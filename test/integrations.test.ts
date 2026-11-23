@@ -350,3 +350,34 @@ test('the reviewer token opens the review routes and nothing a service writes th
     server.close()
   }
 })
+
+test('one address cannot flood collect, and health and stats answer', async () => {
+  const graph = createGraph(createMemoryStore())
+  const clock = { now: T0 }
+  const handler = createHandler(graph, { token: 'service', reviewToken: 'reviewer', origins: ['https://site.example'], now: () => clock.now, limit: { perMinute: 60, burst: 2 } })
+  const server = createServer(handler).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const visit = (device: string) => fetch(`${base}/collect`, { method: 'POST', headers: { origin: 'https://site.example' }, body: JSON.stringify({ device }) })
+  try {
+    assert.equal((await visit('a')).status, 204)
+    assert.equal((await visit('b')).status, 204)
+    const refused = await visit('c')
+    assert.equal(refused.status, 429)
+    assert.equal(refused.headers.get('retry-after'), '1')
+    assert.deepEqual(await graph.history('visitor:c'), [])
+    // One a second comes back.
+    clock.now += 1000
+    assert.equal((await visit('c')).status, 204)
+    assert.equal((await visit('d')).status, 429)
+
+    assert.deepEqual(await (await fetch(`${base}/health`)).json(), { ok: true })
+    assert.equal((await fetch(`${base}/stats`)).status, 401)
+    assert.equal((await fetch(`${base}/stats`, { headers: { authorization: 'Bearer reviewer' } })).status, 403)
+    const stats = (await (await fetch(`${base}/stats`, { headers: { authorization: 'Bearer service' } })).json()) as any
+    assert.deepEqual([stats.collected, stats.limited, stats.errors, stats.since], [3, 2, 0, T0])
+    assert.equal(stats.graph.subjects, 3)
+  } finally {
+    server.close()
+  }
+})
