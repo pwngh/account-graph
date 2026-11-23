@@ -256,6 +256,10 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return graph.attribute(subject, { at: Number(url.searchParams.get('at') ?? now()) })
       case 'GET /verify':
         return graph.verify()
+      case 'POST /prune': {
+        const body = await json(request)
+        return { pruned: await graph.prune(body.before, why(body)) }
+      }
       case 'GET /decisions':
         return graph.decisions()
       case 'GET /audit':
