@@ -159,6 +159,8 @@ function ask(title, text, confirm = 'Confirm') {
   $('ask-reason').value = ''
   return new Promise((resolve) => {
     $('ask').addEventListener('close', () => resolve($('ask').returnValue === 'yes' ? $('ask-reason').value.trim() : undefined), { once: true })
+    // Clear the last answer first, so closing with Escape can never repeat an earlier "yes".
+    $('ask').returnValue = ''
     $('ask').showModal()
   })
 }
@@ -188,7 +190,8 @@ function reasons(list) {
 
 /** The subject in the middle, the subjects tied to it around it, and the ties between them. */
 function picture(profile) {
-  const others = [...new Set([...(profile.cluster?.members ?? []), ...profile.ties.flatMap((tie) => [tie.a, tie.b]), ...profile.separated])].filter((s) => s !== profile.subject).slice(0, 24)
+  // Room for 24. The subject's own ties and separations come first, then the rest of its cluster.
+  const others = [...new Set([...profile.separated, ...profile.links.map((link) => link.subject), ...(profile.cluster?.members ?? [])])].filter((s) => s !== profile.subject).slice(0, 24)
   const members = new Set(profile.cluster?.members ?? [])
   const place = new Map([[profile.subject, [300, 170]]])
   others.forEach((subject, i) => {
@@ -200,7 +203,11 @@ function picture(profile) {
     const [from, to] = [place.get(a), place.get(b)]
     if (from && to) drawing.append(svg('line', { class: `tie ${kind}`, x1: from[0], y1: from[1], x2: to[0], y2: to[1], 'stroke-width': width }, svg('title', {}, label)))
   }
-  for (const tie of profile.ties) line(tie.a, tie.b, tie.level, 1 + 3 * tie.score, `${tie.a} and ${tie.b}: ${tie.level} ${percent(tie.score)}`)
+  // A strong tie that a cut left out of the cluster is drawn like a related one: tied, not joined.
+  for (const tie of profile.ties) {
+    const joined = tie.level === 'same' && members.has(tie.a) && members.has(tie.b)
+    line(tie.a, tie.b, joined ? 'same' : 'related', 1 + 3 * tie.score, `${tie.a} and ${tie.b}: ${joined ? 'joined' : 'tied, not joined'}, ${percent(tie.score)}`)
+  }
   for (const other of profile.separated) line(profile.subject, other, 'apart', 2, `${profile.subject} and ${other}: kept apart by a reviewer`)
   for (const [subject, [x, y]] of place) {
     const me = subject === profile.subject
@@ -231,7 +238,7 @@ function render(profile) {
   detail.append(summary)
 
   if (profile.ties.length > 0 || profile.separated.length > 0) detail.append(el('section', {}, el('h2', {}, 'Picture'), picture(profile),
-    el('p', { class: 'muted' }, 'Solid: joined. Dashed: related, not joined. Dotted red: kept apart by a reviewer. Click a circle to open it.')))
+    el('p', { class: 'muted' }, 'Solid: joined. Dashed: tied, not joined. Dotted red: kept apart by a reviewer. Click a circle to open it.')))
 
   const members = new Set(profile.cluster.members)
   const links = el('table', {}, el('tr', {}, el('th', {}, 'Subject'), el('th', {}, 'Tie'), el('th', { class: 'num' }, 'Score'), el('th', {}, 'Why'), el('th', {})))
@@ -269,8 +276,8 @@ let current
 async function show(subject) {
   current = subject
   $('subject').value = subject
-  history.replaceState(null, '', `#${encodeURIComponent(subject)}`)
   try {
+    history.replaceState(null, '', `#${encodeURIComponent(subject)}`)
     render(await api('GET', `/subject?subject=${encodeURIComponent(subject)}`))
     notice('')
   } catch (error) {
@@ -287,11 +294,12 @@ async function refresh() {
     $('queue').replaceChildren(...(clusters.length > 0 ? clusters.map((cluster) => el('li', {}, open(cluster.id), el('span', { class: 'muted' }, ` ${cluster.size} accounts `), cluster.oversized ? el('span', { class: 'chip apart' }, 'review') : '')) : [el('li', { class: 'muted' }, 'No clusters yet.')]))
     $('seal').textContent = audit.sound ? `${decisions.length} recorded. The record is whole.` : `The record was altered at entry ${audit.brokenAt}.`
     $('seal').className = audit.sound ? 'muted' : 'apart'
-    const restored = new Set(decisions.filter((d) => d.action === 'restore').map((d) => d.about[0]))
+    // An ignore can be undone unless a later decision already restored that identifier.
+    const restoredAt = new Map(decisions.filter((d) => d.action === 'restore').map((d) => [d.about[0], d.seq]))
     $('decisions').replaceChildren(...decisions.slice(-30).reverse().map((d) => el('li', {},
       el('span', {}, `${ACTIONS[d.action] ?? d.action} `), ...d.about.map((subject) => el('span', { class: 'reason' }, subject)),
       el('span', { class: 'muted' }, `${when(d.at)}${d.by ? `, ${d.by}` : ''}${d.reason ? `: ${d.reason}` : ''} `),
-      d.action === 'ignore' && !restored.has(d.about[0]) ? el('button', { class: 'link', on: { click: () => act('Resume linking through this identifier', d.about[0], '/ignore', { identifier: d.about[0], ignored: false }, 'Resume') } }, 'undo') : '')))
+      d.action === 'ignore' && !(restoredAt.get(d.about[0]) > d.seq) ? el('button', { class: 'link', on: { click: () => act('Resume linking through this identifier', d.about[0], '/ignore', { identifier: d.about[0], ignored: false }, 'Resume') } }, 'undo') : '')))
     if (current) await show(current)
     else notice('')
   } catch (error) {
@@ -300,7 +308,9 @@ async function refresh() {
 }
 
 $('find').addEventListener('submit', (event) => { event.preventDefault(); show($('subject').value.trim()) })
-if (location.hash.length > 1) current = decodeURIComponent(location.hash.slice(1))
+try {
+  if (location.hash.length > 1) current = decodeURIComponent(location.hash.slice(1))
+} catch {}
 refresh()
 </script>
 </body>

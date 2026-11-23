@@ -11,7 +11,11 @@ import { reviewPage } from './review.ts'
 import type { Identifier, Level, Subject, Touch } from './types.ts'
 
 export interface HandlerOptions {
-  /** The bearer token your own services send. Browsers never hold it. */
+  /**
+   * The bearer token your own services send. Visitors' browsers never hold
+   * it. A reviewer types it into the reviewer screen, which keeps it for that
+   * browser tab, so give it only to people you would let use every route.
+   */
   token: string
   /** Site origins allowed to post to `/collect`, such as `https://example.org`. */
   origins: readonly string[]
@@ -175,7 +179,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
 
     if (path === 'GET /review') {
       // The page is only a shell. Nothing it shows arrives without the token.
-      response.writeHead(200, reviewPage.headers).end(reviewPage.html)
+      const page = reviewPage()
+      response.writeHead(200, page.headers).end(page.html)
       return SENT
     }
 
