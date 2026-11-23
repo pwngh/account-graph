@@ -104,6 +104,8 @@ export function fold(
     const key = keyOf(source, campaignId, campaign)
     let found = lines.get(key)
     if (!found) lines.set(key, (found = { source, campaignId, campaign: campaignId ? '' : campaign, named: '', cost: 0, clicks: 0, impressions: 0, visits: 0, stages: new Map(), outcomes: 0, value: 0 }))
+    // A campaign known only by name keeps one spelling of it, the first in order.
+    if (!campaignId && campaign < found.campaign) found.campaign = campaign
     return found
   }
 
@@ -115,8 +117,6 @@ export function fold(
     found.impressions += cost.impressions
     if (cost.currency) currencies.add(cost.currency)
     if (cost.campaignId && cost.campaign && cost.day >= found.named) [found.named, found.campaign] = [cost.day, cost.day === found.named && found.campaign > cost.campaign ? found.campaign : cost.campaign]
-    // A campaign known only by name keeps one spelling of it, the first in order.
-    if (!cost.campaignId && cost.campaign < found.campaign) found.campaign = cost.campaign
   }
   // When two campaigns of one source share a name, the name stands for the one that cost more.
   const byName = new Map<string, Line>()
@@ -128,17 +128,22 @@ export function fold(
 
   // Then every touch that names an id no cost has, so a touch that carries the id as its name can find it.
   const all = [...touches, ...credited.flatMap(({ touch }) => (touch ? [touch] : []))]
-  const named = (source: string, name: string) => byName.get(`${source}\u0000${name.toLowerCase()}`)
+  // A touch finds a cost by name when it has no id. One with an id no cost knows only finds a cost that has no id either:
+  // a different id under the same name is a different campaign.
+  const named = (touch: Touch, source: string) => {
+    const found = touch.campaign ? byName.get(`${source}\u0000${touch.campaign.toLowerCase()}`) : undefined
+    return found && (!touch.campaignId || !found.campaignId) ? found : undefined
+  }
   for (const touch of all) {
     const source = sourceOf(touch)
-    if (touch.campaignId && !costed.has(keyOf(source, touch.campaignId, '')) && !(touch.campaign && named(source, touch.campaign))) line(source, touch.campaignId, '')
+    if (touch.campaignId && !costed.has(keyOf(source, touch.campaignId, '')) && !named(touch, source)) line(source, touch.campaignId, '')
   }
   const lineOf = (touch: Touch): Line => {
     const source = sourceOf(touch)
     const name = touch.campaign ?? ''
     const byId = lines.get(keyOf(source, touch.campaignId || name, ''))
     if (touch.campaignId && costed.has(keyOf(source, touch.campaignId, ''))) return byId!
-    const found = (name && named(source, name)) || byId || line(source, '', name)
+    const found = named(touch, source) ?? byId ?? line(source, '', name)
     // A line known only from touches takes the first name in order, so the answer is the same however the rows arrive.
     if (found.campaignId && !found.named && name && name !== found.campaignId && (!found.campaign || name < found.campaign)) found.campaign = name
     return found

@@ -244,6 +244,11 @@ test('the report is the same whatever order its rows arrive in', () => {
     touch(4, { ttclid: 'd', campaign: '9001' }),
     touch(5, { ttclid: 'e', campaignId: '9001', campaign: 'Beta' }),
     touch(6, { ttclid: 'f', campaignId: '9001', campaign: 'Alpha' }),
+    // An id no cost knows, under a name a costed campaign with another id has: a different campaign.
+    touch(9, { fbclid: 'g', campaignId: '799', campaign: 'Retarget' }),
+    // A campaign nobody paid for, spelled two ways.
+    touch(10, { source: 'newsletter', campaign: 'march' }),
+    touch(11, { source: 'newsletter', campaign: 'March' }),
     // Sources and steps named after things every object has.
     touch(7, { source: 'constructor', campaign: 'toString' }),
     touch(8, { source: '__proto__' }),
@@ -251,7 +256,7 @@ test('the report is the same whatever order its rows arrive in', () => {
   const outcome = (n: number, stage: string, value: number) => ({ transactionId: `t${n}`, subject: 's', at: n, stage, value, currency: 'USD' })
   const credited = [
     { outcome: outcome(1, 'enrolled', 200), touch: touches[2] },
-    { outcome: outcome(2, '__proto__', 1), touch: touches[6] },
+    { outcome: outcome(2, '__proto__', 1), touch: touches[9] },
     { outcome: outcome(3, 'constructor', 2), touch: undefined },
   ]
   const expected = fold('2026-03-01', '2026-03-02', costs, touches, credited)
@@ -263,13 +268,15 @@ test('the report is the same whatever order its rows arrive in', () => {
     ['(none)', '', '', 0, 0, ['constructor']],
     ['constructor', '', 'toString', 0, 1, ['__proto__']],
     ['tiktok', '9001', 'Alpha', 0, 3, []],
+    ['newsletter', '', 'March', 0, 2, []],
     ['__proto__', '', '', 0, 1, []],
+    ['meta', '799', 'Retarget', 0, 1, []],
   ])
   assert.deepEqual(Object.entries(expected.total.stages).sort(), [['__proto__', { count: 1, value: 1 }], ['constructor', { count: 1, value: 2 }], ['enrolled', { count: 1, value: 200 }]])
   assert.equal(({} as any).count, undefined)
   // Every rotation and the reverse of each list gives the same report.
   const turn = <T>(list: T[], by: number) => [...list.slice(by), ...list.slice(0, by)]
-  for (let by = 0; by < 8; by++) {
+  for (let by = 0; by < touches.length; by++) {
     assert.deepEqual(fold('2026-03-01', '2026-03-02', turn(costs, by % costs.length), turn(touches, by), turn(credited, by % credited.length)), expected)
     assert.deepEqual(fold('2026-03-01', '2026-03-02', turn(costs, by % costs.length).reverse(), turn(touches, by).reverse(), credited), expected)
   }
