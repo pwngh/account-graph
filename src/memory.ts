@@ -227,8 +227,19 @@ export function createMemoryStore(): Store {
       return limit === undefined ? all : all.slice(Math.max(0, all.length - limit))
     },
 
-    async sightingsUntil(at) {
-      return [...sightings.values()].flatMap((log) => log.filter((sighting) => sighting.at <= at))
+    async sightingsUntil(recorded) {
+      return [...sightings.values()].flatMap((log) => log.filter((sighting) => (sighting.recorded ?? sighting.at) <= recorded))
+    },
+
+    async pruneSightings(before) {
+      let gone = 0
+      for (const [subject, log] of sightings) {
+        const kept = log.filter((sighting) => (sighting.recorded ?? sighting.at) >= before)
+        gone += log.length - kept.length
+        if (kept.length > 0) sightings.set(subject, kept)
+        else sightings.delete(subject)
+      }
+      return gone
     },
 
     async addDecision(decision) {

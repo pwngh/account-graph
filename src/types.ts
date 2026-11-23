@@ -18,8 +18,11 @@ export interface Observation {
 export interface Sighting {
   subject: Subject
   identifier: Identifier
+  /** When it happened, in epoch milliseconds. */
   at: number
   event?: string
+  /** When it was written down, which can be later than when it happened. The graph sets this. */
+  recorded?: number
 }
 
 /** Every sighting of one identifier on one subject, folded together. */
@@ -153,7 +156,7 @@ export interface Decision extends Why {
   seq: number
   /** When it was made, in epoch milliseconds. */
   at: number
-  action: 'ignore' | 'restore' | 'separate' | 'rejoin' | 'join' | 'forget' | 'rebuild'
+  action: 'ignore' | 'restore' | 'separate' | 'rejoin' | 'join' | 'forget' | 'rebuild' | 'prune'
   /** What it was about: an identifier, a subject, or two subjects. */
   about: string[]
   /** Seals this entry to the one before it. */

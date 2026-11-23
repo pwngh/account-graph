@@ -96,10 +96,17 @@ export interface Graph {
   audit(): Promise<{ sound: boolean; brokenAt?: number }>
   /**
    * The graph as it stood at a time: a copy in memory, built from the
-   * sightings and decisions up to then. Each sighting counts from its own
-   * time, and a forgotten subject is gone from every past.
+   * sightings written down and the decisions made up to then. A sighting
+   * that happened earlier but arrived later is not in it. A forgotten
+   * subject, and anything pruned, is gone from every past.
    */
   asOf(at: number): Promise<Graph>
+  /**
+   * Deletes sightings written down before a time, to keep the log from
+   * growing forever. Links and clusters do not change, because edges keep
+   * what they folded. `history` and `asOf` lose what was deleted. Returns how many went.
+   */
+  prune(before: number, why?: Why): Promise<number>
   /** Compares stored clusters with a full recompute. Empty when they agree. */
   verify(): Promise<Change[]>
 }
@@ -250,12 +257,13 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     async observe(input) {
       const observations = Array.isArray(input) ? (input as readonly Observation[]) : [input as Observation]
       const sightings: Sighting[] = []
+      const recorded = now()
       for (const { subject, identifiers, at, event } of observations) {
         if (!subject) throw new TypeError('An observation needs a subject')
         if (!Number.isFinite(at)) throw new TypeError(`Observation of "${subject}" needs a time in epoch milliseconds`)
         for (const identifier of new Set(identifiers)) {
           ruleFor(policy, identifier)
-          sightings.push(event === undefined ? { subject, identifier, at } : { subject, identifier, at, event })
+          sightings.push(event === undefined ? { subject, identifier, at, recorded } : { subject, identifier, at, event, recorded })
         }
       }
       if (sightings.length === 0) return []
@@ -340,7 +348,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         // A name some subject already holds would join these two to strangers. Take one nobody holds.
         while ((await tx.states([identifier])).has(identifier)) identifier += '+'
         const at = now()
-        return record(tx, pair.map((subject) => ({ subject, identifier, at, event: 'review' })))
+        return record(tx, pair.map((subject) => ({ subject, identifier, at, event: 'review', recorded: at })))
       })
     },
 
@@ -461,6 +469,14 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       })
     },
 
+    async prune(before, why) {
+      if (!Number.isFinite(before)) throw new TypeError('prune needs a time in epoch milliseconds')
+      return store.write(async (tx) => {
+        await decide(tx, 'prune', [String(before)], why)
+        return tx.pruneSightings(before)
+      })
+    },
+
     decisions() {
       return store.read((tx) => tx.decisions())
     },
@@ -475,7 +491,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         sightings: await tx.sightingsUntil(at),
         decisions: (await tx.decisions()).filter((decision) => decision.at <= at),
       }))
-      const past = createGraph(createMemoryStore(), policy)
+      // Stamp the copy's sightings with the time asked about, so the copy's own log reads as of then.
+      const past = createGraph(createMemoryStore(), policy, { now: () => at })
       for (let i = 0; i < sightings.length; i += 1000) {
         await past.observe(sightings.slice(i, i + 1000).map(({ subject, identifier, at: seen, event }) => ({ subject, identifiers: [identifier], at: seen, ...(event !== undefined && { event }) })))
       }
