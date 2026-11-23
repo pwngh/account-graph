@@ -17,6 +17,8 @@ import { createFingerprintVerifier } from '../src/integrations/fingerprint.ts'
 import { createGoogleTokens } from '../src/integrations/google-auth.ts'
 import { createMaxMindLookup } from '../src/integrations/maxmind.ts'
 import { createMicrosoftTokens } from '../src/integrations/microsoft-auth.ts'
+import { createAddressVerifier } from '../src/integrations/smarty.ts'
+import { createLineTypeLookup } from '../src/integrations/twilio.ts'
 
 const env = process.env
 const short = (text: unknown) => String(text).replace(/\s+/g, ' ').slice(0, 240)
@@ -95,3 +97,11 @@ if (env.META_AD_ACCOUNT_ID && env.META_ADS_TOKEN) {
   const read = metaCosts({ adAccountId: env.META_AD_ACCOUNT_ID, accessToken: env.META_ADS_TOKEN })
   await check('meta costs', true, async () => `${(await read(yesterday, yesterday)).length} campaigns spent yesterday`)
 } else await check('meta costs', false, () => metaCosts({ adAccountId: '1', accessToken: 'invalid' })(yesterday, yesterday))
+
+// Smarty: one address check. Twilio: one line lookup of Twilio's own published example number. Each is one paid query with real keys.
+if (env.SMARTY_AUTH_ID && env.SMARTY_AUTH_TOKEN) {
+  await check('smarty', true, () => createAddressVerifier({ authId: env.SMARTY_AUTH_ID!, authToken: env.SMARTY_AUTH_TOKEN! })({ street: '1600 Amphitheatre Parkway', city: 'Mountain View', state: 'CA' }))
+} else await check('smarty', false, () => createAddressVerifier({ authId: 'invalid', authToken: 'invalid' })({ street: '1600 Amphitheatre Parkway', city: 'Mountain View', state: 'CA' }))
+if (env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN) {
+  await check('twilio line lookup', true, () => createLineTypeLookup({ accountSid: env.TWILIO_ACCOUNT_SID!, authToken: env.TWILIO_AUTH_TOKEN! })('+14159929960'))
+} else await check('twilio line lookup', false, () => createLineTypeLookup({ accountSid: 'ACinvalid', authToken: 'invalid' })('+14159929960'))

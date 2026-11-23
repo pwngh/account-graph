@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { carry, collect, event, read, watch } from '../src/collect.ts'
+import { carry, collect, event, fields, fill, read, watch } from '../src/collect.ts'
 
 /** Just enough of a browser for the collector: a URL, cookies, storage, and a beacon. */
 function browser(href: string, cookies: Record<string, string> = {}, gpc = false) {
@@ -240,4 +240,73 @@ test('links to your other sites carry the visitor along, and no other link is to
   } finally {
     globalThis.fetch = realFetch
   }
+})
+
+test('a form carries the device id and the landing page to whatever receives it', async () => {
+  const page = browser('https://site.example/landing?gclid=G1')
+  const session = new Map<string, string>()
+  Object.defineProperty(globalThis, 'sessionStorage', { value: { getItem: (key: string) => session.get(key) ?? null, setItem: (key: string, value: string) => void session.set(key, value) }, configurable: true })
+  await collect({ endpoint: 'https://graph.example/collect' })
+  // The session began on the landing page; three pages later that is still what a form reports.
+  page.go('https://site.example/contact')
+  await collect({ endpoint: 'https://graph.example/collect' })
+  const device = page.jar.get('ag_device')!
+  assert.deepEqual(fields(), { ag_device: device, ag_landing: 'https://site.example/landing?gclid=G1' })
+
+  const listeners = new Map<string, (happened: object) => void>()
+  const created: { type: string; name: string; value: string }[] = []
+  Object.assign((globalThis as any).document, {
+    addEventListener: (name: string, listener: (happened: object) => void) => void listeners.set(name, listener),
+    removeEventListener: (name: string) => void listeners.delete(name),
+    createElement: () => ({ type: '', name: '', value: '' }),
+  })
+  /** A stand-in form: it remembers the inputs appended to it and finds them again by name. */
+  const form = (marked: boolean, inputs: { name: string; value: string }[] = [], method: string | null = 'post') => {
+    const self = {
+      inputs,
+      getAttribute: (name: string) => (name === 'method' ? method : null),
+      hasAttribute: (name: string) => marked && name === 'data-ag-fields',
+      querySelector: (selector: string) => inputs.find((input) => selector === `input[name="${input.name}"]`) ?? null,
+      append: (input: { type: string; name: string; value: string }) => void (inputs.push(input), created.push(input)),
+      closest: () => self,
+    }
+    return self
+  }
+  const submit = (target: object) => listeners.get('submit')!({ target })
+
+  const stop = fill()
+  const marked = form(true)
+  submit(marked)
+  assert.deepEqual(marked.inputs, [{ type: 'hidden', name: 'ag_device', value: device }, { type: 'hidden', name: 'ag_landing', value: 'https://site.example/landing?gclid=G1' }])
+  // Submitting again fills the same two fields, and a form that already has one keeps it.
+  submit(marked)
+  assert.equal(marked.inputs.length, 2)
+  const own = form(true, [{ name: 'ag_device', value: 'stale' }])
+  submit(own)
+  assert.deepEqual(own.inputs.map((input) => [input.name, input.value]), [['ag_device', device], ['ag_landing', 'https://site.example/landing?gclid=G1']])
+  // An unmarked form is left alone, unless every form was asked for.
+  const plain = form(false)
+  submit(plain)
+  assert.equal(plain.inputs.length, 0)
+  stop()
+  const stopAll = fill({ all: true })
+  submit(plain)
+  assert.equal(plain.inputs.length, 2)
+  // A form that sends its fields in the address is filled only when marked: an address is seen by more than its receiver.
+  const search = form(false, [], null)
+  submit(search)
+  assert.equal(search.inputs.length, 0)
+  const markedSearch = form(true, [], 'GET')
+  submit(markedSearch)
+  assert.equal(markedSearch.inputs.length, 2)
+  stopAll()
+
+  // A visitor who opted out of advertising: the device id still goes, the landing page with its ad click does not.
+  assert.deepEqual(fields({ adUserData: false, adPersonalization: false }), { ag_device: device })
+  ;(globalThis as any).navigator.globalPrivacyControl = true
+  assert.deepEqual(fields(), { ag_device: device })
+  fill({ all: true })
+  const optedOut = form(false)
+  submit(optedOut)
+  assert.deepEqual(optedOut.inputs.map((input) => input.name), ['ag_device'])
 })

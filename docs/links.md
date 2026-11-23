@@ -72,6 +72,8 @@ Put the tag, with its own `domains`, on each site, and list each site in `ORIGIN
 
 The tie is 0.95: enough to join two visitors, not enough to merge two groups on its own. It is filed per receiving site, so one visitor carried to three of your sites is joined on each. One token used by several look-alike browsers on a shared network thins instead: a third holder ends the join, and a fifth ends the tie.
 
+A walk from one of your sites to another is not a new arrival. The first site shows up as the referrer, and a referrer that is one of `ORIGINS` leaves no touch, so the ad click that began the visit keeps the credit.
+
 Subdomains of one site do not need this. `COOKIE=example.org` already gives them one cookie; see [Running the server](operations.md#behind-a-proxy).
 
 ## Limits

@@ -20,6 +20,8 @@ node examples/site.ts            # in a second terminal: an example site on :300
 
 That is the whole loop: a visit, a sign-up, an answer, and a screen for the people who check it.
 
+The same example shows the rest. Press **Channels** on the reviewer screen to see the sign-up under its campaign. On the example site, *See an email* opens a link that names its contact, *Our other site* carries you to a second host name as the same visitor, and *Who does the graph think this browser is?* shows the result.
+
 ## How the pieces fit
 
 ```mermaid
@@ -79,7 +81,8 @@ The `device:` value is the `ag_device` cookie the script set, which your backend
 - **Alerts.** A conversion that fails for good, an outbox that cannot run, or costs that cannot be read are posted to a Slack-style webhook.
 - **Page events and phone calls.** The script tag reports taps and marked clicks, and a call that follows a tap is tied to the visitor who tapped, so calls land under the ad click that produced them.
 - **Links that name a person.** A signed link in an email or text ties the browser that opens it to the person it was sent to, and a visitor stays one visitor across your sites.
-- **Real integrations.** Fingerprint, the operating system's machine id, MaxMind, the Google tag's cookies, and the conversion APIs of Google, Meta, Microsoft, and TikTok.
+- **One call to say who someone is.** Send an email, phone, address and device as they are; the server hashes them, checks the address with the postal service, and counts a throwaway phone number for less.
+- **Real integrations.** Fingerprint, the operating system's machine id, MaxMind, Twilio, Smarty, the Google tag's cookies, the cost reports of Google Ads and Meta, and the conversion APIs of Google, Meta, Microsoft, and TikTok.
 - **An outbox for conversions.** Outcomes are recorded once, sent in batches to each ad platform, retried with backoff, and never sent by two workers at once. Failed ones can be listed and retried.
 - **Consent.** A browser's opt-out signal and a banner's answer are stored and honoured before anything goes to an ad platform.
 - **A write queue.** Observations that arrive together are written together, four times faster on PostgreSQL.
@@ -97,6 +100,7 @@ The `device:` value is the `ag_device` cookie the script set, which your backend
 - [What each campaign cost and brought in](docs/report.md): the three things the report needs, and how to read it.
 - [Page events and phone calls](docs/calls.md): what the script tag reports from a page, and how a call finds its visitor.
 - [Links that name a person](docs/links.md): signed links for email and text, and one visitor across several sites.
+- [Telling the server who someone is](docs/identify.md): one call with plain facts, forms that post elsewhere, and what is filtered out.
 
 **To understand it**
 
@@ -131,21 +135,28 @@ PostgreSQL writes take one advisory lock, so they run one at a time; the write q
 
 ## What has run for real
 
-- Every test runs on memory and on PostgreSQL 16, locally and in CI: 157 tests, including a fuzz test that mixes observations, reviewer decisions, deletions, and transfers, and six outbox workers at once.
-- The image was built and `docker compose up` brought up the server and its database. With the example site pointed at it, a visit with an ad click followed by a sign-up was credited in Chrome, and the reviewer screen served from the container showed the account joined to its visitor.
+- Every test runs on memory and on PostgreSQL 16, locally and in CI: 163 tests, including a fuzz test that mixes observations, reviewer decisions, deletions, and transfers, and six outbox workers at once.
+- The image was built and `docker compose up` brought up the server and its database. With the example site pointed at it, a visit with an ad click followed by a sign-up was credited in Chrome, and the reviewer screen served from the container showed the account joined to its visitor. Against the same container, a signed link tied a browser to its contact, a link to the example's second host name carried the visitor across, and a call posted after a tap was tied to that visitor and valued by its step.
 - The script tag ran in Chrome from a different origin than the page that loaded it.
 - With `cookie: true` the device cookie was set by the server, invisible to script, and the same on the next visit.
 - The reviewer screen ran in Chrome under its content policy: a cluster opened, two accounts were kept apart with a reason, the cluster split, and the decision appeared on the record.
 - The channel report ran in Chrome: a sign-up on the example site, arriving with a campaign id, appeared on that campaign's line beside its cost.
 - A tap on a phone link in Chrome, followed by a call posted for that number, joined the caller to the browser's visitor and counted the call under the visitor's campaign.
 - A signed link opened in Chrome tied the browser to its contact and left the address bar clean. Following a link to the example under a second host name joined that host's visitor to the first.
+- With the device cookie deleted, the example's sign-up form still carried the device id in a hidden field the script added, and the sign-up was credited to its ad click.
 - A database made before an upgrade was brought up to date by starting the server.
 - The hardware id ran on macOS and, in CI, on Linux.
-- The real endpoints of Fingerprint, MaxMind, Google's token service, Google's Data Manager, Meta, Microsoft Advertising, Microsoft's token service, and TikTok each answered an invalid key the way the code expects.
+- The real endpoints of Fingerprint, MaxMind, Google's token service, Google's Data Manager, Google Ads reporting, Meta's conversions and its cost reports, Microsoft Advertising, Microsoft's token service, TikTok, Twilio Lookup, and Smarty each answered an invalid key the way the code expects.
+- The check of Twilio's signature reproduces the example on Twilio's own webhook security page.
 
 ## Limits
 
-- No request has been made with real credentials, so a successful Fingerprint lookup, MaxMind answer, token from Google or Microsoft, and upload to any ad platform are untested. `npm run live-check` is how to run them with yours.
+- No request has been made with real credentials. A successful Fingerprint lookup, MaxMind answer, token from Google or Microsoft, upload to any ad platform, cost report from Google Ads or Meta, Twilio line lookup, and Smarty address check are all untested. `npm run live-check` is how to run them with yours.
+- No real phone call has arrived from Twilio, and no alert has been posted to a real webhook.
+- The report credits the newest strong touch with the whole outcome, and is worked out each time it is asked for.
+- Tracking numbers are one per channel. There is no pool that gives each visitor a number of their own.
+- A signed link is a key: forwarded to a stranger's browser, it ties that browser to the person it names. [Links](docs/links.md) says what limits that and what does not.
+- Postal addresses are checked for the United States only, and names are never matched.
 - TikTok keys are not exercised by `npm run live-check`, because any call would record an event.
 - The two Fingerprint browser loaders have not run in a browser. They need a real key or a third-party script.
 - The server-set cookie has run in Chrome only. Safari's handling is the reason it exists, and it has not run there.

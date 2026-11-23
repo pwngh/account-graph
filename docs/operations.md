@@ -13,7 +13,7 @@ npm start
 database upgraded: tables, sighting record time
 listening on 0.0.0.0:8080
 collect accepts https://example.org
-reviewer token off, server cookie off, fingerprint off, maxmind off, signed links off, alerts off
+reviewer token off, server cookie off, fingerprint off, maxmind off, signed links off, alerts off, address checks off, phone line checks off
 outbox sends to nobody (no ad platform configured)
 page events taken: none (set EVENTS); calls from twilio off
 costs are read from nobody (post them to /costs)
@@ -29,7 +29,9 @@ The last five lines say what is switched on. Each provider turns on when its var
 GRAPH_TOKEN=a-long-random-string REVIEW_TOKEN=another-one ORIGINS=https://example.org docker compose up --build
 ```
 
-Set `GRAPH_PORT` to publish it on another port. The compose file is for trying it out: it keeps the database in a local volume and uses a fixed database password.
+Set `GRAPH_PORT` to publish it on another port. Every variable in the table at the end of this page is passed through to the server when you set it, the same way as the three above.
+
+The compose file is for trying it out: it keeps the database in a local volume, uses a fixed database password, and switches on what the example site shows, with a placeholder `LINK_SECRET`. Set your own before anything real touches it.
 
 ## The script tag
 
@@ -54,6 +56,7 @@ Options ride on the script's address:
 | `collect.js?canvas=open` | Adds the open-source FingerprintJS id, recorded as the weaker `canvas` kind. |
 | `collect.js?params=mailing,placement` | Keeps address parameters of your own with each arrival. |
 | `collect.js?domains=shop.example,help.example` | Carries the visitor along links to your other sites. Needs `LINK_SECRET`. |
+| `collect.js?forms=all` | Adds the device id and landing page to every form as it is submitted. Without it, only forms marked `data-ag-fields`. |
 
 The same script reports taps on phone links and clicks on elements marked `data-ag-event`, once the server is told which names to keep with `EVENTS`. [Page events and phone calls](calls.md) has the details.
 
@@ -100,7 +103,7 @@ Each change has a number and runs once. Several servers may start at the same mo
 | Route | Token | Answers |
 | --- | --- | --- |
 | `GET /health` | none | `{"ok":true}` once the database answers. Use it for a load balancer's check. |
-| `GET /stats` | service | Visits collected, visits refused by the limit, and errors since start; what the graph holds; outbox jobs by state. |
+| `GET /stats` | service | Visits collected, visits refused by the limit, visits from declared bots, and errors since start; what the graph holds; outbox jobs by state. |
 | `GET /verify` | service | The subjects whose stored cluster differs from a full recompute. Empty when sound. It reads every edge. |
 
 Set `ALERT_WEBHOOK` to a Slack incoming webhook, or anything that takes `{"text": "…"}`, and the server posts there when something needs a person:
@@ -143,6 +146,8 @@ On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes i
 | `CALL_NUMBERS` | none | Your tracking numbers and the channel of each, as JSON: `{"+15551230001":{"source":"google","campaignId":"20222"}}`. |
 | `CALL_MIN_SECONDS` | `30` | A shorter call is recorded but not counted. |
 | `TWILIO_AUTH_TOKEN`, `TWILIO_WEBHOOK_URL` | none | Take Twilio's call reports at `/calls/twilio`. Set both. |
+| `TWILIO_ACCOUNT_SID` | none | With `TWILIO_AUTH_TOKEN`: ask Twilio what kind of line a phone posted to `/identify` is. |
+| `SMARTY_AUTH_ID`, `SMARTY_AUTH_TOKEN` | none | Check postal addresses posted to `/identify`. Set both. |
 | `REPORT_TIME_ZONE` | `UTC` | The time zone `/report` reads its days in, such as `America/New_York`. Use the ad account's. |
 | `GOOGLE_ADS_DEVELOPER_TOKEN` | none | Read campaign costs from Google Ads. Needs the two Google variables below. |
 | `META_AD_ACCOUNT_ID`, `META_ADS_TOKEN` | none | Read campaign costs from Meta. Set both. |

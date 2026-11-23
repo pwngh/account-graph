@@ -46,7 +46,7 @@ createServer(async (request, response) => {
   try {
     if (url.pathname === '/') {
       return html(page(host, 'Example shop', `<p>A landing page. If you arrived with <code>?gclid=…</code>, the script below has already told the graph server.</p>
-        <form method="post" action="/signup"><input name="email" type="email" placeholder="you@example.com" required> <button>Sign up</button></form>
+        <form method="post" action="/signup" data-ag-fields><input name="email" type="email" placeholder="you@example.com" required> <button>Sign up</button></form>
         <p>Two things the script reports without any code here: a tap on <a href="tel:+15551230001">555-123-0001</a>, and a click on
         <button type="button" data-ag-event="brochure">Request a brochure</button>. The server keeps them when started with <code>EVENTS=brochure,phone_click</code>.</p>
         <p><a href="${otherSite(host)}/">Our other site</a> is this one under another host name. Follow the link and you stay one visitor there; type its address by hand and you are a stranger.
@@ -54,13 +54,13 @@ createServer(async (request, response) => {
     }
     if (url.pathname === '/signup' && request.method === 'POST') {
       const form = new URLSearchParams(await new Response(request as unknown as ReadableStream).text())
-      // The collector keeps the visitor's device id in a cookie. Reading it here is what ties the visit to the account.
+      // The cookie names the visitor. Where there is none, the script tag added the same id to the form as it was
+      // submitted, which is how a form posted to another system, one that never sees this site's cookie, carries it.
+      const filled = device ?? form.get('ag_device')
       const subject = `account:${++accounts}`
       const at = Date.now()
-      // The email is hashed the way the graph expects before it leaves this server.
-      const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(form.get('email')).trim().toLowerCase()))
-      const email = `email:${[...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')}`
-      const changes = await graph('POST', '/observe', { subject, identifiers: [...(device ? [`device:${device}`] : []), email], at, event: 'signup' })
+      // Hand the server the facts as they are; it hashes the email and ties the account to the browser.
+      const { changes } = await graph('POST', '/identify', { subject, at, event: 'signup', email: form.get('email'), ...(filled && { device: filled }) })
       // Count the sign-up, so the report can set it beside what the campaign cost.
       await graph('POST', '/convert', { transactionId: `signup-${subject}`, subject, at, stage: 'signup', value: 25, currency: 'USD' })
       const attribution = await graph('GET', `/attribute?subject=${encodeURIComponent(subject)}&at=${at}`)

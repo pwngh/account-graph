@@ -11,8 +11,9 @@ import type { VerifiedFingerprint } from '../src/integrations/fingerprint.ts'
 import { createGoogleTokens } from '../src/integrations/google-auth.ts'
 import { createMicrosoftTokens } from '../src/integrations/microsoft-auth.ts'
 import { hardwareId, machineId } from '../src/integrations/hardware.ts'
-import { createDatabaseLookup, createMaxMindLookup, shared } from '../src/integrations/maxmind.ts'
-import { fromTwilio, twilioCall, twilioSignature } from '../src/integrations/twilio.ts'
+import { createDatabaseLookup, createMaxMindLookup, placeOf, shared } from '../src/integrations/maxmind.ts'
+import { addressIdentifier, createAddressVerifier } from '../src/integrations/smarty.ts'
+import { createLineTypeLookup, fromTwilio, twilioCall, twilioSignature } from '../src/integrations/twilio.ts'
 import { createHandler } from '../src/server.ts'
 
 const T0 = 1_708_102_555_327
@@ -225,9 +226,9 @@ test('the server keeps the device id in its own cookie and honours an opt-out', 
     assert.equal(cookie, `ag_device=page-id-1; Max-Age=${400 * 86_400}; Path=/; HttpOnly; Secure; SameSite=Lax; Domain=site.example`)
     assert.equal(first.headers.get('access-control-allow-credentials'), 'true')
 
-    // Later the page has lost its id and made a new one. The cookie still names the same visitor.
+    // Later the page has lost its id and made a new one. The cookie still names the same visitor, who now carries both ids.
     await visit({ device: 'page-id-2' }, { cookie: 'other=1; ag_device=page-id-1' })
-    assert.equal((await graph.history('visitor:page-id-1')).filter((s) => s.identifier.startsWith('device:')).length, 2)
+    assert.deepEqual((await graph.history('visitor:page-id-1')).map((s) => s.identifier).filter((identifier) => identifier.startsWith('device:')), ['device:page-id-1', 'device:page-id-1', 'device:page-id-2'])
     assert.deepEqual(await graph.history('visitor:page-id-2'), [])
 
     // No id from the page and no cookie: the server makes one.
@@ -664,6 +665,12 @@ test('a link sent to one person ties the browser that opens it, and a visitor is
     const { token } = (await asked.json()) as { token: string }
     assert.equal((await page('/collect', { device: 'shop-device', carried: token }, 'https://shop.example')).status, 204)
     assert.deepEqual(await members('visitor:shop-device'), ['visitor:shop-device', 'visitor:site-device'])
+    // Walking between your own sites is not an arrival: the first site as referrer leaves no touch, though a campaign tag still does.
+    await page('/collect', { device: 'shop-device', touch: { referrer: 'https://site.example/pricing', landing: 'https://shop.example/' } }, 'https://shop.example')
+    assert.equal((await graph.counts()).touches, 1)
+    await page('/collect', { device: 'elsewhere', touch: { referrer: 'https://news.example/story', landing: 'https://shop.example/' } }, 'https://shop.example')
+    await page('/collect', { device: 'elsewhere', touch: { referrer: 'https://site.example/pricing', source: 'newsletter', landing: 'https://shop.example/' } }, 'https://shop.example')
+    assert.equal((await graph.counts()).touches, 3)
     // So a sign-up on the second site is credited to the ad click that landed on the first.
     await graph.observe({ subject: 'account:7', identifiers: ['device:shop-device'], at: clock + 1000 })
     assert.equal((await graph.attribute('account:7', { at: clock + 1000 })).credited?.gclid, 'G-site')
@@ -767,6 +774,211 @@ test('steps give page events, calls and outcomes their value and their ad platfo
     const report = (await (await fetch(`${base}/report?from=2026-03-02&to=2026-03-02`, { headers: { authorization: 'Bearer reviewer' } })).json()) as any
     assert.deepEqual(report.steps, ['inquiry', 'call', 'client', 'brochure'])
     assert.deepEqual(report.total.stages, { inquiry: { count: 1, value: 5 }, call: { count: 1, value: 10 }, client: { count: 2, value: 1450 }, brochure: { count: 1, value: 0 } })
+  } finally {
+    server.close()
+  }
+})
+
+/** The fields this reads from Smarty's documented answer for one address. */
+const candidate = (more: { analysis?: object; metadata?: object } = {}) => ({
+  delivery_line_1: '1 Main St Apt 2',
+  last_line: 'Springfield IL 62701-1234',
+  delivery_point_barcode: '627011234025',
+  metadata: { rdi: 'Residential', record_type: 'H', ...more.metadata },
+  analysis: { dpv_match_code: 'Y', dpv_cmra: 'N', dpv_vacant: 'N', ...more.analysis },
+})
+
+test('a postal address is checked with Smarty and counts only when confirmed to the door', async () => {
+  const { fetcher, calls } = fake((url) => {
+    if (url.includes('street=nowhere')) return { body: [] }
+    if (url.includes('street=broke')) return { status: 402, body: { errors: [{ message: 'Payment required' }] } }
+    return { body: [candidate()] }
+  })
+  const verify = createAddressVerifier({ authId: 'id', authToken: 'token', fetch: fetcher })
+  const found = await verify({ street: ' 1 main street #2 ', city: 'Springfield', state: 'IL', zipcode: '62701' })
+  assert.deepEqual(found, { barcode: '627011234025', line1: '1 Main St Apt 2', lastLine: 'Springfield IL 62701-1234', match: 'Y', residential: true, mailDrop: false, vacant: false })
+  const asked = new URL(calls[0]!.url)
+  assert.equal(asked.origin + asked.pathname, 'https://us-street.api.smarty.com/street-address')
+  assert.deepEqual(Object.fromEntries(asked.searchParams), { street: '1 main street #2', city: 'Springfield', state: 'IL', zipcode: '62701', candidates: '1' })
+  // The secret goes in a header, never in the address.
+  assert.equal((calls[0]!.init.headers as Record<string, string>).authorization, `Basic ${Buffer.from('id:token').toString('base64')}`)
+
+  assert.equal(await verify({ street: 'nowhere' }), undefined)
+  // An answer that is not a list of candidates is read as no match, not as a crash.
+  const odd = createAddressVerifier({ authId: 'id', authToken: 'token', fetch: (async () => new Response('{"unexpected":true}')) as typeof fetch })
+  assert.equal(await odd({ street: '1 Main St' }), undefined)
+  await assert.rejects(verify({ street: 'broke' }), /Smarty refused the address check with 402/)
+  await assert.rejects(verify({ street: '  ' }), TypeError)
+
+  // Only the hash of the delivery point is kept, and only for an address that can belong to a household.
+  assert.match(addressIdentifier(found!)!, /^address:[0-9a-f]{64}$/)
+  assert.equal(addressIdentifier(found!), addressIdentifier({ ...found!, line1: 'written another way' }))
+  for (const not of [{ match: 'S' }, { match: 'D' }, { match: 'N' }, { match: '' }, { mailDrop: true }, { vacant: true }]) assert.equal(addressIdentifier({ ...found!, ...not }), undefined)
+})
+
+test('Twilio says what kind of line a number is, once per number', async () => {
+  let clock = 1_800_000_000_000
+  const { fetcher, calls } = fake((url) => {
+    if (url.includes('%2B15550000404')) return { status: 404, body: { code: 20404 } }
+    if (url.includes('%2B15550000500')) return { status: 401, body: { message: 'Authenticate' } }
+    if (url.includes('%2B15550000606')) return { body: { line_type_intelligence: { error_code: 60601, type: null } } }
+    return { body: { line_type_intelligence: { error_code: null, mobile_country_code: '240', mobile_network_code: '38', carrier_name: 'Twilio - SMS/MMS-SVR', type: 'nonFixedVoip' } } }
+  })
+  const lookup = createLineTypeLookup({ accountSid: 'AC1', authToken: 'secret', fetch: fetcher, now: () => clock })
+  assert.deepEqual(await lookup('+14159929960'), { type: 'nonFixedVoip', carrier: 'Twilio - SMS/MMS-SVR' })
+  assert.equal(calls[0]!.url, 'https://lookups.twilio.com/v2/PhoneNumbers/%2B14159929960?Fields=line_type_intelligence')
+  assert.equal((calls[0]!.init.headers as Record<string, string>).authorization, `Basic ${Buffer.from('AC1:secret').toString('base64')}`)
+  // A second question about the same number is answered from memory for thirty days.
+  await lookup('+14159929960')
+  assert.equal(calls.length, 1)
+  clock += 31 * 86_400_000
+  await lookup('+14159929960')
+  assert.equal(calls.length, 2)
+
+  assert.equal(await lookup('+15550000404'), undefined)
+  assert.deepEqual(await lookup('+15550000606'), { type: 'unknown', carrier: undefined })
+  // An error inside the answer may clear up, so it is asked again next time; a number Twilio does not know is remembered.
+  const before = calls.length
+  await lookup('+15550000606')
+  await lookup('+15550000404')
+  assert.equal(calls.length, before + 1)
+  await assert.rejects(lookup('+15550000500'), /Twilio refused the lookup with 401/)
+})
+
+test('the server identifies a subject from plain facts, drops declared bots, and notes where a visit came from', async () => {
+  const graph = createGraph(createMemoryStore())
+  const at = 1_800_000_000_000
+  const lines: Record<string, string> = { '+15550001111': 'mobile', '+15550002222': 'nonFixedVoip', '+18005550100': 'tollFree' }
+  const handler = createHandler(graph, {
+    token: 'service',
+    reviewToken: 'reviewer',
+    origins: ['https://site.example'],
+    now: () => at,
+    limit: false,
+    ipInfo: async () => ({ country: 'US', region: 'FL', city: 'Miami', asn: 1, organization: 'Home ISP', userType: 'residential', anonymous: false, hosting: false }),
+    lineType: async (number) => (number === '+15550009999' ? Promise.reject(new Error('lookup down')) : lines[number] ? { type: lines[number]!, carrier: undefined } : undefined),
+    address: async ({ street }) => (street === 'offline' ? Promise.reject(new TypeError('fetch failed')) : street === 'unknown' ? undefined : { barcode: street.startsWith('1 Main') ? '627011234025' : '999', line1: street, lastLine: '', match: street.includes('Box') ? 'Y' : street.includes('Tower') ? 'D' : 'Y', residential: true, mailDrop: street.includes('Box'), vacant: false }),
+  })
+  const server = createServer(handler).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const post = (path: string, body: object) => fetch(`${base}${path}`, { method: 'POST', headers: { authorization: 'Bearer service' }, body: JSON.stringify(body) })
+  const identify = async (body: object, token = 'service') => {
+    const response = await fetch(`${base}/identify`, { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify(body) })
+    return { status: response.status, ...((await response.json()) as { identifiers?: string[]; notes?: Record<string, string>; changes?: unknown[]; error?: string }) }
+  }
+  const kinds = (identifiers: string[] = []) => identifiers.map((identifier) => identifier.slice(0, identifier.indexOf(':')))
+  const errors = console.error
+  console.error = () => {}
+  try {
+    // Everything arrives as the backend has it; the server hashes, normalizes and checks.
+    const first = await identify({ subject: 'account:1', event: 'signup', device: 'd-1', email: ' Pat.Lee@Gmail.com ', phone: '(555) 000-1111', ip: '203.0.113.9', address: { street: '1 Main Street #2', city: 'Springfield', state: 'IL' } })
+    assert.deepEqual([first.status, kinds(first.identifiers), first.notes], [200, ['device', 'email', 'ip', 'phone', 'address'], { phone: 'mobile', address: 'confirmed' }])
+    assert.equal(first.identifiers![1], `email:${createHash('sha256').update('patlee@gmail.com').digest('hex')}`)
+    assert.deepEqual((await graph.history('account:1')).map((sighting) => [sighting.event, sighting.at]), Array(5).fill(['signup', at]))
+
+    // The same address written another way is the same delivery point: a household, so related and not joined.
+    const second = await identify({ subject: 'account:2', address: { street: '1 Main St Apt 2' } })
+    assert.deepEqual(second.identifiers, [first.identifiers![4]])
+    assert.deepEqual((await graph.links('account:2')).map((link) => [link.subject, link.level, Math.round(link.score * 100)]), [['account:1', 'related', 60]])
+
+    // A throwaway number is kept as the weaker kind; a switchboard, a rented box and a building with no apartment tie nobody.
+    const third = await identify({ subject: 'account:3', phone: '+15550002222', address: { street: 'PO Box 9' } })
+    assert.deepEqual([kinds(third.identifiers), third.notes], [['voip'], { phone: 'nonFixedVoip', address: 'a rented mail box: not used' }])
+    const fourth = await identify({ subject: 'account:4', device: 'd-4', phone: '1-800-555-0100', address: { street: '9 Tower Rd' } })
+    assert.deepEqual([kinds(fourth.identifiers), fourth.notes], [['device'], { phone: 'tollFree: not used', address: 'not confirmed to the apartment: not used' }])
+    const fifth = await identify({ subject: 'account:5', device: 'd-5', address: { street: 'unknown' } })
+    assert.deepEqual(fifth.notes, { address: 'not found' })
+    // A lookup that is down does not lose the sighting: the number is kept as a plain phone.
+    const sixth = await identify({ subject: 'account:6', phone: '+15550009999' })
+    assert.deepEqual([kinds(sixth.identifiers), sixth.notes], [['phone'], {}])
+    // The address service cannot be reached: the rest of the sighting is recorded and the note says why the address is not.
+    const offline = await identify({ subject: 'account:6b', device: 'd-6b', address: { street: 'offline' } })
+    assert.deepEqual([offline.status, kinds(offline.identifiers), offline.notes], [200, ['device'], { address: 'not checked: the address service did not answer' }])
+    // A number found to be a throwaway stops counting as a phone wherever it was written before, calls included,
+    // and ties at the weaker strength from then on.
+    await post('/call', { id: 'V1', from: '+15550002222', to: '+15551230001', at, duration: 60 })
+    const caller = `caller:${hashPhone('+15550002222')}`
+    assert.deepEqual((await graph.links('account:3')).map((link) => [link.subject, link.level, link.reasons[0]!.identifier.split(':')[0]]), [[caller, 'related', 'voip']])
+    await graph.observe({ subject: 'account:old', identifiers: [`phone:${hashPhone('+15550002222')}`], at })
+    assert.deepEqual(await graph.links('account:old'), [])
+    // Muting is decided once, however often the number comes up and however often anyone asks for it again.
+    await graph.ignore(`phone:${hashPhone('+15550002222')}`)
+    assert.deepEqual((await graph.decisions()).map((decision) => [decision.action, decision.by]), [['ignore', 'line check']])
+    // Identifiers the backend already has can ride along, and a time of its own.
+    const seventh = await identify({ subject: 'account:7', at: at - 5000, identifiers: ['payment:tok_1'] })
+    assert.deepEqual([seventh.identifiers, (await graph.history('account:7'))[0]!.at], [['payment:tok_1'], at - 5000])
+
+    assert.equal((await identify({ subject: 'account:8' })).status, 400)
+    assert.equal((await identify({ device: 'd-1' })).status, 400)
+    assert.equal((await identify({ subject: 'account:8', phone: '12' })).status, 400)
+    assert.equal((await identify({ subject: 'account:8', email: 'nope' })).status, 400)
+    assert.equal((await identify({ subject: 'account:8', device: 'has space' })).status, 400)
+    assert.equal((await identify({ subject: 'account:8', address: {} })).status, 400)
+    assert.equal((await identify({ subject: 'account:8', device: 'd-8', at: 1.5 })).status, 400)
+    assert.equal((await identify({ subject: 'account:8', device: 'd-8', at: '1700000000000' })).status, 400)
+    assert.equal((await identify({ subject: 'account:8', device: 'd-8' }, 'reviewer')).status, 403)
+
+    // A program that says what it is leaves no visit; a browser's visit is noted with where its address places it.
+    const visit = (device: string, agent: string, path = '/collect', body: object = {}) =>
+      fetch(`${base}${path}`, { method: 'POST', headers: { origin: 'https://site.example', 'user-agent': agent }, body: JSON.stringify({ device, ...body }) }).then((r) => r.status)
+    const declared = [
+      'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', 'facebookexternalhit/1.1', 'Mozilla/5.0 (X11; Linux x86_64) HeadlessChrome/120.0', 'Mozilla/5.0 (compatible; AhrefsBot/7.0)', 'TelegramBot (like TwitterBot)',
+      'Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)', 'Baiduspider+(+http://www.baidu.com/search/spider.htm)', 'Mozilla/5.0 (compatible; Yahoo! Slurp; http://help.yahoo.com/help/us/ysearch/slurp)', 'Pingdom.com_bot_version_1.4_(http://www.pingdom.com/)',
+      'WhatsApp/2.23.20.0 A', 'curl/8.4.0', 'python-requests/2.31.0', 'Chrome-Lighthouse',
+      // The crawlers that load ad landing pages, and others whose names carry a dash and no slash.
+      'AdsBot-Google (+http://www.google.com/adsbot.html)', 'Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36 (compatible; AdsBot-Google-Mobile; +http://www.google.com/mobile/adsbot.html)',
+      'Mozilla/5.0 (X11; Linux x86_64; Storebot-Google/1.0) AppleWebKit/537.36 Chrome/120.0 Safari/537.36', 'Mozilla/5.0 (compatible;PetalBot;+https://webmaster.petalsearch.com/site/petalbot)', 'DuckDuckBot-Https/1.1; (+https://duckduckgo.com/duckduckbot)', 'Googlebot-Image/1.0',
+    ]
+    for (const agent of declared) assert.equal(await visit('crawler', agent), 204)
+    assert.equal(await graph.cluster('visitor:crawler'), undefined)
+    // A phone sold under a name with "bot" in it, and an app's built-in browser, are people.
+    const people = [
+      'Mozilla/5.0 (Linux; Android 12; CUBOT-X70 Build/SP1A) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36',
+      'Mozilla/5.0 (Linux; Android 13; CUBOT_NOTE_50) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36',
+      'Mozilla/5.0 (Linux; Android 12; Robot-Vacuum-Tab) AppleWebKit/537.36 Chrome/120.0 Safari/537.36',
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS;FBAV/489.0.0.61.109;FBDV/iPhone15,3]',
+      'Mozilla/5.0 (Linux; Android 14; SM-S918B; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/130.0 Mobile Safari/537.36 Instagram 355.0.0.38.103 Android',
+    ]
+    for (const [n, agent] of people.entries()) assert.equal(await visit(`someone-${n}`, agent), 204)
+    assert.equal((await graph.search('visitor:someone-')).length, people.length)
+    assert.equal(await visit('person', 'Mozilla/5.0 (Linux; Android 13; CUBOT KINGKONG 9) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36'), 204)
+    assert.deepEqual((await graph.history('visitor:person')).map((sighting) => sighting.identifier).sort(), ['device:person', 'ip:127.0.0.1', 'place:US/FL/Miami'])
+    assert.deepEqual(await graph.links('visitor:person'), [])
+    const stats = (await (await fetch(`${base}/stats`, { headers: { authorization: 'Bearer service' } })).json()) as { bots: number; collected: number }
+    assert.deepEqual([stats.bots, stats.collected], [declared.length, people.length + 1])
+    assert.deepEqual(await graph.verify(), [])
+  } finally {
+    console.error = errors
+    server.close()
+  }
+
+  assert.equal(placeOf({ country: 'CA', asn: undefined, organization: undefined, userType: undefined, anonymous: false, hosting: false }), 'CA')
+  assert.equal(placeOf(undefined), undefined)
+  // With no address service, an address is left alone and the note says so.
+  const plain = createServer(createHandler(graph, { token: 'service', origins: [] })).listen(0, '127.0.0.1')
+  await new Promise((resolve) => plain.once('listening', resolve))
+  try {
+    const answer = (await (await fetch(`http://127.0.0.1:${(plain.address() as AddressInfo).port}/identify`, { method: 'POST', headers: { authorization: 'Bearer service' }, body: JSON.stringify({ subject: 'account:9', phone: '+15550001111', address: { street: '1 Main St' } }) })).json()) as { identifiers: string[]; notes: object }
+    assert.deepEqual([kinds(answer.identifiers), answer.notes], [['phone'], { address: 'not checked: no address service is set up' }])
+  } finally {
+    plain.close()
+  }
+})
+
+test('with the server cookie on, the id a page quotes still names the visitor', async () => {
+  const graph = createGraph(createMemoryStore())
+  const server = createServer(createHandler(graph, { token: 'service', origins: ['https://site.example'], cookie: true })).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  try {
+    // The page's storage was cleared and it made a new id; the server's cookie still holds the old one.
+    await fetch(`${base}/collect`, { method: 'POST', headers: { origin: 'https://site.example', cookie: 'ag_device=old-id' }, body: JSON.stringify({ device: 'new-id' }) })
+    assert.deepEqual((await graph.cluster('visitor:old-id'))!.members, ['visitor:old-id'])
+    assert.equal(await graph.cluster('visitor:new-id'), undefined)
+    // A form filled by the page carries the new id, and it still finds the visitor.
+    await fetch(`${base}/identify`, { method: 'POST', headers: { authorization: 'Bearer service' }, body: JSON.stringify({ subject: 'account:1', device: 'new-id' }) })
+    assert.deepEqual((await graph.cluster('account:1'))!.members, ['account:1', 'visitor:old-id'])
   } finally {
     server.close()
   }
