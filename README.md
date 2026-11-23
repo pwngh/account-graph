@@ -130,6 +130,7 @@ import { createHandler } from 'account-graph/server'
 createServer(
   createHandler(graph, {
     token: process.env.GRAPH_TOKEN,
+    reviewToken: process.env.REVIEW_TOKEN,
     origins: ['https://example.org', 'https://example.com'],
     fingerprint,
     ipInfo,
@@ -141,7 +142,7 @@ createServer(
 
 The same handler serves a screen for the people who review accounts, at `/review`. It lists the largest clusters, shows who a subject is tied to and why, draws the ties, and shows money moved and every sighting. From it a reviewer can keep two accounts apart, join two, stop linking through an identifier, or forget a subject, each with a reason that goes on the record.
 
-The page is one file with no outside assets. It holds no data and no secret: the reviewer types the access token, and the browser may run only the script the page shipped with and talk only to the server it came from. The token is the same one your services use, and the page keeps it for that browser tab, so give it only to people you would let use every route. Try it over made-up data with `npm run review`.
+The page is one file with no outside assets. It holds no data and no secret: the reviewer types the access token, and the browser may run only the script the page shipped with and talk only to the server it came from. Give reviewers their own token with `reviewToken`. It opens what the screen needs and nothing your services write through, so a reviewer cannot record observations, transfers, or conversions. The page keeps the token for that browser tab. Try it over made-up data with `npm run review`.
 
 With `cookie: true`, `/collect` keeps the device id in a cookie the server sets. Safari deletes a cookie set by script after seven days; one set by the server lasts, and script cannot read or change it. It needs `/collect` to be served from the site's own domain, or a subdomain with `cookie: { domain: 'example.org' }`.
 
