@@ -53,7 +53,7 @@ const TOUCH_FIELDS = [
 
 /** What the reviewer token opens: what the reviewer screen reads, and the decisions a reviewer makes. */
 const REVIEW_ROUTES = new Set([
-  'GET /subject', 'GET /clusters', 'GET /links', 'GET /cluster', 'GET /history', 'GET /flows', 'GET /collusion',
+  'GET /subject', 'GET /clusters', 'GET /links', 'GET /cluster', 'GET /history', 'GET /flows', 'GET /collusion', 'GET /rings',
   'GET /decisions', 'GET /audit', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
 ])
 
@@ -180,6 +180,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       ties: [...ties.values()],
       separated: await graph.separations(subject),
       flows: await graph.flows(subject),
+      rings: await graph.rings(subject),
       history: (await graph.history(subject, 100)).reverse(),
     }
   }
@@ -243,6 +244,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return graph.flows(subject)
       case 'GET /collusion':
         return graph.collusion(subject)
+      case 'GET /rings':
+        return graph.rings(subject)
       case 'GET /links':
         return graph.links(subject)
       case 'GET /cluster':
