@@ -32,3 +32,9 @@
 - `spend` records campaign cost per day; `googleCosts`, `metaCosts`, and `costsFromCsv` read it, and `POST /costs` takes it.
 - `report({ from, to, timeZone })` sets each campaign's cost beside the outcomes credited to it; `GET /report` and the reviewer screen's Channels view show it.
 - `Touch` carries `campaignId`, `adGroupId`, `adId`, `term`, `content`, and `custom`; `collect.js?params=` names the custom parameters to keep.
+- `POST /event` records a page event named in `HandlerOptions.events` as an outcome, once a day per browser unless it carries an id.
+- `collect.js` reports taps on `tel:` links as `phone_click` and clicks on `data-ag-event` elements; `accountGraph.event(name)` reports from page code (`event`, `watch`).
+- `recordCall` ties a phone call to the one visitor who tapped its number just before, else files it under the number's channel; `POST /call` takes one.
+- `POST /calls/twilio` takes Twilio's status callbacks after checking the signature (`fromTwilio`, `twilioCall`).
+- `holders(identifiers)` lists every subject seen with an identifier.
+- The `dial` kind (0.92) links a caller to the visitor who tapped; the `dialed` kind is a note that links nothing.
