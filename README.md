@@ -144,11 +144,17 @@ PostgreSQL writes take one advisory lock, so they run one at a time; the write q
 - With the device cookie deleted, the example's sign-up form still carried the device id in a hidden field the script added, and the sign-up was credited to its ad click.
 - A database made before an upgrade was brought up to date by starting the server.
 - The hardware id ran on macOS and, in CI, on Linux.
-- The real endpoints of Fingerprint, MaxMind, Google's token service, Google's Data Manager, Meta, Microsoft Advertising, Microsoft's token service, and TikTok each answered an invalid key the way the code expects.
+- The real endpoints of Fingerprint, MaxMind, Google's token service, Google's Data Manager, Google Ads reporting, Meta's conversions and its cost reports, Microsoft Advertising, Microsoft's token service, TikTok, Twilio Lookup, and Smarty each answered an invalid key the way the code expects.
+- The check of Twilio's signature reproduces the example on Twilio's own webhook security page.
 
 ## Limits
 
-- No request has been made with real credentials, so a successful Fingerprint lookup, MaxMind answer, token from Google or Microsoft, and upload to any ad platform are untested. `npm run live-check` is how to run them with yours.
+- No request has been made with real credentials. A successful Fingerprint lookup, MaxMind answer, token from Google or Microsoft, upload to any ad platform, cost report from Google Ads or Meta, Twilio line lookup, and Smarty address check are all untested. `npm run live-check` is how to run them with yours.
+- No real phone call has arrived from Twilio, and no alert has been posted to a real webhook.
+- The report credits the newest strong touch with the whole outcome, and is worked out each time it is asked for.
+- Tracking numbers are one per channel. There is no pool that gives each visitor a number of their own.
+- A signed link is a key: forwarded to a stranger's browser, it ties that browser to the person it names. [Links](docs/links.md) says what limits that and what does not.
+- Postal addresses are checked for the United States only, and names are never matched.
 - TikTok keys are not exercised by `npm run live-check`, because any call would record an event.
 - The two Fingerprint browser loaders have not run in a browser. They need a real key or a third-party script.
 - The server-set cookie has run in Chrome only. Safari's handling is the reason it exists, and it has not run there.
