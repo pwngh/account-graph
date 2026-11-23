@@ -15,6 +15,8 @@
     --same: #4cc79b; --related: #f0b24a; --apart: #ff8a80; --accent: #8fb0ff; --chip: #2a2925; }
 }
 * { box-sizing: border-box; }
+/* The rules below set display on labels and rows, which would otherwise undo the hidden attribute. */
+[hidden] { display: none !important; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
 header { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--panel); }
 header h1 { font-size: 16px; margin: 0 auto 4px 0; letter-spacing: .01em; }
@@ -97,7 +99,7 @@ dialog h4 { margin: 0; font-size: 16px; }
     <label>Reason, for the record <input id="ask-reason" autocomplete="off"></label>
     <div class="row">
       <button value="yes" class="primary" id="ask-yes">Confirm</button>
-      <button value="no">Cancel</button>
+      <button value="no" formnovalidate>Cancel</button>
     </div>
   </form>
 </dialog>
@@ -186,7 +188,7 @@ async function act(title, text, path, body, confirm, otherKey) {
     outcome = [error.message, true]
   }
   // Reloading clears the notice, so speak after it. A failed reload has already said why.
-  if (await refresh()) notice(...outcome)
+  if ((await refresh()) || outcome[1]) notice(...outcome)
 }
 
 const open = (subject) => el('button', { class: 'link', on: { click: () => show(subject) } }, subject)
