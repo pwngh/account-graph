@@ -139,6 +139,19 @@ export function createMemoryStore(): Store {
       return [...(byCluster.get(cluster) ?? [])]
     },
 
+    async counts() {
+      const count = (groups: Map<unknown, { length: number }>) => [...groups.values()].reduce((sum, group) => sum + group.length, 0)
+      return {
+        subjects: labels.size,
+        clusters: byCluster.size,
+        identifiers: byIdentifier.size,
+        edges: [...bySubject.values()].reduce((sum, edges) => sum + edges.size, 0),
+        sightings: count(sightings),
+        touches: count(touches),
+        decisions: decisions.length,
+      }
+    },
+
     async largestClusters(limit) {
       return [...byCluster]
         .filter(([, group]) => group.size > 1)

@@ -11,6 +11,7 @@ import type {
   Cluster,
   Consent,
   Counterparty,
+  Counts,
   Decision,
   Flow,
   Identifier,
@@ -69,6 +70,8 @@ export interface Graph {
   consentOf(subjects: readonly Subject[]): Promise<Map<Subject, Consent>>
   /** Records a reviewer's decision that two subjects are one person. They join one cluster unless separated. */
   join(a: Subject, b: Subject, why?: Why): Promise<Change[]>
+  /** How much the graph holds: subjects, clusters, identifiers, edges, sightings, touches, decisions. */
+  counts(): Promise<Counts>
   /** The subjects a reviewer has separated from this one. */
   separations(subject: Subject): Promise<Subject[]>
   /** The clusters with two or more members, largest first: where a reviewer should look. */
@@ -350,6 +353,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const at = now()
         return record(tx, pair.map((subject) => ({ subject, identifier, at, event: 'review', recorded: at })))
       })
+    },
+
+    counts() {
+      return store.read((tx) => tx.counts())
     },
 
     separations(subject) {
