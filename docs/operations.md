@@ -53,6 +53,12 @@ Options ride on the script's address:
 
 To pass a consent banner's answer, set `window.accountGraphConsent = { adUserData: true, adPersonalization: false }` before the tag.
 
+The script keeps the visitor's device id in a cookie named `ag_device`, marked `Secure`. Browsers only keep such a cookie on a site served over HTTPS; `localhost` is the exception.
+
+### Several sites
+
+Each site's domain gets its own device id, because a browser keeps cookies per domain. A person who visits two of your sites is two visitors until something ties them: a confirmed fingerprint, the same email at sign-in, or the same account signing in on both. That is what the graph is for, and it is why adding Fingerprint matters most when you run several domains.
+
 ## Tokens
 
 `GRAPH_TOKEN` opens every route. Your own services send it; nothing in a browser should hold it.

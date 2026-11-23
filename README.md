@@ -1,8 +1,70 @@
 # account-graph
 
-Links accounts, leads, and anonymous visitors that share identifiers, and traces a conversion back to the ad click that started it.
+Works out which accounts, leads, and anonymous visitors are the same person, and traces a sign-up or sale back to the ad click that started it.
 
-## Features
+It runs as a server beside your sites. Each page reports its visits with one script tag, your backend says who a visitor turned out to be, and the server answers with who else that is.
+
+## Try it in five minutes
+
+You need Docker and Node 22.18 or later. If port 8080 is taken, start with `GRAPH_PORT=8090 docker compose up --build` and `GRAPH_URL=http://localhost:8090 node examples/site.ts`.
+
+```sh
+git clone https://github.com/pwngh/account-graph && cd account-graph
+docker compose up --build        # the server on :8080, and its database
+node examples/site.ts            # in a second terminal: an example site on :3000
+```
+
+1. Open <http://localhost:3000/?gclid=demo-click&utm_source=google> and sign up with any email.
+2. The page answers: *The graph server credits the ad click demo-click at 98% confidence.*
+3. Open <http://localhost:8080/review>, enter the token `change-me-review-token`, and open the account. It is joined to the visitor who clicked the ad.
+
+That is the whole loop: a visit, a sign-up, an answer, and a screen for the people who check it.
+
+## How the pieces fit
+
+```mermaid
+flowchart LR
+  B[Browser on your site] -- "collect.js: device id, ad click" --> S[Graph server]
+  A[Your backend] -- "observe, transfer, convert" --> S
+  R[Reviewer] -- "/review" --> S
+  S --> G[(PostgreSQL)]
+  S -- "outbox" --> P[Google, Meta, Microsoft, TikTok]
+```
+
+The browser never names an account. It only says "this device, arriving from this ad click". Your backend names the account at sign-in, with whatever it saw: the device cookie, an email, a machine id. The server joins the two when the evidence is strong enough, and the outbox tells each ad platform which click earned the conversion.
+
+## On your own site
+
+Add the script tag to every page:
+
+```html
+<script type="module" src="https://graph.example.org/collect.js"></script>
+```
+
+When someone signs in or signs up, tell the server from your backend:
+
+```sh
+curl -X POST https://graph.example.org/observe \
+  -H "authorization: Bearer $GRAPH_TOKEN" \
+  -d '{"subject":"account:42","identifiers":["device:9f3c…"],"at":1795460000000,"event":"signup"}'
+```
+
+The `device:` value is the `ag_device` cookie the script set, which your backend reads from the request. The answer lists every subject whose cluster just changed.
+
+## The words it uses
+
+| Word | Meaning |
+| --- | --- |
+| Subject | Anything with an identity: `account:42`, `visitor:9f3c`. |
+| Identifier | Something a subject was seen with, written `kind:value`: `device:9f3c`, `email:…`, `ip:203.0.113.9`. |
+| Sighting | One time a subject was seen with an identifier. Sightings are the record; everything else is worked out from them. |
+| Link | Two subjects that share identifiers, with a score from 0 to 1 and the reasons for it. |
+| Cluster | The subjects the graph treats as one person. |
+| Touch | An arrival from an ad click or a campaign. |
+| Outcome | Something worth telling an ad platform: a sign-up, a sale. |
+| Decision | A reviewer's call: join these two, keep these two apart, stop linking through this identifier. |
+
+## What it does
 
 - **Scored links with reasons.** Every link says which shared identifiers produced it and how much each counted.
 - **Clusters that can split.** Clusters are derived from the record, so a bad identifier can be ignored and a person can be forgotten, and the clusters come apart correctly.
@@ -10,371 +72,30 @@ Links accounts, leads, and anonymous visitors that share identifiers, and traces
 - **Reviewer decisions.** Join two subjects, keep two apart, or mute an identifier. Each decision is recorded with who and why, and sealed so the record cannot be quietly edited.
 - **Money flows.** Trades and transfers between accounts are reported with how the two are tied by identity, and value that goes round in a circle is found, so collusion shows up.
 - **Attribution with confidence.** A conversion lists every touch that could have led to it and credits one only when the chain of links is strong.
-- **Real integrations.** Fingerprint, the operating system's machine id, MaxMind, the Google tag's cookies, and the conversion APIs of Google, Meta, and Microsoft.
-- **An outbox for conversions.** Outcomes are recorded once, sent in batches to each ad platform, retried with backoff, and never sent by two workers at once.
+- **Real integrations.** Fingerprint, the operating system's machine id, MaxMind, the Google tag's cookies, and the conversion APIs of Google, Meta, Microsoft, and TikTok.
+- **An outbox for conversions.** Outcomes are recorded once, sent in batches to each ad platform, retried with backoff, and never sent by two workers at once. Failed ones can be listed and retried.
 - **Consent.** A browser's opt-out signal and a banner's answer are stored and honoured before anything goes to an ad platform.
 - **A write queue.** Observations that arrive together are written together, four times faster on PostgreSQL.
 - **Two stores, one suite.** Memory and PostgreSQL pass the same tests, including a fuzz test that checks stored clusters against a full recompute after every operation.
 - **No runtime dependencies.** `pg` is needed only for the PostgreSQL store.
 
-## Installation
 
-Not published yet. From a checkout, Node 22.18 or later runs the TypeScript source directly.
+## Where to read next
 
-```sh
-npm install
-npm test
-DATABASE_URL=postgres://localhost/yourdb npm test
-npm run build   # writes dist/, which the package's doors point at
-```
+**To run it**
 
-## Usage
+- [Running the server](docs/operations.md): the start command, Docker, the script tag, tokens, every variable.
+- [Setting up the providers](docs/providers.md): where to get keys for Fingerprint, MaxMind, Google, Meta, Microsoft and TikTok.
+- [The HTTP routes](docs/http.md): every route, which token opens it, and what it answers.
 
-```ts
-import { createGraph, createMemoryStore, ip } from 'account-graph'
+**To understand it**
 
-let graph = createGraph(createMemoryStore())
+- [How it decides](docs/deciding.md): the score, the weights and what they rest on, how links become clusters, and when to change a setting.
 
-// Record what each account was seen with, on any event.
-await graph.observe({
-  subject: 'account:1',
-  identifiers: ['hardware:9c1f…', ip('203.0.113.20')],
-  at: Date.now(),
-  event: 'login',
-})
-let changes = await graph.observe({
-  subject: 'account:2',
-  identifiers: ['hardware:9c1f…'],
-  at: Date.now(),
-  event: 'trade',
-})
-// changes: [{ subject: 'account:2', from: 'account:2', to: 'account:1' }]
+**To build on it**
 
-await graph.links('account:2')
-// [{ subject: 'account:1', level: 'same', score: 0.95, reasons: [{ identifier: 'hardware:9c1f…', evidence: 0.95, … }] }]
-```
-
-`observe` returns the cluster changes that one event caused, so a login or trade can be held before it settles.
-
-### PostgreSQL
-
-```ts
-import pg from 'pg'
-import { createGraph } from 'account-graph'
-import { createPostgresStore } from 'account-graph/postgres'
-
-let store = createPostgresStore(new pg.Pool({ connectionString: process.env.DATABASE_URL }))
-await store.migrate()
-let graph = createGraph(store)
-```
-
-## Integrations
-
-### Hardware id
-
-In a desktop client, on Node or in Electron's main process. Reads the operating system's machine id and hashes it with a constant of your app, so the raw id never leaves the machine.
-
-```ts
-import { hardwareId } from 'account-graph/hardware'
-
-let hardware = await hardwareId('my-game-client') // 'hardware:9c1f…'
-// Send it with the login. The server observes it on the account.
-```
-
-It reads `IOPlatformUUID` on macOS, `MachineGuid` on Windows, and `/etc/machine-id` on Linux. The client reports it, so a modified client can lie.
-
-### Fingerprint
-
-The browser gets an event id. The server confirms it with Fingerprint and reads the visitor id there, so a page cannot claim someone else's fingerprint.
-
-```ts
-// Browser
-import { collect } from 'account-graph/collect'
-import { fingerprintEvent } from 'account-graph/fingerprint/browser'
-
-collect({
-  endpoint: 'https://graph.example.org/collect',
-  fingerprintEvent: fingerprintEvent({ apiKey: 'PUBLIC_KEY' }),
-})
-```
-
-```ts
-// Server
-import { createFingerprintVerifier } from 'account-graph/fingerprint'
-
-let fingerprint = createFingerprintVerifier({ secretKey: process.env.FINGERPRINT_SECRET })
-```
-
-A tampered browser, a bad bot, or an event older than five minutes gives no fingerprint. `openFingerprint` returns the open-source FingerprintJS id instead; nothing confirms it, so it is recorded as the weaker `canvas` kind.
-
-### MaxMind
-
-Classifies each address. A VPN, proxy, data center, phone carrier, campus, or office address is recorded and then ignored, so it links nobody.
-
-```ts
-import { createMaxMindLookup } from 'account-graph/maxmind'
-
-let ipInfo = createMaxMindLookup({ accountId: 123456, licenseKey: process.env.MAXMIND_KEY })
-```
-
-`createDatabaseLookup` does the same from local MaxMind databases opened with the `maxmind` package.
-
-### The server
-
-`createHandler` puts these together. `/collect` takes browser visits from your sites, `/review` serves the reviewer screen, and the other routes take your own services' calls with a bearer token.
-
-```ts
-import { createServer } from 'node:http'
-import { createHandler } from 'account-graph/server'
-
-createServer(
-  createHandler(graph, {
-    token: process.env.GRAPH_TOKEN,
-    reviewToken: process.env.REVIEW_TOKEN,
-    origins: ['https://example.org', 'https://example.com'],
-    fingerprint,
-    ipInfo,
-  }),
-).listen(8080)
-```
-
-### The reviewer screen
-
-The same handler serves a screen for the people who review accounts, at `/review`. It lists the largest clusters, shows who a subject is tied to and why, draws the ties, and shows money moved and every sighting. From it a reviewer can keep two accounts apart, join two, stop linking through an identifier, or forget a subject, each with a reason that goes on the record.
-
-The page is one file with no outside assets. It holds no data and no secret: the reviewer types the access token, and the browser may run only the script the page shipped with and talk only to the server it came from. Give reviewers their own token with `reviewToken`. It opens what the screen needs and nothing your services write through, so a reviewer cannot record observations, transfers, or conversions. The page keeps the token for that browser tab. Try it over made-up data with `npm run review`.
-
-With `cookie: true`, `/collect` keeps the device id in a cookie the server sets. Safari deletes a cookie set by script after seven days; one set by the server lasts, and script cannot read or change it. It needs `/collect` to be served from the site's own domain, or a subdomain with `cookie: { domain: 'example.org' }`.
-
-### Consent
-
-A browser that sends the Global Privacy Control signal is still seen, because fraud checks do not depend on advertising consent. Its ad click and analytics id are not kept, and nothing about it goes to an ad platform.
-
-```ts
-collect({ endpoint, consent: { adUserData: true, adPersonalization: false } }) // the banner's answer
-await graph.consent('contact:1001', { adUserData: true, adPersonalization: true }) // or from your server
-```
-
-### Google tag and Google Ads
-
-`collect` reads the click id from the URL (`gclid`, `gbraid`, `wbraid`, and Meta's and Microsoft's), falls back to the Google tag's `_gcl_aw` cookie, and reads the Analytics client id from `_ga`. It keeps its own first-party device id in the `ag_device` cookie.
-
-When someone enrolls, your server reads `ag_device` from the request and observes the new contact with it.
-
-```ts
-await graph.observe({
-  subject: 'contact:1001',
-  identifiers: [`device:${cookies.ag_device}`, email(form.email)],
-  at: Date.now(),
-  event: 'enroll',
-})
-
-let attribution = await graph.attribute('contact:1001', { at: Date.now() })
-// attribution.reason: 'credited' | 'low_confidence' | 'no_touch'
-```
-
-Then record the outcome in the outbox, which sends it to each ad platform.
-
-```ts
-import { createOutbox, googleAds, ingest, meta, microsoftAds } from 'account-graph'
-import { createGoogleTokens } from 'account-graph/google-auth'
-
-let token = createGoogleTokens(JSON.parse(serviceAccountKeyFile))
-let outbox = createOutbox(graph, store.outbox, {
-  targets: [
-    googleAds({ customerId: '123-456-7890', send: async (request) => ingest(request, await token()) }),
-    meta({ pixelId: '555', accessToken: process.env.META_TOKEN, url: 'https://example.org/' }),
-    microsoftAds({ accessToken: microsoftToken, developerToken, customerId: '11', customerAccountId: '22' }),
-  ],
-})
-
-await outbox.record({
-  transactionId: 'enroll-1001',
-  subject: 'contact:1001',
-  at: Date.now(),
-  action: { google: '987654321', meta: 'Lead', microsoft: 'Enrolled' }, // an action id, an event name, a goal name
-  value: 200,
-  email: form.email,
-})
-
-let stop = outbox.start(30_000) // send what is due, every 30 seconds
-```
-
-Google gets one click id per conversion: `gclid`, else `gbraid`, else `wbraid`. Meta gets `fbc`, built from the `fbclid` and the time of the click. Microsoft gets the `msclkid`. Each gets the email and phone hashed the way it matches them, as a second key for when the click id was lost. The two hash a Gmail address and a phone number differently, so each platform's keys are stored separately.
-
-## The outbox
-
-`record` stores an outcome and returns at once. The email and phone are hashed before they are stored. Recording the same `transactionId` again does nothing; recording it with different details is refused.
-
-`run` sends what is due. For each job it asks the graph for the click at that moment, so evidence that arrived after the outcome still counts.
-
-| What happens | Result |
-| --- | --- |
-| The platform accepts the request | `sent`, with its request id, the click, and its confidence |
-| Rate limit, outage, bad credential, network error | Stays `pending`; tried again in 30 seconds, doubling to an hour |
-| Still failing after 8 tries | `failed`, with the last error |
-| The platform rejects a request for one bad event | Each event is sent alone; only the bad one is `failed` |
-| No trusted click and no email or phone | `skipped`: `no_match_key` |
-| The person, or the browser that clicked, refused ad measurement | `skipped`: `consent_denied` |
-| The outcome is older than the platform accepts: 7 days for Meta, 90 for Microsoft | `skipped`: `too_old` |
-| A click below 0.9 confidence, but an email or phone | Sent with the email or phone alone |
-
-A worker takes a job by pushing its due time one minute ahead. If the worker dies, the job comes due again and another worker takes it. On PostgreSQL the claim locks its rows, so any number of workers can call `run` at once.
-
-Delivery is at least once. A job sent twice after a crash carries the same `transactionId`. Meta keeps the first copy; Google reads the second as a restatement of the same value, which changes nothing.
-
-`restate` changes an outcome's value after a refund or a correction and sends it again. Google overwrites the value it holds. Google has no way to retract a conversion, and Meta and Microsoft cannot restate one.
-
-```ts
-await outbox.restate('enroll-1001', 120)
-```
-
-`delay` holds a new outcome before its first send. `forget` deletes a subject's jobs along with everything else about it.
-
-## The write queue
-
-PostgreSQL writes run one at a time. `createBatcher` puts a queue in front: while one write is in flight, arrivals wait and go together in the next.
-
-```ts
-import { createBatcher } from 'account-graph'
-
-let queue = createBatcher(graph)
-await queue.observe({ subject: 'account:1', identifiers: ['email:…'], at: Date.now() })
-```
-
-A quiet system writes at once; nothing waits on a timer. One bad observation fails alone.
-
-## How it decides
-
-A subject is anything with an identity: `account:42`, `visitor:9f3c`. An identifier is `kind:value`. The graph is the set of subject-identifier edges, each with a first and last sighting.
-
-Two subjects that share an identifier get evidence from it:
-
-```
-evidence = weight × (2 / subjects sharing it) ^ dilution × 0.5 ^ (gap / halfLife)
-```
-
-`gap` is the time between the two subjects' sightings of it, and zero when they overlap. An identifier shared by more subjects than its `cap` gives no evidence. Evidence from several identifiers combines as `1 − Π(1 − evidence)`. At 0.9 the pair joins one cluster; at 0.5 it is reported as related.
-
-Scores depend only on stored data, never on the current time or on arrival order.
-
-| Kind | Weight | Cap | Half-life | What it is |
-| --- | --- | --- | --- | --- |
-| `review` | 1.00 | 100 | none | A reviewer joined these by hand |
-| `passkey` | 0.99 | 5 | none | A passkey's credential id, after your server verified the sign-in |
-| `email` | 0.99 | 25 | none | Stored as the SHA-256 Google also accepts |
-| `device` | 0.98 | 10 | none | First-party cookie or install id |
-| `payment` | 0.97 | 10 | none | Card or bank token |
-| `fingerprint` | 0.97 | 20 | 720 days | Vendor visitor id the server confirmed |
-| `hardware` | 0.95 | 10 | none | Hashed machine id from your client |
-| `phone` | 0.90 | 25 | none | |
-| `ga` | 0.90 | 10 | none | Google Analytics client id |
-| `canvas` | 0.50 | 20 | 45 days | Browser hash nothing confirmed |
-| `ip` | 0.30 | 10 | 14 days | IPv6 is kept as its /64 |
-
-### From links to clusters
-
-Every subject reachable over `same` links forms a component. A cluster is what is left of a component after three cuts, in this order.
-
-1. **A pair a reviewer separated is never linked.**
-2. **If the two are still connected through others, the weakest set of links between them is cut.** Evidence adds up along the way, so two weak links outweigh one.
-3. **One link below 0.97 cannot be the only thing joining two groups.** It may add a single account to a group. Two groups of two or more need a strong link or a second, separate link. The weakest such link is cut first, then the next.
-
-So a chain of four accounts, each sharing one machine with the next, becomes two pairs. Give the outer two a shared phone and it becomes one cluster, because the groups are now tied twice.
-
-A cluster with more than 50 members is flagged `oversized`. A cluster that big is more often one bad identifier than one person.
-
-## Reviewer decisions
-
-```ts
-await graph.ignore('email:…', true, { by: 'dana', reason: 'front desk mailbox' })
-await graph.separate('account:7', 'account:9', true, { by: 'dana', reason: 'siblings' })
-await graph.join('account:1', 'account:2', { by: 'dana', reason: 'same caller' })
-```
-
-A separation holds whatever the two share later, and can be withdrawn with `false`. It may be recorded before either account exists. A join is the strongest tie there is, but a separation still wins: joining an account to one side of a separated pair pulls it away from the other.
-
-`clusters()` lists the largest clusters, which is where a reviewer should look first.
-
-Every `ignore`, `separate`, `join`, `forget`, and `rebuild` is appended to a record of decisions. Each entry carries a hash of itself and the entry before, so editing or deleting one breaks every hash after it.
-
-```ts
-await graph.decisions() // [{ seq: 1, at, action: 'ignore', about: ['email:…'], by: 'dana', reason, hash }, …]
-await graph.audit()     // { sound: true }
-```
-
-`asOf` rebuilds the graph as it stood at a time, in memory, from the sightings written down and the decisions made up to then. It goes by when each sighting was recorded, not when it happened, so an event that arrived late is not part of a past it had not reached yet.
-
-```ts
-let then = await graph.asOf(Date.parse('2026-06-01'))
-await then.cluster('account:7')
-```
-
-Pass `onChange` to `createGraph` to be told, after each write commits, which subjects changed cluster.
-
-### Keeping the log small
-
-Every observation adds rows to the sighting log. `prune` deletes the ones written down before a time. Links and clusters do not change, because each edge keeps its first and last sighting and its count; only `history` and `asOf` lose what was deleted. Pruning is itself recorded as a decision.
-
-```ts
-await graph.prune(Date.now() - 180 * 24 * 60 * 60 * 1000, { by: 'ops', reason: '180 day retention' })
-```
-
-## Money flows
-
-Identity says who is who. Flows say who pays whom. Collusion is the two together: value moving between accounts that are the same person or tied to them.
-
-```ts
-let tie = await graph.transfer({ from: 'account:2', to: 'account:1', amount: 250_000, at: Date.now(), asset: 'gold' })
-// tie.relation: 'same' | 'related' | 'none', with the score and reasons. Hold the trade on anything but 'none'.
-
-await graph.flows('account:1')     // every counterparty: sent, received, count, imbalance, and the tie
-await graph.collusion('account:1') // only those tied by identity, with three or more flows
-```
-
-`amount` is a whole number of the asset's smallest unit. `imbalance` is 1 when value only ever moved one way.
-
-`rings` finds value that left a subject and came back through others: A paid B, B paid C, C paid A. A per-pair report cannot show that, because no single pair looks wrong.
-
-```ts
-await graph.rings('account:1')
-// [{ subjects: ['account:1', 'account:2', 'account:3'], asset: 'gold', amount: 700, tied: 1 }]
-```
-
-`amount` is the least that moved along any step, so it is the most that could have gone all the way round. `tied` counts how many of the others share the subject's cluster. Rings of up to four subjects are found by default; pass a second argument for longer ones.
-
-## Fitting the weights
-
-`measure` reports how often each kind was right on pairs that shared only that kind. `fit` goes further: it sets every weight at once from pairs checked by hand, using the same formula the graph scores with, so a kind that mostly appears beside a stronger one is not credited with the stronger one's accuracy.
-
-```ts
-import { fit } from 'account-graph'
-
-let { policy, kinds, loss, calibration } = fit(checkedPairs, defaultPolicy)
-// kinds.fingerprint: { before: 0.97, after: 0.94, pairs: 812 }
-let graph = createGraph(store, policy)
-await graph.rebuild()
-```
-
-## What the weights rest on
-
-The fingerprint, canvas, and address rows are set from how these identifiers behave in production, measured where the person behind each visit was known.
-
-| Identifier | Values that only ever belonged to one person | Same person on the next sighting, by days since the last |
-| --- | --- | --- |
-| Vendor fingerprint | 98% | 98% up to 30 days, 95% at 31–90, 86% past 90 |
-| Home-made canvas and user-agent hash | 53% | about 55% up to 7 days, 23% at 31–90, 7% past 90 |
-| IP address | 46% | 89% next day, 73% in a week, 37% in a month, 5% past 90 |
-
-Three things follow, and the defaults encode each.
-
-- **A vendor fingerprint is strong and slow to fade.** It can join two subjects on its own.
-- **A home-made hash is a coin flip.** Phones of one model share it. It can relate two subjects, never join them. Attribution that rests on it alone is wrong about half the time.
-- **A few identifiers are shared by crowds.** A handful of fingerprints, each shared by more than twenty people, can produce most of the same-fingerprint pairs, and under 2% of those pairs are one person. Without a cap, those few values would merge hundreds of strangers.
-
-An address shared by exactly two people points at the same one about 42% of the time, and by three to five people about 9%. That is why its evidence thins with the square of how many share it.
-
-The other rows are priors. `measure` and `fit` compute the real values from pairs you have confirmed by hand.
+- [Using it as a library](docs/library.md): the same graph as functions in your own Node program, with the memory or PostgreSQL store.
+- [CHANGELOG.md](CHANGELOG.md): what the first release contains.
 
 ## Speed
 
@@ -389,31 +110,41 @@ PostgreSQL writes take one advisory lock, so they run one at a time; the write q
 
 ## Tools
 
+- `examples/site.ts` is a two-page site with the script tag and a sign-up.
 - `tools/review-demo.ts` serves the reviewer screen over made-up data.
 - `tools/browser-check.ts` runs `collect`, the server, and the outbox against a real browser.
-- `tools/live-check.ts` calls each vendor's real endpoint with an invalid key and prints how it answered.
+- `tools/live-check.ts` calls each provider's real endpoint, with your keys when they are set, and prints how it answered.
 - `tools/replay.ts` replays an export of your own past traffic and compares attribution with what was sent.
 - `tools/export.ts` writes edges, flows, or cluster labels as CSV for an analytics engine.
 
+
 ## What has run for real
 
-- Every test runs on memory and on PostgreSQL 16: 118 tests, including a fuzz test that mixes observations, reviewer decisions, deletions, and transfers, and six outbox workers at once.
-- `collect` ran in Chrome against the server and PostgreSQL: it read the click id and tags from the URL, the enrollment was credited and sent through the outbox, and with `cookie: true` the device cookie was set by the server, invisible to script, and the same on the next visit.
+- Every test runs on memory and on PostgreSQL 16, locally and in CI: 134 tests, including a fuzz test that mixes observations, reviewer decisions, deletions, and transfers, and six outbox workers at once.
+- The image was built and `docker compose up` brought up the server and its database. With the example site pointed at it, a visit with an ad click followed by a sign-up was credited in Chrome, and the reviewer screen served from the container showed the account joined to its visitor.
+- The script tag ran in Chrome from a different origin than the page that loaded it.
+- With `cookie: true` the device cookie was set by the server, invisible to script, and the same on the next visit.
 - The reviewer screen ran in Chrome under its content policy: a cluster opened, two accounts were kept apart with a reason, the cluster split, and the decision appeared on the record.
+- A database made before an upgrade was brought up to date by starting the server.
 - The hardware id ran on macOS and, in CI, on Linux.
-- The real endpoints of Fingerprint, MaxMind, Google's token service, Google's Data Manager, Meta's Conversions API, and Microsoft Advertising each answered an invalid key the way the code expects.
+- The real endpoints of Fingerprint, MaxMind, Google's token service, Google's Data Manager, Meta, Microsoft Advertising, Microsoft's token service, and TikTok each answered an invalid key the way the code expects.
 
 ## Limits
 
-- No request has been made with real credentials, so a successful Fingerprint lookup, MaxMind answer, Google token, and upload to Google, Meta, or Microsoft are untested.
-- Microsoft does not document how to normalize an email before hashing it; this lowercases and trims.
+- No request has been made with real credentials, so a successful Fingerprint lookup, MaxMind answer, token from Google or Microsoft, and upload to any ad platform are untested. `npm run live-check` is how to run them with yours.
+- TikTok keys are not exercised by `npm run live-check`, because any call would record an event.
 - The two Fingerprint browser loaders have not run in a browser. They need a real key or a third-party script.
+- The server-set cookie has run in Chrome only. Safari's handling is the reason it exists, and it has not run there.
 - The hardware id's Windows path is untested.
+- Microsoft does not document how to normalize an email before hashing it; this lowercases and trims.
+- The per-address limit on `/collect` is kept in each server's memory. Several servers each allow the limit.
+- Subject search matches the start of an id and reads the subject table to do it.
 - `asOf` cannot bring back a forgotten subject or a pruned sighting; both are gone from every past.
 - A separation between two subjects cuts the weakest links between them. With several separations in one component the cuts are made one after another, which is not always the fewest possible.
 - Flows are kept as running totals per pair, not as a ledger.
 - `rebuild`, `verify`, and `asOf` load every edge into memory.
 - The memory store does not roll back a failed write.
+- Not published to npm. Until it is, installing means cloning.
 
 ## License
 

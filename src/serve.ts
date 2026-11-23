@@ -26,7 +26,7 @@ import { createPostgresStore } from './postgres.ts'
 import type { Pool } from './postgres.ts'
 import { createHandler } from './server.ts'
 import type { HandlerOptions } from './server.ts'
-import { googleAds, meta, microsoftAds } from './targets.ts'
+import { googleAds, meta, microsoftAds, tiktok } from './targets.ts'
 import type { Change } from './types.ts'
 
 type Env = Record<string, string | undefined>
@@ -80,6 +80,9 @@ export function configFrom(env: Env) {
     meta: group(['META_PIXEL_ID', 'META_ACCESS_TOKEN', 'META_SITE_URL'])
       ? { pixelId: env.META_PIXEL_ID!, accessToken: env.META_ACCESS_TOKEN!, url: env.META_SITE_URL!, testEventCode: env.META_TEST_EVENT_CODE }
       : undefined,
+    tiktok: group(['TIKTOK_PIXEL_CODE', 'TIKTOK_ACCESS_TOKEN', 'TIKTOK_SITE_URL'])
+      ? { pixelCode: env.TIKTOK_PIXEL_CODE!, accessToken: env.TIKTOK_ACCESS_TOKEN!, url: env.TIKTOK_SITE_URL! }
+      : undefined,
     microsoft: group(['MICROSOFT_CLIENT_ID', 'MICROSOFT_REFRESH_TOKEN', 'MICROSOFT_DEVELOPER_TOKEN', 'MICROSOFT_CUSTOMER_ID', 'MICROSOFT_ACCOUNT_ID'])
       ? {
           clientId: env.MICROSOFT_CLIENT_ID!,
@@ -128,6 +131,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
     targets.push(googleAds({ customerId: config.google.customerId, ...(config.google.loginCustomerId && { loginCustomerId: config.google.loginCustomerId }), send: async (request) => ingest(request, await token()) }))
   }
   if (config.meta) targets.push(meta({ pixelId: config.meta.pixelId, accessToken: config.meta.accessToken, url: config.meta.url, ...(config.meta.testEventCode && { testEventCode: config.meta.testEventCode }) }))
+  if (config.tiktok) targets.push(tiktok(config.tiktok))
   if (config.microsoft) {
     const { clientId, refreshToken, clientSecret, ...account } = config.microsoft
     targets.push(microsoftAds({ ...account, accessToken: createMicrosoftTokens({ clientId, refreshToken, ...(clientSecret && { clientSecret }) }) }))

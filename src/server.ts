@@ -57,7 +57,7 @@ export interface HandlerOptions {
 
 const ID = /^[\w.-]{1,128}$/
 const TOUCH_FIELDS = [
-  'source', 'medium', 'campaign', 'gclid', 'gbraid', 'wbraid', 'fbclid', 'msclkid', 'landing', 'referrer',
+  'source', 'medium', 'campaign', 'gclid', 'gbraid', 'wbraid', 'fbclid', 'msclkid', 'ttclid', 'landing', 'referrer',
 ] as const
 
 /** What the reviewer token opens: what the reviewer screen reads, and the decisions a reviewer makes. */

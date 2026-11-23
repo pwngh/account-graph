@@ -198,6 +198,7 @@ export interface Touch {
   wbraid?: string
   fbclid?: string
   msclkid?: string
+  ttclid?: string
   landing?: string
   referrer?: string
 }
