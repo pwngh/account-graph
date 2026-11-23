@@ -53,7 +53,7 @@ An event counts once a day per browser. Give it an id, with `data-ag-id` or the 
 When a call is reported, the server does four things in order.
 
 1. **The caller becomes a subject carrying their phone number.** An account that later gives the same number is tied to the call, and the call to the account.
-2. **It looks for a tap.** If exactly one visitor tapped that number in the three minutes before the call began, the caller and the visitor are linked at 0.92, enough to join them. The call then follows the visitor's own arrival: their ad click, their campaign. One tap leads to one caller: a visitor already tied to a different caller is passed over, so a browser cannot collect call after call by tapping again.
+2. **It looks for a tap.** If exactly one visitor tapped that number in the three minutes before the call began, the caller and the visitor are linked at 0.92, enough to join them. The call then follows the visitor's own arrival: their ad click, their campaign. One visitor is tied to one caller: a visitor already tied to a different caller is passed over, so a browser cannot collect call after call by tapping again.
 3. **Otherwise it uses the number.** The call is filed under the channel `CALL_NUMBERS` gives that number, with the medium `call`.
 4. **A call of 30 seconds or more is counted** as an outcome of the step `call`. A shorter one is recorded and not counted.
 
@@ -92,7 +92,8 @@ Post the same five facts to `/call` with the service token: the provider's id fo
 | Limit | Detail |
 | --- | --- |
 | One number per channel | A tracking number stands for one channel. There is no pool that hands each visitor a number of their own, so two visitors tapping within the same three minutes cannot be told apart. |
-| Taps can be faked | A tap comes from a browser, so a program can send one. Three guards limit what that buys: only your tracking numbers are noted, one network is believed from three browsers in ten minutes and no more, and one tap is tied to one caller. A fake tap at the right moment can still turn a real call `ambiguous`, which files it under the number's channel instead. |
+| Taps can be faked | A tap comes from a browser, so a program can send one. Three guards limit what that buys: only your tracking numbers are noted, one network is believed from three browsers in ten minutes and no more, and one visitor is tied to one caller. A fake tap at the right moment can still turn a real call `ambiguous`, which files it under the number's channel instead. |
+| One caller per visitor | The rule above holds for good. A visitor tied to one hidden caller is not tied to another hidden call later, because each hidden call is a caller of its own. |
 | Taps only | A visitor who reads the number and dials it by hand leaves no tap. That call is filed under the number's channel. |
 | The tap window | Three minutes before the call began, with thirty seconds of allowance for clocks that disagree. `clickWindow` changes it in the library. |
 | Calls reach the report | A counted call is an outcome in the report. It is not sent to an ad platform yet. |

@@ -449,13 +449,12 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await graph.links(switchboard.subject), [])
       assert.deepEqual((await graph.history(switchboard.subject)).map((sighting) => sighting.identifier), ['dialed:call-CA5'])
 
-      // A visitor once tied to a hidden caller taps again another day, and is tied to that day's call too.
-      await graph.observe({ subject: 'visitor:h', identifiers: ['device:h', dialed('+15551230001', T0 + 20 * HOUR)], at: T0 + 20 * HOUR, event: 'phone_click' })
-      assert.equal((await recordCall(graph, { id: 'H0', to: '+15551230001', at: T0 + 20 * HOUR + 5000, duration: 5 }, { numbers })).visitor, 'visitor:h')
-      await graph.observe({ subject: 'visitor:h', identifiers: ['device:h', dialed('+15551230001', T0 + 44 * HOUR)], at: T0 + 44 * HOUR, event: 'phone_click' })
-      assert.equal((await recordCall(graph, { id: 'H1', to: '+15551230001', at: T0 + 44 * HOUR + 5000, duration: 5 }, { numbers })).visitor, 'visitor:h')
+      // One visitor, one caller, for good: tapping again later does not earn a browser a second stranger's call.
+      await graph.observe({ subject: 'visitor:a', identifiers: ['device:a', dialed('+15551230001', T0 + 20 * HOUR)], at: T0 + 20 * HOUR, event: 'phone_click' })
+      assert.equal((await recordCall(graph, { id: 'CA1d', from: '+15553334444', to: '+15551230001', at: T0 + 20 * HOUR + 5000, duration: 5 }, { numbers })).visitor, undefined)
+      assert.equal((await recordCall(graph, { id: 'CA1e', from: '+15558675309', to: '+15551230001', at: T0 + 20 * HOUR + 9000, duration: 5 }, { numbers })).visitor, 'visitor:a')
 
-            // Two visitors tap the same number in the same minute: the call cannot say which, so it is tied to neither.
+      // Two visitors tap the same number in the same minute: the call cannot say which, so it is tied to neither.
       for (const who of ['b', 'c']) await graph.observe({ subject: `visitor:${who}`, identifiers: [`device:${who}`, dialed('+15551230001', T0 + 5 * HOUR)], at: T0 + 5 * HOUR, event: 'phone_click' })
       const unsure = await recordCall(graph, { id: 'CA6', from: '+15552223333', to: '+15551230001', at: T0 + 5 * HOUR + 10_000, duration: 60 }, { numbers })
       assert.deepEqual([unsure.flags, unsure.visitor], [['ambiguous'], undefined])
