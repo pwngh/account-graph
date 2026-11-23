@@ -155,7 +155,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
   const tally = { since: now(), collected: 0, limited: 0, bots: 0, errors: 0 }
 
   /** A program that says what it is: a search crawler, a link previewer, an uptime check. Its visits are nobody's. */
-  const BOT = /bot[\/)-]|spider|crawl|slurp|facebookexternalhit|headlesschrome|lighthouse|pagespeed|pingdom|uptimerobot/i
+  // "bot/" and not just "bot": phones are sold under names like Cubot, and their browsers are people.
+  const BOT = /bot\/|telegrambot|slackbot|spider|crawl|slurp|facebookexternalhit|whatsapp\/|headlesschrome|lighthouse|pagespeed|pingdom|uptimerobot|^curl\/|^wget\/|python-requests/i
 
   // A token bucket per address: it refills steadily and a visit spends one token.
   const perMinute = options.limit === false ? Infinity : (options.limit?.perMinute ?? 120)

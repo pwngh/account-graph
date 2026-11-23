@@ -898,16 +898,28 @@ test('the server identifies a subject from plain facts, drops declared bots, and
     // A program that says what it is leaves no visit; a browser's visit is noted with where its address places it.
     const visit = (device: string, agent: string, path = '/collect', body: object = {}) =>
       fetch(`${base}${path}`, { method: 'POST', headers: { origin: 'https://site.example', 'user-agent': agent }, body: JSON.stringify({ device, ...body }) }).then((r) => r.status)
-    for (const agent of ['Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', 'facebookexternalhit/1.1', 'Mozilla/5.0 (X11; Linux x86_64) HeadlessChrome/120.0', 'Mozilla/5.0 (compatible; AhrefsBot/7.0)', 'TelegramBot (like TwitterBot)']) {
-      assert.equal(await visit('crawler', agent), 204)
-    }
+    const declared = [
+      'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', 'facebookexternalhit/1.1', 'Mozilla/5.0 (X11; Linux x86_64) HeadlessChrome/120.0', 'Mozilla/5.0 (compatible; AhrefsBot/7.0)', 'TelegramBot (like TwitterBot)',
+      'Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)', 'Baiduspider+(+http://www.baidu.com/search/spider.htm)', 'Mozilla/5.0 (compatible; Yahoo! Slurp; http://help.yahoo.com/help/us/ysearch/slurp)', 'Pingdom.com_bot_version_1.4_(http://www.pingdom.com/)',
+      'WhatsApp/2.23.20.0 A', 'curl/8.4.0', 'python-requests/2.31.0', 'Chrome-Lighthouse',
+    ]
+    for (const agent of declared) assert.equal(await visit('crawler', agent), 204)
     assert.equal(await graph.cluster('visitor:crawler'), undefined)
-    // A phone whose model name happens to end in "bot" is a person.
+    // A phone sold under a name with "bot" in it, and an app's built-in browser, are people.
+    const people = [
+      'Mozilla/5.0 (Linux; Android 12; CUBOT-X70 Build/SP1A) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36',
+      'Mozilla/5.0 (Linux; Android 13; CUBOT_NOTE_50) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36',
+      'Mozilla/5.0 (Linux; Android 12; Robot-Vacuum-Tab) AppleWebKit/537.36 Chrome/120.0 Safari/537.36',
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS;FBAV/489.0.0.61.109;FBDV/iPhone15,3]',
+      'Mozilla/5.0 (Linux; Android 14; SM-S918B; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/130.0 Mobile Safari/537.36 Instagram 355.0.0.38.103 Android',
+    ]
+    for (const [n, agent] of people.entries()) assert.equal(await visit(`someone-${n}`, agent), 204)
+    assert.equal((await graph.search('visitor:someone-')).length, people.length)
     assert.equal(await visit('person', 'Mozilla/5.0 (Linux; Android 13; CUBOT KINGKONG 9) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36'), 204)
     assert.deepEqual((await graph.history('visitor:person')).map((sighting) => sighting.identifier).sort(), ['device:person', 'ip:127.0.0.1', 'place:US/FL/Miami'])
     assert.deepEqual(await graph.links('visitor:person'), [])
     const stats = (await (await fetch(`${base}/stats`, { headers: { authorization: 'Bearer service' } })).json()) as { bots: number; collected: number }
-    assert.deepEqual([stats.bots, stats.collected], [5, 1])
+    assert.deepEqual([stats.bots, stats.collected], [declared.length, people.length + 1])
     assert.deepEqual(await graph.verify(), [])
   } finally {
     console.error = errors
