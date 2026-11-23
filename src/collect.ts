@@ -1,7 +1,7 @@
 /**
  * Runs in the browser. Reports this visit to the graph's `/collect` route:
  * a first-party device id, the Google Analytics client id, optional
- * fingerprints, and the ad click or campaign that brought the visitor.
+ * fingerprints, and the ad click, campaign and ad that brought the visitor.
  */
 
 export interface CollectOptions {
@@ -13,6 +13,8 @@ export interface CollectOptions {
   canvas?: string | Promise<string | undefined>
   /** What the visitor answered in your consent banner. Leave it out if they have not answered. */
   consent?: { adUserData: boolean; adPersonalization: boolean }
+  /** Names of your own address parameters to keep with the arrival, such as `mailing` or `placement`. */
+  params?: readonly string[]
 }
 
 export interface Collected {
@@ -21,14 +23,29 @@ export interface Collected {
   fingerprintEvent?: string
   canvas?: string
   url: string
-  touch?: Record<string, string>
+  touch?: Arrival
   /** The browser sent its Global Privacy Control signal. */
   gpc?: boolean
   consent?: { adUserData: boolean; adPersonalization: boolean }
 }
 
+/** What an arrival carried: click ids and tags by name, and under `custom` the parameters of your own. */
+export type Arrival = { [field: string]: string | Record<string, string> | undefined; custom?: Record<string, string> }
+
 const CLICK_IDS = ['gclid', 'gbraid', 'wbraid', 'fbclid', 'msclkid', 'ttclid'] as const
-const TAGS = { utm_source: 'source', utm_medium: 'medium', utm_campaign: 'campaign' } as const
+// Address parameters and the touch field each fills. The first one present wins a field.
+const TAGS = [
+  ['utm_source', 'source'],
+  ['utm_medium', 'medium'],
+  ['utm_campaign', 'campaign'],
+  ['utm_term', 'term'],
+  ['utm_content', 'content'],
+  ['utm_id', 'campaignId'],
+  ['campaignid', 'campaignId'],
+  ['adgroupid', 'adGroupId'],
+  ['adid', 'adId'],
+  ['creative', 'adId'],
+] as const
 const YEAR = 365 * 24 * 60 * 60
 
 function cookie(name: string): string | undefined {
@@ -65,17 +82,23 @@ export function deviceId(): string {
 }
 
 /** Reads what this page view can tell the graph. Sends nothing. */
-export function read(): Collected {
+export function read(params: readonly string[] = []): Collected {
   const url = new URL(location.href)
-  const touch: Record<string, string> = {}
+  const touch: Arrival = {}
   for (const name of CLICK_IDS) {
     const value = url.searchParams.get(name)
     if (value) touch[name] = value
   }
-  for (const [param, field] of Object.entries(TAGS)) {
+  for (const [param, field] of TAGS) {
     const value = url.searchParams.get(param)
-    if (value) touch[field] = value
+    if (value && !touch[field]) touch[field] = value
   }
+  const custom: Record<string, string> = {}
+  for (const name of params) {
+    const value = url.searchParams.get(name)
+    if (value) custom[name] = value
+  }
+  if (Object.keys(custom).length > 0) touch.custom = custom
   // The Google tag keeps the last ad click here; use it when the URL has lost the parameter.
   // `collect` remembers what it sent, so a click kept in the cookie is reported once, not on every page.
   const stored = cookie('_gcl_aw')?.split('.')[2]
@@ -98,7 +121,7 @@ export async function collect(options: CollectOptions): Promise<void> {
   const [fingerprintEvent, canvas] = await Promise.all(
     [options.fingerprintEvent, options.canvas].map((value) => Promise.resolve(value).catch(() => undefined)),
   )
-  const visit = read()
+  const visit = read(options.params)
   // A visitor who opted out of advertising is still seen, but nothing about ads leaves the page.
   if ((navigator as { globalPrivacyControl?: boolean }).globalPrivacyControl === true) visit.gpc = true
   if (options.consent) visit.consent = options.consent
@@ -106,7 +129,7 @@ export async function collect(options: CollectOptions): Promise<void> {
     delete visit.touch
     delete visit.ga
   }
-  if (visit.touch?.gclid) remember('ag_click', visit.touch.gclid)
+  if (typeof visit.touch?.gclid === 'string') remember('ag_click', visit.touch.gclid)
   const body = JSON.stringify({
     ...visit,
     ...(fingerprintEvent && { fingerprintEvent }),

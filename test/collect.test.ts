@@ -104,3 +104,24 @@ test('an opted-out visitor is reported without anything about ads', async () => 
   assert.equal(banner.sent[0].touch, undefined)
   assert.equal(banner.sent[1].touch.gclid, 'G2')
 })
+
+test('the collector reads campaign, ad group and ad ids, and parameters of your own', async () => {
+  const page = browser('https://site.example/offer?gclid=G1&utm_id=111&campaignid=999&adgroupid=22&creative=3&utm_term=garden%20hose&utm_content=blue&mailing=march&placement=&other=x')
+  await collect({ endpoint: 'https://graph.example/collect', params: ['mailing', 'placement', 'missing'] })
+  await settle()
+  assert.deepEqual(page.sent[0].touch, {
+    gclid: 'G1',
+    campaignId: '111',
+    adGroupId: '22',
+    adId: '3',
+    term: 'garden hose',
+    content: 'blue',
+    custom: { mailing: 'march' },
+    landing: 'https://site.example/offer',
+  })
+
+  // A parameter of your own is enough to count as an arrival.
+  page.go('https://site.example/offer?mailing=april')
+  assert.deepEqual(read(['mailing']).touch, { custom: { mailing: 'april' }, landing: 'https://site.example/offer' })
+  assert.equal(read().touch, undefined)
+})
