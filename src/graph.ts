@@ -330,7 +330,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       ruleFor(policy, 'review:0')
       return changing(async (tx) => {
         // Named after the decision, not the subjects, so no two joins can collide and a forgotten id leaves no trace.
-        const identifier = `review:${await decide(tx, 'join', pair, why)}`
+        let identifier = `review:join-${await decide(tx, 'join', pair, why)}`
+        // A name some subject already holds would join these two to strangers. Take one nobody holds.
+        while ((await tx.states([identifier])).has(identifier)) identifier += '+'
         const at = now()
         return record(tx, pair.map((subject) => ({ subject, identifier, at, event: 'review' })))
       })

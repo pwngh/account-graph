@@ -50,7 +50,7 @@ export const defaultPolicy: Policy = {
   bridge: 0.97,
   review: 50,
   kinds: {
-    // A reviewer's decision that two subjects are one person: observe both with the same `review:` value.
+    // A reviewer's decision that two subjects are one person. `join` writes it.
     review: { weight: 1, dilution: 0, cap: 100, halfLife: Infinity },
     // A passkey's credential id, after your server verified the sign-in. Bound to one device or one person's keychain.
     passkey: { weight: 0.99, dilution: 0, cap: 5, halfLife: Infinity },

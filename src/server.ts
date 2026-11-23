@@ -145,9 +145,10 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     }
     for (const link of links) add(subject, link.subject, link.score, link.level)
     // The ties among the cluster's other members, so the picture shows how the cluster holds together.
+    // Walk them in the order the picture places them: the subject's own ties first, then the rest, up to 24.
     const members = new Set(cluster.members)
-    for (const member of cluster.members.slice(0, 24)) {
-      if (member === subject) continue
+    const placed = [...new Set([...links.map((link) => link.subject).filter((other) => members.has(other)), ...cluster.members])]
+    for (const member of placed.filter((other) => other !== subject).slice(0, 24)) {
       for (const link of await graph.links(member)) if (members.has(link.subject)) add(member, link.subject, link.score, link.level)
     }
     return {
