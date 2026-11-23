@@ -314,7 +314,7 @@ async function channels() {
   const section = el('section', {}, el('h3', {}, 'Channels'), el('p', { class: 'muted' }, 'What each campaign cost and what it brought in. An outcome counts on the day it happened, under the arrival that earned it.'), pick)
   try {
     const report = await api('GET', `/report?from=${range.from}&to=${range.to}`)
-    const stages = Object.keys(report.total.stages).sort()
+    const stages = report.steps.filter((step) => report.total.stages[step])
     const per = (cost, count) => (count > 0 && cost > 0 ? money(cost / count) : '')
     const back = (value, cost) => (cost > 0 && value > 0 ? `${(value / cost).toFixed(1)}×` : '')
     const cells = (row) => [el('td', { class: 'num' }, money(row.cost)), el('td', { class: 'num' }, amount(row.clicks)), el('td', { class: 'num' }, amount(row.visits)),

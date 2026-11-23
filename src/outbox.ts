@@ -97,6 +97,11 @@ export interface OutboxOptions {
   maxAttempts?: number
   /** Jobs per pass. Defaults to 500. */
   batch?: number
+  /**
+   * Hears about each pass's jobs that failed for good, after the pass. Use it
+   * to alert someone. A throw here is logged and changes nothing.
+   */
+  onFailed?: (jobs: Job[]) => void | Promise<void>
   now?: () => number
   random?: () => number
 }
@@ -152,7 +157,15 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
   /** Thirty seconds, doubling each try up to an hour, shortened by up to half so workers do not retry in step. */
   const backoff = (attempts: number) => Math.min(3_600_000, 30_000 * 2 ** (attempts - 1)) * (0.5 + random() / 2)
 
-  async function deliver(target: Target, action: string, items: readonly Item[], pass: Pass): Promise<void> {
+  /** Marks a job failed for good and remembers it for `onFailed`. */
+  async function fail(job: Job, note: string, pass: Pass, failed: Job[]): Promise<void> {
+    const dead: Job = { ...job, state: 'failed', note }
+    await store.save(dead)
+    failed.push(dead)
+    pass.failed += 1
+  }
+
+  async function deliver(target: Target, action: string, items: readonly Item[], pass: Pass, failed: Job[]): Promise<void> {
     try {
       const { requestId } = await target.deliver(action, items)
       for (const { job } of items) {
@@ -163,18 +176,16 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
       const note = String((error as Error)?.message ?? error).slice(0, 500)
       if (target.retryable(error)) {
         for (const { job } of items) {
-          const spent = job.attempts >= maxAttempts
-          await store.save(spent ? { ...job, state: 'failed', note } : { ...job, due: now() + backoff(job.attempts), note })
-          if (spent) pass.failed += 1
-          else pass.retried += 1
+          if (job.attempts >= maxAttempts) await fail(job, note, pass, failed)
+          else {
+            await store.save({ ...job, due: now() + backoff(job.attempts), note })
+            pass.retried += 1
+          }
         }
       } else if (items.length > 1) {
         // A platform rejects a whole request for one bad event. Send each alone to find it.
-        for (const item of items) await deliver(target, action, [item], pass)
-      } else {
-        await store.save({ ...items[0]!.job, state: 'failed', note })
-        pass.failed += 1
-      }
+        for (const item of items) await deliver(target, action, [item], pass, failed)
+      } else await fail(items[0]!.job, note, pass, failed)
     }
   }
 
@@ -238,6 +249,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
 
     async run() {
       const pass: Pass = { sent: 0, skipped: 0, failed: 0, retried: 0 }
+      const failed: Job[] = []
       const groups = new Map<string, { target: Target; action: string; items: Item[] }>()
       const attributions = new Map<string, Attribution>()
       for (const job of await store.claim(now(), lease, options.batch ?? 500)) {
@@ -247,8 +259,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
         }
         const target = targets.get(job.target)
         if (!target) {
-          await store.save({ ...job, state: 'failed', note: 'unknown_target' })
-          pass.failed += 1
+          await fail(job, 'unknown_target', pass, failed)
           continue
         }
         if (job.consent && !job.consent.adUserData) {
@@ -284,7 +295,14 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
         group.items.push({ job: { ...job, ...(touch && { confidence: touch.confidence }) }, touch, consent })
       }
       for (const { target, action, items } of groups.values()) {
-        for (let i = 0; i < items.length; i += target.batch) await deliver(target, action, items.slice(i, i + target.batch), pass)
+        for (let i = 0; i < items.length; i += target.batch) await deliver(target, action, items.slice(i, i + target.batch), pass, failed)
+      }
+      if (failed.length > 0 && options.onFailed) {
+        try {
+          await options.onFailed(failed)
+        } catch (error) {
+          console.error(error)
+        }
       }
       return pass
     },

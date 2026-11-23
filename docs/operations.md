@@ -13,7 +13,7 @@ npm start
 database upgraded: tables, sighting record time
 listening on 0.0.0.0:8080
 collect accepts https://example.org
-reviewer token off, server cookie off, fingerprint off, maxmind off, signed links off
+reviewer token off, server cookie off, fingerprint off, maxmind off, signed links off, alerts off
 outbox sends to nobody (no ad platform configured)
 page events taken: none (set EVENTS); calls from twilio off
 costs are read from nobody (post them to /costs)
@@ -103,6 +103,16 @@ Each change has a number and runs once. Several servers may start at the same mo
 | `GET /stats` | service | Visits collected, visits refused by the limit, and errors since start; what the graph holds; outbox jobs by state. |
 | `GET /verify` | service | The subjects whose stored cluster differs from a full recompute. Empty when sound. It reads every edge. |
 
+Set `ALERT_WEBHOOK` to a Slack incoming webhook, or anything that takes `{"text": "…"}`, and the server posts there when something needs a person:
+
+| When | The message says |
+| --- | --- |
+| A conversion fails for good | Which transaction, which platform, and the platform's reason. Up to ten per message. |
+| The outbox cannot run | Why, such as the database not answering. Nothing is being sent while this lasts. |
+| Campaign costs cannot be read | Which platform and why. The report's costs go stale until it is fixed. |
+
+Each kind is sent at most once in ten minutes. A webhook that fails is logged and never stops the work it was reporting on.
+
 Set `CHANGE_WEBHOOK` to a URL and the server posts `{"changes": [...]}` there each time a cluster changes. Each change names a subject, the cluster it left, and the cluster it joined.
 
 ## Stopping
@@ -126,6 +136,8 @@ On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes i
 | `OUTBOX_INTERVAL_MS` | `30000` | How often to send what is due. |
 | `OUTBOX_DELAY_MS` | `0` | How long to hold a new outcome before its first send. |
 | `CHANGE_WEBHOOK` | none | A URL to post cluster changes to. |
+| `ALERT_WEBHOOK` | none | A URL to post failures to, as `{"text": "…"}`. |
+| `STAGES` | none | Your steps in order, as JSON, each with a `value`, `currency` and `action`. See [the report](report.md#steps-and-what-each-is-worth). |
 | `LINK_SECRET` | none | Signs links that name a person, and the tokens that carry a visitor between your sites. At least 16 characters. |
 | `EVENTS` | none | Names of page events to keep, separated by commas: `inquiry,phone_click`. |
 | `CALL_NUMBERS` | none | Your tracking numbers and the channel of each, as JSON: `{"+15551230001":{"source":"google","campaignId":"20222"}}`. |

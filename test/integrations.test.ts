@@ -3,7 +3,8 @@ import { createHash, createVerify, generateKeyPairSync } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
-import { createGraph, createMemoryStore, hashPhone } from '../src/index.ts'
+import { createGraph, createMemoryStore, createOutbox, googleAds, hashPhone } from '../src/index.ts'
+import type { IngestRequest } from '../src/index.ts'
 import { CostError, costsFromCsv, googleCosts, metaCosts } from '../src/integrations/costs.ts'
 import { createFingerprintVerifier, trusted } from '../src/integrations/fingerprint.ts'
 import type { VerifiedFingerprint } from '../src/integrations/fingerprint.ts'
@@ -716,4 +717,57 @@ test('behind a proxy the visitor is the address the proxy added, not one the sen
   assert.equal(await seen(2, '198.51.100.1, 203.0.113.9, 10.0.0.2'), 'ip:203.0.113.9')
   assert.equal(await seen(2, '203.0.113.9'), 'ip:203.0.113.9')
   assert.equal(await seen(false, '203.0.113.9'), 'ip:127.0.0.1')
+})
+
+test('steps give page events, calls and outcomes their value and their ad platform action', async () => {
+  const store = createMemoryStore()
+  const graph = createGraph(store)
+  const at = Date.parse('2026-03-02T12:00:00Z')
+  const sent: IngestRequest[] = []
+  const outbox = createOutbox(graph, store.outbox, { targets: [googleAds({ customerId: '1234567890', send: async (request) => (sent.push(request), { requestId: 'r' }) })], now: () => at + 60_000 })
+  const handler = createHandler(graph, {
+    token: 'service',
+    reviewToken: 'reviewer',
+    origins: ['https://site.example'],
+    now: () => at,
+    outbox,
+    events: ['inquiry'],
+    stages: { inquiry: { value: 5, currency: 'USD', action: { google: '111' } }, call: { value: 10, currency: 'USD', action: { google: '222' } }, client: { value: 200, currency: 'USD' } },
+  })
+  const server = createServer(handler).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const post = (path: string, body: object, headers: Record<string, string> = { authorization: 'Bearer service' }) => fetch(`${base}${path}`, { method: 'POST', headers, body: JSON.stringify(body) })
+  try {
+    await post('/collect', { device: 'd-1', touch: { gclid: 'G1', campaignId: '111' } }, { origin: 'https://site.example' })
+    // A page event needs only its name: the step says what it is worth and where it goes.
+    assert.equal((await post('/event', { device: 'd-1', event: 'inquiry' }, { origin: 'https://site.example' })).status, 204)
+    assert.deepEqual((await outbox.get(`inquiry:d-1:2026-03-02`)).map((job) => [job.target, job.action, job.value, job.currency]), [['google', '111', 5, 'USD']])
+    // A step worth something counts once a day per browser, whatever id the page gives and however often it reports.
+    assert.equal((await post('/event', { device: 'd-1', event: 'inquiry' }, { origin: 'https://site.example' })).status, 204)
+    for (const id of ['a', 'b', 'c']) assert.equal((await post('/event', { device: 'd-1', event: 'inquiry', id }, { origin: 'https://site.example' })).status, 204)
+    assert.deepEqual(await outbox.get('inquiry:d-1:a'), [])
+    assert.equal((await outbox.counts()).pending, 1)
+
+    // A call takes its step the same way, with the caller's number as a match key.
+    const call = (await (await post('/call', { id: 'CA1', from: '+15558675309', to: '+15551230001', at, duration: 90 })).json()) as any
+    assert.equal(call.counted, true)
+    const [job] = await outbox.get('call:CA1')
+    assert.deepEqual([job!.action, job!.value, job!.source, Object.keys(job!.keys)], ['222', 10, 'PHONE', ['phone']])
+
+    // A step with no action is counted and not sent; what an outcome states for itself stands.
+    await post('/observe', { subject: 'account:1', identifiers: ['device:d-1'], at })
+    assert.deepEqual(await (await post('/convert', { transactionId: 'client-1', subject: 'account:1', at, stage: 'client' })).json(), [])
+    await post('/convert', { transactionId: 'client-2', subject: 'account:1', at, stage: 'client', value: 1250 })
+    assert.deepEqual((await outbox.run()).sent, 2)
+    assert.deepEqual(sent.flatMap((request) => request.events.map((event) => [event.transactionId, event.conversionValue])).sort(), [['call:CA1', 10], ['inquiry:d-1:2026-03-02', 5]])
+
+    // The report lists the steps in the order they were given, then any others by name.
+    await post('/convert', { transactionId: 'other-1', subject: 'account:1', at, stage: 'brochure' })
+    const report = (await (await fetch(`${base}/report?from=2026-03-02&to=2026-03-02`, { headers: { authorization: 'Bearer reviewer' } })).json()) as any
+    assert.deepEqual(report.steps, ['inquiry', 'call', 'client', 'brochure'])
+    assert.deepEqual(report.total.stages, { inquiry: { count: 1, value: 5 }, call: { count: 1, value: 10 }, client: { count: 2, value: 1450 }, brochure: { count: 1, value: 0 } })
+  } finally {
+    server.close()
+  }
 })

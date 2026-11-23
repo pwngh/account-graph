@@ -44,9 +44,11 @@ A page reports an event in one of three ways. None needs the service token.
 
 The server keeps only the names listed in `EVENTS`, and refuses the rest with 400. Each kept event is an outcome of that step in the report, credited like any other.
 
-An event counts once a day per browser. Give it an id, with `data-ag-id` or the `id` argument, to count each occurrence: one per form submission, say.
+An event counts once a day per browser. Give it an id, with `data-ag-id` or the `id` argument, to count each occurrence: one per form submission, say. An id is ignored for a step that has a value or an action in `STAGES`: those count once a day per browser, whatever the page says.
 
-> **A page can be made to say anything.** Events come from browsers, so anyone can send one. They are limited per address and counted once a day, but do not list a step that carries money in `EVENTS`. Record those from your backend with `POST /convert`.
+An event whose name is a step in `STAGES` takes that step's value, and is sent to the ad platforms the step names. [Steps](report.md#steps-and-what-each-is-worth) has the setting.
+
+> **A page can be made to say anything.** Events come from browsers, so anyone can send one. A step listed in both `EVENTS` and `STAGES` lets a browser create a conversion of that value, once a day per browser, limited per address. Keep such steps small, an inquiry and not a sale, and record anything that carries real money from your backend with `POST /convert`.
 
 ## Phone calls
 
@@ -96,5 +98,5 @@ Post the same five facts to `/call` with the service token: the provider's id fo
 | One caller per visitor | The rule above holds for good. A visitor tied to one hidden caller is not tied to another hidden call later, because each hidden call is a caller of its own. |
 | Taps only | A visitor who reads the number and dials it by hand leaves no tap. That call is filed under the number's channel. |
 | The tap window | Three minutes before the call began, with thirty seconds of allowance for clocks that disagree. `clickWindow` changes it in the library. |
-| Calls reach the report | A counted call is an outcome in the report. It is not sent to an ad platform yet. |
+| Sending calls to ad platforms | A counted call is always in the report. It is sent to an ad platform when the `call` step in `STAGES` has an action; the caller's number goes along, hashed, as a match key. |
 | Not confirmed | The Twilio console's field names are as remembered, not read this month. The signature check was run against the example on Twilio's webhook security page and matches it. No real Twilio request has been received. |
