@@ -12,6 +12,7 @@ import { readFileSync, realpathSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { fileURLToPath } from 'node:url'
+import { createAlerter } from './alerts.ts'
 import { createBatcher } from './batch.ts'
 import { ingest } from './conversions.ts'
 import { createGraph } from './graph.ts'
@@ -22,6 +23,8 @@ import type { CostSource } from './integrations/costs.ts'
 import { createFingerprintVerifier } from './integrations/fingerprint.ts'
 import { createGoogleTokens } from './integrations/google-auth.ts'
 import { createMaxMindLookup } from './integrations/maxmind.ts'
+import { ladderProblems } from './ladder.ts'
+import type { Ladder } from './ladder.ts'
 import { createMicrosoftTokens } from './integrations/microsoft-auth.ts'
 import { createOutbox } from './outbox.ts'
 import type { Target } from './outbox.ts'
@@ -76,6 +79,8 @@ export function configFrom(env: Env) {
     outboxDelay: number('OUTBOX_DELAY_MS', 0),
     changeWebhook: env.CHANGE_WEBHOOK,
     linkSecret: env.LINK_SECRET || undefined,
+    alertWebhook: env.ALERT_WEBHOOK || undefined,
+    stages: parsed('STAGES') as Ladder | undefined,
     timeZone: env.REPORT_TIME_ZONE || 'UTC',
     events: (env.EVENTS ?? '').split(',').map((name) => name.trim()).filter(Boolean),
     callNumbers: parsed('CALL_NUMBERS'),
@@ -135,7 +140,11 @@ export function configFrom(env: Env) {
     }
     if (typeof channel?.source !== 'string' || !channel.source) wrong.push(`CALL_NUMBERS: "${number}" needs a source, such as {"source":"google"}`)
   }
-  if (config.linkSecret !== undefined && config.linkSecret.length < 16) wrong.push('LINK_SECRET must be at least 16 characters')
+  if (config.stages) {
+    const targets = [config.google && 'google', config.meta && 'meta', config.tiktok && 'tiktok', config.microsoft && 'microsoft'].filter((name): name is string => Boolean(name))
+    for (const problem of ladderProblems(config.stages, targets)) wrong.push(`STAGES: ${problem}`)
+  }
+    if (config.linkSecret !== undefined && config.linkSecret.length < 16) wrong.push('LINK_SECRET must be at least 16 characters')
   if (config.reviewToken && config.reviewToken === config.token) wrong.push('REVIEW_TOKEN must differ from GRAPH_TOKEN')
   if (wrong.length > 0) throw new Error(`Cannot start:\n  ${wrong.join('\n  ')}`)
   return config
@@ -177,8 +186,25 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
     const { clientId, refreshToken, clientSecret, ...account } = config.microsoft
     targets.push(microsoftAds({ ...account, accessToken: createMicrosoftTokens({ clientId, refreshToken, ...(clientSecret && { clientSecret }) }) }))
   }
-  const outbox = targets.length > 0 ? createOutbox(graph, store.outbox, { targets, delay: config.outboxDelay }) : undefined
-  const stopOutbox = outbox?.start(config.outboxInterval, (error) => log(`outbox: ${String((error as Error)?.message ?? error)}`))
+  // Tell someone when a conversion fails for good, when the outbox cannot run, or when costs cannot be read.
+  const alert = config.alertWebhook ? createAlerter({ url: config.alertWebhook, onError: (error) => log(`alert: ${String((error as Error)?.message ?? error)}`) }) : undefined
+  const outbox =
+    targets.length > 0
+      ? createOutbox(graph, store.outbox, {
+          targets,
+          delay: config.outboxDelay,
+          onFailed: (jobs) => {
+            const lines = jobs.slice(0, 10).map((job) => `• ${job.transactionId} to ${job.target}: ${job.note ?? 'no reason given'}`)
+            const more = jobs.length > 10 ? `\n…and ${jobs.length - 10} more` : ''
+            void alert?.('conversions', `account-graph: ${jobs.length} ${jobs.length === 1 ? 'conversion' : 'conversions'} failed for good.\n${lines.join('\n')}${more}\nList them with GET /conversions?state=failed, and send again with POST /retry.`)
+          },
+        })
+      : undefined
+  const stopOutbox = outbox?.start(config.outboxInterval, (error) => {
+    const reason = String((error as Error)?.message ?? error)
+    log(`outbox: ${reason}`)
+    void alert?.('outbox', `account-graph: the outbox could not run, so no conversion is being sent. ${reason}`)
+  })
 
   // What campaigns cost, read again every few hours. The last days are read each time, because platforms revise them.
   const sources: [string, CostSource][] = []
@@ -198,6 +224,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
         log(`costs: ${costs.length} rows from ${name}, ${from} to ${to}`)
       } catch (error) {
         log(`costs: ${name} failed: ${String((error as Error)?.message ?? error)}`)
+        void alert?.(`costs:${name}`, `account-graph: campaign costs could not be read from ${name}, so the report's costs are going stale. ${String((error as Error)?.message ?? error)}`)
       }
     }
   }
@@ -218,6 +245,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
     trustProxy: config.trustProxy,
     timeZone: config.timeZone,
     ...(config.linkSecret && { linkSecret: config.linkSecret }),
+    ...(config.stages && { stages: config.stages }),
     // A tap on a phone link is what ties a call to a visitor, so taking calls means taking that event.
     events: [...new Set([...config.events, ...(config.callNumbers || config.twilio ? ['phone_click'] : [])])],
     calls: { minimumSeconds: config.callMinimum, ...(config.callNumbers && { numbers: config.callNumbers }), ...(config.twilio && { twilio: config.twilio }) },
@@ -234,9 +262,10 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
   const on = (name: string, enabled: unknown) => `${name} ${enabled ? 'on' : 'off'}`
   log(`listening on ${config.host}:${port}`)
   log(`collect accepts ${config.origins.length > 0 ? config.origins.join(', ') : 'no origins yet (set ORIGINS)'}`)
-  log([on('reviewer token', config.reviewToken), on('server cookie', config.cookie), on('fingerprint', config.fingerprint), on('maxmind', config.maxmind), on('signed links', config.linkSecret)].join(', '))
+  log([on('reviewer token', config.reviewToken), on('server cookie', config.cookie), on('fingerprint', config.fingerprint), on('maxmind', config.maxmind), on('signed links', config.linkSecret), on('alerts', config.alertWebhook)].join(', '))
   log(`outbox sends to ${targets.length > 0 ? targets.map((target) => target.name).join(', ') : 'nobody (no ad platform configured)'}`)
-  log(`page events taken: ${options.events!.length > 0 ? options.events!.join(', ') : 'none (set EVENTS)'}; calls from twilio ${config.twilio ? 'on' : 'off'}`)
+  if (config.stages) log(`steps: ${Object.entries(config.stages).map(([name, stage]) => `${name}${stage.value === undefined ? '' : ` ${stage.value}`}`).join(', ')}`)
+    log(`page events taken: ${options.events!.length > 0 ? options.events!.join(', ') : 'none (set EVENTS)'}; calls from twilio ${config.twilio ? 'on' : 'off'}`)
   log(`costs are read from ${sources.length > 0 ? sources.map(([name]) => name).join(', ') : 'nobody (post them to /costs)'}`)
   if (sources.length > 0) readCosts()
 

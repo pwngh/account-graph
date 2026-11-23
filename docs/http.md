@@ -68,7 +68,7 @@ A token goes in the `authorization` header as `Bearer …`. There are two.
 | `GET /rings?subject=` | Value that left the subject and came back through others. |
 | `GET /decisions` | The record of reviewer decisions, oldest first. |
 | `GET /audit` | Whether that record is whole: `{ sound }`, with `brokenAt` when it is not. |
-| `GET /report?from=&to=&tz=` | What each campaign cost and brought in between two days. See [the report](report.md). |
+| `GET /report?from=&to=&tz=` | What each campaign cost and brought in between two days, with `steps` naming the steps in your order. See [the report](report.md). |
 | `POST /separate` | `{ a, b, separated?, by?, reason? }`. Keeps two subjects apart, or with `separated: false` allows them again. |
 | `POST /join` | `{ a, b, by?, reason? }`. Records that two subjects are one person. |
 | `POST /ignore` | `{ identifier, ignored?, by?, reason? }`. Stops linking through one identifier, or resumes. |
@@ -85,7 +85,7 @@ The four `POST` routes answer with the subjects whose cluster moved.
 | `POST /consent` | `{ subject, consent: { adUserData, adPersonalization } }`. |
 | `GET /attribute?subject=&at=` | The touches that led to a conversion by this subject, and the one credited. |
 | `POST /transfer` | `{ from, to, amount, at, asset? }`. Records value moving, and answers with the identity tie between the two. |
-| `POST /convert` | An outcome: `{ transactionId, subject, at, stage?, value?, currency?, action?, email?, phone? }`. Counted for the report; with `action`, also sent to the ad platforms. |
+| `POST /convert` | An outcome: `{ transactionId, subject, at, stage?, value?, currency?, action?, email?, phone? }`. Counted for the report; with `action`, also sent to the ad platforms. A `stage` listed in `STAGES` supplies the value, currency and action it leaves out. |
 | `POST /restate` | `{ transactionId, value, currency? }`. Changes an outcome's value, in the report and on the platforms that can restate. |
 | `POST /link` | `{ url, subject, days? }`. Answers `{ url }`: the address with a token naming the person it is for. See [links](links.md). |
 | `POST /call` | A phone call: `{ id, from?, to, at, duration? }`. Answers `{ subject, flags, counted, visitor?, duplicate }`. See [calls](calls.md). |

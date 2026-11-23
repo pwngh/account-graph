@@ -5,6 +5,7 @@ import { test } from 'node:test'
 import {
   components,
   conversionEvent,
+  createAlerter,
   createGraph,
   createMemoryStore,
   dayStart,
@@ -16,6 +17,7 @@ import {
   ingestRequest,
   ip,
   knownLink,
+  ladderProblems,
   measure,
   normalizeEmail,
   normalizePhone,
@@ -23,6 +25,7 @@ import {
   scorePairs,
   signToken,
   sourceOf,
+  withStage,
 } from '../src/index.ts'
 import type { Edge, IdentifierState } from '../src/index.ts'
 import { configFrom } from '../src/serve.ts'
@@ -377,4 +380,61 @@ test('a signed token reads back until it expires, and not after any change', () 
   // The longest subject allowed still makes a token that reads back.
   const long = 'c'.repeat(512)
   assert.equal(readToken('s', 'known', new URL(knownLink('https://site.example/', long, { secret: 's', now: () => now })).searchParams.get('ag'), now), long)
+})
+
+test('a step fills in what an outcome leaves out, and nothing it states', () => {
+  const ladder = { inquiry: { value: 5, currency: 'USD', action: { google: '111' } }, client: { value: 200 }, constructor: { value: 1 } }
+  const base = { transactionId: 't', subject: 's', at: 1 }
+  assert.deepEqual(withStage(ladder, { ...base, stage: 'inquiry' }), { ...base, stage: 'inquiry', value: 5, currency: 'USD', action: { google: '111' } })
+  assert.deepEqual(withStage(ladder, { ...base, stage: 'client', value: 1250, currency: 'EUR' }), { ...base, stage: 'client', value: 1250, currency: 'EUR' })
+  assert.deepEqual(withStage(ladder, { ...base, stage: 'inquiry', value: 0, action: 'other' }), { ...base, stage: 'inquiry', value: 0, currency: 'USD', action: 'other' })
+  // A step nobody listed, no step, and no ladder each leave the outcome as it came.
+  for (const outcome of [{ ...base, stage: 'unknown' }, base, { ...base, stage: 'toString' }]) assert.deepEqual(withStage(ladder, outcome), outcome)
+  assert.deepEqual(withStage(undefined, { ...base, stage: 'inquiry' }), { ...base, stage: 'inquiry' })
+
+  assert.deepEqual(ladderProblems(ladder, ['google', 'meta']), [])
+  assert.deepEqual(ladderProblems({ a: { value: -1 }, b: 5, c: { action: 'x' }, d: { action: { tiktok: 'y' } }, e: { action: { google: '' } }, f: { currency: 7 } }, ['google', 'meta']), [
+    'step "a" needs a value of zero or more',
+    'step "b" must be an object, such as {"value":5}',
+    'step "c" must name its action per platform, such as {"google":"…"}',
+    'step "d" names "tiktok", which is not set up',
+    'step "e" needs its action as text, or as one text per platform',
+    'step "f" needs its currency as text',
+  ])
+  // With one platform a plain action is enough; with none, actions are not checked because nothing is sent.
+  assert.deepEqual(ladderProblems({ c: { action: 'x' } }, ['google']), [])
+  assert.deepEqual(ladderProblems({ d: { action: { tiktok: 'y' } } }, []), [])
+  assert.deepEqual(ladderProblems([1], []), ['must be an object of steps, such as {"inquiry":{"value":5}}'])
+  assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', STAGES: '{"inquiry":{"value":"5"}}' }), /STAGES: step "inquiry" needs a value of zero or more/)
+  assert.deepEqual(configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', STAGES: '{"inquiry":{"value":5}}', ALERT_WEBHOOK: 'https://hooks.example/x' }).stages, { inquiry: { value: 5 } })
+})
+
+test('an alert is posted once per subject per quiet period, and a broken webhook breaks nothing', async () => {
+  let clock = 1_000_000
+  const posted: { url: string; body: any }[] = []
+  const errors: unknown[] = []
+  let status = 200
+  const alert = createAlerter({
+    url: 'https://hooks.example/abc',
+    now: () => clock,
+    onError: (error) => errors.push(error),
+    fetch: (async (url: string, init: RequestInit) => {
+      posted.push({ url, body: JSON.parse(String(init.body)) })
+      if (status === 0) throw new Error('network down')
+      return new Response('ok', { status })
+    }) as typeof fetch,
+  })
+  assert.equal(await alert('conversions', 'two conversions failed'), true)
+  assert.equal(await alert('conversions', 'three more failed'), false)
+  assert.equal(await alert('outbox', 'the outbox could not run'), true)
+  clock += 10 * 60_000
+  assert.equal(await alert('conversions', 'x'.repeat(5000)), true)
+  assert.deepEqual(posted.map((each) => [each.url, each.body.text.length]), [['https://hooks.example/abc', 22], ['https://hooks.example/abc', 24], ['https://hooks.example/abc', 3000]])
+
+  clock += 10 * 60_000
+  status = 500
+  assert.equal(await alert('conversions', 'again'), false)
+  status = 0
+  assert.equal(await alert('outbox', 'again'), false)
+  assert.deepEqual(errors.map((error) => (error as Error).message), ['The alert webhook answered 500', 'network down'])
 })

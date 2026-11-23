@@ -10,6 +10,8 @@ import { shared } from './integrations/maxmind.ts'
 import { fromTwilio, twilioCall } from './integrations/twilio.ts'
 import type { IpLookup } from './integrations/maxmind.ts'
 import type { Outbox } from './outbox.ts'
+import { withStage } from './ladder.ts'
+import type { Ladder } from './ladder.ts'
 import { reviewPage } from './review.ts'
 import { browserMark, knownLink, readToken, signToken } from './sign.ts'
 import { browserScripts, scriptHeaders } from './tag.ts'
@@ -81,7 +83,14 @@ export interface HandlerOptions {
    * visitor the same visitor across your sites. Long and random.
    */
   linkSecret?: string
-  /** The time zone `/report` reads its days in when the request names none. Use the ad account's. Defaults to UTC. */
+  /**
+   * Your steps, in order, with what each is worth and what it counts as on
+   * each ad platform. An outcome that names a step takes from it whatever
+   * the outcome leaves out, so a page event or a call needs only its name.
+   * `/report` lists the steps in this order.
+   */
+  stages?: Ladder
+    /** The time zone `/report` reads its days in when the request names none. Use the ad account's. Defaults to UTC. */
   timeZone?: string
   /** The clock, for tests. */
   now?: () => number
@@ -177,7 +186,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
   }
 
   /** Counts an outcome for the report, and sends it to the ad platforms when one is set up and the outcome names an action. */
-  const convert = async (outcome: Outcome) => {
+  const convert = async (given: Outcome) => {
+    const outcome = withStage(options.stages, given)
     if (options.outbox && outcome.action) return options.outbox.record(outcome)
     await graph.outcome(outcome)
     return []
@@ -499,7 +509,11 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         const today = new Date(now()).toISOString().slice(0, 10)
         const to = url.searchParams.get('to') || today
         const from = url.searchParams.get('from') || new Date(Date.parse(`${to}T00:00:00Z`) - 29 * 86_400_000 || now()).toISOString().slice(0, 10)
-        return graph.report({ from, to, timeZone: url.searchParams.get('tz') || options.timeZone || 'UTC' })
+        const report = await graph.report({ from, to, timeZone: url.searchParams.get('tz') || options.timeZone || 'UTC' })
+        // The steps in your order first, then any others that turned up, by name.
+        const named = Object.keys(options.stages ?? {})
+        const others = Object.keys(report.total.stages).filter((step) => !named.includes(step)).sort()
+        return { ...report, steps: [...named, ...others] }
       }
       case 'GET /conversions': {
         if (!options.outbox) break

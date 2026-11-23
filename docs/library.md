@@ -220,6 +220,20 @@ await outbox.restate('enroll-1001', 120)
 
 `delay` holds a new outcome before its first send. `forget` deletes a subject's jobs along with everything else about it.
 
+### Steps and alerts
+
+`withStage` fills an outcome's value, currency and action from a list of your steps. `onFailed` hears the jobs that failed for good, and `createAlerter` posts them where people will see.
+
+```ts
+import { createAlerter, createOutbox, withStage } from 'account-graph'
+
+const steps = { inquiry: { value: 5, action: { google: '111' } }, client: { value: 200, action: { google: '333' } } }
+const alert = createAlerter({ url: process.env.ALERT_WEBHOOK })
+const outbox = createOutbox(graph, store.outbox, { targets, onFailed: (jobs) => alert('conversions', `${jobs.length} conversions failed`) })
+
+await outbox.record(withStage(steps, { transactionId: 'client-1001', subject: 'account:42', at: Date.now(), stage: 'client' }))
+```
+
 ### When a conversion fails
 
 `list` shows the jobs in one state with the reason on each. `retry` puts a transaction's failed and skipped jobs back in line once you have fixed what stopped them.

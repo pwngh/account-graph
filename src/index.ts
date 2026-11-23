@@ -12,6 +12,8 @@ export { brokenAt, seal } from './audit.ts'
 export { dayStart, fold, sourceOf } from './report.ts'
 export { dialed, recordCall } from './calls.ts'
 export { knownLink, readToken, signToken } from './sign.ts'
+export { ladderProblems, withStage } from './ladder.ts'
+export { createAlerter } from './alerts.ts'
 
 export type { AttributeOptions, Graph, GraphOptions, ReportOptions } from './graph.ts'
 export type { Policy, Rule } from './policy.ts'
@@ -21,6 +23,8 @@ export type { Item, Job, JobState, Outbox, OutboxOptions, OutboxStore, Pass, Tar
 export type { GoogleAdsOptions, MetaOptions, MicrosoftAdsOptions, TikTokOptions } from './targets.ts'
 export type { Batcher } from './batch.ts'
 export type { KnownLinkOptions } from './sign.ts'
+export type { Ladder, Stage } from './ladder.ts'
+export type { AlertOptions, Alerter } from './alerts.ts'
 export type { Call, CallFlag, CallOptions, Channel, RecordedCall } from './calls.ts'
 export type { Fitted, Labeled, Measured } from './calibrate.ts'
 export type {

@@ -81,6 +81,40 @@ curl -X POST https://graph.example.org/convert -H "authorization: Bearer $GRAPH_
 
 Add `action` and the same call also sends the outcome to the ad platforms; see [the outbox](library.md#the-outbox). Without it the outcome is counted here and sent nowhere. `POST /restate` changes a value later, for a refund or for what was actually paid.
 
+## Steps and what each is worth
+
+Most businesses count the same few steps: an inquiry, a call, a sale. Name them once, in order, with what each is worth, and an outcome needs only its step.
+
+```sh
+STAGES='{
+  "inquiry": { "value": 5,   "currency": "USD", "action": { "google": "111", "meta": "Lead" } },
+  "call":    { "value": 10,  "currency": "USD", "action": { "google": "222" } },
+  "client":  { "value": 200, "currency": "USD", "action": { "google": "333", "meta": "Purchase" } }
+}'
+```
+
+```sh
+curl -X POST https://graph.example.org/convert -H "authorization: Bearer $GRAPH_TOKEN" \
+  -d '{"transactionId":"client-1001","subject":"account:42","at":1795460000000,"stage":"client"}'
+```
+
+That outcome is counted at 200 USD and sent to Google and Meta. A page event named `inquiry` and a phone call take their steps the same way, with no code on your side.
+
+| An outcome that | Gets |
+| --- | --- |
+| Names a step and nothing else | The step's value, currency and action. |
+| States its own value, currency or action | What it states. The step fills in only what is missing. |
+| Names a step that is not listed | Nothing added. It is counted under that name. |
+
+When the real amount is known, restate it. The report changes, and so does the value Google holds:
+
+```sh
+curl -X POST https://graph.example.org/restate -H "authorization: Bearer $GRAPH_TOKEN" \
+  -d '{"transactionId":"client-1001","value":1250}'
+```
+
+The report's columns follow the order of `STAGES`. A step whose action names a platform that is not set up stops the server at start, so a typo cannot quietly send nothing.
+
 ## How an outcome finds its campaign
 
 The report asks the graph the same question `/attribute` answers. Starting from the account, it follows links to the visitors that are the same person, and takes the newest arrival within 90 days that is tied at 0.9 or better.

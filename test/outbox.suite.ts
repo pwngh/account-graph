@@ -171,7 +171,14 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
     })
 
     test('a job that keeps failing stops after the last attempt', async () => {
-      const { graph, outbox, remote, clock } = await fresh({ maxAttempts: 3 })
+      const heard: string[][] = []
+      const { graph, outbox, remote, clock } = await fresh({
+        maxAttempts: 3,
+        onFailed: (jobs) => {
+          heard.push(jobs.map((job) => `${job.transactionId} ${job.target} ${job.state}: ${job.note}`))
+          throw new Error('the listener itself fails')
+        },
+      })
       await enroll(graph, 1)
       await outbox.record(outcome(1))
       remote.refuseWith(() => new Error('socket hang up'))
@@ -181,6 +188,8 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       }
       assert.equal((await outbox.get('enroll-1'))[0]!.state, 'failed')
       assert.deepEqual(await outbox.counts(), { pending: 0, sent: 0, skipped: 0, failed: 1 })
+      // The listener heard once, on the pass that gave up, and its own failure changed nothing.
+      assert.deepEqual(heard, [['enroll-1 google failed: socket hang up']])
     })
 
     test('one bad event does not sink the rest of its request', async () => {

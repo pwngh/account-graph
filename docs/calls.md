@@ -48,6 +48,8 @@ An event counts once a day per browser. Give it an id, with `data-ag-id` or the 
 
 > **A page can be made to say anything.** Events come from browsers, so anyone can send one. They are limited per address and counted once a day, but do not list a step that carries money in `EVENTS`. Record those from your backend with `POST /convert`.
 
+An event whose name is a step in `STAGES` takes that step's value, and is sent to the ad platforms the step names. [Steps](report.md#steps-and-what-each-is-worth) has the setting.
+
 ## Phone calls
 
 When a call is reported, the server does four things in order.
@@ -96,5 +98,5 @@ Post the same five facts to `/call` with the service token: the provider's id fo
 | One caller per visitor | The rule above holds for good. A visitor tied to one hidden caller is not tied to another hidden call later, because each hidden call is a caller of its own. |
 | Taps only | A visitor who reads the number and dials it by hand leaves no tap. That call is filed under the number's channel. |
 | The tap window | Three minutes before the call began, with thirty seconds of allowance for clocks that disagree. `clickWindow` changes it in the library. |
-| Calls reach the report | A counted call is an outcome in the report. It is not sent to an ad platform yet. |
+| Sending calls to ad platforms | A counted call is always in the report. It is sent to an ad platform when the `call` step in `STAGES` has an action; the caller's number goes along, hashed, as a match key. |
 | Not confirmed | The Twilio console's field names are as remembered, not read this month. The signature check was run against the example on Twilio's webhook security page and matches it. No real Twilio request has been received. |
