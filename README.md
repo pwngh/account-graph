@@ -20,6 +20,8 @@ node examples/site.ts            # in a second terminal: an example site on :300
 
 That is the whole loop: a visit, a sign-up, an answer, and a screen for the people who check it.
 
+The same example shows the rest. Press **Channels** on the reviewer screen to see the sign-up under its campaign. On the example site, *See an email* opens a link that names its contact, *Our other site* carries you to a second host name as the same visitor, and *Who does the graph think this browser is?* shows the result.
+
 ## How the pieces fit
 
 ```mermaid
@@ -134,7 +136,7 @@ PostgreSQL writes take one advisory lock, so they run one at a time; the write q
 ## What has run for real
 
 - Every test runs on memory and on PostgreSQL 16, locally and in CI: 162 tests, including a fuzz test that mixes observations, reviewer decisions, deletions, and transfers, and six outbox workers at once.
-- The image was built and `docker compose up` brought up the server and its database. With the example site pointed at it, a visit with an ad click followed by a sign-up was credited in Chrome, and the reviewer screen served from the container showed the account joined to its visitor.
+- The image was built and `docker compose up` brought up the server and its database. With the example site pointed at it, a visit with an ad click followed by a sign-up was credited in Chrome, and the reviewer screen served from the container showed the account joined to its visitor. Against the same container, a signed link tied a browser to its contact, a link to the example's second host name carried the visitor across, and a call posted after a tap was tied to that visitor and valued by its step.
 - The script tag ran in Chrome from a different origin than the page that loaded it.
 - With `cookie: true` the device cookie was set by the server, invisible to script, and the same on the next visit.
 - The reviewer screen ran in Chrome under its content policy: a cluster opened, two accounts were kept apart with a reason, the cluster split, and the decision appeared on the record.
