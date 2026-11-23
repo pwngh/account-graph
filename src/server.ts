@@ -12,11 +12,19 @@ import type { Identifier, Level, Subject, Touch } from './types.ts'
 
 export interface HandlerOptions {
   /**
-   * The bearer token your own services send. Visitors' browsers never hold
-   * it. A reviewer types it into the reviewer screen, which keeps it for that
-   * browser tab, so give it only to people you would let use every route.
+   * The bearer token your own services send. It opens every route. Visitors'
+   * browsers never hold it. Give reviewers `reviewToken` instead: the
+   * reviewer screen keeps whichever token is typed for that browser tab.
    */
   token: string
+  /**
+   * A second token, for people who review accounts. It opens the reviewer
+   * screen's routes: reading subjects, clusters, flows and decisions, and
+   * keeping apart, joining, muting and forgetting. It does not open the
+   * routes your services write through, so a reviewer cannot record
+   * observations, transfers, consent, or conversions.
+   */
+  reviewToken?: string
   /** Site origins allowed to post to `/collect`, such as `https://example.org`. */
   origins: readonly string[]
   /** Read the visitor's address from `x-forwarded-for`. Turn on only behind a proxy you run. */
@@ -43,6 +51,12 @@ const TOUCH_FIELDS = [
   'source', 'medium', 'campaign', 'gclid', 'gbraid', 'wbraid', 'fbclid', 'msclkid', 'landing', 'referrer',
 ] as const
 
+/** What the reviewer token opens: what the reviewer screen reads, and the decisions a reviewer makes. */
+const REVIEW_ROUTES = new Set([
+  'GET /subject', 'GET /clusters', 'GET /links', 'GET /cluster', 'GET /history', 'GET /flows', 'GET /collusion',
+  'GET /decisions', 'GET /audit', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
+])
+
 /** A route that wrote its own answer. */
 const SENT = Symbol('sent')
 
@@ -63,9 +77,16 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
   const now = options.now ?? Date.now
   const token = Buffer.from(options.token)
 
-  const authorize = (request: IncomingMessage) => {
+  const reviewToken = options.reviewToken ? Buffer.from(options.reviewToken) : undefined
+  if (reviewToken && reviewToken.equals(token)) throw new TypeError('The reviewer token must differ from the service token')
+  const matches = (sent: Buffer, expected: Buffer) => sent.length === expected.length && timingSafeEqual(sent, expected)
+
+  /** Refuses the request unless it carries the service token, or the reviewer token on a route reviewers may use. */
+  const authorize = (request: IncomingMessage, path: string) => {
     const sent = Buffer.from(request.headers.authorization?.replace(/^Bearer /, '') ?? '')
-    if (sent.length !== token.length || !timingSafeEqual(sent, token)) throw new Refusal(401, 'Missing or wrong token')
+    if (matches(sent, token)) return
+    if (!reviewToken || !matches(sent, reviewToken)) throw new Refusal(401, 'Missing or wrong token')
+    if (!REVIEW_ROUTES.has(path)) throw new Refusal(403, 'The reviewer token does not open this route')
   }
 
   const ignoredAddresses = new Set<Identifier>()
@@ -159,7 +180,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       ties: [...ties.values()],
       separated: await graph.separations(subject),
       flows: await graph.flows(subject),
-      history: (await graph.history(subject)).slice(-100).reverse(),
+      history: (await graph.history(subject, 100)).reverse(),
     }
   }
 
@@ -185,7 +206,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       return SENT
     }
 
-    authorize(request)
+    authorize(request, path)
     const subject = url.searchParams.get('subject') ?? ''
     switch (path) {
       case 'POST /observe':
