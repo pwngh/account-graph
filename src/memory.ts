@@ -1,6 +1,6 @@
 import { createMemoryOutbox } from './outbox.ts'
 import type { Store, Tx } from './store.ts'
-import type { Consent, Decision, Edge, FlowEdge, Identifier, IdentifierState, Labels, Moved, Sighting, Subject, Touch } from './types.ts'
+import type { Consent, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, Labels, Moved, Sighting, Subject, Touch } from './types.ts'
 
 /**
  * Keeps the graph in process memory. Writes run one at a time; a write that
@@ -20,6 +20,8 @@ export function createMemoryStore(): Store {
   const flowsBy = new Map<Subject, Set<string>>()
   const consents = new Map<Subject, Consent>()
   const decisions: Decision[] = []
+  const outcomes = new Map<string, Counted>()
+  const costs = new Map<string, Required<Cost>>()
   const moves: Moved[] = []
 
   const index = (groups: Map<Subject, Set<Subject>>, key: Subject, subject: Subject) => {
@@ -83,6 +85,7 @@ export function createMemoryStore(): Store {
       bySubject.delete(subject)
       sightings.delete(subject)
       touches.delete(subject)
+      for (const [id, outcome] of outcomes) if (outcome.subject === subject) outcomes.delete(id)
       assign(subject, undefined)
       for (const other of separated.get(subject) ?? []) unindex(separated, other, subject)
       separated.delete(subject)
@@ -151,6 +154,7 @@ export function createMemoryStore(): Store {
         sightings: count(sightings),
         touches: count(touches),
         decisions: decisions.length,
+        outcomes: outcomes.size,
       }
     },
 
@@ -239,14 +243,44 @@ export function createMemoryStore(): Store {
 
     async addTouch(touch) {
       const list = touches.get(touch.subject)
-      if (list) list.push({ ...touch })
-      else touches.set(touch.subject, [{ ...touch }])
+      if (list) list.push(structuredClone(touch))
+      else touches.set(touch.subject, [structuredClone(touch)])
     },
 
     async touchesOf(subjects, from, to) {
       return subjects.flatMap((subject) =>
-        (touches.get(subject) ?? []).filter((touch) => touch.at >= from && touch.at <= to).map((touch) => ({ ...touch })),
+        (touches.get(subject) ?? []).filter((touch) => touch.at >= from && touch.at <= to).map((touch) => structuredClone(touch)),
       )
+    },
+
+    async touchesBetween(from, to) {
+      const found = [...touches.values()].flatMap((list) => list.filter((touch) => touch.at >= from && touch.at < to).map((touch) => structuredClone(touch)))
+      return found.sort((x, y) => x.at - y.at)
+    },
+
+    async setOutcome(outcome) {
+      outcomes.set(outcome.transactionId, { ...outcome })
+    },
+
+    async outcomeOf(transactionId) {
+      const found = outcomes.get(transactionId)
+      return found && { ...found }
+    },
+
+    async outcomesBetween(from, to) {
+      return [...outcomes.values()]
+        .filter((outcome) => outcome.at >= from && outcome.at < to)
+        .sort((x, y) => x.at - y.at || (x.transactionId < y.transactionId ? -1 : 1))
+        .map((outcome) => ({ ...outcome }))
+    },
+
+    async addCosts(rows) {
+      for (const cost of rows) costs.set([cost.day, cost.source, cost.campaignId].join('\u0000'), { ...cost })
+    },
+
+    async costsBetween(from, to) {
+      const key = (cost: Required<Cost>) => [cost.day, cost.source, cost.campaignId].join('\u0000')
+      return [...costs.values()].filter((cost) => cost.day >= from && cost.day <= to).sort((x, y) => (key(x) < key(y) ? -1 : 1)).map((cost) => ({ ...cost }))
     },
 
     async history(subject, limit) {

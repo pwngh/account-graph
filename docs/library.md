@@ -229,6 +229,23 @@ await outbox.list('failed')      // [{ transactionId, target, note: 'Google refu
 await outbox.retry('enroll-1001')
 ```
 
+## The report
+
+`outcome` counts something a subject did. `spend` records what campaigns cost. `report` sets one beside the other, per campaign.
+
+```ts
+import { googleCosts } from 'account-graph/costs'
+
+await graph.outcome({ transactionId: 'enroll-1001', subject: 'account:42', at: Date.now(), stage: 'enrolled', value: 200, currency: 'USD' })
+await graph.spend(await googleCosts({ customerId, developerToken, accessToken })('2026-11-01', '2026-11-14'))
+
+const { rows, total } = await graph.report({ from: '2026-11-01', to: '2026-11-14', timeZone: 'America/New_York' })
+// rows[0]: { source: 'google', campaignId: '20111', campaign: 'Search: garden tools', cost: 873.6, visits: 9,
+//            stages: { enrolled: { count: 3, value: 600 } }, outcomes: 3, value: 600, … }
+```
+
+`outbox.record` calls `outcome` for you, so an outcome sent to an ad platform is counted once here too. `restate` changes the value in both places. [The report](report.md) says what feeds it and how to read it.
+
 ## The write queue
 
 PostgreSQL writes run one at a time. `createBatcher` puts a queue in front: while one write is in flight, arrivals wait and go together in the next.

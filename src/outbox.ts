@@ -1,27 +1,7 @@
 import type { Graph } from './graph.ts'
-import type { Attribution, AttributedTouch, Consent, Subject } from './types.ts'
+import type { Attribution, AttributedTouch, Consent, Outcome, Subject } from './types.ts'
 
-/** Something a subject did that an ad platform should hear about: an enrollment, a payment. */
-export interface Outcome {
-  /** Your id for this outcome. Recording it twice records it once. */
-  transactionId: string
-  subject: Subject
-  /** When it happened, in epoch milliseconds. */
-  at: number
-  /**
-   * What this outcome counts as on each platform, by target name:
-   * `{ google: '987654321', meta: 'Lead' }`. A plain string names it for the only target.
-   */
-  action: string | Record<string, string>
-  value?: number
-  currency?: string
-  /** Where it happened. Defaults to WEB. */
-  source?: 'WEB' | 'APP' | 'IN_STORE' | 'PHONE' | 'MESSAGE' | 'OTHER'
-  /** Hashed before it is stored. */
-  email?: string
-  phone?: string
-  consent?: Consent
-}
+export type { Outcome }
 
 export type JobState = 'pending' | 'sent' | 'skipped' | 'failed'
 
@@ -130,7 +110,10 @@ export interface Pass {
 }
 
 export interface Outbox {
-  /** Records an outcome to send: one job per platform named in `action`. Safe to call again with the same id. */
+  /**
+   * Records an outcome: once in the graph, for the report, and as one job per
+   * platform named in `action`. Safe to call again with the same id.
+   */
   record(outcome: Outcome): Promise<Job[]>
   /**
    * Changes the value of an outcome, for a refund or a corrected amount, and
@@ -206,9 +189,11 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
         actions = { [options.targets[0]!.name]: actions }
       }
       const named = Object.entries(actions ?? {})
-      if (named.length === 0 || named.some(([, action]) => !action)) throw new TypeError(`Outcome "${transactionId}" needs an action`)
+      if (named.some(([, action]) => !action)) throw new TypeError(`Outcome "${transactionId}" names a target with no action`)
       for (const [name] of named) if (!targets.has(name)) throw new TypeError(`Outcome "${transactionId}" names an unknown target "${name}"`)
 
+      // Counted first: it checks the rest of the outcome, and a job must never be queued for an outcome the report refused.
+      await graph.outcome(outcome)
       const jobs: Job[] = []
       for (const [name, action] of named) {
         const job: Job = {
@@ -240,7 +225,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
     },
 
     async restate(transactionId, value, currency) {
-      if (!Number.isFinite(value) || value < 0) throw new TypeError('A restated value must be zero or more')
+      await graph.restate(transactionId, value, currency)
       const changed: Job[] = []
       for (const job of await store.get(transactionId)) {
         if (!targets.get(job.target)?.restates || job.state === 'skipped') continue

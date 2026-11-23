@@ -28,3 +28,7 @@
 - `createFingerprintVerifier`, `hardwareId`, `createMaxMindLookup`, `createGoogleTokens`, and `createMicrosoftTokens` are the integration entry points.
 - `measure` and `fit` compute identifier weights from reviewed pairs; `reviewed` turns reviewer decisions into those pairs.
 - `clusters`, `search`, and `recent` are the reviewer's queue: largest clusters, subjects by prefix, newest cluster changes.
+- `outcome` and `restate` record what a subject did and change its value; `POST /convert` counts an outcome with or without an ad platform.
+- `spend` records campaign cost per day; `googleCosts`, `metaCosts`, and `costsFromCsv` read it, and `POST /costs` takes it.
+- `report({ from, to, timeZone })` sets each campaign's cost beside the outcomes credited to it; `GET /report` and the reviewer screen's Channels view show it.
+- `Touch` carries `campaignId`, `adGroupId`, `adId`, `term`, `content`, and `custom`; `collect.js?params=` names the custom parameters to keep.

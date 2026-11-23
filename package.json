@@ -60,6 +60,10 @@
     "./microsoft-auth": {
       "types": "./dist/integrations/microsoft-auth.d.ts",
       "default": "./dist/integrations/microsoft-auth.js"
+    },
+    "./costs": {
+      "types": "./dist/integrations/costs.d.ts",
+      "default": "./dist/integrations/costs.js"
     }
   },
   "scripts": {
@@ -71,7 +75,8 @@
     "prepublishOnly": "npm run check && npm test && npm run build",
     "review": "node tools/review-demo.ts",
     "start": "node src/serve.ts",
-    "live-check": "node tools/live-check.ts"
+    "live-check": "node tools/live-check.ts",
+    "costs": "node tools/costs.ts"
   },
   "peerDependencies": {
     "pg": "^8.11.0"

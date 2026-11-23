@@ -1,5 +1,5 @@
 import type { OutboxStore } from './outbox.ts'
-import type { Change, Consent, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, Labels, Moved, Sighting, Subject, Touch } from './types.ts'
+import type { Change, Consent, Cost, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, Labels, Moved, Sighting, Subject, Touch } from './types.ts'
 
 /**
  * Where the graph lives. Sightings and touches are the record; edges and
@@ -18,7 +18,7 @@ export interface Store {
 export interface Tx {
   /** Logs sightings and folds them into edges. Returns how many new edges each identifier gained. */
   addSightings(sightings: readonly Sighting[]): Promise<Map<Identifier, number>>
-  /** Deletes a subject with its sightings, edges, touches, flows, consent, and reviewer decisions. */
+  /** Deletes a subject with its sightings, edges, touches, outcomes, flows, consent, and reviewer decisions. */
   removeSubject(subject: Subject): Promise<void>
   edgesOf(subjects: readonly Subject[]): Promise<Edge[]>
   edgesOn(identifiers: readonly Identifier[]): Promise<Edge[]>
@@ -58,6 +58,17 @@ export interface Tx {
   addTouch(touch: Touch): Promise<void>
   /** Touches on the given subjects with `from <= at <= to`. */
   touchesOf(subjects: readonly Subject[], from: number, to: number): Promise<Touch[]>
+  /** Every touch with `from <= at < to`, whoever it belongs to. */
+  touchesBetween(from: number, to: number): Promise<Touch[]>
+  /** Records an outcome for the report, replacing one with the same id. */
+  setOutcome(outcome: Counted): Promise<void>
+  outcomeOf(transactionId: string): Promise<Counted | undefined>
+  /** Outcomes with `from <= at < to`, oldest first. */
+  outcomesBetween(from: number, to: number): Promise<Counted[]>
+  /** Records what campaigns cost, replacing any row with the same day, source and campaign. */
+  addCosts(costs: readonly Required<Cost>[]): Promise<void>
+  /** Costs with `from <= day <= to`, days written `YYYY-MM-DD`. */
+  costsBetween(from: string, to: string): Promise<Required<Cost>[]>
   /** Sightings of a subject, oldest first. With `limit`, only the newest that many. */
   history(subject: Subject, limit?: number): Promise<Sighting[]>
   /** Every sighting written down at or before a time, for replaying what was known then. */

@@ -65,6 +65,7 @@ A token goes in the `authorization` header as `Bearer …`. There are two.
 | `GET /rings?subject=` | Value that left the subject and came back through others. |
 | `GET /decisions` | The record of reviewer decisions, oldest first. |
 | `GET /audit` | Whether that record is whole: `{ sound }`, with `brokenAt` when it is not. |
+| `GET /report?from=&to=&tz=` | What each campaign cost and brought in between two days. See [the report](report.md). |
 | `POST /separate` | `{ a, b, separated?, by?, reason? }`. Keeps two subjects apart, or with `separated: false` allows them again. |
 | `POST /join` | `{ a, b, by?, reason? }`. Records that two subjects are one person. |
 | `POST /ignore` | `{ identifier, ignored?, by?, reason? }`. Stops linking through one identifier, or resumes. |
@@ -77,12 +78,13 @@ The four `POST` routes answer with the subjects whose cluster moved.
 | Route | What it does |
 | --- | --- |
 | `POST /observe` | One observation, or a list: `{ subject, identifiers, at, event? }`. Answers with the cluster changes. |
-| `POST /touch` | A marketing touch: `{ subject, at, gclid?, source?, medium?, campaign?, … }`. |
+| `POST /touch` | A marketing touch: `{ subject, at, gclid?, source?, medium?, campaign?, campaignId?, … }`. |
 | `POST /consent` | `{ subject, consent: { adUserData, adPersonalization } }`. |
 | `GET /attribute?subject=&at=` | The touches that led to a conversion by this subject, and the one credited. |
 | `POST /transfer` | `{ from, to, amount, at, asset? }`. Records value moving, and answers with the identity tie between the two. |
-| `POST /convert` | An outcome for the outbox: `{ transactionId, subject, at, action, value?, email?, phone? }`. |
-| `POST /restate` | `{ transactionId, value, currency? }`. Changes a sent conversion's value. |
+| `POST /convert` | An outcome: `{ transactionId, subject, at, stage?, value?, currency?, action?, email?, phone? }`. Counted for the report; with `action`, also sent to the ad platforms. |
+| `POST /restate` | `{ transactionId, value, currency? }`. Changes an outcome's value, in the report and on the platforms that can restate. |
+| `POST /costs` | A list of `{ day, source, amount, campaignId?, campaign?, currency?, clicks?, impressions? }`. A row for the same day, source and campaign replaces the one before. |
 | `GET /conversion?id=` | The jobs of one transaction, one per ad platform. |
 | `GET /conversions?state=` | Jobs in one state: `pending`, `sent`, `skipped`, or `failed`. |
 | `POST /retry` | `{ transactionId }`. Puts its failed and skipped jobs back in line. |
@@ -90,7 +92,7 @@ The four `POST` routes answer with the subjects whose cluster moved.
 | `GET /stats` | Counts since start, what the graph holds, and outbox jobs by state. |
 | `GET /verify` | The subjects whose stored cluster differs from a full recompute. |
 
-The five outbox routes answer 404 when no ad platform is configured.
+`/conversion`, `/conversions` and `/retry` answer 404 when no ad platform is configured.
 
 ## Errors
 

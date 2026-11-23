@@ -7,7 +7,9 @@ import {
   conversionEvent,
   createGraph,
   createMemoryStore,
+  dayStart,
   defaultPolicy,
+  fold,
   fit,
   googleClick,
   hashEmail,
@@ -17,6 +19,7 @@ import {
   normalizeEmail,
   normalizePhone,
   scorePairs,
+  sourceOf,
 } from '../src/index.ts'
 import type { Edge, IdentifierState } from '../src/index.ts'
 import { configFrom } from '../src/serve.ts'
@@ -200,4 +203,132 @@ test('the server reads its settings from the environment and names everything wr
     (error: Error) =>
       ['DATABASE_URL is required', 'PORT must be a number', 'MAXMIND_LICENSE_KEY must be set along with MAXMIND_ACCOUNT_ID', 'META_ACCESS_TOKEN, META_SITE_URL must be set along with META_PIXEL_ID', 'FINGERPRINT_REGION must be us, eu, or ap', 'REVIEW_TOKEN must differ from GRAPH_TOKEN'].every((line) => error.message.includes(line)),
   )
+})
+
+test('a day begins at local midnight, across a clock change', () => {
+  assert.equal(dayStart('2026-03-01'), Date.parse('2026-03-01T00:00:00Z'))
+  assert.equal(dayStart('2026-03-01', 'America/New_York'), Date.parse('2026-03-01T05:00:00Z'))
+  // Clocks in New York go forward on 8 March 2026 and back on 1 November.
+  assert.equal(dayStart('2026-03-08', 'America/New_York'), Date.parse('2026-03-08T05:00:00Z'))
+  assert.equal(dayStart('2026-03-09', 'America/New_York'), Date.parse('2026-03-09T04:00:00Z'))
+  assert.equal(dayStart('2026-11-01', 'America/New_York'), Date.parse('2026-11-01T04:00:00Z'))
+  assert.equal(dayStart('2026-11-02', 'America/New_York'), Date.parse('2026-11-02T05:00:00Z'))
+  assert.equal(dayStart('2026-03-01', 'Asia/Kolkata'), Date.parse('2026-02-28T18:30:00Z'))
+  // In Havana the clocks go forward at midnight, so 8 March 2026 begins at one o'clock.
+  assert.equal(dayStart('2026-03-08', 'America/Havana'), Date.parse('2026-03-08T05:00:00Z'))
+  assert.equal(dayStart('2026-03-09', 'America/Havana'), Date.parse('2026-03-09T04:00:00Z'))
+  assert.equal(dayStart('2026-09-06', 'America/Santiago'), Date.parse('2026-09-06T04:00:00Z'))
+  assert.throws(() => dayStart('2026-3-1'), TypeError)
+  assert.throws(() => dayStart('2026-13-01'), TypeError)
+  assert.throws(() => dayStart('2026-02-30'), TypeError)
+})
+
+test('the report is the same whatever order its rows arrive in', () => {
+  const cost = (day: string, source: string, campaignId: string, campaign: string, amount: number) => ({ day, source, campaignId, campaign, amount, currency: 'USD', clicks: 0, impressions: 0 })
+  const touch = (at: number, more: object) => ({ subject: `visitor:${at}`, at, ...more })
+  const costs = [
+    cost('2026-03-01', 'google', '111', 'Old name', 10),
+    cost('2026-03-02', 'google', '111', 'New name', 10),
+    // Two Meta campaigns share a name; the name stands for the one that cost more.
+    cost('2026-03-01', 'meta', '700', 'Retarget', 5),
+    cost('2026-03-01', 'meta', '701', 'Retarget', 50),
+    // A spreadsheet row that knows the campaign only by name.
+    cost('2026-03-01', 'microsoft', '', 'Spring', 30),
+  ]
+  const touches = [
+    touch(1, { gclid: 'a', campaignId: '111' }),
+    touch(2, { fbclid: 'b', campaign: 'retarget' }),
+    // The touch has an id no cost knows, and a name one does.
+    touch(3, { msclkid: 'c', campaignId: '42', campaign: 'spring' }),
+    // The id rides in utm_campaign on one arrival and in utm_id on the next; neither has a cost.
+    touch(4, { ttclid: 'd', campaign: '9001' }),
+    touch(5, { ttclid: 'e', campaignId: '9001', campaign: 'Beta' }),
+    touch(6, { ttclid: 'f', campaignId: '9001', campaign: 'Alpha' }),
+    // An id no cost knows, under a name a costed campaign with another id has: a different campaign.
+    touch(9, { fbclid: 'g', campaignId: '799', campaign: 'Retarget' }),
+    // A campaign nobody paid for, spelled two ways.
+    touch(10, { source: 'newsletter', campaign: 'march' }),
+    touch(11, { source: 'newsletter', campaign: 'March' }),
+    // Sources and steps named after things every object has.
+    touch(7, { source: 'constructor', campaign: 'toString' }),
+    touch(8, { source: '__proto__' }),
+  ]
+  const outcome = (n: number, stage: string, value: number) => ({ transactionId: `t${n}`, subject: 's', at: n, stage, value, currency: 'USD' })
+  const credited = [
+    { outcome: outcome(1, 'enrolled', 200), touch: touches[2] },
+    { outcome: outcome(2, '__proto__', 1), touch: touches[9] },
+    { outcome: outcome(3, 'constructor', 2), touch: undefined },
+  ]
+  const expected = fold('2026-03-01', '2026-03-02', costs, touches, credited)
+  assert.deepEqual(expected.rows.map((row) => [row.source, row.campaignId, row.campaign, row.cost, row.visits, Object.keys(row.stages)]), [
+    ['meta', '701', 'Retarget', 50, 1, []],
+    ['microsoft', '', 'Spring', 30, 1, ['enrolled']],
+    ['google', '111', 'New name', 20, 1, []],
+    ['meta', '700', 'Retarget', 5, 0, []],
+    ['(none)', '', '', 0, 0, ['constructor']],
+    ['constructor', '', 'toString', 0, 1, ['__proto__']],
+    ['tiktok', '9001', 'Alpha', 0, 3, []],
+    ['newsletter', '', 'March', 0, 2, []],
+    ['__proto__', '', '', 0, 1, []],
+    ['meta', '799', 'Retarget', 0, 1, []],
+  ])
+  assert.deepEqual(Object.entries(expected.total.stages).sort(), [['__proto__', { count: 1, value: 1 }], ['constructor', { count: 1, value: 2 }], ['enrolled', { count: 1, value: 200 }]])
+  assert.equal(({} as any).count, undefined)
+  // Every rotation and the reverse of each list gives the same report.
+  const turn = <T>(list: T[], by: number) => [...list.slice(by), ...list.slice(0, by)]
+  for (let by = 0; by < touches.length; by++) {
+    assert.deepEqual(fold('2026-03-01', '2026-03-02', turn(costs, by % costs.length), turn(touches, by), turn(credited, by % credited.length)), expected)
+    assert.deepEqual(fold('2026-03-01', '2026-03-02', turn(costs, by % costs.length).reverse(), turn(touches, by).reverse(), credited), expected)
+  }
+})
+
+test('a touch is filed under the platform of its click id, then its tag, then the site that referred it', () => {
+  const touch = { subject: 's', at: 0 }
+  assert.equal(sourceOf({ ...touch, gbraid: 'x', source: 'newsletter' }), 'google')
+  assert.equal(sourceOf({ ...touch, msclkid: 'x' }), 'microsoft')
+  assert.equal(sourceOf({ ...touch, source: ' Instagram ' }), 'meta')
+  assert.equal(sourceOf({ ...touch, source: 'Newsletter' }), 'newsletter')
+  assert.equal(sourceOf({ ...touch, referrer: 'https://www.news.example/story?id=1' }), 'news.example')
+  assert.equal(sourceOf({ ...touch, custom: { placement: 'top' } }), '(other)')
+})
+
+test('the server counts outcomes without an ad platform, takes costs, and reports to a reviewer', async () => {
+  const graph = createGraph(createMemoryStore())
+  const at = Date.parse('2026-03-02T12:00:00Z')
+  const handler = createHandler(graph, { token: 'secret', reviewToken: 'reviewer', origins: ['https://site.example'], now: () => at, timeZone: 'UTC' })
+  const server = createServer(handler).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const post = (path: string, body: unknown, token = 'secret') => fetch(`${base}${path}`, { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify(body) })
+  try {
+    const visit = { device: 'd-9', touch: { gclid: 'G9', campaignId: '111', adGroupId: '22', adId: '3', term: 'garden hose', content: 'blue', custom: { placement: 'top', 'bad name': 'x', long: 'y'.repeat(300) } } }
+    assert.equal((await fetch(`${base}/collect`, { method: 'POST', headers: { origin: 'https://site.example' }, body: JSON.stringify(visit) })).status, 204)
+    await post('/observe', { subject: 'account:9', identifiers: ['device:d-9'], at: at + 1000 })
+
+    assert.deepEqual(await (await post('/costs', [{ day: '2026-03-02', source: 'google', campaignId: '111', campaign: 'Spring', amount: 50, clicks: 10 }])).json(), { recorded: 1 })
+    assert.equal((await post('/costs', { costs: [{ day: 'bad', source: 'google', amount: 1 }] })).status, 400)
+    assert.equal((await post('/costs', { nothing: true })).status, 400)
+    assert.equal((await post('/costs', [], 'reviewer')).status, 403)
+
+    // No ad platform is set up, so the outcome is counted and sent nowhere.
+    assert.deepEqual(await (await post('/convert', { transactionId: 'enr-9', subject: 'account:9', at: at + 2000, stage: 'enrolled', value: 200 })).json(), [])
+    assert.equal((await post('/convert', { subject: 'account:9', at })).status, 400)
+    assert.deepEqual(await (await post('/restate', { transactionId: 'enr-9', value: 120 })).json(), [])
+
+    const report = (await (await fetch(`${base}/report?from=2026-03-01&to=2026-03-02`, { headers: { authorization: 'Bearer reviewer' } })).json()) as any
+    assert.deepEqual(report.rows, [
+      { source: 'google', campaignId: '111', campaign: 'Spring', cost: 50, clicks: 10, impressions: 0, visits: 1, stages: { enrolled: { count: 1, value: 120 } }, outcomes: 1, value: 120 },
+    ])
+    // With no days named, the report covers the thirty days up to today.
+    const recent = (await (await fetch(`${base}/report`, { headers: { authorization: 'Bearer secret' } })).json()) as any
+    assert.deepEqual([recent.from, recent.to, recent.total.cost], ['2026-02-01', '2026-03-02', 50])
+    assert.equal((await fetch(`${base}/report?from=nope`, { headers: { authorization: 'Bearer secret' } })).status, 400)
+    assert.equal((await fetch(`${base}/report`)).status, 401)
+
+    const credited = (await graph.attribute('account:9', { at: at + 2000 })).credited!
+    assert.deepEqual([credited.campaignId, credited.adGroupId, credited.adId, credited.term, credited.content], ['111', '22', '3', 'garden hose', 'blue'])
+    assert.deepEqual(credited.custom, { placement: 'top' })
+  } finally {
+    server.close()
+  }
 })

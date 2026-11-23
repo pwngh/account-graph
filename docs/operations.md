@@ -15,9 +15,10 @@ listening on 0.0.0.0:8080
 collect accepts https://example.org
 reviewer token off, server cookie off, fingerprint off, maxmind off
 outbox sends to nobody (no ad platform configured)
+costs are read from nobody (post them to /costs)
 ```
 
-The last three lines say what is switched on. Each provider turns on when its variables are set; [providers.md](providers.md) says where to get them.
+The last four lines say what is switched on. Each provider turns on when its variables are set; [providers.md](providers.md) says where to get them.
 
 ## With Docker
 
@@ -39,7 +40,7 @@ Each site adds one line. The script reports every page view to the server it was
 
 ```text
 page ──▶ collect.js ──▶ POST /collect ──▶ graph
-          (reads the click id, the campaign tags, the device id)
+          (reads the click id, the campaign and ad ids, the device id)
 ```
 
 The site's address must be in `ORIGINS`, or `/collect` answers 403. A site with a content security policy must allow the server's address under `script-src` and `connect-src`.
@@ -50,6 +51,7 @@ Options ride on the script's address:
 | --- | --- |
 | `collect.js?fingerprint=PUBLIC_KEY` | Confirms each visitor with Fingerprint. Add `&region=eu` or `&region=ap` outside the US, and `&endpoints=…` for your own subdomain. |
 | `collect.js?canvas=open` | Adds the open-source FingerprintJS id, recorded as the weaker `canvas` kind. |
+| `collect.js?params=mailing,placement` | Keeps address parameters of your own with each arrival. |
 
 To pass a consent banner's answer, set `window.accountGraphConsent = { adUserData: true, adPersonalization: false }` before the tag.
 
@@ -116,6 +118,10 @@ On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes i
 | `OUTBOX_INTERVAL_MS` | `30000` | How often to send what is due. |
 | `OUTBOX_DELAY_MS` | `0` | How long to hold a new outcome before its first send. |
 | `CHANGE_WEBHOOK` | none | A URL to post cluster changes to. |
+| `REPORT_TIME_ZONE` | `UTC` | The time zone `/report` reads its days in, such as `America/New_York`. Use the ad account's. |
+| `GOOGLE_ADS_DEVELOPER_TOKEN` | none | Read campaign costs from Google Ads. Needs the two Google variables below. |
+| `META_AD_ACCOUNT_ID`, `META_ADS_TOKEN` | none | Read campaign costs from Meta. Set both. |
+| `COST_INTERVAL_MS`, `COST_DAYS` | six hours, `7` | How often to read costs, and how many days back each time. |
 | `FINGERPRINT_SECRET`, `FINGERPRINT_REGION` | none, `us` | Confirm Fingerprint events. |
 | `MAXMIND_ACCOUNT_ID`, `MAXMIND_LICENSE_KEY` | none | Classify addresses with MaxMind. Set both. |
 | `MAXMIND_SERVICE`, `MAXMIND_HOST` | `insights`, `geoip.maxmind.com` | Which MaxMind service to ask. |

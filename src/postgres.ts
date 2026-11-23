@@ -1,6 +1,6 @@
 import type { Job, JobState, OutboxStore } from './outbox.ts'
 import type { Store, Tx } from './store.ts'
-import type { Consent, Decision, Edge, FlowEdge, Identifier, IdentifierState, Labels, Moved, Sighting, Subject, Touch } from './types.ts'
+import type { Consent, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, Labels, Moved, Sighting, Subject, Touch } from './types.ts'
 
 /** The part of a `pg` client the store calls. */
 export interface Queryable {
@@ -91,6 +91,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       )
       await db.query(`delete from ${t('sighting')} where subject = $1`, [subject])
       await db.query(`delete from ${t('touch')} where subject = $1`, [subject])
+      await db.query(`delete from ${t('outcome')} where subject = $1`, [subject])
       await db.query(`delete from ${t('subject')} where id = $1`, [subject])
       await db.query(`delete from ${t('apart')} where a = $1 or b = $1`, [subject])
       await db.query(`delete from ${t('flow')} where source = $1 or target = $1`, [subject])
@@ -159,7 +160,8 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
                 (select count(*) from ${t('edge')})::int as edges,
                 (select count(*) from ${t('sighting')})::int as sightings,
                 (select count(*) from ${t('touch')})::int as touches,
-                (select count(*) from ${t('decision')})::int as decisions`,
+                (select count(*) from ${t('decision')})::int as decisions,
+                (select count(*) from ${t('outcome')})::int as outcomes`,
       )
       return rows[0]
     },
@@ -272,6 +274,65 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
         [subjects, from, to],
       )
       return rows.map((row) => ({ ...row.detail, subject: row.subject, at: Number(row.at) }) as Touch)
+    },
+
+    async touchesBetween(from, to) {
+      const { rows } = await db.query(`select subject, at, detail from ${t('touch')} where at >= $1 and at < $2 order by at, id`, [from, to])
+      return rows.map((row) => ({ ...row.detail, subject: row.subject, at: Number(row.at) }) as Touch)
+    },
+
+    async setOutcome({ transactionId, subject, at, stage, value, currency }) {
+      await db.query(
+        `insert into ${t('outcome')} (transaction_id, subject, at, stage, value, currency) values ($1, $2, $3, $4, $5, $6)
+         on conflict (transaction_id) do update set subject = excluded.subject, at = excluded.at, stage = excluded.stage, value = excluded.value, currency = excluded.currency`,
+        [transactionId, subject, at, stage, value, currency],
+      )
+    },
+
+    async outcomeOf(transactionId) {
+      const { rows } = await db.query(`select * from ${t('outcome')} where transaction_id = $1`, [transactionId])
+      return rows[0] && toCounted(rows[0])
+    },
+
+    async outcomesBetween(from, to) {
+      const { rows } = await db.query(`select * from ${t('outcome')} where at >= $1 and at < $2 order by at, transaction_id collate "C"`, [from, to])
+      return rows.map(toCounted)
+    },
+
+    async addCosts(costs) {
+      // Fold repeats first, keeping the last: one statement cannot upsert the same row twice.
+      const last = [...new Map(costs.map((cost) => [[cost.day, cost.source, cost.campaignId].join('\u0000'), cost])).values()]
+      if (last.length === 0) return
+      await db.query(
+        `insert into ${t('cost')} (day, source, campaign_id, campaign, amount, currency, clicks, impressions)
+         select * from unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::float8[], $6::text[], $7::bigint[], $8::bigint[])
+         on conflict (day, source, campaign_id) do update set
+           campaign = excluded.campaign, amount = excluded.amount, currency = excluded.currency, clicks = excluded.clicks, impressions = excluded.impressions`,
+        [
+          last.map((c) => c.day),
+          last.map((c) => c.source),
+          last.map((c) => c.campaignId),
+          last.map((c) => c.campaign),
+          last.map((c) => c.amount),
+          last.map((c) => c.currency),
+          last.map((c) => c.clicks),
+          last.map((c) => c.impressions),
+        ],
+      )
+    },
+
+    async costsBetween(from, to) {
+      const { rows } = await db.query(`select * from ${t('cost')} where day >= $1 and day <= $2 order by day, source collate "C", campaign_id collate "C"`, [from, to])
+      return rows.map((row) => ({
+        day: row.day,
+        source: row.source,
+        campaignId: row.campaign_id,
+        campaign: row.campaign,
+        amount: row.amount,
+        currency: row.currency,
+        clicks: Number(row.clicks),
+        impressions: Number(row.impressions),
+      }))
     },
 
     async history(subject, limit) {
@@ -418,6 +479,10 @@ function toSighting(row: any): Sighting {
   return row.event === null ? sighting : { ...sighting, event: row.event }
 }
 
+function toCounted(row: any): Counted {
+  return { transactionId: row.transaction_id, subject: row.subject, at: Number(row.at), stage: row.stage, value: row.value, currency: row.currency }
+}
+
 function toDecision(row: any): Decision {
   return {
     seq: Number(row.seq),
@@ -476,6 +541,33 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
             );
             create index if not exists change_subject on ${schema}.change (subject);
             create index if not exists subject_id_plain on ${schema}.subject (id collate "C");`,
+    },
+    {
+      id: 4,
+      name: 'outcomes and costs',
+      // What subjects did and what campaigns cost, for the report.
+      sql: `create table if not exists ${schema}.outcome (
+              transaction_id text primary key,
+              subject text not null,
+              at bigint not null,
+              stage text not null,
+              value float8 not null,
+              currency text not null
+            );
+            create index if not exists outcome_at on ${schema}.outcome (at);
+            create index if not exists outcome_subject on ${schema}.outcome (subject);
+            create table if not exists ${schema}.cost (
+              day text not null,
+              source text not null,
+              campaign_id text not null,
+              campaign text not null,
+              amount float8 not null,
+              currency text not null,
+              clicks bigint not null,
+              impressions bigint not null,
+              primary key (day, source, campaign_id)
+            );
+            create index if not exists touch_at on ${schema}.touch (at);`,
     },
   ]
 }

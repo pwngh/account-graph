@@ -14,7 +14,7 @@ docker compose up --build        # the server on :8080, and its database
 node examples/site.ts            # in a second terminal: an example site on :3000
 ```
 
-1. Open <http://localhost:3000/?gclid=demo-click&utm_source=google> and sign up with any email.
+1. Open <http://localhost:3000/?gclid=demo-click&utm_id=20111> and sign up with any email.
 2. The page answers: *The graph server credits the ad click demo-click at 98% confidence.*
 3. Open <http://localhost:8080/review>, enter the token `change-me-review-token`, and open the account. It is joined to the visitor who clicked the ad.
 
@@ -61,7 +61,8 @@ The `device:` value is the `ag_device` cookie the script set, which your backend
 | Link | Two subjects that share identifiers, with a score from 0 to 1 and the reasons for it. |
 | Cluster | The subjects the graph treats as one person. |
 | Touch | An arrival from an ad click or a campaign. |
-| Outcome | Something worth telling an ad platform: a sign-up, a sale. |
+| Outcome | Something a person did that you count: an inquiry, a sign-up, a sale. |
+| Cost | What an ad platform charged for one campaign on one day. |
 | Decision | A reviewer's call: join these two, keep these two apart, stop linking through this identifier. |
 
 ## What it does
@@ -72,6 +73,7 @@ The `device:` value is the `ag_device` cookie the script set, which your backend
 - **Reviewer decisions.** Join two subjects, keep two apart, or mute an identifier. Each decision is recorded with who and why, and sealed so the record cannot be quietly edited.
 - **Money flows.** Trades and transfers between accounts are reported with how the two are tied by identity, and value that goes round in a circle is found, so collusion shows up.
 - **Attribution with confidence.** A conversion lists every touch that could have led to it and credits one only when the chain of links is strong.
+- **A report of cost against outcomes.** Campaign costs are read from Google Ads and Meta, or posted, and set beside the inquiries, sign-ups and sales each campaign's visitors produced.
 - **Real integrations.** Fingerprint, the operating system's machine id, MaxMind, the Google tag's cookies, and the conversion APIs of Google, Meta, Microsoft, and TikTok.
 - **An outbox for conversions.** Outcomes are recorded once, sent in batches to each ad platform, retried with backoff, and never sent by two workers at once. Failed ones can be listed and retried.
 - **Consent.** A browser's opt-out signal and a banner's answer are stored and honoured before anything goes to an ad platform.
@@ -87,6 +89,7 @@ The `device:` value is the `ag_device` cookie the script set, which your backend
 - [Running the server](docs/operations.md): the start command, Docker, the script tag, tokens, every variable.
 - [Setting up the providers](docs/providers.md): where to get keys for Fingerprint, MaxMind, Google, Meta, Microsoft and TikTok.
 - [The HTTP routes](docs/http.md): every route, which token opens it, and what it answers.
+- [What each campaign cost and brought in](docs/report.md): the three things the report needs, and how to read it.
 
 **To understand it**
 
@@ -115,16 +118,18 @@ PostgreSQL writes take one advisory lock, so they run one at a time; the write q
 - `tools/browser-check.ts` runs `collect`, the server, and the outbox against a real browser.
 - `tools/live-check.ts` calls each provider's real endpoint, with your keys when they are set, and prints how it answered.
 - `tools/replay.ts` replays an export of your own past traffic and compares attribution with what was sent.
+- `tools/costs.ts` sends a CSV of campaign costs to a running server.
 - `tools/export.ts` writes edges, flows, or cluster labels as CSV for an analytics engine.
 
 
 ## What has run for real
 
-- Every test runs on memory and on PostgreSQL 16, locally and in CI: 134 tests, including a fuzz test that mixes observations, reviewer decisions, deletions, and transfers, and six outbox workers at once.
+- Every test runs on memory and on PostgreSQL 16, locally and in CI: 144 tests, including a fuzz test that mixes observations, reviewer decisions, deletions, and transfers, and six outbox workers at once.
 - The image was built and `docker compose up` brought up the server and its database. With the example site pointed at it, a visit with an ad click followed by a sign-up was credited in Chrome, and the reviewer screen served from the container showed the account joined to its visitor.
 - The script tag ran in Chrome from a different origin than the page that loaded it.
 - With `cookie: true` the device cookie was set by the server, invisible to script, and the same on the next visit.
 - The reviewer screen ran in Chrome under its content policy: a cluster opened, two accounts were kept apart with a reason, the cluster split, and the decision appeared on the record.
+- The channel report ran in Chrome: a sign-up on the example site, arriving with a campaign id, appeared on that campaign's line beside its cost.
 - A database made before an upgrade was brought up to date by starting the server.
 - The hardware id ran on macOS and, in CI, on Linux.
 - The real endpoints of Fingerprint, MaxMind, Google's token service, Google's Data Manager, Meta, Microsoft Advertising, Microsoft's token service, and TikTok each answered an invalid key the way the code expects.

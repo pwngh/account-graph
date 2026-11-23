@@ -16,6 +16,8 @@ import { createBatcher } from './batch.ts'
 import { ingest } from './conversions.ts'
 import { createGraph } from './graph.ts'
 import type { Graph } from './graph.ts'
+import { googleCosts, metaCosts } from './integrations/costs.ts'
+import type { CostSource } from './integrations/costs.ts'
 import { createFingerprintVerifier } from './integrations/fingerprint.ts'
 import { createGoogleTokens } from './integrations/google-auth.ts'
 import { createMaxMindLookup } from './integrations/maxmind.ts'
@@ -62,6 +64,15 @@ export function configFrom(env: Env) {
     outboxInterval: number('OUTBOX_INTERVAL_MS', 30_000),
     outboxDelay: number('OUTBOX_DELAY_MS', 0),
     changeWebhook: env.CHANGE_WEBHOOK,
+    timeZone: env.REPORT_TIME_ZONE || 'UTC',
+    costInterval: number('COST_INTERVAL_MS', 6 * 3_600_000),
+    costDays: number('COST_DAYS', 7),
+    googleCosts: env.GOOGLE_ADS_DEVELOPER_TOKEN
+      ? group(['GOOGLE_ADS_DEVELOPER_TOKEN', 'GOOGLE_ADS_CUSTOMER_ID', 'GOOGLE_SERVICE_ACCOUNT_FILE'])
+        ? { developerToken: env.GOOGLE_ADS_DEVELOPER_TOKEN, customerId: env.GOOGLE_ADS_CUSTOMER_ID!, loginCustomerId: env.GOOGLE_ADS_LOGIN_CUSTOMER_ID, keyFile: env.GOOGLE_SERVICE_ACCOUNT_FILE! }
+        : undefined
+      : undefined,
+    metaCosts: group(['META_AD_ACCOUNT_ID', 'META_ADS_TOKEN']) ? { adAccountId: env.META_AD_ACCOUNT_ID!, accessToken: env.META_ADS_TOKEN! } : undefined,
     fingerprint: env.FINGERPRINT_SECRET ? { secretKey: env.FINGERPRINT_SECRET, region: (env.FINGERPRINT_REGION || 'us') as 'us' | 'eu' | 'ap' } : undefined,
     maxmind: group(['MAXMIND_ACCOUNT_ID', 'MAXMIND_LICENSE_KEY'])
       ? {
@@ -95,6 +106,11 @@ export function configFrom(env: Env) {
       : undefined,
   }
   if (config.fingerprint && !['us', 'eu', 'ap'].includes(config.fingerprint.region)) wrong.push('FINGERPRINT_REGION must be us, eu, or ap')
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: config.timeZone })
+  } catch {
+    wrong.push('REPORT_TIME_ZONE must be a time zone, such as America/New_York')
+  }
   if (config.reviewToken && config.reviewToken === config.token) wrong.push('REVIEW_TOKEN must differ from GRAPH_TOKEN')
   if (wrong.length > 0) throw new Error(`Cannot start:\n  ${wrong.join('\n  ')}`)
   return config
@@ -139,6 +155,33 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
   const outbox = targets.length > 0 ? createOutbox(graph, store.outbox, { targets, delay: config.outboxDelay }) : undefined
   const stopOutbox = outbox?.start(config.outboxInterval, (error) => log(`outbox: ${String((error as Error)?.message ?? error)}`))
 
+  // What campaigns cost, read again every few hours. The last days are read each time, because platforms revise them.
+  const sources: [string, CostSource][] = []
+  if (config.googleCosts) {
+    const { keyFile, loginCustomerId, ...account } = config.googleCosts
+    const accessToken = createGoogleTokens(JSON.parse(readFileSync(keyFile, 'utf8')), { scope: 'https://www.googleapis.com/auth/adwords' })
+    sources.push(['google', googleCosts({ ...account, accessToken, ...(loginCustomerId && { loginCustomerId }) })])
+  }
+  if (config.metaCosts) sources.push(['meta', metaCosts(config.metaCosts)])
+  const importCosts = async () => {
+    const to = new Date().toISOString().slice(0, 10)
+    const from = new Date(Date.now() - config.costDays * 86_400_000).toISOString().slice(0, 10)
+    for (const [name, source] of sources) {
+      try {
+        const costs = await source(from, to)
+        await graph.spend(costs)
+        log(`costs: ${costs.length} rows from ${name}, ${from} to ${to}`)
+      } catch (error) {
+        log(`costs: ${name} failed: ${String((error as Error)?.message ?? error)}`)
+      }
+    }
+  }
+  // One read at a time: a slow platform must not stack a second read on the first.
+  let reading: Promise<void> | undefined
+  const readCosts = () => void (reading ??= importCosts().finally(() => (reading = undefined)))
+  const costTimer = sources.length > 0 ? setInterval(readCosts, Math.max(60_000, config.costInterval)) : undefined
+  costTimer?.unref()
+
   // Visits that arrive together are written together.
   const batcher = createBatcher(graph)
   const queued: Graph = { ...graph, observe: (input) => (Array.isArray(input) ? graph.observe(input) : batcher.observe(input as Parameters<typeof batcher.observe>[0])) }
@@ -148,6 +191,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
     origins: config.origins,
     limit: config.limit,
     trustProxy: config.trustProxy,
+    timeZone: config.timeZone,
     ...(config.reviewToken && { reviewToken: config.reviewToken }),
     ...(config.cookie && { cookie: config.cookie }),
     ...(config.fingerprint && { fingerprint: createFingerprintVerifier(config.fingerprint) }),
@@ -163,15 +207,19 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
   log(`collect accepts ${config.origins.length > 0 ? config.origins.join(', ') : 'no origins yet (set ORIGINS)'}`)
   log([on('reviewer token', config.reviewToken), on('server cookie', config.cookie), on('fingerprint', config.fingerprint), on('maxmind', config.maxmind)].join(', '))
   log(`outbox sends to ${targets.length > 0 ? targets.map((target) => target.name).join(', ') : 'nobody (no ad platform configured)'}`)
+  log(`costs are read from ${sources.length > 0 ? sources.map(([name]) => name).join(', ') : 'nobody (post them to /costs)'}`)
+  if (sources.length > 0) readCosts()
 
   return {
     port,
     graph,
     async close() {
       stopOutbox?.()
+      clearInterval(costTimer)
       await new Promise<void>((resolve) => server.close(() => resolve()))
       server.closeAllConnections?.()
       await batcher.drain()
+      await reading
       await pool.end()
     },
   }

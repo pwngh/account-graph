@@ -34,6 +34,31 @@ await graph.transfer({ from: 'account:ana-shop', to: 'account:ben', amount: 85_0
 await graph.transfer({ from: 'account:ben', to: 'account:ana', amount: 80_000, at: start + 72 * HOUR, asset: 'gold' })
 await graph.separate('account:cy', 'account:dee', true, { by: 'dana', reason: 'siblings, one family computer' })
 
-const handler = createHandler(graph, { token: 'service-demo', reviewToken: 'demo', origins: [] })
+// Marketing: three campaigns with a daily cost, the visitors each brought, and what those visitors went on to do.
+const day = (ago: number) => new Date(Date.now() - ago * 24 * HOUR).toISOString().slice(0, 10)
+const campaigns = [
+  { source: 'google', campaignId: '20111', campaign: 'Search: garden tools', daily: 62.4, visitors: 9, enroll: 3 },
+  { source: 'google', campaignId: '20222', campaign: 'Search: brand', daily: 11.75, visitors: 5, enroll: 3 },
+  { source: 'meta', campaignId: '90333', campaign: 'Retarget visitors', daily: 28, visitors: 6, enroll: 1 },
+]
+let lead = 0
+for (const { visitors, enroll, daily, ...campaign } of campaigns) {
+  for (let ago = 13; ago >= 0; ago--) await graph.spend({ ...campaign, day: day(ago), amount: daily, currency: 'USD', clicks: Math.round(daily / 2.6), impressions: Math.round(daily * 21) })
+  for (let i = 0; i < visitors; i++) {
+    const n = ++lead
+    const at = Date.now() - (13 - (n % 13)) * 24 * HOUR
+    await graph.observe({ subject: `visitor:v${n}`, identifiers: [`device:v${n}`], at, event: 'visit' })
+    await graph.touch({ subject: `visitor:v${n}`, at, campaignId: campaign.campaignId, ...(campaign.source === 'google' ? { gclid: `click-${n}` } : { fbclid: `click-${n}` }) })
+    await graph.observe({ subject: `lead:${n}`, identifiers: [`device:v${n}`], at: at + HOUR, event: 'inquiry' })
+    await graph.outcome({ transactionId: `inquiry-${n}`, subject: `lead:${n}`, at: at + HOUR, stage: 'inquiry', value: 5, currency: 'USD' })
+    if (i < enroll) await graph.outcome({ transactionId: `enrolled-${n}`, subject: `lead:${n}`, at: at + 5 * HOUR, stage: 'enrolled', value: 200, currency: 'USD' })
+  }
+}
+// One enrollment nobody's ad can claim.
+await graph.observe({ subject: 'lead:walk-in', identifiers: ['email:walk-in'], at: Date.now() - 2 * 24 * HOUR })
+await graph.outcome({ transactionId: 'enrolled-walk-in', subject: 'lead:walk-in', at: Date.now() - 2 * 24 * HOUR, stage: 'enrolled', value: 200, currency: 'USD' })
+
+// The example site (examples/site.ts) can report to this server too.
+const handler = createHandler(graph, { token: 'service-demo', reviewToken: 'demo', origins: ['http://localhost:3000'] })
 const port = Number(process.env.PORT ?? 8788)
-createServer(handler).listen(port, 'localhost', () => console.log(`reviewer screen: http://localhost:${port}/review  (reviewer token: demo)`))
+createServer(handler).listen(port, 'localhost', () => console.log(`reviewer screen: http://localhost:${port}/review  (reviewer token: demo; press Channels for the report)`))

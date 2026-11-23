@@ -12,6 +12,7 @@ import { readFileSync } from 'node:fs'
 import { generateKeyPairSync } from 'node:crypto'
 import { ingest, ingestRequest, meta, microsoftAds, tiktok } from '../src/index.ts'
 import type { Job, Target } from '../src/index.ts'
+import { googleCosts, metaCosts } from '../src/integrations/costs.ts'
 import { createFingerprintVerifier } from '../src/integrations/fingerprint.ts'
 import { createGoogleTokens } from '../src/integrations/google-auth.ts'
 import { createMaxMindLookup } from '../src/integrations/maxmind.ts'
@@ -82,3 +83,15 @@ if (env.MICROSOFT_CLIENT_ID && env.MICROSOFT_REFRESH_TOKEN) {
 // TikTok: there is no call here that records nothing, so real keys are not exercised.
 if (env.TIKTOK_PIXEL_CODE && env.TIKTOK_ACCESS_TOKEN) console.log('tiktok: not checked with your keys; any call would record an event')
 else await check('tiktok', false, refusal(tiktok({ pixelCode: 'X', accessToken: 'invalid', url: 'https://example.org/' })))
+
+// Campaign costs: reading yesterday's is a real call that changes nothing.
+const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)
+if (env.GOOGLE_ADS_DEVELOPER_TOKEN && env.GOOGLE_ADS_CUSTOMER_ID && env.GOOGLE_SERVICE_ACCOUNT_FILE) {
+  const accessToken = createGoogleTokens(JSON.parse(readFileSync(env.GOOGLE_SERVICE_ACCOUNT_FILE, 'utf8')), { scope: 'https://www.googleapis.com/auth/adwords' })
+  const read = googleCosts({ customerId: env.GOOGLE_ADS_CUSTOMER_ID, developerToken: env.GOOGLE_ADS_DEVELOPER_TOKEN, accessToken, ...(env.GOOGLE_ADS_LOGIN_CUSTOMER_ID && { loginCustomerId: env.GOOGLE_ADS_LOGIN_CUSTOMER_ID }) })
+  await check('google ads costs', true, async () => `${(await read(yesterday, yesterday)).length} campaigns had impressions yesterday`)
+} else await check('google ads costs', false, () => googleCosts({ customerId: '1234567890', developerToken: 'invalid', accessToken: async () => 'invalid' })(yesterday, yesterday))
+if (env.META_AD_ACCOUNT_ID && env.META_ADS_TOKEN) {
+  const read = metaCosts({ adAccountId: env.META_AD_ACCOUNT_ID, accessToken: env.META_ADS_TOKEN })
+  await check('meta costs', true, async () => `${(await read(yesterday, yesterday)).length} campaigns spent yesterday`)
+} else await check('meta costs', false, () => metaCosts({ adAccountId: '1', accessToken: 'invalid' })(yesterday, yesterday))

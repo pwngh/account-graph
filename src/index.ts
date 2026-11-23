@@ -9,12 +9,13 @@ export { MetaError, MicrosoftError, TikTokError, googleAds, meta, metaEvent, mic
 export { createBatcher } from './batch.ts'
 export { fit, measure } from './calibrate.ts'
 export { brokenAt, seal } from './audit.ts'
+export { dayStart, fold, sourceOf } from './report.ts'
 
-export type { AttributeOptions, Graph, GraphOptions } from './graph.ts'
+export type { AttributeOptions, Graph, GraphOptions, ReportOptions } from './graph.ts'
 export type { Policy, Rule } from './policy.ts'
 export type { Store, Tx } from './store.ts'
 export type { Conversion, Destination, IngestRequest } from './conversions.ts'
-export type { Item, Job, JobState, Outbox, OutboxOptions, OutboxStore, Outcome, Pass, Target } from './outbox.ts'
+export type { Item, Job, JobState, Outbox, OutboxOptions, OutboxStore, Pass, Target } from './outbox.ts'
 export type { GoogleAdsOptions, MetaOptions, MicrosoftAdsOptions, TikTokOptions } from './targets.ts'
 export type { Batcher } from './batch.ts'
 export type { Fitted, Labeled, Measured } from './calibrate.ts'
@@ -24,6 +25,8 @@ export type {
   Change,
   Cluster,
   Consent,
+  Cost,
+  Counted,
   Counterparty,
   Counts,
   Decision,
@@ -37,8 +40,11 @@ export type {
   Link,
   Moved,
   Observation,
+  Outcome,
   Pair,
   Reason,
+  Report,
+  ReportRow,
   Ring,
   Sighting,
   Subject,

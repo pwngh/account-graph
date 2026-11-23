@@ -75,6 +75,7 @@ dialog h4 { margin: 0; font-size: 16px; }
     <datalist id="found"></datalist>
     <button class="primary">Open</button>
   </form>
+  <button id="channels" type="button">Channels</button>
 </header>
 <div id="notice" role="status"></div>
 <main>
@@ -296,9 +297,53 @@ function render(profile) {
   detail.append(el('section', {}, el('h2', {}, `Sightings, newest ${profile.history.length}`), el('div', { class: 'wide' }, history)))
 }
 
+const money = (n) => n.toLocaleString(undefined, { maximumFractionDigits: 2 })
+const iso = (date) => date.toISOString().slice(0, 10)
+let range = { from: iso(new Date(Date.now() - 29 * 86400000)), to: iso(new Date()) }
+let reporting = false
+
+/** Shows what each campaign cost and brought in. Resolves to whether it loaded. */
+async function channels() {
+  reporting = true
+  current = undefined
+  history.replaceState(null, '', '#!channels')
+  const from = el('input', { type: 'date', value: range.from, required: '' })
+  const to = el('input', { type: 'date', value: range.to, required: '' })
+  const pick = el('form', { class: 'row', on: { submit: (event) => { event.preventDefault(); range = { from: from.value, to: to.value }; channels() } } },
+    el('label', {}, 'From', from), el('label', {}, 'To', to), el('button', { class: 'primary' }, 'Show'))
+  const section = el('section', {}, el('h3', {}, 'Channels'), el('p', { class: 'muted' }, 'What each campaign cost and what it brought in. An outcome counts on the day it happened, under the arrival that earned it.'), pick)
+  try {
+    const report = await api('GET', `/report?from=${range.from}&to=${range.to}`)
+    const stages = Object.keys(report.total.stages).sort()
+    const per = (cost, count) => (count > 0 && cost > 0 ? money(cost / count) : '')
+    const back = (value, cost) => (cost > 0 && value > 0 ? `${(value / cost).toFixed(1)}×` : '')
+    const cells = (row) => [el('td', { class: 'num' }, money(row.cost)), el('td', { class: 'num' }, amount(row.clicks)), el('td', { class: 'num' }, amount(row.visits)),
+      ...stages.map((stage) => el('td', { class: 'num' }, row.stages[stage]?.count ?? '')),
+      el('td', { class: 'num' }, money(row.value)), el('td', { class: 'num' }, per(row.cost, row.outcomes)), el('td', { class: 'num' }, back(row.value, row.cost))]
+    const table = el('table', {}, el('tr', {}, el('th', {}, 'Source'), el('th', {}, 'Campaign'), el('th', { class: 'num' }, 'Cost'), el('th', { class: 'num' }, 'Clicks billed'), el('th', { class: 'num' }, 'Arrivals seen'),
+      ...stages.map((stage) => el('th', { class: 'num' }, stage)), el('th', { class: 'num' }, 'Value'), el('th', { class: 'num' }, 'Cost per outcome'), el('th', { class: 'num' }, 'Return')))
+    for (const row of report.rows) {
+      table.append(el('tr', {}, el('td', {}, row.source === '(none)' ? el('span', { class: 'muted' }, 'no arrival credited') : row.source),
+        el('td', {}, row.campaign || row.campaignId || el('span', { class: 'muted' }, 'no campaign named'), row.campaign && row.campaignId ? el('span', { class: 'reason' }, row.campaignId) : ''), ...cells(row)))
+    }
+    table.append(el('tr', {}, el('td', {}, el('b', {}, 'All')), el('td', {}), ...cells(report.total)))
+    section.append(report.rows.length > 0 ? el('div', { class: 'wide' }, table) : el('p', { class: 'muted' }, 'Nothing was recorded in these days.'))
+    if (report.currencies.length > 1) section.append(el('p', { class: 'apart' }, `These sums mix currencies: ${report.currencies.join(', ')}.`))
+    $('detail').replaceChildren(section)
+    notice('')
+    return true
+  } catch (error) {
+    $('detail').replaceChildren(section)
+    notice(error.message, true)
+    return false
+  }
+}
+$('channels').addEventListener('click', channels)
+
 let current
 /** Shows one subject. Resolves to whether it loaded. */
 async function show(subject) {
+  reporting = false
   current = subject
   $('subject').value = subject
   try {
@@ -359,6 +404,7 @@ async function refresh() {
       el('span', {}, `${ACTIONS[d.action] ?? d.action} `), ...(d.action === 'prune' ? [when(Number(d.about[0]))] : d.about).map((subject) => el('span', { class: 'reason' }, subject)),
       el('span', { class: 'muted' }, `${when(d.at)}${d.by ? `, ${d.by}` : ''}${d.reason ? `: ${d.reason}` : ''} `),
       d.action === 'ignore' && !(restoredAt.get(d.about[0]) > d.seq) ? el('button', { class: 'link', on: { click: () => act('Resume linking through this identifier', d.about[0], '/ignore', { identifier: d.about[0], ignored: false }, 'Resume') } }, 'undo') : '')))
+    if (reporting) return channels()
     if (current) return show(current)
     notice('')
     return true
@@ -370,7 +416,8 @@ async function refresh() {
 
 $('find').addEventListener('submit', (event) => { event.preventDefault(); show($('subject').value.trim()) })
 try {
-  if (location.hash.length > 1) current = decodeURIComponent(location.hash.slice(1))
+  if (location.hash === '#!channels') reporting = true
+  else if (location.hash.length > 1) current = decodeURIComponent(location.hash.slice(1))
 } catch {}
 refresh()
 </script>

@@ -22,6 +22,7 @@ function browserModule(name: string): string {
  * server it was loaded from. Options ride on the address:
  *   collect.js?fingerprint=PUBLIC_KEY&region=eu    confirm visitors with Fingerprint
  *   collect.js?canvas=open                         add the open-source FingerprintJS id
+ *   collect.js?params=mailing,placement            keep address parameters of your own
  * Set `window.accountGraphConsent = { adUserData, adPersonalization }` before
  * the tag to pass a consent banner's answer.
  */
@@ -35,6 +36,8 @@ const RUN = `
   const endpoints = self.searchParams.get('endpoints')
   if (key) options.fingerprintEvent = helper().then((m) => m.fingerprintEvent({ apiKey: key, ...(region && { region }), ...(endpoints && { endpoints }) })).catch(() => undefined)
   if (self.searchParams.get('canvas') === 'open') options.canvas = helper().then((m) => m.openFingerprint()).catch(() => undefined)
+  const params = self.searchParams.get('params')
+  if (params) options.params = params.split(',').filter(Boolean)
   if (globalThis.accountGraphConsent) options.consent = globalThis.accountGraphConsent
   collect(options).catch(() => undefined)
 }
