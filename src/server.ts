@@ -1,15 +1,18 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { dialed, recordCall } from './calls.ts'
+import type { CallOptions } from './calls.ts'
 import type { Graph } from './graph.ts'
 import { identifier, ip } from './identifiers.ts'
 import { trusted } from './integrations/fingerprint.ts'
 import type { FingerprintVerifier } from './integrations/fingerprint.ts'
 import { shared } from './integrations/maxmind.ts'
+import { fromTwilio, twilioCall } from './integrations/twilio.ts'
 import type { IpLookup } from './integrations/maxmind.ts'
 import type { Outbox } from './outbox.ts'
 import { reviewPage } from './review.ts'
 import { browserScripts, scriptHeaders } from './tag.ts'
-import type { Identifier, Level, Subject, Touch } from './types.ts'
+import type { Identifier, Level, Outcome, Subject, Touch } from './types.ts'
 
 export interface HandlerOptions {
   /**
@@ -51,6 +54,19 @@ export interface HandlerOptions {
   limit?: false | { perMinute?: number; burst?: number }
   /** Sends outcomes posted to `/convert` to ad platforms. Without it, they are only counted for the report. */
   outbox?: Outbox
+  /**
+   * The events a page may report to `/event`, by name: `inquiry`,
+   * `phone_click`. Each is counted as an outcome of that name, once a day
+   * per browser unless the page gives it an id. A name not listed is refused.
+   */
+  events?: readonly string[]
+  /**
+   * How phone calls posted to `/call` are recorded. With `twilio`, the
+   * server also takes Twilio's status callbacks at `/calls/twilio`: `url` is
+   * that route's public address exactly as entered in Twilio, which the
+   * signature is checked against.
+   */
+  calls?: CallOptions & { twilio?: { authToken: string; url: string } }
   /** The time zone `/report` reads its days in when the request names none. Use the ad account's. Defaults to UTC. */
   timeZone?: string
   /** The clock, for tests. */
@@ -82,7 +98,7 @@ class Refusal extends Error {
 }
 
 /**
- * An HTTP handler for `node:http`. `/collect` is open to the listed origins,
+ * An HTTP handler for `node:http`. `/collect` and `/event` are open to the listed origins,
  * `/collect.js` is the script tag that posts to it, `/review` serves the
  * reviewer screen, `/health` says the database answers, and every other
  * route needs a bearer token.
@@ -131,10 +147,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
 
   const cookieDomain = typeof options.cookie === 'object' && options.cookie.domain ? `; Domain=${options.cookie.domain}` : ''
 
-  /** Records one browser visit. The subject is the visitor; nothing here names an account. */
-  async function collect(request: IncomingMessage, response: ServerResponse) {
-    const body = await json(request)
-    const at = now()
+  /** The device id of a browser's request. With the server's cookie on, the cookie decides and is renewed. */
+  function deviceOf(request: IncomingMessage, response: ServerResponse, body: any): string {
     let device = typeof body.device === 'string' && ID.test(body.device) ? body.device : undefined
     if (options.cookie) {
       // The cookie outlives what the page remembers, so it wins. A first visit adopts the page's id.
@@ -143,6 +157,42 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       response.setHeader('set-cookie', `ag_device=${device}; Max-Age=${400 * 86_400}; Path=/; HttpOnly; Secure; SameSite=Lax${cookieDomain}`)
     }
     if (!device) throw new Refusal(400, 'Body needs a device id')
+    return device
+  }
+
+  /** Counts an outcome for the report, and sends it to the ad platforms when one is set up and the outcome names an action. */
+  const convert = async (outcome: Outcome) => {
+    if (options.outbox && outcome.action) return options.outbox.record(outcome)
+    await graph.outcome(outcome)
+    return []
+  }
+
+  const events = new Set(options.events ?? [])
+
+  /** Records something a visitor did on a page. Only names the server was told to accept are kept. */
+  async function happened(request: IncomingMessage, response: ServerResponse) {
+    const body = await json(request)
+    if (typeof body.event !== 'string' || !events.has(body.event)) throw new Refusal(400, 'This server does not take that event')
+    const device = deviceOf(request, response, body)
+    const subject = `visitor:${device}`
+    const at = now()
+    const identifiers: Identifier[] = [identifier('device', device)]
+    // A tapped phone number is noted, so a call that follows can be tied to this visitor.
+    if (typeof body.number === 'string' && body.number.length <= 40) {
+      try {
+        identifiers.push(dialed(body.number, at, options.calls?.country))
+      } catch {}
+    }
+    await graph.observe({ subject, identifiers, at, event: body.event })
+    const occurrence = typeof body.id === 'string' && ID.test(body.id) ? body.id : new Date(at).toISOString().slice(0, 10)
+    await convert({ transactionId: `${body.event}:${device}:${occurrence}`, subject, at, stage: body.event })
+  }
+
+  /** Records one browser visit. The subject is the visitor; nothing here names an account. */
+  async function collect(request: IncomingMessage, response: ServerResponse) {
+    const body = await json(request)
+    const at = now()
+    const device = deviceOf(request, response, body)
     const subject = `visitor:${device}`
     const identifiers: Identifier[] = [identifier('device', device)]
 
@@ -232,7 +282,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     const path = `${request.method} ${url.pathname}`
     const origin = request.headers.origin
 
-    if (url.pathname === '/collect') {
+    if (url.pathname === '/collect' || url.pathname === '/event') {
       if (!origin || !options.origins.includes(origin)) throw new Refusal(403, 'Origin is not allowed')
       response.setHeader('access-control-allow-origin', origin)
       response.setHeader('vary', 'origin')
@@ -243,8 +293,21 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         response.setHeader('retry-after', String(Math.ceil(60 / perMinute)))
         throw new Refusal(429, 'Too many visits from this address')
       }
-      await collect(request, response)
-      tally.collected += 1
+      if (url.pathname === '/event') await happened(request, response)
+      else {
+        await collect(request, response)
+        tally.collected += 1
+      }
+      return undefined
+    }
+
+    if (path === 'POST /calls/twilio' && options.calls?.twilio) {
+      // Twilio cannot hold a token, so the request proves itself with a signature made from the account's secret.
+      const fields = Object.fromEntries(new URLSearchParams(await text(request)))
+      const { authToken, url: address } = options.calls.twilio
+      if (!fromTwilio(authToken, address, fields, String(request.headers['x-twilio-signature'] ?? ''))) throw new Refusal(403, 'The signature does not match')
+      const call = twilioCall(fields, now())
+      if (call) await recordCall(graph, call, { ...options.calls, convert })
       return undefined
     }
 
@@ -331,13 +394,10 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return graph.decisions()
       case 'GET /audit':
         return graph.audit()
-      case 'POST /convert': {
-        // Counted for the report either way. Sent to ad platforms when one is set up and the outcome names an action.
-        const body = await json(request)
-        if (options.outbox && body.action) return options.outbox.record(body)
-        await graph.outcome(body)
-        return []
-      }
+      case 'POST /convert':
+        return convert(await json(request))
+      case 'POST /call':
+        return recordCall(graph, await json(request), { ...options.calls, convert })
       case 'POST /restate': {
         const body = await json(request)
         if (options.outbox) return options.outbox.restate(body.transactionId, body.value, body.currency)
@@ -402,6 +462,10 @@ function why(body: any): { by?: string; reason?: string } {
 }
 
 async function json(request: IncomingMessage): Promise<any> {
+  return JSON.parse(await text(request))
+}
+
+async function text(request: IncomingMessage): Promise<string> {
   let size = 0
   const chunks: Buffer[] = []
   for await (const chunk of request) {
@@ -409,5 +473,5 @@ async function json(request: IncomingMessage): Promise<any> {
     if (size > 1_000_000) throw new Refusal(413, 'Body is over 1 MB')
     chunks.push(chunk)
   }
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  return Buffer.concat(chunks).toString('utf8')
 }

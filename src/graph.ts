@@ -17,6 +17,7 @@ import type {
   Counterparty,
   Counts,
   Decision,
+  Edge,
   Flow,
   Identifier,
   Labels,
@@ -69,6 +70,8 @@ export interface Graph {
   observe(input: Observation | readonly Observation[]): Promise<Change[]>
   /** Every subject linked to this one, strongest first, with the reasons. Computed from edges on each call. */
   links(subject: Subject): Promise<Link[]>
+  /** Every subject seen with any of the given identifiers, with when: who else has this fingerprint, who tapped this number. */
+  holders(identifiers: readonly Identifier[]): Promise<Edge[]>
   /** The cluster a subject belongs to, or undefined for a subject never observed. */
   cluster(subject: Subject): Promise<Cluster | undefined>
   /** Records a marketing touchpoint. */
@@ -356,6 +359,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
     links(subject) {
       return store.read(async (tx) => (await neighbors(tx, [subject])).get(subject) ?? [])
+    },
+
+    holders(identifiers) {
+      return store.read((tx) => tx.edgesOn(identifiers))
     },
 
     cluster(subject) {

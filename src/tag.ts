@@ -24,7 +24,9 @@ function browserModule(name: string): string {
  *   collect.js?canvas=open                         add the open-source FingerprintJS id
  *   collect.js?params=mailing,placement            keep address parameters of your own
  * Set `window.accountGraphConsent = { adUserData, adPersonalization }` before
- * the tag to pass a consent banner's answer.
+ * the tag to pass a consent banner's answer. Once loaded, the page can call
+ * `accountGraph.event('inquiry')`, and taps on phone links and on elements
+ * marked `data-ag-event` are reported without any code.
  */
 const RUN = `
 {
@@ -40,6 +42,8 @@ const RUN = `
   if (params) options.params = params.split(',').filter(Boolean)
   if (globalThis.accountGraphConsent) options.consent = globalThis.accountGraphConsent
   collect(options).catch(() => undefined)
+  globalThis.accountGraph = { event: (name, detail) => event(options, name, detail).catch(() => undefined) }
+  watch(options)
 }
 `
 

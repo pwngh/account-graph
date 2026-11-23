@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { collect, read } from '../src/collect.ts'
+import { collect, event, read, watch } from '../src/collect.ts'
 
 /** Just enough of a browser for the collector: a URL, cookies, storage, and a beacon. */
 function browser(href: string, cookies: Record<string, string> = {}, gpc = false) {
@@ -124,4 +124,45 @@ test('the collector reads campaign, ad group and ad ids, and parameters of your 
   page.go('https://site.example/offer?mailing=april')
   assert.deepEqual(read(['mailing']).touch, { custom: { mailing: 'april' }, landing: 'https://site.example/offer' })
   assert.equal(read().touch, undefined)
+})
+
+test('page events are reported by name, from code and from marked elements', async () => {
+  const page = browser('https://site.example/contact?x=1')
+  const posted: string[] = []
+  ;(globalThis as any).navigator.sendBeacon = (url: string, blob: Blob) => {
+    posted.push(url)
+    void blob.text().then((text) => page.sent.push(JSON.parse(text)))
+    return true
+  }
+  const listeners = new Map<string, (happened: object) => void>()
+  Object.assign((globalThis as any).document, {
+    addEventListener: (name: string, listener: (happened: object) => void) => void listeners.set(name, listener),
+    removeEventListener: (name: string) => void listeners.delete(name),
+  })
+  /** A stand-in element: `closest` answers for the selectors it was made to match. */
+  const element = (matches: Record<string, object>) => ({ closest: (selector: string) => matches[selector] ?? null })
+  const node = (tagName: string, attributes: Record<string, string>) => ({ tagName, getAttribute: (name: string) => attributes[name] ?? null })
+  const options = { endpoint: 'https://graph.example/collect' }
+
+  await event(options, 'inquiry', { id: 'form-7' })
+  const stop = watch(options)
+  listeners.get('click')!({ target: element({ 'a[href^="tel:"]': node('A', { href: 'tel:%2B1-555-123-0001' }) }) })
+  listeners.get('click')!({ target: element({ '[data-ag-event]': node('BUTTON', { 'data-ag-event': 'brochure', 'data-ag-id': 'b-1' }) }) })
+  // A marked form reports when it is submitted, not when something inside it is clicked.
+  const form = node('FORM', { 'data-ag-event': 'inquiry' })
+  listeners.get('click')!({ target: element({ '[data-ag-event]': form }) })
+  listeners.get('submit')!({ target: element({ 'form[data-ag-event]': form }) })
+  listeners.get('click')!({ target: element({}) })
+  await settle()
+
+  const device = page.jar.get('ag_device')
+  assert.deepEqual(new Set(posted), new Set(['https://graph.example/event']))
+  assert.deepEqual(page.sent, [
+    { device, event: 'inquiry', url: 'https://site.example/contact', id: 'form-7' },
+    { device, event: 'phone_click', url: 'https://site.example/contact', number: '+1-555-123-0001' },
+    { device, event: 'brochure', url: 'https://site.example/contact', id: 'b-1' },
+    { device, event: 'inquiry', url: 'https://site.example/contact' },
+  ])
+  stop()
+  assert.equal(listeners.size, 0)
 })

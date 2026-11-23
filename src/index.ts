@@ -10,6 +10,7 @@ export { createBatcher } from './batch.ts'
 export { fit, measure } from './calibrate.ts'
 export { brokenAt, seal } from './audit.ts'
 export { dayStart, fold, sourceOf } from './report.ts'
+export { dialed, recordCall } from './calls.ts'
 
 export type { AttributeOptions, Graph, GraphOptions, ReportOptions } from './graph.ts'
 export type { Policy, Rule } from './policy.ts'
@@ -18,6 +19,7 @@ export type { Conversion, Destination, IngestRequest } from './conversions.ts'
 export type { Item, Job, JobState, Outbox, OutboxOptions, OutboxStore, Pass, Target } from './outbox.ts'
 export type { GoogleAdsOptions, MetaOptions, MicrosoftAdsOptions, TikTokOptions } from './targets.ts'
 export type { Batcher } from './batch.ts'
+export type { Call, CallFlag, CallOptions, Channel, RecordedCall } from './calls.ts'
 export type { Fitted, Labeled, Measured } from './calibrate.ts'
 export type {
   Attribution,

@@ -67,6 +67,10 @@ export const defaultPolicy: Policy = {
     // Any hash computed in the browser and reported unverified, open-source FingerprintJS included.
     canvas: { weight: 0.5, dilution: 1, cap: 20, halfLife: 45 * DAY },
     ip: { weight: 0.3, dilution: 2, cap: 10, halfLife: 14 * DAY },
+    // A phone call that began moments after exactly one visitor tapped its number on your site. `recordCall` writes it.
+    dial: { weight: 0.92, dilution: 0, cap: 2, halfLife: Infinity },
+    // A note, not evidence: the number a visitor tapped, or a call that was recorded. It links nothing.
+    dialed: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
   },
 }
 

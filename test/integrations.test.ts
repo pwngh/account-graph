@@ -3,7 +3,7 @@ import { createHash, createVerify, generateKeyPairSync } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
-import { createGraph, createMemoryStore } from '../src/index.ts'
+import { createGraph, createMemoryStore, hashPhone } from '../src/index.ts'
 import { CostError, costsFromCsv, googleCosts, metaCosts } from '../src/integrations/costs.ts'
 import { createFingerprintVerifier, trusted } from '../src/integrations/fingerprint.ts'
 import type { VerifiedFingerprint } from '../src/integrations/fingerprint.ts'
@@ -11,6 +11,7 @@ import { createGoogleTokens } from '../src/integrations/google-auth.ts'
 import { createMicrosoftTokens } from '../src/integrations/microsoft-auth.ts'
 import { hardwareId, machineId } from '../src/integrations/hardware.ts'
 import { createDatabaseLookup, createMaxMindLookup, shared } from '../src/integrations/maxmind.ts'
+import { fromTwilio, twilioCall, twilioSignature } from '../src/integrations/twilio.ts'
 import { createHandler } from '../src/server.ts'
 
 const T0 = 1_708_102_555_327
@@ -398,6 +399,8 @@ test('the script tag is served as plain JavaScript that runs itself', async () =
     assert.equal(script.headers.get('access-control-allow-origin'), '*')
     assert.match(body, /export async function collect\(options\s*\)/)
     assert.match(body, /new URL\('collect', self\)/)
+    assert.match(body, /globalThis\.accountGraph = \{ event:/)
+    assert.match(body, /export function watch\(options\s*\)/)
     // No TypeScript is left for a browser to choke on.
     assert.equal(/\binterface\b|: string|: Promise<| as const/.test(body), false)
     const helpers = await (await fetch(`${base}/fingerprint.js`)).text()
@@ -488,4 +491,88 @@ test('a spreadsheet of costs is read from CSV', () => {
   ])
   assert.throws(() => costsFromCsv('day,source\n2026-03-01,x'), /"amount" column/)
   assert.throws(() => costsFromCsv('day,source,amount\n2026-03-01,x,'), /Line 2/)
+})
+
+test('a Twilio request is checked against its signature and read as a call', () => {
+  // The example from Twilio's webhook security page.
+  const url = 'https://mycompany.com/myapp.php?foo=1&bar=2'
+  const fields = { CallSid: 'CA1234567890ABCDE', Caller: '+12349013030', Digits: '1234', From: '+12349013030', To: '+18005551212' }
+  assert.equal(twilioSignature('12345', url, fields), '0/KCTR6DLpKmkAf8muzZqo1nDgQ=')
+  assert.equal(fromTwilio('12345', url, fields, '0/KCTR6DLpKmkAf8muzZqo1nDgQ='), true)
+  assert.equal(fromTwilio('12345', url, { ...fields, From: '+10000000000' }, '0/KCTR6DLpKmkAf8muzZqo1nDgQ='), false)
+  assert.equal(fromTwilio('wrong', url, fields, '0/KCTR6DLpKmkAf8muzZqo1nDgQ='), false)
+  assert.equal(fromTwilio('12345', url, fields, undefined), false)
+
+  const ended = { CallSid: 'CA9', From: '+15558675309', To: '+15551230001', CallStatus: 'completed', CallDuration: '95', Direction: 'inbound', Timestamp: 'Fri, 20 Aug 2010 01:13:42 +0000' }
+  assert.deepEqual(twilioCall(ended, 0), { id: 'CA9', from: '+15558675309', to: '+15551230001', at: Date.parse('2010-08-20T01:13:42Z') - 95_000, duration: 95 })
+  // Nobody answered: recorded as a call of no length. Still ringing, or placed by the account: not a call to record.
+  assert.deepEqual(twilioCall({ ...ended, CallStatus: 'no-answer', Timestamp: '' }, 5000), { id: 'CA9', from: '+15558675309', to: '+15551230001', at: 5000, duration: 0 })
+  assert.equal(twilioCall({ ...ended, CallStatus: 'ringing' }, 0), undefined)
+  assert.equal(twilioCall({ ...ended, Direction: 'outbound-api' }, 0), undefined)
+})
+
+test('the server takes page events and phone calls, and ties a call to the visitor who tapped', async () => {
+  const graph = createGraph(createMemoryStore())
+  let clock = Date.parse('2026-03-02T12:00:00Z')
+  const twilio = { authToken: 'twilio-secret', url: 'https://graph.example.org/calls/twilio' }
+  const handler = createHandler(graph, {
+    token: 'service',
+    reviewToken: 'reviewer',
+    origins: ['https://site.example'],
+    now: () => clock,
+    events: ['inquiry', 'phone_click'],
+    calls: { numbers: { '+15551230001': { source: 'google', campaignId: '111' } }, twilio },
+  })
+  const server = createServer(handler).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const page = (path: string, body: object, origin = 'https://site.example') => fetch(`${base}${path}`, { method: 'POST', headers: { origin }, body: JSON.stringify(body) }).then((r) => r.status)
+  const post = (path: string, body: object, token = 'service') => fetch(`${base}${path}`, { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify(body) })
+  const callback = (fields: Record<string, string>, signature = twilioSignature(twilio.authToken, twilio.url, fields)) =>
+    fetch(`${base}/calls/twilio`, { method: 'POST', headers: { 'x-twilio-signature': signature, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(fields) }).then((r) => r.status)
+  try {
+    assert.equal(await page('/collect', { device: 'd-1', touch: { gclid: 'G1', campaignId: '111' } }), 204)
+    // An event the server was told to accept is counted; one it was not is refused, and so is another site.
+    assert.equal(await page('/event', { device: 'd-1', event: 'inquiry' }), 204)
+    assert.equal(await page('/event', { device: 'd-1', event: 'inquiry' }), 204)
+    assert.equal(await page('/event', { device: 'd-1', event: 'inquiry', id: 'form-7' }), 204)
+    assert.equal(await page('/event', { device: 'd-1', event: 'purchase' }), 400)
+    assert.equal(await page('/event', { event: 'inquiry' }), 400)
+    assert.equal(await page('/event', { device: 'd-1', event: 'inquiry' }, 'https://evil.example'), 403)
+
+    // The visitor taps the number, and Twilio reports the call that followed.
+    assert.equal(await page('/event', { device: 'd-1', event: 'phone_click', number: '+1 (555) 123-0001' }), 204)
+    clock += 15_000
+    const fields = { CallSid: 'CA100', From: '+15558675309', To: '+15551230001', CallStatus: 'completed', CallDuration: '120', Direction: 'inbound', Timestamp: new Date(clock + 120_000).toUTCString() }
+    assert.equal(await callback(fields, 'forged'), 403)
+    assert.equal(await callback({ ...fields, CallStatus: 'ringing' }), 204)
+    assert.equal(await callback(fields), 204)
+    assert.equal(await callback(fields), 204)
+    const caller = `caller:${hashPhone('+15558675309')}`
+    assert.deepEqual((await graph.cluster('visitor:d-1'))!.members, [caller, 'visitor:d-1'].sort())
+
+    // Any other provider posts the same facts with the service token.
+    const other = (await (await post('/call', { id: 'X-1', from: '+15550001111', to: '555-123-0001', at: clock + 3_600_000, duration: 10 })).json()) as any
+    assert.deepEqual([other.flags, other.counted], [['short'], false])
+    assert.equal((await post('/call', { id: 'X-2', to: '+15551230001', at: clock }, 'reviewer')).status, 403)
+    assert.equal((await post('/call', { to: '+15551230001', at: clock })).status, 400)
+
+    // Two inquiries (one a day, plus the one with its own id), one tap, one counted call, all on the campaign of the ad click.
+    const report = await graph.report({ from: '2026-03-02', to: '2026-03-02' })
+    assert.deepEqual(report.rows.map((row) => [row.source, row.campaignId, row.stages]), [
+      ['google', '111', { inquiry: { count: 2, value: 0 }, phone_click: { count: 1, value: 0 }, call: { count: 1, value: 0 } }],
+    ])
+    assert.deepEqual((await graph.history('visitor:d-1')).map((sighting) => sighting.event), ['visit', 'visit', 'inquiry', 'inquiry', 'inquiry', 'phone_click', 'phone_click', 'call'])
+  } finally {
+    server.close()
+  }
+
+  // Without Twilio set up, its route does not exist.
+  const plain = createServer(createHandler(graph, { token: 'service', origins: [] })).listen(0, '127.0.0.1')
+  await new Promise((resolve) => plain.once('listening', resolve))
+  try {
+    assert.equal((await fetch(`http://127.0.0.1:${(plain.address() as AddressInfo).port}/calls/twilio`, { method: 'POST', body: 'CallSid=CA1' })).status, 401)
+  } finally {
+    plain.close()
+  }
 })

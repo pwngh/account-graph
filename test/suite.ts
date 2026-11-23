@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, describe, test } from 'node:test'
-import { brokenAt, createGraph, defaultPolicy, email, fit } from '../src/index.ts'
+import { brokenAt, createGraph, defaultPolicy, dialed, email, fit, hashPhone, recordCall } from '../src/index.ts'
 import type { Change, GraphOptions, Observation, Policy, Store } from '../src/index.ts'
 
 export interface Opened {
@@ -393,6 +393,66 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await assert.rejects(graph.spend({ day: '2026-03-01', source: 'google', amount: -1 }), TypeError)
       await assert.rejects(graph.report({ from: '2026-03-02', to: '2026-03-01' }), TypeError)
       await assert.rejects(graph.report({ from: '2026-03-01', to: '2026-03-01', timeZone: 'Mars/Olympus' }), TypeError)
+    })
+
+    test('a call is tied to the visitor who tapped the number, or filed under the number it rang', async () => {
+      const { graph } = await fresh()
+      const numbers = { '(555) 123-0001': { source: 'google', campaignId: '111' }, '+15551230002': { source: 'mailer', campaign: 'postcard' } }
+      const MINUTE = 60_000
+      const caller = (number: string) => `caller:${hashPhone(number)}`
+
+      // A visitor arrives from an ad, taps the number, and the call begins twenty seconds later.
+      await graph.observe({ subject: 'visitor:a', identifiers: ['device:a'], at: T0, event: 'visit' })
+      await graph.touch({ subject: 'visitor:a', at: T0, gclid: 'G-a', campaignId: '111' })
+      await graph.observe({ subject: 'visitor:a', identifiers: ['device:a', dialed('+1 555 123 0001', T0 + MINUTE)], at: T0 + MINUTE, event: 'phone_click' })
+      const tied = await recordCall(graph, { id: 'CA1', from: '555-867-5309', to: '+15551230001', at: T0 + MINUTE + 20_000, duration: 95 }, { numbers })
+      assert.deepEqual(tied, { subject: caller('+15558675309'), flags: [], counted: true, visitor: 'visitor:a', duplicate: false })
+      assert.deepEqual(await members(graph, 'visitor:a'), [caller('+15558675309'), 'visitor:a'].sort())
+      const credited = (await graph.attribute(tied.subject, { at: T0 + 2 * MINUTE })).credited!
+      assert.deepEqual([credited.gclid, credited.subject], ['G-a', 'visitor:a'])
+
+      // The provider reports the same call again: nothing is written twice.
+      const sightings = (await graph.counts()).sightings
+      assert.deepEqual(await recordCall(graph, { id: 'CA1', from: '555-867-5309', to: '+15551230001', at: T0 + MINUTE + 20_000, duration: 95 }, { numbers }), {
+        subject: tied.subject, flags: [], counted: false, duplicate: true,
+      })
+      assert.equal((await graph.counts()).sightings, sightings)
+
+      // Nobody tapped the postcard's number, so the call is filed under the postcard. The caller enrolls later with the same phone.
+      const mailed = await recordCall(graph, { id: 'CA2', from: '+15550001111', to: '555-123-0002', at: T0 + HOUR, duration: 200 }, { numbers })
+      assert.deepEqual([mailed.flags, mailed.counted, mailed.visitor], [[], true, undefined])
+      await graph.observe({ subject: 'account:9', identifiers: [`phone:${hashPhone('+15550001111')}`], at: T0 + DAY, event: 'enroll' })
+      const viaPhone = (await graph.attribute('account:9', { at: T0 + DAY })).credited!
+      assert.deepEqual([viaPhone.source, viaPhone.medium, viaPhone.campaign, viaPhone.landing], ['mailer', 'call', 'postcard', 'tel:+15551230002'])
+
+      // The same number calls again and hangs up: flagged, recorded, not counted.
+      const again = await recordCall(graph, { id: 'CA3', from: '+15550001111', to: '+15551230002', at: T0 + 2 * HOUR, duration: 4 }, { numbers })
+      assert.deepEqual([again.flags, again.counted], [['short', 'repeat'], false])
+
+      // A hidden number and a toll-free line each tie the call to nobody.
+      const hidden = await recordCall(graph, { id: 'CA4', from: 'anonymous', to: '+15551230002', at: T0 + 3 * HOUR, duration: 60 }, { numbers })
+      assert.deepEqual([hidden.subject, hidden.flags, hidden.counted], ['call:CA4', ['blocked'], true])
+      const switchboard = await recordCall(graph, { id: 'CA5', from: '+18885550100', to: '+15551230002', at: T0 + 3 * HOUR, duration: 60 }, { numbers })
+      assert.deepEqual(switchboard.flags, ['toll_free'])
+      assert.deepEqual(await graph.links(switchboard.subject), [])
+      assert.deepEqual((await graph.history(switchboard.subject)).map((sighting) => sighting.identifier), ['dialed:call-CA5'])
+
+      // Two visitors tap the same number in the same minute: the call cannot say which, so it is tied to neither.
+      for (const who of ['b', 'c']) await graph.observe({ subject: `visitor:${who}`, identifiers: [`device:${who}`, dialed('+15551230001', T0 + 5 * HOUR)], at: T0 + 5 * HOUR, event: 'phone_click' })
+      const unsure = await recordCall(graph, { id: 'CA6', from: '+15552223333', to: '+15551230001', at: T0 + 5 * HOUR + 10_000, duration: 60 }, { numbers })
+      assert.deepEqual([unsure.flags, unsure.visitor], [['ambiguous'], undefined])
+      // A tap four minutes before a call is too old to be the reason for it.
+      const late = await recordCall(graph, { id: 'CA7', from: '+15554445555', to: '+15551230001', at: T0 + 5 * HOUR + 4 * MINUTE, duration: 60 }, { numbers })
+      assert.deepEqual([late.flags, late.visitor], [[], undefined])
+
+      // Counted calls are outcomes of the `call` step: CA1, CA2, CA4, CA5, CA6, CA7.
+      const report = await graph.report({ from: '2023-11-14', to: '2023-11-15' })
+      assert.deepEqual(report.total.stages, { call: { count: 6, value: 0 } })
+      assert.equal(report.rows.find((row) => row.campaignId === '111')!.stages.call!.count, 3)
+      assert.deepEqual(await graph.verify(), [])
+
+      await assert.rejects(recordCall(graph, { id: 'bad id', to: '+15551230001', at: T0 }), TypeError)
+      await assert.rejects(recordCall(graph, { id: 'CA8', to: 'nope', at: T0 }), TypeError)
     })
 
     test('the review queue pages, subjects are found by prefix, and recent changes are listed', async () => {

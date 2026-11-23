@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url'
 import { createBatcher } from './batch.ts'
 import { ingest } from './conversions.ts'
 import { createGraph } from './graph.ts'
+import { normalizePhone } from './identifiers.ts'
 import type { Graph } from './graph.ts'
 import { googleCosts, metaCosts } from './integrations/costs.ts'
 import type { CostSource } from './integrations/costs.ts'
@@ -43,6 +44,16 @@ export function configFrom(env: Env) {
     if (!Number.isFinite(value) || value < 0) wrong.push(`${name} must be a number`)
     return value
   }
+  // A variable that holds JSON: an object, or nothing.
+  const parsed = (name: string): Record<string, any> | undefined => {
+    if (!env[name]) return undefined
+    try {
+      const value = JSON.parse(env[name]!)
+      if (value && typeof value === 'object' && !Array.isArray(value)) return value
+    } catch {}
+    wrong.push(`${name} must be a JSON object`)
+    return undefined
+  }
   // A group of variables that only make sense together: all or none.
   const group = (names: string[]) => {
     const set = names.filter((name) => env[name])
@@ -65,6 +76,10 @@ export function configFrom(env: Env) {
     outboxDelay: number('OUTBOX_DELAY_MS', 0),
     changeWebhook: env.CHANGE_WEBHOOK,
     timeZone: env.REPORT_TIME_ZONE || 'UTC',
+    events: (env.EVENTS ?? '').split(',').map((name) => name.trim()).filter(Boolean),
+    callNumbers: parsed('CALL_NUMBERS'),
+    callMinimum: number('CALL_MIN_SECONDS', 30),
+    twilio: group(['TWILIO_AUTH_TOKEN', 'TWILIO_WEBHOOK_URL']) ? { authToken: env.TWILIO_AUTH_TOKEN!, url: env.TWILIO_WEBHOOK_URL! } : undefined,
     costInterval: number('COST_INTERVAL_MS', 6 * 3_600_000),
     costDays: number('COST_DAYS', 7),
     googleCosts: env.GOOGLE_ADS_DEVELOPER_TOKEN
@@ -110,6 +125,14 @@ export function configFrom(env: Env) {
     new Intl.DateTimeFormat('en-US', { timeZone: config.timeZone })
   } catch {
     wrong.push('REPORT_TIME_ZONE must be a time zone, such as America/New_York')
+  }
+  for (const [number, channel] of Object.entries(config.callNumbers ?? {})) {
+    try {
+      normalizePhone(number)
+    } catch {
+      wrong.push(`CALL_NUMBERS: "${number}" is not a phone number`)
+    }
+    if (typeof channel?.source !== 'string' || !channel.source) wrong.push(`CALL_NUMBERS: "${number}" needs a source, such as {"source":"google"}`)
   }
   if (config.reviewToken && config.reviewToken === config.token) wrong.push('REVIEW_TOKEN must differ from GRAPH_TOKEN')
   if (wrong.length > 0) throw new Error(`Cannot start:\n  ${wrong.join('\n  ')}`)
@@ -192,6 +215,9 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
     limit: config.limit,
     trustProxy: config.trustProxy,
     timeZone: config.timeZone,
+    // A tap on a phone link is what ties a call to a visitor, so taking calls means taking that event.
+    events: [...new Set([...config.events, ...(config.callNumbers || config.twilio ? ['phone_click'] : [])])],
+    calls: { minimumSeconds: config.callMinimum, ...(config.callNumbers && { numbers: config.callNumbers }), ...(config.twilio && { twilio: config.twilio }) },
     ...(config.reviewToken && { reviewToken: config.reviewToken }),
     ...(config.cookie && { cookie: config.cookie }),
     ...(config.fingerprint && { fingerprint: createFingerprintVerifier(config.fingerprint) }),
@@ -207,6 +233,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
   log(`collect accepts ${config.origins.length > 0 ? config.origins.join(', ') : 'no origins yet (set ORIGINS)'}`)
   log([on('reviewer token', config.reviewToken), on('server cookie', config.cookie), on('fingerprint', config.fingerprint), on('maxmind', config.maxmind)].join(', '))
   log(`outbox sends to ${targets.length > 0 ? targets.map((target) => target.name).join(', ') : 'nobody (no ad platform configured)'}`)
+  log(`page events taken: ${options.events!.length > 0 ? options.events!.join(', ') : 'none (set EVENTS)'}; calls from twilio ${config.twilio ? 'on' : 'off'}`)
   log(`costs are read from ${sources.length > 0 ? sources.map(([name]) => name).join(', ') : 'nobody (post them to /costs)'}`)
   if (sources.length > 0) readCosts()
 
