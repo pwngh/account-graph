@@ -273,6 +273,8 @@ test('the reviewer screen is a locked-down shell, and its data needs the token',
     }
     assert.match(policy, /^default-src 'none';/)
     assert.match(policy, /connect-src 'self'/)
+    assert.match(policy, /form-action 'none'/)
+    assert.equal(html.includes('\r'), false)
     assert.equal(/https?:\/\/(?!www\.w3\.org\/2000\/svg)/.test(html), false, 'the page loads nothing from outside')
     assert.equal(html.includes('innerHTML'), false)
 
@@ -295,6 +297,8 @@ test('the reviewer screen is a locked-down shell, and its data needs the token',
       { subject: 'account:3', from: 'account:1', to: 'account:3' },
       { subject: 'account:9', from: 'account:9', to: 'account:3' },
     ])
+    const bad = await fetch(`${base}/join`, { method: 'POST', headers: auth, body: JSON.stringify({ a: 1, b: 2 }) })
+    assert.equal(bad.status, 400)
     const decisions = (await (await fetch(`${base}/decisions`, { headers: auth })).json()) as any[]
     assert.deepEqual(decisions.map((d) => [d.action, d.about, d.by]), [
       ['separate', ['account:1', 'account:9'], undefined],
