@@ -3,6 +3,7 @@ import type { Labeled } from './calibrate.ts'
 import { createMemoryStore } from './memory.ts'
 import { defaultPolicy, ruleFor, usable } from './policy.ts'
 import type { Policy } from './policy.ts'
+import { dayStart, fold, nextDay } from './report.ts'
 import { partition, scorePairs } from './resolve.ts'
 import type { Store, Tx } from './store.ts'
 import type {
@@ -11,6 +12,8 @@ import type {
   Change,
   Cluster,
   Consent,
+  Cost,
+  Counted,
   Counterparty,
   Counts,
   Decision,
@@ -20,6 +23,8 @@ import type {
   Link,
   Moved,
   Observation,
+  Outcome,
+  Report,
   Ring,
   Sighting,
   Subject,
@@ -33,6 +38,18 @@ export interface AttributeOptions {
   /** How far back a touch may be. Defaults to 90 days. */
   window?: number
   /** How many links a touch may be from the converting subject. Defaults to 2. */
+  hops?: number
+}
+
+export interface ReportOptions {
+  /** The first and last day to cover, each written `YYYY-MM-DD`. */
+  from: string
+  to: string
+  /** The time zone the days are in, such as `America/New_York`. Use the ad account's. Defaults to UTC. */
+  timeZone?: string
+  /** How far back from an outcome a touch may be. Defaults to 90 days. */
+  window?: number
+  /** How many links a touch may be from the subject of an outcome. Defaults to 2. */
   hops?: number
 }
 
@@ -58,6 +75,21 @@ export interface Graph {
   touch(touch: Touch): Promise<void>
   /** Finds the touches that led to a conversion by this subject. */
   attribute(subject: Subject, options: AttributeOptions): Promise<Attribution>
+  /**
+   * Records something a subject did, for the report. The first record of an
+   * id stands; `restate` changes its value. Resolves to false when the id was already recorded.
+   */
+  outcome(outcome: Outcome): Promise<boolean>
+  /** Changes the value of a recorded outcome: a refund, or what was actually paid. Resolves to false for an unknown id. */
+  restate(transactionId: string, value: number, currency?: string): Promise<boolean>
+  /** Records what campaigns cost. A row for the same day, source and campaign replaces the one before. */
+  spend(costs: Cost | readonly Cost[]): Promise<void>
+  /**
+   * What each campaign cost and what it brought in over a range of days.
+   * Each outcome in the range goes to the campaign of its credited touch,
+   * the same touch `attribute` credits, on the day the outcome happened.
+   */
+  report(options: ReportOptions): Promise<Report>
   /** Stops, or with `false` resumes, linking through one identifier. */
   ignore(identifier: Identifier, ignored?: boolean, why?: Why): Promise<Change[]>
   /**
@@ -228,6 +260,40 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
   const now = options.now ?? Date.now
 
+  type Reached = Map<Subject, { confidence: number; via: Subject[] }>
+
+  /** Every subject within `hops` links of one, with the strength of the best chain to each. */
+  async function reach(tx: Tx, subject: Subject, hops: number): Promise<Reached> {
+    const reached: Reached = new Map([[subject, { confidence: 1, via: [] }]])
+    let frontier = [subject]
+    for (let hop = 0; hop < hops && frontier.length > 0; hop++) {
+      const links = await neighbors(tx, frontier)
+      const improved = new Set<Subject>()
+      for (const near of [...frontier].sort()) {
+        const start = reached.get(near)!
+        for (const link of links.get(near) ?? []) {
+          const confidence = start.confidence * link.score
+          const known = reached.get(link.subject)
+          if (known && known.confidence >= confidence) continue
+          reached.set(link.subject, { confidence, via: [...start.via, near] })
+          improved.add(link.subject)
+        }
+      }
+      frontier = [...improved]
+    }
+    return reached
+  }
+
+  /** The touches in the window before a conversion, on every subject reached, and the one that earns the credit. */
+  async function credit(subject: Subject, at: number, window: number, reached: Reached, tx: Tx): Promise<Attribution> {
+    const touches: AttributedTouch[] = (await tx.touchesOf([...reached.keys()], at - window, at))
+      .map((touch) => ({ ...touch, ...reached.get(touch.subject)! }))
+      .sort((x, y) => y.at - x.at || y.confidence - x.confidence || (x.subject < y.subject ? -1 : 1))
+    const credited = touches.find((touch) => touch.confidence >= policy.same)
+    const reason = credited ? 'credited' : touches.length > 0 ? 'low_confidence' : 'no_touch'
+    return { subject, at, touches, credited, reason }
+  }
+
   /** Appends a decision to the record, sealed to the one before it. Returns its sequence number. */
   async function decide(tx: Tx, action: Decision['action'], about: string[], why: Why | undefined): Promise<number> {
     const last = await tx.lastDecision()
@@ -308,31 +374,70 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     attribute(subject, { at, window = 90 * DAY, hops = 2 }) {
-      return store.read(async (tx) => {
-        const reached = new Map<Subject, { confidence: number; via: Subject[] }>([[subject, { confidence: 1, via: [] }]])
-        let frontier = [subject]
-        for (let hop = 0; hop < hops && frontier.length > 0; hop++) {
-          const links = await neighbors(tx, frontier)
-          const improved = new Set<Subject>()
-          for (const near of [...frontier].sort()) {
-            const start = reached.get(near)!
-            for (const link of links.get(near) ?? []) {
-              const confidence = start.confidence * link.score
-              const known = reached.get(link.subject)
-              if (known && known.confidence >= confidence) continue
-              reached.set(link.subject, { confidence, via: [...start.via, near] })
-              improved.add(link.subject)
-            }
-          }
-          frontier = [...improved]
-        }
+      return store.read(async (tx) => credit(subject, at, window, await reach(tx, subject, hops), tx))
+    },
 
-        const touches: AttributedTouch[] = (await tx.touchesOf([...reached.keys()], at - window, at))
-          .map((touch) => ({ ...touch, ...reached.get(touch.subject)! }))
-          .sort((x, y) => y.at - x.at || y.confidence - x.confidence || (x.subject < y.subject ? -1 : 1))
-        const credited = touches.find((touch) => touch.confidence >= policy.same)
-        const reason = credited ? 'credited' : touches.length > 0 ? 'low_confidence' : 'no_touch'
-        return { subject, at, touches, credited, reason } satisfies Attribution
+    async outcome(outcome) {
+      const { transactionId, subject, at } = outcome
+      if (!transactionId || !subject) throw new TypeError('An outcome needs a transactionId and a subject')
+      if (!Number.isFinite(at)) throw new TypeError(`Outcome "${transactionId}" needs a time in epoch milliseconds`)
+      const value = outcome.value ?? 0
+      if (!Number.isFinite(value)) throw new TypeError(`Outcome "${transactionId}" has a value that is not a number`)
+      const counted: Counted = { transactionId, subject, at, stage: outcome.stage || 'outcome', value, currency: outcome.currency ?? '' }
+      return store.write(async (tx) => {
+        if (await tx.outcomeOf(transactionId)) return false
+        await tx.setOutcome(counted)
+        return true
+      })
+    },
+
+    async restate(transactionId, value, currency) {
+      if (!Number.isFinite(value) || value < 0) throw new TypeError('A restated value must be zero or more')
+      return store.write(async (tx) => {
+        const found = await tx.outcomeOf(transactionId)
+        if (!found) return false
+        await tx.setOutcome({ ...found, value, ...(currency && { currency }) })
+        return true
+      })
+    },
+
+    async spend(input) {
+      const costs = Array.isArray(input) ? (input as readonly Cost[]) : [input as Cost]
+      const rows = costs.map((cost): Required<Cost> => {
+        dayStart(cost?.day)
+        if (typeof cost.source !== 'string' || !cost.source.trim()) throw new TypeError('A cost needs a source, such as "google"')
+        if (!Number.isFinite(cost.amount) || cost.amount < 0) throw new TypeError(`The cost of ${cost.day} needs an amount of zero or more`)
+        for (const count of [cost.clicks, cost.impressions]) {
+          if (count !== undefined && (!Number.isSafeInteger(count) || count < 0)) throw new TypeError(`The cost of ${cost.day} has a count that is not a whole number`)
+        }
+        return {
+          day: cost.day,
+          source: cost.source.trim().toLowerCase(),
+          campaignId: String(cost.campaignId ?? ''),
+          campaign: cost.campaign ?? '',
+          amount: cost.amount,
+          currency: cost.currency ?? '',
+          clicks: cost.clicks ?? 0,
+          impressions: cost.impressions ?? 0,
+        }
+      })
+      if (rows.length > 0) await store.write((tx) => tx.addCosts(rows))
+    },
+
+    async report({ from, to, timeZone, window = 90 * DAY, hops = 2 }) {
+      const start = dayStart(from, timeZone)
+      const end = dayStart(nextDay(to), timeZone)
+      if (end <= start) throw new TypeError('A report needs `from` on or before `to`')
+      return store.read(async (tx) => {
+        // Who a subject can reach does not depend on when, so one subject's outcomes share one search.
+        const reached = new Map<Subject, Reached>()
+        const credited: { outcome: Counted; touch: Touch | undefined }[] = []
+        for (const outcome of await tx.outcomesBetween(start, end)) {
+          let from = reached.get(outcome.subject)
+          if (!from) reached.set(outcome.subject, (from = await reach(tx, outcome.subject, hops)))
+          credited.push({ outcome, touch: (await credit(outcome.subject, outcome.at, window, from, tx)).credited })
+        }
+        return fold(from, to, await tx.costsBetween(from, to), await tx.touchesBetween(start, end), credited)
       })
     },
 

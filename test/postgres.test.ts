@@ -65,8 +65,13 @@ if (!url) {
       const attribution = (await (await fetch(`${base}/attribute?subject=account:1`, { headers: { authorization: 'Bearer service' } })).json()) as any
       assert.equal(attribution.credited.gclid, 'G1')
       assert.equal((await fetch(`${base}/clusters`, { headers: { authorization: 'Bearer review' } })).status, 200)
-      // No ad platform is configured, so there is no outbox to post to.
-      assert.equal((await fetch(`${base}/convert`, { method: 'POST', headers: { authorization: 'Bearer service' }, body: '{}' })).status, 404)
+      // No ad platform is configured, so an outcome is counted for the report and sent nowhere.
+      const convert = (body: object) => fetch(`${base}/convert`, { method: 'POST', headers: { authorization: 'Bearer service' }, body: JSON.stringify(body) })
+      assert.equal((await convert({})).status, 400)
+      assert.deepEqual(await (await convert({ transactionId: 'enr-1', subject: 'account:1', at: Date.now(), stage: 'enrolled', value: 200 })).json(), [])
+      const today = new Date().toISOString().slice(0, 10)
+      const report = (await (await fetch(`${base}/report?from=${today}&to=${today}`, { headers: { authorization: 'Bearer review' } })).json()) as any
+      assert.deepEqual([report.rows[0].source, report.rows[0].stages], ['google', { enrolled: { count: 1, value: 200 } }])
     } finally {
       await running.close()
       await pool.query(`drop schema if exists ${schema} cascade`)

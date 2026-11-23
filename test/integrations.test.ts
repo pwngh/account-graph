@@ -4,6 +4,7 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
 import { createGraph, createMemoryStore } from '../src/index.ts'
+import { CostError, costsFromCsv, googleCosts, metaCosts } from '../src/integrations/costs.ts'
 import { createFingerprintVerifier, trusted } from '../src/integrations/fingerprint.ts'
 import type { VerifiedFingerprint } from '../src/integrations/fingerprint.ts'
 import { createGoogleTokens } from '../src/integrations/google-auth.ts'
@@ -425,4 +426,66 @@ test('a Microsoft refresh token is exchanged, rotated, and reused until it expir
   assert.equal(sent[1]!.get('refresh_token'), 'refresh-1')
   const refused = createMicrosoftTokens({ clientId: 'app', refreshToken: 'bad', clientSecret: 's', fetch: fake(() => ({ status: 400, body: { error: 'invalid_grant', error_description: 'AADSTS70000: bad token.\nTrace ID: x' } })).fetcher })
   await assert.rejects(refused(), /400 invalid_grant: AADSTS70000: bad token\.$/)
+})
+
+test('daily campaign cost is read from the Google Ads API', async () => {
+  const { fetcher, calls } = fake((_url, init) =>
+    String(init.body).includes('2026-03-09')
+      ? { status: 403, body: [{ error: { code: 403, message: 'The caller does not have permission', status: 'PERMISSION_DENIED', details: [{ errors: [{ message: 'The developer token is not approved.' }], requestId: 'req-7' }] } }] }
+      : {
+          body: [
+            { results: [{ campaign: { id: '111', name: 'Spring sale' }, segments: { date: '2026-03-01' }, metrics: { costMicros: '40100000', clicks: '30', impressions: '900' }, customer: { currencyCode: 'USD' } }] },
+            { results: [{ campaign: { id: '222', name: 'Brand' }, segments: { date: '2026-03-02' }, metrics: { costMicros: '5000000', clicks: '2', impressions: '40' }, customer: { currencyCode: 'USD' } }] },
+          ],
+        },
+  )
+  const read = googleCosts({ customerId: '123-456-7890', loginCustomerId: '999-000-1111', developerToken: 'dev', accessToken: async () => 'token', fetch: fetcher })
+  assert.deepEqual(await read('2026-03-01', '2026-03-02'), [
+    { day: '2026-03-01', source: 'google', campaignId: '111', campaign: 'Spring sale', amount: 40.1, currency: 'USD', clicks: 30, impressions: 900 },
+    { day: '2026-03-02', source: 'google', campaignId: '222', campaign: 'Brand', amount: 5, currency: 'USD', clicks: 2, impressions: 40 },
+  ])
+  assert.equal(calls[0]!.url, 'https://googleads.googleapis.com/v26/customers/1234567890/googleAds:searchStream')
+  const headers = calls[0]!.init.headers as Record<string, string>
+  assert.deepEqual([headers.authorization, headers['developer-token'], headers['login-customer-id']], ['Bearer token', 'dev', '9990001111'])
+  assert.match(JSON.parse(String(calls[0]!.init.body)).query, /FROM campaign WHERE segments\.date BETWEEN '2026-03-01' AND '2026-03-02'/)
+
+  await assert.rejects(read('2026-03-09', '2026-03-09'), (error: CostError) => error.status === 403 && error.requestId === 'req-7' && /developer token is not approved/.test(error.message))
+  await assert.rejects(read("2026-03-01' OR 1=1", '2026-03-02'), TypeError)
+})
+
+test('daily campaign spend is read from Meta, page after page', async () => {
+  const { fetcher, calls } = fake((url) => {
+    if (url.includes('act_13')) return { status: 400, body: { error: { message: 'Invalid OAuth access token.', code: 190, fbtrace_id: 'trace-1' } } }
+    return url.includes('after=next')
+      ? { body: { data: [{ campaign_id: '778', campaign_name: 'Lookalike', spend: '3', clicks: '1', impressions: '50', account_currency: 'USD', date_start: '2026-03-02', date_stop: '2026-03-02' }], paging: { cursors: { after: 'end' } } } }
+      : { body: { data: [{ campaign_id: '777', campaign_name: 'Retarget', spend: '15.25', clicks: '9', impressions: '300', account_currency: 'USD', date_start: '2026-03-01', date_stop: '2026-03-01' }], paging: { next: 'https://graph.facebook.com/v27.0/act_12/insights?after=next' } } }
+  })
+  const read = metaCosts({ adAccountId: 'act_12', accessToken: 'token', fetch: fetcher })
+  assert.deepEqual(await read('2026-03-01', '2026-03-02'), [
+    { day: '2026-03-01', source: 'meta', campaignId: '777', campaign: 'Retarget', amount: 15.25, currency: 'USD', clicks: 9, impressions: 300 },
+    { day: '2026-03-02', source: 'meta', campaignId: '778', campaign: 'Lookalike', amount: 3, currency: 'USD', clicks: 1, impressions: 50 },
+  ])
+  const first = new URL(calls[0]!.url)
+  assert.equal(first.origin + first.pathname, 'https://graph.facebook.com/v27.0/act_12/insights')
+  assert.deepEqual(Object.fromEntries(first.searchParams), {
+    level: 'campaign',
+    fields: 'campaign_id,campaign_name,spend,clicks,impressions,account_currency',
+    time_range: '{"since":"2026-03-01","until":"2026-03-02"}',
+    time_increment: '1',
+    limit: '500',
+  })
+  assert.equal((calls[0]!.init.headers as Record<string, string>).authorization, 'Bearer token')
+  assert.equal(calls.length, 2)
+
+  await assert.rejects(metaCosts({ adAccountId: '13', accessToken: 'bad', fetch: fetcher })('2026-03-01', '2026-03-02'), (error: CostError) => error.status === 400 && error.requestId === 'trace-1' && /Invalid OAuth/.test(error.message))
+})
+
+test('a spreadsheet of costs is read from CSV', () => {
+  const csv = 'Day,Source,Campaign ID,Campaign,Amount,Currency,Clicks,Impressions\r\n2026-03-01,microsoft,55,"Spring, ""big"" sale","$1,250.50",USD,40,"2,000"\n\n2026-03-02,mailer,,,300,,,\n'
+  assert.deepEqual(costsFromCsv(csv), [
+    { day: '2026-03-01', source: 'microsoft', amount: 1250.5, campaignId: '55', campaign: 'Spring, "big" sale', currency: 'USD', clicks: 40, impressions: 2000 },
+    { day: '2026-03-02', source: 'mailer', amount: 300 },
+  ])
+  assert.throws(() => costsFromCsv('day,source\n2026-03-01,x'), /"amount" column/)
+  assert.throws(() => costsFromCsv('day,source,amount\n2026-03-01,x,'), /Line 2/)
 })

@@ -257,6 +257,13 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       assert.equal((await outbox.record(outcome(1)))[0]!.value, 120)
       assert.deepEqual(await outbox.restate('unknown', 5), [])
       await assert.rejects(outbox.restate('enroll-1', -1), TypeError)
+
+      // The report counts the outcome once, at its restated value, whatever was sent.
+      const report = await graph.report({ from: '2023-11-14', to: '2023-11-15' })
+      assert.deepEqual([report.total.outcomes, report.total.value, report.rows[0]!.source], [1, 120, 'google'])
+      // An outcome that names no action is counted and sent nowhere.
+      assert.deepEqual(await outbox.record({ transactionId: 'walk-in', subject: 'contact:1', at: T0 + HOUR, stage: 'visit' }), [])
+      assert.equal((await graph.report({ from: '2023-11-14', to: '2023-11-15' })).total.stages.visit!.count, 1)
     })
 
     test('one outcome goes to Google and to Meta, each in its own shape', async () => {

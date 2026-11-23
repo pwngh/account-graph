@@ -49,21 +49,25 @@ export interface HandlerOptions {
    * of 60. Pass `false` to turn it off, when a proxy in front already limits.
    */
   limit?: false | { perMinute?: number; burst?: number }
-  /** Takes outcomes posted to `/convert`. Without it, that route answers 404. */
+  /** Sends outcomes posted to `/convert` to ad platforms. Without it, they are only counted for the report. */
   outbox?: Outbox
+  /** The time zone `/report` reads its days in when the request names none. Use the ad account's. Defaults to UTC. */
+  timeZone?: string
   /** The clock, for tests. */
   now?: () => number
 }
 
 const ID = /^[\w.-]{1,128}$/
 const TOUCH_FIELDS = [
-  'source', 'medium', 'campaign', 'gclid', 'gbraid', 'wbraid', 'fbclid', 'msclkid', 'ttclid', 'landing', 'referrer',
+  'source', 'medium', 'campaign', 'campaignId', 'adGroupId', 'adId', 'term', 'content',
+  'gclid', 'gbraid', 'wbraid', 'fbclid', 'msclkid', 'ttclid', 'landing', 'referrer',
 ] as const
+const NAME = /^[\w.-]{1,64}$/
 
 /** What the reviewer token opens: what the reviewer screen reads, and the decisions a reviewer makes. */
 const REVIEW_ROUTES = new Set([
   'GET /subject', 'GET /clusters', 'GET /search', 'GET /recent', 'GET /links', 'GET /cluster', 'GET /history', 'GET /flows', 'GET /collusion', 'GET /rings',
-  'GET /decisions', 'GET /audit', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
+  'GET /decisions', 'GET /audit', 'GET /report', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
 ])
 
 /** A route that wrote its own answer. */
@@ -183,6 +187,11 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         const value = body.touch[field]
         if (typeof value === 'string' && value.length <= 2048) touch[field] = value
       }
+      // Parameters of the site's own: a few short ones, so a page cannot fill the table.
+      const custom = Object.entries(body.touch.custom && typeof body.touch.custom === 'object' ? body.touch.custom : {})
+        .filter(([name, value]) => NAME.test(name) && typeof value === 'string' && value.length <= 256)
+        .slice(0, 10)
+      if (custom.length > 0) touch.custom = Object.fromEntries(custom) as Record<string, string>
       await graph.touch(touch)
     }
   }
@@ -322,13 +331,31 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return graph.decisions()
       case 'GET /audit':
         return graph.audit()
-      case 'POST /convert':
-        if (!options.outbox) break
-        return options.outbox.record(await json(request))
-      case 'POST /restate': {
-        if (!options.outbox) break
+      case 'POST /convert': {
+        // Counted for the report either way. Sent to ad platforms when one is set up and the outcome names an action.
         const body = await json(request)
-        return options.outbox.restate(body.transactionId, body.value, body.currency)
+        if (options.outbox && body.action) return options.outbox.record(body)
+        await graph.outcome(body)
+        return []
+      }
+      case 'POST /restate': {
+        const body = await json(request)
+        if (options.outbox) return options.outbox.restate(body.transactionId, body.value, body.currency)
+        await graph.restate(body.transactionId, body.value, body.currency)
+        return []
+      }
+      case 'POST /costs': {
+        const body = await json(request)
+        const costs = Array.isArray(body) ? body : body.costs
+        if (!Array.isArray(costs)) throw new Refusal(400, 'Body needs a list of costs')
+        await graph.spend(costs)
+        return { recorded: costs.length }
+      }
+      case 'GET /report': {
+        const today = new Date(now()).toISOString().slice(0, 10)
+        const to = url.searchParams.get('to') || today
+        const from = url.searchParams.get('from') || new Date(Date.parse(`${to}T00:00:00Z`) - 29 * 86_400_000 || now()).toISOString().slice(0, 10)
+        return graph.report({ from, to, timeZone: url.searchParams.get('tz') || options.timeZone || 'UTC' })
       }
       case 'GET /conversions': {
         if (!options.outbox) break

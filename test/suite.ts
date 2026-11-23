@@ -293,7 +293,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
 
     test('counts say how much the graph holds', async () => {
       const { graph } = await fresh()
-      assert.deepEqual(await graph.counts(), { subjects: 0, clusters: 0, identifiers: 0, edges: 0, sightings: 0, touches: 0, decisions: 0 })
+      assert.deepEqual(await graph.counts(), { subjects: 0, clusters: 0, identifiers: 0, edges: 0, sightings: 0, touches: 0, decisions: 0, outcomes: 0 })
       await graph.observe([
         { subject: 'a', identifiers: ['email:e', 'ip:198.51.100.2'], at: T0 },
         { subject: 'b', identifiers: ['email:e'], at: T0 },
@@ -302,7 +302,91 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await graph.observe({ subject: 'a', identifiers: ['email:e'], at: T0 + HOUR })
       await graph.touch({ subject: 'a', at: T0, gclid: 'G' })
       await graph.ignore('ip:198.51.100.2')
-      assert.deepEqual(await graph.counts(), { subjects: 3, clusters: 2, identifiers: 3, edges: 4, sightings: 5, touches: 1, decisions: 1 })
+      await graph.outcome({ transactionId: 't1', subject: 'a', at: T0 })
+      assert.deepEqual(await graph.counts(), { subjects: 3, clusters: 2, identifiers: 3, edges: 4, sightings: 5, touches: 1, decisions: 1, outcomes: 1 })
+    })
+
+    test('the report sets what each campaign cost beside what it brought in', async () => {
+      const { graph } = await fresh()
+      const day = (n: number) => Date.parse('2026-03-01T12:00:00Z') + n * DAY
+      // Three visitors arrive: one from a Google campaign named by id, one from a Meta campaign named only by name, one from another site.
+      const arrive = async (n: number, at: number, touch: object) => {
+        await graph.observe({ subject: `visitor:${n}`, identifiers: [`device:${n}`], at, event: 'visit' })
+        await graph.touch({ subject: `visitor:${n}`, at, ...touch })
+        await graph.observe({ subject: `contact:${n}`, identifiers: [`device:${n}`], at: at + HOUR, event: 'enroll' })
+      }
+      await arrive(1, day(0), { gclid: 'G1', campaignId: '111', campaign: 'Spring', custom: { placement: 'top' } })
+      await arrive(2, day(1), { fbclid: 'F2', source: 'Facebook', campaign: 'retarget' })
+      await arrive(3, day(1), { referrer: 'https://www.partner.example/list' })
+      await graph.observe({ subject: 'contact:4', identifiers: ['email:walk-in'], at: day(2) })
+
+      await graph.spend([
+        { day: '2026-03-01', source: 'google', campaignId: '111', campaign: 'Spring sale', amount: 40.1, currency: 'USD', clicks: 30, impressions: 900 },
+        { day: '2026-03-02', source: 'google', campaignId: '111', campaign: 'Spring sale', amount: 20.2, currency: 'USD', clicks: 12, impressions: 400 },
+        { day: '2026-03-02', source: 'Meta', campaignId: '777', campaign: 'Retarget', amount: 15, currency: 'USD', clicks: 9 },
+        { day: '2026-03-02', source: 'google', campaignId: '222', campaign: 'Brand', amount: 5, currency: 'USD' },
+        { day: '2026-04-01', source: 'google', campaignId: '111', campaign: 'Spring sale', amount: 999 },
+      ])
+      // Writing a day again replaces it.
+      await graph.spend({ day: '2026-03-02', source: 'google', campaignId: '222', campaign: 'Brand', amount: 6, currency: 'USD' })
+
+      assert.equal(await graph.outcome({ transactionId: 'inq-1', subject: 'contact:1', at: day(0) + 2 * HOUR, stage: 'inquiry', value: 5, currency: 'USD' }), true)
+      assert.equal(await graph.outcome({ transactionId: 'enr-1', subject: 'contact:1', at: day(2), stage: 'enrolled', value: 200, currency: 'USD' }), true)
+      assert.equal(await graph.outcome({ transactionId: 'enr-2', subject: 'contact:2', at: day(2), stage: 'enrolled', value: 200, currency: 'USD' }), true)
+      assert.equal(await graph.outcome({ transactionId: 'inq-3', subject: 'contact:3', at: day(1) + 2 * HOUR, stage: 'inquiry', value: 5 }), true)
+      assert.equal(await graph.outcome({ transactionId: 'enr-4', subject: 'contact:4', at: day(2), stage: 'enrolled', value: 200 }), true)
+      // The first record of an id stands; restating changes its value.
+      assert.equal(await graph.outcome({ transactionId: 'enr-2', subject: 'contact:2', at: day(2), stage: 'enrolled', value: 1 }), false)
+      assert.equal(await graph.restate('enr-2', 150.5), true)
+      assert.equal(await graph.restate('nobody', 1), false)
+
+      const report = await graph.report({ from: '2026-03-01', to: '2026-03-03' })
+      const line = (source: string, campaignId: string) => report.rows.find((row) => row.source === source && row.campaignId === campaignId)
+      assert.deepEqual(report.rows.map((row) => [row.source, row.campaignId, row.campaign]), [
+        ['google', '111', 'Spring sale'],
+        ['meta', '777', 'Retarget'],
+        ['google', '222', 'Brand'],
+        ['(none)', '', ''],
+        ['partner.example', '', ''],
+      ])
+      assert.deepEqual(line('google', '111'), {
+        source: 'google', campaignId: '111', campaign: 'Spring sale', cost: 60.3, clicks: 42, impressions: 1300, visits: 1,
+        stages: { inquiry: { count: 1, value: 5 }, enrolled: { count: 1, value: 200 } }, outcomes: 2, value: 205,
+      })
+      // The Meta touch named its campaign only by name, in another case, and its source by an alias.
+      assert.deepEqual(line('meta', '777'), {
+        source: 'meta', campaignId: '777', campaign: 'Retarget', cost: 15, clicks: 9, impressions: 0, visits: 1,
+        stages: { enrolled: { count: 1, value: 150.5 } }, outcomes: 1, value: 150.5,
+      })
+      assert.equal(line('google', '222')!.cost, 6)
+      assert.deepEqual(line('(none)', '')!.stages, { enrolled: { count: 1, value: 200 } })
+      assert.deepEqual(report.total, {
+        cost: 81.3, clicks: 51, impressions: 1300, visits: 3,
+        stages: { inquiry: { count: 2, value: 10 }, enrolled: { count: 3, value: 550.5 } }, outcomes: 5, value: 560.5,
+      })
+      assert.deepEqual(report.currencies, ['USD'])
+
+      // A narrower range leaves out the later days, and a day belongs to the time zone asked for.
+      const first = await graph.report({ from: '2026-03-01', to: '2026-03-01' })
+      assert.deepEqual([first.total.cost, first.total.outcomes, first.total.visits], [40.1, 1, 1])
+      // Midnight on Kiritimati comes fourteen hours before UTC's, so its 1 March ended before the first outcome.
+      const kiritimati = await graph.report({ from: '2026-03-01', to: '2026-03-01', timeZone: 'Pacific/Kiritimati' })
+      assert.deepEqual([kiritimati.total.outcomes, kiritimati.total.visits, kiritimati.total.cost], [0, 0, 40.1])
+      // And in Pago Pago, eleven hours behind, 2 March runs until 11:00 UTC on the 3rd, an hour before the enrollments.
+      const pagoPago = await graph.report({ from: '2026-03-02', to: '2026-03-02', timeZone: 'Pacific/Pago_Pago' })
+      assert.deepEqual(pagoPago.total.stages, { inquiry: { count: 1, value: 5 } })
+
+      // The custom parameter came back with the touch.
+      assert.deepEqual((await graph.attribute('contact:1', { at: day(2) })).credited!.custom, { placement: 'top' })
+
+      // Forgetting a person takes their outcomes out of the report.
+      await graph.forget('contact:2')
+      assert.equal((await graph.report({ from: '2026-03-01', to: '2026-03-03' })).total.outcomes, 4)
+
+      await assert.rejects(graph.spend({ day: 'March 1', source: 'google', amount: 1 }), TypeError)
+      await assert.rejects(graph.spend({ day: '2026-03-01', source: 'google', amount: -1 }), TypeError)
+      await assert.rejects(graph.report({ from: '2026-03-02', to: '2026-03-01' }), TypeError)
+      await assert.rejects(graph.report({ from: '2026-03-01', to: '2026-03-01', timeZone: 'Mars/Olympus' }), TypeError)
     })
 
     test('the review queue pages, subjects are found by prefix, and recent changes are listed', async () => {

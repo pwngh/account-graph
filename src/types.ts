@@ -145,6 +145,7 @@ export interface Counts {
   sightings: number
   touches: number
   decisions: number
+  outcomes: number
 }
 
 /** What a person agreed to. Both are about advertising; neither affects fraud checks. */
@@ -192,7 +193,18 @@ export interface Touch {
   at: number
   source?: string
   medium?: string
+  /** The campaign's name, from `utm_campaign`. */
   campaign?: string
+  /** The ad platform's own ids, when the landing address carried them. Costs join on `campaignId`. */
+  campaignId?: string
+  adGroupId?: string
+  adId?: string
+  /** The search keyword, from `utm_term`. */
+  term?: string
+  /** Which ad or link, from `utm_content`. */
+  content?: string
+  /** Parameters of your own that the landing address carried, by name. */
+  custom?: Record<string, string>
   gclid?: string
   gbraid?: string
   wbraid?: string
@@ -218,4 +230,84 @@ export interface Attribution {
   /** The newest touch at or above the `same` threshold. */
   credited: AttributedTouch | undefined
   reason: 'credited' | 'low_confidence' | 'no_touch'
+}
+
+/** Something a subject did that you count: an inquiry, an enrollment, a payment. */
+export interface Outcome {
+  /** Your id for this outcome. Recording it twice records it once. */
+  transactionId: string
+  subject: Subject
+  /** When it happened, in epoch milliseconds. */
+  at: number
+  /** Which step this is, in your own words: `inquiry`, `enrolled`, `paid`. The report counts each step apart. */
+  stage?: string
+  /**
+   * What this outcome counts as on each ad platform, by target name:
+   * `{ google: '987654321', meta: 'Lead' }`. A plain string names it for the only target.
+   * Without it the outcome is counted in the report and sent nowhere.
+   */
+  action?: string | Record<string, string>
+  value?: number
+  currency?: string
+  /** Where it happened. Defaults to WEB. */
+  source?: 'WEB' | 'APP' | 'IN_STORE' | 'PHONE' | 'MESSAGE' | 'OTHER'
+  /** Hashed before it is stored. */
+  email?: string
+  phone?: string
+  consent?: Consent
+}
+
+/** The part of an outcome the graph keeps for the report. */
+export interface Counted {
+  transactionId: string
+  subject: Subject
+  at: number
+  stage: string
+  value: number
+  currency: string
+}
+
+/** What an ad platform charged for one campaign on one day. Writing the same day, source and campaign again replaces it. */
+export interface Cost {
+  /** The day, written `YYYY-MM-DD` in the ad account's time zone. */
+  day: string
+  /** The platform: `google`, `meta`, `microsoft`, `tiktok`, or your own name for another. */
+  source: string
+  /** The platform's id for the campaign. Leave it out for spend that belongs to no campaign. */
+  campaignId?: string
+  /** The campaign's name. */
+  campaign?: string
+  /** What was charged, in whole units of the currency: 12.5 is twelve and a half. */
+  amount: number
+  currency?: string
+  clicks?: number
+  impressions?: number
+}
+
+/** One line of the report: a campaign, or a source with no campaign, and what it cost and brought in. */
+export interface ReportRow {
+  /** The platform or site the visitor came from. `(none)` holds outcomes no arrival could be credited with. */
+  source: string
+  campaignId: string
+  campaign: string
+  cost: number
+  clicks: number
+  impressions: number
+  /** Arrivals recorded in the period. */
+  visits: number
+  /** Outcomes credited to this row, per step. */
+  stages: Record<string, { count: number; value: number }>
+  /** Outcomes credited to this row, all steps together. */
+  outcomes: number
+  value: number
+}
+
+export interface Report {
+  from: string
+  to: string
+  /** Highest cost first, then highest value. */
+  rows: ReportRow[]
+  total: Omit<ReportRow, 'source' | 'campaignId' | 'campaign'>
+  /** Every currency the costs and outcomes named. More than one means the sums mix currencies. */
+  currencies: string[]
 }

@@ -7,6 +7,7 @@ import {
   conversionEvent,
   createGraph,
   createMemoryStore,
+  dayStart,
   defaultPolicy,
   fit,
   googleClick,
@@ -17,6 +18,7 @@ import {
   normalizeEmail,
   normalizePhone,
   scorePairs,
+  sourceOf,
 } from '../src/index.ts'
 import type { Edge, IdentifierState } from '../src/index.ts'
 import { configFrom } from '../src/serve.ts'
@@ -200,4 +202,68 @@ test('the server reads its settings from the environment and names everything wr
     (error: Error) =>
       ['DATABASE_URL is required', 'PORT must be a number', 'MAXMIND_LICENSE_KEY must be set along with MAXMIND_ACCOUNT_ID', 'META_ACCESS_TOKEN, META_SITE_URL must be set along with META_PIXEL_ID', 'FINGERPRINT_REGION must be us, eu, or ap', 'REVIEW_TOKEN must differ from GRAPH_TOKEN'].every((line) => error.message.includes(line)),
   )
+})
+
+test('a day begins at local midnight, across a clock change', () => {
+  assert.equal(dayStart('2026-03-01'), Date.parse('2026-03-01T00:00:00Z'))
+  assert.equal(dayStart('2026-03-01', 'America/New_York'), Date.parse('2026-03-01T05:00:00Z'))
+  // Clocks in New York go forward on 8 March 2026 and back on 1 November.
+  assert.equal(dayStart('2026-03-08', 'America/New_York'), Date.parse('2026-03-08T05:00:00Z'))
+  assert.equal(dayStart('2026-03-09', 'America/New_York'), Date.parse('2026-03-09T04:00:00Z'))
+  assert.equal(dayStart('2026-11-01', 'America/New_York'), Date.parse('2026-11-01T04:00:00Z'))
+  assert.equal(dayStart('2026-11-02', 'America/New_York'), Date.parse('2026-11-02T05:00:00Z'))
+  assert.equal(dayStart('2026-03-01', 'Asia/Kolkata'), Date.parse('2026-02-28T18:30:00Z'))
+  assert.throws(() => dayStart('2026-3-1'), TypeError)
+  assert.throws(() => dayStart('2026-13-01'), TypeError)
+})
+
+test('a touch is filed under the platform of its click id, then its tag, then the site that referred it', () => {
+  const touch = { subject: 's', at: 0 }
+  assert.equal(sourceOf({ ...touch, gbraid: 'x', source: 'newsletter' }), 'google')
+  assert.equal(sourceOf({ ...touch, msclkid: 'x' }), 'microsoft')
+  assert.equal(sourceOf({ ...touch, source: ' Instagram ' }), 'meta')
+  assert.equal(sourceOf({ ...touch, source: 'Newsletter' }), 'newsletter')
+  assert.equal(sourceOf({ ...touch, referrer: 'https://www.news.example/story?id=1' }), 'news.example')
+  assert.equal(sourceOf({ ...touch, custom: { placement: 'top' } }), '(other)')
+})
+
+test('the server counts outcomes without an ad platform, takes costs, and reports to a reviewer', async () => {
+  const graph = createGraph(createMemoryStore())
+  const at = Date.parse('2026-03-02T12:00:00Z')
+  const handler = createHandler(graph, { token: 'secret', reviewToken: 'reviewer', origins: ['https://site.example'], now: () => at, timeZone: 'UTC' })
+  const server = createServer(handler).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const post = (path: string, body: unknown, token = 'secret') => fetch(`${base}${path}`, { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify(body) })
+  try {
+    const visit = { device: 'd-9', touch: { gclid: 'G9', campaignId: '111', adGroupId: '22', adId: '3', term: 'garden hose', content: 'blue', custom: { placement: 'top', 'bad name': 'x', long: 'y'.repeat(300) } } }
+    assert.equal((await fetch(`${base}/collect`, { method: 'POST', headers: { origin: 'https://site.example' }, body: JSON.stringify(visit) })).status, 204)
+    await post('/observe', { subject: 'account:9', identifiers: ['device:d-9'], at: at + 1000 })
+
+    assert.deepEqual(await (await post('/costs', [{ day: '2026-03-02', source: 'google', campaignId: '111', campaign: 'Spring', amount: 50, clicks: 10 }])).json(), { recorded: 1 })
+    assert.equal((await post('/costs', { costs: [{ day: 'bad', source: 'google', amount: 1 }] })).status, 400)
+    assert.equal((await post('/costs', { nothing: true })).status, 400)
+    assert.equal((await post('/costs', [], 'reviewer')).status, 403)
+
+    // No ad platform is set up, so the outcome is counted and sent nowhere.
+    assert.deepEqual(await (await post('/convert', { transactionId: 'enr-9', subject: 'account:9', at: at + 2000, stage: 'enrolled', value: 200 })).json(), [])
+    assert.equal((await post('/convert', { subject: 'account:9', at })).status, 400)
+    assert.deepEqual(await (await post('/restate', { transactionId: 'enr-9', value: 120 })).json(), [])
+
+    const report = (await (await fetch(`${base}/report?from=2026-03-01&to=2026-03-02`, { headers: { authorization: 'Bearer reviewer' } })).json()) as any
+    assert.deepEqual(report.rows, [
+      { source: 'google', campaignId: '111', campaign: 'Spring', cost: 50, clicks: 10, impressions: 0, visits: 1, stages: { enrolled: { count: 1, value: 120 } }, outcomes: 1, value: 120 },
+    ])
+    // With no days named, the report covers the thirty days up to today.
+    const recent = (await (await fetch(`${base}/report`, { headers: { authorization: 'Bearer secret' } })).json()) as any
+    assert.deepEqual([recent.from, recent.to, recent.total.cost], ['2026-02-01', '2026-03-02', 50])
+    assert.equal((await fetch(`${base}/report?from=nope`, { headers: { authorization: 'Bearer secret' } })).status, 400)
+    assert.equal((await fetch(`${base}/report`)).status, 401)
+
+    const credited = (await graph.attribute('account:9', { at: at + 2000 })).credited!
+    assert.deepEqual([credited.campaignId, credited.adGroupId, credited.adId, credited.term, credited.content], ['111', '22', '3', 'garden hose', 'blue'])
+    assert.deepEqual(credited.custom, { placement: 'top' })
+  } finally {
+    server.close()
+  }
 })

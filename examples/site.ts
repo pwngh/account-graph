@@ -6,8 +6,9 @@
  *   docker compose up --build        the graph server on :8080
  *   node examples/site.ts            this site on :3000
  *
- * Open http://localhost:3000/?gclid=demo-click&utm_source=google and sign up.
- * Then open http://localhost:8080/review with the review token.
+ * Open http://localhost:3000/?gclid=demo-click&utm_id=20111 and sign up.
+ * Then open http://localhost:8080/review with the review token, and press
+ * Channels to see the sign-up under its campaign.
  * http://localhost:3000/reset makes this browser a new visitor again.
  */
 import { createServer } from 'node:http'
@@ -50,11 +51,13 @@ createServer(async (request, response) => {
       const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(form.get('email')).trim().toLowerCase()))
       const email = `email:${[...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')}`
       const changes = await graph('POST', '/observe', { subject, identifiers: [...(device ? [`device:${device}`] : []), email], at, event: 'signup' })
+      // Count the sign-up, so the report can set it beside what the campaign cost.
+      await graph('POST', '/convert', { transactionId: `signup-${subject}`, subject, at, stage: 'signup', value: 25, currency: 'USD' })
       const attribution = await graph('GET', `/attribute?subject=${encodeURIComponent(subject)}&at=${at}`)
       return html(page('Signed up', `<p>You are <code>${subject}</code>.</p>
         <p>The graph server ${attribution.credited ? `credits the ad click <code>${attribution.credited.gclid ?? attribution.credited.source ?? 'a visit'}</code> at ${Math.round(attribution.credited.confidence * 100)}% confidence.` : `found no ad click to credit (${attribution.reason}).`}</p>
         <p>Cluster changes from this sign-up: ${changes.length}.</p>
-        <p><a href="${GRAPH}/review#${encodeURIComponent(subject)}">Open this account on the reviewer screen</a> (it asks for the review token). <a href="/">Back</a>.</p>`))
+        <p><a href="${GRAPH}/review#${encodeURIComponent(subject)}">Open this account on the reviewer screen</a> (it asks for the review token), or <a href="${GRAPH}/review#!channels">see it in the channel report</a>. <a href="/">Back</a>.</p>`))
     }
     if (url.pathname === '/reset') {
       // Start over as a new visitor: forget the device id the collector kept in this browser.
@@ -66,4 +69,4 @@ createServer(async (request, response) => {
   } catch (error) {
     response.writeHead(500, { 'content-type': 'text/plain' }).end(String((error as Error).message))
   }
-}).listen(PORT, () => console.log(`example site: http://localhost:${PORT}/?gclid=demo-click&utm_source=google`))
+}).listen(PORT, () => console.log(`example site: http://localhost:${PORT}/?gclid=demo-click&utm_id=20111`))
