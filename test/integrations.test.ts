@@ -561,10 +561,14 @@ test('the server takes page events and phone calls, and ties a call to the visit
     await page('/event', { device: 'd-5', event: 'phone_click', number: '+15559998888' })
     await page('/event', { device: 'd-5', event: 'inquiry', number: '+15551230001' })
     assert.deepEqual((await graph.history('visitor:d-5')).map((sighting) => sighting.identifier), ['device:d-5', 'device:d-5'])
-    // One address has now tapped from two browsers. A third is believed; a fourth and fifth inside ten minutes are not.
+    // One address has tapped a tracking number from one browser. A second and third are believed; a fourth inside ten minutes is not.
     for (const device of ['d-2', 'd-3', 'd-4']) await page('/event', { device, event: 'phone_click', number: '+15551230001' })
     const noted = async (device: string) => (await graph.history(`visitor:${device}`)).some((sighting) => sighting.identifier.startsWith('dialed:'))
-    assert.deepEqual([await noted('d-2'), await noted('d-3'), await noted('d-4')], [true, false, false])
+    assert.deepEqual([await noted('d-2'), await noted('d-3'), await noted('d-4')], [true, true, false])
+    // Being turned away costs the first three nothing: d-1 taps again and is still believed.
+    clock += 6 * 60_000
+    await page('/event', { device: 'd-1', event: 'phone_click', number: '+15551230001', id: 'again' })
+    assert.equal((await graph.history('visitor:d-1')).filter((sighting) => sighting.identifier.startsWith('dialed:')).length, 2)
 
     // Two inquiries (one a day, plus the one with its own id), one tap, one counted call, all on the campaign of the ad click.
     const report = await graph.report({ from: '2026-03-02', to: '2026-03-02' })

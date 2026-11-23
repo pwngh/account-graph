@@ -92,7 +92,7 @@ Post the same five facts to `/call` with the service token: the provider's id fo
 | Limit | Detail |
 | --- | --- |
 | One number per channel | A tracking number stands for one channel. There is no pool that hands each visitor a number of their own, so two visitors tapping within the same three minutes cannot be told apart. |
-| Taps can be faked | A tap comes from a browser, so a program can send one. Three guards limit what that buys: only your tracking numbers are noted, one address is believed from three browsers in ten minutes and no more, and one visitor is tied to one caller. A fake tap at the right moment can still turn a real call `ambiguous`, which files it under the number's channel instead. |
+| Taps can be faked | A tap comes from a browser, so a program can send one. Three guards limit what that buys: only your tracking numbers are noted, one network is believed from three browsers in ten minutes and no more, and one tap is tied to one caller. A fake tap at the right moment can still turn a real call `ambiguous`, which files it under the number's channel instead. |
 | Taps only | A visitor who reads the number and dials it by hand leaves no tap. That call is filed under the number's channel. |
 | The tap window | Three minutes before the call began, with thirty seconds of allowance for clocks that disagree. `clickWindow` changes it in the library. |
 | Calls reach the report | A counted call is an outcome in the report. It is not sent to an ad platform yet. |

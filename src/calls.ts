@@ -120,13 +120,15 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   const buckets: Identifier[] = []
   for (let bucket = Math.floor((at - window) / BUCKET); bucket <= Math.floor((at + SLACK) / BUCKET); bucket++) buckets.push(`dialed:${to}@${bucket}`)
   const taps = (await graph.holders(buckets)).filter((edge) => edge.last >= at - window && edge.first <= at + SLACK)
-  const tapped = [...new Set(taps.map((edge) => edge.subject))]
-  // One tap leads to one caller. A visitor already tied to a different caller by an earlier call is not the one who made this one,
-  // so a browser cannot collect call after call by tapping again.
+  // One tap leads to one caller. A visitor whose tap has already been followed by a call from someone else is not
+  // the one who made this call, so a browser cannot collect call after call. The same caller ringing back still counts.
+  const tappedAt = new Map<Subject, number>()
+  for (const edge of taps) tappedAt.set(edge.subject, Math.max(edge.last, tappedAt.get(edge.subject) ?? 0))
   const visitors: Subject[] = []
-  for (const candidate of tapped) {
-    const earlier = (await graph.links(candidate)).filter((link) => link.reasons.some((reason) => reason.identifier.startsWith('dial:')))
-    if (earlier.every((link) => link.subject === subject)) visitors.push(candidate)
+  for (const [candidate, tapped] of tappedAt) {
+    const since = (await graph.history(candidate, 200)).filter((sighting) => sighting.identifier.startsWith('dial:') && sighting.at >= tapped - SLACK)
+    const answered = await graph.holders([...new Set(since.map((sighting) => sighting.identifier))])
+    if (answered.every((edge) => edge.subject === candidate || edge.subject === subject)) visitors.push(candidate)
   }
   const visitor = visitors.length === 1 ? visitors[0] : undefined
   if (visitors.length > 1) flags.push('ambiguous')

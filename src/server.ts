@@ -174,13 +174,20 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
   // A household has a few devices; a program inventing visitors has as many as it likes.
   const tappers = new Map<string, { devices: Set<string>; since: number }>()
   const tapsFrom = (address: string, device: string, at: number): boolean => {
-    let seen = tappers.get(address)
+    // One network, not one address: a single machine holds a whole range of IPv6 addresses.
+    let network = address
+    try {
+      network = ip(address)
+    } catch {}
+    let seen = tappers.get(network)
     if (!seen || at - seen.since > 10 * 60_000) {
       if (tappers.size >= 50_000) tappers.clear()
-      tappers.set(address, (seen = { devices: new Set(), since: at }))
+      tappers.set(network, (seen = { devices: new Set(), since: at }))
     }
+    // The first three browsers stay believed; a fourth is turned away without costing them their place.
+    if (!seen.devices.has(device) && seen.devices.size >= 3) return false
     seen.devices.add(device)
-    return seen.devices.size <= 3
+    return true
   }
 
   /** Records something a visitor did on a page. Only names the server was told to accept are kept. */
@@ -192,11 +199,12 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     const at = now()
     const identifiers: Identifier[] = [identifier('device', device)]
     // A tapped phone number is noted, so a call that follows can be tied to this visitor.
-    if (body.event === 'phone_click' && typeof body.number === 'string' && body.number.length <= 40 && tapsFrom(addressOf(request), device, at)) {
+    if (body.event === 'phone_click' && typeof body.number === 'string' && body.number.length <= 40) {
       try {
         const note = dialed(body.number, at, options.calls?.country)
         // When the tracking numbers are known, a tap on any other number is not worth a note.
-        if (!trackingNumbers || trackingNumbers.has(note.slice('dialed:'.length, note.lastIndexOf('@')))) identifiers.push(note)
+        const tracked = !trackingNumbers || trackingNumbers.has(note.slice('dialed:'.length, note.lastIndexOf('@')))
+        if (tracked && tapsFrom(addressOf(request), device, at)) identifiers.push(note)
       } catch {}
     }
     await graph.observe({ subject, identifiers, at, event: body.event })
