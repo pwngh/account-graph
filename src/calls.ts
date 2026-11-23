@@ -1,5 +1,5 @@
 import type { Graph } from './graph.ts'
-import { hashPhone, normalizePhone } from './identifiers.ts'
+import { hashPhone, normalizePhone, phoneOfType } from './identifiers.ts'
 import type { Identifier, Outcome, Subject } from './types.ts'
 
 /** One phone call to a number of yours, as your telephone provider reports it. */
@@ -44,7 +44,9 @@ export interface CallOptions {
   stage?: string
   /** The country code for numbers written without one. Defaults to 1. */
   country?: string
-  /** Records the outcome of a counted call. Defaults to `graph.outcome`; pass the outbox's `record` to send it too. */
+  /** Says what kind of line the caller's number is, so a throwaway number counts for less and a switchboard for nothing. */
+  lineType?: (number: string) => Promise<{ type: string } | undefined>
+    /** Records the outcome of a counted call. Defaults to `graph.outcome`; pass the outbox's `record` to send it too. */
   convert?: (outcome: Outcome) => Promise<unknown>
 }
 
@@ -114,7 +116,10 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
 
   // A toll-free number belongs to a switchboard, not a person, so it ties the call to nobody.
   const known = from && !tollFree ? from : undefined
-  if (known) await graph.observe({ subject, identifiers: [`phone:${hashPhone(known)}`], at, event: 'call' })
+  // With a line check, a number from an internet calling app is written as the weaker kind. A check that fails changes nothing.
+  const line = known && options.lineType ? await options.lineType(known).catch(() => undefined) : undefined
+  const phone = known && phoneOfType(known, line?.type)
+  if (phone) await graph.observe({ subject, identifiers: [phone], at, event: 'call' })
 
   const window = options.clickWindow ?? 3 * 60_000
   const buckets: Identifier[] = []

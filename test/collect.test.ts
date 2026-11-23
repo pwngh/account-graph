@@ -261,9 +261,10 @@ test('a form carries the device id and the landing page to whatever receives it'
     createElement: () => ({ type: '', name: '', value: '' }),
   })
   /** A stand-in form: it remembers the inputs appended to it and finds them again by name. */
-  const form = (marked: boolean, inputs: { name: string; value: string }[] = []) => {
+  const form = (marked: boolean, inputs: { name: string; value: string }[] = [], method: string | null = 'post') => {
     const self = {
       inputs,
+      getAttribute: (name: string) => (name === 'method' ? method : null),
       hasAttribute: (name: string) => marked && name === 'data-ag-fields',
       querySelector: (selector: string) => inputs.find((input) => selector === `input[name="${input.name}"]`) ?? null,
       append: (input: { type: string; name: string; value: string }) => void (inputs.push(input), created.push(input)),
@@ -288,7 +289,24 @@ test('a form carries the device id and the landing page to whatever receives it'
   submit(plain)
   assert.equal(plain.inputs.length, 0)
   stop()
-  fill({ all: true })
+  const stopAll = fill({ all: true })
   submit(plain)
   assert.equal(plain.inputs.length, 2)
+  // A form that sends its fields in the address is filled only when marked: an address is seen by more than its receiver.
+  const search = form(false, [], null)
+  submit(search)
+  assert.equal(search.inputs.length, 0)
+  const markedSearch = form(true, [], 'GET')
+  submit(markedSearch)
+  assert.equal(markedSearch.inputs.length, 2)
+  stopAll()
+
+  // A visitor who opted out of advertising: the device id still goes, the landing page with its ad click does not.
+  assert.deepEqual(fields({ adUserData: false, adPersonalization: false }), { ag_device: device })
+  ;(globalThis as any).navigator.globalPrivacyControl = true
+  assert.deepEqual(fields(), { ag_device: device })
+  fill({ all: true })
+  const optedOut = form(false)
+  submit(optedOut)
+  assert.deepEqual(optedOut.inputs.map((input) => input.name), ['ag_device'])
 })

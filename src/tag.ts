@@ -46,8 +46,8 @@ const RUN = `
   collect(options).catch(() => undefined)
   globalThis.accountGraph = { event: (name, detail) => event(options, name, detail).catch(() => undefined) }
   watch(options)
-  globalThis.accountGraph.fields = fields
-  fill({ all: self.searchParams.get('forms') === 'all' })
+  globalThis.accountGraph.fields = () => fields(options.consent)
+  fill({ all: self.searchParams.get('forms') === 'all', consent: options.consent })
     const domains = self.searchParams.get('domains')
   if (domains) carry({ ...options, domains: domains.split(',').filter(Boolean) })
 }

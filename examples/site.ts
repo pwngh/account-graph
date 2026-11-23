@@ -54,9 +54,9 @@ createServer(async (request, response) => {
     }
     if (url.pathname === '/signup' && request.method === 'POST') {
       const form = new URLSearchParams(await new Response(request as unknown as ReadableStream).text())
-      // The script tag added the visitor's device id to the form as it was submitted. A form posted to another system,
-      // which never sees this site's cookie, carries it the same way.
-      const filled = form.get('ag_device') ?? device
+      // The cookie names the visitor. Where there is none, the script tag added the same id to the form as it was
+      // submitted, which is how a form posted to another system, one that never sees this site's cookie, carries it.
+      const filled = device ?? form.get('ag_device')
       const subject = `account:${++accounts}`
       const at = Date.now()
       // Hand the server the facts as they are; it hashes the email and ties the account to the browser.

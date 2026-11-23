@@ -319,8 +319,12 @@ export function carry(options: CollectOptions): () => void {
 /**
  * What a form should carry so whatever receives it can say which visitor
  * filled it in: the device id, and the page this browser session began on.
+ * The landing page holds the ad click, so it is left out for a visitor who
+ * opted out of advertising.
  */
-export function fields(): { ag_device: string; ag_landing: string } {
+export function fields(consent?: CollectOptions['consent']): { ag_device: string; ag_landing?: string } {
+  const optedOut = (navigator as { globalPrivacyControl?: boolean }).globalPrivacyControl === true || consent?.adUserData === false
+  if (optedOut) return { ag_device: deviceId() }
   let landing: string | null = null
   try {
     landing = sessionStorage.getItem('ag_landing')
@@ -329,16 +333,20 @@ export function fields(): { ag_device: string; ag_landing: string } {
 }
 
 /**
- * Adds those two as hidden fields to a form at the moment it is submitted:
- * every form marked `data-ag-fields`, or with `all`, every form on the
- * page. Use it for forms that post to a system the cookie does not reach,
- * such as a hosted form or a CRM. Returns a function that stops.
+ * Adds those as hidden fields to a form at the moment it is submitted:
+ * every form marked `data-ag-fields`, or with `all`, every form that posts.
+ * A form that sends its fields in the address is only filled when marked,
+ * because the address is seen by more than its receiver. Use it for forms
+ * that post to a system the cookie does not reach, such as a hosted form or
+ * a CRM. Returns a function that stops.
  */
-export function fill(options: { all?: boolean } = {}): () => void {
+export function fill(options: { all?: boolean; consent?: CollectOptions['consent'] } = {}): () => void {
   const submitted = (happened: Event) => {
     const form = (happened.target as Element | null)?.closest?.('form')
-    if (!form || !(options.all || form.hasAttribute('data-ag-fields'))) return
-    for (const [name, value] of Object.entries(fields())) {
+    if (!form) return
+    const posts = (form.getAttribute('method') ?? 'get').toLowerCase() === 'post'
+    if (!(form.hasAttribute('data-ag-fields') || (options.all && posts))) return
+    for (const [name, value] of Object.entries(fields(options.consent))) {
       let input = form.querySelector(`input[name="${name}"]`) as HTMLInputElement | null
       if (!input) {
         input = document.createElement('input')

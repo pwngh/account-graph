@@ -63,7 +63,8 @@ export function createAddressVerifier(options: SmartyOptions): AddressVerifier {
     url.searchParams.set('candidates', '1')
     const response = await fetcher(url.href, { headers: { authorization, accept: 'application/json' }, signal: AbortSignal.timeout(10_000) })
     if (!response.ok) throw new Error(`Smarty refused the address check with ${response.status}: ${(await response.text()).slice(0, 200)}`)
-    const [found] = (await response.json()) as any[]
+    const answer = (await response.json()) as unknown
+    const found = Array.isArray(answer) ? answer[0] : undefined
     if (!found?.delivery_point_barcode) return undefined
     const rdi = found.metadata?.rdi
     return {

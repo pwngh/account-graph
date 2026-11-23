@@ -226,9 +226,9 @@ test('the server keeps the device id in its own cookie and honours an opt-out', 
     assert.equal(cookie, `ag_device=page-id-1; Max-Age=${400 * 86_400}; Path=/; HttpOnly; Secure; SameSite=Lax; Domain=site.example`)
     assert.equal(first.headers.get('access-control-allow-credentials'), 'true')
 
-    // Later the page has lost its id and made a new one. The cookie still names the same visitor.
+    // Later the page has lost its id and made a new one. The cookie still names the same visitor, who now carries both ids.
     await visit({ device: 'page-id-2' }, { cookie: 'other=1; ag_device=page-id-1' })
-    assert.equal((await graph.history('visitor:page-id-1')).filter((s) => s.identifier.startsWith('device:')).length, 2)
+    assert.deepEqual((await graph.history('visitor:page-id-1')).map((s) => s.identifier).filter((identifier) => identifier.startsWith('device:')), ['device:page-id-1', 'device:page-id-1', 'device:page-id-2'])
     assert.deepEqual(await graph.history('visitor:page-id-2'), [])
 
     // No id from the page and no cookie: the server makes one.
@@ -804,6 +804,9 @@ test('a postal address is checked with Smarty and counts only when confirmed to 
   assert.equal((calls[0]!.init.headers as Record<string, string>).authorization, `Basic ${Buffer.from('id:token').toString('base64')}`)
 
   assert.equal(await verify({ street: 'nowhere' }), undefined)
+  // An answer that is not a list of candidates is read as no match, not as a crash.
+  const odd = createAddressVerifier({ authId: 'id', authToken: 'token', fetch: (async () => new Response('{"unexpected":true}')) as typeof fetch })
+  assert.equal(await odd({ street: '1 Main St' }), undefined)
   await assert.rejects(verify({ street: 'broke' }), /Smarty refused the address check with 402/)
   await assert.rejects(verify({ street: '  ' }), TypeError)
 
@@ -834,6 +837,11 @@ test('Twilio says what kind of line a number is, once per number', async () => {
 
   assert.equal(await lookup('+15550000404'), undefined)
   assert.deepEqual(await lookup('+15550000606'), { type: 'unknown', carrier: undefined })
+  // An error inside the answer may clear up, so it is asked again next time; a number Twilio does not know is remembered.
+  const before = calls.length
+  await lookup('+15550000606')
+  await lookup('+15550000404')
+  assert.equal(calls.length, before + 1)
   await assert.rejects(lookup('+15550000500'), /Twilio refused the lookup with 401/)
 })
 
@@ -849,11 +857,12 @@ test('the server identifies a subject from plain facts, drops declared bots, and
     limit: false,
     ipInfo: async () => ({ country: 'US', region: 'FL', city: 'Miami', asn: 1, organization: 'Home ISP', userType: 'residential', anonymous: false, hosting: false }),
     lineType: async (number) => (number === '+15550009999' ? Promise.reject(new Error('lookup down')) : lines[number] ? { type: lines[number]!, carrier: undefined } : undefined),
-    address: async ({ street }) => (street === 'unknown' ? undefined : { barcode: street.startsWith('1 Main') ? '627011234025' : '999', line1: street, lastLine: '', match: street.includes('Box') ? 'Y' : street.includes('Tower') ? 'D' : 'Y', residential: true, mailDrop: street.includes('Box'), vacant: false }),
+    address: async ({ street }) => (street === 'offline' ? Promise.reject(new TypeError('fetch failed')) : street === 'unknown' ? undefined : { barcode: street.startsWith('1 Main') ? '627011234025' : '999', line1: street, lastLine: '', match: street.includes('Box') ? 'Y' : street.includes('Tower') ? 'D' : 'Y', residential: true, mailDrop: street.includes('Box'), vacant: false }),
   })
   const server = createServer(handler).listen(0, '127.0.0.1')
   await new Promise((resolve) => server.once('listening', resolve))
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const post = (path: string, body: object) => fetch(`${base}${path}`, { method: 'POST', headers: { authorization: 'Bearer service' }, body: JSON.stringify(body) })
   const identify = async (body: object, token = 'service') => {
     const response = await fetch(`${base}/identify`, { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify(body) })
     return { status: response.status, ...((await response.json()) as { identifiers?: string[]; notes?: Record<string, string>; changes?: unknown[]; error?: string }) }
@@ -883,6 +892,16 @@ test('the server identifies a subject from plain facts, drops declared bots, and
     // A lookup that is down does not lose the sighting: the number is kept as a plain phone.
     const sixth = await identify({ subject: 'account:6', phone: '+15550009999' })
     assert.deepEqual([kinds(sixth.identifiers), sixth.notes], [['phone'], {}])
+    // The address service cannot be reached: the rest of the sighting is recorded and the note says why the address is not.
+    const offline = await identify({ subject: 'account:6b', device: 'd-6b', address: { street: 'offline' } })
+    assert.deepEqual([offline.status, kinds(offline.identifiers), offline.notes], [200, ['device'], { address: 'not checked: the address service did not answer' }])
+    // A number found to be a throwaway stops counting as a phone wherever it was written before, calls included,
+    // and ties at the weaker strength from then on.
+    await post('/call', { id: 'V1', from: '+15550002222', to: '+15551230001', at, duration: 60 })
+    const caller = `caller:${hashPhone('+15550002222')}`
+    assert.deepEqual((await graph.links('account:3')).map((link) => [link.subject, link.level, link.reasons[0]!.identifier.split(':')[0]]), [[caller, 'related', 'voip']])
+    await graph.observe({ subject: 'account:old', identifiers: [`phone:${hashPhone('+15550002222')}`], at })
+    assert.deepEqual(await graph.links('account:old'), [])
     // Identifiers the backend already has can ride along, and a time of its own.
     const seventh = await identify({ subject: 'account:7', at: at - 5000, identifiers: ['payment:tok_1'] })
     assert.deepEqual([seventh.identifiers, (await graph.history('account:7'))[0]!.at], [['payment:tok_1'], at - 5000])
@@ -893,6 +912,8 @@ test('the server identifies a subject from plain facts, drops declared bots, and
     assert.equal((await identify({ subject: 'account:8', email: 'nope' })).status, 400)
     assert.equal((await identify({ subject: 'account:8', device: 'has space' })).status, 400)
     assert.equal((await identify({ subject: 'account:8', address: {} })).status, 400)
+    assert.equal((await identify({ subject: 'account:8', device: 'd-8', at: 1.5 })).status, 400)
+    assert.equal((await identify({ subject: 'account:8', device: 'd-8', at: '1700000000000' })).status, 400)
     assert.equal((await identify({ subject: 'account:8', device: 'd-8' }, 'reviewer')).status, 403)
 
     // A program that says what it is leaves no visit; a browser's visit is noted with where its address places it.
@@ -936,5 +957,23 @@ test('the server identifies a subject from plain facts, drops declared bots, and
     assert.deepEqual([kinds(answer.identifiers), answer.notes], [['phone'], { address: 'not checked: no address service is set up' }])
   } finally {
     plain.close()
+  }
+})
+
+test('with the server cookie on, the id a page quotes still names the visitor', async () => {
+  const graph = createGraph(createMemoryStore())
+  const server = createServer(createHandler(graph, { token: 'service', origins: ['https://site.example'], cookie: true })).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  try {
+    // The page's storage was cleared and it made a new id; the server's cookie still holds the old one.
+    await fetch(`${base}/collect`, { method: 'POST', headers: { origin: 'https://site.example', cookie: 'ag_device=old-id' }, body: JSON.stringify({ device: 'new-id' }) })
+    assert.deepEqual((await graph.cluster('visitor:old-id'))!.members, ['visitor:old-id'])
+    assert.equal(await graph.cluster('visitor:new-id'), undefined)
+    // A form filled by the page carries the new id, and it still finds the visitor.
+    await fetch(`${base}/identify`, { method: 'POST', headers: { authorization: 'Bearer service' }, body: JSON.stringify({ subject: 'account:1', device: 'new-id' }) })
+    assert.deepEqual((await graph.cluster('account:1'))!.members, ['account:1', 'visitor:old-id'])
+  } finally {
+    server.close()
   }
 })

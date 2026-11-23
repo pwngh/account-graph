@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dialed, recordCall } from './calls.ts'
 import type { CallOptions } from './calls.ts'
 import type { Graph } from './graph.ts'
-import { email, identifier, ip, normalizePhone, phoneOfType } from './identifiers.ts'
+import { email, hashPhone, identifier, ip, normalizePhone, phoneOfType } from './identifiers.ts'
 import { trusted } from './integrations/fingerprint.ts'
 import type { FingerprintVerifier } from './integrations/fingerprint.ts'
 import { placeOf, shared } from './integrations/maxmind.ts'
@@ -156,7 +156,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
 
   /** A program that says what it is: a search crawler, a link previewer, an uptime check. Its visits are nobody's. */
   // "bot/" and not just "bot": phones are sold under names like Cubot, and their browsers are people.
-  const BOT = /bot\/|telegrambot|slackbot|spider|crawl|slurp|facebookexternalhit|whatsapp\/|headlesschrome|lighthouse|pagespeed|pingdom|uptimerobot|^curl\/|^wget\/|python-requests/i
+  const BOT = /bot\/|telegrambot|slackbot|seznambot|spider|crawl|slurp|facebookexternalhit|whatsapp\/|bingpreview|google-inspectiontool|headlesschrome|lighthouse|pagespeed|gtmetrix|pingdom|uptimerobot|datadogsynthetics|^curl\/|^wget\/|python-requests/i
 
   // A token bucket per address: it refills steadily and a visit spends one token.
   const perMinute = options.limit === false ? Infinity : (options.limit?.perMinute ?? 120)
@@ -263,6 +263,9 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     const device = deviceOf(request, response, body)
     const subject = `visitor:${device}`
     const identifiers: Identifier[] = [identifier('device', device)]
+    // With the server's cookie on, the page may hold a different id: storage was cleared and the cookie was not.
+    // The page's id is what forms and your backend will quote, so it is kept on the same visitor.
+    if (typeof body.device === 'string' && ID.test(body.device) && body.device !== device) identifiers.push(identifier('device', body.device))
 
     // The browser's opt-out signal, or an answer from your consent banner, covers advertising only.
     const optedOut = request.headers['sec-gpc'] === '1' || body.gpc === true
@@ -287,12 +290,13 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     if (address) {
       const seen = ip(address)
       identifiers.push(seen)
-      if (options.ipInfo) {
+      if (options.ipInfo && !ignoredAddresses.has(seen)) {
         // The lookup keeps its own answers for a day, so asking on every visit costs one query a day per address.
+        // An address already found to be shared is not asked about again: it has no place worth noting.
         const info = (await options.ipInfo(address.replace(/^::ffff:/, '')).catch((error) => void console.error(error))) ?? undefined
         const place = shared(info) ? undefined : placeOf(info)
         if (place) identifiers.push(identifier('place', place.slice(0, 120)))
-        if (shared(info) && !ignoredAddresses.has(seen)) {
+        if (shared(info)) {
           await graph.ignore(seen)
           if (ignoredAddresses.size >= 100_000) ignoredAddresses.clear()
           ignoredAddresses.add(seen)
@@ -356,7 +360,23 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     }
   }
 
-  /**
+  // A number found to come from an internet calling app stops counting as a phone everywhere it was already written,
+  // and counts as the weaker kind from here on.
+  const mutedPhones = new Set<Identifier>()
+  const lineOf =
+    options.lineType &&
+    (async (number: string) => {
+      const line = await options.lineType!(number)
+      const plain = `phone:${hashPhone(number)}`
+      if (line?.type === 'nonFixedVoip' && !mutedPhones.has(plain)) {
+        await graph.ignore(plain, true, { by: 'line check', reason: 'a number from an internet calling app' })
+        if (mutedPhones.size >= 100_000) mutedPhones.clear()
+        mutedPhones.add(plain)
+      }
+      return line
+    })
+
+    /**
    * Records who a subject is from plain facts, so a backend does not have
    * to hash or normalize anything: the device cookie, an email, a phone
    * number, a postal address, the address the request came from.
@@ -374,22 +394,32 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     if (typeof body.phone === 'string' && body.phone) {
       const number = normalizePhone(body.phone, options.calls?.country)
       // A lookup that is down must not lose the sighting: the number is kept as a plain phone.
-      const line = options.lineType ? ((await options.lineType(number).catch((error) => void console.error(error))) ?? undefined) : undefined
+      const line = lineOf ? ((await lineOf(number).catch((error) => void console.error(error))) ?? undefined) : undefined
       const found = phoneOfType(number, line?.type)
       if (found) identifiers.push(found)
       if (line) notes.phone = found ? line.type : `${line.type}: not used`
     }
     if (body.address && typeof body.address === 'object') {
+      if (typeof body.address.street !== 'string' || !body.address.street.trim()) throw new Refusal(400, 'An address needs a street')
       if (!options.address) notes.address = 'not checked: no address service is set up'
       else {
-        const checked = (await options.address(body.address).catch((error) => (error instanceof TypeError ? Promise.reject(error) : void console.error(error)))) ?? undefined
+        // Whatever goes wrong with the check, the rest of the sighting is still recorded.
+        let checked: Awaited<ReturnType<AddressVerifier>>
+        let failed = false
+        try {
+          checked = await options.address(body.address)
+        } catch (error) {
+          console.error(error)
+          failed = true
+        }
         const found = checked && addressIdentifier(checked)
         if (found) identifiers.push(found)
-        notes.address = !checked ? 'not found' : found ? 'confirmed' : checked.mailDrop ? 'a rented mail box: not used' : checked.vacant ? 'vacant: not used' : 'not confirmed to the apartment: not used'
+        notes.address = failed ? 'not checked: the address service did not answer' : !checked ? 'not found' : found ? 'confirmed' : checked.mailDrop ? 'a rented mail box: not used' : checked.vacant ? 'vacant: not used' : 'not confirmed to the apartment: not used'
       }
     }
+    if (body.at !== undefined && !Number.isSafeInteger(body.at)) throw new Refusal(400, '`at` must be a time in whole epoch milliseconds')
     if (identifiers.length === 0) throw new Refusal(400, 'Nothing here identifies the subject')
-    const at = Number.isFinite(body.at) ? body.at : now()
+    const at = body.at ?? now()
     const changes = await graph.observe({ subject: body.subject, identifiers, at, ...(typeof body.event === 'string' && body.event && { event: body.event }) })
     return { changes, identifiers, notes }
   }
@@ -466,7 +496,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       const { authToken, url: address } = options.calls.twilio
       if (!fromTwilio(authToken, address, fields, String(request.headers['x-twilio-signature'] ?? ''))) throw new Refusal(403, 'The signature does not match')
       const call = twilioCall(fields, now())
-      if (call) await recordCall(graph, call, { ...options.calls, convert })
+      if (call) await recordCall(graph, call, { ...options.calls, convert, ...(lineOf && { lineType: lineOf }) })
       return undefined
     }
 
@@ -564,7 +594,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return { url: knownLink(String(body.url), body.subject, { secret: options.linkSecret, now, ...(body.days !== undefined && { lasts: body.days * 86_400_000 }) }) }
       }
       case 'POST /call':
-        return recordCall(graph, await json(request), { ...options.calls, convert })
+        return recordCall(graph, await json(request), { ...options.calls, convert, ...(lineOf && { lineType: lineOf }) })
       case 'POST /restate': {
         const body = await json(request)
         if (options.outbox) return options.outbox.restate(body.transactionId, body.value, body.currency)

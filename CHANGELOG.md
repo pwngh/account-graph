@@ -47,7 +47,8 @@
 - `createAlerter` posts `{ text }` to a webhook at most once per subject per ten minutes; `ALERT_WEBHOOK` reports failed conversions, an outbox that cannot run, and costs that cannot be read.
 - `POST /identify` takes a subject's device, email, phone, address and IP as plain values, hashes and checks them, and answers `{ changes, identifiers, notes }`.
 - `createAddressVerifier` checks a US postal address with Smarty; `addressIdentifier` keeps one confirmed to the door as the `address` kind (0.6).
-- `createLineTypeLookup` asks Twilio what kind of line a number is; `phoneOfType` records a throwaway number as the `voip` kind (0.5) and a switchboard as nothing.
+- `createLineTypeLookup` asks Twilio what kind of line a number is; `phoneOfType` records a throwaway number as the `voip` kind (0.5) and a switchboard as nothing. `CallOptions.lineType` applies the same to callers.
+- With `cookie` on, `/collect` keeps the id a page quotes on the visitor the server's cookie names.
 - `/collect` and `/event` drop visits whose user agent names a crawler, previewer or uptime check (`bots` in `GET /stats`), and note a visit's `place` when the address lookup gives one.
 - `collect.js` adds `ag_device` and `ag_landing` to forms marked `data-ag-fields`, or to every form with `?forms=all` (`fill`, `fields`, `accountGraph.fields()`).
 - `/collect` records no touch for an arrival whose only source is a referrer among `origins`: a visitor moving between your own sites.

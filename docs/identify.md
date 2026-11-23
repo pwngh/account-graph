@@ -53,7 +53,9 @@ Only hashes are kept. The email, the number and the address themselves are not s
 | A rented mail box, or vacant | `"address": "a rented mail box: not used"` | Not kept. |
 | The postal service does not know it | `"address": "not found"` | Not kept. |
 
-A check that is down never loses the sighting. The phone is kept as a plain `phone`, the address is left out, and the rest is recorded.
+A check that is down never loses the sighting. The phone is kept as a plain `phone`, the address is left out with a note saying the service did not answer, and the rest is recorded.
+
+A number found to be from an internet calling app also stops counting as a `phone` wherever it was written before the check: by a phone call, or by a sighting made while the check was down. Phone calls ask the same question about the caller's number, so a call and an account on one such number are related at 0.5.
 
 ## Forms that post somewhere else
 
@@ -73,7 +75,16 @@ the other system ──▶ your backend, later ──▶ POST /identify { subjec
 | `ag_device` | The visitor's device id. Send it back as `device`. |
 | `ag_landing` | The address this browser session began on, with its click id and campaign. |
 
-`collect.js?forms=all` fills every form on the page without marking each. A script that posts a form itself can read the same two values from `accountGraph.fields()`.
+`collect.js?forms=all` fills every form that posts, without marking each. A script that posts a form itself can read the same two values from `accountGraph.fields()`.
+
+| Case | What is filled |
+| --- | --- |
+| A form marked `data-ag-fields` | Both fields. |
+| An unmarked form with `method="post"`, under `forms=all` | Both fields. |
+| An unmarked form that sends its fields in the address, under `forms=all` | Nothing. An address is seen by more than its receiver. |
+| A visitor who opted out of advertising | `ag_device` only. The landing page holds the ad click. |
+
+When your backend can read the `ag_device` cookie, prefer it to the field. With `COOKIE=true` the server's cookie outlives what the page remembers; the id a page quotes is kept on the same visitor, so either one finds them.
 
 ## What is filtered out before it counts
 

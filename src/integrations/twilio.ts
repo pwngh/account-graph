@@ -88,12 +88,17 @@ export function createLineTypeLookup(options: LookupOptions): LineTypeLookup {
       signal: AbortSignal.timeout(10_000),
     })
     let line: LineType | undefined
+    let settled = true
     if (response.ok) {
       const found = ((await response.json()) as any)?.line_type_intelligence
-      line = { type: typeof found?.type === 'string' && !found.error_code ? found.type : 'unknown', carrier: found?.carrier_name ?? undefined }
+      // An error inside the answer, such as a country that needs approval, may clear up: it is not remembered.
+      settled = !found?.error_code
+      line = { type: typeof found?.type === 'string' && settled ? found.type : 'unknown', carrier: found?.carrier_name ?? undefined }
     } else if (response.status !== 404) throw new Error(`Twilio refused the lookup with ${response.status}: ${(await response.text()).slice(0, 200)}`)
-    if (cache.size >= limit) cache.delete(cache.keys().next().value!)
-    cache.set(number, { line, until: now() + 30 * 86_400_000 })
+    if (settled) {
+      if (cache.size >= limit) cache.delete(cache.keys().next().value!)
+      cache.set(number, { line, until: now() + 30 * 86_400_000 })
+    }
     return line
   }
 }
