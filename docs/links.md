@@ -40,7 +40,11 @@ The tie is strong enough to join the browser to the person: 0.92, where 0.9 join
 
 Every opening is written down as a note on the visitor, `opened:contact:42`, or `opened:contact:42 (not tied)`. A reviewer sees who opened what.
 
-What the rules cannot see: a link forwarded to a stranger's browser that has no account yet is tied to the person the link names. If that stranger later signs up there, the two meet in one cluster until a reviewer keeps them apart. Lower `link` in the policy below 0.9 if that risk outweighs the benefit; the link then relates a browser to its person without joining them.
+What the rules cannot see:
+
+- **A browser with no account yet.** A link forwarded to a stranger's browser is tied to the person the link names. If that stranger later signs up there, the two meet in one cluster until a reviewer keeps them apart.
+- **A person of another kind.** `contact:alice`'s link opened in a browser signed in as `account:bob` joins the two at once. The rule above compares like with like, because a contact opening their link where they hold an account is the ordinary case.
+ Lower `link` in the policy below 0.9 if that risk outweighs the benefit; the link then relates a browser to its person without joining them.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -64,7 +68,7 @@ shop.example's script tag ──▶ POST /collect with the token ──▶ the t
 
 Put the tag, with its own `domains`, on each site, and list each site in `ORIGINS`. Only links the visitor follows are touched, at the moment they follow them; a link to anywhere else is left alone.
 
-> **A carry token works only in the browser it was made for.** It is bound to that browser's user agent and network. Sent to someone else, it ties nobody, so nobody can attach their own ad click to another person's sign-up by handing them a link.
+> **A carry token is bound to the browser's user agent and network.** Sent to someone on another network, or with another browser version, it ties nobody. So a stranger cannot attach their ad click to someone's sign-up by handing them a link. Someone on the visitor's own network with the same browser version still can; see the limits below.
 
 The tie is 0.95: enough to join two visitors, not enough to merge two groups on its own. It is filed per receiving site, so one visitor carried to three of your sites is joined on each. One token used by several look-alike browsers on a shared network thins instead: a third holder ends the join, and a fifth ends the tie.
 
@@ -78,8 +82,8 @@ Subdomains of one site do not need this. `COOKIE=example.org` already gives them
 | Changing `LINK_SECRET` | Every link already sent stops naming its person, and becomes an ordinary link. |
 | Carry needs a followed link | A visitor who types the second site's address arrives as a stranger. A confirmed fingerprint or a sign-in still ties them. |
 | A changed network | A visitor whose network changes between the two sites, such as leaving wifi, is not carried. |
-| A look-alike on the same network | The token is bound to a browser's user agent and network, not to the browser itself. Someone on your visitor's own network, with the same browser version, could hand them a link that ties the two visits. The tie cannot merge two groups by itself, and a reviewer can cut it. |
+| A look-alike on the same network | The token is bound to a browser's user agent and network, not to the browser itself. Someone on your visitor's own network, with the same browser version, could hand them a link that ties the two visits. Their lone visitor then joins the other's cluster, and their ad click can be credited with the other's sign-up. The tie cannot merge two groups of accounts by itself, and a reviewer can cut it. |
 | Behind a proxy | The network a token is bound to comes from `x-forwarded-for`, so `TRUST_PROXY` must say how many proxies you run. See [Running the server](operations.md#behind-a-proxy). |
-| The menu | A link opened from its menu (right-click, long press) is not carried, because the same menu can copy the address. |
+| The menu | A link opened from its menu (right-click, long press) is not carried, because the same menu can copy the address. This relies on the browser announcing the menu; whether every phone browser does on a long press was not checked. |
 | An old page | A token lasts an hour and is renewed after thirty minutes, and when a tab comes back into view. A link followed while the renewal is still on its way goes without one. |
 | In the library | `knownLink(url, subject, { secret })` makes a link; `readToken` checks one. |
