@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { after, describe, test } from 'node:test'
-import { GoogleError, MetaError, createBatcher, createGraph, createOutbox, googleAds, hashEmail, meta } from '../src/index.ts'
+import { GoogleError, MetaError, createBatcher, createGraph, createOutbox, googleAds, hashEmail, meta, microsoftAds } from '../src/index.ts'
 import type { IngestRequest, OutboxOptions, Outcome, Store } from '../src/index.ts'
 import type { Opened } from './suite.ts'
 
@@ -331,6 +331,62 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       clock.now += 60_000
       assert.deepEqual(await outbox.run(), { sent: 0, skipped: 0, failed: 1, retried: 0 })
       assert.ok(new MetaError(400, '{"error":{"code":190}}').code === 190)
+    })
+
+    test('Microsoft gets its own request shape, and a part-refused request is retried one by one', async () => {
+      const next = await open()
+      opened.push(next)
+      const graph = createGraph(next.store)
+      const posted: { url: string; headers: Record<string, string>; body: any }[] = []
+      let status = 200
+      const fetcher = (async (url: any, init: any) => {
+        const body = JSON.parse(init.body)
+        posted.push({ url: String(url), headers: init.headers, body })
+        if (status !== 200) return new Response(JSON.stringify({ Errors: [{ Code: 105, ErrorCode: 'InvalidCredentials' }] }), { status })
+        // Refuse any conversion for the goal's bad click, the way Microsoft reports it: a 200 with PartialErrors.
+        const refused = body.OfflineConversions.flatMap((c: any, Index: number) => (c.MicrosoftClickId === 'BAD' ? [{ Index, ErrorCode: 'OfflineConversionMicrosoftClickIdInvalid', Message: 'bad click' }] : []))
+        return new Response(JSON.stringify({ PartialErrors: refused }), { headers: { TrackingId: 'track-1' } })
+      }) as typeof fetch
+      const clock = { now: T0 + 2 * HOUR }
+      const outbox = createOutbox(graph, next.store.outbox, {
+        targets: [microsoftAds({ accessToken: () => 'ms-token', developerToken: 'dev', customerId: '11', customerAccountId: '22', fetch: fetcher })],
+        now: () => clock.now,
+        random: () => 1,
+      })
+      for (const [n, click] of [[1, 'M1'], [2, 'BAD']] as const) {
+        await graph.observe({ subject: `visitor:v${n}`, identifiers: [`device:v${n}`], at: T0 })
+        await graph.touch({ subject: `visitor:v${n}`, at: T0, msclkid: click })
+        await graph.observe({ subject: `contact:${n}`, identifiers: [`device:v${n}`], at: T0 + HOUR })
+      }
+      await outbox.record({ ...outcome(1), action: 'Enrolled', email: ' Pat@Example.com ', phone: '(800) 555-0100' })
+      await outbox.record({ ...outcome(2), action: 'Enrolled' })
+
+      assert.deepEqual(await outbox.run(), { sent: 1, skipped: 0, failed: 1, retried: 0 })
+      assert.equal(posted[0]!.url, 'https://campaign.api.bingads.microsoft.com/CampaignManagement/v13/OfflineConversions/Apply')
+      assert.deepEqual(posted[0]!.headers, { authorization: 'Bearer ms-token', DeveloperToken: 'dev', CustomerId: '11', CustomerAccountId: '22', 'content-type': 'application/json' })
+      assert.deepEqual(posted[0]!.body.OfflineConversions[0], {
+        ConversionName: 'Enrolled',
+        ConversionTime: new Date(T0 + HOUR).toISOString(),
+        ConversionValue: 200,
+        ConversionCurrencyCode: 'USD',
+        MicrosoftClickId: 'M1',
+        HashedEmailAddress: sha256('pat@example.com'),
+        HashedPhoneNumber: sha256('+18005550100'),
+      })
+      // The pair went together once, was part-refused, then each went alone.
+      assert.deepEqual(posted.map((request) => request.body.OfflineConversions.length), [2, 1, 1])
+      const [good] = await outbox.get('enroll-1')
+      assert.equal(good!.state, 'sent')
+      assert.equal(good!.requestId, 'track-1')
+      assert.deepEqual(good!.click, { msclkid: 'M1' })
+      const [bad] = await outbox.get('enroll-2')
+      assert.equal(bad!.state, 'failed')
+      assert.match(bad!.note!, /bad click/)
+
+      // A refused token is worth another try.
+      await outbox.record({ ...outcome(1), transactionId: 'later', action: 'Enrolled' })
+      status = 401
+      assert.deepEqual(await outbox.run(), { sent: 0, skipped: 0, failed: 0, retried: 1 })
     })
 
     test('forgetting a subject deletes its unsent conversions', async () => {
