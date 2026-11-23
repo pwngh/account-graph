@@ -1,6 +1,6 @@
 import { createMemoryOutbox } from './outbox.ts'
 import type { Store, Tx } from './store.ts'
-import type { Consent, Decision, Edge, FlowEdge, Identifier, IdentifierState, Labels, Sighting, Subject, Touch } from './types.ts'
+import type { Consent, Decision, Edge, FlowEdge, Identifier, IdentifierState, Labels, Moved, Sighting, Subject, Touch } from './types.ts'
 
 /**
  * Keeps the graph in process memory. Writes run one at a time; a write that
@@ -20,6 +20,7 @@ export function createMemoryStore(): Store {
   const flowsBy = new Map<Subject, Set<string>>()
   const consents = new Map<Subject, Consent>()
   const decisions: Decision[] = []
+  const moves: Moved[] = []
 
   const index = (groups: Map<Subject, Set<Subject>>, key: Subject, subject: Subject) => {
     const group = groups.get(key)
@@ -92,6 +93,7 @@ export function createMemoryStore(): Store {
       }
       flowsBy.delete(subject)
       consents.delete(subject)
+      for (let i = moves.length - 1; i >= 0; i--) if (moves[i]!.subject === subject) moves.splice(i, 1)
     },
 
     async edgesOf(subjects) {
@@ -152,12 +154,24 @@ export function createMemoryStore(): Store {
       }
     },
 
-    async largestClusters(limit) {
+    async largestClusters(limit, offset = 0) {
       return [...byCluster]
         .filter(([, group]) => group.size > 1)
         .map(([id, group]) => ({ id, size: group.size }))
         .sort((x, y) => y.size - x.size || (x.id < y.id ? -1 : 1))
-        .slice(0, limit)
+        .slice(offset, offset + limit)
+    },
+
+    async subjectsStarting(text, limit) {
+      return [...labels.keys()].filter((subject) => subject.startsWith(text)).sort().slice(0, limit)
+    },
+
+    async addChanges(at, changes) {
+      for (const change of changes) moves.push({ ...change, at })
+    },
+
+    async recentChanges(limit) {
+      return moves.slice(Math.max(0, moves.length - limit)).reverse().map((move) => ({ ...move }))
     },
 
     async allLabels() {

@@ -52,7 +52,7 @@ if (!url) {
     const running = await serve({ DATABASE_URL: url, GRAPH_SCHEMA: schema, GRAPH_TOKEN: 'service', REVIEW_TOKEN: 'review', ORIGINS: 'https://site.example', PORT: '0', HOST: '127.0.0.1' }, (line) => lines.push(line))
     const base = `http://127.0.0.1:${running.port}`
     try {
-      assert.equal(lines[0], 'database upgraded: tables, sighting record time')
+      assert.equal(lines[0], `database upgraded: ${upgrades().map((upgrade) => upgrade.name).join(', ')}`)
       assert.ok(lines.includes('collect accepts https://site.example'))
       assert.deepEqual(await (await fetch(`${base}/health`)).json(), { ok: true })
       assert.equal((await fetch(`${base}/collect.js`)).status, 200)

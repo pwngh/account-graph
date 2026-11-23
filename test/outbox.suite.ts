@@ -389,6 +389,31 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       assert.deepEqual(await outbox.run(), { sent: 0, skipped: 0, failed: 0, retried: 1 })
     })
 
+    test('failed and skipped conversions can be listed and put back in line', async () => {
+      const { graph, outbox, remote, clock } = await fresh()
+      for (const n of [1, 2]) await enroll(graph, n)
+      await outbox.record(outcome(1))
+      await outbox.record(outcome(2))
+      await outbox.record(outcome(9))
+      remote.refuseWith((request) => (request.events.some((event) => event.transactionId === 'enroll-2') ? new GoogleError(400, 'conversion action not found') : undefined))
+      assert.deepEqual(await outbox.run(), { sent: 1, skipped: 1, failed: 1, retried: 0 })
+
+      const failed = await outbox.list('failed')
+      assert.deepEqual(failed.map((job) => [job.transactionId, job.state]), [['enroll-2', 'failed']])
+      assert.match(failed[0]!.note!, /conversion action not found/)
+      assert.deepEqual((await outbox.list('skipped')).map((job) => [job.transactionId, job.note]), [['enroll-9', 'no_match_key']])
+      assert.deepEqual((await outbox.list('sent', 5)).map((job) => job.transactionId), ['enroll-1'])
+
+      // The cause is fixed, so the failed one goes round again. A sent one is left alone.
+      remote.refuseWith(undefined)
+      clock.now += 1000
+      assert.deepEqual((await outbox.retry('enroll-2')).map((job) => [job.state, job.attempts, job.note]), [['pending', 0, 'retried']])
+      assert.deepEqual(await outbox.retry('enroll-1'), [])
+      assert.deepEqual(await outbox.retry('unknown'), [])
+      assert.deepEqual(await outbox.run(), { sent: 1, skipped: 0, failed: 0, retried: 0 })
+      assert.deepEqual(await outbox.list('failed'), [])
+    })
+
     test('forgetting a subject deletes its unsent conversions', async () => {
       const { graph, outbox } = await fresh()
       await enroll(graph, 1)

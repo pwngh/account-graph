@@ -1,5 +1,5 @@
 import type { OutboxStore } from './outbox.ts'
-import type { Consent, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, Labels, Sighting, Subject, Touch } from './types.ts'
+import type { Change, Consent, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, Labels, Moved, Sighting, Subject, Touch } from './types.ts'
 
 /**
  * Where the graph lives. Sightings and touches are the record; edges and
@@ -33,8 +33,14 @@ export interface Tx {
   clusterOf(cluster: Subject): Promise<Subject[]>
   /** How much the graph holds. */
   counts(): Promise<Counts>
-  /** The clusters with two or more members, largest first. */
-  largestClusters(limit: number): Promise<{ id: Subject; size: number }[]>
+  /** The clusters with two or more members, largest first, skipping the first `offset`. */
+  largestClusters(limit: number, offset?: number): Promise<{ id: Subject; size: number }[]>
+  /** Subjects whose id starts with the text, in order. */
+  subjectsStarting(text: string, limit: number): Promise<Subject[]>
+  /** Writes down cluster changes as they happen. */
+  addChanges(at: number, changes: readonly Change[]): Promise<void>
+  /** The newest cluster changes, newest first. */
+  recentChanges(limit: number): Promise<Moved[]>
   allLabels(): Promise<Map<Subject, Labels>>
   setLabels(labels: ReadonlyMap<Subject, Labels>): Promise<void>
   /** Records, or with `false` withdraws, a reviewer's decision that two subjects are different people. */

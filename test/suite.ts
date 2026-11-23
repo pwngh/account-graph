@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, describe, test } from 'node:test'
-import { brokenAt, createGraph, defaultPolicy, email } from '../src/index.ts'
+import { brokenAt, createGraph, defaultPolicy, email, fit } from '../src/index.ts'
 import type { Change, GraphOptions, Observation, Policy, Store } from '../src/index.ts'
 
 export interface Opened {
@@ -303,6 +303,65 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await graph.touch({ subject: 'a', at: T0, gclid: 'G' })
       await graph.ignore('ip:198.51.100.2')
       assert.deepEqual(await graph.counts(), { subjects: 3, clusters: 2, identifiers: 3, edges: 4, sightings: 5, touches: 1, decisions: 1 })
+    })
+
+    test('the review queue pages, subjects are found by prefix, and recent changes are listed', async () => {
+      const clock = { now: T0 }
+      const { graph } = await fresh(undefined, { now: () => clock.now })
+      // Three clusters of sizes 3, 2 and 2, and one account on its own.
+      await graph.observe(chain('email', 'team:a', 'team:b', 'team:c'))
+      clock.now = T0 + HOUR
+      await graph.observe(chain('email', 'pair:x', 'pair:y'))
+      await graph.observe(chain('email', 'duo:m', 'duo:n'))
+      await graph.observe({ subject: 'solo%', identifiers: ['email:solo'], at: T0 })
+
+      assert.deepEqual((await graph.clusters(2)).map((c) => c.id), ['team:a', 'duo:m'])
+      assert.deepEqual((await graph.clusters(2, 2)).map((c) => c.id), ['pair:x'])
+      assert.deepEqual(await graph.clusters(2, 3), [])
+
+      assert.deepEqual(await graph.search('team:'), ['team:a', 'team:b', 'team:c'])
+      assert.deepEqual(await graph.search('pair:', 1), ['pair:x'])
+      // A percent sign means itself, not "anything".
+      assert.deepEqual(await graph.search('solo%'), ['solo%'])
+      assert.deepEqual(await graph.search('%'), [])
+      assert.deepEqual(await graph.search('nobody'), [])
+
+      const recent = await graph.recent()
+      assert.deepEqual(recent.map((move) => [move.subject, move.from, move.to, move.at]), [
+        ['duo:n', 'duo:n', 'duo:m', T0 + HOUR],
+        ['pair:y', 'pair:y', 'pair:x', T0 + HOUR],
+        ['team:c', 'team:c', 'team:a', T0],
+        ['team:b', 'team:b', 'team:a', T0],
+      ])
+      assert.equal((await graph.recent(1)).length, 1)
+      await graph.forget('pair:y')
+      assert.equal((await graph.recent()).some((move) => move.subject === 'pair:y'), false)
+    })
+
+    test('reviewer decisions become the checked pairs that set the weights', async () => {
+      const { graph } = await fresh()
+      // Reviewers looked at pairs that shared a canvas hash: three were one person, five were not.
+      for (let n = 0; n < 8; n++) {
+        await graph.observe([
+          { subject: `left:${n}`, identifiers: [`canvas:c${n}`], at: T0 },
+          { subject: `right:${n}`, identifiers: [`canvas:c${n}`], at: T0 },
+        ])
+        if (n < 3) await graph.join(`left:${n}`, `right:${n}`)
+        else await graph.separate(`left:${n}`, `right:${n}`)
+      }
+      // A decision that was withdrawn, and a pair that shares nothing, say nothing.
+      await graph.separate('left:7', 'right:7', false)
+      await graph.join('left:0', 'left:1')
+
+      const reviewed = await graph.reviewed()
+      assert.equal(reviewed.length, 7)
+      assert.deepEqual(reviewed.map((pair) => pair.same).sort(), [false, false, false, false, true, true, true])
+      // The reviewer's own join mark is the answer, not evidence, so it is not among the reasons.
+      assert.ok(reviewed.every((pair) => pair.reasons.length === 1 && pair.reasons[0]!.identifier.startsWith('canvas:')))
+
+      const fitted = fit(reviewed, defaultPolicy)
+      assert.equal(fitted.kinds.canvas!.pairs, 7)
+      assert.ok(fitted.kinds.canvas!.after < 0.5 && fitted.kinds.canvas!.after > 0.35, String(fitted.kinds.canvas!.after))
     })
 
     test('a cluster past the review size is flagged', async () => {

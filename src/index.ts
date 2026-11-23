@@ -35,6 +35,7 @@ export type {
   Labels,
   Level,
   Link,
+  Moved,
   Observation,
   Pair,
   Reason,

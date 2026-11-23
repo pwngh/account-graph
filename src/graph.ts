@@ -1,4 +1,5 @@
 import { brokenAt, seal } from './audit.ts'
+import type { Labeled } from './calibrate.ts'
 import { createMemoryStore } from './memory.ts'
 import { defaultPolicy, ruleFor, usable } from './policy.ts'
 import type { Policy } from './policy.ts'
@@ -17,6 +18,7 @@ import type {
   Identifier,
   Labels,
   Link,
+  Moved,
   Observation,
   Ring,
   Sighting,
@@ -74,8 +76,18 @@ export interface Graph {
   counts(): Promise<Counts>
   /** The subjects a reviewer has separated from this one. */
   separations(subject: Subject): Promise<Subject[]>
-  /** The clusters with two or more members, largest first: where a reviewer should look. */
-  clusters(limit?: number): Promise<{ id: Subject; size: number; oversized: boolean }[]>
+  /** The clusters with two or more members, largest first: where a reviewer should look. `offset` skips that many. */
+  clusters(limit?: number, offset?: number): Promise<{ id: Subject; size: number; oversized: boolean }[]>
+  /** Subjects whose id starts with the text, in order. */
+  search(text: string, limit?: number): Promise<Subject[]>
+  /** The newest cluster changes, newest first: who joined or left which cluster, and when. */
+  recent(limit?: number): Promise<Moved[]>
+  /**
+   * Every pair a reviewer joined or kept apart, with what the two share, in
+   * the form `fit` takes. A pair that shares nothing is left out, since it
+   * says nothing about any identifier.
+   */
+  reviewed(): Promise<Labeled[]>
   /** Records value moving between two subjects, and says how the two are tied by identity. */
   transfer(flow: Flow): Promise<Counterparty>
   /** Everyone a subject has exchanged value with, largest volume first. */
@@ -147,7 +159,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       if (!before || before.component !== labels.component || before.cluster !== labels.cluster) moved.set(subject, labels)
     }
     if (moved.size > 0) await tx.setLabels(moved)
-    return diff(stored, next).filter((change) => change.from !== change.to)
+    const changes = diff(stored, next).filter((change) => change.from !== change.to)
+    await tx.addChanges(now(), changes)
+    return changes
   }
 
   async function recompute(tx: Tx): Promise<Map<Subject, Labels>> {
@@ -363,8 +377,41 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return store.read(async (tx) => (await tx.separatedOf([subject])).map(([a, b]) => (a === subject ? b : a)).sort())
     },
 
-    clusters(limit = 50) {
-      return store.read(async (tx) => (await tx.largestClusters(limit)).map((each) => ({ ...each, oversized: each.size > policy.review })))
+    clusters(limit = 50, offset = 0) {
+      return store.read(async (tx) => (await tx.largestClusters(limit, offset)).map((each) => ({ ...each, oversized: each.size > policy.review })))
+    },
+
+    search(text, limit = 20) {
+      return store.read((tx) => tx.subjectsStarting(text, limit))
+    },
+
+    recent(limit = 50) {
+      return store.read((tx) => tx.recentChanges(limit))
+    },
+
+    reviewed() {
+      return store.read(async (tx) => {
+        // The last decision about a pair is the one that stands.
+        const verdicts = new Map<string, { a: Subject; b: Subject; same: boolean } | undefined>()
+        for (const { action, about } of await tx.decisions()) {
+          const [a, b] = about
+          if (a === undefined || b === undefined) continue
+          if (action === 'join') verdicts.set(pairKey(a, b), { a, b, same: true })
+          if (action === 'separate') verdicts.set(pairKey(a, b), { a, b, same: false })
+          if (action === 'rejoin') verdicts.set(pairKey(a, b), undefined)
+        }
+        // Score every shared identifier, however weak, and leave out the reviewer's own mark: it is the answer, not evidence.
+        const open = { ...policy, related: 0 }
+        const out: Labeled[] = []
+        for (const verdict of verdicts.values()) {
+          if (!verdict) continue
+          const edges = await tx.edgesOf([verdict.a, verdict.b])
+          const states = await tx.states(unique(edges.map((edge) => edge.identifier)))
+          const reasons = scorePairs(open, edges, states).flatMap((pair) => pair.reasons).filter((reason) => !reason.identifier.startsWith('review:'))
+          if (reasons.length > 0) out.push({ reasons, same: verdict.same })
+        }
+        return out
+      })
     },
 
     async consent(subject, consent) {

@@ -326,7 +326,7 @@ test('the reviewer token opens the review routes and nothing a service writes th
   const call = (token: string, method: string, path: string, body?: object) =>
     fetch(`${base}${path}`, { method, headers: { authorization: `Bearer ${token}` }, ...(body && { body: JSON.stringify(body) }) }).then((r) => r.status)
   try {
-    for (const path of ['/subject?subject=account:1', '/clusters', '/links?subject=account:1', '/flows?subject=account:1', '/decisions', '/audit']) {
+    for (const path of ['/subject?subject=account:1', '/clusters', '/clusters?offset=50', '/search?q=account', '/recent', '/links?subject=account:1', '/flows?subject=account:1', '/decisions', '/audit']) {
       assert.equal(await call('reviewer', 'GET', path), 200, path)
     }
     assert.equal(await call('reviewer', 'POST', '/separate', { a: 'account:1', b: 'account:2', by: 'dana' }), 200)
