@@ -37,6 +37,7 @@ export type {
   Observation,
   Pair,
   Reason,
+  Ring,
   Sighting,
   Subject,
   Touch,
