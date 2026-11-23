@@ -147,7 +147,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
 
     async largestClusters(limit) {
       const { rows } = await db.query(
-        `select cluster, count(*)::int as size from ${t('subject')} group by cluster having count(*) > 1 order by size desc, cluster limit $1`,
+        `select cluster, count(*)::int as size from ${t('subject')} group by cluster having count(*) > 1 order by size desc, cluster collate "C" limit $1`,
         [limit],
       )
       return rows.map((row) => ({ id: row.cluster as Subject, size: row.size as number }))
