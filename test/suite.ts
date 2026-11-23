@@ -253,7 +253,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
 
       assert.deepEqual(await graph.join('solo', 'y', { by: 'dana' }), [{ subject: 'y', from: 'x', to: 'solo' }, { subject: 'x', from: 'x', to: 'solo' }].sort((p, q) => (p.subject < q.subject ? -1 : 1)))
       assert.deepEqual(await members(graph, 'solo'), ['solo', 'x', 'y'])
-      assert.deepEqual((await graph.history('solo')).at(-1), { subject: 'solo', identifier: 'review:join-1', at: T0 + DAY, event: 'review' })
+      assert.deepEqual((await graph.history('solo')).at(-1), { subject: 'solo', identifier: 'review:join-1', at: T0 + DAY, event: 'review', recorded: T0 + DAY })
       assert.deepEqual((await graph.decisions()).map((d) => [d.action, d.about, d.by]), [['join', ['solo', 'y'], 'dana']])
       await assert.rejects(graph.join('solo', 'solo'), TypeError)
       await assert.rejects(graph.join('solo', 7 as unknown as string), TypeError)
@@ -391,13 +391,15 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
     })
 
     test('every decision is recorded, sealed, and can be replayed to see the past', async () => {
-      const clock = { now: T0 + 20 * DAY }
+      const clock = { now: T0 }
       const { graph } = await fresh(undefined, { now: () => clock.now })
       await graph.observe([
         { subject: 'a', identifiers: ['email:shared'], at: T0 },
         { subject: 'b', identifiers: ['email:shared'], at: T0 },
       ])
+      clock.now = T0 + 10 * DAY
       await graph.observe({ subject: 'c', identifiers: ['email:shared'], at: T0 + 10 * DAY })
+      clock.now = T0 + 20 * DAY
       await graph.ignore('email:shared', true, { by: 'dana', reason: 'front desk mailbox' })
       clock.now += DAY
       await graph.separate('b', 'a', true, { by: 'dana' })
@@ -423,6 +425,46 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual((await (await graph.asOf(T0 + 15 * DAY)).cluster('a'))!.members, ['a', 'b', 'c'])
       assert.deepEqual((await (await graph.asOf(T0 + 20 * DAY)).cluster('a'))!.members, ['a'])
       assert.deepEqual((await graph.cluster('a'))!.members, ['a'])
+    })
+
+    test('the past is what had been written down, not what had happened', async () => {
+      const clock = { now: T0 }
+      const { graph } = await fresh(undefined, { now: () => clock.now })
+      await graph.observe({ subject: 'a', identifiers: ['email:late'], at: T0 })
+      // b did this on day 1, but the record of it only arrived on day 30.
+      clock.now = T0 + 30 * DAY
+      await graph.observe({ subject: 'b', identifiers: ['email:late'], at: T0 + DAY, event: 'import' })
+      assert.deepEqual(await graph.history('b'), [{ subject: 'b', identifier: 'email:late', at: T0 + DAY, event: 'import', recorded: T0 + 30 * DAY }])
+
+      // On day 15 nobody knew about b, so a decision made then could not have rested on it.
+      assert.deepEqual((await (await graph.asOf(T0 + 15 * DAY)).cluster('a'))!.members, ['a'])
+      assert.deepEqual((await (await graph.asOf(T0 + 30 * DAY)).cluster('a'))!.members, ['a', 'b'])
+    })
+
+    test('pruning deletes old sightings and leaves links and clusters alone', async () => {
+      const clock = { now: T0 }
+      const { graph } = await fresh(undefined, { now: () => clock.now })
+      await graph.observe([
+        { subject: 'a', identifiers: ['email:e', 'ip:198.51.100.3'], at: T0 },
+        { subject: 'b', identifiers: ['email:e'], at: T0 },
+      ])
+      clock.now = T0 + 100 * DAY
+      await graph.observe({ subject: 'a', identifiers: ['email:e'], at: T0 + 100 * DAY })
+      const links = await graph.links('a')
+
+      assert.equal(await graph.prune(T0 + 50 * DAY, { by: 'ops', reason: '90 day retention' }), 3)
+      assert.equal(await graph.prune(T0 + 50 * DAY), 0)
+      assert.deepEqual((await graph.history('a')).map((s) => s.at), [T0 + 100 * DAY])
+      assert.deepEqual(await graph.history('b'), [])
+      // What the graph believes is unchanged.
+      assert.deepEqual(await graph.links('a'), links)
+      assert.deepEqual((await graph.cluster('b'))!.members, ['a', 'b'])
+      assert.deepEqual(await graph.verify(), [])
+      assert.deepEqual((await graph.decisions()).map((d) => [d.action, d.about, d.by]), [
+        ['prune', [String(T0 + 50 * DAY)], 'ops'],
+        ['prune', [String(T0 + 50 * DAY)], undefined],
+      ])
+      await assert.rejects(graph.prune(Number.NaN), TypeError)
     })
 
     test('an identifier of an unknown kind is refused and nothing is written', async () => {
