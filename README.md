@@ -10,7 +10,7 @@ Links accounts, leads, and anonymous visitors that share identifiers, and traces
 - **Reviewer decisions.** Join two subjects, keep two apart, or mute an identifier. Each decision is recorded with who and why, and sealed so the record cannot be quietly edited.
 - **Money flows.** Trades and transfers between accounts are reported with how the two are tied by identity, and value that goes round in a circle is found, so collusion shows up.
 - **Attribution with confidence.** A conversion lists every touch that could have led to it and credits one only when the chain of links is strong.
-- **Real integrations.** Fingerprint, the operating system's machine id, MaxMind, the Google tag's cookies, Google's Data Manager API, and Meta's Conversions API.
+- **Real integrations.** Fingerprint, the operating system's machine id, MaxMind, the Google tag's cookies, and the conversion APIs of Google, Meta, and Microsoft.
 - **An outbox for conversions.** Outcomes are recorded once, sent in batches to each ad platform, retried with backoff, and never sent by two workers at once.
 - **Consent.** A browser's opt-out signal and a banner's answer are stored and honoured before anything goes to an ad platform.
 - **A write queue.** Observations that arrive together are written together, four times faster on PostgreSQL.
@@ -176,7 +176,7 @@ let attribution = await graph.attribute('contact:1001', { at: Date.now() })
 Then record the outcome in the outbox, which sends it to each ad platform.
 
 ```ts
-import { createOutbox, googleAds, ingest, meta } from 'account-graph'
+import { createOutbox, googleAds, ingest, meta, microsoftAds } from 'account-graph'
 import { createGoogleTokens } from 'account-graph/google-auth'
 
 let token = createGoogleTokens(JSON.parse(serviceAccountKeyFile))
@@ -184,6 +184,7 @@ let outbox = createOutbox(graph, store.outbox, {
   targets: [
     googleAds({ customerId: '123-456-7890', send: async (request) => ingest(request, await token()) }),
     meta({ pixelId: '555', accessToken: process.env.META_TOKEN, url: 'https://example.org/' }),
+    microsoftAds({ accessToken: microsoftToken, developerToken, customerId: '11', customerAccountId: '22' }),
   ],
 })
 
@@ -191,7 +192,7 @@ await outbox.record({
   transactionId: 'enroll-1001',
   subject: 'contact:1001',
   at: Date.now(),
-  action: { google: '987654321', meta: 'Lead' }, // a conversion action id, an event name
+  action: { google: '987654321', meta: 'Lead', microsoft: 'Enrolled' }, // an action id, an event name, a goal name
   value: 200,
   email: form.email,
 })
@@ -199,7 +200,7 @@ await outbox.record({
 let stop = outbox.start(30_000) // send what is due, every 30 seconds
 ```
 
-Google gets one click id per conversion: `gclid`, else `gbraid`, else `wbraid`. Meta gets `fbc`, built from the `fbclid` and the time of the click. Each gets the email and phone hashed the way it matches them, as a second key for when the click id was lost. The two hash a Gmail address and a phone number differently, so each platform's keys are stored separately.
+Google gets one click id per conversion: `gclid`, else `gbraid`, else `wbraid`. Meta gets `fbc`, built from the `fbclid` and the time of the click. Microsoft gets the `msclkid`. Each gets the email and phone hashed the way it matches them, as a second key for when the click id was lost. The two hash a Gmail address and a phone number differently, so each platform's keys are stored separately.
 
 ## The outbox
 
@@ -215,14 +216,14 @@ Google gets one click id per conversion: `gclid`, else `gbraid`, else `wbraid`. 
 | The platform rejects a request for one bad event | Each event is sent alone; only the bad one is `failed` |
 | No trusted click and no email or phone | `skipped`: `no_match_key` |
 | The person, or the browser that clicked, refused ad measurement | `skipped`: `consent_denied` |
-| The outcome is over seven days old and bound for Meta | `skipped`: `too_old` |
+| The outcome is older than the platform accepts: 7 days for Meta, 90 for Microsoft | `skipped`: `too_old` |
 | A click below 0.9 confidence, but an email or phone | Sent with the email or phone alone |
 
 A worker takes a job by pushing its due time one minute ahead. If the worker dies, the job comes due again and another worker takes it. On PostgreSQL the claim locks its rows, so any number of workers can call `run` at once.
 
 Delivery is at least once. A job sent twice after a crash carries the same `transactionId`. Meta keeps the first copy; Google reads the second as a restatement of the same value, which changes nothing.
 
-`restate` changes an outcome's value after a refund or a correction and sends it again. Google overwrites the value it holds. Google has no way to retract a conversion, and Meta cannot restate one.
+`restate` changes an outcome's value after a refund or a correction and sends it again. Google overwrites the value it holds. Google has no way to retract a conversion, and Meta and Microsoft cannot restate one.
 
 ```ts
 await outbox.restate('enroll-1001', 120)
@@ -396,15 +397,16 @@ PostgreSQL writes take one advisory lock, so they run one at a time; the write q
 
 ## What has run for real
 
-- Every test runs on memory and on PostgreSQL 16: 107 tests, including a fuzz test that mixes observations, reviewer decisions, deletions, and transfers, and six outbox workers at once.
+- Every test runs on memory and on PostgreSQL 16: 118 tests, including a fuzz test that mixes observations, reviewer decisions, deletions, and transfers, and six outbox workers at once.
 - `collect` ran in Chrome against the server and PostgreSQL: it read the click id and tags from the URL, the enrollment was credited and sent through the outbox, and with `cookie: true` the device cookie was set by the server, invisible to script, and the same on the next visit.
 - The reviewer screen ran in Chrome under its content policy: a cluster opened, two accounts were kept apart with a reason, the cluster split, and the decision appeared on the record.
 - The hardware id ran on macOS and, in CI, on Linux.
-- The real endpoints of Fingerprint, MaxMind, Google's token service, Google's Data Manager, and Meta's Conversions API each answered an invalid key the way its documentation says.
+- The real endpoints of Fingerprint, MaxMind, Google's token service, Google's Data Manager, Meta's Conversions API, and Microsoft Advertising each answered an invalid key the way the code expects.
 
 ## Limits
 
-- No request has been made with real credentials, so a successful Fingerprint lookup, MaxMind answer, Google token, Google upload, and Meta upload are untested.
+- No request has been made with real credentials, so a successful Fingerprint lookup, MaxMind answer, Google token, and upload to Google, Meta, or Microsoft are untested.
+- Microsoft does not document how to normalize an email before hashing it; this lowercases and trims.
 - The two Fingerprint browser loaders have not run in a browser. They need a real key or a third-party script.
 - The hardware id's Windows path is untested.
 - `asOf` cannot bring back a forgotten subject or a pruned sighting; both are gone from every past.
