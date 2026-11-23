@@ -45,6 +45,7 @@ A token goes in the `authorization` header as `Bearer …`. There are two.
 | --- | --- |
 | `POST /collect` | Records one browser visit. Only from an origin in `ORIGINS`, and limited per address. Answers 204. |
 | `POST /event` | Records something a visitor did on a page: `{ device, event, id?, number? }`. Same origins and limit as `/collect`; only names in `EVENTS` are kept. Answers 204. |
+| `POST /carry` | Answers `{ token }`: a token the script tag adds to links that lead to your other sites. Same origins and limit as `/collect`. Only when `LINK_SECRET` is set. |
 | `POST /calls/twilio` | Twilio's status callback for a phone call. Checked against Twilio's signature. Only when Twilio is set up. |
 | `GET /collect.js` | The script tag that posts to `/collect` and `/event`. |
 | `GET /fingerprint.js` | Fingerprint helpers the script loads when asked to. |
@@ -86,6 +87,7 @@ The four `POST` routes answer with the subjects whose cluster moved.
 | `POST /transfer` | `{ from, to, amount, at, asset? }`. Records value moving, and answers with the identity tie between the two. |
 | `POST /convert` | An outcome: `{ transactionId, subject, at, stage?, value?, currency?, action?, email?, phone? }`. Counted for the report; with `action`, also sent to the ad platforms. |
 | `POST /restate` | `{ transactionId, value, currency? }`. Changes an outcome's value, in the report and on the platforms that can restate. |
+| `POST /link` | `{ url, subject, days? }`. Answers `{ url }`: the address with a token naming the person it is for. See [links](links.md). |
 | `POST /call` | A phone call: `{ id, from?, to, at, duration? }`. Answers `{ subject, flags, counted, visitor?, duplicate }`. See [calls](calls.md). |
 | `POST /costs` | A list of `{ day, source, amount, campaignId?, campaign?, currency?, clicks?, impressions? }`. A row for the same day, source and campaign replaces the one before. |
 | `GET /conversion?id=` | The jobs of one transaction, one per ad platform. |
@@ -95,7 +97,7 @@ The four `POST` routes answer with the subjects whose cluster moved.
 | `GET /stats` | Counts since start, what the graph holds, and outbox jobs by state. |
 | `GET /verify` | The subjects whose stored cluster differs from a full recompute. |
 
-`/conversion`, `/conversions` and `/retry` answer 404 when no ad platform is configured.
+`/conversion`, `/conversions` and `/retry` answer 404 when no ad platform is configured, and `/link` when `LINK_SECRET` is not set.
 
 ## Errors
 

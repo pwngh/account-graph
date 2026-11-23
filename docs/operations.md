@@ -13,7 +13,7 @@ npm start
 database upgraded: tables, sighting record time
 listening on 0.0.0.0:8080
 collect accepts https://example.org
-reviewer token off, server cookie off, fingerprint off, maxmind off
+reviewer token off, server cookie off, fingerprint off, maxmind off, signed links off
 outbox sends to nobody (no ad platform configured)
 page events taken: none (set EVENTS); calls from twilio off
 costs are read from nobody (post them to /costs)
@@ -53,6 +53,7 @@ Options ride on the script's address:
 | `collect.js?fingerprint=PUBLIC_KEY` | Confirms each visitor with Fingerprint. Add `&region=eu` or `&region=ap` outside the US, and `&endpoints=…` for your own subdomain. |
 | `collect.js?canvas=open` | Adds the open-source FingerprintJS id, recorded as the weaker `canvas` kind. |
 | `collect.js?params=mailing,placement` | Keeps address parameters of your own with each arrival. |
+| `collect.js?domains=shop.example,help.example` | Carries the visitor along links to your other sites. Needs `LINK_SECRET`. |
 
 The same script reports taps on phone links and clicks on elements marked `data-ag-event`, once the server is told which names to keep with `EVENTS`. [Page events and phone calls](calls.md) has the details.
 
@@ -62,7 +63,9 @@ The script keeps the visitor's device id in a cookie named `ag_device`, marked `
 
 ### Several sites
 
-Each site's domain gets its own device id, because a browser keeps cookies per domain. A person who visits two of your sites is two visitors until something ties them: a confirmed fingerprint, the same email at sign-in, or the same account signing in on both. That is what the graph is for, and it is why adding Fingerprint matters most when you run several domains.
+Each site's domain gets its own device id, because a browser keeps cookies per domain. A person who visits two of your sites is two visitors until something ties them.
+
+Three things can: the script tag's `domains` option, which carries a visitor along the links between your sites; a confirmed fingerprint; or the same account signing in on both. [Links](links.md) covers the first.
 
 ## Tokens
 
@@ -70,11 +73,13 @@ Each site's domain gets its own device id, because a browser keeps cookies per d
 
 `REVIEW_TOKEN` is for the people who review accounts. It opens the reviewer screen's routes and nothing your services write through. Make both long and random, for example with `openssl rand -hex 32`.
 
-> **`/collect`, `/event`, `/collect.js`, `/review` and `/health` need no token.** `/review` is only a page; nothing it shows arrives without one.
+> **`/collect`, `/event`, `/carry`, `/collect.js`, `/review` and `/health` need no token.** `/review` is only a page; nothing it shows arrives without one.
 
 ## Behind a proxy
 
 Set `TRUST_PROXY=true` when a proxy or load balancer you run sits in front. The server then reads each visitor's address from `x-forwarded-for`. Without it, every visit appears to come from the proxy, and the per-address limit below would count them as one sender.
+
+With two proxies in a row, such as a CDN in front of a load balancer, set `TRUST_PROXY=2`. Each proxy adds the address it heard from to the end of that header, so the visitor's is that many from the end. Whatever comes before it was written by the sender and is ignored.
 
 Set `COOKIE=true` to have the server keep the device id in a cookie it sets itself. Safari deletes a cookie set by script after seven days; one set by the server lasts. It only works when the server answers on the site's own domain, or on a subdomain with `COOKIE=example.org`.
 
@@ -114,13 +119,14 @@ On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes i
 | `ORIGINS` | none | Site addresses that may post visits, separated by commas. |
 | `PORT`, `HOST` | `8080`, `0.0.0.0` | Where to listen. |
 | `GRAPH_SCHEMA` | `account_graph` | The database schema to keep tables in. |
-| `TRUST_PROXY` | `false` | Read visitor addresses from `x-forwarded-for`. |
+| `TRUST_PROXY` | `false` | `true`, or how many proxies stand in front: read visitor addresses from `x-forwarded-for`. |
 | `COOKIE` | `false` | `true`, or a domain, to keep the device id in a server-set cookie. |
 | `RATE_PER_MINUTE`, `RATE_BURST` | `120`, `60` | The per-address limit on `/collect`. |
 | `RATE_LIMIT` | on | `off` removes that limit. |
 | `OUTBOX_INTERVAL_MS` | `30000` | How often to send what is due. |
 | `OUTBOX_DELAY_MS` | `0` | How long to hold a new outcome before its first send. |
 | `CHANGE_WEBHOOK` | none | A URL to post cluster changes to. |
+| `LINK_SECRET` | none | Signs links that name a person, and the tokens that carry a visitor between your sites. At least 16 characters. |
 | `EVENTS` | none | Names of page events to keep, separated by commas: `inquiry,phone_click`. |
 | `CALL_NUMBERS` | none | Your tracking numbers and the channel of each, as JSON: `{"+15551230001":{"source":"google","campaignId":"20222"}}`. |
 | `CALL_MIN_SECONDS` | `30` | A shorter call is recorded but not counted. |

@@ -62,8 +62,9 @@ await graph.outcome({ transactionId: 'enrolled-walk-in', subject: 'lead:walk-in'
 const handler = createHandler(graph, {
   token: 'service-demo',
   reviewToken: 'demo',
-  origins: ['http://localhost:3000'],
+  origins: ['http://localhost:3000', 'http://127.0.0.1:3000'],
   events: ['brochure', 'phone_click'],
+  linkSecret: 'demo-link-secret-not-for-real-use',
   calls: { numbers: { '+15551230001': { source: 'google', campaignId: '20222' } } },
 })
 const port = Number(process.env.PORT ?? 8788)

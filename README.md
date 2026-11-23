@@ -76,6 +76,7 @@ The `device:` value is the `ag_device` cookie the script set, which your backend
 - **Attribution with confidence.** A conversion lists every touch that could have led to it and credits one only when the chain of links is strong.
 - **A report of cost against outcomes.** Campaign costs are read from Google Ads and Meta, or posted, and set beside the inquiries, sign-ups and sales each campaign's visitors produced.
 - **Page events and phone calls.** The script tag reports taps and marked clicks, and a call that follows a tap is tied to the visitor who tapped, so calls land under the ad click that produced them.
+- **Links that name a person.** A signed link in an email or text ties the browser that opens it to the person it was sent to, and a visitor stays one visitor across your sites.
 - **Real integrations.** Fingerprint, the operating system's machine id, MaxMind, the Google tag's cookies, and the conversion APIs of Google, Meta, Microsoft, and TikTok.
 - **An outbox for conversions.** Outcomes are recorded once, sent in batches to each ad platform, retried with backoff, and never sent by two workers at once. Failed ones can be listed and retried.
 - **Consent.** A browser's opt-out signal and a banner's answer are stored and honoured before anything goes to an ad platform.
@@ -93,6 +94,7 @@ The `device:` value is the `ag_device` cookie the script set, which your backend
 - [The HTTP routes](docs/http.md): every route, which token opens it, and what it answers.
 - [What each campaign cost and brought in](docs/report.md): the three things the report needs, and how to read it.
 - [Page events and phone calls](docs/calls.md): what the script tag reports from a page, and how a call finds its visitor.
+- [Links that name a person](docs/links.md): signed links for email and text, and one visitor across several sites.
 
 **To understand it**
 
@@ -127,13 +129,14 @@ PostgreSQL writes take one advisory lock, so they run one at a time; the write q
 
 ## What has run for real
 
-- Every test runs on memory and on PostgreSQL 16, locally and in CI: 149 tests, including a fuzz test that mixes observations, reviewer decisions, deletions, and transfers, and six outbox workers at once.
+- Every test runs on memory and on PostgreSQL 16, locally and in CI: 154 tests, including a fuzz test that mixes observations, reviewer decisions, deletions, and transfers, and six outbox workers at once.
 - The image was built and `docker compose up` brought up the server and its database. With the example site pointed at it, a visit with an ad click followed by a sign-up was credited in Chrome, and the reviewer screen served from the container showed the account joined to its visitor.
 - The script tag ran in Chrome from a different origin than the page that loaded it.
 - With `cookie: true` the device cookie was set by the server, invisible to script, and the same on the next visit.
 - The reviewer screen ran in Chrome under its content policy: a cluster opened, two accounts were kept apart with a reason, the cluster split, and the decision appeared on the record.
 - The channel report ran in Chrome: a sign-up on the example site, arriving with a campaign id, appeared on that campaign's line beside its cost.
 - A tap on a phone link in Chrome, followed by a call posted for that number, joined the caller to the browser's visitor and counted the call under the visitor's campaign.
+- A signed link opened in Chrome tied the browser to its contact and left the address bar clean. Following a link to the example under a second host name joined that host's visitor to the first.
 - A database made before an upgrade was brought up to date by starting the server.
 - The hardware id ran on macOS and, in CI, on Linux.
 - The real endpoints of Fingerprint, MaxMind, Google's token service, Google's Data Manager, Meta, Microsoft Advertising, Microsoft's token service, and TikTok each answered an invalid key the way the code expects.

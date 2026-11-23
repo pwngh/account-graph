@@ -592,3 +592,128 @@ test('the server takes page events and phone calls, and ties a call to the visit
     plain.close()
   }
 })
+
+test('a link sent to one person ties the browser that opens it, and a visitor is carried between sites', async () => {
+  const graph = createGraph(createMemoryStore())
+  let clock = 1_800_000_000_000
+  const handler = createHandler(graph, { token: 'service', reviewToken: 'reviewer', origins: ['https://site.example', 'https://shop.example'], now: () => clock, linkSecret: 'a-long-secret-value', limit: false })
+  const server = createServer(handler).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const service = (path: string, body: object, token = 'service') => fetch(`${base}${path}`, { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify(body) })
+  const page = (path: string, body: object, origin = 'https://site.example', agent = 'Browser/1.0') => fetch(`${base}${path}`, { method: 'POST', headers: { origin, 'user-agent': agent }, body: JSON.stringify(body) })
+  const members = async (subject: string) => (await graph.cluster(subject))?.members
+  try {
+    // Your backend asks for a link for one contact and sends it to them.
+    const made = (await (await service('/link', { url: 'https://site.example/offer', subject: 'contact:1', days: 7 })).json()) as { url: string }
+    const known = new URL(made.url).searchParams.get('ag')!
+    assert.equal((await service('/link', { url: 'https://site.example/', subject: 'contact:1' }, 'reviewer')).status, 403)
+    assert.equal((await service('/link', { url: 'nope', subject: 'contact:1' })).status, 400)
+    for (const bad of [{ url: 'https://site.example/', subject: ' ' }, { url: 'javascript:alert(1)', subject: 'contact:1' }, { url: 'https://site.example/', subject: 'contact:1', days: 1e300 }, { url: 'https://site.example/', subject: 'contact:1', days: -1 }, { url: 'https://site.example/', subject: 'contact:1', days: '7' }, { url: 'https://site.example/', subject: '中'.repeat(256) }]) {
+      assert.equal((await service('/link', bad)).status, 400, JSON.stringify(bad).slice(0, 60))
+    }
+
+    // They open it: the browser is tied to them. A forged token ties nobody.
+    assert.equal((await page('/collect', { device: 'phone-1', known })).status, 204)
+    assert.equal((await page('/collect', { device: 'phone-2', known: known.slice(0, -2) + 'xx' })).status, 204)
+    assert.deepEqual(await members('contact:1'), ['contact:1', 'visitor:phone-1'])
+    assert.deepEqual(await members('visitor:phone-2'), ['visitor:phone-2'])
+    assert.deepEqual((await graph.links('contact:1')).map((link) => [link.subject, link.level, link.reasons[0]!.identifier]), [['visitor:phone-1', 'same', 'link:phone-1']])
+
+    // A second person's link opened in the same browser. Both are there by a link alone, so neither wins: each thins, and the browser is joined to nobody.
+    const linkFor = async (subject: string) => new URL(((await (await service('/link', { url: 'https://site.example/offer', subject })).json()) as { url: string }).url).searchParams.get('ag')!
+    await page('/collect', { device: 'phone-1', known: await linkFor('contact:2') })
+    assert.deepEqual(await members('contact:1'), ['contact:1'])
+    assert.deepEqual((await graph.links('visitor:phone-1')).map((link) => [link.subject, link.level]), [['contact:1', 'related'], ['contact:2', 'related']])
+
+    // A browser that belongs to someone by more than a link, here a sign-in, is not handed to another person of the same kind.
+    await graph.observe({ subject: 'contact:bob', identifiers: ['device:bob-phone'], at: clock })
+    await page('/collect', { device: 'bob-phone' })
+    await page('/collect', { device: 'bob-phone', known: await linkFor('contact:alice') })
+    assert.deepEqual(await members('contact:bob'), ['contact:bob', 'visitor:bob-phone'])
+    assert.equal(await members('contact:alice'), undefined)
+    assert.ok((await graph.history('visitor:bob-phone')).some((sighting) => sighting.identifier === 'opened:contact:alice (not tied)'))
+    // Openings that did not tie do not use up the person's three browsers: her own phone still ties.
+    for (const device of ['x-1', 'x-2', 'x-3']) {
+      await graph.observe({ subject: `contact:${device}`, identifiers: [`device:${device}`], at: clock })
+      await page('/collect', { device })
+      await page('/collect', { device, known: await linkFor('contact:alice') })
+    }
+    await page('/collect', { device: 'alice-phone', known: await linkFor('contact:alice') })
+    assert.deepEqual(await members('contact:alice'), ['contact:alice', 'visitor:alice-phone'])
+
+    // One person opens their link on a phone, a laptop and a tablet. A fourth browser is one too many to be the same person.
+    const third = await linkFor('contact:3')
+    for (const device of ['c3-phone', 'c3-laptop', 'c3-tablet', 'c3-fourth']) await page('/collect', { device, known: third })
+    assert.deepEqual(await members('contact:3'), ['contact:3', 'visitor:c3-laptop', 'visitor:c3-phone', 'visitor:c3-tablet'])
+    assert.deepEqual(await members('visitor:c3-fourth'), ['visitor:c3-fourth'])
+    // Opening it again in one of the three changes nothing.
+    await page('/collect', { device: 'c3-phone', known: third })
+    assert.equal((await members('contact:3'))!.length, 4)
+
+    // A week later the first link has run out.
+    clock += 8 * 86_400_000
+    await page('/collect', { device: 'phone-3', known })
+    assert.deepEqual(await members('visitor:phone-3'), ['visitor:phone-3'])
+
+    // One site asks for a token for its visitor; the next site hands it over with its own visit.
+    await page('/collect', { device: 'site-device', touch: { gclid: 'G-site' } })
+    const asked = await page('/carry', { device: 'site-device' })
+    assert.equal(asked.headers.get('access-control-allow-credentials'), 'true')
+    const { token } = (await asked.json()) as { token: string }
+    assert.equal((await page('/collect', { device: 'shop-device', carried: token }, 'https://shop.example')).status, 204)
+    assert.deepEqual(await members('visitor:shop-device'), ['visitor:shop-device', 'visitor:site-device'])
+    // So a sign-up on the second site is credited to the ad click that landed on the first.
+    await graph.observe({ subject: 'account:7', identifiers: ['device:shop-device'], at: clock + 1000 })
+    assert.equal((await graph.attribute('account:7', { at: clock + 1000 })).credited?.gclid, 'G-site')
+    assert.deepEqual((await graph.links('visitor:shop-device')).map((link) => [link.subject, link.reasons[0]!.identifier]), [['account:7', 'device:shop-device'], ['visitor:site-device', 'carry:site-device@shop.example']])
+    // Passed to another browser, or used after an hour, the same token ties nobody.
+    await page('/collect', { device: 'stranger', carried: token }, 'https://shop.example', 'Other/2.0')
+    assert.deepEqual(await members('visitor:stranger'), ['visitor:stranger'])
+    // Handed around a shared network, where the browsers look alike, it thins: a third holder ends the join, a fifth ends the tie.
+    await page('/collect', { device: 'lookalike-1', carried: token }, 'https://shop.example')
+    assert.deepEqual(await members('visitor:shop-device'), ['account:7', 'visitor:shop-device'])
+    assert.deepEqual((await graph.links('visitor:lookalike-1')).map((link) => link.level), ['related', 'related'])
+    for (const device of ['lookalike-2', 'lookalike-3']) await page('/collect', { device, carried: token }, 'https://shop.example')
+    assert.deepEqual(await graph.links('visitor:lookalike-1'), [])
+    clock += 3_600_001
+    await page('/collect', { device: 'late', carried: token }, 'https://shop.example')
+    assert.deepEqual(await members('visitor:late'), ['visitor:late'])
+    assert.equal((await page('/carry', { device: 'x' }, 'https://evil.example')).status, 403)
+    assert.deepEqual(await graph.verify(), [])
+  } finally {
+    server.close()
+  }
+
+  // With no secret set, there is nothing to sign with: the routes do not exist and tokens are ignored.
+  const plain = createServer(createHandler(graph, { token: 'service', origins: ['https://site.example'] })).listen(0, '127.0.0.1')
+  await new Promise((resolve) => plain.once('listening', resolve))
+  try {
+    const address = `http://127.0.0.1:${(plain.address() as AddressInfo).port}`
+    assert.equal((await fetch(`${address}/link`, { method: 'POST', headers: { authorization: 'Bearer service' }, body: '{}' })).status, 404)
+    assert.equal((await fetch(`${address}/carry`, { method: 'POST', headers: { origin: 'https://site.example' }, body: '{}' })).status, 401)
+  } finally {
+    plain.close()
+  }
+})
+
+test('behind a proxy the visitor is the address the proxy added, not one the sender wrote', async () => {
+  const seen = async (trustProxy: boolean | number, forwarded: string) => {
+    const graph = createGraph(createMemoryStore())
+    const server = createServer(createHandler(graph, { token: 'service', origins: ['https://site.example'], trustProxy })).listen(0, '127.0.0.1')
+    await new Promise((resolve) => server.once('listening', resolve))
+    try {
+      await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/collect`, { method: 'POST', headers: { origin: 'https://site.example', 'x-forwarded-for': forwarded }, body: JSON.stringify({ device: 'd' }) })
+      return (await graph.history('visitor:d')).map((sighting) => sighting.identifier).find((identifier) => identifier.startsWith('ip:'))
+    } finally {
+      server.close()
+    }
+  }
+  assert.equal(await seen(true, '203.0.113.9'), 'ip:203.0.113.9')
+  // The sender put an address in front; the one proxy in between added the real one at the end.
+  assert.equal(await seen(true, '198.51.100.1, 203.0.113.9'), 'ip:203.0.113.9')
+  // Two proxies: the visitor is two from the end.
+  assert.equal(await seen(2, '198.51.100.1, 203.0.113.9, 10.0.0.2'), 'ip:203.0.113.9')
+  assert.equal(await seen(2, '203.0.113.9'), 'ip:203.0.113.9')
+  assert.equal(await seen(false, '203.0.113.9'), 'ip:127.0.0.1')
+})

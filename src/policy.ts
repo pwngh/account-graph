@@ -67,6 +67,12 @@ export const defaultPolicy: Policy = {
     // Any hash computed in the browser and reported unverified, open-source FingerprintJS included.
     canvas: { weight: 0.5, dilution: 1, cap: 20, halfLife: 45 * DAY },
     ip: { weight: 0.3, dilution: 2, cap: 10, halfLife: 14 * DAY },
+    // A link sent to one person and opened in this browser. Two people's links opened in one browser thin each other out.
+    link: { weight: 0.92, dilution: 1, cap: 5, halfLife: Infinity },
+    // A visitor who followed a link from another of your sites, proven by a token made for that browser. Passed around, it thins.
+    carry: { weight: 0.95, dilution: 1, cap: 4, halfLife: Infinity },
+    // A note, not evidence: a browser opened the link sent to this person. It links nothing.
+    opened: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     // A phone call that began moments after exactly one visitor tapped its number on your site. `recordCall` writes it.
     dial: { weight: 0.92, dilution: 0, cap: 2, halfLife: Infinity },
     // A note, not evidence: the number a visitor tapped, or a call that was recorded. It links nothing.

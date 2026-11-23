@@ -11,8 +11,9 @@ import { fromTwilio, twilioCall } from './integrations/twilio.ts'
 import type { IpLookup } from './integrations/maxmind.ts'
 import type { Outbox } from './outbox.ts'
 import { reviewPage } from './review.ts'
+import { browserMark, knownLink, readToken, signToken } from './sign.ts'
 import { browserScripts, scriptHeaders } from './tag.ts'
-import type { Identifier, Level, Outcome, Subject, Touch } from './types.ts'
+import type { Identifier, Level, Observation, Outcome, Subject, Touch } from './types.ts'
 
 export interface HandlerOptions {
   /**
@@ -31,8 +32,14 @@ export interface HandlerOptions {
   reviewToken?: string
   /** Site origins allowed to post to `/collect`, such as `https://example.org`. */
   origins: readonly string[]
-  /** Read the visitor's address from `x-forwarded-for`. Turn on only behind a proxy you run. */
-  trustProxy?: boolean
+  /**
+   * Read the visitor's address from `x-forwarded-for`. Turn on only behind a
+   * proxy you run. `true` trusts one proxy; a number says how many stand in
+   * front. Each proxy adds the address it heard from to the end of the
+   * header, so the visitor's is that many entries from the end. Anything
+   * earlier was written by the sender and is not believed.
+   */
+  trustProxy?: boolean | number
   /** Confirms a Fingerprint event id. Without it, `fingerprintEvent` in a visit is dropped. */
   fingerprint?: FingerprintVerifier
   /** Classifies the visitor's address. A shared address is recorded but links nothing. */
@@ -67,6 +74,13 @@ export interface HandlerOptions {
    * signature is checked against.
    */
   calls?: CallOptions & { twilio?: { authToken: string; url: string } }
+  /**
+   * The secret that signs links. With it, `/link` makes an address that
+   * names the person it is sent to, a visit that arrives through one ties
+   * the browser to that person, and `/carry` lets the script tag keep a
+   * visitor the same visitor across your sites. Long and random.
+   */
+  linkSecret?: string
   /** The time zone `/report` reads its days in when the request names none. Use the ad account's. Defaults to UTC. */
   timeZone?: string
   /** The clock, for tests. */
@@ -141,7 +155,9 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     return true
   }
   const addressOf = (request: IncomingMessage): string => {
-    const forwarded = options.trustProxy ? String(request.headers['x-forwarded-for'] ?? '').split(',')[0]!.trim() : ''
+    const hops = options.trustProxy === true ? 1 : Number(options.trustProxy) || 0
+    const entries = hops > 0 ? String(request.headers['x-forwarded-for'] ?? '').split(',').map((entry) => entry.trim()).filter(Boolean) : []
+    const forwarded = entries[Math.max(0, entries.length - hops)] ?? ''
     return forwarded || request.socket.remoteAddress || ''
   }
 
@@ -252,7 +268,38 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         }
       }
     }
-    await graph.observe({ subject, identifiers, at, event: 'visit' })
+    // A link sent to one person names them; a link from another of your sites names the visitor they were there.
+    const also: Observation[] = []
+    if (options.linkSecret) {
+      const named = readToken(options.linkSecret, 'known', body.known, at)
+      if (named) {
+        // Every opening is noted. It ties the browser to the person only while that is believable.
+        const tie = identifier('link', device)
+        const tied = identifier('opened', named)
+        // Few browsers: a person has a phone, a laptop, a tablet. Only openings that tied count toward the three.
+        const openers = new Set((await graph.holders([tied])).map((edge) => edge.subject))
+        const room = openers.has(subject) || openers.size < 3
+        // Not someone else's browser: one that already holds another person of the same kind, by anything but a link,
+        // belongs to them. Where the other person is there by a link too, both are written and thin each other out,
+        // so whoever's link was opened first does not win.
+        const kind = named.slice(0, named.indexOf(':') + 1)
+        const others = (await graph.cluster(subject))?.members.filter((member) => member !== named && kind && member.startsWith(kind)) ?? []
+        const contested = others.length > 0 && (await graph.holders([tie])).some((edge) => edge.subject !== subject && edge.subject !== named)
+        if (room && (others.length === 0 || contested)) {
+          identifiers.push(tie, tied)
+          also.push({ subject: named, identifiers: [tie], at, event: 'link' })
+        } else identifiers.push(identifier('opened', `${named} (not tied)`))
+      }
+      const [from, mark] = readToken(options.linkSecret, 'carry', body.carried, at)?.split('\n') ?? []
+      // The token only counts in the browser it was made for, and the tie is filed per site, so one passed around thins to nothing.
+      if (from && from !== device && mark === browserMark(request.headers['user-agent'], address)) {
+        const tie = identifier('carry', `${from}@${new URL(request.headers.origin!).host}`)
+        identifiers.push(tie)
+        also.push({ subject: `visitor:${from}`, identifiers: [tie], at, event: 'visit' })
+      }
+    }
+    const visit = { subject, identifiers, at, event: 'visit' }
+    await graph.observe(also.length > 0 ? [visit, ...also] : visit)
     if (consent) await graph.consent(subject, consent)
 
     if (advertising && body.touch && typeof body.touch === 'object') {
@@ -306,7 +353,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     const path = `${request.method} ${url.pathname}`
     const origin = request.headers.origin
 
-    if (url.pathname === '/collect' || url.pathname === '/event') {
+    if (url.pathname === '/collect' || url.pathname === '/event' || (url.pathname === '/carry' && options.linkSecret)) {
       if (!origin || !options.origins.includes(origin)) throw new Refusal(403, 'Origin is not allowed')
       response.setHeader('access-control-allow-origin', origin)
       response.setHeader('vary', 'origin')
@@ -316,6 +363,13 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         tally.limited += 1
         response.setHeader('retry-after', String(Math.ceil(60 / perMinute)))
         throw new Refusal(429, 'Too many visits from this address')
+      }
+      if (url.pathname === '/carry') {
+        // The page reads this answer, and may send the server's own cookie with the request.
+        response.setHeader('access-control-allow-credentials', 'true')
+        const device = deviceOf(request, response, await json(request))
+        const made = `${device}\n${browserMark(request.headers['user-agent'], addressOf(request))}`
+        return { token: signToken(options.linkSecret!, 'carry', made, now() + 3_600_000) }
       }
       if (url.pathname === '/event') await happened(request, response)
       else {
@@ -420,6 +474,12 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return graph.audit()
       case 'POST /convert':
         return convert(await json(request))
+      case 'POST /link': {
+        if (!options.linkSecret) break
+        const body = await json(request)
+        if (body.days !== undefined && typeof body.days !== 'number') throw new Refusal(400, '`days` must be a number')
+        return { url: knownLink(String(body.url), body.subject, { secret: options.linkSecret, now, ...(body.days !== undefined && { lasts: body.days * 86_400_000 }) }) }
+      }
       case 'POST /call':
         return recordCall(graph, await json(request), { ...options.calls, convert })
       case 'POST /restate': {

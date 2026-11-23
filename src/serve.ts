@@ -69,12 +69,13 @@ export function configFrom(env: Env) {
     origins: (env.ORIGINS ?? '').split(',').map((origin) => origin.trim().replace(/\/$/, '')).filter(Boolean),
     port: number('PORT', 8080),
     host: env.HOST || '0.0.0.0',
-    trustProxy: env.TRUST_PROXY === 'true',
+    trustProxy: env.TRUST_PROXY === 'true' ? 1 : env.TRUST_PROXY === 'false' ? 0 : number('TRUST_PROXY', 0),
     cookie: env.COOKIE === 'true' ? true : env.COOKIE && env.COOKIE !== 'false' ? { domain: env.COOKIE } : false,
     limit: env.RATE_LIMIT === 'off' ? (false as const) : { perMinute: number('RATE_PER_MINUTE', 120), burst: number('RATE_BURST', 60) },
     outboxInterval: number('OUTBOX_INTERVAL_MS', 30_000),
     outboxDelay: number('OUTBOX_DELAY_MS', 0),
     changeWebhook: env.CHANGE_WEBHOOK,
+    linkSecret: env.LINK_SECRET || undefined,
     timeZone: env.REPORT_TIME_ZONE || 'UTC',
     events: (env.EVENTS ?? '').split(',').map((name) => name.trim()).filter(Boolean),
     callNumbers: parsed('CALL_NUMBERS'),
@@ -134,6 +135,7 @@ export function configFrom(env: Env) {
     }
     if (typeof channel?.source !== 'string' || !channel.source) wrong.push(`CALL_NUMBERS: "${number}" needs a source, such as {"source":"google"}`)
   }
+  if (config.linkSecret !== undefined && config.linkSecret.length < 16) wrong.push('LINK_SECRET must be at least 16 characters')
   if (config.reviewToken && config.reviewToken === config.token) wrong.push('REVIEW_TOKEN must differ from GRAPH_TOKEN')
   if (wrong.length > 0) throw new Error(`Cannot start:\n  ${wrong.join('\n  ')}`)
   return config
@@ -215,6 +217,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
     limit: config.limit,
     trustProxy: config.trustProxy,
     timeZone: config.timeZone,
+    ...(config.linkSecret && { linkSecret: config.linkSecret }),
     // A tap on a phone link is what ties a call to a visitor, so taking calls means taking that event.
     events: [...new Set([...config.events, ...(config.callNumbers || config.twilio ? ['phone_click'] : [])])],
     calls: { minimumSeconds: config.callMinimum, ...(config.callNumbers && { numbers: config.callNumbers }), ...(config.twilio && { twilio: config.twilio }) },
@@ -231,7 +234,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
   const on = (name: string, enabled: unknown) => `${name} ${enabled ? 'on' : 'off'}`
   log(`listening on ${config.host}:${port}`)
   log(`collect accepts ${config.origins.length > 0 ? config.origins.join(', ') : 'no origins yet (set ORIGINS)'}`)
-  log([on('reviewer token', config.reviewToken), on('server cookie', config.cookie), on('fingerprint', config.fingerprint), on('maxmind', config.maxmind)].join(', '))
+  log([on('reviewer token', config.reviewToken), on('server cookie', config.cookie), on('fingerprint', config.fingerprint), on('maxmind', config.maxmind), on('signed links', config.linkSecret)].join(', '))
   log(`outbox sends to ${targets.length > 0 ? targets.map((target) => target.name).join(', ') : 'nobody (no ad platform configured)'}`)
   log(`page events taken: ${options.events!.length > 0 ? options.events!.join(', ') : 'none (set EVENTS)'}; calls from twilio ${config.twilio ? 'on' : 'off'}`)
   log(`costs are read from ${sources.length > 0 ? sources.map(([name]) => name).join(', ') : 'nobody (post them to /costs)'}`)

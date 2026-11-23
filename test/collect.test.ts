@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { collect, event, read, watch } from '../src/collect.ts'
+import { carry, collect, event, read, watch } from '../src/collect.ts'
 
 /** Just enough of a browser for the collector: a URL, cookies, storage, and a beacon. */
 function browser(href: string, cookies: Record<string, string> = {}, gpc = false) {
@@ -169,4 +169,75 @@ test('page events are reported by name, from code and from marked elements', asy
   ])
   stop()
   assert.equal(listeners.size, 0)
+})
+
+test('tokens on the address are sent once and taken out of the address bar', async () => {
+  const page = browser('https://site.example/offer?ag=KNOWN.token.x&utm_source=mailer&ag_from=CARRY.token.y#top')
+  const replaced: string[] = []
+  Object.defineProperty(globalThis, 'history', { value: { state: null, replaceState: (_state: unknown, _title: string, url: string) => void replaced.push(url) }, configurable: true })
+  await collect({ endpoint: 'https://graph.example/collect' })
+  await settle()
+  assert.deepEqual([page.sent[0].known, page.sent[0].carried, page.sent[0].touch.source], ['KNOWN.token.x', 'CARRY.token.y', 'mailer'])
+  assert.deepEqual(replaced, ['https://site.example/offer?utm_source=mailer#top'])
+
+  // A page with neither leaves the address alone.
+  page.go('https://site.example/offer?utm_source=mailer')
+  await collect({ endpoint: 'https://graph.example/collect' })
+  assert.equal(replaced.length, 1)
+})
+
+test('links to your other sites carry the visitor along, and no other link is touched', async () => {
+  browser('https://site.example/')
+  ;(globalThis as any).location.hostname = 'site.example'
+  const asked: { url: string; init: RequestInit }[] = []
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (async (url: string, init: RequestInit) => {
+    asked.push({ url, init })
+    return new Response(JSON.stringify({ token: `token-${asked.length}` }))
+  }) as typeof fetch
+  const listeners = new Map<string, (happened: object) => void>()
+  Object.assign((globalThis as any).document, {
+    addEventListener: (name: string, listener: (happened: object) => void) => void listeners.set(name, listener),
+    removeEventListener: (name: string) => void listeners.delete(name),
+  })
+  const follow = (href: string, button = 0) => {
+    const link = { href }
+    listeners.get('pointerdown')!({ button, target: { closest: () => link } })
+    return link.href
+  }
+  try {
+    const stop = carry({ endpoint: 'https://graph.example/collect', domains: ['shop.example', ' Help.Example ', 'bücher.example', 'not a host'] })
+    await settle()
+    assert.equal(asked[0]!.url, 'https://graph.example/carry')
+    assert.equal(asked[0]!.init.credentials, 'include')
+    assert.equal(follow('https://shop.example/cart?x=1#pay'), 'https://shop.example/cart?x=1&ag_from=token-1#pay')
+    assert.equal(follow('https://help.example/'), 'https://help.example/?ag_from=token-1')
+    // A name in another script is matched in the form a link's host reads back in.
+    assert.equal(follow('https://bücher.example/'), 'https://xn--bcher-kva.example/?ag_from=token-1')
+    // The right button opens a menu that can copy the address, so it gets no token.
+    assert.equal(follow('https://shop.example/cart', 2), 'https://shop.example/cart')
+    // A long press, or a click with a key held, opens the same menu after the press: the token comes off again.
+    const pressed = { href: 'https://shop.example/cart?x=1' }
+    listeners.get('pointerdown')!({ button: 0, target: { closest: () => pressed } })
+    assert.equal(pressed.href, 'https://shop.example/cart?x=1&ag_from=token-1')
+    listeners.get('contextmenu')!({ target: { closest: () => pressed } })
+    assert.equal(pressed.href, 'https://shop.example/cart?x=1')
+    // The same site, a stranger's site, and something that is not an address are left alone.
+    assert.equal(follow('https://site.example/next'), 'https://site.example/next')
+    assert.equal(follow('https://elsewhere.example/'), 'https://elsewhere.example/')
+    assert.equal(follow('not an address'), 'not an address')
+    listeners.get('click')!({ target: { closest: () => null } })
+    assert.equal(asked.length, 1)
+    // A tab that comes back into view with a token still fresh asks for nothing.
+    ;(globalThis as any).document.visibilityState = 'visible'
+    listeners.get('visibilitychange')!({})
+    assert.equal(asked.length, 1)
+    stop()
+    assert.equal(listeners.size, 0)
+    // With no other sites named, nothing is asked and nothing listens.
+    carry({ endpoint: 'https://graph.example/collect' })()
+    assert.equal(asked.length, 1)
+  } finally {
+    globalThis.fetch = realFetch
+  }
 })

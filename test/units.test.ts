@@ -15,10 +15,13 @@ import {
   hashEmail,
   ingestRequest,
   ip,
+  knownLink,
   measure,
   normalizeEmail,
   normalizePhone,
+  readToken,
   scorePairs,
+  signToken,
   sourceOf,
 } from '../src/index.ts'
 import type { Edge, IdentifierState } from '../src/index.ts'
@@ -187,7 +190,8 @@ test('the server reads its settings from the environment and names everything wr
   assert.deepEqual([config.fingerprint, config.maxmind, config.google, config.meta, config.microsoft], [undefined, undefined, undefined, undefined, undefined])
   assert.equal(configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', RATE_LIMIT: 'off', COOKIE: 'true' }).limit, false)
   assert.equal(configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', COOKIE: 'true' }).cookie, true)
-  const calls = configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', EVENTS: 'inquiry, brochure', CALL_NUMBERS: '{"555-123-0001":{"source":"google"}}', TWILIO_AUTH_TOKEN: 't', TWILIO_WEBHOOK_URL: 'https://g.example/calls/twilio' })
+  assert.deepEqual(['true', 'false', '2', undefined].map((value) => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', TRUST_PROXY: value }).trustProxy), [1, 0, 2, 0])
+    const calls = configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', EVENTS: 'inquiry, brochure', CALL_NUMBERS: '{"555-123-0001":{"source":"google"}}', TWILIO_AUTH_TOKEN: 't', TWILIO_WEBHOOK_URL: 'https://g.example/calls/twilio' })
   assert.deepEqual([calls.events, calls.callNumbers, calls.callMinimum, calls.twilio], [['inquiry', 'brochure'], { '555-123-0001': { source: 'google' } }, 30, { authToken: 't', url: 'https://g.example/calls/twilio' }])
   assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', CALL_NUMBERS: '{"12":{}}', TWILIO_AUTH_TOKEN: 't', REPORT_TIME_ZONE: 'Mars/Olympus' }), (error: Error) =>
     ['"12" is not a phone number', '"12" needs a source', 'TWILIO_WEBHOOK_URL must be set along with TWILIO_AUTH_TOKEN', 'REPORT_TIME_ZONE must be a time zone'].every((line) => error.message.includes(line)))
@@ -336,4 +340,41 @@ test('the server counts outcomes without an ad platform, takes costs, and report
   } finally {
     server.close()
   }
+})
+
+test('a signed token reads back until it expires, and not after any change', () => {
+  const now = 1_800_000_000_000
+  const token = signToken('a-long-secret-value', 'known', 'contact:42', now + 60_000)
+  assert.match(token, /^[\w-]+\.[0-9a-z]+\.[\w-]{22}$/)
+  assert.equal(readToken('a-long-secret-value', 'known', token, now), 'contact:42')
+  assert.equal(readToken('a-long-secret-value', 'known', token, now + 60_000), undefined)
+  // Made for one use, it is not accepted for another; nor with another secret, another payload, or a later expiry.
+  assert.equal(readToken('a-long-secret-value', 'carry', token, now), undefined)
+  assert.equal(readToken('another-secret-value', 'known', token, now), undefined)
+  const [body, until, signed] = token.split('.')
+  assert.equal(readToken('a-long-secret-value', 'known', `${Buffer.from('contact:43').toString('base64url')}.${until}.${signed}`, now), undefined)
+  assert.equal(readToken('a-long-secret-value', 'known', `${body}.${(Number.parseInt(until!, 36) + 9999).toString(36)}.${signed}`, now), undefined)
+  for (const bad of [undefined, 42, '', 'a.b', 'a.b.c.d', `${body}.${until}.`, 'x'.repeat(2000)]) assert.equal(readToken('a-long-secret-value', 'known', bad, now), undefined)
+  // One token has one spelling: the same bytes written another way do not read.
+  for (const respelled of [`${body}=.${until}.${signed}`, `${body}.+${until}.${signed}`, `${body}. ${until}.${signed}`, `${body}.${until!.toUpperCase()}.${signed}`, `${body}.${until}!x.${signed}`]) {
+    assert.equal(readToken('a-long-secret-value', 'known', respelled, now), undefined, respelled)
+  }
+  assert.throws(() => signToken('', 'known', 'x', now), TypeError)
+
+  const link = knownLink('https://site.example/offer?utm_source=mailer#top', 'contact:42', { secret: 'a-long-secret-value', now: () => now })
+  const address = new URL(link)
+  assert.equal(address.origin + address.pathname + address.hash, 'https://site.example/offer#top')
+  assert.equal(address.searchParams.get('utm_source'), 'mailer')
+  // Thirty days unless told otherwise.
+  assert.equal(readToken('a-long-secret-value', 'known', address.searchParams.get('ag'), now + 29 * 86_400_000), 'contact:42')
+  assert.equal(readToken('a-long-secret-value', 'known', address.searchParams.get('ag'), now + 31 * 86_400_000), undefined)
+  assert.throws(() => knownLink('not an address', 'contact:42', { secret: 's' }), TypeError)
+  assert.throws(() => knownLink('https://site.example/', '', { secret: 's' }), TypeError)
+  assert.throws(() => knownLink('javascript:alert(1)', 'contact:42', { secret: 's' }), TypeError)
+  assert.throws(() => knownLink('https://site.example/', '中'.repeat(256), { secret: 's' }), TypeError)
+  assert.throws(() => knownLink('https://site.example/', 'contact:42', { secret: 's', lasts: 1e300 }), TypeError)
+  assert.throws(() => knownLink('https://site.example/', 'contact:42', { secret: 's', lasts: 0 }), TypeError)
+  // The longest subject allowed still makes a token that reads back.
+  const long = 'c'.repeat(512)
+  assert.equal(readToken('s', 'known', new URL(knownLink('https://site.example/', long, { secret: 's', now: () => now })).searchParams.get('ag'), now), long)
 })
