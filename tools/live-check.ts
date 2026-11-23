@@ -4,7 +4,7 @@
  *   node tools/live-check.ts
  */
 import { generateKeyPairSync } from 'node:crypto'
-import { ingest, ingestRequest, meta } from '../src/index.ts'
+import { ingest, ingestRequest, meta, microsoftAds } from '../src/index.ts'
 import { createFingerprintVerifier } from '../src/integrations/fingerprint.ts'
 import { createGoogleTokens } from '../src/integrations/google-auth.ts'
 import { createMaxMindLookup } from '../src/integrations/maxmind.ts'
@@ -24,11 +24,15 @@ await show('fingerprint', () => createFingerprintVerifier({ secretKey: 'invalid'
 await show('maxmind', () => createMaxMindLookup({ accountId: 1, licenseKey: 'invalid' })('8.8.8.8'))
 await show('google token', () => createGoogleTokens({ client_email: 'nobody@example-not-real.iam.gserviceaccount.com', private_key: key })())
 await show('google data manager', () => ingest(ingestRequest({ customerId: '1234567890', conversionActionId: '1' }, [{ transactionId: 't', at: Date.now(), click: { gclid: 'x' } }]), 'invalid'))
-const target = meta({ pixelId: '1', accessToken: 'invalid', url: 'https://example.org/' })
-await show('meta', async () => {
-  try {
-    return await target.deliver('Lead', [{ job, touch: undefined, consent: undefined }])
-  } catch (error) {
-    throw new Error(`${(error as Error).message} | retry later: ${target.retryable(error)}`)
-  }
-})
+for (const target of [
+  meta({ pixelId: '1', accessToken: 'invalid', url: 'https://example.org/' }),
+  microsoftAds({ accessToken: 'invalid', developerToken: 'invalid', customerId: '1', customerAccountId: '1' }),
+]) {
+  await show(target.name, async () => {
+    try {
+      return await target.deliver('Lead', [{ job: { ...job, target: target.name, keys: target.name === 'meta' ? job.keys : { email: 'a'.repeat(64) } }, touch: undefined, consent: undefined }])
+    } catch (error) {
+      throw new Error(`${(error as Error).message} | retry later: ${target.retryable(error)}`)
+    }
+  })
+}

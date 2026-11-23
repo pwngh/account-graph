@@ -146,3 +146,83 @@ export function meta(options: MetaOptions): Target {
     },
   }
 }
+
+export interface MicrosoftAdsOptions {
+  /** An OAuth access token for Microsoft Advertising, or a function that returns one. */
+  accessToken: string | (() => string | Promise<string>)
+  developerToken: string
+  /** The manager customer id, for the `CustomerId` header. */
+  customerId: string
+  /** The ad account id, for the `CustomerAccountId` header. */
+  customerAccountId: string
+  /** Send to Microsoft's sandbox instead of production. */
+  sandbox?: boolean
+  fetch?: typeof fetch
+}
+
+/** Microsoft answered with an error status, or accepted the request and refused some of its conversions. */
+export class MicrosoftError extends Error {
+  status: number
+  constructor(status: number, body: string) {
+    super(`Microsoft refused the request with ${status}: ${body}`)
+    this.status = status
+  }
+}
+
+/**
+ * Microsoft Advertising, through `ApplyOfflineConversions`. An outcome's
+ * action is the name of an offline conversion goal. Microsoft refuses
+ * conversions more than 90 days old, and keeps the first of two with the same
+ * click id and time.
+ */
+export function microsoftAds(options: MicrosoftAdsOptions): Target {
+  const fetcher = options.fetch ?? fetch
+  const host = options.sandbox ? 'campaign.api.sandbox.bingads.microsoft.com' : 'campaign.api.bingads.microsoft.com'
+  return {
+    name: 'microsoft',
+    batch: 1000,
+    maxAge: 90 * 86_400_000,
+    // Microsoft documents SHA-256 of the email and of the phone in E.164. The email is lowercased and trimmed first.
+    keys: (outcome) => ({
+      ...(outcome.email && { email: sha256(outcome.email.trim().toLowerCase()) }),
+      ...(outcome.phone && { phone: sha256(normalizePhone(outcome.phone)) }),
+    }),
+    click: (attribution, confidence) => attribution.touches.find((touch) => touch.confidence >= confidence && Boolean(touch.msclkid)),
+    async deliver(action, items) {
+      const token = typeof options.accessToken === 'function' ? await options.accessToken() : options.accessToken
+      const conversions = items.map(({ job, touch }) => {
+        if (touch?.msclkid) job.click = { msclkid: touch.msclkid }
+        return {
+          ConversionName: action,
+          ConversionTime: new Date(job.at).toISOString(),
+          ...(job.value !== undefined && { ConversionValue: job.value, ConversionCurrencyCode: job.currency ?? 'USD' }),
+          ...(touch?.msclkid && { MicrosoftClickId: touch.msclkid }),
+          ...(job.keys.email && { HashedEmailAddress: job.keys.email }),
+          ...(job.keys.phone && { HashedPhoneNumber: job.keys.phone }),
+        }
+      })
+      const response = await fetcher(`https://${host}/CampaignManagement/v13/OfflineConversions/Apply`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          DeveloperToken: options.developerToken,
+          CustomerId: options.customerId,
+          CustomerAccountId: options.customerAccountId,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ OfflineConversions: conversions }),
+      })
+      const body = await response.text()
+      if (!response.ok) throw new MicrosoftError(response.status, body)
+      // A 200 can still refuse some conversions. Treat it as a refusal, so the outbox sends each alone and finds which.
+      const refused = body ? JSON.parse(body)?.PartialErrors : undefined
+      if (Array.isArray(refused) && refused.length > 0) throw new MicrosoftError(200, JSON.stringify(refused.slice(0, 5)))
+      const tracking = response.headers.get('TrackingId')
+      return tracking ? { requestId: tracking } : {}
+    },
+    retryable(error) {
+      if (!(error instanceof MicrosoftError)) return true
+      return error.status === 401 || error.status === 429 || error.status >= 500
+    },
+  }
+}
