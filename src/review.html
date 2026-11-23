@@ -71,7 +71,8 @@ dialog h4 { margin: 0; font-size: 16px; }
   <label>Access token <input id="token" type="password" autocomplete="off" size="18"></label>
   <label>Your name <input id="by" autocomplete="off" size="14"></label>
   <form id="find" class="row">
-    <label>Subject <input id="subject" placeholder="account:42" size="22" required></label>
+    <label>Subject <input id="subject" placeholder="account:42" size="22" list="found" autocomplete="off" required></label>
+    <datalist id="found"></datalist>
     <button class="primary">Open</button>
   </form>
 </header>
@@ -81,6 +82,11 @@ dialog h4 { margin: 0; font-size: 16px; }
     <section>
       <h2>Largest clusters</h2>
       <ul id="queue"><li class="muted">Enter the access token to load.</li></ul>
+      <p><button id="more" hidden>Show more</button></p>
+    </section>
+    <section>
+      <h2>Recent changes</h2>
+      <ul id="recent"><li class="muted">None yet.</li></ul>
     </section>
     <section>
       <h2>Decisions</h2>
@@ -306,14 +312,45 @@ async function show(subject) {
   }
 }
 
+const queued = (cluster) => el('li', {}, open(cluster.id), el('span', { class: 'muted' }, ` ${cluster.size} accounts `), cluster.oversized ? el('span', { class: 'chip apart' }, 'review') : '')
+
+$('more').addEventListener('click', async () => {
+  try {
+    const next = await api('GET', `/clusters?offset=${$('queue').children.length}`)
+    $('queue').append(...next.map(queued))
+    $('more').hidden = next.length < 50
+  } catch (error) {
+    notice(error.message, true)
+  }
+})
+
+// Suggest subjects as the reviewer types, a moment after the last key.
+let typing
+$('subject').addEventListener('input', () => {
+  clearTimeout(typing)
+  typing = setTimeout(async () => {
+    const text = $('subject').value.trim()
+    if (!text || !$('token').value) return
+    try {
+      const found = await api('GET', `/search?q=${encodeURIComponent(text)}`)
+      $('found').replaceChildren(...found.map((subject) => el('option', { value: subject })))
+    } catch {}
+  }, 200)
+})
+
 const ACTIONS = { ignore: 'Stopped linking through', restore: 'Resumed linking through', separate: 'Kept apart', rejoin: 'Allowed to join', join: 'Joined', forget: 'Forgot', rebuild: 'Rebuilt every cluster', prune: 'Deleted sightings older than' }
 
 /** Reloads the lists and the open subject. Resolves to whether everything loaded. */
 async function refresh() {
   if (!$('token').value) return false
   try {
-    const [clusters, decisions, audit] = await Promise.all([api('GET', '/clusters'), api('GET', '/decisions'), api('GET', '/audit')])
-    $('queue').replaceChildren(...(clusters.length > 0 ? clusters.map((cluster) => el('li', {}, open(cluster.id), el('span', { class: 'muted' }, ` ${cluster.size} accounts `), cluster.oversized ? el('span', { class: 'chip apart' }, 'review') : '')) : [el('li', { class: 'muted' }, 'No clusters yet.')]))
+    const [clusters, decisions, audit, recent] = await Promise.all([api('GET', '/clusters'), api('GET', '/decisions'), api('GET', '/audit'), api('GET', '/recent')])
+    $('queue').replaceChildren(...(clusters.length > 0 ? clusters.map(queued) : [el('li', { class: 'muted' }, 'No clusters yet.')]))
+    // The list comes 50 at a time. A full page means there may be more.
+    $('more').hidden = clusters.length < 50
+    $('recent').replaceChildren(...(recent.length > 0 ? recent.slice(0, 30).map((move) => el('li', {}, open(move.subject),
+      el('span', {}, move.to === undefined ? ' was removed ' : move.to === move.subject ? ' is on its own again ' : ' joined '), move.to !== undefined && move.to !== move.subject ? open(move.to) : '',
+      el('span', { class: 'muted' }, ` ${when(move.at)}`))) : [el('li', { class: 'muted' }, 'None yet.')]))
     $('seal').textContent = audit.sound ? `${decisions.length} recorded. The record is whole.` : `The record was altered at entry ${audit.brokenAt}.`
     $('seal').className = audit.sound ? 'muted' : 'apart'
     // An ignore can be undone unless a later decision already restored that identifier.

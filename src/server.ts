@@ -62,7 +62,7 @@ const TOUCH_FIELDS = [
 
 /** What the reviewer token opens: what the reviewer screen reads, and the decisions a reviewer makes. */
 const REVIEW_ROUTES = new Set([
-  'GET /subject', 'GET /clusters', 'GET /links', 'GET /cluster', 'GET /history', 'GET /flows', 'GET /collusion', 'GET /rings',
+  'GET /subject', 'GET /clusters', 'GET /search', 'GET /recent', 'GET /links', 'GET /cluster', 'GET /history', 'GET /flows', 'GET /collusion', 'GET /rings',
   'GET /decisions', 'GET /audit', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
 ])
 
@@ -285,7 +285,11 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       case 'GET /subject':
         return profile(subject)
       case 'GET /clusters':
-        return graph.clusters()
+        return graph.clusters(50, Math.max(0, Number(url.searchParams.get('offset')) || 0))
+      case 'GET /search':
+        return graph.search(url.searchParams.get('q') ?? '')
+      case 'GET /recent':
+        return graph.recent()
       case 'POST /separate': {
         const body = await json(request)
         return graph.separate(body.a, body.b, body.separated ?? true, why(body))
@@ -325,6 +329,16 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         if (!options.outbox) break
         const body = await json(request)
         return options.outbox.restate(body.transactionId, body.value, body.currency)
+      }
+      case 'GET /conversions': {
+        if (!options.outbox) break
+        const state = url.searchParams.get('state') ?? 'failed'
+        if (!['pending', 'sent', 'skipped', 'failed'].includes(state)) throw new Refusal(400, 'state must be pending, sent, skipped, or failed')
+        return options.outbox.list(state as 'pending' | 'sent' | 'skipped' | 'failed')
+      }
+      case 'POST /retry': {
+        if (!options.outbox) break
+        return options.outbox.retry((await json(request)).transactionId)
       }
       case 'GET /conversion':
         if (!options.outbox) break
