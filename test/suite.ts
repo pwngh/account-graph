@@ -61,6 +61,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual((await graph.history('account:2', 2)).map((s) => s.identifier), ['fingerprint:f1', 'email:later'])
       assert.deepEqual((await graph.history('account:2', 1)).map((s) => s.identifier), ['email:later'])
       assert.equal((await graph.history('account:2', 50)).length, 3)
+      assert.deepEqual(await graph.history('account:2', 0), [])
     })
 
     test('a shared address alone links nothing', async () => {

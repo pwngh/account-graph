@@ -224,7 +224,7 @@ export function createMemoryStore(): Store {
 
     async history(subject, limit) {
       const all = [...(sightings.get(subject) ?? [])].sort((x, y) => x.at - y.at)
-      return limit === undefined ? all : all.slice(-limit)
+      return limit === undefined ? all : all.slice(Math.max(0, all.length - limit))
     },
 
     async sightingsUntil(at) {
