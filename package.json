@@ -7,6 +7,9 @@
   "engines": {
     "node": ">=22.18"
   },
+  "bin": {
+    "account-graph": "./dist/serve.js"
+  },
   "files": [
     "dist",
     "README.md",
@@ -49,6 +52,14 @@
     "./google-auth": {
       "types": "./dist/integrations/google-auth.d.ts",
       "default": "./dist/integrations/google-auth.js"
+    },
+    "./serve": {
+      "types": "./dist/serve.d.ts",
+      "default": "./dist/serve.js"
+    },
+    "./microsoft-auth": {
+      "types": "./dist/integrations/microsoft-auth.d.ts",
+      "default": "./dist/integrations/microsoft-auth.js"
     }
   },
   "scripts": {
@@ -58,7 +69,9 @@
     "demo": "node demo.ts",
     "bench": "node bench.ts",
     "prepublishOnly": "npm run check && npm test && npm run build",
-    "review": "node tools/review-demo.ts"
+    "review": "node tools/review-demo.ts",
+    "start": "node src/serve.ts",
+    "live-check": "node tools/live-check.ts"
   },
   "peerDependencies": {
     "pg": "^8.11.0"

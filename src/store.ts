@@ -1,5 +1,5 @@
 import type { OutboxStore } from './outbox.ts'
-import type { Consent, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, Labels, Sighting, Subject, Touch } from './types.ts'
+import type { Consent, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, Labels, Sighting, Subject, Touch } from './types.ts'
 
 /**
  * Where the graph lives. Sightings and touches are the record; edges and
@@ -31,6 +31,8 @@ export interface Tx {
   membersOf(components: readonly Subject[]): Promise<Map<Subject, Labels>>
   /** The members of one cluster. */
   clusterOf(cluster: Subject): Promise<Subject[]>
+  /** How much the graph holds. */
+  counts(): Promise<Counts>
   /** The clusters with two or more members, largest first. */
   largestClusters(limit: number): Promise<{ id: Subject; size: number }[]>
   allLabels(): Promise<Map<Subject, Labels>>

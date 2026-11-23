@@ -136,6 +136,17 @@ export interface Ring {
   tied: number
 }
 
+/** How much the graph holds. */
+export interface Counts {
+  subjects: number
+  clusters: number
+  identifiers: number
+  edges: number
+  sightings: number
+  touches: number
+  decisions: number
+}
+
 /** What a person agreed to. Both are about advertising; neither affects fraud checks. */
 export interface Consent {
   /** Their data may be sent to an ad platform to measure ads. */

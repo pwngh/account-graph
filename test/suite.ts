@@ -291,6 +291,20 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual((await graph.clusters(2)).map((cluster) => cluster.id), ['B1', '_x'])
     })
 
+    test('counts say how much the graph holds', async () => {
+      const { graph } = await fresh()
+      assert.deepEqual(await graph.counts(), { subjects: 0, clusters: 0, identifiers: 0, edges: 0, sightings: 0, touches: 0, decisions: 0 })
+      await graph.observe([
+        { subject: 'a', identifiers: ['email:e', 'ip:198.51.100.2'], at: T0 },
+        { subject: 'b', identifiers: ['email:e'], at: T0 },
+        { subject: 'c', identifiers: ['email:other'], at: T0 },
+      ])
+      await graph.observe({ subject: 'a', identifiers: ['email:e'], at: T0 + HOUR })
+      await graph.touch({ subject: 'a', at: T0, gclid: 'G' })
+      await graph.ignore('ip:198.51.100.2')
+      assert.deepEqual(await graph.counts(), { subjects: 3, clusters: 2, identifiers: 3, edges: 4, sightings: 5, touches: 1, decisions: 1 })
+    })
+
     test('a cluster past the review size is flagged', async () => {
       const { graph } = await fresh({ ...defaultPolicy, review: 3 })
       for (const n of [1, 2, 3]) await graph.observe({ subject: `account:${n}`, identifiers: ['device:d'], at: T0 })

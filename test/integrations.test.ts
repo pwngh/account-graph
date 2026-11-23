@@ -7,6 +7,7 @@ import { createGraph, createMemoryStore } from '../src/index.ts'
 import { createFingerprintVerifier, trusted } from '../src/integrations/fingerprint.ts'
 import type { VerifiedFingerprint } from '../src/integrations/fingerprint.ts'
 import { createGoogleTokens } from '../src/integrations/google-auth.ts'
+import { createMicrosoftTokens } from '../src/integrations/microsoft-auth.ts'
 import { hardwareId, machineId } from '../src/integrations/hardware.ts'
 import { createDatabaseLookup, createMaxMindLookup, shared } from '../src/integrations/maxmind.ts'
 import { createHandler } from '../src/server.ts'
@@ -349,4 +350,79 @@ test('the reviewer token opens the review routes and nothing a service writes th
   } finally {
     server.close()
   }
+})
+
+test('one address cannot flood collect, and health and stats answer', async () => {
+  const graph = createGraph(createMemoryStore())
+  const clock = { now: T0 }
+  const handler = createHandler(graph, { token: 'service', reviewToken: 'reviewer', origins: ['https://site.example'], now: () => clock.now, limit: { perMinute: 60, burst: 2 } })
+  const server = createServer(handler).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const visit = (device: string) => fetch(`${base}/collect`, { method: 'POST', headers: { origin: 'https://site.example' }, body: JSON.stringify({ device }) })
+  try {
+    assert.equal((await visit('a')).status, 204)
+    assert.equal((await visit('b')).status, 204)
+    const refused = await visit('c')
+    assert.equal(refused.status, 429)
+    assert.equal(refused.headers.get('retry-after'), '1')
+    assert.deepEqual(await graph.history('visitor:c'), [])
+    // One a second comes back.
+    clock.now += 1000
+    assert.equal((await visit('c')).status, 204)
+    assert.equal((await visit('d')).status, 429)
+
+    assert.deepEqual(await (await fetch(`${base}/health`)).json(), { ok: true })
+    assert.equal((await fetch(`${base}/stats`)).status, 401)
+    assert.equal((await fetch(`${base}/stats`, { headers: { authorization: 'Bearer reviewer' } })).status, 403)
+    const stats = (await (await fetch(`${base}/stats`, { headers: { authorization: 'Bearer service' } })).json()) as any
+    assert.deepEqual([stats.collected, stats.limited, stats.errors, stats.since], [3, 2, 0, T0])
+    assert.equal(stats.graph.subjects, 3)
+  } finally {
+    server.close()
+  }
+})
+
+test('the script tag is served as plain JavaScript that runs itself', async () => {
+  const graph = createGraph(createMemoryStore())
+  const server = createServer(createHandler(graph, { token: 'service', origins: [] })).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  try {
+    const script = await fetch(`${base}/collect.js`)
+    const body = await script.text()
+    assert.equal(script.status, 200)
+    assert.match(script.headers.get('content-type')!, /^text\/javascript/)
+    // Any site may load it, as a module, from another origin.
+    assert.equal(script.headers.get('access-control-allow-origin'), '*')
+    assert.match(body, /export async function collect\(options\s*\)/)
+    assert.match(body, /new URL\('collect', self\)/)
+    // No TypeScript is left for a browser to choke on.
+    assert.equal(/\binterface\b|: string|: Promise<| as const/.test(body), false)
+    const helpers = await (await fetch(`${base}/fingerprint.js`)).text()
+    assert.match(helpers, /export async function fingerprintEvent\(options\s*\)/)
+    assert.match(helpers, /export async function openFingerprint\(\)/)
+  } finally {
+    server.close()
+  }
+})
+
+test('a Microsoft refresh token is exchanged, rotated, and reused until it expires', async () => {
+  let clock = 1_800_000_000_000
+  const sent: URLSearchParams[] = []
+  const { fetcher } = fake((url, init) => {
+    assert.equal(url, 'https://login.microsoftonline.com/common/oauth2/v2.0/token')
+    const form = init.body as URLSearchParams
+    sent.push(form)
+    return { body: { access_token: `access-${sent.length}`, refresh_token: `refresh-${sent.length}`, expires_in: 3600 } }
+  })
+  const token = createMicrosoftTokens({ clientId: 'app', refreshToken: 'refresh-0', fetch: fetcher, now: () => clock })
+  assert.deepEqual(await Promise.all([token(), token()]), ['access-1', 'access-1'])
+  assert.deepEqual(Object.fromEntries(sent[0]!), { client_id: 'app', grant_type: 'refresh_token', refresh_token: 'refresh-0', scope: 'https://ads.microsoft.com/msads.manage offline_access' })
+  clock += 3600 * 1000
+  assert.equal(await token(), 'access-2')
+  // Microsoft handed back a newer refresh token, and that is the one used next.
+  assert.equal(sent[1]!.get('refresh_token'), 'refresh-1')
+  const refused = createMicrosoftTokens({ clientId: 'app', refreshToken: 'bad', clientSecret: 's', fetch: fake(() => ({ status: 400, body: { error: 'invalid_grant', error_description: 'AADSTS70000: bad token.\nTrace ID: x' } })).fetcher })
+  await assert.rejects(refused(), /400 invalid_grant: AADSTS70000: bad token\.$/)
 })

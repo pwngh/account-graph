@@ -7,6 +7,7 @@ import { generateKeyPairSync } from 'node:crypto'
 import { ingest, ingestRequest, meta, microsoftAds } from '../src/index.ts'
 import { createFingerprintVerifier } from '../src/integrations/fingerprint.ts'
 import { createGoogleTokens } from '../src/integrations/google-auth.ts'
+import { createMicrosoftTokens } from '../src/integrations/microsoft-auth.ts'
 import { createMaxMindLookup } from '../src/integrations/maxmind.ts'
 
 const show = async (name: string, work: () => Promise<unknown>) => {
@@ -23,6 +24,7 @@ const job = { transactionId: 't', target: 'meta', subject: 's', at: Date.now(), 
 await show('fingerprint', () => createFingerprintVerifier({ secretKey: 'invalid' })('1708102555327.NLOjmg'))
 await show('maxmind', () => createMaxMindLookup({ accountId: 1, licenseKey: 'invalid' })('8.8.8.8'))
 await show('google token', () => createGoogleTokens({ client_email: 'nobody@example-not-real.iam.gserviceaccount.com', private_key: key })())
+await show('microsoft token', () => createMicrosoftTokens({ clientId: '00000000-0000-0000-0000-000000000000', refreshToken: 'invalid' })())
 await show('google data manager', () => ingest(ingestRequest({ customerId: '1234567890', conversionActionId: '1' }, [{ transactionId: 't', at: Date.now(), click: { gclid: 'x' } }]), 'invalid'))
 for (const target of [
   meta({ pixelId: '1', accessToken: 'invalid', url: 'https://example.org/' }),

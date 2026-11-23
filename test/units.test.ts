@@ -19,6 +19,7 @@ import {
   scorePairs,
 } from '../src/index.ts'
 import type { Edge, IdentifierState } from '../src/index.ts'
+import { configFrom } from '../src/serve.ts'
 import { createHandler } from '../src/server.ts'
 
 const T0 = 1_700_000_000_000
@@ -172,4 +173,31 @@ test('fit recovers the true weights from checked pairs', () => {
   for (const bucket of fitted.calibration) assert.ok(Math.abs(bucket.predicted - bucket.actual) < 0.06, JSON.stringify(bucket))
   // With no data, nothing moves.
   assert.deepEqual(fit([], defaultPolicy).policy, defaultPolicy)
+})
+
+test('the server reads its settings from the environment and names everything wrong at once', () => {
+  const config = configFrom({ DATABASE_URL: 'postgres://db', GRAPH_TOKEN: 'svc', ORIGINS: 'https://a.example/, https://b.example ', COOKIE: 'a.example', RATE_BURST: '5' })
+  assert.deepEqual(config.origins, ['https://a.example', 'https://b.example'])
+  assert.deepEqual([config.port, config.host, config.schema, config.outboxInterval], [8080, '0.0.0.0', 'account_graph', 30_000])
+  assert.deepEqual(config.cookie, { domain: 'a.example' })
+  assert.deepEqual(config.limit, { perMinute: 120, burst: 5 })
+  assert.deepEqual([config.fingerprint, config.maxmind, config.google, config.meta, config.microsoft], [undefined, undefined, undefined, undefined, undefined])
+  assert.equal(configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', RATE_LIMIT: 'off', COOKIE: 'true' }).limit, false)
+  assert.equal(configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', COOKIE: 'true' }).cookie, true)
+
+  const full = configFrom({
+    DATABASE_URL: 'x', GRAPH_TOKEN: 'y', REVIEW_TOKEN: 'z', FINGERPRINT_SECRET: 'f', FINGERPRINT_REGION: 'eu',
+    MAXMIND_ACCOUNT_ID: '1', MAXMIND_LICENSE_KEY: 'k', GOOGLE_ADS_CUSTOMER_ID: '123', GOOGLE_SERVICE_ACCOUNT_FILE: '/key.json',
+    META_PIXEL_ID: 'p', META_ACCESS_TOKEN: 't', META_SITE_URL: 'https://a.example/',
+  })
+  assert.deepEqual(full.fingerprint, { secretKey: 'f', region: 'eu' })
+  assert.equal(full.maxmind!.service, 'insights')
+  assert.equal(full.google!.keyFile, '/key.json')
+  assert.equal(full.meta!.pixelId, 'p')
+
+  assert.throws(
+    () => configFrom({ GRAPH_TOKEN: 'same', REVIEW_TOKEN: 'same', PORT: 'eighty', MAXMIND_ACCOUNT_ID: '1', META_PIXEL_ID: 'p', FINGERPRINT_SECRET: 'f', FINGERPRINT_REGION: 'mars' }),
+    (error: Error) =>
+      ['DATABASE_URL is required', 'PORT must be a number', 'MAXMIND_LICENSE_KEY must be set along with MAXMIND_ACCOUNT_ID', 'META_ACCESS_TOKEN, META_SITE_URL must be set along with META_PIXEL_ID', 'FINGERPRINT_REGION must be us, eu, or ap', 'REVIEW_TOKEN must differ from GRAPH_TOKEN'].every((line) => error.message.includes(line)),
+  )
 })

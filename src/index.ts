@@ -25,6 +25,7 @@ export type {
   Cluster,
   Consent,
   Counterparty,
+  Counts,
   Decision,
   Edge,
   Flow,
