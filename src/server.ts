@@ -40,6 +40,14 @@ export interface HandlerOptions {
    * domain or a subdomain of it. `domain` shares the cookie across subdomains.
    */
   cookie?: boolean | { domain?: string }
+  /**
+   * How many visits one address may post to `/collect`. The origin check
+   * only stops browsers; a script can claim any origin, so this is what
+   * keeps one sender from flooding the graph. Each address may send `burst`
+   * at once and `perMinute` over time. Defaults to 120 a minute with a burst
+   * of 60. Pass `false` to turn it off, when a proxy in front already limits.
+   */
+  limit?: false | { perMinute?: number; burst?: number }
   /** Takes outcomes posted to `/convert`. Without it, that route answers 404. */
   outbox?: Outbox
   /** The clock, for tests. */
@@ -91,6 +99,30 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
 
   const ignoredAddresses = new Set<Identifier>()
 
+  /** What this process has done since it started, for `/stats`. */
+  const tally = { since: now(), collected: 0, limited: 0, errors: 0 }
+
+  // A token bucket per address: it refills steadily and a visit spends one token.
+  const perMinute = options.limit === false ? Infinity : (options.limit?.perMinute ?? 120)
+  const burst = options.limit === false ? Infinity : (options.limit?.burst ?? 60)
+  const buckets = new Map<string, { tokens: number; at: number }>()
+  const allowed = (address: string): boolean => {
+    if (perMinute === Infinity) return true
+    const at = now()
+    const bucket = buckets.get(address) ?? { tokens: burst, at }
+    bucket.tokens = Math.min(burst, bucket.tokens + ((at - bucket.at) / 60_000) * perMinute)
+    bucket.at = at
+    if (buckets.size >= 50_000 && !buckets.has(address)) buckets.clear()
+    buckets.set(address, bucket)
+    if (bucket.tokens < 1) return false
+    bucket.tokens -= 1
+    return true
+  }
+  const addressOf = (request: IncomingMessage): string => {
+    const forwarded = options.trustProxy ? String(request.headers['x-forwarded-for'] ?? '').split(',')[0]!.trim() : ''
+    return forwarded || request.socket.remoteAddress || ''
+  }
+
   const cookieDomain = typeof options.cookie === 'object' && options.cookie.domain ? `; Domain=${options.cookie.domain}` : ''
 
   /** Records one browser visit. The subject is the visitor; nothing here names an account. */
@@ -127,8 +159,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       if (verified && trusted(verified, { now: at })) identifiers.push(identifier('fingerprint', verified.visitorId))
     }
 
-    const forwarded = options.trustProxy ? String(request.headers['x-forwarded-for'] ?? '').split(',')[0]!.trim() : ''
-    const address = forwarded || request.socket.remoteAddress
+    const address = addressOf(request)
     if (address) {
       const seen = ip(address)
       identifiers.push(seen)
@@ -196,8 +227,20 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       response.setHeader('vary', 'origin')
       if (options.cookie) response.setHeader('access-control-allow-credentials', 'true')
       if (request.method !== 'POST') throw new Refusal(405, 'Use POST')
+      if (!allowed(addressOf(request))) {
+        tally.limited += 1
+        response.setHeader('retry-after', String(Math.ceil(60 / perMinute)))
+        throw new Refusal(429, 'Too many visits from this address')
+      }
       await collect(request, response)
+      tally.collected += 1
       return undefined
+    }
+
+    if (path === 'GET /health') {
+      // Reads one row, so it answers only when the database does.
+      await graph.separations('health')
+      return { ok: true }
     }
 
     if (path === 'GET /review') {
@@ -256,6 +299,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return graph.attribute(subject, { at: Number(url.searchParams.get('at') ?? now()) })
       case 'GET /verify':
         return graph.verify()
+      case 'GET /stats':
+        return { ...tally, graph: await graph.counts(), ...(options.outbox && { outbox: await options.outbox.counts() }) }
       case 'POST /prune': {
         const body = await json(request)
         return { pruned: await graph.prune(body.before, why(body)) }
@@ -289,7 +334,10 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       const refused = error instanceof Refusal || error instanceof TypeError || error instanceof SyntaxError
       const status = error instanceof Refusal ? error.status : refused ? 400 : 500
       const message = refused ? (error as Error).message : 'Internal error'
-      if (!refused) console.error(error)
+      if (!refused) {
+        tally.errors += 1
+        console.error(error)
+      }
       response.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: message }))
     }
   }
