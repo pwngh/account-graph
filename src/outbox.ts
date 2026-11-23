@@ -95,6 +95,8 @@ export interface OutboxStore {
   save(job: Job): Promise<void>
   /** Every job of one transaction, one per target. */
   get(transactionId: string): Promise<Job[]>
+  /** Jobs in one state, the most recently due first. */
+  list(state: JobState, limit: number): Promise<Job[]>
   counts(): Promise<Record<JobState, number>>
   /** Deletes every job of a subject. */
   remove(subject: Subject): Promise<void>
@@ -141,6 +143,10 @@ export interface Outbox {
   start(interval: number, onError?: (error: unknown) => void): () => void
   /** Every job of one transaction, one per platform. */
   get(transactionId: string): Promise<Job[]>
+  /** Jobs in one state, the most recently due first: what failed, what was skipped and why. */
+  list(state: JobState, limit?: number): Promise<Job[]>
+  /** Puts a transaction's failed and skipped jobs back in line, after you fixed what stopped them. */
+  retry(transactionId: string): Promise<Job[]>
   counts(): Promise<Record<JobState, number>>
 }
 
@@ -316,6 +322,19 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
     },
 
     get: (transactionId) => store.get(transactionId),
+    list: (state, limit = 100) => store.list(state, limit),
+
+    async retry(transactionId) {
+      const again: Job[] = []
+      for (const job of await store.get(transactionId)) {
+        if (job.state !== 'failed' && job.state !== 'skipped') continue
+        const next: Job = { ...job, state: 'pending', attempts: 0, due: now(), note: 'retried' }
+        await store.save(next)
+        again.push(next)
+      }
+      return again
+    },
+
     counts: () => store.counts(),
   }
   return outbox
@@ -343,6 +362,10 @@ export function createMemoryOutbox(): OutboxStore {
     },
     async get(transactionId) {
       return [...jobs.values()].filter((job) => job.transactionId === transactionId).map((job) => structuredClone(job))
+    },
+    async list(state, limit) {
+      const found = [...jobs.values()].filter((job) => job.state === state)
+      return found.sort((x, y) => y.due - x.due || (x.transactionId < y.transactionId ? -1 : 1)).slice(0, limit).map((job) => structuredClone(job))
     },
     async counts() {
       const out: Record<JobState, number> = { pending: 0, sent: 0, skipped: 0, failed: 0 }
