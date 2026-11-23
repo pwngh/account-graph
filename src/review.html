@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Account review</title>
+<style>
+:root {
+  --bg: #f6f5f1; --panel: #ffffff; --ink: #1c1b18; --muted: #6b6860; --line: #e2dfd6;
+  --same: #0b6e4f; --related: #b26a00; --apart: #b3261e; --accent: #1f4fd8; --chip: #efede6;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #151513; --panel: #1e1e1b; --ink: #ecebe6; --muted: #a09d94; --line: #33322d;
+    --same: #4cc79b; --related: #f0b24a; --apart: #ff8a80; --accent: #8fb0ff; --chip: #2a2925; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--panel); }
+header h1 { font-size: 16px; margin: 0 auto 4px 0; letter-spacing: .01em; }
+label { display: grid; gap: 3px; font-size: 12px; color: var(--muted); }
+input, button { font: inherit; color: inherit; }
+input { padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); min-width: 0; }
+button { padding: 6px 11px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.danger { color: var(--apart); }
+button.link { border: 0; padding: 0; background: none; color: var(--accent); text-align: left; overflow-wrap: anywhere; }
+main { display: grid; grid-template-columns: minmax(220px, 280px) minmax(0, 1fr); gap: 20px; padding: 20px; align-items: start; }
+@media (max-width: 760px) { main { grid-template-columns: 1fr; } }
+section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
+h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; }
+h3 { font-size: 20px; margin: 0 0 4px; overflow-wrap: anywhere; }
+p { margin: 4px 0; }
+.muted { color: var(--muted); }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+ul { list-style: none; margin: 0; padding: 0; }
+li { padding: 7px 0; border-top: 1px solid var(--line); }
+li:first-child { border-top: 0; }
+.wide { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-weight: 500; color: var(--muted); font-size: 12px; padding: 4px 10px 6px 0; white-space: nowrap; }
+td { padding: 8px 10px 8px 0; border-top: 1px solid var(--line); vertical-align: top; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.chip { display: inline-block; padding: 1px 7px; border-radius: 99px; background: var(--chip); font-size: 12px; white-space: nowrap; }
+.same { color: var(--same); } .related { color: var(--related); } .apart, .none-flag { color: var(--apart); }
+.reason { display: block; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.reason b { color: var(--ink); font-weight: 500; }
+svg { width: 100%; height: auto; max-height: 360px; display: block; }
+svg text { font: 11px system-ui, sans-serif; fill: var(--ink); }
+svg .node { fill: var(--panel); stroke: var(--muted); stroke-width: 1.5; cursor: pointer; }
+svg .node.me { fill: var(--accent); stroke: var(--accent); }
+svg .node.member { stroke: var(--same); stroke-width: 2.5; }
+svg .tie.same { stroke: var(--same); } svg .tie.related { stroke: var(--related); stroke-dasharray: 5 4; }
+svg .tie.apart { stroke: var(--apart); stroke-dasharray: 2 5; }
+#notice { padding: 9px 20px; background: var(--chip); border-bottom: 1px solid var(--line); }
+#notice.bad { color: var(--apart); }
+#notice:empty { display: none; }
+dialog { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); padding: 18px; width: min(420px, 92vw); }
+dialog::backdrop { background: rgba(0, 0, 0, .45); }
+dialog form { display: grid; gap: 12px; }
+dialog h4 { margin: 0; font-size: 16px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Account review</h1>
+  <label>Access token <input id="token" type="password" autocomplete="off" size="18"></label>
+  <label>Your name <input id="by" autocomplete="off" size="14"></label>
+  <form id="find" class="row">
+    <label>Subject <input id="subject" placeholder="account:42" size="22" required></label>
+    <button class="primary">Open</button>
+  </form>
+</header>
+<div id="notice" role="status"></div>
+<main>
+  <div>
+    <section>
+      <h2>Largest clusters</h2>
+      <ul id="queue"><li class="muted">Enter the access token to load.</li></ul>
+    </section>
+    <section>
+      <h2>Decisions</h2>
+      <p id="seal" class="muted"></p>
+      <ul id="decisions"></ul>
+    </section>
+  </div>
+  <div id="detail">
+    <section><p class="muted">Open a subject, or pick a cluster, to see who it is tied to and why.</p></section>
+  </div>
+</main>
+<dialog id="ask">
+  <form method="dialog">
+    <h4 id="ask-title"></h4>
+    <p id="ask-text" class="muted"></p>
+    <label>Reason, for the record <input id="ask-reason" autocomplete="off"></label>
+    <div class="row">
+      <button value="yes" class="primary" id="ask-yes">Confirm</button>
+      <button value="no">Cancel</button>
+    </div>
+  </form>
+</dialog>
+<script>
+'use strict'
+const $ = (id) => document.getElementById(id)
+// Everything from the server is shown with textContent, never as markup.
+const el = (tag, props = {}, ...children) => {
+  const node = document.createElement(tag)
+  for (const [key, value] of Object.entries(props)) {
+    if (key === 'class') node.className = value
+    else if (key === 'on') for (const [name, handler] of Object.entries(value)) node.addEventListener(name, handler)
+    else node.setAttribute(key, value)
+  }
+  for (const child of children) node.append(child instanceof Node ? child : String(child))
+  return node
+}
+const svg = (tag, attrs = {}, ...children) => {
+  const node = document.createElementNS('http://www.w3.org/2000/svg', tag)
+  for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value)
+  for (const child of children) node.append(child instanceof Node ? child : String(child))
+  return node
+}
+const when = (at) => new Date(at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+const percent = (score) => `${Math.round(score * 100)}%`
+const days = (gap) => {
+  if (gap === 0) return 'seen together'
+  const count = Math.round(gap / 86400000)
+  return count < 1 ? 'seen within a day' : `seen ${count} ${count === 1 ? 'day' : 'days'} apart`
+}
+const amount = (n) => n.toLocaleString()
+
+$('token').value = sessionStorage.getItem('token') ?? ''
+$('by').value = localStorage.getItem('by') ?? ''
+$('token').addEventListener('change', () => { sessionStorage.setItem('token', $('token').value); refresh() })
+$('by').addEventListener('change', () => localStorage.setItem('by', $('by').value))
+
+function notice(text, bad = false) {
+  $('notice').textContent = text
+  $('notice').className = bad ? 'bad' : ''
+}
+
+async function api(method, path, body) {
+  const response = await fetch(path, {
+    method,
+    headers: { authorization: `Bearer ${$('token').value}`, ...(body && { 'content-type': 'application/json' }) },
+    ...(body && { body: JSON.stringify(body) }),
+  })
+  if (response.status === 204) return undefined
+  const answer = await response.json()
+  if (!response.ok) throw new Error(response.status === 401 ? 'The access token was refused.' : answer.error ?? `Request failed with ${response.status}`)
+  return answer
+}
+
+/** Asks the reviewer to confirm, with a reason. Resolves to the reason, or undefined when cancelled. */
+function ask(title, text, confirm = 'Confirm') {
+  $('ask-title').textContent = title
+  $('ask-text').textContent = text
+  $('ask-yes').textContent = confirm
+  $('ask-reason').value = ''
+  return new Promise((resolve) => {
+    $('ask').addEventListener('close', () => resolve($('ask').returnValue === 'yes' ? $('ask-reason').value.trim() : undefined), { once: true })
+    $('ask').showModal()
+  })
+}
+
+/** Runs one reviewer action, then reloads what is on screen. */
+async function act(title, text, path, body, confirm) {
+  const reason = await ask(title, text, confirm)
+  if (reason === undefined) return
+  try {
+    await api('POST', path, { ...body, by: $('by').value.trim() || undefined, reason: reason || undefined })
+    notice(`${title}: done.`)
+  } catch (error) {
+    notice(error.message, true)
+  }
+  await refresh()
+}
+
+const open = (subject) => el('button', { class: 'link', on: { click: () => show(subject) } }, subject)
+
+function reasons(list) {
+  return list.map((reason) => {
+    const [kind] = reason.identifier.split(':')
+    return el('span', { class: 'reason' }, el('b', {}, kind), ` ${percent(reason.evidence)}, shared by ${reason.fanout}, ${days(reason.gap)} `,
+      el('button', { class: 'link', title: reason.identifier, on: { click: () => act('Stop linking through this identifier', reason.identifier, '/ignore', { identifier: reason.identifier }, 'Stop linking') } }, 'stop linking'))
+  })
+}
+
+/** The subject in the middle, the subjects tied to it around it, and the ties between them. */
+function picture(profile) {
+  const others = [...new Set([...(profile.cluster?.members ?? []), ...profile.ties.flatMap((tie) => [tie.a, tie.b]), ...profile.separated])].filter((s) => s !== profile.subject).slice(0, 24)
+  const members = new Set(profile.cluster?.members ?? [])
+  const place = new Map([[profile.subject, [300, 170]]])
+  others.forEach((subject, i) => {
+    const angle = (2 * Math.PI * i) / others.length - Math.PI / 2
+    place.set(subject, [300 + 220 * Math.cos(angle), 170 + 125 * Math.sin(angle)])
+  })
+  const drawing = svg('svg', { viewBox: '0 0 600 340', role: 'img', 'aria-label': `Ties of ${profile.subject}` })
+  const line = (a, b, kind, width, label) => {
+    const [from, to] = [place.get(a), place.get(b)]
+    if (from && to) drawing.append(svg('line', { class: `tie ${kind}`, x1: from[0], y1: from[1], x2: to[0], y2: to[1], 'stroke-width': width }, svg('title', {}, label)))
+  }
+  for (const tie of profile.ties) line(tie.a, tie.b, tie.level, 1 + 3 * tie.score, `${tie.a} and ${tie.b}: ${tie.level} ${percent(tie.score)}`)
+  for (const other of profile.separated) line(profile.subject, other, 'apart', 2, `${profile.subject} and ${other}: kept apart by a reviewer`)
+  for (const [subject, [x, y]] of place) {
+    const me = subject === profile.subject
+    const node = svg('circle', { class: `node${me ? ' me' : members.has(subject) ? ' member' : ''}`, cx: x, cy: y, r: me ? 11 : 8, tabindex: 0 }, svg('title', {}, subject))
+    node.addEventListener('click', () => show(subject))
+    drawing.append(node, svg('text', { x, y: y + (y < 170 ? -14 : 22), 'text-anchor': 'middle' }, subject.length > 22 ? `${subject.slice(0, 21)}…` : subject))
+  }
+  return drawing
+}
+
+function render(profile) {
+  const detail = $('detail')
+  detail.replaceChildren()
+  if (!profile.known) {
+    detail.append(el('section', {}, el('h3', {}, profile.subject), el('p', { class: 'muted' }, 'Nothing has been recorded about this subject.')))
+    return
+  }
+  const size = profile.cluster.members.length
+  const summary = el('section', {}, el('h3', {}, profile.subject),
+    el('p', {}, size > 1 ? `In a cluster of ${size} that the graph treats as one person.` : 'On its own. The graph treats it as one person with one account.'),
+    profile.cluster.oversized ? el('p', { class: 'apart' }, 'This cluster is larger than the review size. A shared identifier may be joining strangers.') : '',
+    el('div', { class: 'row' },
+      el('button', { on: { click: async () => {
+        const other = prompt('Join with which subject?')
+        if (other) await act('Join as one person', `${profile.subject} and ${other.trim()}`, '/join', { a: profile.subject, b: other.trim() }, 'Join')
+      } } }, 'Join with another…'),
+      el('button', { class: 'danger', on: { click: () => act('Forget this subject', `Everything recorded about ${profile.subject} will be deleted. This cannot be undone.`, '/forget', { subject: profile.subject }, 'Delete') } }, 'Forget…')))
+  detail.append(summary)
+
+  if (profile.ties.length > 0 || profile.separated.length > 0) detail.append(el('section', {}, el('h2', {}, 'Picture'), picture(profile),
+    el('p', { class: 'muted' }, 'Solid: joined. Dashed: related, not joined. Dotted red: kept apart by a reviewer. Click a circle to open it.')))
+
+  const members = new Set(profile.cluster.members)
+  const links = el('table', {}, el('tr', {}, el('th', {}, 'Subject'), el('th', {}, 'Tie'), el('th', { class: 'num' }, 'Score'), el('th', {}, 'Why'), el('th', {})))
+  for (const link of profile.links) {
+    const inCluster = members.has(link.subject)
+    links.append(el('tr', {},
+      el('td', {}, open(link.subject)),
+      el('td', {}, el('span', { class: `chip ${link.level}` }, link.level === 'same' ? (inCluster ? 'same person' : 'strong, not joined') : 'related')),
+      el('td', { class: 'num' }, percent(link.score)),
+      el('td', {}, ...reasons(link.reasons)),
+      el('td', {}, el('button', { on: { click: () => act('Keep these two apart', `${profile.subject} and ${link.subject} will never share a cluster, whatever they share later.`, '/separate', { a: profile.subject, b: link.subject }, 'Keep apart') } }, 'Keep apart'))))
+  }
+  for (const other of profile.separated) {
+    links.append(el('tr', {}, el('td', {}, open(other)), el('td', {}, el('span', { class: 'chip apart' }, 'kept apart')), el('td', {}), el('td', { class: 'muted' }, 'A reviewer decided these are different people.'),
+      el('td', {}, el('button', { on: { click: () => act('Allow these two to join again', `${profile.subject} and ${other}`, '/separate', { a: profile.subject, b: other, separated: false }, 'Allow') } }, 'Allow again'))))
+  }
+  detail.append(el('section', {}, el('h2', {}, 'Ties'), profile.links.length + profile.separated.length > 0 ? el('div', { class: 'wide' }, links) : el('p', { class: 'muted' }, 'No other subject shares enough with this one to be tied to it.')))
+
+  if (profile.flows.length > 0) {
+    const flows = el('table', {}, el('tr', {}, el('th', {}, 'With'), el('th', {}, 'Tie'), el('th', { class: 'num' }, 'Sent'), el('th', { class: 'num' }, 'Received'), el('th', { class: 'num' }, 'Times'), el('th', {}, 'Last')))
+    for (const flow of profile.flows) {
+      flows.append(el('tr', {}, el('td', {}, open(flow.subject)),
+        el('td', {}, el('span', { class: `chip ${flow.relation === 'none' ? '' : flow.relation}` }, flow.relation === 'none' ? 'no tie' : flow.relation === 'same' ? 'same person' : 'related')),
+        el('td', { class: 'num' }, `${amount(flow.sent)} ${flow.asset}`), el('td', { class: 'num' }, `${amount(flow.received)} ${flow.asset}`), el('td', { class: 'num' }, flow.count), el('td', {}, when(flow.last))))
+    }
+    detail.append(el('section', {}, el('h2', {}, 'Money'), el('div', { class: 'wide' }, flows)))
+  }
+
+  const history = el('table', {}, el('tr', {}, el('th', {}, 'When'), el('th', {}, 'Doing'), el('th', {}, 'Seen with')))
+  for (const sighting of profile.history) history.append(el('tr', {}, el('td', {}, when(sighting.at)), el('td', {}, sighting.event ?? ''), el('td', { class: 'reason' }, sighting.identifier)))
+  detail.append(el('section', {}, el('h2', {}, `Sightings, newest ${profile.history.length}`), el('div', { class: 'wide' }, history)))
+}
+
+let current
+async function show(subject) {
+  current = subject
+  $('subject').value = subject
+  history.replaceState(null, '', `#${encodeURIComponent(subject)}`)
+  try {
+    render(await api('GET', `/subject?subject=${encodeURIComponent(subject)}`))
+    notice('')
+  } catch (error) {
+    notice(error.message, true)
+  }
+}
+
+const ACTIONS = { ignore: 'Stopped linking through', restore: 'Resumed linking through', separate: 'Kept apart', rejoin: 'Allowed to join', join: 'Joined', forget: 'Forgot', rebuild: 'Rebuilt every cluster' }
+
+async function refresh() {
+  if (!$('token').value) return
+  try {
+    const [clusters, decisions, audit] = await Promise.all([api('GET', '/clusters'), api('GET', '/decisions'), api('GET', '/audit')])
+    $('queue').replaceChildren(...(clusters.length > 0 ? clusters.map((cluster) => el('li', {}, open(cluster.id), el('span', { class: 'muted' }, ` ${cluster.size} accounts `), cluster.oversized ? el('span', { class: 'chip apart' }, 'review') : '')) : [el('li', { class: 'muted' }, 'No clusters yet.')]))
+    $('seal').textContent = audit.sound ? `${decisions.length} recorded. The record is whole.` : `The record was altered at entry ${audit.brokenAt}.`
+    $('seal').className = audit.sound ? 'muted' : 'apart'
+    const restored = new Set(decisions.filter((d) => d.action === 'restore').map((d) => d.about[0]))
+    $('decisions').replaceChildren(...decisions.slice(-30).reverse().map((d) => el('li', {},
+      el('span', {}, `${ACTIONS[d.action] ?? d.action} `), ...d.about.map((subject) => el('span', { class: 'reason' }, subject)),
+      el('span', { class: 'muted' }, `${when(d.at)}${d.by ? `, ${d.by}` : ''}${d.reason ? `: ${d.reason}` : ''} `),
+      d.action === 'ignore' && !restored.has(d.about[0]) ? el('button', { class: 'link', on: { click: () => act('Resume linking through this identifier', d.about[0], '/ignore', { identifier: d.about[0], ignored: false }, 'Resume') } }, 'undo') : '')))
+    if (current) await show(current)
+    else notice('')
+  } catch (error) {
+    notice(error.message, true)
+  }
+}
+
+$('find').addEventListener('submit', (event) => { event.preventDefault(); show($('subject').value.trim()) })
+if (location.hash.length > 1) current = decodeURIComponent(location.hash.slice(1))
+refresh()
+</script>
+</body>
+</html>

@@ -145,6 +145,14 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       return rows.map((row) => row.id as Subject)
     },
 
+    async largestClusters(limit) {
+      const { rows } = await db.query(
+        `select cluster, count(*)::int as size from ${t('subject')} group by cluster having count(*) > 1 order by size desc, cluster limit $1`,
+        [limit],
+      )
+      return rows.map((row) => ({ id: row.cluster as Subject, size: row.size as number }))
+    },
+
     async allLabels() {
       const { rows } = await db.query(`select id, component, cluster from ${t('subject')}`)
       return toLabels(rows)

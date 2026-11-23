@@ -7,7 +7,8 @@ import type { FingerprintVerifier } from './integrations/fingerprint.ts'
 import { shared } from './integrations/maxmind.ts'
 import type { IpLookup } from './integrations/maxmind.ts'
 import type { Outbox } from './outbox.ts'
-import type { Identifier, Touch } from './types.ts'
+import { reviewPage } from './review.ts'
+import type { Identifier, Level, Subject, Touch } from './types.ts'
 
 export interface HandlerOptions {
   /** The bearer token your own services send. Browsers never hold it. */
@@ -38,6 +39,9 @@ const TOUCH_FIELDS = [
   'source', 'medium', 'campaign', 'gclid', 'gbraid', 'wbraid', 'fbclid', 'msclkid', 'landing', 'referrer',
 ] as const
 
+/** A route that wrote its own answer. */
+const SENT = Symbol('sent')
+
 class Refusal extends Error {
   status: number
   constructor(status: number, message: string) {
@@ -47,8 +51,9 @@ class Refusal extends Error {
 }
 
 /**
- * An HTTP handler for `node:http`. `/collect` is open to the listed origins;
- * every other route needs the bearer token.
+ * An HTTP handler for `node:http`. `/collect` is open to the listed origins,
+ * `/review` serves the reviewer screen, and every other route needs the
+ * bearer token.
  */
 export function createHandler(graph: Graph, options: HandlerOptions) {
   const now = options.now ?? Date.now
@@ -124,6 +129,35 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     }
   }
 
+  /** Everything the reviewer screen shows about one subject, in one answer. */
+  async function profile(subject: Subject) {
+    const cluster = await graph.cluster(subject)
+    if (!cluster) return { subject, known: false }
+    const links = await graph.links(subject)
+    const ties = new Map<string, { a: Subject; b: Subject; score: number; level: Level }>()
+    const add = (from: Subject, to: Subject, score: number, level: Level) => {
+      const [a, b] = from < to ? [from, to] : [to, from]
+      ties.set(`${a}\u0000${b}`, { a, b, score, level })
+    }
+    for (const link of links) add(subject, link.subject, link.score, link.level)
+    // The ties among the cluster's other members, so the picture shows how the cluster holds together.
+    const members = new Set(cluster.members)
+    for (const member of cluster.members.slice(0, 24)) {
+      if (member === subject) continue
+      for (const link of await graph.links(member)) if (members.has(link.subject)) add(member, link.subject, link.score, link.level)
+    }
+    return {
+      subject,
+      known: true,
+      cluster,
+      links,
+      ties: [...ties.values()],
+      separated: await graph.separations(subject),
+      flows: await graph.flows(subject),
+      history: (await graph.history(subject)).slice(-100).reverse(),
+    }
+  }
+
   async function route(request: IncomingMessage, response: ServerResponse): Promise<unknown> {
     const url = new URL(request.url ?? '/', 'http://localhost')
     const path = `${request.method} ${url.pathname}`
@@ -137,6 +171,12 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       if (request.method !== 'POST') throw new Refusal(405, 'Use POST')
       await collect(request, response)
       return undefined
+    }
+
+    if (path === 'GET /review') {
+      // The page is only a shell. Nothing it shows arrives without the token.
+      response.writeHead(200, reviewPage.headers).end(reviewPage.html)
+      return SENT
     }
 
     authorize(request)
@@ -158,6 +198,14 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         const body = await json(request)
         return graph.consent(body.subject, body.consent)
       }
+      case 'POST /join': {
+        const body = await json(request)
+        return graph.join(body.a, body.b, why(body))
+      }
+      case 'GET /subject':
+        return profile(subject)
+      case 'GET /clusters':
+        return graph.clusters()
       case 'POST /separate': {
         const body = await json(request)
         return graph.separate(body.a, body.b, body.separated ?? true, why(body))
@@ -200,6 +248,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
   return async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     try {
       const result = await route(request, response)
+      if (result === SENT) return
       if (result === undefined) return void response.writeHead(204).end()
       response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result))
     } catch (error) {
