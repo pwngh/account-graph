@@ -42,13 +42,16 @@ export function ladderProblems(ladder: unknown, targets: readonly string[]): str
     if (stage.value !== undefined && (typeof stage.value !== 'number' || !Number.isFinite(stage.value) || stage.value < 0)) wrong.push(`step "${name}" needs a value of zero or more`)
     if (stage.currency !== undefined && typeof stage.currency !== 'string') wrong.push(`step "${name}" needs its currency as text`)
     const { action } = stage
-    if (action === undefined || targets.length === 0) continue
-    if (typeof action === 'string') {
-      if (targets.length > 1) wrong.push(`step "${name}" must name its action per platform, such as {"${targets[0]}":"…"}`)
-    } else if (!action || typeof action !== 'object' || Object.values(action).some((each) => typeof each !== 'string' || !each)) {
+    if (action === undefined) continue
+    const named = typeof action === 'string' ? undefined : action && typeof action === 'object' && !Array.isArray(action) ? Object.entries(action) : null
+    if (named === null || (typeof action === 'string' && !action) || named?.some(([, each]) => typeof each !== 'string' || !each)) {
       wrong.push(`step "${name}" needs its action as text, or as one text per platform`)
+    } else if (targets.length === 0) {
+      wrong.push(`step "${name}" has an action, but no ad platform is set up to send it to`)
+    } else if (named === undefined) {
+      if (targets.length > 1) wrong.push(`step "${name}" must name its action per platform, such as {"${targets[0]}":"…"}`)
     } else {
-      for (const target of Object.keys(action)) if (!targets.includes(target)) wrong.push(`step "${name}" names "${target}", which is not set up`)
+      for (const [target] of named) if (!targets.includes(target)) wrong.push(`step "${name}" names "${target}", which is not set up`)
     }
   }
   return wrong

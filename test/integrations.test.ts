@@ -743,6 +743,11 @@ test('steps give page events, calls and outcomes their value and their ad platfo
     // A page event needs only its name: the step says what it is worth and where it goes.
     assert.equal((await post('/event', { device: 'd-1', event: 'inquiry' }, { origin: 'https://site.example' })).status, 204)
     assert.deepEqual((await outbox.get(`inquiry:d-1:2026-03-02`)).map((job) => [job.target, job.action, job.value, job.currency]), [['google', '111', 5, 'USD']])
+    // A step worth something counts once a day per browser, whatever id the page gives and however often it reports.
+    assert.equal((await post('/event', { device: 'd-1', event: 'inquiry' }, { origin: 'https://site.example' })).status, 204)
+    for (const id of ['a', 'b', 'c']) assert.equal((await post('/event', { device: 'd-1', event: 'inquiry', id }, { origin: 'https://site.example' })).status, 204)
+    assert.deepEqual(await outbox.get('inquiry:d-1:a'), [])
+    assert.equal((await outbox.counts()).pending, 1)
 
     // A call takes its step the same way, with the caller's number as a match key.
     const call = (await (await post('/call', { id: 'CA1', from: '+15558675309', to: '+15551230001', at, duration: 90 })).json()) as any

@@ -113,7 +113,9 @@ curl -X POST https://graph.example.org/restate -H "authorization: Bearer $GRAPH_
   -d '{"transactionId":"client-1001","value":1250}'
 ```
 
-The report's columns follow the order of `STAGES`. A step whose action names a platform that is not set up stops the server at start, so a typo cannot quietly send nothing.
+The report's columns follow the order of `STAGES`. A step whose action names a platform that is not set up stops the server at start, so a typo cannot quietly send nothing. That includes any action at all while no ad platform is set up.
+
+> **A step that a page can report is a step a page can fake.** If a step is also listed in `EVENTS`, a browser can create it: once a day per browser, at the step's value. [Page events](calls.md#page-events) says how to choose which steps to allow.
 
 ## How an outcome finds its campaign
 

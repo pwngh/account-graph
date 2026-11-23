@@ -42,6 +42,8 @@ export function createAlerter(options: AlertOptions): Alerter {
       if (!response.ok) throw new Error(`The alert webhook answered ${response.status}`)
       return true
     } catch (error) {
+      // Nobody heard this one, so the next of its kind must not be held back.
+      if (last.get(about) === at) last.delete(about)
       ;(options.onError ?? console.error)(error)
       return false
     }

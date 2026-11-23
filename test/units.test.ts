@@ -401,9 +401,13 @@ test('a step fills in what an outcome leaves out, and nothing it states', () => 
     'step "e" needs its action as text, or as one text per platform',
     'step "f" needs its currency as text',
   ])
-  // With one platform a plain action is enough; with none, actions are not checked because nothing is sent.
+  // With one platform a plain action is enough. With none, an action has nowhere to go, and saying so beats sending nothing quietly.
   assert.deepEqual(ladderProblems({ c: { action: 'x' } }, ['google']), [])
-  assert.deepEqual(ladderProblems({ d: { action: { tiktok: 'y' } } }, []), [])
+  assert.deepEqual(ladderProblems({ d: { action: { gogle: 'y' } }, e: { action: 'x' }, f: { value: 5 } }, []), [
+    'step "d" has an action, but no ad platform is set up to send it to',
+    'step "e" has an action, but no ad platform is set up to send it to',
+  ])
+  assert.deepEqual(ladderProblems({ g: { action: 5 }, h: { action: ['x'] }, i: { action: '' } }, ['google']).length, 3)
   assert.deepEqual(ladderProblems([1], []), ['must be an object of steps, such as {"inquiry":{"value":5}}'])
   assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', STAGES: '{"inquiry":{"value":"5"}}' }), /STAGES: step "inquiry" needs a value of zero or more/)
   assert.deepEqual(configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', STAGES: '{"inquiry":{"value":5}}', ALERT_WEBHOOK: 'https://hooks.example/x' }).stages, { inquiry: { value: 5 } })
@@ -437,4 +441,8 @@ test('an alert is posted once per subject per quiet period, and a broken webhook
   status = 0
   assert.equal(await alert('outbox', 'again'), false)
   assert.deepEqual(errors.map((error) => (error as Error).message), ['The alert webhook answered 500', 'network down'])
+  // An alert nobody heard does not hold back the next one of its kind.
+  status = 200
+  assert.equal(await alert('conversions', 'heard this time'), true)
+  assert.equal(await alert('conversions', 'and now held back'), false)
 })

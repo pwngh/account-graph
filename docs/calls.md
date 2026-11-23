@@ -44,11 +44,11 @@ A page reports an event in one of three ways. None needs the service token.
 
 The server keeps only the names listed in `EVENTS`, and refuses the rest with 400. Each kept event is an outcome of that step in the report, credited like any other.
 
-An event counts once a day per browser. Give it an id, with `data-ag-id` or the `id` argument, to count each occurrence: one per form submission, say.
-
-> **A page can be made to say anything.** Events come from browsers, so anyone can send one. They are limited per address and counted once a day, but do not list a step that carries money in `EVENTS`. Record those from your backend with `POST /convert`.
+An event counts once a day per browser. Give it an id, with `data-ag-id` or the `id` argument, to count each occurrence: one per form submission, say. An id is ignored for a step that has a value or an action in `STAGES`: those count once a day per browser, whatever the page says.
 
 An event whose name is a step in `STAGES` takes that step's value, and is sent to the ad platforms the step names. [Steps](report.md#steps-and-what-each-is-worth) has the setting.
+
+> **A page can be made to say anything.** Events come from browsers, so anyone can send one. A step listed in both `EVENTS` and `STAGES` lets a browser create a conversion of that value, once a day per browser, limited per address. Keep such steps small, an inquiry and not a sale, and record anything that carries real money from your backend with `POST /convert`.
 
 ## Phone calls
 

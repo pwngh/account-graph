@@ -234,8 +234,15 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       } catch {}
     }
     await graph.observe({ subject, identifiers, at, event: body.event })
-    const occurrence = typeof body.id === 'string' && ID.test(body.id) ? body.id : new Date(at).toISOString().slice(0, 10)
-    await convert({ transactionId: `${body.event}:${device}:${occurrence}`, subject, at, stage: body.event })
+    // A page may number its own occurrences, but not of a step that is worth something or is sent to an ad platform:
+    // those count once a day per browser whatever the page says, because a page can be made to say anything.
+    const step = options.stages && Object.hasOwn(options.stages, body.event) ? options.stages[body.event] : undefined
+    const weighty = Boolean(step?.value || step?.action)
+    const occurrence = !weighty && typeof body.id === 'string' && ID.test(body.id) ? body.id : new Date(at).toISOString().slice(0, 10)
+    const transactionId = `${body.event}:${device}:${occurrence}`
+    // The same occurrence reported again is already on its way; recording it twice with a new time would be refused.
+    if (options.outbox && (await options.outbox.get(transactionId)).length > 0) return
+    await convert({ transactionId, subject, at, stage: body.event })
   }
 
   /** Records one browser visit. The subject is the visitor; nothing here names an account. */
