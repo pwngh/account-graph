@@ -16,6 +16,8 @@ That answer says the login joined `account:42` to the cluster of `account:17`. A
 
 ## Writing identifiers
 
+The short way is `POST /identify`: send the email, phone and address as they are and the server hashes and checks them. [Telling the server who someone is](identify.md) covers it. The rest of this section is for writing identifiers yourself with `/observe`.
+
 An identifier is `kind:value`. The kind must be one the policy names, or the request is refused with 400.
 
 | Kind | What to send |
@@ -80,6 +82,7 @@ The four `POST` routes answer with the subjects whose cluster moved.
 
 | Route | What it does |
 | --- | --- |
+| `POST /identify` | Who a subject is, from plain facts: `{ subject, device?, email?, phone?, ip?, address?, identifiers?, at?, event? }`. Answers `{ changes, identifiers, notes }`. See [identify](identify.md). |
 | `POST /observe` | One observation, or a list: `{ subject, identifiers, at, event? }`. Answers with the cluster changes. |
 | `POST /touch` | A marketing touch: `{ subject, at, gclid?, source?, medium?, campaign?, campaignId?, … }`. |
 | `POST /consent` | `{ subject, consent: { adUserData, adPersonalization } }`. |

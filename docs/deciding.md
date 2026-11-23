@@ -24,10 +24,13 @@ Scores depend only on stored data, never on the current time or on arrival order
 | `carry` | 0.95 | 4 | none | A visitor who followed a link from another of your sites, proven by a token made for that browser. Thins when one token is used by several |
 | `link` | 0.92 | 5 | none | A link sent to one person, opened in this browser. Thins as more people's links are opened there |
 | `dial` | 0.92 | 2 | none | A phone call that began just after exactly one visitor tapped its number |
-| `phone` | 0.90 | 25 | none | |
+| `phone` | 0.90 | 25 | none | A mobile or landline |
+| `address` | 0.60 | 10 | none | A postal address confirmed to the door. A household, not a person |
+| `voip` | 0.50 | 25 | none | A number from an internet calling app, which anyone can get and drop |
 | `ga` | 0.90 | 10 | none | Google Analytics client id |
 | `canvas` | 0.50 | 20 | 45 days | Browser hash nothing confirmed |
 | `ip` | 0.30 | 10 | 14 days | IPv6 is kept as its /64 |
+| `place` | 0 | 0 | none | A note, not evidence: where an address places a visit. It links nothing |
 | `opened` | 0 | 0 | none | A note, not evidence: a browser opened the link sent to this person. It links nothing |
 | `dialed` | 0 | 0 | none | A note, not evidence: the number a visitor tapped, or a recorded call. It links nothing |
 

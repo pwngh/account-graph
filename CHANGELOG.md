@@ -45,3 +45,8 @@
 - `HandlerOptions.stages` (`STAGES`) names your steps with a value, currency and action each; `withStage` fills an outcome from its step, and `GET /report` lists `steps` in that order.
 - `OutboxOptions.onFailed` hears each pass's jobs that failed for good.
 - `createAlerter` posts `{ text }` to a webhook at most once per subject per ten minutes; `ALERT_WEBHOOK` reports failed conversions, an outbox that cannot run, and costs that cannot be read.
+- `POST /identify` takes a subject's device, email, phone, address and IP as plain values, hashes and checks them, and answers `{ changes, identifiers, notes }`.
+- `createAddressVerifier` checks a US postal address with Smarty; `addressIdentifier` keeps one confirmed to the door as the `address` kind (0.6).
+- `createLineTypeLookup` asks Twilio what kind of line a number is; `phoneOfType` records a throwaway number as the `voip` kind (0.5) and a switchboard as nothing.
+- `/collect` and `/event` drop visits whose user agent names a crawler, previewer or uptime check (`bots` in `GET /stats`), and note a visit's `place` when the address lookup gives one.
+- `collect.js` adds `ag_device` and `ag_landing` to forms marked `data-ag-fields`, or to every form with `?forms=all` (`fill`, `fields`, `accountGraph.fields()`).

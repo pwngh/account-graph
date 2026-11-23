@@ -16,7 +16,8 @@ That command calls each provider's real endpoint. With no keys set it sends an i
 | [Meta](#meta) | Conversions sent to Meta | Crediting Meta ad clicks |
 | [Microsoft Advertising](#microsoft-advertising) | Conversions sent to Microsoft | Crediting Microsoft ad clicks |
 | [TikTok](#tiktok) | Conversions sent to TikTok | Crediting TikTok ad clicks |
-| Twilio | Each phone call, reported by Twilio itself | [Tying calls to visitors](calls.md#from-twilio) |
+| [Twilio](#twilio) | Each phone call, and what kind of line a number is | [Tying calls to visitors](calls.md#from-twilio); counting a throwaway number for less |
+| [Smarty](#smarty) | A postal address as the one delivery point it names | Seeing that two accounts share an address |
 | [Campaign costs](#campaign-costs) | What Google and Meta charged per campaign | [The report](report.md) |
 
 Steps below come from each provider's own pages, read in November 2026. Where a page did not state something, this says so instead of guessing.
@@ -141,6 +142,38 @@ TIKTOK_SITE_URL=https://example.org/     # sent as the page of an event when the
 An outcome names a TikTok event: `action: { tiktok: 'CompleteRegistration' }`. The script tag collects the `ttclid` from the landing page address.
 
 TikTok's reference opens only in a browser, and only after choosing version 1.3 from the version menu at the top of the page.
+
+## Twilio
+
+Twilio does two separate things here, with one auth token.
+
+**Call reports.** [Page events and phone calls](calls.md#from-twilio) has the steps: point the number's call status webhook at `/calls/twilio`.
+
+**Line checks.** Lookup's line type intelligence says whether a number is a mobile, a landline, or a number from an internet calling app.
+
+1. Copy the **Account SID** and **Auth Token** from the Twilio console's account page.
+2. Line type intelligence is a paid Lookup package, billed per number looked up. Twilio's [line type intelligence page](https://www.twilio.com/docs/lookup/v2-api/line-type-intelligence) describes it, and says numbers in some countries, Canada among them, need approval first.
+
+```sh
+TWILIO_ACCOUNT_SID=AC…
+TWILIO_AUTH_TOKEN=…
+```
+
+Not stated on the pages read: the price per lookup.
+
+## Smarty
+
+Checks a United States postal address and returns the one delivery point it names.
+
+1. Create an account at <https://www.smarty.com/>. The site advertises a 42-day free trial.
+2. Create a secret key on the API keys page, <https://www.smarty.com/account/keys>. It has an id and a token. An embedded key, the other kind, is for browsers and will not work here.
+
+```sh
+SMARTY_AUTH_ID=…
+SMARTY_AUTH_TOKEN=…
+```
+
+The server sends the key in a header, never in the address. Smarty answers 401 for a wrong key and 402 when the subscription has run out; either is logged and the address is left out of the sighting.
 
 ## Campaign costs
 
