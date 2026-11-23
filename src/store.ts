@@ -52,8 +52,10 @@ export interface Tx {
   touchesOf(subjects: readonly Subject[], from: number, to: number): Promise<Touch[]>
   /** Sightings of a subject, oldest first. With `limit`, only the newest that many. */
   history(subject: Subject, limit?: number): Promise<Sighting[]>
-  /** Every sighting at or before a time, for replaying the past. */
-  sightingsUntil(at: number): Promise<Sighting[]>
+  /** Every sighting written down at or before a time, for replaying what was known then. */
+  sightingsUntil(recorded: number): Promise<Sighting[]>
+  /** Deletes sightings written down before a time. Edges keep what they folded. Returns how many went. */
+  pruneSightings(before: number): Promise<number>
   /** Appends to the record of decisions. */
   addDecision(decision: Decision): Promise<void>
   lastDecision(): Promise<Decision | undefined>

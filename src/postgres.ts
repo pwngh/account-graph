@@ -42,9 +42,9 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       const edges = [...folded.values()]
 
       await db.query(
-        `insert into ${t('sighting')} (subject, identifier, at, event)
-         select * from unnest($1::text[], $2::text[], $3::bigint[], $4::text[])`,
-        [rows.map((r) => r.subject), rows.map((r) => r.identifier), rows.map((r) => r.at), rows.map((r) => r.event ?? null)],
+        `insert into ${t('sighting')} (subject, identifier, at, event, recorded_at)
+         select * from unnest($1::text[], $2::text[], $3::bigint[], $4::text[], $5::bigint[])`,
+        [rows.map((r) => r.subject), rows.map((r) => r.identifier), rows.map((r) => r.at), rows.map((r) => r.event ?? null), rows.map((r) => r.recorded ?? r.at)],
       )
       await db.query(
         `insert into ${t('subject')} (id, component, cluster)
@@ -239,15 +239,23 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
     async history(subject, limit) {
       // Take the newest rows first when there is a limit, then hand them back oldest first.
       const { rows } = await db.query(
-        `select subject, identifier, at, event from ${t('sighting')} where subject = $1 order by at desc, id desc limit $2`,
+        `select subject, identifier, at, event, recorded_at from ${t('sighting')} where subject = $1 order by at desc, id desc limit $2`,
         [subject, limit ?? null],
       )
       return rows.reverse().map(toSighting)
     },
 
-    async sightingsUntil(at) {
-      const { rows } = await db.query(`select subject, identifier, at, event from ${t('sighting')} where at <= $1 order by id`, [at])
+    async sightingsUntil(recorded) {
+      const { rows } = await db.query(
+        `select subject, identifier, at, event, recorded_at from ${t('sighting')} where recorded_at <= $1 order by id`,
+        [recorded],
+      )
       return rows.map(toSighting)
+    },
+
+    async pruneSightings(before) {
+      const { rows } = await db.query(`with gone as (delete from ${t('sighting')} where recorded_at < $1 returning 1) select count(*)::int as n from gone`, [before])
+      return rows[0].n as number
     },
 
     async addDecision({ seq, at, action, about, by, reason, hash }) {
@@ -342,7 +350,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
 }
 
 function toSighting(row: any): Sighting {
-  const sighting = { subject: row.subject, identifier: row.identifier, at: Number(row.at) }
+  const sighting = { subject: row.subject, identifier: row.identifier, at: Number(row.at), recorded: Number(row.recorded_at) }
   return row.event === null ? sighting : { ...sighting, event: row.event }
 }
 
@@ -383,9 +391,11 @@ create table if not exists ${schema}.sighting (
   subject text not null,
   identifier text not null,
   at bigint not null,
-  event text
+  event text,
+  recorded_at bigint not null
 );
 create index if not exists sighting_subject on ${schema}.sighting (subject, at);
+create index if not exists sighting_recorded on ${schema}.sighting (recorded_at);
 
 -- Sightings folded per subject and identifier. This is the graph.
 create table if not exists ${schema}.edge (

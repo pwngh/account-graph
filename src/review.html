@@ -306,7 +306,7 @@ async function show(subject) {
   }
 }
 
-const ACTIONS = { ignore: 'Stopped linking through', restore: 'Resumed linking through', separate: 'Kept apart', rejoin: 'Allowed to join', join: 'Joined', forget: 'Forgot', rebuild: 'Rebuilt every cluster' }
+const ACTIONS = { ignore: 'Stopped linking through', restore: 'Resumed linking through', separate: 'Kept apart', rejoin: 'Allowed to join', join: 'Joined', forget: 'Forgot', rebuild: 'Rebuilt every cluster', prune: 'Deleted sightings older than' }
 
 /** Reloads the lists and the open subject. Resolves to whether everything loaded. */
 async function refresh() {
@@ -319,7 +319,7 @@ async function refresh() {
     // An ignore can be undone unless a later decision already restored that identifier.
     const restoredAt = new Map(decisions.filter((d) => d.action === 'restore').map((d) => [d.about[0], d.seq]))
     $('decisions').replaceChildren(...decisions.slice(-30).reverse().map((d) => el('li', {},
-      el('span', {}, `${ACTIONS[d.action] ?? d.action} `), ...d.about.map((subject) => el('span', { class: 'reason' }, subject)),
+      el('span', {}, `${ACTIONS[d.action] ?? d.action} `), ...(d.action === 'prune' ? [when(Number(d.about[0]))] : d.about).map((subject) => el('span', { class: 'reason' }, subject)),
       el('span', { class: 'muted' }, `${when(d.at)}${d.by ? `, ${d.by}` : ''}${d.reason ? `: ${d.reason}` : ''} `),
       d.action === 'ignore' && !(restoredAt.get(d.about[0]) > d.seq) ? el('button', { class: 'link', on: { click: () => act('Resume linking through this identifier', d.about[0], '/ignore', { identifier: d.about[0], ignored: false }, 'Resume') } }, 'undo') : '')))
     if (current) return show(current)
