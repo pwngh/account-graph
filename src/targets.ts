@@ -226,3 +226,74 @@ export function microsoftAds(options: MicrosoftAdsOptions): Target {
     },
   }
 }
+
+export interface TikTokOptions {
+  /** The pixel code that measures your site's events. */
+  pixelCode: string
+  /** An Events API access token, or a function that returns one. */
+  accessToken: string | (() => string | Promise<string>)
+  /** Your site's address, sent as the page of an event when the click's landing page is unknown. */
+  url: string
+  fetch?: typeof fetch
+}
+
+/** TikTok answered with an error status, or with a result code other than 0. */
+export class TikTokError extends Error {
+  status: number
+  constructor(status: number, body: string) {
+    super(`TikTok refused the request with ${status}: ${body}`)
+    this.status = status
+  }
+}
+
+/**
+ * TikTok, through Events API 2.0 as web events. An outcome's action is an
+ * event name, such as `CompleteRegistration` or `Purchase`. TikTok keeps one
+ * event per pixel, event id, and name, so a job sent twice counts once.
+ */
+export function tiktok(options: TikTokOptions): Target {
+  const fetcher = options.fetch ?? fetch
+  return {
+    name: 'tiktok',
+    batch: 1000,
+    // TikTok matches a lowercased, trimmed email and a phone in E.164 with its plus sign, each as SHA-256.
+    keys: (outcome) => ({
+      ...(outcome.email && { email: sha256(outcome.email.trim().toLowerCase()) }),
+      ...(outcome.phone && { phone: sha256(normalizePhone(outcome.phone)) }),
+    }),
+    click: (attribution, confidence) => attribution.touches.find((touch) => touch.confidence >= confidence && Boolean(touch.ttclid)),
+    async deliver(action, items) {
+      const token = typeof options.accessToken === 'function' ? await options.accessToken() : options.accessToken
+      const data = items.map(({ job, touch }) => {
+        if (touch?.ttclid) job.click = { ttclid: touch.ttclid }
+        return {
+          event: action,
+          event_time: Math.floor(job.at / 1000),
+          event_id: job.transactionId,
+          user: {
+            ...(touch?.ttclid && { ttclid: touch.ttclid }),
+            ...(job.keys.email && { email: job.keys.email }),
+            ...(job.keys.phone && { phone: job.keys.phone }),
+          },
+          page: { url: touch?.landing ?? options.url },
+          ...(job.value !== undefined && { properties: { value: job.value, currency: job.currency ?? 'USD' } }),
+        }
+      })
+      const response = await fetcher('https://business-api.tiktok.com/open_api/v1.3/event/track/', {
+        method: 'POST',
+        headers: { 'Access-Token': token, 'content-type': 'application/json' },
+        body: JSON.stringify({ event_source: 'web', event_source_id: options.pixelCode, data }),
+      })
+      const body = await response.text()
+      if (!response.ok) throw new TikTokError(response.status, body)
+      // TikTok can answer 200 and still refuse, with a code other than 0.
+      const answer = JSON.parse(body) as { code?: number; request_id?: string }
+      if (answer.code !== 0) throw new TikTokError(200, body)
+      return answer.request_id ? { requestId: answer.request_id } : {}
+    },
+    retryable(error) {
+      if (!(error instanceof TikTokError)) return true
+      return error.status === 401 || error.status === 429 || error.status >= 500
+    },
+  }
+}

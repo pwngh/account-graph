@@ -4,7 +4,7 @@
  *   node tools/live-check.ts
  */
 import { generateKeyPairSync } from 'node:crypto'
-import { ingest, ingestRequest, meta, microsoftAds } from '../src/index.ts'
+import { ingest, ingestRequest, meta, microsoftAds, tiktok } from '../src/index.ts'
 import { createFingerprintVerifier } from '../src/integrations/fingerprint.ts'
 import { createGoogleTokens } from '../src/integrations/google-auth.ts'
 import { createMicrosoftTokens } from '../src/integrations/microsoft-auth.ts'
@@ -29,6 +29,7 @@ await show('google data manager', () => ingest(ingestRequest({ customerId: '1234
 for (const target of [
   meta({ pixelId: '1', accessToken: 'invalid', url: 'https://example.org/' }),
   microsoftAds({ accessToken: 'invalid', developerToken: 'invalid', customerId: '1', customerAccountId: '1' }),
+  tiktok({ pixelCode: 'X', accessToken: 'invalid', url: 'https://example.org/' }),
 ]) {
   await show(target.name, async () => {
     try {

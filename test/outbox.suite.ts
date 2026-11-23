@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { after, describe, test } from 'node:test'
-import { GoogleError, MetaError, createBatcher, createGraph, createOutbox, googleAds, hashEmail, meta, microsoftAds } from '../src/index.ts'
+import { GoogleError, MetaError, createBatcher, createGraph, createOutbox, googleAds, hashEmail, meta, microsoftAds, tiktok } from '../src/index.ts'
 import type { IngestRequest, OutboxOptions, Outcome, Store } from '../src/index.ts'
 import type { Opened } from './suite.ts'
 
@@ -412,6 +412,62 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       assert.deepEqual(await outbox.retry('unknown'), [])
       assert.deepEqual(await outbox.run(), { sent: 1, skipped: 0, failed: 0, retried: 0 })
       assert.deepEqual(await outbox.list('failed'), [])
+    })
+
+    test('TikTok gets a web event with its click id, and a refusal inside a 200 fails the job', async () => {
+      const next = await open()
+      opened.push(next)
+      const graph = createGraph(next.store)
+      const posted: { url: string; headers: Record<string, string>; body: any }[] = []
+      let answer: { status: number; body: object } = { status: 200, body: { code: 0, message: 'OK', request_id: 'req-tt' } }
+      const fetcher = (async (url: any, init: any) => {
+        posted.push({ url: String(url), headers: init.headers, body: JSON.parse(init.body) })
+        return new Response(JSON.stringify(answer.body), { status: answer.status })
+      }) as typeof fetch
+      const clock = { now: T0 + 2 * HOUR }
+      const outbox = createOutbox(graph, next.store.outbox, {
+        targets: [tiktok({ pixelCode: 'PIXEL1', accessToken: 'tt-token', url: 'https://site.example/', fetch: fetcher })],
+        now: () => clock.now,
+        random: () => 1,
+      })
+      await graph.observe({ subject: 'visitor:v', identifiers: ['device:v'], at: T0 })
+      await graph.touch({ subject: 'visitor:v', at: T0, ttclid: 'TT-CLICK', landing: 'https://site.example/offer' })
+      await graph.observe({ subject: 'contact:1', identifiers: ['device:v'], at: T0 + HOUR })
+      // The examples from TikTok's own reference: an email with spaces and capitals, a phone with brackets.
+      await outbox.record({ ...outcome(1), action: 'CompleteRegistration', email: ' ALICE_abc@gmail.com ', phone: '(+1)2133734253' })
+
+      assert.deepEqual(await outbox.run(), { sent: 1, skipped: 0, failed: 0, retried: 0 })
+      assert.equal(posted[0]!.url, 'https://business-api.tiktok.com/open_api/v1.3/event/track/')
+      assert.deepEqual(posted[0]!.headers, { 'Access-Token': 'tt-token', 'content-type': 'application/json' })
+      assert.deepEqual(posted[0]!.body, {
+        event_source: 'web',
+        event_source_id: 'PIXEL1',
+        data: [
+          {
+            event: 'CompleteRegistration',
+            event_time: (T0 + HOUR) / 1000,
+            event_id: 'enroll-1',
+            user: {
+              ttclid: 'TT-CLICK',
+              email: '848a771458438fc2ec420560d769fb9b9b86851ee338ec56517baabd79d3bb4f',
+              phone: '9f7ec22d72092cd3c0b58726ed9c2d91b92e51a3f29837508fb2948bb22dd2fd',
+            },
+            page: { url: 'https://site.example/offer' },
+            properties: { value: 200, currency: 'USD' },
+          },
+        ],
+      })
+      const [sent] = await outbox.get('enroll-1')
+      assert.deepEqual([sent!.state, sent!.requestId, sent!.click], ['sent', 'req-tt', { ttclid: 'TT-CLICK' }])
+
+      // A bad token comes back as 401 and is tried again; a refusal inside a 200 is final.
+      await outbox.record({ ...outcome(1), transactionId: 'second', action: 'CompleteRegistration' })
+      answer = { status: 401, body: { code: 40105, message: 'Access token is incorrect or has been revoked.' } }
+      assert.deepEqual(await outbox.run(), { sent: 0, skipped: 0, failed: 0, retried: 1 })
+      answer = { status: 200, body: { code: 40002, message: 'Invalid event' } }
+      clock.now += 60_000
+      assert.deepEqual(await outbox.run(), { sent: 0, skipped: 0, failed: 1, retried: 0 })
+      assert.match((await outbox.get('second'))[0]!.note!, /Invalid event/)
     })
 
     test('forgetting a subject deletes its unsent conversions', async () => {

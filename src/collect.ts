@@ -27,7 +27,7 @@ export interface Collected {
   consent?: { adUserData: boolean; adPersonalization: boolean }
 }
 
-const CLICK_IDS = ['gclid', 'gbraid', 'wbraid', 'fbclid', 'msclkid'] as const
+const CLICK_IDS = ['gclid', 'gbraid', 'wbraid', 'fbclid', 'msclkid', 'ttclid'] as const
 const TAGS = { utm_source: 'source', utm_medium: 'medium', utm_campaign: 'campaign' } as const
 const YEAR = 365 * 24 * 60 * 60
 

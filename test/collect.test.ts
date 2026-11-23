@@ -80,6 +80,11 @@ test('a click kept in the Google tag cookie is reported once, and reading does n
 })
 
 test('a plain page view inside the site reports no touch', async () => {
+  const tiktokVisit = browser('https://site.example/?ttclid=TT1&msclkid=MS1')
+  await collect({ endpoint: 'https://graph.example/collect' })
+  await settle()
+  assert.deepEqual(tiktokVisit.sent[0].touch, { msclkid: 'MS1', ttclid: 'TT1', landing: 'https://site.example/' })
+
   const page = browser('https://site.example/about')
   await collect({ endpoint: 'https://graph.example/collect' })
   await settle()
