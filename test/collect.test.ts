@@ -216,6 +216,12 @@ test('links to your other sites carry the visitor along, and no other link is to
     assert.equal(follow('https://bücher.example/'), 'https://xn--bcher-kva.example/?ag_from=token-1')
     // The right button opens a menu that can copy the address, so it gets no token.
     assert.equal(follow('https://shop.example/cart', 2), 'https://shop.example/cart')
+    // A long press, or a click with a key held, opens the same menu after the press: the token comes off again.
+    const pressed = { href: 'https://shop.example/cart?x=1' }
+    listeners.get('pointerdown')!({ button: 0, target: { closest: () => pressed } })
+    assert.equal(pressed.href, 'https://shop.example/cart?x=1&ag_from=token-1')
+    listeners.get('contextmenu')!({ target: { closest: () => pressed } })
+    assert.equal(pressed.href, 'https://shop.example/cart?x=1')
     // The same site, a stranger's site, and something that is not an address are left alone.
     assert.equal(follow('https://site.example/next'), 'https://site.example/next')
     assert.equal(follow('https://elsewhere.example/'), 'https://elsewhere.example/')

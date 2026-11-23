@@ -609,7 +609,7 @@ test('a link sent to one person ties the browser that opens it, and a visitor is
     const known = new URL(made.url).searchParams.get('ag')!
     assert.equal((await service('/link', { url: 'https://site.example/', subject: 'contact:1' }, 'reviewer')).status, 403)
     assert.equal((await service('/link', { url: 'nope', subject: 'contact:1' })).status, 400)
-    for (const bad of [{ url: 'javascript:alert(1)', subject: 'contact:1' }, { url: 'https://site.example/', subject: 'contact:1', days: 1e300 }, { url: 'https://site.example/', subject: 'contact:1', days: -1 }, { url: 'https://site.example/', subject: 'contact:1', days: '7' }, { url: 'https://site.example/', subject: '中'.repeat(256) }]) {
+    for (const bad of [{ url: 'https://site.example/', subject: ' ' }, { url: 'javascript:alert(1)', subject: 'contact:1' }, { url: 'https://site.example/', subject: 'contact:1', days: 1e300 }, { url: 'https://site.example/', subject: 'contact:1', days: -1 }, { url: 'https://site.example/', subject: 'contact:1', days: '7' }, { url: 'https://site.example/', subject: '中'.repeat(256) }]) {
       assert.equal((await service('/link', bad)).status, 400, JSON.stringify(bad).slice(0, 60))
     }
 
@@ -620,12 +620,27 @@ test('a link sent to one person ties the browser that opens it, and a visitor is
     assert.deepEqual(await members('visitor:phone-2'), ['visitor:phone-2'])
     assert.deepEqual((await graph.links('contact:1')).map((link) => [link.subject, link.level, link.reasons[0]!.identifier]), [['visitor:phone-1', 'same', 'link:phone-1']])
 
-    // A second person's link opened in the same browser: the browser already belongs to someone like them, so it is noted and ties nobody.
+    // A second person's link opened in the same browser. Both are there by a link alone, so neither wins: each thins, and the browser is joined to nobody.
     const linkFor = async (subject: string) => new URL(((await (await service('/link', { url: 'https://site.example/offer', subject })).json()) as { url: string }).url).searchParams.get('ag')!
     await page('/collect', { device: 'phone-1', known: await linkFor('contact:2') })
-    assert.deepEqual(await members('contact:1'), ['contact:1', 'visitor:phone-1'])
-    assert.deepEqual(await members('contact:2'), undefined)
-    assert.ok((await graph.history('visitor:phone-1')).some((sighting) => sighting.identifier === 'opened:contact:2'))
+    assert.deepEqual(await members('contact:1'), ['contact:1'])
+    assert.deepEqual((await graph.links('visitor:phone-1')).map((link) => [link.subject, link.level]), [['contact:1', 'related'], ['contact:2', 'related']])
+
+    // A browser that belongs to someone by more than a link, here a sign-in, is not handed to another person of the same kind.
+    await graph.observe({ subject: 'contact:bob', identifiers: ['device:bob-phone'], at: clock })
+    await page('/collect', { device: 'bob-phone' })
+    await page('/collect', { device: 'bob-phone', known: await linkFor('contact:alice') })
+    assert.deepEqual(await members('contact:bob'), ['contact:bob', 'visitor:bob-phone'])
+    assert.equal(await members('contact:alice'), undefined)
+    assert.ok((await graph.history('visitor:bob-phone')).some((sighting) => sighting.identifier === 'opened:contact:alice (not tied)'))
+    // Openings that did not tie do not use up the person's three browsers: her own phone still ties.
+    for (const device of ['x-1', 'x-2', 'x-3']) {
+      await graph.observe({ subject: `contact:${device}`, identifiers: [`device:${device}`], at: clock })
+      await page('/collect', { device })
+      await page('/collect', { device, known: await linkFor('contact:alice') })
+    }
+    await page('/collect', { device: 'alice-phone', known: await linkFor('contact:alice') })
+    assert.deepEqual(await members('contact:alice'), ['contact:alice', 'visitor:alice-phone'])
 
     // One person opens their link on a phone, a laptop and a tablet. A fourth browser is one too many to be the same person.
     const third = await linkFor('contact:3')

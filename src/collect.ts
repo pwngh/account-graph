@@ -265,8 +265,19 @@ export function carry(options: CollectOptions): () => void {
       asking = false
     }
   }
+  // A link's menu can copy its address, and a copied address must not carry a token. The menu opens by the right
+  // button, by a long press, or by a key held with a click, so the token is taken off again whenever a menu opens.
+  const menu = (happened: Event) => {
+    const link = (happened.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null | undefined
+    if (!link) return
+    try {
+      const url = new URL(link.href)
+      if (!url.searchParams.has('ag_from')) return
+      url.searchParams.delete('ag_from')
+      link.href = url.href
+    } catch {}
+  }
   const followed = (happened: Event) => {
-    // The right button opens a menu that can copy the address; a copied address must not carry a token.
     if ((happened as MouseEvent).button === 2) return
     const link = (happened.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null | undefined
     if (!link) return
@@ -291,9 +302,11 @@ export function carry(options: CollectOptions): () => void {
   }
   // Pressing comes before following a link, whether by a click or by the middle button.
   for (const name of ['pointerdown', 'click']) document.addEventListener(name, followed, true)
+  document.addEventListener('contextmenu', menu, true)
   document.addEventListener('visibilitychange', returned)
   return () => {
     for (const name of ['pointerdown', 'click']) document.removeEventListener(name, followed, true)
+    document.removeEventListener('contextmenu', menu, true)
     document.removeEventListener('visibilitychange', returned)
   }
 }

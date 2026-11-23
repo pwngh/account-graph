@@ -50,7 +50,9 @@ export interface KnownLinkOptions {
  * server, and the browser that opened it is tied to that person.
  */
 export function knownLink(url: string, subject: Subject, options: KnownLinkOptions): string {
-  if (typeof subject !== 'string' || !subject || Buffer.byteLength(subject) > 512) throw new TypeError('A link needs the subject it is for, in 512 bytes or fewer')
+  if (typeof subject !== 'string' || !subject || subject !== subject.trim() || Buffer.byteLength(subject) > 512) {
+    throw new TypeError('A link needs the subject it is for, in 512 bytes or fewer, with no space around it')
+  }
   const address = new URL(url)
   if (address.protocol !== 'https:' && address.protocol !== 'http:') throw new TypeError('A link must lead to an http or https address')
   const lasts = options.lasts ?? 30 * DAY

@@ -273,17 +273,22 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     if (options.linkSecret) {
       const named = readToken(options.linkSecret, 'known', body.known, at)
       if (named) {
-        // Every opening is noted. It ties the browser to the person only while that is believable:
-        // few browsers have opened this person's link, and this browser does not already belong to someone else like them.
-        const note = identifier('opened', named)
-        const openers = new Set((await graph.holders([note])).map((edge) => edge.subject))
+        // Every opening is noted. It ties the browser to the person only while that is believable.
+        const tie = identifier('link', device)
+        const tied = identifier('opened', named)
+        // Few browsers: a person has a phone, a laptop, a tablet. Only openings that tied count toward the three.
+        const openers = new Set((await graph.holders([tied])).map((edge) => edge.subject))
+        const room = openers.has(subject) || openers.size < 3
+        // Not someone else's browser: one that already holds another person of the same kind, by anything but a link,
+        // belongs to them. Where the other person is there by a link too, both are written and thin each other out,
+        // so whoever's link was opened first does not win.
         const kind = named.slice(0, named.indexOf(':') + 1)
         const others = (await graph.cluster(subject))?.members.filter((member) => member !== named && kind && member.startsWith(kind)) ?? []
-        identifiers.push(note)
-        if ((openers.has(subject) || openers.size < 3) && others.length === 0) {
-          identifiers.push(identifier('link', device))
-          also.push({ subject: named, identifiers: [identifier('link', device)], at, event: 'link' })
-        }
+        const contested = others.length > 0 && (await graph.holders([tie])).some((edge) => edge.subject !== subject && edge.subject !== named)
+        if (room && (others.length === 0 || contested)) {
+          identifiers.push(tie, tied)
+          also.push({ subject: named, identifiers: [tie], at, event: 'link' })
+        } else identifiers.push(identifier('opened', `${named} (not tied)`))
       }
       const [from, mark] = readToken(options.linkSecret, 'carry', body.carried, at)?.split('\n') ?? []
       // The token only counts in the browser it was made for, and the tie is filed per site, so one passed around thins to nothing.

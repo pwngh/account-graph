@@ -29,9 +29,18 @@ The token holds the subject and an expiry, signed with `LINK_SECRET`. The script
 
 The tie is strong enough to join the browser to the person: 0.92, where 0.9 joins. From then on, an ad click in that browser, or a sign-up, belongs to someone you already know.
 
-> **A forwarded link reaches the wrong browser.** Three rules keep that from joining the wrong people. The tie is 0.92, not 1. A person's link ties at most three browsers: a phone, a laptop, a tablet. And a browser that already belongs to someone of the same kind, another `contact:` say, is not tied to a second one.
+> **A link is a key: whoever holds it can use it.** A forwarded link reaches someone else's browser, and the rules below limit what that can join. They do not make it impossible.
 
-Every opening is still written down as a note on the visitor, `opened:contact:42`, whether or not it ties. A reviewer sees who opened what.
+| When | What happens |
+| --- | --- |
+| A person's link is opened in a first, second and third browser | Each is tied to them at 0.92, and joined. |
+| It is opened in a fourth | Noted, not tied. A phone, a laptop and a tablet are one person; more is a forwarded link. |
+| The browser already belongs to another person of the same kind, by a sign-in or a device cookie | Noted, not tied. `contact:alice`'s link on `contact:bob`'s phone does not join Alice to Bob. |
+| Two people's links are opened in one browser that belongs to neither | Both are tied and thin each other to 0.61, so the browser is joined to neither. |
+
+Every opening is written down as a note on the visitor, `opened:contact:42`, or `opened:contact:42 (not tied)`. A reviewer sees who opened what.
+
+What the rules cannot see: a link forwarded to a stranger's browser that has no account yet is tied to the person the link names. If that stranger later signs up there, the two meet in one cluster until a reviewer keeps them apart. Lower `link` in the policy below 0.9 if that risk outweighs the benefit; the link then relates a browser to its person without joining them.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -69,7 +78,8 @@ Subdomains of one site do not need this. `COOKIE=example.org` already gives them
 | Changing `LINK_SECRET` | Every link already sent stops naming its person, and becomes an ordinary link. |
 | Carry needs a followed link | A visitor who types the second site's address arrives as a stranger. A confirmed fingerprint or a sign-in still ties them. |
 | A changed network | A visitor whose network changes between the two sites, such as leaving wifi, is not carried. |
+| A look-alike on the same network | The token is bound to a browser's user agent and network, not to the browser itself. Someone on your visitor's own network, with the same browser version, could hand them a link that ties the two visits. The tie cannot merge two groups by itself, and a reviewer can cut it. |
 | Behind a proxy | The network a token is bound to comes from `x-forwarded-for`, so `TRUST_PROXY` must say how many proxies you run. See [Running the server](operations.md#behind-a-proxy). |
-| The menu | A link opened from the right-click menu is not carried, because the same menu can copy the address. |
+| The menu | A link opened from its menu (right-click, long press) is not carried, because the same menu can copy the address. |
 | An old page | A token lasts an hour and is renewed after thirty minutes, and when a tab comes back into view. A link followed while the renewal is still on its way goes without one. |
 | In the library | `knownLink(url, subject, { secret })` makes a link; `readToken` checks one. |
