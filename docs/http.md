@@ -14,6 +14,22 @@ curl -X POST https://graph.example.org/observe \
 
 That answer says the login joined `account:42` to the cluster of `account:17`. An empty list means no cluster changed.
 
+## Writing identifiers
+
+An identifier is `kind:value`. The kind must be one the policy names, or the request is refused with 400.
+
+| Kind | What to send |
+| --- | --- |
+| `device` | The `ag_device` cookie the script tag set, read from the visitor's request. |
+| `email`, `phone` | A hash, never the address itself: SHA-256 of the trimmed, lowercased email, or of the phone number in E.164 form. Hash the same way every time. |
+| `hardware` | The hashed machine id your desktop client reports. |
+| `passkey` | A passkey's credential id, after your server verified the sign-in. |
+| `payment` | A card or bank token from your payment provider, never the number. |
+| `ip` | The address your server saw the request from. |
+| `fingerprint`, `canvas`, `ga` | Leave these to `/collect`, which confirms a fingerprint before recording it. |
+
+[How it decides](deciding.md) says how much each kind counts.
+
 ## Tokens
 
 A token goes in the `authorization` header as `Bearer …`. There are two.
