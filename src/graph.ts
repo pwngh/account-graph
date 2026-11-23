@@ -66,6 +66,12 @@ export interface Graph {
   consent(subject: Subject, consent: Consent): Promise<void>
   /** The latest consent of each given subject. A subject that never answered is absent. */
   consentOf(subjects: readonly Subject[]): Promise<Map<Subject, Consent>>
+  /** Records a reviewer's decision that two subjects are one person. They join one cluster unless separated. */
+  join(a: Subject, b: Subject, why?: Why): Promise<Change[]>
+  /** The subjects a reviewer has separated from this one. */
+  separations(subject: Subject): Promise<Subject[]>
+  /** The clusters with two or more members, largest first: where a reviewer should look. */
+  clusters(limit?: number): Promise<{ id: Subject; size: number; oversized: boolean }[]>
   /** Records value moving between two subjects, and says how the two are tied by identity. */
   transfer(flow: Flow): Promise<Counterparty>
   /** Everyone a subject has exchanged value with, largest volume first. */
@@ -192,11 +198,17 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
   const now = options.now ?? Date.now
 
-  /** Appends a decision to the record, sealed to the one before it. */
-  async function decide(tx: Tx, action: Decision['action'], about: string[], why: Why | undefined): Promise<void> {
+  /** Appends a decision to the record, sealed to the one before it. Returns its sequence number. */
+  async function decide(tx: Tx, action: Decision['action'], about: string[], why: Why | undefined): Promise<number> {
     const last = await tx.lastDecision()
     const entry = { seq: (last?.seq ?? 0) + 1, at: now(), action, about, ...(why?.by && { by: why.by }), ...(why?.reason && { reason: why.reason }) }
     await tx.addDecision({ ...entry, hash: seal(last?.hash ?? '', entry) })
+    return entry.seq
+  }
+
+  const pairOf = (a: Subject, b: Subject, verb: string): [Subject, Subject] => {
+    if (typeof a !== 'string' || typeof b !== 'string' || !a || !b || a === b) throw new TypeError(`${verb} needs two different subjects`)
+    return a < b ? [a, b] : [b, a]
   }
 
   /** Runs a write, then tells the listener what moved. */
@@ -210,6 +222,22 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       }
     }
     return changes
+  }
+
+  /** Writes sightings and recomputes the clusters they can affect. */
+  async function record(tx: Tx, sightings: readonly Sighting[]): Promise<Change[]> {
+    const added = await tx.addSightings(sightings)
+    const touched = unique(sightings.map((sighting) => sighting.identifier))
+    const states = await tx.states(touched)
+    // An identifier that was public before this write linked nothing then and links nothing now.
+    const open = touched.filter((identifier) => {
+      const state = states.get(identifier)!
+      const before = state.fanout - (added.get(identifier) ?? 0)
+      return !state.ignored && before <= ruleFor(policy, identifier).cap
+    })
+    const affected = new Set(sightings.map((sighting) => sighting.subject))
+    for (const edge of await tx.edgesOn(open)) affected.add(edge.subject)
+    return settle(tx, affected)
   }
 
   const graph: Graph = {
@@ -226,20 +254,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       }
       if (sightings.length === 0) return []
 
-      return changing(async (tx) => {
-        const added = await tx.addSightings(sightings)
-        const touched = unique(sightings.map((sighting) => sighting.identifier))
-        const states = await tx.states(touched)
-        // An identifier that was public before this write linked nothing then and links nothing now.
-        const open = touched.filter((identifier) => {
-          const state = states.get(identifier)!
-          const before = state.fanout - (added.get(identifier) ?? 0)
-          return !state.ignored && before <= ruleFor(policy, identifier).cap
-        })
-        const affected = new Set(sightings.map((sighting) => sighting.subject))
-        for (const edge of await tx.edgesOn(open)) affected.add(edge.subject)
-        return settle(tx, affected)
-      })
+      return changing((tx) => record(tx, sightings))
     },
 
     links(subject) {
@@ -302,12 +317,33 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     async separate(a, b, separated = true, why) {
-      if (!a || !b || a === b) throw new TypeError('separate needs two different subjects')
+      const pair = pairOf(a, b, 'separate')
       return changing(async (tx) => {
-        await decide(tx, separated ? 'separate' : 'rejoin', a < b ? [a, b] : [b, a], why)
+        await decide(tx, separated ? 'separate' : 'rejoin', pair, why)
         await tx.setSeparated(a, b, separated)
         return settle(tx, new Set([a, b]))
       })
+    },
+
+    async join(a, b, why) {
+      const pair = pairOf(a, b, 'join')
+      ruleFor(policy, 'review:0')
+      return changing(async (tx) => {
+        // Named after the decision, not the subjects, so no two joins can collide and a forgotten id leaves no trace.
+        let identifier = `review:join-${await decide(tx, 'join', pair, why)}`
+        // A name some subject already holds would join these two to strangers. Take one nobody holds.
+        while ((await tx.states([identifier])).has(identifier)) identifier += '+'
+        const at = now()
+        return record(tx, pair.map((subject) => ({ subject, identifier, at, event: 'review' })))
+      })
+    },
+
+    separations(subject) {
+      return store.read(async (tx) => (await tx.separatedOf([subject])).map(([a, b]) => (a === subject ? b : a)).sort())
+    },
+
+    clusters(limit = 50) {
+      return store.read(async (tx) => (await tx.largestClusters(limit)).map((each) => ({ ...each, oversized: each.size > policy.review })))
     },
 
     async consent(subject, consent) {

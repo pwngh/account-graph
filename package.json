@@ -53,10 +53,11 @@
   "scripts": {
     "test": "node --test",
     "check": "tsc --noEmit",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && cp src/review.html dist/review.html",
     "demo": "node demo.ts",
     "bench": "node bench.ts",
-    "prepublishOnly": "npm run check && npm test && npm run build"
+    "prepublishOnly": "npm run check && npm test && npm run build",
+    "review": "node tools/review-demo.ts"
   },
   "peerDependencies": {
     "pg": "^8.11.0"

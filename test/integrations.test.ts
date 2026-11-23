@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { createVerify, generateKeyPairSync } from 'node:crypto'
+import { createHash, createVerify, generateKeyPairSync } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
@@ -240,6 +240,73 @@ test('the server keeps the device id in its own cookie and honours an opt-out', 
     await visit({ device: 'agreed-1', consent: { adUserData: true, adPersonalization: false }, touch: { gclid: 'G-OK' } })
     assert.deepEqual((await graph.consentOf(['visitor:agreed-1'])).get('visitor:agreed-1'), { adUserData: true, adPersonalization: false })
     assert.equal((await graph.attribute('visitor:agreed-1', { at: T0 })).credited!.gclid, 'G-OK')
+  } finally {
+    server.close()
+  }
+})
+
+test('the reviewer screen is a locked-down shell, and its data needs the token', async () => {
+  const graph = createGraph(createMemoryStore())
+  await graph.observe([
+    { subject: 'account:1', identifiers: ['hardware:h', 'email:e1'], at: T0, event: 'login' },
+    { subject: 'account:2', identifiers: ['hardware:h'], at: T0 },
+    { subject: 'account:3', identifiers: ['email:e1'], at: T0 },
+    { subject: 'account:9', identifiers: ['email:e9'], at: T0 },
+  ])
+  await graph.transfer({ from: 'account:2', to: 'account:1', amount: 500, at: T0 })
+  await graph.separate('account:1', 'account:9')
+  const server = createServer(createHandler(graph, { token: 'secret', origins: [], now: () => T0 })).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const auth = { authorization: 'Bearer secret' }
+  try {
+    const page = await fetch(`${base}/review`)
+    const html = await page.text()
+    assert.equal(page.status, 200)
+    assert.match(page.headers.get('content-type')!, /^text\/html/)
+    assert.equal(page.headers.get('cache-control'), 'no-store')
+    // The policy names the exact script and style the page ships, and nothing else may run or load.
+    const policy = page.headers.get('content-security-policy')!
+    for (const tag of ['script', 'style']) {
+      const body = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`).exec(html)![1]!
+      assert.ok(policy.includes(`${tag}-src 'sha256-${createHash('sha256').update(body).digest('base64')}'`), `${tag} hash`)
+    }
+    assert.match(policy, /^default-src 'none';/)
+    assert.match(policy, /connect-src 'self'/)
+    assert.match(policy, /form-action 'none'/)
+    assert.equal(html.includes('\r'), false)
+    assert.equal(/https?:\/\/(?!www\.w3\.org\/2000\/svg)/.test(html), false, 'the page loads nothing from outside')
+    assert.equal(html.includes('innerHTML'), false)
+
+    assert.equal((await fetch(`${base}/subject?subject=account:1`)).status, 401)
+    const profile = (await (await fetch(`${base}/subject?subject=account:1`, { headers: auth })).json()) as any
+    assert.equal(profile.known, true)
+    assert.deepEqual(profile.cluster, { id: 'account:1', members: ['account:1', 'account:2', 'account:3'], oversized: false })
+    assert.deepEqual(profile.links.map((link: any) => link.subject), ['account:3', 'account:2'])
+    assert.deepEqual(profile.ties.map((tie: any) => `${tie.a}-${tie.b}`).sort(), ['account:1-account:2', 'account:1-account:3'])
+    assert.deepEqual(profile.separated, ['account:9'])
+    assert.equal(profile.flows[0].relation, 'same')
+    assert.equal(profile.history.length, 2)
+    assert.deepEqual(await (await fetch(`${base}/subject?subject=nobody`, { headers: auth })).json(), { subject: 'nobody', known: false })
+    assert.deepEqual(await (await fetch(`${base}/clusters`, { headers: auth })).json(), [{ id: 'account:1', size: 3, oversized: false }])
+
+    // A reviewer joins two accounts by hand; the decision is on the record.
+    const joined = await fetch(`${base}/join`, { method: 'POST', headers: auth, body: JSON.stringify({ a: 'account:9', b: 'account:3', by: 'dana', reason: 'same caller' }) })
+    // 1 and 9 are kept apart, and 3 is tied to 1 by an email. The reviewer's join outweighs the email, so 3 leaves 1 and goes with 9.
+    assert.deepEqual(await joined.json(), [
+      { subject: 'account:3', from: 'account:1', to: 'account:3' },
+      { subject: 'account:9', from: 'account:9', to: 'account:3' },
+    ])
+    const bad = await fetch(`${base}/join`, { method: 'POST', headers: auth, body: JSON.stringify({ a: 1, b: 2 }) })
+    assert.equal(bad.status, 400)
+    const decisions = (await (await fetch(`${base}/decisions`, { headers: auth })).json()) as any[]
+    assert.deepEqual(decisions.map((d) => [d.action, d.about, d.by]), [
+      ['separate', ['account:1', 'account:9'], undefined],
+      ['join', ['account:3', 'account:9'], 'dana'],
+    ])
+    assert.deepEqual(await graph.separations('account:1'), ['account:9'])
+    assert.deepEqual((await graph.cluster('account:9'))!.members, ['account:3', 'account:9'])
+    assert.deepEqual((await graph.cluster('account:1'))!.members, ['account:1', 'account:2'])
   } finally {
     server.close()
   }

@@ -233,6 +233,58 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await members(graph, 'x'), ['x', 'y'])
     })
 
+    test('a reviewer joins two subjects, and the largest clusters are listed for review', async () => {
+      const clock = { now: T0 + DAY }
+      const { graph } = await fresh({ ...defaultPolicy, review: 2 }, { now: () => clock.now })
+      await graph.observe(chain('email', 'a', 'b', 'c'))
+      await graph.observe(chain('email', 'x', 'y'))
+      await graph.observe({ subject: 'solo', identifiers: ['email:solo'], at: T0 })
+      assert.deepEqual(await graph.clusters(), [
+        { id: 'a', size: 3, oversized: true },
+        { id: 'x', size: 2, oversized: false },
+      ])
+      assert.deepEqual(await graph.clusters(1), [{ id: 'a', size: 3, oversized: true }])
+
+      assert.deepEqual(await graph.join('solo', 'y', { by: 'dana' }), [{ subject: 'y', from: 'x', to: 'solo' }, { subject: 'x', from: 'x', to: 'solo' }].sort((p, q) => (p.subject < q.subject ? -1 : 1)))
+      assert.deepEqual(await members(graph, 'solo'), ['solo', 'x', 'y'])
+      assert.deepEqual((await graph.history('solo')).at(-1), { subject: 'solo', identifier: 'review:join-1', at: T0 + DAY, event: 'review' })
+      assert.deepEqual((await graph.decisions()).map((d) => [d.action, d.about, d.by]), [['join', ['solo', 'y'], 'dana']])
+      await assert.rejects(graph.join('solo', 'solo'), TypeError)
+      await assert.rejects(graph.join('solo', 7 as unknown as string), TypeError)
+
+      // Ids that contain a plus sign must not be confused: these two joins involve four different subjects.
+      await graph.join('p', 'q+r')
+      await graph.join('p+q', 'r')
+      assert.deepEqual(await members(graph, 'p'), ['p', 'q+r'])
+      assert.deepEqual(await members(graph, 'r'), ['p+q', 'r'])
+      // A join can be undone by muting its identifier, and made again afterwards.
+      await graph.ignore('review:join-2')
+      assert.deepEqual(await members(graph, 'p'), ['p'])
+      // The next join would be named review:join-4. Two strangers already hold that name; it must not join them to p.
+      await graph.observe([
+        { subject: 'stranger:1', identifiers: ['review:join-4'], at: T0 },
+        { subject: 'stranger:2', identifiers: ['review:join-4'], at: T0 },
+      ])
+      await graph.join('p', 'q+r')
+      assert.deepEqual(await members(graph, 'p'), ['p', 'q+r'])
+      // Forgetting one side leaves nothing that names it.
+      await graph.forget('p')
+      assert.equal((await graph.history('q+r')).some((sighting) => sighting.identifier.includes('p')), false)
+
+      await graph.separate('y', 'a')
+      await graph.separate('b', 'y')
+      assert.deepEqual(await graph.separations('y'), ['a', 'b'])
+      assert.deepEqual(await graph.separations('solo'), [])
+    })
+
+    test('clusters of equal size are listed in the same order by every store', async () => {
+      const { graph } = await fresh()
+      // Mixed case and punctuation sort differently under a database's language rules than in JavaScript.
+      for (const id of ['a1', 'B1', '_x', 'a-1', 'a 1']) await graph.observe(chain('email', id, `${id}~`))
+      assert.deepEqual((await graph.clusters()).map((cluster) => cluster.id), ['B1', '_x', 'a 1', 'a-1', 'a1'])
+      assert.deepEqual((await graph.clusters(2)).map((cluster) => cluster.id), ['B1', '_x'])
+    })
+
     test('a cluster past the review size is flagged', async () => {
       const { graph } = await fresh({ ...defaultPolicy, review: 3 })
       for (const n of [1, 2, 3]) await graph.observe({ subject: `account:${n}`, identifiers: ['device:d'], at: T0 })

@@ -139,6 +139,14 @@ export function createMemoryStore(): Store {
       return [...(byCluster.get(cluster) ?? [])]
     },
 
+    async largestClusters(limit) {
+      return [...byCluster]
+        .filter(([, group]) => group.size > 1)
+        .map(([id, group]) => ({ id, size: group.size }))
+        .sort((x, y) => y.size - x.size || (x.id < y.id ? -1 : 1))
+        .slice(0, limit)
+    },
+
     async allLabels() {
       return new Map([...labels].map(([subject, found]) => [subject, { ...found }]))
     },

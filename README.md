@@ -121,7 +121,7 @@ let ipInfo = createMaxMindLookup({ accountId: 123456, licenseKey: process.env.MA
 
 ### The server
 
-`createHandler` puts these together. `/collect` takes browser visits from your sites; the other routes take your own services' calls with a bearer token.
+`createHandler` puts these together. `/collect` takes browser visits from your sites, `/review` serves the reviewer screen, and the other routes take your own services' calls with a bearer token.
 
 ```ts
 import { createServer } from 'node:http'
@@ -136,6 +136,12 @@ createServer(
   }),
 ).listen(8080)
 ```
+
+### The reviewer screen
+
+The same handler serves a screen for the people who review accounts, at `/review`. It lists the largest clusters, shows who a subject is tied to and why, draws the ties, and shows money moved and every sighting. From it a reviewer can keep two accounts apart, join two, stop linking through an identifier, or forget a subject, each with a reason that goes on the record.
+
+The page is one file with no outside assets. It holds no data and no secret: the reviewer types the access token, and the browser may run only the script the page shipped with and talk only to the server it came from. The token is the same one your services use, and the page keeps it for that browser tab, so give it only to people you would let use every route. Try it over made-up data with `npm run review`.
 
 With `cookie: true`, `/collect` keeps the device id in a cookie the server sets. Safari deletes a cookie set by script after seven days; one set by the server lasts, and script cannot read or change it. It needs `/collect` to be served from the site's own domain, or a subdomain with `cookie: { domain: 'example.org' }`.
 
@@ -281,15 +287,14 @@ A cluster with more than 50 members is flagged `oversized`. A cluster that big i
 ```ts
 await graph.ignore('email:…', true, { by: 'dana', reason: 'front desk mailbox' })
 await graph.separate('account:7', 'account:9', true, { by: 'dana', reason: 'siblings' })
-await graph.observe([ // join by hand
-  { subject: 'account:1', identifiers: ['review:case-17'], at: Date.now() },
-  { subject: 'account:2', identifiers: ['review:case-17'], at: Date.now() },
-])
+await graph.join('account:1', 'account:2', { by: 'dana', reason: 'same caller' })
 ```
 
-A separation holds whatever the two share later, and can be withdrawn with `false`. It may be recorded before either account exists.
+A separation holds whatever the two share later, and can be withdrawn with `false`. It may be recorded before either account exists. A join is the strongest tie there is, but a separation still wins: joining an account to one side of a separated pair pulls it away from the other.
 
-Every `ignore`, `separate`, `forget`, and `rebuild` is appended to a record of decisions. Each entry carries a hash of itself and the entry before, so editing or deleting one breaks every hash after it.
+`clusters()` lists the largest clusters, which is where a reviewer should look first.
+
+Every `ignore`, `separate`, `join`, `forget`, and `rebuild` is appended to a record of decisions. Each entry carries a hash of itself and the entry before, so editing or deleting one breaks every hash after it.
 
 ```ts
 await graph.decisions() // [{ seq: 1, at, action: 'ignore', about: ['email:…'], by: 'dana', reason, hash }, …]
@@ -365,6 +370,7 @@ PostgreSQL writes take one advisory lock, so they run one at a time; the write q
 
 ## Tools
 
+- `tools/review-demo.ts` serves the reviewer screen over made-up data.
 - `tools/browser-check.ts` runs `collect`, the server, and the outbox against a real browser.
 - `tools/live-check.ts` calls each vendor's real endpoint with an invalid key and prints how it answered.
 - `tools/replay.ts` replays an export of your own past traffic and compares attribution with what was sent.
@@ -372,16 +378,17 @@ PostgreSQL writes take one advisory lock, so they run one at a time; the write q
 
 ## What has run for real
 
-- Every test runs on memory and on PostgreSQL 16: 104 tests, including a fuzz test that mixes observations, reviewer decisions, deletions, and transfers, and six outbox workers at once.
+- Every test runs on memory and on PostgreSQL 16: 107 tests, including a fuzz test that mixes observations, reviewer decisions, deletions, and transfers, and six outbox workers at once.
 - `collect` ran in Chrome against the server and PostgreSQL: it read the click id and tags from the URL, the enrollment was credited and sent through the outbox, and with `cookie: true` the device cookie was set by the server, invisible to script, and the same on the next visit.
-- The hardware id ran on macOS.
+- The reviewer screen ran in Chrome under its content policy: a cluster opened, two accounts were kept apart with a reason, the cluster split, and the decision appeared on the record.
+- The hardware id ran on macOS and, in CI, on Linux.
 - The real endpoints of Fingerprint, MaxMind, Google's token service, Google's Data Manager, and Meta's Conversions API each answered an invalid key the way its documentation says.
 
 ## Limits
 
 - No request has been made with real credentials, so a successful Fingerprint lookup, MaxMind answer, Google token, Google upload, and Meta upload are untested.
 - The two Fingerprint browser loaders have not run in a browser. They need a real key or a third-party script.
-- The hardware id's Windows and Linux paths are untested.
+- The hardware id's Windows path is untested.
 - `asOf` counts each sighting from its own time, not from when it was recorded, and a forgotten subject is gone from every past.
 - A separation between two subjects cuts the weakest links between them. With several separations in one component the cuts are made one after another, which is not always the fewest possible.
 - Flows are kept as running totals per pair, not as a ledger.

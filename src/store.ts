@@ -31,6 +31,8 @@ export interface Tx {
   membersOf(components: readonly Subject[]): Promise<Map<Subject, Labels>>
   /** The members of one cluster. */
   clusterOf(cluster: Subject): Promise<Subject[]>
+  /** The clusters with two or more members, largest first. */
+  largestClusters(limit: number): Promise<{ id: Subject; size: number }[]>
   allLabels(): Promise<Map<Subject, Labels>>
   setLabels(labels: ReadonlyMap<Subject, Labels>): Promise<void>
   /** Records, or with `false` withdraws, a reviewer's decision that two subjects are different people. */
