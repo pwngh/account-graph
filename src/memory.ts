@@ -222,8 +222,9 @@ export function createMemoryStore(): Store {
       )
     },
 
-    async history(subject) {
-      return [...(sightings.get(subject) ?? [])].sort((x, y) => x.at - y.at)
+    async history(subject, limit) {
+      const all = [...(sightings.get(subject) ?? [])].sort((x, y) => x.at - y.at)
+      return limit === undefined ? all : all.slice(-limit)
     },
 
     async sightingsUntil(at) {
