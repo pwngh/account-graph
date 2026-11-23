@@ -1,6 +1,6 @@
 import type { Job, JobState, OutboxStore } from './outbox.ts'
 import type { Store, Tx } from './store.ts'
-import type { Consent, Decision, Edge, FlowEdge, Identifier, IdentifierState, Labels, Sighting, Subject, Touch } from './types.ts'
+import type { Consent, Decision, Edge, FlowEdge, Identifier, IdentifierState, Labels, Moved, Sighting, Subject, Touch } from './types.ts'
 
 /** The part of a `pg` client the store calls. */
 export interface Queryable {
@@ -95,6 +95,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       await db.query(`delete from ${t('apart')} where a = $1 or b = $1`, [subject])
       await db.query(`delete from ${t('flow')} where source = $1 or target = $1`, [subject])
       await db.query(`delete from ${t('consent')} where subject = $1`, [subject])
+      await db.query(`delete from ${t('change')} where subject = $1`, [subject])
     },
 
     async edgesOf(subjects) {
@@ -163,12 +164,31 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       return rows[0]
     },
 
-    async largestClusters(limit) {
+    async largestClusters(limit, offset = 0) {
       const { rows } = await db.query(
-        `select cluster, count(*)::int as size from ${t('subject')} group by cluster having count(*) > 1 order by size desc, cluster collate "C" limit $1`,
-        [limit],
+        `select cluster, count(*)::int as size from ${t('subject')} group by cluster having count(*) > 1 order by size desc, cluster collate "C" limit $1 offset $2`,
+        [limit, offset],
       )
       return rows.map((row) => ({ id: row.cluster as Subject, size: row.size as number }))
+    },
+
+    async subjectsStarting(text, limit) {
+      // starts_with takes the text as it is, so a percent sign or underscore in it means itself.
+      const { rows } = await db.query(`select id from ${t('subject')} where starts_with(id, $1) order by id collate "C" limit $2`, [text, limit])
+      return rows.map((row) => row.id as Subject)
+    },
+
+    async addChanges(at, changes) {
+      if (changes.length === 0) return
+      await db.query(
+        `insert into ${t('change')} (at, subject, from_cluster, to_cluster) select $1, * from unnest($2::text[], $3::text[], $4::text[])`,
+        [at, changes.map((change) => change.subject), changes.map((change) => change.from ?? null), changes.map((change) => change.to ?? null)],
+      )
+    },
+
+    async recentChanges(limit) {
+      const { rows } = await db.query(`select * from ${t('change')} order by id desc limit $1`, [limit])
+      return rows.map((row): Moved => ({ subject: row.subject, from: row.from_cluster ?? undefined, to: row.to_cluster ?? undefined, at: Number(row.at) }))
     },
 
     async allLabels() {
@@ -346,6 +366,10 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       const { rows } = await pool.query(`select * from ${t('conversion')} where transaction_id = $1 order by target`, [transactionId])
       return rows.map(toJob)
     },
+    async list(state, limit) {
+      const { rows } = await pool.query(`select * from ${t('conversion')} where state = $1 order by due desc, transaction_id limit $2`, [state, limit])
+      return rows.map(toJob)
+    },
     async counts() {
       const out: Record<JobState, number> = { pending: 0, sent: 0, skipped: 0, failed: 0 }
       const { rows } = await pool.query(`select state, count(*)::int as n from ${t('conversion')} group by state`)
@@ -438,6 +462,20 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
             update ${schema}.sighting set recorded_at = at where recorded_at is null;
             alter table ${schema}.sighting alter column recorded_at set not null;
             create index if not exists sighting_recorded on ${schema}.sighting (recorded_at);`,
+    },
+    {
+      id: 3,
+      name: 'cluster changes',
+      // Each cluster change, written down as it happens, for "what changed lately".
+      sql: `create table if not exists ${schema}.change (
+              id bigint generated always as identity primary key,
+              at bigint not null,
+              subject text not null,
+              from_cluster text,
+              to_cluster text
+            );
+            create index if not exists change_subject on ${schema}.change (subject);
+            create index if not exists subject_id_plain on ${schema}.subject (id collate "C");`,
     },
   ]
 }

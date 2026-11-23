@@ -174,6 +174,11 @@ export interface Decision extends Why {
   hash: string
 }
 
+/** A cluster change as it was written down: who moved, from where to where, and when. */
+export interface Moved extends Change {
+  at: number
+}
+
 /** A subject whose cluster moved. `from` is undefined for a subject not seen before. */
 export interface Change {
   subject: Subject
