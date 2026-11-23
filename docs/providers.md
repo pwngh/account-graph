@@ -16,6 +16,7 @@ That command calls each provider's real endpoint. With no keys set it sends an i
 | [Meta](#meta) | Conversions sent to Meta | Crediting Meta ad clicks |
 | [Microsoft Advertising](#microsoft-advertising) | Conversions sent to Microsoft | Crediting Microsoft ad clicks |
 | [TikTok](#tiktok) | Conversions sent to TikTok | Crediting TikTok ad clicks |
+| [Campaign costs](#campaign-costs) | What Google and Meta charged per campaign | [The report](report.md) |
 
 Steps below come from each provider's own pages, read in November 2026. Where a page did not state something, this says so instead of guessing.
 
@@ -140,6 +141,32 @@ An outcome names a TikTok event: `action: { tiktok: 'CompleteRegistration' }`. T
 
 TikTok's reference opens only in a browser, and only after choosing version 1.3 from the version menu at the top of the page.
 
+## Campaign costs
+
+The report needs what each campaign cost. The server reads it from Google Ads and Meta; other platforms go through `POST /costs`.
+
+**Google Ads.** Costs come from the Google Ads API, version 26, which needs one thing the conversion upload does not: a developer token.
+
+1. Request a developer token in a Google Ads manager account, under **Admin > API Center**. Google's [developer token page](https://developers.google.com/google-ads/api/docs/get-started/dev-token) describes the access levels.
+2. Enable the **Google Ads API** in the same Google Cloud project as the service account.
+3. Use the same service account and customer id as [Google Ads](#google-ads) above. Its access to the account covers reading reports.
+
+```sh
+GOOGLE_ADS_DEVELOPER_TOKEN=…
+```
+
+**Meta.** Costs come from the Insights API of the ad account.
+
+1. Find the ad account's id in Ads Manager. It is the number after `act=` in the address.
+2. Create a token that may read the account's reports: a system user token with the `ads_read` permission. The token from Events Manager used for conversions may not have it.
+
+```sh
+META_AD_ACCOUNT_ID=…
+META_ADS_TOKEN=…
+```
+
+Not stated on the pages read: the developer token steps and header, which are from Google's developer token page as remembered, not read this month; whether `account_currency` comes back on every Meta row; and the address of the next page of Meta results, which this follows from `paging.next`.
+
 ## What has and has not been checked
 
-Each provider's real endpoint has answered an invalid key the way this code expects. No call has been made with real keys, so the first `npm run live-check` with yours is the first real one.
+Each provider's real endpoint has answered an invalid key the way this code expects. No call has been made with real keys, so the first `npm run live-check` with yours is the first real one. The two cost readers are checked there too.
