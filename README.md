@@ -302,7 +302,7 @@ await graph.decisions() // [{ seq: 1, at, action: 'ignore', about: ['email:…']
 await graph.audit()     // { sound: true }
 ```
 
-`asOf` rebuilds the graph as it stood at a time, in memory, from the sightings and decisions up to then.
+`asOf` rebuilds the graph as it stood at a time, in memory, from the sightings written down and the decisions made up to then. It goes by when each sighting was recorded, not when it happened, so an event that arrived late is not part of a past it had not reached yet.
 
 ```ts
 let then = await graph.asOf(Date.parse('2026-06-01'))
@@ -310,6 +310,14 @@ await then.cluster('account:7')
 ```
 
 Pass `onChange` to `createGraph` to be told, after each write commits, which subjects changed cluster.
+
+### Keeping the log small
+
+Every observation adds rows to the sighting log. `prune` deletes the ones written down before a time. Links and clusters do not change, because each edge keeps its first and last sighting and its count; only `history` and `asOf` lose what was deleted. Pruning is itself recorded as a decision.
+
+```ts
+await graph.prune(Date.now() - 180 * 24 * 60 * 60 * 1000, { by: 'ops', reason: '180 day retention' })
+```
 
 ## Money flows
 
@@ -399,7 +407,7 @@ PostgreSQL writes take one advisory lock, so they run one at a time; the write q
 - No request has been made with real credentials, so a successful Fingerprint lookup, MaxMind answer, Google token, Google upload, and Meta upload are untested.
 - The two Fingerprint browser loaders have not run in a browser. They need a real key or a third-party script.
 - The hardware id's Windows path is untested.
-- `asOf` counts each sighting from its own time, not from when it was recorded, and a forgotten subject is gone from every past.
+- `asOf` cannot bring back a forgotten subject or a pruned sighting; both are gone from every past.
 - A separation between two subjects cuts the weakest links between them. With several separations in one component the cuts are made one after another, which is not always the fewest possible.
 - Flows are kept as running totals per pair, not as a ledger.
 - `rebuild`, `verify`, and `asOf` load every edge into memory.
