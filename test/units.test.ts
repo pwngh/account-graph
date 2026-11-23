@@ -1,0 +1,175 @@
+import assert from 'node:assert/strict'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
+import { test } from 'node:test'
+import {
+  components,
+  conversionEvent,
+  createGraph,
+  createMemoryStore,
+  defaultPolicy,
+  fit,
+  googleClick,
+  hashEmail,
+  ingestRequest,
+  ip,
+  measure,
+  normalizeEmail,
+  normalizePhone,
+  scorePairs,
+} from '../src/index.ts'
+import type { Edge, IdentifierState } from '../src/index.ts'
+import { createHandler } from '../src/server.ts'
+
+const T0 = 1_700_000_000_000
+
+test('emails and phones normalize the way Google documents', () => {
+  assert.equal(normalizeEmail(' Cloudy.SanFrancisco+shopping@gmail.com '), 'cloudysanfrancisco@gmail.com')
+  assert.equal(normalizeEmail('user.name+NYC@Example.com'), 'user.name+nyc@example.com')
+  assert.equal(normalizePhone('(800) 555-0100'), '+18005550100')
+  assert.equal(normalizePhone('+44 20 7946 0958'), '+442079460958')
+  assert.throws(() => normalizePhone('555-0100'), TypeError)
+  // The example hash from Google's Data Manager guide for john.smith@example.com.
+  assert.equal(hashEmail('john.smith@example.com'), '8e621e3d0368631d263d07a351fa8d34fba0d17c15fbcdec11a5f58008d022a0')
+})
+
+test('an IPv6 address keeps its /64 prefix and an IPv4 address stays whole', () => {
+  assert.equal(ip('2001:0db8:85a3:0000:1319:8a2e:0370:7344'), 'ip:2001:db8:85a3:0::/64')
+  assert.equal(ip('2001:db8:85a3::8a2e:370:7334'), 'ip:2001:db8:85a3:0::/64')
+  assert.equal(ip('::ffff:203.0.113.9'), 'ip:203.0.113.9')
+  assert.equal(ip('203.0.113.9'), 'ip:203.0.113.9')
+})
+
+test('scoring ignores the order of its input', () => {
+  const edge = (subject: string, identifier: string, at = T0): Edge => ({ subject, identifier, first: at, last: at, count: 1 })
+  const edges = [
+    edge('a', 'email:1'), edge('b', 'email:1'), edge('b', 'canvas:1'), edge('c', 'canvas:1'),
+    edge('c', 'ip:1'), edge('a', 'ip:1'), edge('d', 'hardware:1'), edge('a', 'hardware:1'),
+  ]
+  const states = new Map<string, IdentifierState>(
+    ['email:1', 'canvas:1', 'ip:1', 'hardware:1'].map((id) => [id, { fanout: 2, ignored: false }]),
+  )
+  const forward = scorePairs(defaultPolicy, edges, states)
+  const backward = scorePairs(defaultPolicy, [...edges].reverse(), states)
+  assert.deepEqual(backward, forward)
+  assert.deepEqual(forward.map((pair) => `${pair.a}-${pair.b}:${pair.level}`), ['a-b:same', 'a-d:same', 'b-c:related'])
+  assert.deepEqual([...components(['a', 'b', 'c', 'd'], forward)], [['a', 'a'], ['b', 'a'], ['c', 'c'], ['d', 'a']])
+})
+
+test('a conversion sends one click id and hashed match keys', () => {
+  const request = ingestRequest({ customerId: '123-456-7890', conversionActionId: '99' }, [
+    {
+      transactionId: 'enroll-42',
+      at: Date.UTC(2026, 10, 23, 15, 0, 0),
+      click: { gclid: 'G1', wbraid: 'W1' },
+      email: 'John.Smith@example.com',
+      value: 30.03,
+      consent: { adUserData: true, adPersonalization: false },
+    },
+  ])
+  assert.deepEqual(request, {
+    destinations: [{ operatingAccount: { accountType: 'GOOGLE_ADS', accountId: '1234567890' }, productDestinationId: '99' }],
+    encoding: 'HEX',
+    events: [
+      {
+        transactionId: 'enroll-42',
+        eventTimestamp: '2026-11-23T15:00:00.000Z',
+        eventSource: 'WEB',
+        adIdentifiers: { gclid: 'G1' },
+        userData: {
+          userIdentifiers: [{ emailAddress: '8e621e3d0368631d263d07a351fa8d34fba0d17c15fbcdec11a5f58008d022a0' }],
+        },
+        conversionValue: 30.03,
+        currency: 'USD',
+        consent: { adUserData: 'CONSENT_GRANTED', adPersonalization: 'CONSENT_DENIED' },
+      },
+    ],
+    validateOnly: true,
+  })
+  assert.deepEqual(conversionEvent({ transactionId: 't', at: 0, click: { wbraid: 'W1' } }).adIdentifiers, { wbraid: 'W1' })
+  assert.throws(() => conversionEvent({ transactionId: 't', at: 0 }), TypeError)
+})
+
+test('measure reports how often each kind was right on its own', () => {
+  const reason = (identifier: string) => ({ identifier, evidence: 0.5, fanout: 2, gap: 0 })
+  const measured = measure([
+    { reasons: [reason('fingerprint:1')], same: true },
+    { reasons: [reason('fingerprint:2')], same: true },
+    { reasons: [reason('fingerprint:3')], same: false },
+    { reasons: [reason('fingerprint:4'), reason('ip:1')], same: true },
+  ])
+  assert.deepEqual(measured.fingerprint, { alone: { pairs: 3, same: 2 }, any: { pairs: 4, same: 3 }, precision: 2 / 3 })
+  assert.equal(measured.ip!.precision, undefined)
+})
+
+test('the server takes a browser visit, links the enrollment, and guards its routes', async () => {
+  const graph = createGraph(createMemoryStore())
+  const handler = createHandler(graph, { token: 'secret', origins: ['https://site.example'], now: () => T0 })
+  const server = createServer(handler).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const auth = { authorization: 'Bearer secret' }
+  try {
+    const visit = { device: 'd-1', ga: '123.456', canvas: 'c1', touch: { gclid: 'G1', source: 'google', bogus: 'x' } }
+    const collected = await fetch(`${base}/collect`, {
+      method: 'POST',
+      headers: { origin: 'https://site.example', 'content-type': 'text/plain' },
+      body: JSON.stringify(visit),
+    })
+    assert.equal(collected.status, 204)
+    assert.equal(collected.headers.get('access-control-allow-origin'), 'https://site.example')
+
+    const stranger = await fetch(`${base}/collect`, { method: 'POST', headers: { origin: 'https://evil.example' }, body: '{}' })
+    assert.equal(stranger.status, 403)
+    assert.equal((await fetch(`${base}/links?subject=visitor:d-1`)).status, 401)
+
+    const observed = await fetch(`${base}/observe`, {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify({ subject: 'account:1', identifiers: ['device:d-1'], at: T0 + 1000, event: 'enroll' }),
+    })
+    assert.equal(observed.status, 200)
+
+    const attributed = await fetch(`${base}/attribute?subject=account:1&at=${T0 + 1000}`, { headers: auth })
+    const attribution = (await attributed.json()) as any
+    assert.equal(attribution.reason, 'credited')
+    assert.equal(attribution.credited.gclid, 'G1')
+    assert.equal(attribution.credited.bogus, undefined)
+    assert.equal(googleClick(attribution, defaultPolicy.same)!.gclid, 'G1')
+
+    const bad = await fetch(`${base}/observe`, { method: 'POST', headers: auth, body: JSON.stringify({ subject: 'a', identifiers: ['nope'], at: 1 }) })
+    assert.equal(bad.status, 400)
+  } finally {
+    server.close()
+  }
+})
+
+test('fit recovers the true weights from checked pairs', () => {
+  // Make pairs where a fingerprint is right 80% of the time and an address 10%, far from the defaults.
+  let seed = 9
+  const next = () => {
+    seed = (seed + 0x6d2b79f5) | 0
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+  const truth = { fingerprint: 0.8, ip: 0.1 }
+  const reason = (kind: 'fingerprint' | 'ip', n: number) => ({ identifier: `${kind}:${n}`, evidence: defaultPolicy.kinds[kind]!.weight, fanout: 2, gap: 0 })
+  const labeled = Array.from({ length: 6000 }, (_, n) => {
+    const kinds = (['fingerprint', 'ip'] as const).filter(() => next() < 0.6)
+    const reasons = (kinds.length > 0 ? kinds : (['ip'] as const)).map((kind) => reason(kind, n))
+    const same = reasons.some((each) => next() < truth[each.identifier.split(':')[0] as 'fingerprint' | 'ip'])
+    return { reasons, same }
+  })
+  const fitted = fit(labeled, defaultPolicy)
+  assert.ok(Math.abs(fitted.kinds.fingerprint!.after - 0.8) < 0.04, `fingerprint ${fitted.kinds.fingerprint!.after}`)
+  assert.ok(Math.abs(fitted.kinds.ip!.after - 0.1) < 0.04, `ip ${fitted.kinds.ip!.after}`)
+  assert.equal(fitted.kinds.fingerprint!.before, 0.97)
+  assert.ok(fitted.loss.after < fitted.loss.before)
+  assert.equal(fitted.policy.kinds.fingerprint!.weight, fitted.kinds.fingerprint!.after)
+  assert.equal(fitted.policy.kinds.email!.weight, defaultPolicy.kinds.email!.weight)
+  // Scores the fitted policy gives should match how often such pairs were truly one person.
+  for (const bucket of fitted.calibration) assert.ok(Math.abs(bucket.predicted - bucket.actual) < 0.06, JSON.stringify(bucket))
+  // With no data, nothing moves.
+  assert.deepEqual(fit([], defaultPolicy).policy, defaultPolicy)
+})

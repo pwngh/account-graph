@@ -1,0 +1,232 @@
+import { randomUUID, timingSafeEqual } from 'node:crypto'
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { Graph } from './graph.ts'
+import { identifier, ip } from './identifiers.ts'
+import { trusted } from './integrations/fingerprint.ts'
+import type { FingerprintVerifier } from './integrations/fingerprint.ts'
+import { shared } from './integrations/maxmind.ts'
+import type { IpLookup } from './integrations/maxmind.ts'
+import type { Outbox } from './outbox.ts'
+import type { Identifier, Touch } from './types.ts'
+
+export interface HandlerOptions {
+  /** The bearer token your own services send. Browsers never hold it. */
+  token: string
+  /** Site origins allowed to post to `/collect`, such as `https://example.org`. */
+  origins: readonly string[]
+  /** Read the visitor's address from `x-forwarded-for`. Turn on only behind a proxy you run. */
+  trustProxy?: boolean
+  /** Confirms a Fingerprint event id. Without it, `fingerprintEvent` in a visit is dropped. */
+  fingerprint?: FingerprintVerifier
+  /** Classifies the visitor's address. A shared address is recorded but links nothing. */
+  ipInfo?: IpLookup
+  /**
+   * Have `/collect` keep the device id in a cookie the server sets. Safari
+   * deletes a cookie set by script after seven days; one set by the server
+   * lasts. It only works when `/collect` is served from the site's own
+   * domain or a subdomain of it. `domain` shares the cookie across subdomains.
+   */
+  cookie?: boolean | { domain?: string }
+  /** Takes outcomes posted to `/convert`. Without it, that route answers 404. */
+  outbox?: Outbox
+  /** The clock, for tests. */
+  now?: () => number
+}
+
+const ID = /^[\w.-]{1,128}$/
+const TOUCH_FIELDS = [
+  'source', 'medium', 'campaign', 'gclid', 'gbraid', 'wbraid', 'fbclid', 'msclkid', 'landing', 'referrer',
+] as const
+
+class Refusal extends Error {
+  status: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.status = status
+  }
+}
+
+/**
+ * An HTTP handler for `node:http`. `/collect` is open to the listed origins;
+ * every other route needs the bearer token.
+ */
+export function createHandler(graph: Graph, options: HandlerOptions) {
+  const now = options.now ?? Date.now
+  const token = Buffer.from(options.token)
+
+  const authorize = (request: IncomingMessage) => {
+    const sent = Buffer.from(request.headers.authorization?.replace(/^Bearer /, '') ?? '')
+    if (sent.length !== token.length || !timingSafeEqual(sent, token)) throw new Refusal(401, 'Missing or wrong token')
+  }
+
+  const ignoredAddresses = new Set<Identifier>()
+
+  const cookieDomain = typeof options.cookie === 'object' && options.cookie.domain ? `; Domain=${options.cookie.domain}` : ''
+
+  /** Records one browser visit. The subject is the visitor; nothing here names an account. */
+  async function collect(request: IncomingMessage, response: ServerResponse) {
+    const body = await json(request)
+    const at = now()
+    let device = typeof body.device === 'string' && ID.test(body.device) ? body.device : undefined
+    if (options.cookie) {
+      // The cookie outlives what the page remembers, so it wins. A first visit adopts the page's id.
+      const kept = /(?:^|; )ag_device=([^;]+)/.exec(request.headers.cookie ?? '')?.[1]
+      device = kept && ID.test(kept) ? kept : (device ?? randomUUID())
+      response.setHeader('set-cookie', `ag_device=${device}; Max-Age=${400 * 86_400}; Path=/; HttpOnly; Secure; SameSite=Lax${cookieDomain}`)
+    }
+    if (!device) throw new Refusal(400, 'Body needs a device id')
+    const subject = `visitor:${device}`
+    const identifiers: Identifier[] = [identifier('device', device)]
+
+    // The browser's opt-out signal, or an answer from your consent banner, covers advertising only.
+    const optedOut = request.headers['sec-gpc'] === '1' || body.gpc === true
+    const answered = typeof body.consent?.adUserData === 'boolean' && typeof body.consent?.adPersonalization === 'boolean'
+    const consent = optedOut ? { adUserData: false, adPersonalization: false } : answered ? body.consent : undefined
+    const advertising = consent?.adUserData !== false
+
+    // Reported by the page and not confirmed by anyone.
+    for (const kind of advertising ? ['ga', 'canvas'] : ['canvas']) {
+      const value = body[kind]
+      if (typeof value === 'string' && ID.test(value)) identifiers.push(identifier(kind, value))
+    }
+
+    if (options.fingerprint && typeof body.fingerprintEvent === 'string') {
+      // A vendor outage must not lose the visit: record it without the fingerprint.
+      const verified = await options.fingerprint(body.fingerprintEvent).catch((error) => void console.error(error))
+      if (verified?.bot === 'bad') return
+      if (verified && trusted(verified, { now: at })) identifiers.push(identifier('fingerprint', verified.visitorId))
+    }
+
+    const forwarded = options.trustProxy ? String(request.headers['x-forwarded-for'] ?? '').split(',')[0]!.trim() : ''
+    const address = forwarded || request.socket.remoteAddress
+    if (address) {
+      const seen = ip(address)
+      identifiers.push(seen)
+      if (options.ipInfo && !ignoredAddresses.has(seen)) {
+        const info = await options.ipInfo(address.replace(/^::ffff:/, '')).catch((error) => void console.error(error))
+        if (shared(info ?? undefined)) {
+          await graph.ignore(seen)
+          if (ignoredAddresses.size >= 100_000) ignoredAddresses.clear()
+          ignoredAddresses.add(seen)
+        }
+      }
+    }
+    await graph.observe({ subject, identifiers, at, event: 'visit' })
+    if (consent) await graph.consent(subject, consent)
+
+    if (advertising && body.touch && typeof body.touch === 'object') {
+      const touch: Touch = { subject, at }
+      for (const field of TOUCH_FIELDS) {
+        const value = body.touch[field]
+        if (typeof value === 'string' && value.length <= 2048) touch[field] = value
+      }
+      await graph.touch(touch)
+    }
+  }
+
+  async function route(request: IncomingMessage, response: ServerResponse): Promise<unknown> {
+    const url = new URL(request.url ?? '/', 'http://localhost')
+    const path = `${request.method} ${url.pathname}`
+    const origin = request.headers.origin
+
+    if (url.pathname === '/collect') {
+      if (!origin || !options.origins.includes(origin)) throw new Refusal(403, 'Origin is not allowed')
+      response.setHeader('access-control-allow-origin', origin)
+      response.setHeader('vary', 'origin')
+      if (options.cookie) response.setHeader('access-control-allow-credentials', 'true')
+      if (request.method !== 'POST') throw new Refusal(405, 'Use POST')
+      await collect(request, response)
+      return undefined
+    }
+
+    authorize(request)
+    const subject = url.searchParams.get('subject') ?? ''
+    switch (path) {
+      case 'POST /observe':
+        return graph.observe(await json(request))
+      case 'POST /touch':
+        return graph.touch(await json(request))
+      case 'POST /ignore': {
+        const body = await json(request)
+        return graph.ignore(body.identifier, body.ignored ?? true, why(body))
+      }
+      case 'POST /forget': {
+        const body = await json(request)
+        return graph.forget(body.subject, why(body))
+      }
+      case 'POST /consent': {
+        const body = await json(request)
+        return graph.consent(body.subject, body.consent)
+      }
+      case 'POST /separate': {
+        const body = await json(request)
+        return graph.separate(body.a, body.b, body.separated ?? true, why(body))
+      }
+      case 'POST /transfer':
+        return graph.transfer(await json(request))
+      case 'GET /flows':
+        return graph.flows(subject)
+      case 'GET /collusion':
+        return graph.collusion(subject)
+      case 'GET /links':
+        return graph.links(subject)
+      case 'GET /cluster':
+        return (await graph.cluster(subject)) ?? null
+      case 'GET /history':
+        return graph.history(subject)
+      case 'GET /attribute':
+        return graph.attribute(subject, { at: Number(url.searchParams.get('at') ?? now()) })
+      case 'GET /verify':
+        return graph.verify()
+      case 'GET /decisions':
+        return graph.decisions()
+      case 'GET /audit':
+        return graph.audit()
+      case 'POST /convert':
+        if (!options.outbox) break
+        return options.outbox.record(await json(request))
+      case 'POST /restate': {
+        if (!options.outbox) break
+        const body = await json(request)
+        return options.outbox.restate(body.transactionId, body.value, body.currency)
+      }
+      case 'GET /conversion':
+        if (!options.outbox) break
+        return options.outbox.get(url.searchParams.get('id') ?? '')
+    }
+    throw new Refusal(404, 'No such route')
+  }
+
+  return async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+    try {
+      const result = await route(request, response)
+      if (result === undefined) return void response.writeHead(204).end()
+      response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result))
+    } catch (error) {
+      const refused = error instanceof Refusal || error instanceof TypeError || error instanceof SyntaxError
+      const status = error instanceof Refusal ? error.status : refused ? 400 : 500
+      const message = refused ? (error as Error).message : 'Internal error'
+      if (!refused) console.error(error)
+      response.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: message }))
+    }
+  }
+}
+
+/** Who is deciding and why, from a request body, for the record of decisions. */
+function why(body: any): { by?: string; reason?: string } {
+  return {
+    ...(typeof body.by === 'string' && body.by && { by: body.by.slice(0, 200) }),
+    ...(typeof body.reason === 'string' && body.reason && { reason: body.reason.slice(0, 1000) }),
+  }
+}
+
+async function json(request: IncomingMessage): Promise<any> {
+  let size = 0
+  const chunks: Buffer[] = []
+  for await (const chunk of request) {
+    size += chunk.length
+    if (size > 1_000_000) throw new Refusal(413, 'Body is over 1 MB')
+    chunks.push(chunk)
+  }
+  return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+}

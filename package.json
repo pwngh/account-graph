@@ -1,0 +1,75 @@
+{
+  "name": "account-graph",
+  "version": "0.1.0",
+  "description": "Link accounts by shared identifiers and attribute conversions",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./postgres": {
+      "types": "./dist/postgres.d.ts",
+      "default": "./dist/postgres.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    },
+    "./collect": {
+      "types": "./dist/collect.d.ts",
+      "default": "./dist/collect.js"
+    },
+    "./fingerprint": {
+      "types": "./dist/integrations/fingerprint.d.ts",
+      "default": "./dist/integrations/fingerprint.js"
+    },
+    "./fingerprint/browser": {
+      "types": "./dist/integrations/fingerprint-browser.d.ts",
+      "default": "./dist/integrations/fingerprint-browser.js"
+    },
+    "./hardware": {
+      "types": "./dist/integrations/hardware.d.ts",
+      "default": "./dist/integrations/hardware.js"
+    },
+    "./maxmind": {
+      "types": "./dist/integrations/maxmind.d.ts",
+      "default": "./dist/integrations/maxmind.js"
+    },
+    "./google-auth": {
+      "types": "./dist/integrations/google-auth.d.ts",
+      "default": "./dist/integrations/google-auth.js"
+    }
+  },
+  "scripts": {
+    "test": "node --test",
+    "check": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "demo": "node demo.ts",
+    "bench": "node bench.ts",
+    "prepublishOnly": "npm run check && npm test && npm run build"
+  },
+  "peerDependencies": {
+    "pg": "^8.11.0"
+  },
+  "peerDependenciesMeta": {
+    "pg": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.0",
+    "pg": "^8.13.0",
+    "typescript": "^5.8.0"
+  }
+}

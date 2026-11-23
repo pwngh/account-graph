@@ -1,0 +1,7 @@
+import { createMemoryStore } from '../src/index.ts'
+import { outboxSuite } from './outbox.suite.ts'
+import { suite } from './suite.ts'
+
+const open = async () => ({ store: createMemoryStore(), close: async () => {} })
+suite('memory store', open, 3000)
+outboxSuite('memory store', open)
