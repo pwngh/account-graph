@@ -198,11 +198,17 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
   const now = options.now ?? Date.now
 
-  /** Appends a decision to the record, sealed to the one before it. */
-  async function decide(tx: Tx, action: Decision['action'], about: string[], why: Why | undefined): Promise<void> {
+  /** Appends a decision to the record, sealed to the one before it. Returns its sequence number. */
+  async function decide(tx: Tx, action: Decision['action'], about: string[], why: Why | undefined): Promise<number> {
     const last = await tx.lastDecision()
     const entry = { seq: (last?.seq ?? 0) + 1, at: now(), action, about, ...(why?.by && { by: why.by }), ...(why?.reason && { reason: why.reason }) }
     await tx.addDecision({ ...entry, hash: seal(last?.hash ?? '', entry) })
+    return entry.seq
+  }
+
+  const pairOf = (a: Subject, b: Subject, verb: string): [Subject, Subject] => {
+    if (typeof a !== 'string' || typeof b !== 'string' || !a || !b || a === b) throw new TypeError(`${verb} needs two different subjects`)
+    return a < b ? [a, b] : [b, a]
   }
 
   /** Runs a write, then tells the listener what moved. */
@@ -311,21 +317,22 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     async separate(a, b, separated = true, why) {
-      if (!a || !b || a === b) throw new TypeError('separate needs two different subjects')
+      const pair = pairOf(a, b, 'separate')
       return changing(async (tx) => {
-        await decide(tx, separated ? 'separate' : 'rejoin', a < b ? [a, b] : [b, a], why)
+        await decide(tx, separated ? 'separate' : 'rejoin', pair, why)
         await tx.setSeparated(a, b, separated)
         return settle(tx, new Set([a, b]))
       })
     },
 
     async join(a, b, why) {
-      if (!a || !b || a === b) throw new TypeError('join needs two different subjects')
-      const pair = a < b ? [a, b] : [b, a]
+      const pair = pairOf(a, b, 'join')
+      ruleFor(policy, 'review:0')
       return changing(async (tx) => {
-        await decide(tx, 'join', pair, why)
+        // Named after the decision, not the subjects, so no two joins can collide and a forgotten id leaves no trace.
+        const identifier = `review:${await decide(tx, 'join', pair, why)}`
         const at = now()
-        return record(tx, pair.map((subject) => ({ subject, identifier: `review:${pair.join('+')}`, at, event: 'review' })))
+        return record(tx, pair.map((subject) => ({ subject, identifier, at, event: 'review' })))
       })
     },
 
