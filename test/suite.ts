@@ -56,6 +56,12 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(link!.reasons.map((reason) => reason.identifier), ['fingerprint:f1', 'hardware:h1'])
       assert.ok(Math.abs(link!.score - (1 - 0.05 * 0.03)) < 1e-12)
       assert.deepEqual((await graph.history('account:2')).map((s) => s.event), ['trade', 'trade'])
+      // With a limit, the newest sightings come back, still oldest first.
+      await graph.observe({ subject: 'account:2', identifiers: ['email:later'], at: T0 + DAY, event: 'login' })
+      assert.deepEqual((await graph.history('account:2', 2)).map((s) => s.identifier), ['fingerprint:f1', 'email:later'])
+      assert.deepEqual((await graph.history('account:2', 1)).map((s) => s.identifier), ['email:later'])
+      assert.equal((await graph.history('account:2', 50)).length, 3)
+      assert.deepEqual(await graph.history('account:2', 0), [])
     })
 
     test('a shared address alone links nothing', async () => {

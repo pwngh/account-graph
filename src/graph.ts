@@ -80,8 +80,8 @@ export interface Graph {
   collusion(subject: Subject, count?: number): Promise<Counterparty[]>
   /** Deletes a subject and everything recorded about it, unsent conversions included. */
   forget(subject: Subject, why?: Why): Promise<Change[]>
-  /** Every sighting of a subject, oldest first. */
-  history(subject: Subject): Promise<Sighting[]>
+  /** Every sighting of a subject, oldest first. With `limit`, only the newest that many. */
+  history(subject: Subject, limit?: number): Promise<Sighting[]>
   /** Recomputes every cluster from edges. Run it after changing the policy. */
   rebuild(why?: Why): Promise<Change[]>
   /** Every decision people made about the graph, oldest first: what was ignored, separated, forgotten, and by whom. */
@@ -396,8 +396,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       })
     },
 
-    history(subject) {
-      return store.read((tx) => tx.history(subject))
+    history(subject, limit) {
+      return store.read((tx) => tx.history(subject, limit))
     },
 
     rebuild(why) {

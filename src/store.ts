@@ -50,7 +50,8 @@ export interface Tx {
   addTouch(touch: Touch): Promise<void>
   /** Touches on the given subjects with `from <= at <= to`. */
   touchesOf(subjects: readonly Subject[], from: number, to: number): Promise<Touch[]>
-  history(subject: Subject): Promise<Sighting[]>
+  /** Sightings of a subject, oldest first. With `limit`, only the newest that many. */
+  history(subject: Subject, limit?: number): Promise<Sighting[]>
   /** Every sighting at or before a time, for replaying the past. */
   sightingsUntil(at: number): Promise<Sighting[]>
   /** Appends to the record of decisions. */

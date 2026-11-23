@@ -15,6 +15,8 @@
     --same: #4cc79b; --related: #f0b24a; --apart: #ff8a80; --accent: #8fb0ff; --chip: #2a2925; }
 }
 * { box-sizing: border-box; }
+/* The rules below set display on labels and rows, which would otherwise undo the hidden attribute. */
+[hidden] { display: none !important; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
 header { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--panel); }
 header h1 { font-size: 16px; margin: 0 auto 4px 0; letter-spacing: .01em; }
@@ -93,10 +95,11 @@ dialog h4 { margin: 0; font-size: 16px; }
   <form method="dialog">
     <h4 id="ask-title"></h4>
     <p id="ask-text" class="muted"></p>
+    <label id="ask-other-label" hidden>The other subject <input id="ask-other" autocomplete="off" placeholder="account:42"></label>
     <label>Reason, for the record <input id="ask-reason" autocomplete="off"></label>
     <div class="row">
       <button value="yes" class="primary" id="ask-yes">Confirm</button>
-      <button value="no">Cancel</button>
+      <button value="no" formnovalidate>Cancel</button>
     </div>
   </form>
 </dialog>
@@ -151,31 +154,41 @@ async function api(method, path, body) {
   return answer
 }
 
-/** Asks the reviewer to confirm, with a reason. Resolves to the reason, or undefined when cancelled. */
-function ask(title, text, confirm = 'Confirm') {
+/**
+ * Asks the reviewer to confirm, with a reason. With `wantsOther`, also asks
+ * which other subject. Resolves to what was typed, or undefined when cancelled.
+ */
+function ask(title, text, confirm = 'Confirm', wantsOther = false) {
   $('ask-title').textContent = title
   $('ask-text').textContent = text
   $('ask-yes').textContent = confirm
   $('ask-reason').value = ''
+  $('ask-other').value = ''
+  $('ask-other').required = wantsOther
+  $('ask-other-label').hidden = !wantsOther
   return new Promise((resolve) => {
-    $('ask').addEventListener('close', () => resolve($('ask').returnValue === 'yes' ? $('ask-reason').value.trim() : undefined), { once: true })
+    const answer = () => ($('ask').returnValue === 'yes' ? { reason: $('ask-reason').value.trim(), other: $('ask-other').value.trim() } : undefined)
+    $('ask').addEventListener('close', () => resolve(answer()), { once: true })
     // Clear the last answer first, so closing with Escape can never repeat an earlier "yes".
     $('ask').returnValue = ''
     $('ask').showModal()
   })
 }
 
-/** Runs one reviewer action, then reloads what is on screen. */
-async function act(title, text, path, body, confirm) {
-  const reason = await ask(title, text, confirm)
-  if (reason === undefined) return
+/** Runs one reviewer action, reloads what is on screen, then says what happened. `otherKey` names the body field for a second subject to ask for. */
+async function act(title, text, path, body, confirm, otherKey) {
+  const answer = await ask(title, text, confirm, Boolean(otherKey))
+  if (answer === undefined) return
+  let outcome
   try {
-    await api('POST', path, { ...body, by: $('by').value.trim() || undefined, reason: reason || undefined })
-    notice(`${title}: done.`)
+    const moved = await api('POST', path, { ...body, ...(otherKey && { [otherKey]: answer.other }), by: $('by').value.trim() || undefined, reason: answer.reason || undefined })
+    // These routes answer with the subjects whose cluster moved. None is a real outcome, so say so.
+    outcome = [Array.isArray(moved) && moved.length === 0 ? `${title}: recorded. No cluster changed.` : `${title}: done.`, false]
   } catch (error) {
-    notice(error.message, true)
+    outcome = [error.message, true]
   }
-  await refresh()
+  // Reloading clears the notice, so speak after it. A failed reload has already said why.
+  if ((await refresh()) || outcome[1]) notice(...outcome)
 }
 
 const open = (subject) => el('button', { class: 'link', on: { click: () => show(subject) } }, subject)
@@ -230,10 +243,7 @@ function render(profile) {
     el('p', {}, size > 1 ? `In a cluster of ${size} that the graph treats as one person.` : 'On its own. The graph treats it as one person with one account.'),
     profile.cluster.oversized ? el('p', { class: 'apart' }, 'This cluster is larger than the review size. A shared identifier may be joining strangers.') : '',
     el('div', { class: 'row' },
-      el('button', { on: { click: async () => {
-        const other = prompt('Join with which subject?')
-        if (other) await act('Join as one person', `${profile.subject} and ${other.trim()}`, '/join', { a: profile.subject, b: other.trim() }, 'Join')
-      } } }, 'Join with another…'),
+      el('button', { on: { click: () => act('Join as one person', `${profile.subject} and the subject you name will be treated as one person.`, '/join', { a: profile.subject }, 'Join', 'b') } }, 'Join with another…'),
       el('button', { class: 'danger', on: { click: () => act('Forget this subject', `Everything recorded about ${profile.subject} will be deleted. This cannot be undone.`, '/forget', { subject: profile.subject }, 'Delete') } }, 'Forget…')))
   detail.append(summary)
 
@@ -273,6 +283,7 @@ function render(profile) {
 }
 
 let current
+/** Shows one subject. Resolves to whether it loaded. */
 async function show(subject) {
   current = subject
   $('subject').value = subject
@@ -280,15 +291,18 @@ async function show(subject) {
     history.replaceState(null, '', `#${encodeURIComponent(subject)}`)
     render(await api('GET', `/subject?subject=${encodeURIComponent(subject)}`))
     notice('')
+    return true
   } catch (error) {
     notice(error.message, true)
+    return false
   }
 }
 
 const ACTIONS = { ignore: 'Stopped linking through', restore: 'Resumed linking through', separate: 'Kept apart', rejoin: 'Allowed to join', join: 'Joined', forget: 'Forgot', rebuild: 'Rebuilt every cluster' }
 
+/** Reloads the lists and the open subject. Resolves to whether everything loaded. */
 async function refresh() {
-  if (!$('token').value) return
+  if (!$('token').value) return false
   try {
     const [clusters, decisions, audit] = await Promise.all([api('GET', '/clusters'), api('GET', '/decisions'), api('GET', '/audit')])
     $('queue').replaceChildren(...(clusters.length > 0 ? clusters.map((cluster) => el('li', {}, open(cluster.id), el('span', { class: 'muted' }, ` ${cluster.size} accounts `), cluster.oversized ? el('span', { class: 'chip apart' }, 'review') : '')) : [el('li', { class: 'muted' }, 'No clusters yet.')]))
@@ -300,10 +314,12 @@ async function refresh() {
       el('span', {}, `${ACTIONS[d.action] ?? d.action} `), ...d.about.map((subject) => el('span', { class: 'reason' }, subject)),
       el('span', { class: 'muted' }, `${when(d.at)}${d.by ? `, ${d.by}` : ''}${d.reason ? `: ${d.reason}` : ''} `),
       d.action === 'ignore' && !(restoredAt.get(d.about[0]) > d.seq) ? el('button', { class: 'link', on: { click: () => act('Resume linking through this identifier', d.about[0], '/ignore', { identifier: d.about[0], ignored: false }, 'Resume') } }, 'undo') : '')))
-    if (current) await show(current)
-    else notice('')
+    if (current) return show(current)
+    notice('')
+    return true
   } catch (error) {
     notice(error.message, true)
+    return false
   }
 }
 

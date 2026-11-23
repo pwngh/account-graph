@@ -311,3 +311,41 @@ test('the reviewer screen is a locked-down shell, and its data needs the token',
     server.close()
   }
 })
+
+test('the reviewer token opens the review routes and nothing a service writes through', async () => {
+  const graph = createGraph(createMemoryStore())
+  await graph.observe([
+    { subject: 'account:1', identifiers: ['email:e'], at: T0 },
+    { subject: 'account:2', identifiers: ['email:e'], at: T0 },
+  ])
+  const server = createServer(createHandler(graph, { token: 'service', reviewToken: 'reviewer', origins: [], now: () => T0 })).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const call = (token: string, method: string, path: string, body?: object) =>
+    fetch(`${base}${path}`, { method, headers: { authorization: `Bearer ${token}` }, ...(body && { body: JSON.stringify(body) }) }).then((r) => r.status)
+  try {
+    for (const path of ['/subject?subject=account:1', '/clusters', '/links?subject=account:1', '/flows?subject=account:1', '/decisions', '/audit']) {
+      assert.equal(await call('reviewer', 'GET', path), 200, path)
+    }
+    assert.equal(await call('reviewer', 'POST', '/separate', { a: 'account:1', b: 'account:2', by: 'dana' }), 200)
+    assert.equal(await call('reviewer', 'POST', '/join', { a: 'account:1', b: 'account:3' }), 200)
+    assert.equal(await call('reviewer', 'POST', '/ignore', { identifier: 'email:e' }), 200)
+
+    const before = await graph.history('account:1')
+    assert.equal(await call('reviewer', 'POST', '/observe', { subject: 'account:1', identifiers: ['email:x'], at: T0 }), 403)
+    assert.equal(await call('reviewer', 'POST', '/transfer', { from: 'account:1', to: 'account:2', amount: 5, at: T0 }), 403)
+    assert.equal(await call('reviewer', 'POST', '/touch', { subject: 'account:1', at: T0, gclid: 'G' }), 403)
+    assert.equal(await call('reviewer', 'POST', '/consent', { subject: 'account:1', consent: { adUserData: true, adPersonalization: true } }), 403)
+    assert.equal(await call('reviewer', 'POST', '/convert', {}), 403)
+    assert.equal(await call('reviewer', 'GET', '/verify'), 403)
+    assert.deepEqual(await graph.history('account:1'), before)
+
+    assert.equal(await call('service', 'POST', '/observe', { subject: 'account:1', identifiers: ['email:x'], at: T0 }), 200)
+    assert.equal(await call('service', 'GET', '/clusters'), 200)
+    assert.equal(await call('wrong', 'GET', '/clusters'), 401)
+    assert.equal(await call('', 'GET', '/clusters'), 401)
+    assert.throws(() => createHandler(graph, { token: 'same', reviewToken: 'same', origins: [] }), TypeError)
+  } finally {
+    server.close()
+  }
+})

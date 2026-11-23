@@ -236,12 +236,13 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       return rows.map((row) => ({ ...row.detail, subject: row.subject, at: Number(row.at) }) as Touch)
     },
 
-    async history(subject) {
+    async history(subject, limit) {
+      // Take the newest rows first when there is a limit, then hand them back oldest first.
       const { rows } = await db.query(
-        `select subject, identifier, at, event from ${t('sighting')} where subject = $1 order by at, id`,
-        [subject],
+        `select subject, identifier, at, event from ${t('sighting')} where subject = $1 order by at desc, id desc limit $2`,
+        [subject, limit ?? null],
       )
-      return rows.map(toSighting)
+      return rows.reverse().map(toSighting)
     },
 
     async sightingsUntil(at) {

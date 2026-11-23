@@ -1,7 +1,7 @@
 /**
  * Serves the reviewer screen over made-up data, to try it.
  *   npm run review
- * Then open the printed address and enter the token `demo`.
+ * Then open the printed address and enter the reviewer token `demo`.
  */
 import { createServer } from 'node:http'
 import { createGraph, createMemoryStore } from '../src/index.ts'
@@ -30,6 +30,6 @@ for (let i = 0; i < 4; i++) await graph.transfer({ from: 'account:ana-alt', to: 
 await graph.transfer({ from: 'account:ana', to: 'account:gus', amount: 1_200, at: start + 60 * HOUR, asset: 'gold' })
 await graph.separate('account:cy', 'account:dee', true, { by: 'dana', reason: 'siblings, one family computer' })
 
-const handler = createHandler(graph, { token: 'demo', origins: [] })
+const handler = createHandler(graph, { token: 'service-demo', reviewToken: 'demo', origins: [] })
 const port = Number(process.env.PORT ?? 8788)
-createServer(handler).listen(port, 'localhost', () => console.log(`reviewer screen: http://localhost:${port}/review  (token: demo)`))
+createServer(handler).listen(port, 'localhost', () => console.log(`reviewer screen: http://localhost:${port}/review  (reviewer token: demo)`))
