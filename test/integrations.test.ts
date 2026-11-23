@@ -592,3 +592,72 @@ test('the server takes page events and phone calls, and ties a call to the visit
     plain.close()
   }
 })
+
+test('a link sent to one person ties the browser that opens it, and a visitor is carried between sites', async () => {
+  const graph = createGraph(createMemoryStore())
+  let clock = 1_800_000_000_000
+  const handler = createHandler(graph, { token: 'service', reviewToken: 'reviewer', origins: ['https://site.example', 'https://shop.example'], now: () => clock, linkSecret: 'a-long-secret-value', limit: false })
+  const server = createServer(handler).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const service = (path: string, body: object, token = 'service') => fetch(`${base}${path}`, { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify(body) })
+  const page = (path: string, body: object, origin = 'https://site.example', agent = 'Browser/1.0') => fetch(`${base}${path}`, { method: 'POST', headers: { origin, 'user-agent': agent }, body: JSON.stringify(body) })
+  const members = async (subject: string) => (await graph.cluster(subject))?.members
+  try {
+    // Your backend asks for a link for one contact and sends it to them.
+    const made = (await (await service('/link', { url: 'https://site.example/offer', subject: 'contact:1', days: 7 })).json()) as { url: string }
+    const known = new URL(made.url).searchParams.get('ag')!
+    assert.equal((await service('/link', { url: 'https://site.example/', subject: 'contact:1' }, 'reviewer')).status, 403)
+    assert.equal((await service('/link', { url: 'nope', subject: 'contact:1' })).status, 400)
+
+    // They open it: the browser is tied to them. A forged token ties nobody.
+    assert.equal((await page('/collect', { device: 'phone-1', known })).status, 204)
+    assert.equal((await page('/collect', { device: 'phone-2', known: known.slice(0, -2) + 'xx' })).status, 204)
+    assert.deepEqual(await members('contact:1'), ['contact:1', 'visitor:phone-1'])
+    assert.deepEqual(await members('visitor:phone-2'), ['visitor:phone-2'])
+    assert.deepEqual((await graph.links('contact:1')).map((link) => [link.subject, link.level, link.reasons[0]!.identifier]), [['visitor:phone-1', 'same', 'link:phone-1']])
+
+    // A second person's link opened in the same browser: the browser can no longer say whose it is.
+    const second = new URL(((await (await service('/link', { url: 'https://site.example/offer', subject: 'contact:2' })).json()) as { url: string }).url).searchParams.get('ag')!
+    await page('/collect', { device: 'phone-1', known: second })
+    assert.deepEqual(await members('contact:1'), ['contact:1'])
+    assert.deepEqual((await graph.links('visitor:phone-1')).map((link) => [link.subject, link.level]), [['contact:1', 'related'], ['contact:2', 'related']])
+
+    // A week later the first link has run out.
+    clock += 8 * 86_400_000
+    await page('/collect', { device: 'phone-3', known })
+    assert.deepEqual(await members('visitor:phone-3'), ['visitor:phone-3'])
+
+    // One site asks for a token for its visitor; the next site hands it over with its own visit.
+    await page('/collect', { device: 'site-device', touch: { gclid: 'G-site' } })
+    const asked = await page('/carry', { device: 'site-device' })
+    assert.equal(asked.headers.get('access-control-allow-credentials'), 'true')
+    const { token } = (await asked.json()) as { token: string }
+    assert.equal((await page('/collect', { device: 'shop-device', carried: token }, 'https://shop.example')).status, 204)
+    assert.deepEqual(await members('visitor:shop-device'), ['visitor:shop-device', 'visitor:site-device'])
+    // So a sign-up on the second site is credited to the ad click that landed on the first.
+    await graph.observe({ subject: 'account:7', identifiers: ['device:shop-device'], at: clock + 1000 })
+    assert.equal((await graph.attribute('account:7', { at: clock + 1000 })).credited?.gclid, 'G-site')
+    // Passed to another browser, or used after an hour, the same token ties nobody.
+    await page('/collect', { device: 'stranger', carried: token }, 'https://shop.example', 'Other/2.0')
+    assert.deepEqual(await members('visitor:stranger'), ['visitor:stranger'])
+    clock += 3_600_001
+    await page('/collect', { device: 'late', carried: token }, 'https://shop.example')
+    assert.deepEqual(await members('visitor:late'), ['visitor:late'])
+    assert.equal((await page('/carry', { device: 'x' }, 'https://evil.example')).status, 403)
+    assert.deepEqual(await graph.verify(), [])
+  } finally {
+    server.close()
+  }
+
+  // With no secret set, there is nothing to sign with: the routes do not exist and tokens are ignored.
+  const plain = createServer(createHandler(graph, { token: 'service', origins: ['https://site.example'] })).listen(0, '127.0.0.1')
+  await new Promise((resolve) => plain.once('listening', resolve))
+  try {
+    const address = `http://127.0.0.1:${(plain.address() as AddressInfo).port}`
+    assert.equal((await fetch(`${address}/link`, { method: 'POST', headers: { authorization: 'Bearer service' }, body: '{}' })).status, 404)
+    assert.equal((await fetch(`${address}/carry`, { method: 'POST', headers: { origin: 'https://site.example' }, body: '{}' })).status, 401)
+  } finally {
+    plain.close()
+  }
+})

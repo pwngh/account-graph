@@ -17,12 +17,17 @@ const GRAPH = process.env.GRAPH_URL ?? 'http://localhost:8080'
 const TOKEN = process.env.GRAPH_TOKEN ?? 'change-me-service-token'
 const PORT = Number(process.env.PORT ?? 3000)
 
-// The one line a site adds. The script reports each visit to the server it was loaded from.
-const TAG = `<script type="module" src="${GRAPH}/collect.js"></script>`
+// The same site answers on two host names, which a browser treats as two sites with separate cookies.
+const HOSTS = ['localhost', '127.0.0.1']
+const otherSite = (host: string) => `http://${HOSTS.find((name) => name !== host.split(':')[0]) ?? HOSTS[0]}:${PORT}`
 
-const page = (title: string, body: string) => `<!doctype html><meta charset="utf-8"><title>${title}</title>
+// The one line a site adds. The script reports each visit to the server it was loaded from.
+// `domains` names the other site, so a link to it carries the visitor along.
+const tag = (host: string) => `<script type="module" src="${GRAPH}/collect.js?domains=${new URL(otherSite(host)).hostname}"></script>`
+
+const page = (host: string, title: string, body: string) => `<!doctype html><meta charset="utf-8"><title>${title}</title>
 <style>body{font:16px/1.5 system-ui;max-width:36rem;margin:3rem auto;padding:0 1rem}input,button{font:inherit;padding:.4rem .6rem}pre{background:#f3f3f0;padding:1rem;overflow:auto}</style>
-<h1>${title}</h1>${body}${TAG}`
+<h1>${title}</h1>${body}<p><a href="/who">Who does the graph think this browser is?</a></p>${tag(host)}`
 
 /** Calls the graph server as your own backend would: over HTTP, with the service token. */
 async function graph(method: string, path: string, body?: unknown): Promise<any> {
@@ -36,17 +41,20 @@ let accounts = Date.now() % 100_000
 createServer(async (request, response) => {
   const url = new URL(request.url ?? '/', `http://localhost:${PORT}`)
   const html = (text: string) => response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(text)
+  const host = request.headers.host ?? `localhost:${PORT}`
+  const device = /(?:^|; )ag_device=([^;]+)/.exec(request.headers.cookie ?? '')?.[1]
   try {
     if (url.pathname === '/') {
-      return html(page('Example shop', `<p>A landing page. If you arrived with <code>?gclid=…</code>, the script below has already told the graph server.</p>
+      return html(page(host, 'Example shop', `<p>A landing page. If you arrived with <code>?gclid=…</code>, the script below has already told the graph server.</p>
         <form method="post" action="/signup"><input name="email" type="email" placeholder="you@example.com" required> <button>Sign up</button></form>
         <p>Two things the script reports without any code here: a tap on <a href="tel:+15551230001">555-123-0001</a>, and a click on
-        <button type="button" data-ag-event="brochure">Request a brochure</button>. The server keeps them when started with <code>EVENTS=brochure,phone_click</code>.</p>`))
+        <button type="button" data-ag-event="brochure">Request a brochure</button>. The server keeps them when started with <code>EVENTS=brochure,phone_click</code>.</p>
+        <p><a href="${otherSite(host)}/">Our other site</a> is this one under another host name. Follow the link and you stay one visitor there; type its address by hand and you are a stranger.
+        <a href="/mail">See an email</a> with a link that names the person it was sent to.</p>`))
     }
     if (url.pathname === '/signup' && request.method === 'POST') {
       const form = new URLSearchParams(await new Response(request as unknown as ReadableStream).text())
-      // The collector keeps the visitor's device id in this cookie. Reading it here is what ties the visit to the account.
-      const device = /(?:^|; )ag_device=([^;]+)/.exec(request.headers.cookie ?? '')?.[1]
+      // The collector keeps the visitor's device id in a cookie. Reading it here is what ties the visit to the account.
       const subject = `account:${++accounts}`
       const at = Date.now()
       // The email is hashed the way the graph expects before it leaves this server.
@@ -56,10 +64,23 @@ createServer(async (request, response) => {
       // Count the sign-up, so the report can set it beside what the campaign cost.
       await graph('POST', '/convert', { transactionId: `signup-${subject}`, subject, at, stage: 'signup', value: 25, currency: 'USD' })
       const attribution = await graph('GET', `/attribute?subject=${encodeURIComponent(subject)}&at=${at}`)
-      return html(page('Signed up', `<p>You are <code>${subject}</code>.</p>
+      return html(page(host, 'Signed up', `<p>You are <code>${subject}</code>.</p>
         <p>The graph server ${attribution.credited ? `credits the ad click <code>${attribution.credited.gclid ?? attribution.credited.source ?? 'a visit'}</code> at ${Math.round(attribution.credited.confidence * 100)}% confidence.` : `found no ad click to credit (${attribution.reason}).`}</p>
         <p>Cluster changes from this sign-up: ${changes.length}.</p>
         <p><a href="${GRAPH}/review#${encodeURIComponent(subject)}">Open this account on the reviewer screen</a> (it asks for the review token), or <a href="${GRAPH}/review#!channels">see it in the channel report</a>. <a href="/">Back</a>.</p>`))
+    }
+    if (url.pathname === '/mail') {
+      // Your backend knows a contact and asks the graph server for a link that names them. Needs LINK_SECRET on the server.
+      const subject = `contact:${++accounts}`
+      const link = await graph('POST', '/link', { url: `http://${host}/`, subject })
+      return html(page(host, 'An email we might send', `<p>To <code>${subject}</code>: your offer is ready. <a href="${link.url}">Open it</a>.</p>
+        <p>The link carries a signed token naming the contact. Opening it ties this browser to them, and the script takes the token out of the address bar.</p>`))
+    }
+    if (url.pathname === '/who') {
+      const cluster = device ? await graph('GET', `/cluster?subject=${encodeURIComponent(`visitor:${device}`)}`) : null
+      return html(page(host, 'Who this browser is', cluster
+        ? `<p>This browser is <code>visitor:${device}</code>. The graph treats these as one person:</p><pre>${cluster.members.join('\n')}</pre>`
+        : '<p>The graph has not seen this browser yet. Open the <a href="/">first page</a> and come back.</p>'))
     }
     if (url.pathname === '/reset') {
       // Start over as a new visitor: forget the device id the collector kept in this browser.

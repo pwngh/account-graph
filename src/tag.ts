@@ -23,6 +23,7 @@ function browserModule(name: string): string {
  *   collect.js?fingerprint=PUBLIC_KEY&region=eu    confirm visitors with Fingerprint
  *   collect.js?canvas=open                         add the open-source FingerprintJS id
  *   collect.js?params=mailing,placement            keep address parameters of your own
+ *   collect.js?domains=shop.example,help.example   carry the visitor along links to your other sites
  * Set `window.accountGraphConsent = { adUserData, adPersonalization }` before
  * the tag to pass a consent banner's answer. Once loaded, the page can call
  * `accountGraph.event('inquiry')`, and taps on phone links and on elements
@@ -44,6 +45,8 @@ const RUN = `
   collect(options).catch(() => undefined)
   globalThis.accountGraph = { event: (name, detail) => event(options, name, detail).catch(() => undefined) }
   watch(options)
+  const domains = self.searchParams.get('domains')
+  if (domains) carry({ ...options, domains: domains.split(',').filter(Boolean) })
 }
 `
 

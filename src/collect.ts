@@ -15,6 +15,8 @@ export interface CollectOptions {
   consent?: { adUserData: boolean; adPersonalization: boolean }
   /** Names of your own address parameters to keep with the arrival, such as `mailing` or `placement`. */
   params?: readonly string[]
+  /** Your other sites, by host name. A link to one carries this visitor along, so they stay one visitor there. */
+  domains?: readonly string[]
 }
 
 export interface Collected {
@@ -24,6 +26,10 @@ export interface Collected {
   canvas?: string
   url: string
   touch?: Arrival
+  /** The token of a link sent to one person, from the `ag` parameter. The server checks it. */
+  known?: string
+  /** The token another of your sites put on the link that led here, from `ag_from`. The server checks it. */
+  carried?: string
   /** The browser sent its Global Privacy Control signal. */
   gpc?: boolean
   consent?: { adUserData: boolean; adPersonalization: boolean }
@@ -108,12 +114,27 @@ export function read(params: readonly string[] = []): Collected {
   if (arrived) touch.landing = url.origin + url.pathname
 
   const ga = cookie('_ga')?.split('.').slice(-2).join('.')
+  const known = url.searchParams.get('ag')
+  const carried = url.searchParams.get('ag_from')
   return {
     device: deviceId(),
     url: url.origin + url.pathname,
     ...(ga && { ga }),
     ...(arrived && { touch }),
+    ...(known && { known }),
+    ...(carried && { carried }),
   }
+}
+
+/** Takes the two tokens out of the address bar once they have been read, so they are not bookmarked or passed on. */
+function tidy(): void {
+  try {
+    const url = new URL(location.href)
+    if (!url.searchParams.has('ag') && !url.searchParams.has('ag_from')) return
+    url.searchParams.delete('ag')
+    url.searchParams.delete('ag_from')
+    history.replaceState(history.state, '', url.href)
+  } catch {}
 }
 
 /** Reads the visit and sends it. Call once per page load, after the Google tag if you use one. */
@@ -130,6 +151,7 @@ export async function collect(options: CollectOptions): Promise<void> {
     delete visit.ga
   }
   if (typeof visit.touch?.gclid === 'string') remember('ag_click', visit.touch.gclid)
+  tidy()
   const body = JSON.stringify({
     ...visit,
     ...(fingerprintEvent && { fingerprintEvent }),
@@ -204,5 +226,57 @@ export function watch(options: CollectOptions): () => void {
   return () => {
     document.removeEventListener('click', clicked, true)
     document.removeEventListener('submit', submitted, true)
+  }
+}
+
+
+/**
+ * Keeps a visitor the same visitor across your sites. Asks the server for a
+ * short-lived token for this browser, and adds it to links that lead to one
+ * of `domains` at the moment they are followed. The site that receives it
+ * hands it to its own script tag. Returns a function that stops.
+ */
+export function carry(options: CollectOptions): () => void {
+  const domains = new Set((options.domains ?? []).map((host) => host.toLowerCase()))
+  let token: { value: string; at: number } | undefined
+  let asking = false
+  const ask = async () => {
+    if (asking) return
+    asking = true
+    try {
+      const response = await fetch(new URL('carry', options.endpoint).href, {
+        method: 'POST',
+        body: JSON.stringify({ device: deviceId() }),
+        headers: { 'content-type': 'text/plain' },
+        credentials: 'include',
+      })
+      if (response.ok) token = { value: (await response.json()).token, at: Date.now() }
+    } catch {
+    } finally {
+      asking = false
+    }
+  }
+  const followed = (happened: Event) => {
+    const link = (happened.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null | undefined
+    if (!link) return
+    let url: URL
+    try {
+      url = new URL(link.href)
+    } catch {
+      return
+    }
+    if (!domains.has(url.hostname.toLowerCase()) || url.hostname === location.hostname) return
+    // A token lasts an hour. Past half of that, ask for the next one; it will be there for the next link.
+    if (!token || Date.now() - token.at > 30 * 60_000) void ask()
+    if (!token || Date.now() - token.at > 55 * 60_000) return
+    url.searchParams.set('ag_from', token.value)
+    link.href = url.href
+  }
+  if (domains.size === 0) return () => {}
+  void ask()
+  // Pressing comes before any way of following a link: a click, a middle click, or the menu's "open in new tab".
+  for (const name of ['pointerdown', 'click']) document.addEventListener(name, followed, true)
+  return () => {
+    for (const name of ['pointerdown', 'click']) document.removeEventListener(name, followed, true)
   }
 }

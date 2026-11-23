@@ -21,6 +21,7 @@ Scores depend only on stored data, never on the current time or on arrival order
 | `payment` | 0.97 | 10 | none | Card or bank token |
 | `fingerprint` | 0.97 | 20 | 720 days | Vendor visitor id the server confirmed |
 | `hardware` | 0.95 | 10 | none | Hashed machine id from your client |
+| `link` | 0.92 | 5 | none | A link sent to one person, opened in this browser. Thins as more people's links are opened there |
 | `dial` | 0.92 | 2 | none | A phone call that began just after exactly one visitor tapped its number |
 | `phone` | 0.90 | 25 | none | |
 | `ga` | 0.90 | 10 | none | Google Analytics client id |

@@ -11,6 +11,7 @@ import { fromTwilio, twilioCall } from './integrations/twilio.ts'
 import type { IpLookup } from './integrations/maxmind.ts'
 import type { Outbox } from './outbox.ts'
 import { reviewPage } from './review.ts'
+import { browserMark, knownLink, readToken, signToken } from './sign.ts'
 import { browserScripts, scriptHeaders } from './tag.ts'
 import type { Identifier, Level, Outcome, Subject, Touch } from './types.ts'
 
@@ -67,6 +68,13 @@ export interface HandlerOptions {
    * signature is checked against.
    */
   calls?: CallOptions & { twilio?: { authToken: string; url: string } }
+  /**
+   * The secret that signs links. With it, `/link` makes an address that
+   * names the person it is sent to, a visit that arrives through one ties
+   * the browser to that person, and `/carry` lets the script tag keep a
+   * visitor the same visitor across your sites. Long and random.
+   */
+  linkSecret?: string
   /** The time zone `/report` reads its days in when the request names none. Use the ad account's. Defaults to UTC. */
   timeZone?: string
   /** The clock, for tests. */
@@ -252,7 +260,17 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         }
       }
     }
-    await graph.observe({ subject, identifiers, at, event: 'visit' })
+    // A link sent to one person names them; a link from another of your sites names the visitor they were there.
+    let named: Subject | undefined
+    if (options.linkSecret) {
+      named = readToken(options.linkSecret, 'known', body.known, at)
+      if (named) identifiers.push(identifier('link', device))
+      const [from, mark] = readToken(options.linkSecret, 'carry', body.carried, at)?.split('\n') ?? []
+      // The token only counts in the browser it was made for, so one passed to someone else ties nobody.
+      if (from && from !== device && mark === browserMark(request.headers['user-agent'], address)) identifiers.push(identifier('device', from))
+    }
+    const visit = { subject, identifiers, at, event: 'visit' }
+    await graph.observe(named ? [visit, { subject: named, identifiers: [identifier('link', device)], at, event: 'link' }] : visit)
     if (consent) await graph.consent(subject, consent)
 
     if (advertising && body.touch && typeof body.touch === 'object') {
@@ -306,7 +324,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     const path = `${request.method} ${url.pathname}`
     const origin = request.headers.origin
 
-    if (url.pathname === '/collect' || url.pathname === '/event') {
+    if (url.pathname === '/collect' || url.pathname === '/event' || (url.pathname === '/carry' && options.linkSecret)) {
       if (!origin || !options.origins.includes(origin)) throw new Refusal(403, 'Origin is not allowed')
       response.setHeader('access-control-allow-origin', origin)
       response.setHeader('vary', 'origin')
@@ -316,6 +334,13 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         tally.limited += 1
         response.setHeader('retry-after', String(Math.ceil(60 / perMinute)))
         throw new Refusal(429, 'Too many visits from this address')
+      }
+      if (url.pathname === '/carry') {
+        // The page reads this answer, and may send the server's own cookie with the request.
+        response.setHeader('access-control-allow-credentials', 'true')
+        const device = deviceOf(request, response, await json(request))
+        const made = `${device}\n${browserMark(request.headers['user-agent'], addressOf(request))}`
+        return { token: signToken(options.linkSecret!, 'carry', made, now() + 3_600_000) }
       }
       if (url.pathname === '/event') await happened(request, response)
       else {
@@ -420,6 +445,12 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return graph.audit()
       case 'POST /convert':
         return convert(await json(request))
+      case 'POST /link': {
+        if (!options.linkSecret) break
+        const body = await json(request)
+        const lasts = Number(body.days) > 0 ? Number(body.days) * 86_400_000 : undefined
+        return { url: knownLink(String(body.url), body.subject, { secret: options.linkSecret, now, ...(lasts && { lasts }) }) }
+      }
       case 'POST /call':
         return recordCall(graph, await json(request), { ...options.calls, convert })
       case 'POST /restate': {

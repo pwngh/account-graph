@@ -38,3 +38,6 @@
 - `POST /calls/twilio` takes Twilio's status callbacks after checking the signature (`fromTwilio`, `twilioCall`).
 - `holders(identifiers)` lists every subject seen with an identifier.
 - The `dial` kind (0.92) links a caller to the visitor who tapped; the `dialed` kind is a note that links nothing.
+- `knownLink(url, subject, { secret })` and `POST /link` make an address that names the person it is sent to; a visit through one ties the browser to that person (`link` kind, 0.92).
+- `collect.js?domains=` carries a visitor along links to the named sites: `POST /carry` issues a one-hour token bound to the browser, and `/collect` accepts it as `carried`.
+- `signToken` and `readToken` sign and check short tokens with an expiry and a purpose (`HandlerOptions.linkSecret`, `LINK_SECRET`).

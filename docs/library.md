@@ -261,6 +261,18 @@ const call = await recordCall(graph, { id: 'CA1', from: '+15558675309', to: '+15
 
 [Page events and phone calls](calls.md) says what each flag means and how Twilio's own reports are checked.
 
+## Signed links
+
+`knownLink` makes an address that names the person it is sent to. The server, given the same secret as `linkSecret`, ties the browser that opens it to that person.
+
+```ts
+import { knownLink } from 'account-graph'
+
+const url = knownLink('https://example.org/offer', 'contact:42', { secret: process.env.LINK_SECRET })
+```
+
+[Links that name a person](links.md) covers what the tie is worth and how a visitor is carried between sites.
+
 ## The write queue
 
 PostgreSQL writes run one at a time. `createBatcher` puts a queue in front: while one write is in flight, arrivals wait and go together in the next.

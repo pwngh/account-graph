@@ -15,10 +15,13 @@ import {
   hashEmail,
   ingestRequest,
   ip,
+  knownLink,
   measure,
   normalizeEmail,
   normalizePhone,
+  readToken,
   scorePairs,
+  signToken,
   sourceOf,
 } from '../src/index.ts'
 import type { Edge, IdentifierState } from '../src/index.ts'
@@ -336,4 +339,30 @@ test('the server counts outcomes without an ad platform, takes costs, and report
   } finally {
     server.close()
   }
+})
+
+test('a signed token reads back until it expires, and not after any change', () => {
+  const now = 1_800_000_000_000
+  const token = signToken('a-long-secret-value', 'known', 'contact:42', now + 60_000)
+  assert.match(token, /^[\w-]+\.[0-9a-z]+\.[\w-]{22}$/)
+  assert.equal(readToken('a-long-secret-value', 'known', token, now), 'contact:42')
+  assert.equal(readToken('a-long-secret-value', 'known', token, now + 60_000), undefined)
+  // Made for one use, it is not accepted for another; nor with another secret, another payload, or a later expiry.
+  assert.equal(readToken('a-long-secret-value', 'carry', token, now), undefined)
+  assert.equal(readToken('another-secret-value', 'known', token, now), undefined)
+  const [body, until, signed] = token.split('.')
+  assert.equal(readToken('a-long-secret-value', 'known', `${Buffer.from('contact:43').toString('base64url')}.${until}.${signed}`, now), undefined)
+  assert.equal(readToken('a-long-secret-value', 'known', `${body}.${(Number.parseInt(until!, 36) + 9999).toString(36)}.${signed}`, now), undefined)
+  for (const bad of [undefined, 42, '', 'a.b', 'a.b.c.d', `${body}.${until}.`, 'x'.repeat(2000)]) assert.equal(readToken('a-long-secret-value', 'known', bad, now), undefined)
+  assert.throws(() => signToken('', 'known', 'x', now), TypeError)
+
+  const link = knownLink('https://site.example/offer?utm_source=mailer#top', 'contact:42', { secret: 'a-long-secret-value', now: () => now })
+  const address = new URL(link)
+  assert.equal(address.origin + address.pathname + address.hash, 'https://site.example/offer#top')
+  assert.equal(address.searchParams.get('utm_source'), 'mailer')
+  // Thirty days unless told otherwise.
+  assert.equal(readToken('a-long-secret-value', 'known', address.searchParams.get('ag'), now + 29 * 86_400_000), 'contact:42')
+  assert.equal(readToken('a-long-secret-value', 'known', address.searchParams.get('ag'), now + 31 * 86_400_000), undefined)
+  assert.throws(() => knownLink('not an address', 'contact:42', { secret: 's' }), TypeError)
+  assert.throws(() => knownLink('https://site.example/', '', { secret: 's' }), TypeError)
 })
