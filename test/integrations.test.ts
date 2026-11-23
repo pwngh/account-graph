@@ -565,10 +565,6 @@ test('the server takes page events and phone calls, and ties a call to the visit
     for (const device of ['d-2', 'd-3', 'd-4']) await page('/event', { device, event: 'phone_click', number: '+15551230001' })
     const noted = async (device: string) => (await graph.history(`visitor:${device}`)).some((sighting) => sighting.identifier.startsWith('dialed:'))
     assert.deepEqual([await noted('d-2'), await noted('d-3'), await noted('d-4')], [true, true, false])
-    // Being turned away costs the first three nothing: d-1 taps again and is still believed.
-    clock += 6 * 60_000
-    await page('/event', { device: 'd-1', event: 'phone_click', number: '+15551230001', id: 'again' })
-    assert.equal((await graph.history('visitor:d-1')).filter((sighting) => sighting.identifier.startsWith('dialed:')).length, 2)
 
     // Two inquiries (one a day, plus the one with its own id), one tap, one counted call, all on the campaign of the ad click.
     const report = await graph.report({ from: '2026-03-02', to: '2026-03-02' })
@@ -578,6 +574,11 @@ test('the server takes page events and phone calls, and ties a call to the visit
       ['(none)', '', { phone_click: { count: 4, value: 0 }, inquiry: { count: 1, value: 0 } }],
     ])
     assert.deepEqual((await graph.history('visitor:d-1')).map((sighting) => sighting.event), ['visit', 'visit', 'inquiry', 'inquiry', 'inquiry', 'phone_click', 'phone_click', 'call'])
+
+    // Being turned away cost the first three nothing: d-1 taps again and is still believed.
+    clock += 6 * 60_000
+    await page('/event', { device: 'd-1', event: 'phone_click', number: '+15551230001' })
+    assert.equal((await graph.history('visitor:d-1')).filter((sighting) => sighting.identifier.startsWith('dialed:')).length, 2)
   } finally {
     server.close()
   }
