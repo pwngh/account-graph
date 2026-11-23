@@ -101,6 +101,7 @@ With MaxMind, each visit is also noted with where its address places it, `place:
 | Limit | Detail |
 | --- | --- |
 | Addresses | United States only, through Smarty's US Street API. |
+| A number that changes hands | Once a number is found to be from an internet calling app it stays muted as a `phone`, even if a later check calls it a mobile. Restore it by hand with `POST /ignore` and `ignored: false`. |
 | Line checks cost money | Each new number is one paid Twilio lookup. Answers are kept for thirty days. |
 | A bot that lies | Only bots that name themselves are filtered by user agent. One that pretends to be a browser needs Fingerprint. |
 | Names | Names are not matched. Two accounts are not tied because both are called Pat Lee. |

@@ -53,3 +53,4 @@
 - `collect.js` adds `ag_device` and `ag_landing` to forms marked `data-ag-fields`, or to every form with `?forms=all` (`fill`, `fields`, `accountGraph.fields()`).
 - `/collect` records no touch for an arrival whose only source is a referrer among `origins`: a visitor moving between your own sites.
 - `compose.yaml` passes every server setting through, and switches on page events, a tracking number and signed links for the example site.
+- `ignore` records no decision when the identifier is already in the state asked for.

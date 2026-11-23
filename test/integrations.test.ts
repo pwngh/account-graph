@@ -902,6 +902,9 @@ test('the server identifies a subject from plain facts, drops declared bots, and
     assert.deepEqual((await graph.links('account:3')).map((link) => [link.subject, link.level, link.reasons[0]!.identifier.split(':')[0]]), [[caller, 'related', 'voip']])
     await graph.observe({ subject: 'account:old', identifiers: [`phone:${hashPhone('+15550002222')}`], at })
     assert.deepEqual(await graph.links('account:old'), [])
+    // Muting is decided once, however often the number comes up and however often anyone asks for it again.
+    await graph.ignore(`phone:${hashPhone('+15550002222')}`)
+    assert.deepEqual((await graph.decisions()).map((decision) => [decision.action, decision.by]), [['ignore', 'line check']])
     // Identifiers the backend already has can ride along, and a time of its own.
     const seventh = await identify({ subject: 'account:7', at: at - 5000, identifiers: ['payment:tok_1'] })
     assert.deepEqual([seventh.identifiers, (await graph.history('account:7'))[0]!.at], [['payment:tok_1'], at - 5000])
@@ -923,6 +926,9 @@ test('the server identifies a subject from plain facts, drops declared bots, and
       'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', 'facebookexternalhit/1.1', 'Mozilla/5.0 (X11; Linux x86_64) HeadlessChrome/120.0', 'Mozilla/5.0 (compatible; AhrefsBot/7.0)', 'TelegramBot (like TwitterBot)',
       'Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)', 'Baiduspider+(+http://www.baidu.com/search/spider.htm)', 'Mozilla/5.0 (compatible; Yahoo! Slurp; http://help.yahoo.com/help/us/ysearch/slurp)', 'Pingdom.com_bot_version_1.4_(http://www.pingdom.com/)',
       'WhatsApp/2.23.20.0 A', 'curl/8.4.0', 'python-requests/2.31.0', 'Chrome-Lighthouse',
+      // The crawlers that load ad landing pages, and others whose names carry a dash and no slash.
+      'AdsBot-Google (+http://www.google.com/adsbot.html)', 'Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36 (compatible; AdsBot-Google-Mobile; +http://www.google.com/mobile/adsbot.html)',
+      'Mozilla/5.0 (X11; Linux x86_64; Storebot-Google/1.0) AppleWebKit/537.36 Chrome/120.0 Safari/537.36', 'Mozilla/5.0 (compatible;PetalBot;+https://webmaster.petalsearch.com/site/petalbot)', 'DuckDuckBot-Https/1.1; (+https://duckduckgo.com/duckduckbot)', 'Googlebot-Image/1.0',
     ]
     for (const agent of declared) assert.equal(await visit('crawler', agent), 204)
     assert.equal(await graph.cluster('visitor:crawler'), undefined)

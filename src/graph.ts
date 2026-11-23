@@ -454,10 +454,12 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     ignore(identifier, ignored = true, why) {
       const { cap } = ruleFor(policy, identifier)
       return changing(async (tx) => {
-        await decide(tx, ignored ? 'ignore' : 'restore', [identifier], why)
         const before = (await tx.states([identifier])).get(identifier)
+        // Asked for what already holds, nothing is decided: a server that mutes an address again after a restart adds no entry.
+        if ((before?.ignored ?? false) === ignored) return []
+        await decide(tx, ignored ? 'ignore' : 'restore', [identifier], why)
         await tx.setIgnored(identifier, ignored)
-        if (!before || before.ignored === ignored || before.fanout > cap) return []
+        if (!before || before.fanout > cap) return []
         return settle(tx, new Set((await tx.edgesOn([identifier])).map((edge) => edge.subject)))
       })
     },
