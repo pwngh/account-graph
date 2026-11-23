@@ -9,6 +9,7 @@ import {
   createMemoryStore,
   dayStart,
   defaultPolicy,
+  fold,
   fit,
   googleClick,
   hashEmail,
@@ -213,8 +214,65 @@ test('a day begins at local midnight, across a clock change', () => {
   assert.equal(dayStart('2026-11-01', 'America/New_York'), Date.parse('2026-11-01T04:00:00Z'))
   assert.equal(dayStart('2026-11-02', 'America/New_York'), Date.parse('2026-11-02T05:00:00Z'))
   assert.equal(dayStart('2026-03-01', 'Asia/Kolkata'), Date.parse('2026-02-28T18:30:00Z'))
+  // In Havana the clocks go forward at midnight, so 8 March 2026 begins at one o'clock.
+  assert.equal(dayStart('2026-03-08', 'America/Havana'), Date.parse('2026-03-08T05:00:00Z'))
+  assert.equal(dayStart('2026-03-09', 'America/Havana'), Date.parse('2026-03-09T04:00:00Z'))
+  assert.equal(dayStart('2026-09-06', 'America/Santiago'), Date.parse('2026-09-06T04:00:00Z'))
   assert.throws(() => dayStart('2026-3-1'), TypeError)
   assert.throws(() => dayStart('2026-13-01'), TypeError)
+  assert.throws(() => dayStart('2026-02-30'), TypeError)
+})
+
+test('the report is the same whatever order its rows arrive in', () => {
+  const cost = (day: string, source: string, campaignId: string, campaign: string, amount: number) => ({ day, source, campaignId, campaign, amount, currency: 'USD', clicks: 0, impressions: 0 })
+  const touch = (at: number, more: object) => ({ subject: `visitor:${at}`, at, ...more })
+  const costs = [
+    cost('2026-03-01', 'google', '111', 'Old name', 10),
+    cost('2026-03-02', 'google', '111', 'New name', 10),
+    // Two Meta campaigns share a name; the name stands for the one that cost more.
+    cost('2026-03-01', 'meta', '700', 'Retarget', 5),
+    cost('2026-03-01', 'meta', '701', 'Retarget', 50),
+    // A spreadsheet row that knows the campaign only by name.
+    cost('2026-03-01', 'microsoft', '', 'Spring', 30),
+  ]
+  const touches = [
+    touch(1, { gclid: 'a', campaignId: '111' }),
+    touch(2, { fbclid: 'b', campaign: 'retarget' }),
+    // The touch has an id no cost knows, and a name one does.
+    touch(3, { msclkid: 'c', campaignId: '42', campaign: 'spring' }),
+    // The id rides in utm_campaign on one arrival and in utm_id on the next; neither has a cost.
+    touch(4, { ttclid: 'd', campaign: '9001' }),
+    touch(5, { ttclid: 'e', campaignId: '9001', campaign: 'Beta' }),
+    touch(6, { ttclid: 'f', campaignId: '9001', campaign: 'Alpha' }),
+    // Sources and steps named after things every object has.
+    touch(7, { source: 'constructor', campaign: 'toString' }),
+    touch(8, { source: '__proto__' }),
+  ]
+  const outcome = (n: number, stage: string, value: number) => ({ transactionId: `t${n}`, subject: 's', at: n, stage, value, currency: 'USD' })
+  const credited = [
+    { outcome: outcome(1, 'enrolled', 200), touch: touches[2] },
+    { outcome: outcome(2, '__proto__', 1), touch: touches[6] },
+    { outcome: outcome(3, 'constructor', 2), touch: undefined },
+  ]
+  const expected = fold('2026-03-01', '2026-03-02', costs, touches, credited)
+  assert.deepEqual(expected.rows.map((row) => [row.source, row.campaignId, row.campaign, row.cost, row.visits, Object.keys(row.stages)]), [
+    ['meta', '701', 'Retarget', 50, 1, []],
+    ['microsoft', '', 'Spring', 30, 1, ['enrolled']],
+    ['google', '111', 'New name', 20, 1, []],
+    ['meta', '700', 'Retarget', 5, 0, []],
+    ['(none)', '', '', 0, 0, ['constructor']],
+    ['constructor', '', 'toString', 0, 1, ['__proto__']],
+    ['tiktok', '9001', 'Alpha', 0, 3, []],
+    ['__proto__', '', '', 0, 1, []],
+  ])
+  assert.deepEqual(Object.entries(expected.total.stages).sort(), [['__proto__', { count: 1, value: 1 }], ['constructor', { count: 1, value: 2 }], ['enrolled', { count: 1, value: 200 }]])
+  assert.equal(({} as any).count, undefined)
+  // Every rotation and the reverse of each list gives the same report.
+  const turn = <T>(list: T[], by: number) => [...list.slice(by), ...list.slice(0, by)]
+  for (let by = 0; by < 8; by++) {
+    assert.deepEqual(fold('2026-03-01', '2026-03-02', turn(costs, by % costs.length), turn(touches, by), turn(credited, by % credited.length)), expected)
+    assert.deepEqual(fold('2026-03-01', '2026-03-02', turn(costs, by % costs.length).reverse(), turn(touches, by).reverse(), credited), expected)
+  }
 })
 
 test('a touch is filed under the platform of its click id, then its tag, then the site that referred it', () => {

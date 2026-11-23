@@ -264,6 +264,9 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       // An outcome that names no action is counted and sent nowhere.
       assert.deepEqual(await outbox.record({ transactionId: 'walk-in', subject: 'contact:1', at: T0 + HOUR, stage: 'visit' }), [])
       assert.equal((await graph.report({ from: '2023-11-14', to: '2023-11-15' })).total.stages.visit!.count, 1)
+      // An outcome the report refuses queues nothing to send.
+      await assert.rejects(outbox.record(outcome(2, { value: '12.5' as unknown as number })), TypeError)
+      assert.deepEqual(await outbox.get('enroll-2'), [])
     })
 
     test('one outcome goes to Google and to Meta, each in its own shape', async () => {

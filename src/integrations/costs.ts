@@ -21,6 +21,8 @@ export class CostError extends Error {
   }
 }
 
+/** How long a reporting API has to answer. */
+const TIMEOUT = 60_000
 const DAY = /^\d{4}-\d{2}-\d{2}$/
 const days = (from: string, to: string) => {
   if (!DAY.test(from) || !DAY.test(to)) throw new TypeError('Costs are read between two days written YYYY-MM-DD')
@@ -58,6 +60,7 @@ export function googleCosts(options: GoogleCostOptions): CostSource {
         ...(options.loginCustomerId && { 'login-customer-id': options.loginCustomerId.replace(/\D/g, '') }),
       },
       body: JSON.stringify({ query }),
+      signal: AbortSignal.timeout(TIMEOUT),
     })
     const text = await response.text()
     let body: any
@@ -122,7 +125,7 @@ export function metaCosts(options: MetaCostOptions): CostSource {
     let next: string | undefined = first.href
     // Each answer names the address of the next page. Two hundred pages is a hundred thousand rows.
     for (let page = 0; next && page < 200; page++) {
-      const response: Response = await fetcher(next, { headers: { authorization: `Bearer ${options.accessToken}` } })
+      const response: Response = await fetcher(next, { headers: { authorization: `Bearer ${options.accessToken}` }, signal: AbortSignal.timeout(TIMEOUT) })
       const body: any = await response.json().catch(() => undefined)
       if (!response.ok || body?.error) {
         throw new CostError(`Meta refused the cost report with ${response.status}: ${body?.error?.message ?? 'no reason given'}`, response.status, body?.error?.fbtrace_id)

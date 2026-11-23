@@ -48,7 +48,7 @@ The script tag reads these parameters:
 | `utm_source`, `utm_medium`, `utm_campaign`, `utm_term`, `utm_content` | `source`, `medium`, `campaign`, `term`, `content` |
 | Names listed in `collect.js?params=mailing,placement` | `custom.mailing`, `custom.placement` |
 
-A campaign can also be matched by name. When a touch has no id, its `utm_campaign` is compared with the campaign names in the costs, ignoring case.
+A campaign can also be matched by name. When no cost carries a touch's id, or the touch has none, its `utm_campaign` is compared with the campaign names in the costs, ignoring case. An id written into `utm_campaign` is found too. When two campaigns of one source share a name, the name stands for the one that cost more.
 
 ### 2. Costs
 

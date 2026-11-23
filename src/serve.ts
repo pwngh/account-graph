@@ -176,7 +176,10 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
       }
     }
   }
-  const costTimer = sources.length > 0 ? setInterval(() => void importCosts(), Math.max(60_000, config.costInterval)) : undefined
+  // One read at a time: a slow platform must not stack a second read on the first.
+  let reading: Promise<void> | undefined
+  const readCosts = () => void (reading ??= importCosts().finally(() => (reading = undefined)))
+  const costTimer = sources.length > 0 ? setInterval(readCosts, Math.max(60_000, config.costInterval)) : undefined
   costTimer?.unref()
 
   // Visits that arrive together are written together.
@@ -205,7 +208,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
   log([on('reviewer token', config.reviewToken), on('server cookie', config.cookie), on('fingerprint', config.fingerprint), on('maxmind', config.maxmind)].join(', '))
   log(`outbox sends to ${targets.length > 0 ? targets.map((target) => target.name).join(', ') : 'nobody (no ad platform configured)'}`)
   log(`costs are read from ${sources.length > 0 ? sources.map(([name]) => name).join(', ') : 'nobody (post them to /costs)'}`)
-  if (sources.length > 0) void importCosts()
+  if (sources.length > 0) readCosts()
 
   return {
     port,
@@ -216,6 +219,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
       await new Promise<void>((resolve) => server.close(() => resolve()))
       server.closeAllConnections?.()
       await batcher.drain()
+      await reading
       await pool.end()
     },
   }

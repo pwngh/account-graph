@@ -277,7 +277,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
     },
 
     async touchesBetween(from, to) {
-      const { rows } = await db.query(`select subject, at, detail from ${t('touch')} where at >= $1 and at < $2 order by id`, [from, to])
+      const { rows } = await db.query(`select subject, at, detail from ${t('touch')} where at >= $1 and at < $2 order by at, id`, [from, to])
       return rows.map((row) => ({ ...row.detail, subject: row.subject, at: Number(row.at) }) as Touch)
     },
 
@@ -322,7 +322,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
     },
 
     async costsBetween(from, to) {
-      const { rows } = await db.query(`select * from ${t('cost')} where day >= $1 and day <= $2 order by day, source, campaign_id`, [from, to])
+      const { rows } = await db.query(`select * from ${t('cost')} where day >= $1 and day <= $2 order by day, source collate "C", campaign_id collate "C"`, [from, to])
       return rows.map((row) => ({
         day: row.day,
         source: row.source,

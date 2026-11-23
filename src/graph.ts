@@ -380,9 +380,11 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     async outcome(outcome) {
       const { transactionId, subject, at } = outcome
       if (!transactionId || !subject) throw new TypeError('An outcome needs a transactionId and a subject')
-      if (!Number.isFinite(at)) throw new TypeError(`Outcome "${transactionId}" needs a time in epoch milliseconds`)
+      if (typeof transactionId !== 'string' || typeof subject !== 'string') throw new TypeError('An outcome needs a transactionId and a subject, each as text')
+      if (!Number.isSafeInteger(at)) throw new TypeError(`Outcome "${transactionId}" needs a time in whole epoch milliseconds`)
       const value = outcome.value ?? 0
-      if (!Number.isFinite(value)) throw new TypeError(`Outcome "${transactionId}" has a value that is not a number`)
+      if (typeof value !== 'number' || !Number.isFinite(value)) throw new TypeError(`Outcome "${transactionId}" has a value that is not a number`)
+      for (const text of [outcome.stage, outcome.currency]) if (text !== undefined && typeof text !== 'string') throw new TypeError(`Outcome "${transactionId}" needs its stage and currency as text`)
       const counted: Counted = { transactionId, subject, at, stage: outcome.stage || 'outcome', value, currency: outcome.currency ?? '' }
       return store.write(async (tx) => {
         if (await tx.outcomeOf(transactionId)) return false
@@ -392,7 +394,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     async restate(transactionId, value, currency) {
-      if (!Number.isFinite(value) || value < 0) throw new TypeError('A restated value must be zero or more')
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) throw new TypeError('A restated value must be zero or more')
+      if (currency !== undefined && typeof currency !== 'string') throw new TypeError('A restated currency must be text')
       return store.write(async (tx) => {
         const found = await tx.outcomeOf(transactionId)
         if (!found) return false
@@ -406,7 +409,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       const rows = costs.map((cost): Required<Cost> => {
         dayStart(cost?.day)
         if (typeof cost.source !== 'string' || !cost.source.trim()) throw new TypeError('A cost needs a source, such as "google"')
-        if (!Number.isFinite(cost.amount) || cost.amount < 0) throw new TypeError(`The cost of ${cost.day} needs an amount of zero or more`)
+        if (typeof cost.amount !== 'number' || !Number.isFinite(cost.amount) || cost.amount < 0) throw new TypeError(`The cost of ${cost.day} needs an amount of zero or more`)
         for (const count of [cost.clicks, cost.impressions]) {
           if (count !== undefined && (!Number.isSafeInteger(count) || count < 0)) throw new TypeError(`The cost of ${cost.day} has a count that is not a whole number`)
         }
@@ -414,9 +417,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
           day: cost.day,
           source: cost.source.trim().toLowerCase(),
           campaignId: String(cost.campaignId ?? ''),
-          campaign: cost.campaign ?? '',
+          campaign: String(cost.campaign ?? ''),
           amount: cost.amount,
-          currency: cost.currency ?? '',
+          currency: String(cost.currency ?? ''),
           clicks: cost.clicks ?? 0,
           impressions: cost.impressions ?? 0,
         }

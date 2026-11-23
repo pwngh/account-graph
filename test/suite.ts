@@ -383,6 +383,12 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await graph.forget('contact:2')
       assert.equal((await graph.report({ from: '2026-03-01', to: '2026-03-03' })).total.outcomes, 4)
 
+      // What a caller sends as a name is kept as text, whatever it was.
+      await graph.spend({ day: '2026-03-03', source: 'google', campaignId: 333 as unknown as string, campaign: 2026 as unknown as string, amount: 1 })
+      assert.equal((await graph.report({ from: '2026-03-03', to: '2026-03-03' })).rows.find((row) => row.campaignId === '333')!.campaign, '2026')
+      await assert.rejects(graph.outcome({ transactionId: 'x', subject: 'contact:1', at: day(0), value: '5' as unknown as number }), TypeError)
+      await assert.rejects(graph.outcome({ transactionId: 'x', subject: 'contact:1', at: day(0) + 0.5 }), TypeError)
+      await assert.rejects(graph.outcome({ transactionId: 'x', subject: 'contact:1', at: day(0), stage: 7 as unknown as string }), TypeError)
       await assert.rejects(graph.spend({ day: 'March 1', source: 'google', amount: 1 }), TypeError)
       await assert.rejects(graph.spend({ day: '2026-03-01', source: 'google', amount: -1 }), TypeError)
       await assert.rejects(graph.report({ from: '2026-03-02', to: '2026-03-01' }), TypeError)

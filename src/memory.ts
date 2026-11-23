@@ -254,7 +254,8 @@ export function createMemoryStore(): Store {
     },
 
     async touchesBetween(from, to) {
-      return [...touches.values()].flatMap((list) => list.filter((touch) => touch.at >= from && touch.at < to).map((touch) => structuredClone(touch)))
+      const found = [...touches.values()].flatMap((list) => list.filter((touch) => touch.at >= from && touch.at < to).map((touch) => structuredClone(touch)))
+      return found.sort((x, y) => x.at - y.at)
     },
 
     async setOutcome(outcome) {
@@ -278,7 +279,8 @@ export function createMemoryStore(): Store {
     },
 
     async costsBetween(from, to) {
-      return [...costs.values()].filter((cost) => cost.day >= from && cost.day <= to).map((cost) => ({ ...cost }))
+      const key = (cost: Required<Cost>) => [cost.day, cost.source, cost.campaignId].join('\u0000')
+      return [...costs.values()].filter((cost) => cost.day >= from && cost.day <= to).sort((x, y) => (key(x) < key(y) ? -1 : 1)).map((cost) => ({ ...cost }))
     },
 
     async history(subject, limit) {

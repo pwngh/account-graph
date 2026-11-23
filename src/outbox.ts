@@ -192,6 +192,8 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
       if (named.some(([, action]) => !action)) throw new TypeError(`Outcome "${transactionId}" names a target with no action`)
       for (const [name] of named) if (!targets.has(name)) throw new TypeError(`Outcome "${transactionId}" names an unknown target "${name}"`)
 
+      // Counted first: it checks the rest of the outcome, and a job must never be queued for an outcome the report refused.
+      await graph.outcome(outcome)
       const jobs: Job[] = []
       for (const [name, action] of named) {
         const job: Job = {
@@ -219,7 +221,6 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
         if (!same) throw new TypeError(`Outcome "${transactionId}" was already recorded with different details`)
         jobs.push(stored)
       }
-      await graph.outcome(outcome)
       return jobs
     },
 
