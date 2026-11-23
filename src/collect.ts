@@ -136,6 +136,73 @@ export async function collect(options: CollectOptions): Promise<void> {
     ...(canvas && { canvas }),
   })
   // text/plain keeps the request "simple", so the browser sends it without a preflight.
-  if (navigator.sendBeacon?.(options.endpoint, new Blob([body], { type: 'text/plain' }))) return
-  await fetch(options.endpoint, { method: 'POST', body, keepalive: true, headers: { 'content-type': 'text/plain' } })
+  await post(options.endpoint, body)
+}
+
+async function post(endpoint: string, body: string): Promise<void> {
+  if (navigator.sendBeacon?.(endpoint, new Blob([body], { type: 'text/plain' }))) return
+  await fetch(endpoint, { method: 'POST', body, keepalive: true, headers: { 'content-type': 'text/plain' } })
+}
+
+export interface EventDetail {
+  /** Your id for this occurrence. Without one, an event counts once a day per browser. */
+  id?: string
+  /** For a tap on a phone link: the number, so a call that follows can be tied to this visitor. */
+  number?: string
+}
+
+/**
+ * Reports something the visitor did on the page: sent an inquiry, tapped
+ * the phone number. The server keeps only the names it was told to accept.
+ */
+export async function event(options: CollectOptions, name: string, detail: EventDetail = {}): Promise<void> {
+  const page = new URL(location.href)
+  const body = JSON.stringify({
+    device: deviceId(),
+    event: name,
+    url: page.origin + page.pathname,
+    ...(detail.id && { id: detail.id }),
+    ...(detail.number && { number: detail.number }),
+  })
+  await post(new URL('event', options.endpoint).href, body)
+}
+
+/**
+ * Reports events without code on the page. A tap on any `tel:` link is
+ * reported as `phone_click`. An element marked `data-ag-event="name"`
+ * reports that name when clicked, or, on a form, when submitted;
+ * `data-ag-id` gives the occurrence an id. Returns a function that stops listening.
+ */
+export function watch(options: CollectOptions): () => void {
+  const report = (name: string | null, detail: EventDetail) => {
+    if (name) void event(options, name, detail).catch(() => undefined)
+  }
+  const idOf = (marked: Element): EventDetail => {
+    const id = marked.getAttribute('data-ag-id')
+    return id ? { id } : {}
+  }
+  const clicked = (happened: Event) => {
+    const target = happened.target as Element | null
+    const phone = target?.closest?.('a[href^="tel:"]')
+    if (phone) {
+      const written = phone.getAttribute('href')!.slice(4)
+      let number = written
+      try {
+        number = decodeURIComponent(written)
+      } catch {}
+      report('phone_click', { number })
+    }
+    const marked = target?.closest?.('[data-ag-event]')
+    if (marked && marked.tagName !== 'FORM') report(marked.getAttribute('data-ag-event'), idOf(marked))
+  }
+  const submitted = (happened: Event) => {
+    const form = (happened.target as Element | null)?.closest?.('form[data-ag-event]')
+    if (form) report(form.getAttribute('data-ag-event'), idOf(form))
+  }
+  document.addEventListener('click', clicked, true)
+  document.addEventListener('submit', submitted, true)
+  return () => {
+    document.removeEventListener('click', clicked, true)
+    document.removeEventListener('submit', submitted, true)
+  }
 }

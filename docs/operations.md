@@ -15,10 +15,11 @@ listening on 0.0.0.0:8080
 collect accepts https://example.org
 reviewer token off, server cookie off, fingerprint off, maxmind off
 outbox sends to nobody (no ad platform configured)
+page events taken: none (set EVENTS); calls from twilio off
 costs are read from nobody (post them to /costs)
 ```
 
-The last four lines say what is switched on. Each provider turns on when its variables are set; [providers.md](providers.md) says where to get them.
+The last five lines say what is switched on. Each provider turns on when its variables are set; [providers.md](providers.md) says where to get them.
 
 ## With Docker
 
@@ -53,6 +54,8 @@ Options ride on the script's address:
 | `collect.js?canvas=open` | Adds the open-source FingerprintJS id, recorded as the weaker `canvas` kind. |
 | `collect.js?params=mailing,placement` | Keeps address parameters of your own with each arrival. |
 
+The same script reports taps on phone links and clicks on elements marked `data-ag-event`, once the server is told which names to keep with `EVENTS`. [Page events and phone calls](calls.md) has the details.
+
 To pass a consent banner's answer, set `window.accountGraphConsent = { adUserData: true, adPersonalization: false }` before the tag.
 
 The script keeps the visitor's device id in a cookie named `ag_device`, marked `Secure`. Browsers only keep such a cookie on a site served over HTTPS; `localhost` is the exception.
@@ -67,7 +70,7 @@ Each site's domain gets its own device id, because a browser keeps cookies per d
 
 `REVIEW_TOKEN` is for the people who review accounts. It opens the reviewer screen's routes and nothing your services write through. Make both long and random, for example with `openssl rand -hex 32`.
 
-> **`/collect`, `/collect.js`, `/review` and `/health` need no token.** `/review` is only a page; nothing it shows arrives without one.
+> **`/collect`, `/event`, `/collect.js`, `/review` and `/health` need no token.** `/review` is only a page; nothing it shows arrives without one.
 
 ## Behind a proxy
 
@@ -118,6 +121,10 @@ On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes i
 | `OUTBOX_INTERVAL_MS` | `30000` | How often to send what is due. |
 | `OUTBOX_DELAY_MS` | `0` | How long to hold a new outcome before its first send. |
 | `CHANGE_WEBHOOK` | none | A URL to post cluster changes to. |
+| `EVENTS` | none | Names of page events to keep, separated by commas: `inquiry,phone_click`. |
+| `CALL_NUMBERS` | none | Your tracking numbers and the channel of each, as JSON: `{"+15551230001":{"source":"google","campaignId":"20222"}}`. |
+| `CALL_MIN_SECONDS` | `30` | A shorter call is recorded but not counted. |
+| `TWILIO_AUTH_TOKEN`, `TWILIO_WEBHOOK_URL` | none | Take Twilio's call reports at `/calls/twilio`. Set both. |
 | `REPORT_TIME_ZONE` | `UTC` | The time zone `/report` reads its days in, such as `America/New_York`. Use the ad account's. |
 | `GOOGLE_ADS_DEVELOPER_TOKEN` | none | Read campaign costs from Google Ads. Needs the two Google variables below. |
 | `META_AD_ACCOUNT_ID`, `META_ADS_TOKEN` | none | Read campaign costs from Meta. Set both. |

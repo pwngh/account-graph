@@ -44,7 +44,9 @@ A token goes in the `authorization` header as `Bearer …`. There are two.
 | Route | What it does |
 | --- | --- |
 | `POST /collect` | Records one browser visit. Only from an origin in `ORIGINS`, and limited per address. Answers 204. |
-| `GET /collect.js` | The script tag that posts to `/collect`. |
+| `POST /event` | Records something a visitor did on a page: `{ device, event, id?, number? }`. Same origins and limit as `/collect`; only names in `EVENTS` are kept. Answers 204. |
+| `POST /calls/twilio` | Twilio's status callback for a phone call. Checked against Twilio's signature. Only when Twilio is set up. |
+| `GET /collect.js` | The script tag that posts to `/collect` and `/event`. |
 | `GET /fingerprint.js` | Fingerprint helpers the script loads when asked to. |
 | `GET /review` | The reviewer screen. A page only; its data needs a token. |
 | `GET /health` | `{"ok":true}` once the database answers. |
@@ -84,6 +86,7 @@ The four `POST` routes answer with the subjects whose cluster moved.
 | `POST /transfer` | `{ from, to, amount, at, asset? }`. Records value moving, and answers with the identity tie between the two. |
 | `POST /convert` | An outcome: `{ transactionId, subject, at, stage?, value?, currency?, action?, email?, phone? }`. Counted for the report; with `action`, also sent to the ad platforms. |
 | `POST /restate` | `{ transactionId, value, currency? }`. Changes an outcome's value, in the report and on the platforms that can restate. |
+| `POST /call` | A phone call: `{ id, from?, to, at, duration? }`. Answers `{ subject, flags, counted, visitor?, duplicate }`. See [calls](calls.md). |
 | `POST /costs` | A list of `{ day, source, amount, campaignId?, campaign?, currency?, clicks?, impressions? }`. A row for the same day, source and campaign replaces the one before. |
 | `GET /conversion?id=` | The jobs of one transaction, one per ad platform. |
 | `GET /conversions?state=` | Jobs in one state: `pending`, `sent`, `skipped`, or `failed`. |
@@ -100,8 +103,9 @@ The four `POST` routes answer with the subjects whose cluster moved.
 | --- | --- |
 | 400 | The body is not JSON, or a field is missing or malformed. The answer is `{ "error": "…" }`. |
 | 401, 403 | The token is wrong, or does not open the route. |
-| 403 on `/collect` | The request's origin is not in `ORIGINS`. |
+| 403 on `/collect`, `/event` | The request's origin is not in `ORIGINS`. |
+| 403 on `/calls/twilio` | The request does not carry Twilio's signature. |
 | 404 | No such route. |
 | 413 | The body is over 1 MB. |
-| 429 on `/collect` | Too many visits from one address. `retry-after` says when to try again. |
+| 429 on `/collect`, `/event` | Too many visits from one address. `retry-after` says when to try again. |
 | 500 | Something failed on the server. The cause is in its log, not in the answer. |

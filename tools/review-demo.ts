@@ -59,6 +59,12 @@ await graph.observe({ subject: 'lead:walk-in', identifiers: ['email:walk-in'], a
 await graph.outcome({ transactionId: 'enrolled-walk-in', subject: 'lead:walk-in', at: Date.now() - 2 * 24 * HOUR, stage: 'enrolled', value: 200, currency: 'USD' })
 
 // The example site (examples/site.ts) can report to this server too.
-const handler = createHandler(graph, { token: 'service-demo', reviewToken: 'demo', origins: ['http://localhost:3000'] })
+const handler = createHandler(graph, {
+  token: 'service-demo',
+  reviewToken: 'demo',
+  origins: ['http://localhost:3000'],
+  events: ['brochure', 'phone_click'],
+  calls: { numbers: { '+15551230001': { source: 'google', campaignId: '20222' } } },
+})
 const port = Number(process.env.PORT ?? 8788)
 createServer(handler).listen(port, 'localhost', () => console.log(`reviewer screen: http://localhost:${port}/review  (reviewer token: demo; press Channels for the report)`))

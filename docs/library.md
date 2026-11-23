@@ -246,6 +246,21 @@ const { rows, total } = await graph.report({ from: '2026-11-01', to: '2026-11-14
 
 `outbox.record` calls `outcome` for you, so an outcome sent to an ad platform is counted once here too. `restate` changes the value in both places. [The report](report.md) says what feeds it and how to read it.
 
+## Phone calls
+
+`recordCall` records a call from any telephone provider. It ties the call to the one visitor who tapped the number just before, or files it under the number's channel.
+
+```ts
+import { recordCall } from 'account-graph'
+
+const call = await recordCall(graph, { id: 'CA1', from: '+15558675309', to: '+15551230001', at: Date.now(), duration: 140 }, {
+  numbers: { '+15551230001': { source: 'google', campaignId: '20222' } },
+})
+// { subject: 'caller:96f2…', flags: [], counted: true, visitor: 'visitor:fb91…', duplicate: false }
+```
+
+[Page events and phone calls](calls.md) says what each flag means and how Twilio's own reports are checked.
+
 ## The write queue
 
 PostgreSQL writes run one at a time. `createBatcher` puts a queue in front: while one write is in flight, arrivals wait and go together in the next.

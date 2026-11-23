@@ -39,7 +39,9 @@ createServer(async (request, response) => {
   try {
     if (url.pathname === '/') {
       return html(page('Example shop', `<p>A landing page. If you arrived with <code>?gclid=…</code>, the script below has already told the graph server.</p>
-        <form method="post" action="/signup"><input name="email" type="email" placeholder="you@example.com" required> <button>Sign up</button></form>`))
+        <form method="post" action="/signup"><input name="email" type="email" placeholder="you@example.com" required> <button>Sign up</button></form>
+        <p>Two things the script reports without any code here: a tap on <a href="tel:+15551230001">555-123-0001</a>, and a click on
+        <button type="button" data-ag-event="brochure">Request a brochure</button>. The server keeps them when started with <code>EVENTS=brochure,phone_click</code>.</p>`))
     }
     if (url.pathname === '/signup' && request.method === 'POST') {
       const form = new URLSearchParams(await new Response(request as unknown as ReadableStream).text())

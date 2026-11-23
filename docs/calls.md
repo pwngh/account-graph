@@ -1,0 +1,100 @@
+# Page events and phone calls
+
+The script tag reports what a visitor does on a page, and a phone call that follows a tap on your number is tied to the visitor who tapped. So a call lands under the ad click that produced it.
+
+```html
+<a href="tel:+15551230001">Call us</a>
+<button data-ag-event="brochure">Request a brochure</button>
+```
+
+```sh
+EVENTS=brochure,phone_click \
+CALL_NUMBERS='{"+15551230001":{"source":"google","campaignId":"20222"}}' \
+npm start
+```
+
+Tap the number on the page, then report the call the way a phone provider would:
+
+```sh
+curl -X POST https://graph.example.org/call -H "authorization: Bearer $GRAPH_TOKEN" \
+  -d '{"id":"CA1","from":"+15558675309","to":"+15551230001","at":1795460000000,"duration":140}'
+```
+
+```json
+{ "subject": "caller:96f2c503…", "flags": [], "counted": true, "visitor": "visitor:fb919054…", "duplicate": false }
+```
+
+`visitor` is the browser that tapped. The caller and that visitor are now one cluster, and the call is in [the report](report.md) under the visitor's campaign.
+
+```text
+visitor taps the number ──▶ POST /event ──▶ a note on the visitor: which number, when
+phone provider ──▶ POST /call ──▶ caller ──▶ tied to the one visitor who tapped just before
+                                        └──▶ otherwise filed under the number's own channel
+```
+
+## Page events
+
+A page reports an event in one of three ways. None needs the service token.
+
+| On the page | Reported as |
+| --- | --- |
+| A link whose address starts with `tel:` | `phone_click`, with the number |
+| Any element with `data-ag-event="name"` | `name`, when clicked; on a form, when submitted |
+| `accountGraph.event('name', { id })` from your own script | `name` |
+
+The server keeps only the names listed in `EVENTS`, and refuses the rest with 400. Each kept event is an outcome of that step in the report, credited like any other.
+
+An event counts once a day per browser. Give it an id, with `data-ag-id` or the `id` argument, to count each occurrence: one per form submission, say.
+
+> **A page can be made to say anything.** Events come from browsers, so anyone can send one. They are limited per address and counted once a day, but do not list a step that carries money in `EVENTS`. Record those from your backend with `POST /convert`.
+
+## Phone calls
+
+When a call is reported, the server does four things in order.
+
+1. **The caller becomes a subject carrying their phone number.** An account that later gives the same number is tied to the call, and the call to the account.
+2. **It looks for a tap.** If exactly one visitor tapped that number in the three minutes before the call began, the caller and the visitor are linked at 0.92, enough to join them. The call then follows the visitor's own arrival: their ad click, their campaign. One visitor is tied to one caller: a visitor already tied to a different caller is passed over, so a browser cannot collect call after call by tapping again.
+3. **Otherwise it uses the number.** The call is filed under the channel `CALL_NUMBERS` gives that number, with the medium `call`.
+4. **A call of 30 seconds or more is counted** as an outcome of the step `call`. A shorter one is recorded and not counted.
+
+The answer carries flags for what was noticed:
+
+| Flag | Meaning | Effect |
+| --- | --- | --- |
+| `blocked` | The caller hid their number, or the carrier reported one of the placeholder numbers that stand for "anonymous". | The call ties to nobody by phone. A tap can still tie it to a visitor. |
+| `toll_free` | The caller's number is a toll-free line: a switchboard or a machine. | The number is not used to tie the call to anyone. |
+| `short` | It ended before `CALL_MIN_SECONDS`. | Recorded, not counted. |
+| `repeat` | This number has called before. | None. It is there for you to act on. |
+| `ambiguous` | More than one visitor tapped the number just before. | Tied to none of them; filed under the number's channel. |
+
+Reporting the same call id again writes nothing and answers `"duplicate": true`.
+
+### From Twilio
+
+Twilio can report each call itself. The server checks every request against Twilio's signature, so the route needs no token.
+
+1. In the Twilio console, open the phone number and set **Call status changes** to `https://graph.example.org/calls/twilio`, method POST.
+2. Copy the account's **Auth Token** from the console's account page.
+
+```sh
+TWILIO_AUTH_TOKEN=…
+TWILIO_WEBHOOK_URL=https://graph.example.org/calls/twilio   # exactly as entered in Twilio
+```
+
+The signature is made from that address, so the two must match to the character. A request that fails the check gets 403.
+
+### From any other provider
+
+Post the same five facts to `/call` with the service token: the provider's id for the call, who called, the number rung, when it began in epoch milliseconds, and how many seconds it lasted.
+
+## Limits
+
+| Limit | Detail |
+| --- | --- |
+| One number per channel | A tracking number stands for one channel. There is no pool that hands each visitor a number of their own, so two visitors tapping within the same three minutes cannot be told apart. |
+| Taps can be faked | A tap comes from a browser, so a program can send one. Three guards limit what that buys: only your tracking numbers are noted, one network is believed from three browsers in ten minutes and no more, and one visitor is tied to one caller. A fake tap at the right moment can still turn a real call `ambiguous`, which files it under the number's channel instead. |
+| One caller per visitor | The rule above holds for good. A visitor tied to one hidden caller is not tied to another hidden call later, because each hidden call is a caller of its own. |
+| Taps only | A visitor who reads the number and dials it by hand leaves no tap. That call is filed under the number's channel. |
+| The tap window | Three minutes before the call began, with thirty seconds of allowance for clocks that disagree. `clickWindow` changes it in the library. |
+| Calls reach the report | A counted call is an outcome in the report. It is not sent to an ad platform yet. |
+| Not confirmed | The Twilio console's field names are as remembered, not read this month. The signature check was run against the example on Twilio's webhook security page and matches it. No real Twilio request has been received. |

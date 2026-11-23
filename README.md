@@ -24,7 +24,8 @@ That is the whole loop: a visit, a sign-up, an answer, and a screen for the peop
 
 ```mermaid
 flowchart LR
-  B[Browser on your site] -- "collect.js: device id, ad click" --> S[Graph server]
+  B[Browser on your site] -- "collect.js: device id, ad click, page events" --> S[Graph server]
+  T[Phone provider] -- "calls" --> S
   A[Your backend] -- "observe, transfer, convert" --> S
   R[Reviewer] -- "/review" --> S
   S --> G[(PostgreSQL)]
@@ -74,6 +75,7 @@ The `device:` value is the `ag_device` cookie the script set, which your backend
 - **Money flows.** Trades and transfers between accounts are reported with how the two are tied by identity, and value that goes round in a circle is found, so collusion shows up.
 - **Attribution with confidence.** A conversion lists every touch that could have led to it and credits one only when the chain of links is strong.
 - **A report of cost against outcomes.** Campaign costs are read from Google Ads and Meta, or posted, and set beside the inquiries, sign-ups and sales each campaign's visitors produced.
+- **Page events and phone calls.** The script tag reports taps and marked clicks, and a call that follows a tap is tied to the visitor who tapped, so calls land under the ad click that produced them.
 - **Real integrations.** Fingerprint, the operating system's machine id, MaxMind, the Google tag's cookies, and the conversion APIs of Google, Meta, Microsoft, and TikTok.
 - **An outbox for conversions.** Outcomes are recorded once, sent in batches to each ad platform, retried with backoff, and never sent by two workers at once. Failed ones can be listed and retried.
 - **Consent.** A browser's opt-out signal and a banner's answer are stored and honoured before anything goes to an ad platform.
@@ -90,6 +92,7 @@ The `device:` value is the `ag_device` cookie the script set, which your backend
 - [Setting up the providers](docs/providers.md): where to get keys for Fingerprint, MaxMind, Google, Meta, Microsoft and TikTok.
 - [The HTTP routes](docs/http.md): every route, which token opens it, and what it answers.
 - [What each campaign cost and brought in](docs/report.md): the three things the report needs, and how to read it.
+- [Page events and phone calls](docs/calls.md): what the script tag reports from a page, and how a call finds its visitor.
 
 **To understand it**
 
@@ -124,12 +127,13 @@ PostgreSQL writes take one advisory lock, so they run one at a time; the write q
 
 ## What has run for real
 
-- Every test runs on memory and on PostgreSQL 16, locally and in CI: 144 tests, including a fuzz test that mixes observations, reviewer decisions, deletions, and transfers, and six outbox workers at once.
+- Every test runs on memory and on PostgreSQL 16, locally and in CI: 149 tests, including a fuzz test that mixes observations, reviewer decisions, deletions, and transfers, and six outbox workers at once.
 - The image was built and `docker compose up` brought up the server and its database. With the example site pointed at it, a visit with an ad click followed by a sign-up was credited in Chrome, and the reviewer screen served from the container showed the account joined to its visitor.
 - The script tag ran in Chrome from a different origin than the page that loaded it.
 - With `cookie: true` the device cookie was set by the server, invisible to script, and the same on the next visit.
 - The reviewer screen ran in Chrome under its content policy: a cluster opened, two accounts were kept apart with a reason, the cluster split, and the decision appeared on the record.
 - The channel report ran in Chrome: a sign-up on the example site, arriving with a campaign id, appeared on that campaign's line beside its cost.
+- A tap on a phone link in Chrome, followed by a call posted for that number, joined the caller to the browser's visitor and counted the call under the visitor's campaign.
 - A database made before an upgrade was brought up to date by starting the server.
 - The hardware id ran on macOS and, in CI, on Linux.
 - The real endpoints of Fingerprint, MaxMind, Google's token service, Google's Data Manager, Meta, Microsoft Advertising, Microsoft's token service, and TikTok each answered an invalid key the way the code expects.
