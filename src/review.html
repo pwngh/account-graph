@@ -32,6 +32,7 @@ main { display: grid; grid-template-columns: minmax(220px, 280px) minmax(0, 1fr)
 @media (max-width: 760px) { main { grid-template-columns: 1fr; } }
 section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
 h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; }
+section h2:not(:first-child) { margin-top: 18px; }
 h3 { font-size: 20px; margin: 0 0 4px; overflow-wrap: anywhere; }
 p { margin: 4px 0; }
 .muted { color: var(--muted); }
@@ -274,7 +275,14 @@ function render(profile) {
         el('td', {}, el('span', { class: `chip ${flow.relation === 'none' ? '' : flow.relation}` }, flow.relation === 'none' ? 'no tie' : flow.relation === 'same' ? 'same person' : 'related')),
         el('td', { class: 'num' }, `${amount(flow.sent)} ${flow.asset}`), el('td', { class: 'num' }, `${amount(flow.received)} ${flow.asset}`), el('td', { class: 'num' }, flow.count), el('td', {}, when(flow.last))))
     }
-    detail.append(el('section', {}, el('h2', {}, 'Money'), el('div', { class: 'wide' }, flows)))
+    const section = el('section', {}, el('h2', {}, 'Money'), el('div', { class: 'wide' }, flows))
+    if (profile.rings.length > 0) {
+      section.append(el('h2', {}, 'Rings: value that came back'), el('ul', {}, ...profile.rings.map((ring) => el('li', {},
+        ...ring.subjects.flatMap((subject) => [open(subject), ' paid ']), el('span', {}, `${profile.subject}. `),
+        el('span', { class: 'muted' }, `${amount(ring.amount)} ${ring.asset} went all the way round. `),
+        ring.tied > 0 ? el('span', { class: 'chip apart' }, `${ring.tied} of them in this cluster`) : ''))))
+    }
+    detail.append(section)
   }
 
   const history = el('table', {}, el('tr', {}, el('th', {}, 'When'), el('th', {}, 'Doing'), el('th', {}, 'Seen with')))

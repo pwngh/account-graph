@@ -286,6 +286,7 @@ test('the reviewer screen is a locked-down shell, and its data needs the token',
     assert.deepEqual(profile.ties.map((tie: any) => `${tie.a}-${tie.b}`).sort(), ['account:1-account:2', 'account:1-account:3'])
     assert.deepEqual(profile.separated, ['account:9'])
     assert.equal(profile.flows[0].relation, 'same')
+    assert.deepEqual(profile.rings, [])
     assert.equal(profile.history.length, 2)
     assert.deepEqual(await (await fetch(`${base}/subject?subject=nobody`, { headers: auth })).json(), { subject: 'nobody', known: false })
     assert.deepEqual(await (await fetch(`${base}/clusters`, { headers: auth })).json(), [{ id: 'account:1', size: 3, oversized: false }])

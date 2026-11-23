@@ -8,7 +8,7 @@ Links accounts, leads, and anonymous visitors that share identifiers, and traces
 - **Clusters that can split.** Clusters are derived from the record, so a bad identifier can be ignored and a person can be forgotten, and the clusters come apart correctly.
 - **No chain merges.** One weak link can add an account to a group but cannot join two groups on its own.
 - **Reviewer decisions.** Join two subjects, keep two apart, or mute an identifier. Each decision is recorded with who and why, and sealed so the record cannot be quietly edited.
-- **Money flows.** Trades and transfers between accounts are reported with how the two are tied by identity, so collusion shows up.
+- **Money flows.** Trades and transfers between accounts are reported with how the two are tied by identity, and value that goes round in a circle is found, so collusion shows up.
 - **Attribution with confidence.** A conversion lists every touch that could have led to it and credits one only when the chain of links is strong.
 - **Real integrations.** Fingerprint, the operating system's machine id, MaxMind, the Google tag's cookies, Google's Data Manager API, and Meta's Conversions API.
 - **An outbox for conversions.** Outcomes are recorded once, sent in batches to each ad platform, retried with backoff, and never sent by two workers at once.
@@ -324,6 +324,15 @@ await graph.collusion('account:1') // only those tied by identity, with three or
 ```
 
 `amount` is a whole number of the asset's smallest unit. `imbalance` is 1 when value only ever moved one way.
+
+`rings` finds value that left a subject and came back through others: A paid B, B paid C, C paid A. A per-pair report cannot show that, because no single pair looks wrong.
+
+```ts
+await graph.rings('account:1')
+// [{ subjects: ['account:1', 'account:2', 'account:3'], asset: 'gold', amount: 700, tied: 1 }]
+```
+
+`amount` is the least that moved along any step, so it is the most that could have gone all the way round. `tied` counts how many of the others share the subject's cluster. Rings of up to four subjects are found by default; pass a second argument for longer ones.
 
 ## Fitting the weights
 

@@ -17,6 +17,7 @@ import type {
   Labels,
   Link,
   Observation,
+  Ring,
   Sighting,
   Subject,
   Touch,
@@ -78,6 +79,11 @@ export interface Graph {
   flows(subject: Subject): Promise<Counterparty[]>
   /** The counterparties tied to this subject by identity, with at least `count` flows between them. */
   collusion(subject: Subject, count?: number): Promise<Counterparty[]>
+  /**
+   * Rings of value through a subject: it paid someone, who paid someone, who paid it back.
+   * `length` is the most subjects a ring may have, 4 by default. Largest amount first, 50 at most.
+   */
+  rings(subject: Subject, length?: number): Promise<Ring[]>
   /** Deletes a subject and everything recorded about it, unsent conversions included. */
   forget(subject: Subject, why?: Why): Promise<Change[]>
   /** Every sighting of a subject, oldest first. With `limit`, only the newest that many. */
@@ -376,6 +382,54 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
     async collusion(subject, count = 3) {
       return (await graph.flows(subject)).filter((row) => row.relation !== 'none' && row.count >= count)
+    },
+
+    rings(subject, length = 4) {
+      return store.read(async (tx) => {
+        // Follow value outward one step at a time, at most `length - 1` steps, keeping who paid whom.
+        const paid = new Map<string, Map<Subject, number>>()
+        const key = (from: Subject, asset: string) => `${asset}\u0000${from}`
+        let frontier = [subject]
+        const seen = new Set(frontier)
+        for (let step = 1; step < length && frontier.length > 0; step++) {
+          const next = new Set<Subject>()
+          for (const flow of await tx.flowsOf(frontier)) {
+            if (!seen.has(flow.from)) continue
+            let out = paid.get(key(flow.from, flow.asset))
+            if (!out) paid.set(key(flow.from, flow.asset), (out = new Map()))
+            out.set(flow.to, flow.total)
+            if (!seen.has(flow.to)) next.add(flow.to)
+          }
+          // A subject that pays thousands of others is an exchange, not a ring member. Stop widening there.
+          frontier = [...next].sort().slice(0, 500)
+          for (const reached of frontier) seen.add(reached)
+        }
+        // The last step back needs the flows out of the outermost subjects too.
+        for (const flow of await tx.flowsOf(frontier)) {
+          if (flow.to !== subject || !seen.has(flow.from)) continue
+          let out = paid.get(key(flow.from, flow.asset))
+          if (!out) paid.set(key(flow.from, flow.asset), (out = new Map()))
+          out.set(flow.to, flow.total)
+        }
+
+        const found: Ring[] = []
+        const assets = new Set([...paid.keys()].map((entry) => entry.slice(0, entry.indexOf('\u0000'))))
+        for (const asset of [...assets].sort()) {
+          const walk = (path: Subject[], least: number) => {
+            for (const [to, total] of [...(paid.get(key(path[path.length - 1]!, asset)) ?? [])].sort()) {
+              if (to === subject) found.push({ subjects: [...path], asset, amount: Math.min(least, total), tied: 0 })
+              else if (path.length < length && !path.includes(to)) walk([...path, to], Math.min(least, total))
+            }
+          }
+          walk([subject], Infinity)
+        }
+        found.sort((x, y) => y.amount - x.amount || (x.subjects.join('\u0000') < y.subjects.join('\u0000') ? -1 : 1))
+        const rings = found.filter((ring) => ring.subjects.length > 1).slice(0, 50)
+        const labels = await tx.labelsOf(unique(rings.flatMap((ring) => ring.subjects)))
+        const home = labels.get(subject)?.cluster
+        for (const ring of rings) ring.tied = home === undefined ? 0 : ring.subjects.slice(1).filter((other) => labels.get(other)?.cluster === home).length
+        return rings
+      })
     },
 
     async forget(subject, why) {

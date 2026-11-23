@@ -122,6 +122,17 @@ export interface Counterparty {
   last: number
 }
 
+/** Value that left a subject and came back to it through others: A paid B, B paid C, C paid A. */
+export interface Ring {
+  /** The subjects in the order value moved, starting with the one asked about. The last pays the first. */
+  subjects: Subject[]
+  asset: string
+  /** The least that moved along any step: the most that could have gone all the way round. */
+  amount: number
+  /** How many of the others are in the same cluster as the first. A ring among one person's accounts is the clearest sign. */
+  tied: number
+}
+
 /** What a person agreed to. Both are about advertising; neither affects fraud checks. */
 export interface Consent {
   /** Their data may be sent to an ad platform to measure ads. */
