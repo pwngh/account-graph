@@ -64,8 +64,8 @@ const BUCKET = 5 * 60_000
 /** Allowance for the provider's clock and ours disagreeing. */
 const SLACK = 30_000
 const TOLL_FREE = /^\+18(00|33|44|55|66|77|88)\d{7}$/
-/** The digits a hidden caller is reported as by some carriers: "anonymous" on a keypad. */
-const ANONYMOUS = '+266696687'
+/** What a hidden caller's number is reported as: the words anonymous, restricted, unavailable, blocked and unknown, spelled on a keypad. */
+const HIDDEN = new Set(['+266696687', '+7378742833', '+86282452253', '+2562533', '+8656696'])
 
 /**
  * The note left on a visitor who tapped a phone number. It is filed by the
@@ -73,6 +73,7 @@ const ANONYMOUS = '+266696687'
  * reading every tap there ever was. A note links nothing.
  */
 export function dialed(number: string, at: number, country?: string): Identifier {
+  if (!Number.isSafeInteger(at)) throw new TypeError('A tap needs a time in whole epoch milliseconds')
   return `dialed:${normalizePhone(number, country)}@${Math.floor(at / BUCKET)}`
 }
 
@@ -85,7 +86,8 @@ export function dialed(number: string, at: number, country?: string): Identifier
  */
 export async function recordCall(graph: Graph, call: Call, options: CallOptions = {}): Promise<RecordedCall> {
   if (typeof call?.id !== 'string' || !/^[\w.-]{1,128}$/.test(call.id)) throw new TypeError('A call needs an id of letters, digits, dots, dashes or underscores')
-  if (!Number.isFinite(call.at)) throw new TypeError(`Call "${call.id}" needs a time in epoch milliseconds`)
+  if (!Number.isSafeInteger(call.at)) throw new TypeError(`Call "${call.id}" needs a time in whole epoch milliseconds`)
+  if (call.duration !== undefined && !(typeof call.duration === 'number' && Number.isFinite(call.duration) && call.duration >= 0)) throw new TypeError(`Call "${call.id}" needs its duration in seconds`)
   if (typeof call.to !== 'string') throw new TypeError(`Call "${call.id}" needs the number that was rung`)
   const to = normalizePhone(call.to, options.country)
   const { id, at } = call
@@ -94,7 +96,7 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   try {
     from = typeof call.from === 'string' ? normalizePhone(call.from, options.country) : undefined
   } catch {}
-  if (from === ANONYMOUS) from = undefined
+  if (from !== undefined && HIDDEN.has(from)) from = undefined
   const tollFree = from !== undefined && TOLL_FREE.test(from)
   const subject = from ? `caller:${hashPhone(from)}` : `call:${id}`
 
@@ -118,7 +120,14 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   const buckets: Identifier[] = []
   for (let bucket = Math.floor((at - window) / BUCKET); bucket <= Math.floor((at + SLACK) / BUCKET); bucket++) buckets.push(`dialed:${to}@${bucket}`)
   const taps = (await graph.holders(buckets)).filter((edge) => edge.last >= at - window && edge.first <= at + SLACK)
-  const visitors = [...new Set(taps.map((edge) => edge.subject))]
+  const tapped = [...new Set(taps.map((edge) => edge.subject))]
+  // One tap leads to one caller. A visitor already tied to a different caller by an earlier call is not the one who made this one,
+  // so a browser cannot collect call after call by tapping again.
+  const visitors: Subject[] = []
+  for (const candidate of tapped) {
+    const earlier = (await graph.links(candidate)).filter((link) => link.reasons.some((reason) => reason.identifier.startsWith('dial:')))
+    if (earlier.every((link) => link.subject === subject)) visitors.push(candidate)
+  }
   const visitor = visitors.length === 1 ? visitors[0] : undefined
   if (visitors.length > 1) flags.push('ambiguous')
   if (visitor) {
@@ -129,13 +138,17 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
     ])
   }
 
-  // A visitor's own arrival says more than the number does, so the number's channel is only the fallback.
-  const channel = Object.entries(options.numbers ?? {}).find(([number]) => normalizePhone(number, options.country) === to)?.[1]
-  if (channel && !visitor) await graph.touch({ subject, at, medium: 'call', ...channel, landing: `tel:${to}` })
-
+  // The outcome comes before the touch: if recording it fails, the call is reported again and nothing has been written twice.
   if (!short) {
     const outcome: Outcome = { transactionId: `call:${id}`, subject, at, stage: options.stage ?? 'call', source: 'PHONE', ...(known && { phone: known }) }
     await (options.convert ?? graph.outcome)(outcome)
+  }
+
+  // A visitor's own arrival says more than the number does, so the number's channel is only the fallback.
+  const channel = Object.entries(options.numbers ?? {}).find(([number]) => normalizePhone(number, options.country) === to)?.[1]
+  if (channel && !visitor) {
+    const { source, medium = 'call', campaign, campaignId } = channel
+    await graph.touch({ subject, at, source, medium, ...(campaign && { campaign }), ...(campaignId && { campaignId }), landing: `tel:${to}` })
   }
   await graph.observe({ subject, identifiers: [note], at, event: 'call' })
   return { subject, flags, counted: !short, ...(visitor && { visitor }), duplicate: false }

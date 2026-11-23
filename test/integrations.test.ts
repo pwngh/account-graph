@@ -557,10 +557,21 @@ test('the server takes page events and phone calls, and ties a call to the visit
     assert.equal((await post('/call', { id: 'X-2', to: '+15551230001', at: clock }, 'reviewer')).status, 403)
     assert.equal((await post('/call', { to: '+15551230001', at: clock })).status, 400)
 
+    // A number that is not one of the tracking numbers is not noted, and neither is a number on any other event.
+    await page('/event', { device: 'd-5', event: 'phone_click', number: '+15559998888' })
+    await page('/event', { device: 'd-5', event: 'inquiry', number: '+15551230001' })
+    assert.deepEqual((await graph.history('visitor:d-5')).map((sighting) => sighting.identifier), ['device:d-5', 'device:d-5'])
+    // One address has now tapped from two browsers. A third is believed; a fourth and fifth inside ten minutes are not.
+    for (const device of ['d-2', 'd-3', 'd-4']) await page('/event', { device, event: 'phone_click', number: '+15551230001' })
+    const noted = async (device: string) => (await graph.history(`visitor:${device}`)).some((sighting) => sighting.identifier.startsWith('dialed:'))
+    assert.deepEqual([await noted('d-2'), await noted('d-3'), await noted('d-4')], [true, false, false])
+
     // Two inquiries (one a day, plus the one with its own id), one tap, one counted call, all on the campaign of the ad click.
     const report = await graph.report({ from: '2026-03-02', to: '2026-03-02' })
     assert.deepEqual(report.rows.map((row) => [row.source, row.campaignId, row.stages]), [
       ['google', '111', { inquiry: { count: 2, value: 0 }, phone_click: { count: 1, value: 0 }, call: { count: 1, value: 0 } }],
+      // The visitors made up above arrived from no campaign, so their events are credited to nobody.
+      ['(none)', '', { phone_click: { count: 4, value: 0 }, inquiry: { count: 1, value: 0 } }],
     ])
     assert.deepEqual((await graph.history('visitor:d-1')).map((sighting) => sighting.event), ['visit', 'visit', 'inquiry', 'inquiry', 'inquiry', 'phone_click', 'phone_click', 'call'])
   } finally {

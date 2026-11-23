@@ -153,6 +153,8 @@ test('page events are reported by name, from code and from marked elements', asy
   listeners.get('click')!({ target: element({ '[data-ag-event]': form }) })
   listeners.get('submit')!({ target: element({ 'form[data-ag-event]': form }) })
   listeners.get('click')!({ target: element({}) })
+  // A phone link that is not properly escaped is reported as written, and does not stop the marked element around it.
+  listeners.get('click')!({ target: element({ 'a[href^="tel:"]': node('A', { href: 'tel:%' }), '[data-ag-event]': node('DIV', { 'data-ag-event': 'footer' }) }) })
   await settle()
 
   const device = page.jar.get('ag_device')
@@ -162,6 +164,8 @@ test('page events are reported by name, from code and from marked elements', asy
     { device, event: 'phone_click', url: 'https://site.example/contact', number: '+1-555-123-0001' },
     { device, event: 'brochure', url: 'https://site.example/contact', id: 'b-1' },
     { device, event: 'inquiry', url: 'https://site.example/contact' },
+    { device, event: 'phone_click', url: 'https://site.example/contact', number: '%' },
+    { device, event: 'footer', url: 'https://site.example/contact' },
   ])
   stop()
   assert.equal(listeners.size, 0)

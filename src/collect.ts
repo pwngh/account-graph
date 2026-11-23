@@ -184,7 +184,14 @@ export function watch(options: CollectOptions): () => void {
   const clicked = (happened: Event) => {
     const target = happened.target as Element | null
     const phone = target?.closest?.('a[href^="tel:"]')
-    if (phone) report('phone_click', { number: decodeURIComponent(phone.getAttribute('href')!.slice(4)) })
+    if (phone) {
+      const written = phone.getAttribute('href')!.slice(4)
+      let number = written
+      try {
+        number = decodeURIComponent(written)
+      } catch {}
+      report('phone_click', { number })
+    }
     const marked = target?.closest?.('[data-ag-event]')
     if (marked && marked.tagName !== 'FORM') report(marked.getAttribute('data-ag-event'), idOf(marked))
   }
