@@ -343,6 +343,42 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await graph.flows('a')).some((row) => row.subject === 'b'), false)
     })
 
+    test('value that goes round in a circle is found, with the least that made the trip', async () => {
+      const { graph } = await fresh()
+      await graph.observe([
+        { subject: 'a', identifiers: ['hardware:h'], at: T0 },
+        { subject: 'b', identifiers: ['hardware:h'], at: T0 },
+      ])
+      const pay = (from: string, to: string, amount: number, asset?: string) => graph.transfer({ from, to, amount, at: T0, ...(asset && { asset }) })
+      // a -> b -> c -> a, and a second, smaller ring a -> d -> a.
+      await pay('a', 'b', 900)
+      await pay('b', 'c', 700)
+      await pay('c', 'a', 800)
+      await pay('a', 'd', 50)
+      await pay('d', 'a', 60)
+      // Loose ends that close nothing: a pays e, f pays a, and silver moves one way.
+      await pay('a', 'e', 5000)
+      await pay('f', 'a', 5000)
+      await pay('a', 'b', 400, 'silver')
+      await pay('b', 'c', 400, 'silver')
+
+      assert.deepEqual(await graph.rings('a'), [
+        { subjects: ['a', 'b', 'c'], asset: '', amount: 700, tied: 1 },
+        { subjects: ['a', 'd'], asset: '', amount: 50, tied: 0 },
+      ])
+      // The same ring seen from another member starts with that member.
+      assert.deepEqual(await graph.rings('c'), [{ subjects: ['c', 'a', 'b'], asset: '', amount: 700, tied: 0 }])
+      assert.deepEqual(await graph.rings('e'), [])
+      assert.deepEqual(await graph.rings('nobody'), [])
+      // A ring of three is not found when rings are limited to two.
+      assert.deepEqual((await graph.rings('a', 2)).map((ring) => ring.subjects), [['a', 'd']])
+
+      // A ring of five needs a longer reach than the default of four.
+      for (const [from, to] of [['p', 'q'], ['q', 'r'], ['r', 's'], ['s', 't'], ['t', 'p']]) await pay(from!, to!, 10)
+      assert.deepEqual(await graph.rings('p'), [])
+      assert.deepEqual((await graph.rings('p', 5)).map((ring) => ring.subjects), [['p', 'q', 'r', 's', 't']])
+    })
+
     test('the listener hears each cluster change after it commits', async () => {
       const heard: Change[][] = []
       const { graph } = await fresh(undefined, { onChange: (changes) => void heard.push(changes) })
