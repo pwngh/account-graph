@@ -13,8 +13,13 @@ export interface Pool extends Queryable {
 }
 
 export interface PostgresStore extends Store {
-  /** Creates the schema and tables if they are missing. */
-  migrate(): Promise<void>
+  /**
+   * Brings the database up to date: creates what is missing and applies each
+   * upgrade that has not run yet, in order, inside one transaction. Safe to
+   * call on every start and from several processes at once. Returns the
+   * names of the upgrades it applied.
+   */
+  migrate(): Promise<string[]>
 }
 
 /**
@@ -143,6 +148,19 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
     async clusterOf(cluster) {
       const { rows } = await db.query(`select id from ${t('subject')} where cluster = $1`, [cluster])
       return rows.map((row) => row.id as Subject)
+    },
+
+    async counts() {
+      const { rows } = await db.query(
+        `select (select count(*) from ${t('subject')})::int as subjects,
+                (select count(distinct cluster) from ${t('subject')})::int as clusters,
+                (select count(*) from ${t('identifier')} where fanout > 0)::int as identifiers,
+                (select count(*) from ${t('edge')})::int as edges,
+                (select count(*) from ${t('sighting')})::int as sightings,
+                (select count(*) from ${t('touch')})::int as touches,
+                (select count(*) from ${t('decision')})::int as decisions`,
+      )
+      return rows[0]
     },
 
     async largestClusters(limit) {
@@ -344,7 +362,29 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
     write: (work) => run('begin', true, work),
     read: (work) => run('begin isolation level repeatable read read only', false, work),
     async migrate() {
-      await pool.query(ddl(schema))
+      await pool.query(`create schema if not exists ${schema};
+        create table if not exists ${t('upgrade')} (id int primary key, name text not null, applied_at bigint not null)`)
+      const client = await pool.connect()
+      try {
+        await client.query('begin')
+        await client.query(`select pg_advisory_xact_lock(hashtext($1))`, [`account-graph:${schema}:upgrade`])
+        const { rows } = await client.query(`select id from ${t('upgrade')}`)
+        const done = new Set(rows.map((row) => row.id as number))
+        const applied: string[] = []
+        for (const upgrade of upgrades(schema)) {
+          if (done.has(upgrade.id)) continue
+          await client.query(upgrade.sql)
+          await client.query(`insert into ${t('upgrade')} (id, name, applied_at) values ($1, $2, $3)`, [upgrade.id, upgrade.name, Date.now()])
+          applied.push(upgrade.name)
+        }
+        await client.query('commit')
+        return applied
+      } catch (error) {
+        await client.query('rollback').catch(() => undefined)
+        throw error
+      } finally {
+        client.release()
+      }
     },
   }
 }
@@ -380,7 +420,29 @@ function toEdge(row: any): Edge {
   }
 }
 
-/** The tables, for running by hand or reading. Times are epoch milliseconds. */
+/**
+ * Every change to the database's shape, oldest first. `migrate` applies the
+ * ones a database has not had. To change the shape, add an entry with the
+ * next id; never edit one that has shipped. The first entry creates
+ * everything for a new database, so later entries must also be safe to run
+ * on a database that the first entry just created.
+ */
+export function upgrades(schema = 'account_graph'): { id: number; name: string; sql: string }[] {
+  return [
+    { id: 1, name: 'tables', sql: ddl(schema) },
+    {
+      id: 2,
+      name: 'sighting record time',
+      // For a database made before sightings were stamped with when they were written down.
+      sql: `alter table ${schema}.sighting add column if not exists recorded_at bigint;
+            update ${schema}.sighting set recorded_at = at where recorded_at is null;
+            alter table ${schema}.sighting alter column recorded_at set not null;
+            create index if not exists sighting_recorded on ${schema}.sighting (recorded_at);`,
+    },
+  ]
+}
+
+/** The tables of a new database, for running by hand or reading. Times are epoch milliseconds. */
 export function ddl(schema = 'account_graph'): string {
   return `
 create schema if not exists ${schema};
@@ -395,7 +457,6 @@ create table if not exists ${schema}.sighting (
   recorded_at bigint not null
 );
 create index if not exists sighting_subject on ${schema}.sighting (subject, at);
-create index if not exists sighting_recorded on ${schema}.sighting (recorded_at);
 
 -- Sightings folded per subject and identifier. This is the graph.
 create table if not exists ${schema}.edge (
