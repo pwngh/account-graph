@@ -26,6 +26,8 @@ import { createMaxMindLookup } from './integrations/maxmind.ts'
 import { ladderProblems } from './ladder.ts'
 import type { Ladder } from './ladder.ts'
 import { createMicrosoftTokens } from './integrations/microsoft-auth.ts'
+import { createAddressVerifier } from './integrations/smarty.ts'
+import { createLineTypeLookup } from './integrations/twilio.ts'
 import { createOutbox } from './outbox.ts'
 import type { Target } from './outbox.ts'
 import { createPostgresStore } from './postgres.ts'
@@ -85,7 +87,10 @@ export function configFrom(env: Env) {
     events: (env.EVENTS ?? '').split(',').map((name) => name.trim()).filter(Boolean),
     callNumbers: parsed('CALL_NUMBERS'),
     callMinimum: number('CALL_MIN_SECONDS', 30),
-    twilio: group(['TWILIO_AUTH_TOKEN', 'TWILIO_WEBHOOK_URL']) ? { authToken: env.TWILIO_AUTH_TOKEN!, url: env.TWILIO_WEBHOOK_URL! } : undefined,
+    // One Twilio token serves two things, each switched on by its second variable: call reports and line lookups.
+    twilio: env.TWILIO_AUTH_TOKEN && env.TWILIO_WEBHOOK_URL ? { authToken: env.TWILIO_AUTH_TOKEN, url: env.TWILIO_WEBHOOK_URL } : undefined,
+    lineType: env.TWILIO_AUTH_TOKEN && env.TWILIO_ACCOUNT_SID ? { accountSid: env.TWILIO_ACCOUNT_SID, authToken: env.TWILIO_AUTH_TOKEN } : undefined,
+    smarty: group(['SMARTY_AUTH_ID', 'SMARTY_AUTH_TOKEN']) ? { authId: env.SMARTY_AUTH_ID!, authToken: env.SMARTY_AUTH_TOKEN! } : undefined,
     costInterval: number('COST_INTERVAL_MS', 6 * 3_600_000),
     costDays: number('COST_DAYS', 7),
     googleCosts: env.GOOGLE_ADS_DEVELOPER_TOKEN
@@ -140,7 +145,11 @@ export function configFrom(env: Env) {
     }
     if (typeof channel?.source !== 'string' || !channel.source) wrong.push(`CALL_NUMBERS: "${number}" needs a source, such as {"source":"google"}`)
   }
-  if (config.stages) {
+  const twilioNames = ['TWILIO_AUTH_TOKEN', 'TWILIO_WEBHOOK_URL', 'TWILIO_ACCOUNT_SID'].filter((name) => env[name])
+  if (twilioNames.length > 0 && !config.twilio && !config.lineType) {
+    wrong.push(env.TWILIO_AUTH_TOKEN ? 'TWILIO_WEBHOOK_URL or TWILIO_ACCOUNT_SID must be set along with TWILIO_AUTH_TOKEN' : `TWILIO_AUTH_TOKEN must be set along with ${twilioNames.join(', ')}`)
+  }
+    if (config.stages) {
     const targets = [config.google && 'google', config.meta && 'meta', config.tiktok && 'tiktok', config.microsoft && 'microsoft'].filter((name): name is string => Boolean(name))
     for (const problem of ladderProblems(config.stages, targets)) wrong.push(`STAGES: ${problem}`)
   }
@@ -253,6 +262,8 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
     ...(config.cookie && { cookie: config.cookie }),
     ...(config.fingerprint && { fingerprint: createFingerprintVerifier(config.fingerprint) }),
     ...(config.maxmind && { ipInfo: createMaxMindLookup(config.maxmind) }),
+    ...(config.smarty && { address: createAddressVerifier(config.smarty) }),
+    ...(config.lineType && { lineType: createLineTypeLookup(config.lineType) }),
     ...(outbox && { outbox }),
   }
   const server = createServer(createHandler(queued, options))
@@ -262,7 +273,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
   const on = (name: string, enabled: unknown) => `${name} ${enabled ? 'on' : 'off'}`
   log(`listening on ${config.host}:${port}`)
   log(`collect accepts ${config.origins.length > 0 ? config.origins.join(', ') : 'no origins yet (set ORIGINS)'}`)
-  log([on('reviewer token', config.reviewToken), on('server cookie', config.cookie), on('fingerprint', config.fingerprint), on('maxmind', config.maxmind), on('signed links', config.linkSecret), on('alerts', config.alertWebhook)].join(', '))
+  log([on('reviewer token', config.reviewToken), on('server cookie', config.cookie), on('fingerprint', config.fingerprint), on('maxmind', config.maxmind), on('signed links', config.linkSecret), on('alerts', config.alertWebhook), on('address checks', config.smarty), on('phone line checks', config.lineType)].join(', '))
   log(`outbox sends to ${targets.length > 0 ? targets.map((target) => target.name).join(', ') : 'nobody (no ad platform configured)'}`)
   if (config.stages) log(`steps: ${Object.entries(config.stages).map(([name, stage]) => `${name}${stage.value === undefined ? '' : ` ${stage.value}`}`).join(', ')}`)
     log(`page events taken: ${options.events!.length > 0 ? options.events!.join(', ') : 'none (set EVENTS)'}; calls from twilio ${config.twilio ? 'on' : 'off'}`)

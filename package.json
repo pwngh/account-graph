@@ -64,6 +64,14 @@
     "./costs": {
       "types": "./dist/integrations/costs.d.ts",
       "default": "./dist/integrations/costs.js"
+    },
+    "./smarty": {
+      "types": "./dist/integrations/smarty.d.ts",
+      "default": "./dist/integrations/smarty.js"
+    },
+    "./twilio": {
+      "types": "./dist/integrations/twilio.d.ts",
+      "default": "./dist/integrations/twilio.js"
     }
   },
   "scripts": {

@@ -45,6 +45,21 @@ export function phone(value: string, country?: string): Identifier {
   return `phone:${hashPhone(value, country)}`
 }
 
+/** Lines that belong to no one person: a switchboard, a paid service, a pager. */
+const NOBODY = new Set(['tollFree', 'premium', 'sharedCost', 'uan', 'voicemail', 'pager'])
+
+/**
+ * A phone identifier that takes the kind of line into account. A number
+ * from an internet calling app that anyone can get in a minute is recorded
+ * as the weaker `voip` kind, and a line that belongs to no one person ties
+ * nobody, so it gets no identifier. `type` is what a carrier lookup says:
+ * `mobile`, `landline`, `nonFixedVoip`, `tollFree`. Without one, it is a plain phone.
+ */
+export function phoneOfType(value: string, type?: string, country?: string): Identifier | undefined {
+  if (type !== undefined && NOBODY.has(type)) return undefined
+  return `${type === 'nonFixedVoip' ? 'voip' : 'phone'}:${hashPhone(value, country)}`
+}
+
 /**
  * An IP identifier. An IPv6 address keeps its /64 prefix, because one device
  * rotates through many addresses inside it.

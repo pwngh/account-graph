@@ -56,6 +56,10 @@ export const defaultPolicy: Policy = {
     passkey: { weight: 0.99, dilution: 0, cap: 5, halfLife: Infinity },
     email: { weight: 0.99, dilution: 0, cap: 25, halfLife: Infinity },
     phone: { weight: 0.9, dilution: 0, cap: 25, halfLife: Infinity },
+    // A number from an internet calling app, which anyone can get and drop in a minute. A carrier lookup tells it from a real line.
+    voip: { weight: 0.5, dilution: 0, cap: 25, halfLife: Infinity },
+    // A postal address the postal service confirmed down to the apartment. It names a household, not a person.
+    address: { weight: 0.6, dilution: 1, cap: 10, halfLife: Infinity },
     payment: { weight: 0.97, dilution: 0, cap: 10, halfLife: Infinity },
     // A first-party cookie or install id your own code set.
     device: { weight: 0.98, dilution: 0, cap: 10, halfLife: Infinity },
@@ -75,7 +79,9 @@ export const defaultPolicy: Policy = {
     opened: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     // A phone call that began moments after exactly one visitor tapped its number on your site. `recordCall` writes it.
     dial: { weight: 0.92, dilution: 0, cap: 2, halfLife: Infinity },
-    // A note, not evidence: the number a visitor tapped, or a call that was recorded. It links nothing.
+    // A note, not evidence: where an address places a visit. It links nothing.
+    place: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
+        // A note, not evidence: the number a visitor tapped, or a call that was recorded. It links nothing.
     dialed: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
   },
 }

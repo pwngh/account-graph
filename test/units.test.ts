@@ -14,6 +14,7 @@ import {
   fit,
   googleClick,
   hashEmail,
+  hashPhone,
   ingestRequest,
   ip,
   knownLink,
@@ -21,6 +22,7 @@ import {
   measure,
   normalizeEmail,
   normalizePhone,
+  phoneOfType,
   readToken,
   scorePairs,
   signToken,
@@ -197,7 +199,7 @@ test('the server reads its settings from the environment and names everything wr
     const calls = configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', EVENTS: 'inquiry, brochure', CALL_NUMBERS: '{"555-123-0001":{"source":"google"}}', TWILIO_AUTH_TOKEN: 't', TWILIO_WEBHOOK_URL: 'https://g.example/calls/twilio' })
   assert.deepEqual([calls.events, calls.callNumbers, calls.callMinimum, calls.twilio], [['inquiry', 'brochure'], { '555-123-0001': { source: 'google' } }, 30, { authToken: 't', url: 'https://g.example/calls/twilio' }])
   assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', CALL_NUMBERS: '{"12":{}}', TWILIO_AUTH_TOKEN: 't', REPORT_TIME_ZONE: 'Mars/Olympus' }), (error: Error) =>
-    ['"12" is not a phone number', '"12" needs a source', 'TWILIO_WEBHOOK_URL must be set along with TWILIO_AUTH_TOKEN', 'REPORT_TIME_ZONE must be a time zone'].every((line) => error.message.includes(line)))
+    ['"12" is not a phone number', '"12" needs a source', 'TWILIO_WEBHOOK_URL or TWILIO_ACCOUNT_SID must be set along with TWILIO_AUTH_TOKEN', 'REPORT_TIME_ZONE must be a time zone'].every((line) => error.message.includes(line)))
   assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', CALL_NUMBERS: '[1]' }), /CALL_NUMBERS must be a JSON object/)
 
   const full = configFrom({
@@ -445,4 +447,22 @@ test('an alert is posted once per subject per quiet period, and a broken webhook
   status = 200
   assert.equal(await alert('conversions', 'heard this time'), true)
   assert.equal(await alert('conversions', 'and now held back'), false)
+})
+
+test('a phone number counts by the kind of line it is', () => {
+  const hash = hashPhone('+15558675309')
+  assert.equal(phoneOfType('(555) 867-5309'), `phone:${hash}`)
+  for (const type of ['mobile', 'landline', 'fixedVoip', 'personal', 'unknown']) assert.equal(phoneOfType('+15558675309', type), `phone:${hash}`)
+  // A number from an app anyone can sign up to is recorded as the weaker kind; a line that is nobody's is not recorded.
+  assert.equal(phoneOfType('+15558675309', 'nonFixedVoip'), `voip:${hash}`)
+  for (const type of ['tollFree', 'premium', 'sharedCost', 'uan', 'voicemail', 'pager']) assert.equal(phoneOfType('+15558675309', type), undefined)
+  assert.equal(defaultPolicy.kinds.voip!.weight < defaultPolicy.related + 0.01 && defaultPolicy.kinds.address!.weight < defaultPolicy.same, true)
+
+  // Twilio serves call reports with a webhook address and line lookups with an account id; one token does for both.
+  const both = configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', TWILIO_AUTH_TOKEN: 't', TWILIO_ACCOUNT_SID: 'AC1', TWILIO_WEBHOOK_URL: 'https://g.example/calls/twilio', SMARTY_AUTH_ID: 'id', SMARTY_AUTH_TOKEN: 'tok' })
+  assert.deepEqual([both.twilio, both.lineType, both.smarty], [{ authToken: 't', url: 'https://g.example/calls/twilio' }, { accountSid: 'AC1', authToken: 't' }, { authId: 'id', authToken: 'tok' }])
+  const lookupOnly = configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', TWILIO_AUTH_TOKEN: 't', TWILIO_ACCOUNT_SID: 'AC1' })
+  assert.deepEqual([lookupOnly.twilio, lookupOnly.lineType], [undefined, { accountSid: 'AC1', authToken: 't' }])
+  assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', TWILIO_ACCOUNT_SID: 'AC1', SMARTY_AUTH_ID: 'id' }), (error: Error) =>
+    ['TWILIO_AUTH_TOKEN must be set along with TWILIO_ACCOUNT_SID', 'SMARTY_AUTH_TOKEN must be set along with SMARTY_AUTH_ID'].every((line) => error.message.includes(line)))
 })

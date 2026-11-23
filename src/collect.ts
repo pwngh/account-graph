@@ -152,6 +152,10 @@ export async function collect(options: CollectOptions): Promise<void> {
   }
   if (typeof visit.touch?.gclid === 'string') remember('ag_click', visit.touch.gclid)
   tidy()
+  // The first page of this browser session, for forms to carry along.
+  try {
+    if (!sessionStorage.getItem('ag_landing')) sessionStorage.setItem('ag_landing', location.href)
+  } catch {}
   const body = JSON.stringify({
     ...visit,
     ...(fingerprintEvent && { fingerprintEvent }),
@@ -309,4 +313,42 @@ export function carry(options: CollectOptions): () => void {
     document.removeEventListener('contextmenu', menu, true)
     document.removeEventListener('visibilitychange', returned)
   }
+}
+
+
+/**
+ * What a form should carry so whatever receives it can say which visitor
+ * filled it in: the device id, and the page this browser session began on.
+ */
+export function fields(): { ag_device: string; ag_landing: string } {
+  let landing: string | null = null
+  try {
+    landing = sessionStorage.getItem('ag_landing')
+  } catch {}
+  return { ag_device: deviceId(), ag_landing: landing ?? location.href }
+}
+
+/**
+ * Adds those two as hidden fields to a form at the moment it is submitted:
+ * every form marked `data-ag-fields`, or with `all`, every form on the
+ * page. Use it for forms that post to a system the cookie does not reach,
+ * such as a hosted form or a CRM. Returns a function that stops.
+ */
+export function fill(options: { all?: boolean } = {}): () => void {
+  const submitted = (happened: Event) => {
+    const form = (happened.target as Element | null)?.closest?.('form')
+    if (!form || !(options.all || form.hasAttribute('data-ag-fields'))) return
+    for (const [name, value] of Object.entries(fields())) {
+      let input = form.querySelector(`input[name="${name}"]`) as HTMLInputElement | null
+      if (!input) {
+        input = document.createElement('input')
+        input.type = 'hidden'
+        input.name = name
+        form.append(input)
+      }
+      input.value = value
+    }
+  }
+  document.addEventListener('submit', submitted, true)
+  return () => document.removeEventListener('submit', submitted, true)
 }

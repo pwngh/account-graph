@@ -46,3 +46,54 @@ export function twilioCall(fields: Readonly<Record<string, string>>, now: number
     duration,
   }
 }
+
+/** What kind of line a phone number is, from Twilio Lookup. */
+export interface LineType {
+  /** `mobile`, `landline`, `fixedVoip`, `nonFixedVoip`, `tollFree`, `personal`, `premium`, `sharedCost`, `uan`, `voicemail`, `pager`, or `unknown`. */
+  type: string
+  carrier: string | undefined
+}
+
+export type LineTypeLookup = (number: string) => Promise<LineType | undefined>
+
+export interface LookupOptions {
+  /** The account's SID, or an API key's SID. */
+  accountSid: string
+  /** The account's auth token, or the API key's secret. */
+  authToken: string
+  /** How many answers to keep. Defaults to 10,000. A number's line rarely changes, so each is kept for thirty days. */
+  cache?: number
+  fetch?: typeof fetch
+  now?: () => number
+}
+
+/**
+ * Returns a function that asks Twilio what kind of line a number in E.164
+ * form is. It resolves to undefined for a number Twilio does not know, and
+ * throws when the account is refused or the service fails. Each new number
+ * is a paid lookup.
+ * https://www.twilio.com/docs/lookup/v2-api/line-type-intelligence
+ */
+export function createLineTypeLookup(options: LookupOptions): LineTypeLookup {
+  const fetcher = options.fetch ?? fetch
+  const now = options.now ?? Date.now
+  const limit = options.cache ?? 10_000
+  const authorization = `Basic ${Buffer.from(`${options.accountSid}:${options.authToken}`).toString('base64')}`
+  const cache = new Map<string, { line: LineType | undefined; until: number }>()
+  return async (number) => {
+    const hit = cache.get(number)
+    if (hit && hit.until > now()) return hit.line
+    const response = await fetcher(`https://lookups.twilio.com/v2/PhoneNumbers/${encodeURIComponent(number)}?Fields=line_type_intelligence`, {
+      headers: { authorization, accept: 'application/json' },
+      signal: AbortSignal.timeout(10_000),
+    })
+    let line: LineType | undefined
+    if (response.ok) {
+      const found = ((await response.json()) as any)?.line_type_intelligence
+      line = { type: typeof found?.type === 'string' && !found.error_code ? found.type : 'unknown', carrier: found?.carrier_name ?? undefined }
+    } else if (response.status !== 404) throw new Error(`Twilio refused the lookup with ${response.status}: ${(await response.text()).slice(0, 200)}`)
+    if (cache.size >= limit) cache.delete(cache.keys().next().value!)
+    cache.set(number, { line, until: now() + 30 * 86_400_000 })
+    return line
+  }
+}

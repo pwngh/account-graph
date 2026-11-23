@@ -17,6 +17,9 @@ export interface IpInfo {
   anonymous: boolean
   /** A data center. */
   hosting: boolean
+  /** The state or province's ISO code, and the city, when the service gives them. */
+  region?: string
+  city?: string
 }
 
 export type IpLookup = (address: string) => Promise<IpInfo | undefined>
@@ -47,6 +50,8 @@ function parse(body: any): IpInfo {
     userType: body?.traits?.user_type,
     anonymous: FLAGS.some(flag),
     hosting: flag('is_hosting_provider'),
+    ...(body?.subdivisions?.[0]?.iso_code && { region: body.subdivisions[0].iso_code }),
+    ...(body?.city?.names?.en && { city: body.city.names.en }),
   }
 }
 
@@ -108,4 +113,10 @@ export function createDatabaseLookup(readers: { asn?: Reader; anonymous?: Reader
 export function shared(info: IpInfo | undefined): boolean {
   if (!info) return false
   return info.anonymous || info.hosting || (info.userType !== undefined && info.userType !== 'residential')
+}
+
+/** Where an address places a visit, written `US/FL/Miami`, or undefined when not even the country is known. */
+export function placeOf(info: IpInfo | undefined): string | undefined {
+  if (!info?.country) return undefined
+  return [info.country, info.region, info.city].filter(Boolean).join('/')
 }
