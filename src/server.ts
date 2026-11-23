@@ -8,6 +8,7 @@ import { shared } from './integrations/maxmind.ts'
 import type { IpLookup } from './integrations/maxmind.ts'
 import type { Outbox } from './outbox.ts'
 import { reviewPage } from './review.ts'
+import { browserScripts, scriptHeaders } from './tag.ts'
 import type { Identifier, Level, Subject, Touch } from './types.ts'
 
 export interface HandlerOptions {
@@ -78,8 +79,9 @@ class Refusal extends Error {
 
 /**
  * An HTTP handler for `node:http`. `/collect` is open to the listed origins,
- * `/review` serves the reviewer screen, and every other route needs the
- * bearer token.
+ * `/collect.js` is the script tag that posts to it, `/review` serves the
+ * reviewer screen, `/health` says the database answers, and every other
+ * route needs a bearer token.
  */
 export function createHandler(graph: Graph, options: HandlerOptions) {
   const now = options.now ?? Date.now
@@ -241,6 +243,13 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       // Reads one row, so it answers only when the database does.
       await graph.separations('health')
       return { ok: true }
+    }
+
+    if (path === 'GET /collect.js' || path === 'GET /fingerprint.js') {
+      // The script tag for your sites. Public, like the pages that load it.
+      const scripts = browserScripts()
+      response.writeHead(200, scriptHeaders).end(path === 'GET /collect.js' ? scripts.collect : scripts.fingerprint)
+      return SENT
     }
 
     if (path === 'GET /review') {
