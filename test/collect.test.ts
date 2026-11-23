@@ -200,23 +200,31 @@ test('links to your other sites carry the visitor along, and no other link is to
     addEventListener: (name: string, listener: (happened: object) => void) => void listeners.set(name, listener),
     removeEventListener: (name: string) => void listeners.delete(name),
   })
-  const follow = (href: string) => {
+  const follow = (href: string, button = 0) => {
     const link = { href }
-    listeners.get('pointerdown')!({ target: { closest: () => link } })
+    listeners.get('pointerdown')!({ button, target: { closest: () => link } })
     return link.href
   }
   try {
-    const stop = carry({ endpoint: 'https://graph.example/collect', domains: ['shop.example', 'Help.Example'] })
+    const stop = carry({ endpoint: 'https://graph.example/collect', domains: ['shop.example', ' Help.Example ', 'bücher.example', 'not a host'] })
     await settle()
     assert.equal(asked[0]!.url, 'https://graph.example/carry')
     assert.equal(asked[0]!.init.credentials, 'include')
     assert.equal(follow('https://shop.example/cart?x=1#pay'), 'https://shop.example/cart?x=1&ag_from=token-1#pay')
     assert.equal(follow('https://help.example/'), 'https://help.example/?ag_from=token-1')
+    // A name in another script is matched in the form a link's host reads back in.
+    assert.equal(follow('https://bücher.example/'), 'https://xn--bcher-kva.example/?ag_from=token-1')
+    // The right button opens a menu that can copy the address, so it gets no token.
+    assert.equal(follow('https://shop.example/cart', 2), 'https://shop.example/cart')
     // The same site, a stranger's site, and something that is not an address are left alone.
     assert.equal(follow('https://site.example/next'), 'https://site.example/next')
     assert.equal(follow('https://elsewhere.example/'), 'https://elsewhere.example/')
     assert.equal(follow('not an address'), 'not an address')
     listeners.get('click')!({ target: { closest: () => null } })
+    assert.equal(asked.length, 1)
+    // A tab that comes back into view with a token still fresh asks for nothing.
+    ;(globalThis as any).document.visibilityState = 'visible'
+    listeners.get('visibilitychange')!({})
     assert.equal(asked.length, 1)
     stop()
     assert.equal(listeners.size, 0)

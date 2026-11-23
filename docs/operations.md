@@ -79,6 +79,8 @@ Three things can: the script tag's `domains` option, which carries a visitor alo
 
 Set `TRUST_PROXY=true` when a proxy or load balancer you run sits in front. The server then reads each visitor's address from `x-forwarded-for`. Without it, every visit appears to come from the proxy, and the per-address limit below would count them as one sender.
 
+With two proxies in a row, such as a CDN in front of a load balancer, set `TRUST_PROXY=2`. Each proxy adds the address it heard from to the end of that header, so the visitor's is that many from the end. Whatever comes before it was written by the sender and is ignored.
+
 Set `COOKIE=true` to have the server keep the device id in a cookie it sets itself. Safari deletes a cookie set by script after seven days; one set by the server lasts. It only works when the server answers on the site's own domain, or on a subdomain with `COOKIE=example.org`.
 
 ## Limits on visits
@@ -117,7 +119,7 @@ On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes i
 | `ORIGINS` | none | Site addresses that may post visits, separated by commas. |
 | `PORT`, `HOST` | `8080`, `0.0.0.0` | Where to listen. |
 | `GRAPH_SCHEMA` | `account_graph` | The database schema to keep tables in. |
-| `TRUST_PROXY` | `false` | Read visitor addresses from `x-forwarded-for`. |
+| `TRUST_PROXY` | `false` | `true`, or how many proxies stand in front: read visitor addresses from `x-forwarded-for`. |
 | `COOKIE` | `false` | `true`, or a domain, to keep the device id in a server-set cookie. |
 | `RATE_PER_MINUTE`, `RATE_BURST` | `120`, `60` | The per-address limit on `/collect`. |
 | `RATE_LIMIT` | on | `off` removes that limit. |

@@ -237,7 +237,16 @@ export function watch(options: CollectOptions): () => void {
  * hands it to its own script tag. Returns a function that stops.
  */
 export function carry(options: CollectOptions): () => void {
-  const domains = new Set((options.domains ?? []).map((host) => host.toLowerCase()))
+  // Written the way a link's host reads back: trimmed, lowercase, and a name in another script in its ASCII form.
+  const domains = new Set(
+    (options.domains ?? []).flatMap((host) => {
+      try {
+        return [new URL(`http://${host.trim()}`).hostname]
+      } catch {
+        return []
+      }
+    }),
+  )
   let token: { value: string; at: number } | undefined
   let asking = false
   const ask = async () => {
@@ -257,6 +266,8 @@ export function carry(options: CollectOptions): () => void {
     }
   }
   const followed = (happened: Event) => {
+    // The right button opens a menu that can copy the address; a copied address must not carry a token.
+    if ((happened as MouseEvent).button === 2) return
     const link = (happened.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null | undefined
     if (!link) return
     let url: URL
@@ -274,9 +285,15 @@ export function carry(options: CollectOptions): () => void {
   }
   if (domains.size === 0) return () => {}
   void ask()
-  // Pressing comes before any way of following a link: a click, a middle click, or the menu's "open in new tab".
+  // A tab that comes back into view after a long while gets a fresh token before anyone clicks.
+  const returned = () => {
+    if (document.visibilityState === 'visible' && (!token || Date.now() - token.at > 30 * 60_000)) void ask()
+  }
+  // Pressing comes before following a link, whether by a click or by the middle button.
   for (const name of ['pointerdown', 'click']) document.addEventListener(name, followed, true)
+  document.addEventListener('visibilitychange', returned)
   return () => {
     for (const name of ['pointerdown', 'click']) document.removeEventListener(name, followed, true)
+    document.removeEventListener('visibilitychange', returned)
   }
 }

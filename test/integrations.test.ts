@@ -609,6 +609,9 @@ test('a link sent to one person ties the browser that opens it, and a visitor is
     const known = new URL(made.url).searchParams.get('ag')!
     assert.equal((await service('/link', { url: 'https://site.example/', subject: 'contact:1' }, 'reviewer')).status, 403)
     assert.equal((await service('/link', { url: 'nope', subject: 'contact:1' })).status, 400)
+    for (const bad of [{ url: 'javascript:alert(1)', subject: 'contact:1' }, { url: 'https://site.example/', subject: 'contact:1', days: 1e300 }, { url: 'https://site.example/', subject: 'contact:1', days: -1 }, { url: 'https://site.example/', subject: 'contact:1', days: '7' }, { url: 'https://site.example/', subject: '中'.repeat(256) }]) {
+      assert.equal((await service('/link', bad)).status, 400, JSON.stringify(bad).slice(0, 60))
+    }
 
     // They open it: the browser is tied to them. A forged token ties nobody.
     assert.equal((await page('/collect', { device: 'phone-1', known })).status, 204)
@@ -617,11 +620,21 @@ test('a link sent to one person ties the browser that opens it, and a visitor is
     assert.deepEqual(await members('visitor:phone-2'), ['visitor:phone-2'])
     assert.deepEqual((await graph.links('contact:1')).map((link) => [link.subject, link.level, link.reasons[0]!.identifier]), [['visitor:phone-1', 'same', 'link:phone-1']])
 
-    // A second person's link opened in the same browser: the browser can no longer say whose it is.
-    const second = new URL(((await (await service('/link', { url: 'https://site.example/offer', subject: 'contact:2' })).json()) as { url: string }).url).searchParams.get('ag')!
-    await page('/collect', { device: 'phone-1', known: second })
-    assert.deepEqual(await members('contact:1'), ['contact:1'])
-    assert.deepEqual((await graph.links('visitor:phone-1')).map((link) => [link.subject, link.level]), [['contact:1', 'related'], ['contact:2', 'related']])
+    // A second person's link opened in the same browser: the browser already belongs to someone like them, so it is noted and ties nobody.
+    const linkFor = async (subject: string) => new URL(((await (await service('/link', { url: 'https://site.example/offer', subject })).json()) as { url: string }).url).searchParams.get('ag')!
+    await page('/collect', { device: 'phone-1', known: await linkFor('contact:2') })
+    assert.deepEqual(await members('contact:1'), ['contact:1', 'visitor:phone-1'])
+    assert.deepEqual(await members('contact:2'), undefined)
+    assert.ok((await graph.history('visitor:phone-1')).some((sighting) => sighting.identifier === 'opened:contact:2'))
+
+    // One person opens their link on a phone, a laptop and a tablet. A fourth browser is one too many to be the same person.
+    const third = await linkFor('contact:3')
+    for (const device of ['c3-phone', 'c3-laptop', 'c3-tablet', 'c3-fourth']) await page('/collect', { device, known: third })
+    assert.deepEqual(await members('contact:3'), ['contact:3', 'visitor:c3-laptop', 'visitor:c3-phone', 'visitor:c3-tablet'])
+    assert.deepEqual(await members('visitor:c3-fourth'), ['visitor:c3-fourth'])
+    // Opening it again in one of the three changes nothing.
+    await page('/collect', { device: 'c3-phone', known: third })
+    assert.equal((await members('contact:3'))!.length, 4)
 
     // A week later the first link has run out.
     clock += 8 * 86_400_000
@@ -638,9 +651,16 @@ test('a link sent to one person ties the browser that opens it, and a visitor is
     // So a sign-up on the second site is credited to the ad click that landed on the first.
     await graph.observe({ subject: 'account:7', identifiers: ['device:shop-device'], at: clock + 1000 })
     assert.equal((await graph.attribute('account:7', { at: clock + 1000 })).credited?.gclid, 'G-site')
+    assert.deepEqual((await graph.links('visitor:shop-device')).map((link) => [link.subject, link.reasons[0]!.identifier]), [['account:7', 'device:shop-device'], ['visitor:site-device', 'carry:site-device@shop.example']])
     // Passed to another browser, or used after an hour, the same token ties nobody.
     await page('/collect', { device: 'stranger', carried: token }, 'https://shop.example', 'Other/2.0')
     assert.deepEqual(await members('visitor:stranger'), ['visitor:stranger'])
+    // Handed around a shared network, where the browsers look alike, it thins: a third holder ends the join, a fifth ends the tie.
+    await page('/collect', { device: 'lookalike-1', carried: token }, 'https://shop.example')
+    assert.deepEqual(await members('visitor:shop-device'), ['account:7', 'visitor:shop-device'])
+    assert.deepEqual((await graph.links('visitor:lookalike-1')).map((link) => link.level), ['related', 'related'])
+    for (const device of ['lookalike-2', 'lookalike-3']) await page('/collect', { device, carried: token }, 'https://shop.example')
+    assert.deepEqual(await graph.links('visitor:lookalike-1'), [])
     clock += 3_600_001
     await page('/collect', { device: 'late', carried: token }, 'https://shop.example')
     assert.deepEqual(await members('visitor:late'), ['visitor:late'])
@@ -660,4 +680,25 @@ test('a link sent to one person ties the browser that opens it, and a visitor is
   } finally {
     plain.close()
   }
+})
+
+test('behind a proxy the visitor is the address the proxy added, not one the sender wrote', async () => {
+  const seen = async (trustProxy: boolean | number, forwarded: string) => {
+    const graph = createGraph(createMemoryStore())
+    const server = createServer(createHandler(graph, { token: 'service', origins: ['https://site.example'], trustProxy })).listen(0, '127.0.0.1')
+    await new Promise((resolve) => server.once('listening', resolve))
+    try {
+      await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/collect`, { method: 'POST', headers: { origin: 'https://site.example', 'x-forwarded-for': forwarded }, body: JSON.stringify({ device: 'd' }) })
+      return (await graph.history('visitor:d')).map((sighting) => sighting.identifier).find((identifier) => identifier.startsWith('ip:'))
+    } finally {
+      server.close()
+    }
+  }
+  assert.equal(await seen(true, '203.0.113.9'), 'ip:203.0.113.9')
+  // The sender put an address in front; the one proxy in between added the real one at the end.
+  assert.equal(await seen(true, '198.51.100.1, 203.0.113.9'), 'ip:203.0.113.9')
+  // Two proxies: the visitor is two from the end.
+  assert.equal(await seen(2, '198.51.100.1, 203.0.113.9, 10.0.0.2'), 'ip:203.0.113.9')
+  assert.equal(await seen(2, '203.0.113.9'), 'ip:203.0.113.9')
+  assert.equal(await seen(false, '203.0.113.9'), 'ip:127.0.0.1')
 })

@@ -25,9 +25,11 @@ export function signToken(secret: string, purpose: string, payload: string, expi
 export function readToken(secret: string, purpose: string, token: unknown, now: number): string | undefined {
   if (typeof token !== 'string' || token.length > 1024) return undefined
   const [body, until, signed, ...rest] = token.split('.')
-  if (!body || !until || !signed || rest.length > 0) return undefined
+  if (!body || !until || !signed || rest.length > 0 || !/^[0-9a-z]+$/.test(until)) return undefined
   const expires = Number.parseInt(until, 36)
   const payload = Buffer.from(body, 'base64url').toString('utf8')
+  // One token, one spelling: a body that does not encode back to itself was not written by `signToken`.
+  if (encode(payload) !== body) return undefined
   const expected = Buffer.from(signature(secret, purpose, payload, expires))
   const given = Buffer.from(signed)
   if (given.length !== expected.length || !timingSafeEqual(given, expected)) return undefined
@@ -37,7 +39,7 @@ export function readToken(secret: string, purpose: string, token: unknown, now: 
 export interface KnownLinkOptions {
   /** The secret the server reads links with: `LINK_SECRET`. */
   secret: string
-  /** How long the link names its person, in milliseconds. Defaults to 30 days. */
+  /** How long the link names its person, in milliseconds. Defaults to 30 days; at most 366. */
   lasts?: number
   now?: () => number
 }
@@ -48,10 +50,13 @@ export interface KnownLinkOptions {
  * server, and the browser that opened it is tied to that person.
  */
 export function knownLink(url: string, subject: Subject, options: KnownLinkOptions): string {
-  if (typeof subject !== 'string' || !subject || subject.length > 256) throw new TypeError('A link needs the subject it is for')
+  if (typeof subject !== 'string' || !subject || Buffer.byteLength(subject) > 512) throw new TypeError('A link needs the subject it is for, in 512 bytes or fewer')
   const address = new URL(url)
+  if (address.protocol !== 'https:' && address.protocol !== 'http:') throw new TypeError('A link must lead to an http or https address')
+  const lasts = options.lasts ?? 30 * DAY
+  if (!(lasts > 0 && lasts <= 366 * DAY)) throw new TypeError('A link lasts between a moment and 366 days')
   const now = (options.now ?? Date.now)()
-  address.searchParams.set('ag', signToken(options.secret, 'known', subject, now + (options.lasts ?? 30 * DAY)))
+  address.searchParams.set('ag', signToken(options.secret, 'known', subject, now + lasts))
   return address.href
 }
 

@@ -21,12 +21,14 @@ Scores depend only on stored data, never on the current time or on arrival order
 | `payment` | 0.97 | 10 | none | Card or bank token |
 | `fingerprint` | 0.97 | 20 | 720 days | Vendor visitor id the server confirmed |
 | `hardware` | 0.95 | 10 | none | Hashed machine id from your client |
+| `carry` | 0.95 | 4 | none | A visitor who followed a link from another of your sites, proven by a token made for that browser. Thins when one token is used by several |
 | `link` | 0.92 | 5 | none | A link sent to one person, opened in this browser. Thins as more people's links are opened there |
 | `dial` | 0.92 | 2 | none | A phone call that began just after exactly one visitor tapped its number |
 | `phone` | 0.90 | 25 | none | |
 | `ga` | 0.90 | 10 | none | Google Analytics client id |
 | `canvas` | 0.50 | 20 | 45 days | Browser hash nothing confirmed |
 | `ip` | 0.30 | 10 | 14 days | IPv6 is kept as its /64 |
+| `opened` | 0 | 0 | none | A note, not evidence: a browser opened the link sent to this person. It links nothing |
 | `dialed` | 0 | 0 | none | A note, not evidence: the number a visitor tapped, or a recorded call. It links nothing |
 
 ### From links to clusters

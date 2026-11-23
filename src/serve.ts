@@ -69,7 +69,7 @@ export function configFrom(env: Env) {
     origins: (env.ORIGINS ?? '').split(',').map((origin) => origin.trim().replace(/\/$/, '')).filter(Boolean),
     port: number('PORT', 8080),
     host: env.HOST || '0.0.0.0',
-    trustProxy: env.TRUST_PROXY === 'true',
+    trustProxy: env.TRUST_PROXY === 'true' ? 1 : env.TRUST_PROXY === 'false' ? 0 : number('TRUST_PROXY', 0),
     cookie: env.COOKIE === 'true' ? true : env.COOKIE && env.COOKIE !== 'false' ? { domain: env.COOKIE } : false,
     limit: env.RATE_LIMIT === 'off' ? (false as const) : { perMinute: number('RATE_PER_MINUTE', 120), burst: number('RATE_BURST', 60) },
     outboxInterval: number('OUTBOX_INTERVAL_MS', 30_000),
