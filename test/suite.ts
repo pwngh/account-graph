@@ -233,6 +233,30 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await members(graph, 'x'), ['x', 'y'])
     })
 
+    test('a reviewer joins two subjects, and the largest clusters are listed for review', async () => {
+      const clock = { now: T0 + DAY }
+      const { graph } = await fresh({ ...defaultPolicy, review: 2 }, { now: () => clock.now })
+      await graph.observe(chain('email', 'a', 'b', 'c'))
+      await graph.observe(chain('email', 'x', 'y'))
+      await graph.observe({ subject: 'solo', identifiers: ['email:solo'], at: T0 })
+      assert.deepEqual(await graph.clusters(), [
+        { id: 'a', size: 3, oversized: true },
+        { id: 'x', size: 2, oversized: false },
+      ])
+      assert.deepEqual(await graph.clusters(1), [{ id: 'a', size: 3, oversized: true }])
+
+      assert.deepEqual(await graph.join('solo', 'y', { by: 'dana' }), [{ subject: 'y', from: 'x', to: 'solo' }, { subject: 'x', from: 'x', to: 'solo' }].sort((p, q) => (p.subject < q.subject ? -1 : 1)))
+      assert.deepEqual(await members(graph, 'solo'), ['solo', 'x', 'y'])
+      assert.deepEqual((await graph.history('solo')).at(-1), { subject: 'solo', identifier: 'review:solo+y', at: T0 + DAY, event: 'review' })
+      assert.deepEqual((await graph.decisions()).map((d) => [d.action, d.about, d.by]), [['join', ['solo', 'y'], 'dana']])
+      await assert.rejects(graph.join('solo', 'solo'), TypeError)
+
+      await graph.separate('y', 'a')
+      await graph.separate('b', 'y')
+      assert.deepEqual(await graph.separations('y'), ['a', 'b'])
+      assert.deepEqual(await graph.separations('solo'), [])
+    })
+
     test('a cluster past the review size is flagged', async () => {
       const { graph } = await fresh({ ...defaultPolicy, review: 3 })
       for (const n of [1, 2, 3]) await graph.observe({ subject: `account:${n}`, identifiers: ['device:d'], at: T0 })
