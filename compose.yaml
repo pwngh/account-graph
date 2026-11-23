@@ -1,0 +1,33 @@
+# The server and its database, for trying it out:
+#   docker compose up --build
+# Change the two tokens before anything real touches it. GRAPH_PORT moves it off 8080.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: graph
+      POSTGRES_DB: graph
+    volumes:
+      - graph-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d graph']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  graph:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - '${GRAPH_PORT:-8080}:8080'
+    environment:
+      DATABASE_URL: postgres://postgres:graph@postgres:5432/graph
+      GRAPH_TOKEN: ${GRAPH_TOKEN:-change-me-service-token}
+      REVIEW_TOKEN: ${REVIEW_TOKEN:-change-me-review-token}
+      # The sites whose pages may report visits. The example site runs on port 3000.
+      ORIGINS: ${ORIGINS:-http://localhost:3000}
+
+volumes:
+  graph-data:
