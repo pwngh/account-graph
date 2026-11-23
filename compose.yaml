@@ -1,6 +1,6 @@
 # The server and its database, for trying it out:
 #   docker compose up --build
-# Change the two tokens before anything real touches it. GRAPH_PORT moves it off 8080.
+# Change the two tokens and LINK_SECRET before anything real touches it. GRAPH_PORT moves it off 8080.
 services:
   postgres:
     image: postgres:16
@@ -26,8 +26,57 @@ services:
       DATABASE_URL: postgres://postgres:graph@postgres:5432/graph
       GRAPH_TOKEN: ${GRAPH_TOKEN:-change-me-service-token}
       REVIEW_TOKEN: ${REVIEW_TOKEN:-change-me-review-token}
-      # The sites whose pages may report visits. The example site runs on port 3000.
-      ORIGINS: ${ORIGINS:-http://localhost:3000}
+      # The sites whose pages may report visits. The example site answers on these two.
+      ORIGINS: ${ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      # What the example site needs to show page events, a call tied to a tap, and signed links.
+      EVENTS: ${EVENTS:-brochure,phone_click}
+      CALL_NUMBERS: ${CALL_NUMBERS:-{"+15551230001":{"source":"google","campaignId":"20222"}}}
+      LINK_SECRET: ${LINK_SECRET:-change-me-link-secret-change-me}
+      # Every other setting in docs/operations.md, passed through when you set it. Unset, each is off.
+      REPORT_TIME_ZONE: ${REPORT_TIME_ZONE:-}
+      STAGES: ${STAGES:-}
+      ALERT_WEBHOOK: ${ALERT_WEBHOOK:-}
+      CHANGE_WEBHOOK: ${CHANGE_WEBHOOK:-}
+      TRUST_PROXY: ${TRUST_PROXY:-}
+      COOKIE: ${COOKIE:-}
+      RATE_PER_MINUTE: ${RATE_PER_MINUTE:-}
+      RATE_BURST: ${RATE_BURST:-}
+      RATE_LIMIT: ${RATE_LIMIT:-}
+      OUTBOX_INTERVAL_MS: ${OUTBOX_INTERVAL_MS:-}
+      OUTBOX_DELAY_MS: ${OUTBOX_DELAY_MS:-}
+      CALL_MIN_SECONDS: ${CALL_MIN_SECONDS:-}
+      COST_INTERVAL_MS: ${COST_INTERVAL_MS:-}
+      COST_DAYS: ${COST_DAYS:-}
+      FINGERPRINT_SECRET: ${FINGERPRINT_SECRET:-}
+      FINGERPRINT_REGION: ${FINGERPRINT_REGION:-}
+      MAXMIND_ACCOUNT_ID: ${MAXMIND_ACCOUNT_ID:-}
+      MAXMIND_LICENSE_KEY: ${MAXMIND_LICENSE_KEY:-}
+      MAXMIND_SERVICE: ${MAXMIND_SERVICE:-}
+      MAXMIND_HOST: ${MAXMIND_HOST:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_WEBHOOK_URL: ${TWILIO_WEBHOOK_URL:-}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      SMARTY_AUTH_ID: ${SMARTY_AUTH_ID:-}
+      SMARTY_AUTH_TOKEN: ${SMARTY_AUTH_TOKEN:-}
+      GOOGLE_ADS_CUSTOMER_ID: ${GOOGLE_ADS_CUSTOMER_ID:-}
+      GOOGLE_ADS_LOGIN_CUSTOMER_ID: ${GOOGLE_ADS_LOGIN_CUSTOMER_ID:-}
+      GOOGLE_SERVICE_ACCOUNT_FILE: ${GOOGLE_SERVICE_ACCOUNT_FILE:-}
+      GOOGLE_ADS_DEVELOPER_TOKEN: ${GOOGLE_ADS_DEVELOPER_TOKEN:-}
+      META_PIXEL_ID: ${META_PIXEL_ID:-}
+      META_ACCESS_TOKEN: ${META_ACCESS_TOKEN:-}
+      META_SITE_URL: ${META_SITE_URL:-}
+      META_TEST_EVENT_CODE: ${META_TEST_EVENT_CODE:-}
+      META_AD_ACCOUNT_ID: ${META_AD_ACCOUNT_ID:-}
+      META_ADS_TOKEN: ${META_ADS_TOKEN:-}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+      MICROSOFT_REFRESH_TOKEN: ${MICROSOFT_REFRESH_TOKEN:-}
+      MICROSOFT_DEVELOPER_TOKEN: ${MICROSOFT_DEVELOPER_TOKEN:-}
+      MICROSOFT_CUSTOMER_ID: ${MICROSOFT_CUSTOMER_ID:-}
+      MICROSOFT_ACCOUNT_ID: ${MICROSOFT_ACCOUNT_ID:-}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
+      TIKTOK_PIXEL_CODE: ${TIKTOK_PIXEL_CODE:-}
+      TIKTOK_ACCESS_TOKEN: ${TIKTOK_ACCESS_TOKEN:-}
+      TIKTOK_SITE_URL: ${TIKTOK_SITE_URL:-}
 
 volumes:
   graph-data:

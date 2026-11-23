@@ -343,7 +343,15 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         .filter(([name, value]) => NAME.test(name) && typeof value === 'string' && value.length <= 256)
         .slice(0, 10)
       if (custom.length > 0) touch.custom = Object.fromEntries(custom) as Record<string, string>
-      await graph.touch(touch)
+      // A visitor walking from one of your sites to another has not arrived from anywhere new.
+      // Without this, that walk would be the newest arrival and take the credit from the ad click that began it.
+      let ownSite = false
+      try {
+        ownSite = touch.referrer !== undefined && options.origins.includes(new URL(touch.referrer).origin)
+      } catch {}
+      if (ownSite) delete touch.referrer
+      const arrived = Object.keys(touch).some((field) => !['subject', 'at', 'landing'].includes(field))
+      if (arrived) await graph.touch(touch)
     }
   }
 

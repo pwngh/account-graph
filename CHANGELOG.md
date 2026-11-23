@@ -50,3 +50,5 @@
 - `createLineTypeLookup` asks Twilio what kind of line a number is; `phoneOfType` records a throwaway number as the `voip` kind (0.5) and a switchboard as nothing.
 - `/collect` and `/event` drop visits whose user agent names a crawler, previewer or uptime check (`bots` in `GET /stats`), and note a visit's `place` when the address lookup gives one.
 - `collect.js` adds `ag_device` and `ag_landing` to forms marked `data-ag-fields`, or to every form with `?forms=all` (`fill`, `fields`, `accountGraph.fields()`).
+- `/collect` records no touch for an arrival whose only source is a referrer among `origins`: a visitor moving between your own sites.
+- `compose.yaml` passes every server setting through, and switches on page events, a tracking number and signed links for the example site.

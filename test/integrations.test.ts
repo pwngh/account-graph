@@ -665,6 +665,12 @@ test('a link sent to one person ties the browser that opens it, and a visitor is
     const { token } = (await asked.json()) as { token: string }
     assert.equal((await page('/collect', { device: 'shop-device', carried: token }, 'https://shop.example')).status, 204)
     assert.deepEqual(await members('visitor:shop-device'), ['visitor:shop-device', 'visitor:site-device'])
+    // Walking between your own sites is not an arrival: the first site as referrer leaves no touch, though a campaign tag still does.
+    await page('/collect', { device: 'shop-device', touch: { referrer: 'https://site.example/pricing', landing: 'https://shop.example/' } }, 'https://shop.example')
+    assert.equal((await graph.counts()).touches, 1)
+    await page('/collect', { device: 'elsewhere', touch: { referrer: 'https://news.example/story', landing: 'https://shop.example/' } }, 'https://shop.example')
+    await page('/collect', { device: 'elsewhere', touch: { referrer: 'https://site.example/pricing', source: 'newsletter', landing: 'https://shop.example/' } }, 'https://shop.example')
+    assert.equal((await graph.counts()).touches, 3)
     // So a sign-up on the second site is credited to the ad click that landed on the first.
     await graph.observe({ subject: 'account:7', identifiers: ['device:shop-device'], at: clock + 1000 })
     assert.equal((await graph.attribute('account:7', { at: clock + 1000 })).credited?.gclid, 'G-site')

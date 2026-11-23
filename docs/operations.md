@@ -29,7 +29,9 @@ The last five lines say what is switched on. Each provider turns on when its var
 GRAPH_TOKEN=a-long-random-string REVIEW_TOKEN=another-one ORIGINS=https://example.org docker compose up --build
 ```
 
-Set `GRAPH_PORT` to publish it on another port. The compose file is for trying it out: it keeps the database in a local volume and uses a fixed database password.
+Set `GRAPH_PORT` to publish it on another port. Every variable in the table at the end of this page is passed through to the server when you set it, the same way as the three above.
+
+The compose file is for trying it out: it keeps the database in a local volume, uses a fixed database password, and switches on what the example site shows, with a placeholder `LINK_SECRET`. Set your own before anything real touches it.
 
 ## The script tag
 
