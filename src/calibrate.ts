@@ -129,9 +129,9 @@ export function fit(labeled: readonly Labeled[], policy: Policy, prior = 1): Fit
     return theta
   }
   // A kind that another of its group always outweighs is never moved by the pairs. So each grouped kind also gets a start
-  // in which it is the strong one, and the best of the ends is kept.
+  // in which it is the strong one, however much sharing thins it, and the best of the ends is kept.
   const groupOf = (kind: string) => policy.kinds[kind]!.group
-  const starts = [start, ...kinds.filter((kind) => kinds.some((other) => other !== kind && groupOf(kind) !== undefined && groupOf(other) === groupOf(kind))).map((kind) => ({ ...start, ...Object.fromEntries(kinds.filter((other) => groupOf(other) === groupOf(kind)).map((other) => [other, logit(other === kind ? 0.9 : 0.3)])) }))]
+  const starts = [start, ...kinds.filter((kind) => kinds.some((other) => other !== kind && groupOf(kind) !== undefined && groupOf(other) === groupOf(kind))).map((kind) => ({ ...start, ...Object.fromEntries(kinds.filter((other) => groupOf(other) === groupOf(kind)).map((other) => [other, logit(other === kind ? 0.9 : 0.01)])) }))]
   const theta = starts.map(descend).reduce((best, next) => (cost(next) < cost(best) ? next : best))
 
   const fitted: Policy = { ...policy, kinds: { ...policy.kinds } }

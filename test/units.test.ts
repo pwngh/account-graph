@@ -84,8 +84,12 @@ test('the household preset is a sound policy, and fit counts a group once', () =
   const fitted = fit(labeled, policy, 0.01)
   assert.ok(fitted.kinds.phone!.after < 0.2 && fitted.kinds.address!.after > 0.9, JSON.stringify(fitted.kinds))
   assert.ok(fitted.loss.after < fitted.loss.before)
-  // A pair's score is the stronger of the two under the weights found.
-  assert.deepEqual(fitted.calibration.map((bucket) => bucket.actual), [0, 1])
+  // The same holds where the address is thinned by the seven who share it.
+  const thinned = fit([...Array.from({ length: 70 }, () => ({ same: false, reasons: [phone] })), ...Array.from({ length: 30 }, () => ({ same: true, reasons: [phone, { ...address, evidence: (0.6 * 2) / 7, fanout: 7 }] }))], policy, 0.01)
+  assert.ok(thinned.kinds.phone!.after < 0.3 && thinned.kinds.address!.after > 0.9, JSON.stringify(thinned.kinds))
+  // A pair's score is the stronger of the two, not the two combined.
+  const half = fit(Array.from({ length: 40 }, (_, i) => ({ same: i < 24, reasons: [phone, address] })), policy, 100_000)
+  assert.ok(Math.abs(half.calibration[0]!.predicted - 0.85) < 0.01, JSON.stringify(half.calibration))
 })
 
 test('a conversion sends one click id and hashed match keys', () => {
