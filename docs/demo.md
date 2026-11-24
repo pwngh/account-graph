@@ -36,7 +36,7 @@ The story runs from a Monday to a Thursday that have passed. Each scene moves th
 | Scene | Demonstrates | View |
 | --- | --- | --- |
 | 1 | An ad visit with `office=north` and `lang=es` in its address | Journey |
-| 2 | A phone tap, and a call held uncounted until its result | Accounts |
+| 2 | A phone tap, what the firm's screen says while it rings, and a call held uncounted until its result | Accounts |
 | 3 | A caller who hung up in the queue: missed, uncounted, unsent | Board |
 | 4 | A call back that reaches the person | Journey |
 | 5 | Details entered by staff: the contact is tied to the call by phone at 85%, and the ad is not credited | Accounts |

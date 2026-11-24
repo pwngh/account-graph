@@ -268,7 +268,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, p
   const review = (view: string) => `${graphAt}/review#/${view}`
   /** The scenes, in order. Each does over HTTP what the site, the phone system or the office would, and says what came of it. */
   /** What a scene says came of it, and for some: how sure the credit of the contact's ad is, and what the firm's own screens and the phone show. */
-  interface Told { lines: string[]; credit?: { share: number; campaign: string | null }; link?: string }
+  interface Told { lines: string[]; credit?: { share: number; campaign: string | null }; link?: string; rings?: [string, string][] }
   /** The phone and the firm's own screen once a scene has run. */
   interface Shown { phone?: string; caption?: string; seconds?: number; desk?: { name: string; fields: [string, string][]; done: string } }
   const person = (view: string) => `#/${view}/${encodeURIComponent(demo.contact)}`
@@ -305,12 +305,15 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, p
       },
     },
     {
-      title: 'Tap to call', text: 'They tap the phone number. The phone system reports a connected call and holds it for a result.', see: ['Calls', review('calls')], stage: visitor, shown: { phone: 'calling', seconds: 22 },
+      title: 'Tap to call', text: 'They tap the phone number. While it rings the firm’s screen says which ad they came from. The call is held for a result.', see: ['Calls', review('calls')], stage: visitor, shown: { phone: 'calling', seconds: 22 },
       async run() {
         await at(0, 9, 4)
         await browser('/event', { device: 'v-4821', event: 'phone_click', number: demo.line })
+        // What whoever picks up would see, asked while it rings. It writes nothing.
+        const ringing = await ask('POST', '/call/ringing', { from: demo.phone, to: demo.line, at: clock() })
+        const rings: [string, string][] = [['Caller', `${ringing.known ? 'Has called before' : 'New'}, (555) 010-0042`], ['Came from', `${ringing.source} · ${ringing.campaign}`], ['Page', new URL(ringing.landing).pathname], ['Waiting for a call back', ringing.waiting.calls === 0 ? 'No missed calls' : `${ringing.waiting.calls} missed`]]
         const call = await ask('POST', '/call', { id: 'demo-1', from: demo.phone, to: demo.line, at: clock(), duration: 95, tags: { language: 'es' } })
-        return { lines: [`Linked to ${call.visitor} by the tap. State: ${call.state}. Counted: ${call.counted ? 'yes' : 'no'}.`] }
+        return { lines: [`Linked to ${call.visitor} by the tap. State: ${call.state}. Counted: ${call.counted ? 'yes' : 'no'}.`], rings }
       },
     },
     {
