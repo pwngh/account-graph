@@ -52,12 +52,14 @@ export interface OpsStore {
   jobs(): Promise<JobRun[]>
   /** Keeps an alert unless its key is already kept. Resolves to whether it was new. */
   addAlert(alert: KeptAlert): Promise<boolean>
-  /** Hands out the oldest undelivered alert not handed out since `now - lease`, so no two servers deliver one. */
-  claimAlert(now: number, lease: number): Promise<KeptAlert | undefined>
+  /** Keeps an alert as not delivered. One with its key that is still waiting stays as it is; one that was delivered waits again. */
+  keepAlert(alert: KeptAlert): Promise<void>
+  /** Hands out the oldest undelivered alert not tried since `before`, and notes that it is tried now, so no two servers deliver one. */
+  claimAlert(now: number, before: number): Promise<KeptAlert | undefined>
   alertDelivered(key: string, at: number): Promise<void>
   alertFailed(key: string, error: string): Promise<void>
-  /** Alerts not delivered yet, oldest first, and how many there are in all. */
-  undelivered(limit: number): Promise<{ alerts: KeptAlert[]; count: number }>
+  /** Alerts not delivered yet, oldest first. */
+  undelivered(): Promise<KeptAlert[]>
 }
 
 export interface OpsOptions {
@@ -78,9 +80,8 @@ export interface OpsOptions {
 export interface OpsState {
   feeds: { name: Feed; last: number | null; hours: number; quiet: boolean }[]
   jobs: (JobRun & { state: 'running' | 'stuck' | 'done' | 'failed' })[]
-  /** The oldest alerts that have not been delivered, and how many there are in all. */
+  /** Alerts that have not been delivered, oldest first. */
   undelivered: KeptAlert[]
-  undeliveredCount: number
   /** Whether a webhook is set. */
   alerts: boolean
   at: number
@@ -141,10 +142,11 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
   const onError = options.onError ?? console.error
 
   /** Delivers a kept alert, and writes down whether it arrived. */
-  async function post({ key, text }: { key: string; text: string }): Promise<void> {
+  async function post({ key, text }: { key: string; text: string }): Promise<boolean> {
     const error = await deliver(text)
     if (error === undefined) await store.alertDelivered(key, now())
     else await store.alertFailed(key, error)
+    return error === undefined
   }
   // When each kind was last sent, so it is not repeated within ten minutes.
   const sent = new Map<string, number>()
@@ -177,7 +179,7 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
       else {
         // Nobody heard this one, so the next of its kind must not be held back.
         if (sent.get(about) === at) sent.delete(about)
-        await store.addAlert({ key, text, at, error }).catch(onError)
+        await store.keepAlert({ key, text, at, error }).catch(onError)
       }
       return error === undefined
     },
@@ -219,19 +221,18 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
         }
       }
 
-      // One at a time, so a slow webhook never has two servers working through the same list.
-      const begun = now()
-      for (;;) {
-        const alert = await store.claimAlert(begun, 60_000)
-        if (!alert) break
-        await post(alert)
+      // One at a time, so a slow webhook never has two servers working through the same list. A webhook that
+      // refuses one will refuse the rest, so the first that does not arrive ends the pass.
+      const before = now() - 60_000
+      for (let n = 0; n < 50; n++) {
+        const alert = await store.claimAlert(now(), before)
+        if (!alert || !(await post(alert))) break
       }
     },
 
     async state() {
       const at = now()
       const feeds = await store.feeds()
-      const { alerts, count } = await store.undelivered(50)
       return {
         feeds: FEEDS.map((name) => {
           const hours = options.quiet?.[name] ?? 0
@@ -239,13 +240,12 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
           return { name, last: last ?? null, hours, quiet: hours > 0 && at - (last ?? watched ?? at) >= hours * HOUR }
         }),
         jobs: (await store.jobs()).map((job) => {
-          const ended = Math.max(job.succeeded ?? 0, job.failed ?? 0)
+          // How the run that began last stands, whatever an older one did since.
           const [newest] = job.open
-          const state = newest !== undefined && newest >= ended ? (at - newest >= STUCK ? 'stuck' : 'running') : (job.failed ?? 0) > (job.succeeded ?? 0) ? 'failed' : 'done'
+          const state = newest !== undefined && newest >= job.started ? (at - newest >= STUCK ? 'stuck' : 'running') : (job.failed ?? 0) > (job.succeeded ?? 0) ? 'failed' : 'done'
           return { ...job, open: job.open.filter((began) => at - began >= STUCK), state } as const
         }),
-        undelivered: alerts,
-        undeliveredCount: count,
+        undelivered: await store.undelivered(),
         alerts: options.url !== undefined,
         at,
       }
@@ -301,8 +301,12 @@ export function createMemoryOps(): OpsStore & { fed(feed: Feed, at: number): voi
       alerts.set(alert.key, { ...alert, tried: alert.at })
       return true
     },
-    async claimAlert(now, lease) {
-      const due = open().find((alert) => alert.tried <= now - lease)
+    async keepAlert(alert) {
+      if (alerts.get(alert.key)?.delivered === undefined && alerts.has(alert.key)) return
+      alerts.set(alert.key, { ...alert, tried: alert.at })
+    },
+    async claimAlert(now, before) {
+      const due = open().find((alert) => alert.tried <= before)
       if (due) due.tried = now
       return due && bare(due)
     },
@@ -314,9 +318,8 @@ export function createMemoryOps(): OpsStore & { fed(feed: Feed, at: number): voi
       const alert = alerts.get(key)
       if (alert) alert.error = error
     },
-    async undelivered(limit) {
-      const waiting = open()
-      return { alerts: waiting.slice(0, limit).map(bare), count: waiting.length }
+    async undelivered() {
+      return open().map(bare)
     },
   }
 }

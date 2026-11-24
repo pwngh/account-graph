@@ -11,9 +11,8 @@ function workings(ops) {
   const out = []
   if (ops.undelivered.length > 0) {
     out.push(el('section', {}, el('h2', {}, 'Alerts not delivered'),
-      el('p', { class: 'banner', role: 'alert' }, el('b', {}, `${amount(ops.undeliveredCount)} not delivered. `), ops.alerts ? 'Each is tried again every five minutes, and stays here until it arrives.' : 'No webhook is set, so nobody has been told. Set ALERT_WEBHOOK.'),
-      el('ul', {}, ...ops.undelivered.map((alert) => el('li', {}, alert.text, el('span', { class: 'reason' }, `${when(alert.at)}${alert.error ? `. ${alert.error}` : ''}`)))),
-      ops.undeliveredCount > ops.undelivered.length ? el('p', { class: 'muted' }, `The oldest ${amount(ops.undelivered.length)} are shown.`) : ''))
+      el('p', { class: 'banner', role: 'alert' }, el('b', {}, `${amount(ops.undelivered.length)} not delivered. `), ops.alerts ? 'Each is tried again every five minutes, and stays here until it arrives.' : 'No webhook is set, so nobody has been told. Set ALERT_WEBHOOK.'),
+      el('ul', {}, ...ops.undelivered.map((alert) => el('li', {}, alert.text, el('span', { class: 'reason' }, `${when(alert.at)}${alert.error ? `. ${alert.error}` : ''}`))))))
   } else if (!ops.alerts) out.push(el('section', {}, el('h2', {}, 'Alerts'), el('p', {}, 'No webhook is set, so what goes wrong is shown here and nobody is told.')))
 
   const feeds = el('table', {}, el('tr', {}, th('Feed'), th('Last written down'), th('Quiet after'), th('State')),

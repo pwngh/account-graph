@@ -631,12 +631,19 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       const { rows } = await pool.query(`insert into ${t('alert')} (key, text, at, subject, error, tried_at) values ($1, $2, $3, $4, $5, $3) on conflict do nothing returning 1`, [key, text, at, subject ?? null, error ?? null])
       return rows.length > 0
     },
-    async claimAlert(now, lease) {
+    async keepAlert({ key, text, at, subject, error }) {
+      await pool.query(
+        `insert into ${t('alert')} as a (key, text, at, subject, error, tried_at) values ($1, $2, $3, $4, $5, $3)
+         on conflict (key) do update set at = excluded.at, error = excluded.error, tried_at = excluded.tried_at, delivered_at = null where a.delivered_at is not null`,
+        [key, text, at, subject ?? null, error ?? null],
+      )
+    },
+    async claimAlert(now, before) {
       const { rows } = await pool.query(
         `update ${t('alert')} set tried_at = $1::bigint where key = (
-           select key from ${t('alert')} where delivered_at is null and tried_at <= $1::bigint - $2::bigint order by at limit 1 for update skip locked
+           select key from ${t('alert')} where delivered_at is null and tried_at <= $2::bigint order by at limit 1 for update skip locked
          ) returning *`,
-        [now, lease],
+        [now, before],
       )
       return rows[0] && toAlert(rows[0])
     },
@@ -646,9 +653,9 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
     async alertFailed(key, error) {
       await pool.query(`update ${t('alert')} set error = $2 where key = $1`, [key, error])
     },
-    async undelivered(limit) {
-      const { rows } = await pool.query(`select *, count(*) over ()::int as waiting from ${t('alert')} where delivered_at is null order by at limit $1`, [limit])
-      return { alerts: rows.map(toAlert), count: rows[0]?.waiting ?? 0 }
+    async undelivered() {
+      const { rows } = await pool.query(`select * from ${t('alert')} where delivered_at is null order by at`)
+      return rows.map(toAlert)
     },
   }
 

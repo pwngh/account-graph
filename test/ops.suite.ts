@@ -126,9 +126,9 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       assert.equal(errors.length, 3)
       // The same words again are the same message. Other words are another, and neither takes the other's place.
       assert.equal(await ops.alert('outbox', 'the outbox could not run'), false)
-      assert.equal((await ops.state()).undeliveredCount, 3)
+      assert.equal((await ops.state()).undelivered.length, 3)
       assert.equal(await ops.alert('outbox', 'the outbox still could not run'), false)
-      assert.equal((await ops.state()).undeliveredCount, 4)
+      assert.equal((await ops.state()).undelivered.length, 4)
       // Delivered once the webhook answers, by one server of two, each exactly once.
       hook.status = 200
       clock.now += 60_000
@@ -146,6 +146,32 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       hook.status = 200
       assert.equal(await ops.alert('costs:google', 'stale still'), true)
       assert.deepEqual((await ops.state()).undelivered.map((alert) => alert.text), ['stale'])
+      clock.now += 60_000
+      await ops.check()
+      assert.deepEqual([posted.at(-1), (await ops.state()).undelivered], ['stale', []])
+      // The very same words, not delivered again after they once were: they wait again.
+      hook.status = 500
+      clock.now += HOUR
+      await ops.alert('costs:google', 'stale')
+      assert.deepEqual((await ops.state()).undelivered.map((alert) => alert.text), ['stale'])
+      hook.status = 200
+      clock.now += 60_000
+      await ops.check()
+      await ops.alert('costs:google', 'stale still')
+      assert.deepEqual((await ops.state()).undelivered, [])
+      // A webhook that is down is tried once a pass, not once for every alert that waits.
+      hook.status = 500
+      for (let n = 0; n < 5; n++) await ops.alert(`many:${n}`, `one of many ${n}`)
+      const tries = errors.length
+      clock.now += 60_000
+      await ops.check()
+      assert.equal(errors.length, tries + 1)
+      hook.status = 200
+      clock.now += 60_000
+      await ops.check()
+      clock.now += 60_000
+      await ops.check()
+      assert.deepEqual((await ops.state()).undelivered, [])
       // The same kind is held back for ten minutes.
       assert.equal(await ops.alert('costs:google', 'again'), false)
 
@@ -195,6 +221,7 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       const newer = make().run('outbox', () => new Promise<void>((resolve) => (finishNewer = resolve)))
       await new Promise((resolve) => setTimeout(resolve, 20))
       const began = clock.now
+      clock.now += 1
       finish()
       await hanging
       clock.now += 15 * 60_000
