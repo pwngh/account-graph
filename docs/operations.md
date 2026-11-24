@@ -32,7 +32,7 @@ GRAPH_TOKEN=a-long-random-string REVIEW_TOKENS='{"dana":"another-one"}' ORIGINS=
 
 Compose also reads a `.env` file in the same directory. Run `cp .env.example .env` and fill it in. Set `GRAPH_PORT` to publish a different port.
 
-Compose passes the variables in [Environment variables](#environment-variables) through to the server, except `GRAPH_SCHEMA`, `HOST`, `PORT`, `POLICY_FILE` and `CALL_NUMBERS_FILE`. It sets `DATABASE_URL` itself.
+Compose passes the variables in [Environment variables](#environment-variables) through to the server, except `GRAPH_SCHEMA`, `HOST`, `PORT`, `POLICY_FILE`, `CALL_NUMBERS_FILE` and `SERVER_RANGES_FILE`. It sets `DATABASE_URL` itself.
 
 > **Use the compose file for evaluation.** It has a local volume, a fixed database password, the example site's features and a placeholder `LINK_SECRET`. Replace these before production use. Values in `compose.yaml` that start with `change-me` are public, and the server refuses to start with one when `ORIGINS` contains a site outside your own machine.
 
@@ -420,6 +420,7 @@ A partially set group stops the server at startup, with a message naming the mis
 | --- | --- | --- |
 | `FINGERPRINT_SECRET`, `FINGERPRINT_REGION` | none, `us` | Confirms Fingerprint events. |
 | `MAXMIND_ACCOUNT_ID`, `MAXMIND_LICENSE_KEY` | none | Classifies addresses with MaxMind. Set both. |
+| `SERVER_RANGES_FILE` | none | A file with the address ranges of data centers, written as `192.0.2.0/24` or `2001:db8::/32` in any text: what [AWS](https://ip-ranges.amazonaws.com/ip-ranges.json) and [Google Cloud](https://www.gstatic.com/ipranges/cloud.json) publish, one after the other. An address in them is recorded and is no evidence. Read when the server starts, so fetch it again now and then. |
 | `MAXMIND_SERVICE`, `MAXMIND_HOST` | `insights`, `geoip.maxmind.com` | MaxMind service and host. |
 | `TWILIO_AUTH_TOKEN`, `TWILIO_WEBHOOK_URL` | none | Accepts Twilio's call reports at `/calls/twilio`. Set both. |
 | `TEXT_CODES` | off | `true` gives each browser a code for your [text links](texts.md). |

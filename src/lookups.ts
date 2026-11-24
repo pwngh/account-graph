@@ -2,6 +2,9 @@
  * Facts that are the same for everybody and change slowly, kept as tables so
  * nothing is asked of anyone. Each answers one question and decides nothing.
  */
+import { BlockList, isIP } from 'node:net'
+import type { IpLookup } from './integrations/maxmind.ts'
+import { ZIPS } from './texas-zips.ts'
 
 const words = (text: string) => new Set(text.trim().split(/\s+/))
 /** Without case or accents. */
@@ -82,6 +85,11 @@ const AREAS = new Map(Object.entries(TEXAS).flatMap(([place, codes]) => [...word
 /** Where in Texas a number was first given out, or undefined. People keep a number when they move, so it says where they may be from. */
 export const texasArea = (e164: string): string | undefined => AREAS.get(/^\+1(\d{3})\d{7}$/.exec(e164)?.[1] ?? '')
 
+const COUNTIES = new Map(Object.entries(ZIPS).flatMap(([county, zips]) => zips.split(' ').map((zip) => [zip, county] as const)))
+
+/** The Texas county a ZIP code lies in, or undefined where it lies in several, or in none. By land and the 2020 census, so a new ZIP is not in it. */
+export const texasCounty = (zip: string): string | undefined => COUNTIES.get(/^(\d{5})(-\d{4})?$/.exec(zip.trim())?.[1] ?? '')
+
 const iso = (date: Date) => date.toISOString().slice(0, 10)
 const day = (year: number, month: number, date: number) => new Date(Date.UTC(year, month - 1, date))
 /** The nth of a weekday in a month, and the last for -1. Sunday is 0. */
@@ -125,3 +133,25 @@ const NADIE = new Set(['desconocido', 'desconocida', 'sin nombre', 'no tiene', '
 
 /** Whether a name is what is written in Spanish where none is known. */
 export const spanishPlaceholder = (name: string): boolean => NADIE.has(fold(name).replace(/[^a-z]+/g, ' ').trim())
+
+/**
+ * A lookup that knows data centers by the ranges their owners publish, from
+ * any text that holds them, such as the JSON of a cloud provider. It asks
+ * nobody. A range that is not one is left out, as is one of every address, and no range at all is refused.
+ */
+export function createRangeLookup(text: string): IpLookup {
+  const list = new BlockList()
+  let count = 0
+  for (const [, address, bits] of text.matchAll(/(?<![\w.:])([\da-f]*[.:][\da-f.:]+)\/(\d{1,3})(?![\w.])/gi)) {
+    const version = isIP(address!)
+    if (version === 0 || Number(bits) === 0 || Number(bits) > (version === 4 ? 32 : 128)) continue
+    list.addSubnet(address!, Number(bits), version === 4 ? 'ipv4' : 'ipv6')
+    count += 1
+  }
+  if (count === 0) throw new TypeError('No address range, such as 192.0.2.0/24, was found')
+  return async (address) => {
+    const version = isIP(address)
+    if (version === 0 || !list.check(address, version === 4 ? 'ipv4' : 'ipv6')) return undefined
+    return { country: undefined, asn: undefined, organization: undefined, userType: undefined, anonymous: false, hosting: true }
+  }
+}
