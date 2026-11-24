@@ -42,6 +42,15 @@ export function sourceOf(touch: Touch): string {
   return '(other)'
 }
 
+/**
+ * Whether an arrival was paid for: it carries an ad click, names a campaign
+ * by its id, or says so in its medium. Meta's click id alone does not say
+ * so, because links nobody paid for carry it too.
+ */
+export function paid(touch: Touch): boolean {
+  return Boolean(touch.gclid || touch.gbraid || touch.wbraid || touch.msclkid || touch.ttclid || touch.campaignId) || /^(cpc|ppc|cpm|cpv|paid.*|display)$/i.test(touch.medium ?? '')
+}
+
 // Making one is slow and asking it is not, so each zone's is kept.
 const clocks = new Map<string, Intl.DateTimeFormat>()
 function clockOf(timeZone: string): Intl.DateTimeFormat {
@@ -124,7 +133,7 @@ const round = (amount: number) => Math.round(amount * 1e6) / 1e6
 
 type Tally = { stages: Map<string, { count: number; value: number }>; outcomes: number; value: number; missed: number }
 type Worked = 'costDays' | 'missingDays' | 'thin' | 'costPerOutcome' | 'returnOnCost'
-type Line = Omit<ReportRow, 'stages' | 'breakdown' | Worked> & { costed: Map<string, number>; onDays: Map<string, { outcomes: number; value: number }>; stages: Map<string, { count: number; value: number }>; named: string; parts: Map<string, Tally> }
+type Line = Omit<ReportRow, 'stages' | 'breakdown' | Worked> & { costed: Map<string, number>; bought: boolean; onDays: Map<string, { outcomes: number; value: number }>; stages: Map<string, { count: number; value: number }>; named: string; parts: Map<string, Tally> }
 
 /** Counts one outcome among others. */
 function count(into: Tally, outcome: Counted): void {
@@ -172,11 +181,11 @@ const ratios = ({ cost, outcomes, value }: Spent) => ({
  * on both sides: an outcome on a day whose cost is not known would look
  * free. A recorded zero is cost data, and so is a day that cost nothing.
  */
-function worth(costDays: number, days: number, { campaign, campaignId }: { campaign: string; campaignId: string }, spent: Spent): Pick<ReportRow, Worked> {
-  // Money spent on no campaign in particular says nothing of what one campaign's outcomes cost. A campaign an ad platform
-  // numbered has a cost somewhere; one known only by a name may be a newsletter, so with no cost data nothing is missing.
+function worth(costDays: number, days: number, { campaign, campaignId, bought }: { campaign: string; campaignId: string; bought: boolean }, spent: Spent): Pick<ReportRow, Worked> {
+  // Money spent on no campaign in particular says nothing of what one campaign's outcomes cost. A campaign with
+  // paid arrivals has a cost somewhere; one without may be a newsletter, so with no cost data nothing is missing.
   const named = Boolean(campaignId || campaign)
-  const thin = named && costDays < days * ENOUGH && (costDays > 0 || campaignId !== '')
+  const thin = named && costDays < days * ENOUGH && (costDays > 0 || bought)
   return { costDays, missingDays: Math.max(0, days - costDays), thin, ...(named && costDays > 0 && !thin ? ratios(spent) : { costPerOutcome: null, returnOnCost: null }) }
 }
 
@@ -204,7 +213,7 @@ export function fold(
   const line = (source: string, campaignId: string, campaign: string): Line => {
     const key = keyOf(source, campaignId, campaign)
     let found = lines.get(key)
-    if (!found) lines.set(key, (found = { source, campaignId, campaign: campaignId ? '' : campaign, named: '', cost: 0, clicks: 0, impressions: 0, visits: 0, missed: 0, stages: new Map(), outcomes: 0, value: 0, parts: new Map(), costed: new Map(), onDays: new Map() }))
+    if (!found) lines.set(key, (found = { source, campaignId, campaign: campaignId ? '' : campaign, named: '', cost: 0, clicks: 0, impressions: 0, visits: 0, missed: 0, stages: new Map(), outcomes: 0, value: 0, parts: new Map(), costed: new Map(), bought: false, onDays: new Map() }))
     // A campaign known only by name keeps one spelling of it, the first in order.
     if (!campaignId && campaign < found.campaign) found.campaign = campaign
     return found
@@ -252,6 +261,7 @@ export function fold(
   }
 
   for (const touch of touches) lineOf(touch).visits += 1
+  for (const touch of all) if (paid(touch)) lineOf(touch).bought = true
   const valueOf = by === undefined ? undefined : dimension(by, timeZone)
   const whole = new Map<string, Tally>()
   // Where an outcome or a missed call is counted: its line, and under its value there and in the total.
@@ -286,7 +296,7 @@ export function fold(
   const order = (found: Line) => `${found.source}\u0000${found.campaignId}\u0000${found.campaign}`
   const sorted = [...lines.values()].sort((x, y) => y.cost - x.cost || y.value - x.value || y.visits - x.visits || (order(x) < order(y) ? -1 : 1))
   // A step is named by whoever recorded the outcome, so the names are kept in maps until the very end.
-  const rows = sorted.map(({ named: _, stages, parts, costed: costDays, onDays, ...found }): ReportRow => {
+  const rows = sorted.map(({ named: _, stages, parts, costed: costDays, onDays, bought, ...found }): ReportRow => {
     for (const [name, stage] of stages) {
       stage.value = round(stage.value)
       const sum = sums.get(name) ?? { count: 0, value: 0 }
@@ -310,7 +320,7 @@ export function fold(
       spent.outcomes += onDays.get(day)?.outcomes ?? 0
       spent.value += onDays.get(day)?.value ?? 0
     }
-    const worked = worth(costDays.size, days, found, spent)
+    const worked = worth(costDays.size, days, { ...found, bought }, spent)
     if (worked.thin) leftOut += 1
     else if (costDays.size > 0 && (found.campaignId || found.campaign)) {
       counted += 1

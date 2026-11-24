@@ -410,7 +410,7 @@ export interface ReportRow {
   /** How many days of the period, up to today, have cost data for this campaign, and how many have none. */
   costDays: number
   missingDays: number
-  /** Fewer than half of the days have cost data, which is too few to say what anything cost. Never so for spend on no campaign, nor for a campaign known only by name with no cost at all. On the total, every campaign that would count is so. */
+  /** Fewer than half of the days have cost data, which is too few to say what anything cost. Never so for spend on no campaign, nor for a campaign with no paid arrival and no cost at all. On the total, every campaign that would count is so. */
   thin: boolean
   /**
    * The cost over the outcomes credited to this campaign on the days that

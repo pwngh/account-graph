@@ -189,7 +189,7 @@ A cost per outcome is easy to get wrong in two ways: dividing all the money by a
 - It uses **only outcomes credited to that campaign**. Outcomes nothing could be credited with cost no campaign anything.
 - It uses **only days that have cost data for that campaign**, on both sides. An outcome on a day with no cost would look free.
 - It says how many days are missing: `missingDays` of `days`. Days still to come are not missing.
-- When fewer than half of the days have cost data, `thin` is true and both figures are withheld. A campaign known only by its name, with no cost at all, is not counted as missing any: it may be a newsletter. Spend on no campaign in particular gives no figure.
+- When fewer than half of the days have cost data, `thin` is true and both figures are withheld. A campaign whose arrivals were not paid for, and which has no cost at all, is not counted as missing any: it may be a newsletter. Spend on no campaign in particular gives no figure.
 - The total is worked out the same way, over the campaigns that were not withheld. `leftOut` says how many were.
 
 A day with no row is a missing day, even where the campaign was simply paused: a platform that sends no row does not say which. Post a row of zero for a day you know cost nothing.

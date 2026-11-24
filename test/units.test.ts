@@ -5,8 +5,7 @@ import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
 import { components, conversionEvent, createAlerter, createGraph, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, ingestRequest, ip, knownLink, ladderProblems, measure, normalizeEmail, normalizePhone, phoneOfType, policyFrom, policyHash, policyProblems, readToken, scorePairs, signToken, sourceOf, withStage } from '../src/index.ts'
 import { summarizeCalls } from '../src/callreport.ts'
-import { dayIn } from '../src/report.ts'
-import { paid } from '../src/ops.ts'
+import { dayIn, paid } from '../src/report.ts'
 import { weigh } from '../src/policy.ts'
 import type { Edge, IdentifierState, KeptCall, Reason } from '../src/index.ts'
 import { configFrom } from '../src/serve.ts'
@@ -476,6 +475,9 @@ test('what an outcome cost uses the outcomes of that campaign, on the days whose
   const unnumbered = fold('2026-03-01', '2026-03-10', [cost('2026-03-01', '', 5)], [{ subject: 's', at: 0, source: 'newsletter', campaign: 'march' }], [])
   assert.deepEqual(unnumbered.rows.map((each) => [each.source, each.thin]), [['google', false], ['newsletter', false]])
   assert.equal(unnumbered.leftOut, 0)
+  // One known by its name whose arrivals were ad clicks was paid for, so its cost is missing.
+  const clicked = fold('2026-03-01', '2026-03-10', [], [{ subject: 's', at: 0, gclid: 'G', campaign: 'spring' }], [])
+  assert.deepEqual([clicked.rows[0]!.thin, clicked.rows[0]!.missingDays, clicked.leftOut], [true, 10, 1])
   // Days still to come are not missing.
   const early = fold('2026-03-01', '2026-03-31', costs, [], credited, { through: '2026-03-10' })
   assert.deepEqual([early.days, early.rows.find((each) => each.campaignId === 'full')!.missingDays], [10, 0])
