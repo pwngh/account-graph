@@ -204,7 +204,7 @@ Google gets one click id per conversion: `gclid`, else `gbraid`, else `wbraid`. 
 | Still failing after 8 tries | `failed`, with the last error |
 | The platform rejects a request for one bad event | Each event is sent alone; only the bad one is `failed` |
 | No trusted click and no email or phone | `skipped`: `no_match_key` |
-| The person, or the browser that clicked, refused ad measurement | `skipped`: `consent_denied` |
+| The person, or the browser that clicked, refused ad measurement, or has since the outcome that said yes | `skipped`: `consent_denied` |
 | The outcome is older than the platform accepts: 7 days for Meta, 90 for Microsoft | `skipped`: `too_old` |
 | A click below 0.9 confidence, but an email or phone | Sent with the email or phone alone |
 

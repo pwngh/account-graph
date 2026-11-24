@@ -204,7 +204,7 @@ On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes i
 | `CHANGE_WEBHOOK` | none | A URL to post cluster changes to. |
 | `ALERT_WEBHOOK` | none | A URL to post failures to, as `{"text": "…"}`. |
 | `POLICY`, `POLICY_FILE` | the default policy | What differs from it, as JSON or as a file of JSON. Set one at most. |
-| `AUDIT_HEAD_HOURS` | `0` | Post the newest decision's hash to `ALERT_WEBHOOK` at start and every so many hours. `0` is never. |
+| `AUDIT_HEAD_HOURS` | `0` | Post the newest decision's hash to `ALERT_WEBHOOK` at start and every so many hours, at least one. `0` is never. |
 | `STAGES` | none | Your steps in order, as JSON, each with a `value`, `currency` and `action`. See [the report](report.md#steps-and-what-each-is-worth). |
 | `LINK_SECRET` | none | Signs links that name a person, and the tokens that carry a visitor between your sites. At least 16 characters. |
 | `EVENTS` | none | Names of page events to keep, separated by commas: `inquiry,phone_click`. |

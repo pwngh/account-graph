@@ -355,7 +355,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     }
     const visit = { subject, identifiers, at, event: 'visit' }
     await graph.observe(also.length > 0 ? [visit, ...also] : visit)
-    if (consent) await graph.consent(subject, consent, { source: optedOut ? 'browser signal' : 'banner' })
+    if (consent) await graph.consent(subject, consent, { at, source: optedOut ? 'browser signal' : 'banner' })
 
     if (advertising && body.touch && typeof body.touch === 'object') {
       const touch: Touch = { subject, at }
@@ -473,7 +473,6 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       for (const link of await graph.links(member)) if (members.has(link.subject)) add(member, link.subject, link.score, link.level)
     }
     const separated = await graph.separations(subject)
-    const answers = await graph.consentHistory(subject)
     // What was decided about this subject and each one it is tied to or kept from, and which of the others shown are kept apart.
     const shown = [...new Set([...separated, ...links.map((link) => link.subject), ...placed])].filter((other) => other !== subject).slice(0, 24)
     const among: [Subject, Subject][] = []
@@ -489,8 +488,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       apart: among,
       flows: await graph.flows(subject),
       rings: await graph.rings(subject),
-      consent: answers.slice(0, 50),
-      consents: answers.length,
+      consent: await graph.consentHistory(subject, 50),
       history: (await graph.history(subject, 100)).reverse(),
     }
   }

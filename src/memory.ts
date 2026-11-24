@@ -266,8 +266,8 @@ export function createMemoryStore(): Store {
       return out
     },
 
-    async consentHistory(subject) {
-      return (consents.get(subject) ?? []).map((answer) => ({ ...answer })).sort(standingFirst)
+    async consentHistory(subject, limit) {
+      return (consents.get(subject) ?? []).map((answer) => ({ ...answer })).sort(standingFirst).slice(0, limit)
     },
 
     async pruneConsent(before) {

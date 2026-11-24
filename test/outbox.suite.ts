@@ -141,6 +141,18 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       await graph.consent('contact:1', { adUserData: true, adPersonalization: true }, { at: T0 + 30, source: 'form' })
       await outbox.retry('enroll-1')
       assert.equal((await outbox.run()).sent, 1)
+      // An outcome that says yes itself is still not sent once the person, or the browser that clicked, has said no since.
+      for (const [n, who] of [[2, 'contact:2'], [3, 'visitor:v3']] as const) {
+        await enroll(graph, n)
+        await outbox.record(outcome(n, { consent: { adUserData: true, adPersonalization: true } }))
+        await graph.consent(who, { adUserData: false, adPersonalization: false }, { at: outcome(n).at + 1 })
+        assert.deepEqual([await outbox.run(), (await outbox.get(`enroll-${n}`))[0]!.note], [{ sent: 0, skipped: 1, failed: 0, retried: 0 }, 'consent_denied'])
+      }
+      // A refusal from before the outcome does not stand against it.
+      await enroll(graph, 4)
+      await graph.consent('contact:4', { adUserData: false, adPersonalization: false }, { at: outcome(4).at - 1 })
+      await outbox.record(outcome(4, { consent: { adUserData: true, adPersonalization: true } }))
+      assert.equal((await outbox.run()).sent, 1)
     })
 
     test('a weakly tied click is left out and the email is sent alone', async () => {

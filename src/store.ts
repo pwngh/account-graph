@@ -72,8 +72,8 @@ export interface Tx {
   addConsent(subject: Subject, answer: ConsentAnswer): Promise<void>
   /** The standing answer of each given subject, the one `standingFirst` puts first. A subject that never answered is absent. */
   consentOf(subjects: readonly Subject[]): Promise<Map<Subject, Consent>>
-  /** Every answer of a subject, the standing one first. */
-  consentHistory(subject: Subject): Promise<ConsentAnswer[]>
+  /** Every answer of a subject, the standing one first. With `limit`, only that many. */
+  consentHistory(subject: Subject, limit?: number): Promise<ConsentAnswer[]>
   /** Deletes answers written down before a time, except each subject's standing one. Returns how many went. */
   pruneConsent(before: number): Promise<number>
   addTouch(touch: Touch): Promise<void>

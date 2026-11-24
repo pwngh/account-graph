@@ -289,8 +289,8 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       return out
     },
 
-    async consentHistory(subject) {
-      const { rows } = await db.query(`select * from ${t('consent_log')} where subject = $1 order by ${STANDING}`, [subject])
+    async consentHistory(subject, limit) {
+      const { rows } = await db.query(`select * from ${t('consent_log')} where subject = $1 order by ${STANDING} limit $2`, [subject, limit ?? null])
       return rows.map((row) => ({ at: Number(row.at), adUserData: row.ad_user_data, adPersonalization: row.ad_personalization, ...(row.source !== null && { source: row.source }), recorded: Number(row.recorded_at) }))
     },
 
@@ -677,6 +677,7 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
               recorded_at bigint not null
             );
             create index if not exists consent_log_subject on ${schema}.consent_log (subject, at);
+            lock table ${schema}.consent in access exclusive mode;
             insert into ${schema}.consent_log (subject, at, ad_user_data, ad_personalization, source, recorded_at)
               select subject, 0, ad_user_data, ad_personalization, 'before history', (extract(epoch from now()) * 1000)::bigint from ${schema}.consent;
             drop table ${schema}.consent;`,

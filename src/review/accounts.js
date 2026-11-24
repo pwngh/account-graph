@@ -100,7 +100,7 @@ function profileOf(profile) {
     const consent = el('table', {}, el('tr', {}, th('Given'), th('Measure ads'), th('Personalize ads'), th('Where'), th('Written down'), th('')))
     const word = (granted) => el('span', { class: granted ? 'same' : 'apart' }, granted ? 'granted' : 'denied')
     for (const [i, answer] of profile.consent.entries()) consent.append(el('tr', {}, td('', answer.at > 0 ? when(answer.at) : '(not recorded)'), td('', word(answer.adUserData)), td('', word(answer.adPersonalization)), td('who', answer.source ?? '(not recorded)'), td('', when(answer.recorded)), td('', i === 0 ? el('span', { class: 'chip' }, 'stands') : '')))
-    detail.push(el('section', {}, el('h2', {}, `Advertising consent, newest ${profile.consent.length} of ${profile.consents}`), wide('Advertising consent', consent),
+    detail.push(el('section', {}, el('h2', {}, `Advertising consent, newest ${profile.consent.length}`), wide('Advertising consent', consent),
       el('p', { class: 'muted' }, 'What was answered about advertising, and nothing else. It is not a record of consent to be called or written to.')))
   }
 

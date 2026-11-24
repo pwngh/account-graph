@@ -121,8 +121,8 @@ export interface Graph {
   consent(subject: Subject, consent: Consent, given?: { at?: number; source?: string }): Promise<void>
   /** The standing answer of each given subject. A subject that never answered is absent. */
   consentOf(subjects: readonly Subject[]): Promise<Map<Subject, Consent>>
-  /** Every answer a subject gave, the standing one first. */
-  consentHistory(subject: Subject): Promise<ConsentAnswer[]>
+  /** Every answer a subject gave, the standing one first. With `limit`, only that many. */
+  consentHistory(subject: Subject, limit?: number): Promise<ConsentAnswer[]>
   /** Records a reviewer's decision that two subjects are one person. They join one cluster unless separated. */
   join(a: Subject, b: Subject, why?: Why): Promise<Change[]>
   /** A number that is different after every write: the same number means nothing has changed. */
@@ -745,8 +745,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return store.read((tx) => tx.consentOf(subjects))
     },
 
-    consentHistory(subject) {
-      return store.read((tx) => tx.consentHistory(subject))
+    consentHistory(subject, limit) {
+      return store.read((tx) => tx.consentHistory(subject, limit))
     },
 
     async transfer(flow) {

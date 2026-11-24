@@ -287,7 +287,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
       log(`audit: ${String((error as Error)?.message ?? error)}`)
     }
   }
-  const auditTimer = alert && config.auditHours > 0 ? setInterval(sendHead, Math.min(2 ** 31 - 1, Math.max(60_000, config.auditHours * 3_600_000))) : undefined
+  const auditTimer = alert && config.auditHours > 0 ? setInterval(sendHead, Math.min(2 ** 31 - 1, Math.max(3_600_000, config.auditHours * 3_600_000))) : undefined
   auditTimer?.unref()
 
   // Visits that arrive together are written together.

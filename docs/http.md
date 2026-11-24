@@ -91,7 +91,7 @@ The four `POST` routes answer with the subjects whose cluster moved. With the se
 | `POST /join`, list | The same without `separated`: two records another system merged are one person here too. |
 | `POST /observe` | One observation, or a list: `{ subject, identifiers, at, event? }`. Answers with the cluster changes. |
 | `POST /touch` | A marketing touch: `{ subject, at, gclid?, source?, medium?, campaign?, campaignId?, … }`. |
-| `POST /consent` | `{ subject, consent: { adUserData, adPersonalization }, at?, source? }`. Adds an answer about advertising; the newest by `at` stands. |
+| `POST /consent` | `{ subject, consent: { adUserData, adPersonalization }, at?, source? }`. Adds an answer about advertising; the newest by `at` stands. An `at` more than a day ahead is refused. |
 | `GET /attribute?subject=&at=` | The touches that led to a conversion by this subject, and the one credited. |
 | `POST /transfer` | `{ from, to, amount, at, asset? }`. Records value moving, and answers with the identity tie between the two. |
 | `POST /convert` | An outcome: `{ transactionId, subject, at, stage?, value?, currency?, action?, email?, phone? }`. Counted for the report; with `action`, also sent to the ad platforms. A `stage` listed in `STAGES` supplies the value, currency and action it leaves out. |
