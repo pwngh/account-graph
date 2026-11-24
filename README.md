@@ -1,7 +1,7 @@
 # account-graph
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p30-accounts.png" width="100%" alt="The Accounts view: a graph of one person's linked IDs, with a related account and two kept apart">
+  <img src="https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p31-accounts.png" width="100%" alt="The Accounts view: a graph of one person's linked IDs, with a related account and two kept apart">
   <br>
   <sub>One person's IDs in the Accounts view. All screenshots show sample data.</sub>
 </p>
@@ -99,9 +99,9 @@ Four of its seven views. Accounts is the picture at the top, and the others are 
 
 | Board | Journey |
 | --- | --- |
-| ![Board: missed calls and people by step](https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p30-board.png) | ![Journey: one person's timeline](https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p30-journey.png) |
+| ![Board: missed calls and people by step](https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p31-board.png) | ![Journey: one person's timeline](https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p31-journey.png) |
 | **Channels** | **Health** |
-| ![Channels: spend, outcomes and ROAS by campaign](https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p30-channels.png) | ![Health: feeds, conversions and matching rules](https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p30-health.png) |
+| ![Channels: spend, outcomes and ROAS by campaign](https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p31-channels.png) | ![Health: feeds, conversions and matching rules](https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p31-health.png) |
 
 ## How it works
 
