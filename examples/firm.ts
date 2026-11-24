@@ -268,7 +268,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, p
   const review = (view: string) => `${graphAt}/review#/${view}`
   /** The scenes, in order. Each does over HTTP what the site, the phone system or the office would, and says what came of it. */
   /** What a scene says came of it, and for some: how sure the credit of the contact's ad is, and what the firm's own screens and the phone show. */
-  interface Told { lines: string[]; credit?: { share: number; campaign: string | null }; link?: string; rings?: [string, string][] }
+  interface Told { lines: string[]; credit?: { share: number; campaign: string | null }; link?: string; card?: { title: string; path: string; fields: [string, string][] } }
   /** The phone and the firm's own screen once a scene has run. */
   interface Shown { phone?: string; caption?: string; seconds?: number; desk?: { name: string; fields: [string, string][]; done: string } }
   const person = (view: string) => `#/${view}/${encodeURIComponent(demo.contact)}`
@@ -311,9 +311,9 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, p
         await browser('/event', { device: 'v-4821', event: 'phone_click', number: demo.line })
         // What whoever picks up would see, asked while it rings. It writes nothing.
         const ringing = await ask('POST', '/call/ringing', { from: demo.phone, to: demo.line, at: clock() })
-        const rings: [string, string][] = [['Caller', `${ringing.known ? 'Has called before' : 'New'}, (555) 010-0042`], ['Came from', `${ringing.source} · ${ringing.campaign}`], ['Page', new URL(ringing.landing).pathname], ['Waiting for a call back', ringing.waiting.calls === 0 ? 'No missed calls' : `${ringing.waiting.calls} missed`]]
+        const card = { title: 'Incoming call', path: 'POST /call/ringing', fields: [['Caller', `${ringing.known ? 'Has called before' : 'New'}, (555) 010-0042`], ['Came from', `${ringing.source} · ${ringing.campaign}`], ['Page', new URL(ringing.landing).pathname], ['Waiting for a call back', ringing.waiting.calls === 0 ? 'No missed calls' : `${ringing.waiting.calls} missed`]] as [string, string][] }
         const call = await ask('POST', '/call', { id: 'demo-1', from: demo.phone, to: demo.line, at: clock(), duration: 95, tags: { language: 'es' } })
-        return { lines: [`Linked to ${call.visitor} by the tap. State: ${call.state}. Counted: ${call.counted ? 'yes' : 'no'}.`], rings }
+        return { lines: [`Linked to ${call.visitor} by the tap. State: ${call.state}. Counted: ${call.counted ? 'yes' : 'no'}.`], card }
       },
     },
     {
@@ -453,7 +453,10 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, p
         const { joined } = await ask('GET', `/between?a=${demo.contact}&b=${demo.other}`)
         await ask('POST', '/separate', { source: 'matters', pairs: [{ a: demo.contact, b: demo.other, reason: 'sides of one matter' }] })
         const after = await ask('GET', `/between?a=${demo.contact}&b=${demo.other}`)
-        return { lines: [`Before: ${joined ? 'joined by a shared phone and email' : 'related'}. After: separated.`, `Same cluster: ${after.joined ? 'yes' : 'no'}.`] }
+        // What a firm's own conflict check could ask before it takes a matter. It writes nothing.
+        const { conflicts } = await ask('POST', '/conflicts', { subjects: [demo.contact, demo.other] })
+        const card = { title: 'Conflict check', path: 'POST /conflicts', fields: [['People asked about', 'Inés Vega, Tomás Vega'], ['Answer', conflicts[0]?.how === 'recorded' ? 'Kept apart, on record' : 'None known'], ['Rests on', conflicts[0] ? Object.values(conflicts[0].rests).join(', ') : 'Nothing on record']] as [string, string][] }
+        return { lines: [`Before: ${joined ? 'joined by a shared phone and email' : 'related'}. After: separated.`, `Same cluster: ${after.joined ? 'yes' : 'no'}.`], card }
       },
     },
     {
