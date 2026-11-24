@@ -16,9 +16,9 @@ async function whatFollowed(box, report, address, step, within) {
     el('label', {}, 'Who went on to', pick), known, el('label', {}, 'within days', count), el('button', { class: 'primary' }, 'Show'))
   const section = el('section', {}, el('h2', {}, 'What followed a call, not what it caused'), form)
   box.append(section)
-  if (!step) return void section.append(el('p', { class: 'muted' }, 'Name a step to see who reached it after calling.'))
+  if (!step) return
   const answer = await api('GET', `/followed?from=${report.from}&to=${report.to}&step=${encodeURIComponent(step)}&days=${days}`)
-  section.append(el('p', { class: 'muted' }, `People whose call was ${answer.from} to ${answer.to}, days in ${answer.timeZone}, and how many reached "${answer.step}" within ${amount(answer.days)} days. People choose whether to call and how long to talk, and someone chooses whom to ring back, so a difference between two rows is not an effect.`))
+  section.append(el('p', { class: 'muted' }, `People whose call was ${answer.from} to ${answer.to}, days in ${answer.timeZone}, and how many reached "${answer.step}" within ${amount(answer.days)} days.`), notes('People choose whether to call and how long to talk, and someone chooses whom to ring back, so a difference between two rows is not an effect.'))
   for (const group of answer.groups) {
     const rows = group.rows.map((row) => el('tr', {}, td('', row.name), td('num', amount(row.people)), td('num', amount(row.reached)), td('num', percent(row.share))))
     section.append(el('h2', {}, GROUPS[group.by]))
@@ -27,7 +27,7 @@ async function whatFollowed(box, report, address, step, within) {
       group.thin > 0 ? el('p', { class: 'muted' }, `${amount(group.thin)} ${group.thin === 1 ? 'person is' : 'people are'} in rows of fewer than ${amount(answer.least)}, which are not shown.`) : '')
   }
   const { first, returned } = answer.leftOut
-  section.append(el('p', { class: 'muted' }, `Left out of the first three tables: ${amount(first.already)} who had reached the step before the call ended, ${amount(first.running)} still inside their days. Left out of the last: ${amount(returned.already)} who had reached the step by the landmark, ${amount(returned.running)} still inside their days, ${amount(returned.through)} who got through on their own before it.`))
+  section.append(notes(`Left out of the first three tables: ${amount(first.already)} who had reached the step before the call ended, ${amount(first.running)} still inside their days. Left out of the last: ${amount(returned.already)} who had reached the step by the landmark, ${amount(returned.running)} still inside their days, ${amount(returned.through)} who got through on their own before it.`))
 }
 
 view('channels', 'Channels', async (box, first, last, by = '', step = '', within = '30', per = '') => {
@@ -47,11 +47,8 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
     if (report.currencies.length === 1) coin = new Intl.NumberFormat(undefined, { style: 'currency', currency: report.currencies[0] })
   } catch {}
   const cash = (n) => (coin ? coin.format(n) : money(n))
-  const none = () => el('span', { class: 'muted' }, '—')
-  // Nothing happened, which is known. Not the same as not recorded, nor as not applying.
-  const tally = (n) => (n > 0 ? amount(n) : el('span', { class: 'muted' }, '0'))
   const stages = report.steps.filter((step) => report.total.stages[step])
-  const unknown = () => el('span', { class: 'muted' }, '(not recorded)')
+  const unknown = unrecorded
   const withheld = (row) => el('span', { class: 'muted', title: row === report.total ? 'No campaign has cost data on enough days to say.' : `Cost data for ${row.costDays} of ${report.days} days is too little to say.` }, 'withheld')
   const each = (row) => (row.costPerOutcome !== null ? cash(row.costPerOutcome) : row.thin ? withheld(row) : none())
   const back = (row) => (row.returnOnCost !== null ? `${row.returnOnCost.toFixed(1)}×` : row.thin ? withheld(row) : none())
@@ -62,16 +59,17 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
   }
   // How many people, where that is not how many outcomes: a renewal is a second outcome and not a second person.
   const counted = (step) => (step ? [amount(step.count), step.people === step.count ? '' : el('span', { class: 'reason' }, `${amount(step.people)} ${step.people === 1 ? 'person' : 'people'}`)] : [tally(0)])
-  // The first column of a group carries the line that sets it apart.
-  const edge = ([cell, ...rest]) => (cell.classList.add('edge'), [cell, ...rest])
   const reached = (row) => edge([...stages.map((stage) => td('num', ...counted(row.stages[stage]))), td('num', tally(row.people)), ...(report.total.missed > 0 ? [td('num', tally(row.missed))] : [])])
   const cells = (row) => [...edge([...spent(row), td('num', tally(row.visits))]), ...reached(row), ...edge([td('num', cash(row.value)), td('num', each(row)), td('num', back(row))])]
   // A campaign is charged whole, so its cost, clicks and arrivals stay on its own line and are not split.
   const split = (row) => (row.breakdown ?? []).filter((part) => part.outcomes + part.missed > 0 || part.name === '(not recorded)').map((part) => el('tr', { class: 'part' }, td(''), td('who', part.name), ...edge([td(''), td(''), td('')]), ...reached(part), ...edge([td('num', cash(part.value)), td(''), td('')])))
-  const group = (text, columns) => el('th', { scope: 'colgroup', colspan: columns, class: 'edge group' }, text)
   const table = el('table', {}, el('tr', {}, el('td', { colspan: 2 }), group('Spend and traffic', 3), group('What followed', stages.length + 1 + (report.total.missed > 0 ? 1 : 0)), group('What it was worth', 3)),
     el('tr', {}, th('Source'), th('Campaign'), ...edge([th('Cost', 'num'), th('Clicks billed', 'num'), th('Arrivals seen', 'num')]),
       ...edge([...stages.map((stage) => th(stage, 'num')), th('People', 'num'), ...(report.total.missed > 0 ? [th('Missed calls', 'num')] : [])]), ...edge([th('Value', 'num'), th(per ? `Cost per ${per}` : 'Cost per outcome', 'num'), th('Return', 'num')])))
+  const all = report.total
+  if (report.rows.length > 0) section.append(tiles(['Spent', all.costDays > 0 ? cash(all.cost) : '(not recorded)', all.missingDays > 0 && all.costDays > 0 ? `${amount(all.missingDays)} of ${amount(report.days)} days missing` : ''], ['Worth', cash(all.value), `${amount(all.outcomes)} ${all.outcomes === 1 ? 'outcome' : 'outcomes'}`], ['People', amount(all.people), `${amount(all.visits)} arrivals seen`],
+    [per ? `Cost per ${per}` : 'Cost per outcome', all.costPerOutcome !== null ? cash(all.costPerOutcome) : all.thin ? 'withheld' : '—', report.leftOut > 0 ? `leaves out ${amount(report.leftOut)} ${report.leftOut === 1 ? 'campaign' : 'campaigns'}` : ''], ['Return', all.returnOnCost !== null ? `${all.returnOnCost.toFixed(1)}×` : all.thin ? 'withheld' : '—', report.leftOut > 0 ? `leaves out ${amount(report.leftOut)} ${report.leftOut === 1 ? 'campaign' : 'campaigns'}` : ''],
+    all.missed > 0 && ['Missed calls', amount(all.missed), 'by result, returned ones too']))
   const note = (parts) => (parts.some(Boolean) ? el('span', { class: 'reason' }, parts.filter(Boolean).join(' · ')) : '')
   for (const row of report.rows) {
     table.append(el('tr', {}, td('', row.source === '(none)' ? el('span', { class: 'muted' }, 'no arrival credited') : row.source),
@@ -95,16 +93,16 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
       const { count, median, p95, inside } = report.total.stages[stage].delay
       times.append(el('tr', {}, td('', stage), td('num', `${amount(count)} of ${amount(report.total.stages[stage].count)}`), td('num', `${median.toLocaleString()} days`), td('num', `${p95.toLocaleString()} days`), td('num', percent(inside))))
     }
-    box.append(el('section', {}, el('h2', {}, 'From arrival to each step'), el('p', { class: 'muted' }, `Days from the newest arrival to the outcome, over outcomes of ${report.from} to ${report.to} that have one in the year before. An arrival outside the window is counted here and credited with nothing.`), wide('From arrival to each step', times)))
+    box.append(el('section', {}, el('h2', {}, 'From arrival to each step'), wide('From arrival to each step', times), notes(`Days from the newest arrival to the outcome, over outcomes of ${report.from} to ${report.to} that have one in the year before. An arrival outside the window is counted here and credited with nothing.`)))
   }
   // What outcomes were first worth and are worth now. A step value is a guess until the real amount is known.
-  const valued = (change) => [td('num', amount(change.outcomes)), td('num', change.outcomes === change.firstUnknown ? unknown() : money(change.first), change.firstUnknown > 0 && change.firstUnknown < change.outcomes ? el('span', { class: 'reason' }, `of ${amount(change.outcomes - change.firstUnknown)}`) : ''), td('num', money(change.now)), td('num', change.zeroed || ''), td('num', change.firstUnknown || '')]
+  const valued = (change) => [td('num', amount(change.outcomes)), td('num', change.outcomes === change.firstUnknown ? unknown() : money(change.first), change.firstUnknown > 0 && change.firstUnknown < change.outcomes ? el('span', { class: 'reason' }, `of ${amount(change.outcomes - change.firstUnknown)}`) : ''), td('num', money(change.now)), td('num', tally(change.zeroed)), td('num', tally(change.firstUnknown))]
   const heads = () => [th('Outcomes', 'num'), th('First recorded', 'num'), th('Now', 'num'), th('Restated to zero', 'num'), th('First value not recorded', 'num')]
   if (report.total.worth.outcomes > 0) {
     const named = (row) => (row.source === '(none)' ? 'no arrival credited' : `${row.source}${row.campaign || row.campaignId ? `, ${row.campaign || row.campaignId}` : ''}`)
     const byCampaign = el('table', {}, el('tr', {}, th('Campaign'), ...heads()), ...report.rows.filter((row) => row.worth.outcomes > 0).map((row) => el('tr', {}, td('who', named(row)), ...valued(row.worth))), el('tr', { class: 'sum' }, td('', 'All'), ...valued(report.total.worth)))
     const byMonth = el('table', {}, el('tr', {}, th('Month first recorded'), ...heads()), ...report.months.map((each) => el('tr', {}, td('', each.month), ...valued(each))))
-    box.append(el('section', {}, el('h2', {}, 'Value: first recorded, and now'), el('p', { class: 'muted' }, `Outcomes of ${report.from} to ${report.to}. Now is all of them. First recorded is of those whose first value is known. A value first recorded is often a step's, and is restated once what was collected is known.`), wide('Value by campaign', byCampaign), el('p', {}), wide('Value by month of first record', byMonth)))
+    box.append(el('section', {}, el('h2', {}, 'Value: first recorded, and now'), wide('Value by campaign', byCampaign), el('p', {}), wide('Value by month of first record', byMonth), notes(`Outcomes of ${report.from} to ${report.to}. Now is all of them. First recorded is of those whose first value is known. A value first recorded is often a step's, and is restated once what was collected is known.`)))
   }
   await whatFollowed(box, report, (chosen, days) => address({ step: chosen, within: days }), step, within)
 })

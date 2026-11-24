@@ -28,6 +28,37 @@ const amount = (n) => n.toLocaleString()
 const money = (n) => n.toLocaleString(undefined, { maximumFractionDigits: 2 })
 const th = (text, kind) => el('th', { scope: 'col', ...(kind && { class: kind }) }, text)
 const td = (kind, ...children) => el('td', kind ? { class: kind } : {}, ...children)
+// Three things an empty cell may mean, told apart: known to be none, nothing to say, and not recorded.
+const none = () => el('span', { class: 'muted' }, '—')
+const tally = (n) => (n > 0 ? amount(n) : el('span', { class: 'muted' }, '0'))
+const unrecorded = () => el('span', { class: 'muted' }, '(not recorded)')
+/** Columns that belong together: the first carries the line that sets them apart, and a heading spans them. */
+const edge = ([cell, ...rest]) => (cell.classList.add('edge'), [cell, ...rest])
+const group = (text, columns, first) => el('th', { scope: 'col', colspan: columns, class: first ? 'group' : 'edge group' }, text)
+/** A share drawn as a bar beside its number. The number says it; the bar only lets rows be compared. */
+const meter = (share) => {
+  const bar = el('span', {})
+  bar.style.width = `${Math.max(0, Math.min(1, share)) * 100}%`
+  return el('span', { class: 'meter', 'aria-hidden': 'true' }, bar)
+}
+/** Notes on how a view is worked out, there for whoever wants them and not in the way of the numbers. */
+const notes = (...texts) => el('details', {}, el('summary', { class: 'muted' }, 'How to read this'), ...texts.map((text) => el('p', { class: 'muted' }, text)))
+/** The few numbers a view is about, large, each with what it is of. `tone` marks one that needs someone, in words as well as color. */
+const tiles = (...list) => el('dl', { class: 'tiles' }, ...list.filter(Boolean).map(([label, value, note = '', tone = '']) =>
+  el('div', tone ? { class: tone } : {}, el('dt', {}, label), el('dd', {}, el('b', {}, value), note ? el('span', { class: 'reason' }, note) : ''))))
+/** Parts of a whole as one bar, and the same numbers as a list under it. A part of none keeps its place in the list. */
+function parts(label, list) {
+  const whole = list.reduce((sum, [, n]) => sum + n, 0)
+  const bar = el('div', { class: 'parts', 'aria-hidden': 'true' })
+  list.forEach(([, n], i) => {
+    if (n === 0) return
+    const part = el('span', { class: `part${i}` })
+    part.style.flexGrow = n
+    bar.append(part)
+  })
+  return el('div', {}, bar, el('ul', { class: 'legend', 'aria-label': label }, ...list.map(([name, n, note], i) => el('li', {}, el('span', { class: `key part${i}`, 'aria-hidden': 'true' }),
+    el('span', {}, name, note ? el('span', { class: 'reason' }, note) : ''), el('b', {}, tally(n)), el('span', { class: 'muted' }, whole > 0 ? percent(n / whole) : '—')))))
+}
 /** A table that scrolls inside its own box. The box takes the keyboard, so arrow keys can scroll it. */
 const wide = (label, table) => el('div', { class: 'wide', tabindex: 0, role: 'region', 'aria-label': label }, table)
 
@@ -188,6 +219,11 @@ function place() {
 
 /** Which control this is, whatever moves around it or changes beside it: what it is and does, and the subject its row is about. */
 const which = (node) => [node.tagName, node.dataset.key, node.matches('a, button') ? node.textContent : '', node.getAttribute('href'), node.getAttribute('aria-label'), node.title, node.closest('tr, li')?.querySelector('a')?.getAttribute('href')].join('\n')
+/** Which notes these are, whatever sections come and go around them. */
+const fold = (node) => {
+  const section = node.closest('section')
+  return `${section?.querySelector('h2, h3')?.textContent}\n${[...(section?.querySelectorAll('details') ?? [])].indexOf(node)}`
+}
 
 let loading = 0
 let pending = 0
@@ -232,8 +268,10 @@ async function load(tag) {
     if (seen) beat = seen
     const held = $('view').contains(document.activeElement) ? which(document.activeElement) : undefined
     const scrolled = quiet ? [...$('view').querySelectorAll('.wide')].map((each) => each.scrollLeft) : []
+    const unfolded = quiet ? [...$('view').querySelectorAll('details[open]')].map(fold) : []
     $('view').replaceChildren(box)
     ;[...$('view').querySelectorAll('.wide')].forEach((each, i) => (each.scrollLeft = scrolled[i] ?? 0))
+    for (const each of $('view').querySelectorAll('details')) each.open = unfolded.includes(fold(each))
     if (held) [...$('view').querySelectorAll('a, button, input, select, [tabindex]')].find((node) => which(node) === held)?.focus({ preventScroll: true })
     if (!quiet) {
       notice('')

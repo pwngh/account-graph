@@ -52,9 +52,13 @@ function profileOf(profile) {
   if (!profile.known) return [el('section', {}, el('h3', {}, profile.subject), el('p', { class: 'muted' }, 'Nothing has been recorded about this subject.'))]
   const size = profile.cluster.members.length
   detail.push(el('section', {}, el('h3', {}, profile.subject),
-    el('p', {}, size > 1 ? `In a cluster of ${size} that the graph treats as one person.` : 'On its own. The graph treats it as one person with one account.'),
+    tiles(['One person with', `${amount(size)} ${size === 1 ? 'subject' : 'subjects'}`, profile.cluster.oversized ? 'larger than the review size' : '', profile.cluster.oversized ? 'apart' : ''],
+      profile.links[0] && ['Strongest tie', percent(Math.max(...profile.links.map((link) => link.score))), `${amount(profile.links.length)} in all`],
+      profile.separated.length > 0 && ['Kept apart from', amount(profile.separated.length)],
+      profile.history[0] && ['Last seen', when(Math.max(...profile.history.map((each) => each.at)))],
+      profile.consent[0] && ['Advertising', profile.consent[0].adUserData && profile.consent[0].adPersonalization ? 'Granted' : profile.consent[0].adUserData || profile.consent[0].adPersonalization ? 'In part' : 'Denied', profile.consent[0].source ?? '']),
     profile.cluster.oversized ? el('p', { class: 'apart' }, 'This cluster is larger than the review size. A shared identifier may be joining strangers.') : '',
-    el('p', {}, el('a', { class: 'link', href: `#/journey/${encodeURIComponent(profile.subject)}` }, 'Their journey: everything recorded, in order')),
+    el('p', {}, el('a', { class: 'link', href: `#/journey/${encodeURIComponent(profile.subject)}` }, 'Journey')),
     el('div', { class: 'row' },
       el('button', { on: { click: () => act('Join as one person', `${profile.subject} and the subject you name will be treated as one person.`, '/join', { a: profile.subject }, 'Join', { otherKey: 'b' }) } }, 'Join with another…'),
       el('button', { class: 'danger', on: { click: () => act('Forget this subject', `Everything recorded about ${profile.subject} will be deleted. This cannot be undone.`, '/forget', { subject: profile.subject }, 'Delete') } }, 'Forget…'))))
@@ -67,28 +71,28 @@ function profileOf(profile) {
   const verdicts = new Map(profile.verdicts.map((verdict) => [`${verdict.a}\n${verdict.b}`, verdict]))
   const verdict = (other) => verdicts.get(profile.subject < other ? `${profile.subject}\n${other}` : `${other}\n${profile.subject}`)
   const contested = (other) => (verdict(other)?.reversals >= 3 ? el('span', { class: 'chip apart', title: 'Find out which system is right, and stop the other from sending.' }, `systems disagree, ${verdict(other).reversals} times`) : '')
-  const links = el('table', {}, el('tr', {}, th('Subject'), th('Tie'), th('Score', 'num'), th('Why'), th('')))
+  const links = el('table', {}, el('tr', {}, group('Who', 2, true), group('How strong, and why', 2), el('td', { class: 'edge' })), el('tr', {}, th('Subject'), th('Tie'), ...edge([th('Score', 'num'), th('Why')]), ...edge([th('')])))
   for (const link of profile.links) {
     const inCluster = members.has(link.subject)
     links.append(el('tr', {},
       td('who', open(link.subject)),
       td('', el('span', { class: `chip ${link.level}` }, link.level === 'same' ? (inCluster ? 'same person' : 'strong, not joined') : 'related'), ' ', contested(link.subject)),
-      td('num', percent(link.score)),
-      td('why', ...reasons(link.reasons)),
-      td('', el('button', { on: { click: () => act('Keep these two apart', `${profile.subject} and ${link.subject} will never share a cluster, whatever they share later.`, '/separate', { a: profile.subject, b: link.subject }, 'Keep apart') } }, 'Keep apart'))))
+      ...edge([td('num score', percent(link.score), meter(link.score)), td('why', ...reasons(link.reasons))]),
+      td('edge', el('button', { on: { click: () => act('Keep these two apart', `${profile.subject} and ${link.subject} will never share a cluster, whatever they share later.`, '/separate', { a: profile.subject, b: link.subject }, 'Keep apart') } }, 'Keep apart'))))
   }
   for (const other of profile.separated) {
-    links.append(el('tr', {}, td('who', open(other)), td('', el('span', { class: 'chip apart' }, 'kept apart'), ' ', contested(other)), td(''), td('why', ...kept(verdict(other))),
-      td('', el('button', { on: { click: () => act('Allow these two to join again', `${profile.subject} and ${other}`, '/separate', { a: profile.subject, b: other, separated: false }, 'Allow', { undo: true }) } }, 'Allow again'))))
+    links.append(el('tr', {}, td('who', open(other)), td('', el('span', { class: 'chip apart' }, 'kept apart'), ' ', contested(other)), ...edge([td('num score', none()), td('why', ...kept(verdict(other)))]),
+      td('edge', el('button', { on: { click: () => act('Allow these two to join again', `${profile.subject} and ${other}`, '/separate', { a: profile.subject, b: other, separated: false }, 'Allow', { undo: true }) } }, 'Allow again'))))
   }
   detail.push(el('section', {}, el('h2', {}, 'Ties'), profile.links.length + profile.separated.length > 0 ? wide('Ties', links) : el('p', { class: 'muted' }, 'No other subject shares enough with this one to be tied to it.')))
 
   if (profile.flows.length > 0) {
-    const flows = el('table', {}, el('tr', {}, th('With'), th('Tie'), th('Sent', 'num'), th('Received', 'num'), th('Times', 'num'), th('Last')))
+    const moved = (n, asset) => (n > 0 ? `${amount(n)} ${asset}` : tally(0))
+    const flows = el('table', {}, el('tr', {}, group('With whom', 2, true), group('What moved', 4)), el('tr', {}, th('Subject'), th('Tie'), ...edge([th('Sent', 'num'), th('Received', 'num'), th('Times', 'num'), th('Last')])))
     for (const flow of profile.flows) {
       flows.append(el('tr', {}, td('who', open(flow.subject)),
         td('', el('span', { class: `chip ${flow.relation === 'none' ? '' : flow.relation}` }, flow.relation === 'none' ? 'no tie' : flow.relation === 'same' ? 'same person' : 'related')),
-        td('num', `${amount(flow.sent)} ${flow.asset}`), td('num', `${amount(flow.received)} ${flow.asset}`), td('num', flow.count), td('', when(flow.last))))
+        ...edge([td('num', moved(flow.sent, flow.asset)), td('num', moved(flow.received, flow.asset)), td('num', amount(flow.count)), td('nowrap', when(flow.last))])))
     }
     const section = el('section', {}, el('h2', {}, 'Money, all time'), wide('Money', flows))
     if (profile.rings.length > 0) {
@@ -105,7 +109,7 @@ function profileOf(profile) {
     const word = (granted) => el('span', { class: granted ? 'same' : 'apart' }, granted ? 'granted' : 'denied')
     for (const [i, answer] of profile.consent.entries()) consent.append(el('tr', {}, td('', answer.at > 0 ? when(answer.at) : '(not recorded)'), td('', word(answer.adUserData)), td('', word(answer.adPersonalization)), td('who', answer.source ?? '(not recorded)'), td('', when(answer.recorded)), td('', i === 0 ? el('span', { class: 'chip' }, 'stands') : '')))
     detail.push(el('section', {}, el('h2', {}, `Advertising consent, newest ${profile.consent.length}`), wide('Advertising consent', consent),
-      el('p', { class: 'muted' }, 'What was answered about advertising, and nothing else. It is not a record of consent to be called or written to.')))
+      el('p', { class: 'muted' }, 'Not consent to be called or written to.')))
   }
 
   const history = el('table', {}, el('tr', {}, th('When'), th('Doing'), th('Seen with')))
@@ -115,7 +119,7 @@ function profileOf(profile) {
 }
 
 const ACTIONS = { ignore: 'Stopped linking through', restore: 'Resumed linking through', separate: 'Kept apart', rejoin: 'Allowed to join', join: 'Joined', forget: 'Forgot', rebuild: 'Rebuilt every cluster', prune: 'Deleted sightings older than' }
-const queued = (cluster) => el('li', {}, open(cluster.id), el('span', { class: 'muted' }, ` ${cluster.size} accounts `), cluster.oversized ? el('span', { class: 'chip apart' }, 'review') : '')
+const queued = (cluster) => el('li', { class: 'line' }, caller(cluster.id), el('span', { class: 'muted' }, `${amount(cluster.size)} accounts`), cluster.oversized ? el('span', { class: 'chip apart' }, 'review') : '')
 
 /** How many clusters are on screen, so a refresh reads that many again. */
 let listed = 50
@@ -206,10 +210,10 @@ view('accounts', 'Accounts', async (box, subject) => {
   const decisions = await decisionList(audit)
 
   left.append(el('section', {}, el('h2', {}, 'Largest clusters, now'), ...queue))
-  left.append(el('section', {}, el('h2', {}, 'Recent changes, newest 30'), el('ul', { id: 'recent' }, ...(recent.length > 0 ? recent.slice(0, 30).map((move) => el('li', {}, open(move.subject),
-    el('span', {}, move.to === undefined ? ' was removed ' : move.to === move.subject ? ' is on its own again ' : ' joined '), move.to !== undefined && move.to !== move.subject ? open(move.to) : '',
+  left.append(el('section', {}, el('h2', {}, 'Recent changes, newest 30'), el('ul', { id: 'recent' }, ...(recent.length > 0 ? recent.slice(0, 30).map((move) => el('li', {}, caller(move.subject),
+    el('span', {}, move.to === undefined ? ' was removed ' : move.to === move.subject ? ' is on its own again ' : ' joined '), move.to !== undefined && move.to !== move.subject ? caller(move.to) : '',
     el('span', { class: 'muted' }, ` ${when(move.at)}`))) : [el('li', { class: 'muted' }, 'None yet.')]))))
   left.append(decisions)
 
-  detail.append(...(profile ? profileOf(profile) : [el('section', {}, el('p', { class: 'muted' }, 'Open a subject, or pick a cluster, to see who it is tied to and why.'))]))
+  detail.append(...(profile ? profileOf(profile) : [el('section', {}, el('p', { class: 'muted' }, 'Open a subject or pick a cluster.'))]))
 }, { subject: true })

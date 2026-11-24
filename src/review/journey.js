@@ -49,29 +49,71 @@ function why(entry, ties, subject) {
   return [caller(entry.subject), el('span', { class: 'reason' }, `${tie.how === 'cluster' ? 'same person' : 'strong tie, in another cluster'}${tie.score === null ? ', no path scored' : `, ${percent(tie.score)}`}${tie.kinds.length > 0 ? ` by ${tie.kinds.join(' and ')}` : ''}${chain}`)]
 }
 
-const row = (ties, subject) => (entry) => el('tr', {}, td('nowrap', entry.at > 0 ? when(entry.at) : '(not recorded)'), td('', el('span', { class: 'chip' }, WHAT[entry.kind])), td('what', ...told(entry)), td('why', ...why(entry, ties, subject)))
+const dayOf = (at) => (at > 0 ? new Date(at).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : 'When is not recorded')
+/** Each day's entries under its name, so the hours read as a day and the gaps between days show. */
+function byDay(entries, draw) {
+  const days = []
+  for (const [i, entry] of entries.entries()) {
+    if (i === 0 || dayOf(entry.at) !== dayOf(entries[i - 1].at)) days.push(el('tbody', {}, el('tr', { class: 'day' }, el('th', { scope: 'rowgroup', colspan: 4 }, dayOf(entry.at)))))
+    days.at(-1).append(draw(entry))
+  }
+  return days
+}
+const row = (ties, subject) => (entry) => el('tr', {}, td('nowrap num', entry.at > 0 ? new Date(entry.at).toLocaleTimeString(undefined, { timeStyle: 'short' }) : ''), td('', el('span', { class: `chip kind ${entry.kind}` }, WHAT[entry.kind])), td('what', ...told(entry)), td('why', ...why(entry, ties, subject)))
+const timespan = (entries) => {
+  const times = entries.map((entry) => entry.at).filter((at) => at > 0)
+  if (times.length === 0) return []
+  const [first, last] = [Math.min(...times), Math.max(...times)]
+  return [['First', when(first)], ['Last', when(last), last > first ? `${lasted(last - first)} later` : '']]
+}
+/** When each kind of thing happened, one lane a kind, so a gap or a burst shows before the list is read. The list says the same in words. */
+function lanes(entries, shown) {
+  const dated = shown.filter((entry) => entry.at > 0)
+  const kinds = Object.keys(WHAT).filter((kind) => dated.some((entry) => entry.kind === kind))
+  // The whole span, whatever is left out, so the dots stay under the first and last told above them.
+  const times = entries.map((entry) => entry.at).filter((at) => at > 0)
+  const [first, last] = [Math.min(...times), Math.max(...times)]
+  if (dated.length === 0 || first === last) return ''
+  const drawing = el('div', { class: 'lanes', 'aria-hidden': 'true' })
+  for (const kind of kinds) {
+    const lane = el('div', { class: 'lane' })
+    for (const entry of dated) if (entry.kind === kind) {
+      const dot = el('i', { class: kind })
+      dot.style.left = `${(100 * (entry.at - first)) / (last - first)}%`
+      lane.append(dot)
+    }
+    drawing.append(el('span', {}, WHAT[kind]), lane)
+  }
+  return drawing
+}
 // Kinds left out of the list, kept while the screen is open.
 const leaving = new Set()
 
 // One person's timeline, across every subject that is them.
 view('journey', 'Journey', async (box, subject) => {
   if (!subject) {
-    box.append(el('section', {}, el('h3', {}, 'Journey'), el('p', { class: 'muted' }, 'Open a subject above to see everything recorded about that person, in order.')))
+    box.append(el('section', {}, el('h3', {}, 'Journey'), el('p', { class: 'muted' }, 'Find someone above.')))
     return
   }
   const journey = await api('GET', `/journey?subject=${encodeURIComponent(subject)}`)
-  const top = el('section', {}, el('h3', {}, subject), el('p', {}, el('a', { class: 'link', href: subjectHash(subject) }, 'Its account: ties, reasons and decisions')))
+  const top = el('section', {}, el('h3', {}, subject), el('p', {}, el('a', { class: 'link', href: subjectHash(subject) }, 'Account')))
   box.append(top)
   if (journey.entries.length === 0) {
     top.append(el('p', { class: 'muted' }, 'Nothing has been recorded about this subject.'))
     return
   }
   const subjects = Object.keys(journey.ties)
-  top.append(el('p', { class: 'muted' }, `Everything recorded about this person, oldest first${journey.next === null ? '' : ', newest entries'}, on ${amount(subjects.length)} ${subjects.length === 1 ? 'subject' : 'subjects'}. Each entry says which subject it is on and why that is this person.${journey.more > 0 ? ` ${amount(journey.more)} more subjects of theirs are not read.` : ''}`))
+  const strip = el('div', {})
+  top.append(strip, journey.more > 0 ? el('p', { class: 'muted' }, `${amount(journey.more)} more subjects of theirs are not read.`) : '')
   let entries = journey.entries
+  let next = journey.next
   const ties = { ...journey.ties }
   const table = el('table', { class: 'journey' })
-  const draw = () => table.replaceChildren(el('tr', {}, th('When'), th('What'), th('Details'), th('On, and why')), ...entries.filter((entry) => !leaving.has(entry.kind)).map(row(ties, subject)))
+  const draw = () => {
+    const shown = entries.filter((entry) => !leaving.has(entry.kind))
+    strip.replaceChildren(tiles(['Entries', amount(entries.length), next === null ? '' : 'the newest'], ['Subjects read', amount(subjects.length)], ...timespan(entries)), lanes(entries, shown))
+    table.replaceChildren(el('tr', {}, th('When', 'num'), th('What'), th('Details'), th('On, and why')), ...byDay(shown, row(ties, subject)))
+  }
   const kinds = el('div', { class: 'row', role: 'group', 'aria-label': 'Show' })
   const boxes = () => kinds.replaceChildren(...Object.keys(WHAT).filter((kind) => entries.some((entry) => entry.kind === kind)).map((kind) => {
     const check = el('input', { type: 'checkbox', ...(!leaving.has(kind) && { checked: '' }), on: { change: () => { if (check.checked) leaving.delete(kind); else leaving.add(kind); draw() } } })
@@ -79,7 +121,6 @@ view('journey', 'Journey', async (box, subject) => {
   }))
   boxes()
   draw()
-  let next = journey.next
   const earlier = el('button', { on: { click: async () => {
     if (opening) return
     const turn = ++loading

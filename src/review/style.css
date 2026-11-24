@@ -66,6 +66,42 @@ th.edge, td.edge { border-left: 1px solid var(--line); padding-left: 12px; }
 th.group { font-weight: 600; }
 button[aria-pressed=true] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
 summary { cursor: pointer; width: fit-content; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(136px, 1fr)); gap: 1px; margin: 8px 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--line); overflow: hidden; }
+.tiles > div { background: var(--panel); padding: 8px 12px 10px; min-width: 0; }
+.tiles dt { font-size: 12px; color: var(--muted); }
+.tiles dd { margin: 2px 0 0; overflow-wrap: anywhere; }
+.tiles b { font-size: 20px; line-height: 26px; font-weight: 600; color: inherit; }
+.tiles .apart b { color: var(--apart); } .tiles .same b { color: var(--same); }
+.tiles > .apart { box-shadow: inset 3px 0 0 var(--apart); }
+.needs { margin: 0 0 8px; }
+.needs li { border-left: 3px solid var(--apart); padding: 4px 10px; margin-bottom: 4px; background: var(--soft); border-top: 0; }
+.parts { display: flex; gap: 2px; height: 12px; margin: 4px 0 10px; max-width: 900px; border-radius: 3px; overflow: hidden; background: var(--soft); }
+.parts > span { min-width: 2px; }
+.part0 { background: var(--accent); } .part1 { background: var(--same); } .part2 { background: var(--related); } .part3 { background: var(--muted); } .part4 { background: var(--apart); }
+.legend { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 4px 20px; max-width: 900px; }
+.legend li { display: flex; gap: 8px; align-items: baseline; border: 0; }
+.legend li > span:nth-child(2) { margin-right: auto; }
+.key { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.scale { position: relative; overflow: visible; }
+.scale i { position: absolute; top: -3px; width: 1px; height: 10px; background: var(--muted); }
+.rules td.bar { min-width: 220px; }
+.lanes { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 12px; align-items: center; margin: 4px 0 8px; max-width: 1200px; font-size: 12px; color: var(--muted); }
+.lanes .lane { position: relative; height: 20px; margin: 0 6px; background: linear-gradient(var(--line), var(--line)) center / 100% 1px no-repeat; }
+.lanes i { position: absolute; top: 5px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: var(--muted); opacity: .8; }
+.lanes .arrival { background: var(--accent); } .lanes .call { background: var(--related); } .lanes .step, .lanes .value { background: var(--same); } .lanes .decision { background: var(--apart); }
+.line { display: flex; gap: 8px; align-items: baseline; }
+.line > a { margin-right: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.line > span { white-space: nowrap; }
+.nowrap { white-space: nowrap; }
+.meter { display: block; width: 100%; min-width: 56px; height: 4px; margin-top: 4px; background: var(--soft); border-radius: 2px; overflow: hidden; }
+.meter > span { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+td.share { min-width: 96px; }
+td.bar { width: 120px; vertical-align: middle; }
+td.bar .meter { margin-top: 0; }
+td.score { min-width: 64px; }
+tr.second td { border-top: 1px solid var(--line); }
+tr.day th { padding: 12px 0 4px; color: var(--ink); font-weight: 600; }
+.chip.kind.call { border-color: var(--related); color: var(--related); } .chip.kind.step, .chip.kind.value { border-color: var(--same); color: var(--same); } .chip.kind.arrival { border-color: var(--accent); color: var(--accent); }
 tr.part td { color: var(--muted); border-bottom-style: dotted; }
 tr.part td.num { color: var(--ink); }
 tr.part td.who { padding-left: 16px; }
@@ -107,6 +143,8 @@ dialog p { overflow-wrap: anywhere; }
 /* Columns side by side, scrolling in their own box when there are more than fit. */
 .board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(184px, 1fr); gap: 0 16px; align-items: start; border-top: 1px solid var(--line); overflow-x: auto; }
 .board section, .board section:first-child { border-top: 0; padding-top: 8px; }
+.board .idle { color: var(--muted); }
+.board .idle h2 { color: var(--muted); font-weight: 500; }
 .board h2 { font-size: 13px; color: var(--ink); overflow-wrap: anywhere; }
 .board ol { list-style: none; margin: 4px 0 0; padding: 0; }
 .board li:first-child { border-top: 1px solid var(--line); }
