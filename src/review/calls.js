@@ -25,14 +25,96 @@ function hours(summary) {
   return table
 }
 
-const openRow = (at) => (call) => el('tr', {},
-  td('who', reviewDisplay.subject(call.subject, `#/journey/${encodeURIComponent(call.subject)}`)),
-  td('nowrap', reviewDisplay.time(call.at, at)),
-  td('', reviewDisplay.chip(call.state === 'voicemail' ? 'Voicemail' : 'Missed', reviewDisplay.callTone(call.state))),
-  ...edge([td('nowrap', reviewDisplay.time(call.at)),
-    td('num', call.result?.waited === undefined ? unrecorded() : `${amount(Math.round(call.result.waited))} s`), td('num', tally(call.attempts))]),
-  ...edge([td('who', ...(call.source ? [call.source, call.campaign ? `, ${call.campaign}` : call.campaignId ? ', ' : '', !call.campaign && call.campaignId ? reviewDisplay.id(call.campaignId) : ''] : [el('span', { class: 'muted' }, 'No arrival credited')])),
-    td('who', call.tags ? Object.entries(call.tags).map(([name, value]) => `${name.replaceAll('_', ' ')} ${value}`).join(', ') : unrecorded())]))
+/** Which missed call is open beside the list and which are listed, kept while the screen is open. */
+const inbox = { id: undefined, state: 'all' }
+const credited = (call) => (call.source ? `${call.source}${call.campaign || call.campaignId ? `, ${call.campaign ?? call.campaignId}` : ''}` : 'No arrival credited')
+/** Calls by how long they have waited, so the list reads as what is late and what is fresh. */
+const ages = (at) => [['Today', (call) => at - call.at < 86400000], ['This week', (call) => at - call.at < 7 * 86400000], ['Older', () => true]]
+
+/**
+ * Missed calls nobody returned: the list, the caller's story so far, and what
+ * is known of the call, side by side. Arrow keys walk the list.
+ */
+function missedCalls(open, at) {
+  const calls = [...open]
+  const list = el('div', { class: 'inbox-list scroll', role: 'listbox', tabindex: 0, 'aria-label': 'Missed and not returned' })
+  const story = el('div', { class: 'inbox-story' })
+  const facts = el('div', { class: 'inbox-facts' })
+  const choose = el('div', { class: 'segments', role: 'group', 'aria-label': 'Which calls' })
+  const root = el('div', { class: 'inbox' }, el('div', { class: 'inbox-side' }, choose, list), story, facts)
+  let asked = 0
+
+  const shown = () => calls.filter((call) => inbox.state === 'all' || call.state === inbox.state)
+  function draw() {
+    const held = list.contains(document.activeElement)
+    const some = shown()
+    if (!some.some((call) => call.id === inbox.id)) inbox.id = some[0]?.id
+    choose.replaceChildren(...[['all', 'All'], ['missed', 'Missed'], ['voicemail', 'Voicemail']].map(([state, text]) => el('button', { type: 'button', 'data-key': `calls ${state}`, 'aria-pressed': String(inbox.state === state), on: { click: () => { inbox.state = state; draw() } } }, text, el('span', { class: 'count' }, amount(calls.filter((call) => state === 'all' || call.state === state).length)))))
+    const groups = ages(at).map(([name, holds]) => [name, holds])
+    const left = new Set(some)
+    // The oldest waits longest, so it is first in its group and the oldest group is first.
+    const parts = groups.map(([name, holds]) => [name, [...left].filter((call) => holds(call) && left.delete(call))]).reverse()
+    list.replaceChildren(...parts.filter(([, each]) => each.length > 0).map(([name, each]) => el('div', { role: 'group', 'aria-label': name }, el('p', { class: 'inbox-age' }, name, el('span', { class: 'count' }, amount(each.length))), ...each.map(line))))
+    if (some.length === 0) list.replaceChildren(el('p', { class: 'muted inbox-age' }, 'None of these.'))
+    if (held) list.querySelector('[aria-selected=true]')?.focus({ preventScroll: true })
+    tell()
+  }
+  const line = (call) => el('div', { class: 'inbox-call', role: 'option', tabindex: call.id === inbox.id ? 0 : -1, 'aria-selected': String(call.id === inbox.id), on: { click: () => pick(call) } },
+    el('i', { class: `dot ${call.state}`, 'aria-hidden': 'true' }), el('span', { class: 'inbox-who' }, reviewDisplay.idText(call.subject)), el('span', { class: 'inbox-time' }, reviewDisplay.time(call.at, at)),
+    el('span', { class: 'inbox-from' }, `${call.state === 'voicemail' ? 'Voicemail' : 'Missed'} · ${credited(call)}`), call.attempts > 0 ? el('span', { class: 'chip' }, `${amount(call.attempts)} ${call.attempts === 1 ? 'try' : 'tries'}`) : '')
+  function pick(call) {
+    inbox.id = call.id
+    for (const each of list.querySelectorAll('.inbox-call')) { each.setAttribute('aria-selected', 'false'); each.tabIndex = -1 }
+    draw()
+    const now = list.querySelector('[aria-selected=true]')
+    if (list.contains(document.activeElement) || document.activeElement === document.body) now?.focus({ preventScroll: true })
+    now?.scrollIntoView({ block: 'nearest' })
+  }
+  list.addEventListener('keydown', (event) => {
+    const step = { ArrowDown: 1, ArrowUp: -1 }[event.key]
+    if (!step) return
+    event.preventDefault()
+    // In the order on screen, which is by age.
+    const rows = [...list.querySelectorAll('.inbox-call')]
+    rows[rows.findIndex((row) => row.getAttribute('aria-selected') === 'true') + step]?.click()
+  })
+  async function tell() {
+    const call = calls.find((each) => each.id === inbox.id)
+    const turn = ++asked
+    if (!call) return void (story.replaceChildren(), facts.replaceChildren())
+    const copied = el('span', { class: 'meta', role: 'status' })
+    facts.replaceChildren(el('dl', {}, ...[['Rang', reviewDisplay.time(call.at)], ['Waited', call.result?.waited === undefined ? unrecorded() : `${amount(Math.round(call.result.waited))} s`],
+      ['Tried since', tally(call.attempts)], ['Credited to', call.source ? credited(call) : el('span', { class: 'muted' }, 'No arrival credited')],
+      ...(call.tags ? Object.entries(call.tags).map(([name, value]) => [name.replaceAll('_', ' '), String(value)]) : [['Tags', unrecorded()]])].flatMap(([name, value]) => [el('dt', {}, name), el('dd', {}, value)])),
+    el('p', { class: 'meta' }, 'The number is in your phone system, at this time.'),
+    el('div', { class: 'row' }, el('button', { type: 'button', on: { click: async () => {
+      try {
+        await navigator.clipboard.writeText(when(call.at))
+        copied.textContent = 'Copied.'
+      } catch {
+        copied.textContent = when(call.at)
+      }
+    } } }, 'Copy the time'), copied))
+    const head = el('div', { class: 'inbox-head' }, el('div', {}, el('b', {}, reviewDisplay.id(call.subject)), el('p', { class: 'meta' }, call.state === 'voicemail' ? 'Left a voicemail ' : 'Rang and was missed ', reviewDisplay.time(call.at, at))),
+      el('a', { class: 'button primary', href: `#/journey/${encodeURIComponent(call.subject)}` }, 'Open journey'), el('a', { class: 'button', href: subjectHash(call.subject) }, 'Account'))
+    story.replaceChildren(head, el('div', { class: 'waiting-lines', 'aria-hidden': 'true' }, el('i'), el('i'), el('i')))
+    try {
+      const journey = await api('GET', `/journey?subject=${encodeURIComponent(call.subject)}`)
+      if (turn !== asked) return
+      const entries = [...journey.entries].reverse()
+      const subjects = Object.keys(journey.ties).length
+      story.replaceChildren(head, el('p', { class: 'inbox-age' }, 'Their story, newest first', el('span', { class: 'count' }, `${amount(entries.length)}${journey.next === null ? '' : ' or more'}`), subjects > 1 ? el('span', { class: 'meta' }, ` across ${amount(subjects)} subjects`) : ''),
+        el('ol', { class: 'story', role: 'list' }, ...entries.slice(0, 14).map((entry) => el('li', { class: `${entry.kind}${entry.kind === 'call' && entry.call.id === call.id ? ' this' : ''}` }, glyph(entry.kind), el('div', {}, el('div', { class: 'what' }, ...told(entry)), el('span', { class: 'meta' }, reviewDisplay.time(entry.at > 0 ? entry.at : null, at)))))),
+        entries.length > 14 ? el('p', { class: 'meta' }, `${amount(entries.length - 14)} more in the journey.`) : '')
+    } catch (error) {
+      if (turn === asked) story.replaceChildren(head, el('p', { class: 'apart' }, `Their story could not be read: ${error.message}`))
+    }
+  }
+  // A page more of them, as a table would take it.
+  root.appendRows = (...more) => { calls.push(...more); draw() }
+  draw()
+  return root
+}
 
 // Calls to you: what is still open, how they went, and how many could be placed.
 view('calls', 'Calls', async (box, first, last) => {
@@ -51,14 +133,12 @@ view('calls', 'Calls', async (box, first, last) => {
     ['Waiting for a callback', `${amount(open.calls.length)}${open.next === null ? '' : ' or more'}`, open.calls[0] ? el('span', {}, 'Oldest: ', reviewDisplay.time(open.calls[0].at, open.at)) : '', open.calls.length > 0 ? 'apart' : 'same']))
   top.append(notes('Caller IDs are hashes, not phone numbers. Look up the number in your phone system by call time.',
     summary.expected ? 'An answer counts when a result says a person answered.' : 'No results are expected. Calls without a result are classified by length.'))
-  const table = el('table', {}, el('tr', {}, group('Follow-up queue', 3, true), group('Call details', 3), group('Attribution', 2)),
-    el('tr', {}, th('Caller'), th('Age'), th('Result'), ...edge([th('Began'), th('Waited', 'num'), th('Tries', 'num')]), ...edge([th('Credited to'), th('Tags')])),
-    ...open.calls.map(openRow(open.at)))
+  const queue = open.calls.length > 0 ? missedCalls(open.calls, open.at) : undefined
   box.append(el('section', {}, el('h2', {}, 'Missed and not returned, oldest first'),
-    open.calls.length > 0 ? wide('Missed and not returned', table, true) : el('p', { class: 'muted' }, total.calls === 0 ? 'No inbound calls recorded in this period.' : lost > 0 ? 'All callers who could be rung back have since been reached.' : 'No known missed calls in this period.'),
-    open.calls.length > 0 ? paged(table, open.next, 'Show more', async (next) => {
+    queue ?? el('p', { class: 'muted' }, total.calls === 0 ? 'No inbound calls recorded in this period.' : lost > 0 ? 'All callers who could be rung back have since been reached.' : 'No known missed calls in this period.'),
+    queue ? paged(queue, open.next, 'Show more', async (next) => {
       const page = await api('GET', `/calls?${query}&after=${encodeURIComponent(next)}`)
-      return { rows: page.calls.map(openRow(page.at)), next: page.next }
+      return { rows: page.calls, next: page.next }
     }) : '',
     total.hidden > 0 ? el('p', { class: 'muted' }, `${amount(total.hidden)} more hid their number and cannot be rung back.`) : ''))
 
