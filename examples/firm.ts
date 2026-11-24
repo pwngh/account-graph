@@ -11,15 +11,16 @@
  * script. Ctrl-C stops and deletes all of it.
  */
 import { execFileSync } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { once } from 'node:events'
 import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { createGraph, createMemoryStore, createOps, createOutbox, googleAds, hashPhone, nameKeys, policyFrom, recordCall } from '../src/index.ts'
 import type { Store } from '../src/index.ts'
+import { reviewPage } from '../src/review.ts'
 import { createHandler } from '../src/server.ts'
-import { page } from './firm-page.ts'
+import { clockScript, page } from './firm-page.ts'
 
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
@@ -42,7 +43,7 @@ const CAMPAIGNS = [
 const STEPS = {
   call: { value: 5, currency: 'USD', action: { google: '222' } },
   inquiry: { value: 10, currency: 'USD', wait: 48, action: { google: '111' } },
-  consultation: { value: 60, currency: 'USD', wait: 120 },
+  consultation: { value: 60, currency: 'USD' },
   client: { value: 400, currency: 'USD', action: { google: '333' } },
 }
 const FIRST = ['Ana', 'Luis', 'Maria', 'Jorge', 'Elena', 'Pat', 'Sam', 'Robin', 'Lee', 'Dana', 'Alex', 'Noor']
@@ -57,9 +58,13 @@ export interface Firm {
 
 /** Starts the firm over a store. With `quick`, it has a tenth of its history, for tests. */
 export async function startFirm(store: Store, { ports = [0, 0], quick = false, say = () => {} }: { ports?: [number, number]; quick?: boolean; say?: (line: string) => void } = {}): Promise<Firm> {
-  // What is seeded is written down when it happened. Later the clock may be moved forward, to show a night in which nothing rings.
+  // What is seeded is written down when it happened. The story takes a Monday to a Thursday that have passed, and each scene moves the clock on to when it happens.
   let writing: number | undefined
-  let ahead = 0
+  const monday = new Date()
+  monday.setHours(0, 0, 0, 0)
+  monday.setDate(monday.getDate() - ((monday.getDay() + 3) % 7 || 7) - 3)
+  const when = (days: number, hour: number, minute: number) => new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + days, hour, minute).getTime()
+  let ahead = when(0, 8, 50) - Date.now()
   const clock = () => writing ?? Date.now() + ahead
   const policy = policyFrom(JSON.parse(readFileSync(new URL('./household.json', import.meta.url), 'utf8')))
   const graph = createGraph(store, policy, { now: clock })
@@ -81,7 +86,15 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
     token: 'service-demo', reviewers: { dana: 'demo' }, origins: [siteAt], now: clock, outbox, ops, stages: STEPS, calls, returnHours: 24, limit: false,
     events: ['phone_click'], linkSecret: SECRET, identifierSecret: SECRET, pool: { numbers: ['+15550100111', '+15550100112'], minutes: 15, grace: 120 },
   })
-  const server = createServer(handler)
+  // The reviewer screen goes by the demo's clock: the page is served with it, and every answer carries it.
+  const { html, headers } = reviewPage()
+  const server = createServer((request, response) => {
+    response.setHeader('x-demo-ahead', ahead)
+    if (request.method !== 'GET' || new URL(request.url ?? '/', 'http://localhost').pathname !== '/review') return handler(request, response)
+    const script = clockScript(ahead)
+    const allowed = `script-src 'sha256-${createHash('sha256').update(script).digest('base64')}' `
+    response.writeHead(200, { ...headers, 'content-security-policy': headers['content-security-policy']!.replace('script-src ', () => allowed) }).end(html.replace('<style>', () => `<script>${script}</script>\n<style>`))
+  })
   await once(server.listen(ports[0], '127.0.0.1'), 'listening').catch((error) => {
     site.close()
     throw error
@@ -100,17 +113,47 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
   const pick = <T>(list: readonly T[]): T => list[Math.floor(chance() * list.length)]!
   const phoneOf = (n: number) => `+1555010${String(1000 + n).slice(-4)}`
 
+  const spentOn = new Set<string>()
+  /** What every campaign cost on a day. The one for online consultations has a week with no costs recorded. */
+  async function spend(at: number, ago = 0) {
+    const day = new Date(at).toISOString().slice(0, 10)
+    if (spentOn.has(day)) return
+    spentOn.add(day)
+    await graph.spend(CAMPAIGNS.filter(({ campaignId }) => !(campaignId === '40444' && ago >= 10 && ago < 17)).map(({ source, campaignId, campaign, daily }) => {
+      const amount = Math.round(daily * (0.8 + chance() * 0.4) * 100) / 100
+      return { day, source, campaignId, campaign, amount, currency: 'USD', clicks: Math.round(amount / 4), impressions: Math.round(amount * 12) }
+    }))
+  }
+  let others = 0
+  /** Moves the clock on to a moment of the story. It never goes back. */
+  async function at(days: number, hour: number, minute: number) {
+    const now = clock()
+    const then = Math.max(now + 1000, when(days, hour, minute))
+    for (let day = now + DAY; day < then + DAY; day += DAY) await spend(Math.min(day, then))
+    // The phones ring on in between, by day, and are answered.
+    for (let rang = now + 2 * HOUR; rang < then; rang += 2 * HOUR) {
+      if (new Date(rang).getHours() < 9 || new Date(rang).getHours() > 17) continue
+      const { lang, line } = pick(CAMPAIGNS)
+      writing = rang
+      await recordCall(graph, { id: `day-${rang}`, from: phoneOf(2000 + ++others), to: line, at: rang, duration: 120 + Math.floor(chance() * 600), answered: true, tags: { language: lang } }, { ...calls, now: clock, convert: (outcome) => graph.outcome({ ...outcome, value: STEPS.call.value, currency: 'USD' }) })
+    }
+    writing = undefined
+    ahead = then - Date.now()
+  }
+  const known = new Set<string>()
+  /** A contact called after a made-up person, and a number where there are several. */
+  const contactOf = (first: string, last: string) => {
+    const name = `contact:${first}-${last}`.toLowerCase()
+    let id = name
+    for (let n = 2; known.has(id); n++) id = `${name}-${n}`
+    known.add(id)
+    return id
+  }
+
   /** Two months of a firm's life. */
   async function fill() {
-    const start = Date.now()
-    const day = (ago: number) => new Date(start - ago * DAY).toISOString().slice(0, 10)
-    // The campaign for online consultations has a week with no costs recorded.
-    for (const { source, campaignId, campaign, daily } of CAMPAIGNS) {
-      await graph.spend(Array.from({ length: 60 }, (_, ago) => ago).filter((ago) => !(campaignId === '40444' && ago >= 10 && ago < 17)).map((ago) => {
-        const amount = Math.round(daily * (0.8 + chance() * 0.4) * 100) / 100
-        return { day: day(ago), source, campaignId, campaign, amount, currency: 'USD', clicks: Math.round(amount / 4), impressions: Math.round(amount * 12) }
-      }))
-    }
+    const start = clock()
+    for (let ago = 59; ago >= 0; ago--) await spend(start - ago * DAY, ago)
     const people = quick ? 40 : 320
     for (let n = 0; n < people; n++) {
       if (n % 80 === 79) say(`  ${n + 1} of ${people} people`)
@@ -120,7 +163,6 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       // Most come by day, on weekdays a little more.
       const at = Math.min(start - Math.floor((1 + chance() * 3) * HOUR), Math.floor((start - chance() * 58 * DAY) / DAY) * DAY + Math.floor((14 + chance() * 11) * HOUR))
       const visitor = `visitor:s${n}`
-      const contact = `contact:${1000 + n}`
       const from = phoneOf(n)
       writing = at
       await graph.observe({ subject: visitor, identifiers: [`device:s${n}`, `ip:198.51.100.${n % 200}`], at, event: 'visit' })
@@ -131,20 +173,20 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       if (called) {
         const rang = at + Math.floor(1 + chance() * 40) * 60_000
         const roll = chance()
-        const answered = roll < 0.66
+        const answered = roll < 0.74
         const call = { from, to: line, duration: answered ? 120 + Math.floor(chance() * 900) : 20 + Math.floor(chance() * 80), waited: Math.floor(chance() * 60), ...(chance() < 0.8 && { tags: { language: lang } }) }
         writing = rang
         await recordCall(graph, { id: `s${n}`, at: rang, answered, ...(roll > 0.9 && { voicemail: true }), ...call }, { ...calls, now: clock, convert: (outcome) => graph.outcome({ ...outcome, value: STEPS.call.value, currency: 'USD' }) })
         reached = answered
         met = rang + (call.duration + call.waited) * 1000
-        if (!answered && chance() < 0.82) {
-          const back = rang + Math.floor(1 + chance() * 30) * HOUR
-          if (back < start) {
-            writing = back
-            reached = chance() < 0.7
-            met = back + 300_000
-            await recordCall(graph, { id: `b${n}`, direction: 'outbound', from: line, to: from, at: back, duration: reached ? 300 : 25, answered: reached }, { ...calls, now: clock })
-          }
+        // Staff call back the same day, and again on the next ones until somebody picks up.
+        for (let tries = 0, back = rang; !reached && tries < 4; tries++) {
+          back += Math.floor(1 + chance() * (tries === 0 ? 6 : 24)) * HOUR
+          if (back >= start) break
+          writing = back
+          reached = chance() < 0.75
+          met = back + 300_000
+          await recordCall(graph, { id: `b${n}-${tries}`, direction: 'outbound', from: line, to: from, at: back, duration: reached ? 300 : 25, answered: reached }, { ...calls, now: clock })
         }
       }
       if (!reached || chance() > 0.55) continue
@@ -152,6 +194,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       const asked = met + Math.floor(chance() * 20) * HOUR
       if (asked > start) continue
       const name = [pick(FIRST), pick(LAST)] as const
+      const contact = contactOf(...name)
       writing = asked
       await graph.observe({ subject: contact, identifiers: [...(called ? [] : [`device:s${n}`]), `phone:${hashPhone(from)}`, `email:made-up-${n}`, ...nameKeys(SECRET, ...name, { dob: `19${60 + (n % 40)}-0${1 + (n % 9)}-1${n % 9}` })], at: asked, event: 'inquiry' })
       if (called) await graph.joinAll([{ a: `caller:${hashPhone(from)}`, b: contact, reason: 'answered by staff' }], { by: 'system:desk' })
@@ -165,8 +208,8 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
         await graph.outcome({ transactionId: `${stage}-${n}`, subject: contact, at: when, stage, value, currency: 'USD', tags: { office_served, ...(chance() < 0.8 && { language: lang }) } })
         return true
       }
-      if (!(await step('inquiry', asked)) || chance() > 0.6) continue
-      if (!(await step('consultation', asked + (1 + chance() * 6) * DAY)) || chance() > campaign.client * 3.2) continue
+      if (!(await step('inquiry', asked)) || (chance() > 0.6 && start - asked < 30 * HOUR)) continue
+      if (!(await step('consultation', asked + (0.5 + chance() * 1.3) * DAY)) || chance() > campaign.client * 2) continue
       const signed = Math.floor(asked + (3 + chance() * 25) * DAY)
       if (!(await step('client', signed))) continue
       // What was collected came later: less from some, more from others, nothing from a few.
@@ -180,12 +223,12 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
     // Households: a phone on two contacts of two names, which the preset only relates.
     for (let n = 0; n < (quick ? 3 : 9); n++) {
       const phone = `phone:${hashPhone(phoneOf(900 + n))}`
-      const [one, other] = [0, 1].map((side) => ({ subject: `contact:${5000 + 2 * n + side}`, identifiers: [phone, `email:home-${n}-${side}`, ...nameKeys(SECRET, FIRST[(n + side * 5) % FIRST.length]!, LAST[n % LAST.length]!, { dob: `19${70 + n}-03-1${side}` })], at: start - (n + 2) * HOUR, event: 'staff entry' }))
+      const [one, other] = [0, 1].map((side) => ({ subject: contactOf(FIRST[(n + side * 5) % FIRST.length]!, LAST[n % LAST.length]!), identifiers: [phone, `email:home-${n}-${side}`, ...nameKeys(SECRET, FIRST[(n + side * 5) % FIRST.length]!, LAST[n % LAST.length]!, { dob: `19${70 + n}-03-1${side}` })], at: start - (n + 2) * HOUR, event: 'staff entry' }))
       await graph.observe([one!, other!])
     }
   }
 
-  const demo = { phone: '+15550100042', other: 'contact:other-side', line: '+15550100103' }
+  const demo = { phone: '+15550100042', contact: 'contact:ines-vega', other: 'contact:tomas-vega', line: '+15550100103' }
   const caller = `caller:${hashPhone(demo.phone)}`
   const review = (view: string) => `${graphAt}/review#/${view}`
   /** The scenes, in order. Each does over HTTP what the site, the phone system or the office would, and says what came of it. */
@@ -193,15 +236,17 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
     {
       title: 'Ad visit', text: 'A visitor arrives from a Spanish ad for the North office. The landing address carries office=north and lang=es.', see: ['Channels', review('channels')],
       async run() {
-        await browser('/collect', { device: 'demo-visitor', url: `${siteAt}/es`, touch: { gclid: 'demo-click', source: 'google', medium: 'cpc', campaignId: '30333', campaign: 'Busqueda: North', landing: `${siteAt}/es`, custom: { office: 'north', lang: 'es' } } })
-        const { touches } = await ask('GET', `/attribute?subject=visitor:demo-visitor&at=${clock()}`)
+        await at(0, 9, 2)
+        await browser('/collect', { device: 'v-4821', url: `${siteAt}/es`, touch: { gclid: 'demo-click', source: 'google', medium: 'cpc', campaignId: '30333', campaign: 'Busqueda: North', landing: `${siteAt}/es`, custom: { office: 'north', lang: 'es' } } })
+        const { touches } = await ask('GET', `/attribute?subject=visitor:v-4821&at=${clock()}`)
         return [`Visit recorded: ${touches[0].campaign}, office ${touches[0].custom.office}, language ${touches[0].custom.lang}.`]
       },
     },
     {
       title: 'Tap to call', text: 'The visitor taps the phone number. The phone system reports a connected call and holds it for a result.', see: ['Calls', review('calls')],
       async run() {
-        await browser('/event', { device: 'demo-visitor', event: 'phone_click', number: demo.line })
+        await at(0, 9, 4)
+        await browser('/event', { device: 'v-4821', event: 'phone_click', number: demo.line })
         const call = await ask('POST', '/call', { id: 'demo-1', from: demo.phone, to: demo.line, at: clock(), duration: 95, tags: { language: 'es' } })
         return [`Linked to ${call.visitor} by the tap. State: ${call.state}. Counted: ${call.counted ? 'yes' : 'no'}.`]
       },
@@ -209,18 +254,20 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
     {
       title: 'Missed call', text: 'The result reports no answer. The call is excluded from outcomes and conversions.', see: ['Board', review('board/90')],
       async run() {
+        await at(0, 9, 6)
         const { state, counted } = await ask('POST', '/call/result', { id: 'demo-1', answered: false, waited: 95 })
         await outbox.run()
         return [`State: ${state}. Counted: ${counted ? 'yes' : 'no'}. Sent to the ad platform: ${wasSent('call:demo-1') ? 'yes' : 'no'}.`, 'The caller is on the Board under Missed calls.']
       },
     },
     {
-      title: 'Callback', text: 'Staff return the call, create a contact and join it to the caller.', see: ['Journey', review(`journey/${encodeURIComponent('contact:demo')}`)],
+      title: 'Callback', text: 'Staff return the call, create a contact and join it to the caller.', see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)],
       async run() {
+        await at(0, 14, 0)
         await ask('POST', '/call', { id: 'demo-2', direction: 'outbound', from: demo.line, to: demo.phone, at: clock(), duration: 410, answered: true })
-        await ask('POST', '/identify', { subject: 'contact:demo', phone: demo.phone, name: { first: 'Inés', last: 'Vega' }, dob: '1984-05-06', event: 'inquiry' })
-        await ask('POST', '/join', { source: 'desk', pairs: [{ a: caller, b: 'contact:demo', reason: 'answered by staff' }] })
-        await ask('POST', '/convert', { transactionId: 'demo-inquiry', subject: 'contact:demo', at: clock(), stage: 'inquiry', tags: { language: 'es' } })
+        await ask('POST', '/identify', { subject: demo.contact, phone: demo.phone, name: { first: 'Inés', last: 'Vega' }, dob: '1984-05-06', event: 'inquiry' })
+        await ask('POST', '/join', { source: 'desk', pairs: [{ a: caller, b: demo.contact, reason: 'answered by staff' }] })
+        await ask('POST', '/convert', { transactionId: 'demo-inquiry', subject: demo.contact, at: clock(), stage: 'inquiry', tags: { language: 'es' } })
         await outbox.run()
         const { followUp } = await ask('GET', '/call?id=demo-1')
         return [`Missed call: ${followUp.state}.`, `Inquiry attributed to the ad click and sent: ${wasSent('demo-inquiry') ? 'yes' : 'no'}.`]
@@ -229,6 +276,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
     {
       title: 'Listing call', text: 'A call to a number published on a map listing is attributed to that listing.', see: ['Channels', review('channels')],
       async run() {
+        await at(1, 10, 15)
         const call = await ask('POST', '/call', { id: 'demo-3', from: '+15550100043', to: '+15550100104', at: clock(), duration: 260, answered: true })
         const { touches } = await ask('GET', `/attribute?subject=${call.subject}&at=${clock()}`)
         return [`Attributed to ${touches[0].campaign}, advertised office ${touches[0].custom.office_advertised}. Counted: ${call.counted ? 'yes' : 'no'}.`]
@@ -237,38 +285,42 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
     {
       title: 'Client at another office', text: 'The ad was for North and River serves the client. The report keeps both offices.', see: ['Channels by office served', review('channels///outcome.office_served')],
       async run() {
-        await ask('POST', '/convert', { transactionId: 'demo-client', subject: 'contact:demo', at: clock(), stage: 'client', tags: { office_served: 'river', language: 'es' } })
+        await at(3, 10, 0)
+        await ask('POST', '/convert', { transactionId: 'demo-client', subject: demo.contact, at: clock(), stage: 'client', tags: { office_served: 'river', language: 'es' } })
         await outbox.run()
-        const { credited } = await ask('GET', `/attribute?subject=contact:demo&at=${clock()}`)
+        const { credited } = await ask('GET', `/attribute?subject=${demo.contact}&at=${clock()}`)
         return [`Advertised: ${credited.custom.office}. Served: river. Attributed to ${credited.campaign} at ${Math.round(credited.confidence * 100)}%.`]
       },
     },
     {
-      title: 'Separation', text: 'An opposing party shares the family phone and email. The case system separates the two contacts.', see: ['Accounts', review(`accounts/${encodeURIComponent('contact:demo')}`)],
+      title: 'Value change', text: 'The client value is updated from the initial 400 USD and restated at the ad platform.', see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)],
       async run() {
-        for (const subject of ['contact:demo', demo.other]) await ask('POST', '/identify', { subject, phone: demo.phone, email: 'family@example.org', event: 'staff entry' })
-        const { joined } = await ask('GET', `/between?a=contact:demo&b=${demo.other}`)
-        await ask('POST', '/separate', { source: 'matters', pairs: [{ a: 'contact:demo', b: demo.other, reason: 'sides of one matter' }] })
-        const after = await ask('GET', `/between?a=contact:demo&b=${demo.other}`)
+        await at(3, 16, 0)
+        await ask('POST', '/restate', { transactionId: 'demo-client', value: 1250 })
+        await outbox.run()
+        const { values } = await ask('GET', '/outcome?id=demo-client')
+        return [`Initial value ${values[0].value} USD, current value ${values.at(-1).value} USD.`, `Sent to the ad platform: ${sent.filter((each) => each.id === 'demo-client').at(-1)?.value} USD.`]
+      },
+    },
+    {
+      title: 'Separation', text: 'An opposing party shares the family phone and email. The case system separates the two contacts.', see: ['Accounts', review(`accounts/${encodeURIComponent(demo.contact)}`)],
+      async run() {
+        await at(3, 16, 30)
+        for (const subject of [demo.contact, demo.other]) await ask('POST', '/identify', { subject, phone: demo.phone, email: 'family@example.org', event: 'staff entry' })
+        const { joined } = await ask('GET', `/between?a=${demo.contact}&b=${demo.other}`)
+        await ask('POST', '/separate', { source: 'matters', pairs: [{ a: demo.contact, b: demo.other, reason: 'sides of one matter' }] })
+        const after = await ask('GET', `/between?a=${demo.contact}&b=${demo.other}`)
         return [`Before: ${joined ? 'joined by a shared phone and email' : 'related'}. After: separated.`, `Same cluster: ${after.joined ? 'yes' : 'no'}.`]
       },
     },
     {
       title: 'Shared phone', text: 'A parent and a child share a phone. The link is below the join threshold and waits for review.', see: ['Matches', review('decide')],
       async run() {
-        await ask('POST', '/identify', { subject: 'contact:4801', phone: '+15550100044', name: { first: 'Marta', last: 'Lago' }, dob: '1970-02-03', event: 'staff entry' })
-        await ask('POST', '/identify', { subject: 'contact:4802', phone: '+15550100044', name: { first: 'Teo', last: 'Lago' }, dob: '2001-07-08', event: 'staff entry' })
-        const { joined, score } = await ask('GET', '/between?a=contact:4801&b=contact:4802')
+        await at(3, 16, 45)
+        await ask('POST', '/identify', { subject: 'contact:marta-lago', phone: '+15550100044', name: { first: 'Marta', last: 'Lago' }, dob: '1970-02-03', event: 'staff entry' })
+        await ask('POST', '/identify', { subject: 'contact:teo-lago', phone: '+15550100044', name: { first: 'Teo', last: 'Lago' }, dob: '2001-07-08', event: 'staff entry' })
+        const { joined, score } = await ask('GET', '/between?a=contact:marta-lago&b=contact:teo-lago')
         return [`Linked at ${Math.round(score * 100)}% by phone: ${joined ? 'joined' : 'related'}.`]
-      },
-    },
-    {
-      title: 'Value change', text: 'The client value is updated from the initial 400 USD and restated at the ad platform.', see: ['Journey', review(`journey/${encodeURIComponent('contact:demo')}`)],
-      async run() {
-        await ask('POST', '/restate', { transactionId: 'demo-client', value: 1250 })
-        await outbox.run()
-        const { values } = await ask('GET', '/outcome?id=demo-client')
-        return [`Initial value ${values[0].value} USD, current value ${values.at(-1).value} USD.`, `Sent to the ad platform: ${sent.filter((each) => each.id === 'demo-client').at(-1)?.value} USD.`]
       },
     },
     {
