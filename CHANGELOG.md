@@ -97,6 +97,7 @@
 - `report({ per })`, `GET /report?per=` and **Cost per** on the Channels view count one step in the cost per outcome. The view groups its columns, shows the report's own currency, and tells none, not recorded and does not apply apart.
 - `.env.example` names what compose needs; `docs/operations.md` covers backups, HTTPS and a name under the site.
 - The reviewer screen's picture says how many of those around a subject it draws.
+- Accounts opens on the largest cluster's graph, and its long lists scroll in their own boxes.
 - The reviewer screen draws a subject's ties as a graph to move, zoom, filter and open out. A line says what is shared and how strongly, an outline takes in one person, and whoever is picked has a card with the reasons and what can be done.
 - The Channels and Calls views have buttons for common periods, and save their tables as CSV.
 - Each reviewer view opens with the few numbers it is about. Health says first what needs someone, and by what evidence two subjects are taken for one person; a journey shows when things happened before it lists them.
