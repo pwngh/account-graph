@@ -91,7 +91,7 @@ Set before anything was run. **Source** rates are published figures. **Assumed**
 | Another adult of the household also comes | 5% | 10% | 25% | Assumed |
 | Only visits; fills the form; calls; answered; email asked | 80%; 40%; 60%; 80%; 60% | same | same | Assumed. They set how much there is, not how hard it is |
 
-`busy` is the base rates with 6,000 people whose visits and first calls fall in five days, for calls and taps by strangers close together. Calls again and late records come after, and are counted.
+`busy` is the base rates with 6,000 people in a five-day window of visits and first calls by strangers, for calls and taps by strangers close together. What comes of them after it is counted too.
 
 ## What would be bad
 
@@ -163,7 +163,7 @@ The plain rule finds more true pairs of records and callers than account-graph d
 
 Looked for on the same seeds, once the figures above were known. These were not foreseen and test nothing.
 
-- **Differences over the same worlds**, rule minus account-graph under the default policy, in points of records mixed, and then without those one spoke for. A minus is a rule that mixes fewer.
+- **Differences over the same worlds**, rule minus account-graph under the default policy, in percentage points of people with a contact record who share a cluster with somebody else's, and then without those one spoke for. A minus is a rule that mixes fewer.
 
 | Setting | Any shared fact | without those | Same phone or email | without those |
 | --- | --- | --- | --- | --- |
