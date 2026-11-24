@@ -4,6 +4,10 @@
   "description": "Link accounts by shared identifiers and attribute conversions",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pwngh/account-graph.git"
+  },
   "engines": {
     "node": ">=22.18"
   },
@@ -12,6 +16,7 @@
   },
   "files": [
     "dist",
+    "examples/household.json",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"
