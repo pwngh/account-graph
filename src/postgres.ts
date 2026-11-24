@@ -357,7 +357,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       await db.query(
         `insert into ${t('call_result')} (id, answered, voicemail, waited, recorded_at) values ($1, $2, $3, $4, $5)
          on conflict (id) do update set answered = excluded.answered, voicemail = excluded.voicemail, waited = excluded.waited, recorded_at = excluded.recorded_at`,
-        [id, answered, voicemail ?? null, waited ?? null, recorded],
+        [id, answered ?? null, voicemail ?? null, waited ?? null, recorded],
       )
     },
 
@@ -533,13 +533,22 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       )
       return rows.map(toJob).sort((x, y) => (x.transactionId < y.transactionId ? -1 : x.transactionId > y.transactionId ? 1 : x.target < y.target ? -1 : 1))
     },
-    async save(job) {
+    async swap(before, after) {
       const { rows } = await pool.query(
-        `with before as (select state from ${t('conversion')} where transaction_id = $1 and target = $2 for update)
-         update ${t('conversion')} set state = $3, due = $4, attempts = $5, job = $6 from before where transaction_id = $1 and target = $2 returning before.state as was`,
-        [job.transactionId, job.target, job.state, job.due, job.attempts, job],
+        `update ${t('conversion')} set state = $3, due = $4, attempts = $5, job = $6
+         where transaction_id = $1 and target = $2 and state = $7 and due = $8 and attempts = $9 returning 1`,
+        [after.transactionId, after.target, after.state, after.due, after.attempts, after, before.state, before.due, before.attempts],
       )
-      return rows[0]?.was as JobState | undefined
+      return rows.length > 0
+    },
+    async standing(jobs) {
+      const { rows } = await pool.query(
+        `select c.transaction_id, c.target from unnest($1::text[], $2::text[], $3::text[], $4::bigint[], $5::int[]) as j (id, target, state, due, attempts)
+         join ${t('conversion')} c on c.transaction_id = j.id and c.target = j.target and c.state = j.state and c.due = j.due and c.attempts = j.attempts`,
+        [jobs.map((job) => job.transactionId), jobs.map((job) => job.target), jobs.map((job) => job.state), jobs.map((job) => job.due), jobs.map((job) => job.attempts)],
+      )
+      const found = new Set(rows.map((row) => `${row.transaction_id}\u0000${row.target}`))
+      return jobs.filter((job) => found.has(`${job.transactionId}\u0000${job.target}`))
     },
     async get(transactionId) {
       const { rows } = await pool.query(`select * from ${t('conversion')} where transaction_id = $1 order by target`, [transactionId])
@@ -602,7 +611,7 @@ function toCounted(row: any): Counted {
 }
 
 function toResult(row: any): CallResult {
-  return { answered: row.answered, ...(row.voicemail !== null && { voicemail: row.voicemail }), ...(row.waited !== null && { waited: row.waited }), recorded: Number(row.result_at) }
+  return { ...(row.answered !== null && { answered: row.answered }), ...(row.voicemail !== null && { voicemail: row.voicemail }), ...(row.waited !== null && { waited: row.waited }), recorded: Number(row.result_at) }
 }
 
 function toCall(row: any): KeptCall {
@@ -769,7 +778,7 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
             create index if not exists call_visitor on ${schema}.call (visitor);
             create table if not exists ${schema}.call_result (
               id text primary key,
-              answered boolean not null,
+              answered boolean,
               voicemail boolean,
               waited float8,
               recorded_at bigint not null

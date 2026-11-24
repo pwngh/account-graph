@@ -562,24 +562,26 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual([answered.state, answered.counted], ['answered', true])
       for (let i = 0; i < 2; i++) assert.deepEqual(await recordCallResult(graph, { id: 'Q2', answered: true, waited: 8 }, options), { state: 'answered', counted: true })
       assert.deepEqual((await count()).stages, { call: { count: 1, value: 0 } })
-      // Waiting is not talking: answered after two minutes and over in five seconds is short.
-      const brief = await recordCall(graph, call('Q3', { at: T0 + 2000, duration: 125, answered: true, waited: 120 }), options)
-      assert.deepEqual([brief.state, brief.counted, brief.flags.includes('short')], ['answered', false, true])
+      // How long the caller waited may be known when nothing says whether they were answered. It is kept, and it answers nothing.
+      const waited = await recordCall(graph, call('Q3', { at: T0 + 2000, waited: 20 }), options)
+      assert.deepEqual([waited.state, waited.counted, (await graph.callResult('Q3'))!.waited], ['waiting', false, 20])
+      assert.deepEqual(await recordCallResult(graph, { id: 'Q3', answered: false }, options), { state: 'missed', counted: false })
+      assert.equal((await graph.callResult('Q3'))!.waited, 20)
       const mail = await recordCall(graph, call('Q4', { at: T0 + 3000, duration: 60, answered: false, voicemail: true }), options)
       assert.deepEqual([mail.state, mail.counted], ['voicemail', false])
       // A report of the call that carries a result settles it as well.
       await recordCall(graph, call('Q5', { at: T0 + 4000 }), options)
       const again = await recordCall(graph, call('Q5', { at: T0 + 4000, answered: true }), options)
-      assert.deepEqual([again.duplicate, again.state], [true, 'answered'])
+      assert.deepEqual([again.duplicate, again.state, again.counted], [true, 'answered', true])
       assert.equal((await count()).stages.call!.count, 2)
 
       // With no results expected, a call counts by its length as ever. A result that says otherwise takes it back, and may give it back.
       const plain = await recordCall(graph, call('P1', { at: T0 + 5000 }), { now: () => clock.now })
       assert.deepEqual([plain.state, plain.counted], ['unknown', true])
       assert.deepEqual(await recordCallResult(graph, { id: 'P1', answered: false }, { now: () => clock.now }), { state: 'missed', counted: false })
-      assert.deepEqual([(await count()).stages.call!.count, (await count()).missed], [2, 3])
+      assert.deepEqual([(await count()).stages.call!.count, (await count()).missed], [2, 4])
       assert.equal((await recordCallResult(graph, { id: 'P1', answered: true }))!.counted, true)
-      assert.deepEqual([(await count()).stages.call!.count, (await count()).missed], [3, 2])
+      assert.deepEqual([(await count()).stages.call!.count, (await count()).missed], [3, 3])
 
       // A result and its call arriving at once, in both orders: however they cross, the call ends up counted once.
       await Promise.all(Array.from({ length: 12 }, (_, i) => [() => recordCall(graph, call(`R${i}`, { at: T0 + 6000 + i, from: `+155501001${String(i).padStart(2, '0')}` }), options), () => recordCallResult(graph, { id: `R${i}`, answered: i % 2 === 0 }, options)]).flat().map((each) => each()))
@@ -1205,7 +1207,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       // Every call counts exactly when a person answered it and it was long enough.
       for (let n = 0; n < 30; n++) {
         const call = await graph.keptCall(`F${n}`)
-        const counts = call?.result?.answered === true && call.duration! - call.result.waited! >= 30
+        const counts = call?.result?.answered === true && call.duration! >= 30
         assert.equal(Boolean(await graph.outcomeOf(`call:F${n}`)), counts, `F${n}`)
       }
     })

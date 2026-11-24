@@ -98,7 +98,7 @@ The four `POST` routes answer with the subjects whose cluster moved. With the se
 | `POST /restate` | `{ transactionId, value, currency? }`. Changes an outcome's value, in the report and on the platforms that can restate. |
 | `POST /link` | `{ url, subject, days? }`. Answers `{ url }`: the address with a token naming the person it is for. See [links](links.md). |
 | `POST /staff-link` | `{ url, days? }`. Answers `{ url }`: the address that marks the browser that opens it as staff. |
-| `POST /call` | A phone call: `{ id, from?, to, at, duration?, answered?, voicemail?, waited? }`. Answers `{ subject, flags, counted, state, visitor?, duplicate }`. See [calls](calls.md). |
+| `POST /call` | A phone call: `{ id, from?, to, at, duration?, direction?, answered?, voicemail?, waited? }`. `direction` is `inbound`. Answers `{ subject, flags, counted, state, visitor?, duplicate }`. See [calls](calls.md). |
 | `POST /call/result` | How a call went: `{ id, answered, voicemail?, waited? }`, before or after the call. Answers `{ state, counted }`; `waiting` while the call itself has not come. |
 | `POST /costs` | A list of `{ day, source, amount, campaignId?, campaign?, currency?, clicks?, impressions? }`. A row for the same day, source and campaign replaces the one before. |
 | `GET /conversion?id=` | The jobs of one transaction, one per ad platform. |

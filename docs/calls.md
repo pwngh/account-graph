@@ -90,7 +90,7 @@ curl -X POST https://graph.example.org/call/result -H "authorization: Bearer $GR
 | --- | --- |
 | `answered` | A person spoke to the caller. Required. |
 | `voicemail` | The caller reached voicemail. Not together with `answered: true`. |
-| `waited` | Seconds before someone answered or the caller gave up. It does not count as talking, so it does not help a call reach the minimum length. |
+| `waited` | Seconds before someone answered or the caller gave up. |
 
 Report it again and the last report stands. A call with `answered: false` is **missed**: tied to its visitor and campaign like any call, listed under **Missed calls** in the report, and never an outcome.
 

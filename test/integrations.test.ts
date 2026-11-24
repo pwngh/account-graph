@@ -864,6 +864,12 @@ test('a call whose result is awaited is held, and nothing is sent until a person
     assert.equal((await post('/call', call('CA3'))).body.state, 'answered')
     await outbox.run()
     assert.deepEqual(requests.flatMap((request) => request.events.map((each: any) => each.transactionId)), ['call:CA1', 'call:CA3'])
+    // Missed as it was reported, and answered after all: it goes out with the number's hash it was reported with.
+    await post('/call', { ...call('CA4'), answered: false })
+    assert.equal((await post('/call/result', { id: 'CA4', answered: true })).body.counted, true)
+    await outbox.run()
+    const corrected = requests.at(-1)!.events[0] as any
+    assert.deepEqual([corrected.transactionId, corrected.userData.userIdentifiers], ['call:CA4', [{ phoneNumber: hashPhone('+15550100021') }]])
     const held = (await (await fetch(`${base}/conversions?state=held`, { headers: { authorization: 'Bearer service' } })).json()) as any[]
     assert.deepEqual(held.map((job) => job.transactionId), ['call:CA2'])
   } finally {

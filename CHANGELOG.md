@@ -75,7 +75,7 @@
 
 ### Changed
 
-- `OutboxStore.save` resolves to the state a job was in before.
+- Breaking: `OutboxStore` has `swap` and `standing` in place of `save`; a worker's pass no longer overwrites a change made since it claimed a job.
 - Twilio's `busy`, `no-answer`, `failed` and `canceled` calls are recorded as not answered.
 - `prune` also deletes advertising answers that no longer stand.
 - Breaking: `GET /decisions` answers `{ decisions, next, total }`, newest first, a page at a time (`decisionPage`).

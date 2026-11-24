@@ -579,6 +579,48 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       assert.deepEqual(await outbox.counts(), { held: 1, pending: 0, sent: 1, skipped: 0, failed: 0 })
     })
 
+    test('what was taken back is not sent by an old pass, a retry, or a later change of mind', async () => {
+      let during: (() => Promise<unknown>) | undefined
+      let refuse: Error | undefined
+      const { graph, outbox, remote, clock, store } = await fresh()
+      const values = () => remote.requests.flatMap((request) => request.events.map((event: any) => [event.transactionId, event.conversionValue]))
+      // Skipped for want of a key, then taken back: putting skipped jobs in line again does not send it.
+      await graph.observe({ subject: 'contact:9', identifiers: ['email:none'], at: T0 })
+      await outbox.record({ transactionId: 'enroll-9', subject: 'contact:9', at: T0 + HOUR, action: '900', value: 5 })
+      assert.equal((await outbox.run()).skipped, 1)
+      await outbox.withdraw('enroll-9')
+      assert.deepEqual([await outbox.retry('enroll-9'), (await outbox.get('enroll-9'))[0]!.state], [[], 'held'])
+
+      // Taken back while a request that will be refused is on its way: the pass does not put it back in line.
+      const slow = createOutbox(graph, store.outbox, { targets: [googleAds({ customerId: '1', send: async (request) => { await during?.(); if (refuse) throw refuse; return remote.send(request) } })], now: () => clock.now, random: () => 1 })
+      await enroll(graph, 1)
+      await slow.record(outcome(1))
+      during = () => slow.withdraw('enroll-1')
+      refuse = new GoogleError(503, 'unavailable')
+      assert.equal((await slow.run()).retried, 0)
+      during = refuse = undefined
+      clock.now += 2 * HOUR
+      await slow.run()
+      assert.deepEqual([values(), (await slow.get('enroll-1'))[0]!.state], [[], 'held'])
+
+      // Taken back after a worker claimed it and before it went out.
+      await enroll(graph, 2)
+      await slow.record(outcome(2))
+      const early = { ...store.outbox, standing: async (jobs: Parameters<typeof store.outbox.standing>[0]) => (await slow.withdraw('enroll-2'), store.outbox.standing(jobs)) }
+      await createOutbox(graph, early, { targets: [googleAds({ customerId: '1', send: remote.send })], now: () => clock.now }).run()
+      assert.deepEqual(values(), [])
+
+      // Sent, then no, yes and no again before the next pass: the last word stands on the platform.
+      await enroll(graph, 3)
+      await slow.record(outcome(3))
+      await slow.run()
+      await slow.withdraw('enroll-3')
+      await slow.release(outcome(3))
+      await slow.withdraw('enroll-3')
+      await slow.run()
+      assert.deepEqual(values(), [['enroll-3', 200], ['enroll-3', 0]])
+    })
+
     test('a platform that keeps what it was sent says so, and one taken back on its way is retracted', async () => {
       let midway: (() => Promise<unknown>) | undefined
       const values: unknown[] = []

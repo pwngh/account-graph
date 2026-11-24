@@ -333,8 +333,8 @@ export interface KeptCall {
 
 /** How a call went, as whoever runs the phones reports it. */
 export interface CallResult {
-  /** A person spoke to the caller. The phone system picking up is not an answer, and neither is voicemail. */
-  answered: boolean
+  /** A person spoke to the caller. The phone system picking up is not an answer, and neither is voicemail. Absent when it is not known. */
+  answered?: boolean
   voicemail?: boolean
   /** How long the caller waited before someone answered or they gave up, in seconds. */
   waited?: number
