@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs'
 const allow = (body: string) => `'sha256-${createHash('sha256').update(body).digest('base64')}'`
 
 /** The scripts of the reviewer screen, in the order the page runs them: what every view uses, each view in menu order, then the start. */
-const SCRIPTS = ['core', 'accounts', 'journey', 'calls', 'channels', 'health', 'start']
+const SCRIPTS = ['core', 'accounts', 'journey', 'board', 'calls', 'channels', 'health', 'start']
 
 // A browser hashes the text with every line ending as a plain newline, so serve and hash it that way.
 const read = (file: string) => readFileSync(new URL(`./review/${file}`, import.meta.url), 'utf8').replace(/\r\n?/g, '\n')

@@ -951,7 +951,10 @@ test('a call whose result is awaited is held, and nothing is sent until a person
     assert.deepEqual(told, [['call:CA1', [['google', 'sent']]]])
     assert.ok(story.entries.filter((entry: any) => entry.kind === 'call').every((entry: any) => entry.state && !('to' in entry.call)))
     assert.equal((await read('/journey?subject=a&before=soon')).status, 400)
-    for (const bad of ['/followed?days=10', '/followed?step=client&days=x', '/calls?after=x', '/calls?from=2026-13-01', '/calls/summary?tz=Mars']) assert.equal((await read(bad)).status, 400, bad)
+    const board = await (await read('/board')).json() as any
+    assert.deepEqual([board.days, board.timeZone, board.columns[0].step], [90, 'UTC', null])
+    assert.ok(board.columns.every((column: any) => column.rows.every((row: any) => !('outcome' in row) && !('to' in (row.call ?? {})))))
+    for (const bad of ['/board?days=0', '/board?days=x', '/followed?days=10', '/followed?step=client&days=x', '/calls?after=x', '/calls?from=2026-13-01', '/calls/summary?tz=Mars']) assert.equal((await read(bad)).status, 400, bad)
     // A result that comes first waits for its call.
     assert.deepEqual((await post('/call/result', { id: 'CA3', answered: true })).body, { state: 'waiting', counted: false })
     assert.equal((await post('/call', call('CA3'))).body.state, 'answered')

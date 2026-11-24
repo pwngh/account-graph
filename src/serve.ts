@@ -331,6 +331,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
     staffNetworks: config.staffNetworks,
     ...(config.linkSecret && { linkSecret: config.linkSecret }),
     ...(config.stages && { stages: config.stages }),
+    returnHours: config.returnHours,
     // A tap on a phone link is what ties a call to a visitor, so taking calls means taking that event.
     events: [...new Set([...config.events, ...(config.callNumbers || config.twilio ? ['phone_click'] : [])])],
     calls: { minimumSeconds: config.callMinimum, resultWait: config.callResultWait * 60_000, ...(config.callResults === 'expected' && { results: 'expected' as const }), ...(config.callNumbers && { numbers: config.callNumbers }), ...(config.twilio && { twilio: config.twilio }) },

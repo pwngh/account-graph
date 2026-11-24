@@ -76,6 +76,7 @@ A token goes in the `authorization` header as `Bearer …`. There are two.
 | `GET /disputes` | Pairs whose reports from systems have switched between kept apart and joined (or withdrawn) three times or more. |
 | `GET /consent?subject=` | Every answer the subject gave about advertising, the standing one first. |
 | `GET /outcome?id=` | One outcome with every value it has had, or `null`. |
+| `GET /board?days=` | People by the furthest step they reached, missed calls nobody returned first: `{ columns, unplaced }`, each column with `people`, `fresh`, `late`, `done` and its `rows`. See [the report](report.md#people-by-step). |
 | `GET /followed?from=&to=&tz=&step=&days=` | Who reached a step within some days of a call. See [the report](report.md#what-followed-a-call). |
 | `GET /call?id=` | One call with its state and, for a missed one, what became of it, or `null`. |
 | `GET /calls?from=&to=&tz=&after=` | Missed calls nobody has returned, oldest first, 50 at a time: `{ from, to, timeZone, at, calls, next }`. Pass `next` as `after`. |
