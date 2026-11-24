@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
-import { createGraph, createMemoryStore, email, phone } from '../src/index.ts'
+import { createGraph, createMemoryStore, email, hashPhone, phone, recordCall, recordNotLead, recordReturn } from '../src/index.ts'
 import { createHandler } from '../src/server.ts'
 import { browse, chrome, pause, until, without } from './chrome.ts'
 
@@ -207,6 +207,19 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   const csv = (await run('taken[0].text()')) as string
   assert.match(csv, /"google","'=1\+1",/)
   assert.ok(!/"[=+@]/.test(csv), csv)
+
+  // What another system said of a call is shown as said: reached without a call, and nobody's inquiry.
+  const rang = Date.now() - 3_600_000
+  for (const [id, from] of [['told-1', '+17135550181'], ['spam-1', '+17135550182']]) await recordCall(graph, { id: id!, from: from!, to: '+17135550100', at: rang, answered: false })
+  await recordReturn(graph, { id: 'told-1', at: rang + 600_000 })
+  await recordNotLead(graph, { call: 'spam-1', kind: 'spam' })
+  await run(`location.hash = '#/calls'`)
+  const calls = await until('the calls', async () => ((await text('#view')).includes('No lead') ? text('#view') : ''))
+  assert.match(calls, /1 of them only as your own system reported\./)
+  for (const [from, said] of [['+17135550181', 'returned after 10 min, as your own system reported'], ['+17135550182', 'Spam, not counted']]) {
+    await run(`location.hash = ${JSON.stringify(`#/journey/${encodeURIComponent(`caller:${hashPhone(from!)}`)}`)}`)
+    await until(said!, async () => (await text('#view')).includes(said!))
+  }
 
   await enter('service')
   await until('the service note', async () => (await text('#name')).includes('carry no name'))

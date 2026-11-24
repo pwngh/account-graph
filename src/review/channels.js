@@ -74,8 +74,9 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
   const counted = (step) => (step ? [amount(step.count), step.people === step.count ? '' : el('span', { class: 'reason' }, `${amount(step.people)} ${step.people === 1 ? 'person' : 'people'}`)] : [tally(0)])
   const reached = (row) => edge([...stages.map((stage) => td('num', ...counted(row.stages[stage]))), td('num', tally(row.people)), ...(report.total.missed > 0 ? [td('num', tally(row.missed))] : [])])
   const cells = (row) => [...edge([...spent(row), td('num', tally(row.visits))]), ...reached(row), ...edge([td('num', cash(row.value)), td('num', each(row)), td('num', back(row))])]
+  const spurned = (row) => row.notLeads > 0 && `${amount(row.notLeads)} said to be no lead`
   // A campaign is charged whole, so its cost, clicks and arrivals stay on its own line and are not split.
-  const split = (row) => (row.breakdown ?? []).filter((part) => part.outcomes + part.missed > 0 || part.name === '(not recorded)').map((part) => el('tr', { class: 'part' }, td(''), td('who', part.name), ...edge([td(''), td(''), td('')]), ...reached(part), ...edge([td('num', cash(part.value)), td(''), td('')])))
+  const split = (row) => (row.breakdown ?? []).filter((part) => part.outcomes + part.missed + part.notLeads > 0 || part.name === '(not recorded)').map((part) => el('tr', { class: 'part' }, td(''), td('who', part.name, part.notLeads > 0 ? el('span', { class: 'reason' }, spurned(part)) : ''), ...edge([td(''), td(''), td('')]), ...reached(part), ...edge([td('num', cash(part.value)), td(''), td('')])))
   const table = el('table', { class: 'campaign-report' }, el('tr', {}, group('Attribution', 2, true), group('Spend and traffic', 3), group('What followed', stages.length + 1 + (report.total.missed > 0 ? 1 : 0)), group('What it was worth', 3)),
     el('tr', {}, th('Source'), th('Campaign'), ...edge([th('Cost', 'num'), th('Clicks', 'num', 'Clicks billed'), th('Arrivals', 'num', 'Arrivals seen')]),
       ...edge([...stages.map((stage) => th(stage, 'num')), th('People', 'num'), ...(report.total.missed > 0 ? [th('Missed', 'num', 'Missed calls')] : [])]),
@@ -90,10 +91,10 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
     lines.push(el('tr', {}, td('', row.source === '(none)' ? el('span', { class: 'muted' }, 'no arrival credited') : sourced(row.source)),
       td('who', row.campaign || row.campaignId || el('span', { class: 'muted' }, 'No campaign named'),
         row.campaign && row.campaignId ? el('span', { class: 'reason' }, row.campaignId) : '',
-        note([row.missingDays > 0 && (row.costDays > 0 || row.thin) && `${amount(row.missingDays)} of ${amount(report.days)} days missing`])), ...cells(row)), ...split(row))
+        note([row.missingDays > 0 && (row.costDays > 0 || row.thin) && `${amount(row.missingDays)} of ${amount(report.days)} days missing`, spurned(row)])), ...cells(row)), ...split(row))
     table.append(...lines)
   }
-  table.append(el('tr', { class: 'sum' }, td('', 'All'), td('who', note([report.leftOut > 0 && `cost and return leave out ${amount(report.leftOut)} ${report.leftOut === 1 ? 'campaign' : 'campaigns'}`])), ...cells(report.total)), ...split(report.total))
+  table.append(el('tr', { class: 'sum' }, td('', 'All'), td('who', note([report.leftOut > 0 && `cost and return leave out ${amount(report.leftOut)} ${report.leftOut === 1 ? 'campaign' : 'campaigns'}`, spurned(report.total)])), ...cells(report.total)), ...split(report.total))
   const breakdown = el('select', { on: { change: () => go(address({ by: breakdown.value })) } }, el('option', { value: '' }, 'Nothing'),
     ...[...new Set([...report.dimensions, ...(by ? [by] : [])])].map((each) => el('option', { value: each, ...(each === by && { selected: '' }) }, dimensionName(each))))
   const choose = el('select', { on: { change: () => go(address({ per: choose.value })) } }, el('option', { value: '' }, 'every outcome'),
@@ -107,7 +108,7 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
       per ? `Cost per outcome counts only "${per}". Return still uses all value.` : '',
       by.startsWith('touch.') ? 'Breakdown uses the credited arrival.' : by.startsWith('outcome.') ? 'Breakdown uses the recorded outcome.' : '',
       by ? 'Costs, clicks and arrivals stay on the campaign row.' : '',
-      'Clicks are billed clicks; arrivals are arrivals seen. 0 means known to be none. A dash means no applicable cost or credited value.')),
+      'Clicks are billed clicks; arrivals are arrivals seen. What was said to be no lead is in no other number. 0 means known to be none. A dash means no applicable cost or credited value.')),
     report.filling ? el('p', { class: 'banner' }, el('b', {}, 'Outcomes still coming in. '),
       `At the slowest step, 95 in 100 outcomes arrive within ${amount(report.filling.days)} days of the arrival. Costs for arrivals after ${reviewDisplay.day(report.filling.after)} are included, but some outcomes are not.`) : ''))
   const campaigns = el('section', {}, report.rows.length > 0
