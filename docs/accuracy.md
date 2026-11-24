@@ -49,9 +49,11 @@ Made-up people are no firm's customers. The figures say how the default settings
 
 A browser or telephone used by two people belongs with both. Joining both people's contact records through it is wrong, and is counted so. A call by one adult for another joined to the other's record is wrong too, because the caller is somebody else. Who calls from a landline is everybody who did.
 
+Credit is asked as of an hour after each record, with what is known at the end of the world, so later facts may help an earlier record. A report read on the day would have less.
+
 Each setting is twenty worlds with seeds 20261124 to 20261143. The range beside a figure is Student's 95% interval over the worlds, which are independent of each other; people in one world are not.
 
-Two plain rules are scored beside it: whoever shares any one device, number or email is one person, and whoever shares a phone or an email is, of records and callers alone. The second is what many firms do.
+Two plain rules are scored beside it: whoever shares any one device, number or email is one person, and whoever shares a phone or an email is, of records and callers alone. The second is what many firms do, and is held to pairs of records and callers; account-graph's figures for those alone are printed beside it.
 
 ## The rates
 
@@ -101,7 +103,7 @@ Written before anything was run.
 | Base, default policy | Fewer than 98% of joined pairs are right |
 | Base, default policy | Fewer than 70% of the true pairs with a chain of facts are found |
 | Base, default policy | The rule of any shared fact mixes no more people's records than account-graph does |
-| Base, default policy | The rule of a shared phone or email mixes fewer people's records and finds as many true pairs |
+| Base, default policy | Of records and callers, the rule of a shared phone or email mixes fewer people's records and finds as many true pairs |
 | Base, default policy | More than 5% of `dial` links, or of any kind with 200 links or more, are between two people |
 | Base, default policy | More than 2% of credited records go to somebody else's ad, or more than 2% of records of people who never came by an ad are credited to one |
 | Base, default policy | Fewer than 70% of the records with a chain of facts to their ad are credited to it |

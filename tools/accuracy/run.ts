@@ -188,8 +188,7 @@ async function main() {
     }
     for (const arm of Object.keys(ARMS) as Arm[]) {
       if (values.arm !== undefined && values.arm !== arm) continue
-      const ours: ReturnType<typeof figures>[] = []
-      const plain = new Map<string, ReturnType<typeof figures>[]>(Object.keys(PLAIN).map((rule) => [rule, []]))
+      const lines = new Map<string, ReturnType<typeof figures>[]>(['account-graph', 'any shared fact', 'account-graph, of records and callers', 'same phone or email, of records and callers'].map((label) => [label, []]))
       const credits: ReturnType<typeof creditFigures>[] = []
       const kinds = new Map<string, { same: number; found: number; wrong: number }>()
       const links = new Map<string, { links: number; wrong: number }>()
@@ -199,8 +198,12 @@ async function main() {
         const made = makeWorld(setting.rates, size(world))
         const outcome = await report(made, arm)
         const result = score(outcome.truths, outcome.clusterOf, made.spoke)
-        ours.push(figures(result))
-        for (const [rule, join] of Object.entries(PLAIN)) plain.get(rule)!.push(figures(score(outcome.truths, join(outcome.truths), made.spoke)))
+        // A rule that looks at records and callers alone is held to those, and so is account-graph beside it. Its clusters are still of everything it saw.
+        const few = outcome.truths.filter(({ subject }) => !subject.startsWith('visitor:'))
+        lines.get('account-graph')!.push(figures(result))
+        lines.get('any shared fact')!.push(figures(score(outcome.truths, PLAIN['any shared fact'](outcome.truths), made.spoke)))
+        lines.get('account-graph, of records and callers')!.push(figures(score(few, outcome.clusterOf, made.spoke)))
+        lines.get('same phone or email, of records and callers')!.push(figures(score(few, PLAIN['same phone or email'](few), made.spoke)))
         credits.push(creditFigures(outcome.credit))
         credited = added(credited, outcome.credit)
         total = added(total, { wrong: result.all.wrong, found: result.all.found, mixed: result.mixed, people: result.people, mixedRecords: result.mixedRecords, mixedApart: result.mixedApart, recorded: result.recorded, wrongClusters: result.wrongClusters })
@@ -208,7 +211,7 @@ async function main() {
         for (const [kind, count] of outcome.links) links.set(kind, added(links.get(kind) ?? { links: 0, wrong: 0 }, count))
       }
       console.log(`\n## ${name}, ${arm} policy: ${worlds} worlds of ${people} people over ${setting.days} days, seeds from ${seed}`)
-      for (const [label, list] of [['account-graph', ours], ...plain] as [string, typeof ours][]) {
+      for (const [label, list] of lines) {
         const of = (key: keyof ReturnType<typeof figures>) => percent(interval(list.map((each) => each[key])))
         console.log(`${label}: people whose record is with another's ${of('mixedRecords')}, and without those one spoke for ${of('mixedApart')}; people mixed by anything ${of('mixed')}; joined pairs that are right ${of('right')}; true pairs found ${of('found')}; of those with a chain of facts ${of('foundOfJoinable')}`)
       }
