@@ -67,20 +67,25 @@ test('with no groups a score is what it always was, and with groups only the str
   }
 })
 
-test('the household preset is a sound policy, and fit learns only from the kind that counted', () => {
+test('the household preset is a sound policy, and fit counts a group once', () => {
   const given = JSON.parse(readFileSync(new URL('../examples/household.json', import.meta.url), 'utf8'))
   assert.deepEqual(policyProblems(given), [])
   // The page that explains it shows the same thing.
   const shown = /```json\n([\s\S]*?)```/.exec(readFileSync(new URL('../docs/presets.md', import.meta.url), 'utf8'))![1]!
   assert.deepEqual(JSON.parse(shown), given)
-  assert.deepEqual(policyProblems({ kinds: { phone: { group: '' }, review: { group: 'x' } } }), ['kind "phone" needs its group as text', 'kind "review" is a decision, so it cannot be in a group'])
+  assert.deepEqual(policyProblems({ kinds: { phone: { group: '' } } }), ['kind "phone" needs its group as text'])
 
   const policy = policyFrom(given)
-  // Every pair shares a phone and an address. The address never counts, so nothing about it can be learned from them.
-  const labeled = Array.from({ length: 40 }, (_, i) => ({ same: i < 10, reasons: [{ identifier: 'phone:p', evidence: 0.85, fanout: 2, gap: 0 }, { identifier: 'address:a', evidence: 0.6, fanout: 2, gap: 0 }] }))
+  // Pairs that share only a phone are strangers, and pairs that share an address too are one person. The address starts in the
+  // phone's shadow, and the fit still finds that it is the one that says something.
+  const phone = { identifier: 'phone:p', evidence: 0.85, fanout: 2, gap: 0 }
+  const address = { identifier: 'address:a', evidence: 0.6, fanout: 2, gap: 0 }
+  const labeled = [...Array.from({ length: 100 }, () => ({ same: false, reasons: [phone] })), ...Array.from({ length: 300 }, () => ({ same: true, reasons: [phone, address] }))]
   const fitted = fit(labeled, policy, 0.01)
-  assert.ok(Math.abs(fitted.kinds.phone!.after - 0.25) < 0.15, String(fitted.kinds.phone!.after))
+  assert.ok(fitted.kinds.phone!.after < 0.2 && fitted.kinds.address!.after > 0.9, JSON.stringify(fitted.kinds))
   assert.ok(fitted.loss.after < fitted.loss.before)
+  // A pair's score is the stronger of the two under the weights found.
+  assert.deepEqual(fitted.calibration.map((bucket) => bucket.actual), [0, 1])
 })
 
 test('a conversion sends one click id and hashed match keys', () => {

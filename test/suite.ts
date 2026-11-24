@@ -1027,9 +1027,9 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await graph.ignore('phone:1')
       assert.deepEqual((await graph.links('a')).map((link) => [link.score, link.level, link.reasons[0]!.counted]), [[0.6, 'related', undefined]])
       // A number seen on two people four years apart has faded to a quarter.
-      const old = await fresh(household)
-      await old.graph.observe([{ subject: 'a', identifiers: ['phone:1', 'ip:198.51.100.7'], at: T0 }, { subject: 'b', identifiers: ['phone:1'], at: T0 + 4 * 365 * DAY }])
-      assert.deepEqual(await old.graph.links('a'), [])
+      const old = await fresh({ ...household, related: 0 })
+      await old.graph.observe([{ subject: 'a', identifiers: ['phone:1'], at: T0 }, { subject: 'b', identifiers: ['phone:1'], at: T0 + 4 * 365 * DAY }])
+      assert.ok(Math.abs((await old.graph.links('a'))[0]!.score - 0.85 / 4) < 1e-9)
     })
 
     test('overlapping writes leave clusters sound', async () => {

@@ -125,7 +125,6 @@ export function policyProblems(given: unknown): string[] {
       if (rule.cap !== undefined && !(Number.isSafeInteger(rule.cap) && rule.cap >= 0)) wrong.push(`kind "${kind}" needs a cap of zero or more, in whole subjects`)
       if (rule.halfLife !== undefined && rule.halfLife !== 'none' && !(number(rule.halfLife, 0, Number.MAX_VALUE) && rule.halfLife > 0)) wrong.push(`kind "${kind}" needs a halfLife in milliseconds, or "none"`)
       if (rule.group !== undefined && !(typeof rule.group === 'string' && rule.group)) wrong.push(`kind "${kind}" needs its group as text`)
-      if (kind === 'review' && rule.group !== undefined) wrong.push('kind "review" is a decision, so it cannot be in a group')
       if (NOTES.has(kind) && rule.weight) wrong.push(`kind "${kind}" is a note and links nothing, so its weight must stay 0`)
     }
   }
