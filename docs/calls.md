@@ -122,7 +122,7 @@ Report the calls you place as well, and each missed call says what became of it.
 ```sh
 curl -X POST https://graph.example.org/call -H "authorization: Bearer $GRAPH_TOKEN" \
   -d '{"id":"CB1","direction":"outbound","from":"+15550100001","to":"+15550100041","at":1795463600000,"duration":80,"answered":true}'
-curl "https://graph.example.org/call?id=CA2" -H "authorization: Bearer $REVIEW_TOKEN"
+curl "https://graph.example.org/call?id=CA2" -H "authorization: Bearer $REVIEWER_TOKEN"
 ```
 
 ```json

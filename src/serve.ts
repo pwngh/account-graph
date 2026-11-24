@@ -33,8 +33,8 @@ import { createOutbox } from './outbox.ts'
 import type { Target } from './outbox.ts'
 import { createPostgresStore } from './postgres.ts'
 import type { Pool } from './postgres.ts'
-import { createHandler, networks } from './server.ts'
-import type { HandlerOptions } from './server.ts'
+import { createHandler, networks, reviewerProblems } from './server.ts'
+import type { HandlerOptions, Reviewers } from './server.ts'
 import { checkTags } from './tags.ts'
 import { googleAds, meta, microsoftAds, tiktok } from './targets.ts'
 import type { Change } from './types.ts'
@@ -95,7 +95,7 @@ export function configFrom(env: Env) {
     databaseUrl: need('DATABASE_URL'),
     schema: env.GRAPH_SCHEMA || 'account_graph',
     token: need('GRAPH_TOKEN'),
-    reviewToken: env.REVIEW_TOKEN,
+    reviewers: parsed('REVIEW_TOKENS') as Reviewers | undefined,
     origins: (env.ORIGINS ?? '').split(',').map((origin) => origin.trim().replace(/\/$/, '')).filter(Boolean),
     port: number('PORT', 8080),
     host: env.HOST || '0.0.0.0',
@@ -199,7 +199,7 @@ export function configFrom(env: Env) {
     for (const problem of ladderProblems(config.stages, targets)) wrong.push(`STAGES: ${problem}`)
   }
     if (config.linkSecret !== undefined && config.linkSecret.length < 16) wrong.push('LINK_SECRET must be at least 16 characters')
-  if (config.reviewToken && config.reviewToken === config.token) wrong.push('REVIEW_TOKEN must differ from GRAPH_TOKEN')
+  for (const problem of reviewerProblems(config.reviewers, config.token)) wrong.push(`REVIEW_TOKENS: ${problem}`)
   if (config.auditHours > 0 && !config.alertWebhook) wrong.push('ALERT_WEBHOOK must be set along with AUDIT_HEAD_HOURS')
   if (wrong.length > 0) throw new Error(`Cannot start:\n  ${wrong.join('\n  ')}`)
   return config
@@ -335,7 +335,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
     // A tap on a phone link is what ties a call to a visitor, so taking calls means taking that event.
     events: [...new Set([...config.events, ...(config.callNumbers || config.twilio ? ['phone_click'] : [])])],
     calls: { minimumSeconds: config.callMinimum, resultWait: config.callResultWait * 60_000, ...(config.callResults === 'expected' && { results: 'expected' as const }), ...(config.callNumbers && { numbers: config.callNumbers }), ...(config.twilio && { twilio: config.twilio }) },
-    ...(config.reviewToken && { reviewToken: config.reviewToken }),
+    ...(config.reviewers && { reviewers: config.reviewers }),
     ...(config.cookie && { cookie: config.cookie }),
     ...(config.fingerprint && { fingerprint: createFingerprintVerifier(config.fingerprint) }),
     ...(config.maxmind && { ipInfo: createMaxMindLookup(config.maxmind) }),
@@ -351,7 +351,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
   const on = (name: string, enabled: unknown) => `${name} ${enabled ? 'on' : 'off'}`
   log(`listening on ${config.host}:${port}`)
   log(`collect accepts ${config.origins.length > 0 ? config.origins.join(', ') : 'no origins yet (set ORIGINS)'}`)
-  log([on('reviewer token', config.reviewToken), on('server cookie', config.cookie), on('fingerprint', config.fingerprint), on('maxmind', config.maxmind), on('signed links', config.linkSecret), on('staff networks', config.staffNetworks.length > 0), on('alerts', config.alertWebhook), on('address checks', config.smarty), on('phone line checks', config.lineType)].join(', '))
+  log([Object.keys(config.reviewers ?? {}).length > 0 ? `reviewers ${Object.keys(config.reviewers!).join(', ')}` : 'reviewers none', on('server cookie', config.cookie), on('fingerprint', config.fingerprint), on('maxmind', config.maxmind), on('signed links', config.linkSecret), on('staff networks', config.staffNetworks.length > 0), on('alerts', config.alertWebhook), on('address checks', config.smarty), on('phone line checks', config.lineType)].join(', '))
   log(`outbox sends to ${targets.length > 0 ? targets.map((target) => target.name).join(', ') : 'nobody (no ad platform configured)'}`)
   if (config.stages) log(`steps: ${Object.entries(config.stages).map(([name, stage]) => `${name}${stage.value === undefined ? '' : ` ${stage.value}`}`).join(', ')}`)
     log(`page events taken: ${options.events!.length > 0 ? options.events!.join(', ') : 'none (set EVENTS)'}; calls from twilio ${config.twilio ? 'on' : 'off'}; call results ${config.callResults === 'expected' ? `expected within ${config.callResultWait} minutes` : 'not expected'}`)

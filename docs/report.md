@@ -3,7 +3,7 @@
 The report sets each campaign's cost beside the outcomes its visitors went on to produce. It answers "which campaigns pay for themselves" from the same links the graph already keeps.
 
 ```sh
-curl -H "authorization: Bearer $REVIEW_TOKEN" \
+curl -H "authorization: Bearer $REVIEWER_TOKEN" \
   "https://graph.example.org/report?from=2026-11-01&to=2026-11-14"
 ```
 
@@ -122,7 +122,7 @@ The report's columns follow the order of `STAGES`. A step whose action names a p
 Ask for a dimension and every line is split by it: which office was advertised, which one served the person, in what language, at what hour.
 
 ```sh
-curl -H "authorization: Bearer $REVIEW_TOKEN" \
+curl -H "authorization: Bearer $REVIEWER_TOKEN" \
   "https://graph.example.org/report?from=2026-11-01&to=2026-11-14&by=outcome.office_served"
 ```
 
@@ -187,7 +187,7 @@ Only people who reached a step or had a call, to you or from you, in the period 
 Choose a step and a number of days, and the report counts who went on to reach it after calling.
 
 ```sh
-curl -H "authorization: Bearer $REVIEW_TOKEN" \
+curl -H "authorization: Bearer $REVIEWER_TOKEN" \
   "https://graph.example.org/followed?from=2026-09-01&to=2026-09-30&step=client&days=30"
 ```
 

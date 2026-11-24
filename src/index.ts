@@ -1,4 +1,4 @@
-export { createGraph } from './graph.ts'
+export { createGraph, Outdated } from './graph.ts'
 export { createMemoryStore } from './memory.ts'
 export { defaultPolicy, policyFrom, policyHash, policyProblems } from './policy.ts'
 export { components, partition, scorePairs } from './resolve.ts'
@@ -80,4 +80,5 @@ export type {
   ValueChange,
   Verdict,
   Why,
+  Deciding,
 } from './types.ts'

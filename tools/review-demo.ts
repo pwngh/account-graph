@@ -137,7 +137,7 @@ writing = undefined
 // The example site (examples/site.ts) can report to this server too.
 const handler = createHandler(graph, {
   token: 'service-demo',
-  reviewToken: 'demo',
+  reviewers: { dana: 'demo' },
   origins: ['http://localhost:3000', 'http://127.0.0.1:3000'],
   events: ['brochure', 'phone_click'],
   linkSecret: 'demo-link-secret-not-for-real-use',
@@ -147,4 +147,4 @@ const handler = createHandler(graph, {
   calls: { numbers: { ...numbers, '+15551230001': { source: 'google', campaignId: '20222' } }, results: 'expected' },
 })
 const port = Number(process.env.PORT ?? 8788)
-createServer(handler).listen(port, 'localhost', () => console.log(`reviewer screen: http://localhost:${port}/review  (reviewer token: demo; press Channels for the report)`))
+createServer(handler).listen(port, 'localhost', () => console.log(`reviewer screen: http://localhost:${port}/review  (reviewer dana, token: demo; press Channels for the report)`))

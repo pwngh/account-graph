@@ -53,7 +53,7 @@ function profileOf(profile) {
     profile.cluster.oversized ? el('p', { class: 'apart' }, 'This cluster is larger than the review size. A shared identifier may be joining strangers.') : '',
     el('p', {}, el('a', { class: 'link', href: `#/journey/${encodeURIComponent(profile.subject)}` }, 'Their journey: everything recorded, in order')),
     el('div', { class: 'row' },
-      el('button', { on: { click: () => act('Join as one person', `${profile.subject} and the subject you name will be treated as one person.`, '/join', { a: profile.subject }, 'Join', 'b') } }, 'Join with another…'),
+      el('button', { on: { click: () => act('Join as one person', `${profile.subject} and the subject you name will be treated as one person.`, '/join', { a: profile.subject }, 'Join', { otherKey: 'b' }) } }, 'Join with another…'),
       el('button', { class: 'danger', on: { click: () => act('Forget this subject', `Everything recorded about ${profile.subject} will be deleted. This cannot be undone.`, '/forget', { subject: profile.subject }, 'Delete') } }, 'Forget…'))))
 
   if (profile.ties.length > 0 || profile.separated.length > 0) detail.push(el('section', {}, el('h2', {}, 'Picture'), picture(profile),
@@ -76,7 +76,7 @@ function profileOf(profile) {
   }
   for (const other of profile.separated) {
     links.append(el('tr', {}, td('who', open(other)), td('', el('span', { class: 'chip apart' }, 'kept apart'), ' ', contested(other)), td(''), td('why', ...kept(verdict(other))),
-      td('', el('button', { on: { click: () => act('Allow these two to join again', `${profile.subject} and ${other}`, '/separate', { a: profile.subject, b: other, separated: false }, 'Allow') } }, 'Allow again'))))
+      td('', el('button', { on: { click: () => act('Allow these two to join again', `${profile.subject} and ${other}`, '/separate', { a: profile.subject, b: other, separated: false }, 'Allow', { undo: true }) } }, 'Allow again'))))
   }
   detail.push(el('section', {}, el('h2', {}, 'Ties'), profile.links.length + profile.separated.length > 0 ? wide('Ties', links) : el('p', { class: 'muted' }, 'No other subject shares enough with this one to be tied to it.')))
 
@@ -160,7 +160,7 @@ async function decisionList(audit) {
     if (d.action === 'ignore' || d.action === 'restore') seen.add(d.about[0])
     return el('li', {}, el('span', {}, `${ACTIONS[d.action] ?? d.action} `), ...(d.action === 'prune' ? [when(Number(d.about[0]))] : d.about).map((each) => el('span', { class: 'reason' }, each)),
       author(d.by), el('span', { class: 'muted' }, `, ${when(d.at)}${d.reason ? `: ${d.reason}` : ''} `),
-      d.action === 'ignore' && newest ? el('button', { class: 'link', 'data-key': `decision-${d.seq}`, on: { click: () => act('Resume linking through this identifier', d.about[0], '/ignore', { identifier: d.about[0], ignored: false }, 'Resume') } }, 'undo') : '')
+      d.action === 'ignore' && newest ? el('button', { class: 'link', 'data-key': `decision-${d.seq}`, on: { click: () => act('Resume linking through this identifier', d.about[0], '/ignore', { identifier: d.about[0], ignored: false }, 'Resume', { undo: true }) } }, 'undo') : '')
   }
   const list = el('ul', { id: 'decisions' }, ...(page.decisions.length > 0 ? page.decisions.map(entry) : [el('li', { class: 'muted' }, listing.author ? 'None by these.' : 'None yet.')]))
   let next = page.next
@@ -196,7 +196,10 @@ view('accounts', 'Accounts', async (box, subject) => {
   const left = el('div')
   const detail = el('div', { id: 'detail' })
   box.append(el('div', { class: `split${subject ? ' opened' : ''}` }, left, detail))
-  const [queue, audit, recent, profile] = await Promise.all([clusterList(), api('GET', '/audit'), api('GET', '/recent'), subject ? api('GET', `/subject?subject=${encodeURIComponent(subject)}`) : undefined])
+  // The record first: a decision that lands while the rest is read is then newer than what is shown, and refuses one made on it.
+  const audit = await api('GET', '/audit')
+  box.dataset.seen = audit.head?.seq ?? 0
+  const [queue, recent, profile] = await Promise.all([clusterList(), api('GET', '/recent'), subject ? api('GET', `/subject?subject=${encodeURIComponent(subject)}`) : undefined])
   const decisions = await decisionList(audit)
 
   left.append(el('section', {}, el('h2', {}, 'Largest clusters, now'), ...queue))

@@ -32,12 +32,21 @@ const td = (kind, ...children) => el('td', kind ? { class: kind } : {}, ...child
 const wide = (label, table) => el('div', { class: 'wide', tabindex: 0, role: 'region', 'aria-label': label }, table)
 
 $('token').value = sessionStorage.getItem('token') ?? ''
-$('by').value = localStorage.getItem('by') ?? ''
 $('zone').textContent = `Times are shown in ${Intl.DateTimeFormat().resolvedOptions().timeZone}, this browser's zone.`
 
 function notice(text, bad = false) {
   $('notice').textContent = text
   $('notice').className = bad ? 'bad' : ''
+}
+
+/** Whose token this is: a reviewer's name, null for the service token, undefined until the server has said. */
+let me
+/** Shows who decides, in place of the token. The name is the server's answer, never something typed here. */
+function signedIn(answer) {
+  me = answer
+  $('token-label').hidden = me !== undefined
+  $('who').hidden = me === undefined
+  $('name').textContent = me === undefined ? '' : me === null ? 'Service token: decisions here carry no name' : `Deciding as ${me}`
 }
 
 async function api(method, path, body) {
@@ -48,15 +57,18 @@ async function api(method, path, body) {
   })
   if (response.status === 204) return undefined
   const answer = await response.json()
-  if (!response.ok) throw new Error(response.status === 401 ? 'The access token was refused.' : answer.error ?? `Request failed with ${response.status}`)
+  if (response.status === 401) signedIn(undefined)
+  if (!response.ok) throw Object.assign(new Error(response.status === 401 ? 'The access token was refused.' : answer.error ?? `Request failed with ${response.status}`), { status: response.status, answer })
   return answer
 }
 
 /**
- * Asks the reviewer to confirm, with a reason. With `wantsOther`, also asks
- * which other subject. Resolves to what was typed, or undefined when cancelled.
+ * Asks the reviewer to confirm, with a reason, and does it. With `wantsOther`,
+ * also asks which other subject. The question stays open, with what was typed,
+ * until `save` has succeeded or the reviewer cancels. Resolves to what `save`
+ * answered, or to undefined when cancelled.
  */
-function ask(title, text, confirm = 'Confirm', wantsOther = false) {
+function ask(title, text, confirm, wantsOther, save) {
   $('ask-title').textContent = title
   $('ask-text').textContent = text
   $('ask-yes').textContent = confirm
@@ -64,29 +76,80 @@ function ask(title, text, confirm = 'Confirm', wantsOther = false) {
   $('ask-other').value = ''
   $('ask-other').required = wantsOther
   $('ask-other-label').hidden = !wantsOther
+  $('ask-problem').textContent = ''
+  $('ask-other').oninput = null
+  const dialog = $('ask')
+  let saved
+  let saving = false
+  const working = (now) => {
+    saving = now
+    for (const id of ['ask-yes', 'ask-no', 'ask-reason', 'ask-other']) $(id).disabled = now
+  }
+  const submit = async (event) => {
+    if (event.submitter?.value === 'no') return
+    event.preventDefault()
+    if (saving) return
+    $('ask-problem').textContent = ''
+    working(true)
+    try {
+      saved = { answer: await save({ reason: $('ask-reason').value.trim(), other: $('ask-other').value.trim() }) }
+    } catch (error) {
+      $('ask-problem').textContent = `Not saved: ${error.message}`
+    }
+    working(false)
+    if (saved) dialog.close()
+    else $('ask-reason').focus()
+  }
+  // What is being saved cannot be called back, so Escape waits for the answer.
+  const cancel = (event) => saving && event.preventDefault()
+  const form = dialog.querySelector('form')
+  form.addEventListener('submit', submit)
+  dialog.addEventListener('cancel', cancel)
   return new Promise((resolve) => {
-    const answer = () => ($('ask').returnValue === 'yes' ? { reason: $('ask-reason').value.trim(), other: $('ask-other').value.trim() } : undefined)
-    $('ask').addEventListener('close', () => resolve(answer()), { once: true })
-    // Clear the last answer first, so closing with Escape can never repeat an earlier "yes".
-    $('ask').returnValue = ''
-    $('ask').showModal()
+    dialog.addEventListener('close', () => {
+      form.removeEventListener('submit', submit)
+      dialog.removeEventListener('cancel', cancel)
+      resolve(saved)
+    }, { once: true })
+    dialog.showModal()
   })
 }
 
-/** Runs one reviewer action, reloads what is on screen, then says what happened. `otherKey` names the body field for a second subject to ask for. */
-async function act(title, text, path, body, confirm, otherKey) {
-  const answer = await ask(title, text, confirm, Boolean(otherKey))
-  if (answer === undefined) return
-  let outcome
-  try {
-    const moved = await api('POST', path, { ...body, ...(otherKey && { [otherKey]: answer.other }), by: $('by').value.trim() || undefined, reason: answer.reason || undefined })
-    // These routes answer with the subjects whose cluster moved. None is a real outcome, so say so.
-    outcome = [Array.isArray(moved) && moved.length === 0 ? `${title}: recorded. No cluster changed.` : `${title}: done.`, false]
-  } catch (error) {
-    outcome = [error.message, true]
-  }
+/**
+ * Runs one reviewer action, reloads what is on screen, then says what
+ * happened. `otherKey` names the body field for a second subject to ask for.
+ * A decision says which was the newest when the view was read, so one made on
+ * an outdated view is refused. The question then shows the newer one and can be
+ * answered again, knowing it. An undo is not refused: it is about a decision already made.
+ */
+async function act(title, text, path, body, confirm, { otherKey, undo = false } = {}) {
+  const shown = undo ? undefined : $('view').firstElementChild?.dataset.seen
+  // The newer decisions this question has shown, by the other subject it named at the time: one seen says nothing of another.
+  const told = new Map()
+  let refused = false
+  const saved = await ask(title, text, confirm, Boolean(otherKey), async ({ reason, other }) => {
+    const seen = told.get(other) ?? shown
+    try {
+      return await api('POST', path, { ...body, ...(otherKey && { [otherKey]: other }), ...(seen !== undefined && { seen: Number(seen) }), ...(reason && { reason }) })
+    } catch (error) {
+      if (error.status !== 409) throw error
+      refused = true
+      const { seq, by, at, action, about, reason: why } = error.answer.decision
+      // Shown here, it has been seen.
+      told.set(other, seq)
+      $('ask-yes').textContent = 'Decide anyway'
+      $('ask-other').oninput = () => {
+        $('ask-yes').textContent = confirm
+        $('ask-problem').textContent = ''
+      }
+      throw new Error(`${by ?? 'Someone'} decided first, ${when(at)}: ${ACTIONS[action] ?? action} ${about.join(' and ')}${why ? `, "${why}"` : ''}.`)
+    }
+  })
+  if (!saved) return refused ? load() : undefined
+  // These routes answer with the subjects whose cluster moved. None is a real outcome, so say so.
+  const { answer } = saved
   // Reloading clears the notice, so speak after it. A failed reload has already said why.
-  if ((await load()) || outcome[1]) notice(...outcome)
+  if (await load()) notice(Array.isArray(answer) && answer.length === 0 ? `${title}: recorded. No cluster changed.` : `${title}: done.`)
 }
 
 /** Goes to an address. Going where the screen already is reads it again. */
@@ -145,6 +208,7 @@ async function load(tag) {
   if (!$('token').value) {
     $('view').replaceChildren(el('p', { class: 'muted' }, 'Enter the access token to load.'))
     $('found').replaceChildren()
+    signedIn(undefined)
     beat = loadedAt = undefined
     notice('')
     fresh()
@@ -156,6 +220,11 @@ async function load(tag) {
   try {
     // Read the tag before the view: a change that lands while the view loads is then noticed on the next look.
     const seen = tag ?? (await pulse())
+    if (me === undefined) {
+      const { reviewer } = await api('GET', '/me')
+      if (turn !== loading) return false
+      signedIn(reviewer)
+    }
     await views.get(name).show(box, ...parts)
     if (turn !== loading || (quiet && interrupting())) return false
     if (seen) beat = seen
@@ -198,7 +267,10 @@ let browsing = false
 async function pulse() {
   const response = await fetch('/pulse', { cache: 'no-store', headers: { authorization: `Bearer ${$('token').value}`, ...(beat && { 'if-none-match': beat }) } })
   if (response.status === 304) return undefined
-  if (response.status === 401) throw new Error('The access token was refused.')
+  if (response.status === 401) {
+    signedIn(undefined)
+    throw new Error('The access token was refused.')
+  }
   if (!response.ok) throw new Error(`Request failed with ${response.status}`)
   return response.headers.get('etag')
 }

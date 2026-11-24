@@ -1,7 +1,17 @@
 for (const [name, { title }] of views) $('views').append(el('a', { href: `#/${name}`, 'data-view': name }, title))
 
-$('token').addEventListener('change', () => { sessionStorage.setItem('token', $('token').value); beat = undefined; load() })
-$('by').addEventListener('change', () => localStorage.setItem('by', $('by').value))
+const enter = (token) => {
+  $('token').value = token
+  sessionStorage.setItem('token', token)
+  beat = undefined
+  signedIn(undefined)
+  load()
+}
+$('token').addEventListener('change', () => enter($('token').value))
+$('leave').addEventListener('click', () => {
+  enter('')
+  $('token').focus()
+})
 $('find').addEventListener('submit', (event) => {
   event.preventDefault()
   // In a view about a subject, the one typed opens there. Elsewhere it opens its account.

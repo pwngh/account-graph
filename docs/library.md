@@ -115,7 +115,7 @@ import { createHandler } from 'account-graph/server'
 createServer(
   createHandler(graph, {
     token: process.env.GRAPH_TOKEN,
-    reviewToken: process.env.REVIEW_TOKEN,
+    reviewers: { dana: process.env.DANA_TOKEN! },
     origins: ['https://example.org', 'https://example.com'],
     fingerprint,
     ipInfo,
@@ -127,7 +127,7 @@ createServer(
 
 The same handler serves a screen for the people who review accounts, at `/review`. It lists the largest clusters, shows who a subject is tied to and why, draws the ties, and shows money moved and every sighting. From it a reviewer can keep two accounts apart, join two, stop linking through an identifier, or forget a subject, each with a reason that goes on the record.
 
-The page is one file with no outside assets. It holds no data and no secret: the reviewer types the access token, and the browser may run only the script the page shipped with and talk only to the server it came from. Give reviewers their own token with `reviewToken`. It opens what the screen needs and nothing your services write through, so a reviewer cannot record observations, transfers, or conversions. The page keeps the token for that browser tab. Try it over made-up data with `npm run review`.
+The page is one file with no outside assets. It holds no data and no secret: the reviewer types the access token, and the browser may run only the script the page shipped with and talk only to the server it came from. Give each reviewer a token of their own with `reviewers`; their decisions are signed with their name. It opens what the screen needs and nothing your services write through, so a reviewer cannot record observations, transfers, or conversions. The page keeps the token for that browser tab. Try it over made-up data with `npm run review`.
 
 The screen loads 50 clusters at a time, suggests subjects as you type, and lists the newest cluster changes.
 

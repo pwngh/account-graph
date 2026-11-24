@@ -37,9 +37,9 @@ An identifier is `kind:value`. The kind must be one the policy names, or the req
 A token goes in the `authorization` header as `Bearer …`. There are two.
 
 - **Service**, `GRAPH_TOKEN`: opens every route. For your own backend.
-- **Review**, `REVIEW_TOKEN`: opens what the reviewer screen needs. For people.
+- **A reviewer's**, from `REVIEW_TOKENS`: opens what the reviewer screen needs. Each person has their own, and their decisions are signed with their name.
 
-> **A wrong or missing token gets 401. The review token on a service-only route gets 403.**
+> **A wrong or missing token gets 401. A reviewer's token on a service-only route gets 403.**
 
 ## No token
 
@@ -88,7 +88,15 @@ A token goes in the `authorization` header as `Bearer …`. There are two.
 | `POST /ignore` | `{ identifier, ignored?, by?, reason? }`. Stops linking through one identifier, or resumes. |
 | `POST /forget` | `{ subject, by?, reason? }`. Deletes a subject and everything recorded about it. |
 
-The four `POST` routes answer with the subjects whose cluster moved. With the service token, `/separate` and `/join` also take a list from one of your systems: see [decisions from your own systems](deciding.md#decisions-from-your-own-systems). A name that starts with `system:` is refused with the reviewer token.
+The four `POST` routes answer with the subjects whose cluster moved. With the service token, `/separate` and `/join` also take a list from one of your systems: see [decisions from your own systems](deciding.md#decisions-from-your-own-systems).
+
+`POST /separate`, `/join`, `/ignore` and `/forget` also take `seen`: the number of the newest decision when you looked, which `GET /audit` gives as `head.seq`. If a newer one names the same subject or identifier, yours is refused with 409. Left out, nothing is checked. An undo (`ignored: false`, `separated: false`) and a list from a system never are.
+
+`by` is for the service token. With a reviewer's token the name is the one the token belongs to, and any other is refused.
+
+| Route | What it does |
+| --- | --- |
+| `GET /me` | `{ reviewer }`: whose token this is, or `null` for the service token. |
 
 ## Service token only
 
@@ -126,6 +134,7 @@ The four `POST` routes answer with the subjects whose cluster moved. With the se
 | --- | --- |
 | 400 | The body is not JSON, or a field is missing or malformed. The answer is `{ "error": "…" }`. |
 | 401, 403 | The token is wrong, or does not open the route. |
+| 409 | A decision names a subject or identifier that another decision, newer than `seen`, names too. The answer has that `decision`. |
 | 403 on `/collect`, `/event` | The request's origin is not in `ORIGINS`. |
 | 403 on `/calls/twilio` | The request does not carry Twilio's signature. |
 | 404 | No such route. |

@@ -9,6 +9,7 @@ import type { CallResult, Consent, ConsentAnswer, Cost, Counted, Decision, Edge,
  * throws is not rolled back, so use it for tests, demos, and small graphs.
  */
 export function createMemoryStore(): Store {
+  const outbox = createMemoryOutbox()
   const bySubject = new Map<Subject, Map<Identifier, Edge>>()
   const byIdentifier = new Map<Identifier, Map<Subject, Edge>>()
   const ignored = new Set<Identifier>()
@@ -88,6 +89,7 @@ export function createMemoryStore(): Store {
     },
 
     async removeSubject(subject) {
+      await outbox.remove(subject)
       for (const identifier of bySubject.get(subject)?.keys() ?? []) {
         const holders = byIdentifier.get(identifier)!
         holders.delete(subject)
@@ -477,6 +479,11 @@ export function createMemoryStore(): Store {
       return decisions.filter((decision) => decision.action !== 'ignore' && decision.action !== 'restore' && decision.action !== 'prune' && decision.about.some((each) => wanted.has(each))).map(copied)
     },
 
+    async newestNaming(names, after) {
+      const found = decisions.findLast((decision) => decision.seq > after && decision.action !== 'prune' && decision.about.some((each) => names.includes(each)))
+      return found && copied(found)
+    },
+
     async decisionsAbout(pairs) {
       const wanted = new Set(pairs.map((pair) => pair.join('\u0000')))
       return decisions.filter((decision) => ofPair(decision) && wanted.has(decision.about.join('\u0000'))).map(copied)
@@ -500,7 +507,7 @@ export function createMemoryStore(): Store {
     return run
   }
 
-  return { write: (work) => queue((bound) => (writes += 1, work(bound))), read: queue, outbox: createMemoryOutbox(), ops }
+  return { write: (work) => queue((bound) => (writes += 1, work(bound))), read: queue, outbox, ops }
 }
 
 const copied = (decision: Decision): Decision => ({ ...decision, about: [...decision.about] })

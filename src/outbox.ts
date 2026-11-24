@@ -92,8 +92,6 @@ export interface OutboxStore {
   /** Jobs in one state, the most recently due first. */
   list(state: JobState, limit: number): Promise<Job[]>
   counts(): Promise<Record<JobState, number>>
-  /** Deletes every job of a subject. */
-  remove(subject: Subject): Promise<void>
 }
 
 export interface OutboxOptions {
@@ -455,7 +453,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
 }
 
 /** An outbox store in process memory, for tests and demos. */
-export function createMemoryOutbox(): OutboxStore {
+export function createMemoryOutbox(): OutboxStore & { remove(subject: Subject): Promise<void> } {
   const jobs = new Map<string, Job>()
   const key = (job: { transactionId: string; target: string }) => `${job.transactionId}\u0000${job.target}`
   const unchanged = (job: Job) => {

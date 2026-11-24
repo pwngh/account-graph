@@ -13,7 +13,7 @@ npm start
 database upgraded: tables, sighting record time
 listening on 0.0.0.0:8080
 collect accepts https://example.org
-reviewer token off, server cookie off, fingerprint off, maxmind off, signed links off, staff networks off, alerts off, address checks off, phone line checks off
+reviewers none, server cookie off, fingerprint off, maxmind off, signed links off, staff networks off, alerts off, address checks off, phone line checks off
 outbox sends to nobody (no ad platform configured)
 page events taken: none (set EVENTS); calls from twilio off; call results not expected
 costs are read from nobody (post them to /costs)
@@ -26,7 +26,7 @@ The last five lines say what is switched on. Each provider turns on when its var
 `docker compose up --build` starts the server and a PostgreSQL beside it, on port 8080.
 
 ```sh
-GRAPH_TOKEN=a-long-random-string REVIEW_TOKEN=another-one ORIGINS=https://example.org docker compose up --build
+GRAPH_TOKEN=a-long-random-string REVIEW_TOKENS='{"dana":"another-one"}' ORIGINS=https://example.org docker compose up --build
 ```
 
 Set `GRAPH_PORT` to publish it on another port. Every variable in the table at the end of this page is passed through to the server when you set it, the same way as the three above.
@@ -74,7 +74,15 @@ Three things can: the script tag's `domains` option, which carries a visitor alo
 
 `GRAPH_TOKEN` opens every route. Your own services send it; nothing in a browser should hold it.
 
-`REVIEW_TOKEN` is for the people who review accounts. It opens the reviewer screen's routes and nothing your services write through. Make both long and random, for example with `openssl rand -hex 32`.
+`REVIEW_TOKENS` is for the people who review accounts: each name, and that person's own token. It opens the reviewer screen's routes and nothing your services write through. Make every token long and random, for example with `openssl rand -hex 32`.
+
+```sh
+REVIEW_TOKENS='{"dana":"…","lee":"…"}'
+```
+
+> **Each decision is signed with the name its token belongs to.** It says whose token was used, so it is worth as much as the care taken of that token. Do not share one.
+
+To replace a token, list both, `{"dana":["new","old"]}`, restart, and take the old one out once nobody uses it. Taking a name out ends its access; what that person decided stays on the record.
 
 > **`/collect`, `/event`, `/carry`, `/collect.js`, `/review` and `/health` need no token.** `/review` is only a page; nothing it shows arrives without one.
 
@@ -100,7 +108,7 @@ Every page view reports again what the browser says. So where a banner once said
 Each decision is sealed to the one before it, and `GET /audit` checks the whole chain. The chain shows that part of it was not edited. Someone who can rewrite the whole table could still rebuild it, so keep the newest hash where they cannot write.
 
 ```sh
-curl -s https://graph.example.org/audit -H "authorization: Bearer $REVIEW_TOKEN" | tee -a /somewhere/else/heads.log
+curl -s https://graph.example.org/audit -H "authorization: Bearer $REVIEWER_TOKEN" | tee -a /somewhere/else/heads.log
 ```
 
 ```json
@@ -259,7 +267,7 @@ On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes i
 | --- | --- | --- |
 | `DATABASE_URL` | required | The PostgreSQL address. |
 | `GRAPH_TOKEN` | required | The service token. |
-| `REVIEW_TOKEN` | none | The reviewers' token. Must differ from `GRAPH_TOKEN`. |
+| `REVIEW_TOKENS` | none | The reviewers, as JSON: each name and its token, or a list of tokens. No two may be the same, nor the same as `GRAPH_TOKEN`. |
 | `ORIGINS` | none | Site addresses that may post visits, separated by commas. |
 | `PORT`, `HOST` | `8080`, `0.0.0.0` | Where to listen. |
 | `GRAPH_SCHEMA` | `account_graph` | The database schema to keep tables in. |

@@ -340,13 +340,64 @@ test('the reviewer screen is a locked-down shell, and its data needs the token',
   }
 })
 
-test('the reviewer token opens the review routes and nothing a service writes through', async () => {
+test('a decision is signed with the name its token belongs to, and one made on an outdated view is refused', async () => {
+  const graph = createGraph(createMemoryStore())
+  await graph.observe([1, 2, 3].map((n) => ({ subject: `account:${n}`, identifiers: ['email:e'], at: T0 })))
+  const server = createServer(createHandler(graph, { token: 'service', reviewers: { dana: ['dana-new', 'dana-old'], lee: 'lee-token' }, origins: [], now: () => T0 })).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const call = async (token: string, path: string, body?: object) => {
+    const response = await fetch(base + path, { method: body ? 'POST' : 'GET', headers: { authorization: `Bearer ${token}` }, ...(body && { body: JSON.stringify(body) }) })
+    return { status: response.status, answer: (await response.json()) as any }
+  }
+  const last = async () => (await graph.decisionPage({ limit: 1 }))[0]!
+  try {
+    assert.deepEqual((await call('dana-new', '/me')).answer, { reviewer: 'dana' })
+    assert.deepEqual((await call('service', '/me')).answer, { reviewer: null })
+    assert.equal((await call('dana', '/me')).status, 401)
+
+    // The name is the token's, whichever of hers she used, and cannot be another's.
+    for (const token of ['dana-new', 'dana-old']) {
+      assert.equal((await call(token, '/separate', { a: 'account:1', b: 'account:9', reason: 'brothers' })).status, 200)
+      assert.deepEqual([(await last()).by, (await last()).reason], ['dana', 'brothers'])
+    }
+    for (const by of ['lee', 'system:cases', '', 7]) assert.equal((await call('dana-new', '/join', { a: 'account:1', b: 'account:8', by })).status, 400)
+    assert.equal((await call('lee-token', '/ignore', { identifier: 'email:x', by: 'lee' })).status, 200)
+    assert.equal((await last()).by, 'lee')
+    assert.equal((await call('service', '/ignore', { identifier: 'email:y' })).status, 200)
+    assert.equal((await last()).by, undefined)
+
+    // Both look. Lee decides first, so what Dana decides about either of the same two is refused, and says why.
+    const seen = (await call('dana-new', '/audit')).answer.head.seq
+    assert.equal((await call('lee-token', '/separate', { a: 'account:2', b: 'account:1', reason: 'father and son', seen })).status, 200)
+    const count = (await graph.decisions()).length
+    for (const [path, body] of [['/join', { a: 'account:1', b: 'account:2' }], ['/separate', { a: 'account:1', b: 'account:3' }], ['/forget', { subject: 'account:2' }]] as const) {
+      const refused = await call('dana-new', path, { ...body, seen })
+      assert.equal(refused.status, 409, path)
+      assert.deepEqual([refused.answer.decision.by, refused.answer.decision.reason, refused.answer.decision.about], ['lee', 'father and son', ['account:1', 'account:2']])
+    }
+    assert.equal((await graph.decisions()).length, count)
+    // What it was not about is not refused, nor is someone who does not say what they saw, nor a list from a system.
+    assert.equal((await call('dana-new', '/join', { a: 'account:3', b: 'account:4', seen })).status, 200)
+    assert.equal((await call('dana-new', '/separate', { a: 'account:1', b: 'account:2', separated: false })).status, 200)
+    assert.equal((await call('service', '/separate', { source: 'cases', pairs: [{ a: 'account:1', b: 'account:2' }], seen: 0 })).status, 200)
+    // Having looked again, she may.
+    assert.equal((await call('dana-new', '/forget', { subject: 'account:2', seen: (await last()).seq })).status, 200)
+    for (const wrong of [-1, 1.5, 'x', null]) assert.equal((await call('dana-new', '/join', { a: 'account:5', b: 'account:6', seen: wrong })).status, 400)
+    assert.throws(() => createHandler(graph, { token: 'same', reviewers: { dana: 'same' }, origins: [] }), TypeError)
+    assert.throws(() => createHandler(graph, { token: 'x', reviewers: { dana: 'y', lee: 'y' }, origins: [] }), TypeError)
+  } finally {
+    server.close()
+  }
+})
+
+test('a reviewer\'s token opens the review routes and nothing a service writes through', async () => {
   const graph = createGraph(createMemoryStore())
   await graph.observe([
     { subject: 'account:1', identifiers: ['email:e'], at: T0 },
     { subject: 'account:2', identifiers: ['email:e'], at: T0 },
   ])
-  const server = createServer(createHandler(graph, { token: 'service', reviewToken: 'reviewer', origins: [], now: () => T0 })).listen(0, '127.0.0.1')
+  const server = createServer(createHandler(graph, { token: 'service', reviewers: { dana: 'reviewer' }, origins: [], now: () => T0 })).listen(0, '127.0.0.1')
   await new Promise((resolve) => server.once('listening', resolve))
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
   const call = (token: string, method: string, path: string, body?: object) =>
@@ -389,7 +440,7 @@ test('the reviewer token opens the review routes and nothing a service writes th
     assert.equal(await call('service', 'GET', '/clusters'), 200)
     assert.equal(await call('wrong', 'GET', '/clusters'), 401)
     assert.equal(await call('', 'GET', '/clusters'), 401)
-    assert.throws(() => createHandler(graph, { token: 'same', reviewToken: 'same', origins: [] }), TypeError)
+    assert.throws(() => createHandler(graph, { token: 'same', reviewers: { dana: 'same' }, origins: [] }), TypeError)
   } finally {
     server.close()
   }
@@ -496,7 +547,7 @@ test('how the server runs is read by a reviewer, and a test alert is sent by a s
   const posted: string[] = []
   const ops = createOps(graph, store.ops, { url: 'https://hooks.example/x', quiet: { touches: 5 }, now: () => T0, fetch: (async (_url: string, init: { body: string }) => (posted.push(init.body), new Response('ok'))) as unknown as typeof fetch })
   const start = async (more: object) => {
-    const server = createServer(createHandler(graph, { token: 'service', reviewToken: 'review', origins: [], now: () => T0, ...more })).listen(0, '127.0.0.1')
+    const server = createServer(createHandler(graph, { token: 'service', reviewers: { dana: 'review' }, origins: [], now: () => T0, ...more })).listen(0, '127.0.0.1')
     await new Promise((resolve) => server.once('listening', resolve))
     const ask = (method: string, path: string, token: string) => fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}${path}`, { method, headers: { authorization: `Bearer ${token}` } })
     return { server, ask }
@@ -522,7 +573,7 @@ test('how the server runs is read by a reviewer, and a test alert is sent by a s
 test('one address cannot flood collect, and health and stats answer', async () => {
   const graph = createGraph(createMemoryStore())
   const clock = { now: T0 }
-  const handler = createHandler(graph, { token: 'service', reviewToken: 'reviewer', origins: ['https://site.example'], now: () => clock.now, limit: { perMinute: 60, burst: 2 } })
+  const handler = createHandler(graph, { token: 'service', reviewers: { dana: 'reviewer' }, origins: ['https://site.example'], now: () => clock.now, limit: { perMinute: 60, burst: 2 } })
   const server = createServer(handler).listen(0, '127.0.0.1')
   await new Promise((resolve) => server.once('listening', resolve))
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
@@ -682,7 +733,7 @@ test('the server takes page events and phone calls, and ties a call to the visit
   const twilio = { authToken: 'twilio-secret', url: 'https://graph.example.org/calls/twilio' }
   const handler = createHandler(graph, {
     token: 'service',
-    reviewToken: 'reviewer',
+    reviewers: { dana: 'reviewer' },
     origins: ['https://site.example'],
     now: () => clock,
     events: ['inquiry', 'phone_click'],
@@ -761,7 +812,7 @@ test('the server takes page events and phone calls, and ties a call to the visit
 test('a link sent to one person ties the browser that opens it, and a visitor is carried between sites', async () => {
   const graph = createGraph(createMemoryStore())
   let clock = 1_800_000_000_000
-  const handler = createHandler(graph, { token: 'service', reviewToken: 'reviewer', origins: ['https://site.example', 'https://shop.example'], now: () => clock, linkSecret: 'a-long-secret-value', limit: false })
+  const handler = createHandler(graph, { token: 'service', reviewers: { dana: 'reviewer' }, origins: ['https://site.example', 'https://shop.example'], now: () => clock, linkSecret: 'a-long-secret-value', limit: false })
   const server = createServer(handler).listen(0, '127.0.0.1')
   await new Promise((resolve) => server.once('listening', resolve))
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
@@ -898,7 +949,7 @@ test('a call whose result is awaited is held, and nothing is sent until a person
   const graph = createGraph(store, undefined, { now: () => clock.now })
   const requests: IngestRequest[] = []
   const outbox = createOutbox(graph, store.outbox, { targets: [googleAds({ customerId: '1234567890', send: async (request) => (requests.push(request), {}) })], now: () => clock.now })
-  const server = createServer(createHandler(graph, { token: 'service', reviewToken: 'review', origins: [], outbox, stages: { call: { value: 10, currency: 'USD', action: '111' } }, calls: { results: 'expected' }, now: () => clock.now })).listen(0, '127.0.0.1')
+  const server = createServer(createHandler(graph, { token: 'service', reviewers: { dana: 'review' }, origins: [], outbox, stages: { call: { value: 10, currency: 'USD', action: '111' } }, calls: { results: 'expected' }, now: () => clock.now })).listen(0, '127.0.0.1')
   await new Promise((resolve) => server.once('listening', resolve))
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
   const post = async (path: string, body: object, token = 'service') => {
@@ -981,7 +1032,7 @@ test('steps give page events, calls and outcomes their value and their ad platfo
   const outbox = createOutbox(graph, store.outbox, { targets: [googleAds({ customerId: '1234567890', send: async (request) => (sent.push(request), { requestId: 'r' }) })], now: () => at + 60_000 })
   const handler = createHandler(graph, {
     token: 'service',
-    reviewToken: 'reviewer',
+    reviewers: { dana: 'reviewer' },
     origins: ['https://site.example'],
     now: () => at,
     outbox,
@@ -1098,7 +1149,7 @@ test('the server identifies a subject from plain facts, drops declared bots, and
   const lines: Record<string, string> = { '+15550001111': 'mobile', '+15550002222': 'nonFixedVoip', '+18005550100': 'tollFree' }
   const handler = createHandler(graph, {
     token: 'service',
-    reviewToken: 'reviewer',
+    reviewers: { dana: 'reviewer' },
     origins: ['https://site.example'],
     now: () => at,
     limit: false,

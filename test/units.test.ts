@@ -232,19 +232,23 @@ test('the server reads its settings from the environment and names everything wr
   assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', CALL_NUMBERS: '[1]' }), /CALL_NUMBERS must be a JSON object/)
 
   const full = configFrom({
-    DATABASE_URL: 'x', GRAPH_TOKEN: 'y', REVIEW_TOKEN: 'z', FINGERPRINT_SECRET: 'f', FINGERPRINT_REGION: 'eu',
+    DATABASE_URL: 'x', GRAPH_TOKEN: 'y', REVIEW_TOKENS: '{"dana":"z","lee":["new","old"]}', FINGERPRINT_SECRET: 'f', FINGERPRINT_REGION: 'eu',
     MAXMIND_ACCOUNT_ID: '1', MAXMIND_LICENSE_KEY: 'k', GOOGLE_ADS_CUSTOMER_ID: '123', GOOGLE_SERVICE_ACCOUNT_FILE: '/key.json',
     META_PIXEL_ID: 'p', META_ACCESS_TOKEN: 't', META_SITE_URL: 'https://a.example/',
   })
+  assert.deepEqual(full.reviewers, { dana: 'z', lee: ['new', 'old'] })
+  for (const [given, said] of [['[1]', 'must be a JSON object'], ['{"system:x":"a"}', 'cannot be a reviewer'], ['{"people":"a"}', 'cannot be a reviewer'], ['{" dana":"a"}', 'is not a name'], ['{"dana":""}', 'each token as text'], ['{"dana":[]}', 'needs a token'], ['{"dana":"a","lee":"a"}', 'another reviewer']]) {
+    assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', REVIEW_TOKENS: given! }), (error: Error) => error.message.includes(said!), given)
+  }
   assert.deepEqual(full.fingerprint, { secretKey: 'f', region: 'eu' })
   assert.equal(full.maxmind!.service, 'insights')
   assert.equal(full.google!.keyFile, '/key.json')
   assert.equal(full.meta!.pixelId, 'p')
 
   assert.throws(
-    () => configFrom({ GRAPH_TOKEN: 'same', REVIEW_TOKEN: 'same', PORT: 'eighty', MAXMIND_ACCOUNT_ID: '1', META_PIXEL_ID: 'p', FINGERPRINT_SECRET: 'f', FINGERPRINT_REGION: 'mars' }),
+    () => configFrom({ GRAPH_TOKEN: 'same', REVIEW_TOKENS: '{"dana":"same"}', PORT: 'eighty', MAXMIND_ACCOUNT_ID: '1', META_PIXEL_ID: 'p', FINGERPRINT_SECRET: 'f', FINGERPRINT_REGION: 'mars' }),
     (error: Error) =>
-      ['DATABASE_URL is required', 'PORT must be a number', 'MAXMIND_LICENSE_KEY must be set along with MAXMIND_ACCOUNT_ID', 'META_ACCESS_TOKEN, META_SITE_URL must be set along with META_PIXEL_ID', 'FINGERPRINT_REGION must be us, eu, or ap', 'REVIEW_TOKEN must differ from GRAPH_TOKEN'].every((line) => error.message.includes(line)),
+      ['DATABASE_URL is required', 'PORT must be a number', 'MAXMIND_LICENSE_KEY must be set along with MAXMIND_ACCOUNT_ID', 'META_ACCESS_TOKEN, META_SITE_URL must be set along with META_PIXEL_ID', 'FINGERPRINT_REGION must be us, eu, or ap', 'REVIEW_TOKENS: "dana" has a token that is already the service\'s'].every((line) => error.message.includes(line)),
   )
 })
 
@@ -583,7 +587,7 @@ test('a touch is filed under the platform of its click id, then its tag, then th
 test('the server counts outcomes without an ad platform, takes costs, and reports to a reviewer', async () => {
   const graph = createGraph(createMemoryStore())
   const at = Date.parse('2026-03-02T12:00:00Z')
-  const handler = createHandler(graph, { token: 'secret', reviewToken: 'reviewer', origins: ['https://site.example'], now: () => at, timeZone: 'UTC' })
+  const handler = createHandler(graph, { token: 'secret', reviewers: { dana: 'reviewer' }, origins: ['https://site.example'], now: () => at, timeZone: 'UTC' })
   const server = createServer(handler).listen(0, '127.0.0.1')
   await new Promise((resolve) => server.once('listening', resolve))
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`

@@ -18,7 +18,7 @@
 - `consent` and the Global Privacy Control signal stop advertising data from being kept or sent.
 - `createMemoryStore` and `createPostgresStore` pass one shared suite; `verify` compares stored clusters with a full recompute.
 - `createBatcher` writes observations that arrive together in one transaction.
-- `createHandler` serves `/collect`, the reviewer screen at `/review`, and token-protected routes; `reviewToken` opens only the review routes.
+- `createHandler` serves `/collect`, the reviewer screen at `/review`, and token-protected routes; `reviewers` open only the review routes.
 - `npm start` runs the server from environment variables (`serve`, `configFrom`); `docs/operations.md` lists them.
 - `GET /collect.js` is a script tag that reports to the server it was loaded from.
 - `PostgresStore.migrate` applies numbered upgrades once, in order (`upgrades`).
@@ -95,15 +95,18 @@
 - Twilio's `busy`, `no-answer`, `failed` and `canceled` calls are recorded as not answered.
 - `prune` also deletes advertising answers that no longer stand.
 - Breaking: `GET /decisions` answers `{ decisions, next, total }`, newest first, a page at a time (`decisionPage`).
-- A name that starts with `system:` is refused with the reviewer token.
+- A reviewer cannot sign as a system.
 
 - Breaking: in `defaultPolicy`, `phone` and `voip` thin as more subjects share them (dilution 1), and `phone`, `email` and `voip` link nothing past 10 subjects. Run `rebuild`, or keep the earlier rules with `POLICY`.
+- Breaking: `REVIEW_TOKENS` (`HandlerOptions.reviewers`) replaces `REVIEW_TOKEN` and `reviewToken`: a token for each reviewer, whose name signs what they decide. `GET /me` says whose a token is.
+- `separate`, `join`, `ignore` and `forget` take `seen`, the newest decision their author had seen; a newer one about the same subject or identifier refuses theirs (`Outdated`, 409). A `Store` needs `newestNaming`.
 - Breaking: `Flow` and `POST /transfer` need an `id`. The same flow sent twice is counted once and answers `duplicate: true` (`Transferred`); the same id with other details is refused. A `Store` needs `flowOf`.
 - Breaking: `GET /verify` answers `{ changes, policy }`, not a list.
 - A server whose database holds an identifier of a kind the policy does not name refuses to start.
 
 ### Fixed
 
+- The reviewer screen's question stays open, with what was typed, when a decision could not be saved.
 - `attribute` and `report` reach nothing of a subject kept apart from the one asked about, through a third subject either.
 - `recordCall` ties no call to a visitor a reviewer kept apart from the caller; the call is filed under its number.
 - `CallOptions.numbers` with a key that is not a phone number no longer stops calls to the other numbers.
