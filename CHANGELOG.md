@@ -86,6 +86,7 @@
 - A step in `STAGES` takes `wait`, the hours after which the board says a person has waited too long.
 - The Channels view has a Break down by selector; the Calls view shows tags.
 - `LATE_HOURS` (`OpsOptions.lateHours`) alerts once a day while conversions wait that long past their time; `OutboxStore.oldestDue` says since when.
+- `POST /find` finds subjects by email address, phone number or the start of an id; the reviewer screen uses it, and no longer puts what is typed in an address.
 
 ### Changed
 

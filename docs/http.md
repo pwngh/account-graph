@@ -64,6 +64,7 @@ A token goes in the `authorization` header as `Bearer …`. There are two.
 | `GET /history?subject=` | Every sighting of the subject, oldest first. |
 | `GET /clusters?offset=` | The largest clusters, 50 at a time. |
 | `GET /search?q=` | Subjects whose id starts with the text. |
+| `POST /find` | `{ text }`: an email address or phone number, looked up whole by its hash, or how a subject's id begins. Answers `{ by, subjects }`, at most 20. The text is in the body so that no log of addresses holds it. |
 | `GET /policy` | The running rules by kind, the hash the stored clusters were built with, whether a rebuild is `due`, and which kinds were `changed` from the default. |
 | `GET /ops` | How the server runs: `{ feeds, jobs, undelivered, alerts, outbox }`. |
 | `GET /pulse` | `{ version }`, with an `etag`. Ask again with `if-none-match` and it answers 304 until something is written. |

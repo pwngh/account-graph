@@ -6,7 +6,7 @@ import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { createGraph, createMemoryStore } from '../src/index.ts'
+import { createGraph, createMemoryStore, email, phone } from '../src/index.ts'
 import { createHandler } from '../src/server.ts'
 
 // The reviewer screen in a real browser, driven over Chrome's own debugging port.
@@ -71,9 +71,12 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   assert.ok(chrome, 'CI needs a browser')
   const graph = createGraph(createMemoryStore())
   await graph.observe([1, 2, 3].map((n) => ({ subject: `account:${n}`, identifiers: ['email:e'], at: T0 })))
+  await graph.observe({ subject: 'caller:1', identifiers: [phone('7135550194')], at: T0 })
+  await graph.observe([1, 2].map((n) => ({ subject: `person:${n}`, identifiers: [email('both@example.com')], at: T0 })))
   let down = false
+  const asked: string[] = []
   const handler = createHandler(graph, { token: 'service', reviewers: { dana: 'dana-token', lee: 'lee-token' }, origins: [] })
-  const server = createServer((request, response) => (down && request.method === 'POST' ? void request.socket.destroy() : void handler(request, response))).listen(0, '127.0.0.1')
+  const server = createServer((request, response) => (asked.push(request.url!), down && request.method === 'POST' ? void request.socket.destroy() : void handler(request, response))).listen(0, '127.0.0.1')
   await new Promise((resolve) => server.once('listening', resolve))
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
   t.after(() => (server.closeAllConnections(), void server.close()))
@@ -161,6 +164,17 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   assert.deepEqual(await run(`[document.getElementById('ask-yes').textContent, document.getElementById('ask-reason').value]`), ['Decide anyway', 'kept all along'])
   await run(`document.getElementById('ask-yes').click()`)
   await until('the join to be taken', async () => (await decisions()).at(-1)![3] === 'kept all along')
+  // Found by phone, one person opens at once. Two with one email are offered, and nobody is said to be nobody.
+  const look = (what: string) => run(`(() => { const s = document.getElementById('subject'); s.value = ${JSON.stringify(what)}; s.dispatchEvent(new Event('input')); document.getElementById('find').requestSubmit() })()`)
+  await look('(713) 555-0194')
+  await until('the caller', async () => (await text('#detail h3')) === 'caller:1')
+  await look('both@example.com')
+  await until('the choice', async () => (await text('#notice')).includes('person:1, person:2'))
+  await look('nobody@example.com')
+  await until('nobody', async () => (await text('#notice')).includes('Nobody'))
+  await pause(400)
+  assert.deepEqual([...asked, await run('location.href')].filter((each) => /555|example\.com/.test(decodeURIComponent(each))), [])
+
   await enter('service')
   await until('the service note', async () => (await text('#name')).includes('carry no name'))
 })

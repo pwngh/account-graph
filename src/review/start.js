@@ -12,11 +12,27 @@ $('leave').addEventListener('click', () => {
   enter('')
   $('token').focus()
 })
-$('find').addEventListener('submit', (event) => {
+// What is typed may be a phone number or an email, so it is sent in a body and never put in an address.
+const find = (text) => api('POST', '/find', { text })
+const suggest = (subjects) => $('found').replaceChildren(...subjects.map((subject) => el('option', { value: subject })))
+$('find').addEventListener('submit', async (event) => {
   event.preventDefault()
-  // In a view about a subject, the one typed opens there. Elsewhere it opens its account.
-  const { name } = place()
-  go(`#/${views.get(name).subject ? name : 'accounts'}/${encodeURIComponent($('subject').value.trim())}`)
+  const text = $('subject').value.trim()
+  const token = $('token').value
+  if (!text || !token) return
+  try {
+    const { by, subjects } = await find(text)
+    if ($('token').value !== token || $('subject').value.trim() !== text) return
+    if (by === 'subject') return void go(subjectHash(subjects.length === 1 ? subjects[0] : text))
+    if (subjects.length === 1) return void go(subjectHash(subjects[0]))
+    suggest(subjects)
+    if (subjects.length === 0) return void notice(`Nobody has been seen with that ${by === 'email' ? 'email' : 'phone number'}.`)
+    $('subject').value = ''
+    $('subject').focus()
+    notice(`${subjects.length === 20 ? 'At least 20' : subjects.length} subjects have that ${by === 'email' ? 'email' : 'phone number'}. Pick one from the list: ${subjects.join(', ')}`)
+  } catch (error) {
+    notice(error.message, true)
+  }
 })
 
 // Suggest subjects as the reviewer types, a moment after the last key.
@@ -28,8 +44,8 @@ $('subject').addEventListener('input', () => {
     const token = $('token').value
     if (!text || !token) return
     try {
-      const found = await api('GET', `/search?q=${encodeURIComponent(text)}`)
-      if ($('token').value === token) $('found').replaceChildren(...found.map((subject) => el('option', { value: subject })))
+      const { subjects } = await find(text)
+      if ($('token').value === token && $('subject').value.trim() === text) suggest(subjects)
     } catch {}
   }, 200)
 })
