@@ -231,6 +231,7 @@ table.hours { table-layout: fixed; min-width: 900px; } table.hours :is(td, th) {
 .meter { display: block; width: 100%; height: 4px; border-radius: 2px; overflow: hidden; } .meter > svg { height: 100%; } .meter .track { fill: color-mix(in srgb, var(--ink) 9%, transparent); } .meter .fill { fill: var(--ink); opacity: .72; }
 .compare { display: grid; grid-template-columns: minmax(40px, 1fr) max-content; gap: 10px; align-items: center; width: 100%; min-width: 5rem; } .compare > :last-child { min-width: 3.2ch; text-align: right; }
 td.score, td.share { width: 8rem; min-width: 6.5rem; } td.bar { min-width: 9rem; vertical-align: middle; } .scale, .scale > svg { overflow: visible; } .scale line { stroke: var(--faint); } .rules td.bar { width: 22%; } .rules td:last-child { width: 24%; }
+.claim { display: grid; gap: 4px; min-width: 8rem; } .claim .meter:first-child .fill { fill: var(--accent); opacity: 1; } .claims td.who { max-width: 22rem; } .claims td.who .sourced { margin-right: 6px; color: var(--muted); }
 tr.behind { background: linear-gradient(color-mix(in srgb, var(--ink) 6%, transparent) 0 0) no-repeat left / var(--part) 100%; } tr.behind > td { background: none !important; }
 tr.behind:hover { background-image: linear-gradient(color-mix(in srgb, var(--accent) 14%, transparent) 0 0); }
 .card-label { display: none; }
