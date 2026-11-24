@@ -43,7 +43,7 @@ Made-up people are no firm's customers. The figures say how the default settings
 | People mixed by anything | The same of every subject that is one person's only: contacts, callers and browsers |
 | Joined pairs that are right | Of pairs of subjects in one cluster, those that are one person |
 | True pairs found | Of pairs that are one person, those in one cluster |
-| Of those with a chain of facts | The same, of pairs that share a device, number, email or tap, or are joined by such facts through the person's other subjects. Nobody could find the rest. |
+| Of those with a chain of facts | The same, of pairs that share a device, number, email or tap, or are joined by such facts through the person's other subjects: recall among pairs these four kinds of fact connect. Names and birth dates, which the household arm has, are not among them |
 | Credit | Of contact records, those credited to the ad their person came by, to somebody else's, or to none; and records of people who never came by an ad that are credited to one. Each person's ad is their own, so a wrong one cannot be right by chance |
 | Links by kind | Direct links that join, by what they rest on, and how many are between two people. A call tied by a tap is `dial` |
 
@@ -91,7 +91,7 @@ Set before anything was run. **Source** rates are published figures. **Assumed**
 | Another adult of the household also comes | 5% | 10% | 25% | Assumed |
 | Only visits; fills the form; calls; answered; email asked | 80%; 40%; 60%; 80%; 60% | same | same | Assumed. They set how much there is, not how hard it is |
 
-`busy` is the base rates with 6,000 people in five days, for calls and taps by strangers close together.
+`busy` is the base rates with 6,000 people whose visits and first calls fall in five days, for calls and taps by strangers close together. Calls again and late records come after, and are counted.
 
 ## What would be bad
 
@@ -112,7 +112,7 @@ Written before anything was run.
 | High, either policy | More than 5% of people with a record share a cluster with somebody else's |
 | Busy, default policy | More than 5% of `dial` links are between two people |
 
-Every setting and figure is published whichever way it comes out. A rate is not changed after a run; a new setting is added beside these. The commit and the Node version of the run are written with the figures.
+Every written-down result is published whichever way it comes out, and [all that was printed](accuracy-run.txt) with it. A rate is not changed after a run; a new setting is added beside these. The commit and the Node version of the run are written with the figures.
 
 ## Results
 
@@ -128,12 +128,12 @@ Run once, at commit `17b7a532740eda99855ebf7d31e8b6d53c3f14cc` with Node v22.23.
 | Base, default: fewer than 70% of the true pairs with a chain of facts are found | Held. 90.14% |
 | Base, default: any shared fact mixes no more | Held. It mixes 3.66% |
 | Base, default: same phone or email mixes fewer and finds as many, of records and callers | Held. It mixes 3.36% and finds 86.94%, against 2.86% and 74.18% |
-| Base, default: over 2% of credited records go to another's ad, or of records of people who came by none to one | Held. 1.63% and 0.23% |
+| Base, default: over 2% of credited records go to another's ad, or of records of people who came by none to one | Held. 1.63% (94 of 5,832) of records of people who came by an ad; counting every credited record, 97 of 5,835 (1.66%). 0.23% (3 of 1,333) |
 | Base, default: fewer than 70% of the records with a chain of facts to their ad are credited to it | Held. 93.42% |
 | Base, household: fewer than 50% of those pairs are found | Held. 56.08% |
 | High, either: over 5% of people with a record share a cluster with somebody else's | Held. 4.54% and 4.52%; the intervals reach 5.03 and 5.02 |
 
-| Setting, policy | Records with another's | Without those one spoke for | Joined pairs right | True pairs found, with a chain | Credited to another's ad |
+| Setting, policy | Records with another's | Without those one spoke for | Joined pairs right | True pairs found, with a chain | Credited to another's ad, of records of people who came by one |
 | --- | --- | --- | --- | --- | --- |
 | Base, default | 2.86% (2.40 to 3.33) | 1.57% (1.21 to 1.93) | 94.94% | 90.14% | 1.63% |
 | Base, household | 2.86% (2.40 to 3.33) | 1.57% (1.21 to 1.93) | 94.56% | 56.08% | 1.95% |
@@ -144,7 +144,7 @@ Run once, at commit `17b7a532740eda99855ebf7d31e8b6d53c3f14cc` with Node v22.23.
 | Busy, default | 2.28% (1.94 to 2.63) | 1.36% (1.06 to 1.65) | 91.00% | 85.90% | 2.44% |
 | Busy, household | 2.25% (1.90 to 2.59) | 1.36% (1.06 to 1.65) | 88.73% | 48.64% | 1.30% |
 
-In busy, 4.00% of the records of people who came by no ad are credited to one under the default policy.
+In busy, 4.00% of the records of people who came by no ad are credited to one under the default policy. Counting every credited record there, 505 of 14,162 (3.57%) go to the wrong ad.
 
 ### Beside the plain rules
 
@@ -163,10 +163,18 @@ The plain rule finds more true pairs of records and callers than account-graph d
 
 Looked for on the same seeds, once the figures above were known. These were not foreseen and test nothing.
 
-- **Differences over the same worlds**, rule minus account-graph, records mixed in base: any shared fact 0.80 points (0.51 to 1.09), and 0.04 (-0.02 to 0.10) without those one spoke for; same phone or email 0.50 (0.14 to 0.86), and -0.24 (-0.39 to -0.08). The lead is in records one person spoke for another on.
+- **Differences over the same worlds**, rule minus account-graph under the default policy, in points of records mixed, and then without those one spoke for. A minus is a rule that mixes fewer.
+
+| Setting | Any shared fact | without those | Same phone or email | without those |
+| --- | --- | --- | --- | --- |
+| Base | 0.80 (0.51 to 1.09) | 0.04 (-0.02 to 0.10) | 0.50 (0.14 to 0.86) | **-0.24 (-0.39 to -0.08)** |
+| Low | 0.10 (-0.02 to 0.21) | 0.00 (0.00 to 0.00) | -0.03 (-0.18 to 0.13) | **-0.12 (-0.25 to 0.00)** |
+| High | 1.67 (1.33 to 2.00) | 0.07 (0.00 to 0.13) | 1.17 (0.84 to 1.51) | **-0.42 (-0.62 to -0.23)** |
+| Busy | 0.35 (0.25 to 0.45) | 0.01 (-0.01 to 0.03) | -0.01 (-0.19 to 0.17) | **-0.35 (-0.50 to -0.19)** |
+
 - **Where wrong pairs of records are from**, base, default: 156. In 70 one spoke for the other. Of the rest, 68 share an email only, 13 share a device only, and 5 anything else.
 - **Names.** Every link in the household arm that rests on a name is one person's: 0 of 141 wrong in base. A name or birth date that disagrees weighs nothing today.
-- **Taps.** In busy, 20% of calls have somebody else's tap in the three minutes before. Two browsers that tapped are never tied, so these are calls with one tap, and it is not theirs.
+- **Taps.** In busy, of 32,037 calls, 3,438 have exactly one browser's tap in the window, and it is somebody else's; 3,871 have one, and it is the caller's; 3,793 have several, and are tied to none. Some of the first are not tied either, because a visitor already tied to another caller is left. This is counted from the worlds and not from the links.
 
 ## Limitations
 
