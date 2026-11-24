@@ -28,10 +28,11 @@ $('find').addEventListener('submit', async (event) => {
   const text = $('subject').value.trim()
   const token = $('token').value
   if (!text || !token) return
+  // Something typed since, another reviewer, or a view that has put its own subject in the box is newer than this.
+  const current = () => edits === asked && $('token').value === token && $('subject').value.trim() === text
   try {
     const { by, subjects } = await find(text)
-    // Something typed since, or a view that has put its own subject in the box, is newer than this answer.
-    if (edits !== asked || $('subject').value.trim() !== text) return
+    if (!current()) return
     // Only what the server answered with is ever put in the address.
     const whole = subjects.length === 1 ? subjects[0] : by === 'subject' && subjects.find((each) => each === text)
     if (whole) return void go(subjectHash(whole))
@@ -42,7 +43,7 @@ $('find').addEventListener('submit', async (event) => {
     $('subject').focus()
     notice(`${subjects.length === 20 ? 'At least 20' : subjects.length} subjects have ${what}. Pick one from the list: ${subjects.join(', ')}`)
   } catch (error) {
-    if (edits === asked && $('subject').value.trim() === text) notice(error.message, true)
+    if (current()) notice(error.message, true)
   }
 })
 
@@ -57,7 +58,7 @@ $('subject').addEventListener('input', () => {
     if (!text || !token || edits !== asked) return
     try {
       const { subjects } = await find(text)
-      if (edits === asked && $('subject').value.trim() === text) suggest(subjects)
+      if (edits === asked && $('token').value === token && $('subject').value.trim() === text) suggest(subjects)
     } catch {}
   }, 200)
 })

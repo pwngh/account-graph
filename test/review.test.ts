@@ -161,10 +161,10 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   await until('it to open', () => run(`opening === 0`))
   assert.equal(await run(`document.getElementById('subject').value`), 'typed meanwhile')
   // An answer that comes after something else was opened is too late, and opens nothing.
-  await run(`(() => { const real = window.fetch; window.fetch = async (...all) => { if (all[0] !== '/find') return real(...all); window.fetch = real; await new Promise((resolve) => (window.answer = resolve)); return real(...all) }; const s = document.getElementById('subject'); s.value = 'person:2'; document.getElementById('find').requestSubmit(); location.hash = '#/accounts/person%3A1' })()`)
+  await run(`(() => { const real = window.fetch; window.fetch = async (...all) => { if (all[0] !== '/find') return real(...all); window.fetch = real; await new Promise((resolve) => (window.answer = resolve)); const response = await real(...all); setTimeout(() => (window.answered = true), 50); return response }; const s = document.getElementById('subject'); s.value = 'person:2'; document.getElementById('find').requestSubmit(); location.hash = '#/accounts/person%3A1' })()`)
   await until('what was opened', async () => (await text('#detail h3')) === 'person:1' && (await run(`document.getElementById('subject').value`)) === 'person:1')
   await run(`window.answer()`)
-  await pause(300)
+  await until('the late answer', () => run(`window.answered`))
   assert.equal(await text('#detail h3'), 'person:1')
   await run(`(() => { const s = document.getElementById('subject'); s.value = 'typed meanwhile'; s.dispatchEvent(new Event('input')) })()`)
   // A search made while something opens is answered, and the answer stays when the view comes, or when it fails.
