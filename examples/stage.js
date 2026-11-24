@@ -215,10 +215,19 @@
     await type(rows, fields.map(([, value]) => value), 1500)
     await tapped(desk.querySelector('.send'))
   }
-  async function leaveDesk({ done: words }) {
+  let carded
+  /** What the firm's own screen says, as the server answered it. It stays a moment, and goes when the next scene begins. */
+  function showCard({ title, path, fields }) {
+    desk.replaceChildren(el('div', { class: 'desk-head' }, el('b', {}, title), el('small', {}, 'The firm’s own screen')), ...fields.map(([name, value]) => field(name, value)), el('small', {}, el('code', {}, path)))
+    desk.classList.add('on')
+    carded = setTimeout(() => desk.classList.remove('on'), 3200)
+  }
+  async function leaveDesk({ done: words }, checked) {
     desk.querySelector('.send').replaceChildren(words)
     desk.classList.add('saved')
-    await wait(700)
+    // What the server answered before it was saved.
+    if (checked) desk.append(el('small', {}, checked, ' ', el('code', {}, 'POST /match')))
+    await wait(checked ? 1700 : 700)
     desk.classList.remove('on', 'saved')
   }
 
@@ -365,12 +374,14 @@
     try {
       const shown = scene.shown ?? {}
       spot()
+      clearTimeout(carded)
+      desk.classList.remove('on')
       await DOES[shown.phone]?.(scene)
       if (shown.caption) caption.textContent = shown.caption
       if (shown.desk) await atDesk(shown.desk)
       const began = marks()
       const answer = await fetch('/stage/run', { method: 'POST', headers: { 'x-stage': '1' } })
-      const { lines, ms, error, credit: sure } = await answer.json()
+      const { lines, ms, error, credit: sure, card, checked } = await answer.json()
       if (!answer.ok) throw new Error(error)
       at += 1
       told.textContent = lines.join(' ')
@@ -381,7 +392,8 @@
       if (state === 'signed') done(...STAGE.signed)
       if (state === 'paid') done(...STAGE.last.done)
       if (state && !(shown.desk && state === 'talking')) phone(state, shown.seconds)
-      if (shown.desk) await leaveDesk(shown.desk)
+      if (shown.desk) await leaveDesk(shown.desk, checked)
+      if (card) showCard(card)
       document.body.classList.toggle('with-phone', Boolean(state))
       if (!quiet) {
         await open(scene.stage ?? `#${scene.see[1].split('#')[1]}`, began)

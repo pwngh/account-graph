@@ -1,5 +1,6 @@
 import type { Graph } from './graph.ts'
 import { hashPhone, normalizePhone, phoneOfType } from './identifiers.ts'
+import { texasArea } from './lookups.ts'
 import { checkTags } from './tags.ts'
 import { asks, replyTo } from './texts.ts'
 import type { AttributedTouch, CallResult, CallTime, Candidate, FollowUp, Identifier, KeptCall, NotLead, Outcome, Subject } from './types.ts'
@@ -230,6 +231,8 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
 export interface Ringing {
   /** The caller, as the call will be recorded. Undefined when they hid their number. */
   subject?: Subject
+  /** Where in Texas the number was first given out. People keep a number when they move. */
+  area?: string
   /** Whether the number has called or texted before. */
   known: boolean
   /** Who they may be, strongest first: records of yours with this number, and whoever those are. */
@@ -268,7 +271,8 @@ export async function ringing(graph: Graph, call: { from?: string; to: string; a
   const missed = spoken.filter((each) => each.direction === 'inbound' && each.result?.answered === false && followUp(each, spoken).state === 'open').length
   // A sender who was no lead waits for nobody.
   const unanswered = texts.some((each) => not.has(`text:${each.id}`)) ? 0 : texts.filter((each) => asks(each) && replyTo(each, texts, spoken).state === 'open').length
-  return { ...(subject && { subject }), known: calls.length > 0 || texts.length > 0, people, ...(visitor && { visitor }), ...(touch && { touch }), waiting: { calls: missed, texts: unanswered } }
+  const area = from && texasArea(from)
+  return { ...(subject && { subject }), ...(area && { area }), known: calls.length > 0 || texts.length > 0, people, ...(visitor && { visitor }), ...(touch && { touch }), waiting: { calls: missed, texts: unanswered } }
 }
 
 /** Of some visitors, those a caller can be tied to: not kept apart from them, and not another caller's already. */

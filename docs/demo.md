@@ -36,10 +36,10 @@ The story runs from a Monday to a Thursday that have passed. Each scene moves th
 | Scene | Demonstrates | View |
 | --- | --- | --- |
 | 1 | An ad visit with `office=north` and `lang=es` in its address | Journey |
-| 2 | A phone tap, and a call held uncounted until its result | Accounts |
+| 2 | A phone tap, what the firm's screen says while it rings, and a call held uncounted until its result | Accounts |
 | 3 | A caller who hung up in the queue: missed, uncounted, unsent | Board |
 | 4 | A call back that reaches the person | Journey |
-| 5 | Details entered by staff: the contact is tied to the call by phone at 85%, and the ad is not credited | Accounts |
+| 5 | Details entered by staff, checked for a duplicate first: the contact is tied to the call by phone at 85%, and the ad is not credited | Accounts |
 | 6 | A signed link to the form, recorded with its purpose and texted to the contact | Accounts |
 | 7 | The link opened in the browser of the visit: tied at 92%, and the ad is credited | Accounts |
 | 8, 9 | A form sent and documents signed, on the same person | Board |
@@ -50,7 +50,7 @@ The story runs from a Monday to a Thursday that have passed. Each scene moves th
 | 14 | The payment recorded, by a different office than the ad named | Journey |
 | 15 | The conversion sent to the ad platform for the first ad click | Journey |
 | 16 | The client's value restated, from 400 to 1,250 | Journey |
-| 17 | The other side of the matter with the same family phone and email, separated by the case system | Accounts |
+| 17 | The other side of the matter with the same family phone and email, separated by the case system, and the answer to a conflict check | Accounts |
 | 18 | A call to a map listing's number, without a page load, filed under that listing | Channels |
 | 19 | The form on the site in place of a call, credited by the browser | Board |
 | 20 | A parent and child on one phone: related without joining | Matches |

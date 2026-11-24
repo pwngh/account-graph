@@ -82,6 +82,10 @@ for (const practice of ['family', 'injury'] as const) test(`every scene of the $
     assert.equal(await run(`document.getElementById('notice').textContent`), '')
     assert.equal(await run(`document.body.classList.contains('with-phone')`), i < 14)
     assert.equal(await run(`document.getElementById('stage-light').classList.contains('on')`), Boolean(scenes[i]!.spot), `scene ${i + 1} lights its row`)
+    // While it rings, the firm's own screen says where the caller came from.
+    if (i === 1) assert.match((await run(`document.getElementById('stage-desk').textContent`)) as string, /Incoming call.*New, \(555\) 010-0042.*google · Busqueda: North.*\/es.*No missed calls/)
+    if (scenes[i]!.title === 'Details entered') assert.match((await run(`document.getElementById('stage-desk').textContent`)) as string, /Contact saved.*No duplicate on file · a caller and a site visit, by phone POST \/match/)
+    if (scenes[i]!.title === 'Separation') assert.match((await run(`document.getElementById('stage-desk').textContent`)) as string, /Conflict check.*Inés Vega, Tomás Vega.*Kept apart, on record/)
     const after = seen(await view(links[i]!))
     // A link that was made and not opened changes nothing in the account.
     if (scenes[i]!.title === 'Form texted') assert.equal(after, before)

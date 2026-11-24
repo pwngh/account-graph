@@ -111,7 +111,7 @@ Send `by` only with the service token. A reviewer's decision carries the name of
 | `GET /followed?from=&to=&tz=&step=&days=` | People who reached a step within some days of a call. See [the report](report.md#outcomes-after-a-call). |
 | `GET /call?id=` | One call with its state and, when missed, its follow-up, or `null`. |
 | `GET /sent?subject=` | The links made for the subject's person, with their purpose and openings. |
-| `POST /call/ringing` | `{ from?, to, at? }`, while the phone rings: `{ subject?, known, people, visitor?, waiting, source?, campaign?, campaignId?, landing? }`. Writes nothing. Report the call when it ends. See [calls](calls.md#while-the-phone-rings). |
+| `POST /call/ringing` | `{ from?, to, at? }`, while the phone rings: `{ subject?, area?, known, people, visitor?, waiting, source?, campaign?, campaignId?, landing? }`. Writes nothing. Report the call when it ends. See [calls](calls.md#while-the-phone-rings). |
 | `GET /text?id=` | One text with what became of it, or `null`. |
 | `GET /texts?from=&to=&tz=&after=` | The oldest unanswered text of each sender, 50 at a time: `{ from, to, timeZone, at, texts, next }`. |
 | `GET /texting?subject=` | Whether the subject's person last asked for no more texts: `{ optedOut, at }`, or `null`. |

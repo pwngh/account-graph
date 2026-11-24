@@ -303,9 +303,11 @@ With opening hours set, waiting times and stale call feeds count only the hours 
 OPEN_HOURS='{
   "mon": ["09:00-12:00", "13:00-17:00"], "tue": ["09:00-17:00"], "wed": ["09:00-17:00"],
   "thu": ["09:00-17:00"], "fri": ["09:00-17:00"],
-  "holidays": ["2026-12-25", "2027-01-01"]
+  "holidays": ["us-tx", "2026-12-31"]
 }'
 ```
+
+`us` stands for the federal holidays of every year from 1986, on the day they are kept, with Juneteenth from 2021. `us-tx` adds the day after Thanksgiving and the weekdays around Christmas.
 
 | Counted in open hours | Counted in clock hours |
 | --- | --- |
