@@ -187,6 +187,19 @@ export class MicrosoftError extends Error {
 export function microsoftAds(options: MicrosoftAdsOptions): Target {
   const fetcher = options.fetch ?? fetch
   const host = options.sandbox ? 'campaign.api.sandbox.bingads.microsoft.com' : 'campaign.api.bingads.microsoft.com'
+  const post = async (path: string, body: object, signal?: AbortSignal) =>
+    fetcher(`https://${host}/CampaignManagement/v13/${path}/Apply`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${typeof options.accessToken === 'function' ? await options.accessToken() : options.accessToken}`,
+        DeveloperToken: options.developerToken,
+        CustomerId: options.customerId,
+        CustomerAccountId: options.customerAccountId,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      ...(signal && { signal }),
+    })
   return {
     name: 'microsoft',
     batch: 1000,
@@ -197,8 +210,28 @@ export function microsoftAds(options: MicrosoftAdsOptions): Target {
       ...(outcome.phone && { phone: sha256(normalizePhone(outcome.phone)) }),
     }),
     click: (attribution, confidence) => attribution.touches.find((touch) => touch.confidence >= confidence && Boolean(touch.msclkid)),
+    // Microsoft calls it a retraction, and takes one for ninety days after the conversion.
+    async forget(jobs) {
+      const now = new Date().toISOString()
+      const response = await post('OfflineConversionAdjustments', {
+        OfflineConversionAdjustments: jobs.map((job) => ({
+          AdjustmentType: 'Retract',
+          AdjustmentTime: now,
+          ConversionName: job.action,
+          ConversionTime: new Date(job.at).toISOString(),
+          ...(job.click?.msclkid && { MicrosoftClickId: job.click.msclkid }),
+          ...(job.keys.email && { HashedEmailAddress: job.keys.email }),
+          ...(job.keys.phone && { HashedPhoneNumber: job.keys.phone }),
+        })),
+      }, AbortSignal.timeout(30_000))
+      const body = await response.text()
+      if (!response.ok) throw new MicrosoftError(response.status, body)
+      const refused = new Map<number, string>()
+      const errors = body ? JSON.parse(body)?.PartialErrors : undefined
+      for (const each of Array.isArray(errors) ? errors : []) refused.set(each?.Index, String(each?.ErrorCode ?? 'refused'))
+      return jobs.map((_, i) => refused.get(i))
+    },
     async deliver(action, items) {
-      const token = typeof options.accessToken === 'function' ? await options.accessToken() : options.accessToken
       const conversions = items.map(({ job, touch }) => {
         if (touch?.msclkid) job.click = { msclkid: touch.msclkid }
         return {
@@ -210,17 +243,7 @@ export function microsoftAds(options: MicrosoftAdsOptions): Target {
           ...(job.keys.phone && { HashedPhoneNumber: job.keys.phone }),
         }
       })
-      const response = await fetcher(`https://${host}/CampaignManagement/v13/OfflineConversions/Apply`, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${token}`,
-          DeveloperToken: options.developerToken,
-          CustomerId: options.customerId,
-          CustomerAccountId: options.customerAccountId,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({ OfflineConversions: conversions }),
-      })
+      const response = await post('OfflineConversions', { OfflineConversions: conversions })
       const body = await response.text()
       if (!response.ok) throw new MicrosoftError(response.status, body)
       // A 200 can still refuse some conversions. Treat it as a refusal, so the outbox sends each alone and finds which.

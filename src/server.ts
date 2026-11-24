@@ -16,6 +16,7 @@ import { fromTwilio, twilioCall } from './integrations/twilio.ts'
 import type { LineTypeLookup } from './integrations/twilio.ts'
 import type { IpLookup } from './integrations/maxmind.ts'
 import type { Ops } from './ops.ts'
+import { sentOf } from './outbox.ts'
 import type { Job, JobState, Outbox } from './outbox.ts'
 import { withStage } from './ladder.ts'
 import { dayIn, dayStart, sourceOf } from './report.ts'
@@ -728,7 +729,13 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       }
       case 'POST /forget': {
         const body = await json(request)
-        return graph.forget(body.subject, signed(request, body))
+        if (body.ads !== undefined && typeof body.ads !== 'boolean') throw new Refusal(400, '`ads` must be true or false')
+        // With no platform set up now, what was sent when one was is still said.
+        let jobs: Job[] = []
+        const { changes, sent } = options.outbox
+          ? await options.outbox.forget(body.subject, signed(request, body))
+          : { changes: await graph.forget(body.subject, signed(request, body), (gone) => void (jobs = gone)), sent: sentOf(jobs) }
+        return body.ads ? { changes, sent } : changes
       }
       case 'POST /consent': {
         const body = await json(request)

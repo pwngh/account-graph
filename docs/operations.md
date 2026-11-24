@@ -332,6 +332,7 @@ On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes i
 | `RATE_PER_MINUTE`, `RATE_BURST` | `120`, `60` | The per-address limit on `/collect`. |
 | `RATE_LIMIT` | on | `off` removes that limit. |
 | `OUTBOX_INTERVAL_MS` | `30000` | How often to send what is due. |
+| `FORGET_ADS` | none | `true` tells an ad platform that has a way when someone is [forgotten](privacy.md#what-ad-platforms-hold). |
 | `OUTBOX_DELAY_MS` | `0` | How long to hold a new outcome before its first send. |
 | `CHANGE_WEBHOOK` | none | A URL to post cluster changes to. |
 | `ALERT_WEBHOOK` | none | A URL to post failures to, as `{"text": "…"}`. |

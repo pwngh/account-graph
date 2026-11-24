@@ -37,9 +37,38 @@ The right word for hashed data here is **pseudonymous**: it says who somebody is
 | Restating a step | Nothing | Every value it has had. |
 | Taking back a call that was not answered after all | Its outcome, so the report no longer counts it | The call, its result, and the history of its value. |
 
-What was already sent to an ad platform is there, and its own tools delete it. Backups keep what they hold until they are gone: forget again after restoring one.
+What was already sent to an ad platform [is there](#what-ad-platforms-hold). Backups keep what they hold until they are gone: forget again after restoring one.
 
 Two things to hold to when writing a reason or an id, because the record of decisions keeps them for good: name the kind of matter and never the matter, and do not put a name, a phone or an email in an id.
+
+## What ad platforms hold
+
+Forgetting a person here deletes nothing at a platform their conversions were sent to. `POST /forget` with `"ads": true` answers with what had arrived where:
+
+```json
+{ "changes": [], "sent": [{ "transactionId": "client-42", "target": "google", "action": "333", "at": 1795460000000, "state": "untold" }] }
+```
+
+| `state` | Says |
+| --- | --- |
+| `told` | The platform was asked to take it back, and refused nothing |
+| `refused` | It was asked and refused. `note` says why |
+| `untold` | It was not asked. It is for you to ask, with the platform's own tools. With the note `may not have arrived`, it was picked up to be sent, and that it arrived was never confirmed |
+
+**The answer is the only place this is said.** Nothing about a forgotten person is kept to say it again, so keep the answer until you have asked.
+
+With `FORGET_ADS=true`, a platform that documents a way is asked each time somebody is forgotten, whether or not `ads` was set. It is asked after the person is gone here. What is refused is not tried again, and does not bring them back. It is off by default, because it sends the platform the click id and the hashed email and phone it was sent before.
+
+| Platform | What its documents offer | Here |
+| --- | --- | --- |
+| Microsoft Advertising | [A retraction](https://learn.microsoft.com/en-us/advertising/campaign-management-service/offlineconversionadjustment), up to 90 days after the conversion | Asked, with `FORGET_ADS` |
+| Google Ads | [Removing users](https://developers.google.com/data-manager/api/reference/rest/v1/users/remove), for accounts on a list Google keeps. [A retraction](https://developers.google.com/google-ads/api/docs/conversions/upload-adjustments) in the Google Ads API takes a conversion out of reports and is not said to delete it | Not asked |
+| Meta | Taking people out of audiences. The pages on sending events name no way to delete one | Not asked |
+| TikTok | Its documents could not be read | Not asked |
+
+A retraction takes a conversion back. No platform's documents say it also deletes what was matched to reach it. Asking is not knowing: a request from a person is answered by your own letter to the platform, and this list says what to name in it.
+
+Your own target can take part: give it `forget(jobs)`.
 
 ## Consent
 

@@ -11,6 +11,7 @@ import type { Hours } from './hours.ts'
 import { UNSTORABLE } from './identifiers.ts'
 import { checkTouch } from './touch.ts'
 import { createMemoryStore } from './memory.ts'
+import type { Job } from './outbox.ts'
 import { defaultPolicy, evidence, plainPolicy, policyHash, ruleFor, usable, weigh } from './policy.ts'
 import type { Policy } from './policy.ts'
 import { dayIn, dayStart, dimension, fold, nextDay } from './report.ts'
@@ -275,8 +276,11 @@ export interface Graph {
    * `length` is the most subjects a ring may have, 4 by default. Largest amount first, 50 at most.
    */
   rings(subject: Subject, length?: number): Promise<Ring[]>
-  /** Deletes a subject and everything recorded about it, unsent conversions included. */
-  forget(subject: Subject, why?: Deciding): Promise<Change[]>
+  /**
+   * Deletes a subject and everything recorded about it, unsent conversions
+   * included. `gone` hears what conversions were deleted, once they are.
+   */
+  forget(subject: Subject, why?: Deciding, gone?: (jobs: Job[]) => void): Promise<Change[]>
   /**
    * Everything recorded about the person a subject is: arrivals, what they
    * were seen doing, calls, steps and their values, consent and decisions,
@@ -1469,16 +1473,17 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       })
     },
 
-    async forget(subject, why) {
+    async forget(subject, why, gone) {
       if (typeof subject !== 'string') throw new TypeError('forget needs a subject')
       keepable(subject)
-      return changing(async (tx) => {
+      let jobs: Job[] = []
+      const changes = await changing(async (tx) => {
         await decide(tx, 'forget', [subject], why)
         const edges = await tx.edgesOf([subject])
         const component = (await tx.labelsOf([subject])).get(subject)?.component
         const affected = new Set(component === undefined ? [] : (await tx.membersOf([component])).keys())
         await mark(tx)
-        await tx.removeSubject(subject)
+        jobs = await tx.removeSubject(subject)
         affected.delete(subject)
         // Losing a subject can bring an identifier back under its cap, which links the rest again.
         const identifiers = edges.map((edge) => edge.identifier)
@@ -1487,6 +1492,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         for (const edge of await tx.edgesOn(open)) affected.add(edge.subject)
         return settle(tx, affected)
       })
+      gone?.(jobs)
+      return changes
     },
 
     async journey(subject, { before = Number.MAX_SAFE_INTEGER, limit = 200 } = {}) {

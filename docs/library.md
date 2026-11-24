@@ -218,7 +218,7 @@ Delivery is at least once. A job sent twice after a crash carries the same `tran
 await outbox.restate('enroll-1001', 120)
 ```
 
-`delay` holds a new outcome before its first send. `forget` deletes a subject's jobs along with everything else about it.
+`delay` holds a new outcome before its first send. `graph.forget` deletes a subject's jobs along with everything else about it. `outbox.forget` does the same and says what had [reached a platform](privacy.md#what-ad-platforms-hold).
 
 ### Steps and alerts
 

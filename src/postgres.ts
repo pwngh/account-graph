@@ -111,7 +111,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       await db.query(`with gone as (delete from ${t('call')} where subject = $1 returning id) delete from ${t('call_result')} where id in (select id from gone)`, [subject])
       await db.query(`update ${t('call')} set visitor = null where visitor = $1`, [subject])
       await db.query(`delete from ${t('subject')} where id = $1`, [subject])
-      await db.query(`delete from ${t('conversion')} where job->>'subject' = $1`, [subject])
+      const { rows: jobs } = await db.query(`delete from ${t('conversion')} where job->>'subject' = $1 returning *`, [subject])
       await db.query(`delete from ${t('apart')} where a = $1 or b = $1`, [subject])
       await db.query(`delete from ${t('flow')} where source = $1 or target = $1`, [subject])
       await db.query(`delete from ${t('transfer')} where source = $1 or target = $1`, [subject])
@@ -120,6 +120,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       await db.query(`update ${t('lease')} set subject = '' where subject = $1`, [subject])
       await db.query(`delete from ${t('alert')} where subject = $1`, [subject])
       await db.query(`delete from ${t('change')} where subject = $1`, [subject])
+      return jobs.map(toJob)
     },
 
     async edgesOf(subjects) {
