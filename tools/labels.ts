@@ -8,7 +8,7 @@
  * names your people, so keep it outside the repository. Only counts are printed.
  */
 import { readFileSync } from 'node:fs'
-import { fit, measure } from '../src/index.ts'
+import { fit } from '../src/index.ts'
 import type { Labeled, Policy } from '../src/index.ts'
 import { parseCsv } from '../src/integrations/costs.ts'
 
@@ -57,6 +57,8 @@ for (let i = 0; i < clear.length; i += 8) {
 const { rules } = await read('/policy')
 const policy: Policy = { ...rules, kinds: Object.fromEntries(Object.entries<any>(rules.kinds).map(([kind, rule]) => [kind, { ...rule, halfLife: rule.halfLife === 'none' ? Infinity : rule.halfLife }])) }
 
+/** The kinds of everything both hold, whether or not it still links anybody. */
+const kindsOf = (pair: (typeof used)[number]) => [...new Set([...pair.reasons.map((reason) => reason.identifier), ...pair.idle].map((identifier) => identifier.slice(0, identifier.indexOf(':'))))]
 const count = (list: readonly { same: boolean }[]) => ({ same: list.filter((each) => each.same).length, different: list.filter((each) => !each.same).length })
 const total = count(used)
 const of = (part: number, whole: number) => (whole === 0 ? '-' : `${((100 * part) / whole).toFixed(1)}%`)
@@ -74,12 +76,12 @@ console.log(`${missing.same + missing.different} could not be used, because noth
 console.log(`${used.length} used: ${total.same} same, ${total.different} different.\n`)
 table([
   ['What the pair shares', 'pairs', 'same', 'different', 'precision', 'recall'],
-  ...Object.entries(measure(used)).sort(([x], [y]) => (x < y ? -1 : 1)).flatMap(([kind, { alone }]) => {
-    const sharing = used.filter((pair) => pair.reasons.some((reason) => reason.identifier.startsWith(`${kind}:`)))
-    return [line(kind, sharing), [`  and nothing else`, alone.pairs, alone.same, alone.pairs - alone.same, of(alone.same, alone.pairs), of(alone.same, total.same)]]
+  ...[...new Set(used.flatMap(kindsOf))].sort().flatMap((kind) => {
+    const sharing = used.filter((pair) => kindsOf(pair).includes(kind))
+    const idle = sharing.filter((pair) => pair.idle.some((identifier) => identifier.startsWith(`${kind}:`)))
+    return [line(kind, sharing), line('  and nothing else', sharing.filter((pair) => kindsOf(pair).length === 1)), ...(idle.length > 0 ? [line('  muted or over its cap', idle)] : [])]
   }),
-  ...[...new Set(used.flatMap((pair) => pair.idle.map((identifier) => identifier.slice(0, identifier.indexOf(':')))))].sort().map((kind) => line(`${kind}, muted or over its cap`, used.filter((pair) => pair.idle.some((identifier) => identifier.startsWith(`${kind}:`))))),
-  line('nothing', used.filter((pair) => pair.reasons.length + pair.idle.length === 0)),
+  line('nothing', used.filter((pair) => kindsOf(pair).length === 0)),
   line(`a score of ${policy.same} or more`, used.filter((pair) => pair.score >= policy.same)),
   line('in one cluster now', used.filter((pair) => pair.joined)),
 ])
