@@ -56,7 +56,7 @@ export const defaultPolicy: Policy = {
     // A passkey's credential id, after your server verified the sign-in. Bound to one device or one person's keychain.
     passkey: { weight: 0.99, dilution: 0, cap: 5, halfLife: Infinity },
     email: { weight: 0.99, dilution: 0, cap: 10, halfLife: Infinity },
-    // Shared by two it can join them; by three or more, a household or a front desk is as likely, so it only relates them.
+    // Alone it joins two subjects, relates three, and says nothing of four or more: a household or a front desk is as likely.
     phone: { weight: 0.9, dilution: 1, cap: 10, halfLife: Infinity },
     // A number from an internet calling app, which anyone can get and drop in a minute. A carrier lookup tells it from a real line.
     voip: { weight: 0.5, dilution: 1, cap: 10, halfLife: Infinity },

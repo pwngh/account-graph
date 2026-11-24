@@ -98,7 +98,7 @@ Start the new version. On start the server applies every database change the dat
 
 Each change has a number and runs once. Several servers may start at the same moment; one applies the changes and the others wait. `upgrades()` in `account-graph/postgres` is the list.
 
-> **The default weights changed.** A phone number shared by three or more subjects now relates them and does not join them, and a phone, email or `voip` value held by more than 10 subjects links nothing. A server that ran the earlier defaults starts with the notice that a rebuild is due: post to `/rebuild` when no one is writing. To keep the earlier behaviour, set `POLICY='{"kinds":{"phone":{"dilution":0,"cap":25},"email":{"cap":25},"voip":{"dilution":0,"cap":25}}}'`.
+> **The default weights changed.** A phone number alone now joins two subjects, relates three, and reports no link among four or more, and a phone, email or `voip` value held by more than 10 subjects links nothing. A server that ran the earlier defaults starts with the notice that a rebuild is due: post to `/rebuild` when no one is writing. To keep the earlier behaviour, set `POLICY='{"kinds":{"phone":{"dilution":0,"cap":25},"email":{"cap":25},"voip":{"dilution":0,"cap":25}}}'`.
 
 ## The reviewer screen
 

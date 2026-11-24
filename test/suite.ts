@@ -130,6 +130,8 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const [link] = await graph.links('phone:00')
       assert.deepEqual([link!.level, Math.round(link!.score * 1e9) / 1e9], ['related', 0.6])
       assert.deepEqual((await graph.cluster('phone:00'))!.members, ['phone:00'])
+      await graph.observe({ subject: 'phone:03', identifiers: ['phone:shared'], at: T0 })
+      assert.deepEqual(await graph.links('phone:00'), [])
       // An email still joins as many as ten, and the eleventh makes it nobody's.
       await share('email', 10)
       assert.equal((await graph.cluster('email:00'))!.members.length, 10)

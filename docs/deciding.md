@@ -24,7 +24,7 @@ Scores depend only on stored data, never on the current time or on arrival order
 | `carry` | 0.95 | 4 | none | A visitor who followed a link from another of your sites, proven by a token made for that browser. Thins when one token is used by several |
 | `link` | 0.92 | 5 | none | A link sent to one person, opened in this browser. Thins as more people's links are opened there |
 | `dial` | 0.92 | 2 | none | A phone call that began just after exactly one visitor tapped its number |
-| `phone` | 0.90 | 10 | none | A mobile or landline. Thins as more subjects share it: two can be joined by it, three or more are only related |
+| `phone` | 0.90 | 10 | none | A mobile or landline. Thins as more subjects share it: alone it joins two, relates three, and reports nothing among four or more |
 | `address` | 0.60 | 10 | none | A postal address confirmed to the door. A household, not a person |
 | `voip` | 0.50 | 10 | none | A number from an internet calling app, which anyone can get and drop. Thins as more share it |
 | `ga` | 0.90 | 10 | none | Google Analytics client id |
