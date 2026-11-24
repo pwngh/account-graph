@@ -33,7 +33,14 @@ export interface Tx {
   removeSubject(subject: Subject): Promise<void>
   edgesOf(subjects: readonly Subject[]): Promise<Edge[]>
   edgesOn(identifiers: readonly Identifier[]): Promise<Edge[]>
-  allEdges(): Promise<Edge[]>
+  /**
+   * What every two subjects share, a pair at a time and in batches, so a graph larger than memory can be read. Only
+   * identifiers that can link: not muted, and held by no more than their kind's cap. A pair that shares one identifier,
+   * of a kind not in `alone`, may be left out.
+   */
+  sharing(caps: Readonly<Record<string, number>>, alone: readonly string[]): AsyncIterable<{ a: Edge; b: Edge; fanout: number }[][]>
+  /** Every subject, in batches: where it sits, and whether it holds any identifier. */
+  everyone(): AsyncIterable<{ subject: Subject; labels: Labels | undefined; held: boolean }[]>
   states(identifiers: readonly Identifier[]): Promise<Map<Identifier, IdentifierState>>
   setIgnored(identifier: Identifier, ignored: boolean): Promise<void>
   /** Where each given subject sits. Unknown subjects are absent. */
@@ -65,7 +72,6 @@ export interface Tx {
   setBuiltWith(hash: string): Promise<void>
   /** Every kind some stored identifier has. Reads every identifier. */
   kinds(): Promise<string[]>
-  allLabels(): Promise<Map<Subject, Labels>>
   setLabels(labels: ReadonlyMap<Subject, Labels>): Promise<void>
   /** Records, or with `false` withdraws, a reviewer's decision that two subjects are different people. */
   setSeparated(a: Subject, b: Subject, separated: boolean): Promise<void>
@@ -139,7 +145,7 @@ export interface Tx {
   /** Sightings of a subject, oldest first. With `limit`, only the newest that many. */
   history(subject: Subject, limit?: number): Promise<Sighting[]>
   /** Every sighting written down at or before a time, for replaying what was known then. */
-  sightingsUntil(recorded: number): Promise<Sighting[]>
+  sightingsUntil(recorded: number): AsyncIterable<Sighting[]>
   /** Deletes sightings written down before a time. Edges keep what they folded. Returns how many went. */
   pruneSightings(before: number): Promise<number>
   /** Appends to the record of decisions. */

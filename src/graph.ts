@@ -10,7 +10,7 @@ import type { Followed } from './followed.ts'
 import { UNSTORABLE } from './identifiers.ts'
 import { checkTouch } from './touch.ts'
 import { createMemoryStore } from './memory.ts'
-import { defaultPolicy, plainPolicy, policyHash, ruleFor, usable } from './policy.ts'
+import { defaultPolicy, evidence, plainPolicy, policyHash, ruleFor, usable, weigh } from './policy.ts'
 import type { Policy } from './policy.ts'
 import { dayIn, dayStart, dimension, fold, nextDay } from './report.ts'
 import type { Credited } from './report.ts'
@@ -433,9 +433,40 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     return changes
   }
 
+  /**
+   * Where every subject should sit that is joined to another, from all edges. One that is not here is on its own. Reads
+   * the edges a pair at a time, and keeps only the pairs that join: the graph may be larger than memory.
+   */
   async function recompute(tx: Tx): Promise<Map<Subject, Labels>> {
-    const edges = await tx.allEdges()
-    return compute(tx, unique(edges.map((edge) => edge.subject)))
+    const caps = Object.fromEntries(Object.entries(policy.kinds).map(([kind, rule]) => [kind, rule.cap]))
+    const alone = Object.entries(policy.kinds).filter(([, rule]) => rule.weight >= policy.same && !rule.corroborates).map(([kind]) => kind)
+    const pairs: Pair[] = []
+    const joined = new Set<Subject>()
+    for await (const batch of tx.sharing(caps, alone)) {
+      for (const shared of batch) {
+        const score = weigh(policy, shared.map(({ a, b, fanout }) => evidence(policy, a, b, fanout)))
+        if (score < policy.same) continue
+        const [a, b] = [shared[0]!.a.subject, shared[0]!.b.subject]
+        pairs.push({ a, b, score, level: 'same', reasons: [] })
+        joined.add(a).add(b)
+      }
+    }
+    const subjects = [...joined]
+    const separated = (await tx.separatedOf(subjects)).filter(([a, b]) => joined.has(a) && joined.has(b))
+    return partition(subjects, pairs, separated, policy)
+  }
+
+  /** Every subject whose stored labels are not what a full recompute gives, with what they should be: undefined where nothing is held any more. */
+  async function wrong(tx: Tx): Promise<{ subject: Subject; stored: Labels | undefined; next: Labels | undefined }[]> {
+    const labels = await recompute(tx)
+    const out: { subject: Subject; stored: Labels | undefined; next: Labels | undefined }[] = []
+    for await (const batch of tx.everyone()) {
+      for (const { subject, labels: stored, held } of batch) {
+        const next = held ? (labels.get(subject) ?? { component: subject, cluster: subject }) : undefined
+        if (stored?.component !== next?.component || stored?.cluster !== next?.cluster) out.push({ subject, stored, next })
+      }
+    }
+    return out.sort((x, y) => (x.subject < y.subject ? -1 : 1))
   }
 
   /** Links of each given subject, scored from edges. A pair a reviewer separated is not a link. */
@@ -686,11 +717,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
   /** The subjects whose stored labels are not what a full recompute gives. */
   async function differences(tx: Tx): Promise<Change[]> {
-    const stored = await tx.allLabels()
-    const next = await recompute(tx)
-    const wrong = (subject: Subject) =>
-      stored.get(subject)?.component !== next.get(subject)?.component || stored.get(subject)?.cluster !== next.get(subject)?.cluster
-    return diff(stored, next).filter((change) => wrong(change.subject))
+    return (await wrong(tx)).map(({ subject, stored, next }) => ({ subject, from: stored?.cluster, to: next?.cluster }))
   }
 
   const graph: Graph = {
@@ -1405,7 +1432,12 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return changing(async (tx) => {
         await decide(tx, 'rebuild', [], why)
         await tx.setBuiltWith(hash)
-        return apply(tx, await tx.allLabels(), await recompute(tx))
+        const moved = await wrong(tx)
+        const labels = new Map(moved.flatMap(({ subject, next }) => (next ? [[subject, next] as const] : [])))
+        if (labels.size > 0) await tx.setLabels(labels)
+        const changes = moved.map(({ subject, stored, next }) => ({ subject, from: stored?.cluster, to: next?.cluster })).filter((change) => change.from !== change.to)
+        await tx.addChanges(now(), changes)
+        return changes
       })
     },
 
@@ -1445,15 +1477,16 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     async asOf(at) {
-      const { sightings, decisions } = await store.read(async (tx) => ({
-        sightings: await tx.sightingsUntil(at),
-        decisions: (await tx.decisions()).filter((decision) => decision.at <= at),
-      }))
       // Stamp the copy's sightings with the time asked about, so the copy's own log reads as of then.
       const past = createGraph(createMemoryStore(), policy, { now: () => at })
-      for (let i = 0; i < sightings.length; i += 1000) {
-        await past.observe(sightings.slice(i, i + 1000).map(({ subject, identifier, at: seen, event }) => ({ subject, identifiers: [identifier], at: seen, ...(event !== undefined && { event }) })))
-      }
+      const decisions = await store.read(async (tx) => {
+        for await (const sightings of tx.sightingsUntil(at)) {
+          for (let i = 0; i < sightings.length; i += 1000) {
+            await past.observe(sightings.slice(i, i + 1000).map(({ subject, identifier, at: seen, event }) => ({ subject, identifiers: [identifier], at: seen, ...(event !== undefined && { event }) })))
+          }
+        }
+        return (await tx.decisions()).filter((decision) => decision.at <= at)
+      })
       for (const { action, about } of decisions) {
         if (action === 'ignore' || action === 'restore') await past.ignore(about[0]!, action === 'ignore')
         if (action === 'separate' || action === 'rejoin') await past.separate(about[0]!, about[1]!, action === 'separate')

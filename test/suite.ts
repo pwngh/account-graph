@@ -1842,6 +1842,35 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal(await graph.cluster('account:1'), undefined)
     })
 
+    test('a check finds what is wrong wherever it is, and a rebuild puts it right', async () => {
+      const next = random(11)
+      const { graph, store } = await fresh()
+      await graph.observe(Array.from({ length: 150 }, (): Observation => ({
+        subject: `account:${Math.floor(next() * 60)}`,
+        identifiers: [`email:${Math.floor(next() * 40)}`, `canvas:${Math.floor(next() * 12)}`, `ip:${Math.floor(next() * 9)}`],
+        at: T0 + Math.floor(next() * 30) * DAY,
+      })))
+      await graph.separate('account:1', 'account:2')
+      await graph.ignore('email:3')
+      assert.deepEqual(await graph.verify(), [])
+      // One joined to a stranger, one split off, one whose row is gone, and one that holds nothing.
+      const before = new Map<string, { component: string; cluster: string } | undefined>()
+      await store.read(async (tx) => {
+        for await (const batch of tx.everyone()) for (const { subject, labels } of batch) before.set(subject, labels)
+      })
+      const joined = [...before].filter(([subject, labels]) => labels!.cluster !== subject).map(([subject]) => subject).sort()
+      const single = [...before].filter(([subject, labels]) => labels!.cluster === subject && ![...before.values()].some((other, i) => [...before.keys()][i] !== subject && other!.cluster === subject)).map(([subject]) => subject).sort()
+      assert.ok(joined.length > 0 && single.length > 1)
+      await store.write((tx) => tx.setLabels(new Map([[joined[0]!, { component: joined[0]!, cluster: joined[0]! }], [single[0]!, { component: single[1]!, cluster: single[1]! }]])))
+      assert.deepEqual((await graph.verify()).map((change) => [change.subject, change.to]), [joined[0]!, single[0]!].sort().map((subject) => [subject, before.get(subject)!.cluster]))
+      assert.deepEqual((await graph.rebuild()).map((change) => change.subject), [joined[0]!, single[0]!].sort())
+      assert.deepEqual(await graph.verify(), [])
+      assert.deepEqual(await graph.rebuild(), [])
+      // As of now, the copy is the graph.
+      const past = await graph.asOf(Date.now())
+      for (const subject of before.keys()) assert.deepEqual((await past.cluster(subject))!.members, (await graph.cluster(subject))!.members)
+    })
+
     test('clusters do not depend on the order observations arrive in', async () => {
       const next = random(7)
       const observations: Observation[] = Array.from({ length: 120 }, () => ({
@@ -1854,8 +1883,11 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
         const { graph, store } = await fresh()
         const shuffled = [...observations].sort(() => next() - 0.5)
         for (const observation of shuffled) await graph.observe(observation)
-        const clusters = await store.read((tx) => tx.allLabels())
-        results.push(JSON.stringify([...clusters].sort()))
+        const clusters: unknown[] = []
+        await store.read(async (tx) => {
+          for await (const batch of tx.everyone()) clusters.push(...batch.map(({ subject, labels }) => [subject, labels]))
+        })
+        results.push(JSON.stringify(clusters.sort()))
       }
       assert.equal(results[1], results[0])
       assert.equal(results[2], results[0])
