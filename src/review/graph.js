@@ -166,6 +166,7 @@ function offLine(from, to, box, gap) {
 function* crowding(nodes, edges) {
   const taken = nodes.map((node) => shapes(node))
   for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+    if (Math.abs(nodes[i].x - nodes[j].x) > 360 || Math.abs(nodes[i].y - nodes[j].y) > 200) continue
     for (const one of taken[i]) for (const two of taken[j]) {
       const push = overlap(one, two, GAP)
       if (push) yield { push, node: nodes[j], others: [nodes[i]] }
@@ -174,6 +175,7 @@ function* crowding(nodes, edges) {
   for (const { from, to, bend } of edges) for (let i = 0; i < nodes.length; i++) {
     if (bend || nodes[i] === from || nodes[i] === to) continue
     for (const box of taken[i]) {
+      if (box.x + box.w + CLEAR < Math.min(from.x, to.x) || box.x - box.w - CLEAR > Math.max(from.x, to.x) || box.y + box.h + CLEAR < Math.min(from.y, to.y) || box.y - box.h - CLEAR > Math.max(from.y, to.y)) continue
       const push = offLine(from, to, box, CLEAR)
       if (push) yield { push, node: nodes[i], others: [from, to] }
     }
@@ -220,7 +222,7 @@ function sides(nodes, edges) {
 }
 /** Moves whoever stands in an outline that is not theirs out of it. */
 function outward(nodes, edges) {
-  for (let round = 0; round < 30; round++) {
+  for (let round = 0; round < 12; round++) {
     let moved = false
     for (const { id, points } of outlines(nodes, edges)) {
       const middle = { x: points.reduce((sum, p) => sum + p.x, 0) / points.length, y: points.reduce((sum, p) => sum + p.y, 0) / points.length }
@@ -229,8 +231,8 @@ function outward(nodes, edges) {
         if (Math.min(...corners(shapes(node)).map((p) => beyond(p, points))) >= MARGIN + CLEAR) continue
         const [dx, dy] = [node.x - middle.x, node.y - middle.y]
         const long = Math.max(1, Math.hypot(dx, dy))
-        node.x += (dx / long) * 22
-        node.y += (dy / long) * 22
+        node.x += (dx / long) * 48
+        node.y += (dy / long) * 48
         moved = true
       }
     }
@@ -250,7 +252,10 @@ function course({ from, to, bend = 0 }, sides = bend) {
 }
 /** Whether a course is clear of every disc and name but those at its own ends. */
 function freeOf(edge, points, taken) {
-  return taken.every(({ node, boxes }) => node === edge.from || node === edge.to || boxes.every((box) => points.every((p, i) => {
+  const [l, r, t, b] = [Math.min, Math.max, Math.min, Math.max].map((pick, i) => pick(...points.map((p) => (i < 2 ? p.x : p.y))))
+  // Most are nowhere near it, and that is quickly seen.
+  const near = (box) => box.x + box.w + CLEAR > l && box.x - box.w - CLEAR < r && box.y + box.h + CLEAR > t && box.y - box.h - CLEAR < b
+  return taken.every(({ node, boxes }) => node === edge.from || node === edge.to || boxes.every((box) => !near(box) || points.every((p, i) => {
     if (i === 0) return true
     if (box.round) return apartFrom(points[i - 1], p, box) >= box.w + CLEAR - 4
     return !crossing(points[i - 1], p, box, CLEAR - 4)
@@ -271,7 +276,8 @@ function route(nodes, edges) {
     const long = Math.hypot(edge.to.x - edge.from.x, edge.to.y - edge.from.y)
     const ways = [0, 0.1, -0.1, 0.18, -0.18, 0.26, -0.26, 0.36, -0.36, 0.48, -0.48, 0.62, -0.62].map((part) => part * Math.max(160, long))
     // Best is one that also keeps off the names at its own ends and leaves them apart from other lines. A line may have to do without.
-    const clear = ways.filter((sides) => freeOf(edge, course(edge, sides), taken))
+    // A straight way that will do is taken at once when there are many.
+    const clear = edges.length > 60 && freeOf(edge, course(edge, 0), taken) ? [0] : ways.filter((sides) => freeOf(edge, course(edge, sides), taken))
     const leaves = (sides) => {
       const points = course(edge, sides)
       const [a, b] = [points[1], points.at(-2)]
@@ -532,7 +538,9 @@ function graphOf(profile, more) {
         if (heat > 0.02) {
           step(nodes, edges, heat, size.w < size.h * 1.2)
           spread(nodes, [], 3)
-          route(nodes, edges)
+          // With many, lines are straight while something moves, and bend again once it rests.
+          if (nodes.length <= 40) route(nodes, edges)
+          else for (const edge of edges) edge.bend = 0
         }
         heat *= 0.97
         // Let go of and at rest: whatever is still too near is moved apart, for all to see.
@@ -564,7 +572,7 @@ function graphOf(profile, more) {
     // Left as it was when everything on it already had a place.
     if (!nodes.every((node) => node.known)) {
       // Where they start decides how they end, so a few starts are tried and the one easiest to read is kept.
-      let starts = nodes.some((node) => node.known) ? 1 : nodes.length <= 30 ? 12 : 3
+      let starts = nodes.some((node) => node.known) ? 1 : nodes.length <= 30 ? 12 : 1
       let again = false
       const first = nodes.map(({ x, y }) => ({ x, y }))
       let best
