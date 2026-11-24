@@ -388,8 +388,8 @@ async function load(tag) {
     for (const each of $('view').querySelectorAll('details')) each.open = unfolded.includes(fold(each))
     if (held) [...$('view').querySelectorAll('a, button, input, select, [tabindex]')].find((node) => which(node) === held)?.focus({ preventScroll: true })
     if (!quiet) {
-      notice('')
-      // What was typed since is a search of the reviewer's, and stays.
+      // What was typed since is a search of the reviewer's, and stays, as does what was answered.
+      if (edits === sought) notice('')
       if (views.get(name).subject && parts[0] && edits === sought) $('subject').value = parts[0]
     }
     if (!quiet) browsing = false
