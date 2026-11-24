@@ -126,6 +126,19 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
   const reachedBy = (name) => (row) => row.stages[name]?.count ?? 0
   if (rows.length > 1) sortable('Campaigns', table, [(row) => row.source, (row) => row.campaign || row.campaignId || null, (row) => (row.source === '(none)' || (row.costDays === 0 && row.cost === 0 && row.clicks === 0) ? null : row.cost), (row) => (row.source === '(none)' || (row.costDays === 0 && row.cost === 0 && row.clicks === 0) ? null : row.clicks), (row) => row.visits,
     ...stages.map(reachedBy), (row) => row.people, ...(report.total.missed > 0 ? [(row) => row.missed] : []), (row) => row.value, (row) => row.costPerOutcome, (row) => row.returnOnCost], rows)
+  // What a platform says it brought, beside what is credited here on the same days. They count by different rules, so neither is marked as wrong.
+  if (all.claimed) {
+    const said = report.rows.filter((row) => row.claimed)
+    const most = Math.max(...said.flatMap((row) => [row.claimed.conversions, row.claimed.credited]))
+    const pair = ({ conversions, credited }) => el('span', { class: 'claim' }, meter(most > 0 ? conversions / most : 0), meter(most > 0 ? credited / most : 0))
+    const line = (name, claim, bars) => [td('who', ...name), td('num', amount(claim.days)), td('bar', bars), ...edge([td('num', amount(claim.conversions)), td('num', tally(claim.credited))]), ...edge([td('num', claim.value === null ? unknown() : cash(claim.value)), td('num', cash(claim.creditedValue))])]
+    const claims = el('table', { class: 'claims' }, el('tr', {}, el('td', {}), el('td', {}), el('td', {}), group(per || 'Outcomes', 2), group('Value', 2)),
+      el('tr', {}, th('Campaign'), th('Days said', 'num'), th('Claimed over credited'), ...edge([th('Claimed', 'num'), th('Credited', 'num')]), ...edge([th('Claimed', 'num'), th('Credited', 'num')])),
+      ...said.map((row) => el('tr', {}, ...line([sourced(row.source), ' ', row.campaign || row.campaignId || 'No campaign named'], row.claimed, pair(row.claimed)))),
+      ...(said.length > 1 ? [el('tr', { class: 'sum' }, ...line(['All'], all.claimed, ''))] : []))
+    box.append(el('section', {}, el('h2', {}, 'What the platforms claim'), wide('What the platforms claim', claims),
+      notes('Both are over the days the platform gave a number for. A platform counts by its own rules, often on the day of the click, and two may claim the same outcome, so the two need not agree. A value is not recorded when the platform gave none for some of its conversions.')))
+  }
   const timed = stages.filter((stage) => report.total.stages[stage].delay)
   if (timed.length > 0) {
     const times = el('table', {}, el('tr', {}, th('Step'), th('Outcomes with an arrival', 'num'), th('Half within', 'num'), th('95 in 100 within', 'num'), th('Inside the window', 'num')))

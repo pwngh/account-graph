@@ -221,6 +221,13 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
     await until(said!, async () => (await text('#view')).includes(said!))
   }
 
+  // What a platform claims stands beside what is credited, and a value it did not give is not a number.
+  await graph.spend({ day: today, source: 'google', campaign: '=1+1', amount: 1234.5, clicks: 3, conversions: 7.5 })
+  await run(`location.hash = '#/channels'`)
+  const claims = await until('the claim', () => run(`document.querySelector('.claims')?.innerText`)) as string
+  assert.ok(!claims.includes('[object'), claims)
+  assert.match(claims, /google\s+=1\+1\s+1\s+7\.5\s+0\s+\(not recorded\)/)
+
   // A refund is named where the value changed, and has a column of its own.
   await graph.observe({ subject: 'lead:refund', identifiers: ['device:refund'], at: rang })
   await graph.outcome({ transactionId: 'refund-1', subject: 'lead:refund', at: rang, stage: 'enrolled', value: 200, currency: 'USD' })
