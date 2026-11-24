@@ -53,7 +53,7 @@ An event counts once a day per browser. To count each occurrence, such as each f
 The server processes a reported call in four steps.
 
 1. **Caller.** The caller becomes a subject carrying their phone number. An account that later gives the same number is linked to the call.
-2. **Visitor.** If exactly one visitor tapped the number in the three minutes before the call, the two are linked at 0.92, which joins them. For a [pool](#number-pools) number, the visitor it was shown to takes precedence over a tap.
+2. **Visitor.** If exactly one visitor tapped the number within the tap window (three minutes by default, see [Busy numbers](#busy-numbers)) before the call, the two are linked at 0.92, which joins them. For a [pool](#number-pools) number, the visitor it was shown to takes precedence over a tap.
 3. **Channel.** A call without a visitor is filed under the channel `CALL_NUMBERS` gives the number, with the medium `call`.
 4. **Outcome.** A call of 30 seconds or more counts as an outcome of the step `call`. Where [results are expected](#call-results), a person must also have answered.
 
@@ -70,6 +70,18 @@ Reporting a call id again answers `"duplicate": true`. A result in the second re
 | `pool` | The number dialed was shown to one visitor | The call is linked to that visitor |
 | `left_out` | The other number is in `CALL_EXCLUDE`: your own people, or a test phone | The call is not recorded |
 | `ambiguous` | More than one visitor tapped the number just before | Filed under the number's channel |
+
+### Busy numbers
+
+A call is linked to a tap by time, so on a number that rings often, some calls follow a stranger's tap by chance. A shorter window has fewer of these, and loses callers who took longer to dial. It can also leave only a stranger's tap where a longer one finds two and ties nobody.
+
+```sh
+CALL_TAP_SECONDS=60
+```
+
+Choose it from your own calls. Count the ties at each length, then move every tap by several amounts, such as a day and a week, to times as busy on the same number, and count again. The second counts estimate chance.
+
+> **Twilio dates an unanswered call from the end of its ringing.** Leave room for the ringing if Twilio reports your calls, or missed calls lose their visitor.
 
 ### Twilio
 
@@ -265,13 +277,13 @@ Callers are stored as a hash of their number, so the view shows an ID. To find t
 
 | Area | Detail |
 | --- | --- |
-| Channel numbers | Without a [pool](#number-pools), two visitors who tap a number within three minutes cannot be told apart, and a call dialed by hand is filed under the number's channel. |
+| Channel numbers | Without a [pool](#number-pools), two visitors who tap a number within the tap window (three minutes by default, see [Busy numbers](#busy-numbers)) cannot be told apart, and a call dialed by hand is filed under the number's channel. |
 | Forged taps | A program can send taps. With `CALL_NUMBERS` set, the server keeps taps on tracking numbers only. It trusts three browsers per network in ten minutes, and links one caller per visitor. A forged tap can still make a call `ambiguous`. |
 | One caller per visitor | The rule is permanent. Each hidden call is its own caller, so a visitor linked to one is skipped for the next. |
 | Saved pool numbers | A call after the grace period is not linked to the visitor who saved the number, and one during another visitor's lease is linked to that visitor in error. More numbers mean longer rests and fewer errors. |
 | Copied pages | A saved or printed page keeps showing a pool number. |
 | Pool numbers | People behind one address, such as an office, share the three-browser limit. Carriers may label a number that many strangers are called back from. |
-| Tap window | Thirty seconds are allowed for clock differences. `clickWindow` changes the three minutes in the library. |
+| Tap window | Thirty seconds are allowed for clock differences. `CALL_TAP_SECONDS`, or `clickWindow` in the library, changes the three minutes. See [Busy numbers](#busy-numbers). |
 | Conversions | A counted call goes to an ad platform only when the `call` step in `STAGES` has an action. The caller's hashed number is sent as a match key. |
 | Returns by number | A caller reached on a different number leaves the missed call open, unless you [report the return](#reported-returns). |
 | Older calls | A call recorded before calls were stored has no state, and a result for it finds no call. Its outcome stays counted. |
