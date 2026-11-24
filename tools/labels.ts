@@ -24,14 +24,16 @@ const read = async (path: string): Promise<any> => {
   return response.json()
 }
 
-const lines = parseCsv(readFileSync(file, 'utf8')).map((cells) => cells.map((cell) => cell.trim()))
-const head = (lines[0] ?? []).map((name) => name.toLowerCase())
+const lines = parseCsv(readFileSync(file, 'utf8'))
+const head = (lines[0] ?? []).map((name) => name.trim().toLowerCase())
 for (const needed of ['a', 'b', 'label']) if (!head.includes(needed)) throw new Error(`The CSV needs a "${needed}" column`)
 const pairs = new Map<string, { a: string; b: string; said: Set<boolean> }>()
 let rows = 0
 for (const [i, cells] of lines.entries()) {
-  if (i === 0 || cells.every((cell) => !cell)) continue
-  const [a = '', b = '', label = ''] = ['a', 'b', 'label'].map((name) => cells[head.indexOf(name)])
+  if (i === 0 || cells.every((cell) => !cell.trim())) continue
+  // A subject is used as it is written: a space may be part of it.
+  const [a = '', b = '', said = ''] = ['a', 'b', 'label'].map((name) => cells[head.indexOf(name)])
+  const label = said.trim()
   if (!a || !b || a === b) throw new Error(`Line ${i + 1} needs two different subjects`)
   if (label !== 'same' && label !== 'different') throw new Error(`Line ${i + 1} needs its label as "same" or "different"`)
   rows += 1
@@ -43,12 +45,12 @@ for (const [i, cells] of lines.entries()) {
 // A pair labelled both ways says nothing.
 const clear = [...pairs.values()].filter((pair) => pair.said.size === 1).map(({ a, b, said }) => ({ a, b, same: said.has(true) }))
 
-const used: (Labeled & { joined: boolean; score: number })[] = []
+const used: (Labeled & { joined: boolean; score: number; idle: string[] })[] = []
 const missing = { same: 0, different: 0 }
 for (let i = 0; i < clear.length; i += 8) {
   await Promise.all(clear.slice(i, i + 8).map(async ({ a, b, same }) => {
-    const { known, joined, score, reasons } = await read(`/between?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`)
-    if (known) used.push({ same, joined, score, reasons })
+    const { known, joined, score, reasons, idle } = await read(`/between?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`)
+    if (known) used.push({ same, joined, score, reasons, idle })
     else missing[same ? 'same' : 'different'] += 1
   }))
 }
@@ -68,7 +70,7 @@ const line = (name: string, list: readonly { same: boolean }[]) => {
 }
 
 console.log(`${rows} rows, ${pairs.size} pairs. ${pairs.size - clear.length} labelled both ways were left out.`)
-console.log(`${missing.same + missing.different} could not be used, because the graph does not know one of the two: ${missing.same} same, ${missing.different} different.`)
+console.log(`${missing.same + missing.different} could not be used, because nothing recorded about one of the two is left: ${missing.same} same, ${missing.different} different.`)
 console.log(`${used.length} used: ${total.same} same, ${total.different} different.\n`)
 table([
   ['What the pair shares', 'pairs', 'same', 'different', 'precision', 'recall'],
@@ -76,7 +78,8 @@ table([
     const sharing = used.filter((pair) => pair.reasons.some((reason) => reason.identifier.startsWith(`${kind}:`)))
     return [line(kind, sharing), [`  and nothing else`, alone.pairs, alone.same, alone.pairs - alone.same, of(alone.same, alone.pairs), of(alone.same, total.same)]]
   }),
-  line('nothing', used.filter((pair) => pair.reasons.length === 0)),
+  ...[...new Set(used.flatMap((pair) => pair.idle.map((identifier) => identifier.slice(0, identifier.indexOf(':')))))].sort().map((kind) => line(`${kind}, muted or over its cap`, used.filter((pair) => pair.idle.some((identifier) => identifier.startsWith(`${kind}:`))))),
+  line('nothing', used.filter((pair) => pair.reasons.length + pair.idle.length === 0)),
   line(`a score of ${policy.same} or more`, used.filter((pair) => pair.score >= policy.same)),
   line('in one cluster now', used.filter((pair) => pair.joined)),
 ])

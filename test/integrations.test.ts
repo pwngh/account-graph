@@ -1331,6 +1331,9 @@ test('the labels tool resolves a file of checked pairs against a running server,
   for (const side of ['a', 'b']) await see(`s5${side}`, 'address:s5', `email:s5${side}`)
   for (const side of ['a', 'b']) await see(`d2${side}`, 'address:d2')
   for (const side of ['a', 'b']) await see(`s6${side}`, `email:s6${side}`)
+  // Muted, a phone links nobody, and the pair that shares it is counted apart.
+  for (const side of ['a', 'b']) await see(`s7${side}`, 'phone:muted')
+  await graph.ignore('phone:muted')
   // A reviewer joined the two who share nothing: it is the answer, and not evidence for it.
   await graph.join('s6a', 's6b')
   const server = createServer(createHandler(graph, { token: 'service', reviewers: { dana: 'dana-token' }, origins: [] })).listen(0, '127.0.0.1')
@@ -1343,18 +1346,19 @@ test('the labels tool resolves a file of checked pairs against a running server,
     const at = new URL('../tools/labels.ts', import.meta.url).pathname
     return promisify(execFile)(process.execPath, [decodeURIComponent(at), join(home, 'pairs.csv')], { env: { PATH: process.env.PATH, GRAPH_URL: url, GRAPH_TOKEN: token } })
   }
-  const same = ['s1a,s1b', 's2a,s2b', 's3b,s3a', 's4a,s4b', 's5a,s5b', 's6a,s6b', 's1a,merged-away'].map((pair) => `${pair},same`)
+  const same = ['s1a,s1b', 's2a,s2b', 's3b,s3a', 's4a,s4b', 's5a,s5b', 's6a,s6b', 's7a,s7b', 's1a,merged-away'].map((pair) => `${pair},same`)
   // One pair is in the file twice, the other way round, and one is labelled both ways.
   const { stdout } = await run(['a,b,label', ...same, 's1b,s1a,same', 'd1a,d1b,different', 'd2a,d2b,different', 'd1a,d2a,same', 'd1a,d2a,different', ''].join('\n'))
-  assert.match(stdout, /12 rows, 10 pairs\. 1 labelled both ways were left out\./)
-  assert.match(stdout, /1 could not be used, because the graph does not know one of the two: 1 same, 0 different\./)
-  assert.match(stdout, /8 used: 6 same, 2 different\./)
+  assert.match(stdout, /13 rows, 11 pairs\. 1 labelled both ways were left out\./)
+  assert.match(stdout, /1 could not be used, because nothing recorded about one of the two is left: 1 same, 0 different\./)
+  assert.match(stdout, /9 used: 7 same, 2 different\./)
   const find = (name: string) => stdout.split('\n').find((line) => line.startsWith(name))!.trim().split(/\s{2,}/).slice(1)
-  assert.deepEqual(find('phone'), ['5', '4', '1', '80.0%', '66.7%'])
-  assert.deepEqual(find('address'), ['2', '1', '1', '50.0%', '16.7%'])
-  assert.deepEqual(find('nothing'), ['1', '1', '0', '100.0%', '16.7%'])
-  assert.deepEqual(find('a score of 0.9 or more'), ['5', '4', '1', '80.0%', '66.7%'])
-  assert.deepEqual(find('in one cluster now'), ['6', '5', '1', '83.3%', '83.3%'])
+  assert.deepEqual(find('phone'), ['5', '4', '1', '80.0%', '57.1%'])
+  assert.deepEqual(find('phone, muted or over its cap'), ['1', '1', '0', '100.0%', '14.3%'])
+  assert.deepEqual(find('address'), ['2', '1', '1', '50.0%', '14.3%'])
+  assert.deepEqual(find('nothing'), ['1', '1', '0', '100.0%', '14.3%'])
+  assert.deepEqual(find('a score of 0.9 or more'), ['5', '4', '1', '80.0%', '57.1%'])
+  assert.deepEqual(find('in one cluster now'), ['6', '5', '1', '83.3%', '71.4%'])
   assert.ok(stdout.includes('Labels from staff are biased') && stdout.includes('merged away'))
   assert.ok(!stdout.includes('s1a'))
   await assert.rejects(run('a,b,label\ns1a,s1b,maybe'), /Line 2 needs its label as "same" or "different"/)

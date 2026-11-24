@@ -287,7 +287,7 @@ const DAY = 86_400_000
 const HOUR = 3_600_000
 /** What two subjects share, and how they stand. */
 export interface Between {
-  /** Whether the graph knows both. */
+  /** Whether something other than a reviewer's mark was recorded about both. Without it, sharing nothing says nothing. */
   known: boolean
   /** Whether they are in one cluster, by whatever put them there. */
   joined: boolean
@@ -296,6 +296,8 @@ export interface Between {
   /** What the shared identifiers alone come to, 0 for none. */
   score: number
   reasons: Reason[]
+  /** What both hold that links nobody, because it is muted or over its cap. */
+  idle: Identifier[]
 }
 
 /** Pairs the graph finds related and has not joined, strongest first. */
@@ -694,13 +696,17 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const [x, y] = [labels.get(a), labels.get(b)]
         const edges = (await tx.edgesOf(unique([a, b]))).filter((edge) => !edge.identifier.startsWith('review:'))
         // However weak what they share is.
-        const [pair] = scorePairs({ ...policy, related: 0 }, edges, await tx.states(unique(edges.map((edge) => edge.identifier))))
+        const states = await tx.states(unique(edges.map((edge) => edge.identifier)))
+        const [pair] = scorePairs({ ...policy, related: 0 }, edges, states)
+        const of = (subject: Subject) => new Set(edges.filter((edge) => edge.subject === subject).map((edge) => edge.identifier))
+        const [held, others] = [of(a), of(b)]
         return {
-          known: x !== undefined && y !== undefined,
+          known: held.size > 0 && others.size > 0,
           joined: x !== undefined && x.cluster === y?.cluster,
           apart: (await tx.separatedOf([a])).some((each) => each.includes(b)),
           score: pair?.score ?? 0,
           reasons: pair?.reasons ?? [],
+          idle: a === b ? [] : [...held].filter((identifier) => others.has(identifier) && !usable(policy, identifier, states.get(identifier))).sort(),
         }
       })
     },
