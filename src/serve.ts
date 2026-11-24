@@ -12,7 +12,6 @@ import { readFileSync, realpathSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { fileURLToPath } from 'node:url'
-import { createAlerter } from './alerts.ts'
 import { createBatcher } from './batch.ts'
 import { ingest } from './conversions.ts'
 import { createGraph } from './graph.ts'
@@ -29,6 +28,7 @@ import { defaultPolicy, policyFrom, policyProblems } from './policy.ts'
 import { createMicrosoftTokens } from './integrations/microsoft-auth.ts'
 import { createAddressVerifier } from './integrations/smarty.ts'
 import { createLineTypeLookup } from './integrations/twilio.ts'
+import { createOps } from './ops.ts'
 import { createOutbox } from './outbox.ts'
 import type { Target } from './outbox.ts'
 import { createPostgresStore } from './postgres.ts'
@@ -107,6 +107,8 @@ export function configFrom(env: Env) {
     linkSecret: env.LINK_SECRET || undefined,
     alertWebhook: env.ALERT_WEBHOOK || undefined,
     auditHours: number('AUDIT_HEAD_HOURS', 0),
+    quiet: { touches: number('QUIET_TOUCHES_HOURS', 0), calls: number('QUIET_CALLS_HOURS', 0), results: number('QUIET_RESULTS_HOURS', 0), costs: number('QUIET_COSTS_HOURS', 0) },
+    returnHours: number('RETURN_HOURS', 24),
     stages: parsed('STAGES') as Ladder | undefined,
     policy: policy === undefined ? undefined : policyFrom(policy),
     staffNetworks: (env.STAFF_NETWORKS ?? '').split(',').map((each) => each.trim()).filter(Boolean),
@@ -241,7 +243,15 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
     targets.push(microsoftAds({ ...account, accessToken: createMicrosoftTokens({ clientId, refreshToken, ...(clientSecret && { clientSecret }) }) }))
   }
   // Tell someone when a conversion fails for good, when the outbox cannot run, or when costs cannot be read.
-  const alert = config.alertWebhook ? createAlerter({ url: config.alertWebhook, onError: (error) => log(`alert: ${String((error as Error)?.message ?? error)}`) }) : undefined
+  const ops = createOps(graph, store.ops, {
+    ...(config.alertWebhook && { url: config.alertWebhook }),
+    quiet: config.quiet,
+    returnHours: config.returnHours,
+    timeZone: config.timeZone,
+    onError: (error) => log(`alert: ${String((error as Error)?.message ?? error)}`),
+  })
+  // With no webhook, what would have been said is kept, and the Health view shows it.
+  const { alert } = ops
   const outbox =
     targets.length > 0
       ? createOutbox(graph, store.outbox, {
@@ -250,14 +260,23 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
           onFailed: (jobs) => {
             const lines = jobs.slice(0, 10).map((job) => `• ${job.transactionId} to ${job.target}: ${job.note ?? 'no reason given'}`)
             const more = jobs.length > 10 ? `\n…and ${jobs.length - 10} more` : ''
-            void alert?.('conversions', `account-graph: ${jobs.length} ${jobs.length === 1 ? 'conversion' : 'conversions'} failed for good.\n${lines.join('\n')}${more}\nList them with GET /conversions?state=failed, and send again with POST /retry.`)
+            void alert('conversions', `account-graph: ${jobs.length} ${jobs.length === 1 ? 'conversion' : 'conversions'} failed for good.\n${lines.join('\n')}${more}\nList them with GET /conversions?state=failed, and send again with POST /retry.`)
           },
         })
       : undefined
-  const stopOutbox = outbox?.start(config.outboxInterval, (error) => {
-    const reason = String((error as Error)?.message ?? error)
+  /** Runs a job now and then, never over itself, and says how it went where `GET /ops` reads it. */
+  const stops: (() => void)[] = []
+  const every = (interval: number, name: string, work: () => Promise<unknown>, failed: (reason: string) => void) => {
+    let running: Promise<void> | undefined
+    const pass = () => void (running ??= ops.run(name, work).then(() => undefined, (error) => failed(String((error as Error)?.message ?? error))).finally(() => (running = undefined)))
+    const timer = setInterval(pass, Math.min(2 ** 31 - 1, interval))
+    timer.unref()
+    stops.push(() => clearInterval(timer))
+    return { pass, idle: () => running }
+  }
+  const sends = outbox && every(config.outboxInterval, 'outbox', () => outbox.run(), (reason) => {
     log(`outbox: ${reason}`)
-    void alert?.('outbox', `account-graph: the outbox could not run, so no conversion is being sent. ${reason}`)
+    void alert('outbox', `account-graph: the outbox could not run, so no conversion is being sent. ${reason}`)
   })
 
   // What campaigns cost, read again every few hours. The last days are read each time, because platforms revise them.
@@ -268,38 +287,30 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
     sources.push(['google', googleCosts({ ...account, accessToken, ...(loginCustomerId && { loginCustomerId }) })])
   }
   if (config.metaCosts) sources.push(['meta', metaCosts(config.metaCosts)])
-  const importCosts = async () => {
-    const to = new Date().toISOString().slice(0, 10)
-    const from = new Date(Date.now() - config.costDays * 86_400_000).toISOString().slice(0, 10)
-    for (const [name, source] of sources) {
-      try {
-        const costs = await source(from, to)
-        await graph.spend(costs)
-        log(`costs: ${costs.length} rows from ${name}, ${from} to ${to}`)
-      } catch (error) {
-        log(`costs: ${name} failed: ${String((error as Error)?.message ?? error)}`)
-        void alert?.(`costs:${name}`, `account-graph: campaign costs could not be read from ${name}, so the report's costs are going stale. ${String((error as Error)?.message ?? error)}`)
-      }
-    }
-  }
-  // One read at a time: a slow platform must not stack a second read on the first.
-  let reading: Promise<void> | undefined
-  const readCosts = () => void (reading ??= importCosts().finally(() => (reading = undefined)))
-  const costTimer = sources.length > 0 ? setInterval(readCosts, Math.max(60_000, config.costInterval)) : undefined
-  costTimer?.unref()
+  const readCosts = sources.map(([name, source]) =>
+    every(Math.max(60_000, config.costInterval), `costs:${name}`, async () => {
+      const to = new Date().toISOString().slice(0, 10)
+      const from = new Date(Date.now() - config.costDays * 86_400_000).toISOString().slice(0, 10)
+      const costs = await source(from, to)
+      await graph.spend(costs)
+      log(`costs: ${costs.length} rows from ${name}, ${from} to ${to}`)
+    }, (reason) => {
+      log(`costs: ${name} failed: ${reason}`)
+      void alert(`costs:${name}`, `account-graph: campaign costs could not be read from ${name}, so the report's costs are going stale. ${reason}`)
+    }),
+  )
 
   // The newest hash of the record of decisions, sent where the database's owners cannot write.
-  const sendHead = async () => {
-    try {
-      const { sound, brokenAt, head } = await graph.audit()
-      const state = sound ? 'The record is whole.' : `The record was altered at entry ${brokenAt}.`
-      if (alert && head) await alert('audit', `account-graph: decision ${head.seq} has hash ${head.hash}. ${state} Keep this line somewhere the database's owners cannot write.`)
-    } catch (error) {
-      log(`audit: ${String((error as Error)?.message ?? error)}`)
-    }
-  }
-  const auditTimer = alert && config.auditHours > 0 ? setInterval(sendHead, Math.min(2 ** 31 - 1, Math.max(3_600_000, config.auditHours * 3_600_000))) : undefined
-  auditTimer?.unref()
+  const sendHead =
+    config.auditHours > 0
+      ? every(Math.max(3_600_000, config.auditHours * 3_600_000), 'audit head', async () => {
+          const { sound, brokenAt, head } = await graph.audit()
+          const state = sound ? 'The record is whole.' : `The record was altered at entry ${brokenAt}.`
+          if (head) await alert('audit', `account-graph: decision ${head.seq} has hash ${head.hash}. ${state} Keep this line somewhere the database's owners cannot write.`)
+        }, (reason) => log(`audit: ${reason}`))
+      : undefined
+  // Feeds that have gone quiet, callers nobody has rung back, and alerts that were not delivered.
+  const checks = every(5 * 60_000, 'checks', () => ops.check(), (reason) => log(`checks: ${reason}`))
 
   // Visits that arrive together are written together.
   const batcher = createBatcher(graph)
@@ -324,6 +335,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
     ...(config.smarty && { address: createAddressVerifier(config.smarty) }),
     ...(config.lineType && { lineType: createLineTypeLookup(config.lineType) }),
     ...(outbox && { outbox }),
+    ops,
   }
   const server = createServer(createHandler(queued, options))
   await new Promise<void>((resolve, reject) => server.once('error', reject).listen(config.port, config.host, resolve))
@@ -339,20 +351,17 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
   log(`costs are read from ${sources.length > 0 ? sources.map(([name]) => name).join(', ') : 'nobody (post them to /costs)'}`)
   const { hash, due } = await graph.policy()
   log(`policy ${hash.slice(0, 12)} ${config.policy ? 'from settings' : 'by default'}${due ? '; the stored clusters were not built with it, so a rebuild is due (POST /rebuild)' : ''}`)
-  if (sources.length > 0) readCosts()
-  if (auditTimer) void sendHead()
+  for (const { pass } of [...readCosts, ...(sendHead ? [sendHead] : []), checks]) pass()
 
   return {
     port,
     graph,
     async close() {
-      stopOutbox?.()
-      clearInterval(costTimer)
-      clearInterval(auditTimer)
+      for (const stop of stops) stop()
       await new Promise<void>((resolve) => server.close(() => resolve()))
       server.closeAllConnections?.()
       await batcher.drain()
-      await reading
+      for (const job of [sends, ...readCosts, sendHead, checks]) await job?.idle()
       await pool.end()
     },
   }

@@ -78,7 +78,7 @@ The `device:` value is the `ag_device` cookie the script set, which your backend
 - **Attribution with confidence.** A conversion lists every touch that could have led to it and credits one only when the chain of links is strong.
 - **A report of cost against outcomes.** Campaign costs are read from Google Ads and Meta, or posted, and set beside the inquiries, sign-ups and sales each campaign's visitors produced.
 - **Steps with a value.** Name your steps once (inquiry 5, call 10, client 200) and every outcome, page event and call takes its value and its ad platform action from its step.
-- **Alerts.** A conversion that fails for good, an outbox that cannot run, or costs that cannot be read are posted to a Slack-style webhook.
+- **Alerts.** A conversion that fails for good, an outbox that cannot run, or costs that cannot be read are posted to a Slack-style webhook. So is a feed that has gone quiet, and a missed caller from an ad whom nobody has rung back. An alert that does not arrive is kept until it does.
 - **Page events and phone calls.** The script tag reports taps and marked clicks, and a call that follows a tap is tied to the visitor who tapped, so calls land under the ad click that produced them.
 - **Calls that were really answered.** A queue hang-up is not an answer. Your phone system reports how each call went, and a call can be held, uncounted and unsent, until it does. Each missed call says whether it was returned, and after how long, and a Calls view lists the ones still open.
 - **Links that name a person.** A signed link in an email or text ties the browser that opens it to the person it was sent to, and a visitor stays one visitor across your sites.
@@ -158,6 +158,7 @@ PostgreSQL writes take one advisory lock, so they run one at a time; the write q
 - No real phone call has arrived from Twilio, and no alert has been posted to a real webhook.
 - The report credits the newest strong touch with the whole outcome, and is worked out each time it is asked for.
 - Without call results, a call is counted by its length, which a queue hang-up can reach. Platforms that cannot restate keep a conversion sent for a call that turned out missed.
+- A quiet feed is noticed by hours without a record, so a feed that still sends something wrong is not.
 - Tracking numbers are one per channel. There is no pool that gives each visitor a number of their own.
 - A signed link is a key: forwarded to a stranger's browser, it ties that browser to the person it names. [Links](docs/links.md) says what limits that and what does not.
 - Postal addresses are checked for the United States only, and names are never matched.

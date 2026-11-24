@@ -13,6 +13,7 @@ import type { AddressVerifier } from './integrations/smarty.ts'
 import { fromTwilio, twilioCall } from './integrations/twilio.ts'
 import type { LineTypeLookup } from './integrations/twilio.ts'
 import type { IpLookup } from './integrations/maxmind.ts'
+import type { Ops } from './ops.ts'
 import type { JobState, Outbox } from './outbox.ts'
 import { withStage } from './ladder.ts'
 import { dayIn, sourceOf } from './report.ts'
@@ -108,6 +109,8 @@ export interface HandlerOptions {
   stages?: Ladder
     /** The time zone `/report` reads its days in when the request names none. Use the ad account's. Defaults to UTC. */
   timeZone?: string
+  /** What runs by itself and who is told about it, for `/ops` and `/alerts/test`. */
+  ops?: Ops
   /** The clock, for tests. */
   now?: () => number
 }
@@ -122,7 +125,7 @@ const NAME = /^[\w.-]{1,64}$/
 /** What the reviewer token opens: what the reviewer screen reads, and the decisions a reviewer makes. */
 const REVIEW_ROUTES = new Set([
   'GET /subject', 'GET /clusters', 'GET /search', 'GET /recent', 'GET /links', 'GET /cluster', 'GET /history', 'GET /flows', 'GET /collusion', 'GET /rings',
-  'GET /decisions', 'GET /disputes', 'GET /consent', 'GET /call', 'GET /calls', 'GET /calls/summary', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
+  'GET /decisions', 'GET /disputes', 'GET /consent', 'GET /call', 'GET /calls', 'GET /calls/summary', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'GET /ops', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
 ])
 
 /** A route that wrote its own answer. */
@@ -636,6 +639,12 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       }
       case 'GET /subject':
         return profile(subject)
+      case 'GET /ops':
+        if (!options.ops) break
+        return { ...(await options.ops.state()), outbox: options.outbox ? await options.outbox.counts() : null }
+      case 'POST /alerts/test':
+        if (!options.ops) break
+        return options.ops.test()
       case 'GET /pulse': {
         // One small row: a screen asks this often, and reads the rest only when the answer differs.
         const version = await graph.version()

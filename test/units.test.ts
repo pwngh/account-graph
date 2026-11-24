@@ -6,6 +6,7 @@ import { test } from 'node:test'
 import { components, conversionEvent, createAlerter, createGraph, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, ingestRequest, ip, knownLink, ladderProblems, measure, normalizeEmail, normalizePhone, phoneOfType, policyFrom, policyHash, policyProblems, readToken, scorePairs, signToken, sourceOf, withStage } from '../src/index.ts'
 import { summarizeCalls } from '../src/callreport.ts'
 import { dayIn } from '../src/report.ts'
+import { paid } from '../src/ops.ts'
 import { weigh } from '../src/policy.ts'
 import type { Edge, IdentifierState, KeptCall, Reason } from '../src/index.ts'
 import { configFrom } from '../src/serve.ts'
@@ -340,6 +341,16 @@ test('calls are counted by hour and weekday where they happened, and by what bec
   // Already tomorrow in Tokyo.
   assert.deepEqual([dayIn(Date.parse('2026-03-02T16:00:00Z'), 'Asia/Tokyo'), dayIn(Date.parse('2026-03-02T16:00:00Z'))], ['2026-03-03', '2026-03-02'])
   assert.deepEqual(summarizeCalls([], [], new Set(), at), { total: { calls: 0, answered: 0, missed: 0, voicemail: 0, waiting: 0, unknown: 0, returned: 0, triedAgain: 0, hidden: 0 }, cells: [], coverage: { visitor: 0, channel: 0, neither: 0, noResult: 0 }, returnedWithin: null })
+})
+
+test('quiet hours are off until set, and a call back is due after a day', () => {
+  const env = { DATABASE_URL: 'x', GRAPH_TOKEN: 'y' }
+  assert.deepEqual([configFrom(env).quiet, configFrom(env).returnHours], [{ touches: 0, calls: 0, results: 0, costs: 0 }, 24])
+  assert.deepEqual([configFrom({ ...env, QUIET_CALLS_HOURS: '6' }).quiet.calls, configFrom({ ...env, RETURN_HOURS: '0' }).returnHours], [6, 0])
+  assert.throws(() => configFrom({ ...env, QUIET_COSTS_HOURS: 'often' }), /QUIET_COSTS_HOURS must be a number/)
+  // An arrival is paid for when it carries an ad click, names its campaign by id, or says so.
+  const touch = (more: object) => paid({ subject: 'visitor:1', at: 0, ...more })
+  assert.deepEqual([{ gclid: 'G' }, { campaignId: '1' }, { medium: 'CPC' }, { medium: 'paid_social' }, { source: 'mailer', medium: 'call' }, { referrer: 'https://partner.example' }, { fbclid: 'F' }, { fbclid: 'F', campaignId: '9' }].map(touch), [true, true, true, true, false, false, false, true])
 })
 
 test('a day begins at local midnight, across a clock change', () => {
