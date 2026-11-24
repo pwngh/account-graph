@@ -562,6 +562,11 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await check({ action: 'separate', a: 'b:1', b: 'a:1', separated: false }, ['a:1', 'b:1'], () => graph.separate('a:1', 'b:1', false), [[3, 2], [5]])
       await check({ action: 'ignore', identifier: 'email:b' }, ['b:1', 'b:2'], () => graph.ignore('email:b'), [[5], [4, 1]])
       await check({ action: 'ignore', identifier: 'email:b', ignored: false }, ['b:1', 'b:2'], () => graph.ignore('email:b', false), [[4, 1], [5]])
+      // One kept from the first goes over to another it is tied to, which is neither named nor moved and still counts.
+      await graph.observe([{ subject: 'd:1', identifiers: ['device:d', 'email:d'], at: T0 }, { subject: 'd:3', identifiers: ['device:d', 'email:d', 'payment:d'], at: T0 }, { subject: 'd:2', identifiers: ['payment:d'], at: T0 }])
+      await graph.separate('d:1', 'd:2')
+      await check({ action: 'separate', a: 'd:1', b: 'd:3' }, ['d:1', 'd:2', 'd:3'], () => graph.separate('d:1', 'd:3'), [[2, 1], [2, 1]])
+      assert.deepEqual((await graph.cluster('d:3'))!.members, ['d:2', 'd:3'])
       assert.deepEqual(await graph.foresee({ action: 'ignore', identifier: 'email:nobody' }), { moved: 0, before: [], after: [] })
       assert.deepEqual(await graph.foresee({ action: 'join', a: 'c:1', b: 'never:seen' }), { moved: 1, before: [{ id: 'c:1', size: 1 }, { id: 'never:seen', size: 1 }], after: [{ id: 'c:1', size: 2 }] })
       for (const bad of [{}, { action: 'forget' }, { action: 'join', a: 'a:1' }, { action: 'join', a: 'a:1', b: 'a:1' }, { action: 'ignore' }, { action: 'ignore', identifier: 'email:b', ignored: 'false' }, { action: 'separate', a: 'a:1', b: 'b:1', separated: 0 }]) await assert.rejects(graph.foresee(bad as never), TypeError)
@@ -577,6 +582,10 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(rung.flags, ['left_out'])
       assert.deepEqual([await graph.keptCall('X1'), await graph.keptCall('X2'), await graph.cluster(left.subject)].map((each) => each ?? null), [null, null, null])
       assert.equal((await recordCall(graph, { id: 'X3', ...call, from: '+15550100022' }, options)).flags.includes('left_out'), false)
+      // Kept and then cut off before its note was written: the report of it that comes again finishes it.
+      await graph.keepCall({ id: 'X5', direction: 'inbound', subject: left.subject, at: T0, to: '+15550100001', flags: [] })
+      const again = await recordCall(graph, { id: 'X5', ...call, answered: true }, options)
+      assert.deepEqual([again.flags.includes('left_out'), again.state], [false, 'answered'])
       // Recorded before the number was left out: what is known of it can still be made right.
       await recordCall(graph, { id: 'X4', ...call }, { results: 'expected' })
       assert.deepEqual([(await recordCall(graph, { id: 'X4', ...call, answered: true }, options)).counted, (await graph.keptCall('X4'))!.subject], [true, left.subject])

@@ -108,6 +108,49 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   // Nothing on it is too near anything else: no disc, name or line.
   const marked = `[...document.querySelectorAll('.graph .node')].map((mark) => mark.node)`
   assert.deepEqual(await run(`(() => { const nodes = ${marked}; const edges = [...document.querySelectorAll('.graph .edge')].map((mark) => mark.edge); const taken = nodes.map((node) => ({ node, boxes: shapes(node) })); return [nodes.length > 3, edges.length > 2, [...crowding(nodes, [])].length, edges.every((edge) => freeOf(edge, course(edge), taken))] })()`), [true, true, 0, true])
+  // Measured by the browser, not by the layout: of a crowded graph no name is on another name, a disc, or a line.
+  const touching = await run(`(async () => {
+    const ids = Array.from({ length: 24 }, (_, n) => ['account:somebody-with-a-name-', 'lead:a', 'visitor:of-the-site-'][n % 3] + n)
+    const ties = ids.slice(1).flatMap((id, n) => [...new Set([ids[(n * 7) % (n + 1)], ids[(n * 5 + 2) % (n + 1)]])].map((a) => ({ a: a < id ? a : id, b: a < id ? id : a, score: 0.95, level: 'same' })))
+    const graph = graphOf({ subject: ids[0], cluster: { id: ids[0], members: ids, oversized: false }, links: [], edges: ties, separated: [], verdicts: [], apart: [] }, [])
+    const kept = { ...drawn, spots: new Map(drawn.spots) }
+    const host = document.createElement('div')
+    host.style.width = '1200px'
+    host.append(graph)
+    document.body.append(host)
+    graph.begin()
+    // At rest once nothing has moved for a while.
+    const places = () => [...graph.querySelectorAll('.node')].map((mark) => mark.getAttribute('transform')).join() + graph.querySelector('.stage > svg > g').getAttribute('transform')
+    let same = 0
+    for (let was = '', tries = 0; same < 5 && tries < 100; tries++) {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      same = places() === was ? same + 1 : 0
+      was = places()
+    }
+    const marks = [...graph.querySelectorAll('.node')]
+    const box = (node) => node.getBoundingClientRect()
+    const meet = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+    const parts = marks.map((mark) => ({ disc: box(mark.querySelector('.disc')), name: box(mark.querySelector('.name')) }))
+    const bad = []
+    parts.forEach((one, i) => parts.forEach((two, j) => {
+      if (i < j && meet(one.name, two.name)) bad.push('names ' + i + ' ' + j)
+      if (i < j && meet(one.disc, two.disc)) bad.push('discs ' + i + ' ' + j)
+      if (meet(one.name, two.disc)) bad.push('name ' + i + ' on disc ' + j)
+    }))
+    for (const line of graph.querySelectorAll('.edge .line')) {
+      const long = line.getTotalLength(), to = line.getScreenCTM()
+      for (let at = 0; ; at = Math.min(long, at + 1)) {
+        const p = line.getPointAtLength(at).matrixTransform(to)
+        parts.forEach(({ name }, i) => p.x > name.left && p.x < name.right && p.y > name.top && p.y < name.bottom && bad.push('a line on name ' + i))
+        if (at >= long) break
+      }
+    }
+    host.remove()
+    Object.assign(drawn, kept)
+    const pairs = [...graph.querySelectorAll('.edge')].filter((mark) => mark.querySelector('.line').getTotalLength() > 0).map((mark) => mark.edge.a + ' ' + mark.edge.b).sort().join()
+    return [same, marks.length, ties.length > 24 && pairs === ties.map(({ a, b }) => a + ' ' + b).sort().join(), [...new Set(bad)]]
+  })()`)
+  assert.deepEqual(touching, [5, 24, true, []])
   // A refresh does not take the graph from under a hand, and one kind of tie can be hidden.
   await run(`document.querySelector('.graph').classList.add('held')`)
   assert.equal(await run(`interrupting()`), true)
