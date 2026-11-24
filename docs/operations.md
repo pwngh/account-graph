@@ -32,7 +32,7 @@ GRAPH_TOKEN=a-long-random-string REVIEW_TOKENS='{"dana":"another-one"}' ORIGINS=
 
 Compose also reads a `.env` file in the same directory. Run `cp .env.example .env` and fill it in. Set `GRAPH_PORT` to publish a different port.
 
-Compose passes the variables in [Environment variables](#environment-variables) through to the server, except `GRAPH_SCHEMA`, `HOST`, `PORT` and `POLICY_FILE`. It sets `DATABASE_URL` itself.
+Compose passes the variables in [Environment variables](#environment-variables) through to the server, except `GRAPH_SCHEMA`, `HOST`, `PORT`, `POLICY_FILE` and `CALL_NUMBERS_FILE`. It sets `DATABASE_URL` itself.
 
 > **Use the compose file for evaluation.** It has a local volume, a fixed database password, the example site's features and a placeholder `LINK_SECRET`. Replace these before production use. Values in `compose.yaml` that start with `change-me` are public, and the server refuses to start with one when `ORIGINS` contains a site outside your own machine.
 
@@ -377,6 +377,7 @@ A partially set group stops the server at startup, with a message naming the mis
 | `STAGES` | none | Your steps in order, as JSON, each with a `value`, `currency`, `action` and `wait`. See [the report](report.md#steps). |
 | `EVENTS` | none | Page events to record, separated by commas: `inquiry,phone_click`. |
 | `CALL_NUMBERS` | none | Tracking numbers and the channel of each, as JSON: `{"+15551230001":{"source":"google","campaignId":"20222"}}`. Each may carry `tags`. |
+| `CALL_NUMBERS_FILE` | none | A file with the same JSON, for a long list. Set one of the two. |
 | `CALL_EXCLUDE` | none | Staff and test phone numbers, separated by commas. Calls from or to them are not recorded. |
 | `CALL_MIN_SECONDS` | `30` | Shorter calls are recorded but not counted. |
 | `CALL_TAP_SECONDS` | `180` | How long before a call a tap on its number may be, at most 3600. See [busy numbers](calls.md#busy-numbers). |

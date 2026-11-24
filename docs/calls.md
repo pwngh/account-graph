@@ -208,7 +208,7 @@ curl "https://graph.example.org/call?id=CA2" -H "authorization: Bearer $REVIEWER
 | `open` | The caller has not been reached since. `attempts` counts the calls you placed without a known answer. |
 | `returned` | You called and the same number answered. `delay` is the time from the missed call, in milliseconds. |
 | `called again` | The caller called again and got through |
-| `hidden` | The caller hid their number, so a callback is not possible |
+| `hidden` | The caller hid their number, so a callback is not possible. A [reported return](#reported-returns) makes it `returned`. |
 
 For an outbound call, `from` is your number and `to` is theirs, kept as its hash. Outbound calls are excluded from outcomes, and record no identifier about the person called.
 

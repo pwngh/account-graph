@@ -315,7 +315,7 @@ See [Signed links](links.md) for link strength and carrying a visitor between si
 
 ## Write queue
 
-PostgreSQL writes run one at a time. `createBatcher` queues observations that arrive during a write and sends them together in the next.
+PostgreSQL writes run one at a time. `createBatcher` queues observations that arrive during a write and sends them together in the next. `observe` with a list writes all of it or none: one identifier of a kind the policy lacks refuses the list, where `createBatcher` refuses only the observation that has it.
 
 ```ts
 import { createBatcher } from 'account-graph'

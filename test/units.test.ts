@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createHmac } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
 import { components, conversionEvent, createAlerter, createGraph, createHours, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, hoursProblems, ingestRequest, ip, knownLink, ladderProblems, measure, meta, metaEvent, nameKeys, normalizeEmail, normalizePhone, phoneOfType, policyFrom, policyHash, policyProblems, readToken, scorePairs, signToken, sourceOf, withStage } from '../src/index.ts'
 import { summarizeCalls } from '../src/callreport.ts'
@@ -280,7 +282,7 @@ test('fit recovers the true weights from checked pairs', () => {
   assert.deepEqual(fit([], defaultPolicy).policy, defaultPolicy)
 })
 
-test('the server reads its settings from the environment and names everything wrong at once', () => {
+test('the server reads its settings from the environment and names everything wrong at once', (t) => {
   const config = configFrom({ DATABASE_URL: 'postgres://db', GRAPH_TOKEN: 'svc', ORIGINS: 'https://a.example/, https://b.example ', COOKIE: 'a.example', RATE_BURST: '5' })
   assert.deepEqual(config.origins, ['https://a.example', 'https://b.example'])
   assert.deepEqual([config.port, config.host, config.schema, config.outboxInterval], [8080, '0.0.0.0', 'account_graph', 30_000])
@@ -294,6 +296,20 @@ test('the server reads its settings from the environment and names everything wr
   assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', CHANGE_SECRET: 's' }), /CHANGE_SECRET requires CHANGE_WEBHOOK/)
   assert.equal(configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', CHANGE_SECRET: 's', CHANGE_WEBHOOK: 'https://example.org/c' }).changeSecret, 's')
   assert.equal(bodySignature('s', 5, '{}'), `t=5,v1=${createHmac('sha256', 's').update('5.{}').digest('hex')}`)
+  const dir = mkdtempSync(join(tmpdir(), 'numbers-'))
+  t.after(() => rmSync(dir, { recursive: true }))
+  const listed = join(dir, 'numbers.json')
+  writeFileSync(listed, '{"555-123-0002":{"source":"meta"}}')
+  const from = (more: object) => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', ...more })
+  assert.deepEqual(from({ CALL_NUMBERS_FILE: listed }).callNumbers, { '555-123-0002': { source: 'meta' } })
+  assert.throws(() => from({ CALL_NUMBERS_FILE: listed, CALL_NUMBERS: '{}' }), /must not both be set/)
+  assert.throws(() => from({ CALL_NUMBERS_FILE: `${listed}.gone` }), /cannot be read/)
+  for (const text of ['[]', '']) {
+    writeFileSync(listed, text)
+    assert.throws(() => from({ CALL_NUMBERS_FILE: listed }), /CALL_NUMBERS_FILE must be a JSON object/)
+  }
+  writeFileSync(listed, '{"x":{"source":"a"}}')
+  assert.throws(() => from({ CALL_NUMBERS_FILE: listed }), /CALL_NUMBERS_FILE: "x" is not a phone number/)
   assert.deepEqual([calls.callTapSeconds, configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', CALL_TAP_SECONDS: '60' }).callTapSeconds], [180, 60])
   assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', CALL_TAP_SECONDS: '3601' }), /CALL_TAP_SECONDS/)
   assert.deepEqual([calls.events, calls.callNumbers, calls.callMinimum, calls.twilio], [['inquiry', 'brochure'], { '555-123-0001': { source: 'google' } }, 30, { authToken: 't', url: 'https://g.example/calls/twilio' }])

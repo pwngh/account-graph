@@ -55,14 +55,25 @@ export function configFrom(env: Env) {
     return value
   }
   // A variable that holds JSON: an object, or nothing.
-  const parsed = (name: string): Record<string, any> | undefined => {
-    if (!env[name]) return undefined
+  const parsed = (name: string, text = env[name] || undefined): Record<string, any> | undefined => {
+    if (text === undefined) return undefined
     try {
-      const value = JSON.parse(env[name]!)
+      const value = JSON.parse(text)
       if (value && typeof value === 'object' && !Array.isArray(value)) return value
     } catch {}
     wrong.push(`${name} must be a JSON object`)
     return undefined
+  }
+  // A long list of numbers is kept in a file.
+  const numbersFrom = env.CALL_NUMBERS_FILE ? 'CALL_NUMBERS_FILE' : 'CALL_NUMBERS'
+  const callNumbers = (): Record<string, any> | undefined => {
+    if (!env.CALL_NUMBERS_FILE) return parsed('CALL_NUMBERS')
+    if (env.CALL_NUMBERS) return void wrong.push('CALL_NUMBERS and CALL_NUMBERS_FILE must not both be set')
+    try {
+      return parsed('CALL_NUMBERS_FILE', readFileSync(env.CALL_NUMBERS_FILE, 'utf8'))
+    } catch {
+      return void wrong.push(`CALL_NUMBERS_FILE: "${env.CALL_NUMBERS_FILE}" cannot be read`)
+    }
   }
   // A group of variables that only make sense together: all or none.
   const group = (names: string[]) => {
@@ -123,7 +134,7 @@ export function configFrom(env: Env) {
     staffNetworks: (env.STAFF_NETWORKS ?? '').split(',').map((each) => each.trim()).filter(Boolean),
     timeZone: env.REPORT_TIME_ZONE || 'UTC',
     events: (env.EVENTS ?? '').split(',').map((name) => name.trim()).filter(Boolean),
-    callNumbers: parsed('CALL_NUMBERS'),
+    callNumbers: callNumbers(),
     callExclude: (env.CALL_EXCLUDE ?? '').split(',').map((each) => each.trim()).filter(Boolean),
     callMinimum: number('CALL_MIN_SECONDS', 30),
     callTapSeconds: number('CALL_TAP_SECONDS', 180),
@@ -196,13 +207,13 @@ export function configFrom(env: Env) {
     try {
       normalizePhone(number)
     } catch {
-      wrong.push(`CALL_NUMBERS: "${number}" is not a phone number`)
+      wrong.push(`${numbersFrom}: "${number}" is not a phone number`)
     }
-    if (typeof channel?.source !== 'string' || !channel.source) wrong.push(`CALL_NUMBERS: "${number}" requires a source, such as {"source":"google"}`)
+    if (typeof channel?.source !== 'string' || !channel.source) wrong.push(`${numbersFrom}: "${number}" requires a source, such as {"source":"google"}`)
     try {
       checkTags(channel?.tags, `"${number}"`)
     } catch (error) {
-      wrong.push(`CALL_NUMBERS: ${(error as Error).message}`)
+      wrong.push(`${numbersFrom}: ${(error as Error).message}`)
     }
   }
   for (const each of config.callExclude) {
