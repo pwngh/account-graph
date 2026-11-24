@@ -86,6 +86,7 @@ export const defaultPolicy: Policy = {
     // A note, not evidence: a browser opened the link sent to this person. It links nothing.
     opened: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     // A phone call that began moments after exactly one visitor tapped its number on your site. `recordCall` writes it.
+    lease: { weight: 0.9, dilution: 0, cap: 2, halfLife: Infinity },
     dial: { weight: 0.92, dilution: 0, cap: 2, halfLife: Infinity },
     // A note, not evidence: where an address places a visit. It links nothing.
     place: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },

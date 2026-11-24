@@ -382,3 +382,107 @@ export function fill(options: { all?: boolean; consent?: CollectOptions['consent
   document.addEventListener('submit', submitted, true)
   return () => document.removeEventListener('submit', submitted, true)
 }
+
+/** A number as people write it in North America, or with its country code anywhere else. */
+function written(number: string): string {
+  const local = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(number)
+  return local ? `(${local[1]}) ${local[2]}-${local[3]}` : number
+}
+
+/**
+ * Shows this visitor a number of their own wherever an element is marked
+ * `data-ag-pool`, so a call to it is known to be theirs without a tap. A
+ * marked link's `tel:` address is changed, and a phone number in the text of
+ * a marked element. While the page is in view the number is kept; when it is
+ * theirs no more, or there is none to give, the page shows what it was
+ * written with. Returns a function that stops and puts that back.
+ */
+export function pool(options: CollectOptions): () => void {
+  const PHONE = /\+?\(?\d[\d\s().-]{6,}\d/
+  let original: (() => void)[] = []
+  let until = 0
+  let renewing: ReturnType<typeof setTimeout> | undefined
+  let ending: ReturnType<typeof setTimeout> | undefined
+  let asking = false
+  let stopped = false
+  let tries = 0
+  /** Takes back every change, the last first: a marked element inside another is changed twice. */
+  const undo = () => {
+    for (const put of original.reverse()) put()
+    original = []
+  }
+  const restore = () => {
+    undo()
+    until = 0
+  }
+  const show = (number: string) => {
+    undo()
+    for (const marked of Array.from(document.querySelectorAll('[data-ag-pool]'))) {
+      const href = marked.getAttribute('href')
+      if (href?.startsWith('tel:')) {
+        marked.setAttribute('href', `tel:${number}`)
+        original.push(() => marked.setAttribute('href', href))
+      }
+      const texts = document.createTreeWalker(marked, NodeFilter.SHOW_TEXT)
+      for (let text = texts.nextNode(); text; text = texts.nextNode()) {
+        const before = text.nodeValue ?? ''
+        if (!PHONE.test(before)) continue
+        const node = text
+        node.nodeValue = before.replace(PHONE, written(number))
+        original.push(() => (node.nodeValue = before))
+      }
+    }
+  }
+  const again = (ms: number) => {
+    clearTimeout(renewing)
+    if (!stopped) renewing = setTimeout(() => void ask(), ms)
+  }
+  const ask = async () => {
+    if (asking || stopped || document.visibilityState !== 'visible' || !document.querySelector('[data-ag-pool]')) return
+    asking = true
+    const gpc = (navigator as { globalPrivacyControl?: boolean }).globalPrivacyControl === true
+    const staff = staffMark()
+    let given: { number: string; lasts: number } | undefined
+    // The server counts from before it answered, so the page counts from before it asked: never longer than the server does.
+    const began = Date.now()
+    try {
+      const response = await fetch(new URL('number', options.endpoint).href, {
+        method: 'POST',
+        body: JSON.stringify({ device: deviceId(), ...(gpc && { gpc }), ...(options.consent && { consent: options.consent }), ...(staff && { staff }) }),
+        headers: { 'content-type': 'text/plain' },
+        credentials: 'include',
+      })
+      if (response.status === 200) given = await response.json()
+      // Nothing to give: what is shown stands until it runs out, and the next time of asking is soon enough.
+    } catch {
+    } finally {
+      asking = false
+    }
+    if (stopped) return
+    const left = given ? began + given.lasts - Date.now() : 0
+    if (given && left > 0) {
+      show(given.number)
+      until = began + given.lasts
+      clearTimeout(ending)
+      ending = setTimeout(restore, left)
+    }
+    // In the first moments the visit itself may still be on its way, so a visitor who got nothing asks again shortly.
+    tries += 1
+    again(left > 0 ? Math.min(5 * 60_000, left / 2) : tries < 3 ? 3_000 : 5 * 60_000)
+  }
+  // Hidden, a page neither renews nor counts on its timers: back in view, it looks at the clock first.
+  const seen = () => {
+    if (document.visibilityState !== 'visible') return
+    if (until && Date.now() >= until) restore()
+    void ask()
+  }
+  document.addEventListener('visibilitychange', seen)
+  again(1_000)
+  return () => {
+    stopped = true
+    clearTimeout(renewing)
+    clearTimeout(ending)
+    document.removeEventListener('visibilitychange', seen)
+    restore()
+  }
+}

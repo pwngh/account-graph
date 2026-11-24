@@ -24,7 +24,7 @@ function told(entry) {
     const after = followUp && { open: 'not returned yet', returned: `returned after ${lasted(followUp.delay)}`, 'tried again': `rang again and got through after ${lasted(followUp.delay)}`, hidden: 'hid their number, so it cannot be returned' }[followUp.state]
     return [call.direction === 'outbound' ? 'You rang them: ' : 'Rang you: ', el('span', { class: `chip ${state === 'answered' ? 'same' : state === 'missed' ? 'apart' : ''}` }, how),
       after ? more(`${after}${followUp.attempts > 0 ? `, tried ${amount(followUp.attempts)} ${followUp.attempts === 1 ? 'time' : 'times'}` : ''}`) : '',
-      more([call.duration === undefined ? 'length not recorded' : `${amount(Math.round(call.duration))} s`, call.result?.waited === undefined ? '' : `waited ${amount(Math.round(call.result.waited))} s`, call.visitor ? 'followed a tap' : ''].filter(Boolean).join(', ')),
+      more([call.duration === undefined ? 'length not recorded' : `${amount(Math.round(call.duration))} s`, call.result?.waited === undefined ? '' : `waited ${amount(Math.round(call.result.waited))} s`, call.visitor ? (call.flags.includes('pool') ? 'on the number shown to them' : 'followed a tap') : ''].filter(Boolean).join(', ')),
       ...Object.entries(call.tags ?? {}).map(([name, value]) => more(`${name.replaceAll('_', ' ')}: ${value}`))]
   }
   if (entry.kind === 'step') {

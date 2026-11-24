@@ -84,6 +84,7 @@
 - `journey`, `GET /journey` and the reviewer screen's Journey view show everything recorded about one person in order, with why each subject is them.
 - `between` and `GET /between` say what two subjects share, however weak, and how they stand.
 - `tools/labels.ts` reads a CSV of pairs marked same or different and prints precision and recall for each identifier kind.
+- `POOL_NUMBERS`, `POST /number` and `collect.js?pool=1` show each visitor with an arrival a number of their own; `lease` ties a call to it to them. Database upgrade 15. Off until set.
 - `undecided`, `GET /undecided` and the reviewer screen's Decide view show pairs that are related and not joined, to join or keep apart.
 - `join` tells `marked` the mark it leaves, and `POST /join` with `mark: true` answers with it, so a join can be taken back.
 - `board`, `GET /board` and the reviewer screen's Board view show people by the furthest step they reached, with missed calls nobody returned first.
@@ -110,6 +111,7 @@
 - Breaking: `GET /decisions` answers `{ decisions, next, total }`, newest first, a page at a time (`decisionPage`).
 - A reviewer cannot sign as a system.
 
+- `defaultPolicy` has a `lease` kind, so the Health view says a rebuild is due after upgrading. Clusters stay as they are until a call is tied by it.
 - Breaking: in `defaultPolicy`, `phone` and `voip` thin as more subjects share them (dilution 1), and `phone`, `email` and `voip` link nothing past 10 subjects. Run `rebuild`, or keep the earlier rules with `POLICY`.
 - Breaking: `REVIEW_TOKENS` (`HandlerOptions.reviewers`) replaces `REVIEW_TOKEN` and `reviewToken`: a token for each reviewer, whose name signs what they decide. `GET /me` says whose a token is.
 - `separate`, `join`, `ignore` and `forget` take `seen`, the newest decision their author had seen; a newer one about the same subject or identifier refuses theirs (`Outdated`, 409). A `Store` needs `newestNaming`.

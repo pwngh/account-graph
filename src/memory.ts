@@ -2,7 +2,7 @@ import { createMemoryOps } from './ops.ts'
 import { createMemoryOutbox } from './outbox.ts'
 import { standingFirst } from './store.ts'
 import type { Store, Tx } from './store.ts'
-import type { CallResult, Consent, ConsentAnswer, Cost, Counted, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Moved, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, Consent, ConsentAnswer, Cost, Counted, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Lease, Moved, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
 
 /**
  * Keeps the graph in process memory. Writes run one at a time; a write that
@@ -28,6 +28,8 @@ export function createMemoryStore(): Store {
   const values = new Map<Subject, Map<string, OutcomeValue[]>>()
   const calls = new Map<string, Omit<KeptCall, 'result'>>()
   const results = new Map<string, CallResult>()
+  /** By number, the one that began first, first. */
+  const leases = new Map<string, Lease[]>()
   const costs = new Map<string, Required<Cost>>()
   const moves: Moved[] = []
   let writes = 0
@@ -116,6 +118,8 @@ export function createMemoryStore(): Store {
       }
       flowsBy.delete(subject)
       for (const [id, flow] of flowIds) if (flow.from === subject || flow.to === subject) flowIds.delete(id)
+      // Who held a number is forgotten. That somebody did stays, or a call in that time would go to whoever held it before.
+      for (const held of leases.values()) for (const lease of held) if (lease.subject === subject) lease.subject = ''
       consents.delete(subject)
       ops.forget(subject)
       for (let i = moves.length - 1; i >= 0; i--) if (moves[i]!.subject === subject) moves.splice(i, 1)
@@ -396,6 +400,25 @@ export function createMemoryStore(): Store {
     async callsBetween(from, to) {
       const found = [...calls.values()].filter((call) => call.at >= from && call.at < to)
       return found.sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1)).map(withResult)
+    },
+
+    async newestLeases(numbers, by) {
+      return numbers.flatMap((number) => leases.get(number)?.filter((lease) => lease.start <= by).slice(-1) ?? []).map((lease) => ({ ...lease }))
+    },
+
+    async setLease(lease) {
+      const others = (leases.get(lease.number) ?? []).filter((each) => each.start !== lease.start)
+      leases.set(lease.number, [...others, { ...lease }].sort((x, y) => x.start - y.start))
+    },
+
+    async pruneLeases(before) {
+      let gone = 0
+      for (const [number, held] of leases) {
+        const kept = held.filter((lease) => lease.until >= before)
+        gone += held.length - kept.length
+        leases.set(number, kept)
+      }
+      return gone
     },
 
     async pruneCallResults(before) {

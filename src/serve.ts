@@ -120,6 +120,9 @@ export function configFrom(env: Env) {
     callMinimum: number('CALL_MIN_SECONDS', 30),
     callResults: env.CALL_RESULTS || undefined,
     callResultWait: number('CALL_RESULT_WAIT', 30),
+    poolNumbers: (env.POOL_NUMBERS ?? '').split(',').map((each) => each.trim()).filter(Boolean),
+    poolMinutes: number('POOL_MINUTES', 15),
+    poolGrace: number('POOL_GRACE_MINUTES', 120),
     // One Twilio token serves two things, each switched on by its second variable: call reports and line lookups.
     twilio: env.TWILIO_AUTH_TOKEN && env.TWILIO_WEBHOOK_URL ? { authToken: env.TWILIO_AUTH_TOKEN, url: env.TWILIO_WEBHOOK_URL } : undefined,
     lineType: env.TWILIO_AUTH_TOKEN && env.TWILIO_ACCOUNT_SID ? { accountSid: env.TWILIO_ACCOUNT_SID, authToken: env.TWILIO_AUTH_TOKEN } : undefined,
@@ -190,6 +193,14 @@ export function configFrom(env: Env) {
       wrong.push(`CALL_NUMBERS: ${(error as Error).message}`)
     }
   }
+  for (const each of config.poolNumbers) {
+    try {
+      normalizePhone(each)
+    } catch {
+      wrong.push(`POOL_NUMBERS: "${each}" is not a phone number`)
+    }
+  }
+  if (config.poolNumbers.length > 0 && config.poolMinutes < 1) wrong.push('POOL_MINUTES must be at least 1')
   if (config.callResults !== undefined && config.callResults !== 'expected') wrong.push('CALL_RESULTS must be expected, or not set')
   const twilioNames = ['TWILIO_AUTH_TOKEN', 'TWILIO_WEBHOOK_URL', 'TWILIO_ACCOUNT_SID'].filter((name) => env[name])
   if (twilioNames.length > 0 && !config.twilio && !config.lineType) {
@@ -340,8 +351,9 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
     ...(config.stages && { stages: config.stages }),
     returnHours: config.returnHours,
     // A tap on a phone link is what ties a call to a visitor, so taking calls means taking that event.
-    events: [...new Set([...config.events, ...(config.callNumbers || config.twilio ? ['phone_click'] : [])])],
+    events: [...new Set([...config.events, ...(config.callNumbers || config.twilio || config.poolNumbers.length > 0 ? ['phone_click'] : [])])],
     calls: { minimumSeconds: config.callMinimum, resultWait: config.callResultWait * 60_000, ...(config.callResults === 'expected' && { results: 'expected' as const }), ...(config.callNumbers && { numbers: config.callNumbers }), ...(config.twilio && { twilio: config.twilio }) },
+    ...(config.poolNumbers.length > 0 && { pool: { numbers: config.poolNumbers, minutes: config.poolMinutes, grace: config.poolGrace } }),
     ...(config.reviewers && { reviewers: config.reviewers }),
     ...(config.cookie && { cookie: config.cookie }),
     ...(config.fingerprint && { fingerprint: createFingerprintVerifier(config.fingerprint) }),
@@ -361,7 +373,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
   log([Object.keys(config.reviewers ?? {}).length > 0 ? `reviewers ${Object.keys(config.reviewers!).join(', ')}` : 'reviewers none', on('server cookie', config.cookie), on('fingerprint', config.fingerprint), on('maxmind', config.maxmind), on('signed links', config.linkSecret), on('staff networks', config.staffNetworks.length > 0), on('alerts', config.alertWebhook), on('address checks', config.smarty), on('phone line checks', config.lineType)].join(', '))
   log(`outbox sends to ${targets.length > 0 ? targets.map((target) => target.name).join(', ') : 'nobody (no ad platform configured)'}`)
   if (config.stages) log(`steps: ${Object.entries(config.stages).map(([name, stage]) => `${name}${stage.value === undefined ? '' : ` ${stage.value}`}`).join(', ')}`)
-    log(`page events taken: ${options.events!.length > 0 ? options.events!.join(', ') : 'none (set EVENTS)'}; calls from twilio ${config.twilio ? 'on' : 'off'}; call results ${config.callResults === 'expected' ? `expected within ${config.callResultWait} minutes` : 'not expected'}`)
+    log(`page events taken: ${options.events!.length > 0 ? options.events!.join(', ') : 'none (set EVENTS)'}; calls from twilio ${config.twilio ? 'on' : 'off'}; call results ${config.callResults === 'expected' ? `expected within ${config.callResultWait} minutes` : 'not expected'}; number pool ${config.poolNumbers.length > 0 ? `of ${config.poolNumbers.length}` : 'off'}`)
   log(`costs are read from ${sources.length > 0 ? sources.map(([name]) => name).join(', ') : 'nobody (post them to /costs)'}`)
   const { hash, due } = await graph.policy()
   log(`policy ${hash.slice(0, 12)} ${config.policy ? 'from settings' : 'by default'}${due ? '; the stored clusters were not built with it, so a rebuild is due (POST /rebuild)' : ''}`)

@@ -56,6 +56,7 @@ When a call is reported, the server does four things in order.
 
 1. **The caller becomes a subject carrying their phone number.** An account that later gives the same number is tied to the call, and the call to the account.
 2. **It looks for a tap.** If exactly one visitor tapped that number in the three minutes before the call began, the caller and the visitor are linked at 0.92, enough to join them. The call then follows the visitor's own arrival: their ad click, their campaign. One visitor is tied to one caller: a visitor already tied to a different caller is passed over, so a browser cannot collect call after call by tapping again. A visitor a reviewer has kept apart from the caller is passed over too.
+   Where the number is one of a [pool](#a-number-for-each-visitor), the visitor it was shown to comes before any tap.
 3. **Otherwise it uses the number.** The call is filed under the channel `CALL_NUMBERS` gives that number, with the medium `call`.
 4. **A call of 30 seconds or more is counted** as an outcome of the step `call`. A shorter one is recorded and not counted. Where [results are expected](#was-it-answered), only a call a person answered is counted.
 
@@ -67,9 +68,38 @@ The answer carries flags for what was noticed:
 | `toll_free` | The caller's number is a toll-free line: a switchboard or a machine. | The number is not used to tie the call to anyone. |
 | `short` | It ended before `CALL_MIN_SECONDS`. | Recorded, not counted. |
 | `repeat` | This number has called before. | None. It is there for you to act on. |
+| `pool` | The number rung was shown to one visitor, and the call is tied to them. | None beyond the tie. |
 | `ambiguous` | More than one visitor tapped the number just before. | Tied to none of them; filed under the number's channel. |
 
 Reporting the same call id again writes nothing and answers `"duplicate": true`. If the second report carries a result, the result is taken.
+
+## A number for each visitor
+
+Few people tap a phone link. Most read the number and dial it, and such a call is filed under the number's channel and no more. A number pool shows each visitor who arrived from somewhere a number of their own for a while, so the call is theirs without a tap. It is off until you name the numbers:
+
+```sh
+POOL_NUMBERS=+15550100101,+15550100102,+15550100103
+```
+
+Mark what may change on your pages, and add `pool=1` to the script tag:
+
+```html
+<a href="tel:+15550100100" data-ag-pool>Call (555) 010-0100</a>
+<script type="module" src="https://graph.example.org/collect.js?pool=1"></script>
+```
+
+| When | What happens |
+| --- | --- |
+| A visitor with an arrival on record opens the page | They get the free number that has rested longest, for `POOL_MINUTES`. |
+| The page stays in view | The number is kept, asked for again every five minutes. |
+| The page is hidden or closed | Nobody renews it. It runs out, and the page shows its own number again. |
+| Every number is taken | The page keeps its own number. `/stats` and the Health view count it as exhausted. |
+| A call comes to the number | It is tied, at 0.90, to the visitor who held it when the call began. Otherwise to the last one who did, for `POOL_GRACE_MINUTES` after, if nobody has held it since. One visitor is still tied to one caller, and a visitor a reviewer keeps apart from the caller is passed over. |
+| Nobody held it | A tap decides, as on any other number. |
+
+No number is given to a visitor with no arrival in the last 90 days, to one who opted out of advertising, to your own staff, or to a declared bot. One network gets numbers for three browsers in ten minutes. No two visitors hold one number at one time, however many servers you run. `forget` removes a visitor from their turns, and keeps only that the number was held then. `prune` deletes turns that ended before its time.
+
+> **Size it before you buy.** Count the visitors with an ad click whose visits overlap within `POOL_MINUTES` at your busiest hour. Start there, watch the exhausted count, and add numbers while it grows. Report every call to the pool's numbers to `/call` or through Twilio, as with any other number.
 
 ## Was it answered?
 
@@ -191,10 +221,13 @@ Post the same facts to `/call` with the service token: the provider's id for the
 
 | Limit | Detail |
 | --- | --- |
-| One number per channel | A tracking number stands for one channel. There is no pool that hands each visitor a number of their own, so two visitors tapping within the same three minutes cannot be told apart. |
+| One number per channel | Without a [pool](#a-number-for-each-visitor), a tracking number stands for one channel, so two visitors tapping within the same three minutes cannot be told apart. |
 | Taps can be faked | A tap comes from a browser, so a program can send one. Three guards limit what that buys: only your tracking numbers are noted, one network is believed from three browsers in ten minutes and no more, and one visitor is tied to one caller. A fake tap at the right moment can still turn a real call `ambiguous`, which files it under the number's channel instead. |
 | One caller per visitor | The rule above holds for good. A visitor tied to one hidden caller is not tied to another hidden call later, because each hidden call is a caller of its own. |
-| Taps only | A visitor who reads the number and dials it by hand leaves no tap. That call is filed under the number's channel. |
+| Taps only | A visitor who reads the number and dials it by hand leaves no tap. Without a pool, that call is filed under the number's channel. |
+| A pool number is remembered | People save numbers. A call weeks later, past the grace or after the number went to someone else, is not the first visitor's, and one within the turn of another visitor is wrongly that visitor's. A longer rest between turns, from more numbers, makes this rarer. |
+| A pool number is for a page | Maps, business listings, print and anything else without the script need numbers of their own, in `CALL_NUMBERS`. A copy of the page made while a number is shown, such as a saved or printed one, keeps showing it. |
+| A pool at its peak | When visitors outnumber numbers, the rest see the page's own number. People behind one address, such as an office, share the three browsers. Carriers may label a number that many strangers are called back from. |
 | The tap window | Three minutes before the call began, with thirty seconds of allowance for clocks that disagree. `clickWindow` changes it in the library. |
 | Sending calls to ad platforms | A counted call is always in the report. It is sent to an ad platform when the `call` step in `STAGES` has an action; the caller's number goes along, hashed, as a match key. |
 | Returned from another line | A caller is their number. Reached on a different number, the miss stays open. |

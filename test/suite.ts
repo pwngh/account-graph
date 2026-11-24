@@ -984,6 +984,148 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       for (const bad of [{ step: '' }, { days: 0 }, { days: 1.5 }, { days: 400 }, { from: '2023-12-01' }]) await assert.rejects(graph.followed({ from: '2023-11-14', to: '2023-11-20', step: 'client', days: 30, ...bad }), TypeError)
     })
 
+    test('no two visitors hold one number at one time, whoever asks and whenever', async () => {
+      for (const seed of [1, 2, 3]) {
+        const next = random(seed)
+        const pick = (count: number) => Math.floor(next() * count)
+        const { graph } = await fresh()
+        const numbers = ['+15550100001', '+15550100002', '+15550100003']
+        const held: { number: string; subject: string; start: number; until: number }[] = []
+        let at = T0
+        for (let step = 0; step < 120; step++) {
+          // Time mostly goes forward. Another server's clock may be a little behind.
+          at += pick(6) * 60_000
+          const asked = at - (pick(5) === 0 ? pick(90_000) : 0)
+          const subject = `visitor:${pick(8)}`
+          const lease = await graph.lease(subject, { numbers, minutes: 1 + pick(15), at: asked })
+          if (!lease) {
+            // None was free, and that is the only reason.
+            assert.equal(await graph.leasesAt(numbers, Math.max(...held.map((each) => each.start))) > 0, true)
+            for (const number of numbers) assert.ok(held.some((each) => each.number === number && each.until > asked))
+            continue
+          }
+          assert.equal(lease.subject, subject)
+          assert.ok(lease.until > asked)
+          const same = held.findIndex((each) => each.number === lease.number && each.start === lease.start)
+          if (same >= 0) {
+            assert.equal(held[same]!.subject, subject)
+            held[same] = lease
+          } else held.push(lease)
+          for (const x of held) for (const y of held) if (x !== y && x.number === y.number) assert.ok(x.until <= y.start || y.until <= x.start, `seed ${seed}, step ${step}`)
+          // Whoever asks about the moment is told the one who holds it.
+          assert.equal(await graph.leaseholder(lease.number, lease.start), subject)
+        }
+        assert.ok(held.length > 10)
+      }
+    })
+
+    test('visitors who ask for a number at one moment each get their own, or none', async () => {
+      const { graph } = await fresh()
+      const numbers = Array.from({ length: 5 }, (_, i) => `+1555010010${i}`)
+      // Twelve visitors, each asking twice at once, as two tabs of one browser do.
+      const given = await Promise.all(Array.from({ length: 24 }, (_, i) => graph.lease(`visitor:${i % 12}`, { numbers, minutes: 15, at: T0 + (i % 3) }).then((lease) => [`visitor:${i % 12}`, lease?.number] as const)))
+      const holders = new Map<string, Set<string>>()
+      for (const [subject, number] of given) if (number) holders.set(number, (holders.get(number) ?? new Set()).add(subject))
+      assert.deepEqual([...holders.keys()].sort(), numbers)
+      assert.ok([...holders.values()].every((subjects) => subjects.size === 1))
+      assert.equal(new Set([...holders.values()].flatMap((subjects) => [...subjects])).size, 5)
+      assert.equal(given.filter(([, number]) => number).length, 10)
+    })
+
+    test('a number is renewed for whoever holds it, then goes to the next by longest rest, and is deleted with its holder or by age', async () => {
+      const { graph } = await fresh(undefined, { now: () => T0 })
+      const numbers = ['+15550100001', '+15550100002']
+      const MIN = 60_000
+      const lease = (subject: string, at: number) => graph.lease(subject, { numbers, minutes: 15, at })
+      const first = (await lease('visitor:a', T0))!
+      assert.deepEqual(first, { number: '+15550100001', subject: 'visitor:a', start: T0, until: T0 + 15 * MIN })
+      assert.deepEqual(await lease('visitor:a', T0 + 5 * MIN), { ...first, until: T0 + 20 * MIN })
+      assert.equal((await lease('visitor:b', T0 + 6 * MIN))!.number, '+15550100002')
+      assert.equal(await lease('visitor:c', T0 + 7 * MIN), undefined)
+      assert.equal(await graph.leasesAt(numbers, T0 + 7 * MIN), 2)
+      assert.equal(await graph.leasesAt(numbers, T0 + 20 * MIN), 1)
+      // At the moment one ends it is free, and the one that has rested longest goes first.
+      assert.equal((await lease('visitor:c', T0 + 20 * MIN))!.number, '+15550100001')
+      assert.equal(await lease('visitor:d', T0 + 20 * MIN), undefined)
+      assert.equal((await lease('visitor:d', T0 + 60 * MIN))!.number, '+15550100002')
+      // Who held it when, and for a while after when nobody has since.
+      const who = (minutes: number, grace = 0) => graph.leaseholder('+15550100001', T0 + minutes * MIN, grace)
+      assert.deepEqual([await who(-1, 1e9), await who(0), await who(19), await who(20), await who(34), await who(35)], [undefined, 'visitor:a', 'visitor:a', 'visitor:c', 'visitor:c', undefined])
+      assert.deepEqual([await who(40, 5 * MIN), await who(41, 5 * MIN)], ['visitor:c', undefined])
+      // Forgotten, nobody held it, and it does not go back to whoever did before: somebody has held it since.
+      assert.equal(await who(25, 120 * MIN), 'visitor:c')
+      await graph.forget('visitor:c')
+      assert.equal(await who(25, 120 * MIN), undefined)
+      assert.equal((await graph.leasesAt(numbers, T0 + 25 * MIN)), 1)
+      assert.equal(await graph.prune(T0 + 22 * MIN), 2)
+      assert.equal(await who(5), undefined)
+      // Asked to, it lends only to somebody who arrived and has not opted out.
+      const strictly = (subject: string) => graph.lease(subject, { numbers, minutes: 15, at: T0 + 500 * MIN, arrivedSince: T0 })
+      assert.equal(await strictly('visitor:e'), null)
+      await graph.touch({ subject: 'visitor:e', at: T0 - 1, gclid: 'old' })
+      await graph.touch({ subject: 'visitor:e', at: T0 + 501 * MIN, gclid: 'not yet' })
+      assert.equal(await strictly('visitor:e'), null)
+      await graph.touch({ subject: 'visitor:e', at: T0 + 1, gclid: 'new' })
+      assert.equal((await strictly('visitor:e'))!.subject, 'visitor:e')
+      await graph.consent('visitor:e', { adUserData: false, adPersonalization: false }, { at: T0 + 2 })
+      assert.equal(await strictly('visitor:e'), null)
+      for (const bad of [{ minutes: 0 }, { minutes: 15, at: 1.5 }]) await assert.rejects(graph.lease('visitor:a', { numbers, ...bad }), TypeError)
+      await assert.rejects(graph.lease('', { numbers, minutes: 15 }), TypeError)
+      assert.equal(await graph.lease('visitor:a', { numbers: [], minutes: 15, at: T0 }), undefined)
+    })
+
+    test('a call to a pool number is its holder\'s, without a tap, and never two callers\'', async () => {
+      const { graph } = await fresh()
+      const MIN = 60_000
+      const pool = { numbers: ['+1 (555) 010-0001', '+15550100002'], grace: 120 * MIN }
+      const numbers = ['+15550100001', '+15550100002']
+      for (const name of ['a', 'b', 'c']) {
+        await graph.observe({ subject: `visitor:${name}`, identifiers: [`device:${name}`], at: T0, event: 'visit' })
+        await graph.touch({ subject: `visitor:${name}`, at: T0, gclid: `click-${name}` })
+      }
+      await graph.lease('visitor:a', { numbers, minutes: 15, at: T0 })
+      const call = (id: string, from: string, minutes: number, to = '+15550100001') => recordCall(graph, { id, from, to, at: T0 + minutes * MIN, duration: 60 }, { pool })
+      const during = await call('P1', '+15550100071', 5)
+      assert.deepEqual([during.visitor, during.flags, during.counted], ['visitor:a', ['pool'], true])
+      assert.deepEqual((await graph.links('visitor:a')).map((link) => [link.subject, link.score, link.reasons.map((reason) => reason.identifier)]), [[during.subject, 0.9, ['lease:P1']]])
+      assert.equal((await graph.attribute(during.subject, { at: T0 + 5 * MIN })).credited?.gclid, 'click-a')
+      // Reported again, it is the same call.
+      assert.equal((await call('P1', '+15550100071', 5)).duplicate, true)
+      // After it ended and before anyone else has it, it is still theirs: they wrote the number down.
+      assert.equal((await call('P2', '+15550100071', 60)).visitor, 'visitor:a')
+      // Another caller on it is somebody else: a visitor is tied to one caller.
+      assert.equal((await call('P3', '+15550100072', 61)).visitor, undefined)
+      // Leased again, it is the new holder's, and past the grace it is nobody's.
+      assert.equal((await graph.lease('visitor:b', { numbers: ['+15550100001'], minutes: 15, at: T0 + 70 * MIN }))!.start, T0 + 70 * MIN)
+      assert.equal((await call('P4', '+15550100073', 71)).visitor, 'visitor:b')
+      assert.equal((await call('P5', '+15550100074', 85 + 121)).visitor, undefined)
+      // Two callers reported at once on one holder's number: one of them is the visitor's caller, and never both.
+      await graph.observe({ subject: 'visitor:d', identifiers: ['device:d'], at: T0, event: 'visit' })
+      await graph.lease('visitor:d', { numbers: ['+15550100001'], minutes: 15, at: T0 + 300 * MIN })
+      const both = await Promise.all(['+15550100078', '+15550100079'].map((from, i) => call(`Q${i}`, from, 301)))
+      assert.equal(both.filter((each) => each.visitor === 'visitor:d').length, 1)
+      assert.equal((await graph.links('visitor:d')).length, 1)
+      // Forgotten between the match and the tie, or between the tie and the keeping of the call, a visitor stays forgotten.
+      await graph.forget('visitor:d')
+      // Seen again since, they are still not the one the call was matched to.
+      await graph.observe({ subject: 'visitor:d', identifiers: ['device:d'], at: T0 + 302 * MIN, event: 'visit' })
+      assert.equal(await graph.tieCall('caller:x', 'visitor:d', 'lease:late', T0 + 301 * MIN, { pool: '+15550100001', grace: 0 }), false)
+      assert.equal(await graph.tieCall('caller:x', 'visitor:d', 'dial:late', T0 + 301 * MIN, { notes: [dialed('+15550100001', T0 + 301 * MIN)] }), false)
+      await graph.keepCall({ id: 'LATE', direction: 'inbound', subject: 'caller:x', at: T0, to: '+15550100001', flags: [], visitor: 'visitor:d' })
+      assert.deepEqual([(await graph.links('visitor:d')).length, (await graph.keptCall('LATE'))!.visitor], [0, undefined])
+      // A holder a reviewer keeps apart from the caller is passed over.
+      await graph.lease('visitor:c', { numbers: ['+15550100002'], minutes: 15, at: T0 })
+      await graph.separate('visitor:c', `caller:${hashPhone('+15550100075')}`)
+      assert.equal((await call('P6', '+15550100075', 1, '+15550100002')).visitor, undefined)
+      // A number not in the pool is tied by a tap alone, whoever once held it.
+      assert.equal((await recordCall(graph, { id: 'P7', from: '+15550100076', to: '+15550100001', at: T0 + 72 * MIN, duration: 60 })).visitor, undefined)
+      // Nobody holds it: a tap says whose it is, as on any other number.
+      await graph.observe({ subject: 'visitor:c', identifiers: [dialed('+15550100001', T0 + 500 * MIN)], at: T0 + 500 * MIN, event: 'phone_click' })
+      const tapped = await call('P8', '+15550100077', 500)
+      assert.deepEqual([tapped.visitor, tapped.flags], ['visitor:c', []])
+      await graph.verify().then((wrong) => assert.deepEqual(wrong, []))
+    })
+
     test('between says what two subjects share, however weak, and how they stand', async () => {
       const { graph } = await fresh()
       const see = (subject: string, ...identifiers: string[]) => graph.observe({ subject, identifiers, at: T0, event: 'login' })

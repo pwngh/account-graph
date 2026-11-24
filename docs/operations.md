@@ -56,6 +56,7 @@ Options ride on the script's address:
 | `collect.js?canvas=open` | Adds the open-source FingerprintJS id, recorded as the weaker `canvas` kind. |
 | `collect.js?params=mailing,placement` | Keeps address parameters of your own with each arrival. |
 | `collect.js?domains=shop.example,help.example` | Carries the visitor along links to your other sites. Needs `LINK_SECRET`. |
+| `collect.js?pool=1` | Shows the visitor a number of their own in elements marked `data-ag-pool`. Needs `POOL_NUMBERS`; see [a number for each visitor](calls.md#a-number-for-each-visitor). |
 | `collect.js?forms=all` | Adds the device id and landing page to every form as it is submitted. Without it, only forms marked `data-ag-fields`. |
 
 The same script reports taps on phone links and clicks on elements marked `data-ag-event`, once the server is told which names to keep with `EVENTS`. [Page events and phone calls](calls.md) has the details.
@@ -238,7 +239,7 @@ A setting the server cannot use stops it at start, with a line for each problem.
 | Route | Token | Answers |
 | --- | --- | --- |
 | `GET /health` | none | `{"ok":true}` once the database answers. Use it for a load balancer's check. |
-| `GET /stats` | service | Visits collected, visits refused by the limit, visits from declared bots, staff visits dropped, and errors since start; what the graph holds; whether a rebuild is due; outbox jobs by state. |
+| `GET /stats` | service | Visits collected, visits refused by the limit, visits from declared bots, staff visits dropped, and errors since start; what the graph holds; numbers of the pool given out and times none was free; whether a rebuild is due; outbox jobs by state. |
 | `GET /ops` | review | Feeds and when each was last heard from, how jobs ran, alerts not delivered, outbox jobs by state. |
 | `GET /verify` | service | `{ changes, policy }`. `changes` lists the subjects whose stored cluster differs from a full recompute, and is empty when sound. It reads every edge. |
 
@@ -324,6 +325,9 @@ On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes i
 | `CALL_NUMBERS` | none | Your tracking numbers and the channel of each, as JSON: `{"+15551230001":{"source":"google","campaignId":"20222"}}`. Each may carry `tags`. |
 | `CALL_MIN_SECONDS` | `30` | A shorter call is recorded but not counted. |
 | `CALL_RESULTS` | none | `expected` to hold each call until something reports whether a person answered. See [calls](calls.md#was-it-answered). |
+| `POOL_NUMBERS` | none | Numbers shown to one visitor at a time, separated by commas. Off until set. |
+| `POOL_MINUTES` | `15` | Minutes a visitor keeps a number after their page last asked. |
+| `POOL_GRACE_MINUTES` | `120` | Minutes after that in which a call is still theirs, when nobody has had the number since. |
 | `CALL_RESULT_WAIT` | `30` | Minutes before a call with no result reads as unknown. |
 | `TWILIO_AUTH_TOKEN`, `TWILIO_WEBHOOK_URL` | none | Take Twilio's call reports at `/calls/twilio`. Set both. |
 | `TWILIO_ACCOUNT_SID` | none | With `TWILIO_AUTH_TOKEN`: ask Twilio what kind of line a phone posted to `/identify` is. |

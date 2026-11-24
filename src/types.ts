@@ -410,6 +410,14 @@ export interface OpenCall {
   touch?: AttributedTouch
 }
 
+/** A number shown to one visitor for a while, so a call to it is theirs. Held from `start` up to `until`. The subject is empty once forgotten. */
+export interface Lease {
+  number: string
+  subject: Subject
+  start: number
+  until: number
+}
+
 /** Why something a subject did belongs to the person asked about. */
 export interface Tie {
   /** `self` it is the subject asked about. `cluster` the graph treats the two as one person. `linked` they are linked strongly enough to be credited, and a cut keeps them in two clusters. */

@@ -1322,6 +1322,72 @@ test('with the server cookie on, the id a page quotes still names the visitor', 
   }
 })
 
+test('a visitor with an arrival is shown a number of their own, and nobody else is', async (t) => {
+  let clock = T0
+  const graph = createGraph(createMemoryStore(), undefined, { now: () => clock })
+  const ops = createOps(graph, createMemoryStore().ops, { onError: () => {} })
+  const options = { token: 'service', reviewers: { dana: 'dana-token' }, origins: ['https://site.example'], events: ['phone_click'], trustProxy: 1, now: () => clock, staffNetworks: ['198.51.100.0/24'], ops }
+  const listen = async (more: object) => {
+    const server = createServer(createHandler(graph, { ...options, ...more })).listen(0, '127.0.0.1')
+    await new Promise((resolve) => server.once('listening', resolve))
+    t.after(() => void server.close())
+    return `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  }
+  const base = await listen({ pool: { numbers: ['(555) 010-0001', '+15550100002'], minutes: 15, grace: 120 } })
+  let visit = 0
+  const page = (path: string, body: object, { origin = 'https://site.example', headers = {}, from = `203.0.113.${++visit}` }: { origin?: string; headers?: Record<string, string>; from?: string } = {}) => fetch(base + path, { method: 'POST', body: JSON.stringify(body), headers: { origin, 'user-agent': 'Mozilla/5.0', 'x-forwarded-for': from, ...headers } })
+  const ask = async (device: string, more: object = {}, how: object = {}) => {
+    const response = await page('/number', { device, ...more }, how)
+    return response.status === 200 ? ((await response.json()) as { number: string; until: number; lasts: number }) : response.status
+  }
+  for (const device of ['a', 'b', 'c']) await page('/collect', { device, touch: { gclid: `G-${device}` } })
+  await page('/collect', { device: 'plain' })
+  await page('/collect', { device: 'shy', touch: { gclid: 'G-shy' } })
+
+  // No arrival, an opt-out by signal, by banner or on record, staff, and a program: nothing, and no number is spent.
+  assert.equal(await ask('plain'), 204)
+  assert.equal(await ask('never-seen'), 204)
+  assert.equal(await ask('shy', { gpc: true }), 204)
+  assert.equal(await ask('shy', {}, { headers: { 'sec-gpc': '1' } }), 204)
+  assert.equal(await ask('shy', { consent: { adUserData: false, adPersonalization: false } }), 204)
+  await graph.consent('visitor:shy', { adUserData: false, adPersonalization: false }, { at: clock })
+  assert.equal(await ask('shy'), 204)
+  assert.equal(await ask('a', {}, { from: '198.51.100.7' }), 204)
+  assert.equal(await ask('a', {}, { headers: { 'user-agent': 'curl/8.0' } }), 204)
+  assert.equal((await page('/number', { device: 'a' }, { origin: 'https://evil.example' })).status, 403)
+  assert.equal(await graph.leasesAt(['+15550100001', '+15550100002'], clock), 0)
+
+  const got = await ask('a')
+  assert.deepEqual(got, { number: '+15550100001', until: clock + 900_000, lasts: 900_000 })
+  clock += 300_000
+  assert.deepEqual(await ask('a'), { number: '+15550100001', until: clock + 900_000, lasts: 900_000 })
+  assert.equal(((await ask('b')) as any).number, '+15550100002')
+  // Exhausted, the page keeps its own number, and it is counted.
+  assert.equal(await ask('c'), 204)
+  const authorized = { headers: { authorization: 'Bearer service' } }
+  const stats = (await (await fetch(`${base}/stats`, authorized)).json()) as any
+  assert.deepEqual([stats.leased, stats.exhausted], [3, 1])
+  const shown = (await (await fetch(`${base}/ops`, { headers: { authorization: 'Bearer dana-token' } })).json()) as any
+  assert.deepEqual({ ...shown.pool, since: 0 }, { numbers: 2, held: 2, since: 0, leased: 3, exhausted: 1, minutes: 15 })
+
+  // A call to the number is the visitor's, and so the ad click's, with no tap.
+  const reported = (await (await fetch(`${base}/call`, { method: 'POST', body: JSON.stringify({ id: 'C1', from: '+15550100091', to: '+15550100001', at: clock + 1000, duration: 60 }), ...authorized })).json()) as any
+  assert.deepEqual([reported.visitor, reported.flags], ['visitor:a', ['pool']])
+  assert.equal((await graph.attribute(reported.subject, { at: clock + 1000 })).credited?.gclid, 'G-a')
+
+  // A network of invented visitors gets three browsers' worth, whatever it asks for.
+  clock += 3_600_000
+  for (const n of [1, 2, 3, 4]) await page('/collect', { device: `bot-${n}`, touch: { gclid: `B${n}` } }, { from: '203.0.113.200' })
+  const before = ((await (await fetch(`${base}/stats`, authorized)).json()) as any).exhausted
+  for (const n of [1, 2, 3, 4]) await ask(`bot-${n}`, {}, { from: '203.0.113.200' })
+  assert.equal(((await (await fetch(`${base}/stats`, authorized)).json()) as any).exhausted, before + 1)
+
+  // Off, there is no such route.
+  const off = await listen({})
+  assert.equal((await fetch(`${off}/number`, { method: 'POST', body: '{"device":"a"}', headers: { origin: 'https://site.example' } })).status, 401)
+  assert.throws(() => createHandler(graph, { ...options, pool: { numbers: ['nonsense'], minutes: 15, grace: 0 } }), TypeError)
+})
+
 test('the labels tool resolves a file of checked pairs against a running server, and counts what it could not use', async (t) => {
   const graph = createGraph(createMemoryStore())
   const see = (subject: string, ...identifiers: string[]) => graph.observe({ subject, identifiers, at: T0, event: 'login' })

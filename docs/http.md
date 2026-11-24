@@ -46,6 +46,7 @@ A token goes in the `authorization` header as `Bearer …`. There are two.
 | Route | What it does |
 | --- | --- |
 | `POST /collect` | Records one browser visit. Only from an origin in `ORIGINS`, and limited per address. Answers 204. |
+| `POST /number` | A number of the pool for this visitor: `{ device }`. Same origins and limit as `/collect`. Answers `{ number, until, lasts }`, or 204 when there is none for them. Only where `POOL_NUMBERS` is set. |
 | `POST /event` | Records something a visitor did on a page: `{ device, event, id?, number? }`. Same origins and limit as `/collect`; only names in `EVENTS` are kept. Answers 204. |
 | `POST /carry` | Answers `{ token }`: a token the script tag adds to links that lead to your other sites. Same origins and limit as `/collect`. Only when `LINK_SECRET` is set. |
 | `POST /calls/twilio` | Twilio's status callback for a phone call. Checked against Twilio's signature. Only when Twilio is set up. |
