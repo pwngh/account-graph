@@ -16,8 +16,8 @@ button:disabled { opacity: .45; cursor: default; }
 
 const landing = (lang: 'en' | 'es', graph: string) => {
   const words = {
-    en: { title: 'Example & Partners', line: 'Three made-up offices: North, River and Online. Nobody here is a lawyer, and none of this is real.', call: 'Call (555) 010-0101', number: '+15550100101', other: '<a href="/es">En español</a>', note: 'From an ad, this page shows you a number of your own while it is open.' },
-    es: { title: 'Example y Asociados', line: 'Tres oficinas inventadas: North, River y Online. Aquí nadie es abogado, y nada de esto es real.', call: 'Llame al (555) 010-0103', number: '+15550100103', other: '<a href="/">In English</a>', note: 'Si llega desde un anuncio, esta página le muestra un número propio mientras está abierta.' },
+    en: { title: 'Example & Partners', line: 'Sample site. Offices: North, River and Online.', call: 'Call (555) 010-0101', number: '+15550100101', other: '<a href="/es">En español</a>', note: 'Visitors from an ad see a tracking number.' },
+    es: { title: 'Example y Asociados', line: 'Sitio de muestra. Oficinas: North, River y Online.', call: 'Llame al (555) 010-0103', number: '+15550100103', other: '<a href="/">In English</a>', note: 'Los visitantes de un anuncio ven un número de seguimiento.' },
   }[lang]
   return `<!doctype html><html lang="${lang}"><meta charset="utf-8"><link rel="icon" href="data:,"><meta name="viewport" content="width=device-width"><title>${words.title}</title><style>${SHARED}</style>
 <main><h1>${words.title}</h1><p>${words.line}</p><p><a class="call" data-ag-pool href="tel:${words.number}">${words.call}</a></p><p class="muted">${words.note}</p><p>${words.other}</p></main>
@@ -34,8 +34,8 @@ li.done h2::after { content: " · done"; color: var(--good); font-weight: 400; }
 li .told { border-left: 2px solid var(--good); padding-left: 10px; }
 #problem:not(:empty) { border-left: 2px solid #b3261e; padding-left: 10px; }
 </style><main><h1>Presenter</h1>
-<p class="muted">A made-up firm, two months of made-up history, nothing sent anywhere. Each scene does what the site, the phone system or the office would do, over HTTP. Press Space or the button for the next one, and open the view it changed.</p>
-<p><button id="next" disabled>Next scene</button> <a id="review" href="${graph}/review" target="review">Open the reviewer screen</a> <span class="muted">(token: demo)</span></p>
+<p class="muted">Sample firm with two months of data. Each scene sends the HTTP requests of the site, phone system or office. Press Space to run the next scene.</p>
+<p><button id="next" disabled>Next scene</button> <a id="review" href="${graph}/review" target="review">Reviewer screen</a> <span class="muted">(token: demo)</span></p>
 <p id="problem" role="alert"></p><ol id="scenes"></ol></main>
 <script>
 const make = (tag, text, props = {}) => Object.assign(document.createElement(tag), { textContent: text ?? '', ...props })
@@ -48,7 +48,7 @@ fetch('/scenes').then((answer) => answer.json()).then(({ next, scenes }) => {
     const item = make('li'), body = make('div')
     body.append(make('h2', title), make('p', text, { className: 'muted' }))
     const told = make('div'), where = make('p')
-    where.append(make('a', 'See it: ' + see[0], { href: see[1], target: 'review' }))
+    where.append(make('a', 'Open ' + see[0], { href: see[1], target: 'review' }))
     body.append(told, where)
     item.append(body)
     item.told = told
@@ -56,7 +56,7 @@ fetch('/scenes').then((answer) => answer.json()).then(({ next, scenes }) => {
   }
   draw()
   button.disabled = at >= scenes.length
-}).catch((error) => { problem.textContent = 'The scenes did not load: ' + error.message })
+}).catch((error) => { problem.textContent = 'Failed to load scenes: ' + error.message })
 async function run() {
   if (button.disabled) return
   button.disabled = true
@@ -71,7 +71,7 @@ async function run() {
     at += 1
     draw()
     list.children[at]?.scrollIntoView({ block: 'center' })
-  } catch (error) { problem.textContent = 'That scene did not run: ' + error.message }
+  } catch (error) { problem.textContent = 'Scene failed: ' + error.message }
   button.disabled = at >= list.children.length
 }
 button.addEventListener('click', run)

@@ -1,18 +1,16 @@
 # Presets
 
-A preset is a policy setting for a common situation. Hand one to the server and it lays it over the default.
+A preset is a policy for a common situation. Set `POLICY_FILE` and the server applies it over the default.
 
 ```sh
 POLICY_FILE=examples/household.json npm start
 ```
 
-Switching to one, or away from one, calls for a rebuild. [The policy](operations.md#the-policy) says how.
+Rebuild after switching to or from a preset. See [the policy](operations.md#policy).
 
 ## Contacts entered by staff
 
-The default suits people who contact you themselves: whoever calls from a number is usually the person who has it. It does not suit a list that staff type in, where a parent, a child and a former spouse are all on file under one phone.
-
-`examples/household.json` is for that list:
+Use `examples/household.json` for a list that staff type in, where a parent, a child and a former spouse share one phone on file. The default policy suits people who contact you themselves, where the caller usually owns the number.
 
 ```json
 {
@@ -26,30 +24,28 @@ The default suits people who contact you themselves: whoever calls from a number
 }
 ```
 
-A phone alone no longer joins two people. And a phone, an address and an internet connection count once between them, because a household shares all three.
+Under the preset, a phone alone relates two people without joining them. A phone, an address and an internet connection count once between them, because a household shares all three.
 
-| Two subjects share | By default | With the preset |
+| Two subjects share | Default | Preset |
 | --- | --- | --- |
 | A phone | 0.90, joined | 0.85, related |
 | A phone and a confirmed address | 0.96, joined | 0.85, related |
 | A phone and an email | joined | joined |
 | An IP and a confirmed address | 0.72, related | 0.60, related |
 | A phone and a name | 0.90, joined | 0.94, joined |
-| A name | no such kind | nothing |
+| A name | kind absent | no link |
 
-A name never makes a link. It confirms one that a phone, an email or an address already made: the two are related without it, and the same first and last name with the same zip code or date of birth makes that one person. [Names](identify.md#names) says how the key is made.
+A name confirms a link that a phone, email or address already made. The two must be related without it, and share a first and last name with the same zip code or date of birth. See [Names](identify.md#names).
 
-> **Names repeat in families.** A father and son of one name at one address, or a mother and daughter, are joined once they also share a phone. Where you know they are two people, `separate` them.
+> **Names repeat in families.** A father and son, or mother and daughter, with one name at one address are joined once they also share a phone. `separate` them when you know they are two people.
 
-A number changes hands, so under the preset the phone also fades: its evidence halves for each two years between the two sightings.
+Phone evidence halves for each two years between the two sightings, because numbers change hands.
 
-These weights are priors. They were chosen for the situation above, not fitted to your traffic; [`fit`](library.md) sets them from pairs your reviewers have decided.
+### Caller attribution
 
-### What the preset costs
+A caller becomes a `caller:` subject with their number. Under the preset, the contact on file with that number is only related to the caller. A later step of the contact is then not credited to the caller's ad click.
 
-Someone who calls becomes a `caller:` subject with their number. Under the preset, the contact on file with that number is only related to the caller, so a later step of the contact would not be credited to the caller's ad click.
-
-Close that gap where the fact is known. When staff take a call and open the contact it is about, have your backend say so:
+To close the gap, have your backend join the two when staff open the contact a call is about:
 
 ```sh
 curl -X POST https://graph.example.org/join -H "authorization: Bearer $GRAPH_TOKEN" \
@@ -58,19 +54,21 @@ curl -X POST https://graph.example.org/join -H "authorization: Bearer $GRAPH_TOK
 
 The `caller:` subject is in the answer to `POST /call`.
 
-### Shared phones, without deleting them
+### Shared phones
 
-Where a system treats a shared phone as an error, staff learn to switch the number off on everyone but one. The graph needs the opposite: it keeps the number on each person, and you say what is known about the two.
+Keep a shared phone on each person, and record what you know about the two. Removing the number also removes the link to every call it made.
 
-| What you know | What to do |
+| What you know | Action |
 | --- | --- |
 | They are one person | `join` the two. |
-| They are two people, and nothing hangs on it | Leave them related. |
-| They are two people and must never be taken for one | `separate` them. |
-| The number belongs to nobody in particular: a front desk, a shelter, a school | `ignore` that number. |
+| They are two people, and the distinction has no consequence | Leave them related. |
+| They are two people and must stay distinct | `separate` them. |
+| The number belongs to a front desk, a shelter or a school | `ignore` that number. |
 
-There is no need to remove a phone from anyone. Removing it loses the tie to every call it made.
+## Custom presets
 
-## A preset of your own
+Write a policy the same way and start the server with it. `policyProblems` in `account-graph` checks a policy without starting a server. A group is any name you choose, and kinds with the same group count once between them.
 
-Write one the same way, and start the server with it. `policyProblems` in `account-graph` checks a policy without starting anything. A group is any name you choose: kinds that carry the same name count once between them.
+## Limitations
+
+- **Weights.** The preset's weights are priors chosen for the situation. [`fit`](library.md#fitting-the-weights) sets them from pairs your reviewers have decided.

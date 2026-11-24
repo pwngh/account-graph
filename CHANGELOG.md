@@ -2,183 +2,82 @@
 
 ## Unreleased (0.1.0)
 
-### Added
+### Graph
 
-- `createGraph(store, policy)` links subjects that share identifiers; every link carries a score and the reasons for it.
-- `observe` returns the subjects whose cluster moved; `links`, `cluster`, and `history` read the graph.
-- `defaultPolicy` sets a weight, cap, and half-life per identifier kind; `docs/deciding.md` has the table.
-- A link below `policy.bridge` (default 0.97) cannot alone join two groups of two or more subjects into one cluster.
-- `separate`, `join`, and `ignore` record reviewer decisions; `decisions` lists them and `audit` checks their hash chain.
-- `asOf(time)` rebuilds the graph from what had been recorded by then; `prune(before)` deletes older sightings.
-- `forget(subject)` deletes a subject with its sightings, edges, touches, flows, consent, and unsent conversions.
-- `transfer`, `flows`, `collusion`, and `rings` report value moving between subjects, with the identity tie between them.
-- `touch` and `attribute` trace a conversion to its touches; a touch is credited at `policy.same` confidence or above.
-- `createOutbox` records an outcome once and sends it with leases, backoff, and per-event retry; `restate` changes a sent value.
-- `googleAds`, `meta`, `microsoftAds`, and `tiktok` are outbox targets; `outbox.list` and `outbox.retry` show and requeue failed jobs.
-- `consent` and the Global Privacy Control signal stop advertising data from being kept or sent.
-- `createMemoryStore` and `createPostgresStore` pass one shared suite; `verify` compares stored clusters with a full recompute.
-- `createBatcher` writes observations that arrive together in one transaction.
-- `createHandler` serves `/collect`, the reviewer screen at `/review`, and token-protected routes; `reviewers` open only the review routes.
-- `npm start` runs the server from environment variables (`serve`, `configFrom`); `docs/operations.md` lists them.
-- `GET /collect.js` is a script tag that reports to the server it was loaded from.
-- `PostgresStore.migrate` applies numbered upgrades once, in order (`upgrades`).
-- `/collect` is limited per address (`HandlerOptions.limit`, default 120 a minute and 60 at once, answers `429`).
-- `GET /health` answers once the database does; `GET /stats` and `counts` report what the graph holds.
-- `collect` reports a browser visit; with `cookie: true` the server keeps the device id in an `HttpOnly` cookie.
-- `createFingerprintVerifier`, `hardwareId`, `createMaxMindLookup`, `createGoogleTokens`, and `createMicrosoftTokens` are the integration entry points.
-- `measure` and `fit` compute identifier weights from reviewed pairs; `reviewed` turns reviewer decisions into those pairs.
-- `clusters`, `search`, and `recent` are the reviewer's queue: largest clusters, subjects by prefix, newest cluster changes.
-- `outcome` and `restate` record what a subject did and change its value; `POST /convert` counts an outcome with or without an ad platform.
-- `spend` records campaign cost per day; `googleCosts`, `metaCosts`, and `costsFromCsv` read it, and `POST /costs` takes it.
-- `report({ from, to, timeZone })` sets each campaign's cost beside the outcomes credited to it; `GET /report` and the reviewer screen's Channels view show it.
-- `Touch` carries `campaignId`, `adGroupId`, `adId`, `term`, `content`, and `custom`; `collect.js?params=` names the custom parameters to keep.
-- `POST /event` records a page event named in `HandlerOptions.events` as an outcome, once a day per browser unless it carries an id.
-- `collect.js` reports taps on `tel:` links as `phone_click` and clicks on `data-ag-event` elements; `accountGraph.event(name)` reports from page code (`event`, `watch`).
-- `recordCall` ties a phone call to the one visitor who tapped its number just before, else files it under the number's channel; `POST /call` takes one.
-- `POST /calls/twilio` takes Twilio's status callbacks after checking the signature (`fromTwilio`, `twilioCall`).
-- `holders(identifiers)` lists every subject seen with an identifier.
-- The `dial` kind (0.92) links a caller to the visitor who tapped; the `dialed` kind is a note that links nothing.
-- `knownLink(url, subject, { secret })` and `POST /link` make an address that names the person it is sent to; a visit through one ties up to three browsers to that person (`link` kind, 0.92) and notes every opening (`opened` kind).
-- `collect.js?domains=` carries a visitor along links to the named sites: `POST /carry` issues a one-hour token bound to the browser, and `/collect` accepts it as `carried` (`carry` kind, 0.95, per receiving site).
-- `HandlerOptions.trustProxy` takes a number of proxies and reads the visitor's address that many entries from the end of `x-forwarded-for` (`TRUST_PROXY=2`). Breaking: `true` now reads the last entry, not the first.
-- `signToken` and `readToken` sign and check short tokens with an expiry and a purpose (`HandlerOptions.linkSecret`, `LINK_SECRET`).
-- `HandlerOptions.stages` (`STAGES`) names your steps with a value, currency and action each; `withStage` fills an outcome from its step, and `GET /report` lists `steps` in that order.
-- `OutboxOptions.onFailed` hears each pass's jobs that failed for good.
-- `createAlerter` posts `{ text }` to a webhook at most once per subject per ten minutes; `ALERT_WEBHOOK` reports failed conversions, an outbox that cannot run, and costs that cannot be read.
-- `POST /identify` takes a subject's device, email, phone, address and IP as plain values, hashes and checks them, and answers `{ changes, identifiers, notes }`.
-- `createAddressVerifier` checks a US postal address with Smarty; `addressIdentifier` keeps one confirmed to the door as the `address` kind (0.6).
-- `createLineTypeLookup` asks Twilio what kind of line a number is; `phoneOfType` records a throwaway number as the `voip` kind (0.5) and a switchboard as nothing. `CallOptions.lineType` applies the same to callers.
-- With `cookie` on, `/collect` keeps the id a page quotes on the visitor the server's cookie names.
-- `/collect` and `/event` drop visits whose user agent names a crawler, previewer or uptime check (`bots` in `GET /stats`), and note a visit's `place` when the address lookup gives one.
-- `collect.js` adds `ag_device` and `ag_landing` to forms marked `data-ag-fields`, or to every form with `?forms=all` (`fill`, `fields`, `accountGraph.fields()`).
-- `/collect` records no touch for an arrival whose only source is a referrer among `origins`: a visitor moving between your own sites.
-- `compose.yaml` passes every server setting through, and switches on page events, a tracking number and signed links for the example site.
-- `ignore` records no decision when the identifier is already in the state asked for.
-- The reviewer screen has a view per address (`/review#/accounts/…`, `/review#/channels/…`), keyboard-operable pictures, and tables that scroll inside their own box.
-- `GET /pulse` answers `{ version }` with an `etag`, and 304 until something is written (`graph.version`); the reviewer screen reads a view again only then.
-- `GET /report` names the `timeZone` its days are in.
-- `POLICY` or `POLICY_FILE` lays your weights, caps and half-lives over the default policy (`policyFrom`, `policyProblems`); a problem stops the server at start.
-- `graph.policy()`, `GET /policy`, `GET /stats` and the reviewer screen's Health view say when the running policy is not the one the stored clusters were built with; `POST /rebuild` recomputes them.
-- `POST /separate` and `POST /join` take `{ source, pairs }` with the service token: one transaction, one decision each by `system:<source>` (`separateAll`, `joinAll`).
-- `GET /disputes` and the Health view list pairs that systems have contradicted each other about three times or more (`disputes`, `verdicts`).
-- `reviewed({ exclude: 'system:' })` leaves out what systems decided.
-- The reviewer screen labels system decisions, filters and pages the record, and draws every kept-apart pair among the subjects shown.
-- `Rule.group` makes kinds that come together count once: of the reasons in a group, only the strongest adds to the score (`Reason.group`, `Reason.counted`). The default policy has none.
-- `examples/household.json` is a policy for contacts entered by staff; `docs/presets.md` explains it.
-- Every advertising answer is kept (`consentHistory`, `GET /consent`); `POST /consent` takes `at` and `source`, and the newest by `at` stands.
-- `GET /audit` names the newest decision and its hash (`head`); `AUDIT_HEAD_HOURS` posts it to `ALERT_WEBHOOK`.
-- `STAFF_NETWORKS` (`HandlerOptions.staffNetworks`) and `POST /staff-link` (`staffLink`) drop visits and page events of your own staff; `GET /stats` counts them as `staff`.
-- `Call` takes `answered`, `voicemail` and `waited`; `POST /call/result` (`recordCallResult`) reports how a call went, before or after the call. A call that was not answered is missed and never an outcome.
-- `CALL_RESULTS=expected` (`CallOptions.results`) holds a call, uncounted and unsent, until its result says a person answered; after `CALL_RESULT_WAIT` minutes it reads as unknown.
-- `POST /call` takes calls you place (`direction: "outbound"`); `followUp` and `GET /call` say whether a missed call was returned, after how long, and how often it was tried.
-- The reviewer screen's Calls view lists missed calls not returned, how calls went by hour and weekday, and coverage (`GET /calls`, `GET /calls/summary`, `openCalls`, `callSummary`).
-- `createOps` notices quiet feeds (`QUIET_TOUCHES_HOURS` and its siblings) and missed callers from paid arrivals not rung back within `RETURN_HOURS`; each is alerted once. An alert that is not delivered is kept and tried again.
-- `GET /ops` and the Health view show feeds, jobs, undelivered alerts and the outbox; `POST /alerts/test` sends a test alert.
-- `outbox.hold`, `release` and `withdraw` keep back, send and take back an outcome; a job can be `held`.
-- `ReportRow.missed` counts missed calls per campaign; calls are kept with their results (`keptCall`, `callResult`).
-- `Outcome.tags`, `Call.tags` and `Channel.tags` carry facts; `report({ by })` and `GET /report?by=` break each line down by `touch.<name>`, `outcome.<name>`, `hour` or `weekday`, with `(not recorded)` always a line of its own.
-- `ReportRow` has `costPerOutcome` and `returnOnCost`, over the campaign's own outcomes on days with cost data, with `costDays`, `missingDays` and `thin`; both are null below half the days. The total leaves out thin campaigns (`Report.leftOut`).
-- The report counts `people` beside outcomes, says how long each step takes (`StageCount.delay`), and marks a period that is too recent (`Report.filling`).
-- Every value an outcome has had is kept (`values`, `GET /outcome`); the report shows what outcomes were first worth and are worth now, by campaign (`ReportRow.worth`) and by month of first record (`Report.months`).
-- `followed` and `GET /followed` count who reached a step within some days of a call, by talk time, answer, language and whether a miss was returned, from a landmark a day after the miss; rows of fewer than 20 people are left out.
-- `journey`, `GET /journey` and the reviewer screen's Journey view show everything recorded about one person in order, with why each subject is them.
-- `between` and `GET /between` say what two subjects share, however weak, and how they stand.
-- `docs/privacy.md` says what is kept about people, what is sent, and what deletes it; `docs/deciding.md` has the model and its limits.
-- `npm run firm` starts a made-up firm, its site and a presenter page over a throwaway database; `docs/demo.md` has the script.
-- `tools/labels.ts` reads a CSV of pairs marked same or different and prints precision and recall for each identifier kind.
-- `Rule.corroborates` marks a kind that confirms a link and never makes one. `nameKeys` and `name`, `dob` on `/identify` make a `name` kind for it, in `examples/household.json` only; `IDENTIFIER_SECRET` makes the keys.
-- `collect` sends Meta's browser id from the `_fbp` cookie with an arrival (`Touch.fbp`), and the Meta target sends it as `fbp` beside the click it belongs to.
-- `recordNotLead` and `POST /not-lead` mark an outcome or a call as spam or otherwise no lead: it stays on record, counts nowhere, and `notLeads` counts it apart in the report and the call summary. `Outbox.takeBack` and `giveBack` are for its conversions. Database upgrade 18.
-- `restate` and `POST /restate` take a `kind`, `refund` or `write_off`; `refunded` and `writtenOff` count them apart in the report, and `now` is net of both. Database upgrade 19.
-- `spend`, `POST /costs` and the CSV take `conversions` and `conversionValue`, what a platform says it brought; `claimed` sets them beside what is credited, on each campaign and in total. `GOOGLE_ADS_CONVERSIONS` and `META_ADS_CONVERSIONS` read them, off by default. Database upgrade 20.
-- `outbox.forget`, and `POST /forget` with `ads: true`, say which conversions of a forgotten person had reached a platform. With `FORGET_ADS` (`OutboxOptions.tellForgotten`), off by default, Microsoft Advertising is asked to retract them; `Target.forget` does the same for a target of your own.
-- `OPEN_HOURS` (`createHours`) counts waiting callers, waiting steps and silent calls in the hours you are open, holidays left out; `GET /calls/summary` has `closed`. Off until set.
-- `recordReturn` and `POST /call/returned` let your own system say a missed caller was reached; `FollowUp.told` and the call summary's `told` mark what rests on that. Database upgrade 17.
-- `POOL_NUMBERS`, `POST /number` and `collect.js?pool=1` show each visitor with an arrival a number of their own; `lease` ties a call to it to them. Database upgrade 15. Off until set.
-- `undecided`, `GET /undecided` and the reviewer screen's Decide view show pairs that are related and not joined, to join or keep apart.
-- `join` tells `marked` the mark it leaves, and `POST /join` with `mark: true` answers with it, so a join can be taken back.
-- `board`, `GET /board` and the reviewer screen's Board view show people by the furthest step they reached, with missed calls nobody returned first.
-- A step in `STAGES` takes `wait`, the hours after which the board says a person has waited too long.
-- The Channels view has a Break down by selector; the Calls view shows tags.
-- `LATE_HOURS` (`OpsOptions.lateHours`) alerts once a day while conversions wait that long past their time; `OutboxStore.oldestDue` says since when.
-- `POST /find` finds subjects by email address, phone number or the start of an id; the reviewer screen uses it, and no longer puts what is typed in an address.
-- `report({ per })`, `GET /report?per=` and **Cost per** on the Channels view count one step in the cost per outcome. The view groups its columns, shows the report's own currency, and tells none, not recorded and does not apply apart.
-- `.env.example` names what compose needs; `docs/operations.md` covers backups, HTTPS and a name under the site.
-- The reviewer screen's picture says how many of those around a subject it draws.
-- A search made while a view is still opening keeps its words and its answer, and only the newest search speaks.
-- A question on the reviewer screen says what the decision would do to the clusters before it is made. `graph.foresee` and `POST /foresee` answer the same.
-- A journey is drawn on a calendar, by month, week or day, with a line at now. A mark opens what it was beside it, and a missed call shows how long it waited to be returned.
-- Missed calls are an inbox: the list by how long each has waited, the caller's story beside it, and what is known of the call. Arrow keys walk the list.
-- Decide is a queue beside the pair in front of you: the two compared line by line with what they have alike brought forward, what joining would make of them, and the choices at hand.
-- Ties, sightings and campaigns have a bar that narrows them by words or by a column's values, with what is chosen as chips. A CSV holds the rows shown.
-- Ties are grouped by what they mean, under headings that fold with how many and how strong, and a subject's kind shows as its mark on the graph.
-- Campaigns sort by any heading and stay beside their numbers while the table scrolls. A source and a tag have a color of their own wherever they are shown.
-- Channels rank campaigns by value, cost, people, arrivals or any step, with a bar behind each. Call results have their share behind the row.
-- A bar of parts says its shares inside it. Resting on a part brings it forward, and one pressed is left out of the shares.
-- Tiles say how their number stands to the same number of days before, and call tiles show the hours. Nothing is compared while outcomes are still coming in, or where the days before are not known.
-- Ctrl or Cmd and K opens a palette to find someone, go to a view, open again who was opened here, or act on who is open.
-- Pointing at anyone on the graph lights the strongest drawn way back to the subject.
-- Forgetting a subject is held down to confirm. A short press, or Enter in the reason, does nothing.
-- The reviewer screen has its views in a column at the left, a neutral palette in light and dark, and one style for its numbers, tables and controls.
-- The reviewer screen shows what your own systems reported: a caller reached without a call, calls and outcomes that were no lead, and how many calls were missed while you were closed.
-- The reviewer screen shows what was refunded and written off, in the value tables of Channels and on a journey.
-- The reviewer screen asks for the access token in the middle of the page.
-- The reviewer screen sets what a platform claims beside what is credited, a campaign a row.
-- The reviewer screen has layered surfaces, a mark for each kind of subject, feeds and refused conversions as rows, and text that follows the size set in the browser.
-- The reviewer screen shows what had reached an ad platform of someone it forgets, until it is put away.
-- The reviewer screen is kept out of search engines and apart from other windows, never turns text into markup, has an icon, and works with forced colors and on paper.
-- Each view of the reviewer screen has a short lesson, one picture that changes a step at a time, and its notes are in plain words.
-- The reviewer screen uses standard labels, with an icon beside a term for its definition and an illustrated guide for each view.
-- The reviewer screen has one scale of type and space, tables that fit what they hold, and rows that become cards on a phone. Times are told by how long ago, with the exact time in a title.
-- The graph keeps room around every disc, name and line: names move to a free side, lines bend around what is in their way, and nothing lies over the paper. The strongest way to whoever is picked is shown, and weak ties can be left out.
-- Accounts opens on the largest cluster's graph, and its long lists scroll in their own boxes.
-- The reviewer screen draws a subject's ties as a graph to move, zoom, filter and open out. A line says what is shared and how strongly, an outline takes in one person, and whoever is picked has a card with the reasons and what can be done.
-- Health lists the conversions an ad platform refused, with why, and a button to send each again. `GET /conversions` and `POST /retry` take a reviewer's token, and no longer answer with the click or the hashed email and phone; `GET /conversion` still does, for the service token.
-- Health lists the conversions an ad platform refused, with why, and a button to send each again. `GET /conversions` and `POST /retry` take a reviewer's token, and no longer answer with the hashed email and phone; `GET /conversion` still does, for the service token.
-- Health lists the conversions an ad platform refused, with why, and a button to send each again. `GET /conversions` and `POST /retry` take a reviewer's token, and no longer answer with the hashed email and phone; `GET /conversion` still does, for the service token. `POST /retry` takes a `target`, and a platform's answer is kept without the keys it repeats.
-- Find takes a whole ad click id, and `graph.clicked` answers who arrived with one. Database upgrade 16 indexes them.
-- `CALL_EXCLUDE` names your own people's numbers and test phones. Calls from them, and calls placed to them, are not recorded.
-- The Channels and Calls views have buttons for common periods, and save their tables as CSV.
-- Each reviewer view opens with the few numbers it is about. Health says first what needs someone, and by what evidence two subjects are taken for one person; a journey shows when things happened before it lists them.
-- The reviewer screen groups the columns of its tables, draws shares and scores as bars beside their numbers, shows a journey day by day, and gives the board's empty steps little room.
+- `createGraph(store, policy)` links subjects that share identifiers. Each link has a score and its evidence.
+- `observe` returns the subjects whose cluster changed. `links`, `cluster`, `history`, `holders`, `between` and `GET /between` read the graph.
+- `defaultPolicy` sets a weight, cap and half-life for each identifier kind. `phone` and `voip` use a dilution of 1, and `phone`, `email` and `voip` have a cap of 10.
+- `POLICY` and `POLICY_FILE` override the default policy (`policyFrom`, `policyProblems`). `GET /policy`, `GET /stats` and Health report when a rebuild is required. `POST /rebuild` recomputes clusters.
+- A link below `policy.bridge` (default 0.97) cannot join two groups of two or more subjects by itself.
+- `Rule.group` counts grouped kinds once (`Reason.group`, `Reason.counted`). `Rule.corroborates` marks kinds that confirm a link. `examples/household.json` is a policy for contacts entered by staff.
+- `separate`, `join` and `ignore` record decisions. `decisions` and `audit` list and verify the hash chain. `GET /audit` returns the newest entry, and `AUDIT_HEAD_HOURS` posts it to `ALERT_WEBHOOK`.
+- `separate`, `join`, `ignore` and `forget` accept `seen`, and a newer decision rejects an outdated one with 409 (`Outdated`). `join` returns its mark, so a join can be undone.
+- `POST /separate` and `POST /join` accept `{ source, pairs }` from a service token (`separateAll`, `joinAll`). `GET /disputes` lists conflicting system decisions.
+- `foresee` and `POST /foresee` preview a decision. `undecided` and `GET /undecided` list pending matches.
+- `measure` and `fit` compute weights from reviewed pairs. `reviewed` exports those pairs, and `tools/labels.ts` reads them from CSV.
+- `asOf(time)` rebuilds the graph at a past time. `prune(before)` deletes older records. `forget(subject)` deletes a subject and its data.
+- `transfer`, `flows`, `collusion` and `rings` report value moving between subjects. Each transfer has an `id`, and a repeat returns `duplicate: true`.
+- `createMemoryStore` and `createPostgresStore` share one test suite. `verify` compares stored clusters with a full recompute, and `PostgresStore.migrate` applies numbered upgrades.
+- `rebuild`, `verify` and `asOf` read the graph in pages. `createBatcher` combines concurrent observations into one transaction.
 
-### Changed
+### Identification
 
-- Breaking: `LINK_SECRET` is at least 32 characters, and no `change-me` secret starts a server that takes visits from a site that is not local.
-- Breaking: `fold` takes its options as one object.
-- The Channels view shows `(not recorded)` where no cost was reported, marks missing days, and withholds a cost per outcome that too little data supports.
-- Breaking: `Store` has `ops`, an `OpsStore`.
-- Breaking: `OutboxStore` has `swap` and `standing` in place of `save`; a worker's pass no longer overwrites a change made since it claimed a job.
-- Twilio's `busy`, `no-answer`, `failed` and `canceled` calls are recorded as not answered.
-- `prune` also deletes advertising answers that no longer stand.
-- Breaking: `GET /decisions` answers `{ decisions, next, total }`, newest first, a page at a time (`decisionPage`).
-- A reviewer cannot sign as a system.
+- `POST /identify` accepts a device, email, phone, address, IP, name and date of birth, then normalizes, checks and hashes them.
+- `createAddressVerifier` checks US addresses with Smarty (`address` kind). `createLineTypeLookup` checks phone lines with Twilio (`voip` kind).
+- `createFingerprintVerifier`, `hardwareId` and `createMaxMindLookup` add device and network identifiers.
+- `knownLink` and `POST /link` create signed personal links (`link`, `opened` kinds). `collect.js?domains=` and `POST /carry` carry a visitor across sites (`carry` kind).
+- `collect` and `GET /collect.js` report browser visits. With `cookie: true` the server sets the device id in an `HttpOnly` cookie.
+- `collect.js` adds `ag_device` and `ag_landing` to marked forms, or to all forms with `?forms=all`.
+- Crawlers, previewers and uptime checks are excluded (`bots`). `STAFF_NETWORKS` and `POST /staff-link` exclude staff traffic (`staff`).
+- `/collect` is rate limited per address (`HandlerOptions.limit`). `TRUST_PROXY` sets the number of proxies.
+- `POST /find` searches by email, phone, ad click or id prefix.
 
-- `defaultPolicy` has a `lease` kind, so the Health view says a rebuild is due after upgrading. Clusters stay as they are until a call is tied by it.
-- Breaking: in `defaultPolicy`, `phone` and `voip` thin as more subjects share them (dilution 1), and `phone`, `email` and `voip` link nothing past 10 subjects. Run `rebuild`, or keep the earlier rules with `POLICY`.
-- Breaking: `REVIEW_TOKENS` (`HandlerOptions.reviewers`) replaces `REVIEW_TOKEN` and `reviewToken`: a token for each reviewer, whose name signs what they decide. `GET /me` says whose a token is.
-- `separate`, `join`, `ignore` and `forget` take `seen`, the newest decision their author had seen; a newer one about the same subject or identifier refuses theirs (`Outdated`, 409). A `Store` needs `newestNaming`.
-- Breaking: `Flow` and `POST /transfer` need an `id`. The same flow sent twice is counted once and answers `duplicate: true` (`Transferred`); the same id with other details is refused. A `Store` needs `flowOf`.
-- Breaking: `GET /verify` answers `{ changes, policy }`, not a list.
-- A server whose database holds an identifier of a kind the policy does not name refuses to start.
-- `rebuild`, `verify` and `asOf` read the graph a page at a time, so a rebuild no longer needs memory for every edge. `Tx` has `sharing` and `everyone` in place of `allEdges` and `allLabels`, and `sightingsUntil` streams.
-- `npm run bench -- scale` measures large graphs in PostgreSQL.
+### Calls
 
-### Fixed
+- `recordCall`, `POST /call` and `POST /calls/twilio` record calls. A call is linked to the visitor who tapped the number (`dial` kind), or attributed to the channel of its number.
+- `POST /call/result` (`recordCallResult`) reports whether a call was answered. `CALL_RESULTS=expected` holds a call until its result arrives, up to `CALL_RESULT_WAIT` minutes.
+- `direction: "outbound"` records calls you place. `followUp` and `GET /call` report callbacks, and `POST /call/returned` (`recordReturn`) accepts returns reported by another system.
+- `POOL_NUMBERS`, `POST /number` and `collect.js?pool=1` assign tracking numbers to visitors (`lease` kind).
+- `CALL_EXCLUDE` omits staff and test numbers. `OPEN_HOURS` (`createHours`) limits waiting times and stale-feed checks to open hours.
+- `GET /calls`, `GET /calls/summary`, `openCalls` and `callSummary` report missed calls and call counts.
+- `followed` and `GET /followed` report how many callers reached a step, by call result, talk time, language and callback.
+- `board` and `GET /board` list people by step, with unreturned missed calls first. A step accepts `wait`.
 
-- A reviewer's `restore` of an identifier the line check or the address lookup had muted stands after a restart (`Deciding.automatic`).
-- `touch` takes text only, in the fields a touch has; a field nested thousands deep no longer answers 500. `separate`, `join`, `ignore`, `forget`, `outcome`, `restate`, `consent` and `spend` refuse text the database cannot keep.
-- A body nested more than 32 levels answers 400; one nested thousands deep answered 500 on `/observe`, `/ignore`, `/link`, `/staff-link` and `/costs`.
-- JSON answers are not stored by browsers or proxies (`no-store`, `nosniff`).
-- `tools/export.ts` writes no cell a spreadsheet would run as a formula.
-- The reviewer screen's question stays open, with what was typed, when a decision could not be saved.
-- `attribute` and `report` reach nothing of a subject kept apart from the one asked about, through a third subject either.
-- `recordCall` ties no call to a visitor a reviewer kept apart from the caller; the call is filed under its number.
-- `CallOptions.numbers` with a key that is not a phone number no longer stops calls to the other numbers.
-- A request that holds a NUL, half of a character, or bytes that are not UTF-8 answers 400, not 500, and is not stored. Two subjects that differed only in such text were kept as one.
-- `observe`, `touch`, `transfer`, `prune` and `outbox.record` take whole milliseconds only, on both stores; `GET /attribute` and `GET /clusters` no longer answer 500 to a malformed number.
-- `/collect` records no touch for an arrival whose fields are all empty.
-- `fill` clears `ag_landing` in a form it filled before the visitor opted out of advertising.
-- A chain of links behind a credited arrival is never longer than `hops`, whatever its subjects are called.
-- `forget` on PostgreSQL deletes an identifier that loses its last holder by it, unless it is muted.
-- `reviewed` leaves out a join that was taken back by no longer linking through its mark.
+### Attribution and reporting
+
+- `touch` and `attribute` attribute an outcome to a visit at `policy.same` confidence or above.
+- `outcome`, `POST /convert` and `POST /event` record outcomes. `STAGES` sets the value, currency and action of each step.
+- `restate` and `POST /restate` change a value. `kind` is `refund` or `write_off`. `values` and `GET /outcome` return the value history.
+- `spend`, `POST /costs`, `googleCosts`, `metaCosts` and `costsFromCsv` record campaign costs. `conversions` and `conversionValue` hold platform-reported results (`GOOGLE_ADS_CONVERSIONS`, `META_ADS_CONVERSIONS`).
+- `report` and `GET /report` return spend, outcomes, people, `costPerOutcome`, `returnOnCost`, delays, value changes and platform-reported conversions. `by` adds a breakdown, and `per` selects the step for cost.
+- `recordNotLead` and `POST /not-lead` exclude spam and wrong numbers (`notLeads`).
+- `journey` and `GET /journey` return one person's events with the evidence for each subject.
+
+### Conversions and consent
+
+- `createOutbox` sends each outcome once, with leases, backoff and retries. `googleAds`, `meta`, `microsoftAds` and `tiktok` are targets.
+- `outbox.hold`, `release`, `withdraw`, `takeBack` and `giveBack` change a queued or sent conversion. `GET /conversions` and `POST /retry` list and retry rejected conversions.
+- `consent`, `consentHistory` and `POST /consent` record advertising consent, including Global Privacy Control.
+- `POST /forget` with `ads: true` lists conversions held by ad platforms. `FORGET_ADS` requests their deletion where a platform supports it.
+
+### Operations
+
+- `npm start` runs the server from environment variables. `compose.yaml` runs it with PostgreSQL.
+- `createHandler` serves the routes and the reviewer screen. `REVIEW_TOKENS` gives each reviewer a token, and `GET /me` returns its owner.
+- `createOps`, `GET /ops` and Health report feeds, jobs, alerts and the outbox. `ALERT_WEBHOOK`, `RETURN_HOURS` and `LATE_HOURS` configure alerts.
+- `GET /health`, `GET /stats`, `GET /verify` and `GET /pulse` report server status.
+- `LINK_SECRET` is at least 32 characters. Responses are sent with `no-store` and `nosniff`.
+- Requests with invalid UTF-8, NUL characters or more than 32 levels of nesting return 400.
+- `npm run firm` starts a sample firm, and `npm run bench -- scale` measures large graphs.
+
+### Reviewer screen
+
+- Accounts shows linked IDs as an interactive graph and as a table with evidence.
+- Journey shows one person's events on a timeline.
+- Board shows people by step, with overdue people marked.
+- Matches compares pending pairs side by side, with a preview and undo.
+- Calls lists missed calls with their history, call results and calls by hour.
+- Channels compares campaigns, with breakdowns, sorting, filters and CSV export.
+- Health shows issues, feeds, jobs, conversions, matching rules and the audit log.
+- An info icon beside a term shows its definition, and a guide is available on each view.
+- A command palette opens with Ctrl+K or ⌘K. Light, dark and forced-color modes are supported.

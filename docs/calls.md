@@ -1,6 +1,6 @@
 # Page events and phone calls
 
-The script tag reports what a visitor does on a page, and a phone call that follows a tap on your number is tied to the visitor who tapped. So a call lands under the ad click that produced it.
+The script tag reports what a visitor does on a page. A phone call that follows a tap on your number is linked to the visitor who tapped, and credited to the ad click that brought them.
 
 ```html
 <a href="tel:+15551230001">Call us</a>
@@ -24,17 +24,17 @@ curl -X POST https://graph.example.org/call -H "authorization: Bearer $GRAPH_TOK
 { "subject": "caller:96f2c503…", "flags": [], "counted": true, "state": "unknown", "visitor": "visitor:fb919054…", "duplicate": false }
 ```
 
-`visitor` is the browser that tapped. The caller and that visitor are now one cluster, and the call is in [the report](report.md) under the visitor's campaign.
+`visitor` is the browser that tapped. The caller and that visitor are now one cluster, and [the report](report.md) lists the call under the visitor's campaign.
 
 ```text
 visitor taps the number ──▶ POST /event ──▶ a note on the visitor: which number, when
-phone provider ──▶ POST /call ──▶ caller ──▶ tied to the one visitor who tapped just before
+phone provider ──▶ POST /call ──▶ caller ──▶ linked to the one visitor who tapped just before
                                         └──▶ otherwise filed under the number's own channel
 ```
 
 ## Page events
 
-A page reports an event in one of three ways. None needs the service token.
+A page reports events without the service token, in one of three ways.
 
 | On the page | Reported as |
 | --- | --- |
@@ -42,47 +42,78 @@ A page reports an event in one of three ways. None needs the service token.
 | Any element with `data-ag-event="name"` | `name`, when clicked; on a form, when submitted |
 | `accountGraph.event('name', { id })` from your own script | `name` |
 
-The server keeps only the names listed in `EVENTS`, and refuses the rest with 400. Each kept event is an outcome of that step in the report, credited like any other.
+The server keeps the names listed in `EVENTS` and answers 400 to any other. Each event is an outcome of the step with its name. A step in `STAGES` adds its value and the ad platforms it names; see [Steps](report.md#steps).
 
-An event counts once a day per browser. Give it an id, with `data-ag-id` or the `id` argument, to count each occurrence: one per form submission, say. An id is ignored for a step that has a value or an action in `STAGES`: those count once a day per browser, whatever the page says.
+An event counts once a day per browser. To count each occurrence, such as each form submission, pass an id in `data-ag-id` or the `id` argument. The id is ignored for a step with a value or an action in `STAGES`.
 
-An event whose name is a step in `STAGES` takes that step's value, and is sent to the ad platforms the step names. [Steps](report.md#steps-and-what-each-is-worth) has the setting.
-
-> **A page can be made to say anything.** Events come from browsers, so anyone can send one. A step listed in both `EVENTS` and `STAGES` lets a browser create a conversion of that value, once a day per browser, limited per address. Keep such steps small, an inquiry and not a sale, and record anything that carries real money from your backend with `POST /convert`.
+> **Page events can be forged.** Anyone can send one from a browser. A step in both `EVENTS` and `STAGES` lets a browser create a conversion of that value, once a day per browser, limited per address. Keep such steps small, such as an inquiry, and record sales from your backend with `POST /convert`.
 
 ## Phone calls
 
-When a call is reported, the server does four things in order.
+The server processes a reported call in four steps.
 
-1. **The caller becomes a subject carrying their phone number.** An account that later gives the same number is tied to the call, and the call to the account.
-2. **It looks for a tap.** If exactly one visitor tapped that number in the three minutes before the call began, the caller and the visitor are linked at 0.92, enough to join them. The call then follows the visitor's own arrival: their ad click, their campaign. One visitor is tied to one caller: a visitor already tied to a different caller is passed over, so a browser cannot collect call after call by tapping again. A visitor a reviewer has kept apart from the caller is passed over too.
-   Where the number is one of a [pool](#a-number-for-each-visitor), the visitor it was shown to comes before any tap.
-3. **Otherwise it uses the number.** The call is filed under the channel `CALL_NUMBERS` gives that number, with the medium `call`.
-4. **A call of 30 seconds or more is counted** as an outcome of the step `call`. A shorter one is recorded and not counted. Where [results are expected](#was-it-answered), only a call a person answered is counted.
+1. **Caller.** The caller becomes a subject carrying their phone number. An account that later gives the same number is linked to the call.
+2. **Visitor.** If exactly one visitor tapped the number in the three minutes before the call, the two are linked at 0.92, which joins them. For a [pool](#number-pools) number, the visitor it was shown to takes precedence over a tap.
+3. **Channel.** A call without a visitor is filed under the channel `CALL_NUMBERS` gives the number, with the medium `call`.
+4. **Outcome.** A call of 30 seconds or more counts as an outcome of the step `call`. Where [results are expected](#call-results), a person must also have answered.
 
-The answer carries flags for what was noticed:
+Each visitor is linked to one caller. Visitors already linked to another caller, or separated from this caller by a reviewer, are skipped.
+
+Reporting a call id again answers `"duplicate": true`. A result in the second report is applied; the rest is ignored.
 
 | Flag | Meaning | Effect |
 | --- | --- | --- |
-| `blocked` | The caller hid their number, or the carrier reported one of the placeholder numbers that stand for "anonymous". | The call ties to nobody by phone. A tap can still tie it to a visitor. |
-| `toll_free` | The caller's number is a toll-free line: a switchboard or a machine. | The number is not used to tie the call to anyone. |
-| `short` | It ended before `CALL_MIN_SECONDS`. | Recorded, not counted. |
-| `repeat` | This number has called before. | None. It is there for you to act on. |
-| `pool` | The number rung was shown to one visitor, and the call is tied to them. | None beyond the tie. |
-| `left_out` | The other number is in `CALL_EXCLUDE`: your own people, or a test phone. | Nothing is recorded. |
-| `ambiguous` | More than one visitor tapped the number just before. | Tied to none of them; filed under the number's channel. |
+| `blocked` | The caller hid their number, or the carrier sent a placeholder for "anonymous" | The phone number links to no one. A tap can still link the call to a visitor. |
+| `toll_free` | The caller's number is toll-free: a switchboard or a machine | The number is excluded from linking |
+| `short` | The call ended before `CALL_MIN_SECONDS` | Recorded without being counted |
+| `repeat` | This number has called before | None |
+| `pool` | The number dialed was shown to one visitor | The call is linked to that visitor |
+| `left_out` | The other number is in `CALL_EXCLUDE`: your own people, or a test phone | The call is not recorded |
+| `ambiguous` | More than one visitor tapped the number just before | Filed under the number's channel |
 
-Reporting the same call id again writes nothing and answers `"duplicate": true`. If the second report carries a result, the result is taken.
+### Twilio
 
-## A number for each visitor
+Twilio can report calls directly. The server verifies Twilio's signature on each request, so the route needs no token.
 
-Few people tap a phone link. Most read the number and dial it, and such a call is filed under the number's channel and no more. A number pool shows each visitor who arrived from somewhere a number of their own for a while, so the call is theirs without a tap. It is off until you name the numbers:
+1. In the Twilio console, open the phone number and set **Call status changes** to `https://graph.example.org/calls/twilio`, method POST.
+2. Copy the account's **Auth Token** from the console's account page.
+
+```sh
+TWILIO_AUTH_TOKEN=…
+TWILIO_WEBHOOK_URL=https://graph.example.org/calls/twilio   # exactly as entered in Twilio
+```
+
+The signature covers that address, so the two must match to the character. A request that fails the check gets 403.
+
+| Reported by Twilio | Recorded as |
+| --- | --- |
+| `busy`, `no-answer`, `failed`, `canceled` | Not answered |
+| `completed` | Result unknown: the call may have reached a person, a menu or voicemail |
+| An outbound call | Skipped, because a forwarded call looks the same. Post outbound calls from your backend. |
+
+> **Do not point an `action` address at this server.** The response to `<Dial action>`, `<Record action>` and similar tells Twilio what the call does next. Handle those in your own application, and post the result to `/call/result` from there. Status callbacks expect no instructions and get none.
+
+### Other providers
+
+Post each call to `/call` with the service token.
+
+| Field | Meaning |
+| --- | --- |
+| `id` | The provider's id for the call |
+| `from`, `to` | Who called, and the number dialed |
+| `at` | When the call began, in epoch milliseconds |
+| `duration` | How long it lasted, in seconds |
+| `answered`, `voicemail`, `waited` | The [result](#call-results), if already known |
+
+## Number pools
+
+A number pool shows each visitor a number of their own for a while, so a call dialed by hand is linked to them without a tap. Pools are off until you set the numbers:
 
 ```sh
 POOL_NUMBERS=+15550100101,+15550100102,+15550100103
 ```
 
-Mark what may change on your pages, and add `pool=1` to the script tag:
+Mark the numbers to replace on your pages, and add `pool=1` to the script tag:
 
 ```html
 <a href="tel:+15550100100" data-ag-pool>Call (555) 010-0100</a>
@@ -91,22 +122,22 @@ Mark what may change on your pages, and add `pool=1` to the script tag:
 
 | When | What happens |
 | --- | --- |
-| A visitor with an arrival on record opens the page | They get the free number that has rested longest, for `POOL_MINUTES`. |
-| The page stays in view | The number is kept, asked for again every five minutes. |
-| The page is hidden or closed | Nobody renews it. It runs out, and the page shows its own number again. |
-| Every number is taken | The page keeps its own number. `/stats` and the Health view count it as exhausted. |
-| A call comes to the number | It is tied, at 0.90, to the visitor who held it when the call began. Otherwise to the last one who did, for `POOL_GRACE_MINUTES` after, if nobody has held it since. One visitor is still tied to one caller, and a visitor a reviewer keeps apart from the caller is passed over. |
-| Nobody held it | A tap decides, as on any other number. |
+| A visitor with a visit from an ad, a campaign or another site opens the page | They get the free number that has rested longest, for `POOL_MINUTES` |
+| The page stays in view | The page renews the number every five minutes |
+| The page is hidden or closed | The lease expires, and the page shows its own number again |
+| Every number is taken | The page keeps its own number. `/stats` and the Health view count the request as exhausted. |
+| A call reaches a pool number | It is linked at 0.90 to the visitor holding the number when the call began. For `POOL_GRACE_MINUTES` after a lease ends, the last holder still gets the call unless someone has held the number since. One caller per visitor still applies, as do separations. |
+| The number has no holder | A tap decides, as for any other number |
 
-No number is given to a visitor with no arrival in the last 90 days, to one who opted out of advertising, to your own staff, or to a declared bot. One network gets numbers for three browsers in ten minutes. No two visitors hold one number at one time, however many servers you run. `forget` removes a visitor from their turns, and keeps only that the number was held then. `prune` deletes turns that ended before its time.
+A number is held by one visitor at a time, across all servers. One network gets numbers for three browsers in ten minutes. `forget` removes a visitor from their leases and keeps the record that the number was held; `prune` deletes leases that ended before its time.
 
-> **Size it before you buy.** Count the visitors with an ad click whose visits overlap within `POOL_MINUTES` at your busiest hour. Start there, watch the exhausted count, and add numbers while it grows. Report every call to the pool's numbers to `/call` or through Twilio, as with any other number.
+The page's own number also stays for staff, declared bots, visitors who opted out of advertising, and those without a visit in the last 90 days.
 
-## Was it answered?
+> **Size the pool.** Count the visitors with an ad click whose visits overlap within `POOL_MINUTES` at your busiest hour. Start with that many numbers and add more while the exhausted count grows. Report calls to them as for any other number.
 
-A phone system that picks up has not answered anyone. A caller who waits thirty seconds in a queue and hangs up looks, to the provider, like a completed call. So `answered` is true, false, or not known, and it is never worked out from how long a call lasted.
+## Call results
 
-Whoever runs your phones knows. Have your backend say so, before or after the call itself is reported:
+A result says whether a person spoke to the caller. It is true, false or unknown, independent of call length. Report it from your backend, before or after the call itself:
 
 ```sh
 curl -X POST https://graph.example.org/call/result -H "authorization: Bearer $GRAPH_TOKEN" \
@@ -120,14 +151,14 @@ curl -X POST https://graph.example.org/call/result -H "authorization: Bearer $GR
 | Field | Meaning |
 | --- | --- |
 | `answered` | A person spoke to the caller. Required. |
-| `voicemail` | The caller reached voicemail. Not together with `answered: true`. |
-| `waited` | Seconds before someone answered or the caller gave up. |
+| `voicemail` | The caller reached voicemail. Rejected together with `answered: true`. |
+| `waited` | Seconds before someone answered or the caller gave up |
 
-Report it again and the last report stands. A call with `answered: false` is **missed**: tied to its visitor and campaign like any call, listed under **Missed calls** in the report, and never an outcome.
+The last report stands. A call with `answered: false` is **missed**: linked and credited like any call, counted under **Missed calls** in the report, and excluded from outcomes.
 
-### Waiting for the result
+### Held calls
 
-With `CALL_RESULTS=expected`, a call is held until its result arrives: not counted, and not sent to any ad platform. So nothing is sent that would have to be taken back.
+With `CALL_RESULTS=expected`, a call is held until its result arrives: it is left out of outcomes and conversions.
 
 ```text
 call reported ──▶ waiting ──▶ result: answered ──▶ counted, and sent
@@ -136,19 +167,19 @@ call reported ──▶ waiting ──▶ result: answered ──▶ counted, an
                                                     (a later result settles it)
 ```
 
-Without the setting, a call is counted by its length as it is reported. If a result then says nobody answered, the call leaves the report and reads as missed. Where it had already been sent, its value is restated to nothing on the platforms that can restate. The others keep it. Google can restate. Meta, Microsoft and TikTok cannot.
+`CALL_RESULT_WAIT` sets the 30 minutes, counted from the end of the call. Set `CALL_RESULTS` only if a system posts results; otherwise every call stays unknown and uncounted.
 
-| What was sent | What happens when the call turns out missed |
+Without the setting, a call is counted by its length when it is reported. If a later result says it was missed, it leaves the report as an outcome, and its conversion changes too.
+
+| Conversion | When the call turns out missed |
 | --- | --- |
-| Not yet | It is held and never sent. |
-| To a platform that can restate | Its value becomes 0 there. It may still be counted there as a conversion. |
-| To any other platform | It stays, and the job notes that it does. |
+| Not yet sent | Held, and not sent |
+| Sent to a platform that can restate (Google) | Its value becomes 0. The platform may still count it as a conversion. |
+| Sent to any other platform (Meta, Microsoft, TikTok) | It stays, and the job's note says so |
 
-Turn `CALL_RESULTS` on only when something posts results. Without one, every call reads as unknown and none is counted.
+## Callbacks
 
-## Was it returned?
-
-Report the calls you place as well, and each missed call says what became of it.
+Report the calls you place as well, and each missed call shows whether it was returned.
 
 ```sh
 curl -X POST https://graph.example.org/call -H "authorization: Bearer $GRAPH_TOKEN" \
@@ -162,12 +193,18 @@ curl "https://graph.example.org/call?id=CA2" -H "authorization: Bearer $REVIEWER
 
 | State of a missed call | Meaning |
 | --- | --- |
-| `open` | Nobody has spoken to the caller since. `attempts` is how often you rang and nothing says they answered. |
-| `returned` | You rang and the same number answered. `delay` is the time from the miss, in milliseconds. |
-| `tried again` | The caller rang again and got through. |
-| `hidden` | The caller hid their number, so there is nothing to ring back. |
+| `open` | The caller has not been reached since. `attempts` counts the calls you placed without a known answer. |
+| `returned` | You called and the same number answered. `delay` is the time from the missed call, in milliseconds. |
+| `tried again` | The caller called again and got through |
+| `hidden` | The caller hid their number, so a callback is not possible |
 
-A caller may be reached some way no call shows: from a line your phone system does not report, by a text they answered, in person. Have your own system say so:
+For an outbound call, `from` is your number and `to` is theirs, kept as its hash. Outbound calls are excluded from outcomes, and record no identifier about the person called.
+
+Calls after the missed one decide its state, whatever order they are reported in. One answered call closes every earlier missed call of that number.
+
+### Reported returns
+
+Report a caller reached another way, such as by text, in person or from an unreported line:
 
 ```sh
 curl -X POST https://graph.example.org/call/returned -H "authorization: Bearer $GRAPH_TOKEN" \
@@ -178,15 +215,19 @@ curl -X POST https://graph.example.org/call/returned -H "authorization: Bearer $
 { "followUp": { "state": "returned", "by": "CA1", "delay": 7200000, "told": true, "attempts": 1 } }
 ```
 
-`at` is when they were reached, now unless you say. It closes every miss of that caller that began before then, as an answered call would, and none that began after. It counts only for a call that was missed, and only from after it began. A call that reached them sooner is what counts. `returned: false` takes it back, and the last report stands. It may come before the call it is about. `told` marks a return that rests on such a report, and the summary counts them apart, so it can be told from one a call shows.
+`told` marks a return known only from such a report. The call summary counts these separately.
 
-A call before the miss says nothing about it. One later answer closes every earlier miss of that number. The answer is worked out from the calls themselves each time, so the order they are reported in does not matter.
+| Rule | Behavior |
+| --- | --- |
+| `at` | When the caller was reached. Defaults to now. |
+| Scope | Closes every missed call of that caller that began before `at` |
+| Eligibility | Applies to a missed call, from after it began. An answered call that reached them sooner takes precedence. |
+| `returned: false` | Withdraws the report |
+| Order | The last report stands, and it may arrive before the call |
 
-A call you place is never an outcome and records nothing about who was rung. For an outbound call, `from` is your number and `to` is theirs. The number is kept as its hash.
+## Call tags
 
-## What a call was about
-
-A call can carry facts, such as the language chosen at the prompt, and a tracking number can say what it stands for.
+Tags attach facts to a call, such as the language chosen at the prompt. A tracking number can carry tags too.
 
 ```sh
 CALL_NUMBERS='{"+15550100001":{"source":"listing","tags":{"office_advertised":"north","language":"es"}}}'
@@ -194,11 +235,11 @@ curl -X POST https://graph.example.org/call -H "authorization: Bearer $GRAPH_TOK
   -d '{"id":"CA1","from":"+15550100041","to":"+15550100001","at":1795460000000,"duration":140,"tags":{"language":"es"}}'
 ```
 
-A call's tags go on to its outcome. A number's tags go on the arrival a call to it is filed under, so a call that follows a visitor's own tap takes the visitor's instead. [The report](report.md#breaking-it-down) breaks down by either.
+A call's tags are copied to its outcome. A number's tags go on the visit recorded for a call filed under that number; a call linked to a visitor uses the visitor's own visit instead. The report [breaks down](report.md#breakdowns) by either.
 
-### One number for each listing
+### Listing numbers
 
-A map listing, a directory or a printed page loads no script, so nothing can be shown to one visitor and nobody taps. Give each its own number in `CALL_NUMBERS`, and never one from the pool. Then a call to it that no tap ties to a visitor is filed under that listing:
+A map, business listing, directory or printed page loads no script. Give each its own number in `CALL_NUMBERS`, outside the pool. Its calls are filed under that listing unless a tap links them to a visitor:
 
 ```sh
 CALL_NUMBERS='{
@@ -207,55 +248,32 @@ CALL_NUMBERS='{
 }'
 ```
 
-## The Calls view
+## Calls view
 
-Open `/review#/calls`. It shows, over the days you pick and in the server's time zone:
+Open `/review#/calls`. The view is read-only and covers the days you pick, in the server's time zone.
 
-- **Missed and not returned**, oldest first: how long ago, when, what the call is credited to, how long the caller waited, and how often you have tried. Each links to the caller.
-- **How calls went**: answered, missed, voicemail, waiting, unknown, and how many of the missed were returned or tried again.
-- **By hour and weekday**: pick what to count. The number is in every cell.
-- **Coverage**: how many calls are tied to a visitor, filed under a channel only, or neither, and how many have no result.
-
-> **No phone numbers.** A caller is kept as a hash of their number, so the screen shows a subject. Find the number in your phone system by the time of the call. The view is read-only.
-
-A missed call stays in its own period: one from before the first day shown is not listed, however open it is.
-
-### From Twilio
-
-Twilio can report each call itself. The server checks every request against Twilio's signature, so the route needs no token.
-
-1. In the Twilio console, open the phone number and set **Call status changes** to `https://graph.example.org/calls/twilio`, method POST.
-2. Copy the account's **Auth Token** from the console's account page.
-
-```sh
-TWILIO_AUTH_TOKEN=…
-TWILIO_WEBHOOK_URL=https://graph.example.org/calls/twilio   # exactly as entered in Twilio
-```
-
-The signature is made from that address, so the two must match to the character. A request that fails the check gets 403.
-
-This callback only reports: Twilio expects no instructions in its answer, and gets none. Calls you place are not taken from Twilio, because a forwarded call looks like one: post those from your backend. A status of `busy`, `no-answer`, `failed` or `canceled` is recorded as not answered. `completed` means Twilio connected the call, to a person, a menu or voicemail, so it answers nothing.
-
-> **Do not point an `action` address at this server.** The answer to `<Dial action>`, `<Record action>` and the like is what the call does next, so this server would take over the call. Let your own application handle those, and post the result to `/call/result` from there.
-
-### From any other provider
-
-Post the same facts to `/call` with the service token: the provider's id for the call, who called, the number rung, when it began in epoch milliseconds, and how many seconds it lasted. Add `answered`, `voicemail` and `waited` if you know them already.
-
-## Limits
-
-| Limit | Detail |
+| Section | Shows |
 | --- | --- |
-| One number per channel | Without a [pool](#a-number-for-each-visitor), a tracking number stands for one channel, so two visitors tapping within the same three minutes cannot be told apart. |
-| Taps can be faked | A tap comes from a browser, so a program can send one. Three guards limit what that buys: only your tracking numbers are noted, one network is believed from three browsers in ten minutes and no more, and one visitor is tied to one caller. A fake tap at the right moment can still turn a real call `ambiguous`, which files it under the number's channel instead. |
-| One caller per visitor | The rule above holds for good. A visitor tied to one hidden caller is not tied to another hidden call later, because each hidden call is a caller of its own. |
-| Taps only | A visitor who reads the number and dials it by hand leaves no tap. Without a pool, that call is filed under the number's channel. |
-| A pool number is remembered | People save numbers. A call weeks later, past the grace or after the number went to someone else, is not the first visitor's, and one within the turn of another visitor is wrongly that visitor's. A longer rest between turns, from more numbers, makes this rarer. |
-| A pool number is for a page | Maps, business listings, print and anything else without the script need numbers of their own, in `CALL_NUMBERS`. A copy of the page made while a number is shown, such as a saved or printed one, keeps showing it. |
-| A pool at its peak | When visitors outnumber numbers, the rest see the page's own number. People behind one address, such as an office, share the three browsers. Carriers may label a number that many strangers are called back from. |
-| The tap window | Three minutes before the call began, with thirty seconds of allowance for clocks that disagree. `clickWindow` changes it in the library. |
-| Sending calls to ad platforms | A counted call is always in the report. It is sent to an ad platform when the `call` step in `STAGES` has an action; the caller's number goes along, hashed, as a match key. |
-| Returned from another line | A caller is their number. Reached on a different number, the miss stays open. |
-| Calls from before | A call recorded before calls were kept has no state, and a result for it finds no call. Its outcome stays counted. |
-| Retention | `forget` deletes a caller's calls and results. `prune` deletes results whose call never came, and keeps calls. |
-| Not confirmed | Twilio's statuses and what its callbacks expect were read from its documentation in November 2026. The console's field names were not. The signature check was run against the example on Twilio's webhook security page and matches it. No real Twilio request has been received. |
+| **Missed calls** | Oldest first: age, time, credited source, wait, number of attempts, and a link to the caller. A missed call is listed in the period it began in, however long it stays open. |
+| **Call results** | Answered, missed, voicemail, waiting, unknown, and how many missed callers were returned or called again |
+| **By hour and weekday** | The measure you pick, with the number in every cell |
+| **Call attribution** | Calls matched to a visitor, attributed by phone number, or unmatched, and how many have no result |
+
+Callers are stored as a hash of their number, so the view shows an ID. To find the number, look up the call's time in your phone system.
+
+## Limitations
+
+| Area | Detail |
+| --- | --- |
+| Channel numbers | Without a [pool](#number-pools), two visitors who tap a number within three minutes cannot be told apart, and a call dialed by hand is filed under the number's channel. |
+| Forged taps | A program can send taps. With `CALL_NUMBERS` set, the server keeps taps on tracking numbers only. It trusts three browsers per network in ten minutes, and links one caller per visitor. A forged tap can still make a call `ambiguous`. |
+| One caller per visitor | The rule is permanent. Each hidden call is its own caller, so a visitor linked to one is skipped for the next. |
+| Saved pool numbers | A call after the grace period is not linked to the visitor who saved the number, and one during another visitor's lease is linked to that visitor in error. More numbers mean longer rests and fewer errors. |
+| Copied pages | A saved or printed page keeps showing a pool number. |
+| Pool numbers | People behind one address, such as an office, share the three-browser limit. Carriers may label a number that many strangers are called back from. |
+| Tap window | Thirty seconds are allowed for clock differences. `clickWindow` changes the three minutes in the library. |
+| Conversions | A counted call goes to an ad platform only when the `call` step in `STAGES` has an action. The caller's hashed number is sent as a match key. |
+| Returns by number | A caller reached on a different number leaves the missed call open, unless you [report the return](#reported-returns). |
+| Older calls | A call recorded before calls were stored has no state, and a result for it finds no call. Its outcome stays counted. |
+| Retention | `forget` deletes a caller's calls and results. `prune` deletes results whose call did not arrive, and keeps calls. |
+| Verification | Twilio's statuses and callback behavior were read from its documentation in November 2026; the console's field names were not. The signature check matches the example on Twilio's webhook security page. No real Twilio request has been received. |

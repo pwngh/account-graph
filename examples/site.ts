@@ -27,7 +27,7 @@ const tag = (host: string) => `<script type="module" src="${GRAPH}/collect.js?do
 
 const page = (host: string, title: string, body: string) => `<!doctype html><meta charset="utf-8"><title>${title}</title>
 <style>body{font:16px/1.5 system-ui;max-width:36rem;margin:3rem auto;padding:0 1rem}input,button{font:inherit;padding:.4rem .6rem}pre{background:#f3f3f0;padding:1rem;overflow:auto}</style>
-<h1>${title}</h1>${body}<p><a href="/who">Who does the graph think this browser is?</a></p>${tag(host)}`
+<h1>${title}</h1>${body}<p><a href="/who">Show this browser's cluster</a></p>${tag(host)}`
 
 /** Calls the graph server as your own backend would: over HTTP, with the service token. */
 async function graph(method: string, path: string, body?: unknown): Promise<any> {
@@ -45,12 +45,12 @@ createServer(async (request, response) => {
   const device = /(?:^|; )ag_device=([^;]+)/.exec(request.headers.cookie ?? '')?.[1]
   try {
     if (url.pathname === '/') {
-      return html(page(host, 'Example shop', `<p>A landing page. If you arrived with <code>?gclid=…</code>, the script below has already told the graph server.</p>
+      return html(page(host, 'Example shop', `<p>Landing page. The script reports the <code>gclid</code> in the address to the server.</p>
         <form method="post" action="/signup" data-ag-fields><input name="email" type="email" placeholder="you@example.com" required> <button>Sign up</button></form>
-        <p>Two things the script reports without any code here: a tap on <a href="tel:+15551230001">555-123-0001</a>, and a click on
-        <button type="button" data-ag-event="brochure">Request a brochure</button>. The server keeps them when started with <code>EVENTS=brochure,phone_click</code>.</p>
-        <p><a href="${otherSite(host)}/">Our other site</a> is this one under another host name. Follow the link and you stay one visitor there; type its address by hand and you are a stranger.
-        <a href="/mail">See an email</a> with a link that names the person it was sent to.</p>`))
+        <p>The script also reports taps on <a href="tel:+15551230001">555-123-0001</a> and clicks on
+        <button type="button" data-ag-event="brochure">Request a brochure</button>. Set <code>EVENTS=brochure,phone_click</code> on the server to record them.</p>
+        <p><a href="${otherSite(host)}/">Second site</a>: the same site under another host name. Following the link keeps the visitor.
+        <a href="/mail">Sample email</a> with a signed personal link.</p>`))
     }
     if (url.pathname === '/signup' && request.method === 'POST') {
       const form = new URLSearchParams(await new Response(request as unknown as ReadableStream).text())
@@ -65,28 +65,28 @@ createServer(async (request, response) => {
       await graph('POST', '/convert', { transactionId: `signup-${subject}`, subject, at, stage: 'signup', value: 25, currency: 'USD' })
       const attribution = await graph('GET', `/attribute?subject=${encodeURIComponent(subject)}&at=${at}`)
       return html(page(host, 'Signed up', `<p>You are <code>${subject}</code>.</p>
-        <p>The graph server ${attribution.credited ? `credits the ad click <code>${attribution.credited.gclid ?? attribution.credited.source ?? 'a visit'}</code> at ${Math.round(attribution.credited.confidence * 100)}% confidence.` : `found no ad click to credit (${attribution.reason}).`}</p>
-        <p>Cluster changes from this sign-up: ${changes.length}.</p>
-        <p><a href="${GRAPH}/review#${encodeURIComponent(subject)}">Open this account on the reviewer screen</a> (it asks for the review token), or <a href="${GRAPH}/review#!channels">see it in the channel report</a>. <a href="/">Back</a>.</p>`))
+        <p>${attribution.credited ? `Attributed to ad click <code>${attribution.credited.gclid ?? attribution.credited.source ?? 'a visit'}</code> at ${Math.round(attribution.credited.confidence * 100)}% confidence.` : `Unattributed (${attribution.reason}).`}</p>
+        <p>Cluster changes: ${changes.length}.</p>
+        <p><a href="${GRAPH}/review#${encodeURIComponent(subject)}">Open the account</a> or <a href="${GRAPH}/review#!channels">the campaign report</a> on the reviewer screen. <a href="/">Back</a>.</p>`))
     }
     if (url.pathname === '/mail') {
       // Your backend knows a contact and asks the graph server for a link that names them. Needs LINK_SECRET on the server.
       const subject = `contact:${++accounts}`
       const link = await graph('POST', '/link', { url: `http://${host}/`, subject })
-      return html(page(host, 'An email we might send', `<p>To <code>${subject}</code>: your offer is ready. <a href="${link.url}">Open it</a>.</p>
-        <p>The link carries a signed token naming the contact. Opening it ties this browser to them, and the script takes the token out of the address bar.</p>`))
+      return html(page(host, 'Sample email', `<p>To <code>${subject}</code>: your offer is ready. <a href="${link.url}">Open it</a>.</p>
+        <p>The link carries a signed token for this contact. Opening it links this browser to the contact.</p>`))
     }
     if (url.pathname === '/who') {
       const cluster = device ? await graph('GET', `/cluster?subject=${encodeURIComponent(`visitor:${device}`)}`) : null
-      return html(page(host, 'Who this browser is', cluster
-        ? `<p>This browser is <code>visitor:${device}</code>. The graph treats these as one person:</p><pre>${cluster.members.join('\n')}</pre>`
-        : '<p>The graph has not seen this browser yet. Open the <a href="/">first page</a> and come back.</p>'))
+      return html(page(host, 'Browser cluster', cluster
+        ? `<p>This browser is <code>visitor:${device}</code>. Cluster members:</p><pre>${cluster.members.join('\n')}</pre>`
+        : '<p>No data for this browser. Open the <a href="/">landing page</a> first.</p>'))
     }
     if (url.pathname === '/reset') {
       // Start over as a new visitor: forget the device id the collector kept in this browser.
       return response
         .writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'set-cookie': ['ag_device=; Max-Age=0; Path=/', 'ag_device=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax'] })
-        .end('<!doctype html><title>Reset</title><p id="out"></p><script>localStorage.removeItem("ag_device"); localStorage.removeItem("ag_click"); out.textContent = "This browser is a new visitor again. Device cookie present: " + /(^|; )ag_device=/.test(document.cookie)</script><a href="/">Back</a>')
+        .end('<!doctype html><title>Reset</title><p id="out"></p><script>localStorage.removeItem("ag_device"); localStorage.removeItem("ag_click"); out.textContent = "Visitor reset. Device cookie present: " + /(^|; )ag_device=/.test(document.cookie)</script><a href="/">Back</a>')
     }
     response.writeHead(404).end('Not found')
   } catch (error) {

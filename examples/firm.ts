@@ -191,31 +191,31 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
   /** The scenes, in order. Each does over HTTP what the site, the phone system or the office would, and says what came of it. */
   const scenes: { title: string; text: string; see: [string, string]; run(): Promise<string[]> }[] = [
     {
-      title: 'An ad in Spanish brings a visitor', text: 'Somebody presses the ad for the North office. Its address carries office=north and lang=es.', see: ['Channels', review('channels')],
+      title: 'Ad visit', text: 'A visitor arrives from a Spanish ad for the North office. The landing address carries office=north and lang=es.', see: ['Channels', review('channels')],
       async run() {
         await browser('/collect', { device: 'demo-visitor', url: `${siteAt}/es`, touch: { gclid: 'demo-click', source: 'google', medium: 'cpc', campaignId: '30333', campaign: 'Busqueda: North', landing: `${siteAt}/es`, custom: { office: 'north', lang: 'es' } } })
         const { touches } = await ask('GET', `/attribute?subject=visitor:demo-visitor&at=${clock()}`)
-        return [`The arrival is on record: ${touches[0].campaign}, office ${touches[0].custom.office}, language ${touches[0].custom.lang}.`]
+        return [`Visit recorded: ${touches[0].campaign}, office ${touches[0].custom.office}, language ${touches[0].custom.lang}.`]
       },
     },
     {
-      title: 'They tap the number, and wait in the queue', text: 'The phone system reports the call. It picked up, so a plain call tracker would count it.', see: ['Calls', review('calls')],
+      title: 'Tap to call', text: 'The visitor taps the phone number. The phone system reports a connected call and holds it for a result.', see: ['Calls', review('calls')],
       async run() {
         await browser('/event', { device: 'demo-visitor', event: 'phone_click', number: demo.line })
         const call = await ask('POST', '/call', { id: 'demo-1', from: demo.phone, to: demo.line, at: clock(), duration: 95, tags: { language: 'es' } })
-        return [`Tied to ${call.visitor} by the tap. State: ${call.state}. Counted: ${call.counted ? 'yes' : 'no'}.`]
+        return [`Linked to ${call.visitor} by the tap. State: ${call.state}. Counted: ${call.counted ? 'yes' : 'no'}.`]
       },
     },
     {
-      title: 'They hang up before anyone answers', text: 'The result arrives: nobody answered. The call is a miss, and is never counted or sent to the ad platform.', see: ['Board', review('board/90')],
+      title: 'Missed call', text: 'The result reports no answer. The call is excluded from outcomes and conversions.', see: ['Board', review('board/90')],
       async run() {
         const { state, counted } = await ask('POST', '/call/result', { id: 'demo-1', answered: false, waited: 95 })
         await outbox.run()
-        return [`State: ${state}. Counted: ${counted ? 'yes' : 'no'}. Sent to the ad platform: ${wasSent('call:demo-1') ? 'yes' : 'no'}.`, 'They are on the Board, under missed and not returned.']
+        return [`State: ${state}. Counted: ${counted ? 'yes' : 'no'}. Sent to the ad platform: ${wasSent('call:demo-1') ? 'yes' : 'no'}.`, 'The caller is on the Board under Missed calls.']
       },
     },
     {
-      title: 'Staff ring back', text: 'The return call is answered. Staff open a contact, and say the call is about them.', see: ['Journey', review(`journey/${encodeURIComponent('contact:demo')}`)],
+      title: 'Callback', text: 'Staff return the call, create a contact and join it to the caller.', see: ['Journey', review(`journey/${encodeURIComponent('contact:demo')}`)],
       async run() {
         await ask('POST', '/call', { id: 'demo-2', direction: 'outbound', from: demo.line, to: demo.phone, at: clock(), duration: 410, answered: true })
         await ask('POST', '/identify', { subject: 'contact:demo', phone: demo.phone, name: { first: 'Inés', last: 'Vega' }, dob: '1984-05-06', event: 'inquiry' })
@@ -223,61 +223,61 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
         await ask('POST', '/convert', { transactionId: 'demo-inquiry', subject: 'contact:demo', at: clock(), stage: 'inquiry', tags: { language: 'es' } })
         await outbox.run()
         const { followUp } = await ask('GET', '/call?id=demo-1')
-        return [`The miss is ${followUp.state}.`, `The inquiry is credited to the ad click and sent: ${wasSent('demo-inquiry') ? 'yes' : 'no'}.`]
+        return [`Missed call: ${followUp.state}.`, `Inquiry attributed to the ad click and sent: ${wasSent('demo-inquiry') ? 'yes' : 'no'}.`]
       },
     },
     {
-      title: 'A call to the number on a map listing', text: 'Nobody loaded a page. The number says which listing it is, so the call is filed there.', see: ['Channels', review('channels')],
+      title: 'Listing call', text: 'A call to a number published on a map listing is attributed to that listing.', see: ['Channels', review('channels')],
       async run() {
         const call = await ask('POST', '/call', { id: 'demo-3', from: '+15550100043', to: '+15550100104', at: clock(), duration: 260, answered: true })
         const { touches } = await ask('GET', `/attribute?subject=${call.subject}&at=${clock()}`)
-        return [`Filed under ${touches[0].campaign}, advertised office ${touches[0].custom.office_advertised}. Counted: ${call.counted ? 'yes' : 'no'}.`]
+        return [`Attributed to ${touches[0].campaign}, advertised office ${touches[0].custom.office_advertised}. Counted: ${call.counted ? 'yes' : 'no'}.`]
       },
     },
     {
-      title: 'They become a client of another office', text: 'The ad said North. The River office serves them. Both are kept, under names that cannot be mixed up.', see: ['Channels by office served', review('channels///outcome.office_served')],
+      title: 'Client at another office', text: 'The ad was for North and River serves the client. The report keeps both offices.', see: ['Channels by office served', review('channels///outcome.office_served')],
       async run() {
         await ask('POST', '/convert', { transactionId: 'demo-client', subject: 'contact:demo', at: clock(), stage: 'client', tags: { office_served: 'river', language: 'es' } })
         await outbox.run()
         const { credited } = await ask('GET', `/attribute?subject=contact:demo&at=${clock()}`)
-        return [`Advertised: ${credited.custom.office}. Served: river. Credited to ${credited.campaign} at ${Math.round(credited.confidence * 100)}%.`]
+        return [`Advertised: ${credited.custom.office}. Served: river. Attributed to ${credited.campaign} at ${Math.round(credited.confidence * 100)}%.`]
       },
     },
     {
-      title: 'The other side of the matter', text: 'A contact on the other side gives the same family phone and email. The case system says the two are never one person.', see: ['Accounts', review(`accounts/${encodeURIComponent('contact:demo')}`)],
+      title: 'Separation', text: 'An opposing party shares the family phone and email. The case system separates the two contacts.', see: ['Accounts', review(`accounts/${encodeURIComponent('contact:demo')}`)],
       async run() {
         for (const subject of ['contact:demo', demo.other]) await ask('POST', '/identify', { subject, phone: demo.phone, email: 'family@example.org', event: 'staff entry' })
         const { joined } = await ask('GET', `/between?a=contact:demo&b=${demo.other}`)
         await ask('POST', '/separate', { source: 'matters', pairs: [{ a: 'contact:demo', b: demo.other, reason: 'sides of one matter' }] })
         const after = await ask('GET', `/between?a=contact:demo&b=${demo.other}`)
-        return [`Before: ${joined ? 'joined, by a phone and an email the family shares' : 'related'}. After: kept apart, whatever they come to share.`, `In one cluster: ${after.joined ? 'yes' : 'no'}.`]
+        return [`Before: ${joined ? 'joined by a shared phone and email' : 'related'}. After: separated.`, `Same cluster: ${after.joined ? 'yes' : 'no'}.`]
       },
     },
     {
-      title: 'One phone, one household', text: 'A parent and a child give one phone. Sharing it relates them, and does not make them one person.', see: ['Decide', review('decide')],
+      title: 'Shared phone', text: 'A parent and a child share a phone. The link is below the join threshold and waits for review.', see: ['Matches', review('decide')],
       async run() {
         await ask('POST', '/identify', { subject: 'contact:4801', phone: '+15550100044', name: { first: 'Marta', last: 'Lago' }, dob: '1970-02-03', event: 'staff entry' })
         await ask('POST', '/identify', { subject: 'contact:4802', phone: '+15550100044', name: { first: 'Teo', last: 'Lago' }, dob: '2001-07-08', event: 'staff entry' })
         const { joined, score } = await ask('GET', '/between?a=contact:4801&b=contact:4802')
-        return [`${Math.round(score * 100)}% by the phone: ${joined ? 'joined' : 'related, and not joined'}. Someone can decide.`]
+        return [`Linked at ${Math.round(score * 100)}% by phone: ${joined ? 'joined' : 'related'}.`]
       },
     },
     {
-      title: 'What the client paid is known later', text: 'The step was worth 400 when they signed. The amount is restated, here and at the ad platform.', see: ['Journey', review(`journey/${encodeURIComponent('contact:demo')}`)],
+      title: 'Value change', text: 'The client value is updated from the initial 400 USD and restated at the ad platform.', see: ['Journey', review(`journey/${encodeURIComponent('contact:demo')}`)],
       async run() {
         await ask('POST', '/restate', { transactionId: 'demo-client', value: 1250 })
         await outbox.run()
         const { values } = await ask('GET', '/outcome?id=demo-client')
-        return [`Recorded at ${values[0].value} USD, now ${values.at(-1).value} USD. Both stay on record.`, `Told to the ad platform: ${sent.filter((each) => each.id === 'demo-client').at(-1)?.value} USD.`]
+        return [`Initial value ${values[0].value} USD, current value ${values.at(-1).value} USD.`, `Sent to the ad platform: ${sent.filter((each) => each.id === 'demo-client').at(-1)?.value} USD.`]
       },
     },
     {
-      title: 'A night in which nothing rings', text: 'The clock is moved on fourteen hours. The call feed has gone quiet, and somebody is told.', see: ['Health', review('health')],
+      title: 'Stale feed', text: 'The clock advances 14 hours without a call, and an alert is sent.', see: ['Health', review('health')],
       async run() {
         ahead += 14 * HOUR
         await ops.check()
         const told = alerts.findLast((text) => text.includes('no calls for'))
-        return [told ? `Told: "${told}"` : 'Nobody was told.']
+        return [told ? `Alert: "${told}"` : 'No alert was sent.']
       },
     },
   ]
@@ -387,14 +387,14 @@ if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).
       await postgres.migrate()
       store = postgres
     }
-    console.log(made ? 'Filling a made-up firm in PostgreSQL. This takes a minute or so.' : 'Filling a made-up firm. Everything is kept in memory.')
+    console.log(made ? 'Loading sample data into PostgreSQL. This takes about a minute.' : 'Loading sample data into memory.')
     firm = await startFirm(store, { ports: [Number(process.env.PORT ?? 8790), Number(process.env.SITE_PORT ?? 8791)], say: console.log })
     console.log(`
   Presenter page   ${firm.site}/present
   Reviewer screen  ${firm.graph}/review        sign in with the token: demo
-  The firm's site  ${firm.site}/?gclid=you&utm_id=30111   and ${firm.site}/es?gclid=you&utm_id=30333
+  Sample site      ${firm.site}/?gclid=you&utm_id=30111   and ${firm.site}/es?gclid=you&utm_id=30333
 
-  The script is in docs/demo.md. Ctrl-C stops everything and deletes it.`)
+  See docs/demo.md for the script. Press Ctrl-C to stop and delete the data.`)
   } catch (error) {
     if (!stopping) console.error(error)
     await stop(1)
