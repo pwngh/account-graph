@@ -3324,6 +3324,15 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await graph.cluster('contact:child'))!.members.includes('caller:1'), false)
       assert.equal((await graph.attribute('caller:1', { at: T0 + DAY })).touches.some((touch) => touch.msclkid === 'click-child'), false)
       assert.deepEqual(await graph.verify(), [])
+      // Nor is a second record of the child's, that has the caller's number, the caller's: neither has the other's credit by it.
+      await graph.observe({ subject: 'contact:again', identifiers: ['email:child', 'phone:1'], at: T0 + 6500 })
+      assert.equal((await graph.attribute('caller:1', { at: T0 + DAY })).touches.some((touch) => touch.msclkid === 'click-child'), false)
+      // Nor from an alias of the caller's that nothing is said of.
+      await graph.observe({ subject: 'contact:caller', identifiers: ['email:caller', 'phone:9'], at: T0 + 6600 })
+      await graph.observe({ subject: 'caller:1', identifiers: ['email:caller'], at: T0 + 6600 })
+      await graph.observe({ subject: 'contact:again', identifiers: ['phone:9'], at: T0 + 6700 })
+      assert.equal((await graph.attribute('contact:caller', { at: T0 + DAY })).credited?.msclkid, undefined)
+      assert.deepEqual(await graph.verify(), [])
       // A reviewer who joins the two has the last word.
       await graph.join('contact:child', 'caller:1')
       assert.ok((await graph.cluster('contact:child'))!.members.includes('caller:1'))
@@ -3351,6 +3360,13 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       // What is told at once is never one person for a moment.
       const told = await graph.speak({ subject: 'contact:new', identifiers: ['email:new', 'phone:5'] }, [{ subject: 'caller:5', identifiers: ['phone:5'] }], T0)
       assert.deepEqual(told.changes.filter((change) => change.from !== undefined), [])
+      // What a reviewer joined stays joined, whatever is said of the two through a third.
+      const joined = (await fresh()).graph
+      await joined.speak({ subject: 'contact:one', identifiers: ['email:one'] }, [browser, caller], T0)
+      await joined.join('contact:one', 'caller:1')
+      await joined.join('caller:1', 'visitor:a')
+      assert.deepEqual((await joined.cluster('contact:one'))!.members, ['caller:1', 'contact:one', 'visitor:a'])
+      assert.deepEqual(await joined.verify(), [])
       // Said, so it is shown, however high the policy's levels are.
       const strict = (await fresh({ ...defaultPolicy, related: 0.95, same: 0.96 })).graph
       await strict.speak(child, [caller], T0)

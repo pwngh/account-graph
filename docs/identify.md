@@ -67,7 +67,7 @@ A mother calls about her son. Without being told, the server takes her number an
 curl -X POST https://graph.example.org/identify -H "authorization: Bearer $GRAPH_TOKEN" -d '{
   "subject": "contact:son",
   "email": "son@example.org",
-  "speaker": { "device": "9f3c1c1e-…", "phone": "(555) 000-1111", "email": "mother@example.org" }
+  "speaker": { "device": "9f3c1c1e-0000-4000-8000-000000000001", "phone": "(555) 000-1111", "email": "mother@example.org" }
 }'
 ```
 

@@ -560,8 +560,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     const event = typeof body.event === 'string' && body.event ? (body.event as string) : undefined
     const who = { subject: body.subject as Subject, identifiers }
     if (speaker && speaker.subjects.length > 0) {
-      const { marks, changes } = await graph.speak(who, speaker.subjects, at, event)
-      return { changes, identifiers: [...identifiers, ...marks], notes }
+      const said = await graph.speak(who, speaker.subjects, at, event)
+      return { changes: said.changes, identifiers: said.identifiers, notes }
     }
     const changes = identifiers.length > 0 ? await graph.observe({ ...who, at, ...(event && { event }) }) : []
     return { changes, identifiers, notes }
@@ -574,12 +574,20 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     if (device === undefined && !(typeof phone === 'string' && phone)) throw new Refusal(400, 'A speaker requires a device or a phone')
     const { identifiers: theirs, notes } = await factsIn({ device, phone }, true, true)
     const ofDevice = theirs.find((each) => each.startsWith('device:'))
-    const ofPhone = theirs.find((each) => /^(phone|voip):/.test(each))
+    // A number that names nobody is the speaker's all the same.
+    if (typeof phone === 'string' && phone) theirs.push(`phone:${hashPhone(phone, options.calls?.country)}`)
+    const ofPhone = !notes.phone?.endsWith(': not used') && theirs.find((each) => /^(phone|voip):/.test(each))
     const subjects: { subject: Subject; identifiers: Identifier[] }[] = []
     if (ofDevice) {
       // The browser may be known under another id, and hold this one.
       const known = (await graph.holders([ofDevice])).map((edge) => edge.subject).filter((each) => each.startsWith('visitor:')).sort()
-      subjects.push({ subject: known[0] ?? `visitor:${device}`, identifiers: [ofDevice] })
+      // One that was said to speak for the subject before is said to again, so what was muted stays muted.
+      let before: Subject | undefined
+      for (const each of known) {
+        const { reasons, idle } = await graph.between(body.subject, each)
+        if ([...reasons.map((reason) => reason.identifier), ...idle].some((held) => held.startsWith('behalf:'))) before ??= each
+      }
+      subjects.push({ subject: before ?? known[0] ?? `visitor:${device}`, identifiers: [ofDevice] })
     }
     if (ofPhone) subjects.push({ subject: `caller:${hashPhone(phone, options.calls?.country)}`, identifiers: [ofPhone] })
     if (typeof address === 'string' && address) {

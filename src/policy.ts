@@ -166,13 +166,13 @@ export function policyProblems(given: unknown): string[] {
       if (rule.group !== undefined && !(typeof rule.group === 'string' && rule.group)) wrong.push(`kind "${kind}" requires its group as a string`)
       if (rule.corroborates !== undefined && rule.corroborates !== true) wrong.push(`kind "${kind}" requires its corroborates as true, or left out`)
       if (rule.relates !== undefined && rule.relates !== true) wrong.push(`kind "${kind}" requires its relates as true, or left out`)
-      if (rule.relates && rule.corroborates) wrong.push(`kind "${kind}" cannot both relate and corroborate`)
       if (NOTES.has(kind) && rule.weight) wrong.push(`kind "${kind}" is a note and links nothing, so its weight must stay 0`)
     }
   }
   if (wrong.length > 0) return wrong
   const policy = policyFrom(given)
   if (policy.related > policy.same) wrong.push('"related" must not be above "same"')
+  for (const [kind, rule] of Object.entries(policy.kinds)) if (rule.relates && rule.corroborates) wrong.push(`kind "${kind}" cannot both relate and corroborate`)
   const { review } = policy.kinds
   if (review!.corroborates) wrong.push('kind "review" is a reviewer\'s join, so it cannot only corroborate')
   if (review!.relates) wrong.push('kind "review" is a reviewer\'s join, so it cannot only relate')

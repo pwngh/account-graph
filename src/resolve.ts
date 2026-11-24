@@ -94,14 +94,14 @@ export interface Known {
   joins: Set<Identifier>
 }
 
-/** The facts of the subjects that have one, of the facts a policy keeps people apart by. An undone join is none. */
-export function knownOf(policy: Policy, edges: readonly Edge[], undone: (identifier: Identifier) => boolean): Map<Subject, Known> {
+/** The facts of the subjects that have one, of the facts a policy keeps people apart by. An undone join is none. With `joins`, those are read whatever the policy. */
+export function knownOf(policy: Policy, edges: readonly Edge[], undone: (identifier: Identifier) => boolean, joins = false): Map<Subject, Known> {
   const out = new Map<Subject, Known>()
-  if (!policy.apart?.length) return out
+  if (!policy.apart?.length && !joins) return out
   for (const { subject, identifier } of edges) {
     const kind = identifier.slice(0, identifier.indexOf(':'))
     // Each fact is read for the other to be weighed against, whether or not it keeps anyone apart by itself.
-    if (!policy.apart.includes(kind as Fact) && kind !== 'birth' && kind !== 'given' && kind !== 'initial' && !(kind === 'review' && !undone(identifier))) continue
+    if (!policy.apart?.includes(kind as Fact) && kind !== 'birth' && kind !== 'given' && kind !== 'initial' && !(kind === 'review' && !undone(identifier))) continue
     const known = out.get(subject) ?? { facts: new Map(), joins: new Set() }
     out.set(subject, known)
     if (kind === 'review') known.joins.add(identifier)
@@ -152,6 +152,8 @@ export function partition(
   known: ReadonlyMap<Subject, Known> = new Map(),
   /** Hears each link a difference of facts took. */
   onCut?: (a: Subject, b: Subject) => void,
+  /** Pairs of whom it is said that they are two people, though nobody decided it. */
+  two: readonly (readonly [Subject, Subject])[] = [],
 ): Map<Subject, Labels> {
   const component = components(subjects, pairs)
   const members = new Map<Subject, Subject[]>()
@@ -178,6 +180,12 @@ export function partition(
     else apart.set(id, [pair])
   }
 
+  const said = new Map<Subject, (readonly [Subject, Subject])[]>()
+  for (const pair of two) {
+    const id = component.get(pair[0])
+    if (id !== undefined && component.get(pair[1]) === id) said.set(id, [...(said.get(id) ?? []), pair])
+  }
+
   const out = new Map<Subject, Labels>()
   for (const [id, group] of members) {
     if (group.length === 1) {
@@ -185,8 +193,10 @@ export function partition(
       continue
     }
     const told = group.filter((subject) => known.get(subject)?.facts.size).sort()
-    const differ: [Subject, Subject][] = []
+    const differ: (readonly [Subject, Subject])[] = []
     for (const [i, a] of told.entries()) for (const b of told.slice(i + 1)) if (conflict(policy, known.get(a), known.get(b))) differ.push([a, b])
+    differ.push(...(said.get(id) ?? []))
+    differ.sort((x, y) => (x[0] === y[0] ? (x[1] < y[1] ? -1 : 1) : x[0] < y[0] ? -1 : 1))
     for (const piece of split(group, links.get(id) ?? [], apart.get(id) ?? [], policy, differ, known, onCut)) {
       let cluster = piece[0]!
       for (const subject of piece) if (subject < cluster) cluster = subject
@@ -196,7 +206,7 @@ export function partition(
   return out
 }
 
-function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subject][], policy: Policy, differ: [Subject, Subject][] = [], known: ReadonlyMap<Subject, Known> = new Map(), onCut?: (a: Subject, b: Subject) => void): Subject[][] {
+function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subject][], policy: Policy, differ: readonly (readonly [Subject, Subject])[] = [], known: ReadonlyMap<Subject, Known> = new Map(), onCut?: (a: Subject, b: Subject) => void): Subject[][] {
   const adjacency: Adjacency = new Map(members.map((member) => [member, new Map()]))
   for (const { a, b, score } of links) {
     adjacency.get(a)!.set(b, score)
