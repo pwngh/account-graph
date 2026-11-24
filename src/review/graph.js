@@ -63,7 +63,7 @@ function gathered(profile) {
   return { nodes: [...nodes.values()], edges: [...edges.values()] }
 }
 
-/** One step of the layout: everything pushes everything away, ties pull, and all of it drifts to the middle, as wide or as tall as the room is. */
+/** One step of the layout: everything pushes everything away, ties pull, and all of it drifts to the middle, as wide or as tall as the room is. `tall` is how much taller than wide that is. */
 function step(nodes, edges, heat, tall) {
   for (let i = 0; i < nodes.length; i++) {
     const a = nodes[i]
@@ -94,8 +94,8 @@ function step(nodes, edges, heat, tall) {
   }
   for (const node of nodes) {
     const home = node.role === 'me' ? 0.06 : 0.012
-    node.vx = (node.vx - node.x * home * (tall ? 2 : 1) * heat) * 0.62
-    node.vy = (node.vy - node.y * home * (tall ? 1 : 2) * heat) * 0.62
+    node.vx = (node.vx - node.x * home * (tall > 0.83 ? Math.max(2, 2 * tall * tall) : 1) * heat) * 0.62
+    node.vy = (node.vy - node.y * home * (tall > 0.83 ? 1 : 2) * heat) * 0.62
     if (node.held || drawn.pins.has(node.id)) node.vx = node.vy = 0
     node.x += node.vx
     node.y += node.vy
@@ -302,7 +302,7 @@ function route(nodes, edges, until = performance.now() + 250) {
   return stuck
 }
 /** Gives everything its room: names to their best side, then apart, lines around what is in their way, and wider only when that is not enough. */
-function settle(nodes, edges, tries = 40) {
+function settle(nodes, edges, tall, tries = 40) {
   // It is better to be a little untidy than not to answer a press.
   const until = performance.now() + 700
   for (const edge of edges) edge.bend = 0
@@ -315,8 +315,8 @@ function settle(nodes, edges, tries = 40) {
     if (performance.now() > until) return false
     for (const edge of edges) edge.bend = 0
     for (const [n, node] of nodes.entries()) {
-      node.x = node.x * 1.06 + (n % 3) - 1
-      node.y = node.y * 1.06 + (n % 2)
+      node.x = node.x * (tall > 1.2 ? 1.02 : 1.06) + (n % 3) - 1
+      node.y = node.y * (tall > 1.2 ? 1.08 : 1.06) + (n % 2)
     }
   }
   route(nodes, edges, until)
@@ -329,7 +329,7 @@ function ring(nodes, tall) {
   const inner = nodes.filter((node) => node.cluster === own)
   const round = (list, reach) => list.forEach((node, i) => {
     const turn = (i / list.length) * 2 * Math.PI - Math.PI / 2
-    node.x = Math.cos(turn) * reach * (tall ? 0.85 : 1.5)
+    node.x = Math.cos(turn) * reach * (tall > 1.2 ? 0.7 : tall > 0.83 ? 0.85 : 1.5)
     node.y = Math.sin(turn) * reach
   })
   const reach = Math.max(130, inner.length * 19)
@@ -411,6 +411,8 @@ function graphOf(profile, more) {
   let edges = []
   let byId = new Map()
   let size = { w: 0, h: 0 }
+  /** How much taller than wide the paper is. */
+  const tall = () => size.h / Math.max(1, size.w)
   let heat = 0
   let glide
   let running = false
@@ -467,6 +469,7 @@ function graphOf(profile, more) {
   function place(ease = false) {
     for (const node of nodes) {
       node.mark.setAttribute('transform', `translate(${node.x.toFixed(1)} ${node.y.toFixed(1)})`)
+      node.mark.dataset.side = node.side
       const [, name] = shapes(node)
       const anchor = node.side === 'right' ? 'start' : node.side === 'left' ? 'end' : 'middle'
       const x = name.x - node.x + (node.side === 'right' ? -name.w : node.side === 'left' ? name.w : 0)
@@ -522,7 +525,9 @@ function graphOf(profile, more) {
     const whole = Math.max(0.1, Math.min(1.25, w / (right - left + 56), h / (bottom - top + 48)))
     // Never so small that names cannot be read: the subject in the middle, and the rest by panning.
     const k = drawn.whole ? whole : Math.max(0.55, whole)
-    const [cx, cy] = k === whole ? [(left + right) / 2, (top + bottom) / 2] : [byId.get(me).x, byId.get(me).y]
+    // Where it does not fit, as near the subject as leaves no part of the paper empty.
+    const middle = (low, high, room, at) => (high - low <= room ? (low + high) / 2 : Math.max(low + room / 2, Math.min(high - room / 2, at)))
+    const [cx, cy] = [middle(left - 28, right + 28, w / k, byId.get(me).x), middle(top - 24, bottom + 24, h / k, byId.get(me).y)]
     return { k, x: w / 2 + (card.classList.contains('left') ? over.right : 0) - k * cx, y: h / 2 - k * cy }
   }
   /** Whether something was moved by hand since everything last had its room. */
@@ -530,7 +535,7 @@ function graphOf(profile, more) {
   function rest() {
     loose = false
     const start = nodes.map(({ x, y }) => ({ x, y }))
-    settle(nodes, edges)
+    settle(nodes, edges, tall())
     nodes.forEach((node, i) => {
       Object.assign(node, { start: start[i], end: { x: node.x, y: node.y } }, calm ? {} : start[i])
     })
@@ -556,7 +561,7 @@ function graphOf(profile, more) {
         if (t === 1) glide = undefined
       } else {
         if (heat > 0.02) {
-          step(nodes, edges, heat, size.w < size.h * 1.2)
+          step(nodes, edges, heat, tall())
           spread(nodes, [], 3)
           // With many, lines are straight while something moves, and bend again once it rests.
           if (nodes.length <= 40) route(nodes, edges)
@@ -609,9 +614,9 @@ function graphOf(profile, more) {
         // Two may have been given one place, which would never part them.
         nodes.forEach((node, i) => { if (!node.known) { node.x += i * 0.7; node.y += i * 0.3 } else node.held = keep })
         // Where nearly everyone is tied to everyone, a ring shows who and the lines cross in the middle, away from names.
-        if (thick && !keep) ring(nodes, size.w < size.h * 1.2)
-        else for (let i = 0, warm = 1; i < 320; i++, warm *= 0.985) step(nodes, edges, warm, size.w < size.h * 1.2)
-        const roomy = settle(nodes, edges)
+        if (thick && !keep) ring(nodes, tall())
+        else for (let i = 0, warm = 1; i < 320; i++, warm *= 0.985) step(nodes, edges, warm, tall())
+        const roomy = settle(nodes, edges, tall())
         // Where they were left may have no way out. Then they start over, as if none had a place.
         if (!roomy && starts === 1 && !keep && !again && !thick) {
           again = true
@@ -626,7 +631,7 @@ function graphOf(profile, more) {
       }
       nodes.forEach((node, i) => Object.assign(node, best.spots[i], { held: false }))
       edges.forEach((edge, i) => (edge.bend = best.bends[i]))
-    } else if (!crowding(nodes, []).next().done || route(nodes, edges) > 0) settle(nodes, edges)
+    } else if (!crowding(nodes, []).next().done || route(nodes, edges) > 0) settle(nodes, edges, tall())
     const roomy = edges.length <= 9
     lines.replaceChildren(...edges.map((edge) => {
       const width = edge.kind === 'apart' ? 1.5 : 1 + 2 * (edge.score ?? 0)

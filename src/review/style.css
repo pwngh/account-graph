@@ -440,7 +440,7 @@ dialog#ask { opacity: 0; transform: translateY(8px) scale(.985); transition: opa
 .graph .node text { paint-order: stroke; stroke: var(--card); stroke-width: 4px; stroke-linejoin: round; pointer-events: none; }
 .graph .name { font-size: .8125rem; font-weight: 600; } .graph .me .name { font-size: .875rem; font-weight: 600; }
 .graph .type { font-size: .75rem; fill: var(--muted); }
-.graph .small .type { display: none; }
+.graph .small .type { display: none; } .graph .small [data-side=above] .name { transform: translateY(14px); } .graph .small :is([data-side=left], [data-side=right]) .name { transform: translateY(7px); }
 .graph .alone { opacity: .25; }
 .graph .dimmed .node:not(.lit) { opacity: .22; } .graph .dimmed .edge:not(.lit) { opacity: .18; } .graph .dimmed .tag:not(.lit) { opacity: 0; }
 .graph .tools { display: flex; align-items: center; gap: 4px; }
@@ -455,7 +455,7 @@ dialog#ask { opacity: 0; transform: translateY(8px) scale(.985); transition: opa
 .graph .card .row { margin-top: 8px; }
 /* Narrow, the card stands under the paper, which would otherwise be mostly card. Full screen has room for both. */
 .graph.narrow:not(:fullscreen) .stage { height: auto; }
-.graph.narrow:not(:fullscreen) .stage > svg { height: 460px; }
+.graph.narrow:not(:fullscreen) .stage > svg { height: clamp(460px, var(--tall, 520px) - 60px, 640px); }
 .graph.narrow:not(:fullscreen) .card { position: relative; inset: auto; margin: 0 8px 8px; width: auto; max-height: none; box-shadow: none; }
 .graph.narrow:fullscreen.waiting .card { visibility: hidden; }
 .graph.narrow:fullscreen .card { top: auto; bottom: 8px; left: 8px; right: 8px; width: auto; max-height: 50%; }
