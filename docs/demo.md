@@ -17,7 +17,7 @@ npm run firm
 
 Docker downloads the database image once. After that the demo runs offline without keys, and includes its own ad platform and alert receiver. Every name, number, amount and address is fictional.
 
-The site is live. Open it with `?gclid=you&utm_id=30333` and its number becomes one from the pool, held for you while the page is open.
+The site is live. Open it with `?gclid=you&utm_id=30333` and its number becomes one from the pool, held for you while the page is open. The form and the text link work too: send the form and the contact it makes is on the Board.
 
 ## Setup
 
@@ -67,13 +67,14 @@ Costs per client depend on the day the demo runs, so do not read them out. Texts
 | 16 | The client's value restated, from 400 to 1,250 | Journey |
 | 17 | The other side of the matter with the same family phone and email, separated by the case system | Accounts |
 | 18 | A call to a map listing's number, without a page load, filed under that listing | Channels |
-| 19 | A parent and child on one phone: related without joining | Matches |
-| 20 | A night without calls: a stale feed and a delivered alert | Health |
+| 19 | The form on the site in place of a call, credited by the browser | Board |
+| 20 | A parent and child on one phone: related without joining | Matches |
+| 21 | A night without calls: a stale feed and a delivered alert | Health |
 
 ## Limitations
 
 - **Scale.** The demo has a few hundred people. See [Performance](performance.md) for measured speeds.
-- **Clock.** Scene 20 moves the clock forward fourteen hours. Run it last.
+- **Clock.** Scene 21 moves the clock forward fourteen hours. Run it last.
 - **Repeats.** Each scene runs once. Press R to start over.
 - **Firm systems.** Call answering, scheduling, texts, forms, signing and card payment belong to a firm's own systems. The demo shows made-up screens for them, and makes the requests such systems would, with each text as `POST /text`.
 - **Links.** The demo opens every link in the browser of the first visit. One opened in another browser is another visitor.
