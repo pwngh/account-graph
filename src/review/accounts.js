@@ -193,6 +193,7 @@ view('accounts', 'Accounts', async (box, subject) => {
       recent[0] && ['Last change', when(recent[0].at)],
       ['Record of decisions', audit.sound ? 'Whole' : 'Altered', audit.head ? `${amount(audit.head.seq)} ${audit.head.seq === 1 ? 'decision' : 'decisions'}` : 'no decision yet', audit.sound ? '' : 'apart'])))
     // It may have been forgotten since the list was read.
-    if (profile?.known) detail.append(el('section', {}, el('h2', {}, 'Largest cluster'), el('p', {}, open(profile.subject)), graphOf(profile, more)))
+    if (profile?.known) detail.append(el('section', {}, el('h2', {}, 'Largest cluster'), el('p', {}, open(profile.subject)), graphOf(profile, more),
+      around(profile).length > ROOM ? el('p', { class: 'muted' }, `${ROOM} of ${amount(around(profile).length)} are drawn.`) : ''))
   }
 }, { subject: true })
