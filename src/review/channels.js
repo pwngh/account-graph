@@ -111,6 +111,12 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
     : el('h2', {}, 'Campaigns'),
   report.currencies.length > 1 ? el('p', { class: 'apart' }, `Totals mix currencies: ${report.currencies.join(', ')}.`) : '',
   ...(report.rows.length > 3 ? [filters('Campaigns', table, [{ name: 'Source', at: 0 }])] : []), report.rows.length > 0 ? wide('Channels', table) : el('p', { class: 'muted' }, 'No campaign data in this period.'))
+  // The same numbers ranked, to see at a glance who brings what.
+  const brought = report.rows.filter((row) => row.source !== '(none)')
+  if (brought.length > 1) box.append(el('section', {}, el('h2', {}, 'Campaigns compared'), ranked('Campaigns compared', brought, (row) => [sourced(row.source), el('span', { class: 'ranked-what' }, row.campaign || row.campaignId || 'No campaign named')], [
+    ...(report.currencies.length <= 1 ? [['Value', (row) => row.value, cash], ['Cost', (row) => (row.costDays === 0 && row.cost === 0 && row.clicks === 0 ? null : row.cost), cash]] : []),
+    ['People', (row) => row.people, amount, false], ['Arrivals', (row) => row.visits, amount], ...stages.map((stage) => [stage, (row) => row.stages[stage]?.count ?? 0, amount]),
+  ])))
   box.append(campaigns)
   const reachedBy = (name) => (row) => row.stages[name]?.count ?? 0
   if (rows.length > 1) sortable('Campaigns', table, [(row) => row.source, (row) => row.campaign || row.campaignId || null, (row) => (row.source === '(none)' || (row.costDays === 0 && row.cost === 0 && row.clicks === 0) ? null : row.cost), (row) => (row.source === '(none)' || (row.costDays === 0 && row.cost === 0 && row.clicks === 0) ? null : row.clicks), (row) => row.visits,

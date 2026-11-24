@@ -149,8 +149,8 @@ view('calls', 'Calls', async (box, first, last) => {
       ['Waiting', total.waiting, total.calls, 'Result still expected.'], ['Unknown', total.unknown, total.calls, 'Answer not known.'],
       ['Returned', total.returned, lost, `Reached by callback after a miss or voicemail.${summary.returnedWithin === null ? '' : ` Half within ${lasted(summary.returnedWithin)}.`}`],
       ['Tried again', total.triedAgain, lost, 'Caller rang again and got through after a miss or voicemail.']].map(([name, count, whole, meaning], i) =>
-      el('tr', i === 5 ? { class: 'second' } : {}, td('', reviewDisplay.chip(name, reviewDisplay.callTone(name.toLowerCase()))), td('num', tally(count)),
-        td('num share', whole > 0 ? reviewDisplay.compare(percent(count / whole), count / whole) : none()), td('muted', meaning))))
+      behind(el('tr', i === 5 ? { class: 'second' } : {}, td('', reviewDisplay.chip(name, reviewDisplay.callTone(name.toLowerCase()))), td('num', tally(count)),
+        td('num share', whole > 0 ? percent(count / whole) : none()), td('muted', meaning)), whole > 0 ? count / whole : 0)))
   const results = el('section', {}, reviewDisplay.section('Call results', saved(`calls-${summary.from}-${summary.to}`, states)), wide('How calls went', states),
     notes('Returned and tried again are shares of missed calls and voicemail. Other shares are of all inbound calls.'))
   const placement = el('section', {}, el('h2', {}, 'How calls were placed'), parts('How calls were placed', [

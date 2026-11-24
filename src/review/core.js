@@ -537,6 +537,43 @@ const share = (part, whole) => (whole > 0 ? `${amount(part)} (${percent(part / w
 const caller = (subject) => reviewDisplay.subject(subject)
 // A menu is placed by where its button was, so it goes when the page moves under it.
 addEventListener('scroll', () => document.querySelector('.filter-menu:popover-open')?.hidePopover(), { passive: true })
+/** A row of a table with a bar of its share behind it. The share is said in the row. */
+const behind = (row, part) => {
+  row.classList.add('behind')
+  row.style.setProperty('--part', `${Math.max(0, Math.min(1, part)) * 100}%`)
+  return row
+}
+/** Which of a list's measures is shown, by the list's name, kept while the screen is open. */
+const measured = new Map()
+/**
+ * Rows ranked by a measure, each with a bar of its share behind its name, and
+ * a tab a measure. `measures` gives a name, what a row is worth (null when it
+ * is not known), the words for it, and false when one thing may be counted
+ * under two rows, so that a share would say what is not so. The bar only repeats the number.
+ */
+function ranked(label, rows, named, measures, most = 8) {
+  const tabs = el('div', { class: 'segments', role: 'group', 'aria-label': `${label}, by` })
+  const list = el('ol', { class: 'ranked', role: 'list' })
+  const foot = el('div', { class: 'ranked-foot' })
+  let all = false
+  const draw = () => {
+    const [name, value, words, shares = true] = measures.find(([each]) => each === measured.get(label)) ?? measures[0]
+    tabs.replaceChildren(...measures.map(([each]) => el('button', { type: 'button', 'data-key': `${label} by ${each}`, 'aria-pressed': String(each === name), on: { click: () => { measured.set(label, each); draw() } } }, each)))
+    const known = rows.filter((row) => value(row) !== null && value(row) > 0).sort((x, y) => value(y) - value(x))
+    const unknown = rows.filter((row) => value(row) === null).length
+    const top = Math.max(...known.map(value), 1)
+    const whole = known.reduce((sum, row) => sum + value(row), 0)
+    list.replaceChildren(...(all ? known : known.slice(0, most)).map((row) => {
+      const bar = el('i', { 'aria-hidden': 'true' })
+      bar.style.width = `${(100 * value(row)) / top}%`
+      return el('li', {}, bar, el('span', { class: 'ranked-name' }, ...named(row)), el('span', { class: 'ranked-share' }, !shares ? '' : value(row) / whole < 0.005 ? 'under 1%' : percent(value(row) / whole)), el('b', {}, words(value(row))))
+    }))
+    if (known.length === 0) list.replaceChildren(el('li', { class: 'muted' }, 'None.'))
+    foot.replaceChildren(known.length > most ? el('button', { type: 'button', on: { click: () => { all = !all; draw() } } }, all ? 'Show fewer' : `Show all ${amount(known.length)}`) : '', unknown > 0 ? el('span', { class: 'meta' }, `${amount(unknown)} not recorded`) : '')
+  }
+  draw()
+  return el('div', { class: 'ranked-box' }, tabs, list, foot)
+}
 /** A color of its own for a name, the same wherever it is shown. It only helps the eye: the name is always there. */
 const toneOf = (name) => `tone${[...name].reduce((sum, letter) => (sum * 31 + letter.codePointAt(0)) >>> 0, 7) % 6}`
 /** Where something came from: a letter in its color, which is drawn and not text, and its name. */
