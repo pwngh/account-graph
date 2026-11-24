@@ -403,7 +403,7 @@ export interface Between {
   /** Whether a reviewer keeps them apart. */
   apart: boolean
   /** The fact that says they are two people, under a policy that keeps people apart by it. Nobody decided it. */
-  conflict?: 'birth' | 'initial'
+  conflict?: 'birth'
   /** What the shared identifiers alone come to, 0 for none. */
   score: number
   reasons: Reason[]
@@ -569,7 +569,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     const out = new Map<Subject, Known>()
     if (!policy.apart?.length) return out
     for (let i = 0; i < subjects.length; i += TOGETHER) {
-      const edges = (await tx.edgesOf(subjects.slice(i, i + TOGETHER))).filter(({ identifier }) => /^(birth|initial|review):/.test(identifier))
+      const edges = (await tx.edgesOf(subjects.slice(i, i + TOGETHER))).filter(({ identifier }) => /^(birth|review):/.test(identifier))
       const states = await tx.states(unique(edges.map((edge) => edge.identifier).filter((identifier) => identifier.startsWith('review:'))))
       for (const [subject, facts] of knownOf(policy, edges, (identifier) => states.get(identifier)?.ignored ?? false)) out.set(subject, facts)
     }

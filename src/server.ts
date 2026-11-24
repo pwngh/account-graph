@@ -6,7 +6,7 @@ import type { CallOptions } from './calls.ts'
 import { Outdated } from './graph.ts'
 import type { Graph, PolicyState } from './graph.ts'
 import type { Hours } from './hours.ts'
-import { email, factKeys, hashPhone, identifier, ip, nameKeys, normalizePhone, phoneOfType, UNSTORABLE } from './identifiers.ts'
+import { birthKey, email, hashPhone, identifier, ip, nameKeys, normalizePhone, phoneOfType, UNSTORABLE } from './identifiers.ts'
 import { trusted } from './integrations/fingerprint.ts'
 import type { FingerprintVerifier } from './integrations/fingerprint.ts'
 import { placeOf, shared } from './integrations/maxmind.ts'
@@ -611,9 +611,9 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     if (body.dob !== undefined && typeof body.dob !== 'string') throw new Refusal(400, 'A date of birth is written YYYY-MM-DD')
     if (body.at !== undefined && !Number.isSafeInteger(body.at)) throw new Refusal(400, '`at` must be an integer in epoch milliseconds')
     if (identifiers.length === 0) throw new Refusal(400, 'At least one identifying field is required')
-    // Kept only under a policy that keeps people apart by them. They say who somebody is not, and not who they are.
-    const apart = options.identifierSecret && (body.name !== undefined || body.dob !== undefined) ? (await graph.policy()).rules.apart ?? [] : []
-    if (apart.length > 0) identifiers.push(...factKeys(options.identifierSecret!, { first: body.name?.first, dob: body.dob }).filter((key) => key.startsWith('birth:') || apart.includes('initial')))
+    // Kept only under a policy that keeps people apart by it. It says who somebody is not, and not who they are.
+    const born = options.identifierSecret && body.dob !== undefined && (await graph.policy()).rules.apart?.includes('birth') ? birthKey(options.identifierSecret, body.dob) : undefined
+    if (born) identifiers.push(born)
     return { identifiers, notes, at: (body.at ?? now()) as number }
   }
 

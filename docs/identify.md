@@ -133,6 +133,8 @@ To use names, set `IDENTIFIER_SECRET` and a policy with a `name` kind that only 
 | Keying | The key is an HMAC under `IDENTIFIER_SECRET`, because a plain hash of a guessable name can be reversed. Name keys are withheld from ad platforms. |
 | Cap | A key held by more than five people confirms no one. |
 
+Under a policy with [`apart`](deciding.md#facts-that-keep-people-apart), `dob` is also kept by itself, with or without a name, to tell two people apart. It links nothing.
+
 `notes.name` states whether the name was used, and the reason when it was not. A default `dob`, such as 1900-01-01, is ignored.
 
 ## Costs

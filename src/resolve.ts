@@ -99,9 +99,7 @@ export function knownOf(policy: Policy, edges: readonly Edge[], undone: (identif
   if (!policy.apart?.length) return out
   for (const { subject, identifier } of edges) {
     const kind = identifier.slice(0, identifier.indexOf(':'))
-    const fact = policy.apart.find((each) => each === kind)
-    // `birth` is read for an initial to be weighed against, whether or not it keeps anyone apart by itself.
-    if (!fact && kind !== 'birth' && !(kind === 'review' && !undone(identifier))) continue
+    if (!policy.apart.includes(kind as Fact) && !(kind === 'review' && !undone(identifier))) continue
     const known = out.get(subject) ?? { facts: new Map(), joins: new Set() }
     out.set(subject, known)
     if (kind === 'review') known.joins.add(identifier)
@@ -114,13 +112,10 @@ export function knownOf(policy: Policy, edges: readonly Edge[], undone: (identif
 export function conflict(policy: Policy, a: Known | undefined, b: Known | undefined): Fact | undefined {
   if (!a || !b || !policy.apart?.length) return undefined
   if ([...a.joins].some((identifier) => b.joins.has(identifier))) return undefined
-  /** Whether they agree on a fact, or undefined where one of them has none. */
-  const agree = (fact: Fact) => {
+  return policy.apart.find((fact) => {
     const [own, others] = [a.facts.get(fact), b.facts.get(fact)]
-    return own && others && [...own].some((value) => others.has(value))
-  }
-  if (policy.apart.includes('birth') && agree('birth') === false) return 'birth'
-  return policy.apart.includes('initial') && agree('initial') === false && agree('birth') !== true ? 'initial' : undefined
+    return own && others && ![...own].some((value) => others.has(value))
+  })
 }
 
 type Adjacency = Map<Subject, Map<Subject, number>>

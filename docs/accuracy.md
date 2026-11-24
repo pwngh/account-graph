@@ -230,6 +230,42 @@ Of the held seeds. A share is of counts pooled over the worlds. A comparison is 
 | Busy, `default pool` | More than 5% of the links by a tap or by a number shown are between two people |
 | Base, default and the option | Fewer than 98% of joined pairs are right. It is expected to be bad: shared browsers are not touched by this |
 
+### What was chosen
+
+The development seeds, 20270101 to 20270120, at `271997c9758852289e9f8cb63e47ca6db59efc3b`. Base, pooled, against 2% for each loss:
+
+| Option | Arm | Records mixed | Record pairs lost | Credit lost |
+| --- | --- | --- | --- | --- |
+| `birth` | default | 214 of 9,355 (2.29%) | 3 of 633 (0.47%) | 4 of 5,738 (0.07%) |
+| `birth` | household staff | 276 (2.95%) | 3 of 504 (0.60%) | 3 of 5,714 (0.05%) |
+| `initial` | default | 18 (0.19%) | 26 of 633 (4.11%) | 25 (0.44%) |
+| `initial` | household staff | 28 (0.30%) | 25 of 504 (4.96%) | 19 (0.33%) |
+| `both` | default | 14 (0.15%) | 27 of 633 (4.27%) | 26 (0.45%) |
+| `both` | household staff | 24 (0.26%) | 26 of 504 (5.16%) | 20 (0.35%) |
+
+`birth` is the only one within the losses. Three were tried, and the two that mix fewest records were not chosen. That is the rule's doing, and no evidence against them. They are not in the product.
+
+### Results of the second run
+
+The held seeds, once, at that commit with Node v22.23.0. **Four of the eight results written down came out bad.**
+
+| Written as bad | Came out |
+| --- | --- |
+| Base, default and `birth`: over 1% of people with a record share a cluster with somebody else's | **Bad.** 220 of 9,434 (2.33%) under default, 261 (2.77%) under household staff |
+| High, `birth`: over 2.5% share one, or over 5% of the pairs or the credit are lost | **Bad** for the first. 388 of 11,908 (3.26%) and 573 (4.81%). Lost: pairs 1.89% and 2.82%, credit 0.24% and 0.13% |
+| Busy, pool: over 5% of the links by a tap or a number shown are between two people | **Bad.** 888 of 10,668 (8.3%) |
+| Base, default and `birth`: fewer than 98% of joined pairs are right | **Bad**, as expected. 95.27% |
+| Base, `birth` beside its arm, people whose record is with another's: not below zero over the whole interval | Held. -0.59 points (-0.79 to -0.39) under default, -0.79 (-1.00 to -0.58) under household staff |
+| Base, `birth`: over 2% of the pairs of records, or of the credit, lost | Held. Pairs 5 of 584 (0.86%) and 6 of 446 (1.35%); the second's interval by the mean reaches 2.27, so it is close. Credit 4 of 5,808 and 4 of 5,745 (0.07%) |
+| Base and high, `birth`: more callers and browsers on the wrong side | Held. -2.85, -3.60, -5.35 and -11.75 pairs a world |
+| Base, household staff: fewer than 70% of the true pairs of records and callers found | Held. 75.32% |
+
+All that was printed is in [accuracy-held.txt](accuracy-held.txt), and the development run in [accuracy-dev.txt](accuracy-dev.txt). In both, `exhausted` counts requests that got no number for any reason, and not only a full pool.
+
+**Staff joins raise records mixed.** Base goes from 2.93% to 4.03% under the default policy and from 2.91% to 3.56% under household, and high to 7.88% under default, because staff join a speaker to the record they spoke for. With `birth`, household staff comes back to 2.77% in base. If staff join callers, turn `birth` on.
+
+**A pool mixes more people in base, low and high.** People mixed by anything go up 2.05, 1.22 and 2.15 points, and in base joined pairs right go from 94.68% to 88.38%. Records with another's do not change. In busy, people mixed go down 0.22 points and true pairs found up from 57.63% to 68.15%. Records credited to their ad go from 64.63% to 71.29% in base, with 38 of 5,808 (0.65%) of those credited without it lost. Looked at after the run, on six of the base seeds: 12.6% of the `lease` links are wrong with calls again on the number shown before, and 1.0% without them.
+
 ## Limitations
 
 - Most rates are assumed. Under `high`, every one is at its hard end at once.

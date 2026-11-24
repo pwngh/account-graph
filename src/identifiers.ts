@@ -120,17 +120,11 @@ export function nameKeys(secret: string, first: string, last: string, known: { z
   return keys
 }
 
-/**
- * What cannot be two people's: the date of birth, and the first letter of the
- * first name. Each is a key of its own, and links nothing. There are 26 letters,
- * so a letter's key hides little from whoever has the tables.
- */
-export function factKeys(secret: string, { first, dob }: { first?: string | undefined; dob?: string | undefined }): Identifier[] {
-  if (typeof secret !== 'string' || secret.length < 32) throw new TypeError('A fact key requires a secret of at least 32 characters')
-  const key = (kind: string, value: string): Identifier => `${kind}:${createHmac('sha256', secret).update(JSON.stringify([kind, value])).digest('hex')}`
-  const name = normalizeName(first ?? '')
+/** The key of a date of birth, by which two people are told apart. It links nothing, and is made with a secret because dates are few enough to guess. */
+export function birthKey(secret: string, dob: string | undefined): Identifier | undefined {
+  if (typeof secret !== 'string' || secret.length < 32) throw new TypeError('A birth key requires a secret of at least 32 characters')
   const born = birthday(dob)
-  return [...(born ? [key('birth', born)] : []), ...(name.length > 1 && !NOBODYS.has(name) ? [key('initial', name[0]!)] : [])]
+  return born && `birth:${createHmac('sha256', secret).update(JSON.stringify(['birth', born])).digest('hex')}`
 }
 
 /** A date of birth that is one, or undefined: a date that systems write where none was given is nobody's birthday. */

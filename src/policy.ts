@@ -23,9 +23,9 @@ export interface Rule {
   corroborates?: true
 }
 
-/** A fact about somebody that links nothing: the date of birth, and the first letter of the first name. */
-export type Fact = 'birth' | 'initial'
-export const FACTS: readonly Fact[] = ['birth', 'initial']
+/** A fact about somebody that links nothing: the date of birth. */
+export type Fact = 'birth'
+export const FACTS: readonly Fact[] = ['birth']
 
 export interface Policy {
   /** At or above this score two subjects join one cluster. */
@@ -41,9 +41,8 @@ export interface Policy {
    */
   unnamed?: readonly string[]
   /**
-   * Facts that no two values of are one person's: `birth`, and `initial`. Two subjects of one group that both have such a
-   * fact and share no value of it are kept apart, whatever joins them, unless a reviewer or a system joined the two. An
-   * `initial` keeps apart nobody whose births agree. Left out, nothing is.
+   * Facts that no two values of are one person's: `birth`. Two subjects of one group that both have such a fact and share
+   * no value of it are kept apart, whatever joins them, unless a reviewer or a system joined the two. Left out, nobody is.
    */
   apart?: readonly Fact[]
   /** A cluster with more members than this is flagged for review. */
@@ -112,9 +111,8 @@ export const defaultPolicy: Policy = {
     text: { weight: 0.95, dilution: 0, cap: 2, halfLife: Infinity },
     // A note, not evidence: where an address places a visit. It links nothing.
     place: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
-    // Notes, not evidence: what is known of a person that cannot be two people's. They link nothing.
+    // A note, not evidence: what is known of a person that cannot be two people's. It links nothing.
     birth: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
-    initial: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     // A note, not evidence: the number a visitor tapped, or a call that was recorded. It links nothing.
     dialed: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
   },
@@ -138,7 +136,7 @@ export function policyProblems(given: unknown): string[] {
   for (const name of Object.keys(given)) if (name !== 'kinds' && name !== 'review' && name !== 'apart' && !(LEVELS as readonly string[]).includes(name)) wrong.push(`"${name}" is not a setting`)
   for (const name of LEVELS) if (given[name] !== undefined && !number(given[name], 0, 1)) wrong.push(`"${name}" must be a number from 0 to 1`)
   if (given.review !== undefined && !(Number.isSafeInteger(given.review) && given.review > 0)) wrong.push('"review" must be a positive integer')
-  if (given.apart !== undefined && !(Array.isArray(given.apart) && given.apart.every((fact: unknown) => FACTS.includes(fact as Fact)))) wrong.push(`"apart" must be a list of ${FACTS.map((fact) => `"${fact}"`).join(' and ')}`)
+  if (given.apart !== undefined && !(Array.isArray(given.apart) && given.apart.every((fact: unknown) => FACTS.includes(fact as Fact)))) wrong.push('"apart" must be a list of facts, such as ["birth"]')
   if (given.kinds !== undefined && !plain(given.kinds)) wrong.push('"kinds" must be an object of rules')
   else {
     for (const [kind, rule] of Object.entries(given.kinds ?? {})) {

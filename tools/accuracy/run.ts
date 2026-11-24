@@ -39,17 +39,13 @@ export const ARMS = {
   'default staff': { staff: true },
   'default pool': { pool: true },
   'default birth': { policy: { apart: ['birth'] } },
-  'default initial': { policy: { apart: ['initial'] } },
-  'default both': { policy: { apart: ['birth', 'initial'] } },
   'household staff birth': { policy: { ...HOUSEHOLD, apart: ['birth'] }, staff: true },
-  'household staff initial': { policy: { ...HOUSEHOLD, apart: ['initial'] }, staff: true },
-  'household staff both': { policy: { ...HOUSEHOLD, apart: ['birth', 'initial'] }, staff: true },
 } satisfies Record<string, { policy?: object; staff?: boolean; pool?: boolean }>
 export type Arm = keyof typeof ARMS
 /** What each arm is compared with over the same worlds. */
 const BESIDE: Partial<Record<Arm, Arm>> = {
-  'household staff': 'household', 'default staff': 'default', 'default pool': 'default', 'default birth': 'default', 'default initial': 'default', 'default both': 'default',
-  'household staff birth': 'household staff', 'household staff initial': 'household staff', 'household staff both': 'household staff',
+  'household staff': 'household', 'default staff': 'default', 'default pool': 'default', 'default birth': 'default',
+  'household staff birth': 'household staff',
 }
 
 /** Whether each record's ad is credited: the ad its person came by, another's, or none. Cold records have none to credit. */

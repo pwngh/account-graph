@@ -57,7 +57,7 @@ Notes give no evidence and link nothing.
 
 Every subject reachable over `same` links forms a component. Three cuts, applied in order, divide a component into clusters.
 
-1. **Separated pairs.** The direct link of each separated pair is removed.
+1. **Separated pairs.** The direct link of each separated pair is removed, and of each pair whose [facts differ](#facts-that-keep-people-apart).
 2. **Paths between separated pairs.** If the two are still connected through others, the weakest set of links between them is cut. Strengths add up, so two weak links outweigh one.
 3. **Weak bridges.** A link below 0.97 (`bridge`) cannot be the sole connection between two groups of two or more subjects. The weakest is cut first, until none remains. It may still add a single subject to a group. A group that names nobody, made only of browsers and phone numbers that called (`visitor:`, `caller:` and `call:`), then goes back to the named group it was cut from, if there is exactly one. With none or several, it stays apart.
 
@@ -73,6 +73,34 @@ A cluster above 50 members (`review`) is flagged `oversized`. Clusters that larg
 | Weak bridges | Links below `bridge` are removed as described above. | The rule is off when `bridge` is at or below `same`. |
 
 A component of tens of thousands indicates a shared identifier to cap or mute.
+
+## Facts that keep people apart
+
+Two records can share an email and a phone and still be two people. A policy can keep them apart by a date of birth:
+
+```json
+{ "apart": ["birth"] }
+```
+
+```text
+contact:1 { email, born 1980-02-03 } ──┐
+                                       ├─ share an email, born on two days ──▶ kept apart, shown as related
+contact:2 { email, born 1984-07-01 } ──┘
+```
+
+With `IDENTIFIER_SECRET` set, the server then keeps a keyed `birth` of each `dob` sent to [`/identify`](identify.md), as a note that links nothing. Two subjects that would be in one group, both have a `birth`, and share no value of it are kept apart, whatever path joins them.
+
+| Point | Behavior |
+| --- | --- |
+| One of them has no date | Nothing is said. |
+| A reviewer's join, or a join from your own systems | Overrules it, whichever came first. Undoing the join gives the fact back. |
+| Where it shows | In `/links`, `/between`, `/match` and Matches, as related with `conflict: "birth"`, however high the score. Credit does not cross it. |
+| Where it does not | `/conflicts`, kept-apart lists, disputes and the audit log. Nobody decided it. |
+| A corrected date | The record keeps both values, so it is kept apart from neither, until it is forgotten. |
+| Shared browsers and callers | They go with one of the two, as after a separation. |
+| Turning it on | Rebuild once. Dates sent before are not known: send them again. |
+
+It is off unless a policy lists it, and no preset does. On made-up people it keeps about one mixed record in five apart, at under 1% of the true pairs, and more where staff join callers to records. See [Accuracy](accuracy.md#the-second-run), where it is still far from its bar.
 
 ## Model assumptions
 
