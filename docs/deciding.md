@@ -16,7 +16,7 @@ Scores depend only on stored data, never on the current time or on arrival order
 | --- | --- | --- | --- | --- |
 | `review` | 1.00 | 100 | none | A reviewer joined these by hand |
 | `passkey` | 0.99 | 5 | none | A passkey's credential id, after your server verified the sign-in |
-| `email` | 0.99 | 25 | none | Stored as the SHA-256 Google also accepts |
+| `email` | 0.99 | 10 | none | Stored as the SHA-256 Google also accepts |
 | `device` | 0.98 | 10 | none | First-party cookie or install id |
 | `payment` | 0.97 | 10 | none | Card or bank token |
 | `fingerprint` | 0.97 | 20 | 720 days | Vendor visitor id the server confirmed |
@@ -24,9 +24,9 @@ Scores depend only on stored data, never on the current time or on arrival order
 | `carry` | 0.95 | 4 | none | A visitor who followed a link from another of your sites, proven by a token made for that browser. Thins when one token is used by several |
 | `link` | 0.92 | 5 | none | A link sent to one person, opened in this browser. Thins as more people's links are opened there |
 | `dial` | 0.92 | 2 | none | A phone call that began just after exactly one visitor tapped its number |
-| `phone` | 0.90 | 25 | none | A mobile or landline |
+| `phone` | 0.90 | 10 | none | A mobile or landline. Thins as more subjects share it: alone it joins two, relates three, and reports nothing among four or more |
 | `address` | 0.60 | 10 | none | A postal address confirmed to the door. A household, not a person |
-| `voip` | 0.50 | 25 | none | A number from an internet calling app, which anyone can get and drop |
+| `voip` | 0.50 | 10 | none | A number from an internet calling app, which anyone can get and drop. Thins as more share it |
 | `ga` | 0.90 | 10 | none | Google Analytics client id |
 | `canvas` | 0.50 | 20 | 45 days | Browser hash nothing confirmed |
 | `ip` | 0.30 | 10 | 14 days | IPv6 is kept as its /64 |
@@ -48,7 +48,7 @@ A cluster with more than 50 members is flagged `oversized`. A cluster that big i
 
 ## What the weights rest on
 
-The fingerprint, canvas, and address rows are set from how these identifiers behave in production, measured where the person behind each visit was known.
+The fingerprint, canvas, and `ip` rows are set from how these identifiers behave in production, measured where the person behind each visit was known.
 
 | Identifier | Values that only ever belonged to one person | Same person on the next sighting, by days since the last |
 | --- | --- | --- |
@@ -62,9 +62,9 @@ Three things follow, and the defaults encode each.
 - **A home-made hash is a coin flip.** Phones of one model share it. It can relate two subjects, never join them. Attribution that rests on it alone is wrong about half the time.
 - **A few identifiers are shared by crowds.** A handful of fingerprints, each shared by more than twenty people, can produce most of the same-fingerprint pairs, and under 2% of those pairs are one person. Without a cap, those few values would merge hundreds of strangers.
 
-An address shared by exactly two people points at the same one about 42% of the time, and by three to five people about 9%. That is why its evidence thins with the square of how many share it.
+An IP address shared by exactly two people points at the same one about 42% of the time, and by three to five people about 9%. That is why its evidence thins with the square of how many share it.
 
-The other rows are priors. `measure` and `fit` compute the real values from pairs you have confirmed by hand.
+The other rows are priors, the postal `address` among them: no measurement stands behind its 0.60. `measure` and `fit` compute the real values from pairs you have confirmed by hand.
 
 ## Changing the settings
 

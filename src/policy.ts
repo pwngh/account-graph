@@ -27,7 +27,7 @@ export interface Policy {
 const DAY = 86_400_000
 
 /**
- * Default weights. The fingerprint, canvas, and address rows are set from how
+ * Default weights. The fingerprint, canvas, and ip rows are set from how
  * these identifiers behave in production, where the person behind each
  * sighting was known:
  *
@@ -36,13 +36,13 @@ const DAY = 86_400_000
  *   days, 95% at 31 to 90 days, and 86% past 90.
  * - A home-made canvas and user-agent hash belongs to one person about half
  *   the time: 55% within a week, 23% at 31 to 90 days, 7% past 90.
- * - An address shared by exactly two people points at the same one about 42%
+ * - An IP address shared by exactly two people points at the same one about 42%
  *   of the time, and by three to five people about 9%. It holds for a day
  *   (89%) and is mostly gone in a month (37%).
  * - A handful of fingerprints are each shared by more than twenty people,
  *   and under 2% of the pairs they produce are one person. Hence the caps.
  *
- * Other rows are priors. Measure your own traffic with `measure` or `fit`,
+ * Other rows are priors, the postal address among them. Measure your own traffic with `measure` or `fit`,
  * set the weights, and call `rebuild`.
  */
 export const defaultPolicy: Policy = {
@@ -55,10 +55,11 @@ export const defaultPolicy: Policy = {
     review: { weight: 1, dilution: 0, cap: 100, halfLife: Infinity },
     // A passkey's credential id, after your server verified the sign-in. Bound to one device or one person's keychain.
     passkey: { weight: 0.99, dilution: 0, cap: 5, halfLife: Infinity },
-    email: { weight: 0.99, dilution: 0, cap: 25, halfLife: Infinity },
-    phone: { weight: 0.9, dilution: 0, cap: 25, halfLife: Infinity },
+    email: { weight: 0.99, dilution: 0, cap: 10, halfLife: Infinity },
+    // Alone it joins two subjects, relates three, and says nothing of four or more: a household or a front desk is as likely.
+    phone: { weight: 0.9, dilution: 1, cap: 10, halfLife: Infinity },
     // A number from an internet calling app, which anyone can get and drop in a minute. A carrier lookup tells it from a real line.
-    voip: { weight: 0.5, dilution: 0, cap: 25, halfLife: Infinity },
+    voip: { weight: 0.5, dilution: 1, cap: 10, halfLife: Infinity },
     // A postal address the postal service confirmed down to the apartment. It names a household, not a person.
     address: { weight: 0.6, dilution: 1, cap: 10, halfLife: Infinity },
     payment: { weight: 0.97, dilution: 0, cap: 10, halfLife: Infinity },

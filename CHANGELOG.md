@@ -62,6 +62,7 @@
 
 ### Changed
 
+- Breaking: in `defaultPolicy`, `phone` and `voip` thin as more subjects share them (dilution 1), and `phone`, `email` and `voip` link nothing past 10 subjects. Run `rebuild`, or keep the earlier rules with `POLICY`.
 - Breaking: `GET /verify` answers `{ changes, policy }`, not a list.
 - A server whose database holds an identifier of a kind the policy does not name refuses to start.
 
