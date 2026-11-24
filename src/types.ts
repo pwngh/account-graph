@@ -348,7 +348,12 @@ export interface OutcomeValue {
   currency: string
   /** When it was written down, in epoch milliseconds. 0 when that is not known: a value kept from before there was a history. */
   at: number
+  /** Why it changed, where that was said: money given back, or money that will not come. Without it, what was known was corrected. */
+  kind?: Loss
 }
+
+/** A reason an outcome came to be worth less. */
+export type Loss = 'refund' | 'write_off'
 
 /** What outcomes were worth when they were first recorded, and what they are worth now. */
 export interface ValueChange {
@@ -356,8 +361,11 @@ export interface ValueChange {
   /** Of outcomes whose first value is known. `firstUnknown` counts the others, which are in none of this sum. */
   first: number
   firstUnknown: number
-  /** What all of them are worth now. */
+  /** What all of them are worth now: net of the two below. */
   now: number
+  /** Of what they were worth, how much was given back, and how much will not come, where a change of value said so. */
+  refunded: number
+  writtenOff: number
   /** How many were worth something once and are worth nothing now. */
   zeroed: number
 }

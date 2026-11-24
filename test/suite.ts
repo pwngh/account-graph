@@ -488,14 +488,14 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       ])
       assert.deepEqual(line('google', '111'), {
         source: 'google', campaignId: '111', campaign: 'Spring sale', cost: 60.3, clicks: 42, impressions: 1300, visits: 1, missed: 0, notLeads: 0,
-        stages: { inquiry: { count: 1, value: 5, people: 1, delay: { count: 1, median: 0.1, p95: 0.1, inside: 1 } }, enrolled: { count: 1, value: 200, people: 1, delay: { count: 1, median: 2, p95: 2, inside: 1 } } }, outcomes: 2, value: 205, people: 1, worth: { outcomes: 2, first: 205, now: 205, zeroed: 0, firstUnknown: 0 },
+        stages: { inquiry: { count: 1, value: 5, people: 1, delay: { count: 1, median: 0.1, p95: 0.1, inside: 1 } }, enrolled: { count: 1, value: 200, people: 1, delay: { count: 1, median: 2, p95: 2, inside: 1 } } }, outcomes: 2, value: 205, people: 1, worth: { outcomes: 2, first: 205, now: 205, refunded: 0, writtenOff: 0, zeroed: 0, firstUnknown: 0 },
         // Cost data for two of three days. The enrollment on the third is not set against their cost.
         costDays: 2, missingDays: 1, thin: false, costPerOutcome: 60.3, returnOnCost: 0.082919,
       })
       // The Meta touch named its campaign only by name, in another case, and its source by an alias.
       assert.deepEqual(line('meta', '777'), {
         source: 'meta', campaignId: '777', campaign: 'Retarget', cost: 15, clicks: 9, impressions: 0, visits: 1, missed: 0, notLeads: 0,
-        stages: { enrolled: { count: 1, value: 150.5, people: 1, delay: { count: 1, median: 1, p95: 1, inside: 1 } } }, outcomes: 1, value: 150.5, people: 1, worth: { outcomes: 1, first: 200, now: 150.5, zeroed: 0, firstUnknown: 0 },
+        stages: { enrolled: { count: 1, value: 150.5, people: 1, delay: { count: 1, median: 1, p95: 1, inside: 1 } } }, outcomes: 1, value: 150.5, people: 1, worth: { outcomes: 1, first: 200, now: 150.5, refunded: 0, writtenOff: 0, zeroed: 0, firstUnknown: 0 },
         // One day of three is too few to say what anything cost.
         costDays: 1, missingDays: 2, thin: true, costPerOutcome: null, returnOnCost: null,
       })
@@ -503,7 +503,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(counts(line('(none)', '')!.stages), { enrolled: { count: 1, value: 200 } })
       assert.deepEqual(report.total, {
         cost: 81.3, clicks: 51, impressions: 1300, visits: 3, missed: 0, notLeads: 0,
-        stages: { inquiry: { count: 2, value: 10, people: 2, delay: { count: 2, median: 0.1, p95: 0.1, inside: 1 } }, enrolled: { count: 3, value: 550.5, people: 3, delay: { count: 2, median: 1.5, p95: 2, inside: 1 } } }, outcomes: 5, value: 560.5, people: 4, worth: { outcomes: 5, first: 610, now: 560.5, zeroed: 0, firstUnknown: 0 },
+        stages: { inquiry: { count: 2, value: 10, people: 2, delay: { count: 2, median: 0.1, p95: 0.1, inside: 1 } }, enrolled: { count: 3, value: 550.5, people: 3, delay: { count: 2, median: 1.5, p95: 2, inside: 1 } } }, outcomes: 5, value: 560.5, people: 4, worth: { outcomes: 5, first: 610, now: 560.5, refunded: 0, writtenOff: 0, zeroed: 0, firstUnknown: 0 },
         // Of the campaigns with enough cost data alone: never all spend over all outcomes.
         costDays: 2, missingDays: 1, thin: false, costPerOutcome: 60.3, returnOnCost: 0.082919,
       })
@@ -962,12 +962,12 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await graph.values('nobody'), [])
       const report = await graph.report({ from: '2026-02-01', to: '2026-03-31' })
       const line = report.rows.find((row) => row.campaignId === '111')!
-      assert.deepEqual(line.worth, { outcomes: 3, first: 600, now: 620.5, zeroed: 1, firstUnknown: 0 })
+      assert.deepEqual(line.worth, { outcomes: 3, first: 600, now: 620.5, refunded: 0, writtenOff: 0, zeroed: 1, firstUnknown: 0 })
       assert.equal(line.value, line.worth.now)
-      assert.deepEqual(report.total.worth, { outcomes: 4, first: 700, now: 720.5, zeroed: 1, firstUnknown: 0 })
+      assert.deepEqual(report.total.worth, { outcomes: 4, first: 700, now: 720.5, refunded: 0, writtenOff: 0, zeroed: 1, firstUnknown: 0 })
       assert.deepEqual(report.months, [
-        { month: '2026-02', outcomes: 3, first: 500, now: 520.5, zeroed: 1, firstUnknown: 0 },
-        { month: '2026-03', outcomes: 1, first: 200, now: 200, zeroed: 0, firstUnknown: 0 },
+        { month: '2026-02', outcomes: 3, first: 500, now: 520.5, refunded: 0, writtenOff: 0, zeroed: 1, firstUnknown: 0 },
+        { month: '2026-03', outcomes: 1, first: 200, now: 200, refunded: 0, writtenOff: 0, zeroed: 0, firstUnknown: 0 },
       ])
       // Taken out of the report and back, it goes on from the value it had.
       await graph.withdraw('s4')
@@ -994,6 +994,52 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await read('s1')).length, 3)
       await graph.forget('lead:1')
       assert.deepEqual([await read('s1'), await read('s2'), (await read('s3')).length], [[], [], 1])
+    })
+
+    test('what was refunded and written off is counted apart from what was corrected', async () => {
+      const clock = { now: Date.parse('2026-03-02T12:00:00Z') }
+      const { graph } = await fresh(undefined, { now: () => clock.now })
+      await graph.touch({ subject: 'lead:1', at: clock.now - HOUR, gclid: 'G', campaignId: '111' })
+      for (const [id, subject] of [['s1', 'lead:1'], ['s2', 'lead:1'], ['s3', 'lead:2']] as const) await graph.outcome({ transactionId: id, subject, at: clock.now, stage: 'client', value: 200, currency: 'USD' })
+      const worth = async () => (await graph.report({ from: '2026-03-02', to: '2026-03-02' })).total.worth
+      // What was collected, then some given back, twice, and the rest never paid.
+      await graph.restate('s1', 350)
+      await graph.restate('s1', 300, undefined, 'refund')
+      await graph.restate('s1', 299.9, 'USD', 'refund')
+      await graph.restate('s1', 100, 'USD', 'write_off')
+      await graph.restate('s2', 0, undefined, 'refund')
+      await graph.restate('s3', 150)
+      assert.deepEqual((await graph.values('s1')).map((each) => [each.value, each.kind]), [[200, undefined], [350, undefined], [300, 'refund'], [299.9, 'refund'], [100, 'write_off']])
+      assert.deepEqual(await worth(), { outcomes: 3, first: 600, now: 250, refunded: 250.1, writtenOff: 199.9, zeroed: 1, firstUnknown: 0 })
+      const report = await graph.report({ from: '2026-03-02', to: '2026-03-02' })
+      assert.deepEqual(report.rows.find((row) => row.campaignId === '111')!.worth, { outcomes: 2, first: 400, now: 100, refunded: 250.1, writtenOff: 199.9, zeroed: 1, firstUnknown: 0 })
+      assert.deepEqual(report.months.map((each) => [each.month, each.refunded, each.writtenOff]), [['2026-03', 250.1, 199.9]])
+      // Said again, it counts once. A journey says why.
+      await graph.restate('s2', 0, undefined, 'refund')
+      assert.equal((await worth()).refunded, 250.1)
+      assert.deepEqual((await graph.journey('lead:1')).entries.flatMap((entry) => (entry.kind === 'value' && entry.transactionId === 's2' ? [entry.to.kind] : [])), ['refund'])
+      // One said by mistake is taken back, and no more than was said: the rest was no refund.
+      await assert.rejects(graph.restate('s3', 160, undefined, 'refund'), /not had that much refunded/)
+      await assert.rejects(graph.restate('s1', 301, undefined, 'write_off'), /not had that much written off/)
+      await assert.rejects(graph.restate('s3', 100, 'CAD', 'refund'), /currency/)
+      await assert.rejects(graph.restate('s3', 100, undefined, 'gift' as never), /`refund` or a `write_off`/)
+      assert.equal((await graph.values('s3')).at(-1)!.value, 150)
+      await graph.restate('s1', 299.9, undefined, 'write_off')
+      await graph.restate('s2', 200, undefined, 'refund')
+      assert.deepEqual(await worth(), { outcomes: 3, first: 600, now: 649.9, refunded: 50.1, writtenOff: 0, zeroed: 0, firstUnknown: 0 })
+      // In another currency now, what was lost in the one before stays in the sum, and the report says which it adds up.
+      // It cannot be taken back in the new one.
+      await graph.restate('s1', 250, 'CAD')
+      await graph.restate('s1', 240, undefined, 'refund')
+      await assert.rejects(graph.restate('s1', 251, undefined, 'refund'), /not had that much refunded/)
+      await graph.restate('s1', 250, undefined, 'refund')
+      await graph.restate('s1', 250, 'EUR')
+      assert.equal((await worth()).refunded, 50.1)
+      assert.deepEqual((await graph.report({ from: '2026-03-02', to: '2026-03-02' })).currencies, ['CAD', 'EUR', 'USD'])
+      assert.equal(await graph.restate('nobody', 1, undefined, 'refund'), false)
+      // Forgotten with the rest of their values, and an outcome nobody changed has none.
+      await graph.forget('lead:1')
+      assert.deepEqual(await worth(), { outcomes: 1, first: 200, now: 150, refunded: 0, writtenOff: 0, zeroed: 0, firstUnknown: 0 })
     })
 
     test('the report is broken down by what an arrival said, what is known of an outcome, and when it happened', async () => {

@@ -231,6 +231,7 @@ The last column is the median of 300, one at a time. The two larger graphs were 
 - The report credits the newest strong touch with the whole outcome, and is worked out each time it is asked for.
 - Without call results, a call is counted by its length, which a queue hang-up can reach. Platforms that cannot restate keep a conversion sent for a call that turned out missed.
 - What is marked as no lead is taken at its word. Ad platforms that cannot restate keep what they were sent.
+- A refund or a write-off is counted where a change of value says so. A platform is told the new value, not why.
 - A return your own system reports is taken at its word. It is marked, and counted apart.
 - Opening hours are one week and a list of days closed. They do not differ by office or by line.
 - A quiet feed is noticed by hours without a record, so a feed that still sends something wrong is not.

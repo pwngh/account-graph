@@ -41,6 +41,7 @@ import type {
   Labels,
   Lease,
   Link,
+  Loss,
   Moved,
   NotLead,
   Observation,
@@ -129,8 +130,13 @@ export interface Graph {
    * id stands; `restate` changes its value. Resolves to false when the id was already recorded.
    */
   outcome(outcome: Outcome): Promise<boolean>
-  /** Changes the value of a recorded outcome: a refund, or what was actually paid. Resolves to false for an unknown id. */
-  restate(transactionId: string, value: number, currency?: string): Promise<boolean>
+  /**
+   * Changes the value of a recorded outcome: a refund, a write-off, or, without
+   * a kind, what was actually paid. The value is what it is worth after. A kind
+   * may raise the value only to take back what was said with the same kind.
+   * Resolves to false for an unknown id.
+   */
+  restate(transactionId: string, value: number, currency?: string, kind?: Loss): Promise<boolean>
   /** Takes a recorded outcome out of the report: it turned out not to have happened. Resolves to false for an unknown id. */
   withdraw(transactionId: string): Promise<boolean>
   /** Every value a recorded outcome has had, oldest first. */
@@ -707,9 +713,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
   }
 
   /** Adds an outcome's value to its history, unless it is the one it already has. */
-  async function revalue(tx: Tx, { transactionId, subject, value, currency }: Counted): Promise<void> {
+  async function revalue(tx: Tx, { transactionId, subject, value, currency }: Counted, kind?: Loss): Promise<void> {
     const last = (await tx.valuesOf(transactionId, subject)).at(-1)
-    if (last?.value !== value || last.currency !== currency) await tx.addValue(transactionId, subject, { value, currency, at: now() })
+    if (last?.value !== value || last.currency !== currency) await tx.addValue(transactionId, subject, { value, currency, at: now(), ...(kind && { kind }) })
   }
 
   /** Refuses text the database cannot keep, before anything is written. */
@@ -853,16 +859,27 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       })
     },
 
-    async restate(transactionId, value, currency) {
+    async restate(transactionId, value, currency, kind) {
       if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) throw new TypeError('A restated value must be zero or more')
       if (currency !== undefined && typeof currency !== 'string') throw new TypeError('A restated currency must be text')
+      if (kind !== undefined && kind !== 'refund' && kind !== 'write_off') throw new TypeError('A value changes for a `refund` or a `write_off`, or for neither')
       keepable(transactionId, currency)
       return store.write(async (tx) => {
         const found = await tx.outcomeOf(transactionId)
         if (!found) return false
+        if (kind !== undefined) {
+          if (currency && currency !== found.currency) throw new TypeError('A refund or a write-off is in the currency the outcome is in')
+          // One said by mistake is taken back by saying it the other way, and no more than was said.
+          let said = 0
+          if (value > found.value) {
+            const values = await tx.valuesOf(transactionId, found.subject)
+            values.forEach((each, i) => (said += each.kind === kind && each.currency === found.currency ? values[i - 1]!.value - each.value : 0))
+          }
+          if (value > found.value && (said <= 0 || value - found.value > said + 1e-9)) throw new TypeError(`Outcome "${transactionId}" has not had that much ${kind === 'refund' ? 'refunded' : 'written off'}`)
+        }
         const restated = { ...found, value, ...(currency && { currency }) }
         await tx.setOutcome(restated)
-        await revalue(tx, restated)
+        await revalue(tx, restated, kind)
         return true
       })
     },

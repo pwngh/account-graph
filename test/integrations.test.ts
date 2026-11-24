@@ -1179,6 +1179,13 @@ test('steps give page events, calls and outcomes their value and their ad platfo
     const report = (await (await fetch(`${base}/report?from=2026-03-02&to=2026-03-02`, { headers: { authorization: 'Bearer reviewer' } })).json()) as any
     assert.deepEqual(report.steps, ['inquiry', 'call', 'client', 'brochure'])
     assert.deepEqual(counts(report.total.stages), { inquiry: { count: 1, value: 5 }, call: { count: 1, value: 10 }, client: { count: 2, value: 1450 }, brochure: { count: 1, value: 0 } })
+
+    // A refund says why the value fell, here and to the platform that can restate. A refused one changes neither.
+    assert.deepEqual(((await (await post('/restate', { transactionId: 'call:CA1', value: 4, kind: 'refund' })).json()) as any[]).map((each) => each.value), [4])
+    for (const bad of [{ value: 11, kind: 'refund' }, { value: 1, kind: 'gift' }, { value: 1, kind: 'write_off', currency: 'EUR' }]) assert.equal((await post('/restate', { transactionId: 'call:CA1', ...bad })).status, 400)
+    assert.equal((await outbox.get('call:CA1'))[0]!.value, 4)
+    const { total } = (await (await fetch(`${base}/report?from=2026-03-02&to=2026-03-02`, { headers: { authorization: 'Bearer reviewer' } })).json()) as any
+    assert.deepEqual([total.worth.refunded, total.worth.writtenOff], [6, 0])
   } finally {
     server.close()
   }

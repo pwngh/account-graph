@@ -129,6 +129,24 @@ if (!url) {
     }
   })
 
+  test('a database from before a change of value had a reason keeps its values, and takes reasons', async () => {
+    const schema = `ag_test_${process.pid}_loss`
+    try {
+      const store = await madeBefore(schema, 19)
+      await pool.query(`insert into ${schema}.subject values ('lead:1', 'lead:1', 'lead:1')`)
+      await pool.query(`insert into ${schema}.outcome (transaction_id, subject, at, stage, value, currency) values ('t1', 'lead:1', 1000, 'sale', 90, 'USD')`)
+      await pool.query(`insert into ${schema}.outcome_value (transaction_id, subject, value, currency, at) values ('t1', 'lead:1', 100, 'USD', 1000), ('t1', 'lead:1', 90, 'USD', 2000)`)
+      assert.deepEqual((await store.migrate()).slice(0, 1), ['why values changed'])
+      const graph = createGraph(store, undefined, { now: () => 3000 })
+      await graph.restate('t1', 60, undefined, 'refund')
+      assert.deepEqual(await graph.values('t1'), [{ value: 100, currency: 'USD', at: 1000 }, { value: 90, currency: 'USD', at: 2000 }, { value: 60, currency: 'USD', at: 3000, kind: 'refund' }])
+      const { total } = await graph.report({ from: '1970-01-01', to: '1970-01-01' })
+      assert.deepEqual([total.worth.first, total.worth.now, total.worth.refunded, total.worth.writtenOff], [100, 60, 30, 0])
+    } finally {
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
+
   test('a database from before returns were reported keeps its results, and takes them', async () => {
     const schema = `ag_test_${process.pid}_told`
     try {
@@ -225,7 +243,7 @@ if (!url) {
       await graph.restate('t2', 0)
       assert.deepEqual(await graph.values('t2'), [{ value: 90, currency: 'USD', at: 0 }, { value: 0, currency: 'USD', at: 1767312000000 }])
       const report = await graph.report({ from: '2026-01-01', to: '2026-01-02' })
-      assert.deepEqual(report.total.worth, { outcomes: 2, first: 0, now: 0, zeroed: 1, firstUnknown: 2 })
+      assert.deepEqual(report.total.worth, { outcomes: 2, first: 0, now: 0, refunded: 0, writtenOff: 0, zeroed: 1, firstUnknown: 2 })
       assert.deepEqual(report.months.map((each) => each.month), ['(not recorded)'])
       await graph.forget('account:1')
       assert.deepEqual(await graph.values('t1'), [])
