@@ -48,7 +48,7 @@ function told(entry) {
   if (entry.kind === 'value') return [el('b', {}, entry.stage), ` · from ${worthOf(entry.from.value, entry.from.currency)} to ${worthOf(entry.to.value, entry.to.currency)}`, entry.to.kind ? el('span', { class: 'meta' }, ` · ${entry.to.kind === 'refund' ? 'Refund' : 'Write-off'}${entry.to.value > entry.from.value ? ' reversed' : ''}`) : '']
   if (entry.kind === 'consent') return [`Ad measurement ${entry.answer.adUserData ? 'granted' : 'denied'} · personalization ${entry.answer.adPersonalization ? 'granted' : 'denied'}`, entry.answer.source ? more(entry.answer.source) : '']
   const { decision } = entry
-  return [`${ACTIONS[decision.action] ?? decision.action} ${decision.about.join(' · ')}`, more(author(decision.by), decision.reason ? ` · ${decision.reason}` : '')]
+  return [`${ACTIONS[decision.action] ?? decision.action} ${decision.about.map(reviewDisplay.idText).join(' · ')}`, more(author(decision.by), decision.reason ? ` · ${decision.reason}` : '')]
 }
 
 /** Whose it is, and why that is this person. */
@@ -56,7 +56,7 @@ function why(entry, ties, subject) {
   const tie = ties[entry.subject]
   if (tie.how === 'self') return [caller(entry.subject)]
   const steps = tie.via.filter((each) => each !== subject)
-  const chain = steps.length > 0 ? ` via ${steps.join(' → ')}` : ''
+  const chain = steps.length > 0 ? ` via ${steps.map(reviewDisplay.idText).join(' → ')}` : ''
   return [caller(entry.subject), el('span', { class: 'reason' }, `${tie.how === 'cluster' ? 'Same person' : 'High confidence'}${tie.score === null ? '' : ` · ${percent(tie.score)}`}${tie.kinds.length > 0 ? ` · ${tie.kinds.join(', ')}` : ''}${chain}`)]
 }
 
