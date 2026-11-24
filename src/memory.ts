@@ -134,8 +134,29 @@ export function createMemoryStore(): Store {
       return identifiers.flatMap((identifier) => [...(byIdentifier.get(identifier)?.values() ?? [])].map(copy))
     },
 
-    async allEdges() {
-      return [...bySubject.values()].flatMap((edges) => [...edges.values()].map(copy))
+    async *sharing(caps) {
+      const pairs = new Map<string, { a: Edge; b: Edge; fanout: number }[]>()
+      for (const [identifier, holders] of byIdentifier) {
+        const kind = identifier.slice(0, identifier.indexOf(':'))
+        if (ignored.has(identifier) || holders.size < 2) continue
+        if (!Object.hasOwn(caps, kind)) throw new TypeError(`Identifier "${identifier}" has a kind the policy does not name`)
+        if (holders.size > caps[kind]!) continue
+        const edges = [...holders.values()]
+        for (const [i, x] of edges.entries()) {
+          for (const y of edges.slice(i + 1)) {
+            const [a, b] = x.subject < y.subject ? [x, y] : [y, x]
+            const key = `${a.subject}\u0000${b.subject}`
+            const shared = pairs.get(key)
+            if (shared) shared.push({ a: copy(a), b: copy(b), fanout: holders.size })
+            else pairs.set(key, [{ a: copy(a), b: copy(b), fanout: holders.size }])
+          }
+        }
+      }
+      yield [...pairs.values()]
+    },
+
+    async *everyone() {
+      yield [...new Set([...labels.keys(), ...bySubject.keys()])].map((subject) => ({ subject, labels: labels.get(subject), held: (bySubject.get(subject)?.size ?? 0) > 0 }))
     },
 
     async states(identifiers) {
@@ -227,10 +248,6 @@ export function createMemoryStore(): Store {
 
     async kinds() {
       return [...new Set([...byIdentifier.keys()].map((identifier) => identifier.slice(0, identifier.indexOf(':'))))].sort()
-    },
-
-    async allLabels() {
-      return new Map([...labels].map(([subject, found]) => [subject, { ...found }]))
     },
 
     async setLabels(next) {
@@ -474,8 +491,8 @@ export function createMemoryStore(): Store {
       return [...new Set(all.slice(0, newest).map((sighting) => sighting.subject))]
     },
 
-    async sightingsUntil(recorded) {
-      return [...sightings.values()].flatMap((log) => log.filter((sighting) => (sighting.recorded ?? sighting.at) <= recorded))
+    async *sightingsUntil(recorded) {
+      yield [...sightings.values()].flatMap((log) => log.filter((sighting) => (sighting.recorded ?? sighting.at) <= recorded))
     },
 
     async pruneSightings(before) {

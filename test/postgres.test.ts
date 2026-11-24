@@ -20,7 +20,8 @@ if (!url) {
 
   const open = async () => {
     const schema = `ag_test_${process.pid}_${count++}`
-    const store = createPostgresStore(pool, schema)
+    // Pages far smaller than any answer, so every long read crosses many.
+    const store = createPostgresStore(pool, schema, { page: 3 })
     await store.migrate()
     return { store, close: async () => void (await pool.query(`drop schema ${schema} cascade`)) }
   }

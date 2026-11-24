@@ -130,6 +130,14 @@ On an M-series laptop, with a 20,000-account synthetic workload:
 | Memory | 33,000 observations/s | 17,000/s | 0.02 ms |
 | PostgreSQL 16, local, fsync on | 930 observations/s | 4,200/s | 0.42 ms |
 
+What reads the whole graph, on PostgreSQL 16 in Docker on the same laptop (`npm run bench -- scale 1000000`, five edges to an account). Each number is time and the most memory the process held.
+
+| Edges | On disk | `rebuild` | `verify` | `asOf` | An observation, `links()` |
+| --- | --- | --- | --- | --- | --- |
+| 1 million | 420 MB | 7 s, 159 MB | 6 s, 150 MB | 20 s, 1.4 GB | 6.6 ms, 2.3 ms |
+| 5 million | 2.1 GB | 45 s, 198 MB | 40 s, 206 MB | 156 s, 3.8 GB | 8.1 ms, 2.9 ms |
+| 10 million | 4.3 GB | 94 s, 291 MB | 85 s, 402 MB | out of memory | 10.7 ms, 3.7 ms |
+
 PostgreSQL writes take one advisory lock, so they run one at a time; the write queue is how many callers share one write. Run `npm run bench` for your own numbers.
 
 ## Tools
@@ -191,7 +199,7 @@ PostgreSQL writes take one advisory lock, so they run one at a time; the write q
 - Each page view adds a row to the consent history when the page reports an answer. `prune` deletes the ones that no longer stand.
 - Pairs kept apart by your own systems are only as right as those systems. One person entered on both sides is split, and keeping two apart is not a conflict check.
 - Flows and rings are worked out from running totals per pair, so they do not say in what order value moved. Each transfer is kept only to count it once.
-- `rebuild`, `verify`, and `asOf` load every edge into memory.
+- `asOf` builds the graph of that time in memory, and ran out of it at 10 million edges with Node's default limit. `rebuild` and `verify` do not.
 - The memory store does not roll back a failed write.
 - Not published to npm. Until it is, installing means cloning.
 

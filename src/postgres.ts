@@ -33,10 +33,12 @@ const STANDING = 'at desc, recorded_at desc, ad_user_data, ad_personalization, i
 /**
  * Keeps the graph in PostgreSQL. Writes take one advisory lock, so they run
  * one at a time across every process; reads take a repeatable-read snapshot
- * and never wait on a write.
+ * and never wait on a write. What reads the whole graph reads `page` rows of
+ * an answer at a time.
  */
-export function createPostgresStore(pool: Pool, schema = 'account_graph'): PostgresStore {
+export function createPostgresStore(pool: Pool, schema = 'account_graph', { page = 5_000 }: { page?: number } = {}): PostgresStore {
   if (!/^[a-z_][a-z0-9_]*$/.test(schema)) throw new TypeError(`Schema "${schema}" must be a plain lowercase name`)
+  if (!(Number.isSafeInteger(page) && page > 0)) throw new TypeError('`page` must be a whole number above zero')
   const t = (table: string) => `${schema}.${table}`
 
   const callRows = `select c.*, r.answered, r.voicemail, r.waited, r.recorded_at as result_at from ${t('call')} c left join ${t('call_result')} r on r.id = c.id`
@@ -129,9 +131,46 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       return rows.map(toEdge)
     },
 
-    async allEdges() {
-      const { rows } = await db.query(`select * from ${t('edge')}`)
-      return rows.map(toEdge)
+    async *sharing(caps, alone) {
+      const kinds = Object.keys(caps)
+      const { rows: unnamed } = await db.query(`select id from ${t('identifier')} where fanout >= 2 and not ignored and split_part(id, ':', 1) <> all($1::text[]) limit 1`, [kinds])
+      if (unnamed.length > 0) throw new TypeError(`Identifier "${unnamed[0].id}" has a kind the policy does not name`)
+      const rows = cursor(
+        db,
+        page,
+        `select x.subject as a, y.subject as b, array_agg(x.identifier) as identifiers, array_agg(i.fanout) as fanouts,
+           array_agg(array[x.first_at, x.last_at, x.sightings, y.first_at, y.last_at, y.sightings]) as times
+         from ${t('identifier')} i
+         join unnest($1::text[], $2::bigint[]) as rule (kind, cap) on rule.kind = split_part(i.id, ':', 1) and i.fanout <= rule.cap
+         join ${t('edge')} x on x.identifier = i.id
+         join ${t('edge')} y on y.identifier = i.id and y.subject > x.subject
+         where i.fanout >= 2 and not i.ignored
+         group by x.subject, y.subject
+         having count(*) > 1 or bool_or(rule.kind = any($3::text[]))`,
+        [kinds, kinds.map((kind) => caps[kind]), alone],
+      )
+      for await (const batch of rows) {
+        yield batch.map((row) =>
+          row.identifiers.map((identifier: Identifier, i: number) => {
+            const [first, last, count, otherFirst, otherLast, otherCount] = row.times[i].map(Number)
+            const pair = [{ subject: row.a, identifier, first, last, count }, { subject: row.b, identifier, first: otherFirst, last: otherLast, count: otherCount }] as [Edge, Edge]
+            // The database orders text its own way. A pair is ordered as JavaScript orders it.
+            if (pair[0].subject > pair[1].subject) pair.reverse()
+            return { a: pair[0], b: pair[1], fanout: row.fanouts[i] }
+          }),
+        )
+      }
+    },
+
+    async *everyone() {
+      const rows = cursor(
+        db,
+        page,
+        `select coalesce(s.id, held.subject) as id, s.component, s.cluster, held.subject is not null as held
+         from ${t('subject')} s full join (select distinct subject from ${t('edge')}) held on held.subject = s.id`,
+        [],
+      )
+      for await (const batch of rows) yield batch.map((row) => ({ subject: row.id, labels: row.component === null ? undefined : { component: row.component, cluster: row.cluster }, held: row.held }))
     },
 
     async states(identifiers) {
@@ -237,11 +276,6 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
     async kinds() {
       const { rows } = await db.query(`select distinct split_part(id, ':', 1) as kind from ${t('identifier')} where fanout > 0 order by 1`)
       return rows.map((row) => row.kind as string)
-    },
-
-    async allLabels() {
-      const { rows } = await db.query(`select id, component, cluster from ${t('subject')}`)
-      return toLabels(rows)
     },
 
     async setLabels(next) {
@@ -534,12 +568,8 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       return rows.map((row) => row.subject)
     },
 
-    async sightingsUntil(recorded) {
-      const { rows } = await db.query(
-        `select subject, identifier, at, event, recorded_at from ${t('sighting')} where recorded_at <= $1 order by id`,
-        [recorded],
-      )
-      return rows.map(toSighting)
+    async *sightingsUntil(recorded) {
+      for await (const batch of cursor(db, page, `select subject, identifier, at, event, recorded_at from ${t('sighting')} where recorded_at <= $1 order by id`, [recorded])) yield batch.map(toSighting)
     },
 
     async pruneSightings(before) {
@@ -831,6 +861,22 @@ function toDecision(row: any): Decision {
 
 function toLabels(rows: any[]): Map<Subject, Labels> {
   return new Map(rows.map((row) => [row.id as Subject, { component: row.component as Subject, cluster: row.cluster as Subject }]))
+}
+
+let cursors = 0
+
+/** The rows of a query, a page at a time, so that they are never all in memory. Needs a transaction, as every `Tx` has. */
+async function* cursor(db: Queryable, page: number, text: string, given: readonly unknown[]): AsyncGenerator<any[]> {
+  // All of it will be read, so plan for all of it and not for a quick first page.
+  await db.query('set local cursor_tuple_fraction = 1')
+  const name = `account_graph_${++cursors}`
+  await db.query(`declare ${name} no scroll cursor for ${text}`, [...given])
+  for (;;) {
+    const { rows } = await db.query(`fetch ${page} from ${name}`)
+    if (rows.length === 0) break
+    yield rows
+  }
+  await db.query(`close ${name}`)
 }
 
 function toEdge(row: any): Edge {
