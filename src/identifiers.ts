@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto'
 import type { Identifier } from './types.ts'
 
+/** What no text may hold: a NUL, or half of a character. PostgreSQL refuses the first, and keeps every one of the second as the same replacement character, so two subjects would become one. */
+export const UNSTORABLE = /[\0\p{Surrogate}]/u
+
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex')
 
 /**

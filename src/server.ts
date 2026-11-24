@@ -4,7 +4,7 @@ import { BlockList, isIP } from 'node:net'
 import { callState, dialed, followUp, numberOrSelf, recordCall, recordCallResult } from './calls.ts'
 import type { CallOptions } from './calls.ts'
 import type { Graph, PolicyState } from './graph.ts'
-import { email, hashPhone, identifier, ip, normalizePhone, phoneOfType } from './identifiers.ts'
+import { email, hashPhone, identifier, ip, normalizePhone, phoneOfType, UNSTORABLE } from './identifiers.ts'
 import { trusted } from './integrations/fingerprint.ts'
 import type { FingerprintVerifier } from './integrations/fingerprint.ts'
 import { placeOf, shared } from './integrations/maxmind.ts'
@@ -583,6 +583,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       const fields = Object.fromEntries(new URLSearchParams(await text(request)))
       const { authToken, url: address } = options.calls.twilio
       if (!fromTwilio(authToken, address, fields, String(request.headers['x-twilio-signature'] ?? ''))) throw new Refusal(403, 'The signature does not match')
+      storable(fields)
       const call = twilioCall(fields, now())
       if (call) await recordCall(graph, call, calling())
       return undefined
@@ -609,6 +610,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     }
 
     authorize(request, path)
+    storable([...url.searchParams.values()])
     const subject = url.searchParams.get('subject') ?? ''
     switch (path) {
       case 'POST /observe':
@@ -657,7 +659,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return { version }
       }
       case 'GET /clusters':
-        return graph.clusters(50, Math.max(0, Number(url.searchParams.get('offset')) || 0))
+        return graph.clusters(50, Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.floor(Number(url.searchParams.get('offset')) || 0))))
       case 'GET /search':
         return graph.search(url.searchParams.get('q') ?? '')
       case 'GET /recent':
@@ -682,8 +684,11 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return (await graph.cluster(subject)) ?? null
       case 'GET /history':
         return graph.history(subject)
-      case 'GET /attribute':
-        return graph.attribute(subject, { at: Number(url.searchParams.get('at') ?? now()) })
+      case 'GET /attribute': {
+        const at = Number(url.searchParams.get('at') ?? now())
+        if (!Number.isSafeInteger(at)) throw new Refusal(400, '`at` must be a time in whole epoch milliseconds')
+        return graph.attribute(subject, { at })
+      }
       case 'GET /policy': {
         const { builtWith, ...state } = await graph.policy()
         const standard = plainPolicy(defaultPolicy)
@@ -692,7 +697,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       case 'POST /rebuild': {
         // Nothing in the body is needed, so none has to be sent.
         const sent = await text(request)
-        return graph.rebuild(why(sent.trim() ? JSON.parse(sent) : {}))
+        return graph.rebuild(why(sent.trim() ? parsed(sent) : {}))
       }
       case 'GET /verify': {
         const { changes, policy } = await graph.check()
@@ -845,7 +850,26 @@ function why(body: any): { by?: string; reason?: string } {
 }
 
 async function json(request: IncomingMessage): Promise<any> {
-  return JSON.parse(await text(request))
+  return parsed(await text(request))
+}
+
+function parsed(sent: string): any {
+  const body = JSON.parse(sent)
+  // Only an escape can spell what cannot be kept, so a body without one is not searched.
+  if (sent.includes('\\u')) storable(body)
+  return body
+}
+
+/** Refuses a value that holds, at any depth, text the database cannot keep. */
+function storable(value: unknown): void {
+  // A list and not recursion: a body can be nested deeper than the stack.
+  const left = [value]
+  while (left.length > 0) {
+    const each = left.pop()
+    if (typeof each === 'string' && UNSTORABLE.test(each)) throw new Refusal(400, 'Text may not hold a NUL or half of a character')
+    if (typeof each !== 'object' || each === null) continue
+    for (const [key, inner] of Object.entries(each)) left.push(key, inner)
+  }
 }
 
 async function text(request: IncomingMessage): Promise<string> {
@@ -856,5 +880,6 @@ async function text(request: IncomingMessage): Promise<string> {
     if (size > 1_000_000) throw new Refusal(413, 'Body is over 1 MB')
     chunks.push(chunk)
   }
-  return Buffer.concat(chunks).toString('utf8')
+  // Bytes that are not UTF-8 are refused: read leniently, different ones would all become the same text.
+  return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))
 }

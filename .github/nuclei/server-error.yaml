@@ -1,0 +1,29 @@
+id: server-error
+info:
+  name: A malformed query parameter answers with a server error
+  author: account-graph
+  severity: medium
+http:
+  - pre-condition:
+      - type: dsl
+        dsl:
+          - method == "GET"
+    payloads:
+      bad:
+        - "%00"
+        - "a%00"
+        - "x"
+        - "-1"
+        - "1.5"
+        - "1e308"
+        - "99999999999999999999"
+    fuzzing:
+      - part: query
+        type: replace
+        mode: single
+        fuzz:
+          - "{{url_decode(bad)}}"
+    matchers:
+      - type: dsl
+        dsl:
+          - status_code >= 500
