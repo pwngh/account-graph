@@ -314,6 +314,8 @@ function period(name, first, last, ...rest) {
   const to = el('input', { type: 'date', value: last ?? '', required: '' })
   const form = el('form', { class: 'row', on: { submit: (event) => { event.preventDefault(); go(`#/${name}/${from.value}/${to.value}${rest.some(Boolean) ? `/${rest.map(encodeURIComponent).join('/')}` : ''}`) } } },
     el('label', {}, 'From', from), el('label', {}, 'To', to), el('button', { class: 'primary' }, 'Show'))
+  const shortcuts = el('span', { class: 'row' })
+  form.append(shortcuts)
   const days = (range) => `from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`
   return {
     form,
@@ -321,6 +323,17 @@ function period(name, first, last, ...rest) {
     resolved: (range) => {
       from.value = range.from
       to.value = range.to
+      // Counted from today in the server's zone, which is the one its days are in, and worked out when pressed: a screen may be open past midnight.
+      const spans = () => {
+        const part = Object.fromEntries(new Intl.DateTimeFormat('en', { timeZone: range.timeZone, calendar: 'gregory', numberingSystem: 'latn', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(Date.now()).map(({ type, value }) => [type, value]))
+        const today = `${part.year}-${part.month}-${part.day}`
+        const ago = (n) => new Date(Date.parse(`${today}T00:00:00Z`) - n * 86400000).toISOString().slice(0, 10)
+        return { Today: [today, today], Yesterday: [ago(1), ago(1)], '7 days': [ago(6), today], '30 days': [ago(29), today], 'This month': [`${today.slice(0, 8)}01`, today] }
+      }
+      shortcuts.replaceChildren(...Object.entries(spans()).map(([label, [start, end]]) => el('button', { type: 'button', 'aria-pressed': String(start === range.from && end === range.to), on: { click: () => {
+        ;[from.value, to.value] = spans()[label]
+        form.requestSubmit()
+      } } }, label)))
       return days(range)
     },
   }
@@ -333,6 +346,24 @@ function lasted(ms) {
   const hours = Math.floor(minutes / 60)
   if (hours < 48) return `${hours} h${minutes % 60 ? ` ${minutes % 60} min` : ''}`
   return `${Math.floor(hours / 24)} days${hours % 24 ? ` ${hours % 24} h` : ''}`
+}
+/**
+ * A button that saves a table as it is shown. A spreadsheet runs a cell that
+ * starts like a formula, and names in a table are written by others, so such a cell starts with a quote.
+ */
+function saved(name, table) {
+  const cell = (node) => {
+    const parts = [...node.childNodes].map((each) => each.textContent.trim()).filter(Boolean).join(' · ')
+    const text = /^\s*[=+\-@\uff1d\uff0b\uff0d\uff20]/.test(parts) && !/^-?\d+(\.\d+)?$/.test(parts) ? `'${parts}` : parts
+    return `"${text.replaceAll('"', '""')}"${','.repeat(node.colSpan - 1)}`
+  }
+  return el('p', {}, el('button', { type: 'button', on: { click: () => {
+    const rows = [...table.rows].map((row) => [...row.cells].map(cell).join(','))
+    // A mark that says it is UTF-8, without which Excel reads it as something else.
+    const address = URL.createObjectURL(new Blob(['\ufeff', rows.join('\r\n'), '\r\n'], { type: 'text/csv' }))
+    el('a', { href: address, download: `${name}.csv` }).click()
+    setTimeout(() => URL.revokeObjectURL(address), 10_000)
+  } } }, 'Save as CSV'))
 }
 /** A count of a whole, with its share in words. */
 const share = (part, whole) => (whole > 0 ? `${amount(part)} (${percent(part / whole)})` : amount(part))

@@ -61,6 +61,11 @@ table.hours td, table.hours th { padding: 3px 6px; min-width: 28px; }
 table.hours th[scope=row] { position: sticky; left: 0; background: var(--bg); border-right: 1px solid var(--line); }
 /* One hue, light to dark in the light theme and dark to light in the dark one. The text stays ink. */
 .heat1 { background: var(--heat1); } .heat2 { background: var(--heat2); } .heat3 { background: var(--heat3); } .heat4 { background: var(--heat4); font-weight: 600; }
+/* Columns that belong together, with a line before each group. */
+th.edge, td.edge { border-left: 1px solid var(--line); padding-left: 12px; }
+th.group { font-weight: 600; }
+button[aria-pressed=true] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+summary { cursor: pointer; width: fit-content; }
 tr.part td { color: var(--muted); border-bottom-style: dotted; }
 tr.part td.num { color: var(--ink); }
 tr.part td.who { padding-left: 16px; }

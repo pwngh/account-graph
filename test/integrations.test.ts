@@ -4,7 +4,7 @@ import { createHash, createVerify, generateKeyPairSync } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
-import { createGraph, createMemoryStore, createOps, createOutbox, googleAds, hashPhone, knownLink, staffLink } from '../src/index.ts'
+import { createGraph, createMemoryStore, createOps, createOutbox, googleAds, hashPhone, knownLink, staffLink, email, phone, phoneOfType } from '../src/index.ts'
 import type { IngestRequest } from '../src/index.ts'
 import { CostError, costsFromCsv, googleCosts, metaCosts } from '../src/integrations/costs.ts'
 import { createFingerprintVerifier, trusted } from '../src/integrations/fingerprint.ts'
@@ -335,6 +335,32 @@ test('the reviewer screen is a locked-down shell, and its data needs the token',
     assert.deepEqual(await graph.separations('account:1'), ['account:9'])
     assert.deepEqual((await graph.cluster('account:9'))!.members, ['account:3', 'account:9'])
     assert.deepEqual((await graph.cluster('account:1'))!.members, ['account:1', 'account:2'])
+  } finally {
+    server.close()
+  }
+})
+
+test('someone is found by phone or email without either being in an address', async () => {
+  const graph = createGraph(createMemoryStore())
+  await graph.observe([
+    { subject: 'account:1', identifiers: [email('Pat.Doe+x@gmail.com'), phone('(713) 555-0194')], at: T0 },
+    { subject: 'contact:2', identifiers: [phoneOfType('713-555-0194', 'nonFixedVoip')!], at: T0 },
+    { subject: 'account:30', identifiers: ['device:d'], at: T0 },
+  ])
+  const server = createServer(createHandler(graph, { token: 'service', reviewers: { dana: 'dana' }, origins: [] })).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  const find = async (text: unknown) => {
+    const response = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/find`, { method: 'POST', headers: { authorization: 'Bearer dana' }, body: JSON.stringify({ text }) })
+    return response.ok ? ((await response.json()) as any) : response.status
+  }
+  try {
+    for (const text of ['patdoe@gmail.com', ' PAT.DOE@googlemail.com ', 'Pat.Doe@gmail.com']) assert.deepEqual(await find(text), { by: 'email', subjects: text.includes('googlemail') ? [] : ['account:1'] }, text)
+    for (const text of ['7135550194', '(713) 555-0194', '+1 713.555.0194', '1-713-555-0194']) assert.deepEqual(await find(text), { by: 'phone', subjects: ['account:1', 'contact:2'] }, text)
+    assert.deepEqual(await find('nobody@example.com'), { by: 'email', subjects: [] })
+    assert.deepEqual(await find('account:'), { by: 'subject', subjects: ['account:1', 'account:30'] })
+    // Digits that are not a whole number are how an id begins, and an id may hold an @.
+    assert.deepEqual([(await find('713')).by, (await find('email:a@b')).by], ['subject', 'subject'])
+    for (const wrong of ['', ' ', 5, null, 'x'.repeat(513)]) assert.equal(await find(wrong), 400)
   } finally {
     server.close()
   }

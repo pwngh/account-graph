@@ -81,6 +81,8 @@ export interface ReportOptions {
    * said, `outcome.<name>` what is known of the outcome, `hour` or `weekday`.
    */
   by?: string
+  /** The one step whose outcomes `costPerOutcome` counts: what a client cost, and not what a client or a call did. */
+  per?: string
 }
 
 export interface GraphOptions {
@@ -875,7 +877,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       }
     },
 
-    async report({ from, to, timeZone, window = 90 * DAY, hops = 2, by }) {
+    async report({ from, to, timeZone, window = 90 * DAY, hops = 2, by, per }) {
       if (by !== undefined) dimension(by)
       const [start, end] = range(from, to, timeZone)
       return store.read(async (tx) => {
@@ -900,7 +902,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         for (const outcome of await tx.newestOutcomes(now() - 180 * DAY, now(), 200)) history.push({ outcome, ...(await creditOf(outcome.subject, outcome.at, window)) })
         const missed: { at: number; touch: Touch | undefined; tags: Record<string, string> | undefined }[] = []
         for (const call of await tx.callsBetween(start, end)) if (call.direction === 'inbound' && call.result?.answered === false) missed.push({ at: call.at, touch: (await creditOf(call.subject, call.at, window)).touch, tags: call.tags })
-        return fold(from, to, await tx.costsBetween(from, to), await tx.touchesBetween(start, end), credited, { missed, by, timeZone, through: dayIn(now(), timeZone), history })
+        return fold(from, to, await tx.costsBetween(from, to), await tx.touchesBetween(start, end), credited, { missed, by, per, timeZone, through: dayIn(now(), timeZone), history })
       })
     },
 

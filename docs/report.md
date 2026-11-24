@@ -117,6 +117,10 @@ The report's columns follow the order of `STAGES`. A step whose action names a p
 
 > **A step that a page can report is a step a page can fake.** If a step is also listed in `EVENTS`, a browser can create it: once a day per browser, at the step's value. [Page events](calls.md#page-events) says how to choose which steps to allow.
 
+## What one step cost
+
+Cost per outcome counts every step, so it says what a call *or* a client cost. Name one step and it counts only that: `per=enrolled`, or **Cost per** on the Channels view. A campaign that cost 1,872 and brought nine calls and three clients cost 156 an outcome and 624 a client. The return still sets all value against the cost.
+
 ## Breaking it down
 
 Ask for a dimension and every line is split by it: which office was advertised, which one served the person, in what language, at what hour.

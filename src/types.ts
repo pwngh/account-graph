@@ -544,6 +544,8 @@ export interface Report {
   leftOut: number
   /** The dimension the rows are broken down by, when one was asked for. */
   by?: string
+  /** The one step `costPerOutcome` counts, when one was asked for. The return still sets all value against the cost. */
+  per?: string
   /** The dimensions something in these days was recorded under, for choosing one. */
   dimensions: string[]
   /** Every currency the costs and outcomes named. More than one means the sums mix currencies. */

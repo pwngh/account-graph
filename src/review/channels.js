@@ -30,45 +30,63 @@ async function whatFollowed(box, report, address, step, within) {
   section.append(el('p', { class: 'muted' }, `Left out of the first three tables: ${amount(first.already)} who had reached the step before the call ended, ${amount(first.running)} still inside their days. Left out of the last: ${amount(returned.already)} who had reached the step by the landmark, ${amount(returned.running)} still inside their days, ${amount(returned.through)} who got through on their own before it.`))
 }
 
-view('channels', 'Channels', async (box, first, last, by = '', step = '', within = '30') => {
-  const { form: pick, query, resolved } = period('channels', first, last, by, ...(step ? [step, within] : []))
-  const section = el('section', {}, el('h3', {}, 'Channels'), el('p', { class: 'muted' }, 'What each campaign cost and what it brought in. An outcome counts on the day it happened, under the arrival that earned it.'), pick)
+view('channels', 'Channels', async (box, first, last, by = '', step = '', within = '30', per = '') => {
+  const { form: pick, query, resolved } = period('channels', first, last, ...(by || step || per ? [by, step, within, per] : []))
+  const section = el('section', {}, el('h3', {}, 'Channels'), pick)
   box.append(section)
-  const report = await api('GET', `/report?${query}${by ? `&by=${encodeURIComponent(by)}` : ''}`)
+  const report = await api('GET', `/report?${query}${by ? `&by=${encodeURIComponent(by)}` : ''}${per ? `&per=${encodeURIComponent(per)}` : ''}`)
   resolved(report)
+  const address = (now) => {
+    const next = { by, step, within, per, ...now }
+    const [from, to] = [...pick.querySelectorAll('input')].map((input) => input.value)
+    return `#/channels/${from || report.from}/${to || report.to}${next.by || next.step || next.per ? `/${[next.by, next.step, next.within, next.per].map(encodeURIComponent).join('/')}` : ''}`
+  }
+  // Shown as money where the report names one currency. Where it mixes them, a sign would say something false.
+  let coin
+  try {
+    if (report.currencies.length === 1) coin = new Intl.NumberFormat(undefined, { style: 'currency', currency: report.currencies[0] })
+  } catch {}
+  const cash = (n) => (coin ? coin.format(n) : money(n))
+  const none = () => el('span', { class: 'muted' }, '—')
+  // Nothing happened, which is known. Not the same as not recorded, nor as not applying.
+  const tally = (n) => (n > 0 ? amount(n) : el('span', { class: 'muted' }, '0'))
   const stages = report.steps.filter((step) => report.total.stages[step])
   const unknown = () => el('span', { class: 'muted' }, '(not recorded)')
   const withheld = (row) => el('span', { class: 'muted', title: row === report.total ? 'No campaign has cost data on enough days to say.' : `Cost data for ${row.costDays} of ${report.days} days is too little to say.` }, 'withheld')
-  const per = (row) => (row.costPerOutcome !== null ? money(row.costPerOutcome) : row.thin ? withheld(row) : '')
-  const back = (row) => (row.returnOnCost !== null ? `${row.returnOnCost.toFixed(1)}×` : row.thin ? withheld(row) : '')
+  const each = (row) => (row.costPerOutcome !== null ? cash(row.costPerOutcome) : row.thin ? withheld(row) : none())
+  const back = (row) => (row.returnOnCost !== null ? `${row.returnOnCost.toFixed(1)}×` : row.thin ? withheld(row) : none())
   // A campaign nobody reported a cost for may have cost nothing or anything. Only a number somebody sent is shown as one.
-  const spent = (row) => (row.costDays === 0 && row.cost === 0 && row.clicks === 0 ? [td('num', row.source === '(none)' ? '' : unknown(), row.thin ? el('span', { class: 'reason' }, `${row.missingDays} of ${report.days} days missing`) : ''), td('num', row.source === '(none)' ? '' : unknown())]
-    : [td('num', money(row.cost), row.missingDays > 0 ? el('span', { class: 'reason' }, `${row.missingDays} of ${report.days} days missing`) : ''), td('num', amount(row.clicks))])
+  const spent = (row) => {
+    if (row.source === '(none)') return [td('num', none()), td('num', none())]
+    return row.costDays === 0 && row.cost === 0 && row.clicks === 0 ? [td('num', unknown()), td('num', unknown())] : [td('num', cash(row.cost)), td('num', amount(row.clicks))]
+  }
   // How many people, where that is not how many outcomes: a renewal is a second outcome and not a second person.
-  const counted = (step) => (step ? [amount(step.count), step.people === step.count ? '' : el('span', { class: 'reason' }, `${amount(step.people)} ${step.people === 1 ? 'person' : 'people'}`)] : [''])
-  const cells = (row) => [...spent(row), td('num', amount(row.visits)),
-    ...stages.map((stage) => td('num', ...counted(row.stages[stage]))), td('num', row.people || ''),
-    ...(report.total.missed > 0 ? [td('num', row.missed || '')] : []), td('num', money(row.value)), td('num', per(row)), td('num', back(row))]
+  const counted = (step) => (step ? [amount(step.count), step.people === step.count ? '' : el('span', { class: 'reason' }, `${amount(step.people)} ${step.people === 1 ? 'person' : 'people'}`)] : [tally(0)])
+  // The first column of a group carries the line that sets it apart.
+  const edge = ([cell, ...rest]) => (cell.classList.add('edge'), [cell, ...rest])
+  const reached = (row) => edge([...stages.map((stage) => td('num', ...counted(row.stages[stage]))), td('num', tally(row.people)), ...(report.total.missed > 0 ? [td('num', tally(row.missed))] : [])])
+  const cells = (row) => [...edge([...spent(row), td('num', tally(row.visits))]), ...reached(row), ...edge([td('num', cash(row.value)), td('num', each(row)), td('num', back(row))])]
   // A campaign is charged whole, so its cost, clicks and arrivals stay on its own line and are not split.
-  const split = (row) => (row.breakdown ?? []).filter((part) => part.outcomes + part.missed > 0 || part.name === '(not recorded)').map((part) => el('tr', { class: 'part' }, td(''), td('who', part.name), td(''), td(''), td(''),
-    ...stages.map((stage) => td('num', ...counted(part.stages[stage]))), td('num', part.people || ''), ...(report.total.missed > 0 ? [td('num', part.missed || '')] : []), td('num', money(part.value)), td(''), td('')))
-  const table = el('table', {}, el('tr', {}, th('Source'), th('Campaign'), th('Cost', 'num'), th('Clicks billed', 'num'), th('Arrivals seen', 'num'),
-    ...stages.map((stage) => th(stage, 'num')), th('People', 'num'), ...(report.total.missed > 0 ? [th('Missed calls', 'num')] : []), th('Value', 'num'), th('Cost per outcome', 'num'), th('Return', 'num')))
+  const split = (row) => (row.breakdown ?? []).filter((part) => part.outcomes + part.missed > 0 || part.name === '(not recorded)').map((part) => el('tr', { class: 'part' }, td(''), td('who', part.name), ...edge([td(''), td(''), td('')]), ...reached(part), ...edge([td('num', cash(part.value)), td(''), td('')])))
+  const group = (text, columns) => el('th', { scope: 'colgroup', colspan: columns, class: 'edge group' }, text)
+  const table = el('table', {}, el('tr', {}, el('td', { colspan: 2 }), group('Spend and traffic', 3), group('What followed', stages.length + 1 + (report.total.missed > 0 ? 1 : 0)), group('What it was worth', 3)),
+    el('tr', {}, th('Source'), th('Campaign'), ...edge([th('Cost', 'num'), th('Clicks billed', 'num'), th('Arrivals seen', 'num')]),
+      ...edge([...stages.map((stage) => th(stage, 'num')), th('People', 'num'), ...(report.total.missed > 0 ? [th('Missed calls', 'num')] : [])]), ...edge([th('Value', 'num'), th(per ? `Cost per ${per}` : 'Cost per outcome', 'num'), th('Return', 'num')])))
+  const note = (parts) => (parts.some(Boolean) ? el('span', { class: 'reason' }, parts.filter(Boolean).join(' · ')) : '')
   for (const row of report.rows) {
     table.append(el('tr', {}, td('', row.source === '(none)' ? el('span', { class: 'muted' }, 'no arrival credited') : row.source),
-      td('who', row.campaign || row.campaignId || el('span', { class: 'muted' }, 'no campaign named'), row.campaign && row.campaignId ? el('span', { class: 'reason' }, row.campaignId) : ''), ...cells(row)), ...split(row))
+      td('who', row.campaign || row.campaignId || el('span', { class: 'muted' }, 'no campaign named'), note([row.campaign && row.campaignId, row.missingDays > 0 && (row.costDays > 0 || row.thin) && `${row.missingDays} of ${report.days} days missing`])), ...cells(row)), ...split(row))
   }
-  table.append(el('tr', { class: 'sum' }, td('', 'All'), td(''), ...cells(report.total)), ...split(report.total))
-  const breakdown = el('select', { on: { change: () => {
-    const [from, to] = [...pick.querySelectorAll('input')].map((input) => input.value)
-    go(`#/channels/${from || report.from}/${to || report.to}${breakdown.value || step ? `/${encodeURIComponent(breakdown.value)}` : ''}${step ? `/${encodeURIComponent(step)}/${within}` : ''}`)
-  } } }, el('option', { value: '' }, 'Nothing'),
+  table.append(el('tr', { class: 'sum' }, td('', 'All'), td('who', note([report.leftOut > 0 && `cost and return leave out ${amount(report.leftOut)} ${report.leftOut === 1 ? 'campaign' : 'campaigns'}`])), ...cells(report.total)), ...split(report.total))
+  const breakdown = el('select', { on: { change: () => go(address({ by: breakdown.value })) } }, el('option', { value: '' }, 'Nothing'),
     ...[...new Set([...report.dimensions, ...(by ? [by] : [])])].map((each) => el('option', { value: each, ...(each === by && { selected: '' }) }, dimensionName(each))))
-  pick.append(el('label', {}, 'Break down by', breakdown))
-  section.append(el('p', { class: 'muted' }, `${report.from} to ${report.to}, days in ${report.timeZone}.${report.currencies.length === 1 ? ` Money in ${report.currencies[0]}.` : ''}${by.startsWith('touch.') ? ' Broken down by what the credited arrival said.' : by.startsWith('outcome.') ? ' Broken down by what is known of each outcome.' : ''}${by ? ' Costs, clicks and arrivals belong to the campaign and are not split.' : ''}`))
-  if (report.rows.length > 0) section.append(el('p', { class: 'muted' }, `Cost per outcome and return set a campaign's cost against its own outcomes, on the days its cost is known. With fewer than half of the ${amount(report.days)} days known they are withheld.${report.leftOut > 0 ? ` The total leaves out ${amount(report.leftOut)} ${report.leftOut === 1 ? 'campaign' : 'campaigns'} for that reason.` : ''}`))
+  const choose = el('select', { on: { change: () => go(address({ per: choose.value })) } }, el('option', { value: '' }, 'every outcome'),
+    ...[...new Set([...report.steps, ...(per ? [per] : [])])].map((stage) => el('option', { value: stage, ...(stage === per && { selected: '' }) }, stage)))
+  pick.append(el('label', {}, 'Break down by', breakdown), el('label', {}, 'Cost per', choose))
+  section.append(el('p', { class: 'muted' }, `${report.from} to ${report.to}, days in ${report.timeZone}.${report.currencies.length === 1 ? ` Money in ${report.currencies[0]}.` : ''}${by.startsWith('touch.') ? ' Broken down by what the credited arrival said.' : by.startsWith('outcome.') ? ' Broken down by what is known of each outcome.' : ''}`),
+    el('details', {}, el('summary', { class: 'muted' }, 'How these are worked out'), el('p', { class: 'muted' }, `An outcome counts on the day it happened, under the arrival that earned it. What an outcome cost, and the return, set a campaign's cost against its own outcomes on the days its cost is known; with fewer than half of the ${amount(report.days)} days known they are withheld.${per ? ` Only "${per}" is counted in the cost; the return sets all value against it.` : ''}${by ? ' Costs, clicks and arrivals belong to the campaign and are not split.' : ''} 0 is known to be none. — is nothing to say: no cost, or nothing credited that is worth anything.`)))
   if (report.filling) section.append(el('p', { class: 'banner' }, el('b', {}, 'Still filling. '), `95 in 100 outcomes of the slowest step come within ${amount(report.filling.days)} days of the arrival, so arrivals after ${report.filling.after} have not had their time. Their cost is here already and some of their outcomes are not.`))
-  section.append(report.rows.length > 0 ? wide('Channels', table) : el('p', { class: 'muted' }, 'Nothing was recorded in these days.'))
+  section.append(...(report.rows.length > 0 ? [wide('Channels', table), saved(`channels-${report.from}-${report.to}`, table)] : [el('p', { class: 'muted' }, 'Nothing was recorded in these days.')]))
   if (report.currencies.length > 1) section.append(el('p', { class: 'apart' }, `These sums mix currencies: ${report.currencies.join(', ')}.`))
   const timed = stages.filter((stage) => report.total.stages[stage].delay)
   if (timed.length > 0) {
@@ -88,5 +106,5 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
     const byMonth = el('table', {}, el('tr', {}, th('Month first recorded'), ...heads()), ...report.months.map((each) => el('tr', {}, td('', each.month), ...valued(each))))
     box.append(el('section', {}, el('h2', {}, 'Value: first recorded, and now'), el('p', { class: 'muted' }, `Outcomes of ${report.from} to ${report.to}. Now is all of them. First recorded is of those whose first value is known. A value first recorded is often a step's, and is restated once what was collected is known.`), wide('Value by campaign', byCampaign), el('p', {}), wide('Value by month of first record', byMonth)))
   }
-  await whatFollowed(box, report, (chosen, days) => `#/channels/${report.from}/${report.to}/${encodeURIComponent(by)}${chosen ? `/${encodeURIComponent(chosen)}/${days}` : ''}`, step, within)
+  await whatFollowed(box, report, (chosen, days) => address({ step: chosen, within: days }), step, within)
 })

@@ -130,7 +130,7 @@ const NAME = /^[\w.-]{1,64}$/
 /** What a reviewer's token opens: what the reviewer screen reads, and the decisions a reviewer makes. */
 const REVIEW_ROUTES = new Set([
   'GET /me', 'GET /subject', 'GET /clusters', 'GET /search', 'GET /recent', 'GET /links', 'GET /cluster', 'GET /history', 'GET /journey', 'GET /board', 'GET /flows', 'GET /collusion', 'GET /rings',
-  'GET /decisions', 'GET /disputes', 'GET /consent', 'GET /outcome', 'GET /followed', 'GET /call', 'GET /calls', 'GET /calls/summary', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'GET /ops', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
+  'GET /decisions', 'GET /disputes', 'GET /consent', 'GET /outcome', 'GET /followed', 'GET /call', 'GET /calls', 'GET /calls/summary', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'GET /ops', 'POST /find', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
 ])
 
 /** Answers hold people's data, so nothing keeps a copy of one. */
@@ -507,6 +507,25 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
   /** Which policy runs, which one the stored clusters were built with, and whether a rebuild is due. */
   const brief = ({ hash, builtWith, due }: PolicyState) => ({ hash, builtWith: builtWith ?? null, due })
 
+  /**
+   * Who a text may mean: an email address or a phone number, hashed here and looked up whole, or how a subject's id begins.
+   * Neither is kept, and neither is ever part of an address, which servers and browsers write down.
+   */
+  async function find(given: unknown): Promise<{ by: 'email' | 'phone' | 'subject'; subjects: Subject[] }> {
+    if (typeof given !== 'string' || !given.trim() || given.length > 512) throw new Refusal(400, 'Body needs the text to find, at most 512 characters')
+    const text = given.trim()
+    const holding = async (identifiers: Identifier[]) => [...new Set((await graph.holders(identifiers)).map((edge) => edge.subject))].sort().slice(0, 20)
+    if (/^[^\s:@]+@[^\s:@]+$/.test(text)) return { by: 'email', subjects: await holding([email(text)]) }
+    if (/^\+?[\d\s().-]+$/.test(text)) {
+      let hash: string | undefined
+      try {
+        hash = hashPhone(text, options.calls?.country)
+      } catch {}
+      if (hash) return { by: 'phone', subjects: await holding([`phone:${hash}`, `voip:${hash}`]) }
+    }
+    return { by: 'subject', subjects: await graph.search(text) }
+  }
+
   /** Everything the reviewer screen shows about one subject, in one answer. */
   async function profile(subject: Subject) {
     const cluster = await graph.cluster(subject)
@@ -676,6 +695,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return graph.clusters(50, Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.floor(Number(url.searchParams.get('offset')) || 0))))
       case 'GET /search':
         return graph.search(url.searchParams.get('q') ?? '')
+      case 'POST /find':
+        return find((await json(request)).text)
       case 'GET /recent':
         return graph.recent()
       case 'POST /separate': {
@@ -853,7 +874,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         const days = period(url)
         const { timeZone } = days
         const by = url.searchParams.get('by') || undefined
-        const report = await graph.report({ ...days, ...(by && { by }) })
+        const per = url.searchParams.get('per') || undefined
+        const report = await graph.report({ ...days, ...(by && { by }), ...(per && { per }) })
         // The steps in your order first, then any others that turned up, by name.
         const named = Object.keys(options.stages ?? {})
         const others = Object.keys(report.total.stages).filter((step) => !named.includes(step)).sort()

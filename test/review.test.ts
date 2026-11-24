@@ -6,7 +6,7 @@ import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { createGraph, createMemoryStore } from '../src/index.ts'
+import { createGraph, createMemoryStore, email, phone } from '../src/index.ts'
 import { createHandler } from '../src/server.ts'
 
 // The reviewer screen in a real browser, driven over Chrome's own debugging port.
@@ -71,9 +71,12 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   assert.ok(chrome, 'CI needs a browser')
   const graph = createGraph(createMemoryStore())
   await graph.observe([1, 2, 3].map((n) => ({ subject: `account:${n}`, identifiers: ['email:e'], at: T0 })))
+  await graph.observe({ subject: 'caller:1', identifiers: [phone('7135550194')], at: T0 })
+  await graph.observe([1, 2].map((n) => ({ subject: `person:${n}`, identifiers: [email('both@example.com')], at: T0 })))
   let down = false
+  const asked: string[] = []
   const handler = createHandler(graph, { token: 'service', reviewers: { dana: 'dana-token', lee: 'lee-token' }, origins: [] })
-  const server = createServer((request, response) => (down && request.method === 'POST' ? void request.socket.destroy() : void handler(request, response))).listen(0, '127.0.0.1')
+  const server = createServer((request, response) => (asked.push(request.url!), down && request.method === 'POST' ? void request.socket.destroy() : void handler(request, response))).listen(0, '127.0.0.1')
   await new Promise((resolve) => server.once('listening', resolve))
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
   t.after(() => (server.closeAllConnections(), void server.close()))
@@ -161,6 +164,39 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   assert.deepEqual(await run(`[document.getElementById('ask-yes').textContent, document.getElementById('ask-reason').value]`), ['Decide anyway', 'kept all along'])
   await run(`document.getElementById('ask-yes').click()`)
   await until('the join to be taken', async () => (await decisions()).at(-1)![3] === 'kept all along')
+  // Found by phone, one person opens at once. Two with one email are offered, and nobody is said to be nobody.
+  const look = (what: string) => run(`(() => { const s = document.getElementById('subject'); s.value = ${JSON.stringify(what)}; s.dispatchEvent(new Event('input')); document.getElementById('find').requestSubmit() })()`)
+  await look('(713) 555-0194')
+  await until('the caller', async () => (await text('#detail h3')) === 'caller:1')
+  await look('both@example.com')
+  await until('the choice', async () => (await text('#notice')).includes('person:1, person:2'))
+  await look('nobody@example.com')
+  await until('nobody', async () => (await text('#notice')).includes('Nobody'))
+  // What is the start of nobody's id, or of several, is not put in the address either.
+  for (const [what, said] of [['555 01', 'Nobody'], ['person:', 'person:1, person:2']] as const) {
+    await look(what)
+    await until(what, async () => (await text('#notice')).includes(said))
+  }
+  assert.ok(!(await run('location.href')).includes('person'))
+  await look('person:2')
+  await until('the exact one', async () => (await text('#detail h3')) === 'person:2')
+  await pause(400)
+  assert.deepEqual([...asked, await run('location.href')].filter((each) => /555|example\.com/.test(decodeURIComponent(each))), [])
+
+  // A table is saved as it is shown, a name that starts like a formula as text.
+  const today = new Date().toISOString().slice(0, 10)
+  await graph.spend({ day: today, source: 'google', campaign: '=1+1', amount: 1234.5, clicks: 3 })
+  await run(`(() => { window.taken = []; URL.createObjectURL = (blob) => (taken.push(blob), 'blob:none'); HTMLAnchorElement.prototype.click = function () { taken.push(this.download) }; location.hash = '#/channels' })()`)
+  await until('the report', async () => (await text('#view')).includes('=1+1'))
+  await run(`[...document.querySelectorAll('button')].find((b) => b.textContent === 'Today').click()`)
+  await until('today alone', async () => (await run('location.hash')) === `#/channels/${today}/${today}` && (await text('#view')).includes('=1+1'))
+  await until('the button', () => run(`[...document.querySelectorAll('button')].some((b) => b.textContent === 'Today' && b.ariaPressed === 'true')`))
+  await run(`[...document.querySelectorAll('button')].find((b) => b.textContent === 'Save as CSV').click()`)
+  assert.equal(await run('taken[1]'), `channels-${today}-${today}.csv`)
+  const csv = (await run('taken[0].text()')) as string
+  assert.match(csv, /"google","'=1\+1",/)
+  assert.ok(!/"[=+@]/.test(csv), csv)
+
   await enter('service')
   await until('the service note', async () => (await text('#name')).includes('carry no name'))
 })
