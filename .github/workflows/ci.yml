@@ -46,12 +46,18 @@ jobs:
       # The check asks for 7, so that no other failure is taken for a finding. A merge is read against its first parent: what was put in while merging is in neither branch.
       - name: find a planted token
         run: |
-          mkdir /tmp/planted && cd /tmp/planted && git init -q -b main
-          git config user.name ci && git config user.email ci@example.org
-          git commit -q --allow-empty -m one && git switch -q -c side && git commit -q --allow-empty -m two
-          git switch -q main && git merge -q --no-ff --no-commit side
+          git init -q -b main /tmp/planted
+          cd /tmp/planted
+          git config user.name ci
+          git config user.email ci@example.org
+          git commit -q --allow-empty -m one
+          git switch -q -c side
+          git commit -q --allow-empty -m two
+          git switch -q main
+          git merge -q --no-ff --no-commit side
           printf 'ghp_%s\n' "$(openssl rand -hex 18)" > token.txt
-          git add token.txt && git commit -q -m merged
+          git add token.txt
+          git commit -q -m merged
           code=0
           /tmp/gitleaks git --redact --no-banner --exit-code 7 --log-opts="$LOG" . || code=$?
           test $code = 7
