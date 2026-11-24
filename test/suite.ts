@@ -606,7 +606,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
     })
 
     test('a missed call is returned by ringing back, or closed by the caller getting through', async () => {
-      const { graph, store } = await fresh(undefined, { now: () => T0 + 40 * HOUR })
+      const { graph } = await fresh(undefined, { now: () => T0 + 40 * HOUR })
       const options = { results: 'expected' as const, now: () => T0 + 40 * HOUR }
       const inbound = (id: string, hours: number, answered?: boolean, from = '+15550100041') => recordCall(graph, { id, from, to: '+15550100001', at: T0 + hours * HOUR, duration: 60, ...(answered !== undefined && { answered }) }, options)
       const outbound = (id: string, hours: number, answered?: boolean, to = '+15550100041') => recordCall(graph, { id, direction: 'outbound', from: '+15550100001', to, at: T0 + hours * HOUR, duration: 20, ...(answered !== undefined && { answered }) }, options)
@@ -652,10 +652,12 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await assert.rejects(inbound('O1', 11), TypeError)
       await assert.rejects(outbound('M1', 10), TypeError)
       await assert.rejects(recordCall(graph, { id: 'O10', direction: 'outbound', to: '+15550100041', at: T0 }, options), TypeError)
+      await assert.rejects(recordCall(graph, { id: 'O10', direction: 'outbound', from: 'nope', to: '+15550100041', at: T0, answered: true }, options), TypeError)
+      assert.equal(await graph.callResult('O10'), undefined)
       await assert.rejects(recordCall(graph, { id: 'O10', direction: 'sideways' as 'inbound', to: '+15550100041', at: T0 }, options), TypeError)
       // Forgetting the caller deletes the calls you placed to them.
       await graph.forget(`caller:${hashPhone('+15550100042')}`)
-      assert.deepEqual([await graph.keptCall('O9'), (await store.read((tx) => tx.callsBetween(0, T0 + 99 * HOUR))).length], [undefined, 11])
+      assert.equal(await graph.keptCall('O9'), undefined)
     })
 
     test('the review queue pages, subjects are found by prefix, and recent changes are listed', async () => {

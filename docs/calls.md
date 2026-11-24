@@ -126,7 +126,7 @@ curl "https://graph.example.org/call?id=CA2" -H "authorization: Bearer $REVIEW_T
 ```
 
 ```json
-{ "id": "CA2", "state": "missed", "followUp": { "state": "returned", "by": "CB1", "delay": 3600000, "attempts": 1 } }
+{ "id": "CA2", "state": "missed", "followUp": { "state": "returned", "by": "CB1", "delay": 3600000, "attempts": 0 } }
 ```
 
 | State of a missed call | Meaning |

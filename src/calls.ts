@@ -226,15 +226,16 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
 /** Records a call you placed. Nothing is observed: that you rang someone says nothing about who they are. */
 async function placed(graph: Graph, call: Call, theirs: string, result: Omit<CallResult, 'recorded'> | undefined, options: CallOptions): Promise<RecordedCall> {
   if (typeof call.from !== 'string') throw new TypeError(`Call "${call.id}" needs the number of yours it was placed from`)
+  const ours = normalizePhone(call.from, options.country)
   const subject = `caller:${hashPhone(theirs)}`
   const before = await graph.keptCall(call.id)
   if (before && before.direction !== 'outbound') throw new TypeError(`Call "${call.id}" was already recorded as a call to you`)
   if (result) await graph.keepCallResult(call.id, result)
   if (!before) {
-    await graph.keepCall({ id: call.id, direction: 'outbound', subject, at: call.at, to: normalizePhone(call.from, options.country), flags: [], ...(call.duration !== undefined && { duration: call.duration }) })
+    await graph.keepCall({ id: call.id, direction: 'outbound', subject, at: call.at, to: ours, flags: [], ...(call.duration !== undefined && { duration: call.duration }) })
   }
   const kept = (await graph.keptCall(call.id))!
-  return { subject, flags: [], counted: false, state: callState(kept, (options.now ?? Date.now)(), options), duplicate: before !== undefined }
+  return { subject: kept.subject, flags: [], counted: false, state: callState(kept, (options.now ?? Date.now)(), options), duplicate: before !== undefined }
 }
 
 /**
