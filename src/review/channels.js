@@ -82,7 +82,7 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
   const rows = report.rows.map((row) => ({ row, lines: [] }))
   for (const { row, lines } of rows) {
     lines.push(el('tr', {}, td('', row.source === '(none)' ? el('span', { class: 'muted' }, 'Unattributed') : sourced(row.source)),
-      td('who', row.campaign || row.campaignId || none(),
+      td('who', row.campaign || row.campaignId ? el('span', { class: 'ranked-what', title: row.campaign || row.campaignId }, row.campaign || row.campaignId) : none(),
         note([row.campaign && row.campaignId, spurned(row)])), ...cells(row)), ...split(row))
     table.append(...lines)
   }
