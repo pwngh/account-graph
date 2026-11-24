@@ -28,8 +28,10 @@ import type {
   Counts,
   Decision,
   Edge,
+  Entry,
   Flow,
   Identifier,
+  Journey,
   KeptCall,
   Labels,
   Link,
@@ -43,6 +45,7 @@ import type {
   Ring,
   Sighting,
   Subject,
+  Tie,
   Told,
   Touch,
   Transferred,
@@ -203,6 +206,12 @@ export interface Graph {
   rings(subject: Subject, length?: number): Promise<Ring[]>
   /** Deletes a subject and everything recorded about it, unsent conversions included. */
   forget(subject: Subject, why?: Why): Promise<Change[]>
+  /**
+   * Everything recorded about the person a subject is: arrivals, what they
+   * were seen doing, calls, steps and their values, consent and decisions,
+   * each with the subject it is on and why that subject is this person.
+   */
+  journey(subject: Subject, options?: { before?: number; limit?: number }): Promise<Journey>
   /** Every sighting of a subject, oldest first. With `limit`, only the newest that many. */
   history(subject: Subject, limit?: number): Promise<Sighting[]>
   /** Recomputes every cluster from edges. Run it after changing the policy. */
@@ -255,6 +264,8 @@ export interface PolicyState {
 }
 
 const DAY = 86_400_000
+/** The most subjects of one person a journey reads. */
+const MOST = 60
 const MIXED = 'mixed'
 /** The moments a range of days begins and ends in a time zone. */
 function range(from: string, to: string, timeZone?: string): [number, number] {
@@ -1027,6 +1038,73 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const open = identifiers.filter((identifier) => usable(policy, identifier, states.get(identifier)))
         for (const edge of await tx.edgesOn(open)) affected.add(edge.subject)
         return settle(tx, affected)
+      })
+    },
+
+    journey(subject, { before = Number.MAX_SAFE_INTEGER, limit = 200 } = {}) {
+      return store.read(async (tx) => {
+        const own = (await tx.labelsOf([subject])).get(subject)
+        const members = own ? (await tx.clusterOf(own.cluster)).sort() : [subject]
+        const reached = await reach(tx, subject, 2)
+        const direct = new Map(((await neighbors(tx, [subject])).get(subject) ?? []).map((link) => [link.subject, link]))
+        // The person: their cluster, and whoever is tied strongly enough that their arrivals would be credited.
+        // Nobody kept apart from any of them, though: a browser two people used is tied to both, and they are still two.
+        const within = new Set(members)
+        const apart = new Set((await tx.separatedOf(members)).flat().filter((each) => !within.has(each)))
+        const strong = [...reached].filter(([each, { confidence, via }]) => confidence >= policy.same && ![each, ...via].some((step) => apart.has(step))).map(([each]) => each)
+        const everyone = unique([subject, ...members, ...strong.sort()])
+        const people = everyone.slice(0, MOST)
+        const tie = (each: Subject): Tie => {
+          const found = reached.get(each)
+          return {
+            how: each === subject ? 'self' : within.has(each) ? 'cluster' : 'linked',
+            score: found?.confidence ?? null,
+            via: found?.via ?? [],
+            kinds: unique((direct.get(each)?.reasons ?? []).filter((reason) => reason.counted !== false).map((reason) => reason.identifier.slice(0, reason.identifier.indexOf(':')))),
+          }
+        }
+
+        const entries: Entry[] = []
+        for (const touch of await tx.touchesOf(people, 0, before - 1)) entries.push({ at: touch.at, subject: touch.subject, kind: 'arrival', touch })
+        const calls = await tx.callsOf(people)
+        for (const call of calls) entries.push({ at: call.at, subject: call.subject, kind: 'call', call, ...(call.direction === 'inbound' && call.result?.answered === false && { followUp: followUp(call, calls) }) })
+        for (const each of people) {
+          // One moment is many sightings, one for each identifier. What a call or a reviewer left is told by the call and the decision.
+          const moments = new Map<string, Entry & { kind: 'seen' }>()
+          for (const { at, event = '', identifier } of await tx.history(each)) {
+            if (event === 'call' || event === 'review' || at >= before) continue
+            const key = `${at} ${event}`
+            const moment = moments.get(key) ?? { at, subject: each, kind: 'seen', event, identifiers: [] }
+            moments.set(key, moment)
+            moment.identifiers.push(identifier)
+          }
+          entries.push(...moments.values())
+          for (const answer of await tx.consentHistory(each)) entries.push({ at: answer.at, subject: each, kind: 'consent', answer })
+        }
+        for (const outcome of await tx.outcomesOf(people)) {
+          const [first, ...later] = await tx.valuesOf(outcome.transactionId, outcome.subject)
+          entries.push({ at: outcome.at, subject: outcome.subject, kind: 'step', outcome, first: first ?? null })
+          let from = first
+          for (const to of later) {
+            entries.push({ at: to.at, subject: outcome.subject, kind: 'value', transactionId: outcome.transactionId, stage: outcome.stage, from: from!, to })
+            from = to
+          }
+        }
+        const named = new Set(people)
+        for (const decision of await tx.decisionsNaming(people)) entries.push({ at: decision.at, subject: decision.about.find((each) => named.has(each))!, kind: 'decision', decision })
+
+        const found = entries.filter((entry) => entry.at < before).sort((x, y) => x.at - y.at || (x.kind < y.kind ? -1 : x.kind > y.kind ? 1 : x.subject < y.subject ? -1 : 1))
+        // A page never ends inside a moment, so the next one can begin before it.
+        let cut = Math.max(0, found.length - limit)
+        while (cut > 0 && found[cut - 1]!.at === found[cut]!.at) cut -= 1
+        const page = found.slice(cut)
+        return {
+          subject,
+          ties: Object.fromEntries(unique(page.map((entry) => entry.subject)).map((each) => [each, tie(each)])),
+          entries: page,
+          next: cut > 0 ? page[0]!.at : null,
+          more: everyone.length - people.length,
+        }
       })
     },
 

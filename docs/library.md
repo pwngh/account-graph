@@ -300,6 +300,20 @@ await queue.observe({ subject: 'account:1', identifiers: ['email:…'], at: Date
 
 A quiet system writes at once; nothing waits on a timer. One bad observation fails alone.
 
+## One person's journey
+
+`journey` gathers everything recorded about a person, in order, across the subjects that are them.
+
+```ts
+let { entries, ties } = await graph.journey('contact:42')
+// entries: { at, subject, kind: 'arrival' | 'seen' | 'call' | 'step' | 'value' | 'consent' | 'decision', … }
+// ties[subject]: { how: 'self' | 'cluster' | 'linked', score, via, kinds }
+```
+
+The person is the subject's cluster, and whoever else is tied to it strongly enough that their arrivals would be credited. Somebody a decision keeps apart from any of them is not in it. `ties` says why each subject is there, with the score.
+
+An outcome's conversions are not in the library's answer, because the outbox is separate. `GET /journey` adds them.
+
 ## Reviewer decisions
 
 ```ts

@@ -68,6 +68,7 @@ A token goes in the `authorization` header as `Bearer …`. There are two.
 | `GET /ops` | How the server runs: `{ feeds, jobs, undelivered, alerts, outbox }`. |
 | `GET /pulse` | `{ version }`, with an `etag`. Ask again with `if-none-match` and it answers 304 until something is written. |
 | `GET /recent` | The newest cluster changes. |
+| `GET /journey?subject=&before=` | Everything recorded about the person a subject is, oldest first, the newest 200: `{ entries, ties, next, more }`. Pass `next` as `before` for what came earlier. |
 | `GET /flows?subject=` | Everyone the subject exchanged value with, and the identity tie to each. |
 | `GET /collusion?subject=` | The counterparties tied by identity, with three or more flows. |
 | `GET /rings?subject=` | Value that left the subject and came back through others. |

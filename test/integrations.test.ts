@@ -945,6 +945,12 @@ test('a call whose result is awaited is held, and nothing is sent until a person
     assert.equal((await read('/report?by=nonsense')).status, 400)
     const after = (await (await read(`/followed?${days}&step=client&days=10`)).json()) as any
     assert.deepEqual([after.step, after.days, after.least, after.groups.length, after.timeZone], ['client', 10, 20, 4, 'America/New_York'])
+    // The caller's journey, with what became of each step at the ad platforms.
+    const story = (await (await read(`/journey?subject=${first.body.subject}`)).json()) as any
+    const told = story.entries.filter((entry: any) => entry.kind === 'step').map((entry: any) => [entry.outcome.transactionId, entry.sent.map((job: any) => [job.target, job.state])])
+    assert.deepEqual(told, [['call:CA1', [['google', 'sent']]]])
+    assert.ok(story.entries.filter((entry: any) => entry.kind === 'call').every((entry: any) => entry.state && !('to' in entry.call)))
+    assert.equal((await read('/journey?subject=a&before=soon')).status, 400)
     for (const bad of ['/followed?days=10', '/followed?step=client&days=x', '/calls?after=x', '/calls?from=2026-13-01', '/calls/summary?tz=Mars']) assert.equal((await read(bad)).status, 400, bad)
     // A result that comes first waits for its call.
     assert.deepEqual((await post('/call/result', { id: 'CA3', answered: true })).body, { state: 'waiting', counted: false })

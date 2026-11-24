@@ -139,6 +139,8 @@ export interface Tx {
   decisions(): Promise<Decision[]>
   /** One page of decisions, newest first: those before a sequence number, by people, by systems, or by one author. */
   decisionPage(page: DecisionPage): Promise<Decision[]>
+  /** Every decision that names one of the given subjects, oldest first. Reads every decision. */
+  decisionsNaming(subjects: readonly Subject[]): Promise<Decision[]>
   /** Every decision that joined, separated or rejoined one of the given pairs, oldest first. Each pair is in order. */
   decisionsAbout(pairs: readonly (readonly [Subject, Subject])[]): Promise<Decision[]>
   /** The pairs that systems have decided about this many times or more. */

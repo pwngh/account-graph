@@ -4,7 +4,9 @@ $('token').addEventListener('change', () => { sessionStorage.setItem('token', $(
 $('by').addEventListener('change', () => localStorage.setItem('by', $('by').value))
 $('find').addEventListener('submit', (event) => {
   event.preventDefault()
-  go(subjectHash($('subject').value.trim()))
+  // In a view about a subject, the one typed opens there. Elsewhere it opens its account.
+  const { name } = place()
+  go(`#/${views.get(name).subject ? name : 'accounts'}/${encodeURIComponent($('subject').value.trim())}`)
 })
 
 // Suggest subjects as the reviewer types, a moment after the last key.

@@ -4,7 +4,7 @@
  * Then open the printed address and enter the reviewer token `demo`.
  */
 import { createServer } from 'node:http'
-import { createGraph, createMemoryStore, hashPhone, recordCall, recordCallResult } from '../src/index.ts'
+import { createGraph, createMemoryStore, dialed, hashPhone, recordCall, recordCallResult } from '../src/index.ts'
 import { createHandler } from '../src/server.ts'
 
 // What is recorded below is written down at the time it happened, so the months of first record are real ones.
@@ -113,6 +113,26 @@ for (let i = 0; i < 110; i++) {
     await graph.outcome({ transactionId: `enrolled-p${i}`, subject: `lead:p${i}`, at: at + (30 + Math.floor(chance() * 300)) * HOUR, stage: 'enrolled', value: 200, currency: 'USD' })
   }
 }
+
+// One person's whole story, for the Journey view.
+const told = Date.now() - 20 * 24 * HOUR
+const ana = 'contact:story'
+await graph.observe({ subject: 'visitor:story', identifiers: ['device:story', 'ip:192.0.2.44', 'place:US'], at: told, event: 'visit' })
+await graph.touch({ subject: 'visitor:story', at: told, gclid: 'story-click', campaignId: '20222', campaign: 'Search: brand', term: 'garden help near me', landing: 'https://example.org/help', custom: { office: 'north', lang: 'es' } })
+await graph.observe({ subject: 'visitor:story', identifiers: ['device:story', dialed('+15550100001', told + HOUR)], at: told + HOUR, event: 'phone_click' })
+await recordCall(graph, { id: 'story-1', from: '+15550100900', to: '+15550100001', at: told + HOUR + 20_000, duration: 41, waited: 41, answered: false, tags: { language: 'es' } }, { numbers, results: 'expected' })
+await recordCall(graph, { id: 'story-2', direction: 'outbound', from: '+15550100001', to: '+15550100900', at: told + 5 * HOUR, duration: 30, answered: false })
+await recordCall(graph, { id: 'story-3', direction: 'outbound', from: '+15550100001', to: '+15550100900', at: told + 26 * HOUR, duration: 400, answered: true })
+await graph.observe({ subject: ana, identifiers: ['device:story', `phone:${hashPhone('+15550100900')}`], at: told + 30 * HOUR, event: 'signup' })
+await graph.consent(ana, { adUserData: true, adPersonalization: false }, { at: told + 30 * HOUR, source: 'sign-up form' })
+for (const [hours, value] of [[48, 200], [240, 350], [400, 420.5]] as const) {
+  writing = told + hours * HOUR
+  if (hours === 48) await graph.outcome({ transactionId: 'story-client', subject: ana, at: writing, stage: 'enrolled', value, currency: 'USD', tags: { office_served: 'river', language: 'es' } })
+  else await graph.restate('story-client', value)
+}
+writing = told + 420 * HOUR
+await graph.separate(ana, 'contact:former-spouse', true, { by: 'dana', reason: 'sides of one matter' })
+writing = undefined
 
 // The example site (examples/site.ts) can report to this server too.
 const handler = createHandler(graph, {

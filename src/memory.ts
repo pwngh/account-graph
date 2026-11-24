@@ -472,6 +472,11 @@ export function createMemoryStore(): Store {
       return decisions.filter(wanted).slice(-limit).reverse().map(copied)
     },
 
+    async decisionsNaming(subjects) {
+      const wanted = new Set(subjects)
+      return decisions.filter((decision) => decision.action !== 'ignore' && decision.action !== 'restore' && decision.action !== 'prune' && decision.about.some((each) => wanted.has(each))).map(copied)
+    },
+
     async decisionsAbout(pairs) {
       const wanted = new Set(pairs.map((pair) => pair.join('\u0000')))
       return decisions.filter((decision) => ofPair(decision) && wanted.has(decision.about.join('\u0000'))).map(copied)
