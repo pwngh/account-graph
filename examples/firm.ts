@@ -232,7 +232,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       // They fill in the form, sign, and are scheduled with a director, some not as far.
       let moment = asked
       let reachedAll = true
-      for (const [stage, least, most, share] of [['intake', 0.02, 0.5, 0.94], ['signed', 0.02, 0.4, 0.92], ['scheduled', 0.05, 0.6, 0.95]] as const) {
+      for (const [stage, least, most, share] of [['intake', 0.02, 0.5, 1], ['signed', 0.02, 0.4, 0.92], ['scheduled', 0.05, 0.6, 0.95]] as const) {
         moment += (least + chance() * (most - least)) * DAY
         if (chance() > share || !(await step(stage, moment))) {
           reachedAll = false

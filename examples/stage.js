@@ -106,6 +106,8 @@
       const row = performance.now() - began < 3200 ? found(words) : undefined
       light.classList.toggle('on', Boolean(row))
       if (!row) return performance.now() - began < 3200 ? undefined : clearInterval(lit)
+      // The campaign's name stays at left, and what it cost and brought in is at the far end.
+      if (row.closest('.campaign-report')) row.closest('.wide').scrollLeft = 1e6
       let rect = row.getBoundingClientRect()
       const floor = innerHeight - (bar.classList.contains('away') ? 16 : innerHeight - bar.getBoundingClientRect().top + 12)
       const side = $('view').getBoundingClientRect()
