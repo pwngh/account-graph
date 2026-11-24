@@ -87,6 +87,24 @@ the other system ──▶ your backend, later ──▶ POST /identify { subjec
 
 When your backend can read the `ag_device` cookie, prefer it to the field. With `COOKIE=true` the server's cookie outlives the page's stored id. The id a page reports is kept on the same visitor, so either one finds them.
 
+## Chat
+
+A chat service hands over a lead with an email or a phone number, and often no device. Have your backend record the person, then the step:
+
+```sh
+curl -X POST https://graph.example.org/identify -H "authorization: Bearer $GRAPH_TOKEN" \
+  -d '{"subject":"contact:7","event":"chat","phone":"+15550100142","device":"9f3c1c1e-0000-4000-8000-000000000001"}'
+curl -X POST https://graph.example.org/convert -H "authorization: Bearer $GRAPH_TOKEN" \
+  -d '{"transactionId":"chat-7","subject":"contact:7","at":1795460000000,"stage":"chat"}'
+```
+
+| The chat box | What to send |
+| --- | --- |
+| Takes fields of your own | Give it `accountGraph.fields().ag_device` when the chat opens, and send it back as `device`. The lead is then linked to that browser's recorded visits, if there are any. |
+| Takes none | Leave `device` out. They are linked by a phone or email seen elsewhere, or not at all. |
+
+What was said in the chat is not read or stored. Leave it in the chat service.
+
 ## Filters
 
 | Filter | Behavior |

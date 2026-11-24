@@ -134,6 +134,29 @@ Post each call to `/call` with the service token.
 | `duration` | How long it lasted, in seconds |
 | `answered`, `voicemail`, `waited` | The [result](#call-results), if already known |
 
+### A call tracking service
+
+A service that swaps the numbers on your pages can stay. Keep its script, and have your backend post each of its finished calls to `/call`. Taps are matched only if the script changes the `tel:` address of the link as well as the text, and `phone_click` is in `EVENTS`.
+
+```text
+visitor taps the number it put there ──▶ /event: that number, when
+the service's webhook ──▶ your backend ──▶ POST /call { id, from, to, at, duration, … }
+```
+
+| Field | From the service |
+| --- | --- |
+| `id` | Its own id for the call, so a report sent twice counts once |
+| `from` | Inbound: the caller's number. Outbound: yours. |
+| `to` | Inbound: the number the visitor saw and dialed, not the one it was forwarded to, because a tap is matched on it. Outbound: the customer's number. |
+| `at` | Its start time as epoch milliseconds. Convert a time with a zone. |
+| `duration` | Seconds. Check its unit. |
+| `answered`, `voicemail` | `answered: true` only where a person, and not a menu or a machine, is known to have answered. `answered: false` for a known miss, with `voicemail: true` where it went there. Leave both out when unknown, and report the [result](#call-results) later. |
+| `direction` | `outbound` for calls you placed |
+
+CallRail's API documents a call with `customer_phone_number`, `tracking_phone_number`, `start_time`, `duration`, `answered`, `voicemail` and `direction`. Check the body your account sends, and its signature, before relying on any field. No such service has been tried against a live account here.
+
+> **List its numbers or none.** With `CALL_NUMBERS` set, a tap on a number that is neither in it nor in the pool leaves no note to match a call by. Add each number the service shows, or leave `CALL_NUMBERS` unset.
+
 ## Number pools
 
 A number pool shows each visitor a number of their own for a while, so a call dialed by hand is linked to them without a tap. Pools are off until you set the numbers:

@@ -82,6 +82,8 @@ Mark a sender as no lead with `POST /not-lead` and `"transactionId": "text:SM1"`
 
 It is kept apart from [consent](privacy.md), which is about advertising. Your own system sends the texts, so it must check its own list as well.
 
+A form's consent to texts belongs there too: the wording shown, when, and by whom it was given. Nothing here stores it or decides who may be sent a text. Do not use `/consent` for it, because a no there stops advertising conversions.
+
 ## Limitations
 
 | Area | Detail |
