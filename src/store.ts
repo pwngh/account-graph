@@ -1,6 +1,6 @@
 import type { Feed, OpsStore } from './ops.ts'
 import type { OutboxStore } from './outbox.ts'
-import type { CallResult, Change, Consent, ConsentAnswer, Cost, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Lease, Moved, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, Change, Consent, ConsentAnswer, Cost, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Lease, Moved, NotLead, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
 
 /**
  * Where the graph lives. Sightings and touches are the record; edges and
@@ -108,6 +108,12 @@ export interface Tx {
   firstValues(outcomes: readonly Counted[]): Promise<Map<string, OutcomeValue & { most: number }>>
   /** Takes an outcome out of the report. Its values stay in its history. */
   removeOutcome(transactionId: string): Promise<void>
+  /** Which of these outcomes, by transaction id, were said to be no lead. A call is `call:` and its id. */
+  notLeads(ids: readonly string[]): Promise<Map<string, NotLead>>
+  /** Says an outcome is no lead, or with undefined takes that back. The outcome may not be recorded yet. */
+  setNotLead(id: string, said: NotLead | undefined): Promise<void>
+  /** Deletes what was said before a time about outcomes and calls that never came. Returns how many went. */
+  pruneNotLeads(before: number): Promise<number>
   /** Keeps a call, replacing one with the same id. Its result is kept apart, and may arrive first. */
   setCall(call: Omit<KeptCall, 'result'>): Promise<void>
   setCallResult(id: string, result: CallResult): Promise<void>

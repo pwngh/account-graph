@@ -1,7 +1,7 @@
 import type { Graph } from './graph.ts'
 import { hashPhone, normalizePhone, phoneOfType } from './identifiers.ts'
 import { checkTags } from './tags.ts'
-import type { CallResult, FollowUp, Identifier, KeptCall, Outcome, Subject } from './types.ts'
+import type { CallResult, FollowUp, Identifier, KeptCall, NotLead, Outcome, Subject } from './types.ts'
 
 /** One phone call to a number of yours, or from one, as your telephone provider reports it. */
 export interface Call {
@@ -89,6 +89,9 @@ export interface CallOptions {
   release?: (outcome: Outcome) => Promise<unknown>
   /** Takes back the outcome of a call that was not answered after all. Defaults to `graph.withdraw`; pass the outbox's `withdraw`. */
   withdraw?: (transactionId: string) => Promise<unknown>
+  /** Takes an outcome's conversions back while it is no lead, and gives them back. Default to nothing; pass the outbox's `takeBack` and `giveBack`. */
+  takeBack?: (transactionId: string) => Promise<unknown>
+  giveBack?: (transactionId: string) => Promise<unknown>
   /** The clock, for tests. */
   now?: () => number
 }
@@ -291,6 +294,9 @@ function resultIn(given: { answered?: unknown; voicemail?: unknown; waited?: unk
   return { ...(heard !== undefined && { answered: heard }), ...(voicemail !== undefined && { voicemail: voicemail as boolean }), ...(waited !== undefined && { waited: waited as number }) }
 }
 
+/** Whether a call counts by what is known of it: it was long enough, and a person answered, or no result is expected and none says otherwise. */
+const countsBy = (call: KeptCall, options: CallOptions): boolean => !tooShort(call, options) && (call.result?.answered ?? options.results !== 'expected')
+
 /** Whether a call ended too soon to count. */
 function tooShort(call: { duration?: number }, options: CallOptions): boolean {
   return (call.duration ?? Infinity) < (options.minimumSeconds ?? 30)
@@ -319,8 +325,10 @@ async function settle(graph: Graph, id: string, options: CallOptions, phone?: st
     // A call you placed is never an outcome.
     if (!call || call.direction === 'outbound') return false
     const answered = call.result?.answered
-    const counts = !tooShort(call, options) && (answered ?? options.results !== 'expected')
+    const counts = countsBy(call, options)
     const outcome = outcomeOf(call, options, phone)
+    // Said to be no lead, it is not sent or counted anew. What was counted stays on record, and counts nowhere.
+    if (counts && (await graph.notLeads([outcome.transactionId])).size > 0) return false
     // Each of these does nothing where it is already done, so one that was cut off half way is finished by the next.
     if (counts && options.release) await options.release(outcome)
     // Without one, a result has no number to give, so it only counts the call.
@@ -377,6 +385,30 @@ export async function recordReturn(graph: Graph, report: { id: string; at?: numb
   await graph.keepReturn(report.id, undone ? undefined : at)
   const kept = call && (await graph.keptCall(report.id))
   return kept?.result?.answered === false ? followUp(kept, await graph.callsOf([kept.subject])) : undefined
+}
+
+/**
+ * Records that an outcome was no lead: spam, or somebody who was not asking
+ * for what you do. `call` names a call, and `transactionId` any other outcome;
+ * either may not be recorded yet. It stays on record and counts nowhere, its
+ * conversions are taken back where the ad platform allows it, and a missed
+ * call is not waiting for anyone. `lead: true` takes that back.
+ */
+export async function recordNotLead(graph: Graph, report: { call?: string; transactionId?: string; kind?: NotLead['kind']; lead?: boolean }, options: CallOptions = {}): Promise<{ id: string; lead: boolean }> {
+  const { call, transactionId, kind = 'other', lead = false } = report ?? {}
+  if ((call === undefined) === (transactionId === undefined)) throw new TypeError('Say which: a `call`, or the `transactionId` of an outcome')
+  if (call !== undefined && (typeof call !== 'string' || !/^[\w.-]{1,128}$/.test(call))) throw new TypeError('`call` must be the id of a call')
+  if (typeof lead !== 'boolean') throw new TypeError('`lead` must be true or false')
+  const id = call !== undefined ? `call:${call}` : transactionId!
+  await graph.markNotLead(id, lead ? undefined : kind)
+  if (!lead) await options.takeBack?.(id)
+  // A call is counted by what is known of it now, which may not be what was known when it was marked.
+  // What was recorded keeps its value.
+  else if (await graph.outcomeOf(id)) {
+    const kept = id.startsWith('call:') ? await graph.keptCall(id.slice(5)) : undefined
+    if (!kept || countsBy(kept, options)) await options.giveBack?.(id)
+  } else if (id.startsWith('call:')) await settle(graph, id.slice(5), options)
+  return { id, lead }
 }
 
 /** Whether a number is one of those left out. */

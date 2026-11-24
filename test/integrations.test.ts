@@ -1064,11 +1064,20 @@ test('a call whose result is awaited is held, and nothing is sent until a person
     assert.deepEqual([marked.status, marked.body], [200, { followUp: null }])
     assert.equal((await post('/call/returned', { id: 'CA-nobody', at: 'then' })).status, 400)
     assert.equal((await fetch(`${base}/call/returned`, { method: 'POST', headers: { authorization: 'Bearer review' }, body: '{"id":"CA-nobody"}' })).status, 403)
+    // What was no lead, for the service alone. A call and an outcome say so when they are read.
+    assert.deepEqual((await post('/not-lead', { call: 'CA1', kind: 'spam' })).body, { id: 'call:CA1', lead: false })
+    assert.equal(((await (await read('/call?id=CA1')).json()) as any).notLead, 'spam')
+    assert.equal(((await (await read('/outcome?id=call:CA1')).json()) as any).notLead, 'spam')
+    assert.deepEqual((await post('/not-lead', { call: 'CA1', lead: true })).body, { id: 'call:CA1', lead: true })
+    assert.equal('notLead' in ((await (await read('/call?id=CA1')).json()) as any), false)
+    assert.equal((await post('/not-lead', { call: 'CA1', kind: 'junk' })).status, 400)
+    assert.equal((await fetch(`${base}/not-lead`, { method: 'POST', headers: { authorization: 'Bearer review' }, body: '{"call":"CA1"}' })).status, 403)
+    // Given back, what had been sent is told its value once more.
     // A result that comes first waits for its call.
     assert.deepEqual((await post('/call/result', { id: 'CA3', answered: true })).body, { state: 'waiting', counted: false })
     assert.equal((await post('/call', call('CA3'))).body.state, 'answered')
     await outbox.run()
-    assert.deepEqual(requests.flatMap((request) => request.events.map((each: any) => each.transactionId)), ['call:CA1', 'call:CA3'])
+    assert.deepEqual(requests.flatMap((request) => request.events.map((each: any) => each.transactionId)), ['call:CA1', 'call:CA1', 'call:CA3'])
     // Missed as it was reported, and answered after all: it goes out with the number's hash it was reported with.
     await post('/call', { ...call('CA4'), answered: false })
     assert.equal((await post('/call/result', { id: 'CA4', answered: true })).body.counted, true)
@@ -1486,6 +1495,20 @@ test('a visitor with an arrival is shown a number of their own, and nobody else 
   const off = await listen({})
   assert.equal((await fetch(`${off}/number`, { method: 'POST', body: '{"device":"a"}', headers: { origin: 'https://site.example' } })).status, 401)
   assert.throws(() => createHandler(graph, { ...options, pool: { numbers: ['nonsense'], minutes: 15, grace: 0 } }), TypeError)
+})
+
+test('a call marked before it counted takes its step when that is taken back, with no ad platform', async (t) => {
+  const graph = createGraph(createMemoryStore())
+  const server = createServer(createHandler(graph, { token: 'service', origins: [], calls: { results: 'expected' }, stages: { call: { value: 10, currency: 'USD' } } })).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  t.after(() => void server.close())
+  const post = async (path: string, body: object) => (await (await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}${path}`, { method: 'POST', headers: { authorization: 'Bearer service' }, body: JSON.stringify(body) })).json()) as any
+  await post('/not-lead', { call: 'N1' })
+  await post('/call', { id: 'N1', from: '+15550100091', to: '+15550100001', at: T0, duration: 60, answered: true })
+  assert.equal(await graph.outcomeOf('call:N1'), undefined)
+  await post('/not-lead', { call: 'N1', lead: true })
+  const { stage, value, currency } = (await graph.outcomeOf('call:N1'))!
+  assert.deepEqual([stage, value, currency], ['call', 10, 'USD'])
 })
 
 test('the labels tool resolves a file of checked pairs against a running server, and counts what it could not use', async (t) => {

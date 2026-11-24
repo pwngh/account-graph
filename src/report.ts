@@ -139,8 +139,8 @@ interface Step {
   days: number[]
   inside: number
 }
-type Tally = { stages: Map<string, Step>; outcomes: number; value: number; people: Set<string>; missed: number }
-const tally = (): Tally => ({ stages: new Map(), outcomes: 0, value: 0, people: new Set(), missed: 0 })
+type Tally = { stages: Map<string, Step>; outcomes: number; value: number; people: Set<string>; missed: number; notLeads: number }
+const tally = (): Tally => ({ stages: new Map(), outcomes: 0, value: 0, people: new Set(), missed: 0, notLeads: 0 })
 type Worked = 'costDays' | 'missingDays' | 'thin' | 'costPerOutcome' | 'returnOnCost'
 type Line = Omit<ReportRow, 'stages' | 'breakdown' | 'people' | Worked> & Tally & { costed: Map<string, number>; bought: boolean; onDays: Map<string, { outcomes: number; value: number }>; named: string; parts: Map<string, Tally> }
 
@@ -216,6 +216,8 @@ function plain(parts: Map<string, Tally>): Breakdown {
 export interface FoldOptions {
   /** Each missed call, with the touch it is credited to, or undefined for one nothing can be credited with. */
   missed?: readonly Told[]
+  /** Each outcome and missed call that was said to be no lead, the same way. */
+  notLeads?: readonly Told[]
   /** The dimension to break each line down by. */
   by?: string | undefined
   /** The one step to count in what an outcome cost. Every step is counted without it. */
@@ -271,7 +273,7 @@ export function fold(
   costs: readonly Required<Cost>[],
   touches: readonly Touch[],
   credited: readonly Credited[],
-  { missed = [], by, per, timeZone, through = to, history = credited }: FoldOptions = {},
+  { missed = [], notLeads = [], by, per, timeZone, through = to, history = credited }: FoldOptions = {},
 ): Report {
   // Days still to come have no cost yet, whatever rows there are for them.
   const last = through < to ? through : to
@@ -308,7 +310,7 @@ export function fold(
   const costed = new Set(lines.keys())
 
   // Then every touch that names an id no cost has, so a touch that carries the id as its name can find it.
-  const all = [...touches, ...credited.flatMap(({ touch }) => (touch ? [touch] : [])), ...missed.flatMap(({ touch }) => (touch ? [touch] : []))]
+  const all = [...touches, ...credited.flatMap(({ touch }) => (touch ? [touch] : [])), ...[...missed, ...notLeads].flatMap(({ touch }) => (touch ? [touch] : []))]
   // A touch finds a cost by name when it has no id. One with an id no cost knows only finds a cost that has no id either:
   // a different id under the same name is a different campaign.
   const named = (touch: Touch, source: string) => {
@@ -347,6 +349,7 @@ export function fold(
   }
   const missing = (touch: Touch | undefined) => (touch ? lineOf(touch) : line('(none)', '', ''))
   for (const call of missed) for (const into of tallies(missing(call.touch), call)) into.missed += 1
+  for (const each of notLeads) for (const into of tallies(missing(each.touch), each)) into.notLeads += 1
   const everything = tally()
   const worthAll = unchanged()
   const months = new Map<string, ValueChange>()
@@ -363,7 +366,7 @@ export function fold(
     found.onDays.set(day, { outcomes: on.outcomes + (per === undefined || outcome.stage === per ? 1 : 0), value: on.value + outcome.value })
   }
 
-  const total = { cost: 0, clicks: 0, impressions: 0, visits: 0, missed: 0, outcomes: 0, value: 0 }
+  const total = { cost: 0, clicks: 0, impressions: 0, visits: 0, missed: 0, notLeads: 0, outcomes: 0, value: 0 }
   // The total of what things cost: campaigns with enough cost data, and the outcomes credited to them. Never all spend over all outcomes.
   const known: Spent = { cost: 0, outcomes: 0, value: 0 }
   let counted = 0
@@ -381,6 +384,7 @@ export function fold(
     total.impressions += found.impressions
     total.visits += found.visits
     total.missed += found.missed
+    total.notLeads += found.notLeads
     total.outcomes += found.outcomes
     const spent: Spent = { cost: 0, outcomes: 0, value: 0 }
     for (const [day, cost] of costDays) {
@@ -399,7 +403,7 @@ export function fold(
     }
     return { ...found, ...worked, people: people.size, worth: roundedChange(found.worth), stages: plainSteps(stages), ...(valueOf && { breakdown: plain(parts) }) }
   })
-  const said = new Set([...all.flatMap(touchTags).map((name) => `touch.${name}`), ...[...credited.map(({ outcome }) => outcome.tags), ...missed.map(({ tags }) => tags)].flatMap((tags) => Object.keys(tags ?? {})).map((name) => `outcome.${name}`)])
+  const said = new Set([...all.flatMap(touchTags).map((name) => `touch.${name}`), ...[...credited.map(({ outcome }) => outcome.tags), ...[...missed, ...notLeads].map(({ tags }) => tags)].flatMap((tags) => Object.keys(tags ?? {})).map((name) => `outcome.${name}`)])
   const steps = plainSteps(everything.stages)
   const wait = slowest(history)
   const after = new Date(Date.parse(`${through}T00:00:00Z`) - wait * 86_400_000).toISOString().slice(0, 10)

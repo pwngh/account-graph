@@ -11,6 +11,8 @@ export interface CallCounts extends Record<CallState, number> {
   told: number
   /** Missed and voicemail calls whose caller rang again and got through. */
   triedAgain: number
+  /** Calls said to be no lead. They are in none of the counts above. */
+  notLeads: number
   /** Missed and voicemail calls from a hidden number, which cannot be returned. */
   hidden: number
 }
@@ -37,7 +39,7 @@ export interface CallSummary {
 }
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-const none = (): CallCounts => ({ calls: 0, answered: 0, missed: 0, voicemail: 0, waiting: 0, unknown: 0, returned: 0, told: 0, triedAgain: 0, hidden: 0 })
+const none = (): CallCounts => ({ calls: 0, answered: 0, missed: 0, voicemail: 0, waiting: 0, unknown: 0, returned: 0, told: 0, triedAgain: 0, notLeads: 0, hidden: 0 })
 
 /**
  * Counts calls to you. `calls` are those of the period, `later` every call
@@ -50,7 +52,7 @@ export function summarizeCalls(
   filed: ReadonlySet<string>,
   at: number,
   timeZone = 'UTC',
-  options: Pick<CallOptions, 'results' | 'resultWait'> & { hours?: Hours } = {},
+  options: Pick<CallOptions, 'results' | 'resultWait'> & { hours?: Hours; notLeads?: ReadonlySet<string> } = {},
 ): CallSummary {
   const bySubject = new Map<Subject, KeptCall[]>()
   for (const call of later) bySubject.set(call.subject, [...(bySubject.get(call.subject) ?? []), call])
@@ -69,9 +71,14 @@ export function summarizeCalls(
     const cell = cells.get(key) ?? { weekday, hour, ...none() }
     cells.set(key, cell)
     const state = callState(call, at, options)
-    const became = state === 'missed' || state === 'voicemail' ? followUp(call, bySubject.get(call.subject) ?? []) : undefined
+    const spurned = options.notLeads?.has(`call:${call.id}`) ?? false
+    const became = spurned ? undefined : state === 'missed' || state === 'voicemail' ? followUp(call, bySubject.get(call.subject) ?? []) : undefined
     if (became?.state === 'returned') delays.push(became.delay!)
     for (const counts of [total, cell, ...(closed && !options.hours!.isOpen(call.at) ? [closed] : [])]) {
+      if (spurned) {
+        counts.notLeads += 1
+        continue
+      }
       counts.calls += 1
       counts[state] += 1
       if (became?.state === 'returned') counts.returned += 1
@@ -79,6 +86,7 @@ export function summarizeCalls(
       if (became?.state === 'tried again') counts.triedAgain += 1
       if (became?.state === 'hidden') counts.hidden += 1
     }
+    if (spurned) continue
     if (call.visitor) coverage.visitor += 1
     else if (filed.has(call.id)) coverage.channel += 1
     else coverage.neither += 1

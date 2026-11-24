@@ -335,6 +335,13 @@ export interface Counted {
   tags?: Record<string, string>
 }
 
+/** That something recorded as an outcome, or a call, was nobody's inquiry: `spam`, or `other`, such as a wrong number, a supplier or somebody who is a client already. */
+export interface NotLead {
+  kind: 'spam' | 'other'
+  /** When it was said. */
+  at: number
+}
+
 /** One value an outcome has had. Values are added to and never changed. */
 export interface OutcomeValue {
   value: number
@@ -440,8 +447,8 @@ export interface Tie {
 export type Entry = { at: number; subject: Subject } & (
   | { kind: 'arrival'; touch: Touch }
   | { kind: 'seen'; event: string; identifiers: Identifier[] }
-  | { kind: 'call'; call: KeptCall; followUp?: FollowUp }
-  | { kind: 'step'; outcome: Counted; first: OutcomeValue | null }
+  | { kind: 'call'; call: KeptCall; followUp?: FollowUp; notLead?: NotLead['kind'] }
+  | { kind: 'step'; outcome: Counted; first: OutcomeValue | null; notLead?: NotLead['kind'] }
   | { kind: 'value'; transactionId: string; stage: string; from: OutcomeValue; to: OutcomeValue }
   | { kind: 'consent'; answer: ConsentAnswer }
   | { kind: 'decision'; decision: Decision }
@@ -510,6 +517,8 @@ export interface ReportRow {
   visits: number
   /** Calls no one answered, by result, credited the way outcomes are. They are never outcomes. */
   missed: number
+  /** Outcomes and calls said to be no lead, credited the same way. They are in no other number here. */
+  notLeads: number
   /** Outcomes credited to this row, per step, how many people they are, and how long after their arrival they came. */
   stages: Record<string, StageCount>
   /** Outcomes credited to this row, all steps together. */
@@ -536,7 +545,7 @@ export interface ReportRow {
 }
 
 /** Outcomes and missed calls by the value of one dimension, each named by that value, in order. `(not recorded)` is always the last. */
-export type Breakdown = { name: string; stages: Record<string, StageCount>; outcomes: number; value: number; people: number; missed: number }[]
+export type Breakdown = { name: string; stages: Record<string, StageCount>; outcomes: number; value: number; people: number; missed: number; notLeads: number }[]
 
 export interface Report {
   from: string

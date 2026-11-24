@@ -403,7 +403,7 @@ test('calls are counted by hour and weekday where they happened, and by what bec
   ]
   const later = [...calls, call('r1', { subject: 'caller:b', direction: 'outbound', at: at + 60_000, result: went(true) }), call('r2', { subject: 'caller:c', at: at + 120_000, result: went(true) })]
   const summary = summarizeCalls(calls, later, new Set(['b', 'c']), at + 7_200_000 + 60_000 + 30 * 60_000 - 1, 'America/New_York', { results: 'expected' })
-  assert.deepEqual(summary.total, { calls: 7, answered: 1, missed: 3, voicemail: 1, waiting: 1, unknown: 1, returned: 1, told: 0, triedAgain: 1, hidden: 1 })
+  assert.deepEqual(summary.total, { calls: 7, answered: 1, missed: 3, voicemail: 1, waiting: 1, unknown: 1, returned: 1, told: 0, triedAgain: 1, notLeads: 0, hidden: 1 })
   // Half past five in the morning in London is half past midnight on Monday in New York.
   assert.deepEqual(summary.cells.map((cell) => [cell.weekday, cell.hour, cell.calls]), [[1, 0, 5], [1, 1, 1], [1, 2, 1]])
   assert.deepEqual(summarizeCalls(calls, later, new Set(), at, 'UTC').cells.map((cell) => [cell.weekday, cell.hour, cell.calls]), [[1, 5, 5], [1, 6, 1], [1, 7, 1]])
@@ -416,7 +416,7 @@ test('calls are counted by hour and weekday where they happened, and by what bec
   assert.equal(summarizeCalls([call('long', { duration: 600 }), call('waited', { result: { waited: 5, recorded: at } })], [], new Set(), at).coverage.noResult, 2)
   // Already tomorrow in Tokyo.
   assert.deepEqual([dayIn(Date.parse('2026-03-02T16:00:00Z'), 'Asia/Tokyo'), dayIn(Date.parse('2026-03-02T16:00:00Z'))], ['2026-03-03', '2026-03-02'])
-  assert.deepEqual(summarizeCalls([], [], new Set(), at), { total: { calls: 0, answered: 0, missed: 0, voicemail: 0, waiting: 0, unknown: 0, returned: 0, told: 0, triedAgain: 0, hidden: 0 }, closed: null, cells: [], coverage: { visitor: 0, channel: 0, neither: 0, noResult: 0 }, returnedWithin: null })
+  assert.deepEqual(summarizeCalls([], [], new Set(), at), { total: { calls: 0, answered: 0, missed: 0, voicemail: 0, waiting: 0, unknown: 0, returned: 0, told: 0, triedAgain: 0, notLeads: 0, hidden: 0 }, closed: null, cells: [], coverage: { visitor: 0, channel: 0, neither: 0, noResult: 0 }, returnedWithin: null })
 })
 
 test('quiet hours are off until set, and a call back is due after a day', () => {
@@ -684,7 +684,7 @@ test('the server counts outcomes without an ad platform, takes costs, and report
 
     const report = (await (await fetch(`${base}/report?from=2026-03-01&to=2026-03-02`, { headers: { authorization: 'Bearer reviewer' } })).json()) as any
     assert.deepEqual(report.rows, [
-      { source: 'google', campaignId: '111', campaign: 'Spring', cost: 50, clicks: 10, impressions: 0, visits: 1, missed: 0, stages: { enrolled: { count: 1, value: 120, people: 1, delay: { count: 1, median: 0, p95: 0, inside: 1 } } }, outcomes: 1, value: 120, people: 1, worth: { outcomes: 1, first: 200, now: 120, zeroed: 0, firstUnknown: 0 }, costDays: 1, missingDays: 1, thin: false, costPerOutcome: 50, returnOnCost: 2.4 },
+      { source: 'google', campaignId: '111', campaign: 'Spring', cost: 50, clicks: 10, impressions: 0, visits: 1, missed: 0, notLeads: 0, stages: { enrolled: { count: 1, value: 120, people: 1, delay: { count: 1, median: 0, p95: 0, inside: 1 } } }, outcomes: 1, value: 120, people: 1, worth: { outcomes: 1, first: 200, now: 120, zeroed: 0, firstUnknown: 0 }, costDays: 1, missingDays: 1, thin: false, costPerOutcome: 50, returnOnCost: 2.4 },
     ])
     // One outcome with every value it has had, for a reviewer.
     const asked = (await (await fetch(`${base}/outcome?id=enr-9`, { headers: { authorization: 'Bearer reviewer' } })).json()) as any

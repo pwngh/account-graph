@@ -114,6 +114,21 @@ if (!url) {
     }
   })
 
+  test('a database from before anything was said to be no lead takes it', async () => {
+    const schema = `ag_test_${process.pid}_spurned`
+    try {
+      const store = await madeBefore(schema, 18)
+      await pool.query(`insert into ${schema}.outcome values ('old', 'lead:1', 5, 'inquiry', 10, 'USD')`)
+      assert.deepEqual((await store.migrate()).slice(0, 1), ['what was no lead'])
+      const graph = createGraph(store)
+      await graph.markNotLead('old', 'spam')
+      const { total } = await graph.report({ from: '1970-01-01', to: '1970-01-01' })
+      assert.deepEqual([total.outcomes, total.notLeads], [0, 1])
+    } finally {
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
+
   test('a database from before returns were reported keeps its results, and takes them', async () => {
     const schema = `ag_test_${process.pid}_told`
     try {

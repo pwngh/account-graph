@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { after, describe, test } from 'node:test'
-import { Outdated, brokenAt, callState, createGraph, createHours, defaultPolicy, dialed, email, fit, followUp, hashPhone, nameKeys, policyFrom, recordCall, recordCallResult, recordReturn } from '../src/index.ts'
+import { Outdated, brokenAt, callState, createGraph, createHours, defaultPolicy, dialed, email, fit, followUp, hashPhone, nameKeys, policyFrom, recordCall, recordCallResult, recordNotLead, recordReturn } from '../src/index.ts'
 import type { Change, GraphOptions, Observation, Policy, Store } from '../src/index.ts'
 
 export interface Opened {
@@ -487,14 +487,14 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
         ['partner.example', '', ''],
       ])
       assert.deepEqual(line('google', '111'), {
-        source: 'google', campaignId: '111', campaign: 'Spring sale', cost: 60.3, clicks: 42, impressions: 1300, visits: 1, missed: 0,
+        source: 'google', campaignId: '111', campaign: 'Spring sale', cost: 60.3, clicks: 42, impressions: 1300, visits: 1, missed: 0, notLeads: 0,
         stages: { inquiry: { count: 1, value: 5, people: 1, delay: { count: 1, median: 0.1, p95: 0.1, inside: 1 } }, enrolled: { count: 1, value: 200, people: 1, delay: { count: 1, median: 2, p95: 2, inside: 1 } } }, outcomes: 2, value: 205, people: 1, worth: { outcomes: 2, first: 205, now: 205, zeroed: 0, firstUnknown: 0 },
         // Cost data for two of three days. The enrollment on the third is not set against their cost.
         costDays: 2, missingDays: 1, thin: false, costPerOutcome: 60.3, returnOnCost: 0.082919,
       })
       // The Meta touch named its campaign only by name, in another case, and its source by an alias.
       assert.deepEqual(line('meta', '777'), {
-        source: 'meta', campaignId: '777', campaign: 'Retarget', cost: 15, clicks: 9, impressions: 0, visits: 1, missed: 0,
+        source: 'meta', campaignId: '777', campaign: 'Retarget', cost: 15, clicks: 9, impressions: 0, visits: 1, missed: 0, notLeads: 0,
         stages: { enrolled: { count: 1, value: 150.5, people: 1, delay: { count: 1, median: 1, p95: 1, inside: 1 } } }, outcomes: 1, value: 150.5, people: 1, worth: { outcomes: 1, first: 200, now: 150.5, zeroed: 0, firstUnknown: 0 },
         // One day of three is too few to say what anything cost.
         costDays: 1, missingDays: 2, thin: true, costPerOutcome: null, returnOnCost: null,
@@ -502,7 +502,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal(line('google', '222')!.cost, 6)
       assert.deepEqual(counts(line('(none)', '')!.stages), { enrolled: { count: 1, value: 200 } })
       assert.deepEqual(report.total, {
-        cost: 81.3, clicks: 51, impressions: 1300, visits: 3, missed: 0,
+        cost: 81.3, clicks: 51, impressions: 1300, visits: 3, missed: 0, notLeads: 0,
         stages: { inquiry: { count: 2, value: 10, people: 2, delay: { count: 2, median: 0.1, p95: 0.1, inside: 1 } }, enrolled: { count: 3, value: 550.5, people: 3, delay: { count: 2, median: 1.5, p95: 2, inside: 1 } } }, outcomes: 5, value: 560.5, people: 4, worth: { outcomes: 5, first: 610, now: 560.5, zeroed: 0, firstUnknown: 0 },
         // Of the campaigns with enough cost data alone: never all spend over all outcomes.
         costDays: 2, missingDays: 1, thin: false, costPerOutcome: 60.3, returnOnCost: 0.082919,
@@ -1448,6 +1448,92 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const summary = await graph.callSummary({ from: '2023-11-10', to: '2023-11-14', at: T0, ...options, hours })
       assert.deepEqual([summary.total.calls, summary.closed!.calls, summary.closed!.missed, summary.closed!.answered], [3, 2, 1, 1])
       assert.equal((await graph.callSummary({ from: '2023-11-10', to: '2023-11-14', at: T0, ...options })).closed, null)
+    })
+
+    test('what was no lead stays on record, is counted apart, and counts nowhere else until that is taken back', async () => {
+      const { graph } = await fresh(undefined, { now: () => T0 + DAY })
+      const options = { results: 'expected' as const, now: () => T0 + DAY }
+      const days = { from: '2023-11-14', to: '2023-11-15' }
+      for (const name of ['a', 'b']) {
+        await graph.observe({ subject: `visitor:${name}`, identifiers: [`device:${name}`], at: T0, event: 'visit' })
+        await graph.touch({ subject: `visitor:${name}`, at: T0, gclid: name, campaignId: '1', campaign: 'Search' })
+        await graph.observe({ subject: `lead:${name}`, identifiers: [`device:${name}`], at: T0 + 1 })
+        await graph.outcome({ transactionId: `inquiry-${name}`, subject: `lead:${name}`, at: T0 + 1, stage: 'inquiry', value: 10, currency: 'USD', tags: { language: 'es' } })
+      }
+      const call = (id: string, n: number, answered: boolean) => recordCall(graph, { id, from: `+155501000${n}`, to: '+15550100001', at: T0 + 2000 + n, duration: 60, answered }, options)
+      await call('C1', 71, true)
+      await call('C2', 72, false)
+      await call('C3', 73, false)
+      const seen = async () => {
+        const report = await graph.report({ ...days, by: 'outcome.language' })
+        const summary = (await graph.callSummary({ ...days, at: T0 + DAY, ...options })).total
+        const board = await graph.board({ steps: [{ name: 'call' }, { name: 'inquiry' }], at: T0 + DAY })
+        return {
+          report: [report.total.outcomes, report.total.value, report.total.people, report.total.missed, report.total.notLeads],
+          row: report.rows.filter((row) => row.campaignId === '1').map((row) => [row.outcomes, row.notLeads]),
+          spanish: report.total.breakdown!.filter((part) => part.name === 'es').map((part) => [part.outcomes, part.notLeads]),
+          calls: [summary.calls, summary.answered, summary.missed, summary.notLeads],
+          open: (await graph.openCalls(days)).map((each) => each.call.id),
+          board: board.columns.map((column) => column.people),
+          first: (await graph.followed({ ...days, step: 'inquiry', days: 1, at: T0 + 30 * DAY, least: 1 })).groups[0]!.rows.reduce((sum, row) => sum + row.people, 0),
+        }
+      }
+      const before = await seen()
+      assert.deepEqual(before, { report: [3, 20, 3, 2, 0], row: [[2, 0]], spanish: [[2, 0]], calls: [3, 1, 2, 0], open: ['C2', 'C3'], board: [2, 1, 2], first: 3 })
+      assert.deepEqual(await recordNotLead(graph, { transactionId: 'inquiry-a', kind: 'spam' }, options), { id: 'inquiry-a', lead: false })
+      assert.deepEqual(await recordNotLead(graph, { call: 'C1' }, options), { id: 'call:C1', lead: false })
+      await recordNotLead(graph, { call: 'C2', kind: 'spam' }, options)
+      assert.deepEqual(await seen(), { report: [1, 10, 1, 1, 3], row: [[1, 1]], spanish: [[1, 1]], calls: [1, 0, 1, 2], open: ['C3'], board: [1, 0, 1], first: 1 })
+      // It is there to be seen, and said again in other words it is still one.
+      await recordNotLead(graph, { call: 'C2', kind: 'other' }, options)
+      const told = (await graph.journey('lead:a')).entries.find((entry) => entry.kind === 'step') as any
+      assert.deepEqual([told.outcome.transactionId, told.notLead], ['inquiry-a', 'spam'])
+      const rang = (await graph.journey(`caller:${hashPhone('+15550100072')}`)).entries.find((entry) => entry.kind === 'call') as any
+      assert.equal(rang.notLead, 'other')
+      assert.equal((await graph.notLeads(['call:C1', 'nothing'])).size, 1)
+      // An answered call that was no lead is no conversation with them: the miss before it is still waiting, everywhere.
+      await recordCall(graph, { id: 'C6', from: '+15550100075', to: '+15550100001', at: T0 + 2400, duration: 20, answered: false }, options)
+      await recordCall(graph, { id: 'C5', from: '+15550100075', to: '+15550100001', at: T0 + 2500, duration: 60, answered: true }, options)
+      assert.deepEqual((await graph.openCalls(days)).map((each) => each.call.id), ['C3'])
+      await recordNotLead(graph, { call: 'C5' }, options)
+      const [, waiting] = await graph.openCalls(days)
+      assert.deepEqual([waiting!.call.id, waiting!.followUp.state], ['C6', 'open'])
+      const after = (await graph.callSummary({ ...days, at: T0 + DAY, ...options })).total
+      assert.deepEqual([after.triedAgain, after.notLeads], [0, 3])
+      assert.equal((await graph.board({ steps: [{ name: 'call' }], at: T0 + DAY })).columns[0]!.people, 2)
+      // In the report once, whether or not it ever was an outcome.
+      assert.equal((await graph.report(days)).total.notLeads, 4)
+      await graph.withdraw('call:C5')
+      assert.equal((await graph.report(days)).total.notLeads, 4)
+      await graph.forget(`caller:${hashPhone('+15550100075')}`)
+      // A call said to be none before it came, or before its result did, is not counted when it comes.
+      await recordNotLead(graph, { call: 'C4' }, options)
+      await recordCall(graph, { id: 'C4', from: '+15550100074', to: '+15550100001', at: T0 + 2100, duration: 60 }, options)
+      assert.deepEqual(await recordCallResult(graph, { id: 'C4', answered: true }, options), { state: 'answered', counted: false })
+      assert.equal(await graph.outcomeOf('call:C4'), undefined)
+      await recordNotLead(graph, { call: 'C4', lead: true }, options)
+      assert.equal((await graph.outcomeOf('call:C4'))!.stage, 'call')
+      // What it was restated to meanwhile is kept when the mark is taken back.
+      await graph.restate('call:C4', 77)
+      await recordNotLead(graph, { call: 'C4' }, options)
+      await recordNotLead(graph, { call: 'C4', lead: true }, options)
+      assert.equal((await graph.outcomeOf('call:C4'))!.value, 77)
+      await graph.forget(`caller:${hashPhone('+15550100074')}`)
+      // Taken back, everything is as it was.
+      for (const report of [{ transactionId: 'inquiry-a' }, { call: 'C1' }, { call: 'C2' }]) await recordNotLead(graph, { ...report, lead: true }, options)
+      assert.deepEqual(await seen(), before)
+      for (const bad of [{}, { call: 'C1', transactionId: 'x' }, { call: '' }, { call: 'C1', kind: 'junk' }, { call: 'C1', lead: 'no' }, { transactionId: '' }]) await assert.rejects(recordNotLead(graph, bad as never, options), TypeError)
+      // Forgotten with its subject, and pruned where it never came.
+      await recordNotLead(graph, { transactionId: 'inquiry-b' }, options)
+      await recordNotLead(graph, { call: 'C3' }, options)
+      await recordNotLead(graph, { transactionId: 'never' }, options)
+      await graph.forget('lead:b')
+      await graph.forget(`caller:${hashPhone('+15550100073')}`)
+      assert.deepEqual([...(await graph.notLeads(['inquiry-b', 'call:C3', 'never'])).keys()], ['never'])
+      await graph.prune(T0 + DAY)
+      assert.equal((await graph.notLeads(['never'])).size, 1)
+      await graph.prune(T0 + DAY + 1)
+      assert.equal((await graph.notLeads(['never'])).size, 0)
     })
 
     test('a journey is everything about one person, in order, and why each subject is them', async () => {

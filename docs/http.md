@@ -122,6 +122,7 @@ The four `POST` routes answer with the subjects whose cluster moved. With the se
 | `POST /link` | `{ url, subject, days? }`. Answers `{ url }`: the address with a token naming the person it is for. See [links](links.md). |
 | `POST /staff-link` | `{ url, days? }`. Answers `{ url }`: the address that marks the browser that opens it as staff. |
 | `POST /call` | A phone call: `{ id, from?, to, at, duration?, direction?, answered?, voicemail?, waited?, tags? }`. With `direction: "outbound"` it is a call you placed, and `from` is yours. Answers `{ subject, flags, counted, state, visitor?, duplicate }`. See [calls](calls.md). |
+| `POST /not-lead` | That an outcome or a call was no lead: `{ call }` or `{ transactionId }`, with `kind` `spam` or `other` (the default). `lead: true` takes it back. May come before what it is about. Answers `{ id, lead }`. Service token. |
 | `POST /call/returned` | That somebody reached a caller some way your phone system does not report: `{ id, at?, returned? }`, before or after the call. `returned: false` takes it back. Answers `{ followUp }`, null while the call has not come or was not missed. Service token. |
 | `POST /call/result` | How a call went: `{ id, answered, voicemail?, waited? }`, before or after the call. Answers `{ state, counted }`; `waiting` while the call itself has not come. |
 | `POST /costs` | A list of `{ day, source, amount, campaignId?, campaign?, currency?, clicks?, impressions? }`. A row for the same day, source and campaign replaces the one before. |
