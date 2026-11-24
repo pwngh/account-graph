@@ -9,7 +9,7 @@
  * It starts a throwaway PostgreSQL in Docker (or keeps everything in memory
  * where there is no Docker, or with MEMORY=1), the graph server with its reviewer screen, the
  * firm's site and a stage to present it on, and fills them. docs/demo.md has the
- * script. Ctrl-C stops and deletes all of it.
+ * scenes. Ctrl-C stops and deletes all of it.
  */
 import { execFileSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
@@ -652,7 +652,7 @@ if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).
   Reviewer screen  ${firm.graph}/review        sign in with the token: demo
   Sample site      ${firm.site}/?gclid=you&utm_id=30111   and ${firm.site}/es?gclid=you&utm_id=30333
 
-  See docs/demo.md for the script. Press Ctrl-C to stop and delete the data.`)
+  See docs/demo.md for the scenes. Press Ctrl-C to stop and delete the data.`)
   } catch (error) {
     if (!stopping) console.error(error)
     await stop(1)

@@ -293,7 +293,7 @@
     }
   }
 
-  /** The ninety seconds of docs/demo.md: when each thing happens, in seconds. */
+  /** The ninety seconds the show takes: when each thing happens, in seconds. */
   const CLIENTS = `#/channels/////30/${STAGE.won}`
   const SHOW = [
     [1, () => next()], [4.5, () => next()], [8, () => next()], [15, () => next()], [20, () => next()], [28, () => next()],
