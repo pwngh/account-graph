@@ -42,6 +42,8 @@ export interface Tx {
   /** Every subject, in batches: where it sits, and whether it holds any identifier. */
   everyone(): AsyncIterable<{ subject: Subject; labels: Labels | undefined; held: boolean }[]>
   states(identifiers: readonly Identifier[]): Promise<Map<Identifier, IdentifierState>>
+  /** The identifiers of these subjects that somebody else holds too, not muted: all that could link them. */
+  shared(subjects: readonly Subject[]): Promise<Map<Identifier, IdentifierState>>
   setIgnored(identifier: Identifier, ignored: boolean): Promise<void>
   /** Where each given subject sits. Unknown subjects are absent. */
   labelsOf(subjects: readonly Subject[]): Promise<Map<Subject, Labels>>

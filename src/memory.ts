@@ -189,6 +189,11 @@ export function createMemoryStore(): Store {
       return out
     },
 
+    async shared(subjects) {
+      const own = [...new Set(subjects.flatMap((subject) => [...(bySubject.get(subject)?.keys() ?? [])]))]
+      return new Map([...(await this.states(own))].filter(([, state]) => state.fanout > 1 && !state.ignored))
+    },
+
     async setIgnored(identifier, flag) {
       if (flag) ignored.add(identifier)
       else ignored.delete(identifier)

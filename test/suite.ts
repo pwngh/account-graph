@@ -86,6 +86,22 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await graph.search('account:'), ['account:\u{1f600}'])
     })
 
+    test('what subjects share is the same read for a few of them or for many', async () => {
+      const { graph, store } = await fresh()
+      await graph.observe([
+        { subject: 'contact:1', identifiers: ['device:alone', 'device:two', 'device:muted', 'device:three'], at: T0 },
+        { subject: 'contact:2', identifiers: ['device:two', 'device:muted', 'device:three'], at: T0 },
+        { subject: 'contact:3', identifiers: ['device:three', 'device:others'], at: T0 },
+        { subject: 'contact:4', identifiers: ['device:others'], at: T0 },
+      ])
+      await graph.ignore('device:muted')
+      const shared = async (subjects: string[]) => [...(await store.read((tx) => tx.shared(subjects)))].sort()
+      const found = [['device:three', { fanout: 3, ignored: false }], ['device:two', { fanout: 2, ignored: false }]]
+      assert.deepEqual(await shared(['contact:1']), found)
+      assert.deepEqual(await shared(['contact:1', ...[...Array(3_000).keys()].map((n) => `contact:unknown${n}`)]), found)
+      assert.deepEqual([await shared([]), await shared(['contact:nobody'])], [[], []])
+    })
+
     test('a shared address alone links nothing', async () => {
       const { graph } = await fresh()
       await graph.observe([
@@ -617,7 +633,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const { columns } = await counted.board({ steps: [{ name: 'signup' }], days: 7, at: day + HOUR })
       assert.ok(columns.some((column) => column.rows.length > 0))
       for (const { rows } of columns) for (const row of rows) assert.deepEqual(row.touch, await own(row.subject, row.at))
-      for (const key of ['edgesOf', 'edgesOn', 'states', 'separatedOf', 'touchesOf']) assert.ok(reads.get(key)! <= 12, `${key} was read ${reads.get(key)} times`)
+      for (const key of ['shared', 'edgesOn', 'separatedOf', 'touchesOf']) assert.ok(reads.get(key)! <= 12, `${key} was read ${reads.get(key)} times`)
     })
 
     test('what a decision would do is what it does, and foreseeing it writes nothing', async () => {
