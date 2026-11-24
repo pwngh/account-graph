@@ -796,10 +796,29 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await recordReturn(graph, { id: 'M5', at: T0 + 9 * HOUR }, { now })
       await recordReturn(graph, { id: 'M5', returned: false }, { now })
       assert.equal(await graph.callResult('M5'), undefined)
+      // Taking it back needs no time, right or wrong.
+      await recordReturn(graph, { id: 'M5', at: 1.5, returned: false }, { now })
       // A caller who hid their number can be reached too, and is nobody else.
       await miss('H1', T0, '')
       assert.equal((await became('H1')).state, 'hidden')
       assert.deepEqual((await recordReturn(graph, { id: 'H1', at: T0 + HOUR }, { now }))!.state, 'returned')
+      // Said before its call is known, it counts only once the call turns out to be a miss that began before.
+      const other = '+15550100084'
+      await miss('E1', T0, other)
+      await recordReturn(graph, { id: 'E2', at: T0 + HOUR }, { now })
+      await recordReturn(graph, { id: 'E3', at: T0 + HOUR }, { now })
+      await recordReturn(graph, { id: 'E4', at: T0 + HOUR }, { now })
+      await recordCall(graph, { id: 'E2', from: other, to: '+15550100001', at: T0 + 100, duration: 60 }, { results: 'expected', now })
+      await recordCall(graph, { id: 'E3', direction: 'outbound', from: '+15550100001', to: other, at: T0 + 200, answered: false }, { now })
+      await miss('E4', T0 + 2 * HOUR, other)
+      assert.deepEqual([(await became('E1')).state, (await open()).includes('E1')], ['open', true])
+      await recordCallResult(graph, { id: 'E2', answered: false }, { now })
+      assert.deepEqual([(await became('E1')).told, (await open()).includes('E1'), (await became('E4')).state], [true, false, 'open'])
+      // A call back that began first and connected after they were reached is not what reached them.
+      await recordCall(graph, { id: 'E5', direction: 'outbound', from: '+15550100001', to: other, at: T0 + HOUR - 60_000, answered: true, waited: 120 }, { now })
+      assert.equal((await became('E1')).told, true)
+      await recordCall(graph, { id: 'E6', direction: 'outbound', from: '+15550100001', to: other, at: T0 + HOUR - 50_000, answered: true, waited: 20 }, { now })
+      assert.equal((await became('E1')).by, 'E6')
       // Another caller's is not touched, and an answered call was not missed.
       await recordCall(graph, { id: 'A1', from: '+15550100083', to: '+15550100001', at: T0, duration: 60, answered: true }, { now })
       assert.equal(await recordReturn(graph, { id: 'A1', at: T0 + HOUR }, { now }), undefined)

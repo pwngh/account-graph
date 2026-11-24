@@ -178,7 +178,7 @@ curl -X POST https://graph.example.org/call/returned -H "authorization: Bearer $
 { "followUp": { "state": "returned", "by": "CA1", "delay": 7200000, "told": true, "attempts": 1 } }
 ```
 
-`at` is when they were reached, now unless you say. It closes that miss and every earlier one of the same caller, as an answered call would, and not a later one. A call that reached them sooner is what counts. `returned: false` takes it back, and the last report stands. It may come before the call it is about. `told` marks a return that rests on such a report, and the summary counts them apart, so it can be told from one a call shows.
+`at` is when they were reached, now unless you say. It closes every miss of that caller that began before then, as an answered call would, and none that began after. It counts only for a call that was missed, and only from after it began. A call that reached them sooner is what counts. `returned: false` takes it back, and the last report stands. It may come before the call it is about. `told` marks a return that rests on such a report, and the summary counts them apart, so it can be told from one a call shows.
 
 A call before the miss says nothing about it. One later answer closes every earlier miss of that number. The answer is worked out from the calls themselves each time, so the order they are reported in does not matter.
 

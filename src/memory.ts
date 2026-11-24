@@ -417,7 +417,9 @@ export function createMemoryStore(): Store {
       // When each was last spoken to, by a call answered or by a return reported for one of theirs.
       for (const call of calls.values()) {
         const { answered: spoke, returned = -Infinity } = results.get(call.id) ?? {}
-        answered.set(call.subject, Math.max(spoke ? call.at : -Infinity, returned, answered.get(call.subject) ?? -Infinity))
+        // A return reported for a call that was not missed, or that began after it, says nothing.
+        const told = call.direction === 'inbound' && spoke === false && returned > call.at ? returned : -Infinity
+        answered.set(call.subject, Math.max(spoke ? call.at : -Infinity, told, answered.get(call.subject) ?? -Infinity))
       }
       const open = [...calls.values()].filter((call) => {
         if (call.direction !== 'inbound' || call.at < from || call.at >= to || results.get(call.id)?.answered !== false || call.subject === `call:${call.id}`) return false
