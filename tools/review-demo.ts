@@ -59,10 +59,10 @@ for (const { visitors, enroll, daily, ...campaign } of campaigns) {
     const n = ++lead
     const at = Date.now() - (13 - (n % 13)) * 24 * HOUR
     await graph.observe({ subject: `visitor:v${n}`, identifiers: [`device:v${n}`], at, event: 'visit' })
-    await graph.touch({ subject: `visitor:v${n}`, at, campaignId: campaign.campaignId, ...(campaign.source === 'google' ? { gclid: `click-${n}` } : { fbclid: `click-${n}` }) })
+    await graph.touch({ subject: `visitor:v${n}`, at, campaignId: campaign.campaignId, ...(campaign.source === 'google' ? { gclid: `click-${n}` } : { fbclid: `click-${n}` }), custom: { office: n % 3 ? 'north' : 'river', ...(n % 4 && { lang: n % 2 ? 'en' : 'es' }) } })
     await graph.observe({ subject: `lead:${n}`, identifiers: [`device:v${n}`], at: at + HOUR, event: 'inquiry' })
     await graph.outcome({ transactionId: `inquiry-${n}`, subject: `lead:${n}`, at: at + HOUR, stage: 'inquiry', value: 5, currency: 'USD' })
-    if (i < enroll) await graph.outcome({ transactionId: `enrolled-${n}`, subject: `lead:${n}`, at: at + 5 * HOUR, stage: 'enrolled', value: 200, currency: 'USD' })
+    if (i < enroll) await graph.outcome({ transactionId: `enrolled-${n}`, subject: `lead:${n}`, at: at + 5 * HOUR, stage: 'enrolled', value: 200, currency: 'USD', tags: { office_served: n % 2 ? 'river' : 'online' } })
   }
 }
 // One enrollment nobody's ad can claim.
@@ -79,7 +79,7 @@ for (let i = 0; i < 120; i++) {
   if (at > Date.now()) continue
   const roll = chance()
   const to = chance() < 0.7 ? '+15550100001' : chance() < 0.7 ? '+15550100002' : '+15550100003'
-  await recordCall(graph, { id: `call-${i}`, from: chance() < 0.04 ? '' : from, to, at, duration: 20 + Math.floor(chance() * 300) }, { numbers, results: 'expected' })
+  await recordCall(graph, { id: `call-${i}`, from: chance() < 0.04 ? '' : from, to, at, duration: 20 + Math.floor(chance() * 300), ...(chance() < 0.7 && { tags: { language: chance() < 0.3 ? 'es' : 'en' } }) }, { numbers, results: 'expected' })
   if (roll < 0.93) await recordCallResult(graph, { id: `call-${i}`, answered: roll < 0.68, waited: Math.floor(chance() * 90), ...(roll > 0.85 && { voicemail: true }) }, { results: 'expected' })
   if (roll > 0.68 && chance() < 0.4) await recordCall(graph, { id: `back-${i}`, direction: 'outbound', from: to, to: from, at: at + Math.floor(chance() * 20 * HOUR), duration: 60, answered: chance() < 0.6 })
 }

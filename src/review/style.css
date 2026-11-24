@@ -58,6 +58,9 @@ table.hours td, table.hours th { padding: 3px 6px; min-width: 28px; }
 table.hours th[scope=row] { position: sticky; left: 0; background: var(--bg); border-right: 1px solid var(--line); }
 /* One hue, light to dark in the light theme and dark to light in the dark one. The text stays ink. */
 .heat1 { background: var(--heat1); } .heat2 { background: var(--heat2); } .heat3 { background: var(--heat3); } .heat4 { background: var(--heat4); font-weight: 600; }
+tr.part td { color: var(--muted); border-bottom-style: dotted; }
+tr.part td.num { color: var(--ink); }
+tr.part td.who { padding-left: 16px; }
 tr.sum td { font-weight: 600; border-bottom: 0; }
 .chip { display: inline-block; padding: 0 6px; border: 1px solid var(--line); border-radius: 3px; background: var(--soft); font-size: 12px; line-height: 18px; white-space: nowrap; }
 .same { color: var(--same); } .related { color: var(--related); } .apart { color: var(--apart); }

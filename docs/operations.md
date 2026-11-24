@@ -277,7 +277,7 @@ On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes i
 | `STAGES` | none | Your steps in order, as JSON, each with a `value`, `currency` and `action`. See [the report](report.md#steps-and-what-each-is-worth). |
 | `LINK_SECRET` | none | Signs links that name a person, and the tokens that carry a visitor between your sites. At least 16 characters. |
 | `EVENTS` | none | Names of page events to keep, separated by commas: `inquiry,phone_click`. |
-| `CALL_NUMBERS` | none | Your tracking numbers and the channel of each, as JSON: `{"+15551230001":{"source":"google","campaignId":"20222"}}`. |
+| `CALL_NUMBERS` | none | Your tracking numbers and the channel of each, as JSON: `{"+15551230001":{"source":"google","campaignId":"20222"}}`. Each may carry `tags`. |
 | `CALL_MIN_SECONDS` | `30` | A shorter call is recorded but not counted. |
 | `CALL_RESULTS` | none | `expected` to hold each call until something reports whether a person answered. See [calls](calls.md#was-it-answered). |
 | `CALL_RESULT_WAIT` | `30` | Minutes before a call with no result reads as unknown. |

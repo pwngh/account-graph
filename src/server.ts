@@ -786,7 +786,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       case 'GET /report': {
         const days = period(url)
         const { timeZone } = days
-        const report = await graph.report(days)
+        const by = url.searchParams.get('by') || undefined
+        const report = await graph.report({ ...days, ...(by && { by }) })
         // The steps in your order first, then any others that turned up, by name.
         const named = Object.keys(options.stages ?? {})
         const others = Object.keys(report.total.stages).filter((step) => !named.includes(step)).sort()

@@ -7,8 +7,9 @@ import { UNSTORABLE } from './identifiers.ts'
 import { createMemoryStore } from './memory.ts'
 import { defaultPolicy, plainPolicy, policyHash, ruleFor, usable } from './policy.ts'
 import type { Policy } from './policy.ts'
-import { dayStart, fold, nextDay } from './report.ts'
+import { dayStart, dimension, fold, nextDay } from './report.ts'
 import { partition, scorePairs } from './resolve.ts'
+import { checkTags } from './tags.ts'
 import type { DecisionPage, Store, Tx } from './store.ts'
 import type {
   Attribution,
@@ -63,6 +64,11 @@ export interface ReportOptions {
   window?: number
   /** How many links a touch may be from the subject of an outcome. Defaults to 2. */
   hops?: number
+  /**
+   * A dimension to break each line down by: `touch.<name>` what the arrival
+   * said, `outcome.<name>` what is known of the outcome, `hour` or `weekday`.
+   */
+  by?: string
 }
 
 export interface GraphOptions {
@@ -584,7 +590,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       const value = outcome.value ?? 0
       if (typeof value !== 'number' || !Number.isFinite(value)) throw new TypeError(`Outcome "${transactionId}" has a value that is not a number`)
       for (const text of [outcome.stage, outcome.currency]) if (text !== undefined && typeof text !== 'string') throw new TypeError(`Outcome "${transactionId}" needs its stage and currency as text`)
-      const counted: Counted = { transactionId, subject, at, stage: outcome.stage || 'outcome', value, currency: outcome.currency ?? '' }
+      const tags = checkTags(outcome.tags, `Outcome "${transactionId}"`)
+      const counted: Counted = { transactionId, subject, at, stage: outcome.stage || 'outcome', value, currency: outcome.currency ?? '', ...(tags && { tags }) }
       return store.write(async (tx) => {
         if (await tx.outcomeOf(transactionId)) return false
         await tx.setOutcome(counted)
@@ -697,7 +704,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       }
     },
 
-    async report({ from, to, timeZone, window = 90 * DAY, hops = 2 }) {
+    async report({ from, to, timeZone, window = 90 * DAY, hops = 2, by }) {
+      if (by !== undefined) dimension(by)
       const [start, end] = range(from, to, timeZone)
       return store.read(async (tx) => {
         // Who a subject can reach does not depend on when, so one subject's outcomes share one search.
@@ -709,9 +717,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         }
         const credited: { outcome: Counted; touch: Touch | undefined }[] = []
         for (const outcome of await tx.outcomesBetween(start, end)) credited.push({ outcome, touch: await creditOf(outcome.subject, outcome.at) })
-        const missed: (Touch | undefined)[] = []
-        for (const call of await tx.callsBetween(start, end)) if (call.direction === 'inbound' && call.result?.answered === false) missed.push(await creditOf(call.subject, call.at))
-        return fold(from, to, await tx.costsBetween(from, to), await tx.touchesBetween(start, end), credited, missed)
+        const missed: { at: number; touch: Touch | undefined; tags: Record<string, string> | undefined }[] = []
+        for (const call of await tx.callsBetween(start, end)) if (call.direction === 'inbound' && call.result?.answered === false) missed.push({ at: call.at, touch: await creditOf(call.subject, call.at), tags: call.tags })
+        return fold(from, to, await tx.costsBetween(from, to), await tx.touchesBetween(start, end), credited, missed, by, timeZone)
       })
     },
 

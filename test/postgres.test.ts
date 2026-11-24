@@ -134,6 +134,21 @@ if (!url) {
     }
   })
 
+  test('outcomes and calls from before they had tags have none', async () => {
+    const schema = `ag_test_${process.pid}_tags`
+    try {
+      const store = await madeBefore(schema, 12)
+      await pool.query(`insert into ${schema}.outcome values ('t1', 'account:1', 5, 'sale', 10, 'USD');
+        insert into ${schema}.call (id, subject, at, dialed, flags, recorded_at) values ('OLD', 'caller:x', 5, '+15550100001', '{}', 5)`)
+      await store.migrate()
+      const graph = createGraph(store)
+      assert.deepEqual(await graph.outcomeOf('t1'), { transactionId: 't1', subject: 'account:1', at: 5, stage: 'sale', value: 10, currency: 'USD' })
+      assert.equal('tags' in (await graph.keptCall('OLD'))!, false)
+    } finally {
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
+
   test('a database from before the policy was recorded is due a rebuild, and a kind with no rule stops the server', async () => {
     const schema = `ag_test_${process.pid}_policy`
     const env = { DATABASE_URL: url, GRAPH_SCHEMA: schema, GRAPH_TOKEN: 'service', REVIEW_TOKEN: 'review', PORT: '0', HOST: '127.0.0.1' }

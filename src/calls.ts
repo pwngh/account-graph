@@ -1,5 +1,6 @@
 import type { Graph } from './graph.ts'
 import { hashPhone, normalizePhone, phoneOfType } from './identifiers.ts'
+import { checkTags } from './tags.ts'
 import type { CallResult, FollowUp, Identifier, KeptCall, Outcome, Subject } from './types.ts'
 
 /** One phone call to a number of yours, or from one, as your telephone provider reports it. */
@@ -30,6 +31,8 @@ export interface Call {
   voicemail?: boolean
   /** How long the caller waited before someone answered or they gave up, in seconds. */
   waited?: number
+  /** Facts about the call, such as the language chosen at the prompt, carried on to its outcome. */
+  tags?: Record<string, string>
 }
 
 /** Where a tracking number is published, so a call to it can be filed under that campaign. */
@@ -38,6 +41,8 @@ export interface Channel {
   medium?: string
   campaign?: string
   campaignId?: string
+  /** What the number stands for: the office or the language it is published in. Kept on the arrival a call to it is filed under. */
+  tags?: Record<string, string>
 }
 
 /**
@@ -143,8 +148,12 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   const result = resultIn(call, `Call "${call.id}"`)
   if (typeof call.to !== 'string') throw new TypeError(`Call "${call.id}" needs the number that was rung`)
   const to = normalizePhone(call.to, options.country)
+  const tags = checkTags(call.tags, `Call "${call.id}"`)
   const { id, at } = call
-  if (call.direction === 'outbound') return placed(graph, call, to, result, options)
+  if (call.direction === 'outbound') return placed(graph, call, to, result, tags, options)
+
+  const channel = Object.entries(options.numbers ?? {}).find(([number]) => numberOrSelf(number, options.country) === to)?.[1]
+  const custom = checkTags(channel?.tags, `Number "${to}"`)
 
   let from: string | undefined
   try {
@@ -207,16 +216,15 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
 
   // The outcome comes before the touch: if recording it fails, the call is reported again and nothing has been written twice.
   // What would be sent is held before the call is kept, while the number is at hand: a result that finds the call then finds that too.
-  if (!short) await options.hold?.(outcomeOf({ id, subject, at }, options, known))
+  if (!short) await options.hold?.(outcomeOf({ id, subject, at, ...(tags && { tags }) }, options, known))
   // The call is kept before its result is looked for, and a result is kept before its call is, so whichever comes second settles it.
-  await graph.keepCall({ id, direction: 'inbound', subject, at, to, flags, ...(call.duration !== undefined && { duration: call.duration }), ...(visitor && { visitor }) })
+  await graph.keepCall({ id, direction: 'inbound', subject, at, to, flags, ...(call.duration !== undefined && { duration: call.duration }), ...(visitor && { visitor }), ...(tags && { tags }) })
   const counted = await settle(graph, id, options, known ?? '')
 
   // A visitor's own arrival says more than the number does, so the number's channel is only the fallback.
-  const channel = Object.entries(options.numbers ?? {}).find(([number]) => numberOrSelf(number, options.country) === to)?.[1]
   if (channel && !visitor) {
     const { source, medium = 'call', campaign, campaignId } = channel
-    await graph.touch({ subject, at, source, medium, ...(campaign && { campaign }), ...(campaignId && { campaignId }), landing: `tel:${to}` })
+    await graph.touch({ subject, at, source, medium, ...(campaign && { campaign }), ...(campaignId && { campaignId }), ...(custom && { custom }), landing: `tel:${to}` })
   }
   await graph.observe({ subject, identifiers: [note], at, event: 'call' })
   const kept = await graph.keptCall(id)
@@ -224,7 +232,7 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
 }
 
 /** Records a call you placed. Nothing is observed: that you rang someone says nothing about who they are. */
-async function placed(graph: Graph, call: Call, theirs: string, result: Omit<CallResult, 'recorded'> | undefined, options: CallOptions): Promise<RecordedCall> {
+async function placed(graph: Graph, call: Call, theirs: string, result: Omit<CallResult, 'recorded'> | undefined, tags: Record<string, string> | undefined, options: CallOptions): Promise<RecordedCall> {
   if (typeof call.from !== 'string') throw new TypeError(`Call "${call.id}" needs the number of yours it was placed from`)
   const ours = normalizePhone(call.from, options.country)
   const subject = `caller:${hashPhone(theirs)}`
@@ -232,7 +240,7 @@ async function placed(graph: Graph, call: Call, theirs: string, result: Omit<Cal
   if (before && before.direction !== 'outbound') throw new TypeError(`Call "${call.id}" was already recorded as a call to you`)
   if (result) await graph.keepCallResult(call.id, result)
   if (!before) {
-    await graph.keepCall({ id: call.id, direction: 'outbound', subject, at: call.at, to: ours, flags: [], ...(call.duration !== undefined && { duration: call.duration }) })
+    await graph.keepCall({ id: call.id, direction: 'outbound', subject, at: call.at, to: ours, flags: [], ...(call.duration !== undefined && { duration: call.duration }), ...(tags && { tags }) })
   }
   const kept = (await graph.keptCall(call.id))!
   return { subject: kept.subject, flags: [], counted: false, state: callState(kept, (options.now ?? Date.now)(), options), duplicate: before !== undefined }
@@ -272,13 +280,14 @@ function tooShort(call: { duration?: number }, options: CallOptions): boolean {
   return (call.duration ?? Infinity) < (options.minimumSeconds ?? 30)
 }
 
-const outcomeOf = (call: { id: string; subject: Subject; at: number }, options: CallOptions, phone?: string): Outcome => ({
+const outcomeOf = (call: { id: string; subject: Subject; at: number; tags?: Record<string, string> }, options: CallOptions, phone?: string): Outcome => ({
   transactionId: `call:${call.id}`,
   subject: call.subject,
   at: call.at,
   stage: options.stage ?? 'call',
   source: 'PHONE',
   ...(phone && { phone }),
+  ...(call.tags && { tags: call.tags }),
 })
 
 /**

@@ -691,6 +691,82 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal(await graph.keptCall('O9'), undefined)
     })
 
+    test('the report is broken down by what an arrival said, what is known of an outcome, and when it happened', async () => {
+      const { graph } = await fresh()
+      const day = Date.parse('2026-03-02T15:00:00Z')
+      const arrive = async (n: number, custom?: Record<string, string>) => {
+        await graph.observe({ subject: `visitor:${n}`, identifiers: [`device:${n}`], at: day, event: 'visit' })
+        await graph.touch({ subject: `visitor:${n}`, at: day, gclid: `G${n}`, campaignId: '111', ...(custom && { custom }) })
+        await graph.observe({ subject: `contact:${n}`, identifiers: [`device:${n}`], at: day, event: 'enroll' })
+      }
+      // Two arrivals name the advertised office, one by the short name that fits in an ad's address. One says nothing.
+      await arrive(1, { office: 'north', lang: 'es' })
+      await arrive(2, { office_advertised: 'north' })
+      await arrive(3)
+      const enroll = (n: number, at: number, tags?: Record<string, string>) => graph.outcome({ transactionId: `e${n}`, subject: `contact:${n}`, at, stage: 'enrolled', value: 100 * n, ...(tags && { tags }) })
+      await enroll(1, day + HOUR, { office_served: 'river', language: 'es' })
+      await enroll(2, day + 2 * HOUR, { office_served: 'north' })
+      await enroll(3, day + 20 * HOUR)
+      await recordCall(graph, { id: 'M1', from: '+15550100061', to: '+15550100001', at: day, duration: 5, answered: false, tags: { language: 'es' } }, { numbers: { '+15550100001': { source: 'google', campaignId: '111', tags: { office_advertised: 'river', language: 'en' } } } })
+
+      const split = async (by: string, timeZone?: string) => {
+        const report = await graph.report({ from: '2026-03-02', to: '2026-03-03', by, ...(timeZone && { timeZone }) })
+        // Whatever it is broken down by, the parts add up to the line, and the lines to the whole.
+        for (const row of [...report.rows, report.total]) {
+          const parts = row.breakdown!
+          assert.deepEqual([parts.reduce((sum, part) => sum + part.outcomes, 0), parts.reduce((sum, part) => sum + part.value, 0), parts.reduce((sum, part) => sum + part.missed, 0)], [row.outcomes, row.value, row.missed], by)
+          for (const [stage, { count }] of Object.entries(row.stages)) assert.equal(parts.reduce((sum, part) => sum + (part.stages[stage]?.count ?? 0), 0), count)
+        }
+        assert.equal(report.total.breakdown!.at(-1)!.name, '(not recorded)')
+        return Object.fromEntries(report.total.breakdown!.map((part) => [part.name, [part.outcomes, part.value, part.missed]]))
+      }
+      // Where it was advertised and where the person was served are two things, and neither is guessed.
+      assert.deepEqual(await split('touch.office_advertised'), { north: [2, 300, 0], river: [0, 0, 1], '(not recorded)': [1, 300, 0] })
+      assert.deepEqual(await split('outcome.office_served'), { north: [1, 200, 0], river: [1, 100, 0], '(not recorded)': [1, 300, 1] })
+      assert.deepEqual(await split('touch.language'), { en: [0, 0, 1], es: [1, 100, 0], '(not recorded)': [2, 500, 0] })
+      assert.deepEqual(await split('outcome.language'), { es: [1, 100, 1], '(not recorded)': [2, 500, 0] })
+      assert.deepEqual(await split('outcome.nobody_said'), { '(not recorded)': [3, 600, 1] })
+      assert.deepEqual(await split('outcome.constructor'), { '(not recorded)': [3, 600, 1] })
+      // Ten in the morning in New York, and the next morning.
+      assert.deepEqual(await split('hour', 'America/New_York'), { '06': [1, 300, 0], '10': [0, 0, 1], '11': [1, 100, 0], '12': [1, 200, 0], '(not recorded)': [0, 0, 0] })
+      assert.deepEqual(Object.keys(await split('weekday')), ['Mon', 'Tue', '(not recorded)'])
+      const inOrder = (await graph.report({ from: '2026-03-02', to: '2026-03-03', by: 'hour', timeZone: 'America/New_York' })).total.breakdown!.map((part) => part.name)
+      assert.deepEqual(inOrder, ['06', '10', '11', '12', '(not recorded)'])
+      const report = await graph.report({ from: '2026-03-02', to: '2026-03-03' })
+      assert.deepEqual(report.dimensions, ['hour', 'weekday', 'outcome.language', 'outcome.office_served', 'touch.language', 'touch.office_advertised'])
+      assert.equal('breakdown' in report.rows[0]!, false)
+
+      // A changed value keeps what is known of the outcome, and forgetting the person deletes it.
+      await graph.restate('e1', 5)
+      assert.deepEqual((await graph.outcomeOf('e1'))!.tags, { office_served: 'river', language: 'es' })
+      await graph.forget('contact:1')
+      assert.deepEqual(await split('outcome.office_served'), { north: [1, 200, 0], '(not recorded)': [1, 300, 1] })
+      // An answered call carries its tags on to its outcome, also where the answer came later.
+      await recordCall(graph, { id: 'A1', from: '+15550100062', to: '+15550100009', at: day, duration: 60, tags: { language: ' es ' } }, { results: 'expected' })
+      await recordCallResult(graph, { id: 'A1', answered: true }, { results: 'expected' })
+      assert.deepEqual((await graph.outcomeOf('call:A1'))!.tags, { language: 'es' })
+
+      // A call you place carries its own, and makes no outcome of them. A number's are checked before anything is written.
+      await recordCall(graph, { id: 'P1', direction: 'outbound', from: '+15550100009', to: '+15550100062', at: day, tags: { language: 'es' } })
+      assert.deepEqual((await graph.keptCall('P1'))!.tags, { language: 'es' })
+      await assert.rejects(recordCall(graph, { id: 'N1', from: '+15550100063', to: '+15550100008', at: day, duration: 60 }, { numbers: { '+15550100008': { source: 'x', tags: { Office: 'n' } } } }), TypeError)
+      assert.equal(await graph.keptCall('N1'), undefined)
+      await recordCall(graph, { id: 'N2', from: '+15550100064', to: '+15550100008', at: day, duration: 60 }, { numbers: { '+15550100008': { source: 'x', tags: { office_advertised: ' north ' } } } })
+      assert.equal((await graph.report({ from: '2026-03-02', to: '2026-03-02', by: 'touch.office_advertised' })).rows.find((row) => row.source === 'x')!.breakdown![0]!.name, 'north')
+      // An arrival that says it is not recorded is one that says nothing.
+      await graph.touch({ subject: 'visitor:8', at: day, gclid: 'G8', custom: { office: ' (not recorded) ' } })
+      await graph.touch({ subject: 'visitor:8', at: day + 1, gclid: 'G8', custom: { office: null as unknown as string } })
+      await graph.outcome({ transactionId: 'e8', subject: 'visitor:8', at: day + HOUR, stage: 'enrolled' })
+      assert.equal((await graph.report({ from: '2026-03-02', to: '2026-03-03', by: 'touch.office_advertised' })).total.breakdown!.filter((part) => part.name.includes('not recorded')).length, 1)
+      // A parameter that cannot be asked for is not offered.
+      await graph.touch({ subject: 'visitor:9', at: day, gclid: 'G9', custom: { 'two words': 'x' } })
+      assert.ok((await graph.report({ from: '2026-03-02', to: '2026-03-02' })).dimensions.every((each) => !each.includes(' ')))
+
+      const nine = Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`tag_${'abcdefghi'[i]}`, 'x']))
+      for (const tags of [nine, { Office: 'x' }, { office: '' }, { office: 'x'.repeat(65) }, { office: 5 }, { office: '(not recorded)' }, ['x'], 'x']) await assert.rejects(graph.outcome({ transactionId: 'bad', subject: 'contact:1', at: day, tags: tags as never }), TypeError)
+      for (const by of ['office', 'touch.', 'touch.a b', 'outcome', 'minute']) await assert.rejects(graph.report({ from: '2026-03-02', to: '2026-03-03', by }), TypeError)
+    })
+
     test('the review queue pages, subjects are found by prefix, and recent changes are listed', async () => {
       const clock = { now: T0 }
       const { graph } = await fresh(undefined, { now: () => clock.now })

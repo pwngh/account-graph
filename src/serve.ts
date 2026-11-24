@@ -35,6 +35,7 @@ import { createPostgresStore } from './postgres.ts'
 import type { Pool } from './postgres.ts'
 import { createHandler, networks } from './server.ts'
 import type { HandlerOptions } from './server.ts'
+import { checkTags } from './tags.ts'
 import { googleAds, meta, microsoftAds, tiktok } from './targets.ts'
 import type { Change } from './types.ts'
 
@@ -182,6 +183,11 @@ export function configFrom(env: Env) {
       wrong.push(`CALL_NUMBERS: "${number}" is not a phone number`)
     }
     if (typeof channel?.source !== 'string' || !channel.source) wrong.push(`CALL_NUMBERS: "${number}" needs a source, such as {"source":"google"}`)
+    try {
+      checkTags(channel?.tags, `"${number}"`)
+    } catch (error) {
+      wrong.push(`CALL_NUMBERS: ${(error as Error).message}`)
+    }
   }
   if (config.callResults !== undefined && config.callResults !== 'expected') wrong.push('CALL_RESULTS must be expected, or not set')
   const twilioNames = ['TWILIO_AUTH_TOKEN', 'TWILIO_WEBHOOK_URL', 'TWILIO_ACCOUNT_SID'].filter((name) => env[name])
