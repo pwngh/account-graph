@@ -102,6 +102,7 @@
 - A search made while a view is still opening keeps its words and its answer, and only the newest search speaks.
 - A question on the reviewer screen says what the decision would do to the clusters before it is made. `graph.foresee` and `POST /foresee` answer the same.
 - A journey is drawn on a calendar, by month, week or day, with a line at now. A mark opens what it was beside it, and a missed call shows how long it waited to be returned.
+- Missed calls are an inbox: the list by how long each has waited, the caller's story beside it, and what is known of the call. Arrow keys walk the list.
 - The reviewer screen has one scale of type and space, tables that fit what they hold, and rows that become cards on a phone. Times are told by how long ago, with the exact time in a title.
 - The graph keeps room around every disc, name and line: names move to a free side, lines bend around what is in their way, and nothing lies over the paper. The strongest way to whoever is picked is shown, and weak ties can be left out.
 - Accounts opens on the largest cluster's graph, and its long lists scroll in their own boxes.
