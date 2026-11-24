@@ -1,7 +1,8 @@
 import type { Graph } from './graph.ts'
 import { hashPhone, normalizePhone, phoneOfType } from './identifiers.ts'
 import { checkTags } from './tags.ts'
-import type { CallResult, CallTime, FollowUp, Identifier, KeptCall, NotLead, Outcome, Subject } from './types.ts'
+import { asks, replyTo } from './texts.ts'
+import type { AttributedTouch, CallResult, CallTime, Candidate, FollowUp, Identifier, KeptCall, NotLead, Outcome, Subject } from './types.ts'
 
 /** One phone call to a number of yours, or from one, as your telephone provider reports it. */
 export interface Call {
@@ -199,24 +200,11 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   const phone = known && phoneOfType(known, line?.type)
   if (phone) await graph.observe({ subject, identifiers: [phone], at, event: 'call' })
 
-  const window = options.clickWindow ?? 3 * 60_000
-  const buckets: Identifier[] = []
-  for (let bucket = Math.floor((at - window) / BUCKET); bucket <= Math.floor((at + SLACK) / BUCKET); bucket++) buckets.push(`dialed:${to}@${bucket}`)
-  const taps = (await graph.holders(buckets)).filter((edge) => edge.last >= at - window && edge.first <= at + SLACK)
-  // A number shown to one visitor says whose call it is, whether or not they tapped it.
-  const pooled = options.pool?.numbers.some((number) => numberOrSelf(number, options.country) === to)
-  const holder = pooled ? await graph.leaseholder(to, at, options.pool!.grace) : undefined
-  const tapped = holder !== undefined ? [holder] : [...new Set(taps.map((edge) => edge.subject))]
+  const { visitors: tapped, holder, buckets } = await visitorsFor(graph, to, at, options)
   // One visitor, one caller. A visitor already tied to a different caller by an earlier call is passed over,
   // so a browser cannot collect call after call by tapping again. The same caller ringing back still counts.
   // A visitor a reviewer has kept apart from this caller is passed over too.
-  const apart = new Set(await graph.separations(subject))
-  const visitors: Subject[] = []
-  for (const candidate of tapped) {
-    if (apart.has(candidate)) continue
-    const earlier = (await graph.links(candidate)).filter((link) => link.reasons.some((reason) => /^(dial|lease):/.test(reason.identifier)))
-    if (earlier.every((link) => link.subject === subject)) visitors.push(candidate)
-  }
+  const visitors = await freeFor(graph, subject, tapped)
   if (visitors.length > 1) flags.push('ambiguous')
   const visitor = visitors.length === 1 && (await graph.tieCall(subject, visitors[0]!, `${holder === undefined ? 'dial' : 'lease'}:${id}`, at, holder === undefined ? { notes: buckets } : { pool: to, grace: options.pool!.grace })) ? visitors[0] : undefined
   if (visitor !== undefined && holder !== undefined) flags.push('pool')
@@ -236,6 +224,75 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   await graph.observe({ subject, identifiers: [note], at, event: 'call' })
   const kept = await graph.keptCall(id)
   return { subject, flags, counted, state: callState(kept!, (options.now ?? Date.now)(), options), ...(visitor && { visitor }), duplicate: false }
+}
+
+/** Who is calling, while the phone rings: what a call from this number to this one would be tied to. Nothing is written. */
+export interface Ringing {
+  /** The caller, as the call will be recorded. Undefined when they hid their number. */
+  subject?: Subject
+  /** Whether the number has called or texted before. */
+  known: boolean
+  /** Who they may be, strongest first: records of yours with this number, and whoever those are. */
+  people: Candidate[]
+  /** The one visitor who was shown the number or tapped it just before. */
+  visitor?: Subject
+  /** What brought them, where it can be credited already. */
+  touch?: AttributedTouch
+  /** Their missed calls nobody has returned, and their texts nobody has answered. */
+  waiting: { calls: number; texts: number }
+}
+
+export async function ringing(graph: Graph, call: { from?: string; to: string; at: number }, options: CallOptions = {}): Promise<Ringing> {
+  if (!Number.isSafeInteger(call?.at)) throw new TypeError('A ringing call requires "at", an integer in epoch milliseconds')
+  if (typeof call.to !== 'string') throw new TypeError('A ringing call requires "to", the dialed number')
+  const to = normalizePhone(call.to, options.country)
+  let from: string | undefined
+  try {
+    from = typeof call.from === 'string' ? normalizePhone(call.from, options.country) : undefined
+  } catch {}
+  if (from !== undefined && HIDDEN.has(from)) from = undefined
+  const subject: Subject | undefined = from && `caller:${hashPhone(from)}`
+  const visitors = await freeFor(graph, subject ?? '', (await visitorsFor(graph, to, call.at, options)).visitors)
+  const visitor = visitors.length === 1 ? visitors[0] : undefined
+  const calls = subject ? await graph.callsOf([subject]) : []
+  const texts = subject ? await graph.textsOf([subject]) : []
+  // A caller who is on record is tied already. Of one who is not, the number says who they may be.
+  const ties = subject ? await graph.links(subject) : []
+  const people: Candidate[] = []
+  for (const { subject: other, score, level, reasons } of ties) people.push({ subject: other, score, level, reasons, members: (await graph.cluster(other))?.members ?? [other] })
+  const apart = new Set(subject ? await graph.separations(subject) : [])
+  if (ties.length === 0 && from && !TOLL_FREE.test(from)) people.push(...(await graph.match([`phone:${hashPhone(from)}`, `voip:${hashPhone(from)}`], { at: call.at })).filter((each) => each.subject !== subject && !apart.has(each.subject)))
+  const touch = (subject && (await graph.attribute(subject, { at: call.at })).credited) ?? (visitor && (await graph.attribute(visitor, { at: call.at })).credited)
+  const not = await graph.notLeads([...calls.map((each) => `call:${each.id}`), ...texts.map((each) => `text:${each.id}`)])
+  const spoken = calls.filter((each) => !not.has(`call:${each.id}`))
+  const missed = spoken.filter((each) => each.direction === 'inbound' && each.result?.answered === false && followUp(each, spoken).state === 'open').length
+  // A sender who was no lead waits for nobody.
+  const unanswered = texts.some((each) => not.has(`text:${each.id}`)) ? 0 : texts.filter((each) => asks(each) && replyTo(each, texts, spoken).state === 'open').length
+  return { ...(subject && { subject }), known: calls.length > 0 || texts.length > 0, people, ...(visitor && { visitor }), ...(touch && { touch }), waiting: { calls: missed, texts: unanswered } }
+}
+
+/** Of some visitors, those a caller can be tied to: not kept apart from them, and not another caller's already. */
+async function freeFor(graph: Graph, caller: Subject, candidates: readonly Subject[]): Promise<Subject[]> {
+  const apart = new Set(await graph.separations(caller))
+  const free: Subject[] = []
+  for (const candidate of candidates) {
+    if (apart.has(candidate)) continue
+    const earlier = (await graph.links(candidate)).filter((link) => link.reasons.some((reason) => /^(dial|lease|text):/.test(reason.identifier)))
+    if (earlier.every((link) => link.subject === caller)) free.push(candidate)
+  }
+  return free
+}
+
+/** The visitors a call to a number at a time could be from: whoever it was shown to, or whoever tapped it just before. */
+async function visitorsFor(graph: Graph, to: string, at: number, options: CallOptions): Promise<{ visitors: Subject[]; holder?: Subject; buckets: Identifier[] }> {
+  const window = options.clickWindow ?? 3 * 60_000
+  const buckets: Identifier[] = []
+  for (let bucket = Math.floor((at - window) / BUCKET); bucket <= Math.floor((at + SLACK) / BUCKET); bucket++) buckets.push(`dialed:${to}@${bucket}`)
+  const taps = (await graph.holders(buckets)).filter((edge) => edge.last >= at - window && edge.first <= at + SLACK)
+  // A number shown to one visitor says whose call it is, whether or not they tapped it.
+  const pooled = options.pool?.numbers.some((number) => numberOrSelf(number, options.country) === to)
+  const holder = pooled ? await graph.leaseholder(to, at, options.pool!.grace) : undefined
+  return { visitors: holder !== undefined ? [holder] : [...new Set(taps.map((edge) => edge.subject))], ...(holder !== undefined && { holder }), buckets }
 }
 
 /** Records a call you placed. Nothing is observed: that you rang someone says nothing about who they are. */

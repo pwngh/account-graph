@@ -50,7 +50,9 @@ import type {
   Loss,
   Moved,
   CallTime,
+  Candidate,
   ChangePage,
+  Conflict,
   NotLead,
   Observation,
   OpenCall,
@@ -278,6 +280,16 @@ export interface Graph {
    * `after` defaults to 0, the first change kept. A subject no change has named is in the cluster of its own name.
    */
   changes(options?: { after?: number; limit?: number }): Promise<ChangePage>
+  /**
+   * Who somebody with these identifiers may be, strongest first, as if they were seen with them at a time. Nothing is
+   * written. Who is tied too weakly to be related is left out.
+   */
+  match(identifiers: readonly Identifier[], options?: { at?: number; limit?: number }): Promise<Candidate[]>
+  /**
+   * Which of the given subjects are kept apart, from each other or from anyone on record, themselves or through somebody
+   * they are or may be. An empty list says that none is known here, and not that there is none.
+   */
+  conflicts(subjects: readonly Subject[]): Promise<Conflict[]>
   /** What two subjects share, however weak, without any reviewer's mark, and how they stand. */
   between(a: Subject, b: Subject): Promise<Between>
   /**
@@ -916,6 +928,70 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
     links(subject) {
       return store.read(async (tx) => (await neighbors(tx, [subject])).get(subject) ?? [])
+    },
+
+    async match(identifiers, { at = now(), limit = 20 } = {}) {
+      const given = unique(identifiers)
+      for (const each of given) ruleFor(policy, each)
+      // Nobody's id: no subject on record has an empty one.
+      const nobody = ''
+      return store.read(async (tx) => {
+        const states = new Map([...(await tx.states(given))].map(([identifier, state]) => [identifier, { ...state, fanout: state.fanout + 1 }]))
+        const open = given.filter((identifier) => usable(policy, identifier, states.get(identifier)))
+        const edges = [...(await tx.edgesOn(open)), ...open.map((identifier): Edge => ({ subject: nobody, identifier, first: at, last: at, count: 1 }))]
+        const found = scorePairs(policy, edges, states, new Set([nobody]))
+        const labels = await tx.labelsOf(found.map((pair) => pair.b))
+        found.sort((x, y) => y.score - x.score || (x.b < y.b ? -1 : 1))
+        const out: Candidate[] = []
+        for (const { b: subject, score, level, reasons } of found.slice(0, limit)) out.push({ subject, score, level, reasons, members: (await tx.clusterOf(labels.get(subject)!.cluster)).sort() })
+        return out
+      })
+    },
+
+    conflicts(subjects) {
+      return store.read(async (tx) => {
+        const asked = unique(subjects)
+        const labels = await tx.labelsOf(asked)
+        // Who each is: itself, everyone in its cluster, and everyone any of those is only related to.
+        const people = new Map<Subject, Map<Subject, Conflict['how']>>()
+        for (const subject of asked) {
+          const own = labels.get(subject)
+          const who = new Map<Subject, Conflict['how']>([[subject, 'recorded']])
+          const members = own ? await tx.clusterOf(own.cluster) : []
+          for (const member of members) if (!who.has(member)) who.set(member, 'same')
+          const related = unique([...(await neighbors(tx, [...who.keys()])).values()].flat().map((link) => link.subject)).filter((each) => !who.has(each))
+          const theirs = await tx.labelsOf(related)
+          // Whoever any of them is kept apart from is somebody else, and so is everyone that person is.
+          const others = new Set((await tx.separatedOf([...who.keys()])).flat().filter((each) => !who.has(each)))
+          for (const each of unique([...theirs.values()].map((label) => label.cluster))) {
+            const group = await tx.clusterOf(each)
+            if (!group.some((member) => others.has(member))) for (const member of group) if (!who.has(member)) who.set(member, 'possible')
+          }
+          people.set(subject, who)
+        }
+        const order = ['recorded', 'same', 'possible'] as const
+        const weaker = (x: Conflict['how'], y: Conflict['how']) => order[Math.max(order.indexOf(x), order.indexOf(y))]!
+        const found = new Map<string, Conflict>()
+        for (const a of asked) {
+          const who = people.get(a)!
+          for (const [x, y] of await tx.separatedOf([...who.keys()])) {
+            for (const [mine, theirs] of [[x, y], [y, x]] as const) {
+              const how = who.get(mine)
+              if (!how || theirs === a) continue
+              // Against those asked about who may be the other side, and the other side itself unless one of them surely is.
+              const against = asked.filter((b) => b !== a && people.get(b)!.has(theirs))
+              const sure = against.some((b) => people.get(b)!.get(theirs) !== 'possible')
+              for (const b of new Set(sure ? against : [...against, theirs])) {
+                const conflict: Conflict = { a, b, how: weaker(how, b === theirs ? 'recorded' : people.get(b)!.get(theirs)!), rests: x < y ? [x, y] : [y, x] }
+                const key = `${a}\u0000${b}`
+                const known = found.get(key)
+                if (!known || order.indexOf(conflict.how) < order.indexOf(known.how)) found.set(key, conflict)
+              }
+            }
+          }
+        }
+        return [...found.values()].sort((p, q) => order.indexOf(p.how) - order.indexOf(q.how) || (p.a === q.a ? (p.b < q.b ? -1 : 1) : p.a < q.a ? -1 : 1))
+      })
     },
 
     between(a, b) {

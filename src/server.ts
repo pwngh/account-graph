@@ -1,7 +1,7 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { BlockList, isIP } from 'node:net'
-import { callState, dialed, followUp, numberOrSelf, recordCall, recordCallResult, recordNotLead, recordReturn } from './calls.ts'
+import { callState, dialed, followUp, numberOrSelf, ringing, recordCall, recordCallResult, recordNotLead, recordReturn } from './calls.ts'
 import type { CallOptions } from './calls.ts'
 import { Outdated } from './graph.ts'
 import type { Graph, PolicyState } from './graph.ts'
@@ -149,7 +149,7 @@ const NAME = /^[\w.-]{1,64}$/
 /** What a reviewer's token opens: what the reviewer screen reads, and the decisions a reviewer makes. */
 const REVIEW_ROUTES = new Set([
   'GET /me', 'GET /subject', 'GET /clusters', 'GET /search', 'GET /recent', 'GET /links', 'GET /cluster', 'GET /history', 'GET /journey', 'GET /board', 'GET /flows', 'GET /collusion', 'GET /rings',
-  'GET /decisions', 'GET /disputes', 'GET /consent', 'GET /outcome', 'GET /followed', 'GET /call', 'GET /calls', 'GET /calls/summary', 'GET /text', 'GET /texts', 'GET /texting', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'GET /ops', 'POST /find', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
+  'GET /decisions', 'GET /disputes', 'GET /consent', 'GET /outcome', 'GET /followed', 'GET /call', 'GET /calls', 'GET /calls/summary', 'POST /match', 'POST /conflicts', 'POST /call/ringing', 'GET /text', 'GET /texts', 'GET /texting', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'GET /ops', 'POST /find', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
   'GET /undecided', 'GET /between', 'GET /conversions', 'POST /retry', 'POST /foresee',
 ])
 
@@ -549,6 +549,13 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
    */
   async function identify(body: any) {
     if (typeof body?.subject !== 'string' || !body.subject) throw new Refusal(400, 'Body requires a subject')
+    const { identifiers, notes, at } = await factsIn(body, true)
+    const changes = await graph.observe({ subject: body.subject, identifiers, at, ...(typeof body.event === 'string' && body.event && { event: body.event }) })
+    return { changes, identifiers, notes }
+  }
+
+  /** The identifiers in plain facts about somebody, normalized, checked and hashed, and what came of the checks. Only where they are to be saved is the line of a number looked up, because that can mute it. */
+  async function factsIn(body: any, saving: boolean) {
     const identifiers: Identifier[] = (Array.isArray(body.identifiers) ? body.identifiers : []).map(String)
     const notes: Record<string, string> = {}
     let zip: string | undefined
@@ -561,9 +568,11 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     if (typeof body.phone === 'string' && body.phone) {
       const number = normalizePhone(body.phone, options.calls?.country)
       // A lookup that is down must not lose the sighting: the number is kept as a plain phone.
-      const line = lineOf ? ((await lineOf(number).catch((error) => void console.error(error))) ?? undefined) : undefined
+      const line = lineOf && saving ? ((await lineOf(number).catch((error) => void console.error(error))) ?? undefined) : undefined
       const found = phoneOfType(number, line?.type)
       if (found) identifiers.push(found)
+      // Unlooked at, it is whichever of the two kinds it was saved as.
+      if (found && !saving) identifiers.push(identifier('voip', hashPhone(number)))
       if (line) notes.phone = found ? line.type : `${line.type}: not used`
     }
     if (body.address && typeof body.address === 'object') {
@@ -601,9 +610,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     }
     if (body.at !== undefined && !Number.isSafeInteger(body.at)) throw new Refusal(400, '`at` must be an integer in epoch milliseconds')
     if (identifiers.length === 0) throw new Refusal(400, 'At least one identifying field is required')
-    const at = body.at ?? now()
-    const changes = await graph.observe({ subject: body.subject, identifiers, at, ...(typeof body.event === 'string' && body.event && { event: body.event }) })
-    return { changes, identifiers, notes }
+    return { identifiers, notes, at: (body.at ?? now()) as number }
   }
 
     /** Names the policy this server runs, the flagging size included, so a screen left open over a restart reads it again. */
@@ -855,6 +862,20 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return graph.observe(await json(request))
       case 'POST /identify':
         return identify(await json(request))
+      case 'POST /match': {
+        const { identifiers, notes, at } = await factsIn(await json(request), false)
+        return { candidates: await graph.match(identifiers, { at }), notes }
+      }
+      case 'POST /conflicts': {
+        const { subjects } = await json(request)
+        if (!Array.isArray(subjects) || subjects.length === 0 || subjects.length > 50 || !subjects.every((each) => typeof each === 'string' && each)) throw new Refusal(400, '`subjects` must be a list of 1 to 50 ids')
+        return { conflicts: await graph.conflicts(subjects) }
+      }
+      case 'POST /call/ringing': {
+        const body = await json(request)
+        const { touch, ...rest } = await ringing(graph, { ...body, at: body.at ?? now() }, calling())
+        return { ...rest, ...(touch && { source: sourceOf(touch), campaign: touch.campaign ?? null, campaignId: touch.campaignId ?? null, landing: touch.landing ?? null }) }
+      }
             case 'POST /touch':
         return graph.touch(await json(request))
       case 'POST /ignore': {

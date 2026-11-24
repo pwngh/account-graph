@@ -1787,3 +1787,33 @@ test('a slow answer is worked out once for everybody, shared for a moment while 
     server.close()
   }
 })
+
+test('a screen can ask who somebody may be, who is ringing, and who is kept apart, and nothing is written', async () => {
+  const graph = createGraph(createMemoryStore())
+  const at = Date.parse('2026-03-02T12:00:00Z')
+  const server = createServer(createHandler(graph, { token: 'service', reviewers: { dana: 'reviewer' }, origins: [], now: () => at })).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const ask = async (path: string, body: object, token = 'reviewer') => {
+    const response = await fetch(`${base}${path}`, { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify(body) })
+    return { status: response.status, body: (await response.json()) as any }
+  }
+  try {
+    for (const [subject, email, phone] of [['contact:1', 'pat@example.org', '+15550100181'], ['contact:2', 'lee@example.org', '+15550100182']]) await ask('/identify', { subject, email, phone }, 'service')
+    await ask('/separate', { a: 'contact:1', b: 'contact:2' })
+    await graph.touch({ subject: 'contact:2', at: at - 1000, gclid: 'G', landing: 'https://site.example/' })
+    const version = await graph.version()
+    const found = await ask('/match', { email: 'Pat@Example.org', phone: '(555) 010-0181' })
+    assert.deepEqual(found.body.candidates.map((each: any) => [each.subject, each.level]), [['contact:1', 'same']])
+    assert.equal((await ask('/match', {})).status, 400)
+    const ring = await ask('/call/ringing', { from: '+15550100182', to: '+15550100101' })
+    assert.deepEqual([ring.body.known, ring.body.people[0].subject, ring.body.source, ring.body.waiting, ring.body.touch], [false, 'contact:2', undefined, { calls: 0, texts: 0 }, undefined])
+    assert.equal((await ask('/call/ringing', { from: 'x' })).status, 400)
+    const against = await ask('/conflicts', { subjects: ['contact:1'] })
+    assert.deepEqual(against.body.conflicts, [{ a: 'contact:1', b: 'contact:2', how: 'recorded', rests: ['contact:1', 'contact:2'] }])
+    for (const subjects of [undefined, [], [''], Array(51).fill('x')]) assert.equal((await ask('/conflicts', { subjects })).status, 400)
+    assert.equal(await graph.version(), version)
+  } finally {
+    server.close()
+  }
+})

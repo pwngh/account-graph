@@ -10,7 +10,7 @@ export { createBatcher } from './batch.ts'
 export { fit, measure } from './calibrate.ts'
 export { brokenAt, seal } from './audit.ts'
 export { dayStart, dimension, fold, sourceOf } from './report.ts'
-export { callState, dialed, followUp, recordCall, recordCallResult, recordNotLead, recordReturn } from './calls.ts'
+export { callState, dialed, followUp, ringing, recordCall, recordCallResult, recordNotLead, recordReturn } from './calls.ts'
 export { beginnings, codeIn, codeNote, recordText, replyTo, textCode, texted } from './texts.ts'
 export type { RecordedText, Text, TextFlag, TextOptions } from './texts.ts'
 export { knownLink, readToken, signToken, staffLink } from './sign.ts'
@@ -73,7 +73,9 @@ export type {
   Loss,
   Moved,
   CallTime,
+  Candidate,
   ChangePage,
+  Conflict,
   NumberedChange,
   NotLead,
   Observation,

@@ -85,6 +85,20 @@ The result is a model score, uncalibrated as a probability. Correlated evidence 
 | One weight fits a kind. | A phone typed by staff is weaker than one a caller dialed from. Use [presets](presets.md). |
 | Evidence fades with the gap. | Sightings that overlap do not fade, however old. A kind without a half-life keeps full evidence. |
 
+## Asking about conflicts
+
+`POST /conflicts` takes the people of a matter and answers which of them are kept apart, from each other or from anyone on record.
+
+| `how` | Meaning |
+| --- | --- |
+| `recorded` | The two were separated |
+| `same` | One is the same person as somebody separated from the other, or from somebody the other is |
+| `possible` | One is only related to such a person. Somebody has to look. |
+
+`rests` is the separated pair the answer rests on. Where the other side was not asked about, `b` is whoever on record they are kept apart from.
+
+> **An empty list says that none is known here.** It does not say that there is none, and it does not replace your own conflict check. If the server cannot be reached, say that it was not asked.
+
 ## Decisions from your own systems
 
 Your systems hold facts the graph cannot infer. Report them with `/separate` and `/join`.
