@@ -21,6 +21,9 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   await new Promise((resolve) => server.once('listening', resolve))
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
   t.after(() => (server.closeAllConnections(), void server.close()))
+  const served = await fetch(`${base}/review`)
+  assert.match(served.headers.get('content-security-policy')!, /img-src data:; .*frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types 'none'$/)
+  assert.deepEqual(['cross-origin-opener-policy', 'cross-origin-resource-policy', 'x-robots-tag'].map((name) => served.headers.get(name)), ['same-origin', 'same-origin', 'noindex, nofollow'])
   const { run, press, close } = await browse(`${base}/review#/accounts/account%3A1`)
   t.after(close)
   const text = (selector: string) => run(`document.querySelector(${JSON.stringify(selector)})?.textContent ?? ''`) as Promise<string>
@@ -32,7 +35,7 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
     await until('the question', () => run(`document.getElementById('ask').open`))
   }
   const decisions = async () => (await graph.decisions()).map(({ action, about, by, reason }) => [action, about.join(' '), by, reason])
-  await until('the page', () => run(`typeof load === 'function'`))
+  await until('the page', () => run(`typeof load === 'function'`).catch(() => false))
   await enter('nobody-token')
   await until('the refusal', async () => (await text('#notice')).includes('refused'))
   assert.equal(await shown('#token'), true)

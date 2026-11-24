@@ -17,7 +17,7 @@ test('every scene of the demo runs, says what came of it within a second, and ca
   const links = (await run(`[...document.querySelectorAll('li a')].map((each) => each.href)`)) as string[]
   const screen = await browse(`${firm.graph}/review`)
   t.after(screen.close)
-  await until('the screen', () => screen.run(`typeof load === 'function'`))
+  await until('the screen', () => screen.run(`typeof load === 'function'`).catch(() => false))
   await screen.run(`sessionStorage.setItem('token', 'demo')`)
   /** What a view of the reviewer screen says, read afresh. */
   const view = async (href: string) => {

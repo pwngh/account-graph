@@ -16,7 +16,8 @@ let page: { html: string; headers: Record<string, string> } | undefined
  * The reviewer screen: one page with no outside assets. It holds no data and
  * no secret; the reviewer types the access token, and the page calls the
  * server's own routes with it. The policy lets the page run only the script
- * and style it shipped with, and talk only to the server it came from.
+ * and style it shipped with, and talk only to the server it came from. Its one
+ * image is its own icon, and no text is ever turned into markup.
  *
  * The files are read on first use, so a server that never serves the screen
  * does not need them.
@@ -31,9 +32,13 @@ export function reviewPage(): { html: string; headers: Record<string, string> } 
     html,
     headers: {
       'content-type': 'text/html; charset=utf-8',
-      'content-security-policy': `default-src 'none'; script-src ${allow(script)}; style-src ${allow(style)}; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+      'content-security-policy': `default-src 'none'; script-src ${allow(script)}; style-src ${allow(style)}; connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types 'none'`,
       'cache-control': 'no-store',
       'referrer-policy': 'no-referrer',
+      'cross-origin-opener-policy': 'same-origin',
+      'cross-origin-resource-policy': 'same-origin',
+      'permissions-policy': 'camera=(), display-capture=(), geolocation=(), microphone=(), payment=(), usb=()',
+      'x-robots-tag': 'noindex, nofollow',
       'x-content-type-options': 'nosniff',
     },
   })

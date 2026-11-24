@@ -3,7 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f0f0ee" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0c0c0b" media="(prefers-color-scheme: dark)">
+<meta name="robots" content="noindex, nofollow">
 <title>Account review</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cstyle%3E.b{fill:%231a1a19}.d{fill:%23fff}@media(prefers-color-scheme:dark){.b{fill:%23efefed}.d{fill:%23161615}}%3C/style%3E%3Crect class='b' width='32' height='32' rx='9'/%3E%3Cg class='d'%3E%3Ccircle cx='10.5' cy='11' r='4'/%3E%3Ccircle cx='22' cy='13' r='4'/%3E%3Ccircle cx='15.5' cy='22.5' r='4'/%3E%3C/g%3E%3C/svg%3E">
 <style>/* style.css */</style>
 </head>
 <body>
@@ -12,7 +17,7 @@
   <h1>Account review</h1>
   <nav id="views" aria-label="Views"></nav>
   <form id="find" class="row">
-    <label>Find <input id="subject" placeholder="Find" size="24" list="found" autocomplete="off" required></label>
+    <label>Find <input id="subject" placeholder="Find" size="24" list="found" autocomplete="off" enterkeyhint="search" required></label>
     <datalist id="found"></datalist>
     <button class="primary">Open</button>
     <button type="button" id="summon" title="Find or do"><kbd id="summon-key">Ctrl K</kbd></button>

@@ -162,6 +162,8 @@ function parts(label, list) {
 /** A table that scrolls inside its own box. The box takes the keyboard, so arrow keys can scroll it. */
 const wide = (label, table, cards = false) => {
   // Keep both lines of a grouped heading pinned together.
+  // Named, as a table read on its own has no heading beside it.
+  if (!table.caption) table.setAttribute('aria-label', label)
   const heading = el('thead')
   const rows = [...table.children].filter((node) => node.tagName !== 'CAPTION' && node.tagName !== 'COLGROUP')
   for (const row of rows) {

@@ -126,6 +126,7 @@
 - The reviewer screen sets what a platform claims beside what is credited, a campaign a row.
 - The reviewer screen has layered surfaces, a mark for each kind of subject, feeds and refused conversions as rows, and text that follows the size set in the browser.
 - The reviewer screen shows what had reached an ad platform of someone it forgets, until it is put away.
+- The reviewer screen is kept out of search engines and apart from other windows, never turns text into markup, has an icon, and works with forced colors and on paper.
 - The reviewer screen has one scale of type and space, tables that fit what they hold, and rows that become cards on a phone. Times are told by how long ago, with the exact time in a title.
 - The graph keeps room around every disc, name and line: names move to a free side, lines bend around what is in their way, and nothing lies over the paper. The strongest way to whoever is picked is shown, and weak ties can be left out.
 - Accounts opens on the largest cluster's graph, and its long lists scroll in their own boxes.
