@@ -114,6 +114,9 @@ export function read(params: readonly string[] = []): Collected {
   if (document.referrer && new URL(document.referrer).origin !== location.origin) touch.referrer = document.referrer
   const arrived = Object.keys(touch).length > 0
   if (arrived) touch.landing = url.origin + url.pathname
+  // Meta's id for this browser goes along with an arrival, and is never one by itself.
+  const fbp = cookie('_fbp')
+  if (arrived && fbp) touch.fbp = fbp
 
   const staff = staffMark()
   const ga = cookie('_ga')?.split('.').slice(-2).join('.')

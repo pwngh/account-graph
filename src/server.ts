@@ -462,7 +462,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         ownSite = touch.referrer !== undefined && options.origins.includes(new URL(touch.referrer).origin)
       } catch {}
       if (ownSite) delete touch.referrer
-      const arrived = Object.keys(touch).some((field) => !['subject', 'at', 'landing'].includes(field))
+      const arrived = Object.keys(touch).some((field) => !['subject', 'at', 'landing', 'fbp'].includes(field))
       if (arrived) await graph.touch(touch)
     }
   }

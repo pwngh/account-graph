@@ -88,7 +88,10 @@ export class MetaError extends Error {
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex')
 const SOURCES = { WEB: 'website', APP: 'app', IN_STORE: 'physical_store', PHONE: 'phone_call', MESSAGE: 'chat', OTHER: 'other' } as const
 
-/** One Conversions API event. `fbc` is built from the ad click the graph credited. */
+/** How Meta writes its browser id: version, subdomain level, when it was made, and a random number. */
+const FBP = /^fb\.\d\.\d{10,14}\.\d{1,20}$/
+
+/** One Conversions API event. `fbc` is built from the ad click the graph credited, and `fbp` is the id of the browser it was made in. */
 export function metaEvent(action: string, { job, touch }: Item, url: string): Record<string, unknown> {
   const source = SOURCES[job.source ?? 'WEB']
   if (touch?.fbclid) job.click = { fbclid: touch.fbclid }
@@ -102,6 +105,7 @@ export function metaEvent(action: string, { job, touch }: Item, url: string): Re
       ...(job.keys.em && { em: [job.keys.em] }),
       ...(job.keys.ph && { ph: [job.keys.ph] }),
       ...(touch?.fbclid && { fbc: `fb.1.${touch.at}.${touch.fbclid}` }),
+      ...(touch?.fbp && FBP.test(touch.fbp) && { fbp: touch.fbp }),
     },
     ...(job.value !== undefined && { custom_data: { value: job.value, currency: job.currency ?? 'USD' } }),
   }
@@ -123,7 +127,12 @@ export function meta(options: MetaOptions): Target {
       ...(outcome.email && { em: sha256(outcome.email.trim().toLowerCase()) }),
       ...(outcome.phone && { ph: sha256(normalizePhone(outcome.phone).slice(1)) }),
     }),
-    click: (attribution, confidence) => attribution.touches.find((touch) => touch.confidence >= confidence && Boolean(touch.fbclid)),
+    click: (attribution, confidence) => {
+      const click = attribution.touches.find((touch) => touch.confidence >= confidence && Boolean(touch.fbclid))
+      // The pixel may not have made its cookie yet when the click landed. A later arrival in the same browser then has it.
+      const fbp = click && (click.fbp ?? attribution.touches.find((touch) => touch.subject === click.subject && touch.fbp)?.fbp)
+      return click && { ...click, ...(fbp && { fbp }) }
+    },
     async deliver(action, items) {
       const token = typeof options.accessToken === 'function' ? await options.accessToken() : options.accessToken
       const endpoint = `https://graph.facebook.com/${options.version ?? 'v27.0'}/${encodeURIComponent(options.pixelId)}/events`

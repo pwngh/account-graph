@@ -272,6 +272,8 @@ export interface Touch {
   gbraid?: string
   wbraid?: string
   fbclid?: string
+  /** Meta's own id for this browser, from the `_fbp` cookie its pixel keeps on your site. Says nothing of where the visitor came from. */
+  fbp?: string
   msclkid?: string
   ttclid?: string
   landing?: string

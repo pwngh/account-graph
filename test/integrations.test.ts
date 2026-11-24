@@ -923,6 +923,8 @@ test('a link sent to one person ties the browser that opens it, and a visitor is
     assert.equal((await graph.counts()).touches, 3)
     // Fields sent empty say nothing about where the visitor came from, so they leave no touch either.
     await page('/collect', { device: 'elsewhere', touch: { referrer: '', source: '', custom: { mailing: '' }, landing: 'https://shop.example/' } }, 'https://shop.example')
+    // Nor does Meta's browser id by itself: it says which browser, and not from where.
+    await page('/collect', { device: 'elsewhere', touch: { fbp: 'fb.1.1700000000000.1', landing: 'https://shop.example/' } }, 'https://shop.example')
     assert.equal((await graph.counts()).touches, 3)
     // So a sign-up on the second site is credited to the ad click that landed on the first.
     await graph.observe({ subject: 'account:7', identifiers: ['device:shop-device'], at: clock + 1000 })

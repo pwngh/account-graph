@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
-import { components, conversionEvent, createAlerter, createGraph, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, ingestRequest, ip, knownLink, ladderProblems, measure, nameKeys, normalizeEmail, normalizePhone, phoneOfType, policyFrom, policyHash, policyProblems, readToken, scorePairs, signToken, sourceOf, withStage } from '../src/index.ts'
+import { components, conversionEvent, createAlerter, createGraph, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, ingestRequest, ip, knownLink, ladderProblems, measure, meta, metaEvent, nameKeys, normalizeEmail, normalizePhone, phoneOfType, policyFrom, policyHash, policyProblems, readToken, scorePairs, signToken, sourceOf, withStage } from '../src/index.ts'
 import { summarizeCalls } from '../src/callreport.ts'
 import { followed } from '../src/followed.ts'
 import type { Caller, Followed } from '../src/followed.ts'
@@ -834,4 +834,21 @@ test('the number pool is off until numbers are given, and its settings are check
   assert.deepEqual([poolNumbers, poolMinutes, poolGrace], [['+15550100001', '(555) 010-0002'], 20, 0])
   assert.throws(() => configFrom({ ...env, POOL_NUMBERS: 'nonsense' }), /POOL_NUMBERS: "nonsense" is not a phone number/)
   assert.throws(() => configFrom({ ...env, POOL_NUMBERS: '+15550100001', POOL_MINUTES: '0' }), /POOL_MINUTES must be at least 1/)
+})
+
+test('Meta gets its browser id only as Meta writes it, and only beside its click', () => {
+  const at = 1_700_000_000_000
+  const target = meta({ pixelId: '1', accessToken: 't', url: 'https://site.example/' })
+  const touch = (more: object) => ({ subject: 'visitor:v', at, confidence: 1, via: [], ...more })
+  const sent = (touches: object[]) => {
+    const click = target.click({ subject: 'visitor:v', at, touches: touches as never, credited: undefined, reason: 'credited' }, 0.9)
+    return click && (metaEvent('Lead', { job: { transactionId: 't', subject: 'visitor:v', at, keys: {} }, touch: click } as never, 'https://site.example/').user_data as Record<string, unknown>)
+  }
+  const fbp = 'fb.1.1700000000000.1234567890'
+  assert.deepEqual(sent([touch({ fbclid: 'F', fbp })]), { fbc: `fb.1.${at}.F`, fbp })
+  assert.deepEqual(sent([touch({ fbclid: 'F' })]), { fbc: `fb.1.${at}.F` })
+  // Anything a page could put there instead is left out.
+  for (const made of ['x', 'fb.1.1700000000000.abc', 'fb.1.1700000000000.1&em=x', `${fbp}\n`]) assert.deepEqual(sent([touch({ fbclid: 'F', fbp: made })]), { fbc: `fb.1.${at}.F` }, made)
+  // No Meta click, no browser id: it is a key that goes along, and not one to send a conversion by.
+  assert.equal(sent([touch({ source: 'newsletter', fbp })]), undefined)
 })

@@ -164,6 +164,7 @@ PostgreSQL writes take one advisory lock, so they run one at a time; the write q
 
 - No request has been made with real credentials. A successful Fingerprint lookup, MaxMind answer, token from Google or Microsoft, upload to any ad platform, cost report from Google Ads or Meta, Twilio line lookup, and Smarty address check are all untested. `npm run live-check` is how to run them with yours.
 - No real phone call has arrived from Twilio, and no alert has been posted to a real webhook.
+- Meta's browser id is sent only where the site runs Meta's pixel, with an arrival, beside a Meta click. It is not a match key by itself.
 - A pool number is only right while it is that visitor's. One saved and rung much later ties to nobody, or to whoever has the number by then.
 - The queue of pairs to decide looks at the subjects of the newest 10,000 sightings, not at everyone.
 - The board is read from what is recorded. It does not assign work, and only people who reached a step or had a call in its period are on it.
