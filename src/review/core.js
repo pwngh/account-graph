@@ -223,6 +223,7 @@ function ask(title, text, confirm, wantsOther, save) {
  * `done` is told the answer, before the reload.
  */
 async function act(title, text, path, body, confirm, { otherKey, undo = false, done } = {}) {
+  foretell(path, body, otherKey)
   const shown = undo ? undefined : $('view').firstElementChild?.dataset.seen
   // The newer decisions this question has shown, by the other subject it named at the time: one seen says nothing of another.
   const told = new Map()
@@ -251,6 +252,41 @@ async function act(title, text, path, body, confirm, { otherKey, undo = false, d
   const answer = saved.answer?.moved ?? saved.answer
   // Reloading clears the notice, so speak after it. A failed reload has already said why.
   if (await load()) notice(Array.isArray(answer) && answer.length === 0 ? `${title}: recorded. No cluster changed.` : `${title}: done.`)
+}
+
+/** People by how many subjects each has, in words. */
+const people = (clusters) => (clusters.length === 1 ? (clusters[0].size === 1 ? 'one subject on its own' : `one person of ${amount(clusters[0].size)} subjects`)
+  : `${amount(clusters.length)} people, of ${clusters.length > 6 ? `${clusters.slice(0, 6).map(({ size }) => amount(size)).join(', ')} and fewer` : `${clusters.slice(0, -1).map(({ size }) => amount(size)).join(', ')} and ${amount(clusters.at(-1).size)}`} subjects`)
+let foretelling = 0
+/** Says in the question what the decision would do, worked out by the server and not made. With a subject still to be named, once it is. */
+function foretell(path, body, otherKey) {
+  const turn = ++foretelling
+  const said = $('ask-effect')
+  said.textContent = ''
+  const action = { '/join': 'join', '/separate': 'separate', '/ignore': 'ignore' }[path]
+  $('ask-other').onchange = $('ask-other').onkeyup = null
+  if (!action) return
+  const tell = async (other) => {
+    const asked = ++said.asked
+    try {
+      const { moved, before, after } = await api('POST', '/foresee', { action, ...body, ...(otherKey && { [otherKey]: other }) })
+      if (turn !== foretelling || asked !== said.asked) return
+      said.textContent = moved === 0 ? 'No cluster would change.' : `Now ${people(before)}. After this, ${people(after)}.`
+    } catch {
+      // The question can be answered without it.
+      if (turn === foretelling && asked === said.asked) said.textContent = ''
+    }
+  }
+  said.asked = 0
+  if (!otherKey) return void tell()
+  let waiting
+  $('ask-other').onchange = () => tell($('ask-other').value.trim())
+  $('ask-other').onkeyup = () => {
+    clearTimeout(waiting)
+    said.textContent = ''
+    said.asked += 1
+    waiting = setTimeout(() => $('ask-other').value.trim() && turn === foretelling && tell($('ask-other').value.trim()), 300)
+  }
 }
 
 /** Goes to an address. Going where the screen already is reads it again. */

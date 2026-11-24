@@ -99,6 +99,16 @@ export interface GraphOptions {
   now?: () => number
 }
 
+/** A decision that has not been made. */
+export type Supposed = { action: 'join'; a: Subject; b: Subject } | { action: 'separate'; a: Subject; b: Subject; separated?: boolean } | { action: 'ignore'; identifier: Identifier; ignored?: boolean }
+
+/** What a decision would do. A subject of no cluster counts as a cluster of one. */
+export interface Foreseen {
+  moved: number
+  before: { id: Subject; size: number }[]
+  after: { id: Subject; size: number }[]
+}
+
 export interface Graph {
   /** Records observations and returns every subject whose cluster moved. */
   observe(input: Observation | readonly Observation[]): Promise<Change[]>
@@ -211,6 +221,8 @@ export interface Graph {
   separations(subject: Subject): Promise<Subject[]>
   /** The clusters with two or more members, largest first: where a reviewer should look. `offset` skips that many. */
   clusters(limit?: number, offset?: number): Promise<{ id: Subject; size: number; oversized: boolean }[]>
+  /** What a decision would do to the clusters now, worked out without making it: how many subjects would move, and the clusters it is about before and after. */
+  foresee(decision: Supposed): Promise<Foreseen>
   /** Subjects with an arrival that carries this ad click id, whole, in order. */
   clicked(id: string, limit?: number): Promise<Subject[]>
   /** Subjects whose id starts with the text, in order. */
@@ -400,11 +412,21 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
   }
 
   /** Components and clusters of the given subjects, from their edges and the reviewer's separations. */
-  async function compute(tx: Tx, subjects: readonly Subject[]): Promise<Map<Subject, Labels>> {
-    const edges = await tx.edgesOf(subjects)
+  async function compute(tx: Tx, subjects: readonly Subject[], supposing?: Supposed): Promise<Map<Subject, Labels>> {
+    let edges = await tx.edgesOf(subjects)
     const states = await tx.states(unique(edges.map((edge) => edge.identifier)))
     const among = new Set(subjects)
-    const separated = (await tx.separatedOf(subjects)).filter(([a, b]) => among.has(a) && among.has(b))
+    let separated = (await tx.separatedOf(subjects)).filter(([a, b]) => among.has(a) && among.has(b))
+    if (supposing?.action === 'join') {
+      // Joined as a decision would join them, by an identifier of their own. Nobody else can hold one with no number.
+      const identifier = 'review:join-'
+      edges = [...edges, ...[supposing.a, supposing.b].map((subject) => ({ subject, identifier, first: now(), last: now(), count: 1 }))]
+      states.set(identifier, { fanout: 2, ignored: false })
+    } else if (supposing?.action === 'ignore') states.set(supposing.identifier, { ...states.get(supposing.identifier)!, ignored: supposing.ignored ?? true })
+    else if (supposing) {
+      separated = separated.filter(([a, b]) => !(a === supposing.a && b === supposing.b) && !(a === supposing.b && b === supposing.a))
+      if (supposing.separated ?? true) separated.push([supposing.a, supposing.b])
+    }
     return partition(subjects, scorePairs(policy, edges, states), separated, policy)
   }
 
@@ -1170,6 +1192,36 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
     clusters(limit = 50, offset = 0) {
       return store.read(async (tx) => (await tx.largestClusters(limit, offset)).map((each) => ({ ...each, oversized: each.size > policy.review })))
+    },
+
+    async foresee(decision) {
+      const { action } = decision
+      if (action === 'join' || action === 'separate') pairOf(decision.a, decision.b, action)
+      else if (action === 'ignore') keepable(decision.identifier)
+      else throw new TypeError('foresee needs an action: join, separate or ignore')
+      return store.read(async (tx) => {
+        let about: Subject[]
+        if (action === 'ignore') {
+          const { cap } = ruleFor(policy, decision.identifier)
+          const state = (await tx.states([decision.identifier])).get(decision.identifier)
+          // What nobody holds, or too many to link, joins nobody either way.
+          about = !state || state.fanout > cap ? [] : unique((await tx.edgesOn([decision.identifier])).map((edge) => edge.subject))
+        } else about = [decision.a, decision.b]
+        const own = await tx.labelsOf(about)
+        const stored = await tx.membersOf(unique([...own.values()].map((labels) => labels.component)))
+        const subjects = unique([...stored.keys(), ...about])
+        const next = await compute(tx, subjects, decision)
+        const was = (subject: Subject) => stored.get(subject)?.cluster ?? subject
+        const moved = subjects.filter((subject) => was(subject) !== next.get(subject)!.cluster)
+        const shown = new Set([...about, ...moved])
+        const sized = (clusterOf: (subject: Subject) => Subject) => {
+          const held = new Set([...shown].map(clusterOf))
+          const sizes = new Map<Subject, number>()
+          for (const subject of subjects) if (held.has(clusterOf(subject))) sizes.set(clusterOf(subject), (sizes.get(clusterOf(subject)) ?? 0) + 1)
+          return [...sizes].map(([id, size]) => ({ id, size })).sort((x, y) => y.size - x.size || (x.id < y.id ? -1 : 1))
+        }
+        return { moved: moved.length, before: sized(was), after: sized((subject) => next.get(subject)!.cluster) }
+      })
     },
 
     clicked(id, limit = 20) {

@@ -27,6 +27,7 @@ const POST: Record<string, object> = {
   '/consent': { subject: 'account:1', consent: { adUserData: true, adPersonalization: true }, at: T0, source: 's' },
   '/transfer': { id: 'f1', from: 'account:1', to: 'account:2', amount: 1, at: T0, asset: 'usd' },
   '/find': { text: 'a' },
+  '/foresee': { action: 'join', a: 'a', b: 'b' },
   '/rebuild': { by: 'me', reason: 'r' }, '/prune': { before: 1, by: 'me', reason: 'r' },
   '/convert': { transactionId: 't1', subject: 'account:1', at: T0, stage: 's', value: 1, currency: 'USD', tags: { office: 'north' } },
   '/restate': { transactionId: 't1', value: 1, currency: 'USD' },
