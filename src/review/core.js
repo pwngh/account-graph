@@ -118,7 +118,7 @@ function place() {
 }
 
 /** Which control this is, whatever moves around it or changes beside it: what it is and does, and the subject its row is about. */
-const which = (node) => [node.tagName, node.matches('a, button') ? node.textContent : '', node.getAttribute('href'), node.getAttribute('aria-label'), node.title, node.closest('tr, li')?.querySelector('a')?.getAttribute('href')].join('\n')
+const which = (node) => [node.tagName, node.dataset.key, node.matches('a, button') ? node.textContent : '', node.getAttribute('href'), node.getAttribute('aria-label'), node.title, node.closest('tr, li')?.querySelector('a')?.getAttribute('href')].join('\n')
 
 let loading = 0
 let pending = 0

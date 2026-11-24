@@ -106,6 +106,9 @@ async function clusterList() {
   const list = el('ul', { id: 'queue' }, ...(clusters.length > 0 ? clusters.map(queued) : [el('li', { class: 'muted' }, 'No clusters yet.')]))
   // The list comes 50 at a time. A full page means there may be more.
   const more = el('button', { on: { click: async () => {
+    // A refresh under way would replace the list this page is added to, so it gives way.
+    loading += 1
+    pending += 1
     try {
       const next = await api('GET', `/clusters?offset=${list.children.length}`)
       list.append(...next.map(queued))
@@ -113,6 +116,8 @@ async function clusterList() {
       more.hidden = next.length < 50
     } catch (error) {
       notice(error.message, true)
+    } finally {
+      pending -= 1
     }
   } } }, 'Show more')
   more.hidden = clusters.length === 0 || clusters.length % 50 > 0
@@ -136,7 +141,7 @@ view('accounts', 'Accounts', async (box, subject) => {
     el('ul', { id: 'decisions' }, ...decisions.slice(-30).reverse().map((d) => el('li', {},
       el('span', {}, `${ACTIONS[d.action] ?? d.action} `), ...(d.action === 'prune' ? [when(Number(d.about[0]))] : d.about).map((each) => el('span', { class: 'reason' }, each)),
       el('span', { class: 'muted' }, `${when(d.at)}${d.by ? `, ${d.by}` : ''}${d.reason ? `: ${d.reason}` : ''} `),
-      d.action === 'ignore' && !(restoredAt.get(d.about[0]) > d.seq) ? el('button', { class: 'link', on: { click: () => act('Resume linking through this identifier', d.about[0], '/ignore', { identifier: d.about[0], ignored: false }, 'Resume') } }, 'undo') : '')))))
+      d.action === 'ignore' && !(restoredAt.get(d.about[0]) > d.seq) ? el('button', { class: 'link', 'data-key': `decision-${d.seq}`, on: { click: () => act('Resume linking through this identifier', d.about[0], '/ignore', { identifier: d.about[0], ignored: false }, 'Resume') } }, 'undo') : '')))))
 
   detail.append(...(profile ? profileOf(profile) : [el('section', {}, el('p', { class: 'muted' }, 'Open a subject, or pick a cluster, to see who it is tied to and why.'))]))
 })
