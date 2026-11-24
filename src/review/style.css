@@ -136,7 +136,7 @@ summary::-webkit-details-marker { display: none; }
 summary::after { content: ''; display: inline-block; width: 5px; height: 5px; margin: 0 0 2px 7px; border: solid currentColor; border-width: 0 1.2px 1.2px 0; transform: rotate(45deg); transition: transform .15s; }
 details[open] > summary::after { transform: rotate(-135deg) translate(-3px, -2px); }
 summary:hover { color: var(--ink); }
-details p { padding-top: 6px; }
+details p { padding-top: 6px; } details p:empty { display: none; }
 .panel-grid { display: grid; gap: var(--s6); align-items: start; }
 @media (min-width: 1180px) { .panel-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .call-grid { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); } .profile-grid, .value-grid { grid-template-columns: minmax(0, 1fr); } .panel-grid > :only-child { grid-column: 1 / -1; } }
 .panel-grid > section { margin: 0; }
