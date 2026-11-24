@@ -650,10 +650,10 @@ function graphOf(profile, more) {
         node.role === 'apart' ? svg('path', { class: 'no', d: `M${-node.r * 0.71} ${node.r * 0.71}L${node.r * 0.71} ${-node.r * 0.71}` }) : '',
         ...(node.texts = [svg('text', { class: 'name' }, nameOf(node.id)), svg('text', { class: 'type' }, typeOf(node.id))]), svg('title', {}, node.id))
       node.mark.node = node
-      node.mark.addEventListener('pointerenter', () => !running && light(near(node.id)))
+      node.mark.addEventListener('pointerenter', () => !running && light(near(node.id), undefined, node.id))
       node.mark.addEventListener('pointerleave', () => light())
       node.mark.addEventListener('focus', () => {
-        light(near(node.id))
+        light(near(node.id), undefined, node.id)
         reveal(node)
       })
       node.mark.addEventListener('blur', () => light())
@@ -739,13 +739,15 @@ function graphOf(profile, more) {
     for (const node of nodes) node.mark.classList.toggle('alone', node.id !== me && !edges.some((edge) => (edge.a === node.id || edge.b === node.id) && !hidden(edge)))
   }
   /** Brings some forward and lets the rest fall back. Nothing named goes back to whoever is picked. */
-  function light(some, only) {
+  function light(some, only, toward) {
     const lit = some ?? (drawn.chosen === undefined ? undefined : near(drawn.chosen))
     const about = some ? [...some][0] : drawn.chosen
     paper.classList.toggle('dimmed', lit !== undefined)
     for (const node of nodes) node.mark.classList.toggle('lit', lit?.has(node.id) ?? false)
     for (const edge of edges) for (const mark of [edge.mark, edge.tag]) mark.classList.toggle('lit', only ? edge === only : lit !== undefined && (edge.a === about || edge.b === about))
-    const path = drawn.chosen === undefined || some ? [] : chain(drawn.chosen)
+    // The way back to the subject, from whoever is pointed at or picked.
+    const back = toward ?? (some ? undefined : drawn.chosen)
+    const path = back === undefined ? [] : chain(back)
     if (drawn.chosen !== undefined) onward()
     let at = me
     for (const edge of edges) edge.mark.classList.remove('path', 'back')
