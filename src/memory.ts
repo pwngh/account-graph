@@ -3,14 +3,14 @@ import { createMemoryOutbox } from './outbox.ts'
 import { standingFirst } from './store.ts'
 import type { Store, Tx } from './store.ts'
 import { CLICK_IDS } from './touch.ts'
-import type { CallResult, Consent, ConsentAnswer, CostRow, Counted, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Lease, Moved, NotLead, NumberedChange, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, Consent, ConsentAnswer, CostRow, Counted, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, NumberedChange, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
 
 /**
  * Keeps the graph in process memory. Writes run one at a time; a write that
  * throws is not rolled back, so use it for tests, demos, and small graphs.
  */
 export function createMemoryStore(): Store {
-  const outbox = createMemoryOutbox()
+  const outbox = createMemoryOutbox((job) => outcomes.get(job.transactionId)?.subject === job.subject)
   const bySubject = new Map<Subject, Map<Identifier, Edge>>()
   const byIdentifier = new Map<Identifier, Map<Subject, Edge>>()
   const ignored = new Set<Identifier>()
@@ -28,6 +28,7 @@ export function createMemoryStore(): Store {
   const outcomes = new Map<string, Counted>()
   const values = new Map<Subject, Map<string, OutcomeValue[]>>()
   const calls = new Map<string, Omit<KeptCall, 'result'>>()
+  const texts = new Map<string, KeptText>()
   const results = new Map<string, CallResult>()
   const spurned = new Map<string, NotLead>()
   /** By number, the one that began first, first. */
@@ -94,7 +95,6 @@ export function createMemoryStore(): Store {
     },
 
     async removeSubject(subject) {
-      const jobs = await outbox.remove(subject)
       for (const identifier of bySubject.get(subject)?.keys() ?? []) {
         const holders = byIdentifier.get(identifier)!
         holders.delete(subject)
@@ -116,6 +116,12 @@ export function createMemoryStore(): Store {
           spurned.delete(`call:${id}`)
         } else if (call.visitor === subject) delete call.visitor
       }
+      for (const [id, text] of texts) {
+        if (text.subject === subject) {
+          texts.delete(id)
+          spurned.delete(`text:${id}`)
+        } else if (text.visitor === subject) delete text.visitor
+      }
       assign(subject, undefined)
       for (const other of separated.get(subject) ?? []) unindex(separated, other, subject)
       separated.delete(subject)
@@ -131,7 +137,8 @@ export function createMemoryStore(): Store {
       consents.delete(subject)
       ops.forget(subject)
       for (let i = moves.length - 1; i >= 0; i--) if (moves[i]!.subject === subject) moves.splice(i, 1)
-      return jobs
+      // Last, so a job added meanwhile has no outcome to be added for.
+      return outbox.remove(subject)
     },
 
     async edgesOf(subjects) {
@@ -427,7 +434,7 @@ export function createMemoryStore(): Store {
 
     async pruneNotLeads(before) {
       let gone = 0
-      for (const [id, { at }] of spurned) if (at < before && !outcomes.has(id) && !(id.startsWith('call:') && calls.has(id.slice(5)))) gone += Number(spurned.delete(id))
+      for (const [id, { at }] of spurned) if (at < before && !outcomes.has(id) && !(id.startsWith('call:') && calls.has(id.slice(5))) && !(id.startsWith('text:') && texts.has(id.slice(5)))) gone += Number(spurned.delete(id))
       return gone
     },
 
@@ -472,6 +479,43 @@ export function createMemoryStore(): Store {
     async callsBetween(from, to) {
       const found = [...calls.values()].filter((call) => call.at >= from && call.at < to)
       return found.sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1)).map(withResult)
+    },
+
+    async setText(text) {
+      texts.set(text.id, structuredClone(text))
+    },
+
+    async textOf(id) {
+      const text = texts.get(id)
+      return text && structuredClone(text)
+    },
+
+    async textsOf(subjects) {
+      const wanted = new Set(subjects)
+      return [...texts.values()].filter((text) => wanted.has(text.subject)).sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1)).map((text) => structuredClone(text))
+    },
+
+    async openTexts(from, to, limit, after) {
+      const spoken = new Map<Subject, number>()
+      const last = (subject: Subject, at: number) => spoken.set(subject, Math.max(at, spoken.get(subject) ?? -Infinity))
+      const spam = new Set<Subject>()
+      for (const text of texts.values()) {
+        if (text.direction === 'outbound' || text.flags.includes('opt_out')) last(text.subject, text.at)
+        if (spurned.has(`text:${text.id}`)) spam.add(text.subject)
+      }
+      for (const call of calls.values()) if (results.get(call.id)?.answered && !spurned.has(`call:${call.id}`)) last(call.subject, call.at)
+      const oldest = new Map<Subject, KeptText>()
+      for (const text of texts.values()) {
+        if (text.direction !== 'inbound' || text.at < from || text.at >= to || spam.has(text.subject) || text.flags.includes('opt_out') || text.flags.includes('opt_in')) continue
+        if ((spoken.get(text.subject) ?? -Infinity) > text.at) continue
+        const known = oldest.get(text.subject)
+        if (!known || text.at < known.at || (text.at === known.at && text.id < known.id)) oldest.set(text.subject, text)
+      }
+      return [...oldest.values()]
+        .filter((text) => !after || text.at > after.at || (text.at === after.at && text.id > after.id))
+        .sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1))
+        .slice(0, limit)
+        .map((text) => structuredClone(text))
     },
 
     async newestLeases(numbers, by) {

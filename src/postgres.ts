@@ -2,7 +2,7 @@ import type { Feed, KeptAlert, OpsStore } from './ops.ts'
 import type { Job, JobState, OutboxStore } from './outbox.ts'
 import type { Store, Tx } from './store.ts'
 import { CLICK_IDS } from './touch.ts'
-import type { CallResult, Consent, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Lease, Moved, NotLead, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, Consent, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
 
 /** Every ad click id a touch carries, as the index on them has it. */
 const CLICKED = `array[${CLICK_IDS.map((name) => `detail->>'${name}'`).join(', ')}]`
@@ -103,13 +103,15 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       )
       // What nobody holds any more goes too, unless it is muted: that is a decision, and stands for whoever holds it next.
       await db.query(`delete from ${t('identifier')} where id = any($1::text[]) and fanout <= 0 and not ignored`, [left.filter((row) => row.fanout <= 0).map((row) => row.id)])
-      await db.query(`delete from ${t('not_lead')} where id in (select transaction_id from ${t('outcome')} where subject = $1 union all select 'call:' || id from ${t('call')} where subject = $1)`, [subject])
+      await db.query(`delete from ${t('not_lead')} where id in (select transaction_id from ${t('outcome')} where subject = $1 union all select 'call:' || id from ${t('call')} where subject = $1 union all select 'text:' || id from ${t('message')} where subject = $1)`, [subject])
       await db.query(`delete from ${t('sighting')} where subject = $1`, [subject])
       await db.query(`delete from ${t('touch')} where subject = $1`, [subject])
       await db.query(`delete from ${t('outcome')} where subject = $1`, [subject])
       await db.query(`delete from ${t('outcome_value')} where subject = $1`, [subject])
       await db.query(`with gone as (delete from ${t('call')} where subject = $1 returning id) delete from ${t('call_result')} where id in (select id from gone)`, [subject])
       await db.query(`update ${t('call')} set visitor = null where visitor = $1`, [subject])
+      await db.query(`delete from ${t('message')} where subject = $1`, [subject])
+      await db.query(`update ${t('message')} set visitor = null where visitor = $1`, [subject])
       await db.query(`delete from ${t('subject')} where id = $1`, [subject])
       const { rows: jobs } = await db.query(`delete from ${t('conversion')} where job->>'subject' = $1 returning *`, [subject])
       await db.query(`delete from ${t('apart')} where a = $1 or b = $1`, [subject])
@@ -469,7 +471,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     async pruneNotLeads(before) {
       const { rows } = await db.query(
         `with gone as (delete from ${t('not_lead')} n where at < $1 and not exists (select 1 from ${t('outcome')} o where o.transaction_id = n.id)
-           and not exists (select 1 from ${t('call')} c where 'call:' || c.id = n.id) returning 1) select count(*)::int as n from gone`,
+           and not exists (select 1 from ${t('call')} c where 'call:' || c.id = n.id) and not exists (select 1 from ${t('message')} m where 'text:' || m.id = n.id) returning 1) select count(*)::int as n from gone`,
         [before],
       )
       return rows[0].n
@@ -505,6 +507,43 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
         [from, to, limit, after?.at ?? null, after?.id ?? null],
       )
       return rows.map(toCall)
+    },
+
+    async setText({ id, direction, subject, at, to, flags, visitor, tags, recorded }) {
+      await db.query(
+        `insert into ${t('message')} (id, direction, subject, at, ours, flags, visitor, tags, recorded_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         on conflict (id) do update set direction = excluded.direction, subject = excluded.subject, at = excluded.at, ours = excluded.ours, flags = excluded.flags,
+           visitor = excluded.visitor, tags = excluded.tags, recorded_at = excluded.recorded_at`,
+        [id, direction, subject, at, to, flags, visitor ?? null, tags ?? null, recorded],
+      )
+    },
+
+    async textOf(id) {
+      const { rows } = await db.query(`select * from ${t('message')} where id = $1`, [id])
+      return rows[0] && toText(rows[0])
+    },
+
+    async textsOf(subjects) {
+      if (subjects.length === 0) return []
+      const { rows } = await db.query(`select * from ${t('message')} where subject = any($1::text[]) order by at, id collate "C"`, [subjects])
+      return rows.map(toText)
+    },
+
+    async openTexts(from, to, limit, after) {
+      const { rows } = await db.query(
+        `select * from (
+           select distinct on (m.subject) m.* from ${t('message')} m
+           where m.direction = 'inbound' and m.at >= $1 and m.at < $2 and not m.flags && array['opt_out', 'opt_in']
+             and not exists (select 1 from ${t('message')} r where r.subject = m.subject and r.at > m.at and (r.direction = 'outbound' or 'opt_out' = any(r.flags)))
+             and not exists (select 1 from ${t('call')} c join ${t('call_result')} s on s.id = c.id where c.subject = m.subject and c.at > m.at and s.answered
+               and not exists (select 1 from ${t('not_lead')} n where n.id = 'call:' || c.id))
+             and not exists (select 1 from ${t('message')} q join ${t('not_lead')} n on n.id = 'text:' || q.id where q.subject = m.subject)
+           order by m.subject, m.at, m.id collate "C") oldest
+         where $4::bigint is null or at > $4 or (at = $4 and id collate "C" > $5)
+         order by at, id collate "C" limit $3`,
+        [from, to, limit, after?.at ?? null, after?.id ?? null],
+      )
+      return rows.map(toText)
     },
 
     async callsBetween(from, to) {
@@ -695,17 +734,20 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
   // Each outbox call is one statement, so it needs neither the write lock nor a transaction.
   const toJob = (row: any): Job => ({ ...row.job, state: row.state, due: Number(row.due), attempts: row.attempts, rev: Number(row.rev) })
   const outbox: OutboxStore = {
-    async add(job) {
+    async add(job, counted = false) {
+      // The outcome is held until the job is there, so a deletion waits for it and then finds the job to delete.
+      const there = counted ? `from (select 1 from ${t('outcome')} where transaction_id = $1 and subject = $6::jsonb->>'subject' for key share) as o` : ''
       const { rows } = await pool.query(
         `with added as (
-           insert into ${t('conversion')} (transaction_id, target, state, due, attempts, job) values ($1, $2, $3, $4, $5, $6)
+           insert into ${t('conversion')} (transaction_id, target, state, due, attempts, job) select $1, $2, $3, $4::bigint, $5::int, $6::jsonb ${there}
            on conflict (transaction_id, target) do nothing returning *
          )
          select * from added union all select * from ${t('conversion')} where transaction_id = $1 and target = $2 limit 1`,
         [job.transactionId, job.target, job.state, job.due, job.attempts, job],
       )
       // Another call may have added it in the same moment, too late for the statement above to see. A new one sees it.
-      return toJob(rows[0] ?? (await pool.query(`select * from ${t('conversion')} where transaction_id = $1 and target = $2`, [job.transactionId, job.target])).rows[0])
+      const row = rows[0] ?? (await pool.query(`select * from ${t('conversion')} where transaction_id = $1 and target = $2`, [job.transactionId, job.target])).rows[0]
+      return row && toJob(row)
     },
     async claim(now, lease, limit) {
       const { rows } = await pool.query(
@@ -890,6 +932,20 @@ function toCall(row: any): KeptCall {
     ...(row.tags !== null && { tags: row.tags }),
     recorded: Number(row.recorded_at),
     ...(row.result_at !== null && { result: toResult(row) }),
+  }
+}
+
+function toText(row: any): KeptText {
+  return {
+    id: row.id,
+    direction: row.direction,
+    subject: row.subject,
+    at: Number(row.at),
+    to: row.ours,
+    flags: row.flags,
+    ...(row.visitor !== null && { visitor: row.visitor }),
+    ...(row.tags !== null && { tags: row.tags }),
+    recorded: Number(row.recorded_at),
   }
 }
 
@@ -1179,6 +1235,24 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
       id: 20,
       name: 'what platforms say they brought',
       sql: `alter table ${schema}.cost add column if not exists conversions float8, add column if not exists claimed_value float8;`,
+    },
+    {
+      id: 21,
+      name: 'text messages',
+      sql: `create table if not exists ${schema}.message (
+              id text primary key,
+              direction text not null,
+              subject text not null,
+              at bigint not null,
+              ours text not null,
+              flags text[] not null,
+              visitor text,
+              tags jsonb,
+              recorded_at bigint not null
+            );
+            create index if not exists message_subject on ${schema}.message (subject, at);
+            create index if not exists message_at on ${schema}.message (at);
+            create index if not exists message_visitor on ${schema}.message (visitor);`,
     },
   ]
 }

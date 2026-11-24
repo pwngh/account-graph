@@ -329,6 +329,8 @@ export interface Outcome {
   action?: string | Record<string, string>
   value?: number
   currency?: string
+  /** The text it is of. It is recorded only while that text is kept. `recordText` sets this. */
+  ofText?: string
   /** Where it happened. Defaults to WEB. */
   source?: 'WEB' | 'APP' | 'IN_STORE' | 'PHONE' | 'MESSAGE' | 'OTHER'
   /** Hashed before it is stored. */
@@ -408,6 +410,41 @@ export interface KeptCall {
   result?: CallResult
 }
 
+/** A text message as it is kept: who and when, and nothing it said. */
+export interface KeptText {
+  id: string
+  direction: 'inbound' | 'outbound'
+  /** The other side: `caller:` and a hash of their number, the same subject their calls have. */
+  subject: Subject
+  /** When it was sent, in epoch milliseconds. */
+  at: number
+  /** The number of yours it was on, in E.164 form. */
+  to: string
+  flags: string[]
+  /** The visitor whose code or tap led to it. */
+  visitor?: Subject
+  tags?: Record<string, string>
+  /** When it was written down. */
+  recorded: number
+}
+
+/** What became of a text to you. `stopped` the sender asked for no more texts before anyone replied. */
+export interface TextReply {
+  state: 'open' | 'replied' | 'stopped'
+  /** The text or call that replied, and which of the two it was. */
+  by?: string
+  how?: 'text' | 'call'
+  /** From the text to the reply, in milliseconds. */
+  delay?: number
+}
+
+/** An unanswered text, with how many its sender has sent since anyone replied and what it is credited to. */
+export interface OpenText {
+  text: KeptText
+  unanswered: number
+  touch?: AttributedTouch
+}
+
 /** How a call went, as whoever runs the phones reports it. */
 export interface CallResult {
   /** A person spoke to the caller. The phone system picking up is not an answer, and neither is voicemail. Absent when it is not known. */
@@ -471,6 +508,7 @@ export type Entry = { at: number; subject: Subject } & (
   | { kind: 'visit'; touch: Touch }
   | { kind: 'sighting'; event: string; identifiers: Identifier[] }
   | { kind: 'call'; call: KeptCall; followUp?: FollowUp; notLead?: NotLead['kind'] }
+  | { kind: 'text'; text: KeptText; reply?: TextReply; notLead?: NotLead['kind'] }
   | { kind: 'outcome'; outcome: Counted; first: OutcomeValue | null; notLead?: NotLead['kind'] }
   | { kind: 'value'; transactionId: string; stage: string; from: OutcomeValue; to: OutcomeValue }
   | { kind: 'consent'; answer: ConsentAnswer }

@@ -1611,3 +1611,51 @@ test('the labels tool resolves a file of checked pairs against a running server,
   await assert.rejects(run('a,b\ns1a,s1b'), /needs a "label" column/)
   await assert.rejects(run('a,b,label\ns1a,s1b,same', 'wrong'), /The server answered 401/)
 })
+
+test('texts are taken from the page, your own systems and Twilio, and what they say is nowhere in the answers', async () => {
+  const store = createMemoryStore()
+  const graph = createGraph(store)
+  const at = Date.parse('2026-03-02T12:00:00Z')
+  const url = 'https://graph.example/texts/twilio'
+  const handler = createHandler(graph, { token: 'service', reviewers: { dana: 'reviewer' }, origins: ['https://site.example'], now: () => at, events: ['text_click'], texts: { codes: true, twilio: { authToken: 'secret', url } } })
+  const server = createServer(handler).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const open = (path: string, body: object, headers: Record<string, string> = {}) => fetch(`${base}${path}`, { method: 'POST', headers: { origin: 'https://site.example', ...headers }, body: JSON.stringify(body) })
+  const get = async (path: string, token = 'reviewer') => fetch(`${base}${path}`, { headers: { authorization: `Bearer ${token}` } })
+  try {
+    await open('/collect', { device: 'd-1', touch: { gclid: 'G1' } })
+    const { code } = (await (await open('/text-code', { device: 'd-1' })).json()) as { code: string }
+    // The same browser keeps its code, another has its own, and one that refuses ad measurement has none.
+    assert.equal(((await (await open('/text-code', { device: 'd-1' })).json()) as { code: string }).code, code)
+    assert.notEqual(((await (await open('/text-code', { device: 'd-2' })).json()) as { code: string }).code, code)
+    for (const body of [{ device: 'd-3', gpc: true }, { device: 'd-3', consent: { adUserData: false, adPersonalization: false } }]) assert.equal((await open('/text-code', body)).status, 204)
+    assert.equal((await open('/text-code', { device: 'd-3' }, { origin: 'https://other.example' })).status, 403)
+    assert.equal((await open('/event', { device: 'd-2', event: 'text_click', number: '+15550100101' })).status, 204)
+
+    const twilio = (fields: Record<string, string>, signature = twilioSignature('secret', url, fields)) => fetch(`${base}/texts/twilio`, { method: 'POST', headers: { 'x-twilio-signature': signature }, body: new URLSearchParams(fields).toString() })
+    const fields = { MessageSid: 'SM1', From: '+15550100141', To: '+15550100101', Body: `A private matter. Ref ${code}`, SmsStatus: 'received' }
+    assert.equal((await twilio(fields, 'wrong')).status, 403)
+    const answered = await twilio(fields)
+    assert.deepEqual([answered.status, await answered.text()], [200, '<Response/>'])
+    assert.equal((await twilio({ ...fields, MessageSid: 'SM2', SmsStatus: 'delivered' })).status, 200)
+    assert.equal(await graph.keptText('SM2'), undefined)
+
+    const post = async (body: object, token = 'service') => fetch(`${base}/text`, { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify(body) })
+    assert.equal((await post({}, 'reviewer')).status, 403)
+    assert.equal((await post({ id: 'M1' })).status, 400)
+    const tapped: any = await (await post({ id: 'M1', from: '+15550100142', to: '+15550100101', at, text: 'hello' })).json()
+    assert.deepEqual([tapped.visitor, tapped.flags], ['visitor:d-2', ['first', 'tap']])
+    const kept: any = await (await get('/text?id=SM1')).json()
+    assert.deepEqual([kept.visitor, kept.reply, await (await get('/text?id=none')).json()], ['visitor:d-1', { state: 'open' }, null])
+    const list: any = await (await get('/texts?from=2026-03-02&to=2026-03-02')).json()
+    assert.deepEqual(list.texts.map((each: any) => [each.id, each.unanswered, each.source, each.to]).sort(), [['M1', 1, undefined, undefined], ['SM1', 1, 'google', undefined]])
+    assert.equal((await get('/texts?after=x')).status, 400)
+    assert.equal(await (await get('/texting?subject=visitor:d-1')).json(), null)
+    const journey: any = await (await get('/journey?subject=visitor:d-1')).json()
+    assert.deepEqual(journey.entries.filter((entry: any) => entry.kind === 'text').map((entry: any) => [entry.text.id, entry.text.to, entry.reply.state]), [['SM1', undefined, 'open']])
+    assert.doesNotMatch(JSON.stringify([kept, list, journey, await graph.history('visitor:d-1')]), /private matter/)
+  } finally {
+    server.close()
+  }
+})

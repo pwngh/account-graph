@@ -39,6 +39,7 @@ A page reports events without the service token, in one of three ways.
 | On the page | Reported as |
 | --- | --- |
 | A link whose address starts with `tel:` | `phone_click`, with the number |
+| A link whose address starts with `sms:` | `text_click`, with the number. See [texts](texts.md). |
 | Any element with `data-ag-event="name"` | `name`, when clicked; on a form, when submitted |
 | `accountGraph.event('name', { id })` from your own script | `name` |
 

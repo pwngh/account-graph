@@ -116,6 +116,22 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       }
     })
 
+    test('nothing is queued for someone forgotten between their outcome and its job', async () => {
+      const { graph, outbox, store } = await fresh()
+      await outbox.record(outcome(1, { email: 'pat@example.org' }))
+      const [job] = await outbox.get('enroll-1')
+      await graph.forget('contact:1')
+      assert.deepEqual(await outbox.get('enroll-1'), [])
+      // The job of a record that was under way arrives after the deletion.
+      assert.equal(await store.outbox.add(job!, true), undefined)
+      // And one that arrives while the deletion is under way.
+      await outbox.record(outcome(2))
+      const [second] = await outbox.get('enroll-2')
+      await Promise.all([graph.forget('contact:2'), store.outbox.add(second!, true)])
+      assert.deepEqual(await outbox.get('enroll-2'), [])
+      assert.deepEqual(await outbox.get('enroll-1'), [])
+    })
+
     test('the same id with different details is refused', async () => {
       const { outbox } = await fresh()
       await outbox.record(outcome(1))

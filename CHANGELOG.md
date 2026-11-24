@@ -40,6 +40,7 @@
 - `CALL_TAP_SECONDS` sets how long before a call a tap on its number may be.
 - `POST /call/result` (`recordCallResult`) reports whether a call was answered. `CALL_RESULTS=expected` holds a call until its result arrives, up to `CALL_RESULT_WAIT` minutes.
 - `direction: "outbound"` records calls you place. `followUp` and `GET /call` report callbacks, and `POST /call/returned` (`recordReturn`) accepts returns reported by another system.
+- `recordText`, `POST /text` and `POST /texts/twilio` record texts without what they say. `TEXT_CODES` and `collect.js?text=1` put a code in text links (`text` kind), `GET /texts` lists the unanswered, and `GET /texting` says who asked for no more. Rebuild after upgrading.
 - `POOL_NUMBERS`, `POST /number` and `collect.js?pool=1` assign tracking numbers to visitors (`lease` kind).
 - `CALL_EXCLUDE` omits staff and test numbers. `OPEN_HOURS` (`createHours`) limits waiting times and stale-feed checks to open hours.
 - `GET /calls`, `GET /calls/summary`, `openCalls` and `callSummary` report missed calls and call counts.

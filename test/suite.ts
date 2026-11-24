@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { after, describe, test } from 'node:test'
-import { Outdated, brokenAt, callState, createGraph, createHours, defaultPolicy, dialed, email, fit, followUp, hashPhone, nameKeys, policyFrom, recordCall, recordCallResult, recordNotLead, recordReturn } from '../src/index.ts'
+import { Outdated, brokenAt, callState, createGraph, createHours, defaultPolicy, dialed, email, fit, followUp, hashPhone, nameKeys, policyFrom, recordCall, recordCallResult, recordNotLead, recordReturn, recordText, replyTo, beginnings, textCode, codeNote, texted } from '../src/index.ts'
 import type { Change, GraphOptions, Observation, Policy, Store } from '../src/index.ts'
 
 export interface Opened {
@@ -2404,6 +2404,145 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await graph.attribute('contact:7', { at: T0 + DAY })).credited!.gclid, 'G1')
     })
 
+    test('a text is tied by its code, or by the tap before it, and what it said is not kept', async () => {
+      const { graph, store } = await fresh()
+      const [A, B] = [textCode(), textCode()]
+      const visit = async (n: number, code: string) => {
+        await graph.observe({ subject: `visitor:${n}`, identifiers: [`device:${n}`, codeNote(code)], at: T0, event: 'text_code' })
+        await graph.touch({ subject: `visitor:${n}`, at: T0, gclid: `G${n}`, source: 'google', campaignId: `c${n}` })
+      }
+      await visit(1, A)
+      await visit(2, B)
+      const [ours, ana, ben, cy] = ['+15550100101', '+15550100151', '+15550100152', '+15550100153']
+      const numbers = { [ours]: { source: 'listing' } }
+      const first = await recordText(graph, { id: 'M1', from: ana, to: ours, at: T0 + DAY, text: `I need a lawyer for a private matter. Ref ${A.toLowerCase()}` }, { numbers })
+      assert.deepEqual([first.visitor, first.flags, first.counted, first.duplicate], ['visitor:1', ['first', 'code'], true, false])
+      assert.equal((await graph.attribute(first.subject, { at: T0 + DAY })).credited!.gclid, 'G1')
+      // Recorded again, it is recorded once, and the next in the conversation is no new lead.
+      assert.equal((await recordText(graph, { id: 'M1', from: ana, to: ours, at: T0 + DAY, text: 'again' }, { numbers })).duplicate, true)
+      assert.deepEqual((await recordText(graph, { id: 'M2', from: ana, to: ours, at: T0 + DAY + HOUR, text: 'Are you open?' }, { numbers })).flags, [])
+      // After a month of silence it is.
+      assert.equal((await recordText(graph, { id: 'M3', from: ana, to: ours, at: T0 + 40 * DAY, text: 'hello again' }, { numbers })).counted, true)
+      // Without a code, the one visitor who tapped just before. Two who did are told apart by nothing, and the number's own channel is what is left.
+      await graph.observe({ subject: 'visitor:2', identifiers: ['device:2', texted(ours, T0 + 2 * DAY)], at: T0 + 2 * DAY, event: 'text_click' })
+      assert.deepEqual((await recordText(graph, { id: 'M4', from: ben, to: ours, at: T0 + 2 * DAY + 60_000, text: 'hi' }, { numbers })).flags, ['first', 'tap'])
+      for (const n of [3, 4]) await graph.observe({ subject: `visitor:${n}`, identifiers: [`device:${n}`, texted(ours, T0 + 3 * DAY)], at: T0 + 3 * DAY, event: 'text_click' })
+      const lost = await recordText(graph, { id: 'M5', from: cy, to: ours, at: T0 + 3 * DAY + 60_000, text: 'Ref ZZZZZZ' }, { numbers })
+      assert.deepEqual([lost.visitor, lost.flags], [undefined, ['first', 'ambiguous']])
+      assert.equal((await graph.attribute(lost.subject, { at: T0 + 3 * DAY + 60_000 })).credited!.landing, `sms:${ours}`)
+      // A code outlives its use by no more than it was given for, and one visitor has one sender.
+      assert.equal((await recordText(graph, { id: 'M6', from: cy, to: ours, at: T0 + 35 * DAY, text: `Ref ${B}` })).visitor, undefined)
+      const taken = await recordText(graph, { id: 'M7', from: cy, to: ours, at: T0 + 4 * DAY, text: `Ref ${A}` })
+      assert.deepEqual([taken.visitor, taken.flags], [undefined, ['taken']])
+      // A text tap is no call, and a phone tap no text.
+      assert.equal((await recordCall(graph, { id: 'X1', from: '+15550100154', to: ours, at: T0 + 2 * DAY + 60_000, duration: 60 })).visitor, undefined)
+      // From a number that is no phone's, or your own people, nothing is kept.
+      for (const from of ['24365', 'BANK']) assert.deepEqual((await recordText(graph, { id: 'M8', from, to: ours, at: T0, text: 'x' })).flags, ['left_out'])
+      assert.deepEqual((await recordText(graph, { id: 'M8', from: ben, to: ours, at: T0, text: 'x' }, { exclude: ['555-010-0152'] })).flags, ['left_out'])
+      assert.equal(await graph.keptText('M8'), undefined)
+      // Nothing that was said is anywhere a person's record is read from.
+      for (const subject of [first.subject, 'visitor:1']) assert.doesNotMatch(JSON.stringify([await graph.journey(subject), await graph.history(subject)]), /private matter|lawyer/)
+      assert.deepEqual(await graph.verify(), [])
+      // Forgotten, the sender's texts are gone, and the visitor is not named on anybody's.
+      await graph.forget('visitor:2')
+      assert.equal((await graph.keptText('M4'))!.visitor, undefined)
+      await graph.forget(first.subject)
+      assert.equal(await graph.keptText('M1'), undefined)
+      assert.deepEqual(await store.read((tx) => tx.textsOf([first.subject])), [])
+    })
+
+    test('what begins a conversation does not depend on the order texts are reported in, nor on being reported twice at once', async () => {
+      const days = [0, 10, 25, 50, 85, 90]
+      for (const order of [days, [...days].reverse(), [50, 0, 25, 90, 10, 85], [0, 50, 25, 85, 90, 10]]) {
+        const { graph } = await fresh()
+        for (const day of order) await recordText(graph, { id: `D${day}`, from: '+15550100171', to: '+15550100101', at: T0 + day * DAY, text: 'hi' }, { numbers: { '+15550100101': { source: 'listing' } } })
+        const counted = []
+        for (const day of days) if (await graph.outcomeOf(`text:D${day}`)) counted.push(day)
+        assert.deepEqual(counted, [0, 85], order.join())
+        for (const day of days) assert.equal((await graph.journey((await graph.keptText(`D${day}`))!.subject)).entries.some((entry) => entry.kind === 'text' && entry.text.id === `D${day}` && entry.text.flags.includes('first')), counted.includes(day))
+      }
+      const { graph, store } = await fresh()
+      // One from you that is reported late was before theirs, so theirs was an answer. And two at once are one conversation.
+      const talk = { from: '+15550100173', to: '+15550100101' }
+      await recordText(graph, { ...talk, id: 'H2', at: T0 + DAY })
+      assert.ok(await graph.outcomeOf('text:H2'))
+      await recordText(graph, { id: 'H1', direction: 'outbound', from: talk.to, to: talk.from, at: T0 })
+      assert.equal(await graph.outcomeOf('text:H2'), undefined)
+      await Promise.all(['I1', 'I2'].map((id, i) => recordText(graph, { id, from: '+15550100174', to: talk.to, at: T0 + i })))
+      assert.deepEqual([Boolean(await graph.outcomeOf('text:I1')), await graph.outcomeOf('text:I2')], [true, undefined])
+      // A text that came, or was forgotten, while one was being counted.
+      const at = (hours: number, id: string) => ({ ...talk, from: '+15550100176', id, at: T0 + hours * HOUR })
+      let between: (() => Promise<unknown>) | undefined = () => recordText(graph, at(0, 'K1'))
+      const slow = { convert: async (outcome: any) => {
+        const now = between
+        between = undefined
+        await now?.()
+        return graph.outcome(outcome)
+      } }
+      await recordText(graph, at(5, 'K2'), slow)
+      assert.deepEqual([Boolean(await graph.outcomeOf('text:K1')), await graph.outcomeOf('text:K2')], [true, undefined])
+      between = () => graph.forget(`caller:${hashPhone('+15550100177')}`)
+      await recordText(graph, { ...talk, from: '+15550100177', id: 'K3', at: T0 }, slow)
+      const gone = `caller:${hashPhone('+15550100177')}`
+      assert.deepEqual([await graph.outcomeOf('text:K3'), await store.read((tx) => tx.valuesOf('text:K3', gone))], [undefined, []])
+      // Reported again as from somebody else, it is still the first sender's, and the other number goes nowhere.
+      const sent: unknown[] = []
+      await graph.keepText({ id: 'K5', direction: 'inbound', subject: `caller:${hashPhone('+15550100180')}`, at: T0, to: talk.to, flags: [] })
+      const other = await recordText(graph, { ...talk, from: '+15550100179', id: 'K5', at: T0 }, { convert: async (outcome) => sent.push(outcome.phone) })
+      assert.deepEqual([other.subject === `caller:${hashPhone('+15550100180')}`, sent], [true, [undefined]])
+      // An outcome of yours may be called anything.
+      assert.equal(await graph.outcome({ transactionId: 'text:campaign-42', subject: 'contact:9', at: T0 }), true)
+      // Said beforehand to be no lead, it is not counted.
+      await graph.markNotLead('text:K4', 'spam')
+      assert.equal((await recordText(graph, { ...talk, from: '+15550100178', id: 'K4', at: T0 })).counted, false)
+      // Cut off after it was kept, it is put right when it is reported again.
+      await graph.keepText({ id: 'J1', direction: 'inbound', subject: `caller:${hashPhone('+15550100175')}`, at: T0, to: talk.to, flags: [] })
+      assert.deepEqual([(await recordText(graph, { id: 'J1', from: '+15550100175', to: talk.to, at: T0 })).duplicate, Boolean(await graph.outcomeOf('text:J1'))], [true, true])
+      const once = { id: 'E1', from: '+15550100172', to: '+15550100101', text: 'hi' }
+      const both = await Promise.all([0, 5].map((ms) => recordText(graph, { ...once, at: T0 + ms }, { numbers: { '+15550100101': { source: 'listing' } } })))
+      assert.deepEqual(both.map((each) => each.duplicate).sort(), [false, true])
+      assert.equal((await graph.attribute(both[0]!.subject, { at: T0 + HOUR })).touches.length, 1)
+    })
+
+    test('a text waits until someone replies by text or in a call, or its sender asks for no more', async () => {
+      const { graph } = await fresh()
+      const ours = '+15550100101'
+      const from = (n: number) => `+155501001${n}`
+      const text = (id: string, n: number, hours: number, said = 'hello') => recordText(graph, { id, from: from(n), to: ours, at: T0 + hours * HOUR, text: said })
+      const reply = (id: string, n: number, hours: number) => recordText(graph, { id, direction: 'outbound', from: ours, to: from(n), at: T0 + hours * HOUR })
+      const days = { from: '2023-11-14', to: '2023-11-20' }
+      const open = async () => (await graph.openTexts(days)).map(({ text, unanswered }) => [text.id, unanswered])
+      for (const n of [60, 61, 62, 63]) await text(`A${n}`, n, 0)
+      await text('B60', 60, 1)
+      assert.deepEqual(await open(), [['A60', 2], ['A61', 1], ['A62', 1], ['A63', 1]])
+      await reply('R61', 61, 2)
+      await recordCall(graph, { id: 'P62', direction: 'outbound', from: ours, to: from(62), at: T0 + 3 * HOUR, duration: 60, answered: true })
+      await text('S63', 63, 4, ' Stop. ')
+      assert.deepEqual(await open(), [['A60', 2]])
+      const { entries } = await graph.journey((await graph.keptText('A61'))!.subject)
+      const [asked] = entries.filter((entry) => entry.kind === 'text' && entry.text.id === 'A61') as any[]
+      assert.deepEqual(asked.reply, { state: 'replied', by: 'R61', how: 'text', delay: 2 * HOUR })
+      // A word that stops texts is no lead and no question, and the last word stands.
+      const stopped = (await graph.keptText('S63'))!
+      assert.deepEqual([stopped.flags, await graph.outcomeOf('text:S63')], [['opt_out'], undefined])
+      assert.deepEqual(await graph.texting(stopped.subject), { optedOut: true, at: T0 + 4 * HOUR })
+      await graph.observe({ subject: 'contact:63', identifiers: [`phone:${hashPhone(from(63))}`], at: T0 })
+      assert.equal((await graph.texting('contact:63'))!.optedOut, true)
+      await text('S64', 63, 5, 'START')
+      assert.equal((await graph.texting('contact:63'))!.optedOut, false)
+      assert.equal(await graph.texting('contact:nobody'), undefined)
+      // A reply reported late closes it all the same, and a sender who was no lead waits for nobody.
+      await text('C61', 61, 6)
+      assert.deepEqual(await open(), [['A60', 2], ['C61', 1]])
+      await graph.markNotLead('text:A60', 'spam')
+      assert.deepEqual(await open(), [['C61', 1]])
+      // The range picks the senders, and all they are waiting for is counted.
+      for (const [id, day] of [['G1', 1], ['G2', 2]] as const) await text(id, 64, day * 24)
+      assert.deepEqual((await graph.openTexts({ from: '2023-11-16', to: '2023-11-20' })).map((each) => [each.text.id, each.unanswered]), [['G2', 2]])
+      assert.deepEqual((await graph.openTexts({ ...days, after: (await graph.openTexts(days))[0]!.text })).map((each) => each.text.id), ['G1'])
+      for (const bad of [{ id: 'bad id', from: from(60), to: ours, at: T0 }, { id: 'Z', from: from(60), to: ours, at: 1.5 }, { id: 'Z', from: from(60), to: 'x', at: T0 }, { id: 'A61', direction: 'outbound', from: ours, to: from(61), at: T0 }, { id: 'Z', from: from(60), to: ours, at: T0, text: 5 }]) await assert.rejects(recordText(graph, bad as never), TypeError)
+    })
+
     test('a changed policy is noticed, and a rebuild brings every cluster to it', async () => {
       const { graph, store } = await fresh()
       assert.equal((await graph.policy()).due, false)
@@ -2570,6 +2709,12 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
         else if (roll < 0.97) {
           const a = pick(40)
           await graph.separate(`account:${a}`, `account:${(a + 1 + pick(39)) % 40}`, next() < 0.7)
+        } else if (roll < 0.975) {
+          // A text in or out, sometimes a word that stops them, and the same id twice now and then.
+          const id = `T${pick(30)}`
+          const them = `+1555010${String(pick(20)).padStart(4, '0')}`
+          const sent = id.endsWith('3')
+          await recordText(graph, { id, at: T0 + pick(200) * DAY, ...(sent ? { direction: 'outbound', from: '+15550100001', to: them } : { from: them, to: '+15550100001', text: ['hello', 'STOP', 'start', 'ok'][pick(4)]! }) })
         } else if (roll < 0.98) {
           // A call, its result, or both, in whatever order, with results expected.
           const id = `F${pick(30)}`
@@ -2618,8 +2763,19 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
         if (call?.direction === 'inbound' && call.result?.answered === false && followUp(call, await graph.callsOf([call.subject])).state === 'open') still.push(call.id)
       }
       assert.deepEqual(all.map((each) => each.call.id).sort(), still.sort())
+      // Every first text counts, and the unanswered are exactly the oldest of each sender nobody replied to.
+      const senders = Array.from({ length: 20 }, (_, n) => `caller:${hashPhone(`+1555010${String(n).padStart(4, '0')}`)}`)
+      const waitingTexts: string[] = []
+      for (const sender of senders) {
+        const texts = await graph.textsOf([sender])
+        const calls = await graph.callsOf([sender])
+        for (const text of texts) assert.equal(Boolean(await graph.outcomeOf(`text:${text.id}`)), beginnings(texts).has(text.id), text.id)
+        const oldest = texts.find((text) => text.direction === 'inbound' && !text.flags.some((flag) => flag.startsWith('opt_')) && replyTo(text, texts, calls).state === 'open')
+        if (oldest) waitingTexts.push(oldest.id)
+      }
+      assert.deepEqual((await graph.openTexts({ from: '2023-11-01', to: '2024-07-01', limit: 1000 })).map((each) => each.text.id).sort(), waitingTexts.sort())
       // The board has each person in one place, and everybody with a call to return in the first column.
-      const board = await graph.board({ steps: [{ name: 'call' }], at: T0 + 201 * DAY, days: 365 })
+      const board = await graph.board({ steps: [{ name: 'text' }, { name: 'call' }], at: T0 + 201 * DAY, days: 365 })
       const placed: string[] = []
       for (const row of board.columns.flatMap((column) => column.rows)) placed.push((await graph.cluster(row.subject))?.id ?? row.subject)
       assert.equal(new Set(placed).size, placed.length)

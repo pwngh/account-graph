@@ -1,6 +1,6 @@
 import type { Feed, OpsStore } from './ops.ts'
 import type { Job, OutboxStore } from './outbox.ts'
-import type { CallResult, Change, Consent, ConsentAnswer, CostRow, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Lease, Moved, NotLead, NumberedChange, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, Change, Consent, ConsentAnswer, CostRow, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, NumberedChange, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
 
 /**
  * Where the graph lives. Sightings and touches are the record; edges and
@@ -133,6 +133,13 @@ export interface Tx {
   openCalls(from: number, to: number, limit: number, after?: { at: number; id: string }): Promise<KeptCall[]>
   /** Calls with `from <= at < to`, oldest first. */
   callsBetween(from: number, to: number): Promise<KeptCall[]>
+  /** Keeps a text message. */
+  setText(text: KeptText): Promise<void>
+  textOf(id: string): Promise<KeptText | undefined>
+  /** Every kept text to or from the given subjects, oldest first. */
+  textsOf(subjects: readonly Subject[]): Promise<KeptText[]>
+  /** The oldest text of each sender in a range of time that nobody has replied to, neither by text nor in a call, of those who did not ask for no more. */
+  openTexts(from: number, to: number, limit: number, after?: { at: number; id: string }): Promise<KeptText[]>
   /** The newest lease of each given number that began by a time. A number never leased by then is absent. */
   newestLeases(numbers: readonly string[], by: number): Promise<Lease[]>
   /** Keeps a lease, replacing the one of the same number that began at the same time. */

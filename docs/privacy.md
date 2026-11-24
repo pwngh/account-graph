@@ -16,6 +16,7 @@ Hashed data here is **pseudonymous**: anyone who holds the original value can id
 | IP address | As written; IPv6 as its /64 | Yes. |
 | Ad clicks, campaign ids, the parameters you named, landing pages without their query | As received | They identify what was clicked. |
 | Calls | Time, duration, result, your number, and the caller as a hash. Call content is not stored. | As a phone number. |
+| Texts | Time, direction, your number, flags such as `opt_out`, and the other side as a hash. What was said is not stored. | As a phone number. |
 | Steps and their values | With the ids you gave | By you. |
 | Decisions | Author, time, ids concerned, and the reason as typed | Yes. |
 
@@ -37,7 +38,7 @@ Deleting a person takes one `POST /forget` per subject, because it leaves the pe
 
 | Action | Deletes | Keeps |
 | --- | --- | --- |
-| `forget` one subject | Its sightings and links, identifiers with no other holder, visits, steps and their values, not-a-lead marks, its calls and their results, conversions, consent, separations, transfers, alerts, and the changes of its own cluster | See the list below |
+| `forget` one subject | Its sightings and links, identifiers with no other holder, visits, steps and their values, not-a-lead marks, its calls and their results, its texts, conversions, consent, separations, transfers, alerts, and the changes of its own cluster | See the list below |
 | `prune` before a time | Sightings, superseded consent answers, and call results without a call, all stored before it. Also pool assignments that ended before it, and not-a-lead marks set before it without a recorded outcome or call | Links and clusters, because each link keeps its first and last sighting and its count. Visits, steps, calls, and the consent answer that applies |
 | Restating a step | None | Every value it has had |
 | Correcting a call to unanswered | Its outcome, which leaves the report | The call, its result, and the history of its value |
@@ -47,7 +48,7 @@ Deleting a person takes one `POST /forget` per subject, because it leaves the pe
 - Audit log entries that name the subject, including the deletion itself, because entries are hashed in a chain.
 - Changes of other subjects that name it as their cluster.
 - A muted identifier.
-- Calls of another subject that were linked to it, with the link removed.
+- Calls and texts of another subject that were linked to it, with the link removed.
 - The fact that a pool number was held at that time, without the holder.
 - Other subjects of the same person.
 

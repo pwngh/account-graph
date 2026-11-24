@@ -222,7 +222,7 @@ export async function event(options: CollectOptions, name: string, detail: Event
 
 /**
  * Reports events without code on the page. A tap on any `tel:` link is
- * reported as `phone_click`. An element marked `data-ag-event="name"`
+ * reported as `phone_click`, and on any `sms:` link as `text_click`. An element marked `data-ag-event="name"`
  * reports that name when clicked, or, on a form, when submitted;
  * `data-ag-id` gives the occurrence an id. Returns a function that stops listening.
  */
@@ -244,6 +244,15 @@ export function watch(options: CollectOptions): () => void {
         number = decodeURIComponent(written)
       } catch {}
       report('phone_click', { number })
+    }
+    const message = target?.closest?.('a[href^="sms:"]')
+    if (message) {
+      const written = message.getAttribute('href')!.slice(4).split(/[?&;]/)[0]!
+      let number = written
+      try {
+        number = decodeURIComponent(written)
+      } catch {}
+      report('text_click', { number })
     }
     const marked = target?.closest?.('[data-ag-event]')
     if (marked && marked.tagName !== 'FORM') report(marked.getAttribute('data-ag-event'), idOf(marked))
@@ -390,6 +399,63 @@ export function fill(options: { all?: boolean; consent?: CollectOptions['consent
   }
   document.addEventListener('submit', submitted, true)
   return () => document.removeEventListener('submit', submitted, true)
+}
+
+/** A text link with this visitor's code at the end of what it fills in. */
+export function withCode(href: string, code: string): string {
+  const ref = `Ref%20${code}`
+  if (!/^sms:/i.test(href) || href.endsWith(ref)) return href
+  const body = /([?&;]body=)([^&;]*)/i
+  if (body.test(href)) return href.replace(body, (_, name: string, text: string) => `${name}${text ? `${text}%20` : ''}${ref}`)
+  return `${href}${href.includes('?') ? '&' : '?&'}body=${ref}`
+}
+
+/**
+ * Puts this visitor's code in the message a text link fills in, at the moment it is followed, so the text that arrives says
+ * whose it is. Asks the server for the code when the page has such a link. Returns a function that stops.
+ */
+export function texts(options: CollectOptions): () => void {
+  let code: string | undefined
+  let asked = false
+  const ask = async () => {
+    if (asked || !document.querySelector('a[href^="sms:"]')) return
+    asked = true
+    const gpc = (navigator as { globalPrivacyControl?: boolean }).globalPrivacyControl === true
+    const staff = staffMark()
+    try {
+      const response = await fetch(new URL('text-code', options.endpoint).href, {
+        method: 'POST',
+        body: JSON.stringify({ device: deviceId(), ...(gpc && { gpc }), ...(options.consent && { consent: options.consent }), ...(staff && { staff }) }),
+        headers: { 'content-type': 'text/plain' },
+        credentials: 'include',
+      })
+      if (response.status === 200) code = (await response.json()).code
+      // Nothing is given to a visitor who refused. Anything else is worth asking again.
+      else if (response.status !== 204) asked = false
+    } catch {
+      // Without a code the link works as it was written, and the next touch asks again.
+      asked = false
+    }
+  }
+  const followed = (happened: Event) => {
+    const link = (happened.target as Element | null)?.closest?.('a[href^="sms:"]')
+    if (!link) return
+    if (!code) return void ask()
+    const written = link.getAttribute('href')!
+    const marked = withCode(written, code)
+    if (marked === written) return
+    link.setAttribute('href', marked)
+    // The page is put back as it was once the link has been followed.
+    setTimeout(() => link.getAttribute('href') === marked && link.setAttribute('href', written), 0)
+  }
+  const touched = () => void ask()
+  void ask()
+  document.addEventListener('click', followed, true)
+  document.addEventListener('pointerdown', touched, true)
+  return () => {
+    document.removeEventListener('click', followed, true)
+    document.removeEventListener('pointerdown', touched, true)
+  }
 }
 
 /** A number as people write it in North America, or with its country code anywhere else. */
