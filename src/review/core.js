@@ -34,6 +34,10 @@ const none = () => el('span', { class: 'muted' }, '—')
 const tally = (n) => (n > 0 ? amount(n) : el('span', { class: 'muted' }, '0'))
 const unrecorded = () => el('span', { class: 'muted' }, '(not recorded)')
 
+/** The mark of a view, as the list of views has it. The words beside it say the same. */
+const viewMark = (name) => svg('svg', { class: 'mark-view', viewBox: '0 0 16 16', 'aria-hidden': 'true', focusable: 'false' }, svg('path', { d: VIEW_ICONS[name] }))
+/** What a row is about, as a mark on a tile of its own. */
+const tile = (path, tone = '') => el('span', { class: tone ? `tile ${tone}` : 'tile', 'aria-hidden': 'true' }, svg('svg', { viewBox: '0 0 16 16', focusable: 'false' }, svg('path', { d: path })))
 const reviewDisplay = {
   idText: (value) => value.length > 24 ? `${value.slice(0, 18)}…` : value,
   id: (value, full = false) => el('span', { title: value }, full ? value : reviewDisplay.idText(value)),
@@ -48,7 +52,7 @@ const reviewDisplay = {
   },
   day: (value) => new Date(`${value}T00:00:00Z`).toLocaleDateString(undefined, { dateStyle: 'medium', timeZone: 'UTC' }),
   range: ({ from, to, timeZone }) => el('p', { class: 'meta' }, `${reviewDisplay.day(from)} – ${reviewDisplay.day(to)} · Days in ${timeZone}`),
-  heading: (title, ...controls) => el('div', { class: 'page-head' }, el('h2', { class: 'page-title' }, title), ...controls),
+  heading: (title, ...controls) => el('div', { class: 'page-head' }, el('h2', { class: 'page-title' }, viewMark(place().name), title), ...controls),
   section: (title, ...controls) => el('div', { class: 'section-head' }, el('h2', {}, title), ...controls),
   chip: (text, tone = '') => el('span', { class: tone ? `chip ${tone}` : 'chip' }, text),
   callTone: (state) => ({ answered: 'same', missed: 'apart', voicemail: 'related', waiting: 'related' })[state] ?? '',
@@ -111,7 +115,10 @@ function parts(label, list) {
   const bar = el('div', { class: 'parts', 'aria-hidden': 'true' })
   const legend = el('ul', { class: 'legend', 'aria-label': label })
   const told = el('p', { class: 'meta', role: 'status' })
-  const root = el('div', { class: 'split-bar' }, bar, legend, told)
+  const whole = el('p', { class: 'parts-whole' })
+  // With nothing to add about any part, the list is a line of labels.
+  if (!list.some(([, , note]) => note)) legend.classList.add('labels')
+  const root = el('div', { class: 'split-bar' }, whole, bar, legend, told)
   const key = (name) => `${label}\n${name}`
   const light = (i) => {
     // One left out has nothing in the bar to bring forward.
@@ -128,13 +135,14 @@ function parts(label, list) {
   const draw = () => {
     const held = legend.contains(document.activeElement) ? document.activeElement.dataset.key : undefined
     const kept = list.filter(([name]) => !partsOff.has(key(name)))
-    const whole = kept.reduce((sum, [, n]) => sum + n, 0)
+    const total = kept.reduce((sum, [, n]) => sum + n, 0)
+    whole.replaceChildren(el('b', {}, amount(total)), el('span', {}, kept.length < list.length ? ` of ${amount(list.reduce((sum, [, n]) => sum + n, 0))}` : ' in all'))
     bar.replaceChildren(...list.flatMap(([name, n], i) => {
       if (n === 0 || partsOff.has(key(name))) return []
-      const part = lights(el('span', { class: `part part${i}`, 'data-part': i, title: `${name}: ${amount(n)}, ${percent(n / whole)}` }, el('b', {}, percent(n / whole))), i)
+      const part = lights(el('span', { class: `part part${i}`, 'data-part': i, title: `${name}: ${amount(n)}, ${percent(n / total)}` }, el('b', {}, percent(n / total))), i)
       part.style.flexGrow = n
       // Its number is inside when there is room for it, and only in the list when there is not.
-      part.classList.toggle('roomy', n / whole >= 0.09)
+      part.classList.toggle('roomy', n / total >= 0.09)
       return [part]
     }))
     legend.replaceChildren(...list.map(([name, n, note], i) => {
@@ -143,9 +151,9 @@ function parts(label, list) {
         if (!partsOff.delete(key(name))) partsOff.add(key(name))
         draw()
         light(i)
-      } } }, el('span', { class: `key part${i}`, 'aria-hidden': 'true' }), el('span', { class: 'legend-name' }, el('span', {}, name), note ? el('span', { class: 'reason' }, note) : ''), el('b', {}, tally(n)), el('span', { class: 'muted' }, off ? 'left out' : whole > 0 ? percent(n / whole) : '—'))), i)
+      } } }, el('span', { class: `key part${i}`, 'aria-hidden': 'true' }), el('span', { class: 'legend-name' }, el('span', {}, name), note ? el('span', { class: 'reason' }, note) : ''), el('b', {}, tally(n)), el('span', { class: 'muted' }, off ? 'left out' : total > 0 ? percent(n / total) : '—'))), i)
     }))
-    told.textContent = kept.length < list.length ? `Shares are of the ${amount(whole)} not left out.` : ''
+    told.textContent = kept.length < list.length ? `Shares are of the ${amount(total)} not left out.` : ''
     if (held) legend.querySelector(`[data-key="${CSS.escape(held)}"]`)?.focus({ preventScroll: true })
   }
   draw()

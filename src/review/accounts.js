@@ -9,10 +9,12 @@ function reasons(list) {
   return list.filter((reason) => reason.counted !== false).flatMap((reason) => [line(reason), ...list.filter((other) => reason.group !== undefined && other.group === reason.group && other.counted === false).map(line)])
 }
 
+/** The kinds of subject with a color of their own. */
+const BADGES = new Set(['account', 'visitor', 'lead', 'caller', 'contact', 'person'])
 /** What kind of subject it is, as its mark on the graph. The name beside it says the same. */
 const badge = (subject) => {
   const icon = ICONS[typeOf(subject)]
-  return svg('svg', { class: 'badge', viewBox: '-11 -11 22 22', 'aria-hidden': 'true', focusable: 'false' }, svg('circle', { r: 10 }), svg('path', { class: icon ? 'line' : '', d: icon ?? PERSON, transform: 'scale(.82)' }))
+  return svg('svg', { class: `badge ${BADGES.has(typeOf(subject)) ? typeOf(subject) : ''}`, viewBox: '-11 -11 22 22', 'aria-hidden': 'true', focusable: 'false' }, svg('circle', { r: 10 }), svg('path', { class: icon ? 'line' : '', d: icon ?? PERSON, transform: 'scale(.82)' }))
 }
 
 /** Why two are kept apart, in the words of whoever decided it. */
@@ -21,7 +23,7 @@ const kept = (verdict) => (verdict?.apart ? [el('span', { class: 'muted' }, 'Dec
 
 function profileOf(profile, more) {
   const detail = []
-  const title = el('h3', { class: 'page-title' }, reviewDisplay.id(profile.subject, true))
+  const title = el('h3', { class: 'page-title' }, badge(profile.subject), reviewDisplay.id(profile.subject, true))
   if (!profile.known) return [el('section', {}, el('div', { class: 'page-head' }, title), el('p', { class: 'muted' }, 'No records for this subject.'))]
   const size = profile.cluster.members.length
   detail.push(el('section', {}, el('div', { class: 'page-head' }, title, el('div', { class: 'row' },
@@ -109,7 +111,7 @@ function profileOf(profile, more) {
 }
 
 const ACTIONS = { ignore: 'Stopped linking through', restore: 'Resumed linking through', separate: 'Kept apart', rejoin: 'Allowed to join', join: 'Joined', forget: 'Forgot', rebuild: 'Rebuilt every cluster', prune: 'Deleted sightings older than' }
-const queued = (cluster) => el('li', { class: 'line' }, caller(cluster.id), el('span', { class: 'muted' }, `${amount(cluster.size)} accounts`), cluster.oversized ? el('span', { class: 'chip apart' }, 'review') : '')
+const queued = (cluster) => el('li', { class: 'line' }, badge(cluster.id), caller(cluster.id), el('span', { class: 'muted' }, `${amount(cluster.size)} accounts`), cluster.oversized ? el('span', { class: 'chip apart' }, 'review') : '')
 
 /** How many clusters are on screen, so a refresh reads that many again. */
 let listed = 50
@@ -208,9 +210,8 @@ view('accounts', 'Accounts', async (box, subject) => {
   const decisions = await decisionList(audit)
 
   left.append(el('section', {}, el('h2', {}, 'Largest clusters, now'), ...queue.shown))
-  left.append(el('section', {}, el('h2', {}, 'Recent changes, newest 30'), scroll('Recent changes', el('ul', { id: 'recent' }, ...(recent.length > 0 ? recent.slice(0, 30).map((move) => el('li', {}, caller(move.subject),
-    el('span', {}, move.to === undefined ? ' was removed ' : move.to === move.subject ? ' is on its own again ' : ' joined '), move.to !== undefined && move.to !== move.subject ? caller(move.to) : '',
-    el('span', { class: 'reason' }, reviewDisplay.time(move.at, Date.now())))) : [el('li', { class: 'muted' }, 'No cluster changes recorded.')])))))
+  left.append(el('section', {}, el('h2', {}, 'Recent changes, newest 30'), scroll('Recent changes', el('ul', { id: 'recent' }, ...(recent.length > 0 ? recent.slice(0, 30).map((move) => el('li', { class: 'move' }, badge(move.subject), caller(move.subject), el('span', { class: 'meta move-time' }, reviewDisplay.time(move.at, Date.now())),
+    el('span', { class: 'move-to' }, el('span', {}, move.to === undefined ? ' was removed' : move.to === move.subject ? ' is on its own again' : ' joined '), ...(move.to !== undefined && move.to !== move.subject ? [caller(move.to)] : [])))) : [el('li', { class: 'muted' }, 'No cluster changes recorded.')])))))
   left.append(decisions)
 
   if (subject) detail.append(...profileOf(profile, more))
