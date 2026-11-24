@@ -36,7 +36,7 @@ services:
       CALL_NUMBERS: ${CALL_NUMBERS:-{"+15551230001":{"source":"google","campaignId":"20222"}}}
       CALL_RESULTS: ${CALL_RESULTS:-}
       CALL_RESULT_WAIT: ${CALL_RESULT_WAIT:-30}
-      LINK_SECRET: ${LINK_SECRET:-change-me-link-secret-change-me}
+      LINK_SECRET: ${LINK_SECRET:-change-me-link-secret-change-me-now}
       # Every other setting in docs/operations.md, passed through when you set it. Unset, each is off.
       REPORT_TIME_ZONE: ${REPORT_TIME_ZONE:-}
       STAGES: ${STAGES:-}
@@ -47,6 +47,7 @@ services:
       QUIET_RESULTS_HOURS: ${QUIET_RESULTS_HOURS:-0}
       QUIET_COSTS_HOURS: ${QUIET_COSTS_HOURS:-0}
       RETURN_HOURS: ${RETURN_HOURS:-24}
+      LATE_HOURS: ${LATE_HOURS:-6}
       STAFF_NETWORKS: ${STAFF_NETWORKS:-}
       CHANGE_WEBHOOK: ${CHANGE_WEBHOOK:-}
       TRUST_PROXY: ${TRUST_PROXY:-}

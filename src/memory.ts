@@ -479,8 +479,8 @@ export function createMemoryStore(): Store {
       return decisions.filter((decision) => decision.action !== 'ignore' && decision.action !== 'restore' && decision.action !== 'prune' && decision.about.some((each) => wanted.has(each))).map(copied)
     },
 
-    async newestNaming(names, after) {
-      const found = decisions.findLast((decision) => decision.seq > after && decision.action !== 'prune' && decision.about.some((each) => names.includes(each)))
+    async newestNaming(names, after, among) {
+      const found = decisions.findLast((decision) => decision.seq > after && decision.action !== 'prune' && (!among || among.includes(decision.action)) && decision.about.some((each) => names.includes(each)))
       return found && copied(found)
     },
 

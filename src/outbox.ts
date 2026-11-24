@@ -92,6 +92,8 @@ export interface OutboxStore {
   /** Jobs in one state, the most recently due first. */
   list(state: JobState, limit: number): Promise<Job[]>
   counts(): Promise<Record<JobState, number>>
+  /** When the pending job that has been due the longest fell due. */
+  oldestDue(): Promise<number | undefined>
 }
 
 export interface OutboxOptions {
@@ -488,6 +490,11 @@ export function createMemoryOutbox(): OutboxStore & { remove(subject: Subject): 
     async list(state, limit) {
       const found = [...jobs.values()].filter((job) => job.state === state)
       return found.sort((x, y) => y.due - x.due || (x.transactionId < y.transactionId ? -1 : 1)).slice(0, limit).map((job) => structuredClone(job))
+    },
+    async oldestDue() {
+      let oldest: number | undefined
+      for (const job of jobs.values()) if (job.state === 'pending' && !(job.due >= oldest!)) oldest = job.due
+      return oldest
     },
     async counts() {
       const out: Record<JobState, number> = { held: 0, pending: 0, sent: 0, skipped: 0, failed: 0 }

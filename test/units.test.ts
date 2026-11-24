@@ -240,6 +240,13 @@ test('the server reads its settings from the environment and names everything wr
   for (const [given, said] of [['[1]', 'must be a JSON object'], ['{"system:x":"a"}', 'cannot be a reviewer'], ['{"people":"a"}', 'cannot be a reviewer'], ['{" dana":"a"}', 'is not a name'], ['{"dana":""}', 'each token as text'], ['{"dana":[]}', 'needs a token'], ['{"dana":"a","lee":"a"}', 'another reviewer']]) {
     assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', REVIEW_TOKENS: given! }), (error: Error) => error.message.includes(said!), given)
   }
+  const tried = { DATABASE_URL: 'x', GRAPH_TOKEN: 'change-me-service-token', REVIEW_TOKENS: '{"reviewer":"change-me-review-token"}', LINK_SECRET: 'change-me-link-secret-change-me-now' }
+  for (const ORIGINS of ['', 'http://localhost:3000,http://127.0.0.1:3000', 'http://app.localhost:3000', 'http://[::1]:3000']) configFrom({ ...tried, ORIGINS })
+  for (const ORIGINS of ['https://example.org', 'https://site.test', 'http://localhost:3000,https://localhost.example.org']) {
+    assert.throws(() => configFrom({ ...tried, ORIGINS }), (error: Error) => ['GRAPH_TOKEN', 'REVIEW_TOKENS', 'LINK_SECRET'].every((name) => error.message.includes(`${name} must be changed`)))
+  }
+  configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', REVIEW_TOKENS: '{"change-me-later":"real"}', ORIGINS: 'https://example.org' })
+  assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', LINK_SECRET: 'x'.repeat(31) }), /at least 32/)
   assert.deepEqual(full.fingerprint, { secretKey: 'f', region: 'eu' })
   assert.equal(full.maxmind!.service, 'insights')
   assert.equal(full.google!.keyFile, '/key.json')

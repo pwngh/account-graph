@@ -354,6 +354,10 @@ test('a decision is signed with the name its token belongs to, and one made on a
   try {
     assert.deepEqual((await call('dana-new', '/me')).answer, { reviewer: 'dana' })
     assert.deepEqual((await call('service', '/me')).answer, { reviewer: null })
+    for (const path of ['/me', '/nowhere']) {
+      const { headers } = await fetch(base + path, { headers: { authorization: 'Bearer service' } })
+      assert.deepEqual([headers.get('cache-control'), headers.get('x-content-type-options')], ['no-store', 'nosniff'])
+    }
     assert.equal((await call('dana', '/me')).status, 401)
 
     // The name is the token's, whichever of hers she used, and cannot be another's.
@@ -533,8 +537,9 @@ test('what cannot be kept is refused, and nothing else answers 500', async () =>
     // A whole character written as two escapes is text like any other, and so is a backslash before a u.
     assert.equal(await post('/observe', seen('account:\\ud83d\\ude00')), 200)
     assert.equal(await post('/observe', seen('account:\\\\u0000')), 200)
-    // Nested deeper than the stack, and still an answer.
-    assert.equal(await post('/observe', seen('account:1', `,"x":"\\u0061","deep":${'['.repeat(20_000)}${']'.repeat(20_000)}`)), 200)
+    // Nested as deep as a body may be, and deeper than the stack.
+    const nested = (levels: number) => seen('account:1', `,"x":${'['.repeat(levels)}${']'.repeat(levels)}`)
+    assert.deepEqual([await post('/observe', nested(31)), await post('/observe', nested(32)), await post('/observe', nested(20_000))], [200, 400, 400])
     assert.equal(((await (await fetch(`${base}/stats`, { headers })).json()) as any).errors, 0)
   } finally {
     server.close()

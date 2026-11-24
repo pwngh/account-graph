@@ -85,9 +85,11 @@
 - `board`, `GET /board` and the reviewer screen's Board view show people by the furthest step they reached, with missed calls nobody returned first.
 - A step in `STAGES` takes `wait`, the hours after which the board says a person has waited too long.
 - The Channels view has a Break down by selector; the Calls view shows tags.
+- `LATE_HOURS` (`OpsOptions.lateHours`) alerts once a day while conversions wait that long past their time; `OutboxStore.oldestDue` says since when.
 
 ### Changed
 
+- Breaking: `LINK_SECRET` is at least 32 characters, and no `change-me` secret starts a server that takes visits from a site that is not local.
 - Breaking: `fold` takes its options as one object.
 - The Channels view shows `(not recorded)` where no cost was reported, marks missing days, and withholds a cost per outcome that too little data supports.
 - Breaking: `Store` has `ops`, an `OpsStore`.
@@ -106,6 +108,11 @@
 
 ### Fixed
 
+- A reviewer's `restore` of an identifier the line check or the address lookup had muted stands after a restart (`Deciding.automatic`).
+- `touch` takes text only, in the fields a touch has; a field nested thousands deep no longer answers 500. `separate`, `join`, `ignore`, `forget`, `outcome`, `restate`, `consent` and `spend` refuse text the database cannot keep.
+- A body nested more than 32 levels answers 400; one nested thousands deep answered 500 on `/observe`, `/ignore`, `/link`, `/staff-link` and `/costs`.
+- JSON answers are not stored by browsers or proxies (`no-store`, `nosniff`).
+- `tools/export.ts` writes no cell a spreadsheet would run as a formula.
 - The reviewer screen's question stays open, with what was typed, when a decision could not be saved.
 - `attribute` and `report` reach nothing of a subject kept apart from the one asked about, through a third subject either.
 - `recordCall` ties no call to a visitor a reviewer kept apart from the caller; the call is filed under its number.

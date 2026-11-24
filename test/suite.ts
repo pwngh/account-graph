@@ -265,6 +265,37 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await graph.audit()).sound, true)
     })
 
+    test('what a program muted and someone restored stays restored, and other text that cannot be kept is refused', async () => {
+      const { graph } = await fresh()
+      const check = { by: 'line check', automatic: true }
+      await graph.ignore('phone:p', true, check)
+      await graph.ignore('phone:p', false, { by: 'dana' })
+      // A subject may be called what an identifier is called.
+      await graph.join('phone:p', 'z', { by: 'dana' })
+      await graph.ignore('phone:p', true, check)
+      assert.deepEqual((await graph.decisions()).map(({ action, by }) => [action, by]), [['ignore', 'line check'], ['restore', 'dana'], ['join', 'dana']])
+      // A person may still mute it.
+      await graph.ignore('phone:p', true, { by: 'dana' })
+      assert.equal((await graph.decisions()).length, 4)
+
+      const deep = JSON.parse(`${'['.repeat(20_000)}${']'.repeat(20_000)}`)
+      for (const bad of [{ x: 1 }, { x: deep }, { gclid: 5 }, { gclid: deep }, { campaignId: 123 }, { source: null }, { gclid: '\0' }, { custom: { a: deep } }, { custom: ['a'] }, { custom: 'a' }, { custom: { a: 5 } }, { custom: { a: '\ud800' } }]) {
+        await assert.rejects(graph.touch({ subject: 'visitor:1', at: T0, ...bad } as never), TypeError)
+      }
+      await graph.touch({ subject: 'visitor:1', at: T0, gclid: 'G', custom: { 'two words': 'x' } })
+      for (const half of ['\ud800', 'a\0']) {
+        await assert.rejects(graph.join('a', half), TypeError)
+        await assert.rejects(graph.separate(half, 'b'), TypeError)
+        await assert.rejects(graph.ignore(`email:${half}`), TypeError)
+        await assert.rejects(graph.ignore('email:e', true, { reason: half }), TypeError)
+        await assert.rejects(graph.forget(half), TypeError)
+        await assert.rejects(graph.outcome({ transactionId: half, subject: 'a', at: T0 }), TypeError)
+        await assert.rejects(graph.consent('a', { adUserData: true, adPersonalization: true }, { at: 1, source: half }), TypeError)
+        await assert.rejects(graph.spend({ day: '2026-03-01', source: 'google', campaign: half, amount: 1 }), TypeError)
+      }
+      assert.equal((await graph.decisions()).length, 4)
+    })
+
     test('a reviewer keeps two subjects apart, and can change their mind', async () => {
       const { graph } = await fresh()
       await graph.observe([
@@ -896,7 +927,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await graph.report({ from: '2026-03-02', to: '2026-03-02', by: 'touch.office_advertised' })).rows.find((row) => row.source === 'x')!.breakdown![0]!.name, 'north')
       // An arrival that says it is not recorded is one that says nothing.
       await graph.touch({ subject: 'visitor:8', at: day, gclid: 'G8', custom: { office: ' (not recorded) ' } })
-      await graph.touch({ subject: 'visitor:8', at: day + 1, gclid: 'G8', custom: { office: null as unknown as string } })
+      await assert.rejects(graph.touch({ subject: 'visitor:8', at: day + 1, gclid: 'G8', custom: { office: null as unknown as string } }), TypeError)
       await graph.outcome({ transactionId: 'e8', subject: 'visitor:8', at: day + HOUR, stage: 'enrolled' })
       assert.equal((await graph.report({ from: '2026-03-02', to: '2026-03-03', by: 'touch.office_advertised' })).total.breakdown!.filter((part) => part.name.includes('not recorded')).length, 1)
       // A parameter that cannot be asked for is not offered.

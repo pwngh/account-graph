@@ -17,7 +17,12 @@ const queries: Record<string, string> = {
 const query = queries[process.argv[2] ?? '']
 if (!query) throw new Error(`Say what to export: ${Object.keys(queries).join(', ')}`)
 
-const cell = (value: unknown) => (/[",\n]/.test(String(value)) ? `"${String(value).replaceAll('"', '""')}"` : String(value))
+// A spreadsheet runs a cell that starts like a formula, and subjects and identifiers are written by others. Numbers stay as they are.
+const cell = (value: unknown) => {
+  const plain = String(value)
+  const text = /^\s*[=+\-@\uff1d\uff0b\uff0d\uff20]|^[\t\r\n]/.test(plain) && !/^-?\d+(\.\d+)?$/.test(plain) ? `'${plain}` : plain
+  return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
+}
 const client = new pg.Client({ connectionString: process.env.DATABASE_URL })
 await client.connect()
 try {

@@ -14,13 +14,13 @@ const chrome = [process.env.CHROME, '/usr/bin/google-chrome', '/usr/bin/chromium
 
 const T0 = 1_700_000_000_000
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
-async function until<T>(what: string, look: () => Promise<T> | T): Promise<NonNullable<T>> {
-  for (let i = 0; i < 200; i++) {
+async function until<T>(what: string, look: () => Promise<T> | T, seconds = 10): Promise<NonNullable<T>> {
+  for (let i = 0; i < seconds * 20; i++) {
     const found = await look()
     if (found) return found
     await pause(50)
   }
-  throw new Error(`Waited ten seconds for ${what}`)
+  throw new Error(`Waited ${seconds} seconds for ${what}`)
 }
 
 /** Opens an address in a browser of its own. `run` evaluates an expression in the page. */
@@ -40,7 +40,7 @@ async function browse(address: string) {
   }
   try {
     const at = join(home, 'DevToolsActivePort')
-    const port = await Promise.race([failed, until('Chrome to start', () => existsSync(at) && readFileSync(at, 'utf8').split('\n')[0])])
+    const port = await Promise.race([failed, until('Chrome to start', () => existsSync(at) && readFileSync(at, 'utf8').split('\n')[0], 60)])
     const page = (await (await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(address)}`, { method: 'PUT' })).json()) as { webSocketDebuggerUrl: string }
     const socket = new WebSocket(page.webSocketDebuggerUrl)
     await new Promise((resolve, reject) => ((socket.onopen = resolve), (socket.onerror = reject)))
@@ -67,7 +67,7 @@ async function browse(address: string) {
   }
 }
 
-test('the reviewer screen signs with the token, keeps what was typed, and refuses an outdated decision', { skip: !chrome && !process.env.CI ? 'set CHROME to a Chrome or Chromium to run it' : false, timeout: 60_000 }, async (t) => {
+test('the reviewer screen signs with the token, keeps what was typed, and refuses an outdated decision', { skip: !chrome && !process.env.CI ? 'set CHROME to a Chrome or Chromium to run it' : false, timeout: 180_000 }, async (t) => {
   assert.ok(chrome, 'CI needs a browser')
   const graph = createGraph(createMemoryStore())
   await graph.observe([1, 2, 3].map((n) => ({ subject: `account:${n}`, identifiers: ['email:e'], at: T0 })))

@@ -542,8 +542,8 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       return rows.map(toDecision)
     },
 
-    async newestNaming(names, after) {
-      const { rows } = await db.query(`select * from ${t('decision')} where seq > $1 and action <> 'prune' and about ?| $2::text[] order by seq desc limit 1`, [after, names])
+    async newestNaming(names, after, among) {
+      const { rows } = await db.query(`select * from ${t('decision')} where seq > $1 and action <> 'prune' and ($3::text[] is null or action = any($3::text[])) and about ?| $2::text[] order by seq desc limit 1`, [after, names, among ?? null])
       return rows[0] && toDecision(rows[0])
     },
 
@@ -634,6 +634,10 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
     async list(state, limit) {
       const { rows } = await pool.query(`select * from ${t('conversion')} where state = $1 order by due desc, transaction_id limit $2`, [state, limit])
       return rows.map(toJob)
+    },
+    async oldestDue() {
+      const { rows } = await pool.query(`select min(due) as due from ${t('conversion')} where state = 'pending'`)
+      return rows[0].due === null ? undefined : Number(rows[0].due)
     },
     async counts() {
       const out: Record<JobState, number> = { held: 0, pending: 0, sent: 0, skipped: 0, failed: 0 }
