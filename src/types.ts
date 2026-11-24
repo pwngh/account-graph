@@ -410,15 +410,15 @@ export interface CallResult {
 export interface FollowUp {
   /**
    * `open` nobody has spoken to the caller since. `returned` you rang back
-   * and they answered, or a system of yours says they were reached. `tried again` they rang again and got through.
+   * and they answered, or a system of yours says they were reached. `called again` they called again and got through.
    * `hidden` they hid their number, so it cannot be returned.
    */
-  state: 'open' | 'returned' | 'tried again' | 'hidden'
+  state: 'open' | 'returned' | 'called again' | 'hidden'
   /** The call that closed it, or that a return was reported for, and how long after the miss that was, in milliseconds. */
   by?: string
   delay?: number
   /** A system of yours reported the return, and no call shows it. */
-  told?: true
+  reported?: true
   /** How often you rang and nothing says they answered, before it was closed. */
   attempts: number
 }
@@ -453,10 +453,10 @@ export interface Tie {
 
 /** One thing that happened to a person. */
 export type Entry = { at: number; subject: Subject } & (
-  | { kind: 'arrival'; touch: Touch }
-  | { kind: 'seen'; event: string; identifiers: Identifier[] }
+  | { kind: 'visit'; touch: Touch }
+  | { kind: 'sighting'; event: string; identifiers: Identifier[] }
   | { kind: 'call'; call: KeptCall; followUp?: FollowUp; notLead?: NotLead['kind'] }
-  | { kind: 'step'; outcome: Counted; first: OutcomeValue | null; notLead?: NotLead['kind'] }
+  | { kind: 'outcome'; outcome: Counted; first: OutcomeValue | null; notLead?: NotLead['kind'] }
   | { kind: 'value'; transactionId: string; stage: string; from: OutcomeValue; to: OutcomeValue }
   | { kind: 'consent'; answer: ConsentAnswer }
   | { kind: 'decision'; decision: Decision }
@@ -466,7 +466,7 @@ export type Entry = { at: number; subject: Subject } & (
 export interface Journey {
   subject: Subject
   /** Each subject something here was recorded on, and why it is this person. */
-  ties: Record<Subject, Tie>
+  subjects: Record<Subject, Tie>
   /** Oldest first: the newest that many, or those before the time asked for. */
   entries: Entry[]
   /** Pass as `before` for the entries before these, or null when there are none. */
@@ -504,7 +504,7 @@ export type CostRow = Required<Omit<Cost, 'conversions' | 'conversionValue'>> & 
  * the days it said so. The two need not agree: a platform counts by its own
  * rules, often on the day of the click, and two may claim the same one.
  */
-export interface Claimed {
+export interface Reported {
   /** Days of the period, up to today, with a number from the platform. */
   days: number
   conversions: number
@@ -559,12 +559,12 @@ export interface ReportRow {
   /** How many people those outcomes are, whatever accounts they used. A renewal is a second outcome and not a second person. */
   people: number
   /** What those outcomes were first worth and are worth now. */
-  worth: ValueChange
+  valueChange: ValueChange
   /** How many days of the period, up to today, have cost data for this campaign, and how many have none. */
   costDays: number
   missingDays: number
   /** Fewer than half of the days have cost data, which is too few to say what anything cost. Never so for spend on no campaign, nor for a campaign with no paid arrival and no cost at all. On the total, every campaign that would count is so. */
-  thin: boolean
+  insufficientData: boolean
   /**
    * The cost over the outcomes credited to this campaign on the days that
    * have cost data. Null when there is no cost, no such outcome, or too few days.
@@ -573,12 +573,12 @@ export interface ReportRow {
   /** The value of those outcomes over the same cost. Null for the same reasons, or when they are worth nothing. */
   returnOnCost: number | null
   /** What the platform says it brought. Absent where it said nothing. On the total, over the rows that have one. */
-  claimed?: Claimed
+  reported?: Reported
   /** The same outcomes by the dimension asked for. Costs are not split: a campaign is charged whole. */
   breakdown?: Breakdown
 }
 
-/** Outcomes and missed calls by the value of one dimension, each named by that value, in order. `(not recorded)` is always the last. */
+/** Outcomes and missed calls by the value of one dimension, each named by that value, in order. `(not set)` is always the last. */
 export type Breakdown = { name: string; stages: Record<string, StageCount>; outcomes: number; value: number; people: number; missed: number; notLeads: number }[]
 
 export interface Report {
@@ -594,11 +594,11 @@ export interface Report {
    * all they will. `after` is the last day that has had its time, and `days`
    * how long that is: 95 in 100 outcomes of the slowest step come within it.
    */
-  filling?: { after: string; days: number }
-  /** The outcomes of the period by the month they were first recorded in, `YYYY-MM`, oldest first. Those from before there was a history are under `(not recorded)`. */
+  incomplete?: { after: string; days: number }
+  /** The outcomes of the period by the month they were first recorded in, `YYYY-MM`, oldest first. Those from before there was a history are under `(not set)`. */
   months: (ValueChange & { month: string })[]
   /** Campaigns with cost data on too few days, left out of the total's cost per outcome and return. */
-  leftOut: number
+  excluded: number
   /** The dimension the rows are broken down by, when one was asked for. */
   by?: string
   /** The one step `costPerOutcome` counts, when one was asked for. The return still sets all value against the cost. */

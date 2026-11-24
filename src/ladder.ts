@@ -41,14 +41,14 @@ export function ladderProblems(ladder: unknown, targets: readonly string[]): str
       wrong.push(`step "${name}" must be an object, such as {"value":5}`)
       continue
     }
-    if (stage.value !== undefined && (typeof stage.value !== 'number' || !Number.isFinite(stage.value) || stage.value < 0)) wrong.push(`step "${name}" needs a value of zero or more`)
-    if (stage.currency !== undefined && typeof stage.currency !== 'string') wrong.push(`step "${name}" needs its currency as text`)
-    if (stage.wait !== undefined && (typeof stage.wait !== 'number' || !Number.isFinite(stage.wait) || stage.wait < 0)) wrong.push(`step "${name}" needs its wait as hours, zero or more`)
+    if (stage.value !== undefined && (typeof stage.value !== 'number' || !Number.isFinite(stage.value) || stage.value < 0)) wrong.push(`step "${name}" requires a value of zero or more`)
+    if (stage.currency !== undefined && typeof stage.currency !== 'string') wrong.push(`step "${name}" requires its currency as a string`)
+    if (stage.wait !== undefined && (typeof stage.wait !== 'number' || !Number.isFinite(stage.wait) || stage.wait < 0)) wrong.push(`step "${name}" requires its wait as hours, zero or more`)
     const { action } = stage
     if (action === undefined) continue
     const named = typeof action === 'string' ? undefined : action && typeof action === 'object' && !Array.isArray(action) ? Object.entries(action) : null
     if (named === null || (typeof action === 'string' && !action) || named?.some(([, each]) => typeof each !== 'string' || !each)) {
-      wrong.push(`step "${name}" needs its action as text, or as one text per platform`)
+      wrong.push(`step "${name}" requires its action as a string, or as one text per platform`)
     } else if (targets.length === 0) {
       wrong.push(`step "${name}" has an action, but no ad platform is set up to send it to`)
     } else if (named === undefined) {

@@ -1,4 +1,4 @@
-const WHAT = { arrival: 'Visit', seen: 'Sighting', call: 'Call', step: 'Outcome', value: 'Value change', consent: 'Consent', decision: 'Decision' }
+const WHAT = { visit: 'Visit', sighting: 'Sighting', call: 'Call', outcome: 'Outcome', value: 'Value change', consent: 'Consent', decision: 'Decision' }
 const SENT = { held: 'Held for a call result', pending: 'Queued for', sent: 'Sent to', skipped: 'Skipped for', failed: 'Rejected by' }
 const CLICKS = [['gclid', 'Google ad click'], ['gbraid', 'Google ad click'], ['wbraid', 'Google ad click'], ['fbclid', 'Meta click id'], ['msclkid', 'Microsoft ad click'], ['ttclid', 'TikTok ad click']]
 const worthOf = (value, currency) => `${money(value)}${currency ? ` ${currency}` : ''}`
@@ -12,7 +12,7 @@ function told(entry) {
     return chips.length ? el('span', { class: 'entry-tags' }, ...chips) : ''
   }
   const words = (name) => name.replaceAll('_', ' ')
-  if (entry.kind === 'arrival') {
+  if (entry.kind === 'visit') {
     const { touch } = entry
     const click = CLICKS.find(([field]) => touch[field])
     return [sourced(entry.source), `${touch.campaign || touch.campaignId ? ` · ${touch.campaign || touch.campaignId}` : ''} `,
@@ -21,15 +21,15 @@ function told(entry) {
         touch.term && `“${touch.term}”`),
       tags(touch.custom)]
   }
-  if (entry.kind === 'seen') {
+  if (entry.kind === 'sighting') {
     const kinds = new Map()
     for (const identifier of entry.identifiers) kinds.set(identifier.split(':')[0], (kinds.get(identifier.split(':')[0]) ?? 0) + 1)
-    return [entry.event ? entry.event.replaceAll('_', ' ') : 'seen', more(`${[...kinds].map(([kind, count]) => (count > 1 ? `${kind} (${count})` : kind)).join(', ')}`)]
+    return [entry.event ? entry.event.replaceAll('_', ' ') : 'sighting', more(`${[...kinds].map(([kind, count]) => (count > 1 ? `${kind} (${count})` : kind)).join(', ')}`)]
   }
   if (entry.kind === 'call') {
     const { call, state, followUp } = entry
     const how = { answered: 'answered', missed: 'missed', voicemail: 'voicemail', waiting: 'waiting for result', unknown: 'unknown result' }[state] ?? 'unknown result'
-    const after = followUp && { open: 'Not returned', returned: `Returned after ${lasted(followUp.delay)}${followUp.told ? ' (reported)' : ''}`, 'tried again': `Called again after ${lasted(followUp.delay)}`, hidden: 'Number withheld' }[followUp.state]
+    const after = followUp && { open: 'Not returned', returned: `Returned after ${lasted(followUp.delay)}${followUp.reported ? ' (reported)' : ''}`, 'called again': `Called again after ${lasted(followUp.delay)}`, hidden: 'Number withheld' }[followUp.state]
     return [call.direction === 'outbound' ? 'Outbound ' : 'Inbound ', reviewDisplay.chip(how[0].toUpperCase() + how.slice(1), reviewDisplay.callTone(state)), notLead(entry.notLead),
       facts(after && `${after}${followUp.attempts > 0 ? ` · ${amount(followUp.attempts)} ${followUp.attempts === 1 ? 'attempt' : 'attempts'}` : ''}`,
         call.duration === undefined ? '' : `Duration ${amount(Math.round(call.duration))} s`,
@@ -37,7 +37,7 @@ function told(entry) {
         call.visitor && (call.flags.includes('pool') ? 'Tracking number' : 'Tap to call')),
       tags(call.tags, words)]
   }
-  if (entry.kind === 'step') {
+  if (entry.kind === 'outcome') {
     const { outcome, first, sent } = entry
     const began = first === null || first.at === 0 ? '' : ` · initially ${worthOf(first.value, first.currency)}`
     return [el('b', {}, outcome.stage), outcome.value === 0 ? '' : ` · ${worthOf(outcome.value, outcome.currency)}`, notLead(entry.notLead),
@@ -96,7 +96,7 @@ const DAYS = 86400000
 /** How much time fits about 700 points at each zoom. */
 const ZOOMS = { All: 0, Month: 30 * DAYS, Week: 7 * DAYS, Day: DAYS }
 const GLYPHS = {
-  arrival: 'M-5 4L5 0L-5 -4L-2.5 0Z', seen: 'M-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0Z', call: 'M-5-3.5h10v7h-10Z', step: 'M0-6L6 0L0 6L-6 0Z', value: 'M0-4.5L4.5 0L0 4.5L-4.5 0Z',
+  visit: 'M-5 4L5 0L-5 -4L-2.5 0Z', sighting: 'M-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0Z', call: 'M-5-3.5h10v7h-10Z', outcome: 'M0-6L6 0L0 6L-6 0Z', value: 'M0-4.5L4.5 0L0 4.5L-4.5 0Z',
   consent: 'M-5 0a5 5 0 1 0 10 0a5 5 0 1 0-10 0Z', decision: 'M-4.5 6V-6H5L2.5-2.5L5 1H-2.5V6Z',
 }
 const glyph = (kind) => svg('svg', { class: `glyph ${kind}`, viewBox: '-8 -8 16 16', 'aria-hidden': 'true', focusable: 'false' }, svg('path', { d: GLYPHS[kind] }))
@@ -302,12 +302,12 @@ view('journey', 'Journey', async (box, subject) => {
     top.append(el('p', { class: 'muted' }, 'No events'))
     return
   }
-  const subjects = Object.keys(journey.ties)
+  const subjects = Object.keys(journey.subjects)
   const strip = el('div', {})
   top.append(strip, journey.more > 0 ? el('p', { class: 'muted' }, `${amount(journey.more)} more IDs are not shown.`) : '')
   let entries = journey.entries
   let next = journey.next
-  const ties = { ...journey.ties }
+  const ties = { ...journey.subjects }
   const timeline = el('div', { class: 'wide timeline', tabindex: 0, role: 'region', 'aria-label': 'Journey' })
   const lines = new Map()
   /** Brings a line of the list into view, and marks it for a moment. */
@@ -341,7 +341,7 @@ view('journey', 'Journey', async (box, subject) => {
       const page = await api('GET', `/journey?subject=${encodeURIComponent(subject)}&before=${next}`)
       if (turn !== loading) return
       entries = [...page.entries, ...entries]
-      Object.assign(ties, page.ties)
+      Object.assign(ties, page.subjects)
       next = page.next
       browsing = true
       earlier.hidden = next === null

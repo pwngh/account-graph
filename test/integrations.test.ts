@@ -297,7 +297,7 @@ test('the reviewer screen is a locked-down shell, and its data needs the token',
     assert.equal(profile.known, true)
     assert.deepEqual(profile.cluster, { id: 'account:1', members: ['account:1', 'account:2', 'account:3'], oversized: false })
     assert.deepEqual(profile.links.map((link: any) => link.subject), ['account:3', 'account:2'])
-    assert.deepEqual(profile.ties.map((tie: any) => `${tie.a}-${tie.b}`).sort(), ['account:1-account:2', 'account:1-account:3'])
+    assert.deepEqual(profile.edges.map((tie: any) => `${tie.a}-${tie.b}`).sort(), ['account:1-account:2', 'account:1-account:3'])
     assert.deepEqual(profile.separated, ['account:9'])
     assert.equal(profile.flows[0].relation, 'same')
     assert.deepEqual(profile.rings, [])
@@ -599,7 +599,7 @@ test('how the server runs is read by a reviewer, and a test alert is sent by a s
     assert.deepEqual([state.feeds.length, state.jobs, state.undelivered, state.alerts, state.outbox, state.at], [4, [], [], true, null, T0])
     assert.equal((await ask('POST', '/alerts/test', 'review')).status, 403)
     assert.deepEqual(await (await ask('POST', '/alerts/test', 'service')).json(), { delivered: true })
-    assert.deepEqual(posted.map((body) => JSON.parse(body).text), ['account-graph: this is a test alert. Nothing is wrong.'])
+    assert.deepEqual(posted.map((body) => JSON.parse(body).text), ['account-graph: test alert.'])
   } finally {
     server.close()
   }
@@ -1073,13 +1073,13 @@ test('a call whose result is awaited is held, and nothing is sent until a person
     assert.deepEqual([whole.expected, whole.total.calls, whole.total.missed, whole.total.returned], [true, 3, 2, 1])
     assert.equal('to' in list.calls[0], false)
     const broken = (await (await read(`/report?${days}&by=outcome.language`)).json()) as any
-    assert.deepEqual([broken.by, broken.total.breakdown.map((part: any) => part.name)], ['outcome.language', ['(not recorded)']])
+    assert.deepEqual([broken.by, broken.total.breakdown.map((part: any) => part.name)], ['outcome.language', ['(not set)']])
     assert.equal((await read('/report?by=nonsense')).status, 400)
     const after = (await (await read(`/followed?${days}&step=client&days=10`)).json()) as any
     assert.deepEqual([after.step, after.days, after.least, after.groups.length, after.timeZone], ['client', 10, 20, 4, 'America/New_York'])
     // The caller's journey, with what became of each step at the ad platforms.
     const story = (await (await read(`/journey?subject=${first.body.subject}`)).json()) as any
-    const told = story.entries.filter((entry: any) => entry.kind === 'step').map((entry: any) => [entry.outcome.transactionId, entry.sent.map((job: any) => [job.target, job.state])])
+    const told = story.entries.filter((entry: any) => entry.kind === 'outcome').map((entry: any) => [entry.outcome.transactionId, entry.sent.map((job: any) => [job.target, job.state])])
     assert.deepEqual(told, [['call:CA1', [['google', 'sent']]]])
     assert.ok(story.entries.filter((entry: any) => entry.kind === 'call').every((entry: any) => entry.state && !('to' in entry.call)))
     assert.equal((await read('/journey?subject=a&before=soon')).status, 400)
@@ -1217,7 +1217,7 @@ test('steps give page events, calls and outcomes their value and their ad platfo
     for (const bad of [{ value: 11, kind: 'refund' }, { value: 1, kind: 'gift' }, { value: 1, kind: 'write_off', currency: 'EUR' }]) assert.equal((await post('/restate', { transactionId: 'call:CA1', ...bad })).status, 400)
     assert.equal((await outbox.get('call:CA1'))[0]!.value, 4)
     const { total } = (await (await fetch(`${base}/report?from=2026-03-02&to=2026-03-02`, { headers: { authorization: 'Bearer reviewer' } })).json()) as any
-    assert.deepEqual([total.worth.refunded, total.worth.writtenOff], [6, 0])
+    assert.deepEqual([total.valueChange.refunded, total.valueChange.writtenOff], [6, 0])
 
     // Forgetting says what had reached a platform where it is asked to, and is refused when it is asked in words.
     const caller = (await outbox.get('call:CA1'))[0]!.subject
@@ -1227,7 +1227,7 @@ test('steps give page events, calls and outcomes their value and their ad platfo
     for (const retract of ['yes', 1, true]) assert.equal((await post('/forget', { subject: caller, retract })).status, 400)
     assert.equal((await outbox.get('call:CA1')).length, 1)
     const forgotten = (await (await post('/forget', { subject: caller, ads: true })).json()) as any
-    assert.deepEqual(forgotten.sent, [{ transactionId: 'call:CA1', target: 'google', action: '222', at, state: 'untold' }])
+    assert.deepEqual(forgotten.sent, [{ transactionId: 'call:CA1', target: 'google', action: '222', at, state: 'not_requested' }])
     assert.deepEqual([Array.isArray(forgotten.changes), await outbox.get('call:CA1')], [true, []])
     assert.ok(Array.isArray(await (await post('/forget', { subject: 'nobody' })).json()))
   } finally {
@@ -1263,7 +1263,7 @@ test('a postal address is checked with Smarty and counts only when confirmed to 
   // An answer that is not a list of candidates is read as no match, not as a crash.
   const odd = createAddressVerifier({ authId: 'id', authToken: 'token', fetch: (async () => new Response('{"unexpected":true}')) as typeof fetch })
   assert.equal(await odd({ street: '1 Main St' }), undefined)
-  await assert.rejects(verify({ street: 'broke' }), /Smarty refused the address check with 402/)
+  await assert.rejects(verify({ street: 'broke' }), /Smarty rejected the address check with 402/)
   await assert.rejects(verify({ street: '  ' }), TypeError)
 
   // Only the hash of the delivery point is kept, and only for an address that can belong to a household.
@@ -1298,7 +1298,7 @@ test('Twilio says what kind of line a number is, once per number', async () => {
   await lookup('+15550000606')
   await lookup('+15550000404')
   assert.equal(calls.length, before + 1)
-  await assert.rejects(lookup('+15550000500'), /Twilio refused the lookup with 401/)
+  await assert.rejects(lookup('+15550000500'), /Twilio rejected the lookup with 401/)
 })
 
 test('the server identifies a subject from plain facts, drops declared bots, and notes where a visit came from', async () => {

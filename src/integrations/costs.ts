@@ -175,7 +175,7 @@ export function costsFromCsv(text: string): Cost[] {
   const lines = parseCsv(text).filter((cells) => cells.some((cell) => cell.trim()))
   const head = (lines.shift() ?? []).map((name) => name.trim().toLowerCase().replace(/[\s_]/g, ''))
   const column = (name: string) => head.indexOf(name)
-  for (const needed of ['day', 'source', 'amount']) if (column(needed) < 0) throw new TypeError(`The CSV needs a "${needed}" column`)
+  for (const needed of ['day', 'source', 'amount']) if (column(needed) < 0) throw new TypeError(`The CSV requires a "${needed}" column`)
   const number = (cells: string[], name: string) => {
     const cell = (cells[column(name)] ?? '').trim().replace(/[$,]/g, '')
     return cell === '' ? undefined : Number(cell)

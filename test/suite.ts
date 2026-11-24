@@ -488,24 +488,24 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       ])
       assert.deepEqual(line('google', '111'), {
         source: 'google', campaignId: '111', campaign: 'Spring sale', cost: 60.3, clicks: 42, impressions: 1300, visits: 1, missed: 0, notLeads: 0,
-        stages: { inquiry: { count: 1, value: 5, people: 1, delay: { count: 1, median: 0.1, p95: 0.1, inside: 1 } }, enrolled: { count: 1, value: 200, people: 1, delay: { count: 1, median: 2, p95: 2, inside: 1 } } }, outcomes: 2, value: 205, people: 1, worth: { outcomes: 2, first: 205, now: 205, refunded: 0, writtenOff: 0, zeroed: 0, firstUnknown: 0 },
+        stages: { inquiry: { count: 1, value: 5, people: 1, delay: { count: 1, median: 0.1, p95: 0.1, inside: 1 } }, enrolled: { count: 1, value: 200, people: 1, delay: { count: 1, median: 2, p95: 2, inside: 1 } } }, outcomes: 2, value: 205, people: 1, valueChange: { outcomes: 2, first: 205, now: 205, refunded: 0, writtenOff: 0, zeroed: 0, firstUnknown: 0 },
         // Cost data for two of three days. The enrollment on the third is not set against their cost.
-        costDays: 2, missingDays: 1, thin: false, costPerOutcome: 60.3, returnOnCost: 0.082919,
+        costDays: 2, missingDays: 1, insufficientData: false, costPerOutcome: 60.3, returnOnCost: 0.082919,
       })
       // The Meta touch named its campaign only by name, in another case, and its source by an alias.
       assert.deepEqual(line('meta', '777'), {
         source: 'meta', campaignId: '777', campaign: 'Retarget', cost: 15, clicks: 9, impressions: 0, visits: 1, missed: 0, notLeads: 0,
-        stages: { enrolled: { count: 1, value: 150.5, people: 1, delay: { count: 1, median: 1, p95: 1, inside: 1 } } }, outcomes: 1, value: 150.5, people: 1, worth: { outcomes: 1, first: 200, now: 150.5, refunded: 0, writtenOff: 0, zeroed: 0, firstUnknown: 0 },
+        stages: { enrolled: { count: 1, value: 150.5, people: 1, delay: { count: 1, median: 1, p95: 1, inside: 1 } } }, outcomes: 1, value: 150.5, people: 1, valueChange: { outcomes: 1, first: 200, now: 150.5, refunded: 0, writtenOff: 0, zeroed: 0, firstUnknown: 0 },
         // One day of three is too few to say what anything cost.
-        costDays: 1, missingDays: 2, thin: true, costPerOutcome: null, returnOnCost: null,
+        costDays: 1, missingDays: 2, insufficientData: true, costPerOutcome: null, returnOnCost: null,
       })
       assert.equal(line('google', '222')!.cost, 6)
       assert.deepEqual(counts(line('(none)', '')!.stages), { enrolled: { count: 1, value: 200 } })
       assert.deepEqual(report.total, {
         cost: 81.3, clicks: 51, impressions: 1300, visits: 3, missed: 0, notLeads: 0,
-        stages: { inquiry: { count: 2, value: 10, people: 2, delay: { count: 2, median: 0.1, p95: 0.1, inside: 1 } }, enrolled: { count: 3, value: 550.5, people: 3, delay: { count: 2, median: 1.5, p95: 2, inside: 1 } } }, outcomes: 5, value: 560.5, people: 4, worth: { outcomes: 5, first: 610, now: 560.5, refunded: 0, writtenOff: 0, zeroed: 0, firstUnknown: 0 },
+        stages: { inquiry: { count: 2, value: 10, people: 2, delay: { count: 2, median: 0.1, p95: 0.1, inside: 1 } }, enrolled: { count: 3, value: 550.5, people: 3, delay: { count: 2, median: 1.5, p95: 2, inside: 1 } } }, outcomes: 5, value: 560.5, people: 4, valueChange: { outcomes: 5, first: 610, now: 560.5, refunded: 0, writtenOff: 0, zeroed: 0, firstUnknown: 0 },
         // Of the campaigns with enough cost data alone: never all spend over all outcomes.
-        costDays: 2, missingDays: 1, thin: false, costPerOutcome: 60.3, returnOnCost: 0.082919,
+        costDays: 2, missingDays: 1, insufficientData: false, costPerOutcome: 60.3, returnOnCost: 0.082919,
       })
       assert.deepEqual(report.currencies, ['USD'])
 
@@ -770,15 +770,15 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await recordCall(graph, { id: 'O1', direction: 'outbound', from: '+15550100001', to: from, at: T0 + 2 * HOUR, answered: false }, { now })
       assert.deepEqual(await open(), ['M1', 'M2', 'M3'])
       // Reached at three hours: that closes the misses before, and not the one after.
-      assert.deepEqual(await recordReturn(graph, { id: 'M1', at: T0 + 3 * HOUR }, { now }), { state: 'returned', by: 'M1', delay: 3 * HOUR, told: true, attempts: 1 })
-      assert.deepEqual(await became('M2'), { state: 'returned', by: 'M1', delay: 2 * HOUR, told: true, attempts: 1 })
+      assert.deepEqual(await recordReturn(graph, { id: 'M1', at: T0 + 3 * HOUR }, { now }), { state: 'returned', by: 'M1', delay: 3 * HOUR, reported: true, attempts: 1 })
+      assert.deepEqual(await became('M2'), { state: 'returned', by: 'M1', delay: 2 * HOUR, reported: true, attempts: 1 })
       assert.deepEqual([(await became('M3')).state, await open()], ['open', ['M3']])
       const summary = async () => (await graph.callSummary({ from: '2023-11-14', to: '2023-11-15', at: clock.now, results: 'expected' })).total
-      assert.deepEqual([(await summary()).returned, (await summary()).told, (await summary()).missed], [2, 2, 3])
+      assert.deepEqual([(await summary()).returned, (await summary()).reported, (await summary()).missed], [2, 2, 3])
       // A call that did reach them first is what closed it, and the report adds nothing.
       await recordCall(graph, { id: 'O2', direction: 'outbound', from: '+15550100001', to: from, at: T0 + 2 * HOUR + 1, answered: true }, { now })
       assert.deepEqual(await became('M2'), { state: 'returned', by: 'O2', delay: HOUR + 1, attempts: 1 })
-      assert.deepEqual([(await summary()).returned, (await summary()).told], [2, 0])
+      assert.deepEqual([(await summary()).returned, (await summary()).reported], [2, 0])
       // Reported again the last time stands, and taken back it is open again. How the call went is kept through both.
       await recordReturn(graph, { id: 'M3', at: T0 + 6 * HOUR }, { now })
       assert.equal((await recordReturn(graph, { id: 'M3', at: T0 + 7 * HOUR }, { now }))!.delay, 2 * HOUR)
@@ -791,7 +791,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await recordReturn(graph, { id: 'M3' }, { now }))!.delay, 5 * HOUR)
       assert.equal(await recordReturn(graph, { id: 'M4', at: T0 + 9 * HOUR }, { now }), undefined)
       await miss('M4', T0 + 8 * HOUR, '+15550100082')
-      assert.deepEqual((await became('M4')).told, true)
+      assert.deepEqual((await became('M4')).reported, true)
       // Taken back before it is known, nothing is left of it.
       await recordReturn(graph, { id: 'M5', at: T0 + 9 * HOUR }, { now })
       await recordReturn(graph, { id: 'M5', returned: false }, { now })
@@ -813,10 +813,10 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await miss('E4', T0 + 2 * HOUR, other)
       assert.deepEqual([(await became('E1')).state, (await open()).includes('E1')], ['open', true])
       await recordCallResult(graph, { id: 'E2', answered: false }, { now })
-      assert.deepEqual([(await became('E1')).told, (await open()).includes('E1'), (await became('E4')).state], [true, false, 'open'])
+      assert.deepEqual([(await became('E1')).reported, (await open()).includes('E1'), (await became('E4')).state], [true, false, 'open'])
       // A call back that began first and connected after they were reached is not what reached them.
       await recordCall(graph, { id: 'E5', direction: 'outbound', from: '+15550100001', to: other, at: T0 + HOUR - 60_000, answered: true, waited: 120 }, { now })
-      assert.equal((await became('E1')).told, true)
+      assert.equal((await became('E1')).reported, true)
       await recordCall(graph, { id: 'E6', direction: 'outbound', from: '+15550100001', to: other, at: T0 + HOUR - 50_000, answered: true, waited: 20 }, { now })
       assert.equal((await became('E1')).by, 'E6')
       // Another caller's is not touched, and an answered call was not missed.
@@ -855,8 +855,8 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await inbound('M2', 20, false)
       await inbound('M3', 21, false)
       await inbound('A1', 23, true)
-      assert.deepEqual(await became('M2'), { state: 'tried again', by: 'A1', delay: 3 * HOUR, attempts: 0 })
-      assert.deepEqual(await became('M3'), { state: 'tried again', by: 'A1', delay: 2 * HOUR, attempts: 0 })
+      assert.deepEqual(await became('M2'), { state: 'called again', by: 'A1', delay: 3 * HOUR, attempts: 0 })
+      assert.deepEqual(await became('M3'), { state: 'called again', by: 'A1', delay: 2 * HOUR, attempts: 0 })
       // Ringing in and missing again is not getting through, and somebody else answering is nothing to this caller.
       await inbound('M4', 30, false)
       await inbound('M5', 31, false)
@@ -874,7 +874,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual((await graph.openCalls({ ...days, limit: 1, after: first!.call })).map((each) => each.call.id), ['M5'])
       assert.deepEqual(await graph.openCalls({ from: '2023-11-14', to: '2023-11-14' }), [])
       const summary = await graph.callSummary({ ...days, results: 'expected' })
-      assert.deepEqual([summary.total.calls, summary.total.missed, summary.total.returned, summary.total.triedAgain, summary.total.hidden, summary.returnedWithin], [7, 6, 1, 2, 1, 2 * HOUR])
+      assert.deepEqual([summary.total.calls, summary.total.missed, summary.total.returned, summary.total.calledAgain, summary.total.hidden, summary.returnedWithin], [7, 6, 1, 2, 1, 2 * HOUR])
 
       // Ringing someone records nothing about who they are, and is not a missed call in the report.
       assert.deepEqual([await graph.cluster(`caller:${hashPhone('+15550100042')}`), (await graph.counts()).touches], [undefined, 0])
@@ -920,13 +920,13 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await graph.separate('account:1', 'account:1b')
       assert.equal((await graph.report({ from: '2026-03-01', to: '2026-03-31' })).total.stages.sale!.people, 4)
       // Three say too little of how long a step takes to call anything too recent.
-      assert.equal('filling' in report, false)
+      assert.equal('incomplete' in report, false)
       for (let n = 0; n < 20; n++) {
         await graph.observe({ subject: `visitor:f${n}`, identifiers: [`device:f${n}`], at: T0 })
         await graph.touch({ subject: `visitor:f${n}`, at: NOW - 20 * DAY, gclid: 'F', campaignId: '222' })
         await sale(`f${n}`, `visitor:f${n}`, 20 - (n < 19 ? 4 : 6.5), 'signup')
       }
-      const filling = async (from: string, to: string) => (await graph.report({ from, to })).filling
+      const filling = async (from: string, to: string) => (await graph.report({ from, to })).incomplete
       // 95 in 100 sign-ups come within four days, so arrivals of the last four have not had theirs.
       assert.deepEqual(await filling('2026-03-12', '2026-03-30'), { after: '2026-03-27', days: 4 })
       assert.equal(await filling('2026-03-12', '2026-03-27'), undefined)
@@ -962,16 +962,16 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await graph.values('nobody'), [])
       const report = await graph.report({ from: '2026-02-01', to: '2026-03-31' })
       const line = report.rows.find((row) => row.campaignId === '111')!
-      assert.deepEqual(line.worth, { outcomes: 3, first: 600, now: 620.5, refunded: 0, writtenOff: 0, zeroed: 1, firstUnknown: 0 })
-      assert.equal(line.value, line.worth.now)
-      assert.deepEqual(report.total.worth, { outcomes: 4, first: 700, now: 720.5, refunded: 0, writtenOff: 0, zeroed: 1, firstUnknown: 0 })
+      assert.deepEqual(line.valueChange, { outcomes: 3, first: 600, now: 620.5, refunded: 0, writtenOff: 0, zeroed: 1, firstUnknown: 0 })
+      assert.equal(line.value, line.valueChange.now)
+      assert.deepEqual(report.total.valueChange, { outcomes: 4, first: 700, now: 720.5, refunded: 0, writtenOff: 0, zeroed: 1, firstUnknown: 0 })
       assert.deepEqual(report.months, [
         { month: '2026-02', outcomes: 3, first: 500, now: 520.5, refunded: 0, writtenOff: 0, zeroed: 1, firstUnknown: 0 },
         { month: '2026-03', outcomes: 1, first: 200, now: 200, refunded: 0, writtenOff: 0, zeroed: 0, firstUnknown: 0 },
       ])
       // Taken out of the report and back, it goes on from the value it had.
       await graph.withdraw('s4')
-      assert.equal((await graph.report({ from: '2026-02-01', to: '2026-03-31' })).total.worth.outcomes, 3)
+      assert.equal((await graph.report({ from: '2026-02-01', to: '2026-03-31' })).total.valueChange.outcomes, 3)
       await graph.outcome({ transactionId: 's4', subject: 'lead:1', at: day('2026-03-02'), stage: 'client', value: 200, currency: 'USD' })
       assert.equal((await read('s4')).length, 1)
       // Pruning leaves values alone; forgetting the person deletes theirs, also of an outcome no longer in the report.
@@ -987,7 +987,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await graph.outcome({ transactionId: 's6', subject: 'lead:2', at: day('2026-03-20'), stage: 'client', value: 0, currency: 'USD' })
       await graph.restate('s5', 90)
       await graph.restate('s5', 0)
-      assert.equal((await graph.report({ from: '2026-03-20', to: '2026-03-20' })).total.worth.zeroed, 1)
+      assert.equal((await graph.report({ from: '2026-03-20', to: '2026-03-20' })).total.valueChange.zeroed, 1)
       assert.deepEqual((await graph.report({ from: '2026-02-01', to: '2026-03-31' })).currencies, ['CAD', 'USD'])
       await graph.withdraw('s2')
       await graph.prune(clock.now + DAY)
@@ -1004,10 +1004,10 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       for (const [n, day, stage] of [[1, '2026-03-01', 'inquiry'], [2, '2026-03-02', 'client'], [3, '2026-03-03', 'client']] as const) await graph.outcome({ transactionId: `t${n}`, subject: 'lead:1', at: at(day), stage, value: 100, currency: 'USD' })
       await graph.outcome({ transactionId: 't4', subject: 'lead:2', at: at('2026-03-01'), stage: 'client', value: 50, currency: 'USD' })
       const read = async (options: object = {}) => (await graph.report({ from: '2026-03-01', to: '2026-03-09', ...options }))
-      const of = (report: Awaited<ReturnType<typeof read>>, id: string) => report.rows.find((row) => row.campaignId === id)!.claimed
+      const of = (report: Awaited<ReturnType<typeof read>>, id: string) => report.rows.find((row) => row.campaignId === id)!.reported
       await graph.spend({ day: '2026-03-01', source: 'google', campaignId: '111', amount: 10, currency: 'USD' })
       const before = await read()
-      assert.deepEqual([of(before, '111'), before.total.claimed], [undefined, undefined])
+      assert.deepEqual([of(before, '111'), before.total.reported], [undefined, undefined])
       // The third of March is a day the platform said nothing about, so what was credited then is not set beside it.
       await graph.spend([
         { day: '2026-03-01', source: 'google', campaignId: '111', amount: 10, currency: 'USD', conversions: 2.5, conversionValue: 250.1 },
@@ -1019,10 +1019,10 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const after = await read()
       assert.deepEqual(of(after, '111'), { days: 2, conversions: 2.5, value: 250.1, credited: 2, creditedValue: 200 })
       assert.deepEqual(of(after, '777'), { days: 1, conversions: 1, value: null, credited: 1, creditedValue: 50 })
-      assert.deepEqual(after.total.claimed, { days: 2, conversions: 3.5, value: null, credited: 3, creditedValue: 250 })
+      assert.deepEqual(after.total.reported, { days: 2, conversions: 3.5, value: null, credited: 3, creditedValue: 250 })
       assert.equal(after.total.outcomes, 4)
       const clients = await read({ per: 'client' })
-      assert.deepEqual([of(clients, '111')!.credited, of(clients, '111')!.creditedValue, clients.total.claimed!.credited], [1, 100, 2])
+      assert.deepEqual([of(clients, '111')!.credited, of(clients, '111')!.creditedValue, clients.total.reported!.credited], [1, 100, 2])
       // A value may be below nothing, where the platform took back more than it added.
       await graph.spend({ day: '2026-03-01', source: 'meta', campaignId: '777', amount: 5, conversions: 0, conversionValue: -20 })
       assert.deepEqual(of(await read(), '777'), { days: 1, conversions: 0, value: -20, credited: 1, creditedValue: 50 })
@@ -1039,7 +1039,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const { graph } = await fresh(undefined, { now: () => clock.now })
       await graph.touch({ subject: 'lead:1', at: clock.now - HOUR, gclid: 'G', campaignId: '111' })
       for (const [id, subject] of [['s1', 'lead:1'], ['s2', 'lead:1'], ['s3', 'lead:2']] as const) await graph.outcome({ transactionId: id, subject, at: clock.now, stage: 'client', value: 200, currency: 'USD' })
-      const worth = async () => (await graph.report({ from: '2026-03-02', to: '2026-03-02' })).total.worth
+      const worth = async () => (await graph.report({ from: '2026-03-02', to: '2026-03-02' })).total.valueChange
       // What was collected, then some given back, twice, and the rest never paid.
       await graph.restate('s1', 350)
       await graph.restate('s1', 300, undefined, 'refund')
@@ -1050,17 +1050,17 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual((await graph.values('s1')).map((each) => [each.value, each.kind]), [[200, undefined], [350, undefined], [300, 'refund'], [299.9, 'refund'], [100, 'write_off']])
       assert.deepEqual(await worth(), { outcomes: 3, first: 600, now: 250, refunded: 250.1, writtenOff: 199.9, zeroed: 1, firstUnknown: 0 })
       const report = await graph.report({ from: '2026-03-02', to: '2026-03-02' })
-      assert.deepEqual(report.rows.find((row) => row.campaignId === '111')!.worth, { outcomes: 2, first: 400, now: 100, refunded: 250.1, writtenOff: 199.9, zeroed: 1, firstUnknown: 0 })
+      assert.deepEqual(report.rows.find((row) => row.campaignId === '111')!.valueChange, { outcomes: 2, first: 400, now: 100, refunded: 250.1, writtenOff: 199.9, zeroed: 1, firstUnknown: 0 })
       assert.deepEqual(report.months.map((each) => [each.month, each.refunded, each.writtenOff]), [['2026-03', 250.1, 199.9]])
       // Said again, it counts once. A journey says why.
       await graph.restate('s2', 0, undefined, 'refund')
       assert.equal((await worth()).refunded, 250.1)
       assert.deepEqual((await graph.journey('lead:1')).entries.flatMap((entry) => (entry.kind === 'value' && entry.transactionId === 's2' ? [entry.to.kind] : [])), ['refund'])
       // One said by mistake is taken back, and no more than was said: the rest was no refund.
-      await assert.rejects(graph.restate('s3', 160, undefined, 'refund'), /not had that much refunded/)
-      await assert.rejects(graph.restate('s1', 301, undefined, 'write_off'), /not had that much written off/)
+      await assert.rejects(graph.restate('s3', 160, undefined, 'refund'), /cannot reverse more than was refunded/)
+      await assert.rejects(graph.restate('s1', 301, undefined, 'write_off'), /cannot reverse more than was written off/)
       await assert.rejects(graph.restate('s3', 100, 'CAD', 'refund'), /currency/)
-      await assert.rejects(graph.restate('s3', 100, undefined, 'gift' as never), /`refund` or a `write_off`/)
+      await assert.rejects(graph.restate('s3', 100, undefined, 'gift' as never), /`refund` or `write_off`/)
       assert.equal((await graph.values('s3')).at(-1)!.value, 150)
       await graph.restate('s1', 299.9, undefined, 'write_off')
       await graph.restate('s2', 200, undefined, 'refund')
@@ -1069,15 +1069,15 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await graph.outcome({ transactionId: 'large', subject: 'lead:2', at: clock.now - 90 * DAY, stage: 'client', value: 100_000_000, currency: 'USD' })
       await graph.restate('large', 99_999_999.9, undefined, 'refund')
       await graph.restate('large', 1)
-      await assert.rejects(graph.restate('large', 1.1001, undefined, 'refund'), /not had that much refunded/)
+      await assert.rejects(graph.restate('large', 1.1001, undefined, 'refund'), /cannot reverse more than was refunded/)
       assert.equal(await graph.restate('large', 1.1, undefined, 'refund'), true)
-      await assert.rejects(graph.restate('large', 1.2, undefined, 'refund'), /not had that much refunded/)
+      await assert.rejects(graph.restate('large', 1.2, undefined, 'refund'), /cannot reverse more than was refunded/)
       await graph.withdraw('large')
       // What it was corrected from has no part in how much may be taken back.
       await graph.outcome({ transactionId: 'typo', subject: 'lead:2', at: clock.now - 90 * DAY, stage: 'client', value: 1e16, currency: 'USD' })
       await graph.restate('typo', 10)
       await graph.restate('typo', 9, undefined, 'refund')
-      await assert.rejects(graph.restate('typo', 11, undefined, 'refund'), /not had that much refunded/)
+      await assert.rejects(graph.restate('typo', 11, undefined, 'refund'), /cannot reverse more than was refunded/)
       assert.equal(await graph.restate('typo', 10, undefined, 'refund'), true)
       await graph.withdraw('typo')
       // Many small ones after a large one round down as they are added, and still come back in full.
@@ -1087,14 +1087,14 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
         await graph.restate('many', 0.02)
         await graph.restate('many', 0, undefined, 'refund')
       }
-      await assert.rejects(graph.restate('many', 100_000_000.41, undefined, 'refund'), /not had that much refunded/)
+      await assert.rejects(graph.restate('many', 100_000_000.41, undefined, 'refund'), /cannot reverse more than was refunded/)
       assert.equal(await graph.restate('many', 100_000_000.4, undefined, 'refund'), true)
       await graph.withdraw('many')
       // In another currency now, what was lost in the one before stays in the sum, and the report says which it adds up.
       // It cannot be taken back in the new one.
       await graph.restate('s1', 250, 'CAD')
       await graph.restate('s1', 240, undefined, 'refund')
-      await assert.rejects(graph.restate('s1', 251, undefined, 'refund'), /not had that much refunded/)
+      await assert.rejects(graph.restate('s1', 251, undefined, 'refund'), /cannot reverse more than was refunded/)
       await graph.restate('s1', 250, undefined, 'refund')
       await graph.restate('s1', 250, 'EUR')
       assert.equal((await worth()).refunded, 50.1)
@@ -1131,21 +1131,21 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
           assert.deepEqual([parts.reduce((sum, part) => sum + part.outcomes, 0), parts.reduce((sum, part) => sum + part.value, 0), parts.reduce((sum, part) => sum + part.missed, 0)], [row.outcomes, row.value, row.missed], by)
           for (const [stage, { count }] of Object.entries(row.stages)) assert.equal(parts.reduce((sum, part) => sum + (part.stages[stage]?.count ?? 0), 0), count)
         }
-        assert.equal(report.total.breakdown!.at(-1)!.name, '(not recorded)')
+        assert.equal(report.total.breakdown!.at(-1)!.name, '(not set)')
         return Object.fromEntries(report.total.breakdown!.map((part) => [part.name, [part.outcomes, part.value, part.missed]]))
       }
       // Where it was advertised and where the person was served are two things, and neither is guessed.
-      assert.deepEqual(await split('touch.office_advertised'), { north: [2, 300, 0], river: [0, 0, 1], '(not recorded)': [1, 300, 0] })
-      assert.deepEqual(await split('outcome.office_served'), { north: [1, 200, 0], river: [1, 100, 0], '(not recorded)': [1, 300, 1] })
-      assert.deepEqual(await split('touch.language'), { en: [0, 0, 1], es: [1, 100, 0], '(not recorded)': [2, 500, 0] })
-      assert.deepEqual(await split('outcome.language'), { es: [1, 100, 1], '(not recorded)': [2, 500, 0] })
-      assert.deepEqual(await split('outcome.nobody_said'), { '(not recorded)': [3, 600, 1] })
-      assert.deepEqual(await split('outcome.constructor'), { '(not recorded)': [3, 600, 1] })
+      assert.deepEqual(await split('touch.office_advertised'), { north: [2, 300, 0], river: [0, 0, 1], '(not set)': [1, 300, 0] })
+      assert.deepEqual(await split('outcome.office_served'), { north: [1, 200, 0], river: [1, 100, 0], '(not set)': [1, 300, 1] })
+      assert.deepEqual(await split('touch.language'), { en: [0, 0, 1], es: [1, 100, 0], '(not set)': [2, 500, 0] })
+      assert.deepEqual(await split('outcome.language'), { es: [1, 100, 1], '(not set)': [2, 500, 0] })
+      assert.deepEqual(await split('outcome.nobody_said'), { '(not set)': [3, 600, 1] })
+      assert.deepEqual(await split('outcome.constructor'), { '(not set)': [3, 600, 1] })
       // Ten in the morning in New York, and the next morning.
-      assert.deepEqual(await split('hour', 'America/New_York'), { '06': [1, 300, 0], '10': [0, 0, 1], '11': [1, 100, 0], '12': [1, 200, 0], '(not recorded)': [0, 0, 0] })
-      assert.deepEqual(Object.keys(await split('weekday')), ['Mon', 'Tue', '(not recorded)'])
+      assert.deepEqual(await split('hour', 'America/New_York'), { '06': [1, 300, 0], '10': [0, 0, 1], '11': [1, 100, 0], '12': [1, 200, 0], '(not set)': [0, 0, 0] })
+      assert.deepEqual(Object.keys(await split('weekday')), ['Mon', 'Tue', '(not set)'])
       const inOrder = (await graph.report({ from: '2026-03-02', to: '2026-03-03', by: 'hour', timeZone: 'America/New_York' })).total.breakdown!.map((part) => part.name)
-      assert.deepEqual(inOrder, ['06', '10', '11', '12', '(not recorded)'])
+      assert.deepEqual(inOrder, ['06', '10', '11', '12', '(not set)'])
       const report = await graph.report({ from: '2026-03-02', to: '2026-03-03' })
       assert.deepEqual(report.dimensions, ['hour', 'weekday', 'outcome.language', 'outcome.office_served', 'touch.language', 'touch.office_advertised'])
       assert.equal('breakdown' in report.rows[0]!, false)
@@ -1154,7 +1154,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await graph.restate('e1', 5)
       assert.deepEqual((await graph.outcomeOf('e1'))!.tags, { office_served: 'river', language: 'es' })
       await graph.forget('contact:1')
-      assert.deepEqual(await split('outcome.office_served'), { north: [1, 200, 0], '(not recorded)': [1, 300, 1] })
+      assert.deepEqual(await split('outcome.office_served'), { north: [1, 200, 0], '(not set)': [1, 300, 1] })
       // An answered call carries its tags on to its outcome, also where the answer came later.
       await recordCall(graph, { id: 'A1', from: '+15550100062', to: '+15550100009', at: day, duration: 60, tags: { language: ' es ' } }, { results: 'expected' })
       await recordCallResult(graph, { id: 'A1', answered: true }, { results: 'expected' })
@@ -1168,16 +1168,16 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await recordCall(graph, { id: 'N2', from: '+15550100064', to: '+15550100008', at: day, duration: 60 }, { numbers: { '+15550100008': { source: 'x', tags: { office_advertised: ' north ' } } } })
       assert.equal((await graph.report({ from: '2026-03-02', to: '2026-03-02', by: 'touch.office_advertised' })).rows.find((row) => row.source === 'x')!.breakdown![0]!.name, 'north')
       // An arrival that says it is not recorded is one that says nothing.
-      await graph.touch({ subject: 'visitor:8', at: day, gclid: 'G8', custom: { office: ' (not recorded) ' } })
+      await graph.touch({ subject: 'visitor:8', at: day, gclid: 'G8', custom: { office: ' (not set) ' } })
       await assert.rejects(graph.touch({ subject: 'visitor:8', at: day + 1, gclid: 'G8', custom: { office: null as unknown as string } }), TypeError)
       await graph.outcome({ transactionId: 'e8', subject: 'visitor:8', at: day + HOUR, stage: 'enrolled' })
-      assert.equal((await graph.report({ from: '2026-03-02', to: '2026-03-03', by: 'touch.office_advertised' })).total.breakdown!.filter((part) => part.name.includes('not recorded')).length, 1)
+      assert.equal((await graph.report({ from: '2026-03-02', to: '2026-03-03', by: 'touch.office_advertised' })).total.breakdown!.filter((part) => part.name.includes('not set')).length, 1)
       // A parameter that cannot be asked for is not offered.
       await graph.touch({ subject: 'visitor:9', at: day, gclid: 'G9', custom: { 'two words': 'x' } })
       assert.ok((await graph.report({ from: '2026-03-02', to: '2026-03-02' })).dimensions.every((each) => !each.includes(' ')))
 
       const nine = Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`tag_${'abcdefghi'[i]}`, 'x']))
-      for (const tags of [nine, { Office: 'x' }, { office: '' }, { office: 'x'.repeat(65) }, { office: 5 }, { office: '(not recorded)' }, ['x'], 'x']) await assert.rejects(graph.outcome({ transactionId: 'bad', subject: 'contact:1', at: day, tags: tags as never }), TypeError)
+      for (const tags of [nine, { Office: 'x' }, { office: '' }, { office: 'x'.repeat(65) }, { office: 5 }, { office: '(not set)' }, ['x'], 'x']) await assert.rejects(graph.outcome({ transactionId: 'bad', subject: 'contact:1', at: day, tags: tags as never }), TypeError)
       for (const by of ['office', 'touch.', 'touch.a b', 'outcome', 'minute']) await assert.rejects(graph.report({ from: '2026-03-02', to: '2026-03-03', by }), TypeError)
     })
 
@@ -1198,11 +1198,11 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const asked = await graph.followed({ from: '2023-11-14', to: '2023-11-20', step: 'client', days: 30, least: 1 })
       const rows = (by: string) => asked.groups.find((each) => each.by === by)!.rows.map((row) => [row.name, row.people, row.reached])
       assert.deepEqual(rows('answer'), [['answered', 1, 1], ['missed', 1, 0]])
-      assert.deepEqual(rows('language'), [['es', 1, 1], ['(not recorded)', 1, 0]])
+      assert.deepEqual(rows('language'), [['es', 1, 1], ['(not set)', 1, 0]])
       assert.deepEqual(rows('returned'), [['returned within a day', 1, 0]])
       // With the usual least of twenty, nothing so thin is shown.
       const usual = await graph.followed({ from: '2023-11-14', to: '2023-11-20', step: 'client', days: 30 })
-      assert.deepEqual(usual.groups.map((each) => [each.rows.length, each.thin]), [[0, 2], [0, 1], [0, 2], [0, 1]])
+      assert.deepEqual(usual.groups.map((each) => [each.rows.length, each.suppressed]), [[0, 2], [0, 1], [0, 2], [0, 1]])
       await graph.forget('contact:a')
       assert.deepEqual((await graph.followed({ from: '2023-11-14', to: '2023-11-20', step: 'client', days: 30, least: 1 })).groups[0]!.rows.map((row) => row.reached), [0, 0])
       for (const bad of [{ step: '' }, { days: 0 }, { days: 1.5 }, { days: 400 }, { from: '2023-12-01' }]) await assert.rejects(graph.followed({ from: '2023-11-14', to: '2023-11-20', step: 'client', days: 30, ...bad }), TypeError)
@@ -1595,7 +1595,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await seen(), { report: [1, 10, 1, 1, 3], row: [[1, 1]], spanish: [[1, 1]], calls: [1, 0, 1, 2], open: ['C3'], board: [1, 0, 1], first: 1 })
       // It is there to be seen, and said again in other words it is still one.
       await recordNotLead(graph, { call: 'C2', kind: 'other' }, options)
-      const told = (await graph.journey('lead:a')).entries.find((entry) => entry.kind === 'step') as any
+      const told = (await graph.journey('lead:a')).entries.find((entry) => entry.kind === 'outcome') as any
       assert.deepEqual([told.outcome.transactionId, told.notLead], ['inquiry-a', 'spam'])
       const rang = (await graph.journey(`caller:${hashPhone('+15550100072')}`)).entries.find((entry) => entry.kind === 'call') as any
       assert.equal(rang.notLead, 'other')
@@ -1608,7 +1608,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const [, waiting] = await graph.openCalls(days)
       assert.deepEqual([waiting!.call.id, waiting!.followUp.state], ['C6', 'open'])
       const after = (await graph.callSummary({ ...days, at: T0 + DAY, ...options })).total
-      assert.deepEqual([after.triedAgain, after.notLeads], [0, 3])
+      assert.deepEqual([after.calledAgain, after.notLeads], [0, 3])
       assert.equal((await graph.board({ steps: [{ name: 'call' }], at: T0 + DAY })).columns[0]!.people, 2)
       // In the report once, whether or not it ever was an outcome.
       assert.equal((await graph.report(days)).total.notLeads, 4)
@@ -1673,7 +1673,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const journey = await graph.journey('contact:j')
       const say = (entry: (typeof journey.entries)[number]) => `${(entry.at - T0) / HOUR === Math.floor((entry.at - T0) / HOUR) ? (entry.at - T0) / HOUR : 'x'} ${entry.kind} ${entry.subject === callerId ? 'caller' : entry.subject}`
       assert.deepEqual(journey.entries.map(say), [
-        '0 arrival visitor:j', '0 seen visitor:j', '1 seen visitor:j', 'x call caller', '3 call caller', '5 consent contact:j', '5 seen contact:j', '6 step contact:j', '30 value contact:j', '31 decision contact:j',
+        '0 visit visitor:j', '0 sighting visitor:j', '1 sighting visitor:j', 'x call caller', '3 call caller', '5 consent contact:j', '5 sighting contact:j', '6 outcome contact:j', '30 value contact:j', '31 decision contact:j',
       ])
       assert.deepEqual([journey.next, journey.more], [null, 0])
       const [tap, miss, step, value] = [journey.entries[2], journey.entries[3], journey.entries[7], journey.entries[8]] as any[]
@@ -1681,9 +1681,9 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual([miss.call.id, miss.call.visitor, miss.followUp.state, miss.call.tags], ['J1', 'visitor:j', 'returned', { language: 'es' }])
       assert.deepEqual([step.first.value, step.outcome.value, value.from.value, value.to.value], [100, 250, 100, 250])
       // Why each subject is this person: itself, and by what it is tied.
-      assert.deepEqual(Object.keys(journey.ties).sort(), [callerId, 'contact:j', 'visitor:j'].sort())
-      assert.deepEqual([journey.ties['contact:j']!.how, journey.ties['contact:j']!.score], ['self', 1])
-      const tie = journey.ties['visitor:j']!
+      assert.deepEqual(Object.keys(journey.subjects).sort(), [callerId, 'contact:j', 'visitor:j'].sort())
+      assert.deepEqual([journey.subjects['contact:j']!.how, journey.subjects['contact:j']!.score], ['self', 1])
+      const tie = journey.subjects['visitor:j']!
       assert.deepEqual([tie.how, tie.kinds, tie.via], ['cluster', ['device'], ['contact:j']])
       assert.ok(tie.score! > 0.9)
       // Asked of any of them, it is the same story.
@@ -1691,7 +1691,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
 
       // A page holds the newest, and ends between moments and not inside one.
       const page = await graph.journey('contact:j', { limit: 4 })
-      assert.deepEqual(page.entries.map((entry) => entry.kind), ['consent', 'seen', 'step', 'value', 'decision'])
+      assert.deepEqual(page.entries.map((entry) => entry.kind), ['consent', 'sighting', 'outcome', 'value', 'decision'])
       const before = await graph.journey('contact:j', { limit: 99, before: page.next! })
       assert.deepEqual([...before.entries, ...page.entries].map(say), journey.entries.map(say))
 
@@ -1713,8 +1713,8 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await see('w:4', 'device:34')
       const asked = await graph.journey('w:1')
       assert.deepEqual(asked.entries.map((entry) => entry.subject), ['w:1', 'w:2', 'w:3', 'w:4'])
-      assert.deepEqual([asked.ties['w:4']!.how, asked.ties['w:4']!.via, asked.ties['w:4']!.kinds], ['cluster', ['w:1', 'w:2', 'w:3'], ['device']])
-      assert.ok(asked.ties['w:4']!.score! > 0.8)
+      assert.deepEqual([asked.subjects['w:4']!.how, asked.subjects['w:4']!.via, asked.subjects['w:4']!.kinds], ['cluster', ['w:1', 'w:2', 'w:3'], ['device']])
+      assert.ok(asked.subjects['w:4']!.score! > 0.8)
       // Four of one person, and y kept apart from one of them, with a cut between. x is tied to one of the four only, and z best through y.
       for (const each of ['a:1', 'a:2', 'a:3', 'a:4']) await see(each, 'device:a', 'email:a')
       await see('a:1', 'device:y', 'device:z')
@@ -1724,13 +1724,13 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await see('a:4', 'device:x')
       await graph.separate('a:2', 'y', true)
       assert.notEqual((await graph.cluster('a:1'))!.id, (await graph.cluster('z'))!.id)
-      const people = async (subject: string) => Object.keys((await graph.journey(subject)).ties).sort()
+      const people = async (subject: string) => Object.keys((await graph.journey(subject)).subjects).sort()
       for (const each of ['a:1', 'a:2', 'a:3', 'a:4']) assert.deepEqual(await people(each), ['a:1', 'a:2', 'a:3', 'a:4', 'x', 'z'])
-      assert.deepEqual((await graph.journey('a:3')).ties.x!.via, ['a:4'])
+      assert.deepEqual((await graph.journey('a:3')).subjects.x!.via, ['a:4'])
       // A sighting called after a call or a review that no call or decision tells stays.
       await graph.observe({ subject: 'w:1', identifiers: ['device:12'], at: T0 + 1, event: 'call' })
       await graph.observe({ subject: 'w:1', identifiers: ['device:12'], at: T0 + 2, event: 'review' })
-      assert.deepEqual((await graph.journey('w:1')).entries.slice(-2).map((entry) => entry.kind === 'seen' && entry.event), ['call', 'review'])
+      assert.deepEqual((await graph.journey('w:1')).entries.slice(-2).map((entry) => entry.kind === 'sighting' && entry.event), ['call', 'review'])
       await assert.rejects(graph.journey('w:1', { limit: 0 }), TypeError)
     })
 
@@ -2187,8 +2187,8 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const card = { weight: 0.95, dilution: 0, cap: 10, halfLife: Infinity }
       const wide = createGraph(store, { ...defaultPolicy, kinds: { ...defaultPolicy.kinds, card } })
       await wide.observe([{ subject: 'z:1', identifiers: ['card:x'], at: T0 }, { subject: 'z:2', identifiers: ['card:x'], at: T0 }, { subject: 'z:3', identifiers: ['card:y'], at: T0 }])
-      await assert.rejects(graph.verify(), /"card:x" has a kind the policy does not name/)
-      await assert.rejects(graph.rebuild(), /"card:x" has a kind the policy does not name/)
+      await assert.rejects(graph.verify(), /"card:x" has a kind that is missing from the policy/)
+      await assert.rejects(graph.rebuild(), /"card:x" has a kind that is missing from the policy/)
       for (const subject of ['z:1', 'z:2', 'z:3']) await wide.forget(subject)
       // As of now, the copy is the graph, and it moved as often as if it had been read at once.
       const past = await graph.asOf(Date.now())
@@ -2394,7 +2394,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await graph.links('c'))[0]!.level, 'related')
       assert.deepEqual(await graph.verify(), [])
       // The default policy knows no names.
-      await assert.rejects((await fresh()).graph.observe({ subject: 'a', identifiers: both, at: T0 }), /kind the policy does not name/)
+      await assert.rejects((await fresh()).graph.observe({ subject: 'a', identifiers: both, at: T0 }), /kind that is missing from the policy/)
     })
 
     test('overlapping writes leave clusters sound', async () => {

@@ -137,7 +137,7 @@ const HIDDEN = new Set(['+266696687', '+7378742833', '+86282452253', '+2562533',
  * reading every tap there ever was. A note links nothing.
  */
 export function dialed(number: string, at: number, country?: string): Identifier {
-  if (!Number.isSafeInteger(at)) throw new TypeError('A tap needs a time in whole epoch milliseconds')
+  if (!Number.isSafeInteger(at)) throw new TypeError('A tap requires `at`, an integer in epoch milliseconds')
   return `dialed:${normalizePhone(number, country)}@${Math.floor(at / BUCKET)}`
 }
 
@@ -149,12 +149,12 @@ export function dialed(number: string, at: number, country?: string): Identifier
  * Otherwise the call is filed under the channel its tracking number is published on.
  */
 export async function recordCall(graph: Graph, call: Call, options: CallOptions = {}): Promise<RecordedCall> {
-  if (typeof call?.id !== 'string' || !/^[\w.-]{1,128}$/.test(call.id)) throw new TypeError('A call needs an id of letters, digits, dots, dashes or underscores')
-  if (!Number.isSafeInteger(call.at)) throw new TypeError(`Call "${call.id}" needs a time in whole epoch milliseconds`)
-  if (call.duration !== undefined && !(typeof call.duration === 'number' && Number.isFinite(call.duration) && call.duration >= 0)) throw new TypeError(`Call "${call.id}" needs its duration in seconds`)
-  if (call.direction !== undefined && call.direction !== 'inbound' && call.direction !== 'outbound') throw new TypeError(`Call "${call.id}" needs its direction, inbound or outbound`)
+  if (typeof call?.id !== 'string' || !/^[\w.-]{1,128}$/.test(call.id)) throw new TypeError('A call requires an id of letters, digits, dots, dashes or underscores')
+  if (!Number.isSafeInteger(call.at)) throw new TypeError(`Call "${call.id}" requires "at", an integer in epoch milliseconds`)
+  if (call.duration !== undefined && !(typeof call.duration === 'number' && Number.isFinite(call.duration) && call.duration >= 0)) throw new TypeError(`Call "${call.id}" requires its duration in seconds`)
+  if (call.direction !== undefined && call.direction !== 'inbound' && call.direction !== 'outbound') throw new TypeError(`Call "${call.id}" requires its direction, inbound or outbound`)
   const result = resultIn(call, `Call "${call.id}"`)
-  if (typeof call.to !== 'string') throw new TypeError(`Call "${call.id}" needs the number that was rung`)
+  if (typeof call.to !== 'string') throw new TypeError(`Call "${call.id}" requires "to", the dialed number`)
   const to = normalizePhone(call.to, options.country)
   const tags = checkTags(call.tags, `Call "${call.id}"`)
   const { id, at } = call
@@ -181,7 +181,7 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
     return { subject: before.subject, flags: [], counted: settled?.counted ?? false, state: kept ? callState(kept, (options.now ?? Date.now)(), options) : 'unknown', duplicate: true }
   }
   const saved = await graph.keptCall(id)
-  if (saved?.direction === 'outbound') throw new TypeError(`Call "${id}" was already recorded as a call you placed`)
+  if (saved?.direction === 'outbound') throw new TypeError(`Call "${id}" is already recorded as outbound`)
   if (!saved && from !== undefined && leftOut(from, options)) return { subject, flags: ['left_out'], counted: false, state: 'unknown', duplicate: false }
   if (result) await graph.keepCallResult(id, result)
 
@@ -240,11 +240,11 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
 
 /** Records a call you placed. Nothing is observed: that you rang someone says nothing about who they are. */
 async function placed(graph: Graph, call: Call, theirs: string, result: Omit<CallResult, 'recorded'> | undefined, tags: Record<string, string> | undefined, options: CallOptions): Promise<RecordedCall> {
-  if (typeof call.from !== 'string') throw new TypeError(`Call "${call.id}" needs the number of yours it was placed from`)
+  if (typeof call.from !== 'string') throw new TypeError(`Call "${call.id}" requires "from", the number it was placed from`)
   const ours = normalizePhone(call.from, options.country)
   const subject = `caller:${hashPhone(theirs)}`
   const before = await graph.keptCall(call.id)
-  if (before && before.direction !== 'outbound') throw new TypeError(`Call "${call.id}" was already recorded as a call to you`)
+  if (before && before.direction !== 'outbound') throw new TypeError(`Call "${call.id}" is already recorded as inbound`)
   if (!before && leftOut(theirs, options)) return { subject, flags: ['left_out'], counted: false, state: 'unknown', duplicate: false }
   if (result) await graph.keepCallResult(call.id, result)
   if (!before) {
@@ -275,18 +275,18 @@ export function followUp(miss: KeptCall, calls: readonly KeptCall[]): FollowUp {
     // An answered call reaches the caller after its wait, where that is known.
     const reached = call.at + (call.result?.answered ? (call.result.waited ?? 0) * 1000 : 0)
     if (told && told.result!.returned! < reached) continue
-    if (call.result?.answered) return { state: call.direction === 'outbound' ? 'returned' : 'tried again', by: call.id, delay: call.at - miss.at, attempts }
+    if (call.result?.answered) return { state: call.direction === 'outbound' ? 'returned' : 'called again', by: call.id, delay: call.at - miss.at, attempts }
     if (call.direction === 'outbound') attempts += 1
   }
-  if (told) return { state: 'returned', by: told.id, delay: told.result!.returned! - miss.at, told: true, attempts }
+  if (told) return { state: 'returned', by: told.id, delay: told.result!.returned! - miss.at, reported: true, attempts }
   return { state: 'open', attempts }
 }
 
 /** The result a call or a report of one carries, checked. Undefined when it says nothing of how the call went. */
 function resultIn(given: { answered?: unknown; voicemail?: unknown; waited?: unknown }, what: string): Omit<CallResult, 'recorded'> | undefined {
   const { answered, voicemail, waited } = given
-  for (const [name, value] of [['answered', answered], ['voicemail', voicemail]] as const) if (value !== undefined && typeof value !== 'boolean') throw new TypeError(`${what} needs ${name} as true or false`)
-  if (waited !== undefined && !(typeof waited === 'number' && Number.isFinite(waited) && waited >= 0)) throw new TypeError(`${what} needs its wait in seconds`)
+  for (const [name, value] of [['answered', answered], ['voicemail', voicemail]] as const) if (value !== undefined && typeof value !== 'boolean') throw new TypeError(`${what} requires ${name} as true or false`)
+  if (waited !== undefined && !(typeof waited === 'number' && Number.isFinite(waited) && waited >= 0)) throw new TypeError(`${what} requires its wait in seconds`)
   if (answered === true && voicemail === true) throw new TypeError(`${what} cannot be answered by a person and go to voicemail`)
   // Voicemail is not a person, so it says nobody answered.
   const heard = voicemail === true ? false : (answered as boolean | undefined)
@@ -354,9 +354,9 @@ async function tell(graph: Graph, id: string, result: Omit<CallResult, 'recorded
  * itself has not been recorded.
  */
 export async function recordCallResult(graph: Graph, report: { id: string; answered: boolean; voicemail?: boolean; waited?: number }, options: CallOptions = {}): Promise<{ state: CallState; counted: boolean } | undefined> {
-  if (typeof report?.id !== 'string' || !/^[\w.-]{1,128}$/.test(report.id)) throw new TypeError('A call result needs the id of its call')
+  if (typeof report?.id !== 'string' || !/^[\w.-]{1,128}$/.test(report.id)) throw new TypeError('A call result requires the id of its call')
   const result = resultIn(report, `The result of call "${report.id}"`)
-  if (result?.answered === undefined) throw new TypeError(`The result of call "${report.id}" needs answered, true or false`)
+  if (result?.answered === undefined) throw new TypeError(`The result of call "${report.id}" requires answered, true or false`)
   return tell(graph, report.id, result, options)
 }
 
@@ -369,19 +369,19 @@ export async function recordCallResult(graph: Graph, report: { id: string; answe
  * recorded or was not missed.
  */
 export async function recordReturn(graph: Graph, report: { id: string; at?: number; returned?: boolean }, options: Pick<CallOptions, 'now'> = {}): Promise<FollowUp | undefined> {
-  if (typeof report?.id !== 'string' || !/^[\w.-]{1,128}$/.test(report.id)) throw new TypeError('A return needs the id of the call it is about')
-  if (report.returned !== undefined && typeof report.returned !== 'boolean') throw new TypeError(`The return of call "${report.id}" needs returned as true or false`)
+  if (typeof report?.id !== 'string' || !/^[\w.-]{1,128}$/.test(report.id)) throw new TypeError('A return requires the id of the call it is about')
+  if (report.returned !== undefined && typeof report.returned !== 'boolean') throw new TypeError(`The return of call "${report.id}" requires returned as true or false`)
   const undone = report.returned === false
   let at = 0
   if (!undone) {
     const now = (options.now ?? Date.now)()
     at = report.at ?? now
-    if (!Number.isSafeInteger(at)) throw new TypeError(`The return of call "${report.id}" needs a time in whole epoch milliseconds`)
+    if (!Number.isSafeInteger(at)) throw new TypeError(`The return of call "${report.id}" requires "at", an integer in epoch milliseconds`)
     if (at > now) throw new TypeError(`The return of call "${report.id}" is in the future`)
   }
   const call = await graph.keptCall(report.id)
-  if (call?.direction === 'outbound') throw new TypeError(`Call "${report.id}" is one you placed, so there is nothing to return`)
-  if (!undone && call && at <= call.at) throw new TypeError(`Call "${report.id}" began after it is said to have been returned`)
+  if (call?.direction === 'outbound') throw new TypeError(`Call "${report.id}" is outbound and cannot be returned`)
+  if (!undone && call && at <= call.at) throw new TypeError(`Call "${report.id}" starts after its reported return`)
   await graph.keepReturn(report.id, undone ? undefined : at)
   const kept = call && (await graph.keptCall(report.id))
   return kept?.result?.answered === false ? followUp(kept, await graph.callsOf([kept.subject])) : undefined
@@ -396,7 +396,7 @@ export async function recordReturn(graph: Graph, report: { id: string; at?: numb
  */
 export async function recordNotLead(graph: Graph, report: { call?: string; transactionId?: string; kind?: NotLead['kind']; lead?: boolean }, options: CallOptions = {}): Promise<{ id: string; lead: boolean }> {
   const { call, transactionId, kind = 'other', lead = false } = report ?? {}
-  if ((call === undefined) === (transactionId === undefined)) throw new TypeError('Say which: a `call`, or the `transactionId` of an outcome')
+  if ((call === undefined) === (transactionId === undefined)) throw new TypeError('Set either `call` or `transactionId`')
   if (call !== undefined && (typeof call !== 'string' || !/^[\w.-]{1,128}$/.test(call))) throw new TypeError('`call` must be the id of a call')
   if (typeof lead !== 'boolean') throw new TypeError('`lead` must be true or false')
   const id = call !== undefined ? `call:${call}` : transactionId!

@@ -4,7 +4,7 @@ import type { Touch } from './types.ts'
 export type Tags = Record<string, string>
 
 /** Where nothing was recorded. Always a line of its own, never folded into another and never left out. */
-export const NOT_RECORDED = '(not recorded)'
+export const NOT_SET = '(not set)'
 
 /** How a dimension's own name may be written. */
 export const DIMENSION = /^[\w.-]{1,64}$/
@@ -12,14 +12,14 @@ export const DIMENSION = /^[\w.-]{1,64}$/
 /** Tags checked and copied, or undefined for none. Throws when they are not a few short codes. */
 export function checkTags(given: unknown, what: string): Tags | undefined {
   if (given === undefined || given === null) return undefined
-  if (typeof given !== 'object' || Array.isArray(given)) throw new TypeError(`${what} needs its tags as an object, such as {"language":"es"}`)
+  if (typeof given !== 'object' || Array.isArray(given)) throw new TypeError(`${what} requires its tags as an object, such as {"language":"es"}`)
   const entries = Object.entries(given)
   if (entries.length > 8) throw new TypeError(`${what} has more than 8 tags`)
   for (const [name, value] of entries) {
     if (!/^[a-z_]{1,32}$/.test(name)) throw new TypeError(`${what} has a tag named "${name}"; a name is lowercase letters and underscores, at most 32`)
-    if (typeof value !== 'string' || !value.trim() || value.length > 64) throw new TypeError(`${what} needs its tag "${name}" as text of at most 64 characters`)
+    if (typeof value !== 'string' || !value.trim() || value.length > 64) throw new TypeError(`${what} requires its tag "${name}" as a string of at most 64 characters`)
     // It would read as a value that was never recorded.
-    if (value.trim() === NOT_RECORDED) throw new TypeError(`${what} cannot have "${NOT_RECORDED}" as its tag "${name}"; leave the tag out`)
+    if (value.trim() === NOT_SET) throw new TypeError(`${what} cannot have "${NOT_SET}" as its tag "${name}"; leave the tag out`)
   }
   return entries.length > 0 ? Object.fromEntries(entries.map(([name, value]) => [name, value.trim()])) : undefined
 }

@@ -193,7 +193,7 @@ export function configFrom(env: Env) {
     } catch {
       wrong.push(`CALL_NUMBERS: "${number}" is not a phone number`)
     }
-    if (typeof channel?.source !== 'string' || !channel.source) wrong.push(`CALL_NUMBERS: "${number}" needs a source, such as {"source":"google"}`)
+    if (typeof channel?.source !== 'string' || !channel.source) wrong.push(`CALL_NUMBERS: "${number}" requires a source, such as {"source":"google"}`)
     try {
       checkTags(channel?.tags, `"${number}"`)
     } catch (error) {
@@ -231,7 +231,7 @@ export function configFrom(env: Env) {
   const far = config.origins.find((origin) => !/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|[^/]+\.localhost)(:\d+)?$/.test(origin))
   const secrets = { GRAPH_TOKEN: [config.token], REVIEW_TOKENS: Object.values(config.reviewers ?? {}).flat(), LINK_SECRET: [config.linkSecret] }
   if (far) for (const [name, held] of Object.entries(secrets)) if (held.some((each) => String(each).startsWith('change-me'))) wrong.push(`${name} must be changed before taking visits from ${far}`)
-  if (config.auditHours > 0 && !config.alertWebhook) wrong.push('ALERT_WEBHOOK must be set along with AUDIT_HEAD_HOURS')
+  if (config.auditHours > 0 && !config.alertWebhook) wrong.push('ALERT_WEBHOOK is required with AUDIT_HEAD_HOURS')
   if (wrong.length > 0) throw new Error(`Cannot start:\n  ${wrong.join('\n  ')}`)
   return config
 }
@@ -257,7 +257,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
   const webhook = config.changeWebhook
   const notify = async (changes: Change[]) => {
     const response = await fetch(webhook!, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ changes }) })
-    if (!response.ok) throw new Error(`The change webhook answered ${response.status}`)
+    if (!response.ok) throw new Error(`The change webhook returned ${response.status}`)
   }
   const policy = config.policy ?? defaultPolicy
   // A kind that is stored but not named would stop every link that reaches it, so say so before anything is served.
@@ -298,11 +298,11 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
       ? createOutbox(graph, store.outbox, {
           targets,
           delay: config.outboxDelay,
-          tellForgotten: config.forgetAds,
+          retractOnForget: config.forgetAds,
           onFailed: (jobs) => {
             const lines = jobs.slice(0, 10).map((job) => `• ${job.transactionId} to ${job.target}: ${job.note ?? 'no reason given'}`)
             const more = jobs.length > 10 ? `\n…and ${jobs.length - 10} more` : ''
-            void alert('conversions', `account-graph: ${jobs.length} ${jobs.length === 1 ? 'conversion' : 'conversions'} failed for good.\n${lines.join('\n')}${more}\nList them with GET /conversions?state=failed, and send again with POST /retry.`)
+            void alert('conversions', `account-graph: ${jobs.length} ${jobs.length === 1 ? 'conversion' : 'conversions'} rejected.\n${lines.join('\n')}${more}\nList: GET /conversions?state=failed. Retry: POST /retry.`)
           },
         })
       : undefined
@@ -318,7 +318,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
   }
   const sends = outbox && every(config.outboxInterval, 'outbox', () => outbox.run(), (reason) => {
     log(`outbox: ${reason}`)
-    void alert('outbox', `account-graph: the outbox could not run, so no conversion is being sent. ${reason}`)
+    void alert('outbox', `account-graph: the outbox failed and conversions are not being sent. ${reason}`)
   })
 
   // What campaigns cost, read again every few hours. The last days are read each time, because platforms revise them.
@@ -338,7 +338,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
       log(`costs: ${costs.length} rows from ${name}, ${from} to ${to}`)
     }, (reason) => {
       log(`costs: ${name} failed: ${reason}`)
-      void alert(`costs:${name}`, `account-graph: campaign costs could not be read from ${name}, so the report's costs are going stale. ${reason}`)
+      void alert(`costs:${name}`, `account-graph: reading campaign costs from ${name} failed. ${reason}`)
     }),
   )
 
@@ -347,8 +347,8 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
     config.auditHours > 0
       ? every(Math.max(3_600_000, config.auditHours * 3_600_000), 'audit head', async () => {
           const { sound, brokenAt, head } = await graph.audit()
-          const state = sound ? 'The record is whole.' : `The record was altered at entry ${brokenAt}.`
-          if (head) await alert('audit', `account-graph: decision ${head.seq} has hash ${head.hash}. ${state} Keep this line somewhere the database's owners cannot write.`)
+          const state = sound ? 'Verified.' : `Altered at entry ${brokenAt}.`
+          if (head) await alert('audit', `account-graph: audit log entry ${head.seq}, hash ${head.hash}. ${state} Store this outside the database.`)
         }, (reason) => log(`audit: ${reason}`))
       : undefined
   // Feeds that have gone quiet, callers nobody has rung back, and alerts that were not delivered.

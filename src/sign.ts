@@ -17,7 +17,7 @@ function signature(secret: string, purpose: string, payload: string, expires: nu
  * use from being accepted for another.
  */
 export function signToken(secret: string, purpose: string, payload: string, expires: number): string {
-  if (!secret) throw new TypeError('Signing needs a secret')
+  if (!secret) throw new TypeError('Signing requires a secret')
   return `${encode(payload)}.${Math.floor(expires / 1000).toString(36)}.${signature(secret, purpose, payload, Math.floor(expires / 1000))}`
 }
 
@@ -51,12 +51,12 @@ export interface KnownLinkOptions {
  */
 export function knownLink(url: string, subject: Subject, options: KnownLinkOptions): string {
   if (typeof subject !== 'string' || !subject || subject !== subject.trim() || Buffer.byteLength(subject) > 512) {
-    throw new TypeError('A link needs the subject it is for, in 512 bytes or fewer, with no space around it')
+    throw new TypeError('A link requires the subject it is for, in 512 bytes or fewer, with no space around it')
   }
   const address = new URL(url)
-  if (address.protocol !== 'https:' && address.protocol !== 'http:') throw new TypeError('A link must lead to an http or https address')
+  if (address.protocol !== 'https:' && address.protocol !== 'http:') throw new TypeError('A link must use http or https')
   const lasts = options.lasts ?? 30 * DAY
-  if (!(lasts > 0 && lasts <= 366 * DAY)) throw new TypeError('A link lasts between a moment and 366 days')
+  if (!(lasts > 0 && lasts <= 366 * DAY)) throw new TypeError('A link must last more than zero and at most 366 days')
   const now = (options.now ?? Date.now)()
   address.searchParams.set('ag', signToken(options.secret, 'known', subject, now + lasts))
   return address.href
@@ -79,9 +79,9 @@ export function staffLink(url: string, options: StaffLinkOptions): string {
   const address = new URL(url)
   // The mark is kept in a Secure cookie, which a browser only takes over HTTPS, or from this machine.
   const local = address.protocol === 'http:' && /^(localhost|127\.0\.0\.1|\[::1\]|.*\.localhost)$/.test(address.hostname)
-  if (address.protocol !== 'https:' && !local) throw new TypeError('A staff link must lead to an https address')
+  if (address.protocol !== 'https:' && !local) throw new TypeError('A staff link must use https')
   const lasts = options.lasts ?? 90 * DAY
-  if (!(lasts > 0 && lasts <= 366 * DAY)) throw new TypeError('A mark lasts between a moment and 366 days')
+  if (!(lasts > 0 && lasts <= 366 * DAY)) throw new TypeError('A mark must last more than zero and at most 366 days')
   address.searchParams.set('ag_staff', signToken(options.secret, 'staff', 'staff', (options.now ?? Date.now)() + lasts))
   return address.href
 }

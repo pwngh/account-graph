@@ -48,7 +48,7 @@ export function createFingerprintVerifier(options: FingerprintOptions): Fingerpr
       headers: { authorization: `Bearer ${options.secretKey}`, accept: 'application/json' },
     })
     if (response.status === 404 || response.status === 400) return undefined
-    if (!response.ok) throw new Error(`Fingerprint refused the lookup with ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw new Error(`Fingerprint rejected the lookup with ${response.status}: ${await response.text()}`)
     const event = (await response.json()) as any
     const visitorId = event?.identification?.visitor_id
     if (typeof visitorId !== 'string' || !visitorId) return undefined

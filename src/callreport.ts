@@ -8,9 +8,9 @@ export interface CallCounts extends Record<CallState, number> {
   calls: number
   returned: number
   /** Of those, how many a system of yours reported, and no call shows. */
-  told: number
+  reported: number
   /** Missed and voicemail calls whose caller rang again and got through. */
-  triedAgain: number
+  calledAgain: number
   /** Calls said to be no lead. They are in none of the counts above. */
   notLeads: number
   /** Missed and voicemail calls from a hidden number, which cannot be returned. */
@@ -39,7 +39,7 @@ export interface CallSummary {
 }
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-const none = (): CallCounts => ({ calls: 0, answered: 0, missed: 0, voicemail: 0, waiting: 0, unknown: 0, returned: 0, told: 0, triedAgain: 0, notLeads: 0, hidden: 0 })
+const none = (): CallCounts => ({ calls: 0, answered: 0, missed: 0, voicemail: 0, waiting: 0, unknown: 0, returned: 0, reported: 0, calledAgain: 0, notLeads: 0, hidden: 0 })
 
 /**
  * Counts calls to you. `calls` are those of the period, `later` every call
@@ -82,8 +82,8 @@ export function summarizeCalls(
       counts.calls += 1
       counts[state] += 1
       if (became?.state === 'returned') counts.returned += 1
-      if (became?.told) counts.told += 1
-      if (became?.state === 'tried again') counts.triedAgain += 1
+      if (became?.reported) counts.reported += 1
+      if (became?.state === 'called again') counts.calledAgain += 1
       if (became?.state === 'hidden') counts.hidden += 1
     }
     if (spurned) continue

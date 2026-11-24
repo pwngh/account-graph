@@ -331,9 +331,9 @@ An idle system writes at once, without a timer. A bad observation fails alone.
 `journey` returns everything recorded about a person, in order, across their subjects.
 
 ```ts
-let { entries, ties } = await graph.journey('contact:42')
-// entries: { at, subject, kind: 'arrival' | 'seen' | 'call' | 'step' | 'value' | 'consent' | 'decision', … }
-// ties[subject]: { how: 'self' | 'cluster' | 'linked', score, via, kinds }
+let { entries, subjects } = await graph.journey('contact:42')
+// entries: { at, subject, kind: 'visit' | 'sighting' | 'call' | 'outcome' | 'value' | 'consent' | 'decision', … }
+// subjects[subject]: { how: 'self' | 'cluster' | 'linked', score, via, kinds }
 ```
 
 The person is the subject's cluster, plus any subject linked strongly enough that its visits would be credited. A subject separated from any of them is excluded. `ties` gives the reason and score for each subject. An outcome's conversions are held in the outbox, and `GET /journey` adds them.

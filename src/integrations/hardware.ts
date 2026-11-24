@@ -33,7 +33,7 @@ export async function machineId(platform: NodeJS.Platform = process.platform): P
       if (id) break
     }
   }
-  if (!id) throw new Error(`Could not read a machine id on ${platform}`)
+  if (!id) throw new Error(`Cannot read a machine id on ${platform}`)
   return id.toLowerCase()
 }
 
@@ -43,6 +43,6 @@ export async function machineId(platform: NodeJS.Platform = process.platform): P
  * the value is useless to any other app that reads the same machine id.
  */
 export async function hardwareId(salt: string, platform?: NodeJS.Platform): Promise<Identifier> {
-  if (!salt) throw new TypeError('hardwareId needs a salt that is constant for your app')
+  if (!salt) throw new TypeError('hardwareId requires a salt that is constant for your app')
   return `hardware:${createHmac('sha256', salt).update(await machineId(platform)).digest('hex')}`
 }

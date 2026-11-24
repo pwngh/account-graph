@@ -137,9 +137,9 @@ if (!url) {
       assert.deepEqual((await store.migrate()).slice(0, 1), ['what platforms say they brought'])
       const graph = createGraph(store)
       const [row] = (await graph.report({ from: '1970-01-01', to: '1970-01-02' })).rows
-      assert.deepEqual([row!.cost, row!.claimed], [5, undefined])
+      assert.deepEqual([row!.cost, row!.reported], [5, undefined])
       await graph.spend({ day: '1970-01-02', source: 'google', campaignId: '111', amount: 5, conversions: 3, conversionValue: 30 })
-      assert.deepEqual((await graph.report({ from: '1970-01-01', to: '1970-01-02' })).rows[0]!.claimed, { days: 1, conversions: 3, value: 30, credited: 0, creditedValue: 0 })
+      assert.deepEqual((await graph.report({ from: '1970-01-01', to: '1970-01-02' })).rows[0]!.reported, { days: 1, conversions: 3, value: 30, credited: 0, creditedValue: 0 })
     } finally {
       await pool.query(`drop schema if exists ${schema} cascade`)
     }
@@ -157,7 +157,7 @@ if (!url) {
       await graph.restate('t1', 60, undefined, 'refund')
       assert.deepEqual(await graph.values('t1'), [{ value: 100, currency: 'USD', at: 1000 }, { value: 90, currency: 'USD', at: 2000 }, { value: 60, currency: 'USD', at: 3000, kind: 'refund' }])
       const { total } = await graph.report({ from: '1970-01-01', to: '1970-01-01' })
-      assert.deepEqual([total.worth.first, total.worth.now, total.worth.refunded, total.worth.writtenOff], [100, 60, 30, 0])
+      assert.deepEqual([total.valueChange.first, total.valueChange.now, total.valueChange.refunded, total.valueChange.writtenOff], [100, 60, 30, 0])
     } finally {
       await pool.query(`drop schema if exists ${schema} cascade`)
     }
@@ -172,7 +172,7 @@ if (!url) {
       assert.deepEqual((await store.migrate()).slice(0, 1), ['returns reported by your own systems'])
       const graph = createGraph(store)
       assert.deepEqual((await graph.keptCall('OLD'))!.result, { answered: false, recorded: 1000 })
-      assert.deepEqual(await recordReturn(graph, { id: 'OLD', at: 5000 }), { state: 'returned', by: 'OLD', delay: 4000, told: true, attempts: 0 })
+      assert.deepEqual(await recordReturn(graph, { id: 'OLD', at: 5000 }), { state: 'returned', by: 'OLD', delay: 4000, reported: true, attempts: 0 })
     } finally {
       await pool.query(`drop schema if exists ${schema} cascade`)
     }
@@ -255,12 +255,12 @@ if (!url) {
       await pool.query(`insert into ${schema}.outcome values ('t1', 'account:1', 1767225600000, 'sale', 0, 'USD'), ('t2', 'account:1', 1767225600000, 'sale', 90, 'USD')`)
       await store.migrate()
       const graph = createGraph(store, undefined, { now: () => 1767312000000 })
-      assert.equal((await graph.report({ from: '2026-01-01', to: '2026-01-02' })).total.worth.now, 90)
+      assert.equal((await graph.report({ from: '2026-01-01', to: '2026-01-02' })).total.valueChange.now, 90)
       await graph.restate('t2', 0)
       assert.deepEqual(await graph.values('t2'), [{ value: 90, currency: 'USD', at: 0 }, { value: 0, currency: 'USD', at: 1767312000000 }])
       const report = await graph.report({ from: '2026-01-01', to: '2026-01-02' })
-      assert.deepEqual(report.total.worth, { outcomes: 2, first: 0, now: 0, refunded: 0, writtenOff: 0, zeroed: 1, firstUnknown: 2 })
-      assert.deepEqual(report.months.map((each) => each.month), ['(not recorded)'])
+      assert.deepEqual(report.total.valueChange, { outcomes: 2, first: 0, now: 0, refunded: 0, writtenOff: 0, zeroed: 1, firstUnknown: 2 })
+      assert.deepEqual(report.months.map((each) => each.month), ['(not set)'])
       await graph.forget('account:1')
       assert.deepEqual(await graph.values('t1'), [])
     } finally {

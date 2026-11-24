@@ -108,8 +108,8 @@ export interface Sent {
   target: string
   action: string
   at: number
-  /** `told` was taken back there, `refused` was not, and `untold` is for you to ask, with the platform's own tools. */
-  state: 'told' | 'refused' | 'untold'
+  /** `accepted` means the platform rejected nothing, `rejected` that it did, and `not_requested` that it was not asked. */
+  state: 'accepted' | 'rejected' | 'not_requested'
   /** Why it was refused, or that it may not have arrived. */
   note?: string
 }
@@ -135,7 +135,7 @@ export interface OutboxOptions {
    */
   onFailed?: (jobs: Job[]) => void | Promise<void>
   /** Tell platforms that have a way when someone is forgotten. Off unless asked for. */
-  tellForgotten?: boolean
+  retractOnForget?: boolean
   now?: () => number
   random?: () => number
 }
@@ -179,7 +179,7 @@ export interface Outbox {
   giveBack(transactionId: string): Promise<Job[]>
   /**
    * Forgets a subject the way `graph.forget` does, and says which of its
-   * conversions had reached a platform. With `tellForgotten`, or `retract` for this one, a platform that
+   * conversions had reached a platform. With `retractOnForget`, or `retract` for this one, a platform that
    * has a way is told after the subject is gone here, and not again. What was not
    * told is in the answer and kept nowhere.
    */
@@ -209,7 +209,7 @@ export function sentOf(jobs: readonly Job[]): Sent[] {
     .map((job): [Job, boolean] => [job, reached(job)])
     // One that was picked up may have arrived with no answer. Telling a platform of it could be the first it hears.
     .filter(([job, arrived]) => arrived || (job.attempts > 0 && job.state !== 'skipped' && job.note !== 'unknown_target'))
-    .map(([{ transactionId, target, action, at }, arrived]): Sent => ({ transactionId, target, action, at, state: 'untold', ...(!arrived && { note: 'may not have arrived' }) }))
+    .map(([{ transactionId, target, action, at }, arrived]): Sent => ({ transactionId, target, action, at, state: 'not_requested', ...(!arrived && { note: 'may not have arrived' }) }))
     .sort((x, y) => (x.transactionId < y.transactionId ? -1 : x.transactionId > y.transactionId ? 1 : x.target < y.target ? -1 : 1))
 }
 
@@ -229,7 +229,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
   const lease = options.lease ?? 60_000
   const maxAttempts = options.maxAttempts ?? 8
   const targets = new Map(options.targets.map((target) => [target.name, target]))
-  if (targets.size === 0) throw new TypeError('An outbox needs at least one target')
+  if (targets.size === 0) throw new TypeError('An outbox requires at least one target')
 
   /** Thirty seconds, doubling each try up to an hour, shortened by up to half so workers do not retry in step. */
   const backoff = (attempts: number) => Math.min(3_600_000, 30_000 * 2 ** (attempts - 1)) * (0.5 + random() / 2)
@@ -321,8 +321,8 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
   /** The jobs of an outcome, one for each platform its action names. */
   function prepare(outcome: Outcome, state: 'pending' | 'held'): Job[] {
     const { transactionId, subject, at } = outcome
-    if (!transactionId || !subject) throw new TypeError('An outcome needs a transactionId and a subject')
-    if (!Number.isSafeInteger(at)) throw new TypeError(`Outcome "${transactionId}" needs a time in whole epoch milliseconds`)
+    if (!transactionId || !subject) throw new TypeError('An outcome requires a transactionId and a subject')
+    if (!Number.isSafeInteger(at)) throw new TypeError(`Outcome "${transactionId}" requires "at", an integer in epoch milliseconds`)
     let actions = outcome.action
     if (typeof actions === 'string') {
       if (targets.size > 1) throw new TypeError(`Outcome "${transactionId}" must name its action per target, such as { google: '…' }`)
@@ -426,12 +426,12 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
       return changed
     },
 
-    retraction: { targets: options.targets.filter((target) => target.forget).map((target) => target.name), always: options.tellForgotten ?? false },
+    retraction: { targets: options.targets.filter((target) => target.forget).map((target) => target.name), always: options.retractOnForget ?? false },
     async forget(subject, why, { retract = false } = {}) {
       let jobs: Job[] = []
       const changes = await graph.forget(subject, why, (gone) => void (jobs = gone))
       const sent = sentOf(jobs)
-      if (!options.tellForgotten && !retract) return { changes, sent }
+      if (!options.retractOnForget && !retract) return { changes, sent }
       for (const [name, target] of targets) {
         const theirs = jobs.filter((job) => job.target === name && reached(job))
         if (!target.forget) continue
@@ -447,8 +447,8 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
           some.forEach((job, j) => {
             const found = sent.find((each) => each.transactionId === job.transactionId && each.target === name)!
             const refusal = refusals[j]
-            if (refusal === undefined) found.state = 'told'
-            else [found.state, found.note] = ['refused', noted(refusal, keys)]
+            if (refusal === undefined) found.state = 'accepted'
+            else [found.state, found.note] = ['rejected', noted(refusal, keys)]
           })
         }
       }

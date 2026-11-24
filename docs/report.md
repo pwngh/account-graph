@@ -142,7 +142,7 @@ curl -H "authorization: Bearer $REVIEWER_TOKEN" \
 { "by": "outcome.office_served", "total": { "outcomes": 9, "breakdown": [
   { "name": "north", "outcomes": 5, "value": 1000, "missed": 0, "stages": { "enrolled": { "count": 5, "value": 1000 } } },
   { "name": "river", "outcomes": 3, "value": 600, "missed": 0, "stages": { "enrolled": { "count": 3, "value": 600 } } },
-  { "name": "(not recorded)", "outcomes": 1, "value": 200, "missed": 0, "stages": { "enrolled": { "count": 1, "value": 200 } } } ] } }
+  { "name": "(not set)", "outcomes": 1, "value": 200, "missed": 0, "stages": { "enrolled": { "count": 1, "value": 200 } } } ] } }
 ```
 
 | `by` | Splits by | Source |
@@ -151,7 +151,7 @@ curl -H "authorization: Bearer $REVIEWER_TOKEN" \
 | `outcome.<name>` | The outcome | `tags` on `POST /convert`, or on the `POST /call` it came from |
 | `hour`, `weekday` | When it happened | The report's time zone |
 
-The response lists the `dimensions` recorded in the period; the Channels view offers them in **Breakdown**. Outcomes without a value have their own line, `(not recorded)`, so the parts add up to the total, rounding aside.
+The response lists the `dimensions` recorded in the period; the Channels view offers them in **Breakdown**. Outcomes without a value have their own line, `(not set)`, so the parts add up to the total, rounding aside.
 
 > **Costs stay on the campaign.** Cost, clicks and visits apply to the whole campaign and are excluded from breakdowns.
 
@@ -167,7 +167,7 @@ Use these names so reports stay comparable from month to month. Values are short
 
 The advertised and serving offices are separate facts, and neither is filled in from the other.
 
-An outcome or call carries at most 8 tags. A name is lowercase letters and underscores, up to 32 characters; a value is up to 64. `(not recorded)` is reserved and rejected as a value.
+An outcome or call carries at most 8 tags. A name is lowercase letters and underscores, up to 32 characters; a value is up to 64. `(not set)` is reserved and rejected as a value.
 
 ## Not a lead
 
@@ -224,8 +224,8 @@ curl -H "authorization: Bearer $REVIEWER_TOKEN" \
 ```
 
 ```json
-{ "step": "client", "days": 30, "least": 20, "leftOut": { "first": { "already": 4, "running": 0 }, "returned": { "already": 9, "running": 0, "through": 31 } }, "groups": [
-  { "by": "returned", "thin": 0, "rows": [
+{ "step": "client", "days": 30, "least": 20, "excluded": { "first": { "already": 4, "running": 0 }, "returned": { "already": 9, "running": 0, "through": 31 } }, "groups": [
+  { "by": "returned", "suppressed": 0, "rows": [
     { "name": "returned within a day", "people": 64, "reached": 16, "share": 0.25 },
     { "name": "not returned within a day", "people": 51, "reached": 9, "share": 0.1765 } ] } ] }
 ```
@@ -233,11 +233,11 @@ curl -H "authorization: Bearer $REVIEWER_TOKEN" \
 | Group | Splits people by | The clock starts |
 | --- | --- | --- |
 | `answer` | Whether their first call in the period was answered, missed, or went to voicemail | When that call ended |
-| `talk` | Talk time of an answered call: its length without the wait, and `(not recorded)` unless both are known | When that call ended |
+| `talk` | Talk time of an answered call: its length without the wait, and `(not set)` unless both are known | When that call ended |
 | `language` | The `language` tag of that call | When that call ended |
 | `returned` | Whether their first missed call was returned within a day | A day after the missed call, for everyone |
 
-A person is a cluster, so calls from two numbers and outcomes under an account count once. People who reached the step before the clock started, or whose days are still running, are excluded and counted under `leftOut`. Rows of fewer than 20 people are hidden, and `thin` counts the people in them.
+A person is a cluster, so calls from two numbers and outcomes under an account count once. People who reached the step before the clock started, or whose days are still running, are excluded and counted under `excluded`. Rows of fewer than 20 people are hidden, and `insufficientData` counts the people in them.
 
 The one-day delay in `returned` removes one bias: people already signing up are often called about it. Anyone who signed up or got through on their own before the clock started is excluded. Other biases remain.
 
@@ -293,7 +293,7 @@ Each step counts people as well as outcomes. A person is a cluster: two accounts
 | `median`, `p95` | Median and 95th percentile, in days |
 | `inside` | The share within the attribution window, and so eligible for credit |
 
-Costs are recorded the day they are spent and outcomes later, so the end of a period is missing outcomes. When the period reaches into those days, the report has `filling`, with `after` as the last complete day, and the Channels view says so. The slowest step's 95th percentile sets the length, from the newest 200 outcomes per step in the last half year; a step needs at least 20 that could be credited.
+Costs are recorded the day they are spent and outcomes later, so the end of a period is missing outcomes. When the period reaches into those days, the report has `incomplete`, with `after` as the last complete day, and the Channels view says so. The slowest step's 95th percentile sets the length, from the newest 200 outcomes per step in the last half year; a step needs at least 20 that could be credited.
 
 ### Value changes
 
@@ -323,7 +323,7 @@ The decrease is the amount refunded or written off. To reverse one, send the sam
 
 Sending the same value again changes nothing, so a `kind` cannot be added to an earlier change.
 
-`GET /outcome?id=client-42` lists every value an outcome has had. The report gives these figures for each campaign (`worth`) and for each month outcomes were first recorded in (`months`):
+`GET /outcome?id=client-42` lists every value an outcome has had. The report gives these figures for each campaign (`valueChange`) and for each month outcomes were first recorded in (`months`):
 
 | Figure | Meaning |
 | --- | --- |
@@ -346,10 +346,10 @@ Cost per outcome and ROAS are computed per campaign:
 - Only **outcomes credited to that campaign** count.
 - Only **days that have cost data for that campaign** count, for both costs and outcomes.
 - `missingDays` of `days` says how many days have no cost data. Future days are excluded.
-- `thin` is true when fewer than half of the days have cost data, and both figures are null. The screen shows insufficient data.
-- A campaign without paid visits or any cost, such as a newsletter, is exempt from `thin`.
+- `insufficientData` is true when fewer than half of the days have cost data, and both figures are null. The screen shows insufficient data.
+- A campaign without paid visits or any cost, such as a newsletter, is exempt from `insufficientData`.
 - Spend without a campaign gives no figure.
-- The total covers the campaigns with enough data, and `leftOut` counts the others.
+- The total covers the campaigns with enough data, and `excluded` counts the others.
 
 A day without a row is missing, even if the campaign was paused. Post a row of zero for a day you know cost nothing.
 
@@ -369,7 +369,7 @@ A `conversionValue` requires `conversions`. CSV columns use the same names. The 
 | `GOOGLE_ADS_CONVERSIONS=true` | `metrics.conversions` and its value: the actions you let Google count as conversions |
 | `META_ADS_CONVERSIONS=offsite_conversion.fb_pixel_lead` | How many of that one action Meta reports, and its value |
 
-Campaigns with a number, and the total, have `claimed`:
+Campaigns with a number, and the total, have `reported`:
 
 | Figure | Meaning |
 | --- | --- |

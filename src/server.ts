@@ -188,15 +188,15 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
   /** Refuses the request unless it carries the service token, or a reviewer's on a route reviewers may use. */
   const authorize = (request: IncomingMessage, path: string) => {
     if (matches(sentToken(request), token)) return
-    if (reviewerOf(request) === undefined) throw new Refusal(401, 'Missing or wrong token')
-    if (!REVIEW_ROUTES.has(path)) throw new Refusal(403, 'A reviewer\'s token does not open this route')
+    if (reviewerOf(request) === undefined) throw new Refusal(401, 'Missing or invalid token')
+    if (!REVIEW_ROUTES.has(path)) throw new Refusal(403, 'This route requires a service token')
   }
 
   /** A list of pairs from one of your systems, and who it is from. Only a service may speak for a system. */
   const listed = (request: IncomingMessage, body: any, withdrawals: boolean): [Told[], Why] => {
-    if (reviewerOf(request) !== undefined) throw new Refusal(403, 'A reviewer\'s token does not open the list form of this route')
+    if (reviewerOf(request) !== undefined) throw new Refusal(403, 'The list form of this route requires a service token')
     if (!Array.isArray(body.pairs) || body.pairs.length > 1000) throw new Refusal(400, '`pairs` must be a list of at most 1000')
-    if (typeof body.source !== 'string' || !NAME.test(body.source)) throw new Refusal(400, 'A list needs its `source`: the name of the system it is from')
+    if (typeof body.source !== 'string' || !NAME.test(body.source)) throw new Refusal(400, 'A list requires its `source`: the name of the system it is from')
     for (const each of body.pairs) {
       if (!each || typeof each !== 'object') throw new Refusal(400, 'Each pair must be written { a, b }')
       if (withdrawals && each.separated !== undefined && typeof each.separated !== 'boolean') throw new Refusal(400, '`separated` must be true or false')
@@ -207,7 +207,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
   /** Who one decision is by, why, and what they had seen. A reviewer's name is the one their token belongs to, whatever the body says. */
   const signed = (request: IncomingMessage, body: any): Deciding => {
     const name = reviewerOf(request)
-    if (name !== undefined && body.by !== undefined && body.by !== name) throw new Refusal(400, 'A decision is signed with the name its token belongs to')
+    if (name !== undefined && body.by !== undefined && body.by !== name) throw new Refusal(400, '`by` must match the owner of the token')
     return { ...why(body), ...(name !== undefined && { by: name }), ...(body.seen !== undefined && { seen: body.seen }) }
   }
 
@@ -265,7 +265,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       device = kept && ID.test(kept) ? kept : (device ?? randomUUID())
       response.setHeader('set-cookie', `ag_device=${device}; Max-Age=${400 * 86_400}; Path=/; HttpOnly; Secure; SameSite=Lax${cookieDomain}`)
     }
-    if (!device) throw new Refusal(400, 'Body needs a device id')
+    if (!device) throw new Refusal(400, 'Body requires a device id')
     return device
   }
 
@@ -325,7 +325,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
   /** Records something a visitor did on a page. Only names the server was told to accept are kept. */
   async function happened(request: IncomingMessage, response: ServerResponse) {
     const body = await json(request)
-    if (typeof body.event !== 'string' || !events.has(body.event)) throw new Refusal(400, 'This server does not take that event')
+    if (typeof body.event !== 'string' || !events.has(body.event)) throw new Refusal(400, 'Event is not listed in EVENTS')
     if (fromStaff(request, body)) return void (tally.staff += 1)
     const device = deviceOf(request, response, body)
     const subject = `visitor:${device}`
@@ -501,7 +501,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
    * number, a postal address, the address the request came from.
    */
   async function identify(body: any) {
-    if (typeof body?.subject !== 'string' || !body.subject) throw new Refusal(400, 'Body needs a subject')
+    if (typeof body?.subject !== 'string' || !body.subject) throw new Refusal(400, 'Body requires a subject')
     const identifiers: Identifier[] = (Array.isArray(body.identifiers) ? body.identifiers : []).map(String)
     const notes: Record<string, string> = {}
     let zip: string | undefined
@@ -520,7 +520,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       if (line) notes.phone = found ? line.type : `${line.type}: not used`
     }
     if (body.address && typeof body.address === 'object') {
-      if (typeof body.address.street !== 'string' || !body.address.street.trim()) throw new Refusal(400, 'An address needs a street')
+      if (typeof body.address.street !== 'string' || !body.address.street.trim()) throw new Refusal(400, 'An address requires a street')
       if (!options.address) notes.address = 'not checked: no address service is set up'
       else {
         // Whatever goes wrong with the check, the rest of the sighting is still recorded.
@@ -541,7 +541,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     }
     if (body.name !== undefined) {
       const { first, last } = body.name ?? {}
-      if (typeof first !== 'string' || typeof last !== 'string' || first.length > 200 || last.length > 200) throw new Refusal(400, 'A name needs its first and last as text')
+      if (typeof first !== 'string' || typeof last !== 'string' || first.length > 200 || last.length > 200) throw new Refusal(400, 'A name requires `first` and `last` as strings')
       if (body.dob !== undefined && typeof body.dob !== 'string') throw new Refusal(400, 'A date of birth is written YYYY-MM-DD')
       if (!options.identifierSecret) notes.name = 'not used: IDENTIFIER_SECRET is not set'
       else if (!(await graph.policy()).rules.kinds.name?.corroborates) notes.name = 'not used: the policy has no "name" kind that only corroborates'
@@ -552,8 +552,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         notes.name = keys.length > 0 ? 'used' : 'not used: a placeholder, or neither a confirmed address nor a date of birth'
       }
     }
-    if (body.at !== undefined && !Number.isSafeInteger(body.at)) throw new Refusal(400, '`at` must be a time in whole epoch milliseconds')
-    if (identifiers.length === 0) throw new Refusal(400, 'Nothing here identifies the subject')
+    if (body.at !== undefined && !Number.isSafeInteger(body.at)) throw new Refusal(400, '`at` must be an integer in epoch milliseconds')
+    if (identifiers.length === 0) throw new Refusal(400, 'At least one identifying field is required')
     const at = body.at ?? now()
     const changes = await graph.observe({ subject: body.subject, identifiers, at, ...(typeof body.event === 'string' && body.event && { event: body.event }) })
     return { changes, identifiers, notes }
@@ -574,7 +574,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
    * Neither is kept, and neither is ever part of an address, which servers and browsers write down.
    */
   async function find(given: unknown): Promise<{ by: 'email' | 'phone' | 'click' | 'subject'; subjects: Subject[] }> {
-    if (typeof given !== 'string' || !given.trim() || given.length > 512) throw new Refusal(400, 'Body needs the text to find, at most 512 characters')
+    if (typeof given !== 'string' || !given.trim() || given.length > 512) throw new Refusal(400, '`text` is required, up to 512 characters')
     const text = given.trim()
     const holding = async (identifiers: Identifier[]) => [...new Set((await graph.holders(identifiers)).map((edge) => edge.subject))].sort().slice(0, 20)
     if (/^[^\s:@]+@[^\s:@]+$/.test(text)) return { by: 'email', subjects: await holding([email(text)]) }
@@ -619,7 +619,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       known: true,
       cluster,
       links,
-      ties: [...ties.values()],
+      edges: [...ties.values()],
       separated,
       verdicts: await graph.verdicts([...[...new Set([...separated, ...links.map((link) => link.subject)])].map((other): [Subject, Subject] => [subject, other]), ...among]),
       apart: among,
@@ -686,7 +686,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       // Twilio cannot hold a token, so the request proves itself with a signature made from the account's secret.
       const fields = Object.fromEntries(new URLSearchParams(await text(request)))
       const { authToken, url: address } = options.calls.twilio
-      if (!fromTwilio(authToken, address, fields, String(request.headers['x-twilio-signature'] ?? ''))) throw new Refusal(403, 'The signature does not match')
+      if (!fromTwilio(authToken, address, fields, String(request.headers['x-twilio-signature'] ?? ''))) throw new Refusal(403, 'Invalid signature')
       storable(fields)
       const call = twilioCall(fields, now())
       if (call) await recordCall(graph, call, calling())
@@ -801,13 +801,13 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return (await graph.cluster(subject)) ?? null
       case 'GET /journey': {
         const before = url.searchParams.has('before') ? Number(url.searchParams.get('before')) : undefined
-        if (before !== undefined && !Number.isSafeInteger(before)) throw new Refusal(400, '`before` must be the `next` of a later page')
+        if (before !== undefined && !Number.isSafeInteger(before)) throw new Refusal(400, '`before` must be a `next` value from a page')
         const journey = await graph.journey(subject, before === undefined ? {} : { before })
         // What became of each step at the ad platforms. A job keeps how it stands, and not when it got there.
         const jobs = new Map<string, { target: string; state: JobState; note?: string; value?: number }[]>()
         if (options.outbox) {
           for (const entry of journey.entries) {
-            if (entry.kind !== 'step') continue
+            if (entry.kind !== 'outcome') continue
             const { transactionId } = entry.outcome
             jobs.set(transactionId, (await options.outbox.get(transactionId)).map(({ target, state, note, value }) => ({ target, state, ...(note && { note }), ...(value !== undefined && { value }) })))
           }
@@ -815,8 +815,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return {
           ...journey,
           entries: journey.entries.map((entry) => {
-            if (entry.kind === 'arrival') return { ...entry, source: sourceOf(entry.touch) }
-            if (entry.kind === 'step') return { ...entry, sent: jobs.get(entry.outcome.transactionId) ?? [] }
+            if (entry.kind === 'visit') return { ...entry, source: sourceOf(entry.touch) }
+            if (entry.kind === 'outcome') return { ...entry, sent: jobs.get(entry.outcome.transactionId) ?? [] }
             if (entry.kind !== 'call') return entry
             const { to: _, ...call } = entry.call
             return { ...entry, call, state: callState(entry.call, now(), options.calls) }
@@ -827,7 +827,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return graph.history(subject)
       case 'GET /attribute': {
         const at = Number(url.searchParams.get('at') ?? now())
-        if (!Number.isSafeInteger(at)) throw new Refusal(400, '`at` must be a time in whole epoch milliseconds')
+        if (!Number.isSafeInteger(at)) throw new Refusal(400, '`at` must be an integer in epoch milliseconds')
         return graph.attribute(subject, { at })
       }
       case 'GET /policy': {
@@ -853,7 +853,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       case 'GET /decisions': {
         const limit = Math.min(500, Math.max(1, Math.floor(Number(url.searchParams.get('limit')) || 50)))
         const before = url.searchParams.has('before') ? Number(url.searchParams.get('before')) : undefined
-        if (before !== undefined && !(Number.isSafeInteger(before) && before > 0)) throw new Refusal(400, '`before` must be a decision\'s number')
+        if (before !== undefined && !(Number.isSafeInteger(before) && before > 0)) throw new Refusal(400, '`before` must be a decision number')
         const author = url.searchParams.get('author') || undefined
         // One more than asked for says whether there is another page.
         const found = await graph.decisionPage({ limit: limit + 1, ...(before !== undefined && { before }), ...(author !== undefined && { author }) })
@@ -886,7 +886,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         const days = period(url)
         const after = url.searchParams.get('after') ?? ''
         const cut = after.indexOf(' ')
-        if (after && !(cut > 0 && Number.isSafeInteger(Number(after.slice(0, cut))))) throw new Refusal(400, '`after` must be the `next` of an earlier page')
+        if (after && !(cut > 0 && Number.isSafeInteger(Number(after.slice(0, cut))))) throw new Refusal(400, '`after` must be a `next` value from a page')
         const limit = 50
         const open = await graph.openCalls({ ...days, limit: limit + 1, ...(after && { after: { at: Number(after.slice(0, cut)), id: after.slice(cut + 1) } }) })
         const page = open.slice(0, limit)
@@ -913,7 +913,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return graph.between(url.searchParams.get('a') ?? '', url.searchParams.get('b') ?? '')
       case 'GET /undecided': {
         const limit = url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : 50
-        if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new Refusal(400, '`limit` must be a whole number from 1 to 500')
+        if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new Refusal(400, '`limit` must be an integer from 1 to 500')
         return graph.undecided({ limit })
       }
       case 'GET /board': {
@@ -962,7 +962,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       case 'POST /costs': {
         const body = await json(request)
         const costs = Array.isArray(body) ? body : body.costs
-        if (!Array.isArray(costs)) throw new Refusal(400, 'Body needs a list of costs')
+        if (!Array.isArray(costs)) throw new Refusal(400, 'Body requires a list of costs')
         await graph.spend(costs)
         return { recorded: costs.length }
       }
@@ -986,7 +986,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       case 'POST /retry': {
         if (!options.outbox) break
         const { transactionId, target } = await json(request)
-        if (typeof transactionId !== 'string' || (target !== undefined && typeof target !== 'string')) throw new Refusal(400, 'transactionId and target must be text')
+        if (typeof transactionId !== 'string' || (target !== undefined && typeof target !== 'string')) throw new Refusal(400, 'transactionId and target must be a string')
         return (await options.outbox.retry(transactionId, target)).map(shownJob)
       }
       case 'GET /conversion':
@@ -1043,9 +1043,9 @@ export function reviewerProblems(reviewers: unknown, service: string): string[] 
     // "people" and "system" are what the record is filtered by, and a name that starts with "system:" is a system's.
     if (name.startsWith('system:') || name === 'system' || name === 'people') wrong.push(`"${name}" cannot be a reviewer's name`)
     const tokens: unknown[] = [given].flat()
-    if (tokens.length === 0) wrong.push(`"${name}" needs a token`)
+    if (tokens.length === 0) wrong.push(`"${name}" requires a token`)
     for (const token of tokens) {
-      if (typeof token !== 'string' || !token || token !== token.trim()) wrong.push(`"${name}" needs each token as text with no space around it`)
+      if (typeof token !== 'string' || !token || token !== token.trim()) wrong.push(`"${name}" requires each token as a string with no space around it`)
       else if (taken.has(token)) wrong.push(`"${name}" has a token that is already the service's or another reviewer's`)
       else taken.add(token)
     }
@@ -1080,9 +1080,9 @@ function storable(value: unknown): void {
   const left: [unknown, number][] = [[value, 0]]
   while (left.length > 0) {
     const [each, level] = left.pop()!
-    if (typeof each === 'string' && UNSTORABLE.test(each)) throw new Refusal(400, 'Text may not hold a NUL or half of a character')
+    if (typeof each === 'string' && UNSTORABLE.test(each)) throw new Refusal(400, 'Text contains unsupported characters')
     if (typeof each !== 'object' || each === null) continue
-    if (level >= LEVELS) throw new Refusal(400, `A body may have ${LEVELS} levels at most`)
+    if (level >= LEVELS) throw new Refusal(400, `Body exceeds ${LEVELS} levels of nesting`)
     for (const [key, inner] of Object.entries(each)) left.push([key, level + 1], [inner, level + 1])
   }
 }
@@ -1092,7 +1092,7 @@ async function text(request: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = []
   for await (const chunk of request) {
     size += chunk.length
-    if (size > 1_000_000) throw new Refusal(413, 'Body is over 1 MB')
+    if (size > 1_000_000) throw new Refusal(413, 'Body exceeds 1 MB')
     chunks.push(chunk)
   }
   // Bytes that are not UTF-8 are refused: read leniently, different ones would all become the same text.

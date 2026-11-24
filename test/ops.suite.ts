@@ -50,7 +50,7 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       assert.deepEqual(posted, [])
       clock.now += 1
       for (let i = 0; i < 3; i++) await ops.check()
-      assert.deepEqual(posted, ['account-graph: conversions are waiting to be sent. The oldest should have gone Nov 14, 2023, 10:13 PM (UTC).'])
+      assert.deepEqual(posted, ['account-graph: conversions are overdue. The oldest was due Nov 14, 2023, 10:13 PM (UTC).'])
       clock.now += 24 * HOUR
       await ops.check()
       assert.equal(posted.length, 2)
@@ -74,7 +74,7 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       assert.deepEqual(posted, [])
       clock.now += 1
       for (let i = 0; i < 3; i++) await ops.check()
-      assert.deepEqual(posted, ['account-graph: no touches for 6 hours. The last was written down Nov 14, 2023, 5:13 PM (America/New_York).'])
+      assert.deepEqual(posted, ['account-graph: no touches for 6 hours. Last record: Nov 14, 2023, 5:13 PM (America/New_York).'])
       const state = await ops.state()
       assert.deepEqual(state.feeds.map((feed) => [feed.name, feed.last, feed.hours, feed.quiet]), [['touches', T0, 6, true], ['calls', null, 0, false], ['results', null, 0, false], ['costs', null, 48, false]])
       // It speaks, and goes quiet again.
@@ -87,7 +87,7 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       // A feed that never wrote anything is quiet too, once it has been watched that long, whatever restarted meanwhile.
       clock.now = T0 + 6 * HOUR + 48 * HOUR
       await make().check()
-      assert.match(posted.at(-1)!, /no costs for 48 hours\. None has ever been recorded\./)
+      assert.match(posted.at(-1)!, /no costs for 48 hours\. No records exist\./)
       // Each feed is fed by its own records. A touch dated in the past still fed it now.
       await graph.spend({ day: '2023-11-14', source: 'google', amount: 1 })
       await graph.touch({ subject: 'visitor:1', at: 5, gclid: 'G' })
@@ -115,7 +115,7 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       clock.now += 5 * HOUR
       await ops.check()
       assert.equal(posted.length, 1)
-      assert.match(posted[0]!, /a caller from google, Search has waited over 24 hours for a call back\. Missed Nov 14, 2023, 10:13 PM \(UTC\)\. Rung back once, not reached\. caller:/)
+      assert.match(posted[0]!, /a caller from google, Search has waited over 24 hours for a callback\. Missed Nov 14, 2023, 10:13 PM \(UTC\)\. 1 callback attempt\. caller:/)
       // They miss again: still the same wait. They are reached, and miss again later: a new one.
       await miss('A3', '+15550100011')
       clock.now += 25 * HOUR
@@ -168,10 +168,10 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       // Eight hours open since the miss: an hour on Tuesday, and seven on Wednesday. Thursday is a holiday.
       clock.now = at(15, 15)
       await ops.check()
-      assert.equal(posted.some((text) => text.includes('call back')), false)
+      assert.equal(posted.some((text) => text.includes('callback')), false)
       clock.now = at(15, 16)
       await ops.check()
-      assert.match(posted.at(-1)!, /has waited over 8 open hours for a call back/)
+      assert.match(posted.at(-1)!, /has waited over 8 open hours for a callback/)
       // Two weeks past due and no more, counted from when it was due and not from when they rang.
       await recordCall(graph, { id: 'N2', from: '+15550100072', to: '+15550100001', at: at(15, 16), duration: 20, answered: false }, { results: 'expected', now: () => clock.now })
       await graph.touch({ subject: `caller:${hashPhone('+15550100072')}`, at: at(15, 15), gclid: 'H' })
@@ -179,7 +179,7 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       clock.now = at(17, 16) + 14 * DAY - HOUR
       const count = posted.length
       await ops.check()
-      assert.equal(posted.slice(count).filter((text) => text.includes('call back')).length, 1)
+      assert.equal(posted.slice(count).filter((text) => text.includes('callback')).length, 1)
     })
 
     test('a miss that was no lead is told to nobody, and does not hide the next one', async () => {
@@ -213,7 +213,7 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       await ops.check()
       assert.equal(await ops.alert('outbox', 'the outbox could not run'), false)
       const left = (await ops.state()).undelivered
-      assert.deepEqual(left.map((alert) => [alert.key.split(':')[0], alert.error]).sort(), [['alert', 'The alert webhook answered 500'], ['quiet', 'The alert webhook answered 500'], ['unreturned', 'The alert webhook answered 500']])
+      assert.deepEqual(left.map((alert) => [alert.key.split(':')[0], alert.error]).sort(), [['alert', 'The alert webhook returned 500'], ['quiet', 'The alert webhook returned 500'], ['unreturned', 'The alert webhook returned 500']])
       assert.equal(errors.length, 3)
       // The same words again are the same message. Other words are another, and neither takes the other's place.
       assert.equal(await ops.alert('outbox', 'the outbox could not run'), false)
@@ -298,8 +298,8 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       hook.status = 200
       assert.deepEqual(await ops.test(), { delivered: true })
       hook.status = 404
-      assert.deepEqual(await ops.test(), { delivered: false, error: 'The alert webhook answered 404' })
-      assert.match((await ops.state()).undelivered.at(-1)!.text, /this is a test alert/)
+      assert.deepEqual(await ops.test(), { delivered: false, error: 'The alert webhook returned 404' })
+      assert.match((await ops.state()).undelivered.at(-1)!.text, /test alert/)
       assert.deepEqual(await createOps(graph, store.ops, { now: () => clock.now }).test(), { delivered: false, error: 'No webhook is set. Set ALERT_WEBHOOK.' })
     })
 

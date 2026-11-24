@@ -107,7 +107,7 @@ test('names fold to one key, and placeholders to none', () => {
 test('a kind that only confirms is a sound rule, names its policy, and fit gives it no more than it confirms', () => {
   const name = { weight: 0.6, dilution: 1, cap: 5, halfLife: 'none', corroborates: true }
   assert.deepEqual(policyProblems({ kinds: { name } }), [])
-  assert.deepEqual(policyProblems({ kinds: { name: { ...name, corroborates: false } } }), ['kind "name" needs its corroborates as true, or left out'])
+  assert.deepEqual(policyProblems({ kinds: { name: { ...name, corroborates: false } } }), ['kind "name" requires its corroborates as true, or left out'])
   assert.deepEqual(policyProblems({ kinds: { review: { corroborates: true } } }), ['kind "review" is a reviewer\'s join, so it cannot only corroborate'])
   const policy = policyFrom({ kinds: { name } })
   assert.notEqual(policyHash(policy), policyHash(policyFrom({ kinds: { name: { ...name, corroborates: undefined } } })))
@@ -141,7 +141,7 @@ test('the household preset is a sound policy, and fit counts a group once', () =
   // The page that explains it shows the same thing.
   const shown = /```json\n([\s\S]*?)```/.exec(readFileSync(new URL('../docs/presets.md', import.meta.url), 'utf8'))![1]!
   assert.deepEqual(JSON.parse(shown), given)
-  assert.deepEqual(policyProblems({ kinds: { phone: { group: '' } } }), ['kind "phone" needs its group as text'])
+  assert.deepEqual(policyProblems({ kinds: { phone: { group: '' } } }), ['kind "phone" requires its group as a string'])
 
   const policy = policyFrom(given)
   // Pairs that share only a phone are strangers, and pairs that share an address too are one person. The address starts in the
@@ -291,7 +291,7 @@ test('the server reads its settings from the environment and names everything wr
     const calls = configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', EVENTS: 'inquiry, brochure', CALL_NUMBERS: '{"555-123-0001":{"source":"google"}}', TWILIO_AUTH_TOKEN: 't', TWILIO_WEBHOOK_URL: 'https://g.example/calls/twilio' })
   assert.deepEqual([calls.events, calls.callNumbers, calls.callMinimum, calls.twilio], [['inquiry', 'brochure'], { '555-123-0001': { source: 'google' } }, 30, { authToken: 't', url: 'https://g.example/calls/twilio' }])
   assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', CALL_NUMBERS: '{"12":{}}', TWILIO_AUTH_TOKEN: 't', REPORT_TIME_ZONE: 'Mars/Olympus' }), (error: Error) =>
-    ['"12" is not a phone number', '"12" needs a source', 'TWILIO_WEBHOOK_URL or TWILIO_ACCOUNT_SID must be set along with TWILIO_AUTH_TOKEN', 'REPORT_TIME_ZONE must be a time zone'].every((line) => error.message.includes(line)))
+    ['"12" is not a phone number', '"12" requires a source', 'TWILIO_WEBHOOK_URL or TWILIO_ACCOUNT_SID must be set along with TWILIO_AUTH_TOKEN', 'REPORT_TIME_ZONE must be a time zone'].every((line) => error.message.includes(line)))
   assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', CALL_NUMBERS: '[1]' }), /CALL_NUMBERS must be a JSON object/)
 
   const full = configFrom({
@@ -300,7 +300,7 @@ test('the server reads its settings from the environment and names everything wr
     META_PIXEL_ID: 'p', META_ACCESS_TOKEN: 't', META_SITE_URL: 'https://a.example/',
   })
   assert.deepEqual(full.reviewers, { dana: 'z', lee: ['new', 'old'] })
-  for (const [given, said] of [['[1]', 'must be a JSON object'], ['{"system:x":"a"}', 'cannot be a reviewer'], ['{"people":"a"}', 'cannot be a reviewer'], ['{" dana":"a"}', 'is not a name'], ['{"dana":""}', 'each token as text'], ['{"dana":[]}', 'needs a token'], ['{"dana":"a","lee":"a"}', 'another reviewer']]) {
+  for (const [given, said] of [['[1]', 'must be a JSON object'], ['{"system:x":"a"}', 'cannot be a reviewer'], ['{"people":"a"}', 'cannot be a reviewer'], ['{" dana":"a"}', 'is not a name'], ['{"dana":""}', 'each token as a string'], ['{"dana":[]}', 'requires a token'], ['{"dana":"a","lee":"a"}', 'another reviewer']]) {
     assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', REVIEW_TOKENS: given! }), (error: Error) => error.message.includes(said!), given)
   }
   const tried = { DATABASE_URL: 'x', GRAPH_TOKEN: 'change-me-service-token', REVIEW_TOKENS: '{"reviewer":"change-me-review-token"}', LINK_SECRET: 'change-me-link-secret-change-me-now' }
@@ -348,17 +348,17 @@ test('a policy setting is laid over the default kind by kind, and everything wro
   assert.deepEqual(policyProblems({ smae: 1, same: 2, review: 0, kinds: { phone: { weight: '0.9' }, 'Bad:kind': 5, badge: { weight: 1 }, ip: { cap: 1.5, dilution: -1, halfLife: 0, colour: 1 }, dialed: { weight: 0.1 } } }), [
     '"smae" is not a setting',
     '"same" must be a number from 0 to 1',
-    '"review" must be a whole number above 0',
-    'kind "phone" needs a weight from 0 to 1',
+    '"review" must be a positive integer',
+    'kind "phone" requires a weight from 0 to 1',
     'kind "Bad:kind" must be a name without a colon',
     'kind "Bad:kind" must be an object, such as {"weight":0.85}',
-    'kind "badge" is new, so it needs its dilution',
-    'kind "badge" is new, so it needs its cap',
-    'kind "badge" is new, so it needs its halfLife',
+    'kind "badge" is new, so it requires its dilution',
+    'kind "badge" is new, so it requires its cap',
+    'kind "badge" is new, so it requires its halfLife',
     'kind "ip" has "colour", which is not part of a rule',
-    'kind "ip" needs a dilution of zero or more',
-    'kind "ip" needs a cap of zero or more, in whole subjects',
-    'kind "ip" needs a halfLife in milliseconds, or "none"',
+    'kind "ip" requires a dilution of zero or more',
+    'kind "ip" requires a cap of zero or more, in whole subjects',
+    'kind "ip" requires a halfLife in milliseconds, or "none"',
     'kind "dialed" is a note and links nothing, so its weight must stay 0',
   ])
   assert.deepEqual(policyProblems({ same: 0.4 }), ['"related" must not be above "same"'])
@@ -403,7 +403,7 @@ test('calls are counted by hour and weekday where they happened, and by what bec
   ]
   const later = [...calls, call('r1', { subject: 'caller:b', direction: 'outbound', at: at + 60_000, result: went(true) }), call('r2', { subject: 'caller:c', at: at + 120_000, result: went(true) })]
   const summary = summarizeCalls(calls, later, new Set(['b', 'c']), at + 7_200_000 + 60_000 + 30 * 60_000 - 1, 'America/New_York', { results: 'expected' })
-  assert.deepEqual(summary.total, { calls: 7, answered: 1, missed: 3, voicemail: 1, waiting: 1, unknown: 1, returned: 1, told: 0, triedAgain: 1, notLeads: 0, hidden: 1 })
+  assert.deepEqual(summary.total, { calls: 7, answered: 1, missed: 3, voicemail: 1, waiting: 1, unknown: 1, returned: 1, reported: 0, calledAgain: 1, notLeads: 0, hidden: 1 })
   // Half past five in the morning in London is half past midnight on Monday in New York.
   assert.deepEqual(summary.cells.map((cell) => [cell.weekday, cell.hour, cell.calls]), [[1, 0, 5], [1, 1, 1], [1, 2, 1]])
   assert.deepEqual(summarizeCalls(calls, later, new Set(), at, 'UTC').cells.map((cell) => [cell.weekday, cell.hour, cell.calls]), [[1, 5, 5], [1, 6, 1], [1, 7, 1]])
@@ -416,7 +416,7 @@ test('calls are counted by hour and weekday where they happened, and by what bec
   assert.equal(summarizeCalls([call('long', { duration: 600 }), call('waited', { result: { waited: 5, recorded: at } })], [], new Set(), at).coverage.noResult, 2)
   // Already tomorrow in Tokyo.
   assert.deepEqual([dayIn(Date.parse('2026-03-02T16:00:00Z'), 'Asia/Tokyo'), dayIn(Date.parse('2026-03-02T16:00:00Z'))], ['2026-03-03', '2026-03-02'])
-  assert.deepEqual(summarizeCalls([], [], new Set(), at), { total: { calls: 0, answered: 0, missed: 0, voicemail: 0, waiting: 0, unknown: 0, returned: 0, told: 0, triedAgain: 0, notLeads: 0, hidden: 0 }, closed: null, cells: [], coverage: { visitor: 0, channel: 0, neither: 0, noResult: 0 }, returnedWithin: null })
+  assert.deepEqual(summarizeCalls([], [], new Set(), at), { total: { calls: 0, answered: 0, missed: 0, voicemail: 0, waiting: 0, unknown: 0, returned: 0, reported: 0, calledAgain: 0, notLeads: 0, hidden: 0 }, closed: null, cells: [], coverage: { visitor: 0, channel: 0, neither: 0, noResult: 0 }, returnedWithin: null })
 })
 
 test('quiet hours are off until set, and a call back is due after a day', () => {
@@ -458,10 +458,10 @@ test('what followed a call starts the clock at a landmark, and leaves out whoeve
   const through = person([call(T, false)], [call(T + 1_800_000, true)], [T + 4 * DAY])
   const biased = run([returned, left, signing, through])
   assert.deepEqual(group(biased, 'returned'), [['returned within a day', 1, 1], ['not returned within a day', 1, 0]])
-  assert.deepEqual(biased.leftOut, { first: { already: 0, running: 0 }, returned: { already: 1, running: 0, through: 1 } })
+  assert.deepEqual(biased.excluded, { first: { already: 0, running: 0 }, returned: { already: 1, running: 0, through: 1 } })
   // Rung back first and ringing in afterwards is getting through too.
   const both = person([call(T, false)], [back(T + 600_000), call(T + 7_200_000, true)], [T + 4 * DAY])
-  assert.equal(run([both]).leftOut.returned.through, 1)
+  assert.equal(run([both]).excluded.returned.through, 1)
   // Ringing just before the landmark and answered after the wait is getting through after it.
   const waiting = person([call(T, false)], [call(T + DAY - 60_000, true, { result: { answered: true, waited: 120, recorded: T } })], [T + 4 * DAY])
   assert.deepEqual(group(run([waiting]), 'returned'), [['not returned within a day', 1, 1]])
@@ -478,23 +478,23 @@ test('what followed a call starts the clock at a landmark, and leaves out whoeve
   const edge = (days: number) => person([call(T, true)], [], [T + 120_000 + days * DAY])
   assert.deepEqual(group(run([edge(30), edge(30.01)]), 'answer'), [['answered', 2, 1]])
   const running = run([edge(5)], { at: T + 10 * DAY })
-  assert.deepEqual([group(running, 'answer'), running.leftOut.first.running], [[], 1])
+  assert.deepEqual([group(running, 'answer'), running.excluded.first.running], [[], 1])
   // Reached before the call ended, whatever they do after.
-  assert.equal(run([person([call(T, true)], [], [T + 60_000, T + DAY])]).leftOut.first.already, 1)
+  assert.equal(run([person([call(T, true)], [], [T + 60_000, T + DAY])]).excluded.first.already, 1)
 
   // How long they talked leaves out the wait, and is not known when the wait is not. A call nobody answered was not talked on. Only a person's first call counts.
   const talked = (seconds: number, waited = 0) => person([call(T, true, { duration: seconds, result: { answered: true, waited, recorded: T } }), call(T + DAY, true, { duration: 9999 })])
-  assert.deepEqual(group(run([talked(59), talked(60), talked(400, 350), talked(301), talked(900), person([call(T, true, { duration: 500 })]), person([call(T, false, { duration: 500 })]), person([call(T, undefined)])]), 'talk'), [['under 1 minute', 2, 0], ['1 to 5 minutes', 1, 0], ['5 to 15 minutes', 1, 0], ['15 minutes or more', 1, 0], ['(not recorded)', 1, 0]])
+  assert.deepEqual(group(run([talked(59), talked(60), talked(400, 350), talked(301), talked(900), person([call(T, true, { duration: 500 })]), person([call(T, false, { duration: 500 })]), person([call(T, undefined)])]), 'talk'), [['under 1 minute', 2, 0], ['1 to 5 minutes', 1, 0], ['5 to 15 minutes', 1, 0], ['15 minutes or more', 1, 0], ['(not set)', 1, 0]])
   const answers = run([person([call(T, true, { tags: { language: 'es' } })]), person([call(T, undefined)]), person([call(T, false, { result: { answered: false, voicemail: true, recorded: T } })]), person([call(T, false)])])
-  assert.deepEqual(group(answers, 'answer'), [['answered', 1, 0], ['missed', 1, 0], ['voicemail', 1, 0], ['(not recorded)', 1, 0]])
-  assert.deepEqual(group(answers, 'language'), [['es', 1, 0], ['(not recorded)', 3, 0]])
+  assert.deepEqual(group(answers, 'answer'), [['answered', 1, 0], ['missed', 1, 0], ['voicemail', 1, 0], ['(not set)', 1, 0]])
+  assert.deepEqual(group(answers, 'language'), [['es', 1, 0], ['(not set)', 3, 0]])
   // A hidden number cannot be rung back, so it is in neither row.
   assert.deepEqual(group(run([person([call(T, false, { id: 'h', subject: 'call:h' })])]), 'returned'), [])
 
   // Thin rows are not shown, and how many people were in them is.
   const many = Array.from({ length: 25 }, (_, i) => person([call(T, i < 20)]))
   const thin = run(many, { least: 20 }).groups.find((each) => each.by === 'answer')!
-  assert.deepEqual([thin.rows.map((row) => [row.name, row.people, row.share]), thin.thin], [[['answered', 20, 0]], 5])
+  assert.deepEqual([thin.rows.map((row) => [row.name, row.people, row.share]), thin.suppressed], [[['answered', 20, 0]], 5])
   assert.deepEqual(run([...many].reverse(), { least: 20 }), run(many, { least: 20 }))
 })
 
@@ -581,12 +581,12 @@ test('the report is the same whatever order its rows arrive in', () => {
 
 test('how recent is too recent is worked out from the days as they are, not as they are shown', () => {
   const history = Array.from({ length: 20 }, (_, n) => ({ outcome: { transactionId: `t${n}`, subject: 's', at: 10 * 86_400_000, stage: 'sale', value: 0, currency: '' }, touch: undefined, delay: 4.04 * 86_400_000, inside: true }))
-  assert.deepEqual(fold('2026-03-01', '2026-03-10', [], [], [], { history }).filling, { after: '2026-03-05', days: 5 })
+  assert.deepEqual(fold('2026-03-01', '2026-03-10', [], [], [], { history }).incomplete, { after: '2026-03-05', days: 5 })
   const quick = history.map((each) => ({ ...each, delay: 60_000 }))
-  assert.deepEqual(fold('2026-03-01', '2026-03-10', [], [], [], { history: quick }).filling, { after: '2026-03-09', days: 1 })
-  assert.equal(fold('2026-03-01', '2026-03-10', [], [], [], { history: history.slice(1) }).filling, undefined)
+  assert.deepEqual(fold('2026-03-01', '2026-03-10', [], [], [], { history: quick }).incomplete, { after: '2026-03-09', days: 1 })
+  assert.equal(fold('2026-03-01', '2026-03-10', [], [], [], { history: history.slice(1) }).incomplete, undefined)
   // What came too late to be credited is not waited for.
-  assert.deepEqual(fold('2026-03-01', '2026-03-10', [], [], [], { history: [...history, ...history.map((each) => ({ ...each, delay: 100 * 86_400_000, inside: false }))] }).filling, { after: '2026-03-05', days: 5 })
+  assert.deepEqual(fold('2026-03-01', '2026-03-10', [], [], [], { history: [...history, ...history.map((each) => ({ ...each, delay: 100 * 86_400_000, inside: false }))] }).incomplete, { after: '2026-03-05', days: 5 })
 })
 
 test('what an outcome cost uses the outcomes of that campaign, on the days whose cost is known', () => {
@@ -609,8 +609,8 @@ test('what an outcome cost uses the outcomes of that campaign, on the days whose
   const costs = [...days(10).map((day) => cost(day, 'full', 10)), ...days(6).map((day) => cost(day, 'gaps', 5)), ...days(4).map((day) => cost(day, 'thin', 50)), cost('2026-03-01', 'idle', 7)]
   const report = fold('2026-03-01', '2026-03-10', costs, [], credited)
   const row = (id: string) => {
-    const { costDays, missingDays, thin, costPerOutcome, returnOnCost } = report.rows.find((each) => each.campaignId === id)!
-    return [costDays, missingDays, thin, costPerOutcome, returnOnCost]
+    const { costDays, missingDays, insufficientData, costPerOutcome, returnOnCost } = report.rows.find((each) => each.campaignId === id)!
+    return [costDays, missingDays, insufficientData, costPerOutcome, returnOnCost]
   }
   assert.deepEqual(row('full'), [10, 0, false, 25, 4])
   // 30 over the two sales on those days, and not over all five.
@@ -618,15 +618,15 @@ test('what an outcome cost uses the outcomes of that campaign, on the days whose
   assert.deepEqual(row('thin'), [4, 6, true, null, null])
   assert.deepEqual(row('free'), [0, 10, true, null, null])
   // The total covers the campaigns whose cost is known: 130 over six sales. Not the 337 spent over the twelve there were.
-  assert.deepEqual([report.total.costPerOutcome, report.total.returnOnCost, report.leftOut, report.days], [21.666667, 4.615385, 3, 10])
+  assert.deepEqual([report.total.costPerOutcome, report.total.returnOnCost, report.excluded, report.days], [21.666667, 4.615385, 3, 10])
   assert.equal(report.total.cost, 337)
   // A campaign known only by its name may be a newsletter, and spend on no campaign is nobody's: neither is withheld for want of days.
   const unnumbered = fold('2026-03-01', '2026-03-10', [cost('2026-03-01', '', 5)], [{ subject: 's', at: 0, source: 'newsletter', campaign: 'march' }], [])
-  assert.deepEqual(unnumbered.rows.map((each) => [each.source, each.thin]), [['google', false], ['newsletter', false]])
-  assert.equal(unnumbered.leftOut, 0)
+  assert.deepEqual(unnumbered.rows.map((each) => [each.source, each.insufficientData]), [['google', false], ['newsletter', false]])
+  assert.equal(unnumbered.excluded, 0)
   // One known by its name whose arrivals were ad clicks was paid for, so its cost is missing.
   const clicked = fold('2026-03-01', '2026-03-10', [], [{ subject: 's', at: 0, gclid: 'G', campaign: 'spring' }], [])
-  assert.deepEqual([clicked.rows[0]!.thin, clicked.rows[0]!.missingDays, clicked.leftOut], [true, 10, 1])
+  assert.deepEqual([clicked.rows[0]!.insufficientData, clicked.rows[0]!.missingDays, clicked.excluded], [true, 10, 1])
   // Days still to come are not missing.
   const early = fold('2026-03-01', '2026-03-31', costs, [], credited, { through: '2026-03-10' })
   assert.deepEqual([early.days, early.rows.find((each) => each.campaignId === 'full')!.missingDays], [10, 0])
@@ -646,7 +646,7 @@ test('what an outcome cost uses the outcomes of that campaign, on the days whose
   assert.deepEqual([loose.rows.find((each) => each.campaignId === '')!.costPerOutcome, loose.total.costPerOutcome, loose.total.cost], [null, 30, 530])
   // Two campaigns each known on half the days they need: between them every day, and still nothing can be said.
   const halves = fold('2026-03-01', '2026-03-10', [...days(4).map((day) => cost(day, 'a', 10)), ...days(10).slice(6).map((day) => cost(day, 'b', 10))], [], [sale('2026-03-01', 'a'), sale('2026-03-08', 'b')])
-  assert.deepEqual([halves.total.thin, halves.total.costPerOutcome, halves.leftOut, halves.total.costDays], [true, null, 2, 8])
+  assert.deepEqual([halves.total.insufficientData, halves.total.costPerOutcome, halves.excluded, halves.total.costDays], [true, null, 2, 8])
 })
 
 test('a touch is filed under the platform of its click id, then its tag, then the site that referred it', () => {
@@ -684,7 +684,7 @@ test('the server counts outcomes without an ad platform, takes costs, and report
 
     const report = (await (await fetch(`${base}/report?from=2026-03-01&to=2026-03-02`, { headers: { authorization: 'Bearer reviewer' } })).json()) as any
     assert.deepEqual(report.rows, [
-      { source: 'google', campaignId: '111', campaign: 'Spring', cost: 50, clicks: 10, impressions: 0, visits: 1, missed: 0, notLeads: 0, stages: { enrolled: { count: 1, value: 120, people: 1, delay: { count: 1, median: 0, p95: 0, inside: 1 } } }, outcomes: 1, value: 120, people: 1, worth: { outcomes: 1, first: 200, now: 120, refunded: 0, writtenOff: 0, zeroed: 0, firstUnknown: 0 }, costDays: 1, missingDays: 1, thin: false, costPerOutcome: 50, returnOnCost: 2.4 },
+      { source: 'google', campaignId: '111', campaign: 'Spring', cost: 50, clicks: 10, impressions: 0, visits: 1, missed: 0, notLeads: 0, stages: { enrolled: { count: 1, value: 120, people: 1, delay: { count: 1, median: 0, p95: 0, inside: 1 } } }, outcomes: 1, value: 120, people: 1, valueChange: { outcomes: 1, first: 200, now: 120, refunded: 0, writtenOff: 0, zeroed: 0, firstUnknown: 0 }, costDays: 1, missingDays: 1, insufficientData: false, costPerOutcome: 50, returnOnCost: 2.4 },
     ])
     // One outcome with every value it has had, for a reviewer.
     const asked = (await (await fetch(`${base}/outcome?id=enr-9`, { headers: { authorization: 'Bearer reviewer' } })).json()) as any
@@ -753,13 +753,13 @@ test('a step fills in what an outcome leaves out, and nothing it states', () => 
 
   assert.deepEqual(ladderProblems(ladder, ['google', 'meta']), [])
   assert.deepEqual(ladderProblems({ a: { value: -1 }, b: 5, c: { action: 'x' }, d: { action: { tiktok: 'y' } }, e: { action: { google: '' } }, f: { currency: 7 }, g: { wait: -1 } }, ['google', 'meta']), [
-    'step "a" needs a value of zero or more',
+    'step "a" requires a value of zero or more',
     'step "b" must be an object, such as {"value":5}',
     'step "c" must name its action per platform, such as {"google":"…"}',
     'step "d" names "tiktok", which is not set up',
-    'step "e" needs its action as text, or as one text per platform',
-    'step "f" needs its currency as text',
-    'step "g" needs its wait as hours, zero or more',
+    'step "e" requires its action as a string, or as one text per platform',
+    'step "f" requires its currency as a string',
+    'step "g" requires its wait as hours, zero or more',
   ])
   // With one platform a plain action is enough. With none, an action has nowhere to go, and saying so beats sending nothing quietly.
   assert.deepEqual(ladderProblems({ c: { action: 'x' } }, ['google']), [])
@@ -769,7 +769,7 @@ test('a step fills in what an outcome leaves out, and nothing it states', () => 
   ])
   assert.deepEqual(ladderProblems({ g: { action: 5 }, h: { action: ['x'] }, i: { action: '' } }, ['google']).length, 3)
   assert.deepEqual(ladderProblems([1], []), ['must be an object of steps, such as {"inquiry":{"value":5}}'])
-  assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', STAGES: '{"inquiry":{"value":"5"}}' }), /STAGES: step "inquiry" needs a value of zero or more/)
+  assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', STAGES: '{"inquiry":{"value":"5"}}' }), /STAGES: step "inquiry" requires a value of zero or more/)
   assert.deepEqual(configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', STAGES: '{"inquiry":{"value":5}}', ALERT_WEBHOOK: 'https://hooks.example/x' }).stages, { inquiry: { value: 5 } })
 })
 
@@ -800,7 +800,7 @@ test('an alert is posted once per subject per quiet period, and a broken webhook
   assert.equal(await alert('conversions', 'again'), false)
   status = 0
   assert.equal(await alert('outbox', 'again'), false)
-  assert.deepEqual(errors.map((error) => (error as Error).message), ['The alert webhook answered 500', 'network down'])
+  assert.deepEqual(errors.map((error) => (error as Error).message), ['The alert webhook returned 500', 'network down'])
   // An alert nobody heard does not hold back the next one of its kind.
   status = 200
   assert.equal(await alert('conversions', 'heard this time'), true)

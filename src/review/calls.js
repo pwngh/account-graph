@@ -101,7 +101,7 @@ function missedCalls(open, at) {
       const journey = await api('GET', `/journey?subject=${encodeURIComponent(call.subject)}`)
       if (turn !== asked) return
       const entries = [...journey.entries].reverse()
-      const subjects = Object.keys(journey.ties).length
+      const subjects = Object.keys(journey.subjects).length
       story.replaceChildren(head, el('p', { class: 'inbox-age' }, 'History', el('span', { class: 'count' }, `${amount(entries.length)}${journey.next === null ? '' : '+'}`), subjects > 1 ? el('span', { class: 'meta' }, ` · ${amount(subjects)} IDs`) : ''),
         el('ol', { class: 'story', role: 'list' }, ...entries.slice(0, 14).map((entry) => el('li', { class: `${entry.kind}${entry.kind === 'call' && entry.call.id === call.id ? ' this' : ''}` }, glyph(entry.kind), el('div', { class: 'what' }, ...told(entry)), el('span', { class: 'meta' }, reviewDisplay.time(entry.at > 0 ? entry.at : null, at))))),
         entries.length > 14 ? el('p', { class: 'meta' }, `${amount(entries.length - 14)} more in the journey`) : '')
@@ -154,8 +154,8 @@ view('calls', 'Calls', async (box, first, last) => {
     ...[['Answered', total.answered, total.calls, ''],
       ['Missed', total.missed, total.calls, ''], ['Voicemail', total.voicemail, total.calls, ''],
       ['Waiting', total.waiting, total.calls, 'Result not received yet'], ['Unknown', total.unknown, total.calls, 'Result unavailable'],
-      ['Returned', total.returned, lost, [summary.returnedWithin !== null && `Median ${lasted(summary.returnedWithin)}`, total.told > 0 && `${amount(total.told)} reported by another system`].filter(Boolean).join(' · ')],
-      ['Called again', total.triedAgain, lost, 'Caller got through later'],
+      ['Returned', total.returned, lost, [summary.returnedWithin !== null && `Median ${lasted(summary.returnedWithin)}`, total.reported > 0 && `${amount(total.reported)} reported by another system`].filter(Boolean).join(' · ')],
+      ['Called again', total.calledAgain, lost, 'Caller got through later'],
       ...(total.notLeads > 0 ? [['Not a lead', total.notLeads, 0, 'Excluded from other counts']] : [])].map(([name, count, whole, meaning], i) =>
       behind(el('tr', i === 5 ? { class: 'second' } : {}, td('', reviewDisplay.chip(name, reviewDisplay.callTone(name.toLowerCase()))), td('num', tally(count)),
         td('num share', whole > 0 ? percent(count / whole) : none()), td('muted', meaning)), whole > 0 ? count / whole : 0)))
