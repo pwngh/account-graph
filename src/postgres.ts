@@ -588,7 +588,7 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
   ]
 }
 
-/** The tables of a new database, for running by hand or reading. Times are epoch milliseconds. */
+/** The tables the first upgrade makes, for reading. `migrate` makes these and everything `upgrades` adds after them. Times are epoch milliseconds. */
 export function ddl(schema = 'account_graph'): string {
   return `
 create schema if not exists ${schema};

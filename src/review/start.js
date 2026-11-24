@@ -13,10 +13,11 @@ $('subject').addEventListener('input', () => {
   clearTimeout(typing)
   typing = setTimeout(async () => {
     const text = $('subject').value.trim()
-    if (!text || !$('token').value) return
+    const token = $('token').value
+    if (!text || !token) return
     try {
       const found = await api('GET', `/search?q=${encodeURIComponent(text)}`)
-      $('found').replaceChildren(...found.map((subject) => el('option', { value: subject })))
+      if ($('token').value === token) $('found').replaceChildren(...found.map((subject) => el('option', { value: subject })))
     } catch {}
   }, 200)
 })

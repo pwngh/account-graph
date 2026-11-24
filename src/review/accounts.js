@@ -94,7 +94,7 @@ function profileOf(profile) {
 const ACTIONS = { ignore: 'Stopped linking through', restore: 'Resumed linking through', separate: 'Kept apart', rejoin: 'Allowed to join', join: 'Joined', forget: 'Forgot', rebuild: 'Rebuilt every cluster', prune: 'Deleted sightings older than' }
 const queued = (cluster) => el('li', {}, open(cluster.id), el('span', { class: 'muted' }, ` ${cluster.size} accounts `), cluster.oversized ? el('span', { class: 'chip apart' }, 'review') : '')
 
-/** Reads pages of the cluster list until as many are in hand as were on screen. */
+/** How many clusters are on screen, so a refresh reads that many again. */
 let listed = 50
 async function clusterList() {
   let clusters = await api('GET', '/clusters')
@@ -103,9 +103,20 @@ async function clusterList() {
     clusters = [...clusters, ...next]
     if (next.length < 50) break
   }
+  const list = el('ul', { id: 'queue' }, ...(clusters.length > 0 ? clusters.map(queued) : [el('li', { class: 'muted' }, 'No clusters yet.')]))
   // The list comes 50 at a time. A full page means there may be more.
-  const more = el('button', { on: { click: () => { listed = clusters.length + 50; load() } } }, 'Show more')
-  return [el('ul', { id: 'queue' }, ...(clusters.length > 0 ? clusters.map(queued) : [el('li', { class: 'muted' }, 'No clusters yet.')])), clusters.length > 0 && clusters.length % 50 === 0 ? el('p', {}, more) : '']
+  const more = el('button', { on: { click: async () => {
+    try {
+      const next = await api('GET', `/clusters?offset=${list.children.length}`)
+      list.append(...next.map(queued))
+      listed = list.children.length
+      more.hidden = next.length < 50
+    } catch (error) {
+      notice(error.message, true)
+    }
+  } } }, 'Show more')
+  more.hidden = clusters.length === 0 || clusters.length % 50 > 0
+  return [list, el('p', {}, more)]
 }
 
 view('accounts', 'Accounts', async (box, subject) => {

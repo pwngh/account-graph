@@ -117,10 +117,11 @@ function place() {
   return views.has(name) ? { name, parts } : { name: 'accounts', parts: [] }
 }
 
-/** Which control this is, whatever moved around it: what it is, what it says, and the row it is in. */
-const which = (node) => [node.tagName, node.textContent, node.getAttribute('href'), node.getAttribute('aria-label'), node.title, node.closest('tr, li')?.textContent].join('\n')
+/** Which control this is, whatever moves around it or changes beside it: what it is and does, and the subject its row is about. */
+const which = (node) => [node.tagName, node.matches('a, button') ? node.textContent : '', node.getAttribute('href'), node.getAttribute('aria-label'), node.title, node.closest('tr, li')?.querySelector('a')?.getAttribute('href')].join('\n')
 
 let loading = 0
+let pending = 0
 /**
  * Fills the view the address names. Resolves to whether it loaded. `tag` is
  * what a look just found: the reload is one nobody asked for, so it gives
@@ -144,6 +145,7 @@ async function load(tag) {
     return false
   }
   const box = el('div')
+  pending += 1
   try {
     // Read the tag before the view: a change that lands while the view loads is then noticed on the next look.
     const seen = tag ?? (await pulse())
@@ -171,6 +173,8 @@ async function load(tag) {
       notice(error.message, true)
     }
     return false
+  } finally {
+    pending -= 1
   }
 }
 
@@ -195,13 +199,13 @@ const busy = () => $('ask').open || ($('view').contains(document.activeElement) 
 const interrupting = () => document.hidden || busy()
 let looking = false
 async function look() {
-  if (interrupting() || looking || !$('token').value || !loadedAt) return fresh()
+  if (interrupting() || looking || pending || !$('token').value || !loadedAt) return fresh()
   looking = true
   const turn = loading
   try {
     const tag = await pulse()
     // Opened something else meanwhile, or began to type: the tag is not taken, so the next look finds the change again.
-    if (turn !== loading || interrupting()) fresh()
+    if (turn !== loading || pending || interrupting()) fresh()
     else if (tag) await load(tag)
     else {
       loadedAt = Date.now()
