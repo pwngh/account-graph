@@ -232,7 +232,7 @@ Each platform also gets the email and phone hashed the way it matches them, as a
 | Without a trusted click, email or phone | `skipped`: `no_match_key` |
 | The person, or the browser that clicked, refused ad measurement, including after an outcome that said yes | `skipped`: `consent_denied` |
 | The outcome is older than the platform accepts: 7 days for Meta, 90 for Microsoft | `skipped`: `too_old` |
-| A click below 0.9 confidence, with an email or phone | Sent with the email or phone alone |
+| A click below 0.9 confidence that is not in the person's cluster, with an email or phone | Sent with the email or phone alone |
 
 A worker claims a job by moving its due time one minute ahead. If the worker dies, the job comes due again for another. On PostgreSQL the claim locks its rows, so any number of workers can call `run` at once.
 

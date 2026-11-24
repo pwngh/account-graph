@@ -117,7 +117,7 @@ export interface Sent {
 export interface OutboxOptions {
   /** The platforms to send to. See `googleAds` and `meta`. */
   targets: readonly Target[]
-  /** The lowest confidence at which a click is sent. Defaults to 0.9. */
+  /** The lowest confidence at which a click is sent. Left out, 0.9, and any click of the person's own cluster. */
   confidence?: number
   /** How far back a click may be. Defaults to 90 days. */
   window?: number
@@ -489,7 +489,10 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
         const asked = `${job.subject}\u0000${job.at}`
         let attribution = attributions.get(asked)
         if (!attribution) attributions.set(asked, (attribution = await graph.attribute(job.subject, { at: job.at, window: options.window ?? 90 * DAY })))
-        const touch = target.click(attribution, confidence)
+        // A person's own click counts however weak the chain to it, unless a lowest confidence was asked for.
+        const touches = attribution.touches.map((each) => (each.joined && options.confidence === undefined ? { ...each, confidence: Math.max(each.confidence, confidence) } : each))
+        const found = target.click({ ...attribution, touches }, confidence)
+        const touch = found && (attribution.touches[touches.indexOf(found)] ?? found)
         const subjects = touch && touch.subject !== job.subject ? [job.subject, touch.subject] : [job.subject]
         // With no consent on the outcome, use what the person and the browser that clicked told us.
         let consent = job.consent

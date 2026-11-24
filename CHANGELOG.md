@@ -51,6 +51,7 @@
 - `outcome`, `POST /convert` and `POST /event` record outcomes. `STAGES` sets the value, currency and action of each step.
 - `restate` and `POST /restate` change a value. `kind` is `refund` or `write_off`. `values` and `GET /outcome` return the value history.
 - `spend`, `POST /costs`, `googleCosts`, `metaCosts` and `costsFromCsv` record campaign costs. `conversions` and `conversionValue` hold platform-reported results (`GOOGLE_ADS_CONVERSIONS`, `META_ADS_CONVERSIONS`).
+- A visit in the same cluster is credited, however weak the chain of links to it (`AttributedTouch.joined`). The outbox sends its click unless `confidence` is set.
 - A report, open calls and the board read the links of a thousand people at a time.
 - `report` and `GET /report` return spend, outcomes, people, `costPerOutcome`, `returnOnCost`, delays, value changes and platform-reported conversions. `by` adds a breakdown, and `per` selects the step for cost.
 - `recordNotLead` and `POST /not-lead` exclude spam and wrong numbers (`notLeads`).

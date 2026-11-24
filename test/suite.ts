@@ -2338,7 +2338,25 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const attribution = await graph.attribute('account:5', { at: T0 + 2 * HOUR })
       assert.deepEqual(attribution.touches[0]!.via, ['account:5', 'visitor:b'])
       assert.ok(Math.abs(attribution.touches[0]!.confidence - 0.98 * 0.9) < 1e-12)
-      assert.equal(attribution.reason, 'low_confidence')
+      // The two links make the three one cluster, so the ad is theirs, however the two multiply.
+      assert.equal(attribution.touches[0]!.joined, true)
+      assert.equal(attribution.reason, 'credited')
+      // Kept apart, they are two people, and the chain goes nowhere.
+      await graph.separate('account:5', 'visitor:a')
+      assert.equal((await graph.attribute('account:5', { at: T0 + 2 * HOUR })).reason, 'no_touch')
+    })
+
+    test('an ad click is credited to a caller whose name was taken on the phone', async () => {
+      const { graph } = await fresh()
+      await graph.touch({ subject: 'visitor:1', at: T0, gclid: 'G1', source: 'google', campaignId: '30111' })
+      await graph.observe({ subject: 'visitor:1', identifiers: ['device:1', dialed('+15550100101', T0)], at: T0, event: 'phone_click' })
+      await recordCall(graph, { id: 'L1', from: '+15550100141', to: '+15550100101', at: T0 + 20_000, duration: 300 })
+      await graph.observe({ subject: 'contact:7', identifiers: [`phone:${hashPhone('+15550100141')}`], at: T0 + HOUR, event: 'intake' })
+      await graph.outcome({ transactionId: 'paid', subject: 'contact:7', at: T0 + DAY, stage: 'client', value: 1250, currency: 'USD' })
+      const { credited } = await graph.attribute('contact:7', { at: T0 + DAY })
+      assert.ok(Math.abs(credited!.confidence - 0.92 * 0.9) < 1e-12)
+      const { rows } = await graph.report({ from: '2023-11-14', to: '2023-11-16' })
+      assert.deepEqual(rows.filter((row) => row.value > 0).map((row) => [row.campaignId, row.value]), [['30111', 1250]])
     })
 
     test('a changed policy is noticed, and a rebuild brings every cluster to it', async () => {

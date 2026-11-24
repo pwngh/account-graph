@@ -584,7 +584,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
   const now = options.now ?? Date.now
 
-  type Reached = Map<Subject, { confidence: number; via: Subject[] }>
+  type Reached = Map<Subject, { confidence: number; via: Subject[]; joined?: true }>
 
   /** Every subject within `hops` links of any of those given, with the strength of the best chain to each. With `only`, through those subjects and to them. */
   async function reach(tx: Tx, from: readonly Subject[], hops: number, only?: ReadonlySet<Subject>, last?: Map<Subject, Link>): Promise<Reached> {
@@ -638,10 +638,26 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     return out
   }
 
+  /**
+   * Marks whoever a search found in the searcher's own cluster. A chain of links multiplies, so two that each join can come
+   * to less than one that joins, and the cluster has already been decided.
+   */
+  async function asOne(tx: Tx, searches: Map<Subject, Reached>): Promise<Map<Subject, Reached>> {
+    const everyone = unique([...searches.values()].flatMap((reached) => [...reached.keys()]))
+    const clusters = new Map<Subject, Subject>()
+    for (let i = 0; i < everyone.length; i += TOGETHER) for (const [subject, { cluster }] of await tx.labelsOf(everyone.slice(i, i + TOGETHER))) clusters.set(subject, cluster)
+    for (const [subject, reached] of searches) {
+      const own = clusters.get(subject)
+      if (own === undefined) continue
+      for (const [each, found] of reached) if (clusters.get(each) === own) found.joined = true
+    }
+    return searches
+  }
+
   /** The same credit as `credit` for many conversions of about one time, read together. `reached` keeps the searches for the next such read. */
   async function creditAll(tx: Tx, asked: readonly { subject: Subject; at: number }[], window: number, hops: number, reached = new Map<Subject, Reached>()): Promise<(subject: Subject, at: number) => Attribution> {
     const subjects = unique(asked.map(({ subject }) => subject))
-    for (const [subject, found] of await reachEach(tx, subjects.filter((subject) => !reached.has(subject)), hops)) reached.set(subject, found)
+    for (const [subject, found] of await asOne(tx, await reachEach(tx, subjects.filter((subject) => !reached.has(subject)), hops))) reached.set(subject, found)
     const touches = new Map<Subject, Touch[]>()
     if (asked.length > 0) {
       let [from, to] = [Infinity, -Infinity]
@@ -666,9 +682,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
   function credited(subject: Subject, at: number, reached: Reached, found: readonly Touch[]): Attribution {
     const touches: AttributedTouch[] = found
-      .map((touch) => ({ ...touch, ...reached.get(touch.subject)! }))
+      .map((touch) => ({ ...touch, joined: false, ...reached.get(touch.subject)! }))
       .sort((x, y) => y.at - x.at || y.confidence - x.confidence || (x.subject < y.subject ? -1 : 1))
-    const best = touches.find((touch) => touch.confidence >= policy.same)
+    const best = touches.find((touch) => touch.joined || touch.confidence >= policy.same)
     const reason = best ? 'credited' : touches.length > 0 ? 'low_confidence' : 'no_touch'
     return { subject, at, touches, credited: best, reason }
   }
@@ -903,7 +919,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     attribute(subject, { at, window = 90 * DAY, hops = 2 }) {
-      return store.read(async (tx) => credit(subject, at, window, await reach(tx, [subject], hops), tx))
+      return store.read(async (tx) => credit(subject, at, window, (await asOne(tx, new Map([[subject, await reach(tx, [subject], hops)]]))).get(subject)!, tx))
     },
 
     async outcome(outcome) {

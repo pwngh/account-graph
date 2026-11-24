@@ -296,6 +296,8 @@ export interface Touch {
 export interface AttributedTouch extends Touch {
   /** Strength of the best chain of links from the converting subject to the touch's subject. */
   confidence: number
+  /** The two are one cluster, so the touch can be credited however weak the chain between them. */
+  joined: boolean
   /** The subjects that chain passes through, starting at the converting subject. */
   via: Subject[]
 }
