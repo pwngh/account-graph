@@ -731,6 +731,30 @@ tr.folded { display: none !important; }
 @media (max-width: 760px) { .wide .table-cards tr.fold { display: block; padding: 0; } .wide .table-cards tr.fold th { display: block; width: 100%; padding: 0; } }
 @media (prefers-reduced-motion: reduce) { .chevron { transition: none; } }
 
+/* Names with a color of their own, and headings that sort. */
+:root { --t0: #1d5fd1; --t1: #0b7a57; --t2: #8a5a00; --t3: #a8326e; --t4: #6747c7; --t5: #0a7285; }
+@media (prefers-color-scheme: dark) { :root { --t0: #8fb4ff; --t1: #5fd6a6; --t2: #f0bd62; --t3: #f59ac6; --t4: #bba6ff; --t5: #6fd3e4; } }
+.tone0 { --tone: var(--t0); } .tone1 { --tone: var(--t1); } .tone2 { --tone: var(--t2); } .tone3 { --tone: var(--t3); } .tone4 { --tone: var(--t4); } .tone5 { --tone: var(--t5); }
+.chip.tag { background: color-mix(in srgb, var(--tone) 13%, transparent); color: var(--tone); }
+.sourced { display: inline-flex; gap: 8px; align-items: center; white-space: nowrap; }
+.letter { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; background: color-mix(in srgb, var(--tone) 18%, var(--panel)); color: var(--tone); font: 700 11px/1 system-ui, sans-serif; }
+.letter::before { content: attr(data-letter); }
+.what .letter { width: 16px; height: 16px; border-radius: 5px; font-size: 10px; }
+.what .sourced { gap: 5px; vertical-align: -2px; }
+.sort { position: relative; overflow-wrap: normal; word-break: keep-all; white-space: normal; display: inline-flex; align-items: center; height: auto; min-height: 0; padding: 2px 4px; margin: -2px -4px; border: 0; border-radius: 4px; background: none; color: inherit; font: inherit; }
+th.num .sort { text-align: right; }
+th.num .way { right: auto; left: 50%; top: -5px; margin: 0 0 0 -4px; }
+.campaign-report th { overflow-wrap: normal; word-break: keep-all; }
+.sort:hover { background: var(--hover); color: var(--ink); }
+.way { position: absolute; right: -4px; top: 50%; margin-top: -4px; width: 7px; height: 7px; opacity: 0; transition: opacity .12s; background: currentColor; clip-path: polygon(50% 100%, 0 30%, 100% 30%); }
+.sort:hover .way, .sort:focus-visible .way { opacity: .35; }
+[aria-sort=descending] .way, [aria-sort=ascending] .way { opacity: 1; }
+[aria-sort=ascending] .way { transform: rotate(180deg); }
+[aria-sort=descending] .sort, [aria-sort=ascending] .sort { color: var(--ink); }
+.campaign-report td:nth-child(2), .campaign-report thead tr:last-child > th:nth-child(2) { position: sticky; left: 0; z-index: 1; background: var(--panel); }
+.campaign-report thead tr:last-child > th:nth-child(2) { z-index: 2; background: var(--soft); }
+.campaign-report tr.sum td:nth-child(2) { background: var(--soft); }
+
 /* A table of a few plain columns is read along its rows, so they do not stand far apart. */
 @media (min-width: 761px) { .wide:has(> table):not(:has(th[colspan])) { max-width: 1040px; } }
 

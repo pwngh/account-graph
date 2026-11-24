@@ -8,14 +8,14 @@ function told(entry) {
   const more = (...text) => el('span', { class: 'reason' }, ...text)
   const facts = (...text) => text.some(Boolean) ? more(text.filter(Boolean).join(' · ')) : ''
   const tags = (values, rename = (name) => name) => {
-    const chips = Object.entries(values ?? {}).map(([name, value]) => reviewDisplay.chip(`${rename(name)}: ${value}`, 'muted'))
+    const chips = Object.entries(values ?? {}).map(([name, value]) => reviewDisplay.chip(`${rename(name)}: ${value}`, `tag ${toneOf(name)}`))
     return chips.length ? el('span', { class: 'entry-tags' }, ...chips) : ''
   }
   const words = (name) => name.replaceAll('_', ' ')
   if (entry.kind === 'arrival') {
     const { touch } = entry
     const click = CLICKS.find(([field]) => touch[field])
-    return [`From ${entry.source}${touch.campaign || touch.campaignId ? `, ${touch.campaign || touch.campaignId}` : ''}. `,
+    return ['From ', sourced(entry.source), `${touch.campaign || touch.campaignId ? `, ${touch.campaign || touch.campaignId}` : ''}. `,
       click || touch.medium ? reviewDisplay.chip(click ? click[1] : touch.medium, 'muted') : '',
       facts(touch.landing && (touch.landing.startsWith('tel:') ? 'filed under the number that was rung' : `landed on ${touch.landing}`),
         touch.term && `searched ${touch.term}`),

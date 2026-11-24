@@ -81,11 +81,13 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
     [per ? `Cost per ${per}` : 'Cost per outcome', all.costPerOutcome !== null ? cash(all.costPerOutcome) : all.thin ? 'withheld' : '—', report.leftOut > 0 ? `leaves out ${amount(report.leftOut)} ${report.leftOut === 1 ? 'campaign' : 'campaigns'}` : ''], ['Return', all.returnOnCost !== null ? `${all.returnOnCost.toFixed(1)}×` : all.thin ? 'withheld' : '—', report.leftOut > 0 ? `leaves out ${amount(report.leftOut)} ${report.leftOut === 1 ? 'campaign' : 'campaigns'}` : ''],
     all.missed > 0 && ['Missed calls', amount(all.missed), 'by result, returned ones too']))
   const note = (parts) => (parts.some(Boolean) ? el('span', { class: 'reason' }, parts.filter(Boolean).join(' · ')) : '')
-  for (const row of report.rows) {
-    table.append(el('tr', {}, td('', row.source === '(none)' ? el('span', { class: 'muted' }, 'no arrival credited') : row.source),
+  const rows = report.rows.map((row) => ({ row, lines: [] }))
+  for (const { row, lines } of rows) {
+    lines.push(el('tr', {}, td('', row.source === '(none)' ? el('span', { class: 'muted' }, 'no arrival credited') : sourced(row.source)),
       td('who', row.campaign || row.campaignId || el('span', { class: 'muted' }, 'No campaign named'),
         row.campaign && row.campaignId ? el('span', { class: 'reason' }, row.campaignId) : '',
         note([row.missingDays > 0 && (row.costDays > 0 || row.thin) && `${amount(row.missingDays)} of ${amount(report.days)} days missing`])), ...cells(row)), ...split(row))
+    table.append(...lines)
   }
   table.append(el('tr', { class: 'sum' }, td('', 'All'), td('who', note([report.leftOut > 0 && `cost and return leave out ${amount(report.leftOut)} ${report.leftOut === 1 ? 'campaign' : 'campaigns'}`])), ...cells(report.total)), ...split(report.total))
   const breakdown = el('select', { on: { change: () => go(address({ by: breakdown.value })) } }, el('option', { value: '' }, 'Nothing'),
@@ -110,6 +112,9 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
   report.currencies.length > 1 ? el('p', { class: 'apart' }, `Totals mix currencies: ${report.currencies.join(', ')}.`) : '',
   ...(report.rows.length > 3 ? [filters('Campaigns', table, [{ name: 'Source', at: 0 }])] : []), report.rows.length > 0 ? wide('Channels', table) : el('p', { class: 'muted' }, 'No campaign data in this period.'))
   box.append(campaigns)
+  const reachedBy = (name) => (row) => row.stages[name]?.count ?? 0
+  if (rows.length > 1) sortable('Campaigns', table, [(row) => row.source, (row) => row.campaign || row.campaignId || null, (row) => (row.source === '(none)' || (row.costDays === 0 && row.cost === 0 && row.clicks === 0) ? null : row.cost), (row) => (row.source === '(none)' || (row.costDays === 0 && row.cost === 0 && row.clicks === 0) ? null : row.clicks), (row) => row.visits,
+    ...stages.map(reachedBy), (row) => row.people, ...(report.total.missed > 0 ? [(row) => row.missed] : []), (row) => row.value, (row) => row.costPerOutcome, (row) => row.returnOnCost], rows)
   const timed = stages.filter((stage) => report.total.stages[stage].delay)
   if (timed.length > 0) {
     const times = el('table', {}, el('tr', {}, th('Step'), th('Outcomes with an arrival', 'num'), th('Half within', 'num'), th('95 in 100 within', 'num'), th('Inside the window', 'num')))
