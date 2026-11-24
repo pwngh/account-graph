@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { after, describe, test } from 'node:test'
-import { GoogleError, MetaError, createBatcher, createGraph, createOutbox, googleAds, hashEmail, meta, microsoftAds, tiktok } from '../src/index.ts'
+import { GoogleError, MetaError, createBatcher, createGraph, createOutbox, googleAds, hashEmail, meta, microsoftAds, tiktok, recordNotLead } from '../src/index.ts'
 import type { IngestRequest, OutboxOptions, Outcome, Store } from '../src/index.ts'
 import type { Opened } from './suite.ts'
 
@@ -687,6 +687,56 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       assert.equal(await graph.outcomeOf('enroll-2'), undefined)
       await outbox.run()
       assert.deepEqual(values, [['changes', 200], ['changes', 0]])
+    })
+
+    test('what was no lead is not sent, is retracted where it was, and goes out again when that is taken back', async () => {
+      const { graph, outbox, remote, clock, store } = await fresh()
+      const values = () => remote.requests.flatMap((request) => request.events.map((event) => [event.transactionId, event.conversionValue]))
+      const options = { takeBack: outbox.takeBack, giveBack: outbox.giveBack }
+      const job = async (n: number) => (await outbox.get(`enroll-${n}`))[0]!
+      // Not sent yet: it waits, and the outcome is still on record.
+      await enroll(graph, 1)
+      await outbox.record(outcome(1))
+      await recordNotLead(graph, { transactionId: 'enroll-1', kind: 'spam' }, options)
+      await outbox.run()
+      assert.deepEqual([values(), (await job(1)).state, (await graph.outcomeOf('enroll-1'))!.value], [[], 'held', 200])
+      // Said before it was queued, the pass finds it.
+      await enroll(graph, 2)
+      await recordNotLead(graph, { transactionId: 'enroll-2' }, options)
+      await outbox.record(outcome(2))
+      await outbox.run()
+      assert.deepEqual([values(), (await job(2)).state], [[], 'held'])
+      await outbox.run()
+      // Sent already: worth nothing on a platform that can be told.
+      await enroll(graph, 3)
+      await outbox.record(outcome(3))
+      await outbox.run()
+      await recordNotLead(graph, { transactionId: 'enroll-3' }, options)
+      await recordNotLead(graph, { transactionId: 'enroll-3', kind: 'spam' }, options)
+      await outbox.run()
+      assert.deepEqual(values(), [['enroll-3', 200], ['enroll-3', 0]])
+      // Restated meanwhile, nothing is said of it. Taken back, they go out at what they are worth now.
+      await outbox.restate('enroll-3', 350)
+      await outbox.run()
+      for (const n of [1, 2, 3]) await recordNotLead(graph, { transactionId: `enroll-${n}`, lead: true }, options)
+      await outbox.run()
+      assert.deepEqual(values().slice(2).sort(), [['enroll-1', 200], ['enroll-2', 200], ['enroll-3', 350]])
+      // Said while it was on its way, it is retracted by the next pass.
+      let during: (() => Promise<unknown>) | undefined
+      const slow = createOutbox(graph, store.outbox, { targets: [googleAds({ customerId: '1', send: async (request) => (await during?.(), remote.send(request)) })], now: () => clock.now, random: () => 1 })
+      await enroll(graph, 4)
+      await slow.record(outcome(4))
+      during = async () => {
+        during = undefined
+        await recordNotLead(graph, { transactionId: 'enroll-4' }, { takeBack: slow.takeBack })
+      }
+      await slow.run()
+      await slow.run()
+      assert.deepEqual(values().filter(([id]) => id === 'enroll-4'), [['enroll-4', 200], ['enroll-4', 0]])
+      // Where there is no such outcome, nothing is given back.
+      await outbox.withdraw('enroll-1')
+      await recordNotLead(graph, { transactionId: 'enroll-1', lead: true }, options)
+      assert.equal((await job(1)).withdrawn, true)
     })
 
     test('forgetting a subject deletes its unsent conversions', async () => {

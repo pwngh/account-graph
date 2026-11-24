@@ -1,7 +1,7 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { BlockList, isIP } from 'node:net'
-import { callState, dialed, followUp, numberOrSelf, recordCall, recordCallResult, recordReturn } from './calls.ts'
+import { callState, dialed, followUp, numberOrSelf, recordCall, recordCallResult, recordNotLead, recordReturn } from './calls.ts'
 import type { CallOptions } from './calls.ts'
 import { Outdated } from './graph.ts'
 import type { Graph, PolicyState } from './graph.ts'
@@ -290,6 +290,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         hold: async (outcome: Outcome) => (sends(outcome) ? outbox.hold(staged(outcome)) : []),
         release: async (outcome: Outcome) => (sends(outcome) ? outbox.release(staged(outcome)) : convert(outcome)),
         withdraw: (transactionId: string) => outbox.withdraw(transactionId),
+        takeBack: (transactionId: string) => outbox.takeBack(transactionId),
+        giveBack: (transactionId: string) => outbox.giveBack(transactionId),
       }),
       ...(lineOf && { lineType: lineOf }),
     }
@@ -894,7 +896,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       case 'GET /outcome': {
         const id = url.searchParams.get('id') ?? ''
         const outcome = await graph.outcomeOf(id)
-        return outcome ? { ...outcome, values: await graph.values(id) } : null
+        const said = (await graph.notLeads([id])).get(id)
+        return outcome ? { ...outcome, values: await graph.values(id), ...(said && { notLead: said.kind }) } : null
       }
       case 'GET /between':
         return graph.between(url.searchParams.get('a') ?? '', url.searchParams.get('b') ?? '')
@@ -931,10 +934,13 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         const call = await graph.keptCall(url.searchParams.get('id') ?? '')
         if (!call) return null
         const missed = call.direction === 'inbound' && call.result?.answered === false
-        return { ...call, state: callState(call, now(), options.calls), ...(missed && { followUp: followUp(call, await graph.callsOf([call.subject])) }) }
+        const said = (await graph.notLeads([`call:${call.id}`])).get(`call:${call.id}`)
+        return { ...call, ...(said && { notLead: said.kind }), state: callState(call, now(), options.calls), ...(missed && { followUp: followUp(call, await graph.callsOf([call.subject])) }) }
       }
       case 'POST /call/result':
         return (await recordCallResult(graph, await json(request), calling())) ?? { state: 'waiting', counted: false }
+      case 'POST /not-lead':
+        return recordNotLead(graph, await json(request), calling())
       case 'POST /call/returned':
         return { followUp: (await recordReturn(graph, await json(request), calling())) ?? null }
       case 'POST /restate': {

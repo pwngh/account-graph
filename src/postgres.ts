@@ -2,7 +2,7 @@ import type { Feed, KeptAlert, OpsStore } from './ops.ts'
 import type { Job, JobState, OutboxStore } from './outbox.ts'
 import type { Store, Tx } from './store.ts'
 import { CLICK_IDS } from './touch.ts'
-import type { CallResult, Consent, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Lease, Moved, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, Consent, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Lease, Moved, NotLead, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
 
 /** Every ad click id a touch carries, as the index on them has it. */
 const CLICKED = `array[${CLICK_IDS.map((name) => `detail->>'${name}'`).join(', ')}]`
@@ -103,6 +103,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       )
       // What nobody holds any more goes too, unless it is muted: that is a decision, and stands for whoever holds it next.
       await db.query(`delete from ${t('identifier')} where id = any($1::text[]) and fanout <= 0 and not ignored`, [left.filter((row) => row.fanout <= 0).map((row) => row.id)])
+      await db.query(`delete from ${t('not_lead')} where id in (select transaction_id from ${t('outcome')} where subject = $1 union all select 'call:' || id from ${t('call')} where subject = $1)`, [subject])
       await db.query(`delete from ${t('sighting')} where subject = $1`, [subject])
       await db.query(`delete from ${t('touch')} where subject = $1`, [subject])
       await db.query(`delete from ${t('outcome')} where subject = $1`, [subject])
@@ -443,6 +444,26 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       )
     },
 
+    async notLeads(ids) {
+      if (ids.length === 0) return new Map()
+      const { rows } = await db.query(`select * from ${t('not_lead')} where id = any($1::text[])`, [ids])
+      return new Map(rows.map((row) => [row.id, { kind: row.kind, at: Number(row.at) }]))
+    },
+
+    async setNotLead(id, said) {
+      if (said) await db.query(`insert into ${t('not_lead')} (id, kind, at) values ($1, $2, $3) on conflict (id) do update set kind = excluded.kind, at = excluded.at`, [id, said.kind, said.at])
+      else await db.query(`delete from ${t('not_lead')} where id = $1`, [id])
+    },
+
+    async pruneNotLeads(before) {
+      const { rows } = await db.query(
+        `with gone as (delete from ${t('not_lead')} n where at < $1 and not exists (select 1 from ${t('outcome')} o where o.transaction_id = n.id)
+           and not exists (select 1 from ${t('call')} c where 'call:' || c.id = n.id) returning 1) select count(*)::int as n from gone`,
+        [before],
+      )
+      return rows[0].n
+    },
+
     async removeCallResult(id) {
       await db.query(`delete from ${t('call_result')} where id = $1`, [id])
     },
@@ -466,6 +487,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     async openCalls(from, to, limit, after) {
       const { rows } = await db.query(
         `${callRows} where c.direction = 'inbound' and c.at >= $1 and c.at < $2 and r.answered = false and c.subject <> 'call:' || c.id
+           and not exists (select 1 from ${t('not_lead')} n where n.id = 'call:' || c.id)
            and ($4::bigint is null or c.at > $4 or (c.at = $4 and c.id collate "C" > $5))
            and not exists (select 1 from ${t('call')} d join ${t('call_result')} s on s.id = d.id where d.subject = c.subject and ((d.at > c.at and s.answered) or (d.direction = 'inbound' and s.answered = false and s.returned_at > d.at and s.returned_at > c.at)))
          order by c.at, c.id collate "C" limit $3`,
@@ -1124,6 +1146,11 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
       id: 17,
       name: 'returns reported by your own systems',
       sql: `alter table ${schema}.call_result add column if not exists returned_at bigint;`,
+    },
+    {
+      id: 18,
+      name: 'what was no lead',
+      sql: `create table if not exists ${schema}.not_lead (id text primary key, kind text not null, at bigint not null);`,
     },
   ]
 }

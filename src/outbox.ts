@@ -153,6 +153,10 @@ export interface Outbox {
    * restated to nothing on every platform that can restate. Others keep it.
    */
   withdraw(transactionId: string): Promise<Job[]>
+  /** Takes an outcome's jobs back and leaves the outcome: it was no lead. */
+  takeBack(transactionId: string): Promise<Job[]>
+  /** Gives back the jobs `takeBack` took, at what the outcome is worth now. */
+  giveBack(transactionId: string): Promise<Job[]>
   /** Sends every job that is due. Call it on a timer, from as many workers as you like. */
   run(): Promise<Pass>
   /** Calls `run` every `interval` milliseconds. Returns a function that stops it. */
@@ -213,6 +217,15 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
     const gone: Job = { ...job, delivered: true, withdrawn: true }
     if (!targets.get(job.target)?.restates) return { ...gone, state: 'sent', note: 'withdrawn, but this platform keeps it' }
     return { ...gone, value: 0, restated: true, state: 'pending', attempts: 0, due: now(), note: 'withdrawn' }
+  }
+
+  /** A job whose outcome counts after all. */
+  function givenBack(job: Job, value: number): Job {
+    const { withdrawn: _, note: __, ...rest } = job
+    if (!reached(job)) return { ...rest, state: 'pending', due: now() + (options.delay ?? 0) }
+    // It had arrived, and may have been restated to nothing since: give it its value again.
+    if (!targets.get(job.target)?.restates) return { ...rest, state: 'sent' }
+    return { ...rest, value, state: 'pending', attempts: 0, due: now() }
   }
 
   /**
@@ -323,12 +336,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
       return Promise.all(
         before.map((job) =>
           change(job, (current) => {
-            if (current.state !== 'held' && !current.withdrawn) return undefined
-            const { withdrawn: _, note: __, ...rest } = current
-            if (!reached(current)) return { ...rest, state: 'pending', due: now() + (options.delay ?? 0) }
-            // It had arrived, and may have been restated to nothing since: give it its value again.
-            if (!targets.get(current.target)?.restates) return { ...rest, state: 'sent' }
-            return { ...rest, value: outcome.value ?? 0, state: 'pending', attempts: 0, due: now() }
+            return current.state === 'held' || current.withdrawn ? givenBack(current, outcome.value ?? 0) : undefined
           }),
         ),
       )
@@ -337,6 +345,15 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
     async withdraw(transactionId) {
       await graph.withdraw(transactionId)
       return Promise.all((await store.get(transactionId)).map((job) => change(job, (current) => (current.withdrawn ? undefined : takenBack(current)))))
+    },
+
+    async takeBack(transactionId) {
+      return Promise.all((await store.get(transactionId)).map((job) => change(job, (current) => (current.withdrawn ? undefined : takenBack(current)))))
+    },
+
+    async giveBack(transactionId) {
+      const outcome = await graph.outcomeOf(transactionId)
+      return Promise.all((await store.get(transactionId)).map((job) => change(job, (current) => (outcome && current.withdrawn ? givenBack(current, outcome.value) : undefined))))
     },
 
     async restate(transactionId, value, currency) {
@@ -359,7 +376,14 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
       const failed: Job[] = []
       const groups = new Map<string, { target: Target; action: string; items: Item[] }>()
       const attributions = new Map<string, Attribution>()
-      for (const job of await store.claim(now(), lease, options.batch ?? 500)) {
+      const claimed = await store.claim(now(), lease, options.batch ?? 500)
+      const spurned = await graph.notLeads(claimed.map((job) => job.transactionId))
+      for (const job of claimed) {
+        // Said to be no lead before it was queued: it waits, and one that is taking a conversion back goes out.
+        if (spurned.has(job.transactionId) && !job.withdrawn) {
+          await change(job, (current) => (current.withdrawn ? undefined : takenBack(current)))
+          continue
+        }
         const skip = async (note: string) => {
           if (await store.swap(job, { ...job, state: 'skipped', note })) pass.skipped += 1
         }

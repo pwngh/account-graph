@@ -171,6 +171,28 @@ The advertised office and the serving office are two facts, and often differ. Ne
 
 An outcome or a call carries at most 8 tags, each name of lowercase letters and underscores up to 32 characters, each value up to 64. `(not recorded)` is not a value: it is what a missing one is called.
 
+## What was no lead
+
+Some inquiries are spam, a wrong number, a supplier, or somebody who is a client already. Have your own system say so, for a call or for any other outcome:
+
+```sh
+curl -X POST https://graph.example.org/not-lead -H "authorization: Bearer $GRAPH_TOKEN" -d '{"call":"CA1","kind":"spam"}'
+curl -X POST https://graph.example.org/not-lead -H "authorization: Bearer $GRAPH_TOKEN" -d '{"transactionId":"inquiry-1001"}'
+```
+
+| Where | What happens |
+| --- | --- |
+| The report | It is in no outcome, value, person or missed call, and in no cost per outcome. `notLeads` counts it beside them, on the campaign it would have been credited to, so a campaign that brings spam shows it. |
+| The call summary | Counted as `notLeads`, and in nothing else. |
+| The Calls view, the Board and alerts | A missed call is waiting for nobody. |
+| What followed a call | Left out. |
+| A journey, `GET /call`, `GET /outcome` | Still there, marked `notLead`. |
+| Ad platforms | Not sent if it was waiting. Told it is worth nothing where a platform can be told. The others keep it. |
+
+It may be said before the outcome is recorded, and a call marked before its result is not counted when the result comes. `"lead": true` takes it back: everything counts again, and a conversion goes out at what it is worth now. `forget` deletes the mark with its subject, and `prune` deletes marks whose outcome never came.
+
+> **It is taken at its word.** A campaign looks cheaper per lead when its poor leads are marked, so mark by a rule you would defend, and look at `notLeads` beside the cost.
+
 ## People by step
 
 The Board puts each person in one column. A person is everyone the graph treats as one, whatever subjects they left.

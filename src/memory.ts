@@ -3,7 +3,7 @@ import { createMemoryOutbox } from './outbox.ts'
 import { standingFirst } from './store.ts'
 import type { Store, Tx } from './store.ts'
 import { CLICK_IDS } from './touch.ts'
-import type { CallResult, Consent, ConsentAnswer, Cost, Counted, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Lease, Moved, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, Consent, ConsentAnswer, Cost, Counted, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Lease, Moved, NotLead, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
 
 /**
  * Keeps the graph in process memory. Writes run one at a time; a write that
@@ -29,6 +29,7 @@ export function createMemoryStore(): Store {
   const values = new Map<Subject, Map<string, OutcomeValue[]>>()
   const calls = new Map<string, Omit<KeptCall, 'result'>>()
   const results = new Map<string, CallResult>()
+  const spurned = new Map<string, NotLead>()
   /** By number, the one that began first, first. */
   const leases = new Map<string, Lease[]>()
   const costs = new Map<string, Required<Cost>>()
@@ -101,12 +102,17 @@ export function createMemoryStore(): Store {
       bySubject.delete(subject)
       sightings.delete(subject)
       touches.delete(subject)
-      for (const [id, outcome] of outcomes) if (outcome.subject === subject) outcomes.delete(id)
+      for (const [id, outcome] of outcomes) {
+        if (outcome.subject !== subject) continue
+        outcomes.delete(id)
+        spurned.delete(id)
+      }
       values.delete(subject)
       for (const [id, call] of calls) {
         if (call.subject === subject) {
           calls.delete(id)
           results.delete(id)
+          spurned.delete(`call:${id}`)
         } else if (call.visitor === subject) delete call.visitor
       }
       assign(subject, undefined)
@@ -393,6 +399,21 @@ export function createMemoryStore(): Store {
       results.set(id, { ...result })
     },
 
+    async notLeads(ids) {
+      return new Map(ids.flatMap((id) => (spurned.has(id) ? [[id, { ...spurned.get(id)! }] as const] : [])))
+    },
+
+    async setNotLead(id, said) {
+      if (said) spurned.set(id, { ...said })
+      else spurned.delete(id)
+    },
+
+    async pruneNotLeads(before) {
+      let gone = 0
+      for (const [id, { at }] of spurned) if (at < before && !outcomes.has(id) && !(id.startsWith('call:') && calls.has(id.slice(5)))) gone += Number(spurned.delete(id))
+      return gone
+    },
+
     async removeCallResult(id) {
       results.delete(id)
     },
@@ -422,7 +443,7 @@ export function createMemoryStore(): Store {
         answered.set(call.subject, Math.max(spoke ? call.at : -Infinity, told, answered.get(call.subject) ?? -Infinity))
       }
       const open = [...calls.values()].filter((call) => {
-        if (call.direction !== 'inbound' || call.at < from || call.at >= to || results.get(call.id)?.answered !== false || call.subject === `call:${call.id}`) return false
+        if (call.direction !== 'inbound' || call.at < from || call.at >= to || results.get(call.id)?.answered !== false || call.subject === `call:${call.id}` || spurned.has(`call:${call.id}`)) return false
         if (after && !(call.at > after.at || (call.at === after.at && call.id > after.id))) return false
         return (answered.get(call.subject) ?? -Infinity) <= call.at
       })

@@ -1064,11 +1064,20 @@ test('a call whose result is awaited is held, and nothing is sent until a person
     assert.deepEqual([marked.status, marked.body], [200, { followUp: null }])
     assert.equal((await post('/call/returned', { id: 'CA-nobody', at: 'then' })).status, 400)
     assert.equal((await fetch(`${base}/call/returned`, { method: 'POST', headers: { authorization: 'Bearer review' }, body: '{"id":"CA-nobody"}' })).status, 403)
+    // What was no lead, for the service alone. A call and an outcome say so when they are read.
+    assert.deepEqual((await post('/not-lead', { call: 'CA1', kind: 'spam' })).body, { id: 'call:CA1', lead: false })
+    assert.equal(((await (await read('/call?id=CA1')).json()) as any).notLead, 'spam')
+    assert.equal(((await (await read('/outcome?id=call:CA1')).json()) as any).notLead, 'spam')
+    assert.deepEqual((await post('/not-lead', { call: 'CA1', lead: true })).body, { id: 'call:CA1', lead: true })
+    assert.equal('notLead' in ((await (await read('/call?id=CA1')).json()) as any), false)
+    assert.equal((await post('/not-lead', { call: 'CA1', kind: 'junk' })).status, 400)
+    assert.equal((await fetch(`${base}/not-lead`, { method: 'POST', headers: { authorization: 'Bearer review' }, body: '{"call":"CA1"}' })).status, 403)
+    // Given back, what had been sent is told its value once more.
     // A result that comes first waits for its call.
     assert.deepEqual((await post('/call/result', { id: 'CA3', answered: true })).body, { state: 'waiting', counted: false })
     assert.equal((await post('/call', call('CA3'))).body.state, 'answered')
     await outbox.run()
-    assert.deepEqual(requests.flatMap((request) => request.events.map((each: any) => each.transactionId)), ['call:CA1', 'call:CA3'])
+    assert.deepEqual(requests.flatMap((request) => request.events.map((each: any) => each.transactionId)), ['call:CA1', 'call:CA1', 'call:CA3'])
     // Missed as it was reported, and answered after all: it goes out with the number's hash it was reported with.
     await post('/call', { ...call('CA4'), answered: false })
     assert.equal((await post('/call/result', { id: 'CA4', answered: true })).body.counted, true)

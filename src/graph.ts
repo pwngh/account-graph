@@ -42,6 +42,7 @@ import type {
   Lease,
   Link,
   Moved,
+  NotLead,
   Observation,
   OpenCall,
   Outcome,
@@ -142,6 +143,13 @@ export interface Graph {
   keepCallResult(id: string, result: Omit<CallResult, 'recorded'>): Promise<void>
   /** Keeps when a caller was reached as a system of yours reports it, or with undefined takes that back. `recordReturn` does this. */
   keepReturn(id: string, at: number | undefined): Promise<void>
+  /**
+   * Says an outcome was no lead, or with undefined takes that back. A call is `call:` and its id, and either may not be
+   * recorded yet. It stays on record, and counts nowhere. `recordNotLead` does this, and tells the ad platforms.
+   */
+  markNotLead(id: string, kind: NotLead['kind'] | undefined): Promise<void>
+  /** Which of these outcomes, by transaction id, were said to be no lead. */
+  notLeads(ids: readonly string[]): Promise<Map<string, NotLead>>
   /** A kept call with its result, or undefined for an id no call was kept for. */
   keptCall(id: string): Promise<KeptCall | undefined>
   /** Whether an arrival since a time is on record for a subject, and no standing opt-out from measuring ads. */
@@ -593,6 +601,14 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     return { subject, at, touches, credited, reason }
   }
 
+  /** Those of some outcomes, or of some calls, that nobody said were no lead. */
+  const leadsOf = async <T>(tx: Tx, list: readonly T[], id: (each: T) => string): Promise<T[]> => {
+    const not = await tx.notLeads(list.map(id))
+    return not.size === 0 ? [...list] : list.filter((each) => !not.has(id(each)))
+  }
+  const outcomeId = (outcome: Counted) => outcome.transactionId
+  const callId = (call: KeptCall) => `call:${call.id}`
+
   const followable = async (tx: Tx, subject: Subject, since: number, at: number) => (await tx.touchesOf([subject], since, at)).length > 0 && (await tx.consentOf([subject])).get(subject)?.adUserData !== false
 
   const holderOf = async (tx: Tx, number: string, at: number, grace: number): Promise<Subject | undefined> => {
@@ -898,6 +914,16 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       })
     },
 
+    async markNotLead(id, kind) {
+      if (typeof id !== 'string' || !id) throw new TypeError('Say which outcome was no lead, by its transaction id')
+      if (kind !== undefined && kind !== 'spam' && kind !== 'other') throw new TypeError('What was no lead is `spam` or `other`')
+      await store.write((tx) => tx.setNotLead(id, kind && { kind, at: now() }))
+    },
+
+    notLeads(ids) {
+      return store.read((tx) => tx.notLeads(ids))
+    },
+
     keptCall(id) {
       return store.read((tx) => tx.callOf(id))
     },
@@ -982,7 +1008,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         // A call filed under its number's channel left a touch of its own, on the caller, at the moment it began.
         const own = new Set((await tx.touchesBetween(start, end)).filter((touch) => touch.landing?.startsWith('tel:')).map((touch) => `${touch.at} ${touch.landing} ${touch.subject}`))
         const filed = new Set(calls.filter((call) => own.has(`${call.at} tel:${call.to} ${call.subject}`)).map((call) => call.id))
-        return summarizeCalls(calls, await tx.callsOf(unique(missed.map((call) => call.subject))), filed, at, timeZone, options)
+        return summarizeCalls(calls, await tx.callsOf(unique(missed.map((call) => call.subject))), filed, at, timeZone, { ...options, notLeads: new Set((await tx.notLeads(calls.map(callId))).keys()) })
       })
     },
 
@@ -992,15 +1018,15 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       const today = dayStart(day, timeZone)
       const from = dayStart(new Date(Date.parse(day) - (days - 1) * DAY).toISOString().slice(0, 10), timeZone)
       return store.read(async (tx) => {
-        const outcomes = await tx.outcomesBetween(from, at + 1)
-        const found = unique([...outcomes, ...(await tx.callsBetween(from, at + 1))].map((each) => each.subject))
+        const outcomes = await leadsOf(tx, await tx.outcomesBetween(from, at + 1), outcomeId)
+        const found = unique([...outcomes, ...(await leadsOf(tx, await tx.callsBetween(from, at + 1), callId))].map((each) => each.subject))
         const labels = await tx.labelsOf(found)
         const everyone = await tx.membersOf(unique([...labels.values()].map((label) => label.component)))
         const person = (subject: Subject) => everyone.get(subject)?.cluster ?? subject
         const people = new Map(found.map((subject) => [person(subject), { outcomes: [] as Counted[], calls: [] as KeptCall[] }]))
         const theirs = unique([...found, ...everyone.keys()]).filter((subject) => people.has(person(subject)))
-        for (const outcome of await tx.outcomesOf(theirs)) people.get(person(outcome.subject))!.outcomes.push(outcome)
-        for (const call of await tx.callsOf(theirs)) people.get(person(call.subject))!.calls.push(call)
+        for (const outcome of await leadsOf(tx, await tx.outcomesOf(theirs), outcomeId)) people.get(person(outcome.subject))!.outcomes.push(outcome)
+        for (const call of await leadsOf(tx, await tx.callsOf(theirs), callId)) people.get(person(call.subject))!.calls.push(call)
         const { columns, unplaced } = board([...people.values()], { steps: steps.map(({ name, wait }) => ({ name, ...(wait && { wait: wait * HOUR }) })), at, today, ...(returnHours > 0 && { returnWait: returnHours * HOUR }), ...(hours && { hours }) })
         // Only those shown are traced to an ad: it is the slow part.
         const shown: BoardColumn<BoardRow>[] = []
@@ -1022,7 +1048,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       if (typeof options.step !== 'string' || !options.step) throw new TypeError('Say which step to look for')
       if (!Number.isSafeInteger(options.days) || options.days < 1 || options.days > 365) throw new TypeError('`days` must be a whole number from 1 to 365')
       return store.read(async (tx) => {
-        const inPeriod = (await tx.callsBetween(start, end)).filter((call) => call.direction === 'inbound')
+        const inPeriod = await leadsOf(tx, (await tx.callsBetween(start, end)).filter((call) => call.direction === 'inbound'), callId)
         // A person is a cluster: whoever rings from two numbers is counted once, and what they did under an account is theirs.
         const labels = await tx.labelsOf(unique(inPeriod.map((call) => call.subject)))
         const clusterOf = (subject: Subject) => labels.get(subject)?.cluster ?? subject
@@ -1036,7 +1062,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         }
         const called = group(inPeriod)
         const calls = group(await tx.callsOf(subjects))
-        const reached = group((await tx.outcomesOf(subjects)).filter((outcome) => outcome.stage === options.step))
+        const reached = group(await leadsOf(tx, (await tx.outcomesOf(subjects)).filter((outcome) => outcome.stage === options.step), outcomeId))
         return followed([...called].map(([who, mine]) => ({ called: mine, calls: calls.get(who) ?? [], reached: (reached.get(who) ?? []).map((outcome) => outcome.at) })), { ...options, at })
       })
     },
@@ -1092,7 +1118,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
           const inside = touch !== undefined && touch.at >= at - window
           return { touch: inside ? touch : undefined, delay: touch && at - touch.at, inside }
         }
-        const outcomes = await tx.outcomesBetween(start, end)
+        const recorded = await tx.outcomesBetween(start, end)
+        const outcomes = await leadsOf(tx, recorded, outcomeId)
         const labels = await tx.labelsOf(unique(outcomes.map((outcome) => outcome.subject)))
         const first = await tx.firstValues(outcomes)
         const credited: Credited[] = []
@@ -1100,10 +1127,22 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         // How long steps take is read from the last half year and not from the days asked about: the newest days hold
         // few outcomes, which is what it has to say. Some of each step, so a common quick one does not hide a slow one.
         const history: Credited[] = []
-        for (const outcome of await tx.newestOutcomes(now() - 180 * DAY, now(), 200)) history.push({ outcome, ...(await creditOf(outcome.subject, outcome.at, window)) })
-        const missed: { at: number; touch: Touch | undefined; tags: Record<string, string> | undefined }[] = []
-        for (const call of await tx.callsBetween(start, end)) if (call.direction === 'inbound' && call.result?.answered === false) missed.push({ at: call.at, touch: (await creditOf(call.subject, call.at, window)).touch, tags: call.tags })
-        return fold(from, to, await tx.costsBetween(from, to), await tx.touchesBetween(start, end), credited, { missed, by, per, timeZone, through: dayIn(now(), timeZone), history })
+        for (const outcome of await leadsOf(tx, await tx.newestOutcomes(now() - 180 * DAY, now(), 200), outcomeId)) history.push({ outcome, ...(await creditOf(outcome.subject, outcome.at, window)) })
+        // What was no lead is counted apart, where it would have been credited.
+        const notLeads: { at: number; touch: Touch | undefined; tags: Record<string, string> | undefined }[] = []
+        const lead = new Set(outcomes)
+        for (const outcome of recorded) if (!lead.has(outcome)) notLeads.push({ at: outcome.at, touch: (await creditOf(outcome.subject, outcome.at)).touch, tags: outcome.tags })
+        const missed: typeof notLeads = []
+        const misses = (await tx.callsBetween(start, end)).filter((call) => call.direction === 'inbound' && call.result?.answered === false)
+        const called = new Set(await leadsOf(tx, misses, callId))
+        // A missed call that was once counted is an outcome still, and is not counted twice.
+        const counted = new Set(recorded.map(outcomeId))
+        for (const call of misses) {
+          if (!called.has(call) && counted.has(callId(call))) continue
+          const credited = { at: call.at, touch: (await creditOf(call.subject, call.at, window)).touch, tags: call.tags }
+          ;(called.has(call) ? missed : notLeads).push(credited)
+        }
+        return fold(from, to, await tx.costsBetween(from, to), await tx.touchesBetween(start, end), credited, { missed, notLeads, by, per, timeZone, through: dayIn(now(), timeZone), history })
       })
     },
 
@@ -1454,7 +1493,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const entries: Entry[] = []
         for (const touch of await tx.touchesOf(people, 0, before - 1)) entries.push({ at: touch.at, subject: touch.subject, kind: 'arrival', touch })
         const calls = await tx.callsOf(people)
-        for (const call of calls) entries.push({ at: call.at, subject: call.subject, kind: 'call', call, ...(call.direction === 'inbound' && call.result?.answered === false && { followUp: followUp(call, calls) }) })
+        const outcomes = await tx.outcomesOf(people)
+        const not = await tx.notLeads([...calls.map(callId), ...outcomes.map(outcomeId)])
+        const spurned = (id: string) => (not.has(id) ? { notLead: not.get(id)!.kind } : {})
+        for (const call of calls) entries.push({ at: call.at, subject: call.subject, kind: 'call', call, ...spurned(callId(call)), ...(call.direction === 'inbound' && call.result?.answered === false && { followUp: followUp(call, calls) }) })
         for (const each of people) {
           // One moment is many sightings, one for each identifier. What a call or a reviewer's join left is told by the call and the decision.
           const rang = new Set(calls.filter((call) => call.subject === each || call.visitor === each).map((call) => call.at))
@@ -1469,9 +1511,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
           entries.push(...moments.values())
           for (const answer of await tx.consentHistory(each)) entries.push({ at: answer.at, subject: each, kind: 'consent', answer })
         }
-        for (const outcome of await tx.outcomesOf(people)) {
+        for (const outcome of outcomes) {
           const [first, ...later] = await tx.valuesOf(outcome.transactionId, outcome.subject)
-          entries.push({ at: outcome.at, subject: outcome.subject, kind: 'step', outcome, first: first ?? null })
+          entries.push({ at: outcome.at, subject: outcome.subject, kind: 'step', outcome, first: first ?? null, ...spurned(outcomeId(outcome)) })
           let from = first
           for (const to of later) {
             entries.push({ at: to.at, subject: outcome.subject, kind: 'value', transactionId: outcome.transactionId, stage: outcome.stage, from: from!, to })
@@ -1517,7 +1559,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       if (!Number.isSafeInteger(before)) throw new TypeError('prune needs a time in whole epoch milliseconds')
       return store.write(async (tx) => {
         await decide(tx, 'prune', [String(before)], why)
-        return (await tx.pruneSightings(before)) + (await tx.pruneConsent(before)) + (await tx.pruneCallResults(before)) + (await tx.pruneLeases(before))
+        return (await tx.pruneSightings(before)) + (await tx.pruneConsent(before)) + (await tx.pruneCallResults(before)) + (await tx.pruneLeases(before)) + (await tx.pruneNotLeads(before))
       })
     },
 
