@@ -294,26 +294,49 @@ All assumed unless it says otherwise, and set before anything was run.
 | Cold callers who dial a number somebody else was shown | 2% | 4% | 8% |
 | `dirty3`, base with placeholder numbers; shared office emails | | 3%; 3% of records | |
 
-Somebody who speaks for another is told of by a field on `/identify`, and the arms that ask send it. The others send what was given as the subject's, as before. What a record was given is the same for both, so a chain of facts is the same.
+Somebody who speaks for another is told of by a field on `/identify`, and the arms that ask send it. The others send what was given as the subject's, as before. What was given, and so a chain of facts, is the same for both. The client's own number and email are typed with the same errors, are sent by the asking arms only, and count in no chain. A told box or call cannot know whose browser it was, so the client's browser is sometimes sent as the speaker's. `ownGiven` is of boxes that were told in time, which is 40% of told boxes in base.
+
+### What is compared
+
+`tools/accuracy/third.ts` makes each world once and reports it to two codes: `b9bba69`, under its default policy (`today`), and the code named below. They are matched by what was made (a browser, a record, a call), never by what a server called it.
+
+| Arm | Code, policy and switches |
+| --- | --- |
+| `today` | `b9bba69`, the default policy |
+| `new` | The named code, the default policy with `apart: ["birth", "given"]`, and the field for who speaks |
+| `today pool`, `new pool` | The same, with a pool of numbers |
+
+The code named is the branch `feat/round3` at a commit written here before 20270301. The held names and the table:
+
+| File | SHA-256 |
+| --- | --- |
+| `world-names.json`, the list of the worlds | `f5a69fbe139b8541f96a42dae40bf4d564d29d660f2aeb1add0eec776ec8ff2f` |
+| Held short forms | `f17060b45a847d991932aad3e94e4cfa46e399669a77744a8267e3d058d2f438`, `a8d47c9bd3da66ebecb70a503977083bbe6d9b0b3edb8437396fde157df67f87` |
+
+The table in `src/names.ts` was frozen at `8d5922b`, from a part of one list, 142 names and 56 pairs of the author's own. Five of 724 English and nine of 46 Spanish held pairs are in it, all by that. The tool prints how many of the written names are in a form the table knows, and what is kept apart for each.
+
+**The line.** A firm with a busy line uses a pool, as [Calls](calls.md#number-pools) says, so `new pool` is judged in busy3 and beside base3, for what links by a tap or a number shown, against `today` without a pool. `new` without one is printed beside it and not judged.
 
 ### What would be bad
 
-Of the held seeds, for the configuration named before them, beside the code of `b9bba69` under the default policy (`today`), on the new settings. Shares are pooled. **The old marks are repeated on the old settings too**, and a mark that tying less could meet has a floor.
+Of the held seeds. A share is of counts pooled over the worlds, and one with nothing to count is bad. "Kept" is of what `today` found, on the same items. **The old marks are repeated on the old settings too, and a mark that tying less could meet has a floor.** The rows are judged by the tool and not by hand.
 
 | In | Bad |
 | --- | --- |
 | base3 | More than 1% of people with a record share a cluster with somebody else's |
 | base3 | Fewer than 98% of joined pairs are right |
-| base3 | A kind of link with 200 links or more has over 5% of them between two people |
+| base3 | A kind of link with 200 links or more, in `today` or in `new`, has over 5% of them between two people |
+| base3 | More than 2% of credited records, cold ones among them, go to somebody else's ad |
+| base3, and base3 with a pool, and busy3 with a pool | More than 5% of the links that rest on a tap or a number shown are between two people, each link counted once |
+| base3 | Fewer than 90% kept of the pairs with a chain of facts, of the calls tied to a browser of their caller's, and of those with a pool |
+| base3 and high3 | Fewer than 98% and 95% kept of the true pairs of records; fewer than 90% of the records credited to their ad |
+| busy3, with a pool | Fewer than 90% kept of the calls tied to a browser of their caller's |
 | high3 | More than 2.5% of people with a record share a cluster with somebody else's |
-| busy3, and base3 with a pool | More than 5% of the links that rest on a tap or a number shown are between two people |
-| base3, and dirty3 | More than 2% of credited records go to somebody else's ad |
-| base3 | Fewer than 90% of the pairs with a chain of facts that `today` finds, and fewer than 90% of its records credited to their ad |
-| busy3 | Fewer than 90% of the `dial` ties that are right under `today` |
-| base3 and high3 | More than 2% and 5% of the true pairs of records `today` finds are lost |
-| dirty3 | More than 1.5% of people with a record share a cluster with somebody else's |
+| dirty3 | More than 1.5% of people with a record share a cluster with somebody else's; over 2% of credited records go to the wrong ad; fewer than 98% kept of the pairs of records, or 90% of the records credited |
 
-Each is written down as held, bad, or not run. The configuration is written here, by its policy and commit, before the development seeds are chosen from: 20270301 to 20270320. Held: 20270401 to 20270420.
+Development seeds 20270301 to 20270320, to make sure the code does what it should. Nothing is chosen on them: there is one configuration. Held: 20270401 to 20270420, once.
+
+Known and not changed: a couple's shared email is put on the first two adults of every household with two; a short form is drawn before an English form, so the realised shares of names are printed and not the rates; a person's ad is reachable by the end of the world and not at an hour after a record; callers are what the server calls them, so a subject of two callers is one of two people; and a Student's t range is how far simulated worlds differ, not how far a firm is.
 
 ## Limitations
 
