@@ -5,7 +5,7 @@ view('channels', 'Channels', async (box, first, last) => {
   const range = { from: first || iso(new Date(Date.now() - 29 * 86400000)), to: last || iso(new Date()) }
   const from = el('input', { type: 'date', value: range.from, required: '' })
   const to = el('input', { type: 'date', value: range.to, required: '' })
-  const pick = el('form', { class: 'row', on: { submit: (event) => { event.preventDefault(); location.hash = `#/channels/${from.value}/${to.value}` } } },
+  const pick = el('form', { class: 'row', on: { submit: (event) => { event.preventDefault(); go(`#/channels/${from.value}/${to.value}`) } } },
     el('label', {}, 'From', from), el('label', {}, 'To', to), el('button', { class: 'primary' }, 'Show'))
   const section = el('section', {}, el('h3', {}, 'Channels'), el('p', { class: 'muted' }, 'What each campaign cost and what it brought in. An outcome counts on the day it happened, under the arrival that earned it.'), pick)
   box.append(section)

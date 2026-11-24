@@ -30,9 +30,8 @@ function picture(profile) {
   for (const [subject, [x, y]] of spot) {
     const me = subject === profile.subject
     const node = svg('circle', { class: `node${me ? ' me' : members.has(subject) ? ' member' : ''}`, cx: x, cy: y, r: me ? 11 : 8, tabindex: 0, role: 'link', 'aria-label': subject }, svg('title', {}, subject))
-    const go = () => (location.hash = subjectHash(subject))
-    node.addEventListener('click', go)
-    node.addEventListener('keydown', (event) => event.key === 'Enter' && go())
+    node.addEventListener('click', () => go(subjectHash(subject)))
+    node.addEventListener('keydown', (event) => event.key === 'Enter' && go(subjectHash(subject)))
     drawing.append(node, svg('text', { x, y: y + (y < 170 ? -14 : 22), 'text-anchor': 'middle' }, subject.length > 22 ? `${subject.slice(0, 21)}…` : subject))
   }
   return drawing
@@ -105,7 +104,7 @@ async function clusterList() {
     if (next.length < 50) break
   }
   // The list comes 50 at a time. A full page means there may be more.
-  const more = el('button', { on: { click: () => { listed = clusters.length + 50; load({ quiet: true }) } } }, 'Show more')
+  const more = el('button', { on: { click: () => { listed = clusters.length + 50; load() } } }, 'Show more')
   return [el('ul', { id: 'queue' }, ...(clusters.length > 0 ? clusters.map(queued) : [el('li', { class: 'muted' }, 'No clusters yet.')])), clusters.length > 0 && clusters.length % 50 === 0 ? el('p', {}, more) : '']
 }
 
@@ -113,7 +112,6 @@ view('accounts', 'Accounts', async (box, subject) => {
   const left = el('div')
   const detail = el('div', { id: 'detail' })
   box.append(el('div', { class: `split${subject ? ' opened' : ''}` }, left, detail))
-  if (subject) $('subject').value = subject
   const [queue, decisions, audit, recent, profile] = await Promise.all([clusterList(), api('GET', '/decisions'), api('GET', '/audit'), api('GET', '/recent'), subject ? api('GET', `/subject?subject=${encodeURIComponent(subject)}`) : undefined])
 
   left.append(el('section', {}, el('h2', {}, 'Largest clusters, now'), ...queue))

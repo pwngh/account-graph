@@ -89,6 +89,8 @@ async function act(title, text, path, body, confirm, otherKey) {
   if ((await load()) || outcome[1]) notice(...outcome)
 }
 
+/** Goes to an address. Going where the screen already is reads it again. */
+const go = (hash) => (location.hash === hash ? load() : (location.hash = hash))
 const subjectHash = (subject) => `#/accounts/${encodeURIComponent(subject)}`
 const open = (subject) => el('a', { class: 'link', href: subjectHash(subject) }, subject)
 
@@ -104,7 +106,7 @@ const view = (name, title, show) => views.set(name, { title, show })
 function place() {
   let hash = location.hash.slice(1)
   if (hash === '!channels') hash = '/channels'
-  else if (hash && !hash.startsWith('/')) hash = `/accounts/${hash}`
+  else if (hash && !hash.startsWith('/')) hash = `/accounts/${hash.replaceAll('/', '%2F')}`
   const [name, ...parts] = hash.split('/').slice(1).map((part) => {
     try {
       return decodeURIComponent(part)
@@ -115,33 +117,48 @@ function place() {
   return views.has(name) ? { name, parts } : { name: 'accounts', parts: [] }
 }
 
-/** What can take the keyboard in the view, to find the same place again after a reload. */
-const stops = () => [...$('view').querySelectorAll('a, button, input, select, [tabindex]')]
+/** Which control this is, whatever moved around it: what it is, what it says, and the row it is in. */
+const which = (node) => [node.tagName, node.textContent, node.getAttribute('href'), node.getAttribute('aria-label'), node.title, node.closest('tr, li')?.textContent].join('\n')
 
 let loading = 0
-/** Fills the view the address names. Resolves to whether it loaded. */
-async function load({ quiet = false } = {}) {
+/**
+ * Fills the view the address names. Resolves to whether it loaded. `tag` is
+ * what a look just found: the reload is one nobody asked for, so it gives
+ * way to a reviewer who has started typing, and keeps their place.
+ */
+async function load(tag) {
   const turn = ++loading
+  const quiet = tag !== undefined
   const { name, parts } = place()
   for (const link of $('views').children) {
     if (link.dataset.view === name) link.setAttribute('aria-current', 'page')
     else link.removeAttribute('aria-current')
   }
   document.title = `${views.get(name).title} · Account review`
-  if (!$('token').value) return false
+  if (!$('token').value) {
+    $('view').replaceChildren(el('p', { class: 'muted' }, 'Enter the access token to load.'))
+    $('found').replaceChildren()
+    beat = loadedAt = undefined
+    notice('')
+    fresh()
+    return false
+  }
   const box = el('div')
   try {
-    // Read what the pulse says first: a change that lands while the view loads is then noticed on the next look.
-    const seen = await pulse()
+    // Read the tag before the view: a change that lands while the view loads is then noticed on the next look.
+    const seen = tag ?? (await pulse())
     await views.get(name).show(box, ...parts)
-    if (turn !== loading) return false
+    if (turn !== loading || (quiet && interrupting())) return false
     if (seen) beat = seen
-    const held = quiet ? stops().indexOf(document.activeElement) : -1
+    const held = quiet && $('view').contains(document.activeElement) ? which(document.activeElement) : undefined
     const scrolled = quiet ? [...$('view').querySelectorAll('.wide')].map((each) => each.scrollLeft) : []
     $('view').replaceChildren(box)
     ;[...$('view').querySelectorAll('.wide')].forEach((each, i) => (each.scrollLeft = scrolled[i] ?? 0))
-    if (held >= 0) stops()[held]?.focus({ preventScroll: true })
-    if (!quiet) notice('')
+    if (held) [...$('view').querySelectorAll('a, button, input, select, [tabindex]')].find((node) => which(node) === held)?.focus({ preventScroll: true })
+    if (!quiet) {
+      notice('')
+      if (name === 'accounts' && parts[0]) $('subject').value = parts[0]
+    }
     loadedAt = Date.now()
     fresh()
     return true
@@ -175,12 +192,17 @@ function fresh(problem) {
 }
 /** Typing or answering a question is not interrupted: the next look finds the change again. */
 const busy = () => $('ask').open || ($('view').contains(document.activeElement) && document.activeElement.matches('input, select, textarea'))
+const interrupting = () => document.hidden || busy()
 let looking = false
 async function look() {
-  if (document.hidden || looking || busy() || !$('token').value || !loadedAt) return fresh()
+  if (interrupting() || looking || !$('token').value || !loadedAt) return fresh()
   looking = true
+  const turn = loading
   try {
-    if (await pulse()) await load({ quiet: true })
+    const tag = await pulse()
+    // Opened something else meanwhile, or began to type: the tag is not taken, so the next look finds the change again.
+    if (turn !== loading || interrupting()) fresh()
+    else if (tag) await load(tag)
     else {
       loadedAt = Date.now()
       fresh()

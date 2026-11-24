@@ -4,10 +4,7 @@ $('token').addEventListener('change', () => { sessionStorage.setItem('token', $(
 $('by').addEventListener('change', () => localStorage.setItem('by', $('by').value))
 $('find').addEventListener('submit', (event) => {
   event.preventDefault()
-  const next = subjectHash($('subject').value.trim())
-  // Opening what is already open reads it again.
-  if (location.hash === next) load()
-  else location.hash = next
+  go(subjectHash($('subject').value.trim()))
 })
 
 // Suggest subjects as the reviewer types, a moment after the last key.
