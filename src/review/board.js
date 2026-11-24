@@ -30,12 +30,12 @@ view('board', 'Board', async (box, days = '90') => {
     reviewDisplay.range({ from: board.from, to: board.day, timeZone: board.timeZone }),
     board.unplaced > 0 ? el('p', { class: 'meta' }, `${amount(board.unplaced)} more reached only steps outside STAGES.`) : '',
     notes('Each person is in one column: missed calls nobody returned first, then the furthest step they ever reached.',
-      'A highlighted age is over that column’s waiting limit.'),
+      `A highlighted age is over that column’s waiting limit${board.openHours ? ', which is counted in the hours you are open. The age itself is by the clock' : ''}.`),
     board.columns.length === 1 ? el('p', {}, 'No steps are set, so only missed calls have a column. Set STAGES to your steps, in order.') : ''))
   const columns = board.columns.map((column) => {
     const name = column.step ?? 'Missed, not returned'
     const counts = [`${amount(column.people)} ${column.people === 1 ? 'person' : 'people'}`, column.fresh > 0 && `${amount(column.fresh)} new today`,
-      column.late > 0 && `${amount(column.late)} waiting over ${lasted(column.wait)}`, column.done > 0 && `${amount(column.done)} ${column.step === null ? 'returned or got through' : 'went further'} today`]
+      column.late > 0 && `${amount(column.late)} waiting over ${lasted(column.wait)}${board.openHours ? ' open' : ''}`, column.done > 0 && `${amount(column.done)} ${column.step === null ? 'returned or got through' : 'went further'} today`]
     const cards = el('ol', { role: 'list' }, ...column.rows.map((row) => person(row, column, board.at)))
     const lane = el('div', { class: 'scroll', tabindex: 0, role: 'region', 'aria-label': `${name}: people`, ...(column.rows.length === 0 && { hidden: '' }) }, cards)
     return el('section', { 'aria-label': name, ...(column.people === 0 && { class: 'idle' }) }, el('h2', {}, name),
