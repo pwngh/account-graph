@@ -8,7 +8,7 @@ import type { Opened } from './suite.ts'
 
 const T0 = 1_700_000_000_000
 
-/** A good request of every route that takes something. Each field of each is then made bad in turn. */
+/** A good request of every route that takes something, except `/calls/twilio`, which needs a signature, and `/retry`, `/conversion` and `/conversions`, which need an ad platform. Each field of each is then made bad in turn. */
 const GET: Record<string, Record<string, string>> = {
   '/subject': { subject: 'account:1' }, '/cluster': { subject: 'account:1' }, '/links': { subject: 'account:1' }, '/history': { subject: 'account:1' }, '/journey': { subject: 'account:1', before: '9' },
   '/flows': { subject: 'account:1' }, '/collusion': { subject: 'account:1' }, '/rings': { subject: 'account:1' }, '/consent': { subject: 'account:1' }, '/outcome': { id: 't1' }, '/call': { id: 'C1' },
@@ -47,7 +47,7 @@ const BAD_BODY = ['', 'null', '1', '"x"', '[]', '{}', '[null]', '[1]', '{"pairs"
 
 /** Whatever is sent, the answer says what was wrong with it. Run on each store, because what one cannot keep the other may. */
 export function malformedSuite(name: string, open: () => Promise<Opened>) {
-  test(`${name}: no malformed request to a route that reads or records gets a server error`, async () => {
+  test(`${name}: no malformed request gets a server error, on the routes above`, async () => {
     const { store, close } = await open()
     const graph = createGraph(store)
     const server = createServer(createHandler(graph, { token: 'service', origins: ['https://site.example'], events: ['brochure'], limit: false, linkSecret: 'x'.repeat(32), now: () => T0 })).listen(0, '127.0.0.1')

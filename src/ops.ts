@@ -198,7 +198,13 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
       }
 
       const late = options.lateHours ?? 0
-      const due = late > 0 ? await Promise.resolve(options.outbox?.oldestDue()).catch((error) => void onError(error)) : undefined
+      let due: number | undefined
+      try {
+        if (late > 0) due = await options.outbox?.oldestDue()
+      } catch (error) {
+        // What else there is to look for does not depend on the outbox.
+        onError(error)
+      }
       // Once a day while it lasts: a backlog that drains slowly has a new oldest job at every look.
       if (due !== undefined && at - due >= late * HOUR) await ops.once(`late:${dayIn(at, timeZone)}`, `account-graph: conversions are waiting to be sent. The oldest should have gone ${when(due)} (${timeZone}).`)
 

@@ -37,7 +37,7 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
     }
 
     test('conversions that wait past their time are said once a day while it lasts', async () => {
-      const { make, clock, posted, store } = await fresh()
+      const { make, clock, posted, store, errors } = await fresh()
       const ops = make({ outbox: store.outbox, lateHours: 6 })
       const job = (transactionId: string, due: number, state: 'pending' | 'held' = 'pending') => store.outbox.add({ transactionId, target: 'google', subject: 'contact:1', at: T0, action: 'x', keys: {}, state, attempts: 0, due })
       assert.equal(await store.outbox.oldestDue(), undefined)
@@ -57,6 +57,12 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       clock.now += 24 * HOUR
       await make({ outbox: store.outbox }).check()
       assert.equal(posted.length, 2)
+      // An outbox that cannot be read is reported, and the rest is still looked for.
+      for (const oldestDue of [async () => Promise.reject(new Error('down')), () => { throw new Error('down') }]) {
+        const before = errors.length
+        await make({ outbox: { oldestDue }, lateHours: 6, quiet: { touches: 1 } }).check()
+        assert.equal(errors.length, before + 1)
+      }
     })
 
     test('a feed that goes quiet is said once, and once more when it goes quiet again', async () => {
