@@ -25,13 +25,13 @@ Everything in those pictures is made up.
 
 | You ask | Where | What you get |
 | --- | --- | --- |
-| Who rang and was never rung back? | Board, Calls | Missed calls, oldest first, with the ad each came from. A person who hung up in the queue was not answered, and is not counted as a lead. |
+| Who rang and was never rung back? | Board, Calls | Missed calls, oldest first, with the ad each is credited to, where there is one. When your phone system reports who answered, a person who hung up in the queue is a miss and not a lead. |
 | Which ads bring clients, and not only clicks? | Channels | Each campaign's cost beside its calls, inquiries, clients and what they were worth, by office and language. Days with no recorded cost are marked, and never read as zero. |
 | What happened with this person? | Journey | One timeline across every visit, number and record that is them, each line with why. |
 | Are these two one person? | Accounts, Decide | What they share and how much it counts. Your people join them or keep them apart, and either can be taken back. |
 | Is everything still arriving? | Health | Quiet feeds, failed jobs, refused conversions, and whether the record of decisions is whole. |
 
-> **It does not act for you.** It dials nobody, assigns nobody, and writes to nobody. What it sends is the conversions you told it to send, to the ad platforms you set up.
+> **It does not act for you.** It dials nobody, assigns nobody, and writes to no client. It sends the conversions you told it to send to the ad platforms you set up, and alerts and cluster changes to webhooks of your own.
 
 ## How the pieces fit
 
@@ -49,13 +49,19 @@ The browser never names an account. It only says "this device, arriving from thi
 
 ## Put it on your site
 
-Start the server and its database with `docker compose up --build`. Change the two tokens and `LINK_SECRET` in it before anything real; [running the server](docs/operations.md) covers the rest. Then add one line to every page:
+Start the server and its database, telling it which site may report to it and giving it secrets of your own:
+
+```sh
+ORIGINS=https://www.example.org GRAPH_TOKEN=… REVIEW_TOKENS='{"dana":"…"}' LINK_SECRET=… docker compose up --build
+```
+
+Each secret is a long random string, such as `openssl rand -hex 32` prints. A site that is not in `ORIGINS` is refused. [Running the server](docs/operations.md) covers the rest. Then add one line to every page:
 
 ```html
 <script type="module" src="https://graph.example.org/collect.js"></script>
 ```
 
-When someone signs in or signs up, your backend says so with what it knows. The server hashes it:
+When someone signs in or signs up, your backend says so with what it knows:
 
 ```sh
 curl -X POST https://graph.example.org/identify \
@@ -63,9 +69,20 @@ curl -X POST https://graph.example.org/identify \
   -d '{"subject":"account:42","event":"signup","device":"9f3c…","email":"pat@example.org"}'
 ```
 
-The `device` is the `ag_device` cookie the script set, which your backend reads from the request. The answer lists every subject whose cluster just changed.
+The server normalizes and hashes the email, as it does a phone and a postal address. The subject and the device id are kept as they are. The `device` is the `ag_device` cookie the script set, which your backend reads from the request, and the answer lists every subject whose cluster just changed.
 
-To try that loop first, run `node examples/site.ts` beside the compose file. Open <http://localhost:3000/?gclid=demo-click&utm_id=20111>, sign up, and the page says which click it credits. <http://localhost:8080/review> takes the token `change-me-review-token`.
+### A site to try it with
+
+```sh
+docker compose up --build        # the server on :8080, and its database
+node examples/site.ts            # in a second terminal: an example site on :3000
+```
+
+1. Open <http://localhost:3000/?gclid=demo-click&utm_id=20111> and sign up with any email.
+2. The page answers: *The graph server credits the ad click demo-click at 98% confidence.*
+3. Open <http://localhost:8080/review>, enter the token `change-me-review-token`, and open the account. It is joined to the visitor who clicked the ad. **Channels** shows the sign-up under its campaign.
+
+On the site, *See an email* opens a link that names its contact, *Our other site* carries you to a second host name as the same visitor, and *Who does the graph think this browser is?* shows the result. If port 8080 is taken, start with `GRAPH_PORT=8090 docker compose up --build` and `GRAPH_URL=http://localhost:8090 node examples/site.ts`.
 
 ## Where to read next
 
@@ -106,7 +123,7 @@ The graph is subjects, identifiers, and the sightings that tie them. Everything 
 | Cost | What an ad platform charged for one campaign on one day. |
 | Decision | A reviewer's call: join these two, keep these two apart, stop linking through this identifier. |
 
-Two subjects that share an identifier get evidence from it: a weight for its kind, thinned by how many share it and faded by the time between. Evidence combines as `1 − Π(1 − evidence)`. At 0.9 two subjects join, at 0.5 they are related. [How it decides](docs/deciding.md) has the model and what it leaves out.
+Two subjects that share an identifier get evidence from it: a weight for its kind, thinned by how many share it and faded by the time between. Evidence combines as `1 − Π(1 − evidence)`. By default a pair at 0.9 may join and one at 0.5 is related. Clusters come after: a separation, or one weak link between two groups, can keep a strong pair apart. [How it decides](docs/deciding.md) has the model and what it leaves out.
 
 ### Who is who
 
@@ -165,7 +182,7 @@ BENCH
 
 ## What has run for real
 
-- Every test runs on memory and on PostgreSQL 16, locally and in CI, including a fuzz test that mixes observations, reviewer decisions, deletions, and transfers, and six outbox workers at once.
+- The graph's shared suite runs on memory and on PostgreSQL 16, locally and in CI, including a fuzz test that mixes observations, reviewer decisions, deletions, and transfers, and six outbox workers at once.
 - The image was built and `docker compose up` brought up the server and its database. With the example site pointed at it, a visit with an ad click followed by a sign-up was credited in Chrome, and the reviewer screen served from the container showed the account joined to its visitor. Against the same container, a signed link tied a browser to its contact, a link to the example's second host name carried the visitor across, and a call posted after a tap was tied to that visitor and valued by its step.
 - The script tag ran in Chrome from a different origin than the page that loaded it.
 - With `cookie: true` the device cookie was set by the server, invisible to script, and the same on the next visit.
@@ -193,7 +210,7 @@ BENCH
 - The report credits the newest strong touch with the whole outcome, and is worked out each time it is asked for.
 - Without call results, a call is counted by its length, which a queue hang-up can reach. Platforms that cannot restate keep a conversion sent for a call that turned out missed.
 - A quiet feed is noticed by hours without a record, so a feed that still sends something wrong is not.
-- Without the optional pool, a tracking number stands for one channel, and a call dialed by hand ties to nobody.
+- Without a tap or the optional pool, a call is credited to its number's channel and tied to no visitor of the site.
 - A signed link is a key: forwarded to a stranger's browser, it ties that browser to the person it names. [Links](docs/links.md) says what limits that and what does not.
 - Postal addresses are checked for the United States only. A name never ties two people by itself, and only a policy that has names uses them at all.
 - TikTok keys are not exercised by `npm run live-check`, because any call would record an event.
