@@ -491,7 +491,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
         if (!attribution) attributions.set(asked, (attribution = await graph.attribute(job.subject, { at: job.at, window: options.window ?? 90 * DAY })))
         // A person's own click counts however weak the chain to it, unless a lowest confidence was asked for.
         const touches = attribution.touches.filter((each) => each.confidence >= confidence || (each.joined && options.confidence === undefined))
-        const touch = target.click({ ...attribution, touches }, 0)
+        const touch = target.click({ ...attribution, touches, credited: touches[0], reason: touches[0] ? 'credited' : attribution.touches[0] ? 'low_confidence' : 'no_touch' }, 0)
         const subjects = touch && touch.subject !== job.subject ? [job.subject, touch.subject] : [job.subject]
         // With no consent on the outcome, use what the person and the browser that clicked told us.
         let consent = job.consent
