@@ -153,7 +153,7 @@ the service's webhook ──▶ your backend ──▶ POST /call { id, from, to
 | `answered`, `voicemail` | `answered: true` only where a person, and not a menu or a machine, is known to have answered. `answered: false` for a known miss, with `voicemail: true` where it went there. Leave both out when unknown, and report the [result](#call-results) later. |
 | `direction` | `outbound` for calls you placed |
 
-CallRail's API documents a call with `customer_phone_number`, `tracking_phone_number`, `start_time`, `duration`, `answered`, `voicemail` and `direction`. Check the body your account sends, and its signature, before relying on any field. No such service has been tried against a live account here.
+CallRail's API documents a call with `customer_phone_number`, `tracking_phone_number`, `start_time`, `duration`, `answered`, `voicemail` and `direction`. Check the body your account sends, and its signature, before relying on any field. [`examples/call-tracking.ts`](../examples/call-tracking.ts) takes its webhook, checks the signature and posts the call, and keeps calls while the server is away. No such service has been tried against a live account here.
 
 > **List its numbers or none.** With `CALL_NUMBERS` set, a tap on a number that is neither in it nor in the pool leaves no note to match a call by. Add each number the service shows, or leave `CALL_NUMBERS` unset.
 

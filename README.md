@@ -219,6 +219,7 @@ The server normalizes and hashes the email, phone and postal address. `device` i
 
 **Extend**
 
+- [Pilot](docs/pilot.md): a trial on your own data, with nothing sent to ad platforms
 - [Matching](docs/deciding.md): scores, weights, clusters and policy
 - [Presets](docs/presets.md): a policy for contacts entered by staff
 - [Library](docs/library.md): using the graph from Node
@@ -232,6 +233,7 @@ The server normalizes and hashes the email, phone and postal address. `device` i
 | `npm run firm` | Sample firm with a stage for presenting |
 | `npm run review` | Reviewer screen with sample data (`tools/review-demo.ts`) |
 | `examples/site.ts` | Two-page site with the script tag and a signup form |
+| `examples/call-tracking.ts` | Takes a call tracking webhook and posts the call |
 | `tools/browser-check.ts` | Runs `collect`, the server and the outbox against a browser |
 | `npm run live-check` | Calls each provider endpoint and prints its response (`tools/live-check.ts`) |
 | `tools/replay.ts` | Replays an export of past traffic and compares attribution |
