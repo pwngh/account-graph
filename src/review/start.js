@@ -13,6 +13,7 @@ const enter = (token) => {
   drawn.spots.clear()
   drawn.off.clear()
   narrowed.clear()
+  opened.length = 0
   inbox.id = charted.subject = undefined
   load()
 }
@@ -65,6 +66,8 @@ $('subject').addEventListener('input', () => {
   }, 200)
 })
 
+if (/Mac|iPhone|iPad/.test(navigator.platform)) $('summon-key').textContent = '⌘ K'
+$('summon').addEventListener('click', () => palette.show())
 addEventListener('hashchange', () => load())
 document.addEventListener('visibilitychange', look)
 setInterval(look, EVERY)
