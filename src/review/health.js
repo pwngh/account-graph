@@ -26,17 +26,18 @@ function workings(ops, refused) {
       el('ul', {}, ...ops.undelivered.map((alert) => el('li', {}, alert.text, el('span', { class: 'reason' }, ago(alert.at, ops.at), alert.error ? ` · ${alert.error}` : ''))))))
   }
 
-  const feeds = el('table', {}, el('tr', {}, th('Feed'), th('Last written down'), th('Quiet after'), th('State')),
-    ...ops.feeds.map((feed) => el('tr', {}, td('', NAMES[feed.name]), td('', ago(feed.last, ops.at)), td('', feed.hours > 0 ? `${amount(feed.hours)} h` : 'not watched'),
-      td('', feed.quiet ? el('span', { class: 'chip apart' }, 'quiet') : feed.hours > 0 ? el('span', { class: 'chip same' }, 'heard from') : ''))))
- 
-  const jobs = el('table', {}, el('tr', {}, th('Job'), th('State'), th('Began'), th('Last success'), th('Last failure'), th('Why')),
-    ...ops.jobs.map((job) => el('tr', {}, td('', job.name), td('', el('span', { class: `chip ${job.state === 'done' ? 'same' : job.state === 'running' ? '' : 'apart'}` }, JOB[job.state])), td('', ago(job.started, ops.at)),
-      td('', ago(job.succeeded, ops.at)), td('', job.failed === undefined ? el('span', { class: 'muted' }, 'none') : ago(job.failed, ops.at)),
-      td('who', job.error && job.state === 'failed' ? job.error : '', ...job.open.slice(0, 3).map((began) => el('span', { class: 'reason' }, `A run that began ${when(began)} never finished.`))))))
-  const runs = el('div', {}, el('section', {}, el('h2', {}, 'Feeds'), wide('Feeds', feeds)),
+  const FEED = { touches: 'M2.5 13 13 8 2.5 3l2 5ZM4.5 8H8', calls: VIEW_ICONS.calls, results: 'M3 8.4 6.4 11.8 13 4.6', costs: 'M8 2.2v11.6M11 4.8c-.6-1-1.7-1.5-3-1.5-1.7 0-3 .9-3 2.3 0 3.2 6.200 1.600 6.200 4.8 0 1.400-1.400 2.3-3.2 2.3-1.5 0-2.700-.6-3.3-1.600' }
+  const feeds = el('ul', { class: 'cards' }, ...ops.feeds.map((feed) => el('li', {}, tile(FEED[feed.name]), el('b', {}, NAMES[feed.name]),
+    feed.quiet ? el('span', { class: 'chip apart' }, 'quiet') : feed.hours > 0 ? el('span', { class: 'chip same' }, 'heard from') : el('span', { class: 'meta' }, 'not watched'),
+    el('span', { class: 'meta' }, 'Last written down ', ago(feed.last, ops.at), feed.hours > 0 ? ` · quiet after ${amount(feed.hours)} h` : ''))))
+
+  const jobs = el('ul', { class: 'cards' }, ...ops.jobs.map((job) => el('li', {}, tile('M13 8a5 5 0 1 1-1.5-3.6M13 2.5v2.6h-2.6'), el('b', {}, job.name),
+    el('span', { class: `chip ${job.state === 'done' ? 'same' : job.state === 'running' ? '' : 'apart'}` }, JOB[job.state]),
+    el('span', { class: 'meta' }, 'Began ', ago(job.started, ops.at), ' · last success ', ago(job.succeeded, ops.at), ' · last failure ', job.failed === undefined ? 'none' : ago(job.failed, ops.at),
+      job.error && job.state === 'failed' ? el('span', { class: 'reason apart' }, job.error) : '', ...job.open.slice(0, 3).map((began) => el('span', { class: 'reason' }, `A run that began ${when(began)} never finished.`))))))
+  const runs = el('div', {}, el('section', {}, el('h2', {}, 'Feeds'), feeds),
     el('section', ops.jobs.length ? {} : { class: 'ops-empty' }, el('h2', {}, 'Jobs'),
-      ops.jobs.length > 0 ? wide('Jobs', jobs) : el('p', { class: 'muted' }, 'No jobs have run yet.')))
+      ops.jobs.length > 0 ? jobs : el('p', { class: 'muted' }, 'No jobs have run yet.')))
   const sends = el('div', {})
   if (ops.outbox !== null) sends.append(el('section', {}, el('h2', {}, 'Conversions to ad platforms, all time'), parts('Conversions by state', [['Sent', ops.outbox.sent], ['Waiting to be sent', ops.outbox.pending], ['Held for a call result', ops.outbox.held], ['Not sent, with a reason', ops.outbox.skipped], ['Refused for good', ops.outbox.failed]])))
   if (ops.pool) {
@@ -46,10 +47,9 @@ function workings(ops, refused) {
   }
   out.push(el('div', { class: 'panel-grid ops-grid' }, runs, sends.hasChildNodes() ? sends : ''))
   if (refused.length > 0) out.push(el('section', {}, el('h2', {}, `Refused conversions, ${refused.length < ops.outbox.failed ? `newest ${amount(refused.length)} of ${amount(ops.outbox.failed)}` : amount(refused.length)}`),
-    wide('Refused conversions', el('table', {}, el('tr', {}, group('What', 4, true), group('Why it was refused', 2), el('td', { class: 'edge' })),
-      el('tr', {}, th('Happened'), th('Sent as'), th('Worth', 'num'), th('Who'), ...edge([th('Platform'), th('Answer')]), ...edge([th('Action')])),
-      ...refused.map((job) => el('tr', {}, td('nowrap', ago(job.at, ops.at)), td('', job.action), td('num', job.value === undefined ? none() : `${money(job.value)} ${job.currency ?? ''}`), td('who', open(job.subject)),
-        ...edge([td('', job.target), td('why', job.note || unrecorded())]), td('edge', el('button', { 'aria-label': `Send ${job.transactionId} to ${job.target} again`, on: { click: (event) => again(job, event.currentTarget) } }, 'Send again'))))), true),
+    el('ul', { class: 'cards rows' }, ...refused.map((job) => el('li', {}, tile('M2.5 13 13 8 2.5 3l2 5ZM4.5 8H8', 'apart'), el('b', {}, job.action, ' ', el('span', { class: 'muted' }, job.value === undefined ? none() : `${money(job.value)} ${job.currency ?? ''}`)),
+      el('button', { 'aria-label': `Send ${job.transactionId} to ${job.target} again`, on: { click: (event) => again(job, event.currentTarget) } }, 'Send again'),
+      el('span', { class: 'flow' }, ago(job.at, ops.at), el('a', { class: 'who-chip', href: subjectHash(job.subject), title: job.subject }, badge(job.subject), reviewDisplay.idText(job.subject)), el('span', { class: 'sr-only' }, ' to '), el('i', { class: 'to', 'aria-hidden': 'true' }), el('span', { class: 'who-chip' }, sourced(job.target)), el('span', { class: 'meta' }, job.note || unrecorded()))))),
     notes('Fix the refusal reason before sending again.')))
   return out
 }

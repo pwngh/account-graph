@@ -17,7 +17,7 @@ function compared(left, right, pair) {
   const cluster = ({ cluster }) => (cluster && cluster.members.length > 1 ? `one of ${amount(cluster.members.length)}${cluster.oversized ? ', larger than the review size' : ''}` : 'on its own')
   const seen = ({ history }) => (history.length === 0 ? [unrecorded()] : [reviewDisplay.time(history.at(-1).at), ' to ', reviewDisplay.time(history[0].at), el('span', { class: 'reason' }, `Newest ${amount(history.length)} sightings`)])
   const apart = ({ separated }) => (separated.length === 0 ? 'From nobody' : `From ${amount(separated.length)}`)
-  const who = ({ subject }) => el('div', { class: 'versus-who' }, el('b', {}, open(subject)), el('a', { class: 'link', href: `#/journey/${encodeURIComponent(subject)}` }, 'Journey'))
+  const who = ({ subject }) => el('div', { class: 'versus-who' }, badge(subject), el('b', {}, open(subject)), el('a', { class: 'link', href: `#/journey/${encodeURIComponent(subject)}` }, 'Journey'))
   const row = (name, one, two) => el('div', { class: 'versus-row', role: 'row' }, el('div', { role: 'cell' }, ...one), el('div', { class: 'versus-name', role: 'rowheader' }, name), el('div', { role: 'cell' }, ...two))
   const shared = [...new Set(pair.reasons.filter((reason) => reason.counted !== false).map((reason) => reason.identifier.split(':')[0]))]
   return el('div', { class: 'versus', role: 'table', 'aria-label': 'The two, side by side' },

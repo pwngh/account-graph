@@ -77,6 +77,8 @@ $('subject').addEventListener('input', () => {
 
 if (/Mac|iPhone|iPad/.test(navigator.platform)) $('summon-key').textContent = '⌘ K'
 $('summon').addEventListener('click', () => palette.show())
+// The address says which view is open, so the link past the list of views moves the focus and nothing else.
+document.querySelector('.skip').addEventListener('click', (event) => { event.preventDefault(); $('view').focus() })
 addEventListener('hashchange', () => load())
 document.addEventListener('visibilitychange', look)
 setInterval(look, EVERY)

@@ -291,7 +291,8 @@ const leaving = new Set()
 // One person's timeline, across every subject that is them.
 view('journey', 'Journey', async (box, subject) => {
   if (!subject) {
-    box.append(el('section', {}, reviewDisplay.heading('Journey'), el('p', { class: 'muted' }, 'Use Find to open a subject.')))
+    box.append(el('section', {}, reviewDisplay.heading('Journey'), el('div', { class: 'opening' }, el('h4', {}, 'Whose journey?'), el('button', { class: 'primary', on: { click: () => palette.show() } }, 'Find someone'),
+      ...(opened.length > 0 ? [el('div', { class: 'row' }, el('span', { class: 'meta' }, 'Opened here'), ...opened.slice(0, 5).map((each) => el('a', { class: 'who-chip', href: `#/journey/${encodeURIComponent(each)}`, title: each }, badge(each), reviewDisplay.idText(each))))] : []))))
     return
   }
   const journey = await api('GET', `/journey?subject=${encodeURIComponent(subject)}`)

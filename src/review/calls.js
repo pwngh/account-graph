@@ -60,7 +60,7 @@ function missedCalls(open, at) {
     tell()
   }
   const line = (call) => el('div', { class: 'inbox-call', role: 'option', tabindex: call.id === inbox.id ? 0 : -1, 'aria-selected': String(call.id === inbox.id), on: { click: () => pick(call) } },
-    el('i', { class: `dot ${call.state}`, 'aria-hidden': 'true' }), el('span', { class: 'inbox-who' }, reviewDisplay.idText(call.subject)), el('span', { class: 'inbox-time' }, reviewDisplay.time(call.at, at)),
+    tile(call.state === 'voicemail' ? 'M4.6 10.4a2.4 2.4 0 1 0 0-4.8a2.4 2.4 0 0 0 0 4.8ZM11.4 10.4a2.4 2.4 0 1 0 0-4.8a2.4 2.4 0 0 0 0 4.8ZM4.6 10.4h6.8' : 'M4.5 4.5 8 8l4.2-4.2M4.5 4.5v3M4.5 4.5h3M3 12.5c3-2.4 7-2.4 10 0', call.state === 'voicemail' ? 'related' : 'apart'), el('span', { class: 'inbox-who' }, reviewDisplay.idText(call.subject)), el('span', { class: 'inbox-time' }, reviewDisplay.time(call.at, at)),
     el('span', { class: 'inbox-from' }, `${call.state === 'voicemail' ? 'Voicemail' : 'Missed'} · ${credited(call)}`), call.attempts > 0 ? el('span', { class: 'chip' }, `${amount(call.attempts)} ${call.attempts === 1 ? 'try' : 'tries'}`) : '')
   function pick(call) {
     inbox.id = call.id
