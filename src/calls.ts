@@ -177,8 +177,9 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
     const kept = await graph.keptCall(id)
     return { subject: before.subject, flags: [], counted: settled?.counted ?? false, state: kept ? callState(kept, (options.now ?? Date.now)(), options) : 'unknown', duplicate: true }
   }
-  if (from !== undefined && leftOut(from, options)) return { subject, flags: ['left_out'], counted: false, state: 'unknown', duplicate: false }
-  if ((await graph.keptCall(id))?.direction === 'outbound') throw new TypeError(`Call "${id}" was already recorded as a call you placed`)
+  const saved = await graph.keptCall(id)
+  if (saved?.direction === 'outbound') throw new TypeError(`Call "${id}" was already recorded as a call you placed`)
+  if (!saved && from !== undefined && leftOut(from, options)) return { subject, flags: ['left_out'], counted: false, state: 'unknown', duplicate: false }
   if (result) await graph.keepCallResult(id, result)
 
   const flags: CallFlag[] = []
