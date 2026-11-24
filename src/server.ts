@@ -15,6 +15,7 @@ import type { LineTypeLookup } from './integrations/twilio.ts'
 import type { IpLookup } from './integrations/maxmind.ts'
 import type { JobState, Outbox } from './outbox.ts'
 import { withStage } from './ladder.ts'
+import { dayIn, sourceOf } from './report.ts'
 import type { Ladder } from './ladder.ts'
 import { defaultPolicy, plainPolicy } from './policy.ts'
 import { reviewPage } from './review.ts'
@@ -121,7 +122,7 @@ const NAME = /^[\w.-]{1,64}$/
 /** What the reviewer token opens: what the reviewer screen reads, and the decisions a reviewer makes. */
 const REVIEW_ROUTES = new Set([
   'GET /subject', 'GET /clusters', 'GET /search', 'GET /recent', 'GET /links', 'GET /cluster', 'GET /history', 'GET /flows', 'GET /collusion', 'GET /rings',
-  'GET /decisions', 'GET /disputes', 'GET /consent', 'GET /call', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
+  'GET /decisions', 'GET /disputes', 'GET /consent', 'GET /call', 'GET /calls', 'GET /calls/summary', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
 ])
 
 /** A route that wrote its own answer. */
@@ -527,6 +528,14 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     }
   }
 
+  /** The days a request asks about: the last thirty unless it says, in the time zone it names or the server's own. */
+  const period = (url: URL) => {
+    const timeZone = url.searchParams.get('tz') || options.timeZone || 'UTC'
+    const to = url.searchParams.get('to') || dayIn(now(), timeZone)
+    const from = url.searchParams.get('from') || new Date((Date.parse(`${to}T00:00:00Z`) || now()) - 29 * 86_400_000).toISOString().slice(0, 10)
+    return { from, to, timeZone }
+  }
+
   async function route(request: IncomingMessage, response: ServerResponse): Promise<unknown> {
     const url = new URL(request.url ?? '/', 'http://localhost')
     const path = `${request.method} ${url.pathname}`
@@ -718,6 +727,27 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       }
       case 'POST /call':
         return recordCall(graph, await json(request), calling())
+      case 'GET /calls': {
+        const days = period(url)
+        const after = url.searchParams.get('after') ?? ''
+        const cut = after.indexOf(' ')
+        if (after && !(cut > 0 && Number.isSafeInteger(Number(after.slice(0, cut))))) throw new Refusal(400, '`after` must be the `next` of an earlier page')
+        const limit = 50
+        const open = await graph.openCalls({ ...days, limit: limit + 1, ...(after && { after: { at: Number(after.slice(0, cut)), id: after.slice(cut + 1) } }) })
+        const page = open.slice(0, limit)
+        const last = page.at(-1)
+        return {
+          ...days,
+          at: now(),
+          // Your own number is of no use here, and nobody else's is kept.
+          calls: page.map(({ call: { to: ours, ...call }, followUp, touch }) => ({ ...call, state: callState({ ...call, to: ours }, now(), options.calls), attempts: followUp.attempts, ...(touch && { source: sourceOf(touch), campaign: touch.campaign ?? null, campaignId: touch.campaignId ?? null }) })),
+          next: open.length > limit && last ? `${last.call.at} ${last.call.id}` : null,
+        }
+      }
+      case 'GET /calls/summary': {
+        const days = period(url)
+        return { ...days, expected: options.calls?.results === 'expected', ...(await graph.callSummary({ ...days, at: now(), ...(options.calls?.results && { results: options.calls.results }), ...(options.calls?.resultWait !== undefined && { resultWait: options.calls.resultWait }) })) }
+      }
       case 'GET /call': {
         const call = await graph.keptCall(url.searchParams.get('id') ?? '')
         if (!call) return null
@@ -740,11 +770,9 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return { recorded: costs.length }
       }
       case 'GET /report': {
-        const today = new Date(now()).toISOString().slice(0, 10)
-        const to = url.searchParams.get('to') || today
-        const from = url.searchParams.get('from') || new Date(Date.parse(`${to}T00:00:00Z`) - 29 * 86_400_000 || now()).toISOString().slice(0, 10)
-        const timeZone = url.searchParams.get('tz') || options.timeZone || 'UTC'
-        const report = await graph.report({ from, to, timeZone })
+        const days = period(url)
+        const { timeZone } = days
+        const report = await graph.report(days)
         // The steps in your order first, then any others that turned up, by name.
         const named = Object.keys(options.stages ?? {})
         const others = Object.keys(report.total.stages).filter((step) => !named.includes(step)).sort()

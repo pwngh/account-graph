@@ -74,6 +74,15 @@ export function dayStart(day: string, timeZone = 'UTC'): number {
   }
 }
 
+/** The day it is at an instant in a time zone, written `YYYY-MM-DD`. */
+export function dayIn(at: number, timeZone = 'UTC'): string {
+  try {
+    return new Date(at + ahead(at, timeZone)).toISOString().slice(0, 10)
+  } catch {
+    throw new TypeError(`"${timeZone}" is not a time zone`)
+  }
+}
+
 /** The day after a day written `YYYY-MM-DD`. */
 export function nextDay(day: string): string {
   return new Date(dayStart(day) + 86_400_000).toISOString().slice(0, 10)

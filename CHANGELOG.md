@@ -71,6 +71,7 @@
 - `Call` takes `answered`, `voicemail` and `waited`; `POST /call/result` (`recordCallResult`) reports how a call went, before or after the call. A call that was not answered is missed and never an outcome.
 - `CALL_RESULTS=expected` (`CallOptions.results`) holds a call, uncounted and unsent, until its result says a person answered; after `CALL_RESULT_WAIT` minutes it reads as unknown.
 - `POST /call` takes calls you place (`direction: "outbound"`); `followUp` and `GET /call` say whether a missed call was returned, after how long, and how often it was tried.
+- The reviewer screen's Calls view lists missed calls not returned, how calls went by hour and weekday, and coverage (`GET /calls`, `GET /calls/summary`, `openCalls`, `callSummary`).
 - `outbox.hold`, `release` and `withdraw` keep back, send and take back an outcome; a job can be `held`.
 - `ReportRow.missed` counts missed calls per campaign; calls are kept with their results (`keptCall`, `callResult`).
 

@@ -99,10 +99,11 @@ const open = (subject) => el('a', { class: 'link', href: subjectHash(subject) },
 /**
  * The views, in the order of the menu. Each has a `title` and
  * `show(box, ...parts)`, which fills the box from what the address names
- * after the view. What it throws is shown as a problem.
+ * after the view. What it throws is shown as a problem. A view whose answer
+ * depends on the time of day says with `every` how often to read it again.
  */
 const views = new Map()
-const view = (name, title, show) => views.set(name, { title, show })
+const view = (name, title, show, { every } = {}) => views.set(name, { title, show, every })
 
 /** The view an address names, with the parts that follow it. Addresses from before views had names still work. */
 function place() {
@@ -166,7 +167,8 @@ async function load(tag) {
       notice('')
       if (name === 'accounts' && parts[0]) $('subject').value = parts[0]
     }
-    loadedAt = Date.now()
+    if (!quiet) browsing = false
+    loadedAt = readAt = Date.now()
     fresh()
     return true
   } catch (error) {
@@ -188,6 +190,9 @@ async function load(tag) {
 const EVERY = 10_000
 let beat
 let loadedAt
+let readAt = 0
+/** Further pages are on screen, which a refresh would take away. */
+let browsing = false
 /** The tag of what the server holds now, or undefined when it is the one already seen. */
 async function pulse() {
   const response = await fetch('/pulse', { cache: 'no-store', headers: { authorization: `Bearer ${$('token').value}`, ...(beat && { 'if-none-match': beat }) } })
@@ -198,11 +203,11 @@ async function pulse() {
 }
 function fresh(problem) {
   const at = loadedAt ? `Current as of ${new Date(loadedAt).toLocaleTimeString()}.` : ''
-  $('fresh').textContent = problem ? `Not refreshed: ${problem} ${at}` : document.hidden ? `${at} Paused while this tab is hidden.` : busy() ? `${at} Waiting while a field here has the cursor.` : at && `${at} Looks for changes every ${EVERY / 1000} seconds.`
+  $('fresh').textContent = problem ? `Not refreshed: ${problem} ${at}` : document.hidden ? `${at} Paused while this tab is hidden.` : busy() ? `${at} Waiting while a field here has the cursor.` : browsing ? `${at} Not refreshed while further pages are shown. Reload to start again.` : at && `${at} Looks for changes every ${EVERY / 1000} seconds.`
 }
 /** Typing or answering a question is not interrupted: the next look finds the change again. */
 const busy = () => $('ask').open || ($('view').contains(document.activeElement) && document.activeElement.matches('input:not([readonly]), select, textarea'))
-const interrupting = () => document.hidden || busy()
+const interrupting = () => document.hidden || busy() || browsing
 let looking = false
 async function look() {
   if (interrupting() || looking || pending || !$('token').value || !loadedAt) return fresh()
@@ -213,6 +218,8 @@ async function look() {
     // Opened something else meanwhile, or began to type: the tag is not taken, so the next look finds the change again.
     if (turn !== loading || pending || interrupting()) fresh()
     else if (tag) await load(tag)
+    // Nothing was written, but ages and deadlines have moved on.
+    else if (Date.now() - readAt >= (views.get(place().name).every ?? Infinity)) await load(beat)
     else {
       loadedAt = Date.now()
       fresh()
@@ -222,4 +229,63 @@ async function look() {
   } finally {
     looking = false
   }
+}
+
+/**
+ * The days an address names, and a form that goes to others. When it names
+ * none the server picks the last thirty in its own time zone, and `resolved`
+ * puts those in the form.
+ */
+function period(name, first, last) {
+  const from = el('input', { type: 'date', value: first ?? '', required: '' })
+  const to = el('input', { type: 'date', value: last ?? '', required: '' })
+  const form = el('form', { class: 'row', on: { submit: (event) => { event.preventDefault(); go(`#/${name}/${from.value}/${to.value}`) } } },
+    el('label', {}, 'From', from), el('label', {}, 'To', to), el('button', { class: 'primary' }, 'Show'))
+  const days = (range) => `from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`
+  return {
+    form,
+    query: [first && `from=${encodeURIComponent(first)}`, last && `to=${encodeURIComponent(last)}`].filter(Boolean).join('&'),
+    resolved: (range) => {
+      from.value = range.from
+      to.value = range.to
+      return days(range)
+    },
+  }
+}
+/** A length of time in words: the two largest units that matter. */
+function lasted(ms) {
+  const minutes = Math.round(ms / 60000)
+  if (minutes < 1) return 'under a minute'
+  if (minutes < 60) return `${minutes} min`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 48) return `${hours} h${minutes % 60 ? ` ${minutes % 60} min` : ''}`
+  return `${Math.floor(hours / 24)} days${hours % 24 ? ` ${hours % 24} h` : ''}`
+}
+/** A count of a whole, with its share in words. */
+const share = (part, whole) => (whole > 0 ? `${amount(part)} (${percent(part / whole)})` : amount(part))
+/** A caller's id is long. Its start is enough to tell it from another, and the whole is in the title and the link. */
+const caller = (subject) => el('a', { class: 'link', href: subjectHash(subject), title: subject }, subject.length > 24 ? `${subject.slice(0, 18)}…` : subject)
+/** The same table of rows, a page at a time: `fetchPage(next)` answers `{ rows, next }`. */
+function paged(table, next, more, fetchPage) {
+  const button = el('button', { on: { click: async () => {
+    if (opening) return
+    const turn = ++loading
+    pending += 1
+    button.disabled = true
+    try {
+      const page = await fetchPage(next)
+      if (turn !== loading) return
+      table.append(...page.rows)
+      browsing = true
+      next = page.next
+      button.hidden = next === null
+    } catch (error) {
+      notice(error.message, true)
+    } finally {
+      pending -= 1
+      button.disabled = false
+    }
+  } } }, more)
+  button.hidden = next === null
+  return el('p', {}, button)
 }

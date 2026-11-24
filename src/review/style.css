@@ -1,11 +1,13 @@
 :root {
   --bg: #fbfbfa; --panel: #ffffff; --ink: #1b1b1a; --muted: #66645e; --line: #e4e2dc; --soft: #f2f1ed;
   --same: #0b6e4f; --related: #8f5600; --apart: #b3261e; --accent: #1f4fd8; --on-accent: #ffffff;
+  --heat1: #eaf0fb; --heat2: #d3e0f7; --heat3: #b5cbf1; --heat4: #93b3ea;
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #141413; --panel: #1a1a18; --ink: #e9e8e3; --muted: #a3a098; --line: #31302c; --soft: #232320;
-    --same: #4cc79b; --related: #f0b24a; --apart: #ff8a80; --accent: #8fb0ff; --on-accent: #10131c; }
+    --same: #4cc79b; --related: #f0b24a; --apart: #ff8a80; --accent: #8fb0ff; --on-accent: #10131c;
+    --heat1: #1d2636; --heat2: #22324d; --heat3: #274068; --heat4: #2f5288; }
 }
 * { box-sizing: border-box; }
 /* The rules below set display on labels and rows, which would otherwise undo the hidden attribute. */
@@ -51,6 +53,11 @@ td { padding: 3px 12px 4px 0; border-bottom: 1px solid var(--line); vertical-ali
 td.num, th.num { text-align: right; }
 td.why { min-width: 240px; }
 td.who { min-width: 120px; max-width: 360px; overflow-wrap: anywhere; }
+caption { text-align: left; font-size: 12px; color: var(--muted); padding: 4px 0; }
+table.hours td, table.hours th { padding: 3px 6px; min-width: 28px; }
+table.hours th[scope=row] { position: sticky; left: 0; background: var(--bg); border-right: 1px solid var(--line); }
+/* One hue, light to dark in the light theme and dark to light in the dark one. The text stays ink. */
+.heat1 { background: var(--heat1); } .heat2 { background: var(--heat2); } .heat3 { background: var(--heat3); } .heat4 { background: var(--heat4); font-weight: 600; }
 tr.sum td { font-weight: 600; border-bottom: 0; }
 .chip { display: inline-block; padding: 0 6px; border: 1px solid var(--line); border-radius: 3px; background: var(--soft); font-size: 12px; line-height: 18px; white-space: nowrap; }
 .same { color: var(--same); } .related { color: var(--related); } .apart { color: var(--apart); }

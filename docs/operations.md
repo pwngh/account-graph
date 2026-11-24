@@ -168,6 +168,7 @@ Open `/review` and enter a token. Each view has an address of its own, so it can
 | --- | --- |
 | `/review#/accounts` | The largest clusters, recent changes, and decisions. |
 | `/review#/accounts/account:42` | One subject: its cluster, its ties and why, its money, its sightings. |
+| `/review#/calls` | Missed calls not returned, how calls went by hour and weekday, and coverage, over the last 30 days. Takes two days like the next. |
 | `/review#/channels` | What each campaign cost and brought in, over the last 30 days. |
 | `/review#/channels/2026-11-01/2026-11-30` | The same, for the days named. |
 | `/review#/health` | The record's newest hash, the running policy by kind, and a banner when a rebuild is due. |
@@ -245,7 +246,7 @@ On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes i
 | `TWILIO_AUTH_TOKEN`, `TWILIO_WEBHOOK_URL` | none | Take Twilio's call reports at `/calls/twilio`. Set both. |
 | `TWILIO_ACCOUNT_SID` | none | With `TWILIO_AUTH_TOKEN`: ask Twilio what kind of line a phone posted to `/identify` is. |
 | `SMARTY_AUTH_ID`, `SMARTY_AUTH_TOKEN` | none | Check postal addresses posted to `/identify`. Set both. |
-| `REPORT_TIME_ZONE` | `UTC` | The time zone `/report` reads its days in, such as `America/New_York`. Use the ad account's. |
+| `REPORT_TIME_ZONE` | `UTC` | The time zone `/report` and the call routes read their days in, such as `America/New_York`. Use the ad account's. |
 | `GOOGLE_ADS_DEVELOPER_TOKEN` | none | Read campaign costs from Google Ads. Needs the two Google variables below. |
 | `META_AD_ACCOUNT_ID`, `META_ADS_TOKEN` | none | Read campaign costs from Meta. Set both. |
 | `COST_INTERVAL_MS`, `COST_DAYS` | six hours, `7` | How often to read costs, and how many days back each time. |

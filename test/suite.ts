@@ -553,6 +553,9 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await recordCallResult(graph, { id: 'Q1', answered: false, waited: 45 }, options), { state: 'missed', counted: false })
       const missed = await count()
       assert.deepEqual([missed.stages, missed.missed], [{}, 1])
+      const [waiting1] = await graph.openCalls({ from: '2023-11-14', to: '2023-11-14' })
+      assert.deepEqual([waiting1!.call.id, waiting1!.touch!.campaignId, waiting1!.followUp.attempts], ['Q1', '111', 0])
+      assert.deepEqual((await graph.callSummary({ from: '2023-11-14', to: '2023-11-14' })).coverage, { visitor: 0, channel: 1, neither: 0, noResult: 0 })
       // It is filed under the number it rang, like any call: missed, credited, and never an outcome.
       assert.deepEqual((await graph.report({ from: '2023-11-14', to: '2023-11-14' })).rows.map((row) => [row.source, row.campaignId, row.missed, row.outcomes]), [['google', '111', 1, 0]])
 
@@ -643,6 +646,16 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       // A hidden caller cannot be rung back.
       await recordCall(graph, { id: 'H1', to: '+15550100001', at: T0 + 5 * HOUR, duration: 9, answered: false }, options)
       assert.deepEqual(await became('H1'), { state: 'hidden', attempts: 0 })
+
+      // What is still open, oldest first, a page at a time, and the same as asking of each miss.
+      const days = { from: '2023-11-14', to: '2023-11-17' }
+      const open = await graph.openCalls(days)
+      assert.deepEqual(open.map((each) => [each.call.id, each.followUp.state]), [['M4', 'open'], ['M5', 'open']])
+      const [first] = await graph.openCalls({ ...days, limit: 1 })
+      assert.deepEqual((await graph.openCalls({ ...days, limit: 1, after: first!.call })).map((each) => each.call.id), ['M5'])
+      assert.deepEqual(await graph.openCalls({ from: '2023-11-14', to: '2023-11-14' }), [])
+      const summary = await graph.callSummary({ ...days, results: 'expected' })
+      assert.deepEqual([summary.total.calls, summary.total.missed, summary.total.returned, summary.total.triedAgain, summary.total.hidden, summary.returnedWithin], [7, 6, 1, 2, 1, 2 * HOUR])
 
       // Ringing someone records nothing about who they are, and is not a missed call in the report.
       assert.deepEqual([await graph.cluster(`caller:${hashPhone('+15550100042')}`), (await graph.counts()).touches], [undefined, 0])

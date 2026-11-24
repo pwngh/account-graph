@@ -377,6 +377,17 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       return rows.map(toCall)
     },
 
+    async openCalls(from, to, limit, after) {
+      const { rows } = await db.query(
+        `${callRows} where c.direction = 'inbound' and c.at >= $1 and c.at < $2 and r.answered = false and c.subject <> 'call:' || c.id
+           and ($4::bigint is null or c.at > $4 or (c.at = $4 and c.id collate "C" > $5))
+           and not exists (select 1 from ${t('call')} d join ${t('call_result')} s on s.id = d.id where d.subject = c.subject and d.at > c.at and s.answered)
+         order by c.at, c.id collate "C" limit $3`,
+        [from, to, limit, after?.at ?? null, after?.id ?? null],
+      )
+      return rows.map(toCall)
+    },
+
     async callsBetween(from, to) {
       const { rows } = await db.query(`${callRows} where c.at >= $1 and c.at < $2 order by c.at, c.id collate "C"`, [from, to])
       return rows.map(toCall)

@@ -359,6 +359,14 @@ export interface FollowUp {
   attempts: number
 }
 
+/** A missed call nobody has returned, with what it was credited to. */
+export interface OpenCall {
+  call: KeptCall
+  followUp: FollowUp
+  /** The arrival the call is credited to, as an outcome would be. */
+  touch?: AttributedTouch
+}
+
 /** What an ad platform charged for one campaign on one day. Writing the same day, source and campaign again replaces it. */
 export interface Cost {
   /** The day, written `YYYY-MM-DD` in the ad account's time zone. */
