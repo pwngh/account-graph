@@ -67,12 +67,13 @@ const timespan = (entries) => {
   return [['First', when(first)], ['Last', when(last), last > first ? `${lasted(last - first)} later` : '']]
 }
 /** When each kind of thing happened, one lane a kind, so a gap or a burst shows before the list is read. The list says the same in words. */
-function lanes(entries) {
-  const dated = entries.filter((entry) => entry.at > 0)
+function lanes(entries, shown) {
+  const dated = shown.filter((entry) => entry.at > 0)
   const kinds = Object.keys(WHAT).filter((kind) => dated.some((entry) => entry.kind === kind))
-  if (dated.length < 2) return ''
-  const [first, last] = [Math.min(...dated.map((entry) => entry.at)), Math.max(...dated.map((entry) => entry.at))]
-  if (first === last) return ''
+  // The whole span, whatever is left out, so the dots stay under the first and last told above them.
+  const times = entries.map((entry) => entry.at).filter((at) => at > 0)
+  const [first, last] = [Math.min(...times), Math.max(...times)]
+  if (dated.length === 0 || first === last) return ''
   const drawing = el('div', { class: 'lanes', 'aria-hidden': 'true' })
   for (const kind of kinds) {
     const lane = el('div', { class: 'lane' })
@@ -110,7 +111,7 @@ view('journey', 'Journey', async (box, subject) => {
   const table = el('table', { class: 'journey' })
   const draw = () => {
     const shown = entries.filter((entry) => !leaving.has(entry.kind))
-    strip.replaceChildren(tiles(['Entries', amount(entries.length), next === null ? '' : 'the newest'], ['Subjects read', amount(subjects.length)], ...timespan(entries)), lanes(shown))
+    strip.replaceChildren(tiles(['Entries', amount(entries.length), next === null ? '' : 'the newest'], ['Subjects read', amount(subjects.length)], ...timespan(entries)), lanes(entries, shown))
     table.replaceChildren(el('tr', {}, th('When', 'num'), th('What'), th('Details'), th('On, and why')), ...byDay(shown, row(ties, subject)))
   }
   const kinds = el('div', { class: 'row', role: 'group', 'aria-label': 'Show' })

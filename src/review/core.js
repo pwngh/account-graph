@@ -220,7 +220,10 @@ function place() {
 /** Which control this is, whatever moves around it or changes beside it: what it is and does, and the subject its row is about. */
 const which = (node) => [node.tagName, node.dataset.key, node.matches('a, button') ? node.textContent : '', node.getAttribute('href'), node.getAttribute('aria-label'), node.title, node.closest('tr, li')?.querySelector('a')?.getAttribute('href')].join('\n')
 /** Which notes these are, whatever sections come and go around them. */
-const fold = (node) => `${node.closest('section')?.querySelector('h2, h3')?.textContent}\n${node.querySelector('summary').textContent}`
+const fold = (node) => {
+  const section = node.closest('section')
+  return `${section?.querySelector('h2, h3')?.textContent}\n${[...(section?.querySelectorAll('details') ?? [])].indexOf(node)}`
+}
 
 let loading = 0
 let pending = 0
