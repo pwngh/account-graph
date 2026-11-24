@@ -95,6 +95,25 @@ if (!url) {
     }
   })
 
+  test('forgetting a subject leaves no identifier nobody holds, and keeps what is muted', async () => {
+    const schema = `ag_test_${process.pid}_forgotten`
+    try {
+      const store = createPostgresStore(pool, schema)
+      await store.migrate()
+      const graph = createGraph(store)
+      await graph.observe([{ subject: 'a', identifiers: ['email:a', 'email:shared', 'phone:muted'], at: 1 }, { subject: 'b', identifiers: ['email:shared'], at: 1 }])
+      await graph.ignore('phone:muted')
+      await graph.forget('a')
+      const { rows } = await pool.query(`select id, fanout from ${schema}.identifier order by id`)
+      assert.deepEqual(rows, [{ id: 'email:shared', fanout: 1 }, { id: 'phone:muted', fanout: 0 }])
+      // Seen again, it is counted from one.
+      await graph.observe({ subject: 'c', identifiers: ['email:a', 'phone:muted'], at: 2 })
+      assert.deepEqual((await pool.query(`select fanout, ignored from ${schema}.identifier where id in ('email:a', 'phone:muted') order by id`)).rows, [{ fanout: 1, ignored: false }, { fanout: 1, ignored: true }])
+    } finally {
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
+
   test('a database from before numbers were shown to one visitor lends them', async () => {
     const schema = `ag_test_${process.pid}_lease`
     try {

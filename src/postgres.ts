@@ -96,11 +96,13 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     },
 
     async removeSubject(subject) {
-      await db.query(
+      const { rows: left } = await db.query(
         `with gone as (delete from ${t('edge')} where subject = $1 returning identifier)
-         update ${t('identifier')} set fanout = fanout - 1 where id in (select identifier from gone)`,
+         update ${t('identifier')} set fanout = fanout - 1 where id in (select identifier from gone) returning id, fanout`,
         [subject],
       )
+      // What nobody holds any more goes too, unless it is muted: that is a decision, and stands for whoever holds it next.
+      await db.query(`delete from ${t('identifier')} where id = any($1::text[]) and fanout <= 0 and not ignored`, [left.filter((row) => row.fanout <= 0).map((row) => row.id)])
       await db.query(`delete from ${t('sighting')} where subject = $1`, [subject])
       await db.query(`delete from ${t('touch')} where subject = $1`, [subject])
       await db.query(`delete from ${t('outcome')} where subject = $1`, [subject])

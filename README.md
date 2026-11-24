@@ -114,6 +114,7 @@ The `device:` value is the `ag_device` cookie the script set, which your backend
 **To understand it**
 
 - [How it decides](docs/deciding.md): the score, the weights and what they rest on, how links become clusters, and when to change a setting.
+- [What is kept about people](docs/privacy.md): what is hashed, what is sent, what `forget` and `prune` delete, and what consent covers.
 - [Presets](docs/presets.md): a policy for contacts entered by staff, and what to do about shared phones.
 
 **To build on it**
