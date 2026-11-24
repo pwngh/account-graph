@@ -264,11 +264,6 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       return rows.map((row) => ({ ...moved(row), seq: Number(row.id) }))
     },
 
-    async lastChange() {
-      const { rows } = await db.query(`select id from ${t('change')} order by id desc limit 1`)
-      return Number(rows[0]?.id ?? 0)
-    },
-
     async fed(feed, at) {
       await db.query(`insert into ${t('feed')} (name, last_at) values ($1, $2) on conflict (name) do update set last_at = greatest(${t('feed')}.last_at, excluded.last_at)`, [feed, at])
     },

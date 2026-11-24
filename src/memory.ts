@@ -242,10 +242,6 @@ export function createMemoryStore(): Store {
       return moves.filter((move) => move.seq > seq).slice(0, limit).map((move) => ({ ...move }))
     },
 
-    async lastChange() {
-      return moves.at(-1)?.seq ?? 0
-    },
-
     async fed(feed, at) {
       ops.fed(feed, at)
     },

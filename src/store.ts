@@ -65,8 +65,6 @@ export interface Tx {
   recentChanges(limit: number): Promise<Moved[]>
   /** Cluster changes numbered above `seq`, oldest first. */
   changesAfter(seq: number, limit: number): Promise<NumberedChange[]>
-  /** The number of the newest cluster change, or 0. */
-  lastChange(): Promise<number>
   /** Notes that a feed wrote something down at a time. */
   fed(feed: Feed, at: number): Promise<void>
   /** Whether no subject has been recorded. */

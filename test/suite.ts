@@ -1848,7 +1848,9 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const all = await read(0)
       assert.deepEqual(all.out.slice(-4).reverse().map(({ seq: _, ...move }) => move), recent.slice(0, 4))
       assert.deepEqual([...all.out].sort((x, y) => x.seq - y.seq), all.out)
-      assert.deepEqual(await graph.changes({ after: 'now' }), { changes: [], next: all.next, more: false })
+      // Followed from the start, the changes say where everyone is: whoever they never named is on their own.
+      const followed = new Map(all.out.map((move) => [move.subject, move.to]))
+      for (const name of ['team', 'duo', 'pair', 'solo']) for (const subject of await graph.search(`${name}:`)) assert.equal(followed.get(subject) ?? subject, (await graph.cluster(subject))?.id ?? subject)
       assert.deepEqual(await graph.changes({ after: all.next }), { changes: [], next: all.next, more: false })
       for (const bad of [-1, 1.5, NaN]) await assert.rejects(graph.changes({ after: bad }), TypeError)
       await graph.forget('pair:y')

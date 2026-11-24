@@ -334,9 +334,9 @@ curl "https://graph.example.org/changes?after=4180" -H "authorization: Bearer $G
 { "changes": [{ "seq": 4181, "at": 1795460000000, "subject": "account:42", "from": "account:42", "to": "account:17" }], "next": 4181, "more": false }
 ```
 
-1. Start with `after=now` and keep `next`, or with `after=0` to read everything kept.
+1. Start with `after=0`. A subject no change has named is in the cluster of its own name.
 2. Read with the number you kept, act on the changes, then keep the new `next`.
-3. Read again at once while `more` is true.
+3. Read again at once while `more` is true. Otherwise read again every minute or so, and whenever the webhook arrives.
 
 If you stop between acting and keeping `next`, the same changes come again, so act on them in a way that can be repeated. `limit` is 500 unless you set it, and at most 1,000.
 

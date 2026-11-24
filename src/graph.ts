@@ -251,9 +251,9 @@ export interface Graph {
   recent(limit?: number): Promise<Moved[]>
   /**
    * Every cluster change numbered above `after`, oldest first, so a system that keeps the number it got to misses none.
-   * `after` defaults to 0, the first change kept. `'now'` answers with no changes and the number to start from.
+   * `after` defaults to 0, the first change kept. A subject no change has named is in the cluster of its own name.
    */
-  changes(options?: { after?: number | 'now'; limit?: number }): Promise<ChangePage>
+  changes(options?: { after?: number; limit?: number }): Promise<ChangePage>
   /** What two subjects share, however weak, without any reviewer's mark, and how they stand. */
   between(a: Subject, b: Subject): Promise<Between>
   /**
@@ -1389,10 +1389,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     async changes({ after = 0, limit = 500 } = {}) {
-      if (after !== 'now' && !(Number.isSafeInteger(after) && after >= 0)) throw new TypeError('`after` must be the number of a change, or "now"')
+      if (!(Number.isSafeInteger(after) && after >= 0)) throw new TypeError('`after` must be the number of a change')
       if (!(Number.isSafeInteger(limit) && limit > 0)) throw new TypeError('`limit` must be a positive integer')
       return store.read(async (tx) => {
-        if (after === 'now') return { changes: [], next: await tx.lastChange(), more: false }
         const found = await tx.changesAfter(after, limit + 1)
         const changes = found.slice(0, limit)
         return { changes, next: changes.at(-1)?.seq ?? after, more: found.length > limit }
