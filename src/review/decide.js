@@ -91,6 +91,11 @@ view('decide', 'Decide', async (box) => {
     // What joining would make of them, worked out and not done. The pair can be decided without it.
     api('POST', '/foresee', { action: 'join', a: pair.a, b: pair.b }).then(({ moved, after }) => { said.textContent = moved === 0 ? 'Joining them would change no cluster.' : `Joined, they would be ${people(after)}.` }, () => {})
     box.append(el('div', { class: 'deck' }, rail, here))
+    // Once it is on the page, the one in front is brought into view in the queue, without moving the page.
+    setTimeout(() => {
+      const now = rail.querySelector('[aria-current]')
+      if (now && (now.offsetTop < rail.scrollTop || now.offsetTop + now.offsetHeight > rail.scrollTop + rail.clientHeight)) rail.scrollTop = now.offsetTop - rail.clientHeight / 2
+    })
   } else box.append(el('section', {}, el('p', { class: 'muted' }, found.total === 0 ? 'No unjoined ties among the subjects checked.' : 'Every pair in this list was skipped.')))
 
   if (decided.length > 0) box.append(el('section', {}, el('h2', {}, 'Decided here, newest first'), el('ul', { class: 'decided' }, ...decided.map((entry) => el('li', {}, reviewDisplay.chip(entry.what === 'join' ? 'Joined' : 'Kept apart', entry.what === 'join' ? 'same' : 'apart'), open(entry.a), ' and ', open(entry.b), ' ',

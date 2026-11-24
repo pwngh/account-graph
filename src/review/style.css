@@ -650,11 +650,12 @@ a.button.primary { border-color: var(--accent); background: var(--accent); color
 @media (prefers-reduced-motion: reduce) { .waiting-lines i { animation: none; } }
 
 /* Decide: the queue, and the pair in front of you. */
-.deck { display: grid; grid-template-columns: minmax(230px, 290px) minmax(0, 1fr); border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overflow: hidden; }
+.deck { margin-top: var(--s3); display: grid; grid-template-columns: minmax(230px, 290px) minmax(0, 1fr); border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overflow: hidden; }
 .queue-rail { max-height: 640px; padding: var(--s2); border-right: 1px solid var(--line); background: color-mix(in srgb, var(--soft) 40%, var(--panel)); }
 .queue-pair { display: grid; grid-template-columns: minmax(0, 1fr) max-content; gap: 2px var(--s2); width: 100%; height: auto; padding: var(--s2) var(--s3); border: 1px solid transparent; border-radius: 8px; background: none; text-align: left; transition: background .12s; }
 .queue-pair:hover { background: var(--hover); border-color: transparent; }
 .queue-pair[aria-current] { background: var(--panel); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); box-shadow: 0 1px 3px rgb(0 0 0 / .08); }
+.queue-pair > b { text-align: right; }
 .queue-names { display: grid; min-width: 0; }
 .queue-names span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .queue-pair .meta { grid-column: 1; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -668,7 +669,8 @@ main .deck .pair { padding: var(--s4) var(--s5) 0; border: 0; min-width: 0; disp
 .versus-row > :first-child { text-align: right; }
 .versus-row .reason { display: block; }
 .versus-name { text-align: center; color: var(--muted); font-size: var(--small); }
-.versus-who { display: grid; gap: 2px; }
+.versus-who { display: grid; gap: 2px; justify-items: start; }
+.versus-row > :first-child .versus-who { justify-items: end; }
 .versus-who b { font-size: 18px; overflow-wrap: anywhere; }
 .versus-score { display: grid; justify-items: center; gap: 4px; text-align: center; }
 .dial { width: 72px; height: 72px; }
@@ -686,7 +688,7 @@ main .deck .pair { padding: var(--s4) var(--s5) 0; border: 0; min-width: 0; disp
 kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border: 1px solid color-mix(in srgb, currentColor 35%, transparent); border-radius: 4px; font: 600 11px/1 system-ui, sans-serif; opacity: .85; }
 .decided li { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
 @media (max-width: 860px) { .deck { grid-template-columns: minmax(0, 1fr); } .queue-rail { order: 2; max-height: 320px; border-right: 0; border-top: 1px solid var(--line); } main .deck .pair { padding: var(--s3) var(--s3) 0; } .choices { margin: auto calc(-1 * var(--s3)) 0; padding: var(--s3); } .choice.quiet { margin-left: 0; } }
-@media (max-width: 560px) { .versus-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 2px var(--s3); } .versus-row > :first-child { text-align: left; } .versus-name { grid-column: 1 / -1; grid-row: 1; text-align: left; } .versus-score { grid-column: 1 / -1; grid-row: 1; justify-items: center; } .versus-row > :last-child { text-align: left; } }
+@media (max-width: 560px) { .versus-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 2px var(--s3); align-items: start; } .versus-row > :first-child .versus-who { justify-items: start; } .versus-row > :first-child { text-align: left; } .versus-name { grid-column: 1 / -1; grid-row: 1; text-align: left; } .versus-score { grid-column: 1 / -1; grid-row: 1; justify-items: center; } .versus-row > :last-child { text-align: left; } }
 
 /* A table of a few plain columns is read along its rows, so they do not stand far apart. */
 @media (min-width: 761px) { .wide:has(> table):not(:has(th[colspan])) { max-width: 1040px; } }
