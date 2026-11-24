@@ -270,16 +270,14 @@ function apartFrom(a, b, p) {
 }
 /** Bends each line that runs through someone around them, as little as will do. Answers how many it could not. */
 function route(nodes, edges, until = performance.now() + 250) {
+  for (const edge of edges) edge.bend = 0
+  if (performance.now() > until) return edges.length
   const taken = nodes.map((node) => ({ node, boxes: shapes(node) }))
   const left = new Map()
   let stuck = 0
   for (const edge of edges) {
     // Out of time, the rest stay straight.
-    if (performance.now() > until) {
-      edge.bend = 0
-      stuck += 1
-      continue
-    }
+    if (performance.now() > until) return stuck + 1
     const long = Math.hypot(edge.to.x - edge.from.x, edge.to.y - edge.from.y)
     const ways = [0, 0.1, -0.1, 0.18, -0.18, 0.26, -0.26, 0.36, -0.36, 0.48, -0.48, 0.62, -0.62].map((part) => part * Math.max(160, long))
     // Best is one that also keeps off the names at its own ends and leaves them apart from other lines. A line may have to do without.
