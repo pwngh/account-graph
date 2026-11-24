@@ -11,8 +11,8 @@ function actions() {
   const { name, parts: [subject] } = place()
   if (!subject || !['accounts', 'journey'].includes(name)) return []
   return [
-    name === 'accounts' ? ['Open their journey', () => go(`#/journey/${encodeURIComponent(subject)}`)] : ['Open their account', () => go(subjectHash(subject))],
-    ...(name === 'accounts' ? [['Join with another…', () => act('Join as one person', `${subject} and the subject you name will be treated as one person.`, '/join', { a: subject }, 'Join', { otherKey: 'b' })]] : []),
+    name === 'accounts' ? ['Open journey', () => go(`#/journey/${encodeURIComponent(subject)}`)] : ['Open account', () => go(subjectHash(subject))],
+    ...(name === 'accounts' ? [['Join with…', () => act('Join IDs', `${subject} and the other ID will be treated as one person.`, '/join', { a: subject }, 'Join', { otherKey: 'b' })]] : []),
   ].map(([text, run]) => ({ group: subject, text, run, mark: '>' }))
 }
 /** Whether every letter typed is in a text, in order, and how well: at the start of words and together is better. */
@@ -31,13 +31,13 @@ function matched(text, typed) {
   return { score: score - whole.length / 100, places }
 }
 
-const palette = el('dialog', { id: 'palette', 'aria-label': 'Find or do' })
+const palette = el('dialog', { id: 'palette', 'aria-label': 'Search' })
 {
-  const input = el('input', { type: 'text', role: 'combobox', 'aria-expanded': 'true', 'aria-controls': 'palette-list', 'aria-autocomplete': 'list', 'aria-label': 'Find or do', placeholder: 'Find someone, or go somewhere', autocomplete: 'off', spellcheck: 'false' })
+  const input = el('input', { type: 'text', role: 'combobox', 'aria-expanded': 'true', 'aria-controls': 'palette-list', 'aria-autocomplete': 'list', 'aria-label': 'Search', placeholder: 'Search IDs or go to…', autocomplete: 'off', spellcheck: 'false' })
   const list = el('div', { id: 'palette-list', role: 'listbox', 'aria-label': 'Results' })
   const keys = (...each) => el('span', {}, ...each.map((key) => el('kbd', {}, key)))
   palette.append(el('div', { class: 'palette-top' }, el('i', { class: 'glass', 'aria-hidden': 'true' }), input, el('kbd', {}, 'esc')), list,
-    el('div', { class: 'palette-foot' }, keys('Up', 'Down'), 'to move', keys('Enter'), 'to open'))
+    el('div', { class: 'palette-foot' }, keys('Up', 'Down'), 'to navigate', keys('Enter'), 'to open'))
   document.body.append(palette)
   let shown = []
   let at = 0
@@ -49,15 +49,15 @@ const palette = el('dialog', { id: 'palette', 'aria-label': 'Find or do' })
   const commands = () => [
     ...actions(),
     ...[...views].map(([name, { title }]) => ({ group: 'Go to', text: title, run: () => go(`#/${name}`), icon: VIEW_ICONS[name] })),
-    { group: 'Go to', text: 'Read this again', run: () => load(), icon: 'M13 8a5 5 0 1 1-1.5-3.6M13 2.5v2.6h-2.6' },
+    { group: 'Go to', text: 'Refresh', run: () => load(), icon: 'M13 8a5 5 0 1 1-1.5-3.6M13 2.5v2.6h-2.6' },
   ]
   function draw() {
     const typed = input.value.trim()
     const some = [
       ...people,
-      ...(typed ? opened.map((subject) => ({ group: 'Opened here', text: subject, subject, run: () => go(subjectHash(subject)) })).filter(({ subject }) => !people.some((each) => each.subject === subject)) : []),
+      ...(typed ? opened.map((subject) => ({ group: 'Recent', text: subject, subject, run: () => go(subjectHash(subject)) })).filter(({ subject }) => !people.some((each) => each.subject === subject)) : []),
       ...commands(),
-      ...(typed ? [] : opened.map((subject) => ({ group: 'Opened here', text: subject, subject, run: () => go(subjectHash(subject)) }))),
+      ...(typed ? [] : opened.map((subject) => ({ group: 'Recent', text: subject, subject, run: () => go(subjectHash(subject)) }))),
     ]
     const held = some.map((item) => ({ ...item, match: typed && !item.found ? matched(item.text, typed) : { score: 99, places: [] } })).filter((item) => item.match)
     // Groups keep their order; within one, the best match is first.
@@ -69,7 +69,7 @@ const palette = el('dialog', { id: 'palette', 'aria-label': 'Find or do' })
       const letters = [...item.text].map((letter, n) => (item.match.places.includes(n) ? el('mark', {}, letter) : letter))
       return el('div', { id: `palette-${i}`, class: 'palette-item', role: 'option', 'aria-selected': String(i === at), title: item.text, on: { click: () => choose(i), pointermove: () => { if (at !== i) { at = i; point() } } } }, item.subject ? badge(item.subject) : el('i', { class: 'palette-mark', 'aria-hidden': 'true' }, item.icon ? svg('svg', { viewBox: '0 0 16 16', focusable: 'false' }, svg('path', { d: item.icon })) : item.mark), el('span', {}, ...letters), item.note ? el('span', { class: 'meta' }, item.note) : '')
     }))))
-    if (shown.length === 0) list.replaceChildren(el('p', { class: 'muted palette-none' }, looking ? 'Looking.' : 'Nothing by that name.'))
+    if (shown.length === 0) list.replaceChildren(el('p', { class: 'muted palette-none' }, looking ? 'Searching…' : 'No results'))
     point()
   }
   function point() {
@@ -100,7 +100,7 @@ const palette = el('dialog', { id: 'palette', 'aria-label': 'Find or do' })
         // A name is enough, without the kind before it: the kinds of subject there are known to be are tried.
         if (subjects.length === 0 && by === 'subject' && !text.includes(':')) subjects = (await Promise.all(KNOWN_KINDS.map((kind) => find(`${kind}:${text}`)))).flatMap((each) => each.subjects)
         if (asked !== turn || !palette.open || $('token').value !== token) return
-        people = subjects.slice(0, 8).map((subject) => ({ group: 'People', text: subject, subject, found: true, note: by === 'subject' ? '' : `by ${by === 'click' ? 'ad click' : by}`, run: () => go(subjectHash(subject)) }))
+        people = subjects.slice(0, 8).map((subject) => ({ group: 'IDs', text: subject, subject, found: true, note: by === 'subject' ? '' : `by ${by === 'click' ? 'ad click' : by}`, run: () => go(subjectHash(subject)) }))
         looking = false
         draw()
       } catch {

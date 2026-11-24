@@ -2,9 +2,9 @@
 function reasons(list) {
   const line = (reason) => {
     const [kind] = reason.identifier.split(':')
-    return el('span', { class: `reason${reason.counted === false ? ' uncounted' : ''}` }, el('b', {}, kind), ` ${percent(reason.evidence)}, shared by ${reason.fanout}, ${days(reason.gap)} `,
-      reason.group === undefined ? '' : reason.counted === false ? `· not counted, ${reason.group} counts once ` : list.some((other) => other.group === reason.group && other.counted === false) ? `· counts for ${reason.group} ` : '',
-      el('button', { class: 'link', title: reason.identifier, 'data-key': reason.identifier, on: { click: () => act('Stop linking through this identifier', reason.identifier, '/ignore', { identifier: reason.identifier }, 'Stop linking') } }, 'stop linking'))
+    return el('span', { class: `reason${reason.counted === false ? ' uncounted' : ''}` }, el('b', {}, kind), ` ${percent(reason.evidence)} · ${reason.fanout} IDs · ${days(reason.gap)} `,
+      reason.group === undefined ? '' : reason.counted === false ? `· not counted (${reason.group} group) ` : list.some((other) => other.group === reason.group && other.counted === false) ? `· ${reason.group} group ` : '',
+      el('button', { class: 'link', title: reason.identifier, 'data-key': reason.identifier, on: { click: () => act('Ignore identifier', reason.identifier, '/ignore', { identifier: reason.identifier }, 'Ignore') } }, 'Ignore'))
   }
   return list.filter((reason) => reason.counted !== false).flatMap((reason) => [line(reason), ...list.filter((other) => reason.group !== undefined && other.group === reason.group && other.counted === false).map(line)])
 }
@@ -18,18 +18,18 @@ const badge = (subject) => {
 }
 
 /** Why two are kept apart, in the words of whoever decided it. */
-const kept = (verdict) => (verdict?.apart ? [el('span', { class: 'muted' }, 'Decided by '), author(verdict.apart.by), el('span', { class: 'muted' }, `, ${when(verdict.apart.at)}: ${verdict.apart.reason ?? '(no reason recorded)'}`),
-  verdict.last.action === 'join' ? el('span', { class: 'reason' }, 'A later decision joined them, which does not undo this one. By ', author(verdict.last.by), `, ${when(verdict.last.at)}`) : ''] : [el('span', { class: 'muted' }, '(no decision recorded)')])
+const kept = (verdict) => (verdict?.apart ? [author(verdict.apart.by), el('span', { class: 'muted' }, ` · ${when(verdict.apart.at)}${verdict.apart.reason ? ` · ${verdict.apart.reason}` : ''}`),
+  verdict.last.action === 'join' ? el('span', { class: 'reason' }, 'Later joined by ', author(verdict.last.by), `, ${when(verdict.last.at)}. The separation takes precedence.`) : ''] : [unrecorded()])
 
-const TOLD = { told: ['Asked to take it back', 'same'], refused: ['Refused to take it back', 'apart'], untold: ['Not asked', 'related'] }
+const TOLD = { told: ['Deletion requested', 'same'], refused: ['Request rejected', 'apart'], untold: ['Not requested', 'related'] }
 /** What had reached an ad platform of someone just forgotten. It is said once and kept nowhere, so only its button puts it away. */
 function sentOn(sent) {
-  const table = el('table', {}, el('tr', {}, th('Platform'), th('Sent as'), th('Happened'), th('Transaction'), th('State')),
+  const table = el('table', {}, el('tr', {}, th('Platform'), th('Conversion'), th('Date'), th('Transaction'), th('Status')),
     ...sent.map((each) => el('tr', {}, td('', sourced(each.target)), td('', each.action), td('nowrap', reviewDisplay.time(each.at)), td('', each.transactionId),
       td('', reviewDisplay.chip(...TOLD[each.state]), each.note ? el('span', { class: 'reason' }, each.note) : ''))))
-  const dialog = el('dialog', { class: 'sent-on', closedby: 'none', 'aria-label': 'What ad platforms hold' }, el('h4', {}, 'What ad platforms hold'),
-    el('p', { class: 'muted' }, sent.some(({ state }) => state !== 'told') ? 'Forgotten here. Ask the platforms that were not asked, or refused, with their own tools. Nothing here is kept, so save it first.' : 'Forgotten here. Nothing here is kept.'),
-    wide('What ad platforms hold', table), el('div', { class: 'row' }, saved('sent-to-ad-platforms', table), el('button', { class: 'primary', on: { click: () => dialog.close() } }, 'Close')))
+  const dialog = el('dialog', { class: 'sent-on', closedby: 'none', 'aria-label': 'Data held by ad platforms' }, el('h4', {}, 'Data held by ad platforms'),
+    el('p', { class: 'muted' }, sent.some(({ state }) => state !== 'told') ? 'This ID was deleted. Request deletion from these platforms directly. This list is shown once, so save a copy.' : 'This ID was deleted. This list is shown once.'),
+    wide('Data held by ad platforms', table), el('div', { class: 'row' }, saved('sent-to-ad-platforms', table), el('button', { class: 'primary', on: { click: () => dialog.close() } }, 'Close')))
   // A browser closes a dialog on a second Escape whatever the first was answered, so the key itself is stopped.
   dialog.addEventListener('keydown', (event) => event.key === 'Escape' && event.preventDefault())
   dialog.addEventListener('cancel', (event) => event.preventDefault())
@@ -42,94 +42,93 @@ function sentOn(sent) {
 function profileOf(profile, more) {
   const detail = []
   const title = el('h3', { class: 'page-title' }, badge(profile.subject), reviewDisplay.id(profile.subject, true))
-  if (!profile.known) return [el('section', {}, el('div', { class: 'page-head' }, title), el('p', { class: 'muted' }, 'No records for this subject.'))]
+  if (!profile.known) return [el('section', {}, el('div', { class: 'page-head' }, title), el('p', { class: 'muted' }, 'No records'))]
   const size = profile.cluster.members.length
   detail.push(el('section', {}, el('div', { class: 'page-head' }, title, explain(), el('div', { class: 'row' },
     el('a', { class: 'button', href: `#/journey/${encodeURIComponent(profile.subject)}` }, 'Journey'),
-    el('button', { on: { click: () => act('Join as one person', `${profile.subject} and the subject you name will be treated as one person.`, '/join', { a: profile.subject }, 'Join', { otherKey: 'b' }) } }, 'Join with another…'),
-    el('button', { class: 'danger', on: { click: () => act('Forget this subject', `Everything recorded about ${profile.subject} will be deleted. This cannot be undone.`, '/forget', { subject: profile.subject, ads: true }, 'Hold to delete', { hold: true, done: ({ sent }) => sent.length > 0 && sentOn(sent) }) } }, 'Forget…'))),
-  tiles(['Cluster size', `${amount(size)} ${size === 1 ? 'subject' : 'subjects'}`, profile.cluster.oversized ? 'Above the review limit' : '', profile.cluster.oversized ? 'apart' : ''],
-    profile.links[0] && ['Strongest tie', percent(Math.max(...profile.links.map((link) => link.score))), `${amount(profile.links.length)} scored ties`],
-    profile.separated.length > 0 && ['Kept apart from', amount(profile.separated.length)],
-    profile.history[0] && ['Last seen', reviewDisplay.time(Math.max(...profile.history.map((each) => each.at)), Date.now())],
-    profile.consent[0] && ['Advertising', profile.consent[0].adUserData && profile.consent[0].adPersonalization ? 'Granted' : profile.consent[0].adUserData || profile.consent[0].adPersonalization ? 'In part' : 'Denied', profile.consent[0].source ?? '']),
-  profile.cluster.oversized ? el('p', { class: 'banner' }, el('b', {}, 'This group is very large. '), 'One thing that many people share, like an office phone, may be joining strangers.') : ''))
+    el('button', { on: { click: () => act('Join IDs', `${profile.subject} and the other ID will be treated as one person.`, '/join', { a: profile.subject }, 'Join', { otherKey: 'b' }) } }, 'Join with…'),
+    el('button', { class: 'danger', on: { click: () => act('Delete data', `All data recorded for ${profile.subject} will be permanently deleted.`, '/forget', { subject: profile.subject, ads: true }, 'Hold to delete', { hold: true, done: ({ sent }) => sent.length > 0 && sentOn(sent) }) } }, 'Delete…'))),
+  tiles([term('Linked IDs', 'linkedIds'), amount(size), profile.cluster.oversized ? 'Above review limit' : '', profile.cluster.oversized ? 'apart' : ''],
+    profile.links[0] && [term('Strongest link', 'strongest'), percent(Math.max(...profile.links.map((link) => link.score))), `${amount(profile.links.length)} ${profile.links.length === 1 ? 'link' : 'links'}`],
+    profile.separated.length > 0 && [term('Separated', 'separated'), amount(profile.separated.length)],
+    profile.history[0] && [term('Last seen', 'lastSeen'), reviewDisplay.time(Math.max(...profile.history.map((each) => each.at)), Date.now())],
+    profile.consent[0] && [term('Ad consent', 'consent'), profile.consent[0].adUserData && profile.consent[0].adPersonalization ? 'Granted' : profile.consent[0].adUserData || profile.consent[0].adPersonalization ? 'Partial' : 'Denied', profile.consent[0].source ?? '']),
+  profile.cluster.oversized ? el('p', { class: 'banner' }, el('b', {}, 'Large group. '), 'A widely shared identifier may be joining different people. Review the links below.') : ''))
 
-  if (profile.ties.length > 0 || profile.separated.length > 0) detail.push(el('section', {}, el('h2', {}, 'Graph'), graphOf(profile, more),
-    around(profile).length > ROOM ? el('p', { class: 'muted' }, `${ROOM} of ${amount(around(profile).length)} are drawn. The ties are all listed below.`) : ''))
+  if (profile.ties.length > 0 || profile.separated.length > 0) detail.push(el('section', {}, el('h2', {}, term('Graph', 'graph')), graphOf(profile, more),
+    around(profile).length > ROOM ? el('p', { class: 'muted' }, `Showing ${ROOM} of ${amount(around(profile).length)}. All links are listed below.`) : ''))
 
   const members = new Set(profile.cluster.members)
   // What was last decided about this subject and another, and whether systems keep reversing it.
   const verdicts = new Map(profile.verdicts.map((verdict) => [`${verdict.a}\n${verdict.b}`, verdict]))
   const verdict = (other) => verdicts.get(profile.subject < other ? `${profile.subject}\n${other}` : `${other}\n${profile.subject}`)
-  const contested = (other) => (verdict(other)?.reversals >= 3 ? el('span', { class: 'chip apart', title: 'Find out which system is right, and stop the other from sending.' }, `systems disagree, ${verdict(other).reversals} times`) : '')
-  const links = el('table', {}, el('tr', {}, group('Who', 2, true), group('How strong, and why', 2), el('td', { class: 'edge' })), el('tr', {}, th('Subject'), th('Tie'), ...edge([th('Score', 'num'), th('Why')]), ...edge([th('Action')])))
+  const contested = (other) => (verdict(other)?.reversals >= 3 ? el('span', { class: 'chip apart', title: `Systems have reversed this decision ${verdict(other).reversals} times` }, 'Conflict') : '')
+  const links = el('table', {}, el('tr', {}, th('ID'), th('Status'), ...edge([th(term('Score', 'score'), 'num'), th(term('Evidence', 'evidence'))]), ...edge([th('Action')])))
   const kinds = { same: [], strong: [], related: [], apart: [] }
   for (const link of profile.links) {
     const inCluster = members.has(link.subject)
     kinds[link.level !== 'same' ? 'related' : inCluster ? 'same' : 'strong'].push([link.score, el('tr', {},
       td('who', badge(link.subject), open(link.subject)),
-      td('', el('span', { class: `chip ${link.level}` }, link.level === 'same' ? (inCluster ? 'Same person' : 'Strong, not joined') : 'Related'), ' ', contested(link.subject)),
+      td('', el('span', { class: `chip ${link.level}` }, link.level === 'same' ? (inCluster ? 'Same person' : 'High confidence') : 'Related'), ' ', contested(link.subject)),
       ...edge([td('num score', reviewDisplay.compare(percent(link.score), link.score)), td('why', ...reasons(link.reasons))]),
-      td('edge', el('button', { on: { click: () => act('Keep these two apart', `${profile.subject} and ${link.subject} will never share a cluster, whatever they share later.`, '/separate', { a: profile.subject, b: link.subject }, 'Keep apart') } }, 'Keep apart')))])
+      td('edge', el('button', { on: { click: () => act('Separate IDs', `${profile.subject} and ${link.subject} will be treated as different people.`, '/separate', { a: profile.subject, b: link.subject }, 'Separate') } }, 'Separate')))])
   }
   for (const other of profile.separated) {
-    kinds.apart.push([undefined, el('tr', {}, td('who', badge(other), open(other)), td('', el('span', { class: 'chip apart' }, 'Kept apart'), ' ', contested(other)), ...edge([td('num score', none()), td('why', ...kept(verdict(other)))]),
-      td('edge', el('button', { on: { click: () => act('Allow these two to join again', `${profile.subject} and ${other}`, '/separate', { a: profile.subject, b: other, separated: false }, 'Allow', { undo: true }) } }, 'Allow again')))])
+    kinds.apart.push([undefined, el('tr', {}, td('who', badge(other), open(other)), td('', el('span', { class: 'chip apart' }, 'Separated'), ' ', contested(other)), ...edge([td('num score', none()), td('why', ...kept(verdict(other)))]),
+      td('edge', el('button', { on: { click: () => act('Remove separation', `${profile.subject} and ${other} can be joined again.`, '/separate', { a: profile.subject, b: other, separated: false }, 'Remove', { undo: true }) } }, 'Remove')))])
   }
   const between = (list) => {
     const scores = list.map(([score]) => score).filter((score) => score !== undefined)
     if (scores.length === 0) return ''
     const [low, high] = [percent(Math.min(...scores)), percent(Math.max(...scores))]
-    return low === high ? low : `${low} to ${high}`
+    return low === high ? low : `${low} – ${high}`
   }
-  for (const [kind, name, tone] of [['same', 'Same person', 'same'], ['strong', 'Strong, not joined', 'same'], ['related', 'Related', 'related'], ['apart', 'Kept apart', 'apart']]) links.append(...folding('Ties', name, tone, 5, kinds[kind].map(([, row]) => row), between(kinds[kind])))
-  detail.push(el('section', {}, el('h2', {}, 'Ties'), ...(profile.links.length + profile.separated.length > 5 ? [filters('Ties', links, [
-    { name: 'Tie', at: 1, read: (cell) => cell.querySelector('.chip').textContent },
-    { name: 'Shares', at: 3, read: (cell) => [...cell.querySelectorAll('.reason:not(.uncounted) > b')].map((each) => each.textContent) },
-    { name: 'Kind', at: 0, read: (cell) => cell.querySelector('a').textContent.split(':')[0] },
-  ])] : []), profile.links.length + profile.separated.length > 0 ? wide('Ties', links, true) : el('p', { class: 'muted' }, 'No ties meet the score threshold.')))
+  for (const [kind, name, tone] of [['same', 'Same person', 'same'], ['strong', 'High confidence', 'same'], ['related', 'Related', 'related'], ['apart', 'Separated', 'apart']]) links.append(...folding('Links', name, tone, 5, kinds[kind].map(([, row]) => row), between(kinds[kind])))
+  detail.push(el('section', {}, el('h2', {}, term('Links', 'links')), ...(profile.links.length + profile.separated.length > 5 ? [filters('Links', links, [
+    { name: 'Status', at: 1, read: (cell) => cell.querySelector('.chip').textContent },
+    { name: 'Identifier', at: 3, read: (cell) => [...cell.querySelectorAll('.reason:not(.uncounted) > b')].map((each) => each.textContent) },
+    { name: 'Type', at: 0, read: (cell) => cell.querySelector('a').textContent.split(':')[0] },
+  ])] : []), profile.links.length + profile.separated.length > 0 ? wide('Links', links, true) : el('p', { class: 'muted' }, 'No links')))
 
   if (profile.flows.length > 0) {
     const moved = (n, asset) => (n > 0 ? `${amount(n)} ${asset}` : tally(0))
-    const flows = el('table', {}, el('tr', {}, group('With whom', 2, true), group('What moved', 4)), el('tr', {}, th('Subject'), th('Tie'), ...edge([th('Sent', 'num'), th('Received', 'num'), th('Times', 'num'), th('Last')])))
+    const flows = el('table', {}, el('tr', {}, th('ID'), th('Status'), ...edge([th('Sent', 'num'), th('Received', 'num'), th('Transfers', 'num'), th('Last')])))
     for (const flow of profile.flows) {
       flows.append(el('tr', {}, td('who', open(flow.subject)),
-        td('', reviewDisplay.chip(flow.relation === 'none' ? 'No tie' : flow.relation === 'same' ? 'Same person' : 'Related', flow.relation === 'none' ? '' : flow.relation)),
+        td('', reviewDisplay.chip(flow.relation === 'none' ? 'Not linked' : flow.relation === 'same' ? 'Same person' : 'Related', flow.relation === 'none' ? '' : flow.relation)),
         ...edge([td('num', moved(flow.sent, flow.asset)), td('num', moved(flow.received, flow.asset)), td('num', amount(flow.count)), td('nowrap', reviewDisplay.time(flow.last))])))
     }
-    const section = el('section', {}, el('h2', {}, 'Money, all time'), wide('Money', flows))
+    const section = el('section', {}, el('h2', {}, term('Transfers', 'transfers')), wide('Transfers', flows))
     if (profile.rings.length > 0) {
-      section.append(el('h2', {}, 'Rings: value that came back'), el('ul', {}, ...profile.rings.map((ring) => el('li', {},
-        ...ring.subjects.flatMap((subject) => [open(subject), ' paid ']), reviewDisplay.id(profile.subject, true), '. ',
-        el('span', { class: 'muted' }, `${amount(ring.amount)} ${ring.asset} went all the way round. `),
-        ring.tied > 0 ? el('span', { class: 'chip apart' }, `${ring.tied} of them in this cluster`) : ''))))
+      section.append(el('h2', {}, term('Circular transfers', 'rings')), el('ul', {}, ...profile.rings.map((ring) => el('li', {},
+        ...ring.subjects.flatMap((subject) => [open(subject), ' → ']), reviewDisplay.id(profile.subject, true), ' ',
+        el('span', { class: 'muted' }, `${amount(ring.amount)} ${ring.asset} `),
+        ring.tied > 0 ? el('span', { class: 'chip apart' }, `${ring.tied} linked to this ID`) : ''))))
     }
     detail.push(section)
   }
 
   const records = el('div', { class: 'panel-grid profile-grid' })
   if (profile.consent.length > 0) {
-    const consent = el('table', {}, el('tr', {}, th('Given'), th('Measure ads'), th('Personalize ads'), th('Source'), th('Recorded'), th('State')))
+    const consent = el('table', {}, el('tr', {}, th('Date'), th('Ad measurement'), th('Ad personalization'), th('Source'), th('Recorded'), th('Status')))
     const word = (granted) => reviewDisplay.chip(granted ? 'Granted' : 'Denied', granted ? 'same' : 'apart')
     for (const [i, answer] of profile.consent.entries()) {
       consent.append(el('tr', {}, td('nowrap', answer.at > 0 ? reviewDisplay.time(answer.at) : unrecorded()), td('', word(answer.adUserData)), td('', word(answer.adPersonalization)),
         td('who', answer.source ?? unrecorded()), td('nowrap', reviewDisplay.time(answer.recorded)), td('', i === 0 ? reviewDisplay.chip('Current') : '')))
     }
-    records.append(el('section', {}, el('h2', {}, `Advertising consent, newest ${amount(profile.consent.length)}`), wide('Advertising consent', consent),
-      notes('This says only whether their data may be used for ads. It does not say you may call or write to them.')))
+    records.append(el('section', {}, el('h2', {}, term('Ad consent', 'consent'), el('span', { class: 'count' }, amount(profile.consent.length))), wide('Ad consent', consent)))
   }
 
-  const history = el('table', {}, el('tr', {}, th('When'), th('Event'), th('Identifier')))
+  const history = el('table', {}, el('tr', {}, th('Date'), th('Event'), th('Identifier')))
   for (const sighting of profile.history) history.append(el('tr', {}, td('', reviewDisplay.time(sighting.at)), td('', sighting.event ?? ''), td('who', reviewDisplay.id(sighting.identifier, true))))
-  records.append(el('section', {}, el('h2', {}, `Sightings, newest ${amount(profile.history.length)}`),
-    ...(profile.history.length > 8 ? [filters('Sightings', history, [{ name: 'Event', at: 1 }, { name: 'Identifier', at: 2, read: (cell) => cell.textContent.split(':')[0] }])] : []), profile.history.length > 0 ? wide('Sightings', history) : el('p', { class: 'muted' }, 'No sightings recorded.')))
+  records.append(el('section', {}, el('h2', {}, term('Sightings', 'sightings'), el('span', { class: 'count' }, amount(profile.history.length))),
+    ...(profile.history.length > 8 ? [filters('Sightings', history, [{ name: 'Event', at: 1 }, { name: 'Identifier', at: 2, read: (cell) => cell.textContent.split(':')[0] }])] : []), profile.history.length > 0 ? wide('Sightings', history) : el('p', { class: 'muted' }, 'No sightings')))
   detail.push(records)
   return detail
 }
 
-const ACTIONS = { ignore: 'Stopped linking through', restore: 'Resumed linking through', separate: 'Kept apart', rejoin: 'Allowed to join', join: 'Joined', forget: 'Forgot', rebuild: 'Rebuilt every cluster', prune: 'Deleted sightings older than' }
-const queued = (cluster) => el('li', { class: 'line' }, badge(cluster.id), caller(cluster.id), el('span', { class: 'muted' }, `${amount(cluster.size)} accounts`), cluster.oversized ? el('span', { class: 'chip apart' }, 'review') : '')
+const ACTIONS = { ignore: 'Ignored identifier', restore: 'Restored identifier', separate: 'Separated', rejoin: 'Removed separation', join: 'Joined', forget: 'Deleted data', rebuild: 'Rebuilt all groups', prune: 'Deleted sightings before' }
+const queued = (cluster) => el('li', { class: 'line' }, badge(cluster.id), caller(cluster.id), el('span', { class: 'muted' }, `${amount(cluster.size)} IDs`), cluster.oversized ? el('span', { class: 'chip apart' }, 'Review') : '')
 
 /** How many clusters are on screen, so a refresh reads that many again. */
 let listed = 50
@@ -140,7 +139,7 @@ async function clusterList() {
     clusters = [...clusters, ...next]
     if (next.length < 50) break
   }
-  const list = el('ul', { id: 'queue' }, ...(clusters.length > 0 ? clusters.map(queued) : [el('li', { class: 'muted' }, 'No clusters yet.')]))
+  const list = el('ul', { id: 'queue' }, ...(clusters.length > 0 ? clusters.map(queued) : [el('li', { class: 'muted' }, 'None')]))
   // The list comes 50 at a time. A full page means there may be more.
   const more = el('button', { on: { click: async () => {
     // Something else is being opened: this list is about to go.
@@ -162,7 +161,7 @@ async function clusterList() {
     }
   } } }, 'Show more')
   more.hidden = clusters.length === 0 || clusters.length % 50 > 0
-  return { largest: clusters[0], shown: [scroll('Largest clusters', list), el('p', {}, more)] }
+  return { largest: clusters[0], shown: [scroll('Largest groups', list), el('p', {}, more)] }
 }
 
 /** Which decisions to list, and how many are on screen, so a refresh reads the same again. */
@@ -179,9 +178,9 @@ async function decisionList(audit) {
     return el('li', {}, el('b', {}, ACTIONS[d.action] ?? d.action),
       about.length ? el('span', { class: 'reason' }, ...about.flatMap((each, i) => i ? [' · ', each] : [each])) : '',
       el('div', { class: 'meta decision-by' }, author(d.by), ' · ', reviewDisplay.time(d.at, Date.now()), d.reason ? `: ${d.reason}` : ''),
-      d.action === 'ignore' && newest ? el('button', { class: 'link', 'data-key': `decision-${d.seq}`, on: { click: () => act('Resume linking through this identifier', d.about[0], '/ignore', { identifier: d.about[0], ignored: false }, 'Resume', { undo: true }) } }, 'undo') : '')
+      d.action === 'ignore' && newest ? el('button', { class: 'link', 'data-key': `decision-${d.seq}`, on: { click: () => act('Restore identifier', d.about[0], '/ignore', { identifier: d.about[0], ignored: false }, 'Restore', { undo: true }) } }, 'Undo') : '')
   }
-  const list = el('ul', { id: 'decisions' }, ...(page.decisions.length > 0 ? page.decisions.map(entry) : [el('li', { class: 'muted' }, listing.author ? 'None by these.' : 'None yet.')]))
+  const list = el('ul', { id: 'decisions' }, ...(page.decisions.length > 0 ? page.decisions.map(entry) : [el('li', { class: 'muted' }, listing.author ? 'None' : 'None')]))
   let next = page.next
   const more = el('button', { on: { click: async () => {
     if (opening) return
@@ -204,11 +203,11 @@ async function decisionList(audit) {
     }
   } } }, 'Show older')
   more.hidden = next === null
-  const pick = el('select', { 'aria-label': 'Whose decisions', on: { change: () => { listing.author = pick.value; listing.shown = 30; load() } } },
-    ...[['', 'by anyone'], ['people', 'by people'], ['system', 'by systems']].map(([value, text]) => el('option', { value, ...(value === listing.author && { selected: '' }) }, text)))
-  return el('section', {}, reviewDisplay.section('Decisions, newest first', pick),
-    el('p', { id: 'seal', class: audit.sound ? 'muted' : 'apart' }, audit.sound ? `${amount(page.total)} recorded in all. The record is whole.` : `The record was altered at entry ${audit.brokenAt}.`),
-    scroll('Decisions', list), el('p', {}, more))
+  const pick = el('select', { 'aria-label': 'Author', on: { change: () => { listing.author = pick.value; listing.shown = 30; load() } } },
+    ...[['', 'All'], ['people', 'People'], ['system', 'Systems']].map(([value, text]) => el('option', { value, ...(value === listing.author && { selected: '' }) }, text)))
+  return el('section', {}, reviewDisplay.section(term('Audit log', 'audit'), pick),
+    el('p', { id: 'seal', class: audit.sound ? 'muted' : 'apart' }, audit.sound ? `${amount(page.total)} ${page.total === 1 ? 'entry' : 'entries'} · Verified` : `Altered at entry ${audit.brokenAt}`),
+    scroll('Audit log', list), el('p', {}, more))
 }
 
 view('accounts', 'Accounts', async (box, subject) => {
@@ -227,18 +226,18 @@ view('accounts', 'Accounts', async (box, subject) => {
   const [profile, ...more] = await Promise.all([about ? read(about) : undefined, ...spread.map(read)])
   const decisions = await decisionList(audit)
 
-  left.append(el('section', {}, el('h2', {}, 'Largest clusters, now'), ...queue.shown))
-  left.append(el('section', {}, el('h2', {}, 'Recent changes, newest 30'), scroll('Recent changes', el('ul', { id: 'recent' }, ...(recent.length > 0 ? recent.slice(0, 30).map((move) => el('li', { class: 'move' }, badge(move.subject), caller(move.subject), el('span', { class: 'meta move-time' }, reviewDisplay.time(move.at, Date.now())),
-    el('span', { class: 'move-to' }, el('span', {}, move.to === undefined ? ' was removed' : move.to === move.subject ? ' is on its own again' : ' joined '), ...(move.to !== undefined && move.to !== move.subject ? [caller(move.to)] : [])))) : [el('li', { class: 'muted' }, 'No cluster changes recorded.')])))))
+  left.append(el('section', {}, el('h2', {}, term('Largest groups', 'largest')), ...queue.shown))
+  left.append(el('section', {}, el('h2', {}, 'Recent changes'), scroll('Recent changes', el('ul', { id: 'recent' }, ...(recent.length > 0 ? recent.slice(0, 30).map((move) => el('li', { class: 'move' }, badge(move.subject), caller(move.subject), el('span', { class: 'meta move-time' }, reviewDisplay.time(move.at, Date.now())),
+    el('span', { class: 'move-to' }, el('span', {}, move.to === undefined ? ' removed' : move.to === move.subject ? ' ungrouped' : ' joined '), ...(move.to !== undefined && move.to !== move.subject ? [caller(move.to)] : [])))) : [el('li', { class: 'muted' }, 'None')])))))
   left.append(decisions)
 
   if (subject) detail.append(...profileOf(profile, more))
   else {
-    detail.append(el('section', {}, reviewDisplay.heading('Accounts'), tiles(['Largest cluster', queue.largest ? `${amount(queue.largest.size)} accounts` : 'None yet', queue.largest?.oversized ? 'Above the review limit' : '', queue.largest?.oversized ? 'apart' : ''],
+    detail.append(el('section', {}, reviewDisplay.heading('Accounts'), tiles([term('Largest group', 'largest'), queue.largest ? `${amount(queue.largest.size)} IDs` : 'None', queue.largest?.oversized ? 'Above review limit' : '', queue.largest?.oversized ? 'apart' : ''],
       recent[0] && ['Last change', reviewDisplay.time(recent[0].at, Date.now())],
-      ['Record of decisions', audit.sound ? 'Whole' : 'Altered', audit.head ? `${amount(audit.head.seq)} ${audit.head.seq === 1 ? 'decision' : 'decisions'}` : 'no decision yet', audit.sound ? '' : 'apart'])))
+      [term('Audit log', 'record'), audit.sound ? 'Verified' : 'Altered', `${amount(audit.head?.seq ?? 0)} ${audit.head?.seq === 1 ? 'entry' : 'entries'}`, audit.sound ? '' : 'apart'])))
     // It may have been forgotten since the list was read.
-    if (profile?.known) detail.append(el('section', {}, reviewDisplay.section('Largest cluster', caller(profile.subject)), graphOf(profile, more),
-      around(profile).length > ROOM ? el('p', { class: 'muted' }, `${ROOM} of ${amount(around(profile).length)} are drawn.`) : ''))
+    if (profile?.known) detail.append(el('section', {}, reviewDisplay.section('Largest group', caller(profile.subject)), graphOf(profile, more),
+      around(profile).length > ROOM ? el('p', { class: 'muted' }, `Showing ${ROOM} of ${amount(around(profile).length)}`) : ''))
   }
 }, { subject: true })
