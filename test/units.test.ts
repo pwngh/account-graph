@@ -294,6 +294,13 @@ test('a policy setting is laid over the default kind by kind, and everything wro
   assert.throws(() => configFrom({ ...env, POLICY_FILE: '/no/such/file' }), /POLICY_FILE: "\/no\/such\/file" cannot be read/)
 })
 
+test('staff networks are read from a setting, and a range that is not one is named', () => {
+  const env = { DATABASE_URL: 'x', GRAPH_TOKEN: 'y' }
+  assert.deepEqual(configFrom({ ...env, STAFF_NETWORKS: '192.0.2.10, 2001:db8::/32' }).staffNetworks, ['192.0.2.10', '2001:db8::/32'])
+  assert.deepEqual(configFrom(env).staffNetworks, [])
+  for (const bad of ['office', '192.0.2.0/33', '192.0.2.0/24/1', '2001:db8::/129', '192.0.2.0/', '/24']) assert.throws(() => configFrom({ ...env, STAFF_NETWORKS: bad }), /STAFF_NETWORKS: .* is not an address or a range/, bad)
+})
+
 test('a day begins at local midnight, across a clock change', () => {
   assert.equal(dayStart('2026-03-01'), Date.parse('2026-03-01T00:00:00Z'))
   assert.equal(dayStart('2026-03-01', 'America/New_York'), Date.parse('2026-03-01T05:00:00Z'))

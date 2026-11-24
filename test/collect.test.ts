@@ -16,7 +16,9 @@ function browser(href: string, cookies: Record<string, string> = {}, gpc = false
     },
     set cookie(text: string) {
       const [pair = ''] = text.split(';')
-      jar.set(pair.slice(0, pair.indexOf('=')), pair.slice(pair.indexOf('=') + 1))
+      const name = pair.slice(0, pair.indexOf('='))
+      if (/; Max-Age=0(;|$)/.test(text)) jar.delete(name)
+      else jar.set(name, pair.slice(pair.indexOf('=') + 1))
     },
   })
   define('localStorage', { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => void storage.set(key, value) })
@@ -184,6 +186,32 @@ test('tokens on the address are sent once and taken out of the address bar', asy
   page.go('https://site.example/offer?utm_source=mailer')
   await collect({ endpoint: 'https://graph.example/collect' })
   assert.equal(replaced.length, 1)
+})
+
+test('a staff link leaves a mark in the browser, sent with each visit and event until it is taken off', async () => {
+  const page = browser('https://site.example/team?ag_staff=STAFF.token.z')
+  const replaced: string[] = []
+  Object.defineProperty(globalThis, 'history', { value: { state: null, replaceState: (_state: unknown, _title: string, url: string) => void replaced.push(url) }, configurable: true })
+  const options = { endpoint: 'https://graph.example/collect' }
+  // An event on the page the link led to may be reported before the visit is.
+  await event(options, 'inquiry')
+  await settle()
+  assert.equal(page.sent.shift().staff, 'STAFF.token.z')
+  page.jar.delete('ag_staff')
+  await collect(options)
+  await settle()
+  assert.deepEqual([page.sent[0].staff, replaced, page.jar.get('ag_staff')], ['STAFF.token.z', ['https://site.example/team'], 'STAFF.token.z'])
+  page.go('https://site.example/clients')
+  await collect(options)
+  await event(options, 'inquiry')
+  await settle()
+  assert.deepEqual(page.sent.slice(1).map((sent: any) => sent.staff), ['STAFF.token.z', 'STAFF.token.z'])
+  page.go('https://site.example/?ag_staff=off')
+  await event(options, 'inquiry')
+  await collect(options)
+  await settle()
+  assert.deepEqual(page.sent.slice(3).map((sent: any) => [sent.staff, Boolean(sent.device)]), [[undefined, true], [undefined, true]])
+  assert.equal(replaced.at(-1), 'https://site.example/')
 })
 
 test('links to your other sites carry the visitor along, and no other link is touched', async () => {

@@ -67,6 +67,7 @@
 - `examples/household.json` is a policy for contacts entered by staff; `docs/presets.md` explains it.
 - Every advertising answer is kept (`consentHistory`, `GET /consent`); `POST /consent` takes `at` and `source`, and the newest by `at` stands.
 - `GET /audit` names the newest decision and its hash (`head`); `AUDIT_HEAD_HOURS` posts it to `ALERT_WEBHOOK`.
+- `STAFF_NETWORKS` (`HandlerOptions.staffNetworks`) and `POST /staff-link` (`staffLink`) drop visits and page events of your own staff; `GET /stats` counts them as `staff`.
 
 ### Changed
 

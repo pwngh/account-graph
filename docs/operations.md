@@ -13,7 +13,7 @@ npm start
 database upgraded: tables, sighting record time
 listening on 0.0.0.0:8080
 collect accepts https://example.org
-reviewer token off, server cookie off, fingerprint off, maxmind off, signed links off, alerts off, address checks off, phone line checks off
+reviewer token off, server cookie off, fingerprint off, maxmind off, signed links off, staff networks off, alerts off, address checks off, phone line checks off
 outbox sends to nobody (no ad platform configured)
 page events taken: none (set EVENTS); calls from twilio off
 costs are read from nobody (post them to /costs)
@@ -117,6 +117,35 @@ With two proxies in a row, such as a CDN in front of a load balancer, set `TRUST
 
 Set `COOKIE=true` to have the server keep the device id in a cookie it sets itself. Safari deletes a cookie set by script after seven days; one set by the server lasts. It only works when the server answers on the site's own domain, or on a subdomain with `COOKIE=example.org`.
 
+## Visits by your own staff
+
+People who work for you open the same pages your clients do, and their visits can be a large share of what is recorded. Two settings drop them. Both are off until set, and both are counted as `staff` in `GET /stats`.
+
+```sh
+STAFF_NETWORKS=192.0.2.10,198.51.100.0/24   # addresses and ranges your offices browse from
+```
+
+A browser that moves around is marked by opening a link. Ask the server for one, and send it to the person:
+
+```sh
+curl -X POST https://graph.example.org/staff-link -H "authorization: Bearer $GRAPH_TOKEN" \
+  -d '{"url":"https://example.org/team","days":90}'
+```
+
+Opening it on your site leaves a first-party cookie named `ag_staff`. From then on the visits and page events of that browser on that site are dropped, until the days are over or someone opens any page with `?ag_staff=off`.
+
+> **A browser cannot mark itself.** The mark is signed with `LINK_SECRET`, and a visit that carries any other is recorded like everyone's.
+
+| Limit | Detail |
+| --- | --- |
+| Behind a proxy | Set `TRUST_PROXY`, or every visit comes from the proxy's address. If that address is in a staff network, every visit is dropped. |
+| One site at a time | A cookie belongs to a site. Open the link on each of yours. |
+| How long a mark lasts | The days count from when the link was made. The cookie is set by script, and some browsers drop such a cookie sooner: Safari after seven days without a visit. Open the link again. |
+| HTTPS only | The link must lead to an `https` address, because the cookie is marked `Secure`. `localhost` is the exception. |
+| A staff link is a key | Anyone who opens it is marked. Published by mistake, it hides real visitors until it expires. A new `LINK_SECRET` ends every mark, and every other link. |
+| Earlier visits | What a browser did before it was marked is still recorded. `forget` its `visitor:` subject to remove it. |
+| Phone calls | Not covered. A call has no browser. |
+
 ## Limits on visits
 
 Each address may post 60 visits at once and 120 a minute to `/collect`. Past that it gets 429 with a `retry-after` header.
@@ -166,7 +195,7 @@ A setting the server cannot use stops it at start, with a line for each problem.
 | Route | Token | Answers |
 | --- | --- | --- |
 | `GET /health` | none | `{"ok":true}` once the database answers. Use it for a load balancer's check. |
-| `GET /stats` | service | Visits collected, visits refused by the limit, visits from declared bots, and errors since start; what the graph holds; whether a rebuild is due; outbox jobs by state. |
+| `GET /stats` | service | Visits collected, visits refused by the limit, visits from declared bots, staff visits dropped, and errors since start; what the graph holds; whether a rebuild is due; outbox jobs by state. |
 | `GET /verify` | service | `{ changes, policy }`. `changes` lists the subjects whose stored cluster differs from a full recompute, and is empty when sound. It reads every edge. |
 
 Set `ALERT_WEBHOOK` to a Slack incoming webhook, or anything that takes `{"text": "…"}`, and the server posts there when something needs a person:
@@ -205,6 +234,7 @@ On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes i
 | `ALERT_WEBHOOK` | none | A URL to post failures to, as `{"text": "…"}`. |
 | `POLICY`, `POLICY_FILE` | the default policy | What differs from it, as JSON or as a file of JSON. Set one at most. |
 | `AUDIT_HEAD_HOURS` | `0` | Post the newest decision's hash to `ALERT_WEBHOOK` at start and every so many hours, at least one. `0` is never. |
+| `STAFF_NETWORKS` | none | Addresses and ranges whose visits are dropped, separated by commas: `192.0.2.10,198.51.100.0/24`. |
 | `STAGES` | none | Your steps in order, as JSON, each with a `value`, `currency` and `action`. See [the report](report.md#steps-and-what-each-is-worth). |
 | `LINK_SECRET` | none | Signs links that name a person, and the tokens that carry a visitor between your sites. At least 16 characters. |
 | `EVENTS` | none | Names of page events to keep, separated by commas: `inquiry,phone_click`. |

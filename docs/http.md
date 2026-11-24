@@ -97,6 +97,7 @@ The four `POST` routes answer with the subjects whose cluster moved. With the se
 | `POST /convert` | An outcome: `{ transactionId, subject, at, stage?, value?, currency?, action?, email?, phone? }`. Counted for the report; with `action`, also sent to the ad platforms. A `stage` listed in `STAGES` supplies the value, currency and action it leaves out. |
 | `POST /restate` | `{ transactionId, value, currency? }`. Changes an outcome's value, in the report and on the platforms that can restate. |
 | `POST /link` | `{ url, subject, days? }`. Answers `{ url }`: the address with a token naming the person it is for. See [links](links.md). |
+| `POST /staff-link` | `{ url, days? }`. Answers `{ url }`: the address that marks the browser that opens it as staff. |
 | `POST /call` | A phone call: `{ id, from?, to, at, duration? }`. Answers `{ subject, flags, counted, visitor?, duplicate }`. See [calls](calls.md). |
 | `POST /costs` | A list of `{ day, source, amount, campaignId?, campaign?, currency?, clicks?, impressions? }`. A row for the same day, source and campaign replaces the one before. |
 | `GET /conversion?id=` | The jobs of one transaction, one per ad platform. |
@@ -107,7 +108,7 @@ The four `POST` routes answer with the subjects whose cluster moved. With the se
 | `POST /rebuild` | `{ by?, reason? }`. Recomputes every cluster under the running policy, and answers with the subjects that moved. No other write runs meanwhile. |
 | `GET /verify` | `{ changes, policy }`: the subjects whose stored cluster differs from a full recompute, and whether the policy changed since they were stored. |
 
-`/conversion`, `/conversions` and `/retry` answer 404 when no ad platform is configured, and `/link` when `LINK_SECRET` is not set.
+`/conversion`, `/conversions` and `/retry` answer 404 when no ad platform is configured, and `/link` and `/staff-link` when `LINK_SECRET` is not set.
 
 ## Errors
 
