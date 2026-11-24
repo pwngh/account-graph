@@ -79,6 +79,7 @@
     "check": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json && rm -rf dist/review && cp -R src/review dist/review",
     "demo": "node demo.ts",
+    "firm": "node examples/firm.ts",
     "bench": "node bench.ts",
     "prepublishOnly": "npm run check && npm test && npm run build",
     "review": "node tools/review-demo.ts",
