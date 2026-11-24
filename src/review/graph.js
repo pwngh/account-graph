@@ -411,8 +411,8 @@ function graphOf(profile, more) {
   let edges = []
   let byId = new Map()
   let size = { w: 0, h: 0 }
-  /** How much taller than wide the paper is. */
-  const tall = () => size.h / Math.max(1, size.w)
+  /** How much taller than wide the paper is, as far as a layout can follow. */
+  const tall = () => Math.min(4, size.h / Math.max(1, size.w))
   let heat = 0
   let glide
   let running = false
@@ -961,13 +961,19 @@ function graphOf(profile, more) {
       // Narrow, the card has no room beside anyone and stands under the paper.
       root.classList.toggle('narrow', root.clientWidth <= 720)
       size = { w: paper.clientWidth, h: paper.clientHeight }
-      if (size.w > 0) paper.setAttribute('viewBox', `0 0 ${size.w} ${size.h}`)
-      if (size.w === 0 || nodes.length === 0) return
+      // In a window or a pane that is shut there is no paper to lay anything out on. It is drawn once there is.
+      if (size.w === 0 || size.h === 0) return
+      paper.setAttribute('viewBox', `0 0 ${size.w} ${size.h}`)
+      if (!begun) {
+        begun = true
+        return draw(same)
+      }
+      if (nodes.length === 0) return
       place()
       if (glide) run()
     }
+    let begun = false
     measure()
-    draw(same)
     new ResizeObserver(measure).observe(paper)
   }
   return root

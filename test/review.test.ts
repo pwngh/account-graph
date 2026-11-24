@@ -108,6 +108,24 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   // Nothing on it is too near anything else: no disc, name or line.
   const marked = `[...document.querySelectorAll('.graph .node')].map((mark) => mark.node)`
   assert.deepEqual(await run(`(() => { const nodes = ${marked}; const edges = [...document.querySelectorAll('.graph .edge')].map((mark) => mark.edge); const taken = nodes.map((node) => ({ node, boxes: shapes(node) })); return [nodes.length > 3, edges.length > 2, [...crowding(nodes, [])].length, edges.every((edge) => freeOf(edge, course(edge), taken))] })()`), [true, true, 0, true])
+  // Opened where there is no room, as in a pane that is shut, it is drawn once there is.
+  assert.deepEqual(await run(`(async () => {
+    const ids = ['account:a', 'account:b', 'account:c']
+    const graph = graphOf({ subject: ids[0], cluster: { id: ids[0], members: ids, oversized: false }, links: [], edges: [[0, 1], [0, 2]].map(([a, b]) => ({ a: ids[a], b: ids[b], score: 0.95, level: 'same' })), separated: [], verdicts: [], apart: [] }, [])
+    const kept = { ...drawn, spots: new Map(drawn.spots) }
+    const host = document.createElement('div')
+    host.style.width = '0'
+    host.append(graph)
+    document.body.append(host)
+    graph.begin()
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    host.style.width = '900px'
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+    const places = [...graph.querySelectorAll('.node')].map(({ node }) => Number.isFinite(node.x) && Number.isFinite(node.y))
+    host.remove()
+    Object.assign(drawn, kept)
+    return places
+  })()`), [true, true, true])
   // Measured by the browser, not by the layout: of a crowded graph no name is on another name, a disc, or a line.
   const touching = await run(`(async () => {
     const ids = Array.from({ length: 24 }, (_, n) => ['account:somebody-with-a-name-', 'lead:a', 'visitor:of-the-site-'][n % 3] + n)
