@@ -558,6 +558,8 @@ async function load(tag) {
     if (quiet) fresh(error.message)
     else {
       $('view').replaceChildren(box)
+      // Nobody is signed in yet, so the token is asked for after all.
+      if (me === undefined) signedIn(undefined)
       // A search answered meanwhile has the notice, so the problem is told where the view would be.
       if (edits === sought) notice(error.message, true)
       else box.append(el('p', { class: 'apart', role: 'alert' }, `Problem: ${error.message}`))
