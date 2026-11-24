@@ -182,7 +182,7 @@ Use these names so reports stay comparable from month to month. Values are short
 
 The advertised and serving offices are separate facts, and neither is filled in from the other.
 
-An outcome or call carries at most 8 tags. A name is lowercase letters and underscores, up to 32 characters; a value is up to 64. `(not set)` is reserved and rejected as a value.
+A tag `zip` with a Texas ZIP code adds the tag `county`, where all of the ZIP lies in one county, you sent no `county`, and there is room for it. An outcome or call carries at most 8 tags of yours. A name is lowercase letters and underscores, up to 32 characters; a value is up to 64. `(not set)` is reserved and rejected as a value.
 
 ## Not a lead
 

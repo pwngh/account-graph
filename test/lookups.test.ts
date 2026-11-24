@@ -1,8 +1,14 @@
 import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
 import { createGraph, createMemoryStore, ringing } from '../src/index.ts'
+import { configFrom } from '../src/serve.ts'
 import { recordText } from '../src/texts.ts'
-import { fakePhone, holidays, meantEmail, placeholderEmail, sharedMailbox, spanishPlaceholder, spanishStop, texasArea, throwawayEmail } from '../src/lookups.ts'
+import { checkTags } from '../src/tags.ts'
+import { shared } from '../src/integrations/maxmind.ts'
+import { createRangeLookup, fakePhone, holidays, meantEmail, placeholderEmail, sharedMailbox, spanishPlaceholder, spanishStop, texasArea, texasCounty, throwawayEmail } from '../src/lookups.ts'
 
 test('a number that is nobody\'s is told from one that could be', () => {
   const why = { '+15555555555': 'repeated', '+10000000000': 'repeated', '+11234567890': 'counted', '+10123456789': 'counted', '+17139110142': 'never_assigned', '+17130120142': 'never_assigned', '+11136120142': 'never_assigned', '+19116120142': 'never_assigned', '+17135550142': 'never_assigned', '+17135551212': 'never_assigned' }
@@ -67,4 +73,37 @@ test('a Spanish word stops the texts, and a ringing phone says where its number 
   assert.ok(!(await text('3', 'Comenzar')).flags.includes('opt_in'))
   assert.equal((await ringing(graph, { from: '(713) 812-0142', to: '+15550100101', at })).area, 'Houston')
   for (const from of ['+12128120142', 'anonymous', undefined]) assert.equal('area' in (await ringing(graph, { ...(from && { from }), to: '+15550100101', at })), false)
+})
+
+test('a Texas ZIP in one county says which, and is tagged with it unless one was given', () => {
+  for (const [zip, county] of [['77002', 'Harris'], ['78701-1234', 'Travis'], [' 75201 ', 'Dallas'], ['77573', 'Galveston']] as const) assert.equal(texasCounty(zip), county)
+  // 77339 is in Harris and Montgomery, 77494 in three.
+  for (const zip of ['77339', '77494', '10001', '7700', '770021', '', 'x']) assert.equal(texasCounty(zip), undefined, zip)
+  assert.deepEqual(checkTags({ zip: '77002', language: 'es' }, 'It'), { zip: '77002', language: 'es', county: 'Harris' })
+  assert.deepEqual(checkTags({ zip: '77002', county: 'Waller' }, 'It'), { zip: '77002', county: 'Waller' })
+  assert.deepEqual(checkTags({ zip: '77339' }, 'It'), { zip: '77339' })
+  // Checked twice, as a call's tags are, they are the same, and eight leave no room for a ninth.
+  const eight = { zip: '77002', a: '1', b: '1', c: '1', d: '1', e: '1', f: '1', g: '1' }
+  assert.deepEqual(checkTags(checkTags(eight, 'It'), 'It'), eight)
+  assert.deepEqual(checkTags(checkTags({ zip: '77002' }, 'It'), 'It'), { zip: '77002', county: 'Harris' })
+})
+
+test('an address in a published range is a data center, and a file with no range is refused', async () => {
+  const lookup = createRangeLookup('{"prefixes":[{"ip_prefix":"192.0.2.0/24"},{"ipv6_prefix":"2001:db8:5::/48"}],"v":"1.2.3"}\n{"prefixes":[{"ipv4Prefix":"198.51.100.128/25"}]} 300.1.1.0/24 0.0.0.0/0 10.0.0.0/99')
+  for (const address of ['192.0.2.7', '198.51.100.200', '2001:db8:5::1', '::ffff:192.0.2.7']) assert.equal(shared(await lookup(address)), true, address)
+  for (const address of ['192.0.3.7', '198.51.100.1', '2001:db8:6::1', '10.0.0.1', '8.8.8.8', 'x', '']) assert.equal(await lookup(address), undefined, address)
+  for (const text of ['', '{"prefixes":[]}', '0.0.0.0/0', 'version 1.2.3/4x']) assert.throws(() => createRangeLookup(text), TypeError)
+})
+
+test('the server reads ranges from a file, and says what is wrong with it', async (t) => {
+  const folder = mkdtempSync(join(tmpdir(), 'ranges-'))
+  t.after(() => rmSync(folder, { recursive: true }))
+  const file = join(folder, 'ranges.json')
+  const env = { DATABASE_URL: 'postgres://localhost/x', GRAPH_TOKEN: 'a-service-token-of-some-length', ORIGINS: 'https://example.org', SERVER_RANGES_FILE: file }
+  assert.throws(() => configFrom(env), /SERVER_RANGES_FILE: ".*ranges.json" cannot be read/)
+  writeFileSync(file, '{}')
+  assert.throws(() => configFrom(env), /SERVER_RANGES_FILE: No address range/)
+  writeFileSync(file, '["192.0.2.0/24"]')
+  assert.equal((await configFrom(env).serverRanges!('192.0.2.9'))!.hosting, true)
+  assert.equal(configFrom({ ...env, SERVER_RANGES_FILE: '' }).serverRanges, undefined)
 })
