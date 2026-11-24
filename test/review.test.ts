@@ -100,6 +100,9 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   })
   await run(`load(beat)`)
   assert.deepEqual([await run(`JSON.stringify([...drawn.spots])`), (await marks()).includes('account:40'), (await text('.graph .card')).includes('account:3')], [places, true, true])
+  // Nothing on it is too near anything else: no disc, name or line.
+  const marked = `[...document.querySelectorAll('.graph .node')].map((mark) => mark.node)`
+  assert.deepEqual(await run(`(() => { const nodes = ${marked}; const edges = [...document.querySelectorAll('.graph .edge')].map((mark) => mark.edge); const taken = nodes.map((node) => ({ node, boxes: shapes(node) })); return [nodes.length > 3, edges.length > 2, [...crowding(nodes, [])].length, edges.every((edge) => freeOf(edge, course(edge), taken))] })()`), [true, true, 0, true])
   // A refresh does not take the graph from under a hand, and one kind of tie can be hidden.
   await run(`document.querySelector('.graph').classList.add('held')`)
   assert.equal(await run(`interrupting()`), true)
