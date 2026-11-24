@@ -46,6 +46,8 @@ export interface KnownLinkOptions {
   secret: string
   /** How long the link names its person, in milliseconds. Defaults to 30 days; at most 366. */
   lasts?: number
+  /** The id it is kept under, so its opening is noted. Without one, only the browser that opens it is. */
+  id?: string
   now?: () => number
 }
 
@@ -63,7 +65,7 @@ export function knownLink(url: string, subject: Subject, options: KnownLinkOptio
   const lasts = options.lasts ?? 30 * DAY
   if (!(lasts > 0 && lasts <= 366 * DAY)) throw new TypeError('A link must last more than zero and at most 366 days')
   const now = (options.now ?? Date.now)()
-  address.searchParams.set('ag', signToken(options.secret, 'known', subject, now + lasts))
+  address.searchParams.set('ag', options.id === undefined ? signToken(options.secret, 'known', subject, now + lasts) : signToken(options.secret, 'sent', `${options.id}\n${subject}`, now + lasts))
   return address.href
 }
 

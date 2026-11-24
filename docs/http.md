@@ -107,6 +107,7 @@ Send `by` only with the service token. A reviewer's decision carries the name of
 | `GET /board?days=` | People by the furthest step they reached, unreturned missed calls first: `{ columns, unplaced }`, each column with `people`, `fresh`, `late`, `done` and its `rows`. See [the report](report.md#board). |
 | `GET /followed?from=&to=&tz=&step=&days=` | People who reached a step within some days of a call. See [the report](report.md#outcomes-after-a-call). |
 | `GET /call?id=` | One call with its state and, when missed, its follow-up, or `null`. |
+| `GET /sent?subject=` | The links made for the subject's person, with their purpose and openings. |
 | `GET /text?id=` | One text with what became of it, or `null`. |
 | `GET /texts?from=&to=&tz=&after=` | The oldest unanswered text of each sender, 50 at a time: `{ from, to, timeZone, at, texts, next }`. |
 | `GET /texting?subject=` | Whether the subject's person last asked for no more texts: `{ optedOut, at }`, or `null`. |
@@ -136,7 +137,7 @@ Send `by` only with the service token. A reviewer's decision carries the name of
 | `POST /separate`, list | `{ source, pairs: [{ a, b, separated?, reason? }], reason? }`, at most 1,000 pairs. One transaction, one decision each, by `system:<source>`. Answers `{ changes, recorded, already }`. |
 | `POST /join`, list | The same without `separated`, for records another system merged. |
 | `POST /consent` | `{ subject, consent: { adUserData, adPersonalization }, at?, source? }`. Adds an answer about advertising; the newest by `at` applies. Rejects an `at` more than a day ahead and a `source` over 200 characters. |
-| `POST /link` | `{ url, subject, days? }`. Answers `{ url }`: the address with a token naming its person. See [links](links.md). |
+| `POST /link` | `{ url, subject, days?, purpose? }`. Answers `{ url, id }`: the address with a token naming its person. See [links](links.md). |
 | `POST /staff-link` | `{ url, days? }`. Answers `{ url }`: an address that marks the browser that opens it as [staff](operations.md#staff-traffic). |
 | `POST /transfer` | `{ id, from, to, amount, at, asset? }`. Records a transfer of value. Answers with the identity link between the two and whether it was a `duplicate`. Repeating it with the same details adds no record; the same `id` with other details gets 400. |
 

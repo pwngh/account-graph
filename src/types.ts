@@ -445,6 +445,21 @@ export interface OpenText {
   touch?: AttributedTouch
 }
 
+/** A link sent to one person, and whether it was opened. Where it leads is not kept. */
+export interface SentLink {
+  id: string
+  /** Who it was made for. */
+  subject: Subject
+  /** What it is for, in your own words: `form`, `documents`, `payment`. */
+  purpose?: string
+  /** When it was made, and when it stops naming them, in epoch milliseconds. */
+  at: number
+  expires: number
+  /** When it was first opened, and how often it has been, by whoever had it. */
+  opened?: number
+  openings: number
+}
+
 /** How a call went, as whoever runs the phones reports it. */
 export interface CallResult {
   /** A person spoke to the caller. The phone system picking up is not an answer, and neither is voicemail. Absent when it is not known. */
@@ -509,6 +524,7 @@ export type Entry = { at: number; subject: Subject } & (
   | { kind: 'sighting'; event: string; identifiers: Identifier[] }
   | { kind: 'call'; call: KeptCall; followUp?: FollowUp; notLead?: NotLead['kind'] }
   | { kind: 'text'; text: KeptText; reply?: TextReply; notLead?: NotLead['kind'] }
+  | { kind: 'link'; link: SentLink }
   | { kind: 'outcome'; outcome: Counted; first: OutcomeValue | null; notLead?: NotLead['kind'] }
   | { kind: 'value'; transactionId: string; stage: string; from: OutcomeValue; to: OutcomeValue }
   | { kind: 'consent'; answer: ConsentAnswer }

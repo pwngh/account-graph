@@ -1,6 +1,6 @@
 import type { Feed, OpsStore } from './ops.ts'
 import type { Job, OutboxStore } from './outbox.ts'
-import type { CallResult, Change, Consent, ConsentAnswer, CostRow, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, NumberedChange, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, Change, Consent, ConsentAnswer, CostRow, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, NumberedChange, SentLink, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
 
 /**
  * Where the graph lives. Sightings and touches are the record; edges and
@@ -133,6 +133,13 @@ export interface Tx {
   openCalls(from: number, to: number, limit: number, after?: { at: number; id: string }): Promise<KeptCall[]>
   /** Calls with `from <= at < to`, oldest first. */
   callsBetween(from: number, to: number): Promise<KeptCall[]>
+  /** Keeps a link sent to one person, or what is known of it now. */
+  setLink(link: SentLink): Promise<void>
+  linkOf(id: string): Promise<SentLink | undefined>
+  /** Every kept link made for the given subjects, oldest first. */
+  linksSent(subjects: readonly Subject[]): Promise<SentLink[]>
+  /** Deletes kept links that stopped naming anyone before a time. Returns how many went. */
+  pruneLinks(before: number): Promise<number>
   /** Keeps a text message. */
   setText(text: KeptText): Promise<void>
   textOf(id: string): Promise<KeptText | undefined>

@@ -43,6 +43,7 @@ import type {
   KeptCall,
   KeptText,
   OpenText,
+  SentLink,
   Labels,
   Lease,
   Link,
@@ -184,6 +185,12 @@ export interface Graph {
   tieCall(caller: Subject, visitor: Subject, identifier: Identifier, at: number, by: { pool: string; grace: number } | { notes: readonly Identifier[] }): Promise<boolean>
   /** Every kept call to or from the given subjects, oldest first. */
   callsOf(subjects: readonly Subject[]): Promise<KeptCall[]>
+  /** Keeps a link made for one person. `POST /link` does this. */
+  keepLink(link: { id: string; subject: Subject; purpose?: string; at: number; expires: number }): Promise<void>
+  /** Notes that a link made for a subject was opened. Resolves to false when no such link is kept. */
+  linkOpened(id: string, subject: Subject, at: number): Promise<boolean>
+  /** Every kept link made for anyone of a subject's cluster, oldest first. */
+  linksSent(subject: Subject): Promise<SentLink[]>
   /** Keeps a text message, with the arrival it is filed under, unless it is kept already. `recordText` does this. Resolves to whether it was written. */
   keepText(text: Omit<KeptText, 'recorded'>, touch?: Touch): Promise<boolean>
   /** A kept text, or undefined for an id no text was kept for. */
@@ -418,7 +425,7 @@ export interface Board {
 }
 
 /** The order of entries at the same moment. A type added to the journey has a place here or does not compile. */
-const KIND_ORDER: Record<Entry['kind'], number> = { visit: 0, call: 1, text: 1, consent: 2, decision: 3, sighting: 4, outcome: 5, value: 6 }
+const KIND_ORDER: Record<Entry['kind'], number> = { visit: 0, call: 1, text: 1, link: 1, consent: 2, decision: 3, sighting: 4, outcome: 5, value: 6 }
 /** The most subjects of one person a journey reads. */
 const MOST = 60
 /** How many subjects one read of many takes at a time. */
@@ -1126,6 +1133,27 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return store.read((tx) => tx.callsOf(subjects))
     },
 
+    async keepLink(link) {
+      keepable(link.id, link.subject, link.purpose)
+      await store.write((tx) => tx.setLink({ ...link, openings: 0 }))
+    },
+
+    linkOpened(id, subject, at) {
+      return store.write(async (tx) => {
+        const link = await tx.linkOf(id)
+        if (link?.subject !== subject) return false
+        await tx.setLink({ ...link, opened: Math.min(link.opened ?? at, at), openings: link.openings + 1 })
+        return true
+      })
+    },
+
+    linksSent(subject) {
+      return store.read(async (tx) => {
+        const own = (await tx.labelsOf([subject])).get(subject)
+        return tx.linksSent(own ? await tx.clusterOf(own.cluster) : [subject])
+      })
+    },
+
     async keepText(text, touch) {
       keepable(text.id, text.subject, text.to, text.visitor, ...text.flags)
       if (touch) checkTouch(touch)
@@ -1711,6 +1739,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const not = await tx.notLeads([...calls.map(callId), ...outcomes.map(outcomeId)])
         const spurned = (id: string) => (not.has(id) ? { notLead: not.get(id)!.kind } : {})
         for (const call of calls) entries.push({ at: call.at, subject: call.subject, kind: 'call', call, ...spurned(callId(call)), ...(call.direction === 'inbound' && call.result?.answered === false && { followUp: followUp(call, calls.filter((each) => !not.has(callId(each)))) }) })
+        for (const link of await tx.linksSent(people)) entries.push({ at: link.at, subject: link.subject, kind: 'link', link })
         const texts = await tx.textsOf(people)
         const badTexts = await tx.notLeads(texts.map((text) => `text:${text.id}`))
         for (const text of texts) {
@@ -1780,7 +1809,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       if (!Number.isSafeInteger(before)) throw new TypeError('prune requires `before`, an integer in epoch milliseconds')
       return store.write(async (tx) => {
         await decide(tx, 'prune', [String(before)], why)
-        return (await tx.pruneSightings(before)) + (await tx.pruneConsent(before)) + (await tx.pruneCallResults(before)) + (await tx.pruneLeases(before)) + (await tx.pruneNotLeads(before))
+        return (await tx.pruneSightings(before)) + (await tx.pruneConsent(before)) + (await tx.pruneCallResults(before)) + ((await tx.pruneLeases(before)) + (await tx.pruneLinks(before))) + (await tx.pruneNotLeads(before))
       })
     },
 

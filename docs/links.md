@@ -8,7 +8,7 @@ curl -X POST https://graph.example.org/link -H "authorization: Bearer $GRAPH_TOK
 ```
 
 ```json
-{ "url": "https://example.org/offer?ag=Y29udGFjdDo0Mg.tqincp.TtJbaBSLuho3je4xwbXUiw" }
+{ "url": "https://example.org/offer?ag=Y29udGFjdDo0Mg…", "id": "4c1f…" }
 ```
 
 Send that address to contact 42 by email or text message. Both features need one setting on the server:
@@ -40,10 +40,21 @@ The shared identifier scores 0.92, above the 0.9 that joins. Later ad clicks and
 
 Each opening is a note on the visitor for reviewers: `opened:contact:42`, or `opened:contact:42 (not tied)`.
 
+### What became of a link
+
+Say what a link is for with `purpose`, a short word of your own: `form`, `documents`, `payment`. `GET /sent?subject=contact:42` lists the links made for the person, and their [journey](http.md) has them.
+
+```json
+[{ "id": "4c1f…", "subject": "contact:42", "purpose": "payment", "at": 1795460000000, "expires": 1798052000000, "opened": 1795460060000, "openings": 1 }]
+```
+
+Each link made is one row, with an id of its own, even for the same purpose. `opened` is the first opening, by whoever had the link. A link opened and not followed by its step, such as a payment, is one to ask about. Where a link leads is not kept. Once its person is deleted, a link names nobody.
+
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `days` in the `/link` body | 30 | How long the link identifies its person, up to 366. It is then an ordinary link. |
 | `url` | required | An `http` or `https` address. Its other parameters are kept. |
+| `purpose` | none | What it is for, up to 64 letters, digits, dots, dashes and underscores. |
 | `subject` | required | Who it is for, up to 512 bytes. Anyone holding the link can read it, so use an id. Avoid names and emails. |
 
 ## Cross-site visitors

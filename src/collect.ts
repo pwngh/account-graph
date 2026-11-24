@@ -26,7 +26,7 @@ export interface Collected {
   canvas?: string
   url: string
   touch?: Arrival
-  /** The token of a link sent to one person, from the `ag` parameter. The server checks it. */
+  /** The token of a link sent to one person, from the `ag` parameter. The server checks it, and takes it as `link` too. */
   known?: string
   /** The token another of your sites put on the link that led here, from `ag_from`. The server checks it. */
   carried?: string

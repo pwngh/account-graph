@@ -460,7 +460,11 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     // A link sent to one person names them; a link from another of your sites names the visitor they were there.
     const also: Observation[] = []
     if (options.linkSecret) {
-      const named = readToken(options.linkSecret, 'known', body.known, at)
+      const token = body.link ?? body.known
+      // A link that is kept names its person while it is: one whose person was forgotten is nobody's.
+      const [id, ...rest] = readToken(options.linkSecret, 'sent', token, at)?.split('\n') ?? []
+      const opened = id !== undefined && (await graph.linkOpened(id, rest.join('\n'), at))
+      const named = opened ? rest.join('\n') : readToken(options.linkSecret, 'known', token, at)
       if (named) {
         // Every opening is noted. It ties the browser to the person only while that is believable.
         const tie = identifier('link', device)
@@ -950,8 +954,18 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         if (!options.linkSecret) break
         const body = await json(request)
         if (body.days !== undefined && typeof body.days !== 'number') throw new Refusal(400, '`days` must be a number')
-        return { url: knownLink(String(body.url), body.subject, { secret: options.linkSecret, now, ...(body.days !== undefined && { lasts: body.days * 86_400_000 }) }) }
+        const { url, purpose, days = 30 } = body
+        if (purpose !== undefined && !(typeof purpose === 'string' && NAME.test(purpose))) throw new Refusal(400, '`purpose` must be a short word, such as "form"')
+        const id = randomUUID()
+        const made = now()
+        // A token ends on a whole second, and so does what is kept of it.
+        const expires = Math.floor((made + days * 86_400_000) / 1000) * 1000
+        const address = knownLink(String(url), body.subject, { secret: options.linkSecret, id, now: () => made, lasts: expires - made })
+        await graph.keepLink({ id, subject: body.subject, ...(purpose !== undefined && { purpose }), at: made, expires })
+        return { url: address, id }
       }
+      case 'GET /sent':
+        return graph.linksSent(subject)
       case 'POST /staff-link': {
         if (!options.linkSecret) break
         const body = await json(request)

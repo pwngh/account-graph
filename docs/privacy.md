@@ -38,8 +38,8 @@ Deleting a person takes one `POST /forget` per subject, because it leaves the pe
 
 | Action | Deletes | Keeps |
 | --- | --- | --- |
-| `forget` one subject | Its sightings and links, identifiers with no other holder, visits, steps and their values, not-a-lead marks, its calls and their results, its texts, conversions, consent, separations, transfers, alerts, and the changes of its own cluster | See the list below |
-| `prune` before a time | Sightings, superseded consent answers, and call results without a call, all stored before it. Also pool assignments that ended before it, and not-a-lead marks set before it without a recorded outcome or call | Links and clusters, because each link keeps its first and last sighting and its count. Visits, steps, calls, and the consent answer that applies |
+| `forget` one subject | Its sightings and links, identifiers with no other holder, visits, steps and their values, not-a-lead marks, its calls and their results, its texts, the links made for it, conversions, consent, separations, transfers, alerts, and the changes of its own cluster | See the list below |
+| `prune` before a time | Sightings, superseded consent answers, and call results without a call, all stored before it. Also links that stopped naming anyone and pool assignments that ended before it, and not-a-lead marks set before it without a recorded outcome or call | Links and clusters, because each link keeps its first and last sighting and its count. Visits, steps, calls, and the consent answer that applies |
 | Restating a step | None | Every value it has had |
 | Correcting a call to unanswered | Its outcome, which leaves the report | The call, its result, and the history of its value |
 

@@ -27,6 +27,7 @@
 - `createAddressVerifier` checks US addresses with Smarty (`address` kind). `createLineTypeLookup` checks phone lines with Twilio (`voip` kind).
 - `createFingerprintVerifier`, `hardwareId` and `createMaxMindLookup` add device and network identifiers.
 - `knownLink` and `POST /link` create signed personal links (`link`, `opened` kinds). `collect.js?domains=` and `POST /carry` carry a visitor across sites (`carry` kind).
+- `POST /link` takes a `purpose` and keeps the link. `GET /sent` and the journey say whether it was opened (`linksSent`).
 - `collect` and `GET /collect.js` report browser visits. With `cookie: true` the server sets the device id in an `HttpOnly` cookie.
 - `collect.js` adds `ag_device` and `ag_landing` to marked forms, or to all forms with `?forms=all`.
 - Crawlers, previewers and uptime checks are excluded (`bots`). `STAFF_NETWORKS` and `POST /staff-link` exclude staff traffic (`staff`).

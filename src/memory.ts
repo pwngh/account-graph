@@ -3,7 +3,7 @@ import { createMemoryOutbox } from './outbox.ts'
 import { standingFirst } from './store.ts'
 import type { Store, Tx } from './store.ts'
 import { CLICK_IDS } from './touch.ts'
-import type { CallResult, Consent, ConsentAnswer, CostRow, Counted, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, NumberedChange, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, Consent, ConsentAnswer, CostRow, Counted, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, NumberedChange, OutcomeValue, SentLink, Sighting, Subject, Touch } from './types.ts'
 
 /**
  * Keeps the graph in process memory. Writes run one at a time; a write that
@@ -29,6 +29,7 @@ export function createMemoryStore(): Store {
   const values = new Map<Subject, Map<string, OutcomeValue[]>>()
   const calls = new Map<string, Omit<KeptCall, 'result'>>()
   const texts = new Map<string, KeptText>()
+  const sent = new Map<string, SentLink>()
   const results = new Map<string, CallResult>()
   const spurned = new Map<string, NotLead>()
   /** By number, the one that began first, first. */
@@ -116,6 +117,7 @@ export function createMemoryStore(): Store {
           spurned.delete(`call:${id}`)
         } else if (call.visitor === subject) delete call.visitor
       }
+      for (const [id, link] of sent) if (link.subject === subject) sent.delete(id)
       for (const [id, text] of texts) {
         if (text.subject === subject) {
           texts.delete(id)
@@ -479,6 +481,26 @@ export function createMemoryStore(): Store {
     async callsBetween(from, to) {
       const found = [...calls.values()].filter((call) => call.at >= from && call.at < to)
       return found.sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1)).map(withResult)
+    },
+
+    async setLink(link) {
+      sent.set(link.id, { ...link })
+    },
+
+    async linkOf(id) {
+      const link = sent.get(id)
+      return link && { ...link }
+    },
+
+    async linksSent(subjects) {
+      const wanted = new Set(subjects)
+      return [...sent.values()].filter((link) => wanted.has(link.subject)).sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1)).map((link) => ({ ...link }))
+    },
+
+    async pruneLinks(before) {
+      let gone = 0
+      for (const [id, link] of sent) if (link.expires < before) gone += Number(sent.delete(id))
+      return gone
     },
 
     async setText(text) {
