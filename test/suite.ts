@@ -743,7 +743,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await graph.report({ from: '2026-03-30', to: '2026-03-30' })).total.visits, 1)
       assert.deepEqual(await filling('2026-03-30', '2026-03-30'), { after: '2026-03-27', days: 4 })
       // Hundreds of a step that comes at once do not hide the slower one.
-      for (let n = 0; n < 250; n++) await graph.outcome({ transactionId: `tap${n}`, subject: 'visitor:late', at: NOW - DAY + 1000 + n, stage: 'tap' })
+      for (let n = 0; n < 520; n++) await graph.outcome({ transactionId: `tap${n}`, subject: 'visitor:late', at: NOW - DAY + 1000 + n, stage: 'tap' })
       assert.deepEqual(await filling('2026-03-30', '2026-03-30'), { after: '2026-03-27', days: 4 })
     })
 
