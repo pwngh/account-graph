@@ -352,7 +352,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       async run() {
         await at(0, 14, 17)
         await steps('intake')
-        return { lines: ['Step recorded: intake. On the same person, with no new record.'] }
+        return { lines: ['Step recorded: intake. On the same person, with no second contact.'] }
       },
     },
     {
