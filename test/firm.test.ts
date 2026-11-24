@@ -4,17 +4,22 @@ import { startFirm } from '../examples/firm.ts'
 import { createMemoryStore, hashPhone } from '../src/index.ts'
 import { browse, chrome, until, without } from './chrome.ts'
 
-// The demo, scene by scene, in a real browser: what the presenter's page says, and what the reviewer screen then shows.
+// The demo, scene by scene, in a real browser: what the stage says, and what the reviewer screen then shows.
 test('every scene of the demo runs, says what came of it within a second, and can be seen', { skip: without, timeout: 180_000 }, async (t) => {
   assert.ok(chrome, 'CI needs a browser')
   const firm = await startFirm(createMemoryStore(), { quick: true })
   t.after(() => firm.close())
-  const { run, press, close } = await browse(`${firm.site}/present`)
+  const { run, press, close } = await browse(`${firm.graph}/stage`)
   t.after(close)
-  await until('the scenes', () => run(`document.querySelectorAll('#scenes li').length`))
-  const scenes = (await run(`document.querySelectorAll('#scenes li').length`)) as number
-  assert.equal(scenes, 10)
-  const links = (await run(`[...document.querySelectorAll('li a')].map((each) => each.href)`)) as string[]
+  const bar = async (name: string) => (await run(`document.getElementById('stage')?.dataset.${name} ?? ''`).catch(() => '')) as string
+  // Signed in, with the phone beside the screen.
+  await until('the stage', async () => (await bar('running')) === 'false' && (await run(`typeof loadedAt === 'number'`).catch(() => false)))
+  assert.equal(await run(`document.body.classList.contains('with-phone') && document.querySelector('.device').dataset.state`), 'ad')
+  const { scenes } = (await run(`fetch('/stage/scenes').then((answer) => answer.json())`)) as { scenes: { see: [string, string] }[] }
+  assert.equal(scenes.length, 10)
+  const links = scenes.map(({ see }) => see[1])
+  // Only the stage moves the story on.
+  assert.equal((await fetch(`${firm.graph}/stage/run`, { method: 'POST' })).status, 403)
   const screen = await browse(`${firm.graph}/review`)
   t.after(screen.close)
   await until('the screen', () => screen.run(`typeof load === 'function'`).catch(() => false))
@@ -51,18 +56,17 @@ test('every scene of the demo runs, says what came of it within a second, and ca
   for (const [i, [said, seen]] of expected.entries()) {
     const before = seen(await view(links[i]!))
     await press('Space')
-    await until(`scene ${i + 1}`, async () => {
-      assert.equal(await run(`document.getElementById('problem').textContent`), '')
-      return ((await run(`document.querySelectorAll('li.done').length`)) as number) === i + 1
-    })
-    const told = (await run(`[...document.querySelectorAll('li.done')].at(-1).querySelector('.told').innerText`)) as string
-    assert.match(told.replaceAll('\n', ' '), said)
-    assert.ok(Number(/(\d+) ms/.exec(told)![1]) < 1000, `scene ${i + 1} took ${told}`)
+    await until(`scene ${i + 1}`, async () => (await bar('at')) === String(i + 1) && (await bar('running')) === 'false')
+    assert.match((await run(`document.querySelector('#stage .told').textContent`)) as string, said)
+    assert.ok(Number(await bar('ms')) < 1000, `scene ${i + 1} took ${await bar('ms')} ms`)
+    // The stage opens what the scene changed, without a problem, and the phone goes once the call is over.
+    assert.equal(await run(`document.getElementById('notice').textContent`), '')
+    assert.equal(await run(`document.body.classList.contains('with-phone')`), i < 4)
     const after = seen(await view(links[i]!))
     assert.ok(after && after !== before, `scene ${i + 1} shows on its view: ${JSON.stringify([before, after])}`)
   }
   // There is nothing after the last.
-  assert.equal(await run(`document.getElementById('next').disabled`), true)
+  assert.equal(await run(`document.querySelector('#stage .primary').disabled`), true)
   // The site shows a visitor from an ad a number of their own, in their language.
   await screen.run(`location.href = ${JSON.stringify(`${firm.site}/es?gclid=you&utm_id=30333`)}`)
   await until('a pool number', async () => ((await screen.run(`document.querySelector('.call')?.textContent ?? ''`).catch(() => '')) as string).includes('(555) 010-011'))

@@ -1,0 +1,35 @@
+/* The demo's stage: the caller's phone stands where the menu does, and a bar says which scene it is. */
+body { transition: grid-template-columns .5s var(--ease); }
+body.with-phone { grid-template-columns: 340px minmax(0, 1fr); }
+body.with-phone header { visibility: hidden; }
+body.with-phone .split { grid-template-columns: minmax(0, 1fr); } body.with-phone .account-rail { display: none; }
+#stage-phone { position: fixed; z-index: 4; left: 0; top: 0; bottom: 0; display: grid; place-items: center; width: 340px; pointer-events: none; transform: translateX(-110%); opacity: 0; transition: transform .5s var(--ease), opacity .3s; }
+body.with-phone #stage-phone { transform: none; opacity: 1; pointer-events: auto; }
+.device { position: relative; width: 292px; height: min(620px, calc(100vh - 120px)); padding: 9px; border-radius: 44px; background: #111; box-shadow: 0 24px 60px rgb(0 0 0 / .28), inset 0 0 0 1px rgb(255 255 255 / .12); }
+.device .glass { position: relative; display: block; width: 274px; height: 100%; border: 0; border-radius: 36px; overflow: hidden; background: #fbfbfa; color: #1a1a19; color-scheme: light; }
+.device .glass::after { content: none; }
+.device .bar { position: absolute; z-index: 3; inset: 0 0 auto; display: flex; justify-content: space-between; height: 34px; padding: 10px 22px 0; font-size: 11px; font-weight: 600; }
+.device .bar i { width: 18px; height: 9px; margin-top: 3px; border: 1.2px solid currentColor; border-radius: 3px; }
+.device .page { position: absolute; inset: 0; opacity: 0; visibility: hidden; transition: opacity .3s, transform .45s var(--ease), visibility 0s .45s; }
+.device[data-state=ad] .ad, .device[data-state=site] .site, .device[data-state=calling] .ringing, .device[data-state=missed] .ringing, .device[data-state=back] .ringing, .device[data-state=talking] .ringing { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+.site { transform: translateY(18px); background: #fbfbfa; } .site iframe { position: absolute; left: 0; top: 34px; width: 390px; height: 900px; border: 0; transform: scale(.7026); transform-origin: 0 0; }
+.ad { padding: 50px 14px 0; } .ad .ask { padding: 9px 14px; border: 1px solid rgb(0 0 0 / .12); border-radius: 99px; font-size: 13px; background: #fff; }
+.ad .result { display: block; width: 100%; height: auto; margin-top: 14px; padding: 14px; border: 1px solid rgb(0 0 0 / .1); border-radius: 16px; background: #fff; color: #1a1a19; text-align: left; white-space: normal; font-weight: 400; box-shadow: 0 4px 14px rgb(0 0 0 / .06); transition: transform .18s; } .ad .result:hover:not(:disabled) { background: #fff; } .ad .result.pressed { transform: scale(.965); background: #f1f1ef; }
+.ad .result small { display: block; color: #61615e; font-size: 11px; } .ad .result b { display: block; margin: 4px 0; color: #2456c4; font-size: 15px; line-height: 1.25; } .ad .result span { font-size: 12.5px; line-height: 1.4; color: #3a3a38; }
+.ad .blank { display: grid; gap: 8px; margin-top: 22px; padding: 0 4px; } .ad .blank i { height: 9px; border-radius: 5px; background: #ececea; } .ad .blank i:nth-child(3n) { width: 62%; margin-bottom: 12px; }
+.ringing { display: flex; flex-direction: column; align-items: center; padding-top: 92px; background: #14161c; color: #fff; transform: translateY(30px); } .device:not([data-state=ad], [data-state=site]) .bar { color: #fff; }
+.ringing .face { display: grid; place-items: center; width: 84px; height: 84px; border-radius: 50%; background: #2456c4; font-size: 30px; font-weight: 600; } .device:is([data-state=calling], [data-state=back]) .face { animation: ring 1.3s ease-out infinite; } @keyframes ring { from { box-shadow: 0 0 0 0 rgb(122 167 255 / .5); } to { box-shadow: 0 0 0 26px rgb(122 167 255 / 0); } }
+.ringing b { margin-top: 20px; font-size: 18px; letter-spacing: -.01em; } .ringing .how { margin-top: 5px; color: #b9bdc9; font-size: 14px; } .ringing .clock { margin-top: 16px; font-size: 30px; font-weight: 300; letter-spacing: .01em; }
+.device[data-state=missed] .face { background: #a32d2d; } .device[data-state=missed] .how { color: #ff9c9c; font-weight: 600; } .device[data-state=talking] .face { background: #157f55; } .device[data-state=talking] .how { color: #7fe0b1; }
+.ringing .end { display: grid; place-items: center; width: 54px; height: 54px; margin: auto 0 46px; border-radius: 50%; background: #d8443f; } .ringing .end svg { width: 24px; height: 24px; fill: #fff; transform: rotate(135deg); } .device[data-state=missed] .end { opacity: .25; }
+/* The bar. */
+#stage { position: fixed; z-index: 30; left: 50%; bottom: 16px; display: flex; gap: 12px; align-items: center; max-width: calc(100vw - 32px); padding: 6px 6px 6px 16px; border: 1px solid var(--edge); border-radius: 99px; background: var(--card); box-shadow: 0 10px 34px rgb(0 0 0 / .2); transform: translateX(-50%); transition: transform .3s var(--ease), opacity .2s; }
+body.with-phone #stage { left: calc(50% + 170px); max-width: calc(100vw - 380px); }
+#stage.away { transform: translate(-50%, 90px); opacity: 0; pointer-events: none; }
+#stage .where { color: var(--muted); font-size: var(--small); white-space: nowrap; } #stage b { white-space: nowrap; } #stage .told { overflow: hidden; max-width: 46ch; color: var(--muted); font-size: var(--small); text-overflow: ellipsis; white-space: nowrap; } #stage .told:empty { display: none; } #stage .bad { color: var(--apart); }
+#stage button { display: inline-flex; gap: 8px; align-items: center; height: 32px; border-radius: 99px; } #stage button:not(.primary) { border-color: transparent; color: var(--muted); }
+/* What has just come into the graph. */
+.graph .node.arrive { animation: arrive-node .7s var(--ease) both; } @keyframes arrive-node { from { opacity: 0; } }
+.graph .edge.arrive .line { animation: arrive-line .9s var(--ease) .25s both; } @keyframes arrive-line { from { opacity: 0; stroke-width: 12; } }
+.graph .tag.arrive { animation: arrive-node .5s .8s both; }
+@media print, (max-width: 900px) { #stage-phone { display: none; } }

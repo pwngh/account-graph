@@ -1,18 +1,4 @@
-/** The pages of the made-up firm's site: its landing pages in two languages, and the page a presenter works from. */
-
-const SHARED = `
-:root { color-scheme: light dark; --ink: #1b1b1a; --muted: #66645e; --line: #e4e2dc; --bg: #fbfbfa; --accent: #1f4fd8; --on: #fff; --good: #0b6e4f; }
-@media (prefers-color-scheme: dark) { :root { --ink: #e9e8e3; --muted: #a3a098; --line: #31302c; --bg: #141413; --accent: #8fb0ff; --on: #10131c; --good: #4cc79b; } }
-* { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-main { max-width: 780px; margin: 0 auto; padding: 24px 16px 60px; }
-h1 { font-size: 22px; line-height: 1.3; margin: 0 0 4px; }
-a { color: var(--accent); }
-.muted { color: var(--muted); }
-button, .call { display: inline-block; font: inherit; border: 1px solid var(--accent); border-radius: 4px; padding: 6px 14px; background: var(--accent); color: var(--on); text-decoration: none; cursor: pointer; }
-button:disabled { opacity: .45; cursor: default; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-`
+/** The pages of the made-up firm's site, in two languages, and what the demo adds to the reviewer screen. */
 
 const SITE = `
 :root { color-scheme: light dark; --ink: #1a1a19; --muted: #61615e; --line: rgb(0 0 0 / .09); --bg: #fbfbfa; --card: #fff; --tint: #eef2fb; --accent: #2456c4; --on: #fff; }
@@ -48,6 +34,9 @@ h3 { font-size: 16px; font-weight: 600; letter-spacing: -.008em; } .grid p, .ste
 footer { border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; } footer .wrap { padding-block: 18px 28px; }
 @media (max-width: 560px) { .hero .wrap { padding-block: 30px 34px; } .call { display: flex; } section { padding: 30px 0; } }
 `
+
+/** The phone on the stage is light, whatever the presenter's computer is set to. */
+const LIGHT = SITE.replace('color-scheme: light dark', 'color-scheme: light').replace(/@media \(prefers-color-scheme: dark\).*\n/, '')
 
 const WORDS = {
   en: {
@@ -86,70 +75,17 @@ const WORDS = {
   },
 } satisfies Record<'en' | 'es', { help: [string, string[][]]; then: [string, string[][]]; where: [string, string[][]]; other: string[]; [word: string]: unknown }>
 
-const landing = (lang: 'en' | 'es', graph: string) => {
+/** A landing page. In the phone of the stage the scenes say what happens, so it reports nothing and its call button tells the stage. */
+export const landing = (lang: 'en' | 'es', graph: string, phone = false): string => {
   const { title, head, lead, call, number, hours, other, help, then, where, made } = WORDS[lang]
   const list = (kind: string, [name, items]: [string, string[][]], tag = 'ul') => `<section><div class="wrap"><h2>${name}</h2><${tag} class="${kind}">${items.map(([what, text]) => `<li><div><h3>${what}</h3><p>${text}</p></div></li>`).join('')}</${tag}></div></section>`
-  return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><link rel="icon" href="data:,"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${title}</title><style>${SITE}</style></head><body>
+  return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><link rel="icon" href="data:,"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${title}</title><style>${phone ? LIGHT : SITE}</style></head><body>
 <header><div class="wrap"><a class="brand" href="${lang === 'es' ? '/es' : '/'}"><svg viewBox="0 0 26 26" aria-hidden="true"><rect width="26" height="26" rx="8"/><path d="M7 9h12M13 9v10M9.500 19h7"/></svg>${title}</a><a class="lang" lang="${other[1]}" hreflang="${other[1]}" href="${other[0]}">${other[2]}</a></div></header>
 <main><div class="hero"><div class="wrap"><h1>${head}</h1><p>${lead}</p><a class="call" data-ag-pool href="tel:${number}">${call}</a><p class="hours">${hours}</p></div></div>
 ${list('grid', help)}${list('steps', then, 'ol')}${list('grid', where)}</main>
 <footer><div class="wrap">${made}</div></footer>
-<script type="module" src="${graph}/collect.js?pool=1&params=office,lang"></script></body></html>`
+${phone ? `<script>addEventListener('click', (event) => { const link = event.target.closest('a'); if (!link) return; event.preventDefault(); if (link.matches('.call')) parent.postMessage('call', ${JSON.stringify(graph)}) })</script>` : `<script type="module" src="${graph}/collect.js?pool=1&params=office,lang"></script>`}</body></html>`
 }
-
-const presenter = (graph: string) => `<!doctype html><html lang="en"><meta charset="utf-8"><link rel="icon" href="data:,"><meta name="viewport" content="width=device-width"><title>Presenter</title><style>${SHARED}
-ol { list-style: none; margin: 20px 0; padding: 0; counter-reset: scene; }
-li { counter-increment: scene; border-top: 1px solid var(--line); padding: 10px 0; display: grid; grid-template-columns: 28px minmax(0, 1fr); }
-li::before { content: counter(scene); color: var(--muted); font-variant-numeric: tabular-nums; }
-h2 { font-size: 15px; line-height: 1.5; margin: 0; }
-li p { margin: 2px 0; overflow-wrap: anywhere; }
-li.done h2::after { content: " · done"; color: var(--good); font-weight: 400; }
-li .told { border-left: 2px solid var(--good); padding-left: 10px; }
-#problem:not(:empty) { border-left: 2px solid #b3261e; padding-left: 10px; }
-</style><main><h1>Presenter</h1>
-<p class="muted">Sample firm with two months of data. Each scene sends the HTTP requests of the site, phone system or office. Press Space to run the next scene.</p>
-<p><button id="next" disabled>Next scene</button> <a id="review" href="${graph}/review" target="review">Reviewer screen</a> <span class="muted">(token: demo)</span></p>
-<p id="problem" role="alert"></p><ol id="scenes"></ol></main>
-<script>
-const make = (tag, text, props = {}) => Object.assign(document.createElement(tag), { textContent: text ?? '', ...props })
-const list = document.getElementById('scenes'), button = document.getElementById('next'), problem = document.getElementById('problem')
-let at = 0
-const draw = () => [...list.children].forEach((item, i) => { item.className = i < at ? 'done' : ''; if (i === at) item.setAttribute('aria-current', 'step'); else item.removeAttribute('aria-current') })
-fetch('/scenes').then((answer) => answer.json()).then(({ next, scenes }) => {
-  at = next
-  for (const { title, text, see } of scenes) {
-    const item = make('li'), body = make('div')
-    body.append(make('h2', title), make('p', text, { className: 'muted' }))
-    const told = make('div'), where = make('p')
-    where.append(make('a', 'Open ' + see[0], { href: see[1], target: 'review' }))
-    body.append(told, where)
-    item.append(body)
-    item.told = told
-    list.append(item)
-  }
-  draw()
-  button.disabled = at >= scenes.length
-}).catch((error) => { problem.textContent = 'Failed to load scenes: ' + error.message })
-async function run() {
-  if (button.disabled) return
-  button.disabled = true
-  problem.textContent = ''
-  try {
-    const answer = await fetch('/run', { method: 'POST' })
-    const told = await answer.json()
-    if (!answer.ok) throw new Error(told.error)
-    const item = list.children[at]
-    item.told.className = 'told'
-    item.told.append(...told.lines.map((line) => make('p', line)), make('p', told.ms + ' ms', { className: 'muted' }))
-    at += 1
-    draw()
-    list.children[at]?.scrollIntoView({ block: 'center' })
-  } catch (error) { problem.textContent = 'Scene failed: ' + error.message }
-  button.disabled = at >= list.children.length
-}
-button.addEventListener('click', run)
-addEventListener('keydown', (event) => { if (event.code === 'Space' && !event.target.closest('a, button')) { event.preventDefault(); run() } })
-</script></html>`
 
 /** Runs first in the reviewer screen of the demo: its time is the demo's, which the server says with every answer. */
 export const clockScript = (ahead: number): string => `(() => {
@@ -163,4 +99,3 @@ export const clockScript = (ahead: number): string => `(() => {
   }
 })()`
 
-export const page = (which: 'en' | 'es' | 'present', graph: string): string => (which === 'present' ? presenter(graph) : landing(which, graph))
