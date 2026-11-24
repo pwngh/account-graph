@@ -100,7 +100,7 @@ With `IDENTIFIER_SECRET` set, the server then keeps a keyed `birth` of each `dob
 | Shared browsers and callers | They go with one of the two, as after a separation. |
 | Turning it on | Rebuild once. Dates sent before are not known: send them again. |
 
-It is off unless a policy lists it, and no preset does. On made-up people it keeps about one mixed record in five apart, at under 1% of the true pairs, and more where staff join callers to records. See [Accuracy](accuracy.md#the-second-run), where it is still far from its bar.
+It is off unless a policy lists it, and no preset does. On made-up people at the middle rates it kept one mixed record in five apart, and split 0.9% of the true pairs of records, or 1.3% where staff join callers to records. See [Accuracy](accuracy.md#the-second-run), where it is still far from its bar.
 
 ## Model assumptions
 
