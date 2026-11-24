@@ -70,6 +70,11 @@ test('Meta\'s browser id goes along with an arrival and is never one by itself',
   await settle()
   assert.deepEqual(page.sent.map((visit) => visit.touch?.fbp), ['fb.1.1700000000000.1234567890', undefined, undefined])
   assert.equal(page.sent[1].touch, undefined)
+  // A cookie that cannot be read loses nothing else.
+  const broken = browser('https://site.example/start?fbclid=F1', { _fbp: '%E0%A4%A' })
+  await collect({ endpoint: 'https://graph.example/collect' })
+  await settle()
+  assert.deepEqual([broken.sent[0].touch.fbclid, broken.sent[0].touch.fbp], ['F1', undefined])
 })
 
 test('a click kept in the Google tag cookie is reported once, and reading does not consume it', async () => {

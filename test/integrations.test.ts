@@ -923,6 +923,13 @@ test('a link sent to one person ties the browser that opens it, and a visitor is
     assert.equal((await graph.counts()).touches, 3)
     // Fields sent empty say nothing about where the visitor came from, so they leave no touch either.
     await page('/collect', { device: 'elsewhere', touch: { referrer: '', source: '', custom: { mailing: '' }, landing: 'https://shop.example/' } }, 'https://shop.example')
+    // It is kept with an arrival, unless the visitor has said no to measuring ads, whether or not this visit says so again.
+    await page('/collect', { device: 'fb-yes', touch: { fbclid: 'F', fbp: 'fb.1.1700000000000.1' } })
+    await graph.consent('visitor:fb-no', { adUserData: false, adPersonalization: false }, { at: 1_700_000_000_000 })
+    await page('/collect', { device: 'fb-no', touch: { fbclid: 'F', fbp: 'fb.1.1700000000000.2' } })
+    const kept = async (device: string) => (await graph.attribute(`visitor:${device}`, { at: clock + 1 })).touches.map((touch) => touch.fbp)
+    assert.deepEqual([await kept('fb-yes'), await kept('fb-no')], [['fb.1.1700000000000.1'], [undefined]])
+    for (const device of ['fb-yes', 'fb-no']) await graph.forget(`visitor:${device}`)
     // Nor does Meta's browser id by itself: it says which browser, and not from where.
     await page('/collect', { device: 'elsewhere', touch: { fbp: 'fb.1.1700000000000.1', landing: 'https://shop.example/' } }, 'https://shop.example')
     assert.equal((await graph.counts()).touches, 3)

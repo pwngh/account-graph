@@ -849,6 +849,9 @@ test('Meta gets its browser id only as Meta writes it, and only beside its click
   assert.deepEqual(sent([touch({ fbclid: 'F' })]), { fbc: `fb.1.${at}.F` })
   // Anything a page could put there instead is left out.
   for (const made of ['x', 'fb.1.1700000000000.abc', 'fb.1.1700000000000.1&em=x', `${fbp}\n`]) assert.deepEqual(sent([touch({ fbclid: 'F', fbp: made })]), { fbc: `fb.1.${at}.F` }, made)
+  // One that is not keeps nothing from a good one on another arrival of that browser.
+  assert.deepEqual(sent([touch({ fbclid: 'F', fbp: 'x' }), touch({ fbp: 'y' }), touch({ fbp })]), { fbc: `fb.1.${at}.F`, fbp })
+  assert.deepEqual((metaEvent('Lead', { job: { transactionId: 't', subject: 'v', at, keys: {} }, touch: touch({ fbp }) } as never, 'https://site.example/') as any).user_data, {})
   // No Meta click, no browser id: it is a key that goes along, and not one to send a conversion by.
   assert.equal(sent([touch({ source: 'newsletter', fbp })]), undefined)
 })

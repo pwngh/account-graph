@@ -105,7 +105,7 @@ export function metaEvent(action: string, { job, touch }: Item, url: string): Re
       ...(job.keys.em && { em: [job.keys.em] }),
       ...(job.keys.ph && { ph: [job.keys.ph] }),
       ...(touch?.fbclid && { fbc: `fb.1.${touch.at}.${touch.fbclid}` }),
-      ...(touch?.fbp && FBP.test(touch.fbp) && { fbp: touch.fbp }),
+      ...(touch?.fbclid && touch.fbp && FBP.test(touch.fbp) && { fbp: touch.fbp }),
     },
     ...(job.value !== undefined && { custom_data: { value: job.value, currency: job.currency ?? 'USD' } }),
   }
@@ -130,7 +130,7 @@ export function meta(options: MetaOptions): Target {
     click: (attribution, confidence) => {
       const click = attribution.touches.find((touch) => touch.confidence >= confidence && Boolean(touch.fbclid))
       // The pixel may not have made its cookie yet when the click landed. A later arrival in the same browser then has it.
-      const fbp = click && (click.fbp ?? attribution.touches.find((touch) => touch.subject === click.subject && touch.fbp)?.fbp)
+      const fbp = click && [click, ...attribution.touches.filter((touch) => touch.subject === click.subject)].find((touch) => touch.fbp && FBP.test(touch.fbp))?.fbp
       return click && { ...click, ...(fbp && { fbp }) }
     },
     async deliver(action, items) {
