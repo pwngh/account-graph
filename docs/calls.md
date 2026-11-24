@@ -55,7 +55,7 @@ An event whose name is a step in `STAGES` takes that step's value, and is sent t
 When a call is reported, the server does four things in order.
 
 1. **The caller becomes a subject carrying their phone number.** An account that later gives the same number is tied to the call, and the call to the account.
-2. **It looks for a tap.** If exactly one visitor tapped that number in the three minutes before the call began, the caller and the visitor are linked at 0.92, enough to join them. The call then follows the visitor's own arrival: their ad click, their campaign. One visitor is tied to one caller: a visitor already tied to a different caller is passed over, so a browser cannot collect call after call by tapping again.
+2. **It looks for a tap.** If exactly one visitor tapped that number in the three minutes before the call began, the caller and the visitor are linked at 0.92, enough to join them. The call then follows the visitor's own arrival: their ad click, their campaign. One visitor is tied to one caller: a visitor already tied to a different caller is passed over, so a browser cannot collect call after call by tapping again. A visitor a reviewer has kept apart from the caller is passed over too.
 3. **Otherwise it uses the number.** The call is filed under the channel `CALL_NUMBERS` gives that number, with the medium `call`.
 4. **A call of 30 seconds or more is counted** as an outcome of the step `call`. A shorter one is recorded and not counted.
 

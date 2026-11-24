@@ -54,3 +54,10 @@
 - `/collect` records no touch for an arrival whose only source is a referrer among `origins`: a visitor moving between your own sites.
 - `compose.yaml` passes every server setting through, and switches on page events, a tracking number and signed links for the example site.
 - `ignore` records no decision when the identifier is already in the state asked for.
+
+### Fixed
+
+- `recordCall` ties no call to a visitor a reviewer kept apart from the caller; the call is filed under its number.
+- `CallOptions.numbers` with a key that is not a phone number no longer stops calls to the other numbers.
+- `/collect` records no touch for an arrival whose fields are all empty.
+- `fill` clears `ag_landing` in a form it filled before the visitor opted out of advertising.

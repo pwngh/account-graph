@@ -483,6 +483,18 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const retried = await recordCall(graph, { id: 'CA10', from: '+15557778888', to: '+15551230002', at: T0 + 7 * HOUR, duration: 60 }, { numbers })
       assert.equal(retried.duplicate, false)
       assert.equal((await graph.attribute(retried.subject, { at: T0 + 8 * HOUR })).touches.length, 1)
+      // A reviewer kept this caller and this visitor apart. The caller ringing after another tap is filed under the number, not given to the visitor.
+      await graph.observe({ subject: 'visitor:s', identifiers: ['device:s', dialed('+15551230002', T0 + 9 * HOUR)], at: T0 + 9 * HOUR, event: 'phone_click' })
+      const before = await recordCall(graph, { id: 'CA11', from: '+15550100011', to: '+15551230002', at: T0 + 9 * HOUR + 5000, duration: 60 }, { numbers })
+      assert.equal(before.visitor, 'visitor:s')
+      await graph.separate(before.subject, 'visitor:s')
+      await graph.observe({ subject: 'visitor:s', identifiers: ['device:s', dialed('+15551230002', T0 + 10 * HOUR)], at: T0 + 10 * HOUR, event: 'phone_click' })
+      const apart = await recordCall(graph, { id: 'CA12', from: '+15550100011', to: '+15551230002', at: T0 + 10 * HOUR + 5000, duration: 60 }, { numbers })
+      assert.equal(apart.visitor, undefined)
+      assert.equal((await graph.attribute(apart.subject, { at: T0 + 10 * HOUR + 6000 })).credited!.campaign, 'postcard')
+      // One tracking number written wrong does not stop calls to the others.
+      const mistyped = await recordCall(graph, { id: 'CA13', from: '+15550100013', to: '+15551230002', at: T0 + 11 * HOUR, duration: 60 }, { numbers: { 'not a number': { source: 'x' }, ...numbers } })
+      assert.equal((await graph.attribute(mistyped.subject, { at: T0 + 11 * HOUR })).credited!.campaign, 'postcard')
     })
 
     test('the review queue pages, subjects are found by prefix, and recent changes are listed', async () => {

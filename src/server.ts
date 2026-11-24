@@ -1,6 +1,6 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { dialed, recordCall } from './calls.ts'
+import { dialed, numberOrSelf, recordCall } from './calls.ts'
 import type { CallOptions } from './calls.ts'
 import type { Graph } from './graph.ts'
 import { email, hashPhone, identifier, ip, normalizePhone, phoneOfType } from './identifiers.ts'
@@ -205,7 +205,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
   }
 
   const events = new Set(options.events ?? [])
-  const trackingNumbers = options.calls?.numbers && new Set(Object.keys(options.calls.numbers).map((number) => normalizePhoneOrSelf(number, options.calls?.country)))
+  const trackingNumbers = options.calls?.numbers && new Set(Object.keys(options.calls.numbers).map((number) => numberOrSelf(number, options.calls?.country)))
 
   // A tap ties a call to a browser, so one address tapping from many browsers in a few minutes is not believed.
   // A household has a few devices; a program inventing visitors has as many as it likes.
@@ -341,11 +341,11 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       const touch: Touch = { subject, at }
       for (const field of TOUCH_FIELDS) {
         const value = body.touch[field]
-        if (typeof value === 'string' && value.length <= 2048) touch[field] = value
+        if (typeof value === 'string' && value && value.length <= 2048) touch[field] = value
       }
       // Parameters of the site's own: a few short ones, so a page cannot fill the table.
       const custom = Object.entries(body.touch.custom && typeof body.touch.custom === 'object' ? body.touch.custom : {})
-        .filter(([name, value]) => NAME.test(name) && typeof value === 'string' && value.length <= 256)
+        .filter(([name, value]) => NAME.test(name) && typeof value === 'string' && value && value.length <= 256)
         .slice(0, 10)
       if (custom.length > 0) touch.custom = Object.fromEntries(custom) as Record<string, string>
       // A visitor walking from one of your sites to another has not arrived from anywhere new.
@@ -651,15 +651,6 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       }
       response.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: message }))
     }
-  }
-}
-
-/** A phone number in the form calls arrive in, or as written when it is not a phone number. */
-function normalizePhoneOrSelf(number: string, country?: string): string {
-  try {
-    return normalizePhone(number, country)
-  } catch {
-    return number
   }
 }
 

@@ -128,8 +128,11 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   const tapped = [...new Set(taps.map((edge) => edge.subject))]
   // One visitor, one caller. A visitor already tied to a different caller by an earlier call is passed over,
   // so a browser cannot collect call after call by tapping again. The same caller ringing back still counts.
+  // A visitor a reviewer has kept apart from this caller is passed over too.
+  const apart = new Set(await graph.separations(subject))
   const visitors: Subject[] = []
   for (const candidate of tapped) {
+    if (apart.has(candidate)) continue
     const earlier = (await graph.links(candidate)).filter((link) => link.reasons.some((reason) => reason.identifier.startsWith('dial:')))
     if (earlier.every((link) => link.subject === subject)) visitors.push(candidate)
   }
@@ -150,11 +153,20 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   }
 
   // A visitor's own arrival says more than the number does, so the number's channel is only the fallback.
-  const channel = Object.entries(options.numbers ?? {}).find(([number]) => normalizePhone(number, options.country) === to)?.[1]
+  const channel = Object.entries(options.numbers ?? {}).find(([number]) => numberOrSelf(number, options.country) === to)?.[1]
   if (channel && !visitor) {
     const { source, medium = 'call', campaign, campaignId } = channel
     await graph.touch({ subject, at, source, medium, ...(campaign && { campaign }), ...(campaignId && { campaignId }), landing: `tel:${to}` })
   }
   await graph.observe({ subject, identifiers: [note], at, event: 'call' })
   return { subject, flags, counted: !short, ...(visitor && { visitor }), duplicate: false }
+}
+
+/** A phone number in the form calls arrive in, or as written when it is not a phone number. */
+export function numberOrSelf(number: string, country?: string): string {
+  try {
+    return normalizePhone(number, country)
+  } catch {
+    return number
+  }
 }

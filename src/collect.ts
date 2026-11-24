@@ -346,7 +346,11 @@ export function fill(options: { all?: boolean; consent?: CollectOptions['consent
     if (!form) return
     const posts = (form.getAttribute('method') ?? 'get').toLowerCase() === 'post'
     if (!(form.hasAttribute('data-ag-fields') || (options.all && posts))) return
-    for (const [name, value] of Object.entries(fields(options.consent))) {
+    const filled = fields(options.consent)
+    // A form filled before the visitor opted out gives up the landing page it was holding.
+    const held = form.querySelector('input[name="ag_landing"]') as HTMLInputElement | null
+    if (held && filled.ag_landing === undefined) held.value = ''
+    for (const [name, value] of Object.entries(filled)) {
       let input = form.querySelector(`input[name="${name}"]`) as HTMLInputElement | null
       if (!input) {
         input = document.createElement('input')
