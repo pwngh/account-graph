@@ -24,3 +24,61 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: docker build -t account-graph .
+
+  # Runs beside the tests, against a server with nothing real in it. Fails on any finding of low severity or above.
+  nuclei:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 2s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      GRAPH_TOKEN: ci-graph-token
+      REVIEW_TOKEN: ci-review-token
+      ORIGINS: http://localhost:3000
+      LINK_SECRET: ci-link-secret-ci-link-secret-ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # nuclei-templates v10.5.2, only the folders used below.
+      - uses: actions/checkout@v4
+        with:
+          repository: projectdiscovery/nuclei-templates
+          ref: 5442582a875f96887bfe403c6de562de460897e7
+          path: templates
+          sparse-checkout: |
+            http/exposures
+            http/misconfiguration
+            http/vulnerabilities/generic
+            dast
+      - name: install nuclei
+        run: |
+          curl -sSfL -o nuclei.zip https://github.com/projectdiscovery/nuclei/releases/download/v3.11.1/nuclei_3.11.1_linux_amd64.zip
+          echo 'ea63d4ae232808cd7c6bc00d0142428e231fab59dae01042246097d195835ab6  nuclei.zip' | sha256sum -c -
+          unzip -q nuclei.zip nuclei
+      - run: npm ci
+      - name: start the server with two linked accounts
+        run: |
+          node src/serve.ts > server.log 2>&1 &
+          timeout 30 sh -c 'until curl -sf http://127.0.0.1:8080/health; do sleep 0.5; done'
+          curl -sSf http://127.0.0.1:8080/observe -H "authorization: Bearer $GRAPH_TOKEN" \
+            -d "[{\"subject\":\"account:1\",\"identifiers\":[\"device:ci\",\"payment:ci\"],\"at\":$(date +%s)000},{\"subject\":\"account:2\",\"identifiers\":[\"device:ci\",\"payment:ci\"],\"at\":$(date +%s)000}]"
+      # -nmhe: keep going after errors, so that a scan cannot pass by giving up on the server.
+      - name: scan
+        run: |
+          flags='-s low,medium,high,critical -etags dos -no-stdin -duc -ni -nc -nmhe -retries 0 -timeout 3 -c 50 -rl 1000'
+          ./nuclei -u http://127.0.0.1:8080 -t templates/http/exposures -t templates/http/misconfiguration -t templates/http/vulnerabilities/generic $flags -o root.txt
+          ./nuclei -l .github/nuclei/urls.txt -t templates/dast -dast -H "authorization: Bearer $GRAPH_TOKEN" $flags -o routes.txt
+          curl -sSf http://127.0.0.1:8080/health
+          if [ -s root.txt ] || [ -s routes.txt ]; then echo 'nuclei found something'; exit 1; fi
+      - if: failure()
+        run: tail -100 server.log
