@@ -29,7 +29,7 @@ The last five lines say what is switched on. Each provider turns on when its var
 GRAPH_TOKEN=a-long-random-string REVIEW_TOKENS='{"dana":"another-one"}' ORIGINS=https://example.org docker compose up --build
 ```
 
-Set `GRAPH_PORT` to publish it on another port. Every variable in the table at the end of this page is passed through to the server when you set it, the same way as the three above.
+Compose also reads a file named `.env` beside it: `cp .env.example .env`, and fill it in. Set `GRAPH_PORT` to publish it on another port. Every variable in the table at the end of this page is passed through to the server when you set it, the same way as the three above.
 
 The compose file is for trying it out: it keeps the database in a local volume, uses a fixed database password, and switches on what the example site shows, with a placeholder `LINK_SECRET`. Set your own before anything real touches it.
 
@@ -119,11 +119,38 @@ curl -s https://graph.example.org/audit -H "authorization: Bearer $REVIEWER_TOKE
 
 Copy it daily. The Health view has a Copy button, and `AUDIT_HEAD_HOURS=24` posts the line to `ALERT_WEBHOOK` once a day. To check an old copy, find that entry with `GET /decisions?before=419&limit=1` and compare its hash.
 
+## Backups
+
+Everything the server keeps is in one PostgreSQL schema, `account_graph` unless `GRAPH_SCHEMA` says otherwise. It takes no backups of its own.
+
+```sh
+pg_dump --format=custom --schema=account_graph "$DATABASE_URL" > graph.dump
+pg_restore --clean --if-exists --dbname="$DATABASE_URL" graph.dump   # with the server stopped
+curl https://graph.example.org/verify -H "authorization: Bearer $GRAPH_TOKEN"   # then, with it running
+```
+
+| | |
+| --- | --- |
+| Restore one somewhere else before you need to | A dump nobody has restored is not known to be a backup. |
+| Keep the newest decision's hash apart from the dumps | After a restore, `/audit` says the record is whole. The hash says it is the same record. |
+| A forgotten person is still in older dumps | Keep dumps no longer than you need them, and forget the person again after a restore. |
+| What was sent since the dump may be sent again | It carries the same id: Meta keeps the first copy, Google reads the second as a correction. |
+
 ## Behind a proxy
 
 Set `TRUST_PROXY=true` when a proxy or load balancer you run sits in front. The server then reads each visitor's address from `x-forwarded-for`. Without it, every visit appears to come from the proxy, and the per-address limit below would count them as one sender.
 
 With two proxies in a row, such as a CDN in front of a load balancer, set `TRUST_PROXY=2`. Each proxy adds the address it heard from to the end of that header, so the visitor's is that many from the end. Whatever comes before it was written by the sender and is ignored.
+
+A proxy is also where HTTPS comes from; the server speaks plain HTTP. With [Caddy](https://caddyserver.com), which gets the certificate itself, this is the whole of it:
+
+```text
+graph.example.org {
+  reverse_proxy 127.0.0.1:8080
+}
+```
+
+> **Give the server a name under the site it serves.** Point `graph.example.org` at it with an `A` or `CNAME` record and load `collect.js` from there. The cookie the server sets is then the site's own.
 
 Set `COOKIE=true` to have the server keep the device id in a cookie it sets itself. Safari deletes a cookie set by script after seven days; one set by the server lasts. It only works when the server answers on the site's own domain, or on a subdomain with `COOKIE=example.org`.
 

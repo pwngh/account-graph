@@ -10,9 +10,12 @@ function reasons(list) {
 }
 
 /** The subject in the middle, the subjects tied to it around it, and the ties between them. */
+const ROOM = 24
+/** Everyone to draw around a subject: its own ties and separations first, then the rest of its cluster. */
+const around = (profile) => [...new Set([...profile.separated, ...profile.links.map((link) => link.subject), ...(profile.cluster?.members ?? [])])].filter((each) => each !== profile.subject)
+
 function picture(profile) {
-  // Room for 24. The subject's own ties and separations come first, then the rest of its cluster.
-  const others = [...new Set([...profile.separated, ...profile.links.map((link) => link.subject), ...(profile.cluster?.members ?? [])])].filter((s) => s !== profile.subject).slice(0, 24)
+  const others = around(profile).slice(0, ROOM)
   const members = new Set(profile.cluster?.members ?? [])
   const spot = new Map([[profile.subject, [300, 170]]])
   others.forEach((subject, i) => {
@@ -57,7 +60,7 @@ function profileOf(profile) {
       el('button', { class: 'danger', on: { click: () => act('Forget this subject', `Everything recorded about ${profile.subject} will be deleted. This cannot be undone.`, '/forget', { subject: profile.subject }, 'Delete') } }, 'Forget…'))))
 
   if (profile.ties.length > 0 || profile.separated.length > 0) detail.push(el('section', {}, el('h2', {}, 'Picture'), picture(profile),
-    el('p', { class: 'muted' }, 'Solid: joined. Dashed: tied, not joined. Dotted red: kept apart by a decision. Open a circle to see that subject.')))
+    el('p', { class: 'muted' }, `Solid: joined. Dashed: tied, not joined. Dotted red: kept apart by a decision. Open a circle to see that subject.${around(profile).length > ROOM ? ` ${ROOM} of ${amount(around(profile).length)} are drawn; the ties are all listed below.` : ''}`)))
 
   const members = new Set(profile.cluster.members)
   // What was last decided about this subject and another, and whether systems keep reversing it.
