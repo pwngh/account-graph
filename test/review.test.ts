@@ -240,6 +240,22 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   await run(`[...document.querySelectorAll('.sent-on button')].at(-1).click()`)
   await until('it to be put away', () => run(`document.querySelector('.sent-on') === null`))
 
+  // Every view has a lesson that goes forward, back and shut, and says where it is.
+  for (const view of ['accounts', 'journey', 'board', 'decide', 'calls', 'channels', 'health']) {
+    await run(`location.hash = '#/${view}'`)
+    await until(`the lesson of ${view}`, () => run(`document.querySelector('[aria-current=page]').dataset.view === '${view}' && document.querySelector('.page-head .explain') !== null && opening === 0`))
+    await run(`document.querySelector('.explain').click()`)
+    const steps = (await run(`LESSONS['${view}'].steps.length`)) as number
+    const passed = (await run(`(() => { const next = [...document.querySelectorAll('.lesson-foot button')].at(-1); const said = []; for (let i = 0; i < ${steps}; i++) { said.push(document.querySelector('.lesson-said').textContent); if (i < ${steps} - 1) next.click() } return [said, next.textContent] })()`)) as [string[], string]
+    assert.deepEqual([new Set(passed[0]).size, passed[1]], [steps, 'Done'])
+    await run(`document.querySelector('.lesson-foot button').click()`)
+    assert.equal(await text('.lesson-foot .meta'), `${steps - 1} of ${steps}`)
+    await press('Escape')
+    await until('it to shut', () => run(`document.querySelector('dialog.lesson') === null`))
+  }
+  // Each thing a step places, and each line it draws, is in its lesson.
+  assert.deepEqual(await run(`Object.entries(LESSONS).flatMap(([view, { in: has, steps }]) => steps.flatMap(([, at, joins = []], i) => [...Object.keys(at), ...joins.flatMap(([a, b]) => [a, b].filter((id) => !at[id]).concat(a, b))].filter((id) => !has[id] || !at[id]).map((id) => view + ' ' + i + ' ' + id)))`), [])
+
   // A refund is named where the value changed, and has a column of its own.
   await graph.observe({ subject: 'lead:refund', identifiers: ['device:refund'], at: rang })
   await graph.outcome({ transactionId: 'refund-1', subject: 'lead:refund', at: rang, stage: 'enrolled', value: 200, currency: 'USD' })

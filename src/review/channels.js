@@ -16,7 +16,7 @@ async function whatFollowed(box, report, address, step, within) {
     el('label', {}, 'Who went on to', pick), known, el('label', {}, 'within days', count), el('button', { class: 'primary' }, 'Show'))
   const section = el('section', {}, reviewDisplay.section('What followed a call', form))
   box.append(section)
-  const caveat = 'These are observed differences, not effects: people choose whether to call and how long to talk, and someone chooses whom to call back.'
+  const caveat = 'These are differences we saw. They do not prove that one thing caused the other: people choose whether to call and how long to talk, and you choose whom to ring back.'
   if (!step) {
     section.append(notes(caveat))
     return
@@ -31,12 +31,12 @@ async function whatFollowed(box, report, address, step, within) {
       rows.length > 0 ? wide(GROUPS[group.by], el('table', {}, el('tr', {}, th('Group'), th('People', 'num'), th('Reached it', 'num'), th('Share', 'num')), ...rows))
         : group.thin === 0 ? el('p', { class: 'muted' }, 'No eligible callers.') : '',
       group.thin > 0 ? el('p', { class: 'meta' }, `${amount(group.thin)} ${group.thin === 1 ? 'person withheld' : 'people withheld'} in groups of fewer than ${amount(answer.least)}.`) : '',
-      group.by === 'returned' ? notes('For callbacks, the clock starts one day after the missed call. People who already reached the step or got through on their own by then are excluded.') : ''))
+      group.by === 'returned' ? notes('To see whether ringing back helps, we give you one day to do it and start counting from there. Anyone who got there on their own in that day is left out, since your callback could not have been why.') : ''))
   }
   const { first, returned } = answer.leftOut
   section.append(notes(caveat,
-    `Excluded from the first three tables: ${amount(first.already)} reached the step before the call ended; ${amount(first.running)} still within the time window.`,
-    `Excluded from the callback table: ${amount(returned.already)} reached the step by the one-day mark; ${amount(returned.running)} still within the time window; ${amount(returned.through)} got through on their own before the mark.`))
+    `Not in the first three tables: ${amount(first.already)} who had reached the step before the call ended, and ${amount(first.running)} who still have time left to.`,
+    `Not in the callback table: ${amount(returned.already)} who had reached the step within the one day, ${amount(returned.running)} who still have time left to, and ${amount(returned.through)} who got through on their own within that day.`))
 }
 
 view('channels', 'Channels', async (box, first, last, by = '', step = '', within = '30', per = '') => {
@@ -103,12 +103,15 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
   const range = reviewDisplay.range(report)
   if (report.currencies.length === 1) range.append(` · Currency: ${report.currencies[0]}`)
   section.append(el('div', { class: 'report-meta' },
-    el('div', {}, range, notes(
-      `Outcomes count on the day they happen, under the credited arrival. Cost per outcome and return compare each campaign's costs with its outcomes on days with cost data. Both are withheld if data covers fewer than half of the ${amount(report.days)} days.`,
-      per ? `Cost per outcome counts only "${per}". Return still uses all value.` : '',
-      by.startsWith('touch.') ? 'Breakdown uses the credited arrival.' : by.startsWith('outcome.') ? 'Breakdown uses the recorded outcome.' : '',
-      by ? 'Costs, clicks and arrivals stay on the campaign row.' : '',
-      'Clicks are billed clicks; arrivals are arrivals seen. What was said to be no lead is in no other number. 0 means known to be none. A dash means no applicable cost or credited value.')),
+    el('div', {}, range, fine(
+      'An outcome counts on the day it happens, not the day of the click. It goes to the arrival that got the credit.',
+      `Cost per outcome and Return use only the days we have a cost for. If that is fewer than half of the ${amount(report.days)} days, we do not show them: too little to go on.`,
+      per ? `Cost per outcome counts only "${per}". Return still counts the value of everything.` : '',
+      by.startsWith('touch.') ? 'The breakdown is by what the credited arrival said.' : by.startsWith('outcome.') ? 'The breakdown is by what the outcome itself said.' : '',
+      by ? 'What an ad cost, its clicks and its arrivals cannot be split, so they stay on the campaign’s own row.' : '',
+      'Clicks are what the platform charged you for. Arrivals are the people we saw land. The two are rarely the same.',
+      'What was said to be no lead is in no other number.',
+      'A 0 means we know there were none. A dash means there is nothing to work it out from.')),
     report.filling ? el('p', { class: 'banner' }, el('b', {}, 'Outcomes still coming in. '),
       `At the slowest step, 95 in 100 outcomes arrive within ${amount(report.filling.days)} days of the arrival. Costs for arrivals after ${reviewDisplay.day(report.filling.after)} are included, but some outcomes are not.`) : ''))
   const campaigns = el('section', {}, report.rows.length > 0
@@ -137,7 +140,7 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
       ...said.map((row) => el('tr', {}, ...line([sourced(row.source), ' ', row.campaign || row.campaignId || 'No campaign named'], row.claimed, pair(row.claimed)))),
       ...(said.length > 1 ? [el('tr', { class: 'sum' }, ...line(['All'], all.claimed, ''))] : []))
     box.append(el('section', {}, el('h2', {}, 'What the platforms claim'), wide('What the platforms claim', claims),
-      notes('Both are over the days the platform gave a number for. A platform counts by its own rules, often on the day of the click, and two may claim the same outcome, so the two need not agree. A value is not recorded when the platform gave none for some of its conversions.')))
+      notes('Claimed is what the ad platform says it brought you. Credited is what we can trace to it, on the same days.', 'The two need not agree. A platform counts by its own rules, often on the day of the click, and two platforms may both claim the same person.', 'A value reads “not recorded” when the platform left it out for some.')))
   }
   const timed = stages.filter((stage) => report.total.stages[stage].delay)
   if (timed.length > 0) {
@@ -147,7 +150,7 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
       times.append(el('tr', {}, td('', stage), td('num', `${amount(count)} of ${amount(report.total.stages[stage].count)}`), td('num', `${amount(median)} days`), td('num', `${amount(p95)} days`),
         td('num share', reviewDisplay.compare(percent(inside), inside))))
     }
-    box.append(el('section', {}, el('h2', {}, 'From arrival to each step'), wide('From arrival to each step', times), notes(`Days from the newest arrival to the outcome, over outcomes of ${report.from} to ${report.to} that have one in the year before. An arrival outside the window is counted here and credited with nothing.`)))
+    box.append(el('section', {}, el('h2', {}, 'From arrival to each step'), wide('From arrival to each step', times), notes(`How many days passed between the last time they arrived and the outcome. These are the outcomes of ${report.from} to ${report.to} that have an arrival in the year before.`, 'An arrival too long ago is counted here, but gets no credit.')))
   }
   // What outcomes were first worth and are worth now. A step value is a guess until the real amount is known.
   const losses = [['refunded', 'Refunded'], ['writtenOff', 'Written off']].filter(([key]) => [report.total.worth, ...report.months].some((each) => each[key] !== 0))
@@ -160,7 +163,7 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
     box.append(el('section', {}, el('h2', {}, 'Value: first recorded and now'), el('div', { class: 'panel-grid value-grid' },
       el('section', {}, el('h3', {}, 'By campaign'), wide('Value by campaign', byCampaign)),
       el('section', {}, el('h3', {}, 'By month first recorded'), wide('Value by month of first record', byMonth))),
-    notes(`Outcomes from ${reviewDisplay.day(report.from)} to ${reviewDisplay.day(report.to)}. Now includes all outcomes; first recorded includes only known first values. ${losses.length > 0 ? 'It is net of what was refunded and written off. ' : ''}A step's initial value can be restated when the amount collected is known.`)))
+    notes(`Outcomes from ${reviewDisplay.day(report.from)} to ${reviewDisplay.day(report.to)}. “First recorded” is what we first thought each was worth, where that is known. “Now” is what we know today, for all of them.${losses.length > 0 ? ' It has refunds and write-offs taken off.' : ''}`, 'The first is often a guess, put right once the money is known.')))
   }
   await whatFollowed(box, report, (chosen, days) => address({ step: chosen, within: days }), step, within)
 })

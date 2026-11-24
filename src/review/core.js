@@ -52,7 +52,7 @@ const reviewDisplay = {
   },
   day: (value) => new Date(`${value}T00:00:00Z`).toLocaleDateString(undefined, { dateStyle: 'medium', timeZone: 'UTC' }),
   range: ({ from, to, timeZone }) => el('p', { class: 'meta' }, `${reviewDisplay.day(from)} – ${reviewDisplay.day(to)} · Days in ${timeZone}`),
-  heading: (title, ...controls) => el('div', { class: 'page-head' }, el('h2', { class: 'page-title' }, viewMark(place().name), title), ...controls),
+  heading: (title, ...controls) => el('div', { class: 'page-head' }, el('h2', { class: 'page-title' }, viewMark(place().name), title), explain(), ...controls),
   section: (title, ...controls) => el('div', { class: 'section-head' }, el('h2', {}, title), ...controls),
   chip: (text, tone = '') => el('span', { class: tone ? `chip ${tone}` : 'chip' }, text),
   callTone: (state) => ({ answered: 'same', missed: 'apart', voicemail: 'related', waiting: 'related' })[state] ?? '',

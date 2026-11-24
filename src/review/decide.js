@@ -65,7 +65,7 @@ view('decide', 'Decide', async (box) => {
     passed > 0 ? el('button', { on: { click: reset } }, 'Show them again') : ''),
   tiles(['Related, not joined', amount(found.total), 'Strongest first'], ['Subjects checked', amount(found.seen), 'From the newest 10,000 sightings'],
     passed > 0 && ['Skipped', amount(passed), 'Until this screen is closed']),
-  notes('Only subjects in the newest 10,000 sightings are checked. Pairs of subjects not seen in those sightings are not listed.')))
+  fine('We look only at whoever was in the newest 10,000 sightings. A pair not seen since is not listed here.')))
 
   const rail = el('div', { class: 'queue-rail scroll', tabindex: 0, role: 'region', 'aria-label': 'Next' })
   const kindsIn = (each) => [...new Set(each.reasons.filter((reason) => reason.counted !== false).map((reason) => reason.identifier.split(':')[0]))].join(', ')

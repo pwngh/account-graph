@@ -29,8 +29,8 @@ view('board', 'Board', async (box, days = '90') => {
     tiles(['People', amount(people)], ['Waiting too long', amount(late), board.columns.some((column) => column.late !== null) ? '' : 'No limit set', late > 0 ? 'apart' : ''], ['New today', amount(fresh)], ['Moved on today', amount(moved)]),
     reviewDisplay.range({ from: board.from, to: board.day, timeZone: board.timeZone }),
     board.unplaced > 0 ? el('p', { class: 'meta' }, `${amount(board.unplaced)} more reached only steps outside STAGES.`) : '',
-    notes('Each person is in one column: missed calls nobody returned first, then the furthest step they ever reached.',
-      `An age with a red dot is over that column’s waiting limit${board.openHours ? ', which is counted in the hours you are open. The age itself is by the clock' : ''}.`),
+    fine('Each person is in one column only. Missed calls that nobody returned come first. After that it is the furthest step they ever reached.',
+      `The number on a card is how long they have waited. A red dot means that is longer than the column allows${board.openHours ? '. The limit counts only the hours you are open, and the number on the card counts all hours' : ''}.`),
     board.columns.length === 1 ? el('p', {}, 'No steps are set, so only missed calls have a column. Set STAGES to your steps, in order.') : ''))
   const columns = board.columns.map((column) => {
     const name = column.step ?? 'Missed, not returned'
