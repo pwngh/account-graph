@@ -31,6 +31,8 @@ export interface Tx {
   membersOf(components: readonly Subject[]): Promise<Map<Subject, Labels>>
   /** The members of one cluster. */
   clusterOf(cluster: Subject): Promise<Subject[]>
+  /** A number that is different after every write: the same number means nothing has changed. */
+  version(): Promise<number>
   /** How much the graph holds. */
   counts(): Promise<Counts>
   /** The clusters with two or more members, largest first, skipping the first `offset`. */

@@ -113,7 +113,7 @@ const NAME = /^[\w.-]{1,64}$/
 /** What the reviewer token opens: what the reviewer screen reads, and the decisions a reviewer makes. */
 const REVIEW_ROUTES = new Set([
   'GET /subject', 'GET /clusters', 'GET /search', 'GET /recent', 'GET /links', 'GET /cluster', 'GET /history', 'GET /flows', 'GET /collusion', 'GET /rings',
-  'GET /decisions', 'GET /audit', 'GET /report', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
+  'GET /decisions', 'GET /audit', 'GET /report', 'GET /pulse', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
 ])
 
 /** A route that wrote its own answer. */
@@ -547,6 +547,17 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       }
       case 'GET /subject':
         return profile(subject)
+      case 'GET /pulse': {
+        // One small row: a screen asks this often, and reads the rest only when the answer differs.
+        const version = await graph.version()
+        const tag = `"${version}"`
+        response.setHeader('etag', tag)
+        if (request.headers['if-none-match'] === tag) {
+          response.writeHead(304).end()
+          return SENT
+        }
+        return { version }
+      }
       case 'GET /clusters':
         return graph.clusters(50, Math.max(0, Number(url.searchParams.get('offset')) || 0))
       case 'GET /search':
@@ -612,11 +623,12 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         const today = new Date(now()).toISOString().slice(0, 10)
         const to = url.searchParams.get('to') || today
         const from = url.searchParams.get('from') || new Date(Date.parse(`${to}T00:00:00Z`) - 29 * 86_400_000 || now()).toISOString().slice(0, 10)
-        const report = await graph.report({ from, to, timeZone: url.searchParams.get('tz') || options.timeZone || 'UTC' })
+        const timeZone = url.searchParams.get('tz') || options.timeZone || 'UTC'
+        const report = await graph.report({ from, to, timeZone })
         // The steps in your order first, then any others that turned up, by name.
         const named = Object.keys(options.stages ?? {})
         const others = Object.keys(report.total.stages).filter((step) => !named.includes(step)).sort()
-        return { ...report, steps: [...named, ...others] }
+        return { ...report, timeZone, steps: [...named, ...others] }
       }
       case 'GET /conversions': {
         if (!options.outbox) break

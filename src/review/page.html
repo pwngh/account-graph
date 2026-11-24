@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Account review</title>
+<style>/* style.css */</style>
+</head>
+<body>
+<header>
+  <h1>Account review</h1>
+  <nav id="views" aria-label="Views"></nav>
+  <form id="find" class="row">
+    <label>Subject <input id="subject" placeholder="account:42" size="20" list="found" autocomplete="off" required></label>
+    <datalist id="found"></datalist>
+    <button class="primary">Open</button>
+  </form>
+  <label>Access token <input id="token" type="password" autocomplete="off" size="12"></label>
+  <label>Your name <input id="by" autocomplete="off" size="10"></label>
+</header>
+<div id="notice" role="status"></div>
+<main id="view"><p class="muted">Enter the access token to load.</p></main>
+<footer><span id="fresh"></span><span id="zone"></span></footer>
+<dialog id="ask">
+  <form method="dialog">
+    <h4 id="ask-title"></h4>
+    <p id="ask-text" class="muted"></p>
+    <label id="ask-other-label" hidden>The other subject <input id="ask-other" autocomplete="off" placeholder="account:42"></label>
+    <label>Reason, for the record <input id="ask-reason" autocomplete="off"></label>
+    <div class="row">
+      <button value="yes" class="primary" id="ask-yes">Confirm</button>
+      <button value="no" formnovalidate>Cancel</button>
+    </div>
+  </form>
+</dialog>
+<script>/* scripts */</script>
+</body>
+</html>

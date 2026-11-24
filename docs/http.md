@@ -64,13 +64,14 @@ A token goes in the `authorization` header as `Bearer …`. There are two.
 | `GET /history?subject=` | Every sighting of the subject, oldest first. |
 | `GET /clusters?offset=` | The largest clusters, 50 at a time. |
 | `GET /search?q=` | Subjects whose id starts with the text. |
+| `GET /pulse` | `{ version }`, with an `etag`. Ask again with `if-none-match` and it answers 304 until something is written. |
 | `GET /recent` | The newest cluster changes. |
 | `GET /flows?subject=` | Everyone the subject exchanged value with, and the identity tie to each. |
 | `GET /collusion?subject=` | The counterparties tied by identity, with three or more flows. |
 | `GET /rings?subject=` | Value that left the subject and came back through others. |
 | `GET /decisions` | The record of reviewer decisions, oldest first. |
 | `GET /audit` | Whether that record is whole: `{ sound }`, with `brokenAt` when it is not. |
-| `GET /report?from=&to=&tz=` | What each campaign cost and brought in between two days, with `steps` naming the steps in your order. See [the report](report.md). |
+| `GET /report?from=&to=&tz=` | What each campaign cost and brought in between two days, with `steps` naming the steps in your order and `timeZone` the zone its days are in. See [the report](report.md). |
 | `POST /separate` | `{ a, b, separated?, by?, reason? }`. Keeps two subjects apart, or with `separated: false` allows them again. |
 | `POST /join` | `{ a, b, by?, reason? }`. Records that two subjects are one person. |
 | `POST /ignore` | `{ identifier, ignored?, by?, reason? }`. Stops linking through one identifier, or resumes. |
