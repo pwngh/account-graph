@@ -309,4 +309,7 @@ test('a form carries the device id and the landing page to whatever receives it'
   const optedOut = form(false)
   submit(optedOut)
   assert.deepEqual(optedOut.inputs.map((input) => input.name), ['ag_device'])
+  // A form the script filled before the visitor opted out gives up the landing page it was holding.
+  submit(plain)
+  assert.deepEqual(plain.inputs.map((input) => [input.name, input.value]), [['ag_device', device], ['ag_landing', '']])
 })

@@ -671,6 +671,9 @@ test('a link sent to one person ties the browser that opens it, and a visitor is
     await page('/collect', { device: 'elsewhere', touch: { referrer: 'https://news.example/story', landing: 'https://shop.example/' } }, 'https://shop.example')
     await page('/collect', { device: 'elsewhere', touch: { referrer: 'https://site.example/pricing', source: 'newsletter', landing: 'https://shop.example/' } }, 'https://shop.example')
     assert.equal((await graph.counts()).touches, 3)
+    // Fields sent empty say nothing about where the visitor came from, so they leave no touch either.
+    await page('/collect', { device: 'elsewhere', touch: { referrer: '', source: '', landing: 'https://shop.example/' } }, 'https://shop.example')
+    assert.equal((await graph.counts()).touches, 3)
     // So a sign-up on the second site is credited to the ad click that landed on the first.
     await graph.observe({ subject: 'account:7', identifiers: ['device:shop-device'], at: clock + 1000 })
     assert.equal((await graph.attribute('account:7', { at: clock + 1000 })).credited?.gclid, 'G-site')

@@ -170,6 +170,30 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       assert.equal(job.attempts, 3)
     })
 
+    test('each wait before a retry is longer than the one before, in milliseconds, up to an hour', async () => {
+      const waits = async (random: () => number) => {
+        const { graph, outbox, remote, clock } = await fresh({ maxAttempts: 12, random })
+        await enroll(graph, 1)
+        await outbox.record(outcome(1))
+        remote.refuseWith(() => new GoogleError(503, 'unavailable'))
+        const out: number[] = []
+        for (let i = 0; i < 11; i++) {
+          assert.equal((await outbox.run()).retried, 1)
+          const { due } = (await outbox.get('enroll-1'))[0]!
+          out.push(due - clock.now)
+          // One millisecond early is too early; on time is not.
+          clock.now = due - 1
+          assert.equal((await outbox.run()).retried, 0)
+          clock.now = due
+        }
+        return out
+      }
+      const longest = [30_000, 60_000, 120_000, 240_000, 480_000, 960_000, 1_920_000, 3_600_000, 3_600_000, 3_600_000, 3_600_000]
+      assert.deepEqual(await waits(() => 1), longest)
+      // Shortened by as much as half, the waits keep the same shape.
+      assert.deepEqual(await waits(() => 0), longest.map((wait) => wait / 2))
+    })
+
     test('a job that keeps failing stops after the last attempt', async () => {
       const heard: string[][] = []
       const { graph, outbox, remote, clock } = await fresh({

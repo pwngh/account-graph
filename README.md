@@ -135,7 +135,7 @@ PostgreSQL writes take one advisory lock, so they run one at a time; the write q
 
 ## What has run for real
 
-- Every test runs on memory and on PostgreSQL 16, locally and in CI: 163 tests, including a fuzz test that mixes observations, reviewer decisions, deletions, and transfers, and six outbox workers at once.
+- Every test runs on memory and on PostgreSQL 16, locally and in CI, including a fuzz test that mixes observations, reviewer decisions, deletions, and transfers, and six outbox workers at once.
 - The image was built and `docker compose up` brought up the server and its database. With the example site pointed at it, a visit with an ad click followed by a sign-up was credited in Chrome, and the reviewer screen served from the container showed the account joined to its visitor. Against the same container, a signed link tied a browser to its contact, a link to the example's second host name carried the visitor across, and a call posted after a tap was tied to that visitor and valued by its step.
 - The script tag ran in Chrome from a different origin than the page that loaded it.
 - With `cookie: true` the device cookie was set by the server, invisible to script, and the same on the next visit.
