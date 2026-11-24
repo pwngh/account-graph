@@ -256,7 +256,7 @@ To measure the effect, choose at random whom to call back, keep the list, and co
 
 ## Attribution
 
-The report uses the same attribution as `/attribute`. From the account, it follows links to the visitors that are the same person, and credits the newest visit within 90 days linked at 0.9 or higher.
+The report uses the same attribution as `/attribute`. From the account, it follows links to the visitors that are the same person, and credits the newest visit within 90 days that is one person with it: in the same cluster, or linked at 0.9 or higher. A call filed under its number's channel has to be linked at 0.9.
 
 An outcome without such a visit goes on the `(none)` line, so totals add up. An outcome counts on the day it happened: an October click that enrolls in November is in November's report, under October's campaign.
 

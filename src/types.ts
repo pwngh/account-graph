@@ -296,6 +296,8 @@ export interface Touch {
 export interface AttributedTouch extends Touch {
   /** Strength of the best chain of links from the converting subject to the touch's subject. */
   confidence: number
+  /** The two are one cluster, so a visit can be credited however weak the chain between them. A call's own line cannot. */
+  joined: boolean
   /** The subjects that chain passes through, starting at the converting subject. */
   via: Subject[]
 }
@@ -305,7 +307,7 @@ export interface Attribution {
   at: number
   /** Every touch inside the window, newest first. */
   touches: AttributedTouch[]
-  /** The newest touch at or above the `same` threshold. */
+  /** The newest touch at or above the `same` threshold, or a visit in the same cluster. */
   credited: AttributedTouch | undefined
   reason: 'credited' | 'low_confidence' | 'no_touch'
 }

@@ -55,7 +55,7 @@ export interface Target {
   name: string
   /** The email and phone of an outcome, hashed the way this platform matches them. */
   keys(outcome: Outcome): Record<string, string>
-  /** The touch this platform can credit: the newest one that carries its click id at or above `confidence`. */
+  /** The touch this platform can credit: the newest one that carries its click id at or above `confidence`. The outbox gives only touches it trusts, and 0. */
   click(attribution: Attribution, confidence: number): AttributedTouch | undefined
   /** Sends jobs that share an action in one request. Throws when the platform refuses. */
   deliver(action: string, items: readonly Item[]): Promise<{ requestId?: string }>
@@ -117,7 +117,7 @@ export interface Sent {
 export interface OutboxOptions {
   /** The platforms to send to. See `googleAds` and `meta`. */
   targets: readonly Target[]
-  /** The lowest confidence at which a click is sent. Defaults to 0.9. */
+  /** The lowest confidence at which a click is sent. Left out, 0.9, and any click of the person's own cluster. */
   confidence?: number
   /** How far back a click may be. Defaults to 90 days. */
   window?: number
@@ -489,7 +489,9 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
         const asked = `${job.subject}\u0000${job.at}`
         let attribution = attributions.get(asked)
         if (!attribution) attributions.set(asked, (attribution = await graph.attribute(job.subject, { at: job.at, window: options.window ?? 90 * DAY })))
-        const touch = target.click(attribution, confidence)
+        // A person's own click counts however weak the chain to it, unless a lowest confidence was asked for.
+        const touches = attribution.touches.filter((each) => each.confidence >= confidence || (each.joined && options.confidence === undefined))
+        const touch = target.click({ ...attribution, touches, credited: touches[0], reason: touches[0] ? 'credited' : attribution.touches[0] ? 'low_confidence' : 'no_touch' }, 0)
         const subjects = touch && touch.subject !== job.subject ? [job.subject, touch.subject] : [job.subject]
         // With no consent on the outcome, use what the person and the browser that clicked told us.
         let consent = job.consent

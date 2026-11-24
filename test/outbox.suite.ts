@@ -97,6 +97,25 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       assert.equal(JSON.stringify(job).includes('Pat.Lee'), false)
     })
 
+    test("a person's own click is sent however weak the chain to it, unless a lowest confidence was asked for", async () => {
+      for (const [options, sent] of [[{}, 1], [{ confidence: 0.9 }, 0]] as const) {
+        const { graph, outbox, remote } = await fresh(options)
+        // The browser, the caller it called as, and the contact taken on the phone: two links of 0.92 and 0.9.
+        await graph.observe([
+          { subject: 'visitor:v1', identifiers: ['device:v1', 'dial:c1'], at: T0 },
+          { subject: 'caller:1', identifiers: ['dial:c1', 'phone:p1'], at: T0 },
+          { subject: 'contact:1', identifiers: ['phone:p1'], at: T0 },
+        ])
+        await graph.touch({ subject: 'visitor:v1', at: T0, gclid: 'G1' })
+        await outbox.record(outcome(1))
+        assert.equal((await outbox.run()).sent, sent)
+        const [job] = await outbox.get('enroll-1')
+        if (sent) assert.ok(Math.abs(job!.confidence! - 0.92 * 0.9) < 1e-12)
+        else assert.equal(job!.note, 'no_match_key')
+        assert.equal(remote.requests.length, sent)
+      }
+    })
+
     test('the same id with different details is refused', async () => {
       const { outbox } = await fresh()
       await outbox.record(outcome(1))
