@@ -202,7 +202,7 @@ export interface Verdict {
   last: Decision
   /** The last decision that kept them apart, if any ever did. A later join does not undo it. */
   apart?: Decision
-  /** How many times systems have reversed one another, or themselves, about the two. */
+  /** How many times systems have reported the opposite of what a system reported before: kept apart, then joined, or the other way. */
   reversals: number
 }
 

@@ -59,7 +59,7 @@ curl -X POST https://graph.example.org/separate -H "authorization: Bearer $GRAPH
 { "changes": [{ "subject": "contact:12", "from": "contact:7", "to": "contact:12" }], "recorded": 1, "already": 0 }
 ```
 
-Send it when your own conflict check runs, at intake, and not in a batch later. Until it arrives, an outcome of one side can be credited to the other's ad click.
+Send it when your own conflict check runs, at intake, and not in a batch later. Until it arrives, an outcome of one side can be credited to the other's ad click. Once it is there, neither is reached from the other, directly or through a third subject. A browser that both sides and a third person used can still be reached from each.
 
 > **This is not a conflict check.** It keeps two subjects you already know about apart in the graph. It finds nobody, and it decides nothing about whom you may serve.
 
@@ -72,7 +72,7 @@ When another system merges two records, report it to `/join` the same way. It is
 | One person entered on both sides | They are split, and stay so until the pair is withdrawn with `separated: false`. |
 | Two records of one person sent as a pair | That duplicate is blocked until the pair is withdrawn. |
 | Many separations in one component | They are cut one after another, which is not always the fewest links possible. |
-| Two systems that disagree | Each new report reverses the last. At three reversals the pair is flagged on the reviewer screen and in `GET /disputes`. |
+| Two systems that disagree | Each report that contradicts the last is recorded, and a separation holds over a join. At three contradictions the pair is flagged on the reviewer screen and in `GET /disputes`. |
 | `fit` | System separations are biased: they were picked because the two share something. `reviewed({ exclude: 'system:' })` leaves them out. |
 
 ## What the weights rest on

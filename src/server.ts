@@ -153,15 +153,15 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
   const reviewing = (request: IncomingMessage) => !matches(Buffer.from(request.headers.authorization?.replace(/^Bearer /, '') ?? ''), token)
 
   /** A list of pairs from one of your systems, and who it is from. Only a service may speak for a system. */
-  const listed = (request: IncomingMessage, body: any): [Told[], Why] => {
+  const listed = (request: IncomingMessage, body: any, withdrawals: boolean): [Told[], Why] => {
     if (reviewing(request)) throw new Refusal(403, 'The reviewer token does not open the list form of this route')
     if (!Array.isArray(body.pairs) || body.pairs.length > 1000) throw new Refusal(400, '`pairs` must be a list of at most 1000')
     if (typeof body.source !== 'string' || !NAME.test(body.source)) throw new Refusal(400, 'A list needs its `source`: the name of the system it is from')
     for (const each of body.pairs) {
       if (!each || typeof each !== 'object') throw new Refusal(400, 'Each pair must be written { a, b }')
-      if (each.separated !== undefined && typeof each.separated !== 'boolean') throw new Refusal(400, '`separated` must be true or false')
+      if (withdrawals && each.separated !== undefined && typeof each.separated !== 'boolean') throw new Refusal(400, '`separated` must be true or false')
     }
-    return [body.pairs.map(({ a, b, separated, reason }: any) => ({ a, b, ...(separated !== undefined && { separated }), ...(typeof reason === 'string' && reason && { reason: reason.slice(0, 1000) }) })), why({ ...body, by: `system:${body.source}` })]
+    return [body.pairs.map(({ a, b, separated, reason }: any) => ({ a, b, ...(withdrawals && separated !== undefined && { separated }), ...(typeof reason === 'string' && reason && { reason: reason.slice(0, 1000) }) })), why({ ...body, by: `system:${body.source}` })]
   }
 
   /** A reviewer signs with their own name, never as a system. */
@@ -582,7 +582,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       }
       case 'POST /join': {
         const body = await json(request)
-        if (body.pairs !== undefined) return graph.joinAll(...listed(request, body))
+        if (body.pairs !== undefined) return graph.joinAll(...listed(request, body, false))
         signed(request, body)
         return graph.join(body.a, body.b, why(body))
       }
@@ -607,7 +607,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return graph.recent()
       case 'POST /separate': {
         const body = await json(request)
-        if (body.pairs !== undefined) return graph.separateAll(...listed(request, body))
+        if (body.pairs !== undefined) return graph.separateAll(...listed(request, body, true))
         signed(request, body)
         return graph.separate(body.a, body.b, body.separated ?? true, why(body))
       }
@@ -649,7 +649,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       }
       case 'GET /decisions': {
         const limit = Math.min(500, Math.max(1, Math.floor(Number(url.searchParams.get('limit')) || 50)))
-        const before = Number(url.searchParams.get('before')) || undefined
+        const before = url.searchParams.has('before') ? Number(url.searchParams.get('before')) : undefined
+        if (before !== undefined && !(Number.isSafeInteger(before) && before > 0)) throw new Refusal(400, '`before` must be a decision\'s number')
         const author = url.searchParams.get('author') || undefined
         // One more than asked for says whether there is another page.
         const found = await graph.decisionPage({ limit: limit + 1, ...(before !== undefined && { before }), ...(author !== undefined && { author }) })

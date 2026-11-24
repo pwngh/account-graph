@@ -75,6 +75,7 @@
 
 ### Fixed
 
+- `attribute` and `report` reach nothing of a subject kept apart from the one asked about, through a third subject either.
 - `recordCall` ties no call to a visitor a reviewer kept apart from the caller; the call is filed under its number.
 - `CallOptions.numbers` with a key that is not a phone number no longer stops calls to the other numbers.
 - `/collect` records no touch for an arrival whose fields are all empty.

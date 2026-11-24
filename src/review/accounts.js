@@ -119,6 +119,7 @@ async function clusterList() {
     // A refresh under way would replace the list this page is added to, so it gives way.
     loading += 1
     pending += 1
+    more.disabled = true
     try {
       const next = await api('GET', `/clusters?offset=${list.children.length}`)
       list.append(...next.map(queued))
@@ -128,6 +129,7 @@ async function clusterList() {
       notice(error.message, true)
     } finally {
       pending -= 1
+      more.disabled = false
     }
   } } }, 'Show more')
   more.hidden = clusters.length === 0 || clusters.length % 50 > 0
@@ -141,8 +143,8 @@ async function decisionList(audit) {
   const page = await api('GET', decisionPath(Math.min(500, listing.shown)))
   const seen = new Set()
   const entry = (d) => {
-    // Only the newest entry about an identifier can be undone, and only if it is the one that muted it.
-    const newest = !seen.has(d.about[0])
+    // Only the newest entry about an identifier can be undone, and only a list of everyone's decisions shows which that is.
+    const newest = !listing.author && !seen.has(d.about[0])
     if (d.action === 'ignore' || d.action === 'restore') seen.add(d.about[0])
     return el('li', {}, el('span', {}, `${ACTIONS[d.action] ?? d.action} `), ...(d.action === 'prune' ? [when(Number(d.about[0]))] : d.about).map((each) => el('span', { class: 'reason' }, each)),
       author(d.by), el('span', { class: 'muted' }, `, ${when(d.at)}${d.reason ? `: ${d.reason}` : ''} `),
@@ -154,8 +156,11 @@ async function decisionList(audit) {
     if (opening) return
     loading += 1
     pending += 1
+    more.disabled = true
     try {
       const older = await api('GET', decisionPath(50, next))
+      // Another list took this one's place meanwhile.
+      if (!list.isConnected) return
       list.append(...older.decisions.map(entry))
       listing.shown = list.children.length
       next = older.next
@@ -164,6 +169,7 @@ async function decisionList(audit) {
       notice(error.message, true)
     } finally {
       pending -= 1
+      more.disabled = false
     }
   } } }, 'Show older')
   more.hidden = next === null

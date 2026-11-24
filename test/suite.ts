@@ -627,6 +627,12 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await assert.rejects(graph.separateAll([{ a: 'contact:x', b: 'contact:p' }, { a: 'contact:x', b: 'contact:x' }]), TypeError)
       assert.equal((await graph.decisions()).length, before)
 
+      // Named twice, a pair is taken in order from how it stood: already apart, so the first says nothing new.
+      await graph.separateAll([{ a: 'contact:x', b: 'contact:y' }, { a: 'contact:y', b: 'contact:x', separated: false }, { a: 'contact:x', b: 'contact:y' }, { a: 'contact:x', b: 'contact:y' }], { by: 'system:cases' })
+      assert.deepEqual((await graph.decisionPage({ limit: 3 })).map((d) => d.action), ['separate', 'rejoin', 'separate'])
+      const twice = await graph.separateAll([{ a: 'contact:x', b: 'contact:y' }, { a: 'contact:x', b: 'contact:y', separated: false }], { by: 'system:cases' })
+      assert.deepEqual([twice.recorded, (await graph.decisionPage({ limit: 1 }))[0]!.action], [1, 'rejoin'])
+
       // Two records merged elsewhere are joined here, and neither is forgotten.
       const joined = await graph.joinAll([{ a: 'contact:m2', b: 'contact:m1' }, { a: 'contact:m2', b: 'contact:m3' }], { by: 'system:crm' })
       assert.deepEqual([joined.recorded, joined.already], [2, 0])
@@ -675,6 +681,9 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       // The join is the last word on the record, and the separation is still what holds.
       assert.deepEqual([found!.apart!.by, await graph.separations('contact:1')], ['system:cases', ['contact:2']])
       await cases()
+      // However often the system reported it, the join is one mark beside dana's own.
+      const marks = (await graph.history('contact:1')).filter((sighting) => sighting.identifier.startsWith('review:')).map((sighting) => sighting.identifier)
+      assert.equal(marks.length, 2)
       assert.deepEqual((await graph.verdicts([['contact:2', 'contact:1'], ['contact:1', 'contact:3']])).map((each) => [each.a, each.b, each.last.action]), [['contact:1', 'contact:2', 'separate']])
     })
 
@@ -974,6 +983,20 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await fixed.policy()).rules.kinds.phone!.weight, 0.6)
       // The review size only flags clusters, so changing it calls for nothing.
       assert.equal((await createGraph(store, { ...other, review: 3 }).policy()).due, false)
+    })
+
+    test('nothing of one side is credited to the other, through a third subject either', async () => {
+      const { graph } = await fresh()
+      // A child is on file with each parent's email. The parents are on opposite sides, and one of them clicked the ad.
+      await graph.observe([
+        { subject: 'contact:p', identifiers: ['email:p'], at: T0 },
+        { subject: 'contact:child', identifiers: ['email:p', 'email:r'], at: T0 },
+        { subject: 'contact:r', identifiers: ['email:r'], at: T0 },
+      ])
+      await graph.touch({ subject: 'contact:p', at: T0, gclid: 'G1' })
+      assert.equal((await graph.attribute('contact:r', { at: T0 + HOUR })).credited?.gclid, 'G1')
+      await graph.separateAll([{ a: 'contact:p', b: 'contact:r' }], { by: 'system:cases' })
+      assert.equal((await graph.attribute('contact:r', { at: T0 + HOUR })).reason, 'no_touch')
     })
 
     test('overlapping writes leave clusters sound', async () => {

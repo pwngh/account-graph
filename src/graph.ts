@@ -160,7 +160,7 @@ export interface Graph {
   decisionPage(page: DecisionPage): Promise<Decision[]>
   /** What the record says of each given pair. A pair nothing was decided about is left out. */
   verdicts(pairs: readonly (readonly [Subject, Subject])[]): Promise<Verdict[]>
-  /** Pairs that systems have reversed three times or more, the most recently decided first. Two systems that keep undoing each other show up here. */
+  /** Pairs that systems have contradicted themselves or each other about three times or more, the most recently decided first. */
   disputes(limit?: number): Promise<Verdict[]>
   /** Checks that the record of decisions is whole and unaltered. `brokenAt` names the first entry that does not fit. */
   audit(): Promise<{ sound: boolean; brokenAt?: number }>
@@ -322,6 +322,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
   /** Every subject within `hops` links of one, with the strength of the best chain to each. */
   async function reach(tx: Tx, subject: Subject, hops: number): Promise<Reached> {
     const reached: Reached = new Map([[subject, { confidence: 1, via: [] }]])
+    // Two subjects kept apart are two people, so nothing of the one is reached from the other, through a third subject either.
+    const apart = new Set((await tx.separatedOf([subject])).map(([a, b]) => (a === subject ? b : a)))
     let frontier = [subject]
     for (let hop = 0; hop < hops && frontier.length > 0; hop++) {
       const links = await neighbors(tx, frontier)
@@ -329,6 +331,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       for (const near of [...frontier].sort()) {
         const start = reached.get(near)!
         for (const link of links.get(near) ?? []) {
+          if (apart.has(link.subject)) continue
           const confidence = start.confidence * link.score
           const known = reached.get(link.subject)
           if (known && known.confidence >= confidence) continue
@@ -386,33 +389,39 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     return out
   }
 
-  /**
-   * The pairs of a list that do not already stand that way, in order. A
-   * pair stands when the last decision about it says so and it is still in
-   * force: forgetting a subject, or muting a join, leaves the record as it
-   * was and the decision without effect. A pair named twice is taken in the
-   * order it is named.
-   */
-  async function unsaid(tx: Tx, told: readonly { pair: [Subject, Subject]; action: 'separate' | 'rejoin' | 'join'; why: Why }[]) {
-    const last = new Map([...(await verdictsOf(tx, told.map((each) => each.pair)))].map(([key, verdict]) => [key, verdict.last.action]))
-    const subjects = unique(told.flatMap(({ pair }) => pair))
+  /** Which of the given pairs are kept apart, and which hold a reviewer's or a system's join that was not muted. */
+  async function standing(tx: Tx, pairs: readonly (readonly [Subject, Subject])[]) {
+    const subjects = unique(pairs.flat())
     const apart = new Set((await tx.separatedOf(subjects)).map(([a, b]) => pairKey(a, b)))
     const marks = (await tx.edgesOf(subjects)).filter((edge) => edge.identifier.startsWith('review:'))
     const states = await tx.states(unique(marks.map((edge) => edge.identifier)))
-    const joined = new Map<Subject, Set<Identifier>>()
-    for (const { subject, identifier } of marks) if (!states.get(identifier)!.ignored) joined.set(subject, (joined.get(subject) ?? new Set()).add(identifier))
-    const inForce = new Map(told.map(({ pair, action }) => {
-      const key = pairKey(...pair)
-      const shared = [...(joined.get(pair[0]) ?? [])].some((identifier) => joined.get(pair[1])?.has(identifier))
-      return [key, action === 'separate' ? apart.has(key) : action === 'rejoin' ? !apart.has(key) : shared]
-    }))
+    const held = new Map<Subject, Set<Identifier>>()
+    for (const { subject, identifier } of marks) if (!states.get(identifier)!.ignored) held.set(subject, (held.get(subject) ?? new Set()).add(identifier))
+    const joined = new Set(pairs.filter(([a, b]) => [...(held.get(a) ?? [])].some((identifier) => held.get(b)?.has(identifier))).map(([a, b]) => pairKey(a, b)))
+    return { apart, joined }
+  }
+
+  /**
+   * The pairs of a list that are news, in order. A pair is not news when the
+   * last decision about it says the same and still holds: forgetting a
+   * subject, or muting a join, leaves the record as it was and the decision
+   * without effect. A report that contradicts the last one is news even
+   * where nothing moves, because two systems that disagree must show.
+   */
+  async function news(tx: Tx, told: readonly { pair: [Subject, Subject]; action: 'separate' | 'rejoin' | 'join'; why: Why }[]) {
+    const pairs = told.map((each) => each.pair)
+    const last = new Map([...(await verdictsOf(tx, pairs))].map(([key, verdict]) => [key, verdict.last.action]))
+    const { apart, joined } = await standing(tx, pairs)
     return told.filter(({ pair, action }) => {
       const key = pairKey(...pair)
+      const holds = action === 'separate' ? apart.has(key) : action === 'rejoin' ? !apart.has(key) : joined.has(key)
       const before = last.get(key)
-      const stands = inForce.get(key)
+      if (holds && (before === action || (before === undefined && action === 'rejoin'))) return false
       last.set(key, action)
-      inForce.set(key, true)
-      return !(stands && (before === action || (before === undefined && action === 'rejoin')))
+      if (action === 'separate') apart.add(key)
+      else if (action === 'rejoin') apart.delete(key)
+      else joined.add(key)
+      return true
     })
   }
 
@@ -627,7 +636,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       const told = tell(pairs, 'separate', why).map((each) => ({ ...each, action: each.separated ? ('separate' as const) : ('rejoin' as const) }))
       let recorded = 0
       const changes = await changing(async (tx) => {
-        const next = await unsaid(tx, told)
+        const next = await news(tx, told)
         recorded = next.length
         if (recorded === 0) return []
         await decideAll(tx, next.map(({ action, pair, why }) => ({ action, about: pair, why })))
@@ -643,18 +652,22 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       const told = tell(pairs, 'join', why).map((each) => ({ ...each, action: 'join' as const }))
       let recorded = 0
       const changes = await changing(async (tx) => {
-        const next = await unsaid(tx, told)
+        const next = await news(tx, told)
         recorded = next.length
         if (recorded === 0) return []
         const seqs = await decideAll(tx, next.map(({ action, pair, why }) => ({ action, about: pair, why })))
         const at = now()
         const sightings: Sighting[] = []
+        const { joined } = await standing(tx, next.map(({ pair }) => pair))
         for (const [i, { pair }] of next.entries()) {
+          // One mark is enough: a second would keep the two joined after someone muted the first.
+          if (joined.has(pairKey(...pair))) continue
+          joined.add(pairKey(...pair))
           let identifier = `review:join-${seqs[i]}`
           while ((await tx.states([identifier])).has(identifier)) identifier += '+'
           sightings.push(...pair.map((subject) => ({ subject, identifier, at, event: 'review', recorded: at })))
         }
-        return record(tx, sightings)
+        return sightings.length > 0 ? record(tx, sightings) : []
       })
       return { changes, recorded, already: told.length - recorded }
     },
@@ -839,7 +852,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     disputes(limit = 50) {
       return store.read(async (tx) => {
         // Three reversals take four decisions at least. Counting decisions first leaves few pairs to read in full.
-        const verdicts = [...(await verdictsOf(tx, await tx.pairsDecidedBySystems(4, limit * 4))).values()]
+        const verdicts = [...(await verdictsOf(tx, await tx.pairsDecidedBySystems(4))).values()]
         return verdicts.filter((verdict) => verdict.reversals >= 3).sort((x, y) => y.last.seq - x.last.seq).slice(0, limit)
       })
     },

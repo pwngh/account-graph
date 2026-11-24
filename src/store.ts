@@ -102,5 +102,5 @@ export interface Tx {
   /** Every decision that joined, separated or rejoined one of the given pairs, oldest first. Each pair is in order. */
   decisionsAbout(pairs: readonly (readonly [Subject, Subject])[]): Promise<Decision[]>
   /** The pairs that systems have decided about this many times or more, the most recently decided first. */
-  pairsDecidedBySystems(times: number, limit: number): Promise<[Subject, Subject][]>
+  pairsDecidedBySystems(times: number): Promise<[Subject, Subject][]>
 }
