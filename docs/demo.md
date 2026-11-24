@@ -50,7 +50,7 @@ The story runs from a Monday to a Thursday that have passed. Each scene moves th
 | 14 | The payment recorded, by a different office than the ad named | Journey |
 | 15 | The conversion sent to the ad platform for the first ad click | Journey |
 | 16 | The client's value restated, from 400 to 1,250 | Journey |
-| 17 | The other side of the matter with the same family phone and email, separated by the case system | Accounts |
+| 17 | The other side of the matter with the same family phone and email, separated by the case system, and the answer to a conflict check | Accounts |
 | 18 | A call to a map listing's number, without a page load, filed under that listing | Channels |
 | 19 | The form on the site in place of a call, credited by the browser | Board |
 | 20 | A parent and child on one phone: related without joining | Matches |
