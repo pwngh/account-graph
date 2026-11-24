@@ -170,7 +170,7 @@ Open `/review` and enter a token. Each view has an address of its own, so it can
 | `/review#/accounts/account:42` | One subject: its cluster, its ties and why, its money, its sightings. |
 | `/review#/calls` | Missed calls not returned, how calls went by hour and weekday, and coverage, over the last 30 days. Takes two days like the next. |
 | `/review#/channels` | What each campaign cost and brought in, over the last 30 days. |
-| `/review#/channels/2026-11-01/2026-11-30` | The same, for the days named. |
+| `/review#/channels/2026-11-01/2026-11-30` | The same, for the days named. A breakdown, a step and a number of days may follow. |
 | `/review#/health` | Alerts not delivered, feeds, jobs, conversions, the record's newest hash, the running policy by kind, and a banner when a rebuild is due. |
 
 Every ten seconds the screen asks one small question, whether anything was written since it last looked, and reads the view again only when the answer is yes. It does not ask while its tab is hidden, and it does not redraw while someone is typing in the view or answering a question.

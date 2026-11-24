@@ -80,6 +80,7 @@
 - `ReportRow` has `costPerOutcome` and `returnOnCost`, over the campaign's own outcomes on days with cost data, with `costDays`, `missingDays` and `thin`; both are null below half the days. The total leaves out thin campaigns (`Report.leftOut`).
 - The report counts `people` beside outcomes, says how long each step takes (`StageCount.delay`), and marks a period that is too recent (`Report.filling`).
 - Every value an outcome has had is kept (`values`, `GET /outcome`); the report shows what outcomes were first worth and are worth now, by campaign (`ReportRow.worth`) and by month of first record (`Report.months`).
+- `followed` and `GET /followed` count who reached a step within some days of a call, by talk time, answer, language and whether a miss was returned, from a landmark a day after the miss; rows of fewer than 20 people are left out.
 - The Channels view has a Break down by selector; the Calls view shows tags.
 
 ### Changed

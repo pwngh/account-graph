@@ -236,10 +236,10 @@ async function look() {
  * none the server picks the last thirty in its own time zone, and `resolved`
  * puts those in the form.
  */
-function period(name, first, last, rest = '') {
+function period(name, first, last, ...rest) {
   const from = el('input', { type: 'date', value: first ?? '', required: '' })
   const to = el('input', { type: 'date', value: last ?? '', required: '' })
-  const form = el('form', { class: 'row', on: { submit: (event) => { event.preventDefault(); go(`#/${name}/${from.value}/${to.value}${rest ? `/${encodeURIComponent(rest)}` : ''}`) } } },
+  const form = el('form', { class: 'row', on: { submit: (event) => { event.preventDefault(); go(`#/${name}/${from.value}/${to.value}${rest.some(Boolean) ? `/${rest.map(encodeURIComponent).join('/')}` : ''}`) } } },
     el('label', {}, 'From', from), el('label', {}, 'To', to), el('button', { class: 'primary' }, 'Show'))
   const days = (range) => `from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`
   return {

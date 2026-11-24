@@ -3,6 +3,8 @@ import type { Labeled } from './calibrate.ts'
 import { summarizeCalls } from './callreport.ts'
 import type { CallSummary } from './callreport.ts'
 import { followUp } from './calls.ts'
+import { followed } from './followed.ts'
+import type { Followed } from './followed.ts'
 import { UNSTORABLE } from './identifiers.ts'
 import { createMemoryStore } from './memory.ts'
 import { defaultPolicy, plainPolicy, policyHash, ruleFor, usable } from './policy.ts'
@@ -126,6 +128,8 @@ export interface Graph {
   openCalls(options: { from: string; to: string; timeZone?: string; limit?: number; after?: { at: number; id: string } }): Promise<OpenCall[]>
   /** Calls to you over a range of days: how they went, by hour and weekday, and how many could be placed. */
   callSummary(options: { from: string; to: string; timeZone?: string; at?: number; results?: 'expected'; resultWait?: number }): Promise<CallSummary>
+  /** What followed calls in a range of days: who reached a step within some days of one. See `Followed` for what it does not say. */
+  followed(options: { from: string; to: string; timeZone?: string; step: string; days: number; at?: number; least?: number }): Promise<Followed>
   /** How a call went, whether or not the call itself was kept. */
   callResult(id: string): Promise<CallResult | undefined>
   /** Records what campaigns cost. A row for the same day, source and campaign replaces the one before. */
@@ -693,6 +697,30 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const own = new Set((await tx.touchesBetween(start, end)).filter((touch) => touch.landing?.startsWith('tel:')).map((touch) => `${touch.at} ${touch.landing} ${touch.subject}`))
         const filed = new Set(calls.filter((call) => own.has(`${call.at} tel:${call.to} ${call.subject}`)).map((call) => call.id))
         return summarizeCalls(calls, await tx.callsOf(unique(missed.map((call) => call.subject))), filed, at, timeZone, options)
+      })
+    },
+
+    async followed({ from, to, timeZone, at = now(), ...options }) {
+      const [start, end] = range(from, to, timeZone)
+      if (typeof options.step !== 'string' || !options.step) throw new TypeError('Say which step to look for')
+      if (!Number.isSafeInteger(options.days) || options.days < 1 || options.days > 365) throw new TypeError('`days` must be a whole number from 1 to 365')
+      return store.read(async (tx) => {
+        const inPeriod = (await tx.callsBetween(start, end)).filter((call) => call.direction === 'inbound')
+        // A person is a cluster: whoever rings from two numbers is counted once, and what they did under an account is theirs.
+        const labels = await tx.labelsOf(unique(inPeriod.map((call) => call.subject)))
+        const clusterOf = (subject: Subject) => labels.get(subject)?.cluster ?? subject
+        const everyone = await tx.membersOf(unique([...labels.values()].map((label) => label.component)))
+        const subjects = unique([...inPeriod.map((call) => call.subject), ...everyone.keys()])
+        const person = (subject: Subject) => everyone.get(subject)?.cluster ?? clusterOf(subject)
+        const group = <T extends { subject: Subject }>(list: readonly T[]) => {
+          const out = new Map<Subject, T[]>()
+          for (const each of list) out.set(person(each.subject), [...(out.get(person(each.subject)) ?? []), each])
+          return out
+        }
+        const called = group(inPeriod)
+        const calls = group(await tx.callsOf(subjects))
+        const reached = group((await tx.outcomesOf(subjects)).filter((outcome) => outcome.stage === options.step))
+        return followed([...called].map(([who, mine]) => ({ called: mine, calls: calls.get(who) ?? [], reached: (reached.get(who) ?? []).map((outcome) => outcome.at) })), { ...options, at })
       })
     },
 

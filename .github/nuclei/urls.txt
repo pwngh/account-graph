@@ -15,3 +15,4 @@ http://127.0.0.1:8080/call?id=a
 http://127.0.0.1:8080/calls?from=2026-01-01&to=2026-01-02&tz=UTC&after=1%20a
 http://127.0.0.1:8080/calls/summary?from=2026-01-01&to=2026-01-02&tz=UTC
 http://127.0.0.1:8080/outcome?id=a
+http://127.0.0.1:8080/followed?from=2026-01-01&to=2026-01-02&step=call&days=30

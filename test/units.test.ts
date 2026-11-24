@@ -5,6 +5,8 @@ import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
 import { components, conversionEvent, createAlerter, createGraph, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, ingestRequest, ip, knownLink, ladderProblems, measure, normalizeEmail, normalizePhone, phoneOfType, policyFrom, policyHash, policyProblems, readToken, scorePairs, signToken, sourceOf, withStage } from '../src/index.ts'
 import { summarizeCalls } from '../src/callreport.ts'
+import { followed } from '../src/followed.ts'
+import type { Caller, Followed } from '../src/followed.ts'
 import { dayIn, paid } from '../src/report.ts'
 import { weigh } from '../src/policy.ts'
 import type { Edge, IdentifierState, KeptCall, Reason } from '../src/index.ts'
@@ -358,6 +360,57 @@ test('a tracking number may say what it stands for', () => {
   const numbers = { '+15550100001': { source: 'google', tags: { office_advertised: 'north', language: 'es' } } }
   assert.deepEqual(configFrom({ ...env, CALL_NUMBERS: JSON.stringify(numbers) }).callNumbers, numbers)
   assert.throws(() => configFrom({ ...env, CALL_NUMBERS: '{"+15550100001":{"source":"x","tags":{"Office":"n"}}}' }), /CALL_NUMBERS: "\+15550100001" has a tag named "Office"/)
+})
+
+test('what followed a call starts the clock at a landmark, and leaves out whoever was already on the way', () => {
+  const DAY = 86_400_000
+  const T = Date.parse('2026-01-05T15:00:00Z')
+  let n = 0
+  const call = (at: number, answered: boolean | undefined, more: Partial<KeptCall> = {}): KeptCall => ({ id: `c${n++}`, direction: 'inbound', subject: 'caller:x', at, to: '+15550100001', flags: [], recorded: at, duration: 120, ...(answered !== undefined && { result: { answered, recorded: at } }), ...more })
+  const back = (at: number, answered = true) => call(at, answered, { direction: 'outbound' })
+  const person = (called: KeptCall[], later: KeptCall[] = [], reached: number[] = []): Caller => ({ called, calls: [...called, ...later], reached })
+  const run = (callers: Caller[], more: object = {}) => followed(callers, { step: 'client', days: 30, at: T + 100 * DAY, least: 1, ...more })
+  const group = (result: Followed, by: string) => result.groups.find((each) => each.by === by)!.rows.map((row) => [row.name, row.people, row.reached])
+
+  // Missed and rung back the same day, who signed up later; missed and left alone, who did not; rung back too late for the landmark.
+  const returned = person([call(T, false)], [back(T + 3_600_000)], [T + 5 * DAY])
+  const left = person([call(T, false)])
+  const late = person([call(T, false)], [back(T + 2 * DAY)], [T + 9 * DAY])
+  assert.deepEqual(group(run([returned, left, late]), 'returned'), [['returned within a day', 1, 1], ['not returned within a day', 2, 1]])
+
+  // Signing up already: they signed the same evening, and somebody rang them about it. The call looks like the cause and is not, so they are left out.
+  const signing = person([call(T, false)], [back(T + 3_600_000)], [T + 2 * 3_600_000])
+  // And one who rang again and got through: whether they were rung back says nothing.
+  const through = person([call(T, false)], [call(T + 1_800_000, true)], [T + 4 * DAY])
+  const biased = run([returned, left, signing, through])
+  assert.deepEqual(group(biased, 'returned'), [['returned within a day', 1, 1], ['not returned within a day', 1, 0]])
+  assert.deepEqual([biased.leftOut.already, biased.leftOut.through], [1, 1])
+  // Getting through after the landmark was still to come when the clock started, so it stays.
+  const afterwards = person([call(T, false)], [call(T + 2 * DAY, true)], [T + 4 * DAY])
+  assert.deepEqual(group(run([afterwards]), 'returned'), [['not returned within a day', 1, 1]])
+
+  // A step on the last day counts and one after it does not. Someone whose days are not over says nothing yet.
+  const edge = (days: number) => person([call(T, true)], [], [T + 120_000 + days * DAY])
+  assert.deepEqual(group(run([edge(30), edge(30.01)]), 'answer'), [['answered', 2, 1]])
+  const running = run([edge(5)], { at: T + 10 * DAY })
+  assert.deepEqual([group(running, 'answer'), running.leftOut.running], [[], 1])
+  // Reached before the call ended, whatever they do after.
+  assert.equal(run([person([call(T, true)], [], [T + 60_000, T + DAY])]).leftOut.already, 1)
+
+  // How long they talked leaves out the wait, and a call nobody answered was not talked on. Only a person's first call counts.
+  const talked = (seconds: number, waited = 0) => person([call(T, true, { duration: seconds, result: { answered: true, waited, recorded: T } }), call(T + DAY, true, { duration: 9999 })])
+  assert.deepEqual(group(run([talked(59), talked(60), talked(400, 350), talked(301), talked(900), person([call(T, false, { duration: 500 })]), person([call(T, undefined)])]), 'talk'), [['under 1 minute', 2, 0], ['1 to 5 minutes', 1, 0], ['5 to 15 minutes', 1, 0], ['15 minutes or more', 1, 0]])
+  const answers = run([person([call(T, true, { tags: { language: 'es' } })]), person([call(T, undefined)]), person([call(T, false, { result: { answered: false, voicemail: true, recorded: T } })]), person([call(T, false)])])
+  assert.deepEqual(group(answers, 'answer'), [['answered', 1, 0], ['missed', 1, 0], ['voicemail', 1, 0], ['(not recorded)', 1, 0]])
+  assert.deepEqual(group(answers, 'language'), [['es', 1, 0], ['(not recorded)', 3, 0]])
+  // A hidden number cannot be rung back, so it is in neither row.
+  assert.deepEqual(group(run([person([call(T, false, { id: 'h', subject: 'call:h' })])]), 'returned'), [])
+
+  // Thin rows are not shown, and how many people were in them is.
+  const many = Array.from({ length: 25 }, (_, i) => person([call(T, i < 20)]))
+  const thin = run(many, { least: 20 }).groups.find((each) => each.by === 'answer')!
+  assert.deepEqual([thin.rows.map((row) => [row.name, row.people, row.share]), thin.thin], [[['answered', 20, 0]], 5])
+  assert.deepEqual(run([...many].reverse(), { least: 20 }), run(many, { least: 20 }))
 })
 
 test('a day begins at local midnight, across a clock change', () => {

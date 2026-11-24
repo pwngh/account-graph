@@ -440,6 +440,12 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       return rows.map(toCounted)
     },
 
+    async outcomesOf(subjects) {
+      if (subjects.length === 0) return []
+      const { rows } = await db.query(`select * from ${t('outcome')} where subject = any($1::text[]) order by at, transaction_id collate "C"`, [subjects])
+      return rows.map(toCounted)
+    },
+
     async newestOutcomes(from, to, each) {
       const { rows } = await db.query(
         `select * from (select o.*, row_number() over (partition by stage order by at desc, transaction_id collate "C" desc) as n from ${t('outcome')} o where at >= $1 and at < $2) as newest where n <= $3`,
