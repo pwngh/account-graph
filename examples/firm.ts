@@ -6,7 +6,7 @@
  *   npm run firm
  *
  * It starts a throwaway PostgreSQL in Docker (or keeps everything in memory
- * where there is no Docker), the graph server with its reviewer screen, the
+ * where there is no Docker, or with MEMORY=1), the graph server with its reviewer screen, the
  * firm's site and its presenter page, and fills them. docs/demo.md has the
  * script. Ctrl-C stops and deletes all of it.
  */
@@ -29,15 +29,16 @@ export const LINES = {
   '+15550100102': { source: 'google', campaignId: '30222', campaign: 'Search: River', tags: { office_advertised: 'river', language: 'en' } },
   '+15550100103': { source: 'google', campaignId: '30333', campaign: 'Busqueda: North', tags: { office_advertised: 'north', language: 'es' } },
   '+15550100104': { source: 'listing', medium: 'map', campaign: 'Map listing, River', tags: { office_advertised: 'river', language: 'es' } },
+  '+15550100105': { source: 'meta', campaignId: '40444', campaign: 'Online consultations', tags: { office_advertised: 'online', language: 'en' } },
 } as const
 const CAMPAIGNS = [
   { source: 'google', campaignId: '30111', campaign: 'Search: North', office: 'north', lang: 'en', line: '+15550100101', daily: 84, share: 0.34, client: 0.16 },
   { source: 'google', campaignId: '30222', campaign: 'Search: River', office: 'river', lang: 'en', line: '+15550100102', daily: 61, share: 0.24, client: 0.11 },
   { source: 'google', campaignId: '30333', campaign: 'Busqueda: North', office: 'north', lang: 'es', line: '+15550100103', daily: 38, share: 0.24, client: 0.2 },
-  { source: 'meta', campaignId: '40444', campaign: 'Online consultations', office: 'online', lang: 'en', line: '+15550100101', daily: 45, share: 0.18, client: 0.06 },
+  { source: 'meta', campaignId: '40444', campaign: 'Online consultations', office: 'online', lang: 'en', line: '+15550100105', daily: 45, share: 0.18, client: 0.06 },
 ] as const
 const STEPS = {
-  call: { value: 5, currency: 'USD' },
+  call: { value: 5, currency: 'USD', action: { google: '222' } },
   inquiry: { value: 10, currency: 'USD', wait: 48, action: { google: '111' } },
   consultation: { value: 60, currency: 'USD', wait: 120 },
   client: { value: 400, currency: 'USD', action: { google: '333' } },
@@ -61,7 +62,8 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
   const policy = policyFrom(JSON.parse(readFileSync(new URL('./household.json', import.meta.url), 'utf8')))
   const graph = createGraph(store, policy, { now: clock })
   const alerts: string[] = []
-  const sent: string[] = []
+  const sent: { id: string; value: number | undefined }[] = []
+  const wasSent = (id: string) => sent.some((each) => each.id === id)
   const site = createServer((request, response) => void answer(request, response))
   await new Promise<void>((resolve) => site.listen(ports[1], '127.0.0.1', resolve))
   const siteAt = `http://localhost:${(site.address() as AddressInfo).port}`
@@ -69,7 +71,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
   // An ad platform that takes everything and is not there.
   const outbox = createOutbox(graph, store.outbox, {
     now: clock,
-    targets: [googleAds({ customerId: '000-000-0000', send: async (body) => (sent.push(...(body as any).events.map((event: any) => event.transactionId)), { requestId: `made-up-${sent.length}` }) })],
+    targets: [googleAds({ customerId: '000-000-0000', send: async (body) => (sent.push(...body.events.map((event: any) => ({ id: event.transactionId, value: event.conversionValue }))), { requestId: `made-up-${sent.length}` }) })],
   })
   const ops = createOps(graph, store.ops, { now: clock, url: `${siteAt}/hook`, quiet: { calls: 12 }, returnHours: 24, onError: () => {} })
   const calls = { numbers: LINES, results: 'expected' as const }
@@ -120,6 +122,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       await graph.touch({ subject: visitor, at, source, medium: 'cpc', campaignId, campaign: campaign.campaign, [source === 'google' ? 'gclid' : 'fbclid']: `s${n}`, landing: 'https://firm.example.org/', custom: { office, ...(chance() < 0.85 && { lang }) } })
       const called = chance() < 0.62
       let reached = !called
+      let met = at
       if (called) {
         const rang = at + Math.floor(1 + chance() * 40) * 60_000
         const roll = chance()
@@ -128,18 +131,21 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
         writing = rang
         await recordCall(graph, { id: `s${n}`, at: rang, answered, ...(roll > 0.9 && { voicemail: true }), ...call }, { ...calls, now: clock, convert: (outcome) => graph.outcome({ ...outcome, value: STEPS.call.value, currency: 'USD' }) })
         reached = answered
+        met = rang + (call.duration + call.waited) * 1000
         if (!answered && chance() < 0.82) {
           const back = rang + Math.floor(1 + chance() * 30) * HOUR
           if (back < start) {
             writing = back
             reached = chance() < 0.7
+            met = back + 300_000
             await recordCall(graph, { id: `b${n}`, direction: 'outbound', from: line, to: from, at: back, duration: reached ? 300 : 25, answered: reached }, { ...calls, now: clock })
           }
         }
       }
       if (!reached || chance() > 0.55) continue
       // They left their number, with staff or in a form, and staff opened a contact for them.
-      const asked = at + Math.floor(chance() * 20) * HOUR
+      const asked = met + Math.floor(chance() * 20) * HOUR
+      if (asked > start) continue
       const name = [pick(FIRST), pick(LAST)] as const
       writing = asked
       await graph.observe({ subject: contact, identifiers: [...(called ? [] : [`device:s${n}`]), `phone:${hashPhone(from)}`, `email:made-up-${n}`, ...nameKeys(SECRET, ...name, { dob: `19${60 + (n % 40)}-0${1 + (n % 9)}-1${n % 9}` })], at: asked, event: 'inquiry' })
@@ -200,7 +206,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       async run() {
         const { state, counted } = await ask('POST', '/call/result', { id: 'demo-1', answered: false, waited: 95 })
         await outbox.run()
-        return [`State: ${state}. Counted: ${counted ? 'yes' : 'no'}. Sent to the ad platform: ${sent.includes('call:demo-1') ? 'yes' : 'no'}.`, 'They are on the Board, under missed and not returned.']
+        return [`State: ${state}. Counted: ${counted ? 'yes' : 'no'}. Sent to the ad platform: ${wasSent('call:demo-1') ? 'yes' : 'no'}.`, 'They are on the Board, under missed and not returned.']
       },
     },
     {
@@ -212,7 +218,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
         await ask('POST', '/convert', { transactionId: 'demo-inquiry', subject: 'contact:demo', at: clock(), stage: 'inquiry', tags: { language: 'es' } })
         await outbox.run()
         const { followUp } = await ask('GET', '/call?id=demo-1')
-        return [`The miss is ${followUp.state}.`, `The inquiry is credited to the ad click and sent: ${sent.includes('demo-inquiry') ? 'yes' : 'no'}.`]
+        return [`The miss is ${followUp.state}.`, `The inquiry is credited to the ad click and sent: ${wasSent('demo-inquiry') ? 'yes' : 'no'}.`]
       },
     },
     {
@@ -257,7 +263,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
         await ask('POST', '/restate', { transactionId: 'demo-client', value: 1250 })
         await outbox.run()
         const { values } = await ask('GET', '/outcome?id=demo-client')
-        return [`Recorded at ${values[0].value} USD, now ${values.at(-1).value} USD. Both stay on record.`]
+        return [`Recorded at ${values[0].value} USD, now ${values.at(-1).value} USD. Both stay on record.`, `Told to the ad platform: ${sent.filter((each) => each.id === 'demo-client').at(-1)?.value} USD.`]
       },
     },
     {
@@ -320,55 +326,71 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
 }
 
 /** A throwaway PostgreSQL in Docker, or undefined where there is none. */
-async function throwaway(): Promise<{ address: string; stop(): void } | undefined> {
+function throwaway(): { address: string; stop(): void } | undefined {
+  let id: string | undefined
+  const stop = () => {
+    try {
+      if (id) execFileSync('docker', ['rm', '-f', id], { stdio: 'ignore' })
+    } catch {}
+  }
   try {
-    const id = execFileSync('docker', ['run', '--rm', '-d', '-e', 'POSTGRES_PASSWORD=demo', '-p', '127.0.0.1::5432', 'postgres:16'], { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
+    id = execFileSync('docker', ['run', '--rm', '-d', '-e', 'POSTGRES_PASSWORD=demo', '-p', '127.0.0.1::5432', 'postgres:16'], { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
     const port = execFileSync('docker', ['port', id, '5432']).toString().trim().split('\n')[0]!.split(':').at(-1)
-    return { address: `postgres://postgres:demo@127.0.0.1:${port}/postgres`, stop: () => void execFileSync('docker', ['stop', '-t', '1', id], { stdio: 'ignore' }) }
+    return { address: `postgres://postgres:demo@127.0.0.1:${port}/postgres`, stop }
   } catch {
+    stop()
     return undefined
   }
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
-  const made = process.env.DATABASE_URL || process.env.MEMORY ? undefined : await throwaway()
-  const address = process.env.DATABASE_URL ?? made?.address
-  let store: Store = createMemoryStore()
-  let pool: { query(text: string): Promise<unknown>; end(): Promise<void> } | undefined
-  if (address) {
-    const { default: pg } = await import('pg')
-    const { createPostgresStore } = await import('../src/postgres.ts')
-    const opened = (pool = new pg.Pool({ connectionString: address }))
-    for (let tries = 0; ; tries++) {
-      try {
-        await opened.query('drop schema if exists firm_demo cascade')
-        break
-      } catch (error) {
-        if (tries > 100) throw error
-        await new Promise((resolve) => setTimeout(resolve, 200))
-      }
-    }
-    const postgres = createPostgresStore(opened, 'firm_demo')
-    await postgres.migrate()
-    store = postgres
+  let made: ReturnType<typeof throwaway>
+  let firm: Firm | undefined
+  let end: (() => Promise<void>) | undefined
+  let stopping = false
+  // In place before anything else is started, so stopping half way leaves nothing behind either.
+  const stop = async (code: number) => {
+    if (stopping) return
+    stopping = true
+    await firm?.close().catch(() => {})
+    await end?.().catch(() => {})
+    made?.stop()
+    process.exit(code)
   }
-  console.log(address ? 'Filling a made-up firm in PostgreSQL. This takes a minute or so.' : 'No Docker and no DATABASE_URL, so everything is kept in memory. Filling a made-up firm.')
-  const firm = await startFirm(store, { ports: [Number(process.env.PORT ?? 8790), Number(process.env.SITE_PORT ?? 8791)], say: console.log })
-  console.log(`
+  process.once('SIGINT', () => void stop(0))
+  process.once('SIGTERM', () => void stop(0))
+  try {
+    made = process.env.MEMORY ? undefined : throwaway()
+    let store: Store = createMemoryStore()
+    if (made) {
+      const { default: pg } = await import('pg')
+      const { createPostgresStore } = await import('../src/postgres.ts')
+      const pool = new pg.Pool({ connectionString: made.address })
+      pool.on('error', () => {})
+      end = () => pool.end()
+      for (let tries = 0; ; tries++) {
+        try {
+          await pool.query('select 1')
+          break
+        } catch (error) {
+          if (tries > 100) throw error
+          await new Promise((resolve) => setTimeout(resolve, 200))
+        }
+      }
+      const postgres = createPostgresStore(pool)
+      await postgres.migrate()
+      store = postgres
+    }
+    console.log(made ? 'Filling a made-up firm in PostgreSQL. This takes a minute or so.' : 'Filling a made-up firm. Everything is kept in memory.')
+    firm = await startFirm(store, { ports: [Number(process.env.PORT ?? 8790), Number(process.env.SITE_PORT ?? 8791)], say: console.log })
+    console.log(`
   Presenter page   ${firm.site}/present
   Reviewer screen  ${firm.graph}/review        sign in with the token: demo
   The firm's site  ${firm.site}/?gclid=you&utm_id=30111   and ${firm.site}/es?gclid=you&utm_id=30333
 
   The script is in docs/demo.md. Ctrl-C stops everything and deletes it.`)
-  const stop = async () => {
-    await firm.close()
-    if (pool) {
-      if (!made) await pool.query('drop schema if exists firm_demo cascade')
-      await pool.end()
-    }
-    made?.stop()
-    process.exit(0)
+  } catch (error) {
+    if (!stopping) console.error(error)
+    await stop(1)
   }
-  process.once('SIGINT', () => void stop())
-  process.once('SIGTERM', () => void stop())
 }

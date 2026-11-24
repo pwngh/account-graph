@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { startFirm } from '../examples/firm.ts'
-import { createMemoryStore } from '../src/index.ts'
+import { createMemoryStore, hashPhone } from '../src/index.ts'
 import { browse, chrome, until, without } from './chrome.ts'
 
 // The demo, scene by scene, in a real browser: what the presenter's page says, and what the reviewer screen then shows.
@@ -14,36 +14,53 @@ test('every scene of the demo runs, says what came of it within a second, and ca
   await until('the scenes', () => run(`document.querySelectorAll('#scenes li').length`))
   const scenes = (await run(`document.querySelectorAll('#scenes li').length`)) as number
   assert.equal(scenes, 10)
-  for (let i = 0; i < scenes; i++) {
-    await press('Space')
-    await until(`scene ${i + 1}`, async () => {
-      assert.equal(await run(`document.getElementById('problem').textContent`), '')
-      return ((await run(`document.querySelectorAll('li.done').length`)) as number) === i + 1
-    })
-  }
-  const told = (await run(`[...document.querySelectorAll('li.done .told')].map((each) => [...each.children].map((line) => line.textContent))`)) as string[][]
-  for (const [i, lines] of told.entries()) assert.ok(Number.parseInt(lines.at(-1)!, 10) < 1000, `scene ${i + 1} took ${lines.at(-1)}`)
-  const said = told.map((lines) => lines.slice(0, -1).join(' '))
-  for (const [i, expected] of [
-    /office north, language es/, /by the tap\. State: waiting\. Counted: no/, /State: missed\. Counted: no\. Sent to the ad platform: no/, /The miss is returned\..*sent: yes/,
-    /Filed under Map listing, River/, /Advertised: north\. Served: river/, /Before: joined.*In one cluster: no/, /85% by the phone: related, and not joined/, /Recorded at 400 USD, now 1250 USD/, /no calls for 12 hours/,
-  ].entries()) assert.match(said[i]!, expected)
-  // There is nothing after the last.
-  assert.equal(await run(`document.getElementById('next').disabled`), true)
-
-  // What each scene changed is on the view it points to.
   const links = (await run(`[...document.querySelectorAll('li a')].map((each) => each.href)`)) as string[]
   const screen = await browse(`${firm.graph}/review`)
   t.after(screen.close)
   await until('the screen', () => screen.run(`typeof load === 'function'`))
   await screen.run(`sessionStorage.setItem('token', 'demo')`)
-  for (const [i, shown] of [
-    'Busqueda: North', 'How calls were placed', 'Missed, not returned', 'returned after', 'Map listing, River', 'river', 'kept apart', 'contact:4801', '1,250', 'Calls have gone quiet',
-  ].entries()) {
-    await screen.run(`location.href = ${JSON.stringify(links[i])}; location.reload()`)
-    await until(`"${shown}" after scene ${i + 1}`, async () => ((await screen.run(`document.getElementById('view')?.textContent ?? ''`).catch(() => '')) as string).includes(shown))
+  /** What a view of the reviewer screen says, read afresh. */
+  const view = async (href: string) => {
+    await screen.run(`window.old = true`)
+    await screen.run(`location.href = ${JSON.stringify(href)}; location.reload()`)
+    await until(href, () => screen.run(`!window.old && typeof loadedAt === 'number' && document.getElementById('view').childElementCount > 0`).catch(() => false))
     assert.equal(await screen.run(`document.getElementById('notice').textContent`), '')
+    return (await screen.run(`document.getElementById('view').innerText`)) as string
   }
+
+  const caller = `caller:${hashPhone('+15550100042')}`
+  // What each scene says, and what the view it points to says then and did not before.
+  const expected: [RegExp, (text: string) => string][] = [
+    [/office north, language es/, (text) => row(text, 'Busqueda: North')],
+    [/by the tap\. State: waiting\. Counted: no/, (text) => (/Waiting/.test(text) ? text : '')],
+    [/State: missed\. Counted: no\. Sent to the ad platform: no/, (text) => (text.includes(caller.slice(0, 14)) ? 'on the board' : '')],
+    [/The miss is returned\..*sent: yes/, (text) => (/returned after/.test(text) && /answered by a person/.test(text) ? 'returned' : '')],
+    [/Filed under Map listing, River/, (text) => row(text, 'Map listing, River')],
+    [/Advertised: north\. Served: river/, (text) => row(text, 'Busqueda: North', 900)],
+    [/Before: joined.*In one cluster: no/, (text) => (text.includes('contact:other-side') && text.includes('kept apart') ? 'kept apart' : '')],
+    [/85% by the phone: related, and not joined/, (text) => (text.includes('contact:4801') && text.includes('contact:4802') ? 'a pair' : '')],
+    [/Recorded at 400 USD, now 1250 USD.*ad platform: 1250 USD/, (text) => (text.includes('from 400 USD to 1,250 USD') ? 'restated' : '')],
+    [/no calls for 12 hours/, (text) => (text.includes('Calls have gone quiet') ? 'quiet' : '')],
+  ]
+  function row(text: string, name: string, length = 120) {
+    const at = text.indexOf(name)
+    return at < 0 ? '' : text.slice(at, at + length)
+  }
+  for (const [i, [said, seen]] of expected.entries()) {
+    const before = seen(await view(links[i]!))
+    await press('Space')
+    await until(`scene ${i + 1}`, async () => {
+      assert.equal(await run(`document.getElementById('problem').textContent`), '')
+      return ((await run(`document.querySelectorAll('li.done').length`)) as number) === i + 1
+    })
+    const told = (await run(`[...document.querySelectorAll('li.done')].at(-1).querySelector('.told').innerText`)) as string
+    assert.match(told.replaceAll('\n', ' '), said)
+    assert.ok(Number(/(\d+) ms/.exec(told)![1]) < 1000, `scene ${i + 1} took ${told}`)
+    const after = seen(await view(links[i]!))
+    assert.ok(after && after !== before, `scene ${i + 1} shows on its view: ${JSON.stringify([before, after])}`)
+  }
+  // There is nothing after the last.
+  assert.equal(await run(`document.getElementById('next').disabled`), true)
   // The site shows a visitor from an ad a number of their own, in their language.
   await screen.run(`location.href = ${JSON.stringify(`${firm.site}/es?gclid=you&utm_id=30333`)}`)
   await until('a pool number', async () => ((await screen.run(`document.querySelector('.call')?.textContent ?? ''`).catch(() => '')) as string).includes('(555) 010-011'))

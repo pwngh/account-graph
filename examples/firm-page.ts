@@ -35,14 +35,14 @@ li .told { border-left: 2px solid var(--good); padding-left: 10px; }
 #problem:not(:empty) { border-left: 2px solid #b3261e; padding-left: 10px; }
 </style><main><h1>Presenter</h1>
 <p class="muted">A made-up firm, two months of made-up history, nothing sent anywhere. Each scene does what the site, the phone system or the office would do, over HTTP. Press Space or the button for the next one, and open the view it changed.</p>
-<p><button id="next">Next scene</button> <a id="review" href="${graph}/review" target="review">Open the reviewer screen</a> <span class="muted">(token: demo)</span></p>
+<p><button id="next" disabled>Next scene</button> <a id="review" href="${graph}/review" target="review">Open the reviewer screen</a> <span class="muted">(token: demo)</span></p>
 <p id="problem" role="alert"></p><ol id="scenes"></ol></main>
 <script>
 const make = (tag, text, props = {}) => Object.assign(document.createElement(tag), { textContent: text ?? '', ...props })
 const list = document.getElementById('scenes'), button = document.getElementById('next'), problem = document.getElementById('problem')
 let at = 0
 const draw = () => [...list.children].forEach((item, i) => { item.className = i < at ? 'done' : ''; if (i === at) item.setAttribute('aria-current', 'step'); else item.removeAttribute('aria-current') })
-const ready = fetch('/scenes').then((answer) => answer.json()).then(({ next, scenes }) => {
+fetch('/scenes').then((answer) => answer.json()).then(({ next, scenes }) => {
   at = next
   for (const { title, text, see } of scenes) {
     const item = make('li'), body = make('div')
@@ -56,7 +56,7 @@ const ready = fetch('/scenes').then((answer) => answer.json()).then(({ next, sce
   }
   draw()
   button.disabled = at >= scenes.length
-})
+}).catch((error) => { problem.textContent = 'The scenes did not load: ' + error.message })
 async function run() {
   if (button.disabled) return
   button.disabled = true

@@ -9,7 +9,7 @@ npm run firm
 
 | It starts | Where |
 | --- | --- |
-| A throwaway PostgreSQL, in Docker | Deleted when you stop. With no Docker, everything is kept in memory. With `DATABASE_URL`, it uses a schema named `firm_demo` there. |
+| A throwaway PostgreSQL, in Docker | Deleted when you stop. With no Docker, or with `MEMORY=1`, everything is kept in memory. |
 | The graph server and its reviewer screen | `http://localhost:8790/review`. Sign in with the token `demo`. |
 | The firm's site, in English and Spanish | `http://localhost:8791/?gclid=you&utm_id=30111` and `/es` |
 | The presenter page | `http://localhost:8791/present` |
