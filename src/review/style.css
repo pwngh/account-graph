@@ -582,6 +582,7 @@ dialog p:empty { display: none; }
 .graph .edge .line { stroke: var(--hue); stroke-linecap: round; opacity: .55; transition: opacity .18s; }
 .graph .edge.related .line { stroke-dasharray: 7 6; } .graph .edge.apart .line { stroke-dasharray: 1 7; stroke-width: 3; }
 .graph .edge .reach { stroke: transparent; stroke-width: 16; }
+.graph .thick .edge .line { opacity: .28; stroke-width: 1.5; }
 .graph .edge.lit .line { opacity: 1; }
 .graph .flow { stroke: var(--panel); stroke-width: 2; stroke-linecap: round; stroke-dasharray: 2 14; opacity: 0; pointer-events: none; }
 .graph .edge.path .flow { opacity: 1; animation: flow 1s linear infinite; }

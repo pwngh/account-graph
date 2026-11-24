@@ -269,11 +269,17 @@ function apartFrom(a, b, p) {
   return Math.hypot(p.x - a.x - t * ex, p.y - a.y - t * ey)
 }
 /** Bends each line that runs through someone around them, as little as will do. Answers how many it could not. */
-function route(nodes, edges) {
+function route(nodes, edges, until = performance.now() + 250) {
   const taken = nodes.map((node) => ({ node, boxes: shapes(node) }))
   const left = new Map()
   let stuck = 0
   for (const edge of edges) {
+    // Out of time, the rest stay straight.
+    if (performance.now() > until) {
+      edge.bend = 0
+      stuck += 1
+      continue
+    }
     const long = Math.hypot(edge.to.x - edge.from.x, edge.to.y - edge.from.y)
     const ways = [0, 0.1, -0.1, 0.18, -0.18, 0.26, -0.26, 0.36, -0.36, 0.48, -0.48, 0.62, -0.62].map((part) => part * Math.max(160, long))
     // Best is one that also keeps off the names at its own ends and leaves them apart from other lines. A line may have to do without.
@@ -307,18 +313,31 @@ function settle(nodes, edges, tries = 40) {
     outward(nodes, edges)
     spread(nodes, edges, 24, until)
     const still = [...crowding(nodes, [])].length === 0 || spread(nodes, [], 80, until)
-    if (still && route(nodes, edges) === 0) return true
+    if (still && route(nodes, edges, until) === 0) return true
+    if (performance.now() > until) return false
     for (const edge of edges) edge.bend = 0
     for (const [n, node] of nodes.entries()) {
       node.x = node.x * 1.06 + (n % 3) - 1
       node.y = node.y * 1.06 + (n % 2)
     }
   }
-  // Out of time or tries: the lines are put as well as they go from here, in one pass.
-  route(nodes, edges)
+  route(nodes, edges, until)
   return false
 }
 
+/** Everyone in a ring, and whoever is not of the subject's cluster in a wider one. */
+function ring(nodes, tall) {
+  const own = nodes[0].cluster
+  const inner = nodes.filter((node) => node.cluster === own)
+  const round = (list, reach) => list.forEach((node, i) => {
+    const turn = (i / list.length) * 2 * Math.PI - Math.PI / 2
+    node.x = Math.cos(turn) * reach * (tall ? 0.85 : 1.5)
+    node.y = Math.sin(turn) * reach
+  })
+  const reach = Math.max(130, inner.length * 19)
+  round(inner, reach)
+  round(nodes.filter((node) => node.cluster !== own), reach + 170)
+}
 /** How hard a layout is to read: how often lines cross, and how far it reaches. */
 function tangle(nodes, edges) {
   const side = (p, q, r) => Math.sign((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x))
@@ -573,11 +592,14 @@ function graphOf(profile, more) {
       node.vx = node.vy = 0
     })
     for (const edge of edges) Object.assign(edge, { from: byId.get(edge.a), to: byId.get(edge.b) })
+    const thick = nodes.length > 5 && edges.length > 2.4 * nodes.length
+    paper.classList.toggle('thick', thick)
     // Left as it was when everything on it already had a place.
     if (!nodes.every((node) => node.known)) {
       // Where they start decides how they end, so a few starts are tried and the one easiest to read is kept.
       let starts = nodes.some((node) => node.known) ? 1 : nodes.length <= 30 ? 12 : 1
       let again = false
+      if (thick) starts = 1
       const first = nodes.map(({ x, y }) => ({ x, y }))
       let best
       const began = performance.now()
@@ -588,10 +610,12 @@ function graphOf(profile, more) {
         })
         // Two may have been given one place, which would never part them.
         nodes.forEach((node, i) => { if (!node.known) { node.x += i * 0.7; node.y += i * 0.3 } else node.held = keep })
-        for (let i = 0, warm = 1; i < 320; i++, warm *= 0.985) step(nodes, edges, warm, size.w < size.h * 1.2)
+        // Where nearly everyone is tied to everyone, a ring shows who and the lines cross in the middle, away from names.
+        if (thick && !keep) ring(nodes, size.w < size.h * 1.2)
+        else for (let i = 0, warm = 1; i < 320; i++, warm *= 0.985) step(nodes, edges, warm, size.w < size.h * 1.2)
         const roomy = settle(nodes, edges)
         // Where they were left may have no way out. Then they start over, as if none had a place.
-        if (!roomy && starts === 1 && !keep && !again) {
+        if (!roomy && starts === 1 && !keep && !again && !thick) {
           again = true
           starts = 8
           turn = 0
