@@ -401,7 +401,11 @@ function graphOf(profile, more) {
     // Until then nothing moves, so a second press is made on the same one.
     drawn.still = performance.now() + wait
     clearTimeout(later)
-    later = setTimeout(() => root.isConnected && (calm ? place() : run()), wait)
+    root.classList.toggle('waiting', wait > 0)
+    later = setTimeout(() => {
+      root.classList.remove('waiting')
+      if (root.isConnected) calm ? place() : run()
+    }, wait)
   }
   /** Picked by no pointer, so what is told is where the focus goes. */
   const chosen = (id) => {
@@ -426,8 +430,8 @@ function graphOf(profile, more) {
     card.replaceChildren(
       el('button', { class: 'shut', type: 'button', 'aria-label': 'Close', on: { click: shut } }, '×'),
       el('b', { class: 'title' }, node.id),
-      node.role === 'me' ? el('p', { class: 'muted' }, 'This subject') : el('p', {}, el('span', { class: `chip ${node.role === 'member' ? 'same' : node.role === 'far' ? '' : node.role}` }, node.role === 'member' ? 'same person' : node.role === 'apart' ? 'kept apart' : node.role === 'related' ? 'tied, not joined' : 'tied through another'),
-        tie?.score === undefined || tie.kind === 'apart' ? '' : ` ${percent(tie.score)} with ${me}${node.role === 'member' && tie.kind === 'related' ? ', joined through others' : ''}`),
+      node.role === 'me' ? el('p', { class: 'muted' }, 'This subject') : el('p', {}, el('span', { class: `chip ${node.role === 'member' ? 'same' : node.role === 'far' ? '' : node.role}` }, node.role === 'member' ? 'same person' : node.role === 'apart' ? 'kept apart' : node.role === 'related' ? 'tied, not joined' : 'tied through another')),
+      tie && tie.kind !== 'apart' ? el('span', { class: 'reason' }, el('b', {}, me), ` ${said(tie)}`) : '',
       ...(tie?.kind === 'apart' ? [el('p', {}, ...kept(verdict(tie.a, tie.b))), tie.score === undefined ? '' : el('p', { class: 'muted' }, `What ties it to ${me} otherwise, ${percent(tie.score)}`)] : []),
       tie?.score === undefined ? '' : meter(tie.score),
       ...(mine ? reasons(mine.reasons) : node.role === 'member' ? [el('span', { class: 'reason' }, 'No tie of its own to this subject. Joined through others.')] : []),
@@ -457,8 +461,12 @@ function graphOf(profile, more) {
         button.disabled = false
       }
     }
+    // Whatever had the focus is made anew, and has it again. One that was turned off meanwhile had lost it to nobody.
+    const at = document.activeElement
+    const name = (control) => control.dataset.key ?? control.textContent
+    const kept = card.contains(at) ? name(at) : held && at === document.body && drawn.chosen === id ? 'ties' : undefined
     draw()
-    if (held && drawn.chosen === id && (document.activeElement === document.body || document.activeElement === button)) card.querySelector('[data-key=ties]')?.focus({ preventScroll: true })
+    if (kept !== undefined) [...card.querySelectorAll('button')].find((control) => name(control) === kept)?.focus({ preventScroll: true })
   }
 
   // Moving: one pointer moves a subject or the paper, two zoom.
@@ -499,6 +507,9 @@ function graphOf(profile, more) {
     const [dx, dy] = [now.x - grip.from.x, now.y - grip.from.y]
     if (!grip.moved && Math.hypot(dx, dy) < 4) return
     grip.moved = true
+    // A drag is no first press of two.
+    tapped = undefined
+    drawn.still = 0
     // What is being moved stays still on the paper otherwise, so the view does not slide under the hand.
     drawn.camera = { ...drawn.camera, held: true }
     if (!grip.node) {

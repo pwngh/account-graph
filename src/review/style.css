@@ -203,5 +203,6 @@ dd { margin: 0; overflow-wrap: anywhere; }
 .graph.narrow:not(:fullscreen) .tools { top: 420px; }
 .graph.narrow .keys { top: 8px; bottom: auto; left: 8px; max-width: calc(100% - 16px); }
 .graph.narrow:not(:fullscreen) .card { position: relative; inset: auto; margin: 0 8px 8px; width: auto; max-height: none; box-shadow: none; }
+.graph.narrow:fullscreen.waiting .card { visibility: hidden; }
 .graph.narrow:fullscreen .card { top: auto; bottom: 48px; left: 8px; right: 8px; width: auto; max-height: 50%; }
 @media (prefers-reduced-motion: reduce) { .graph * { transition: none !important; } }
