@@ -207,8 +207,8 @@ export interface Graph {
   asOf(at: number): Promise<Graph>
   /**
    * Deletes sightings written down before a time, with answers about
-   * advertising that no longer stand and call results whose call never
-   * came, to keep the logs from growing forever. Links and clusters do
+   * advertising that no longer stand, call results whose call never came,
+   * and alerts delivered over a month ago, to keep the logs from growing forever. Links and clusters do
    * not change, because edges keep what they folded, and each subject keeps
    * the answer that stands. `history`, `consentHistory` and `asOf` lose what
    * was deleted. Returns how many went.
@@ -562,7 +562,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     async touch(touch) {
       if (!touch.subject) throw new TypeError('A touch needs a subject')
       if (!Number.isFinite(touch.at)) throw new TypeError('A touch needs a time in epoch milliseconds')
-      await store.write((tx) => tx.addTouch(touch))
+      await store.write(async (tx) => {
+        await tx.addTouch(touch)
+        await tx.fed('touches', now())
+      })
     },
 
     attribute(subject, { at, window = 90 * DAY, hops = 2 }) {
@@ -609,7 +612,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     async keepCall(call) {
-      await store.write((tx) => tx.setCall({ ...call, recorded: now() }))
+      await store.write(async (tx) => {
+        await tx.setCall({ ...call, recorded: now() })
+        await tx.fed('calls', now())
+      })
     },
 
     async keepCallResult(id, result) {
@@ -617,6 +623,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         // What this report does not say stays as it was said before. A person who answered after all did not go to voicemail.
         const { voicemail, ...before } = (await tx.callResultOf(id)) ?? {}
         await tx.setCallResult(id, { ...before, ...(voicemail !== undefined && !result.answered && { voicemail }), ...result, recorded: now() })
+        await tx.fed('results', now())
       })
     },
 
@@ -678,7 +685,12 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
           impressions: cost.impressions ?? 0,
         }
       })
-      if (rows.length > 0) await store.write((tx) => tx.addCosts(rows))
+      if (rows.length > 0) {
+        await store.write(async (tx) => {
+          await tx.addCosts(rows)
+          await tx.fed('costs', now())
+        })
+      }
     },
 
     async report({ from, to, timeZone, window = 90 * DAY, hops = 2 }) {
@@ -951,7 +963,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       if (!Number.isFinite(before)) throw new TypeError('prune needs a time in epoch milliseconds')
       return store.write(async (tx) => {
         await decide(tx, 'prune', [String(before)], why)
-        return (await tx.pruneSightings(before)) + (await tx.pruneConsent(before)) + (await tx.pruneCallResults(before))
+        return (await tx.pruneSightings(before)) + (await tx.pruneConsent(before)) + (await tx.pruneCallResults(before)) + (await tx.pruneAlerts(Math.min(before, now() - 30 * DAY)))
       })
     },
 

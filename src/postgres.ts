@@ -1,3 +1,4 @@
+import type { Feed, KeptAlert, OpsStore } from './ops.ts'
 import type { Job, JobState, OutboxStore } from './outbox.ts'
 import type { Store, Tx } from './store.ts'
 import type { CallResult, Consent, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Moved, Sighting, Subject, Touch } from './types.ts'
@@ -103,6 +104,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       await db.query(`delete from ${t('apart')} where a = $1 or b = $1`, [subject])
       await db.query(`delete from ${t('flow')} where source = $1 or target = $1`, [subject])
       await db.query(`delete from ${t('consent_log')} where subject = $1`, [subject])
+      await db.query(`delete from ${t('alert')} where subject = $1`, [subject])
       await db.query(`delete from ${t('change')} where subject = $1`, [subject])
     },
 
@@ -203,6 +205,15 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
     async recentChanges(limit) {
       const { rows } = await db.query(`select * from ${t('change')} order by id desc limit $1`, [limit])
       return rows.map((row): Moved => ({ subject: row.subject, from: row.from_cluster ?? undefined, to: row.to_cluster ?? undefined, at: Number(row.at) }))
+    },
+
+    async fed(feed, at) {
+      await db.query(`insert into ${t('feed')} (name, last_at) values ($1, $2) on conflict (name) do update set last_at = greatest(${t('feed')}.last_at, excluded.last_at)`, [feed, at])
+    },
+
+    async pruneAlerts(before) {
+      const { rows } = await db.query(`with gone as (delete from ${t('alert')} where delivered_at is not null and at < $1 returning 1) select count(*)::int as n from gone`, [before])
+      return rows[0].n as number
     },
 
     async empty() {
@@ -586,8 +597,69 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
     },
   }
 
+  const toAlert = (row: any): KeptAlert => ({ key: row.key, text: row.text, at: Number(row.at), ...(row.subject !== null && { subject: row.subject }), ...(row.error !== null && { error: row.error }) })
+  const ops: OpsStore = {
+    async feeds() {
+      const { rows } = await pool.query(`select name, last_at from ${t('feed')}`)
+      return new Map(rows.map((row) => [row.name as Feed, Number(row.last_at)]))
+    },
+    async jobStarted(name, at, stuck) {
+      await pool.query(
+        `insert into ${t('job')} as j (name, started_at) values ($1, $2) on conflict (name) do update set started_at = excluded.started_at,
+           unfinished_at = case when j.started_at > greatest(coalesce(j.succeeded_at, 0), coalesce(j.failed_at, 0)) and j.started_at <= $2::bigint - $3::bigint then j.started_at else j.unfinished_at end`,
+        [name, at, stuck],
+      )
+    },
+    async jobEnded(name, at, error) {
+      if (error === undefined) await pool.query(`update ${t('job')} set succeeded_at = $2 where name = $1`, [name, at])
+      else await pool.query(`update ${t('job')} set failed_at = $2, error = $3 where name = $1`, [name, at, error])
+    },
+    async jobs() {
+      const { rows } = await pool.query(`select * from ${t('job')} order by name collate "C"`)
+      return rows.map((row) => ({
+        name: row.name,
+        started: Number(row.started_at),
+        ...(row.succeeded_at !== null && { succeeded: Number(row.succeeded_at) }),
+        ...(row.failed_at !== null && { failed: Number(row.failed_at) }),
+        ...(row.error !== null && { error: row.error }),
+        ...(row.unfinished_at !== null && { unfinished: Number(row.unfinished_at) }),
+      }))
+    },
+    async addAlert({ key, text, at, subject }) {
+      const { rows } = await pool.query(`insert into ${t('alert')} (key, text, at, subject, tried_at) values ($1, $2, $3, $4, $3) on conflict do nothing returning 1`, [key, text, at, subject ?? null])
+      return rows.length > 0
+    },
+    async replaceAlert({ key, text, at, subject, error }) {
+      await pool.query(
+        `insert into ${t('alert')} (key, text, at, subject, error, tried_at) values ($1, $2, $3, $4, $5, $3)
+         on conflict (key) do update set text = excluded.text, at = excluded.at, error = excluded.error, tried_at = excluded.tried_at, delivered_at = null`,
+        [key, text, at, subject ?? null, error ?? null],
+      )
+    },
+    async claimAlerts(now, lease, limit) {
+      const { rows } = await pool.query(
+        `update ${t('alert')} set tried_at = $1::bigint where key in (
+           select key from ${t('alert')} where delivered_at is null and coalesce(tried_at, 0) <= $1::bigint - $2::bigint order by at limit $3 for update skip locked
+         ) returning *`,
+        [now, lease, limit],
+      )
+      return rows.map(toAlert).sort((x, y) => x.at - y.at)
+    },
+    async alertDelivered(key, at) {
+      await pool.query(`update ${t('alert')} set delivered_at = $2 where key = $1`, [key, at])
+    },
+    async alertFailed(key, error) {
+      await pool.query(`update ${t('alert')} set error = $2 where key = $1`, [key, error])
+    },
+    async undelivered(limit) {
+      const { rows } = await pool.query(`select * from ${t('alert')} where delivered_at is null order by at limit $1`, [limit])
+      return rows.map(toAlert)
+    },
+  }
+
   return {
     outbox,
+    ops,
     write: (work) => run('begin', true, work),
     read: (work) => run('begin isolation level repeatable read read only', false, work),
     async migrate() {
@@ -807,6 +879,37 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
       id: 10,
       name: 'calls you place',
       sql: `alter table ${schema}.call add column if not exists direction text not null default 'inbound';`,
+    },
+    {
+      id: 11,
+      name: 'feeds, jobs and alerts',
+      // When each feed last wrote something, taken once from what is stored. Costs carry no time, so theirs is not known yet.
+      sql: `create table if not exists ${schema}.feed (name text primary key, last_at bigint not null);
+            insert into ${schema}.feed (name, last_at)
+              select name, last_at from (values
+                ('touches', (select max(at) from ${schema}.touch)),
+                ('calls', (select max(recorded_at) from ${schema}.call)),
+                ('results', (select max(recorded_at) from ${schema}.call_result))
+              ) as seen (name, last_at) where last_at is not null on conflict do nothing;
+            create table if not exists ${schema}.job (
+              name text primary key,
+              started_at bigint not null,
+              succeeded_at bigint,
+              failed_at bigint,
+              error text,
+              unfinished_at bigint
+            );
+            create table if not exists ${schema}.alert (
+              key text primary key,
+              text text not null,
+              at bigint not null,
+              subject text,
+              error text,
+              tried_at bigint,
+              delivered_at bigint
+            );
+            create index if not exists alert_undelivered on ${schema}.alert (at) where delivered_at is null;
+            create index if not exists alert_subject on ${schema}.alert (subject);`,
     },
   ]
 }

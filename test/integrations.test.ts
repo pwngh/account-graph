@@ -4,7 +4,7 @@ import { createHash, createVerify, generateKeyPairSync } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
-import { createGraph, createMemoryStore, createOutbox, googleAds, hashPhone, knownLink, staffLink } from '../src/index.ts'
+import { createGraph, createMemoryStore, createOps, createOutbox, googleAds, hashPhone, knownLink, staffLink } from '../src/index.ts'
 import type { IngestRequest } from '../src/index.ts'
 import { CostError, costsFromCsv, googleCosts, metaCosts } from '../src/integrations/costs.ts'
 import { createFingerprintVerifier, trusted } from '../src/integrations/fingerprint.ts'
@@ -451,6 +451,35 @@ test('staff visits are dropped and counted, and no browser can make itself staff
     off.server.close()
   }
   assert.throws(() => createHandler(graph, { token: 'x', origins: [], staffNetworks: ['198.51.100.0/33'] }), TypeError)
+})
+
+test('how the server runs is read by a reviewer, and a test alert is sent by a service', async () => {
+  const store = createMemoryStore()
+  const graph = createGraph(store, undefined, { now: () => T0 })
+  const posted: string[] = []
+  const ops = createOps(graph, store.ops, { url: 'https://hooks.example/x', quiet: { touches: 5 }, now: () => T0, fetch: (async (_url: string, init: { body: string }) => (posted.push(init.body), new Response('ok'))) as unknown as typeof fetch })
+  const start = async (more: object) => {
+    const server = createServer(createHandler(graph, { token: 'service', reviewToken: 'review', origins: [], now: () => T0, ...more })).listen(0, '127.0.0.1')
+    await new Promise((resolve) => server.once('listening', resolve))
+    const ask = (method: string, path: string, token: string) => fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}${path}`, { method, headers: { authorization: `Bearer ${token}` } })
+    return { server, ask }
+  }
+  const { server, ask } = await start({ ops })
+  try {
+    const state = (await (await ask('GET', '/ops', 'review')).json()) as any
+    assert.deepEqual([state.feeds.length, state.jobs, state.undelivered, state.alerts, state.outbox, state.at], [4, [], [], true, null, T0])
+    assert.equal((await ask('POST', '/alerts/test', 'review')).status, 403)
+    assert.deepEqual(await (await ask('POST', '/alerts/test', 'service')).json(), { delivered: true })
+    assert.deepEqual(posted.map((body) => JSON.parse(body).text), ['account-graph: this is a test alert. Nothing is wrong.'])
+  } finally {
+    server.close()
+  }
+  const bare = await start({})
+  try {
+    assert.deepEqual([(await bare.ask('GET', '/ops', 'review')).status, (await bare.ask('POST', '/alerts/test', 'service')).status], [404, 404])
+  } finally {
+    bare.server.close()
+  }
 })
 
 test('one address cannot flood collect, and health and stats answer', async () => {

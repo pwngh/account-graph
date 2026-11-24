@@ -1,3 +1,4 @@
+import type { Feed, OpsStore } from './ops.ts'
 import type { OutboxStore } from './outbox.ts'
 import type { CallResult, Change, Consent, ConsentAnswer, Cost, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Moved, Sighting, Subject, Touch } from './types.ts'
 
@@ -13,6 +14,8 @@ export interface Store {
   read<T>(work: (tx: Tx) => Promise<T>): Promise<T>
   /** Conversions waiting to be sent. */
   outbox: OutboxStore
+  /** When each feed last wrote something, how jobs ran, and alerts for people. */
+  ops: OpsStore
 }
 
 export interface DecisionPage {
@@ -26,7 +29,7 @@ export interface DecisionPage {
 export interface Tx {
   /** Logs sightings and folds them into edges. Returns how many new edges each identifier gained. */
   addSightings(sightings: readonly Sighting[]): Promise<Map<Identifier, number>>
-  /** Deletes a subject with its sightings, edges, touches, outcomes, calls, flows, consent, and reviewer decisions. */
+  /** Deletes a subject with its sightings, edges, touches, outcomes, calls, flows, consent, alerts, and reviewer decisions. */
   removeSubject(subject: Subject): Promise<void>
   edgesOf(subjects: readonly Subject[]): Promise<Edge[]>
   edgesOn(identifiers: readonly Identifier[]): Promise<Edge[]>
@@ -51,6 +54,10 @@ export interface Tx {
   addChanges(at: number, changes: readonly Change[]): Promise<void>
   /** The newest cluster changes, newest first. */
   recentChanges(limit: number): Promise<Moved[]>
+  /** Notes that a feed wrote something down at a time. */
+  fed(feed: Feed, at: number): Promise<void>
+  /** Deletes delivered alerts from before a time. Returns how many went. */
+  pruneAlerts(before: number): Promise<number>
   /** Whether no subject has been recorded. */
   empty(): Promise<boolean>
   /** Which policy the stored clusters were built with, by its hash. */

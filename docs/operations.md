@@ -171,7 +171,7 @@ Open `/review` and enter a token. Each view has an address of its own, so it can
 | `/review#/calls` | Missed calls not returned, how calls went by hour and weekday, and coverage, over the last 30 days. Takes two days like the next. |
 | `/review#/channels` | What each campaign cost and brought in, over the last 30 days. |
 | `/review#/channels/2026-11-01/2026-11-30` | The same, for the days named. |
-| `/review#/health` | The record's newest hash, the running policy by kind, and a banner when a rebuild is due. |
+| `/review#/health` | Alerts not delivered, feeds, jobs, conversions, the record's newest hash, the running policy by kind, and a banner when a rebuild is due. |
 
 Every ten seconds the screen asks one small question, whether anything was written since it last looked, and reads the view again only when the answer is yes. It does not ask while its tab is hidden, and it does not redraw while someone is typing in the view or answering a question.
 
@@ -197,6 +197,7 @@ A setting the server cannot use stops it at start, with a line for each problem.
 | --- | --- | --- |
 | `GET /health` | none | `{"ok":true}` once the database answers. Use it for a load balancer's check. |
 | `GET /stats` | service | Visits collected, visits refused by the limit, visits from declared bots, staff visits dropped, and errors since start; what the graph holds; whether a rebuild is due; outbox jobs by state. |
+| `GET /ops` | review | Feeds and when each was last heard from, how jobs ran, alerts not delivered, outbox jobs by state. |
 | `GET /verify` | service | `{ changes, policy }`. `changes` lists the subjects whose stored cluster differs from a full recompute, and is empty when sound. It reads every edge. |
 
 Set `ALERT_WEBHOOK` to a Slack incoming webhook, or anything that takes `{"text": "…"}`, and the server posts there when something needs a person:
@@ -206,8 +207,43 @@ Set `ALERT_WEBHOOK` to a Slack incoming webhook, or anything that takes `{"text"
 | A conversion fails for good | Which transaction, which platform, and the platform's reason. Up to ten per message. |
 | The outbox cannot run | Why, such as the database not answering. Nothing is being sent while this lasts. |
 | Campaign costs cannot be read | Which platform and why. The report's costs go stale until it is fixed. |
+| A feed has gone quiet | Which one, and when it was last heard from. Once for each silence. |
+| A missed caller from a paid arrival has waited `RETURN_HOURS` | Where they came from, when, and how often they were rung back. Once for each wait, never repeated. |
 
-Each kind is sent at most once in ten minutes. A webhook that fails is logged and never stops the work it was reporting on.
+The first three kinds are sent at most once in ten minutes each. An alert that cannot be delivered is logged, kept, shown on the Health view, and tried again every five minutes until it arrives. It never stops the work it was reporting on.
+
+Send one to see that it arrives:
+
+```sh
+curl -X POST https://graph.example.org/alerts/test -H "authorization: Bearer $GRAPH_TOKEN"
+```
+
+```json
+{ "delivered": true }
+```
+
+### Silence
+
+A feed that breaks makes no error: calls just stop coming. Say after how many hours of nothing each one is worth a message. All four are off until set.
+
+| Feed | Setting | What feeds it |
+| --- | --- | --- |
+| Arrivals | `QUIET_TOUCHES_HOURS` | Any touch written down |
+| Calls | `QUIET_CALLS_HOURS` | Any call, to you or from you |
+| Call results | `QUIET_RESULTS_HOURS` | Any result |
+| Campaign costs | `QUIET_COSTS_HOURS` | Any cost row |
+
+The time is when a record was written down, not the time it carries. Pick hours longer than your quietest night or weekend.
+
+### Callers waiting
+
+A caller who arrived from an ad, was missed, and has not been reached is told about once after `RETURN_HOURS`. Ringing again does not repeat it; being reached and missed later is a new wait. An arrival counts as paid when it carries an ad click, names its campaign by id, or has a medium such as `cpc`.
+
+This needs [call results](calls.md#was-it-answered), because without one nothing says a call was missed. Misses older than two weeks are left to the Calls view.
+
+### Jobs
+
+The Health view and `GET /ops` list what runs by itself: the outbox, each cost import, the checks behind these alerts. Each shows when it last began, succeeded and failed, and whether a run began and never finished.
 
 Set `CHANGE_WEBHOOK` to a URL and the server posts `{"changes": [...]}` there each time a cluster changes. Each change names a subject, the cluster it left, and the cluster it joined.
 
@@ -236,6 +272,8 @@ On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes i
 | `POLICY`, `POLICY_FILE` | the default policy | What differs from it, as JSON or as a file of JSON. Set one at most. |
 | `AUDIT_HEAD_HOURS` | `0` | Post the newest decision's hash to `ALERT_WEBHOOK` at start and every so many hours, at least one. `0` is never. |
 | `STAFF_NETWORKS` | none | Addresses and ranges whose visits are dropped, separated by commas: `192.0.2.10,198.51.100.0/24`. |
+| `QUIET_TOUCHES_HOURS`, `QUIET_CALLS_HOURS`, `QUIET_RESULTS_HOURS`, `QUIET_COSTS_HOURS` | `0` | Hours of silence before a feed is said to be quiet. `0` is not watched. |
+| `RETURN_HOURS` | `24` | Hours before a missed caller from a paid arrival is said to be waiting. `0` is never. Needs `ALERT_WEBHOOK`. |
 | `STAGES` | none | Your steps in order, as JSON, each with a `value`, `currency` and `action`. See [the report](report.md#steps-and-what-each-is-worth). |
 | `LINK_SECRET` | none | Signs links that name a person, and the tokens that carry a visitor between your sites. At least 16 characters. |
 | `EVENTS` | none | Names of page events to keep, separated by commas: `inquiry,phone_click`. |
