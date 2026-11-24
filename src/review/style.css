@@ -690,6 +690,30 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 @media (max-width: 860px) { .deck { grid-template-columns: minmax(0, 1fr); } .queue-rail { order: 2; max-height: 320px; border-right: 0; border-top: 1px solid var(--line); } main .deck .pair { padding: var(--s3) var(--s3) 0; } .choices { margin: auto calc(-1 * var(--s3)) 0; padding: var(--s3); } .choice.quiet { margin-left: 0; } }
 @media (max-width: 560px) { .versus-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 2px var(--s3); align-items: start; } .versus-row > :first-child .versus-who { justify-items: start; } .versus-row > :first-child { text-align: left; } .versus-name { grid-column: 1 / -1; grid-row: 1; text-align: left; } .versus-score { grid-column: 1 / -1; grid-row: 1; justify-items: center; } .versus-row > :last-child { text-align: left; } }
 
+/* A bar that narrows the table under it. */
+.filter-bar { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; margin: 0 0 var(--s2); }
+.filter-words { width: 220px; height: 32px; padding-left: 30px; background: var(--panel) no-repeat 10px center / 13px; }
+.filter-bar { position: relative; }
+.filter-bar::before { content: ''; position: absolute; left: 11px; top: 10px; width: 9px; height: 9px; border: 1.6px solid var(--muted); border-radius: 50%; pointer-events: none; z-index: 1; }
+.filter-bar::after { content: ''; position: absolute; left: 20px; top: 20px; width: 5px; height: 1.6px; background: var(--muted); transform: rotate(45deg); pointer-events: none; }
+.filter-chips { display: contents; }
+.filter-chip { display: inline-flex; gap: 5px; align-items: center; height: 28px; min-height: 0; padding: 0 8px 0 10px; border-radius: 999px; border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); font-size: var(--small); font-weight: 600; }
+.filter-chip span { color: var(--muted); font-weight: 400; }
+.filter-chip i { font-style: normal; font-size: 15px; line-height: 1; color: var(--muted); }
+.filter-add { height: 32px; border-style: dashed; color: var(--muted); }
+.filter-add:hover { color: var(--ink); }
+.filter-clear { height: 28px; min-height: 0; padding: 0 6px; border: 0; background: none; color: var(--accent); font-size: var(--small); }
+.filter-bar > .meta { margin: 0 0 0 auto; }
+.filter-menu { position: fixed; inset: auto; width: 260px; max-height: min(420px, 70vh); margin: 0; padding: var(--s2); border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); box-shadow: 0 10px 34px rgb(0 0 0 / .18); overflow-y: auto; scrollbar-width: thin; }
+.filter-menu fieldset { margin: 0; padding: 0 0 var(--s2); border: 0; }
+.filter-menu fieldset + fieldset { padding-top: var(--s2); border-top: 1px solid var(--line); }
+.filter-menu legend { float: left; width: 100%; padding: var(--s1) var(--s2); color: var(--muted); font-size: var(--small); font-weight: 600; }
+.filter-menu label { clear: both; display: flex; gap: var(--s2); align-items: center; width: 100%; padding: 6px var(--s2); border-radius: 6px; color: var(--ink); font-size: var(--body); cursor: pointer; }
+.filter-menu label:hover { background: var(--hover); }
+.filter-menu label span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.filter-menu .count { margin-left: auto; }
+@media (max-width: 560px) { .filter-words { flex: 1 1 140px; width: auto; } }
+
 /* A table of a few plain columns is read along its rows, so they do not stand far apart. */
 @media (min-width: 761px) { .wide:has(> table):not(:has(th[colspan])) { max-width: 1040px; } }
 

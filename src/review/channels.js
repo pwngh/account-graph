@@ -108,7 +108,7 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
     ? reviewDisplay.section('Campaigns', el('span', { class: 'meta campaign-pan' }, 'Scroll for more columns'), saved(`channels-${report.from}-${report.to}`, table))
     : el('h2', {}, 'Campaigns'),
   report.currencies.length > 1 ? el('p', { class: 'apart' }, `Totals mix currencies: ${report.currencies.join(', ')}.`) : '',
-  report.rows.length > 0 ? wide('Channels', table) : el('p', { class: 'muted' }, 'No campaign data in this period.'))
+  ...(report.rows.length > 3 ? [filters('Campaigns', table, [{ name: 'Source', at: 0 }])] : []), report.rows.length > 0 ? wide('Channels', table) : el('p', { class: 'muted' }, 'No campaign data in this period.'))
   box.append(campaigns)
   const timed = stages.filter((stage) => report.total.stages[stage].delay)
   if (timed.length > 0) {
