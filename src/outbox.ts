@@ -220,7 +220,9 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
    * one arrived, and possibly after a newer one did, so what the job says
    * now is sent once more where the platform keeps the last value it hears.
    */
-  function landed(sent: Job, current: Job, target: Target): Job {
+  function landed(sent: Job, current: Job, target: Target): Job | undefined {
+    // Already known to have arrived, with the value it has now: there is nothing to put right.
+    if (current.delivered && current.value === sent.value) return undefined
     const arrived: Job = { ...current, delivered: true }
     if (current.withdrawn) return takenBack(arrived)
     if (!target.restates || current.value === sent.value) return arrived

@@ -634,6 +634,12 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       assert.deepEqual(values().at(-1), ['enroll-3', 200])
       assert.deepEqual(values().filter(([id]) => id === 'enroll-3').map(([, value]) => value), [200, 0, 200, 200, 0, 200])
 
+      // The same outcome held by many reports at once is one job, whoever came first.
+      await enroll(graph, 5)
+      const holds = await Promise.all(Array.from({ length: 20 }, () => outbox.hold(outcome(5))))
+      assert.ok(holds.every(([job]) => job!.state === 'held' && job!.transactionId === 'enroll-5'))
+      assert.equal((await outbox.get('enroll-5')).length, 1)
+
       // Taken back and given back in the same moment, a job claimed again is not the one the first worker holds.
       await enroll(graph, 4)
       await slow.record(outcome(4))

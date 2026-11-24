@@ -519,7 +519,8 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
          select * from added union all select * from ${t('conversion')} where transaction_id = $1 and target = $2 limit 1`,
         [job.transactionId, job.target, job.state, job.due, job.attempts, job],
       )
-      return toJob(rows[0])
+      // Another call may have added it in the same moment, too late for the statement above to see. A new one sees it.
+      return toJob(rows[0] ?? (await pool.query(`select * from ${t('conversion')} where transaction_id = $1 and target = $2`, [job.transactionId, job.target])).rows[0])
     },
     async claim(now, lease, limit) {
       const { rows } = await pool.query(
