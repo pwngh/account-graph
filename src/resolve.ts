@@ -207,8 +207,8 @@ function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subj
   // Facts come after decisions, and cut no link a decision made: two held together by those alone stay together.
   const decided = (a: Subject, b: Subject) => [...(known.get(a)?.joins ?? [])].some((identifier) => known.get(b)?.joins.has(identifier))
   const cutByFact = (a: Subject, b: Subject) => {
+    if (adjacency.get(a)!.has(b)) onCut?.(a, b)
     cut(a, b)
-    onCut?.(a, b)
   }
   for (const [a, b] of differ) cutByFact(a, b)
   for (const [a, b] of differ) {

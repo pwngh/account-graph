@@ -700,8 +700,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     const decided = new Map<string, boolean>()
     const taken = new Set<string>()
     return {
-      /** Whether facts took the link between two. */
-      cut: (a: Subject, b: Subject) => taken.has(pairKey(a, b)),
+      /** Whether facts took the link between two, and they are not one by others. */
+      cut: (a: Subject, b: Subject) => taken.has(pairKey(a, b)) && labels.get(a)?.cluster !== labels.get(b)?.cluster,
       async load(subjects: Iterable<Subject>): Promise<void> {
         if (!policy.apart?.length) return
         const unread = unique([...subjects].filter((subject) => !labels.has(subject)))

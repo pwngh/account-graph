@@ -2648,6 +2648,11 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await chained.touch({ subject: 'contact:2', at: T0, gclid: 'two' })
       const told = await chained.between('contact:1', 'contact:2')
       assert.deepEqual([told.joined, told.conflict, (await chained.attribute('contact:1', { at: T0 + HOUR })).credited?.gclid], [true, undefined, 'two'])
+      const { graph: longer } = await fresh(policyFrom({ apart: ['birth'] }))
+      await longer.observe([{ subject: 'contact:1', identifiers: ['birth:1', 'email:e'], at: T0 }, { subject: 'contact:2', identifiers: ['birth:2', 'email:e'], at: T0 }, ...[3, 4].map((n) => ({ subject: `contact:${n}`, identifiers: [`ip:${n}`], at: T0 }))])
+      for (const [a, b] of [[1, 3], [3, 4], [4, 2]]) await longer.join(`contact:${a}`, `contact:${b}`, { by: 'dana' })
+      await longer.touch({ subject: 'contact:2', at: T0, gclid: 'two' })
+      assert.equal((await longer.attribute('contact:1', { at: T0 + HOUR })).credited?.gclid, 'two')
       // A reviewer who separates the two is heard before either.
       await joined.separate('account:1', 'account:2')
       assert.equal((await members(joined, 'account:1')).includes('account:2'), false)
