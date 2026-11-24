@@ -43,7 +43,9 @@ const CAMPAIGNS = [
 const STEPS = {
   call: { value: 5, currency: 'USD', action: { google: '222' } },
   inquiry: { value: 10, currency: 'USD', wait: 48, action: { google: '111' } },
-  consultation: { value: 60, currency: 'USD' },
+  intake: { value: 20, currency: 'USD' },
+  signed: { value: 40, currency: 'USD' },
+  scheduled: { value: 60, currency: 'USD' },
   client: { value: 400, currency: 'USD', action: { google: '333' } },
 }
 const FIRST = ['Ana', 'Luis', 'Maria', 'Jorge', 'Elena', 'Pat', 'Sam', 'Robin', 'Lee', 'Dana', 'Alex', 'Noor']
@@ -95,7 +97,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
     response.setHeader('x-demo-ahead', ahead)
     const path = `${request.method} ${new URL(request.url ?? '/', 'http://localhost').pathname}`
     const json = (status: number, body: object) => void response.writeHead(status, { 'content-type': 'application/json', 'x-demo-ahead': ahead }).end(JSON.stringify(body))
-    if (path === 'GET /stage/scenes') return json(200, { boot, ready, next, scenes: scenes.map(({ title, text, see, stage, spot }) => ({ title, text, see, stage, spot })) })
+    if (path === 'GET /stage/scenes') return json(200, { boot, ready, next, scenes: scenes.map(({ run, ...scene }) => scene) })
     // A page elsewhere cannot send the header, so only the stage moves the story on.
     if (path === 'POST /stage/run') return void (request.headers['x-stage'] ? runScene().then(([status, body]) => json(status, body)) : json(403, { error: 'Only the stage runs scenes' }))
     if (path === 'POST /stage/restart') {
@@ -199,10 +201,10 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
         met = rang + (call.duration + call.waited) * 1000
         // Staff call back the same day, and again on the next ones until somebody picks up.
         for (let tries = 0, back = rang; !reached && tries < 4; tries++) {
-          back += Math.floor(1 + chance() * (tries === 0 ? 6 : 24)) * HOUR
+          back += Math.floor(1 + chance() * (tries === 0 ? 5 : 7)) * HOUR
           if (back >= start) break
           writing = back
-          reached = chance() < 0.75
+          reached = tries === 2 || chance() < 0.75
           met = back + 300_000
           await recordCall(graph, { id: `b${n}-${tries}`, direction: 'outbound', from: line, to: from, at: back, duration: reached ? 300 : 25, answered: reached }, { ...calls, now: clock })
         }
@@ -217,7 +219,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       await graph.observe({ subject: contact, identifiers: [...(called ? [] : [`device:s${n}`]), `phone:${hashPhone(from)}`, `email:made-up-${n}`, ...nameKeys(SECRET, ...name, { dob: `19${60 + (n % 40)}-0${1 + (n % 9)}-1${n % 9}` })], at: asked, event: 'inquiry' })
       if (called) await graph.joinAll([{ a: `caller:${hashPhone(from)}`, b: contact, reason: 'answered by staff' }], { by: 'system:desk' })
       if (called) await graph.observe({ subject: contact, identifiers: [`device:s${n}`], at: asked, event: 'inquiry' })
-      const step = async (stage: keyof typeof STEPS, moment: number, value = STEPS[stage].value) => {
+      const step = async (stage: keyof typeof STEPS, moment: number, value: number = STEPS[stage].value) => {
         const when = Math.floor(moment)
         if (when > start) return false
         writing = when
@@ -227,8 +229,18 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
         return true
       }
       if (!(await step('inquiry', asked)) || (chance() > 0.6 && start - asked < 30 * HOUR)) continue
-      if (!(await step('consultation', asked + (0.5 + chance() * 1.3) * DAY)) || chance() > campaign.client * 2) continue
-      const signed = Math.floor(asked + (3 + chance() * 25) * DAY)
+      // They fill in the form, sign, and are scheduled with a director, some not as far.
+      let moment = asked
+      let reachedAll = true
+      for (const [stage, least, most, share] of [['intake', 0.02, 0.5, 0.94], ['signed', 0.02, 0.4, 0.92], ['scheduled', 0.05, 0.6, 0.95]] as const) {
+        moment += (least + chance() * (most - least)) * DAY
+        if (chance() > share || !(await step(stage, moment))) {
+          reachedAll = false
+          break
+        }
+      }
+      if (!reachedAll || chance() > campaign.client * 2.2) continue
+      const signed = Math.floor(moment + (2 + chance() * 24) * DAY)
       if (!(await step('client', signed))) continue
       // What was collected came later: less from some, more from others, nothing from a few.
       const settled = signed + (4 + chance() * 12) * DAY
@@ -250,85 +262,178 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
   const caller = `caller:${hashPhone(demo.phone)}`
   const review = (view: string) => `${graphAt}/review#/${view}`
   /** The scenes, in order. Each does over HTTP what the site, the phone system or the office would, and says what came of it. */
-  const scenes: { title: string; text: string; see: [string, string]; stage?: string; spot?: string[]; run(): Promise<string[]> }[] = [
+  /** What a scene says came of it, and for some: how sure the credit of the contact's ad is, and what the firm's own screens and the phone show. */
+  interface Told { lines: string[]; credit?: { share: number; campaign: string | null }; link?: string }
+  /** The phone and the firm's own screen once a scene has run. */
+  interface Shown { phone?: string; caption?: string; seconds?: number; desk?: { name: string; fields: [string, string][]; done: string } }
+  const person = (view: string) => `#/${view}/${encodeURIComponent(demo.contact)}`
+  const visitor = `#/accounts/${encodeURIComponent('visitor:v-4821')}`
+  /** The best credit of the contact's ad: how sure, and whose it is once it is sure enough. */
+  async function credit() {
+    const { credited, touches } = await ask('GET', `/attribute?subject=${demo.contact}&at=${clock()}`)
+    return { share: Math.max(0, ...touches.map((touch: { confidence: number }) => touch.confidence)), campaign: (credited?.campaign ?? null) as string | null }
+  }
+  /** A signed link for the contact, as staff would text it. */
+  const linkTo = async (page: string): Promise<string> => (await ask('POST', '/link', { url: `${siteAt}/es/${page}`, subject: demo.contact })).url
+  /** The contact opens the link in the browser they came with. The script tag reads the token and takes it out of the address. */
+  const opens = (url: string) => browser('/collect', { device: 'v-4821', url: url.split('?')[0], known: new URL(url).searchParams.get('ag') })
+  const steps = (stage: keyof typeof STEPS, tags: object = {}) => ask('POST', '/convert', { transactionId: `demo-${stage}`, subject: demo.contact, at: clock(), stage, tags: { language: 'es', ...tags } })
+  const links: Record<string, string> = {}
+
+  /** The scenes, in order. Each does over HTTP what the site, the phone system or the office would, and says what came of it. */
+  const scenes: { title: string; text: string; see: [string, string]; stage?: string; spot?: string[]; shown?: Shown; run(): Promise<Told> }[] = [
     {
-      title: 'Ad visit', text: 'A visitor arrives from a Spanish ad for the North office. The landing address carries office=north and lang=es.', stage: '#/journey/visitor%3Av-4821', see: ['Channels', review('channels')], spot: ['Busqueda: North'],
+      title: 'Ad visit', text: 'They search, tap the Spanish ad for the North office, and land on the site.', see: ['Channels', review('channels')], stage: `#/journey/${encodeURIComponent('visitor:v-4821')}`, spot: ['Busqueda: North'], shown: { phone: 'site' },
       async run() {
         await at(0, 9, 2)
         await browser('/collect', { device: 'v-4821', url: `${siteAt}/es`, touch: { gclid: 'demo-click', source: 'google', medium: 'cpc', campaignId: '30333', campaign: 'Busqueda: North', landing: `${siteAt}/es`, custom: { office: 'north', lang: 'es' } } })
         const { touches } = await ask('GET', `/attribute?subject=visitor:v-4821&at=${clock()}`)
-        return [`Visit recorded: ${touches[0].campaign}, office ${touches[0].custom.office}, language ${touches[0].custom.lang}.`]
+        return { lines: [`Visit recorded: ${touches[0].campaign}, office ${touches[0].custom.office}, language ${touches[0].custom.lang}.`] }
       },
     },
     {
-      title: 'Tap to call', text: 'The visitor taps the phone number. The phone system reports a connected call and holds it for a result.', stage: '#/accounts/visitor%3Av-4821', see: ['Calls', review('calls')],
+      title: 'Tap to call', text: 'They tap the phone number. The phone system reports a connected call and holds it for a result.', see: ['Calls', review('calls')], stage: visitor, shown: { phone: 'calling', seconds: 22 },
       async run() {
         await at(0, 9, 4)
         await browser('/event', { device: 'v-4821', event: 'phone_click', number: demo.line })
         const call = await ask('POST', '/call', { id: 'demo-1', from: demo.phone, to: demo.line, at: clock(), duration: 95, tags: { language: 'es' } })
-        return [`Linked to ${call.visitor} by the tap. State: ${call.state}. Counted: ${call.counted ? 'yes' : 'no'}.`]
+        return { lines: [`Linked to ${call.visitor} by the tap. State: ${call.state}. Counted: ${call.counted ? 'yes' : 'no'}.`] }
       },
     },
     {
-      title: 'Missed call', text: 'The result reports no answer. The call is excluded from outcomes and conversions.', see: ['Board', review('board/90')], spot: [caller.slice(0, 16)],
+      title: 'Missed call', text: 'The result reports no answer. The call is excluded from outcomes and conversions.', see: ['Board', review('board/90')], spot: [caller.slice(0, 16)], shown: { phone: 'missed', seconds: 95 },
       async run() {
         await at(0, 9, 6)
         const { state, counted } = await ask('POST', '/call/result', { id: 'demo-1', answered: false, waited: 95 })
         await outbox.run()
-        return [`State: ${state}. Counted: ${counted ? 'yes' : 'no'}. Sent to the ad platform: ${wasSent('call:demo-1') ? 'yes' : 'no'}.`, 'The caller is on the Board under Missed calls.']
+        return { lines: [`State: ${state}. Counted: ${counted ? 'yes' : 'no'}. Sent to the ad platform: ${wasSent('call:demo-1') ? 'yes' : 'no'}.`, 'The caller is on the Board under Missed calls.'] }
       },
     },
     {
-      title: 'Callback', text: 'Staff return the call, create a contact and join it to the caller.', stage: '#/accounts/visitor%3Av-4821', see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)],
+      title: 'Callback', text: 'Staff call back, and are answered.', see: ['Calls', review(`journey/${encodeURIComponent(caller)}`)], stage: `#/journey/${encodeURIComponent(caller)}`, spot: ['Outbound'], shown: { phone: 'talking', seconds: 410 },
       async run() {
         await at(0, 14, 0)
         await ask('POST', '/call', { id: 'demo-2', direction: 'outbound', from: demo.line, to: demo.phone, at: clock(), duration: 410, answered: true })
-        await ask('POST', '/identify', { subject: demo.contact, phone: demo.phone, name: { first: 'Inés', last: 'Vega' }, dob: '1984-05-06', event: 'inquiry' })
-        await ask('POST', '/join', { source: 'desk', pairs: [{ a: caller, b: demo.contact, reason: 'answered by staff' }] })
-        await ask('POST', '/convert', { transactionId: 'demo-inquiry', subject: demo.contact, at: clock(), stage: 'inquiry', tags: { language: 'es' } })
-        await outbox.run()
         const { followUp } = await ask('GET', '/call?id=demo-1')
-        return [`Missed call: ${followUp.state}.`, `Inquiry attributed to the ad click and sent: ${wasSent('demo-inquiry') ? 'yes' : 'no'}.`]
+        return { lines: [`Missed call: ${followUp.state}.`] }
       },
     },
     {
-      title: 'Listing call', text: 'A call to a number published on a map listing is attributed to that listing.', see: ['Channels', review('channels')], spot: ['Map listing, River'],
+      title: 'Details entered', text: 'On the call, staff enter the name, phone and date of birth.', see: ['Accounts', review(`accounts/${encodeURIComponent(demo.contact)}`)], stage: person('accounts'), shown: { phone: 'talking', caption: 'Staff take the details', desk: { name: 'New contact', fields: [['Name', 'Inés Vega'], ['Phone', '(555) 010-0042'], ['Date of birth', 'May 6, 1984'], ['Matter', 'Divorce, with children']], done: 'Contact saved' } },
       async run() {
-        await at(1, 10, 15)
-        const call = await ask('POST', '/call', { id: 'demo-3', from: '+15550100043', to: '+15550100104', at: clock(), duration: 260, answered: true })
-        const { touches } = await ask('GET', `/attribute?subject=${call.subject}&at=${clock()}`)
-        return [`Attributed to ${touches[0].campaign}, advertised office ${touches[0].custom.office_advertised}. Counted: ${call.counted ? 'yes' : 'no'}.`]
+        await at(0, 14, 6)
+        await ask('POST', '/identify', { subject: demo.contact, phone: demo.phone, name: { first: 'Inés', last: 'Vega' }, dob: '1984-05-06', event: 'inquiry' })
+        await steps('inquiry')
+        const sure = await credit()
+        return { lines: [`The call and the visit are now tied to a name. Ad credit: ${Math.round(sure.share * 100)}%, below the 90% it takes.`], credit: sure }
       },
     },
     {
-      title: 'Client at another office', text: 'The ad was for North and River serves the client. The report keeps both offices.', see: ['Channels by office served', review('channels///outcome.office_served')], spot: ['Busqueda: North', 'river'],
+      title: 'Form texted', text: 'Staff text a signed link to the intake form.', see: ['Accounts', review(`accounts/${encodeURIComponent(demo.contact)}`)], stage: person('accounts'), shown: { phone: 'text-form' },
       async run() {
-        await at(3, 10, 0)
-        await ask('POST', '/convert', { transactionId: 'demo-client', subject: demo.contact, at: clock(), stage: 'client', tags: { office_served: 'river', language: 'es' } })
+        await at(0, 14, 8)
+        links.form = await linkTo('datos')
+        return { lines: ['Signed link made for the contact. Not opened yet.'], credit: await credit(), link: links.form }
+      },
+    },
+    {
+      title: 'Form opened', text: 'They open the link in the browser they came with, which is now known to be theirs.', see: ['Accounts', review(`accounts/${encodeURIComponent(demo.contact)}`)], stage: person('accounts'), shown: { phone: 'form' },
+      async run() {
+        await at(0, 14, 12)
+        await opens(links.form!)
+        // The inquiry waited for an ad to be credited, and is sent now.
         await outbox.run()
-        const { credited } = await ask('GET', `/attribute?subject=${demo.contact}&at=${clock()}`)
-        return [`Advertised: ${credited.custom.office}. Served: river. Attributed to ${credited.campaign} at ${Math.round(credited.confidence * 100)}%.`]
+        const sure = await credit()
+        return { lines: [`We now know whose phone this is. Ad credit: ${Math.round(sure.share * 100)}%, to ${sure.campaign}.`], credit: sure }
       },
     },
     {
-      title: 'Value change', text: 'The client value is updated from the initial 400 USD and restated at the ad platform.', see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], spot: ['from 400 USD to 1,250 USD'],
+      title: 'Form sent', text: 'They fill in the form and send it.', see: ['Board', review('board/7')], spot: ['contact:ines-vega'], shown: { phone: 'form-sent' },
+      async run() {
+        await at(0, 14, 17)
+        await steps('intake')
+        return { lines: ['Step recorded: intake. On the same person, with no new record.'] }
+      },
+    },
+    {
+      title: 'Documents signed', text: 'Staff text a link to the documents. They open it and sign.', see: ['Board', review('board/7')], spot: ['contact:ines-vega'], shown: { phone: 'signed' },
+      async run() {
+        await at(0, 14, 31)
+        await opens(await linkTo('firmar'))
+        await steps('signed')
+        return { lines: ['Step recorded: signed.'] }
+      },
+    },
+    {
+      title: 'Director scheduled', text: 'Staff schedule a call with a director.', see: ['Board', review('board/7')], spot: ['contact:ines-vega'], shown: { phone: 'text-time', caption: 'Staff schedule the director', desk: { name: 'Schedule', fields: [['With', 'M. Ortega, director'], ['When', 'Wednesday, 11:00 AM'], ['How', 'By phone, in Spanish']], done: 'Call scheduled' } },
+      async run() {
+        await at(0, 14, 36)
+        await steps('scheduled', { director: 'ortega' })
+        return { lines: ['Step recorded: scheduled, director ortega.'] }
+      },
+    },
+    {
+      title: 'Director calls', text: 'On Wednesday the director calls, and is answered.', see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], stage: person('journey'), spot: ['scheduled', 'Outbound'], shown: { phone: 'director', seconds: 1290 },
+      async run() {
+        await at(2, 11, 0)
+        await ask('POST', '/call', { id: 'demo-4', direction: 'outbound', from: demo.line, to: demo.phone, at: clock(), duration: 1290, answered: true, tags: { language: 'es' } })
+        return { lines: ['Outbound call answered, on the same timeline.'] }
+      },
+    },
+    {
+      title: 'Enrollment texted', text: 'Staff text a signed link to enroll and pay.', see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], stage: person('journey'), spot: ['scheduled', 'Outbound'], shown: { phone: 'text-pay' },
+      async run() {
+        await at(2, 11, 24)
+        links.pay = await linkTo('inscripcion')
+        return { lines: ['Signed link made for the contact. Not opened yet.'], link: links.pay }
+      },
+    },
+    {
+      title: 'Paid', text: 'They open the link and pay. The payment page is the firm’s, and reports the payment.', see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], stage: person('journey'), spot: ['client'], shown: { phone: 'paid' },
+      async run() {
+        await at(2, 11, 29)
+        await opens(links.pay!)
+        await steps('client', { office_served: 'river', director: 'ortega' })
+        const { credited } = await ask('GET', `/attribute?subject=${demo.contact}&at=${clock()}`)
+        return { lines: [`Payment recorded: 400 USD. Advertised: ${credited.custom.office}. Served: river. Attributed to ${credited.campaign} at ${Math.round(credited.confidence * 100)}%.`] }
+      },
+    },
+    {
+      title: 'Conversion sent', text: 'The payment is sent to the ad platform as a conversion of the first ad click.', see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], stage: person('journey'), spot: ['client'], shown: {},
+      async run() {
+        await at(2, 11, 40)
+        await outbox.run()
+        return { lines: [`Sent to the sample ad platform: ${wasSent('demo-client') ? `${sent.findLast((each) => each.id === 'demo-client')!.value} USD, for the first ad click` : 'no'}.`] }
+      },
+    },
+    {
+      title: 'Value change', text: 'The client value is updated from the initial 400 USD and restated at the ad platform.', see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], stage: person('journey'), spot: ['from 400 USD to 1,250 USD'],
       async run() {
         await at(3, 16, 0)
         await ask('POST', '/restate', { transactionId: 'demo-client', value: 1250 })
         await outbox.run()
         const { values } = await ask('GET', '/outcome?id=demo-client')
-        return [`Initial value ${values[0].value} USD, current value ${values.at(-1).value} USD.`, `Sent to the ad platform: ${sent.filter((each) => each.id === 'demo-client').at(-1)?.value} USD.`]
+        return { lines: [`Initial value ${values[0].value} USD, current value ${values.at(-1).value} USD.`, `Sent to the ad platform: ${sent.filter((each) => each.id === 'demo-client').at(-1)?.value} USD.`] }
       },
     },
     {
-      title: 'Separation', text: 'An opposing party shares the family phone and email. The case system separates the two contacts.', see: ['Accounts', review(`accounts/${encodeURIComponent(demo.contact)}`)],
+      title: 'Separation', text: 'An opposing party shares the family phone and email. The case system separates the two contacts.', see: ['Accounts', review(`accounts/${encodeURIComponent(demo.contact)}`)], stage: person('accounts'),
       async run() {
         await at(3, 16, 30)
         for (const subject of [demo.contact, demo.other]) await ask('POST', '/identify', { subject, phone: demo.phone, email: 'family@example.org', event: 'staff entry' })
         const { joined } = await ask('GET', `/between?a=${demo.contact}&b=${demo.other}`)
         await ask('POST', '/separate', { source: 'matters', pairs: [{ a: demo.contact, b: demo.other, reason: 'sides of one matter' }] })
         const after = await ask('GET', `/between?a=${demo.contact}&b=${demo.other}`)
-        return [`Before: ${joined ? 'joined by a shared phone and email' : 'related'}. After: separated.`, `Same cluster: ${after.joined ? 'yes' : 'no'}.`]
+        return { lines: [`Before: ${joined ? 'joined by a shared phone and email' : 'related'}. After: separated.`, `Same cluster: ${after.joined ? 'yes' : 'no'}.`] }
+      },
+    },
+    {
+      title: 'Listing call', text: 'A call to a number published on a map listing is attributed to that listing.', see: ['Channels', review('channels')], spot: ['Map listing, River'],
+      async run() {
+        await at(3, 16, 40)
+        const call = await ask('POST', '/call', { id: 'demo-3', from: '+15550100043', to: '+15550100104', at: clock(), duration: 260, answered: true })
+        const { touches } = await ask('GET', `/attribute?subject=${call.subject}&at=${clock()}`)
+        return { lines: [`Attributed to ${touches[0].campaign}, advertised office ${touches[0].custom.office_advertised}. Counted: ${call.counted ? 'yes' : 'no'}.`] }
       },
     },
     {
@@ -338,7 +443,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
         await ask('POST', '/identify', { subject: 'contact:marta-lago', phone: '+15550100044', name: { first: 'Marta', last: 'Lago' }, dob: '1970-02-03', event: 'staff entry' })
         await ask('POST', '/identify', { subject: 'contact:teo-lago', phone: '+15550100044', name: { first: 'Teo', last: 'Lago' }, dob: '2001-07-08', event: 'staff entry' })
         const { joined, score } = await ask('GET', '/between?a=contact:marta-lago&b=contact:teo-lago')
-        return [`Linked at ${Math.round(score * 100)}% by phone: ${joined ? 'joined' : 'related'}.`]
+        return { lines: [`Linked at ${Math.round(score * 100)}% by phone: ${joined ? 'joined' : 'related'}.`] }
       },
     },
     {
@@ -347,7 +452,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
         ahead += 14 * HOUR
         await ops.check()
         const told = alerts.findLast((text) => text.includes('no calls for'))
-        return [told ? `Alert: "${told}"` : 'No alert was sent.']
+        return { lines: [told ? `Alert: "${told}"` : 'No alert was sent.'] }
       },
     },
   ]
@@ -366,9 +471,9 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
     running = true
     const began = performance.now()
     try {
-      const lines = await scene.run()
+      const told = await scene.run()
       next += 1
-      return [200, { lines, ms: Math.round(performance.now() - began) }]
+      return [200, { ...told, ms: Math.round(performance.now() - began) }]
     } catch (error) {
       return [500, { error: String((error as Error).message) }]
     } finally {
