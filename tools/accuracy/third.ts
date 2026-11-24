@@ -105,10 +105,11 @@ for (const name of settings) {
     console.log(name, JSON.stringify(t), 'names written as they are, in a form the table knows, and in one it does not', JSON.stringify(covered))
     continue
   }
-  const total = new Map(Object.keys(ARMS).map((arm) => [arm, { mixed: 0, mixedApart: 0, recorded: 0, right: 0, wrongPairs: 0, tap: 0, tapWrong: 0, creditRight: 0, creditWrong: 0, links: new Map<string, { links: number; wrong: number }>() }]))
+  const total = new Map(Object.keys(ARMS).map((arm) => [arm, { mixed: 0, mixedApart: 0, recorded: 0, right: 0, wrongPairs: 0, tap: 0, tapWrong: 0, creditRight: 0, creditWrong: 0, links: new Map<string, { links: number; wrong: number }>(), kinds: new Map<string, number>(), wrongBy: new Map<string, number>() }]))
   const kept = new Map(Object.keys(ARMS).map((arm) => [arm, { chained: [0, 0], recordPairs: [0, 0], credit: [0, 0], ties: [0, 0], same: [0, 0], covered: [0, 0], not: [0, 0] } as Record<string, [number, number]>]))
   for (let w = 0; w < worlds; w++) {
     const world = made(w)
+    const saidOf = new Set(world.events.flatMap((event) => (event.kind === 'record' && event.speaker) || event.kind === 'speaks' ? [event.subject] : []))
     const before = new Map<string, { found: Set<string>; chained: Set<string>; credit: Set<string>; ties: Set<string> }>()
     for (const [arm, { pinned: old, ...set }] of Object.entries(ARMS)) {
       const outcome = await play(world, set, setting.pool, old ? pinned! : HERE)
@@ -126,6 +127,24 @@ for (const name of settings) {
       for (const [kind, { links, wrong }] of outcome.links) {
         const now = row.links.get(kind) ?? { links: 0, wrong: 0 }
         row.links.set(kind, { links: now.links + links, wrong: now.wrong + wrong })
+      }
+      for (const [kind, { wrong }] of result.kinds) row.kinds.set(kind, (row.kinds.get(kind) ?? 0) + wrong)
+      const byCluster = new Map<string, typeof outcome.truths>()
+      for (const each of outcome.truths) {
+        const key = outcome.clusterOf.get(each.subject) ?? each.subject
+        byCluster.set(key, [...(byCluster.get(key) ?? []), each])
+      }
+      // Of wrong pairs, those where one spoke for the other, and whether the record of either says so.
+      for (const members of byCluster.values()) {
+        for (const [i, a] of members.entries()) {
+          for (const b of members.slice(i + 1)) {
+            if (a.people.some((each) => b.people.includes(each))) continue
+            const spoke = a.people.some((x) => b.people.some((y) => world.spoke.has(`${x} ${y}`) || world.spoke.has(`${y} ${x}`)))
+            const told = [a.subject, b.subject].some((each) => saidOf.has(each))
+            const key = spoke ? (told ? 'one spoke for the other, and a record says so' : 'one spoke for the other, and none says so') : 'nobody spoke for the other'
+            row.wrongBy.set(key, (row.wrongBy.get(key) ?? 0) + 1)
+          }
+        }
       }
       const items = itemsOf(world, outcome)
       const { found, chained } = pairsOf(items)
@@ -159,6 +178,7 @@ for (const name of settings) {
     const keep = kept.get(arm)!
     console.log(`${arm}: people whose record is with another's ${part(row.mixed, row.recorded)}, and without those one spoke for ${part(row.mixedApart, row.recorded)}; joined pairs right ${part(row.right, row.right + row.wrongPairs)}; links by a tap or a number shown wrong ${part(row.tapWrong, row.tap)}; credited records to the wrong ad ${part(row.creditWrong, row.creditRight + row.creditWrong)}`)
     console.log(`  of what today found, kept: pairs with a chain ${part(...keep.chained!)}; pairs of records ${part(...keep.recordPairs!)}, of them written the same ${part(...keep.same!)}, in forms the table knows ${part(...keep.covered!)}, and in forms it does not ${part(...keep.not!)}; records credited to their ad ${part(...keep.credit!)}; calls tied to a browser of their caller's ${part(...keep.ties!)}`)
+    console.log(`  wrong pairs: ${[...row.wrongBy].map(([kind, n]) => `${kind} ${n}`).join('; ')}; by kind ${[...row.kinds].filter(([, n]) => n > 0).map(([kind, n]) => `${kind} ${n}`).join(', ')}`)
     for (const [kind, { links, wrong }] of [...row.links].sort((x, y) => y[1].links - x[1].links)) console.log(`    links by ${kind}: ${links}, ${wrong} between two people`)
   }
   console.log(`names written as they are, in a form the table knows, and in one it does not: ${JSON.stringify(covered)}`)
@@ -184,8 +204,7 @@ for (const name of settings) {
     const pool = judged('new pool')
     mark('with a pool, links by a tap or a number shown wrong, at most 5%', pool.row.tapWrong, pool.row.tap, (share) => share <= 0.05)
     mark('kept with a pool of calls tied, at least 90%', ...pool.keep.ties!, (share) => share >= 0.9)
-    mark('without a pool, links by a tap wrong, at most 5% (printed, not judged)', now.row.tapWrong, now.row.tap, (share) => share <= 0.05)
-    mark('kept without a pool of calls tied, at least 90% (printed, not judged)', ...now.keep.ties!, (share) => share >= 0.9)
+    console.log(`  no mark: without a pool, links by a tap wrong ${part(now.row.tapWrong, now.row.tap)}; kept of calls tied ${part(...now.keep.ties!)}`)
   }
   if (name === 'dirty3') {
     mark('people whose record is with another\'s, at most 1.5%', now.row.mixed, now.row.recorded, (share) => share <= 0.015)

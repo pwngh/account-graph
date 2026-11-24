@@ -334,7 +334,7 @@ Of the held seeds. A share is of counts pooled over the worlds, and one with not
 | high3 | More than 2.5% of people with a record share a cluster with somebody else's |
 | dirty3 | More than 1.5% of people with a record share a cluster with somebody else's; over 2% of credited records go to the wrong ad; fewer than 98% kept of the pairs of records, or 90% of the records credited |
 
-Development seeds 20270301 to 20270320, to make sure the code does what it should. Nothing is chosen on them: there is one configuration. Held: 20270401 to 20270420, once.
+Development seeds 20270301 to 20270320, to make sure the code does what it should. There is one configuration, so nothing is chosen between on them. Where they show something broken, what is changed for it is listed here, and each look at them is counted as a round. The final commit is named here before 20270401. Held: 20270401 to 20270420, once.
 
 Known and not changed: a couple's shared email is put on the first two adults of every household with two; a short form is drawn before an English form, so the realised shares of names are printed and not the rates; a person's ad is reachable by the end of the world and not at an hour after a record; callers are what the server calls them, so a subject of two callers is one of two people; and a Student's t range is how far simulated worlds differ, not how far a firm is.
 
