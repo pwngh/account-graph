@@ -6,6 +6,9 @@ export type Tags = Record<string, string>
 /** Where nothing was recorded. Always a line of its own, never folded into another and never left out. */
 export const NOT_RECORDED = '(not recorded)'
 
+/** How a dimension's own name may be written. */
+export const DIMENSION = /^[\w.-]{1,64}$/
+
 /** Tags checked and copied, or undefined for none. Throws when they are not a few short codes. */
 export function checkTags(given: unknown, what: string): Tags | undefined {
   if (given === undefined || given === null) return undefined
@@ -15,6 +18,8 @@ export function checkTags(given: unknown, what: string): Tags | undefined {
   for (const [name, value] of entries) {
     if (!/^[a-z_]{1,32}$/.test(name)) throw new TypeError(`${what} has a tag named "${name}"; a name is lowercase letters and underscores, at most 32`)
     if (typeof value !== 'string' || !value.trim() || value.length > 64) throw new TypeError(`${what} needs its tag "${name}" as text of at most 64 characters`)
+    // It would read as a value that was never recorded.
+    if (value.trim() === NOT_RECORDED) throw new TypeError(`${what} cannot have "${NOT_RECORDED}" as its tag "${name}"; leave the tag out`)
   }
   return entries.length > 0 ? Object.fromEntries(entries.map(([name, value]) => [name, value.trim()])) : undefined
 }
@@ -30,5 +35,5 @@ export function touchTag(touch: Touch | undefined, name: string): string | undef
   return undefined
 }
 
-/** The dimensions an arrival has something to say of. */
-export const touchTags = (touch: Touch | undefined): string[] => [...new Set(Object.keys(touch?.custom ?? {}).map((name) => READ.get(name) ?? name))]
+/** The dimensions an arrival has something to say of, of those that can be asked for. */
+export const touchTags = (touch: Touch | undefined): string[] => [...new Set(Object.keys(touch?.custom ?? {}).filter((name) => DIMENSION.test(name)).map((name) => READ.get(name) ?? name))]

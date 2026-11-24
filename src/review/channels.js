@@ -24,7 +24,10 @@ view('channels', 'Channels', async (box, first, last, by = '') => {
       td('who', row.campaign || row.campaignId || el('span', { class: 'muted' }, 'no campaign named'), row.campaign && row.campaignId ? el('span', { class: 'reason' }, row.campaignId) : ''), ...cells(row)), ...split(row))
   }
   table.append(el('tr', { class: 'sum' }, td('', 'All'), td(''), ...cells(report.total)), ...split(report.total))
-  const breakdown = el('select', { on: { change: () => go(`#/channels/${report.from}/${report.to}${breakdown.value ? `/${encodeURIComponent(breakdown.value)}` : ''}`) } }, el('option', { value: '' }, 'Nothing'),
+  const breakdown = el('select', { on: { change: () => {
+    const [from, to] = [...pick.querySelectorAll('input')].map((input) => input.value)
+    go(`#/channels/${from || report.from}/${to || report.to}${breakdown.value ? `/${encodeURIComponent(breakdown.value)}` : ''}`)
+  } } }, el('option', { value: '' }, 'Nothing'),
     ...[...new Set([...report.dimensions, ...(by ? [by] : [])])].map((each) => el('option', { value: each, ...(each === by && { selected: '' }) }, dimensionName(each))))
   pick.append(el('label', {}, 'Break down by', breakdown))
   section.append(el('p', { class: 'muted' }, `${report.from} to ${report.to}, days in ${report.timeZone}.${report.currencies.length === 1 ? ` Money in ${report.currencies[0]}.` : ''}${by.startsWith('touch.') ? ' Broken down by what the credited arrival said.' : by.startsWith('outcome.') ? ' Broken down by what is known of each outcome.' : ''}${by ? ' Costs, clicks and arrivals belong to the campaign and are not split.' : ''}`))

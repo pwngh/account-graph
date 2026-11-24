@@ -746,8 +746,19 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await recordCallResult(graph, { id: 'A1', answered: true }, { results: 'expected' })
       assert.deepEqual((await graph.outcomeOf('call:A1'))!.tags, { language: 'es' })
 
+      // A call you place carries its own, and makes no outcome of them. A number's are checked before anything is written.
+      await recordCall(graph, { id: 'P1', direction: 'outbound', from: '+15550100009', to: '+15550100062', at: day, tags: { language: 'es' } })
+      assert.deepEqual((await graph.keptCall('P1'))!.tags, { language: 'es' })
+      await assert.rejects(recordCall(graph, { id: 'N1', from: '+15550100063', to: '+15550100008', at: day, duration: 60 }, { numbers: { '+15550100008': { source: 'x', tags: { Office: 'n' } } } }), TypeError)
+      assert.equal(await graph.keptCall('N1'), undefined)
+      await recordCall(graph, { id: 'N2', from: '+15550100064', to: '+15550100008', at: day, duration: 60 }, { numbers: { '+15550100008': { source: 'x', tags: { office_advertised: ' north ' } } } })
+      assert.equal((await graph.report({ from: '2026-03-02', to: '2026-03-02', by: 'touch.office_advertised' })).rows.find((row) => row.source === 'x')!.breakdown![0]!.name, 'north')
+      // A parameter that cannot be asked for is not offered.
+      await graph.touch({ subject: 'visitor:9', at: day, gclid: 'G9', custom: { 'two words': 'x' } })
+      assert.ok((await graph.report({ from: '2026-03-02', to: '2026-03-02' })).dimensions.every((each) => !each.includes(' ')))
+
       const nine = Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`tag_${'abcdefghi'[i]}`, 'x']))
-      for (const tags of [nine, { Office: 'x' }, { office: '' }, { office: 'x'.repeat(65) }, { office: 5 }, ['x'], 'x']) await assert.rejects(graph.outcome({ transactionId: 'bad', subject: 'contact:1', at: day, tags: tags as never }), TypeError)
+      for (const tags of [nine, { Office: 'x' }, { office: '' }, { office: 'x'.repeat(65) }, { office: 5 }, { office: '(not recorded)' }, ['x'], 'x']) await assert.rejects(graph.outcome({ transactionId: 'bad', subject: 'contact:1', at: day, tags: tags as never }), TypeError)
       for (const by of ['office', 'touch.', 'touch.a b', 'outcome', 'minute']) await assert.rejects(graph.report({ from: '2026-03-02', to: '2026-03-03', by }), TypeError)
     })
 

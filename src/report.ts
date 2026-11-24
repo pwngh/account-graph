@@ -1,4 +1,4 @@
-import { NOT_RECORDED, touchTag, touchTags } from './tags.ts'
+import { DIMENSION, NOT_RECORDED, touchTag, touchTags } from './tags.ts'
 import type { Breakdown, Cost, Counted, Report, ReportRow, Touch } from './types.ts'
 
 /** The platform each click id belongs to. A click id says where the visitor came from more surely than a tag does. */
@@ -106,8 +106,8 @@ interface Told {
  */
 export function dimension(by: string, timeZone?: string): (told: Told) => string {
   if (by === 'hour' || by === 'weekday') return ({ at }) => hourIn(at, timeZone)[by]
-  const [, side, name] = /^(touch|outcome)\.([\w.-]{1,64})$/.exec(by) ?? []
-  if (!side || !name) throw new TypeError(`"${by}" is not a dimension; use touch.<name>, outcome.<name>, hour or weekday`)
+  const [, side, name] = /^(touch|outcome)\.(.+)$/.exec(by) ?? []
+  if (!side || !name || !DIMENSION.test(name)) throw new TypeError(`"${by}" is not a dimension; use touch.<name>, outcome.<name>, hour or weekday`)
   if (side === 'touch') return ({ touch }) => touchTag(touch, name) ?? NOT_RECORDED
   return ({ tags }) => (tags && Object.hasOwn(tags, name) ? tags[name]! : NOT_RECORDED)
 }

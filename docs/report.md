@@ -143,7 +143,7 @@ The answer names the `dimensions` something in those days was recorded under. On
 
 > **Costs stay on the campaign.** A campaign that served several offices was charged once. Splitting its cost by where people were served would be a guess, so cost, clicks and arrivals are never split.
 
-Outcomes with nothing recorded are always on a line of their own, `(not recorded)`. They are never folded into another value and never left out, so the parts add up to the line.
+Outcomes with nothing recorded are always on a line of their own, `(not recorded)`. They are never folded into another value and never left out, so the parts add up to the line, rounding aside.
 
 ### The codes
 
