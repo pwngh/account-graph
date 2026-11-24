@@ -1078,10 +1078,12 @@ test('a reviewer sees refused conversions without keys and puts them back in lin
   const graph = createGraph(store)
   const at = Date.now() - 60_000
   let refuse = true
-  const outbox = createOutbox(graph, store.outbox, { targets: [{ name: 'ads', restates: false, batch: 10, keys: () => ({ email: 'hashed' }), click: (attribution) => attribution.credited, retryable: () => false, deliver: async () => {
-    if (refuse) throw new Error(`action_111 was not found for HASHED or ${'aB'.repeat(32)}`)
+  // Refused as a whole request, with everything it held repeated in the answer.
+  const target = (name: string) => ({ name, restates: false, batch: 10, keys: (outcome: { email?: string }) => ({ email: `Key+of:${outcome.email}` }), click: () => undefined, retryable: () => true, deliver: async (_action: string, items: readonly { job: { keys: Record<string, string> } }[]) => {
+    if (refuse) throw new Error(`action_111 was not found for ${items.map(({ job }) => job.keys.email!.toUpperCase()).join(' and ')}`)
     return {}
-  } }] })
+  } })
+  const outbox = createOutbox(graph, store.outbox, { maxAttempts: 1, targets: [target('ads'), target('more')] })
   const server = createServer(createHandler(graph, { token: 'service', reviewers: { dana: 'reviewer' }, outbox, origins: [] })).listen(0)
   try {
     const base = `http://localhost:${(server.address() as AddressInfo).port}`
@@ -1089,24 +1091,22 @@ test('a reviewer sees refused conversions without keys and puts them back in lin
       const response = await fetch(base + path, { method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, ...(body !== undefined && { body: JSON.stringify(body) }) })
       return { status: response.status, body: (await response.json()) as any }
     }
-    await graph.touch({ subject: 'a', at: at - 1000, gclid: 'click-1' })
-    await graph.consent('a', { adUserData: true, adPersonalization: true }, { at: at - 1000 })
-    await call('service', 'POST', '/convert', { transactionId: 't1', subject: 'a', at, stage: 'enrolled', action: { ads: '111' }, value: 5, currency: 'USD', email: 'a@example.com' })
+    for (const n of [1, 2]) await call('service', 'POST', '/convert', { transactionId: `t${n}`, subject: `a${n}`, at, stage: 'enrolled', action: { ads: '111', more: '111' }, value: 5, currency: 'USD', email: `a${n}@example.com` })
     await outbox.run()
-    assert.ok((await outbox.get('t1'))[0]!.keys.email)
     const { body: failed } = await call('reviewer', 'GET', '/conversions?state=failed')
-    assert.deepEqual(failed.map((job: any) => [job.transactionId, job.state, 'keys' in job]), [['t1', 'failed', false]])
-    // The platform's answer repeats what it was sent. The service reads it whole in one place.
+    assert.deepEqual(failed.map((job: any) => `${job.transactionId} ${job.target} ${'keys' in job}`).sort(), ['t1 ads false', 't1 more false', 't2 ads false', 't2 more false'])
+    assert.ok(failed.every((job: any) => job.note === 'action_111 was not found for (left out) and (left out)'))
     assert.deepEqual((await call('service', 'GET', '/conversions?state=failed')).body, failed)
-    assert.equal((await call('service', 'GET', '/conversion?id=t1')).body[0].note, `action_111 was not found for HASHED or ${'aB'.repeat(32)}`)
-    assert.equal(failed[0].note, 'action_111 was not found for (left out) or (left out)')
-    for (const bad of [{}, { transactionId: 5 }, { transactionId: ['t1'] }]) assert.equal((await call('reviewer', 'POST', '/retry', bad)).status, 400)
+    assert.equal((await call('service', 'GET', '/conversion?id=t1')).body[0].keys.email, 'Key+of:a1@example.com')
+    for (const bad of [{}, { transactionId: 5 }, { transactionId: ['t1'] }, { transactionId: 't1', target: 5 }]) assert.equal((await call('reviewer', 'POST', '/retry', bad)).status, 400)
     refuse = false
-    const put = await call('reviewer', 'POST', '/retry', { transactionId: 't1' })
-    assert.deepEqual([put.status, put.body.map((job: any) => [job.state, 'keys' in job])], [200, [['pending', false]]])
+    // Only the platform named, and then the rest.
+    const again = async (token: string, body: object) => (await call(token, 'POST', '/retry', body)).body.map((job: any) => `${job.transactionId} ${job.target} ${job.state} ${'keys' in job}`)
+    assert.deepEqual(await again('reviewer', { transactionId: 't1', target: 'ads' }), ['t1 ads pending false'])
+    assert.deepEqual(await again('service', { transactionId: 't1' }), ['t1 more pending false'])
     await outbox.run()
-    assert.deepEqual(await outbox.counts().then((counts) => [counts.sent, counts.failed]), [1, 0])
-    assert.deepEqual((await call('reviewer', 'POST', '/retry', { transactionId: 't1' })).body, [])
+    assert.deepEqual(await outbox.counts().then((counts) => [counts.sent, counts.failed]), [2, 2])
+    assert.deepEqual(await again('reviewer', { transactionId: 't1' }), [])
     assert.equal((await call('reviewer', 'GET', '/conversion?id=t1')).status, 403)
   } finally {
     server.close()

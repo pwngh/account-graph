@@ -145,12 +145,8 @@ const REVIEW_ROUTES = new Set([
 /** Answers hold people's data, so nothing keeps a copy of one. */
 const JSON_HEADERS = { 'content-type': 'application/json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }
 
-/** A job as a person is shown it: the hashed email and phone are for its platform only. A platform's answer may repeat them, and those of the others it was sent with, so any hash is left out there too. */
-function shownJob({ keys, note, ...job }: Job) {
-  if (note === undefined) return job
-  const held = Object.values(keys).filter((value) => value.length > 3).sort((a, b) => b.length - a.length)
-  return { ...job, note: held.reduce((text, value) => text.replaceAll(new RegExp(value.replace(/[^\w]/g, '\\$&'), 'gi'), '(left out)'), note.replace(/[0-9a-f]{32,}/gi, '(left out)')) }
-}
+/** A job as a person is shown it: the hashed email and phone are for its platform only. */
+const shownJob = ({ keys, ...job }: Job) => job
 
 /** A route that wrote its own answer. */
 const SENT = Symbol('sent')
@@ -963,9 +959,9 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       }
       case 'POST /retry': {
         if (!options.outbox) break
-        const { transactionId } = await json(request)
-        if (typeof transactionId !== 'string') throw new Refusal(400, 'transactionId must be text')
-        return (await options.outbox.retry(transactionId)).map(shownJob)
+        const { transactionId, target } = await json(request)
+        if (typeof transactionId !== 'string' || (target !== undefined && typeof target !== 'string')) throw new Refusal(400, 'transactionId and target must be text')
+        return (await options.outbox.retry(transactionId, target)).map(shownJob)
       }
       case 'GET /conversion':
         if (!options.outbox) break

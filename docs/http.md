@@ -102,7 +102,7 @@ The four `POST` routes answer with the subjects whose cluster moved. With the se
 | --- | --- |
 | `GET /me` | `{ reviewer }`: whose token this is, or `null` for the service token. |
 | `GET /conversions?state=` | The 100 jobs in one state most recently due: `held`, `pending`, `sent`, `skipped`, or `failed`, without the hashed email and phone. `held` waits for a call's result. |
-| `POST /retry` | `{ transactionId }`. Puts its failed and skipped jobs back in line. |
+| `POST /retry` | `{ transactionId, target? }`. Puts its failed and skipped jobs back in line, or only one platform's. |
 
 ## Service token only
 

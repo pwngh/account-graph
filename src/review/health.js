@@ -6,11 +6,11 @@ const NAMES = { touches: 'Arrivals', calls: 'Calls', results: 'Call results', co
 const JOB = { running: 'running', stuck: 'never finished', done: 'succeeded', failed: 'failed' }
 const ago = (at, now) => (at === null || at === undefined ? el('span', { class: 'muted' }, '(not recorded)') : el('span', { title: when(at) }, `${lasted(now - at)} ago`))
 
-/** Puts a conversion back in line. Every platform that refused or skipped it gets it again. */
+/** Puts a conversion back in line for the platform that refused it. */
 async function again(job, button) {
   button.disabled = true
   try {
-    const put = await api('POST', '/retry', { transactionId: job.transactionId })
+    const put = await api('POST', '/retry', { transactionId: job.transactionId, target: job.target })
     if (await load()) notice(put.length > 0 ? `${job.action} is back in line, to be sent with the next pass.` : `${job.action} was no longer refused. Nothing was changed.`)
   } catch (error) {
     button.disabled = false
