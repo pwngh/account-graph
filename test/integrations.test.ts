@@ -1079,7 +1079,7 @@ test('a reviewer sees refused conversions without keys and puts them back in lin
   const at = Date.now() - 60_000
   let refuse = true
   const outbox = createOutbox(graph, store.outbox, { targets: [{ name: 'ads', restates: false, batch: 10, keys: () => ({ email: 'hashed' }), click: (attribution) => attribution.credited, retryable: () => false, deliver: async () => {
-    if (refuse) throw new Error('the action was not found')
+    if (refuse) throw new Error('action_111 was not found for HASHED')
     return {}
   } }] })
   const server = createServer(createHandler(graph, { token: 'service', reviewers: { dana: 'reviewer' }, outbox, origins: [] })).listen(0)
@@ -1095,8 +1095,11 @@ test('a reviewer sees refused conversions without keys and puts them back in lin
     await outbox.run()
     assert.ok((await outbox.get('t1'))[0]!.keys.email)
     const { body: failed } = await call('reviewer', 'GET', '/conversions?state=failed')
-    assert.deepEqual(failed.map((job: any) => [job.transactionId, job.state, 'keys' in job, 'click' in job]), [['t1', 'failed', false, false]])
-    assert.ok(!JSON.stringify(failed).includes('click-1'))
+    assert.deepEqual(failed.map((job: any) => [job.transactionId, job.state, 'keys' in job]), [['t1', 'failed', false]])
+    // The platform's answer repeats what it was sent. The service reads it whole in one place.
+    assert.deepEqual((await call('service', 'GET', '/conversions?state=failed')).body, failed)
+    assert.equal((await call('service', 'GET', '/conversion?id=t1')).body[0].note, 'action_111 was not found for HASHED')
+    assert.equal(failed[0].note, 'action_111 was not found for (left out)')
     for (const bad of [{}, { transactionId: 5 }, { transactionId: ['t1'] }]) assert.equal((await call('reviewer', 'POST', '/retry', bad)).status, 400)
     refuse = false
     const put = await call('reviewer', 'POST', '/retry', { transactionId: 't1' })

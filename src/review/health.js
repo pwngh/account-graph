@@ -48,7 +48,7 @@ function workings(ops, refused) {
     wide('Refused conversions', el('table', {}, el('tr', {}, group('What', 4, true), group('Why it was refused', 2), el('td', { class: 'edge' })),
       el('tr', {}, th('Happened'), th('Sent as'), th('Worth', 'num'), th('Who'), ...edge([th('Platform'), th('Answer')]), ...edge([th('')])),
       ...refused.map((job) => el('tr', {}, td('nowrap', when(job.at)), td('', job.action), td('num', job.value === undefined ? none() : `${money(job.value)} ${job.currency ?? ''}`), td('who', caller(job.subject)),
-        ...edge([td('', job.target), td('why', job.note ? job.note.replaceAll('_', ' ') : unrecorded())]), td('edge', el('button', { 'aria-label': `Send ${job.transactionId} again`, on: { click: (event) => again(job, event.currentTarget) } }, 'Send again')))))),
+        ...edge([td('', job.target), td('why', job.note || unrecorded())]), td('edge', el('button', { 'aria-label': `Send ${job.transactionId} again`, on: { click: (event) => again(job, event.currentTarget) } }, 'Send again')))))),
     el('p', { class: 'muted' }, 'Fix what stopped one before sending it again.')))
   return out
 }
