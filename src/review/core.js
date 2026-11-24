@@ -348,6 +348,7 @@ async function load(tag) {
   const turn = ++loading
   const quiet = tag !== undefined
   const { name, parts } = place()
+  const sought = $('subject').value
   for (const link of $('views').children) {
     if (link.dataset.view === name) link.setAttribute('aria-current', 'page')
     else link.removeAttribute('aria-current')
@@ -386,7 +387,8 @@ async function load(tag) {
     if (held) [...$('view').querySelectorAll('a, button, input, select, [tabindex]')].find((node) => which(node) === held)?.focus({ preventScroll: true })
     if (!quiet) {
       notice('')
-      if (views.get(name).subject && parts[0]) $('subject').value = parts[0]
+      // What was typed since is a search of the reviewer's, and stays.
+      if (views.get(name).subject && parts[0] && $('subject').value === sought) $('subject').value = parts[0]
     }
     if (!quiet) browsing = false
     loadedAt = readAt = Date.now()

@@ -156,6 +156,10 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
     await until(what, async () => (await text('#notice')).includes(said))
   }
   assert.ok(!(await run('location.href')).includes('person'))
+  // What is typed while something opens stays as typed.
+  await run(`(() => { load(); document.getElementById('subject').value = 'typed meanwhile' })()`)
+  await until('it to open', () => run(`opening === 0`))
+  assert.equal(await run(`document.getElementById('subject').value`), 'typed meanwhile')
   await look('person:2')
   await until('the exact one', async () => (await text('#detail h3')) === 'person:2')
   await pause(400)
