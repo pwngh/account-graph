@@ -112,6 +112,12 @@ const wide = (label, table, cards = false) => {
     table.appendRows = (...added) => {
       for (const row of added) {
         row.setAttribute('role', 'row')
+        // A heading over some of the rows spans them all and has no columns of its own.
+        if (row.classList.contains('fold')) {
+          row.cells[0].setAttribute('role', 'rowheader')
+          body.append(row)
+          continue
+        }
         for (const [i, cell] of [...row.cells].entries()) {
           cell.setAttribute('role', 'cell')
           cell.setAttribute('headers', heads[i].id)
@@ -531,6 +537,24 @@ const share = (part, whole) => (whole > 0 ? `${amount(part)} (${percent(part / w
 const caller = (subject) => reviewDisplay.subject(subject)
 // A menu is placed by where its button was, so it goes when the page moves under it.
 addEventListener('scroll', () => document.querySelector('.filter-menu:popover-open')?.hidePopover(), { passive: true })
+/** The groups folded away, by table and name, kept while the screen is open. */
+const foldedAway = new Set()
+/** Rows under a heading that folds them away: its name, how many, and what else there is to say of them. */
+function folding(label, name, tone, columns, rows, note = '') {
+  if (rows.length === 0) return []
+  const key = `${label}\n${name}`
+  const button = el('button', { type: 'button', 'data-key': `fold ${name}`, on: { click: () => {
+    if (!foldedAway.delete(key)) foldedAway.add(key)
+    show()
+  } } }, el('i', { class: 'chevron', 'aria-hidden': 'true' }), el('i', { class: `dot ${tone}`, 'aria-hidden': 'true' }), name, el('span', { class: 'count' }, amount(rows.length)), note ? el('span', { class: 'meta' }, note) : '')
+  const show = () => {
+    const away = foldedAway.has(key)
+    button.setAttribute('aria-expanded', String(!away))
+    for (const row of rows) row.classList.toggle('folded', away)
+  }
+  show()
+  return [el('tr', { class: 'fold' }, el('th', { scope: 'rowgroup', colspan: columns }, button)), ...rows]
+}
 /** What each table is narrowed to, by its name, kept while the screen is open. */
 const narrowed = new Map()
 /**
@@ -571,6 +595,13 @@ function filters(label, table, by) {
       if (!row.hidden) left += 1
       // A row split into parts goes with them.
       for (let part = row.nextElementSibling; part?.classList.contains('part'); part = part.nextElementSibling) part.hidden = row.hidden
+    }
+    for (const fold of table.querySelectorAll('tr.fold')) {
+      let here = 0
+      for (let row = fold.nextElementSibling; row && !row.classList.contains('fold'); row = row.nextElementSibling) if (!row.hidden) here += 1
+      fold.hidden = here === 0
+      const count = fold.querySelector('.count')
+      if (count.textContent !== amount(here)) count.textContent = amount(here)
     }
     const some = chosen().length > 0 || state.words.trim()
     told.textContent = some ? `${amount(left)} of ${amount(all.length)}` : ''

@@ -9,6 +9,12 @@ function reasons(list) {
   return list.filter((reason) => reason.counted !== false).flatMap((reason) => [line(reason), ...list.filter((other) => reason.group !== undefined && other.group === reason.group && other.counted === false).map(line)])
 }
 
+/** What kind of subject it is, as its mark on the graph. The name beside it says the same. */
+const badge = (subject) => {
+  const icon = ICONS[typeOf(subject)]
+  return svg('svg', { class: 'badge', viewBox: '-11 -11 22 22', 'aria-hidden': 'true', focusable: 'false' }, svg('circle', { r: 10 }), svg('path', { class: icon ? 'line' : '', d: icon ?? PERSON, transform: 'scale(.82)' }))
+}
+
 /** Why two are kept apart, in the words of whoever decided it. */
 const kept = (verdict) => (verdict?.apart ? [el('span', { class: 'muted' }, 'Decided by '), author(verdict.apart.by), el('span', { class: 'muted' }, `, ${when(verdict.apart.at)}: ${verdict.apart.reason ?? '(no reason recorded)'}`),
   verdict.last.action === 'join' ? el('span', { class: 'reason' }, 'A later decision joined them, which does not undo this one. By ', author(verdict.last.by), `, ${when(verdict.last.at)}`) : ''] : [el('span', { class: 'muted' }, '(no decision recorded)')])
@@ -38,18 +44,26 @@ function profileOf(profile, more) {
   const verdict = (other) => verdicts.get(profile.subject < other ? `${profile.subject}\n${other}` : `${other}\n${profile.subject}`)
   const contested = (other) => (verdict(other)?.reversals >= 3 ? el('span', { class: 'chip apart', title: 'Find out which system is right, and stop the other from sending.' }, `systems disagree, ${verdict(other).reversals} times`) : '')
   const links = el('table', {}, el('tr', {}, group('Who', 2, true), group('How strong, and why', 2), el('td', { class: 'edge' })), el('tr', {}, th('Subject'), th('Tie'), ...edge([th('Score', 'num'), th('Why')]), ...edge([th('Action')])))
+  const kinds = { same: [], strong: [], related: [], apart: [] }
   for (const link of profile.links) {
     const inCluster = members.has(link.subject)
-    links.append(el('tr', {},
-      td('who', open(link.subject)),
+    kinds[link.level !== 'same' ? 'related' : inCluster ? 'same' : 'strong'].push([link.score, el('tr', {},
+      td('who', badge(link.subject), open(link.subject)),
       td('', el('span', { class: `chip ${link.level}` }, link.level === 'same' ? (inCluster ? 'Same person' : 'Strong, not joined') : 'Related'), ' ', contested(link.subject)),
       ...edge([td('num score', reviewDisplay.compare(percent(link.score), link.score)), td('why', ...reasons(link.reasons))]),
-      td('edge', el('button', { on: { click: () => act('Keep these two apart', `${profile.subject} and ${link.subject} will never share a cluster, whatever they share later.`, '/separate', { a: profile.subject, b: link.subject }, 'Keep apart') } }, 'Keep apart'))))
+      td('edge', el('button', { on: { click: () => act('Keep these two apart', `${profile.subject} and ${link.subject} will never share a cluster, whatever they share later.`, '/separate', { a: profile.subject, b: link.subject }, 'Keep apart') } }, 'Keep apart')))])
   }
   for (const other of profile.separated) {
-    links.append(el('tr', {}, td('who', open(other)), td('', el('span', { class: 'chip apart' }, 'Kept apart'), ' ', contested(other)), ...edge([td('num score', none()), td('why', ...kept(verdict(other)))]),
-      td('edge', el('button', { on: { click: () => act('Allow these two to join again', `${profile.subject} and ${other}`, '/separate', { a: profile.subject, b: other, separated: false }, 'Allow', { undo: true }) } }, 'Allow again'))))
+    kinds.apart.push([undefined, el('tr', {}, td('who', badge(other), open(other)), td('', el('span', { class: 'chip apart' }, 'Kept apart'), ' ', contested(other)), ...edge([td('num score', none()), td('why', ...kept(verdict(other)))]),
+      td('edge', el('button', { on: { click: () => act('Allow these two to join again', `${profile.subject} and ${other}`, '/separate', { a: profile.subject, b: other, separated: false }, 'Allow', { undo: true }) } }, 'Allow again')))])
   }
+  const between = (list) => {
+    const scores = list.map(([score]) => score).filter((score) => score !== undefined)
+    if (scores.length === 0) return ''
+    const [low, high] = [percent(Math.min(...scores)), percent(Math.max(...scores))]
+    return low === high ? low : `${low} to ${high}`
+  }
+  for (const [kind, name, tone] of [['same', 'Same person', 'same'], ['strong', 'Strong, not joined', 'same'], ['related', 'Related', 'related'], ['apart', 'Kept apart', 'apart']]) links.append(...folding('Ties', name, tone, 5, kinds[kind].map(([, row]) => row), between(kinds[kind])))
   detail.push(el('section', {}, el('h2', {}, 'Ties'), ...(profile.links.length + profile.separated.length > 5 ? [filters('Ties', links, [
     { name: 'Tie', at: 1, read: (cell) => cell.querySelector('.chip').textContent },
     { name: 'Shares', at: 3, read: (cell) => [...cell.querySelectorAll('.reason:not(.uncounted) > b')].map((each) => each.textContent) },

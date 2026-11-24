@@ -105,6 +105,7 @@
 - Missed calls are an inbox: the list by how long each has waited, the caller's story beside it, and what is known of the call. Arrow keys walk the list.
 - Decide is a queue beside the pair in front of you: the two compared line by line with what they have alike brought forward, what joining would make of them, and the choices at hand.
 - Ties, sightings and campaigns have a bar that narrows them by words or by a column's values, with what is chosen as chips. A CSV holds the rows shown.
+- Ties are grouped by what they mean, under headings that fold with how many and how strong, and a subject's kind shows as its mark on the graph.
 - The reviewer screen has one scale of type and space, tables that fit what they hold, and rows that become cards on a phone. Times are told by how long ago, with the exact time in a title.
 - The graph keeps room around every disc, name and line: names move to a free side, lines bend around what is in their way, and nothing lies over the paper. The strongest way to whoever is picked is shown, and weak ties can be left out.
 - Accounts opens on the largest cluster's graph, and its long lists scroll in their own boxes.

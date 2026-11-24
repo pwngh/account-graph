@@ -714,6 +714,23 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 .filter-menu .count { margin-left: auto; }
 @media (max-width: 560px) { .filter-words { flex: 1 1 140px; width: auto; } }
 
+/* Rows under a heading that folds them away. */
+tr.fold th { padding: 0; border-top: 1px solid var(--line); background: var(--soft); text-align: left; }
+tr.fold button { display: flex; gap: var(--s2); align-items: center; width: 100%; height: 36px; padding: 0 var(--s3); border: 0; border-radius: 0; background: none; color: var(--ink); font-size: var(--body); font-weight: 600; }
+tr.fold button:hover { background: var(--hover); }
+tr.fold .count { margin-left: 0; }
+tr.fold .meta { margin: 0 0 0 auto; font-weight: 400; }
+tr.fold .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+tr.fold .dot.same { color: var(--same); } tr.fold .dot.related { color: var(--related); } tr.fold .dot.apart { color: var(--apart); }
+.chevron { width: 7px; height: 7px; border: solid var(--muted); border-width: 0 1.6px 1.6px 0; transform: rotate(45deg) translate(-2px, -2px); transition: transform .15s; }
+[aria-expanded=false] > .chevron { transform: rotate(-45deg); }
+tr.folded { display: none !important; }
+.badge { display: inline-block; width: 22px; height: 22px; margin-right: 8px; vertical-align: -6px; flex: none; }
+.badge circle { fill: color-mix(in srgb, var(--accent) 12%, var(--panel)); stroke: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.badge path { fill: var(--accent); } .badge path.line { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+@media (max-width: 760px) { .wide .table-cards tr.fold { display: block; padding: 0; } .wide .table-cards tr.fold th { display: block; width: 100%; padding: 0; } }
+@media (prefers-reduced-motion: reduce) { .chevron { transition: none; } }
+
 /* A table of a few plain columns is read along its rows, so they do not stand far apart. */
 @media (min-width: 761px) { .wide:has(> table):not(:has(th[colspan])) { max-width: 1040px; } }
 
