@@ -180,7 +180,7 @@ export interface Outbox {
   /**
    * Forgets a subject the way `graph.forget` does, and says which of its
    * conversions had reached a platform. With `tellForgotten`, a platform that
-   * has a way is told, once, after the subject is gone here. What was not
+   * has a way is told after the subject is gone here, and not again. What was not
    * told is in the answer and kept nowhere.
    */
   forget(subject: Subject, why?: Deciding): Promise<{ changes: Change[]; sent: Sent[] }>
