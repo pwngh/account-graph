@@ -44,6 +44,7 @@ import type {
   OpenCall,
   Outcome,
   OutcomeValue,
+  Pair,
   Recorded,
   Report,
   Ring,
@@ -180,8 +181,8 @@ export interface Graph {
   consentOf(subjects: readonly Subject[]): Promise<Map<Subject, Consent>>
   /** Every answer a subject gave, the standing one first. With `limit`, only that many. */
   consentHistory(subject: Subject, limit?: number): Promise<ConsentAnswer[]>
-  /** Records a reviewer's decision that two subjects are one person. They join one cluster unless separated. */
-  join(a: Subject, b: Subject, why?: Deciding): Promise<Change[]>
+  /** Records a reviewer's decision that two subjects are one person. They join one cluster unless separated. `marked` is told the mark it leaves, to `ignore` if it is taken back. */
+  join(a: Subject, b: Subject, why?: Deciding, marked?: (mark: Identifier) => void): Promise<Change[]>
   /** A number that is different after every write: the same number means nothing has changed. */
   version(): Promise<number>
   /** How much the graph holds: subjects, clusters, identifiers, edges, sightings, touches, decisions. */
@@ -194,6 +195,11 @@ export interface Graph {
   search(text: string, limit?: number): Promise<Subject[]>
   /** The newest cluster changes, newest first: who joined or left which cluster, and when. */
   recent(limit?: number): Promise<Moved[]>
+  /**
+   * Pairs that are related and not joined, strongest first, for someone to decide. Only pairs with a subject of the newest
+   * sightings, 10,000 unless told otherwise: scoring every pair reads the whole graph.
+   */
+  undecided(options?: { limit?: number; sightings?: number }): Promise<Undecided>
   /**
    * Every pair a reviewer joined or kept apart, with what the two share, in
    * the form `fit` takes. A pair that shares nothing is left out, since it
@@ -276,6 +282,14 @@ export interface PolicyState {
 
 const DAY = 86_400_000
 const HOUR = 3_600_000
+/** Pairs the graph finds related and has not joined, strongest first. */
+export interface Undecided {
+  pairs: Pair[]
+  /** How many there are among the subjects looked at, and how many subjects those are. */
+  total: number
+  seen: number
+}
+
 export interface BoardOptions {
   /** The steps in order, the furthest last. `wait` is how many hours at it is too long. */
   steps: readonly { name: string; wait?: number }[]
@@ -934,17 +948,21 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       })
     },
 
-    async join(a, b, why) {
+    async join(a, b, why, marked) {
       const pair = pairOf(a, b, 'join')
       ruleFor(policy, 'review:0')
-      return changing(async (tx) => {
+      let mark: Identifier | undefined
+      const changes = await changing(async (tx) => {
         // Named after the decision, not the subjects, so no two joins can collide and a forgotten id leaves no trace.
         let identifier = `review:join-${await decide(tx, 'join', pair, why)}`
         // A name some subject already holds would join these two to strangers. Take one nobody holds.
         while ((await tx.states([identifier])).has(identifier)) identifier += '+'
+        mark = identifier
         const at = now()
         return record(tx, pair.map((subject) => ({ subject, identifier, at, event: 'review', recorded: at })))
       })
+      marked?.(mark!)
+      return changes
     },
 
     version() {
@@ -1011,12 +1029,35 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return store.read((tx) => tx.recentChanges(limit))
     },
 
+    async undecided({ limit = 50, sightings = 10_000 } = {}) {
+      return store.read(async (tx) => {
+        const lately = await tx.latelySeen(sightings)
+        const pairs = new Map<string, Pair>()
+        // A pair kept apart is not a link, and one a reviewer's mark joins has been decided, even where a cut keeps it in two clusters.
+        for (const [subject, links] of await neighbors(tx, lately)) {
+          for (const link of links) {
+            if (link.reasons.some((reason) => reason.identifier.startsWith('review:join-'))) continue
+            const [a, b] = subject < link.subject ? [subject, link.subject] : [link.subject, subject]
+            pairs.set(pairKey(a, b), { a, b, score: link.score, level: link.level, reasons: link.reasons })
+          }
+        }
+        const labels = await tx.labelsOf(unique([...pairs.values()].flatMap(({ a, b }) => [a, b])))
+        const open = [...pairs.values()].filter(({ a, b }) => labels.get(a)!.cluster !== labels.get(b)!.cluster)
+        open.sort((x, y) => y.score - x.score || (x.a === y.a ? (x.b < y.b ? -1 : 1) : x.a < y.a ? -1 : 1))
+        return { pairs: open.slice(0, limit), total: open.length, seen: lately.length }
+      })
+    },
+
     reviewed({ exclude } = {}) {
       return store.read(async (tx) => {
         // The last decision about a pair is the one that stands.
         const verdicts = new Map<string, { a: Subject; b: Subject; same: boolean } | undefined>()
-        for (const { action, about, by } of await tx.decisions()) {
-          if (exclude && by?.startsWith(exclude)) continue
+        const theirs = new Set<number>()
+        for (const { seq, action, about, by } of await tx.decisions()) {
+          if (exclude && by?.startsWith(exclude)) {
+            theirs.add(seq)
+            continue
+          }
           const [a, b] = about
           if (a === undefined || b === undefined) continue
           if (action === 'join') verdicts.set(pairKey(a, b), { a, b, same: true })
@@ -1030,7 +1071,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
           if (!verdict) continue
           const edges = await tx.edgesOf([verdict.a, verdict.b])
           const states = await tx.states(unique(edges.map((edge) => edge.identifier)))
-          const reasons = scorePairs(open, edges, states).flatMap((pair) => pair.reasons).filter((reason) => !reason.identifier.startsWith('review:'))
+          const shared = scorePairs(open, edges, states).flatMap((pair) => pair.reasons)
+          const reasons = shared.filter((reason) => !reason.identifier.startsWith('review:'))
+          // A join stands while a mark links the two, unless it is the mark of a join left out. Muted, it was taken back, and says nothing.
+          if (verdict.same && !shared.some(({ identifier }) => identifier.startsWith('review:') && !theirs.has(Number.parseInt(identifier.slice(12), 10)))) continue
           if (reasons.length > 0) out.push({ reasons, same: verdict.same })
         }
         return out

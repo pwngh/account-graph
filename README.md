@@ -79,6 +79,7 @@ The `device:` value is the `ag_device` cookie the script set, which your backend
 - **A report of cost against outcomes.** Campaign costs are read from Google Ads and Meta, or posted, and set beside the inquiries, sign-ups and sales each campaign's visitors produced. A cost per outcome counts only days whose cost is known, and is withheld when too few are. People are counted beside outcomes, and recent days are marked as still filling. Every value an outcome has had is kept, so what was expected stands beside what was collected.
 - **Broken down your way.** By the office an ad was for, the office that served, language, hour or weekday, with what was not recorded always shown. Costs are never split by guesswork.
 - **What followed a call.** Who went on to reach a step, by how the call went and whether a miss was returned, with the clock set so people already signing up do not count for it.
+- **A queue of pairs to decide.** Related and not joined, side by side with what they share, one key each to join, keep apart or skip. Every decision can be taken back, and what was decided teaches `fit` the weights.
 - **A board of people by step.** Missed calls nobody returned first, then everyone at the furthest step they reached, with who is new today and who has waited too long.
 - **One person's timeline.** From the ad click to the last value, across every subject that is them, each entry with why it is this person.
 - **Steps with a value.** Name your steps once (inquiry 5, call 10, client 200) and every outcome, page event and call takes its value and its ad platform action from its step.
@@ -160,6 +161,7 @@ PostgreSQL writes take one advisory lock, so they run one at a time; the write q
 
 - No request has been made with real credentials. A successful Fingerprint lookup, MaxMind answer, token from Google or Microsoft, upload to any ad platform, cost report from Google Ads or Meta, Twilio line lookup, and Smarty address check are all untested. `npm run live-check` is how to run them with yours.
 - No real phone call has arrived from Twilio, and no alert has been posted to a real webhook.
+- The queue of pairs to decide looks at the subjects of the newest 10,000 sightings, not at everyone.
 - The board is read from what is recorded. It does not assign work, and only people who reached a step or had a call in its period are on it.
 - A journey reads at most 60 subjects of one person, and says how many it left out. How a conversion stands is kept, and when it was sent is not.
 - What followed a call is a count of what came after, not an effect. The landmark removes one bias and leaves the rest.

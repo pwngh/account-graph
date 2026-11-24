@@ -131,6 +131,7 @@ const NAME = /^[\w.-]{1,64}$/
 const REVIEW_ROUTES = new Set([
   'GET /me', 'GET /subject', 'GET /clusters', 'GET /search', 'GET /recent', 'GET /links', 'GET /cluster', 'GET /history', 'GET /journey', 'GET /board', 'GET /flows', 'GET /collusion', 'GET /rings',
   'GET /decisions', 'GET /disputes', 'GET /consent', 'GET /outcome', 'GET /followed', 'GET /call', 'GET /calls', 'GET /calls/summary', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'GET /ops', 'POST /find', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
+  'GET /undecided',
 ])
 
 /** Answers hold people's data, so nothing keeps a copy of one. */
@@ -668,7 +669,10 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       case 'POST /join': {
         const body = await json(request)
         if (body.pairs !== undefined) return graph.joinAll(...listed(request, body, false))
-        return graph.join(body.a, body.b, signed(request, body))
+        if (body.mark !== true) return graph.join(body.a, body.b, signed(request, body))
+        let mark: Identifier | undefined
+        const moved = await graph.join(body.a, body.b, signed(request, body), (left) => (mark = left))
+        return { moved, mark }
       }
       case 'GET /me':
         return { reviewer: reviewerOf(request) ?? null }
@@ -824,6 +828,11 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         const id = url.searchParams.get('id') ?? ''
         const outcome = await graph.outcomeOf(id)
         return outcome ? { ...outcome, values: await graph.values(id) } : null
+      }
+      case 'GET /undecided': {
+        const limit = url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : 50
+        if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new Refusal(400, '`limit` must be a whole number from 1 to 500')
+        return graph.undecided({ limit })
       }
       case 'GET /board': {
         const steps = Object.entries(options.stages ?? {}).map(([name, { wait }]) => ({ name, ...(wait && { wait }) }))

@@ -18,3 +18,4 @@ http://127.0.0.1:8080/outcome?id=a
 http://127.0.0.1:8080/followed?from=2026-01-01&to=2026-01-02&step=call&days=30
 http://127.0.0.1:8080/journey?subject=account:1&before=9
 http://127.0.0.1:8080/board?days=90
+http://127.0.0.1:8080/undecided?limit=5

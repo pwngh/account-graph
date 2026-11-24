@@ -209,6 +209,7 @@ Open `/review` and enter a token. Each view has an address of its own, so it can
 | `/review#/accounts/account:42` | One subject: its cluster, its ties and why, its money, its sightings. |
 | `/review#/journey/contact:42` | One person's timeline: arrivals, what they were seen doing, calls, steps and their values, consent and decisions, on every subject that is them. |
 | `/review#/board/90` | People by the furthest step they reached, missed calls nobody returned first. |
+| `/review#/decide` | Pairs that are related and not joined, one at a time, to join or keep apart. Keys: J, K, S to skip, U to undo. |
 | `/review#/calls` | Missed calls not returned, how calls went by hour and weekday, and coverage, over the last 30 days. Takes two days like the next. |
 | `/review#/channels` | What each campaign cost and brought in, over the last 30 days. |
 | `/review#/channels/2026-11-01/2026-11-30` | The same, for the days named. A breakdown, a step and a number of days may follow. |

@@ -324,6 +324,10 @@ await graph.join('account:1', 'account:2', { by: 'dana', reason: 'same caller' }
 
 A separation holds whatever the two share later, and can be withdrawn with `false`. It may be recorded before either account exists. A join is the strongest tie there is, but a separation still wins: joining an account to one side of a separated pair pulls it away from the other.
 
+A join leaves a mark, `review:join-` and the number of its decision, that both subjects carry. `ignore` the mark to take the join back. The record keeps both decisions, and `reviewed()` no longer counts the pair.
+
+`undecided()` lists pairs that are related and not joined, strongest first, for someone to decide. It looks at the subjects of the newest 10,000 sightings, because scoring every pair reads the whole graph: measured on the benchmark's 124,000 edges in PostgreSQL, 0.13 seconds against 0.33, and only the second grows with the graph.
+
 `clusters()` lists the largest clusters, which is where a reviewer should look first. `search('account:4')` finds subjects by the start of their id, and `recent()` lists the newest cluster changes.
 
 Every `ignore`, `separate`, `join`, `forget`, and `rebuild` is appended to a record of decisions. Each entry carries a hash of itself and the entry before, so editing or deleting one breaks every hash after it.

@@ -48,6 +48,8 @@ export interface Tx {
   counts(): Promise<Counts>
   /** The clusters with two or more members, largest first, skipping the first `offset`. */
   largestClusters(limit: number, offset?: number): Promise<{ id: Subject; size: number }[]>
+  /** The subjects of that many of the sightings written down last, each once, in no order. Of those written down at one time, by subject. */
+  latelySeen(sightings: number): Promise<Subject[]>
   /** Subjects whose id starts with the text, in order. */
   subjectsStarting(text: string, limit: number): Promise<Subject[]>
   /** Writes down cluster changes as they happen. */

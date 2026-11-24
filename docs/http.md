@@ -77,6 +77,7 @@ A token goes in the `authorization` header as `Bearer …`. There are two.
 | `GET /disputes` | Pairs whose reports from systems have switched between kept apart and joined (or withdrawn) three times or more. |
 | `GET /consent?subject=` | Every answer the subject gave about advertising, the standing one first. |
 | `GET /outcome?id=` | One outcome with every value it has had, or `null`. |
+| `GET /undecided?limit=` | Pairs that are related and not joined, strongest first: `{ pairs, total, seen }`. Looks at the subjects of the newest 10,000 sightings, of which there are `seen`. `limit` is at most 500. |
 | `GET /board?days=` | People by the furthest step they reached, missed calls nobody returned first: `{ columns, unplaced }`, each column with `people`, `fresh`, `late`, `done` and its `rows`. See [the report](report.md#people-by-step). |
 | `GET /followed?from=&to=&tz=&step=&days=` | Who reached a step within some days of a call. See [the report](report.md#what-followed-a-call). |
 | `GET /call?id=` | One call with its state and, for a missed one, what became of it, or `null`. |
@@ -85,7 +86,7 @@ A token goes in the `authorization` header as `Bearer …`. There are two.
 | `GET /audit` | Whether that record is whole: `{ sound, head }`, with `brokenAt` when it is not. `head` is the newest entry's `seq` and `hash`. |
 | `GET /report?from=&to=&tz=&by=&per=` | What each campaign cost and brought in between two days, with `steps` naming the steps in your order and `timeZone` the zone its days are in. See [the report](report.md). |
 | `POST /separate` | `{ a, b, separated?, by?, reason? }`. Keeps two subjects apart, or with `separated: false` allows them again. |
-| `POST /join` | `{ a, b, by?, reason? }`. Records that two subjects are one person. |
+| `POST /join` | `{ a, b, by?, reason?, mark? }`. Records that two subjects are one person. With `mark: true` the answer is `{ moved, mark }`, where `mark` is the identifier to `/ignore` to take the join back. |
 | `POST /ignore` | `{ identifier, ignored?, by?, reason? }`. Stops linking through one identifier, or resumes. |
 | `POST /forget` | `{ subject, by?, reason? }`. Deletes a subject and everything recorded about it. |
 

@@ -441,6 +441,11 @@ export function createMemoryStore(): Store {
       return limit === undefined ? all : all.slice(Math.max(0, all.length - limit))
     },
 
+    async latelySeen(newest) {
+      const all = [...sightings.values()].flat().sort((x, y) => (y.recorded ?? y.at) - (x.recorded ?? x.at) || (x.subject < y.subject ? -1 : 1))
+      return [...new Set(all.slice(0, newest).map((sighting) => sighting.subject))]
+    },
+
     async sightingsUntil(recorded) {
       return [...sightings.values()].flatMap((log) => log.filter((sighting) => (sighting.recorded ?? sighting.at) <= recorded))
     },
