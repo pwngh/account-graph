@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { after, describe, test } from 'node:test'
-import { Outdated, brokenAt, callState, createGraph, createHours, defaultPolicy, dialed, email, fit, followUp, hashPhone, nameKeys, policyFrom, recordCall, recordCallResult, recordNotLead, recordReturn, recordText, ringing, replyTo, beginnings, textCode, codeNote, texted } from '../src/index.ts'
+import { Outdated, brokenAt, callState, createGraph, createHours, defaultPolicy, dialed, email, fit, followUp, hashPhone, nameKeys, policyFrom, policyProblems, recordCall, recordCallResult, recordNotLead, recordReturn, recordText, ringing, replyTo, beginnings, textCode, codeNote, texted } from '../src/index.ts'
 import type { Change, GraphOptions, Observation, Policy, Store } from '../src/index.ts'
 
 export interface Opened {
@@ -2517,6 +2517,161 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await assert.rejects(graph.outcome({ ...client, transactionId: 'e' }), /currency of its payments/)
       await graph.outcome({ ...client, transactionId: 'e', currency: '' })
       assert.deepEqual([(await graph.outcomeOf('e'))?.value, (await graph.outcomeOf('e'))?.currency], [5, 'EUR'])
+    })
+
+    test('two who cannot be one person by a fact are kept apart, whatever joins them and in whatever order it is told', async () => {
+      const births = policyFrom({ apart: ['birth'] })
+      const told: Observation[] = [
+        { subject: 'contact:1', identifiers: ['email:e', 'device:d', 'birth:1'], at: T0 },
+        { subject: 'contact:2', identifiers: ['email:e', 'device:d', 'birth:2'], at: T0 },
+        { subject: 'visitor:1', identifiers: ['device:d'], at: T0 },
+        { subject: 'contact:3', identifiers: ['email:e', 'birth:1'], at: T0 },
+      ]
+      for (const order of [told, [...told].reverse(), [told[2]!, told[1]!, told[3]!, told[0]!]]) {
+        const { graph } = await fresh(births)
+        for (const each of order) await graph.observe(each)
+        assert.deepEqual([(await graph.cluster('contact:1'))!.members.includes('contact:2'), (await graph.cluster('contact:1'))!.members.includes('contact:3')], [false, true])
+        assert.deepEqual(await graph.verify(), [])
+        const link = (await graph.links('contact:1')).find((each) => each.subject === 'contact:2')!
+        assert.deepEqual([link.level, link.conflict, link.score > 0.99], ['related', 'birth', true])
+        assert.equal((await graph.between('contact:1', 'contact:2')).conflict, 'birth')
+        assert.equal((await graph.match(['email:e', 'birth:2'])).find((each) => each.subject === 'contact:1')!.level, 'related')
+        // Nobody decided it, so it is in no list of decisions, and no wall.
+        assert.deepEqual([await graph.decisions(), await graph.conflicts(['contact:1', 'contact:2'])], [[], []])
+        assert.ok((await graph.undecided()).pairs.some((pair) => pair.conflict === 'birth'))
+        await graph.rebuild()
+        assert.equal((await graph.cluster('contact:1'))!.members.includes('contact:2'), false)
+      }
+      // The default keeps nobody apart.
+      const { graph: plain } = await fresh()
+      await plain.observe(told)
+      assert.equal((await members(plain, 'contact:1')).length, 4)
+    })
+
+    test('one value in common is enough, and where one of two is unknown nothing is said', async () => {
+      const { graph } = await fresh(policyFrom({ apart: ['birth'] }))
+      const pair = async (n: number, a: string[], b: string[]) => {
+        await graph.observe([{ subject: `contact:${n}a`, identifiers: [`email:${n}`, ...a], at: T0 }, { subject: `contact:${n}b`, identifiers: [`email:${n}`, ...b], at: T0 }])
+        return (await members(graph, `contact:${n}a`)).length === 2
+      }
+      assert.equal(await pair(1, ['birth:1'], ['birth:1']), true)
+      assert.equal(await pair(2, ['birth:1'], []), true)
+      // Corrected, it holds the old value and the new.
+      assert.equal(await pair(3, ['birth:1'], ['birth:2']), false)
+      await graph.observe({ subject: 'contact:3b', identifiers: ['birth:1'], at: T0 + 1 })
+      assert.equal((await members(graph, 'contact:3a')).length, 2)
+      assert.deepEqual(policyProblems({ apart: ['birth'] }), [])
+      for (const bad of [{ apart: 'birth' }, { apart: ['initial'] }]) assert.equal(policyProblems(bad).length, 1)
+    })
+
+    test('a join overrules a fact, whichever is told first, and its undoing gives the fact back', async () => {
+      for (const system of [false, true]) {
+        for (const first of ['join', 'fact'] as const) {
+          const { graph } = await fresh(policyFrom({ apart: ['birth'] }))
+          const join = () => (system ? graph.joinAll([{ a: 'contact:1', b: 'contact:2' }], { by: 'system:crm' }) : graph.join('contact:1', 'contact:2', { by: 'dana' }))
+          const fact = () => graph.observe([{ subject: 'contact:1', identifiers: ['email:e', 'birth:1'], at: T0 }, { subject: 'contact:2', identifiers: ['email:e', 'birth:2'], at: T0 }])
+          await graph.observe([{ subject: 'contact:1', identifiers: ['ip:1'], at: T0 }, { subject: 'contact:2', identifiers: ['ip:2'], at: T0 }])
+          if (first === 'join') (await join(), await fact())
+          else (await fact(), await join())
+          assert.equal((await members(graph, 'contact:1')).length, 2)
+          assert.deepEqual(await graph.verify(), [])
+          const marks = (await graph.history('contact:1')).map((each) => each.identifier).filter((each) => each.startsWith('review:'))
+          await graph.ignore(marks[0]!)
+          assert.equal((await members(graph, 'contact:1')).length, 1)
+          assert.deepEqual(await graph.verify(), [])
+        }
+      }
+    })
+
+    test('credit does not cross a fact, and forgetting takes the fact along', async () => {
+      const { graph } = await fresh(policyFrom({ apart: ['birth'] }))
+      await graph.observe([
+        { subject: 'contact:1', identifiers: ['email:e', 'birth:1'], at: T0 },
+        { subject: 'contact:2', identifiers: ['email:e', 'birth:2', 'device:d'], at: T0 },
+        { subject: 'visitor:2', identifiers: ['device:d'], at: T0 },
+      ])
+      await graph.touch({ subject: 'contact:2', at: T0, gclid: 'two' })
+      assert.equal((await graph.attribute('contact:1', { at: T0 + HOUR })).credited, undefined)
+      assert.equal((await graph.attribute('contact:2', { at: T0 + HOUR })).credited?.gclid, 'two')
+      await graph.observe({ subject: 'contact:3', identifiers: ['email:e'], at: T0 })
+      await graph.forget('contact:2')
+      assert.equal((await graph.holders(['birth:2'])).length, 0)
+      assert.deepEqual(await graph.verify(), [])
+    })
+
+    test('credit does not cross a cut through a browser, and no fact cuts a join', async () => {
+      const { graph } = await fresh(policyFrom({ apart: ['birth'] }))
+      await graph.observe([
+        { subject: 'contact:1', identifiers: ['device:d', 'birth:1'], at: T0 },
+        { subject: 'contact:2', identifiers: ['email:e', 'birth:2'], at: T0 },
+        { subject: 'visitor:1', identifiers: ['device:d', 'email:e'], at: T0 },
+      ])
+      await graph.touch({ subject: 'visitor:1', at: T0, gclid: 'two' })
+      const credit = async (subject: string) => (await graph.attribute(subject, { at: T0 + HOUR })).credited?.gclid
+      assert.equal((await members(graph, 'contact:2')).includes('visitor:1'), true)
+      assert.deepEqual([await credit('contact:1'), await credit('contact:2')], [undefined, 'two'])
+      // Nor through it: a site it walked on to, and what is tied to that, are in a group of their own.
+      await graph.observe([{ subject: 'visitor:1', identifiers: ['carry:c'], at: T0 }, { subject: 'visitor:8', identifiers: ['carry:c', 'email:w'], at: T0 }, { subject: 'account:9', identifiers: ['email:w'], at: T0 }])
+      await graph.touch({ subject: 'visitor:8', at: T0 + 1, gclid: 'eight' })
+      assert.equal(await credit('contact:1'), undefined)
+      await graph.touch({ subject: 'contact:1', at: T0 + 2, gclid: 'one' })
+      assert.notEqual(await credit('visitor:8'), 'one')
+      assert.notEqual(await credit('account:9'), 'one')
+      // Nor along a link a fact took, where a later cut left nobody whose facts are known beside it.
+      const { graph: later } = await fresh(policyFrom({ apart: ['birth'] }))
+      await later.observe([
+        { subject: 'a:1', identifiers: ['carry:av', 'birth:1'], at: T0 },
+        { subject: 'visitor:v', identifiers: ['carry:av', 'carry:vb', 'device:v'], at: T0 },
+        { subject: 'b:1', identifiers: ['carry:vb', 'birth:2', 'device:b'], at: T0 },
+        { subject: 'account:v', identifiers: ['device:v'], at: T0 },
+        { subject: 'account:b', identifiers: ['device:b'], at: T0 },
+      ])
+      await later.touch({ subject: 'visitor:v', at: T0, gclid: 'v' })
+      assert.equal((await members(later, 'b:1')).includes('visitor:v'), false)
+      assert.equal((await later.attribute('a:1', { at: T0 + HOUR })).credited, undefined)
+      assert.deepEqual(await later.verify(), [])
+      // Joined one and two, and two to three by an email six hold. One and three differ, and the join stands.
+      const { graph: joined } = await fresh(policyFrom({ apart: ['birth'] }))
+      await joined.observe([
+        { subject: 'account:1', identifiers: ['birth:1'], at: T0 },
+        ...[2, 3, 4, 5, 6, 7].map((n) => ({ subject: `account:${n}`, identifiers: ['email:e', ...(n === 3 ? ['birth:3'] : [])], at: T0 })),
+      ])
+      await joined.join('account:1', 'account:2', { by: 'dana' })
+      assert.equal((await members(joined, 'account:1')).includes('account:2'), true)
+      assert.equal((await members(joined, 'account:1')).includes('account:3'), false)
+      assert.deepEqual(await joined.verify(), [])
+      // Two who differ, held in one group by joins through a third, are one, and nothing says otherwise.
+      const { graph: chained } = await fresh(policyFrom({ apart: ['birth'] }))
+      await chained.observe([{ subject: 'contact:1', identifiers: ['birth:1', 'email:e'], at: T0 }, { subject: 'contact:2', identifiers: ['birth:2', 'email:e'], at: T0 }, { subject: 'contact:3', identifiers: ['ip:3'], at: T0 }])
+      await chained.join('contact:1', 'contact:3', { by: 'dana' })
+      await chained.join('contact:3', 'contact:2', { by: 'dana' })
+      await chained.touch({ subject: 'contact:2', at: T0, gclid: 'two' })
+      const told = await chained.between('contact:1', 'contact:2')
+      assert.deepEqual([told.joined, told.conflict, (await chained.attribute('contact:1', { at: T0 + HOUR })).credited?.gclid], [true, undefined, 'two'])
+      const { graph: longer } = await fresh(policyFrom({ apart: ['birth'] }))
+      await longer.observe([{ subject: 'contact:1', identifiers: ['birth:1', 'email:e'], at: T0 }, { subject: 'contact:2', identifiers: ['birth:2', 'email:e'], at: T0 }, ...[3, 4].map((n) => ({ subject: `contact:${n}`, identifiers: [`ip:${n}`], at: T0 }))])
+      for (const [a, b] of [[1, 3], [3, 4], [4, 2]]) await longer.join(`contact:${a}`, `contact:${b}`, { by: 'dana' })
+      await longer.touch({ subject: 'contact:2', at: T0, gclid: 'two' })
+      assert.equal((await longer.attribute('contact:1', { at: T0 + HOUR })).credited?.gclid, 'two')
+      // A reviewer who separates the two is heard before either.
+      await joined.separate('account:1', 'account:2')
+      assert.equal((await members(joined, 'account:1')).includes('account:2'), false)
+      assert.deepEqual(await joined.verify(), [])
+    })
+
+    test('kept apart by facts, what is stored after any writes is what a rebuild gives', async () => {
+      const next = random(11)
+      const { graph } = await fresh(policyFrom({ apart: ['birth'] }))
+      const pick = (n: number) => Math.floor(next() * n)
+      for (let i = 0; i < 120; i++) {
+        const subject = `${['contact', 'visitor', 'caller'][pick(3)]}:${pick(10)}`
+        const roll = next()
+        if (roll < 0.75) await graph.observe({ subject, identifiers: [`email:${pick(5)}`, `device:${pick(6)}`, `phone:${pick(5)}`].filter(() => next() < 0.5).concat(subject.startsWith('contact') ? [`birth:${pick(3)}`].filter(() => next() < 0.5) : [], [`ip:${pick(20)}`]), at: T0 + i })
+        else if (roll < 0.85) await graph.join(subject, `contact:${10 + pick(2)}`, { by: 'dana' })
+        else if (roll < 0.93) await graph.separate(subject, `contact:${10 + pick(2)}`, next() < 0.6)
+        else await graph.forget(subject)
+        if (i % 10 === 9) assert.deepEqual(await graph.verify(), [])
+      }
     })
 
     test('several subjects are forgotten together, or none is', async () => {

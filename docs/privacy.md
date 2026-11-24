@@ -11,6 +11,7 @@ Hashed data here is **pseudonymous**: anyone who holds the original value can id
 | Email, phone, postal address, sent to `/identify`, `/call`, `/convert` or the outbox, or made with the hashing helpers | A hash of the normalized value | By guessing. The set of phone numbers is small enough to hash in full, and a known email can be hashed and compared. The hashes match those of ad platforms, so they carry no secret. |
 | An identifier you write with `/observe` or `graph.observe` | As written, for any kind. Hash it first with `email()`, `phone()` and the other helpers. | Yes, unless you hashed it. |
 | Name | A keyed hash, only under a policy that uses names | Only with `IDENTIFIER_SECRET`. |
+| Date of birth | A keyed hash by itself, only under a policy that keeps people apart by it | Only with `IDENTIFIER_SECRET`. There are few dates, so with it every one can be tried. |
 | Your own ids, such as `contact:7` | As written | By you. |
 | Browser | The id in its first-party cookie | It identifies a browser, and a person once something links the two. |
 | IP address | As written; IPv6 as its /64 | Yes. |

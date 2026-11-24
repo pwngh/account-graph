@@ -80,17 +80,24 @@ test('a world is the same for the same seed, and every subject of it has an owne
   for (const event of events) {
     if (event.kind === 'record') assert.ok(told.has(event.subject))
     else if (event.kind === 'call') assert.ok(calls.has(event.id))
+    else if (event.kind === 'join') assert.ok(calls.has(event.call) && told.has(event.subject))
     else assert.ok(told.has(`visitor:${event.device}`))
   }
 })
 
 test('a world is reported to a server, and everyone told of is found there', async () => {
   const world = makeWorld(SETTINGS.base!.rates, { people: 60, days: 30, start: Date.parse('2026-03-02T15:00:00Z'), seed: 3 })
-  for (const arm of ['default', 'household'] as const) {
+  for (const arm of ['default', 'household', 'household staff', 'default pool'] as const) {
     const { truths, clusterOf, credit } = await report(world, arm)
     // A caller who hid their number is a subject of its own.
     assert.ok(truths.length >= world.truths.length)
     for (const { subject } of world.truths) assert.ok(clusterOf.has(subject), subject)
     assert.equal(credit.right + credit.wrong + credit.none + credit.cold, world.ads.size)
   }
+})
+
+test('under the default policy names and birth dates change no group', async () => {
+  const world = makeWorld(SETTINGS.base!.rates, { people: 80, days: 40, start: Date.parse('2026-03-02T15:00:00Z'), seed: 5 })
+  const without = { ...world, events: world.events.map((event) => (event.kind === 'record' ? { ...event, name: undefined, dob: undefined } : event)) } as unknown as typeof world
+  assert.deepEqual((await report(world)).clusterOf, (await report(without)).clusterOf)
 })

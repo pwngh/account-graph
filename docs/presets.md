@@ -45,7 +45,7 @@ Phone evidence halves for each two years between the two sightings, because numb
 
 A caller becomes a `caller:` subject with their number. Under the preset, the contact on file with that number is only related to the caller. A later step of the contact is then not credited to the caller's ad click.
 
-To close the gap, have your backend join the two when staff open the contact a call is about:
+To close the gap, have your backend join the two when staff open the contact a call is about. Leave out a call by somebody who speaks for another, such as a parent about a child: that is another person, and joining the two mixes their records.
 
 ```sh
 curl -X POST https://graph.example.org/join -H "authorization: Bearer $GRAPH_TOKEN" \

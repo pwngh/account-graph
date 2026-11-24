@@ -1,5 +1,5 @@
 import { UNNAMED, evidence, usable, weigh } from './policy.ts'
-import type { Policy } from './policy.ts'
+import type { Fact, Policy } from './policy.ts'
 import type { Edge, Identifier, IdentifierState, Labels, Pair, Reason, Subject } from './types.ts'
 
 /**
@@ -87,6 +87,37 @@ export function components(subjects: Iterable<Subject>, pairs: readonly Pair[]):
   return out
 }
 
+/** What is known of somebody that cannot be two people's, and the joins a reviewer or a system made of them. */
+export interface Known {
+  facts: Map<Fact, Set<Identifier>>
+  joins: Set<Identifier>
+}
+
+/** The facts of the subjects that have one, of the facts a policy keeps people apart by. An undone join is none. */
+export function knownOf(policy: Policy, edges: readonly Edge[], undone: (identifier: Identifier) => boolean): Map<Subject, Known> {
+  const out = new Map<Subject, Known>()
+  if (!policy.apart?.length) return out
+  for (const { subject, identifier } of edges) {
+    const kind = identifier.slice(0, identifier.indexOf(':'))
+    if (!policy.apart.includes(kind as Fact) && !(kind === 'review' && !undone(identifier))) continue
+    const known = out.get(subject) ?? { facts: new Map(), joins: new Set() }
+    out.set(subject, known)
+    if (kind === 'review') known.joins.add(identifier)
+    else known.facts.set(kind as Fact, (known.facts.get(kind as Fact) ?? new Set()).add(identifier))
+  }
+  return out
+}
+
+/** The fact two subjects cannot both be one person by, if there is one. */
+export function conflict(policy: Policy, a: Known | undefined, b: Known | undefined): Fact | undefined {
+  if (!a || !b || !policy.apart?.length) return undefined
+  if ([...a.joins].some((identifier) => b.joins.has(identifier))) return undefined
+  return policy.apart.find((fact) => {
+    const [own, others] = [a.facts.get(fact), b.facts.get(fact)]
+    return own && others && ![...own].some((value) => others.has(value))
+  })
+}
+
 type Adjacency = Map<Subject, Map<Subject, number>>
 
 /**
@@ -95,7 +126,8 @@ type Adjacency = Map<Subject, Map<Subject, number>>
  * A component is every subject reachable over `same` pairs. A cluster is what
  * is left of a component after three kinds of cut, applied in this order:
  *
- * 1. A pair a reviewer separated is never linked directly.
+ * 1. A pair a reviewer separated, or whose facts say it is two people, is
+ *    never linked directly.
  * 2. If the two are still connected through others, the weakest set of links
  *    between them is removed.
  * 3. A single link below `policy.bridge` may add one subject to a group, but
@@ -111,6 +143,9 @@ export function partition(
   pairs: readonly Pair[],
   separated: readonly (readonly [Subject, Subject])[],
   policy: Policy,
+  known: ReadonlyMap<Subject, Known> = new Map(),
+  /** Hears each link a difference of facts took. */
+  onCut?: (a: Subject, b: Subject) => void,
 ): Map<Subject, Labels> {
   const component = components(subjects, pairs)
   const members = new Map<Subject, Subject[]>()
@@ -143,7 +178,10 @@ export function partition(
       out.set(id, { component: id, cluster: id })
       continue
     }
-    for (const piece of split(group, links.get(id) ?? [], apart.get(id) ?? [], policy)) {
+    const told = group.filter((subject) => known.get(subject)?.facts.size).sort()
+    const differ: [Subject, Subject][] = []
+    for (const [i, a] of told.entries()) for (const b of told.slice(i + 1)) if (conflict(policy, known.get(a), known.get(b))) differ.push([a, b])
+    for (const piece of split(group, links.get(id) ?? [], apart.get(id) ?? [], policy, differ, known, onCut)) {
       let cluster = piece[0]!
       for (const subject of piece) if (subject < cluster) cluster = subject
       for (const subject of piece) out.set(subject, { component: id, cluster })
@@ -152,7 +190,7 @@ export function partition(
   return out
 }
 
-function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subject][], policy: Policy): Subject[][] {
+function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subject][], policy: Policy, differ: [Subject, Subject][] = [], known: ReadonlyMap<Subject, Known> = new Map(), onCut?: (a: Subject, b: Subject) => void): Subject[][] {
   const adjacency: Adjacency = new Map(members.map((member) => [member, new Map()]))
   for (const { a, b, score } of links) {
     adjacency.get(a)!.set(b, score)
@@ -166,6 +204,17 @@ function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subj
   apart.sort((x, y) => (x[0] === y[0] ? (x[1] < y[1] ? -1 : 1) : x[0] < y[0] ? -1 : 1))
   for (const [a, b] of apart) cut(a, b)
   for (const [a, b] of apart) for (const [x, y] of minimumCut(adjacency, a, b)) cut(x, y)
+  // Facts come after decisions, and cut no link a decision made: two held together by those alone stay together.
+  const decided = (a: Subject, b: Subject) => [...(known.get(a)?.joins ?? [])].some((identifier) => known.get(b)?.joins.has(identifier))
+  const cutByFact = (a: Subject, b: Subject) => {
+    if (adjacency.get(a)!.has(b)) onCut?.(a, b)
+    cut(a, b)
+  }
+  for (const [a, b] of differ) cutByFact(a, b)
+  for (const [a, b] of differ) {
+    const found = minimumCut(adjacency, a, b, decided)
+    if (!found.some(([x, y]) => decided(x, y))) for (const [x, y] of found) cutByFact(x, y)
+  }
 
   if (policy.bridge > policy.same) {
     const removed: [Subject, Subject][] = []
@@ -240,17 +289,20 @@ function pieces(adjacency: Adjacency): Subject[][] {
 /** A link's strength as a whole number. Noisy-OR evidence adds on this scale, so cuts compare sums of it. */
 const strength = (score: number) => Math.max(1, Math.round(-Math.log(1 - Math.min(score, 1 - 1e-9)) * 1e6))
 
+/** Stronger than any links together, of a link no cut may take unless there is no other way. */
+const FIRM = 1e13
+
 /**
  * The cheapest set of links whose removal disconnects `source` from `target`,
  * by maximum flow. Of all cheapest cuts it returns the one nearest `source`,
  * which is unique, so the answer does not depend on search order.
  */
-function minimumCut(adjacency: Adjacency, source: Subject, target: Subject): [Subject, Subject][] {
+function minimumCut(adjacency: Adjacency, source: Subject, target: Subject, firm: (a: Subject, b: Subject) => boolean = () => false): [Subject, Subject][] {
   const piece = reach(adjacency, source)
   if (!piece.has(target)) return []
   const residual = new Map<Subject, Map<Subject, number>>()
   for (const node of piece) {
-    residual.set(node, new Map([...adjacency.get(node)!].map(([next, score]) => [next, strength(score)])))
+    residual.set(node, new Map([...adjacency.get(node)!].map(([next, score]) => [next, firm(node, next) ? FIRM : strength(score)])))
   }
 
   for (;;) {

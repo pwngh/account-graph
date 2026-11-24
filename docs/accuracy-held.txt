@@ -1,0 +1,828 @@
+node tools/accuracy/run.ts --seed 20270201 (held seeds), at commit 271997c9758852289e9f8cb63e47ca6db59efc3b, Node v22.23.0
+
+
+## base, default: 20 worlds of 2000 people over 120 days, seeds from 20270201
+account-graph: people whose record is with another's 2.93% (2.42 to 3.43), and without those one spoke for 1.65% (1.17 to 2.14); people mixed by anything 1.86% (1.69 to 2.04); joined pairs that are right 94.68% (94.11 to 95.25); true pairs found 26.70% (26.19 to 27.21); of those with a chain of facts 90.75% (90.11 to 91.40)
+any shared fact: people whose record is with another's 3.29% (2.74 to 3.84), and without those one spoke for 1.65% (1.17 to 2.14); people mixed by anything 1.80% (1.64 to 1.96); joined pairs that are right 94.19% (93.60 to 94.78); true pairs found 23.47% (22.96 to 23.97); of those with a chain of facts 79.68% (78.92 to 80.43)
+account-graph, of records and callers: people whose record is with another's 2.93% (2.42 to 3.43), and without those one spoke for 1.65% (1.17 to 2.14); people mixed by anything 5.06% (4.65 to 5.47); joined pairs that are right 93.33% (92.59 to 94.08); true pairs found 75.93% (74.47 to 77.40); of those with a chain of facts 84.33% (83.26 to 85.40)
+same phone or email, of records and callers: people whose record is with another's 2.89% (2.48 to 3.30), and without those one spoke for 1.25% (0.91 to 1.59); people mixed by anything 4.95% (4.55 to 5.35); joined pairs that are right 93.71% (93.18 to 94.23); true pairs found 88.23% (87.31 to 89.14); of those with a chain of facts 100.00% (100.00 to 100.00)
+credit: records credited to their ad 64.63% (63.59 to 65.67); of records credited, to another's ad 1.90% (1.56 to 2.24); of those with a chain of facts to the ad, to it 93.81% (93.16 to 94.45); of records of people who never came by an ad, credited to one 0.19% (0.00 to 0.42)
+in all: {"wrong":967,"found":17125,"mixed":786,"people":42211,"mixedRecords":276,"mixedApart":156,"recorded":9434,"wrongClusters":395,"exhausted":0} {"right":5808,"wrong":113,"none":3067,"reachable":6191,"reachableRight":5807,"cold":1394,"coldWrong":3}
+  pairs call call: 3 true, 0 found, 0 wrong
+  pairs call caller: 230 true, 7 found, 1 wrong
+  pairs call contact: 299 true, 40 found, 5 wrong
+  pairs call visitor: 343 true, 94 found, 2 wrong
+  pairs caller caller: 136 true, 15 found, 16 wrong
+  pairs caller contact: 6531 true, 5554 found, 263 wrong
+  pairs caller visitor: 7992 true, 3635 found, 93 wrong
+  pairs contact contact: 974 true, 584 found, 159 wrong
+  pairs contact visitor: 13951 true, 7169 found, 376 wrong
+  pairs visitor visitor: 33705 true, 27 found, 52 wrong
+  links by phone: 5442, 148 between two people
+  links by device: 5404, 181 between two people
+  links by dial: 3146, 31 between two people
+  links by email + phone: 452, 48 between two people
+  links by email: 90, 66 between two people
+  links by device + email + phone: 12, 12 between two people
+  links by device + phone: 4, 4 between two people
+  links by device + email: 2, 2 between two people
+
+## base, default birth: 20 worlds of 2000 people over 120 days, seeds from 20270201
+account-graph: people whose record is with another's 2.34% (1.94 to 2.74), and without those one spoke for 1.36% (0.97 to 1.74); people mixed by anything 1.78% (1.61 to 1.94); joined pairs that are right 95.27% (94.75 to 95.78); true pairs found 26.65% (26.14 to 27.15); of those with a chain of facts 90.62% (89.98 to 91.27)
+any shared fact: people whose record is with another's 3.29% (2.74 to 3.84), and without those one spoke for 1.65% (1.17 to 2.14); people mixed by anything 1.80% (1.64 to 1.96); joined pairs that are right 94.19% (93.60 to 94.78); true pairs found 23.47% (22.96 to 23.97); of those with a chain of facts 79.68% (78.92 to 80.43)
+account-graph, of records and callers: people whose record is with another's 2.34% (1.94 to 2.74), and without those one spoke for 1.36% (0.97 to 1.74); people mixed by anything 4.64% (4.26 to 5.01); joined pairs that are right 94.12% (93.48 to 94.76); true pairs found 75.81% (74.35 to 77.27); of those with a chain of facts 84.19% (83.13 to 85.26)
+same phone or email, of records and callers: people whose record is with another's 2.89% (2.48 to 3.30), and without those one spoke for 1.25% (0.91 to 1.59); people mixed by anything 4.95% (4.55 to 5.35); joined pairs that are right 93.71% (93.18 to 94.23); true pairs found 88.23% (87.31 to 89.14); of those with a chain of facts 100.00% (100.00 to 100.00)
+credit: records credited to their ad 64.60% (63.56 to 65.64); of records credited, to another's ad 1.79% (1.46 to 2.11); of those with a chain of facts to the ad, to it 93.76% (93.09 to 94.43); of records of people who never came by an ad, credited to one 0.19% (0.00 to 0.42)
+beside default, over the same worlds, in points: people whose record is with another's -0.59 (-0.79 to -0.39); people mixed by anything -0.09 (-0.13 to -0.04); joined pairs right 0.59 (0.34 to 0.83). Of what that found, lost: true pairs 0.20 (0.11 to 0.30); of records alone 0.82 (-0.01 to 1.66); records credited to their ad 0.07 (-0.01 to 0.15). Callers and browsers with a record that is not theirs, pairs a world: -2.85 (-4.13 to -1.57)
+lost, pooled: true pairs 35 of 17125 (0.20%); of records alone 5 of 584 (0.86%); records credited to their ad 4 of 5808 (0.07%). Records mixed, pooled: 220 of 9434 (2.33%)
+in all: {"wrong":851,"found":17090,"mixed":750,"people":42211,"mixedRecords":220,"mixedApart":128,"recorded":9434,"wrongClusters":376,"exhausted":0} {"right":5805,"wrong":106,"none":3077,"reachable":6191,"reachableRight":5804,"cold":1394,"coldWrong":3}
+  pairs call call: 3 true, 0 found, 0 wrong
+  pairs call caller: 230 true, 7 found, 1 wrong
+  pairs call contact: 299 true, 40 found, 5 wrong
+  pairs call visitor: 343 true, 94 found, 2 wrong
+  pairs caller caller: 136 true, 15 found, 12 wrong
+  pairs caller contact: 6531 true, 5549 found, 243 wrong
+  pairs caller visitor: 7992 true, 3632 found, 82 wrong
+  pairs contact contact: 974 true, 579 found, 126 wrong
+  pairs contact visitor: 13951 true, 7153 found, 339 wrong
+  pairs visitor visitor: 33705 true, 21 found, 41 wrong
+  links by phone: 5442, 148 between two people
+  links by device: 5402, 179 between two people
+  links by dial: 3146, 31 between two people
+  links by email + phone: 436, 37 between two people
+  links by email: 76, 52 between two people
+  links by device + email + phone: 7, 7 between two people
+  links by device + phone: 4, 4 between two people
+  links by device + email: 2, 2 between two people
+
+## base, default staff: 20 worlds of 2000 people over 120 days, seeds from 20270201
+account-graph: people whose record is with another's 4.03% (3.40 to 4.67), and without those one spoke for 2.58% (1.92 to 3.24); people mixed by anything 2.18% (2.00 to 2.35); joined pairs that are right 92.91% (92.09 to 93.73); true pairs found 28.58% (28.02 to 29.14); of those with a chain of facts 93.66% (93.13 to 94.20)
+any shared fact: people whose record is with another's 3.29% (2.74 to 3.84), and without those one spoke for 1.65% (1.17 to 2.14); people mixed by anything 1.80% (1.64 to 1.96); joined pairs that are right 94.19% (93.60 to 94.78); true pairs found 23.47% (22.96 to 23.97); of those with a chain of facts 79.68% (78.92 to 80.43)
+account-graph, of records and callers: people whose record is with another's 4.03% (3.40 to 4.67), and without those one spoke for 2.58% (1.92 to 3.24); people mixed by anything 6.23% (5.77 to 6.70); joined pairs that are right 91.11% (90.11 to 92.11); true pairs found 86.18% (85.11 to 87.25); of those with a chain of facts 89.44% (88.52 to 90.36)
+same phone or email, of records and callers: people whose record is with another's 2.89% (2.48 to 3.30), and without those one spoke for 1.25% (0.91 to 1.59); people mixed by anything 4.95% (4.55 to 5.35); joined pairs that are right 93.71% (93.18 to 94.23); true pairs found 88.23% (87.31 to 89.14); of those with a chain of facts 100.00% (100.00 to 100.00)
+credit: records credited to their ad 66.80% (65.87 to 67.73); of records credited, to another's ad 1.84% (1.52 to 2.16); of those with a chain of facts to the ad, to it 96.44% (95.93 to 96.95); of records of people who never came by an ad, credited to one 0.27% (0.01 to 0.54)
+beside default, over the same worlds, in points: people whose record is with another's 1.10 (0.82 to 1.39); people mixed by anything 0.31 (0.24 to 0.39); joined pairs right -1.77 (-2.39 to -1.15). Of what that found, lost: true pairs 0.63 (0.46 to 0.80); of records alone 0.00 (0.00 to 0.00); records credited to their ad 0.00 (0.00 to 0.00). Callers and browsers with a record that is not theirs, pairs a world: 12.00 (8.48 to 15.52)
+lost, pooled: true pairs 108 of 17125 (0.63%); of records alone 0 of 584 (0.00%); records credited to their ad 0 of 5808 (0.00%). Records mixed, pooled: 381 of 9434 (4.04%)
+in all: {"wrong":1411,"found":18330,"mixed":919,"people":42211,"mixedRecords":381,"mixedApart":245,"recorded":9434,"wrongClusters":458,"exhausted":0} {"right":6003,"wrong":113,"none":2872,"reachable":6191,"reachableRight":5970,"cold":1394,"coldWrong":4}
+  pairs call call: 3 true, 2 found, 0 wrong
+  pairs call caller: 230 true, 115 found, 4 wrong
+  pairs call contact: 299 true, 218 found, 13 wrong
+  pairs call visitor: 343 true, 144 found, 5 wrong
+  pairs caller caller: 136 true, 95 found, 56 wrong
+  pairs caller contact: 6531 true, 6025 found, 397 wrong
+  pairs caller visitor: 7992 true, 3746 found, 163 wrong
+  pairs contact contact: 974 true, 585 found, 222 wrong
+  pairs contact visitor: 13951 true, 7365 found, 474 wrong
+  pairs visitor visitor: 33705 true, 35 found, 77 wrong
+  links by device: 5404, 181 between two people
+  links by phone + review: 4691, 149 between two people
+  links by dial: 3146, 31 between two people
+  links by phone: 1229, 38 between two people
+  links by email + phone: 452, 48 between two people
+  links by review: 383, 62 between two people
+  links by email: 90, 66 between two people
+  links by device + email + phone: 12, 12 between two people
+  links by device + phone: 4, 4 between two people
+  links by device + email: 2, 2 between two people
+
+## base, default pool: 20 worlds of 2000 people over 120 days, seeds from 20270201
+account-graph: people whose record is with another's 2.93% (2.42 to 3.43), and without those one spoke for 1.65% (1.17 to 2.14); people mixed by anything 3.91% (3.70 to 4.12); joined pairs that are right 88.38% (87.65 to 89.11); true pairs found 29.49% (28.91 to 30.07); of those with a chain of facts 91.88% (91.30 to 92.46)
+any shared fact: people whose record is with another's 3.29% (2.74 to 3.84), and without those one spoke for 1.65% (1.17 to 2.14); people mixed by anything 1.80% (1.64 to 1.96); joined pairs that are right 94.19% (93.60 to 94.78); true pairs found 23.47% (22.96 to 23.97); of those with a chain of facts 79.68% (78.92 to 80.43)
+account-graph, of records and callers: people whose record is with another's 2.93% (2.42 to 3.43), and without those one spoke for 1.65% (1.17 to 2.14); people mixed by anything 5.27% (4.86 to 5.67); joined pairs that are right 93.20% (92.48 to 93.93); true pairs found 78.22% (76.86 to 79.58); of those with a chain of facts 86.12% (85.08 to 87.16)
+same phone or email, of records and callers: people whose record is with another's 2.89% (2.48 to 3.30), and without those one spoke for 1.25% (0.91 to 1.59); people mixed by anything 4.95% (4.55 to 5.35); joined pairs that are right 93.71% (93.18 to 94.23); true pairs found 88.23% (87.31 to 89.14); of those with a chain of facts 100.00% (100.00 to 100.00)
+credit: records credited to their ad 71.29% (70.39 to 72.19); of records credited, to another's ad 2.44% (2.07 to 2.81); of those with a chain of facts to the ad, to it 93.31% (92.63 to 93.99); of records of people who never came by an ad, credited to one 0.00% (0.00 to 0.00)
+beside default, over the same worlds, in points: people whose record is with another's 0.00 (0.00 to 0.00); people mixed by anything 2.05 (1.88 to 2.22); joined pairs right -6.30 (-6.85 to -5.75). Of what that found, lost: true pairs 0.13 (0.03 to 0.22); of records alone 0.00 (0.00 to 0.00); records credited to their ad 0.66 (0.41 to 0.91). Callers and browsers with a record that is not theirs, pairs a world: 24.25 (22.45 to 26.05)
+lost, pooled: true pairs 22 of 17125 (0.13%); of records alone 0 of 584 (0.00%); records credited to their ad 38 of 5808 (0.65%). Records mixed, pooled: 276 of 9434 (2.93%)
+in all: {"wrong":2493,"found":18913,"mixed":1652,"people":42211,"mixedRecords":276,"mixedApart":156,"recorded":9434,"wrongClusters":804,"exhausted":34789} {"right":6407,"wrong":160,"none":2421,"reachable":6191,"reachableRight":5776,"cold":1394,"coldWrong":0}
+  pairs call call: 3 true, 0 found, 0 wrong
+  pairs call caller: 230 true, 9 found, 1 wrong
+  pairs call contact: 299 true, 63 found, 5 wrong
+  pairs call visitor: 343 true, 138 found, 14 wrong
+  pairs caller caller: 136 true, 18 found, 20 wrong
+  pairs caller contact: 6531 true, 5713 found, 282 wrong
+  pairs caller visitor: 7992 true, 4553 found, 596 wrong
+  pairs contact contact: 974 true, 584 found, 159 wrong
+  pairs contact visitor: 13951 true, 7802 found, 842 wrong
+  pairs visitor visitor: 33705 true, 33 found, 574 wrong
+  links by phone: 5442, 148 between two people
+  links by device: 5404, 181 between two people
+  links by lease: 4518, 579 between two people
+  links by dial: 603, 8 between two people
+  links by email + phone: 452, 48 between two people
+  links by email: 90, 66 between two people
+  links by device + email + phone: 12, 12 between two people
+  links by device + phone: 4, 4 between two people
+  links by device + email: 2, 2 between two people
+  links by dial + lease: 1, 0 between two people
+
+
+## base, household: 20 worlds of 2000 people over 120 days, seeds from 20270201
+account-graph: people whose record is with another's 2.91% (2.41 to 3.40), and without those one spoke for 1.65% (1.17 to 2.14); people mixed by anything 1.38% (1.19 to 1.56); joined pairs that are right 94.45% (93.65 to 95.24); true pairs found 16.45% (16.07 to 16.83); of those with a chain of facts 55.93% (55.25 to 56.62)
+any shared fact: people whose record is with another's 3.29% (2.74 to 3.84), and without those one spoke for 1.65% (1.17 to 2.14); people mixed by anything 1.80% (1.64 to 1.96); joined pairs that are right 94.19% (93.60 to 94.78); true pairs found 23.47% (22.96 to 23.97); of those with a chain of facts 79.68% (78.92 to 80.43)
+account-graph, of records and callers: people whose record is with another's 2.91% (2.41 to 3.40), and without those one spoke for 1.65% (1.17 to 2.14); people mixed by anything 3.07% (2.60 to 3.54); joined pairs that are right 88.01% (86.05 to 89.98); true pairs found 21.91% (21.00 to 22.83); of those with a chain of facts 23.29% (22.41 to 24.17)
+same phone or email, of records and callers: people whose record is with another's 2.89% (2.48 to 3.30), and without those one spoke for 1.25% (0.91 to 1.59); people mixed by anything 4.95% (4.55 to 5.35); joined pairs that are right 93.71% (93.18 to 94.23); true pairs found 88.23% (87.31 to 89.14); of those with a chain of facts 100.00% (100.00 to 100.00)
+credit: records credited to their ad 50.20% (49.20 to 51.21); of records credited, to another's ad 2.27% (1.87 to 2.66); of those with a chain of facts to the ad, to it 72.88% (71.81 to 73.95); of records of people who never came by an ad, credited to one 0.00% (0.00 to 0.00)
+in all: {"wrong":624,"found":10552,"mixed":582,"people":42211,"mixedRecords":274,"mixedApart":156,"recorded":9434,"wrongClusters":293,"exhausted":0} {"right":4512,"wrong":105,"none":4371,"reachable":6191,"reachableRight":4512,"cold":1394,"coldWrong":0}
+  pairs call call: 3 true, 0 found, 0 wrong
+  pairs call caller: 230 true, 0 found, 0 wrong
+  pairs call contact: 299 true, 40 found, 5 wrong
+  pairs call visitor: 343 true, 93 found, 2 wrong
+  pairs caller caller: 136 true, 0 found, 1 wrong
+  pairs caller contact: 6531 true, 1306 found, 86 wrong
+  pairs caller visitor: 7992 true, 3026 found, 45 wrong
+  pairs contact contact: 974 true, 446 found, 154 wrong
+  pairs contact visitor: 13951 true, 5619 found, 293 wrong
+  pairs visitor visitor: 33705 true, 22 found, 38 wrong
+  links by device: 5404, 181 between two people
+  links by dial: 3146, 31 between two people
+  links by email + phone: 397, 48 between two people
+  links by email: 89, 66 between two people
+  links by email + name + phone: 55, 0 between two people
+  links by name + phone: 18, 0 between two people
+  links by device + email + phone: 12, 12 between two people
+  links by device + phone: 4, 4 between two people
+  links by device + email: 2, 2 between two people
+  links by email + name: 1, 0 between two people
+
+## base, household staff: 20 worlds of 2000 people over 120 days, seeds from 20270201
+account-graph: people whose record is with another's 3.56% (3.02 to 4.10), and without those one spoke for 2.11% (1.58 to 2.64); people mixed by anything 2.10% (1.93 to 2.27); joined pairs that are right 93.25% (92.48 to 94.03); true pairs found 26.30% (25.81 to 26.80); of those with a chain of facts 86.30% (85.62 to 86.97)
+any shared fact: people whose record is with another's 3.29% (2.74 to 3.84), and without those one spoke for 1.65% (1.17 to 2.14); people mixed by anything 1.80% (1.64 to 1.96); joined pairs that are right 94.19% (93.60 to 94.78); true pairs found 23.47% (22.96 to 23.97); of those with a chain of facts 79.68% (78.92 to 80.43)
+account-graph, of records and callers: people whose record is with another's 3.56% (3.02 to 4.10), and without those one spoke for 2.11% (1.58 to 2.64); people mixed by anything 5.86% (5.41 to 6.30); joined pairs that are right 91.46% (90.49 to 92.43); true pairs found 75.32% (74.23 to 76.41); of those with a chain of facts 77.80% (76.72 to 78.88)
+same phone or email, of records and callers: people whose record is with another's 2.89% (2.48 to 3.30), and without those one spoke for 1.25% (0.91 to 1.59); people mixed by anything 4.95% (4.55 to 5.35); joined pairs that are right 93.71% (93.18 to 94.23); true pairs found 88.23% (87.31 to 89.14); of those with a chain of facts 100.00% (100.00 to 100.00)
+credit: records credited to their ad 63.94% (63.06 to 64.81); of records credited, to another's ad 1.79% (1.50 to 2.08); of those with a chain of facts to the ad, to it 92.31% (91.57 to 93.05); of records of people who never came by an ad, credited to one 0.27% (0.01 to 0.54)
+beside household, over the same worlds, in points: people whose record is with another's 0.65 (0.45 to 0.86); people mixed by anything 0.72 (0.61 to 0.83); joined pairs right -1.19 (-1.87 to -0.52). Of what that found, lost: true pairs 0.97 (0.66 to 1.28); of records alone 0.00 (0.00 to 0.00); records credited to their ad 0.00 (0.00 to 0.00). Callers and browsers with a record that is not theirs, pairs a world: 19.20 (16.06 to 22.34)
+lost, pooled: true pairs 103 of 10552 (0.98%); of records alone 0 of 446 (0.00%); records credited to their ad 0 of 4512 (0.00%). Records mixed, pooled: 336 of 9434 (3.56%)
+in all: {"wrong":1229,"found":16868,"mixed":886,"people":42211,"mixedRecords":336,"mixedApart":200,"recorded":9434,"wrongClusters":444,"exhausted":0} {"right":5745,"wrong":105,"none":3138,"reachable":6191,"reachableRight":5713,"cold":1394,"coldWrong":4}
+  pairs call call: 3 true, 2 found, 0 wrong
+  pairs call caller: 230 true, 88 found, 3 wrong
+  pairs call contact: 299 true, 215 found, 10 wrong
+  pairs call visitor: 343 true, 138 found, 5 wrong
+  pairs caller caller: 136 true, 78 found, 43 wrong
+  pairs caller contact: 6531 true, 5324 found, 329 wrong
+  pairs caller visitor: 7992 true, 3497 found, 145 wrong
+  pairs contact contact: 974 true, 446 found, 193 wrong
+  pairs contact visitor: 13951 true, 7049 found, 429 wrong
+  pairs visitor visitor: 33705 true, 31 found, 72 wrong
+  links by device: 5404, 181 between two people
+  links by phone + review: 4691, 149 between two people
+  links by dial: 3146, 31 between two people
+  links by email + phone: 397, 48 between two people
+  links by review: 383, 62 between two people
+  links by email: 89, 66 between two people
+  links by email + name + phone: 55, 0 between two people
+  links by name + phone: 18, 0 between two people
+  links by device + email + phone: 12, 12 between two people
+  links by device + phone: 4, 4 between two people
+  links by device + email: 2, 2 between two people
+  links by email + name: 1, 0 between two people
+
+## base, household staff birth: 20 worlds of 2000 people over 120 days, seeds from 20270201
+account-graph: people whose record is with another's 2.77% (2.33 to 3.21), and without those one spoke for 1.70% (1.26 to 2.15); people mixed by anything 1.99% (1.83 to 2.15); joined pairs that are right 94.00% (93.36 to 94.63); true pairs found 26.22% (25.72 to 26.72); of those with a chain of facts 86.10% (85.43 to 86.77)
+any shared fact: people whose record is with another's 3.29% (2.74 to 3.84), and without those one spoke for 1.65% (1.17 to 2.14); people mixed by anything 1.80% (1.64 to 1.96); joined pairs that are right 94.19% (93.60 to 94.78); true pairs found 23.47% (22.96 to 23.97); of those with a chain of facts 79.68% (78.92 to 80.43)
+account-graph, of records and callers: people whose record is with another's 2.77% (2.33 to 3.21), and without those one spoke for 1.70% (1.26 to 2.15); people mixed by anything 5.38% (4.91 to 5.85); joined pairs that are right 92.46% (91.60 to 93.32); true pairs found 75.10% (74.04 to 76.16); of those with a chain of facts 77.55% (76.50 to 78.60)
+same phone or email, of records and callers: people whose record is with another's 2.89% (2.48 to 3.30), and without those one spoke for 1.25% (0.91 to 1.59); people mixed by anything 4.95% (4.55 to 5.35); joined pairs that are right 93.71% (93.18 to 94.23); true pairs found 88.23% (87.31 to 89.14); of those with a chain of facts 100.00% (100.00 to 100.00)
+credit: records credited to their ad 63.90% (63.03 to 64.78); of records credited, to another's ad 1.67% (1.40 to 1.94); of those with a chain of facts to the ad, to it 92.26% (91.51 to 93.01); of records of people who never came by an ad, credited to one 0.27% (0.01 to 0.54)
+beside household staff, over the same worlds, in points: people whose record is with another's -0.79 (-1.00 to -0.58); people mixed by anything -0.11 (-0.15 to -0.06); joined pairs right 0.74 (0.48 to 1.01). Of what that found, lost: true pairs 0.31 (0.17 to 0.44); of records alone 1.20 (0.14 to 2.27); records credited to their ad 0.07 (-0.01 to 0.15). Callers and browsers with a record that is not theirs, pairs a world: -3.60 (-5.00 to -2.20)
+lost, pooled: true pairs 52 of 16868 (0.31%); of records alone 6 of 446 (1.35%); records credited to their ad 4 of 5745 (0.07%). Records mixed, pooled: 261 of 9434 (2.77%)
+in all: {"wrong":1078,"found":16816,"mixed":841,"people":42211,"mixedRecords":261,"mixedApart":161,"recorded":9434,"wrongClusters":422,"exhausted":0} {"right":5742,"wrong":98,"none":3148,"reachable":6191,"reachableRight":5710,"cold":1394,"coldWrong":4}
+  pairs call call: 3 true, 2 found, 0 wrong
+  pairs call caller: 230 true, 88 found, 3 wrong
+  pairs call contact: 299 true, 215 found, 9 wrong
+  pairs call visitor: 343 true, 138 found, 4 wrong
+  pairs caller caller: 136 true, 78 found, 38 wrong
+  pairs caller contact: 6531 true, 5312 found, 304 wrong
+  pairs caller visitor: 7992 true, 3491 found, 130 wrong
+  pairs contact contact: 974 true, 440 found, 148 wrong
+  pairs contact visitor: 13951 true, 7028 found, 383 wrong
+  pairs visitor visitor: 33705 true, 24 found, 59 wrong
+  links by device: 5402, 179 between two people
+  links by phone + review: 4691, 149 between two people
+  links by dial: 3146, 31 between two people
+  links by review: 383, 62 between two people
+  links by email + phone: 381, 37 between two people
+  links by email: 75, 52 between two people
+  links by email + name + phone: 55, 0 between two people
+  links by name + phone: 18, 0 between two people
+  links by device + email + phone: 7, 7 between two people
+  links by device + phone: 4, 4 between two people
+  links by device + email: 2, 2 between two people
+  links by email + name: 1, 0 between two people
+
+
+## low, default: 20 worlds of 2000 people over 120 days, seeds from 20270201
+account-graph: people whose record is with another's 1.63% (1.08 to 2.17), and without those one spoke for 1.09% (0.67 to 1.51); people mixed by anything 0.76% (0.62 to 0.91); joined pairs that are right 97.44% (96.76 to 98.12); true pairs found 29.48% (28.69 to 30.28); of those with a chain of facts 94.41% (93.65 to 95.17)
+any shared fact: people whose record is with another's 1.92% (1.34 to 2.50), and without those one spoke for 1.11% (0.69 to 1.53); people mixed by anything 0.76% (0.61 to 0.90); joined pairs that are right 96.92% (96.16 to 97.68); true pairs found 23.57% (22.82 to 24.33); of those with a chain of facts 75.39% (74.51 to 76.28)
+account-graph, of records and callers: people whose record is with another's 1.63% (1.08 to 2.17), and without those one spoke for 1.09% (0.67 to 1.51); people mixed by anything 2.43% (1.91 to 2.95); joined pairs that are right 96.63% (95.68 to 97.58); true pairs found 86.70% (85.40 to 88.01); of those with a chain of facts 89.22% (87.76 to 90.69)
+same phone or email, of records and callers: people whose record is with another's 1.80% (1.23 to 2.38), and without those one spoke for 0.99% (0.60 to 1.38); people mixed by anything 2.39% (1.80 to 2.97); joined pairs that are right 96.63% (95.62 to 97.64); true pairs found 95.84% (95.22 to 96.46); of those with a chain of facts 100.00% (100.00 to 100.00)
+credit: records credited to their ad 71.59% (70.53 to 72.65); of records credited, to another's ad 0.98% (0.69 to 1.26); of those with a chain of facts to the ad, to it 95.81% (95.00 to 96.62); of records of people who never came by an ad, credited to one 0.00% (0.00 to 0.00)
+in all: {"wrong":429,"found":16301,"mixed":311,"people":40749,"mixedRecords":132,"mixedApart":88,"recorded":8149,"wrongClusters":155,"exhausted":0} {"right":5844,"wrong":57,"none":2263,"reachable":6100,"reachableRight":5844,"cold":489,"coldWrong":0}
+  pairs call call: 1 true, 0 found, 0 wrong
+  pairs call caller: 34 true, 6 found, 0 wrong
+  pairs call contact: 71 true, 21 found, 1 wrong
+  pairs call visitor: 113 true, 38 found, 0 wrong
+  pairs caller caller: 38 true, 5 found, 11 wrong
+  pairs caller contact: 5173 true, 4699 found, 92 wrong
+  pairs caller visitor: 7400 true, 4071 found, 36 wrong
+  pairs contact contact: 505 true, 317 found, 73 wrong
+  pairs contact visitor: 12345 true, 7137 found, 179 wrong
+  pairs visitor visitor: 29722 true, 7 found, 37 wrong
+  links by device: 5231, 79 between two people
+  links by phone: 4534, 40 between two people
+  links by dial: 3667, 6 between two people
+  links by email + phone: 250, 16 between two people
+  links by email: 49, 43 between two people
+  links by device + email + phone: 5, 5 between two people
+  links by device + email: 1, 1 between two people
+  links by device + phone: 1, 1 between two people
+
+## low, default birth: 20 worlds of 2000 people over 120 days, seeds from 20270201
+account-graph: people whose record is with another's 1.11% (0.78 to 1.44), and without those one spoke for 0.74% (0.48 to 0.99); people mixed by anything 0.69% (0.56 to 0.82); joined pairs that are right 97.91% (97.43 to 98.39); true pairs found 29.46% (28.67 to 30.25); of those with a chain of facts 94.35% (93.58 to 95.13)
+any shared fact: people whose record is with another's 1.92% (1.34 to 2.50), and without those one spoke for 1.11% (0.69 to 1.53); people mixed by anything 0.76% (0.61 to 0.90); joined pairs that are right 96.92% (96.16 to 97.68); true pairs found 23.57% (22.82 to 24.33); of those with a chain of facts 75.39% (74.51 to 76.28)
+account-graph, of records and callers: people whose record is with another's 1.11% (0.78 to 1.44), and without those one spoke for 0.74% (0.48 to 0.99); people mixed by anything 2.03% (1.65 to 2.41); joined pairs that are right 97.38% (96.82 to 97.94); true pairs found 86.62% (85.31 to 87.92); of those with a chain of facts 89.12% (87.67 to 90.57)
+same phone or email, of records and callers: people whose record is with another's 1.80% (1.23 to 2.38), and without those one spoke for 0.99% (0.60 to 1.38); people mixed by anything 2.39% (1.80 to 2.97); joined pairs that are right 96.63% (95.62 to 97.64); true pairs found 95.84% (95.22 to 96.46); of those with a chain of facts 100.00% (100.00 to 100.00)
+credit: records credited to their ad 71.58% (70.51 to 72.64); of records credited, to another's ad 0.87% (0.62 to 1.13); of those with a chain of facts to the ad, to it 95.79% (94.98 to 96.60); of records of people who never came by an ad, credited to one 0.00% (0.00 to 0.00)
+beside default, over the same worlds, in points: people whose record is with another's -0.52 (-0.85 to -0.19); people mixed by anything -0.08 (-0.12 to -0.03); joined pairs right 0.47 (0.14 to 0.80). Of what that found, lost: true pairs 0.10 (0.01 to 0.19); of records alone 0.65 (-0.30 to 1.60); records credited to their ad 0.02 (-0.02 to 0.06). Callers and browsers with a record that is not theirs, pairs a world: -1.95 (-3.37 to -0.53)
+lost, pooled: true pairs 16 of 16301 (0.10%); of records alone 2 of 317 (0.63%); records credited to their ad 1 of 5844 (0.02%). Records mixed, pooled: 90 of 8149 (1.10%)
+in all: {"wrong":347,"found":16287,"mixed":280,"people":40749,"mixedRecords":90,"mixedApart":60,"recorded":8149,"wrongClusters":140,"exhausted":0} {"right":5843,"wrong":51,"none":2270,"reachable":6100,"reachableRight":5843,"cold":489,"coldWrong":0}
+  pairs call call: 1 true, 0 found, 0 wrong
+  pairs call caller: 34 true, 6 found, 0 wrong
+  pairs call contact: 71 true, 21 found, 1 wrong
+  pairs call visitor: 113 true, 38 found, 0 wrong
+  pairs caller caller: 38 true, 5 found, 8 wrong
+  pairs caller contact: 5173 true, 4696 found, 79 wrong
+  pairs caller visitor: 7400 true, 4071 found, 29 wrong
+  pairs contact contact: 505 true, 315 found, 47 wrong
+  pairs contact visitor: 12345 true, 7129 found, 153 wrong
+  pairs visitor visitor: 29722 true, 6 found, 30 wrong
+  links by device: 5231, 79 between two people
+  links by phone: 4534, 40 between two people
+  links by dial: 3667, 6 between two people
+  links by email + phone: 242, 9 between two people
+  links by email: 35, 29 between two people
+  links by device + email + phone: 5, 5 between two people
+
+## low, default staff: 20 worlds of 2000 people over 120 days, seeds from 20270201
+account-graph: people whose record is with another's 1.95% (1.38 to 2.52), and without those one spoke for 1.31% (0.88 to 1.75); people mixed by anything 0.81% (0.67 to 0.96); joined pairs that are right 96.97% (96.26 to 97.68); true pairs found 30.42% (29.63 to 31.21); of those with a chain of facts 96.51% (95.87 to 97.16)
+any shared fact: people whose record is with another's 1.92% (1.34 to 2.50), and without those one spoke for 1.11% (0.69 to 1.53); people mixed by anything 0.76% (0.61 to 0.90); joined pairs that are right 96.92% (96.16 to 97.68); true pairs found 23.57% (22.82 to 24.33); of those with a chain of facts 75.39% (74.51 to 76.28)
+account-graph, of records and callers: people whose record is with another's 1.95% (1.38 to 2.52), and without those one spoke for 1.31% (0.88 to 1.75); people mixed by anything 2.60% (2.06 to 3.15); joined pairs that are right 96.09% (95.16 to 97.02); true pairs found 92.34% (91.24 to 93.44); of those with a chain of facts 93.32% (92.08 to 94.55)
+same phone or email, of records and callers: people whose record is with another's 1.80% (1.23 to 2.38), and without those one spoke for 0.99% (0.60 to 1.38); people mixed by anything 2.39% (1.80 to 2.97); joined pairs that are right 96.63% (95.62 to 97.64); true pairs found 95.84% (95.22 to 96.46); of those with a chain of facts 100.00% (100.00 to 100.00)
+credit: records credited to their ad 73.38% (72.28 to 74.48); of records credited, to another's ad 1.03% (0.79 to 1.28); of those with a chain of facts to the ad, to it 97.99% (97.52 to 98.45); of records of people who never came by an ad, credited to one 0.00% (0.00 to 0.00)
+beside default, over the same worlds, in points: people whose record is with another's 0.32 (0.19 to 0.46); people mixed by anything 0.05 (0.02 to 0.08); joined pairs right -0.47 (-0.71 to -0.23). Of what that found, lost: true pairs 0.33 (0.16 to 0.50); of records alone 0.00 (0.00 to 0.00); records credited to their ad 0.02 (-0.02 to 0.05). Callers and browsers with a record that is not theirs, pairs a world: 2.70 (1.56 to 3.84)
+lost, pooled: true pairs 54 of 16301 (0.33%); of records alone 0 of 317 (0.00%); records credited to their ad 1 of 5844 (0.02%). Records mixed, pooled: 158 of 8149 (1.94%)
+in all: {"wrong":528,"found":16820,"mixed":331,"people":40749,"mixedRecords":158,"mixedApart":106,"recorded":8149,"wrongClusters":165,"exhausted":0} {"right":5990,"wrong":62,"none":2112,"reachable":6100,"reachableRight":5977,"cold":489,"coldWrong":0}
+  pairs call call: 1 true, 1 found, 0 wrong
+  pairs call caller: 34 true, 21 found, 0 wrong
+  pairs call contact: 71 true, 57 found, 2 wrong
+  pairs call visitor: 113 true, 49 found, 0 wrong
+  pairs caller caller: 38 true, 24 found, 15 wrong
+  pairs caller contact: 5173 true, 4955 found, 116 wrong
+  pairs caller visitor: 7400 true, 4098 found, 53 wrong
+  pairs contact contact: 505 true, 318 found, 87 wrong
+  pairs contact visitor: 12345 true, 7286 found, 208 wrong
+  pairs visitor visitor: 29722 true, 11 found, 47 wrong
+  links by device: 5231, 79 between two people
+  links by phone + review: 3973, 43 between two people
+  links by dial: 3667, 6 between two people
+  links by phone: 860, 10 between two people
+  links by email + phone: 250, 16 between two people
+  links by review: 100, 10 between two people
+  links by email: 49, 43 between two people
+  links by device + email + phone: 5, 5 between two people
+  links by device + email: 1, 1 between two people
+  links by device + phone: 1, 1 between two people
+
+## low, default pool: 20 worlds of 2000 people over 120 days, seeds from 20270201
+account-graph: people whose record is with another's 1.63% (1.08 to 2.17), and without those one spoke for 1.09% (0.67 to 1.51); people mixed by anything 1.98% (1.80 to 2.16); joined pairs that are right 93.36% (92.59 to 94.14); true pairs found 31.35% (30.42 to 32.28); of those with a chain of facts 94.87% (94.09 to 95.66)
+any shared fact: people whose record is with another's 1.92% (1.34 to 2.50), and without those one spoke for 1.11% (0.69 to 1.53); people mixed by anything 0.76% (0.61 to 0.90); joined pairs that are right 96.92% (96.16 to 97.68); true pairs found 23.57% (22.82 to 24.33); of those with a chain of facts 75.39% (74.51 to 76.28)
+account-graph, of records and callers: people whose record is with another's 1.63% (1.08 to 2.17), and without those one spoke for 1.09% (0.67 to 1.51); people mixed by anything 2.62% (2.06 to 3.18); joined pairs that are right 96.44% (95.43 to 97.46); true pairs found 87.69% (86.36 to 89.03); of those with a chain of facts 90.02% (88.53 to 91.51)
+same phone or email, of records and callers: people whose record is with another's 1.80% (1.23 to 2.38), and without those one spoke for 0.99% (0.60 to 1.38); people mixed by anything 2.39% (1.80 to 2.97); joined pairs that are right 96.63% (95.62 to 97.64); true pairs found 95.84% (95.22 to 96.46); of those with a chain of facts 100.00% (100.00 to 100.00)
+credit: records credited to their ad 76.34% (75.31 to 77.37); of records credited, to another's ad 1.34% (0.99 to 1.69); of those with a chain of facts to the ad, to it 95.60% (94.76 to 96.45); of records of people who never came by an ad, credited to one 0.00% (0.00 to 0.00)
+beside default, over the same worlds, in points: people whose record is with another's 0.00 (0.00 to 0.00); people mixed by anything 1.22 (1.05 to 1.38); joined pairs right -4.08 (-4.68 to -3.47). Of what that found, lost: true pairs 0.08 (0.01 to 0.16); of records alone 0.00 (0.00 to 0.00); records credited to their ad 0.37 (0.22 to 0.52). Callers and browsers with a record that is not theirs, pairs a world: 13.20 (11.26 to 15.14)
+lost, pooled: true pairs 14 of 16301 (0.09%); of records alone 0 of 317 (0.00%); records credited to their ad 22 of 5844 (0.38%). Records mixed, pooled: 132 of 8149 (1.62%)
+in all: {"wrong":1234,"found":17330,"mixed":808,"people":40749,"mixedRecords":132,"mixedApart":88,"recorded":8149,"wrongClusters":396,"exhausted":31856} {"right":6233,"wrong":84,"none":1847,"reachable":6100,"reachableRight":5831,"cold":489,"coldWrong":0}
+  pairs call call: 1 true, 0 found, 0 wrong
+  pairs call caller: 34 true, 5 found, 0 wrong
+  pairs call contact: 71 true, 24 found, 1 wrong
+  pairs call visitor: 113 true, 48 found, 12 wrong
+  pairs caller caller: 38 true, 5 found, 10 wrong
+  pairs caller contact: 5173 true, 4754 found, 106 wrong
+  pairs caller visitor: 7400 true, 4615 found, 304 wrong
+  pairs contact contact: 505 true, 317 found, 73 wrong
+  pairs contact visitor: 12345 true, 7554 found, 429 wrong
+  pairs visitor visitor: 29722 true, 8 found, 299 wrong
+  links by device: 5231, 79 between two people
+  links by phone: 4534, 40 between two people
+  links by lease: 4236, 305 between two people
+  links by dial: 615, 0 between two people
+  links by email + phone: 250, 16 between two people
+  links by email: 49, 43 between two people
+  links by device + email + phone: 5, 5 between two people
+  links by device + email: 1, 1 between two people
+  links by device + phone: 1, 1 between two people
+
+
+## low, household: 20 worlds of 2000 people over 120 days, seeds from 20270201
+account-graph: people whose record is with another's 1.63% (1.08 to 2.17), and without those one spoke for 1.09% (0.67 to 1.51); people mixed by anything 0.65% (0.51 to 0.79); joined pairs that are right 97.23% (96.49 to 97.97); true pairs found 19.65% (19.01 to 20.28); of those with a chain of facts 62.89% (62.10 to 63.68)
+any shared fact: people whose record is with another's 1.92% (1.34 to 2.50), and without those one spoke for 1.11% (0.69 to 1.53); people mixed by anything 0.76% (0.61 to 0.90); joined pairs that are right 96.92% (96.16 to 97.68); true pairs found 23.57% (22.82 to 24.33); of those with a chain of facts 75.39% (74.51 to 76.28)
+account-graph, of records and callers: people whose record is with another's 1.63% (1.08 to 2.17), and without those one spoke for 1.09% (0.67 to 1.51); people mixed by anything 1.84% (1.34 to 2.34); joined pairs that are right 94.16% (92.47 to 95.86); true pairs found 31.02% (29.48 to 32.56); of those with a chain of facts 31.28% (29.67 to 32.89)
+same phone or email, of records and callers: people whose record is with another's 1.80% (1.23 to 2.38), and without those one spoke for 0.99% (0.60 to 1.38); people mixed by anything 2.39% (1.80 to 2.97); joined pairs that are right 96.63% (95.62 to 97.64); true pairs found 95.84% (95.22 to 96.46); of those with a chain of facts 100.00% (100.00 to 100.00)
+credit: records credited to their ad 53.32% (52.46 to 54.19); of records credited, to another's ad 1.26% (0.86 to 1.66); of those with a chain of facts to the ad, to it 71.38% (70.32 to 72.44); of records of people who never came by an ad, credited to one 0.00% (0.00 to 0.00)
+in all: {"wrong":313,"found":10860,"mixed":264,"people":40749,"mixedRecords":132,"mixedApart":88,"recorded":8149,"wrongClusters":132,"exhausted":0} {"right":4354,"wrong":55,"none":3755,"reachable":6100,"reachableRight":4354,"cold":489,"coldWrong":0}
+  pairs call call: 1 true, 0 found, 0 wrong
+  pairs call caller: 34 true, 1 found, 0 wrong
+  pairs call contact: 71 true, 20 found, 1 wrong
+  pairs call visitor: 113 true, 38 found, 0 wrong
+  pairs caller caller: 38 true, 0 found, 0 wrong
+  pairs caller contact: 5173 true, 1531 found, 43 wrong
+  pairs caller visitor: 7400 true, 3626 found, 16 wrong
+  pairs contact contact: 505 true, 258 found, 72 wrong
+  pairs contact visitor: 12345 true, 5380 found, 153 wrong
+  pairs visitor visitor: 29722 true, 6 found, 28 wrong
+  links by device: 5231, 79 between two people
+  links by dial: 3667, 6 between two people
+  links by email + phone: 206, 16 between two people
+  links by email: 48, 43 between two people
+  links by email + name + phone: 44, 0 between two people
+  links by name + phone: 18, 0 between two people
+  links by device + email + phone: 5, 5 between two people
+  links by email + name: 1, 0 between two people
+  links by device + email: 1, 1 between two people
+  links by device + phone: 1, 1 between two people
+
+## low, household staff: 20 worlds of 2000 people over 120 days, seeds from 20270201
+account-graph: people whose record is with another's 1.83% (1.24 to 2.42), and without those one spoke for 1.19% (0.74 to 1.64); people mixed by anything 0.79% (0.65 to 0.94); joined pairs that are right 97.11% (96.35 to 97.86); true pairs found 29.11% (28.36 to 29.85); of those with a chain of facts 92.37% (91.59 to 93.14)
+any shared fact: people whose record is with another's 1.92% (1.34 to 2.50), and without those one spoke for 1.11% (0.69 to 1.53); people mixed by anything 0.76% (0.61 to 0.90); joined pairs that are right 96.92% (96.16 to 97.68); true pairs found 23.57% (22.82 to 24.33); of those with a chain of facts 75.39% (74.51 to 76.28)
+account-graph, of records and callers: people whose record is with another's 1.83% (1.24 to 2.42), and without those one spoke for 1.19% (0.74 to 1.64); people mixed by anything 2.46% (1.91 to 3.00); joined pairs that are right 96.26% (95.25 to 97.27); true pairs found 85.65% (84.37 to 86.93); of those with a chain of facts 86.48% (85.00 to 87.96)
+same phone or email, of records and callers: people whose record is with another's 1.80% (1.23 to 2.38), and without those one spoke for 0.99% (0.60 to 1.38); people mixed by anything 2.39% (1.80 to 2.97); joined pairs that are right 96.63% (95.62 to 97.64); true pairs found 95.84% (95.22 to 96.46); of those with a chain of facts 100.00% (100.00 to 100.00)
+credit: records credited to their ad 71.84% (70.83 to 72.85); of records credited, to another's ad 1.04% (0.78 to 1.29); of those with a chain of facts to the ad, to it 95.93% (95.37 to 96.50); of records of people who never came by an ad, credited to one 0.00% (0.00 to 0.00)
+beside household, over the same worlds, in points: people whose record is with another's 0.20 (0.06 to 0.34); people mixed by anything 0.14 (0.08 to 0.21); joined pairs right -0.12 (-0.47 to 0.23). Of what that found, lost: true pairs 0.54 (0.29 to 0.79); of records alone 0.00 (0.00 to 0.00); records credited to their ad 0.04 (-0.02 to 0.11). Callers and browsers with a record that is not theirs, pairs a world: 5.20 (3.09 to 7.31)
+lost, pooled: true pairs 59 of 10860 (0.54%); of records alone 0 of 258 (0.00%); records credited to their ad 2 of 4354 (0.05%). Records mixed, pooled: 148 of 8149 (1.82%)
+in all: {"wrong":483,"found":16095,"mixed":323,"people":40749,"mixedRecords":148,"mixedApart":96,"recorded":8149,"wrongClusters":161,"exhausted":0} {"right":5864,"wrong":61,"none":2239,"reachable":6100,"reachableRight":5851,"cold":489,"coldWrong":0}
+  pairs call call: 1 true, 1 found, 0 wrong
+  pairs call caller: 34 true, 17 found, 0 wrong
+  pairs call contact: 71 true, 56 found, 2 wrong
+  pairs call visitor: 113 true, 49 found, 0 wrong
+  pairs caller caller: 38 true, 22 found, 12 wrong
+  pairs caller contact: 5173 true, 4634 found, 102 wrong
+  pairs caller visitor: 7400 true, 3919 found, 46 wrong
+  pairs contact contact: 505 true, 258 found, 80 wrong
+  pairs contact visitor: 12345 true, 7129 found, 197 wrong
+  pairs visitor visitor: 29722 true, 10 found, 44 wrong
+  links by device: 5231, 79 between two people
+  links by phone + review: 3973, 43 between two people
+  links by dial: 3667, 6 between two people
+  links by email + phone: 206, 16 between two people
+  links by review: 100, 10 between two people
+  links by email: 48, 43 between two people
+  links by email + name + phone: 44, 0 between two people
+  links by name + phone: 18, 0 between two people
+  links by device + email + phone: 5, 5 between two people
+  links by email + name: 1, 0 between two people
+  links by device + email: 1, 1 between two people
+  links by device + phone: 1, 1 between two people
+
+## low, household staff birth: 20 worlds of 2000 people over 120 days, seeds from 20270201
+account-graph: people whose record is with another's 1.26% (0.90 to 1.62), and without those one spoke for 0.81% (0.53 to 1.10); people mixed by anything 0.71% (0.59 to 0.84); joined pairs that are right 97.71% (97.21 to 98.21); true pairs found 29.07% (28.33 to 29.81); of those with a chain of facts 92.29% (91.53 to 93.05)
+any shared fact: people whose record is with another's 1.92% (1.34 to 2.50), and without those one spoke for 1.11% (0.69 to 1.53); people mixed by anything 0.76% (0.61 to 0.90); joined pairs that are right 96.92% (96.16 to 97.68); true pairs found 23.57% (22.82 to 24.33); of those with a chain of facts 75.39% (74.51 to 76.28)
+account-graph, of records and callers: people whose record is with another's 1.26% (0.90 to 1.62), and without those one spoke for 0.81% (0.53 to 1.10); people mixed by anything 2.01% (1.64 to 2.37); joined pairs that are right 97.15% (96.57 to 97.72); true pairs found 85.55% (84.28 to 86.81); of those with a chain of facts 86.37% (84.92 to 87.83)
+same phone or email, of records and callers: people whose record is with another's 1.80% (1.23 to 2.38), and without those one spoke for 0.99% (0.60 to 1.38); people mixed by anything 2.39% (1.80 to 2.97); joined pairs that are right 96.63% (95.62 to 97.64); true pairs found 95.84% (95.22 to 96.46); of those with a chain of facts 100.00% (100.00 to 100.00)
+credit: records credited to their ad 71.83% (70.82 to 72.84); of records credited, to another's ad 0.95% (0.71 to 1.20); of those with a chain of facts to the ad, to it 95.92% (95.36 to 96.47); of records of people who never came by an ad, credited to one 0.00% (0.00 to 0.00)
+beside household staff, over the same worlds, in points: people whose record is with another's -0.57 (-0.90 to -0.24); people mixed by anything -0.08 (-0.13 to -0.03); joined pairs right 0.60 (0.22 to 0.98). Of what that found, lost: true pairs 0.12 (0.02 to 0.23); of records alone 0.81 (-0.39 to 2.02); records credited to their ad 0.02 (-0.02 to 0.05). Callers and browsers with a record that is not theirs, pairs a world: -2.55 (-4.24 to -0.86)
+lost, pooled: true pairs 20 of 16095 (0.12%); of records alone 2 of 258 (0.78%); records credited to their ad 1 of 5864 (0.02%). Records mixed, pooled: 102 of 8149 (1.25%)
+in all: {"wrong":378,"found":16075,"mixed":290,"people":40749,"mixedRecords":102,"mixedApart":66,"recorded":8149,"wrongClusters":145,"exhausted":0} {"right":5863,"wrong":56,"none":2245,"reachable":6100,"reachableRight":5850,"cold":489,"coldWrong":0}
+  pairs call call: 1 true, 1 found, 0 wrong
+  pairs call caller: 34 true, 17 found, 0 wrong
+  pairs call contact: 71 true, 56 found, 2 wrong
+  pairs call visitor: 113 true, 49 found, 0 wrong
+  pairs caller caller: 38 true, 22 found, 9 wrong
+  pairs caller contact: 5173 true, 4630 found, 83 wrong
+  pairs caller visitor: 7400 true, 3917 found, 34 wrong
+  pairs contact contact: 505 true, 256 found, 52 wrong
+  pairs contact visitor: 12345 true, 7119 found, 165 wrong
+  pairs visitor visitor: 29722 true, 8 found, 33 wrong
+  links by device: 5231, 79 between two people
+  links by phone + review: 3973, 43 between two people
+  links by dial: 3667, 6 between two people
+  links by email + phone: 198, 9 between two people
+  links by review: 100, 10 between two people
+  links by email + name + phone: 44, 0 between two people
+  links by email: 34, 29 between two people
+  links by name + phone: 18, 0 between two people
+  links by device + email + phone: 5, 5 between two people
+  links by email + name: 1, 0 between two people
+
+
+## high, default: 20 worlds of 2000 people over 120 days, seeds from 20270201
+account-graph: people whose record is with another's 4.32% (3.90 to 4.74), and without those one spoke for 2.54% (2.19 to 2.90); people mixed by anything 3.54% (3.36 to 3.72); joined pairs that are right 91.12% (90.64 to 91.59); true pairs found 22.56% (22.08 to 23.05); of those with a chain of facts 82.45% (81.27 to 83.64)
+any shared fact: people whose record is with another's 6.01% (5.43 to 6.58), and without those one spoke for 2.66% (2.33 to 2.99); people mixed by anything 3.50% (3.29 to 3.71); joined pairs that are right 90.11% (89.51 to 90.71); true pairs found 23.32% (22.83 to 23.82); of those with a chain of facts 84.85% (84.02 to 85.68)
+account-graph, of records and callers: people whose record is with another's 4.32% (3.90 to 4.74), and without those one spoke for 2.54% (2.19 to 2.90); people mixed by anything 6.43% (6.04 to 6.83); joined pairs that are right 90.95% (90.36 to 91.55); true pairs found 54.65% (53.31 to 55.99); of those with a chain of facts 75.38% (73.83 to 76.93)
+same phone or email, of records and callers: people whose record is with another's 5.32% (4.71 to 5.93), and without those one spoke for 1.95% (1.63 to 2.28); people mixed by anything 7.08% (6.59 to 7.56); joined pairs that are right 90.40% (89.63 to 91.18); true pairs found 70.35% (69.08 to 71.61); of those with a chain of facts 100.00% (100.00 to 100.00)
+credit: records credited to their ad 53.20% (52.24 to 54.17); of records credited, to another's ad 3.55% (3.09 to 4.02); of those with a chain of facts to the ad, to it 89.45% (88.31 to 90.59); of records of people who never came by an ad, credited to one 0.24% (0.07 to 0.42)
+in all: {"wrong":1808,"found":18513,"mixed":1613,"people":45586,"mixedRecords":515,"mixedApart":303,"recorded":11908,"wrongClusters":809,"exhausted":0} {"right":5765,"wrong":214,"none":4863,"reachable":6445,"reachableRight":5760,"cold":3194,"coldWrong":8}
+  pairs call call: 132 true, 0 found, 1 wrong
+  pairs call caller: 1490 true, 23 found, 1 wrong
+  pairs call contact: 1566 true, 92 found, 14 wrong
+  pairs call visitor: 1422 true, 194 found, 16 wrong
+  pairs caller caller: 272 true, 19 found, 19 wrong
+  pairs caller contact: 9094 true, 6799 found, 445 wrong
+  pairs caller visitor: 8993 true, 2885 found, 169 wrong
+  pairs contact contact: 2202 true, 1111 found, 321 wrong
+  pairs contact visitor: 17709 true, 7352 found, 733 wrong
+  pairs visitor visitor: 39209 true, 38 found, 89 wrong
+  links by phone: 6941, 265 between two people
+  links by device: 5809, 389 between two people
+  links by dial: 2522, 92 between two people
+  links by email + phone: 691, 86 between two people
+  links by email: 251, 146 between two people
+  links by device + email + phone: 10, 10 between two people
+  links by device + email: 8, 8 between two people
+  links by device + phone: 3, 3 between two people
+
+## high, default birth: 20 worlds of 2000 people over 120 days, seeds from 20270201
+account-graph: people whose record is with another's 3.25% (2.83 to 3.66), and without those one spoke for 1.93% (1.64 to 2.22); people mixed by anything 3.32% (3.11 to 3.53); joined pairs that are right 92.17% (91.58 to 92.75); true pairs found 22.45% (21.98 to 22.92); of those with a chain of facts 82.15% (80.97 to 83.32)
+any shared fact: people whose record is with another's 6.01% (5.43 to 6.58), and without those one spoke for 2.66% (2.33 to 2.99); people mixed by anything 3.50% (3.29 to 3.71); joined pairs that are right 90.11% (89.51 to 90.71); true pairs found 23.32% (22.83 to 23.82); of those with a chain of facts 84.85% (84.02 to 85.68)
+account-graph, of records and callers: people whose record is with another's 3.25% (2.83 to 3.66), and without those one spoke for 1.93% (1.64 to 2.22); people mixed by anything 5.71% (5.26 to 6.16); joined pairs that are right 92.27% (91.59 to 92.96); true pairs found 54.43% (53.12 to 55.74); of those with a chain of facts 75.11% (73.58 to 76.65)
+same phone or email, of records and callers: people whose record is with another's 5.32% (4.71 to 5.93), and without those one spoke for 1.95% (1.63 to 2.28); people mixed by anything 7.08% (6.59 to 7.56); joined pairs that are right 90.40% (89.63 to 91.18); true pairs found 70.35% (69.08 to 71.61); of those with a chain of facts 100.00% (100.00 to 100.00)
+credit: records credited to their ad 53.08% (52.11 to 54.05); of records credited, to another's ad 3.28% (2.80 to 3.76); of those with a chain of facts to the ad, to it 89.25% (88.08 to 90.41); of records of people who never came by an ad, credited to one 0.24% (0.07 to 0.42)
+beside default, over the same worlds, in points: people whose record is with another's -1.07 (-1.30 to -0.84); people mixed by anything -0.22 (-0.28 to -0.16); joined pairs right 1.05 (0.78 to 1.32). Of what that found, lost: true pairs 0.52 (0.37 to 0.67); of records alone 1.83 (1.06 to 2.60); records credited to their ad 0.24 (0.10 to 0.39). Callers and browsers with a record that is not theirs, pairs a world: -5.35 (-6.91 to -3.79)
+lost, pooled: true pairs 97 of 18513 (0.52%); of records alone 21 of 1111 (1.89%); records credited to their ad 14 of 5765 (0.24%). Records mixed, pooled: 388 of 11908 (3.26%)
+in all: {"wrong":1571,"found":18420,"mixed":1512,"people":45586,"mixedRecords":388,"mixedApart":230,"recorded":11908,"wrongClusters":760,"exhausted":0} {"right":5752,"wrong":197,"none":4893,"reachable":6445,"reachableRight":5747,"cold":3194,"coldWrong":8}
+  pairs call call: 132 true, 0 found, 0 wrong
+  pairs call caller: 1490 true, 23 found, 1 wrong
+  pairs call contact: 1566 true, 89 found, 13 wrong
+  pairs call visitor: 1422 true, 194 found, 14 wrong
+  pairs caller caller: 272 true, 18 found, 14 wrong
+  pairs caller contact: 9094 true, 6791 found, 409 wrong
+  pairs caller visitor: 8993 true, 2880 found, 154 wrong
+  pairs contact contact: 2202 true, 1091 found, 236 wrong
+  pairs contact visitor: 17709 true, 7303 found, 663 wrong
+  pairs visitor visitor: 39209 true, 31 found, 67 wrong
+  links by phone: 6935, 263 between two people
+  links by device: 5796, 376 between two people
+  links by dial: 2522, 92 between two people
+  links by email + phone: 659, 64 between two people
+  links by email: 218, 114 between two people
+  links by device + email + phone: 8, 8 between two people
+  links by device + email: 7, 7 between two people
+  links by device + phone: 1, 1 between two people
+
+## high, default staff: 20 worlds of 2000 people over 120 days, seeds from 20270201
+account-graph: people whose record is with another's 7.88% (7.34 to 8.43), and without those one spoke for 5.87% (5.42 to 6.33); people mixed by anything 4.74% (4.55 to 4.93); joined pairs that are right 85.98% (85.41 to 86.55); true pairs found 25.79% (25.29 to 26.29); of those with a chain of facts 86.57% (85.73 to 87.42)
+any shared fact: people whose record is with another's 6.01% (5.43 to 6.58), and without those one spoke for 2.66% (2.33 to 2.99); people mixed by anything 3.50% (3.29 to 3.71); joined pairs that are right 90.11% (89.51 to 90.71); true pairs found 23.32% (22.83 to 23.82); of those with a chain of facts 84.85% (84.02 to 85.68)
+account-graph, of records and callers: people whose record is with another's 7.88% (7.34 to 8.43), and without those one spoke for 5.87% (5.42 to 6.33); people mixed by anything 9.81% (9.44 to 10.17); joined pairs that are right 84.27% (83.49 to 85.05); true pairs found 68.52% (67.42 to 69.62); of those with a chain of facts 81.87% (80.77 to 82.97)
+same phone or email, of records and callers: people whose record is with another's 5.32% (4.71 to 5.93), and without those one spoke for 1.95% (1.63 to 2.28); people mixed by anything 7.08% (6.59 to 7.56); joined pairs that are right 90.40% (89.63 to 91.18); true pairs found 70.35% (69.08 to 71.61); of those with a chain of facts 100.00% (100.00 to 100.00)
+credit: records credited to their ad 55.16% (54.21 to 56.11); of records credited, to another's ad 3.61% (3.15 to 4.07); of those with a chain of facts to the ad, to it 92.12% (91.29 to 92.95); of records of people who never came by an ad, credited to one 0.37% (0.17 to 0.56)
+beside default, over the same worlds, in points: people whose record is with another's 3.56 (3.15 to 3.98); people mixed by anything 1.20 (1.09 to 1.32); joined pairs right -5.14 (-5.87 to -4.41). Of what that found, lost: true pairs 1.00 (0.79 to 1.20); of records alone 0.65 (0.07 to 1.24); records credited to their ad 0.18 (0.06 to 0.31). Callers and browsers with a record that is not theirs, pairs a world: 44.30 (39.33 to 49.27)
+lost, pooled: true pairs 186 of 18513 (1.00%); of records alone 8 of 1111 (0.72%); records credited to their ad 11 of 5765 (0.19%). Records mixed, pooled: 939 of 11908 (7.89%)
+in all: {"wrong":3457,"found":21167,"mixed":2161,"people":45586,"mixedRecords":939,"mixedApart":700,"recorded":11908,"wrongClusters":1074,"exhausted":0} {"right":5979,"wrong":225,"none":4638,"reachable":6445,"reachableRight":5935,"cold":3194,"coldWrong":12}
+  pairs call call: 132 true, 22 found, 3 wrong
+  pairs call caller: 1490 true, 438 found, 37 wrong
+  pairs call contact: 1566 true, 710 found, 96 wrong
+  pairs call visitor: 1422 true, 326 found, 40 wrong
+  pairs caller caller: 272 true, 136 found, 173 wrong
+  pairs caller contact: 9094 true, 7670 found, 973 wrong
+  pairs caller visitor: 8993 true, 3106 found, 380 wrong
+  pairs contact contact: 2202 true, 1122 found, 607 wrong
+  pairs contact visitor: 17709 true, 7590 found, 1009 wrong
+  pairs visitor visitor: 39209 true, 47 found, 139 wrong
+  links by device: 5809, 389 between two people
+  links by phone + review: 5068, 238 between two people
+  links by phone: 2646, 112 between two people
+  links by dial: 2522, 92 between two people
+  links by review: 1123, 287 between two people
+  links by email + phone: 691, 86 between two people
+  links by email: 251, 146 between two people
+  links by device + email + phone: 10, 10 between two people
+  links by device + email: 8, 8 between two people
+  links by device + phone: 3, 3 between two people
+
+## high, default pool: 20 worlds of 2000 people over 120 days, seeds from 20270201
+account-graph: people whose record is with another's 4.32% (3.90 to 4.74), and without those one spoke for 2.54% (2.19 to 2.90); people mixed by anything 5.69% (5.42 to 5.96); joined pairs that are right 85.09% (84.47 to 85.71); true pairs found 26.27% (25.74 to 26.80); of those with a chain of facts 84.95% (83.94 to 85.96)
+any shared fact: people whose record is with another's 6.01% (5.43 to 6.58), and without those one spoke for 2.66% (2.33 to 2.99); people mixed by anything 3.50% (3.29 to 3.71); joined pairs that are right 90.11% (89.51 to 90.71); true pairs found 23.32% (22.83 to 23.82); of those with a chain of facts 84.85% (84.02 to 85.68)
+account-graph, of records and callers: people whose record is with another's 4.32% (3.90 to 4.74), and without those one spoke for 2.54% (2.19 to 2.90); people mixed by anything 7.11% (6.76 to 7.45); joined pairs that are right 90.17% (89.55 to 90.79); true pairs found 57.98% (56.75 to 59.21); of those with a chain of facts 78.35% (77.00 to 79.70)
+same phone or email, of records and callers: people whose record is with another's 5.32% (4.71 to 5.93), and without those one spoke for 1.95% (1.63 to 2.28); people mixed by anything 7.08% (6.59 to 7.56); joined pairs that are right 90.40% (89.63 to 91.18); true pairs found 70.35% (69.08 to 71.61); of those with a chain of facts 100.00% (100.00 to 100.00)
+credit: records credited to their ad 61.06% (60.18 to 61.94); of records credited, to another's ad 3.80% (3.38 to 4.22); of those with a chain of facts to the ad, to it 89.30% (88.12 to 90.48); of records of people who never came by an ad, credited to one 0.00% (0.00 to 0.00)
+beside default, over the same worlds, in points: people whose record is with another's 0.00 (0.00 to 0.00); people mixed by anything 2.15 (1.92 to 2.39); joined pairs right -6.03 (-6.53 to -5.53). Of what that found, lost: true pairs 0.06 (0.01 to 0.12); of records alone 0.00 (0.00 to 0.00); records credited to their ad 0.43 (0.21 to 0.65). Callers and browsers with a record that is not theirs, pairs a world: 33.95 (31.13 to 36.77)
+lost, pooled: true pairs 12 of 18513 (0.06%); of records alone 0 of 1111 (0.00%); records credited to their ad 24 of 5765 (0.42%). Records mixed, pooled: 515 of 11908 (4.32%)
+in all: {"wrong":3784,"found":21555,"mixed":2594,"people":45586,"mixedRecords":515,"mixedApart":303,"recorded":11908,"wrongClusters":1274,"exhausted":38689} {"right":6616,"wrong":262,"none":3964,"reachable":6445,"reachableRight":5751,"cold":3194,"coldWrong":0}
+  pairs call call: 132 true, 0 found, 1 wrong
+  pairs call caller: 1490 true, 39 found, 4 wrong
+  pairs call contact: 1566 true, 165 found, 46 wrong
+  pairs call visitor: 1422 true, 366 found, 82 wrong
+  pairs caller caller: 272 true, 27 found, 32 wrong
+  pairs caller contact: 9094 true, 7196 found, 529 wrong
+  pairs caller visitor: 8993 true, 4388 found, 775 wrong
+  pairs contact contact: 2202 true, 1111 found, 321 wrong
+  pairs contact visitor: 17709 true, 8213 found, 1296 wrong
+  pairs visitor visitor: 39209 true, 50 found, 698 wrong
+  links by phone: 6941, 265 between two people
+  links by device: 5809, 389 between two people
+  links by lease: 4788, 758 between two people
+  links by email + phone: 691, 86 between two people
+  links by dial: 591, 22 between two people
+  links by email: 251, 146 between two people
+  links by device + email + phone: 10, 10 between two people
+  links by device + email: 8, 8 between two people
+  links by device + phone: 3, 3 between two people
+  links by dial + lease: 1, 0 between two people
+
+
+## high, household: 20 worlds of 2000 people over 120 days, seeds from 20270201
+account-graph: people whose record is with another's 4.29% (3.86 to 4.72), and without those one spoke for 2.54% (2.19 to 2.90); people mixed by anything 2.73% (2.57 to 2.89); joined pairs that are right 89.39% (88.66 to 90.12); true pairs found 12.63% (12.30 to 12.95); of those with a chain of facts 46.12% (45.33 to 46.90)
+any shared fact: people whose record is with another's 6.01% (5.43 to 6.58), and without those one spoke for 2.66% (2.33 to 2.99); people mixed by anything 3.50% (3.29 to 3.71); joined pairs that are right 90.11% (89.51 to 90.71); true pairs found 23.32% (22.83 to 23.82); of those with a chain of facts 84.85% (84.02 to 85.68)
+account-graph, of records and callers: people whose record is with another's 4.29% (3.86 to 4.72), and without those one spoke for 2.54% (2.19 to 2.90); people mixed by anything 3.71% (3.40 to 4.02); joined pairs that are right 80.31% (78.74 to 81.88); true pairs found 12.29% (11.67 to 12.91); of those with a chain of facts 15.28% (14.52 to 16.04)
+same phone or email, of records and callers: people whose record is with another's 5.32% (4.71 to 5.93), and without those one spoke for 1.95% (1.63 to 2.28); people mixed by anything 7.08% (6.59 to 7.56); joined pairs that are right 90.40% (89.63 to 91.18); true pairs found 70.35% (69.08 to 71.61); of those with a chain of facts 100.00% (100.00 to 100.00)
+credit: records credited to their ad 43.99% (43.10 to 44.89); of records credited, to another's ad 3.91% (3.40 to 4.43); of those with a chain of facts to the ad, to it 74.06% (72.53 to 75.59); of records of people who never came by an ad, credited to one 0.00% (0.00 to 0.00)
+in all: {"wrong":1234,"found":10366,"mixed":1246,"people":45586,"mixedRecords":511,"mixedApart":303,"recorded":11908,"wrongClusters":625,"exhausted":0} {"right":4766,"wrong":196,"none":5880,"reachable":6445,"reachableRight":4766,"cold":3194,"coldWrong":0}
+  pairs call call: 132 true, 0 found, 1 wrong
+  pairs call caller: 1490 true, 0 found, 1 wrong
+  pairs call contact: 1566 true, 88 found, 13 wrong
+  pairs call visitor: 1422 true, 194 found, 15 wrong
+  pairs caller caller: 272 true, 0 found, 3 wrong
+  pairs caller contact: 9094 true, 986 found, 119 wrong
+  pairs caller visitor: 8993 true, 2243 found, 110 wrong
+  pairs contact contact: 2202 true, 743 found, 308 wrong
+  pairs contact visitor: 17709 true, 6078 found, 595 wrong
+  pairs visitor visitor: 39209 true, 34 found, 69 wrong
+  links by device: 5809, 389 between two people
+  links by dial: 2522, 92 between two people
+  links by email + phone: 654, 86 between two people
+  links by email: 247, 146 between two people
+  links by email + name + phone: 37, 0 between two people
+  links by name + phone: 32, 0 between two people
+  links by device + email + phone: 10, 10 between two people
+  links by device + email: 8, 8 between two people
+  links by email + name: 4, 0 between two people
+  links by device + phone: 3, 3 between two people
+
+## high, household staff: 20 worlds of 2000 people over 120 days, seeds from 20270201
+account-graph: people whose record is with another's 6.54% (6.00 to 7.08), and without those one spoke for 4.55% (4.11 to 5.00); people mixed by anything 4.49% (4.31 to 4.67); joined pairs that are right 86.00% (85.42 to 86.58); true pairs found 21.61% (21.17 to 22.05); of those with a chain of facts 72.15% (71.26 to 73.04)
+any shared fact: people whose record is with another's 6.01% (5.43 to 6.58), and without those one spoke for 2.66% (2.33 to 2.99); people mixed by anything 3.50% (3.29 to 3.71); joined pairs that are right 90.11% (89.51 to 90.71); true pairs found 23.32% (22.83 to 23.82); of those with a chain of facts 84.85% (84.02 to 85.68)
+account-graph, of records and callers: people whose record is with another's 6.54% (6.00 to 7.08), and without those one spoke for 4.55% (4.11 to 5.00); people mixed by anything 8.84% (8.48 to 9.20); joined pairs that are right 83.58% (82.62 to 84.55); true pairs found 51.92% (50.73 to 53.11); of those with a chain of facts 59.88% (58.66 to 61.10)
+same phone or email, of records and callers: people whose record is with another's 5.32% (4.71 to 5.93), and without those one spoke for 1.95% (1.63 to 2.28); people mixed by anything 7.08% (6.59 to 7.56); joined pairs that are right 90.40% (89.63 to 91.18); true pairs found 70.35% (69.08 to 71.61); of those with a chain of facts 100.00% (100.00 to 100.00)
+credit: records credited to their ad 50.76% (49.88 to 51.64); of records credited, to another's ad 3.75% (3.28 to 4.22); of those with a chain of facts to the ad, to it 84.76% (83.65 to 85.86); of records of people who never came by an ad, credited to one 0.31% (0.13 to 0.48)
+beside household, over the same worlds, in points: people whose record is with another's 2.25 (1.89 to 2.61); people mixed by anything 1.75 (1.63 to 1.88); joined pairs right -3.39 (-4.21 to -2.57). Of what that found, lost: true pairs 1.75 (1.48 to 2.02); of records alone 0.00 (0.00 to 0.00); records credited to their ad 0.04 (-0.02 to 0.10). Callers and browsers with a record that is not theirs, pairs a world: 51.35 (47.35 to 55.35)
+lost, pooled: true pairs 182 of 10366 (1.76%); of records alone 0 of 743 (0.00%); records credited to their ad 2 of 4766 (0.04%). Records mixed, pooled: 779 of 11908 (6.54%)
+in all: {"wrong":2891,"found":17737,"mixed":2045,"people":45586,"mixedRecords":779,"mixedApart":543,"recorded":11908,"wrongClusters":1018,"exhausted":0} {"right":5503,"wrong":215,"none":5124,"reachable":6445,"reachableRight":5460,"cold":3194,"coldWrong":10}
+  pairs call call: 132 true, 22 found, 3 wrong
+  pairs call caller: 1490 true, 345 found, 32 wrong
+  pairs call contact: 1566 true, 690 found, 89 wrong
+  pairs call visitor: 1422 true, 318 found, 39 wrong
+  pairs caller caller: 272 true, 94 found, 125 wrong
+  pairs caller contact: 9094 true, 5755 found, 764 wrong
+  pairs caller visitor: 8993 true, 2769 found, 324 wrong
+  pairs contact contact: 2202 true, 746 found, 492 wrong
+  pairs contact visitor: 17709 true, 6952 found, 901 wrong
+  pairs visitor visitor: 39209 true, 46 found, 122 wrong
+  links by device: 5809, 389 between two people
+  links by phone + review: 5068, 238 between two people
+  links by dial: 2522, 92 between two people
+  links by review: 1123, 287 between two people
+  links by email + phone: 654, 86 between two people
+  links by email: 247, 146 between two people
+  links by email + name + phone: 37, 0 between two people
+  links by name + phone: 32, 0 between two people
+  links by device + email + phone: 10, 10 between two people
+  links by device + email: 8, 8 between two people
+  links by email + name: 4, 0 between two people
+  links by device + phone: 3, 3 between two people
+
+## high, household staff birth: 20 worlds of 2000 people over 120 days, seeds from 20270201
+account-graph: people whose record is with another's 4.80% (4.34 to 5.27), and without those one spoke for 3.39% (3.02 to 3.77); people mixed by anything 4.17% (3.95 to 4.38); joined pairs that are right 88.02% (87.30 to 88.74); true pairs found 21.45% (21.01 to 21.88); of those with a chain of facts 71.70% (70.84 to 72.56)
+any shared fact: people whose record is with another's 6.01% (5.43 to 6.58), and without those one spoke for 2.66% (2.33 to 2.99); people mixed by anything 3.50% (3.29 to 3.71); joined pairs that are right 90.11% (89.51 to 90.71); true pairs found 23.32% (22.83 to 23.82); of those with a chain of facts 84.85% (84.02 to 85.68)
+account-graph, of records and callers: people whose record is with another's 4.80% (4.34 to 5.27), and without those one spoke for 3.39% (3.02 to 3.77); people mixed by anything 7.83% (7.40 to 8.26); joined pairs that are right 86.23% (85.12 to 87.34); true pairs found 51.53% (50.40 to 52.66); of those with a chain of facts 59.39% (58.22 to 60.57)
+same phone or email, of records and callers: people whose record is with another's 5.32% (4.71 to 5.93), and without those one spoke for 1.95% (1.63 to 2.28); people mixed by anything 7.08% (6.59 to 7.56); joined pairs that are right 90.40% (89.63 to 91.18); true pairs found 70.35% (69.08 to 71.61); of those with a chain of facts 100.00% (100.00 to 100.00)
+credit: records credited to their ad 50.71% (49.83 to 51.58); of records credited, to another's ad 3.44% (2.95 to 3.94); of those with a chain of facts to the ad, to it 84.67% (83.57 to 85.77); of records of people who never came by an ad, credited to one 0.31% (0.13 to 0.48)
+beside household staff, over the same worlds, in points: people whose record is with another's -1.74 (-2.03 to -1.44); people mixed by anything -0.32 (-0.41 to -0.23); joined pairs right 2.02 (1.61 to 2.42). Of what that found, lost: true pairs 0.77 (0.60 to 0.94); of records alone 2.64 (1.53 to 3.74); records credited to their ad 0.12 (0.03 to 0.22). Callers and browsers with a record that is not theirs, pairs a world: -11.75 (-14.26 to -9.24)
+lost, pooled: true pairs 136 of 17737 (0.77%); of records alone 21 of 746 (2.82%); records credited to their ad 7 of 5503 (0.13%). Records mixed, pooled: 573 of 11908 (4.81%)
+in all: {"wrong":2401,"found":17603,"mixed":1899,"people":45586,"mixedRecords":573,"mixedApart":405,"recorded":11908,"wrongClusters":954,"exhausted":0} {"right":5497,"wrong":197,"none":5148,"reachable":6445,"reachableRight":5454,"cold":3194,"coldWrong":10}
+  pairs call call: 132 true, 22 found, 1 wrong
+  pairs call caller: 1490 true, 345 found, 27 wrong
+  pairs call contact: 1566 true, 685 found, 78 wrong
+  pairs call visitor: 1422 true, 316 found, 33 wrong
+  pairs caller caller: 272 true, 93 found, 104 wrong
+  pairs caller contact: 9094 true, 5724 found, 657 wrong
+  pairs caller visitor: 8993 true, 2757 found, 277 wrong
+  pairs contact contact: 2202 true, 726 found, 348 wrong
+  pairs contact visitor: 17709 true, 6898 found, 784 wrong
+  pairs visitor visitor: 39209 true, 37 found, 92 wrong
+  links by device: 5796, 376 between two people
+  links by phone + review: 5068, 238 between two people
+  links by dial: 2522, 92 between two people
+  links by review: 1123, 287 between two people
+  links by email + phone: 622, 64 between two people
+  links by email: 214, 114 between two people
+  links by email + name + phone: 37, 0 between two people
+  links by name + phone: 32, 0 between two people
+  links by device + email + phone: 8, 8 between two people
+  links by device + email: 7, 7 between two people
+  links by email + name: 4, 0 between two people
+  links by device + phone: 1, 1 between two people
+
+
+## busy, default: 20 worlds of 6000 people over 5 days, seeds from 20270201
+account-graph: people whose record is with another's 1.80% (1.55 to 2.06), and without those one spoke for 0.91% (0.69 to 1.13); people mixed by anything 2.49% (2.36 to 2.62); joined pairs that are right 91.79% (91.38 to 92.20); true pairs found 57.63% (57.07 to 58.18); of those with a chain of facts 85.39% (84.69 to 86.08)
+any shared fact: people whose record is with another's 2.22% (1.96 to 2.47), and without those one spoke for 0.92% (0.70 to 1.14); people mixed by anything 1.17% (1.08 to 1.25); joined pairs that are right 95.43% (95.03 to 95.84); true pairs found 54.21% (53.57 to 54.85); of those with a chain of facts 80.23% (79.63 to 80.82)
+account-graph, of records and callers: people whose record is with another's 1.80% (1.55 to 2.06), and without those one spoke for 0.91% (0.69 to 1.13); people mixed by anything 4.28% (3.95 to 4.62); joined pairs that are right 93.96% (93.48 to 94.45); true pairs found 73.81% (72.85 to 74.76); of those with a chain of facts 83.10% (82.15 to 84.05)
+same phone or email, of records and callers: people whose record is with another's 1.95% (1.74 to 2.16), and without those one spoke for 0.64% (0.46 to 0.83); people mixed by anything 3.58% (3.33 to 3.83); joined pairs that are right 95.41% (95.03 to 95.78); true pairs found 87.64% (87.08 to 88.20); of those with a chain of facts 100.00% (100.00 to 100.00)
+credit: records credited to their ad 71.13% (70.43 to 71.83); of records credited, to another's ad 2.31% (2.05 to 2.58); of those with a chain of facts to the ad, to it 88.52% (87.88 to 89.15); of records of people who never came by an ad, credited to one 4.20% (3.46 to 4.94)
+in all: {"wrong":3079,"found":34372,"mixed":3117,"people":125066,"mixedRecords":388,"mixedApart":196,"recorded":21576,"wrongClusters":1557,"exhausted":0} {"right":13849,"wrong":328,"none":5294,"reachable":15645,"reachableRight":13848,"cold":4187,"coldWrong":178}
+  pairs call call: 17 true, 0 found, 0 wrong
+  pairs call caller: 606 true, 17 found, 5 wrong
+  pairs call contact: 772 true, 67 found, 7 wrong
+  pairs call visitor: 582 true, 148 found, 35 wrong
+  pairs caller caller: 284 true, 19 found, 89 wrong
+  pairs caller contact: 14759 true, 12343 found, 557 wrong
+  pairs caller visitor: 11322 true, 6438 found, 940 wrong
+  pairs contact contact: 2123 true, 1238 found, 223 wrong
+  pairs contact visitor: 20514 true, 14080 found, 1060 wrong
+  pairs visitor visitor: 8684 true, 22 found, 163 wrong
+  links by phone: 12372, 297 between two people
+  links by device: 11095, 391 between two people
+  links by dial: 5983, 984 between two people
+  links by email + phone: 931, 67 between two people
+  links by email: 131, 87 between two people
+  links by device + email + phone: 24, 24 between two people
+  links by device + phone: 2, 2 between two people
+  links by device + email: 2, 2 between two people
+
+## busy, default birth: 20 worlds of 6000 people over 5 days, seeds from 20270201
+account-graph: people whose record is with another's 1.37% (1.20 to 1.55), and without those one spoke for 0.72% (0.54 to 0.90); people mixed by anything 2.48% (2.36 to 2.61); joined pairs that are right 92.00% (91.66 to 92.34); true pairs found 57.46% (56.88 to 58.03); of those with a chain of facts 85.21% (84.49 to 85.92)
+any shared fact: people whose record is with another's 2.22% (1.96 to 2.47), and without those one spoke for 0.92% (0.70 to 1.14); people mixed by anything 1.17% (1.08 to 1.25); joined pairs that are right 95.43% (95.03 to 95.84); true pairs found 54.21% (53.57 to 54.85); of those with a chain of facts 80.23% (79.63 to 80.82)
+account-graph, of records and callers: people whose record is with another's 1.37% (1.20 to 1.55), and without those one spoke for 0.72% (0.54 to 0.90); people mixed by anything 4.17% (3.87 to 4.47); joined pairs that are right 94.23% (93.81 to 94.64); true pairs found 73.55% (72.59 to 74.52); of those with a chain of facts 82.83% (81.86 to 83.80)
+same phone or email, of records and callers: people whose record is with another's 1.95% (1.74 to 2.16), and without those one spoke for 0.64% (0.46 to 0.83); people mixed by anything 3.58% (3.33 to 3.83); joined pairs that are right 95.41% (95.03 to 95.78); true pairs found 87.64% (87.08 to 88.20); of those with a chain of facts 100.00% (100.00 to 100.00)
+credit: records credited to their ad 71.05% (70.34 to 71.75); of records credited, to another's ad 2.25% (2.01 to 2.48); of those with a chain of facts to the ad, to it 88.42% (87.77 to 89.06); of records of people who never came by an ad, credited to one 4.20% (3.46 to 4.94)
+beside default, over the same worlds, in points: people whose record is with another's -0.43 (-0.56 to -0.30); people mixed by anything -0.01 (-0.02 to 0.01); joined pairs right 0.21 (0.09 to 0.34). Of what that found, lost: true pairs 0.30 (0.19 to 0.40); of records alone 1.32 (0.58 to 2.06); records credited to their ad 0.13 (0.07 to 0.19). Callers and browsers with a record that is not theirs, pairs a world: -2.35 (-3.62 to -1.08)
+lost, pooled: true pairs 102 of 34372 (0.30%); of records alone 16 of 1238 (1.29%); records credited to their ad 18 of 13849 (0.13%). Records mixed, pooled: 296 of 21576 (1.37%)
+in all: {"wrong":2983,"found":34270,"mixed":3106,"people":125066,"mixedRecords":296,"mixedApart":156,"recorded":21576,"wrongClusters":1552,"exhausted":0} {"right":13833,"wrong":318,"none":5320,"reachable":15645,"reachableRight":13832,"cold":4187,"coldWrong":178}
+  pairs call call: 17 true, 0 found, 0 wrong
+  pairs call caller: 606 true, 17 found, 5 wrong
+  pairs call contact: 772 true, 67 found, 7 wrong
+  pairs call visitor: 582 true, 148 found, 35 wrong
+  pairs caller caller: 284 true, 18 found, 99 wrong
+  pairs caller contact: 14759 true, 12313 found, 557 wrong
+  pairs caller visitor: 11322 true, 6428 found, 949 wrong
+  pairs contact contact: 2123 true, 1222 found, 169 wrong
+  pairs contact visitor: 20514 true, 14044 found, 1013 wrong
+  pairs visitor visitor: 8684 true, 13 found, 149 wrong
+  links by phone: 12368, 296 between two people
+  links by device: 11090, 386 between two people
+  links by dial: 5983, 984 between two people
+  links by email + phone: 899, 46 between two people
+  links by email: 112, 68 between two people
+  links by device + email + phone: 22, 22 between two people
+  links by device + phone: 2, 2 between two people
+  links by device + email: 1, 1 between two people
+
+## busy, default staff: 20 worlds of 6000 people over 5 days, seeds from 20270201
+account-graph: people whose record is with another's 3.04% (2.67 to 3.41), and without those one spoke for 2.05% (1.74 to 2.36); people mixed by anything 2.70% (2.57 to 2.84); joined pairs that are right 90.12% (89.62 to 90.63); true pairs found 62.69% (62.16 to 63.22); of those with a chain of facts 89.11% (88.50 to 89.72)
+any shared fact: people whose record is with another's 2.22% (1.96 to 2.47), and without those one spoke for 0.92% (0.70 to 1.14); people mixed by anything 1.17% (1.08 to 1.25); joined pairs that are right 95.43% (95.03 to 95.84); true pairs found 54.21% (53.57 to 54.85); of those with a chain of facts 80.23% (79.63 to 80.82)
+account-graph, of records and callers: people whose record is with another's 3.04% (2.67 to 3.41), and without those one spoke for 2.05% (1.74 to 2.36); people mixed by anything 5.28% (4.92 to 5.65); joined pairs that are right 91.72% (91.12 to 92.32); true pairs found 85.56% (84.76 to 86.36); of those with a chain of facts 89.27% (88.53 to 90.01)
+same phone or email, of records and callers: people whose record is with another's 1.95% (1.74 to 2.16), and without those one spoke for 0.64% (0.46 to 0.83); people mixed by anything 3.58% (3.33 to 3.83); joined pairs that are right 95.41% (95.03 to 95.78); true pairs found 87.64% (87.08 to 88.20); of those with a chain of facts 100.00% (100.00 to 100.00)
+credit: records credited to their ad 73.09% (72.47 to 73.72); of records credited, to another's ad 2.85% (2.50 to 3.20); of those with a chain of facts to the ad, to it 90.63% (90.11 to 91.15); of records of people who never came by an ad, credited to one 5.44% (4.69 to 6.19)
+beside default, over the same worlds, in points: people whose record is with another's 1.24 (1.03 to 1.44); people mixed by anything 0.21 (0.17 to 0.25); joined pairs right -1.67 (-1.94 to -1.39). Of what that found, lost: true pairs 0.48 (0.39 to 0.57); of records alone 0.18 (-0.08 to 0.44); records credited to their ad 0.20 (0.12 to 0.28). Callers and browsers with a record that is not theirs, pairs a world: 27.60 (24.29 to 30.91)
+lost, pooled: true pairs 166 of 34372 (0.48%); of records alone 2 of 1238 (0.16%); records credited to their ad 28 of 13849 (0.20%). Records mixed, pooled: 655 of 21576 (3.04%)
+in all: {"wrong":4101,"found":37399,"mixed":3381,"people":125066,"mixedRecords":655,"mixedApart":443,"recorded":21576,"wrongClusters":1676,"exhausted":0} {"right":14231,"wrong":419,"none":4821,"reachable":15645,"reachableRight":14178,"cold":4187,"coldWrong":230}
+  pairs call call: 17 true, 7 found, 0 wrong
+  pairs call caller: 606 true, 304 found, 17 wrong
+  pairs call contact: 772 true, 538 found, 37 wrong
+  pairs call visitor: 582 true, 277 found, 50 wrong
+  pairs caller caller: 284 true, 189 found, 171 wrong
+  pairs caller contact: 14759 true, 13590 found, 834 wrong
+  pairs caller visitor: 11322 true, 6796 found, 1086 wrong
+  pairs contact contact: 2123 true, 1245 found, 374 wrong
+  pairs contact visitor: 20514 true, 14426 found, 1305 wrong
+  pairs visitor visitor: 8684 true, 27 found, 227 wrong
+  links by device: 11095, 391 between two people
+  links by phone + review: 10818, 287 between two people
+  links by dial: 5983, 984 between two people
+  links by phone: 2609, 73 between two people
+  links by email + phone: 931, 67 between two people
+  links by review: 931, 169 between two people
+  links by email: 131, 87 between two people
+  links by device + email + phone: 24, 24 between two people
+  links by device + phone: 2, 2 between two people
+  links by device + email: 2, 2 between two people
+
+## busy, default pool: 20 worlds of 6000 people over 5 days, seeds from 20270201
+account-graph: people whose record is with another's 1.80% (1.55 to 2.06), and without those one spoke for 0.91% (0.69 to 1.13); people mixed by anything 2.27% (2.14 to 2.40); joined pairs that are right 91.39% (90.85 to 91.92); true pairs found 68.15% (67.67 to 68.64); of those with a chain of facts 91.53% (90.96 to 92.11)
+any shared fact: people whose record is with another's 2.22% (1.96 to 2.47), and without those one spoke for 0.92% (0.70 to 1.14); people mixed by anything 1.17% (1.08 to 1.25); joined pairs that are right 95.43% (95.03 to 95.84); true pairs found 54.21% (53.57 to 54.85); of those with a chain of facts 80.23% (79.63 to 80.82)
+account-graph, of records and callers: people whose record is with another's 1.80% (1.55 to 2.06), and without those one spoke for 0.91% (0.69 to 1.13); people mixed by anything 3.75% (3.43 to 4.07); joined pairs that are right 94.95% (94.41 to 95.48); true pairs found 77.86% (76.96 to 78.75); of those with a chain of facts 86.43% (85.63 to 87.22)
+same phone or email, of records and callers: people whose record is with another's 1.95% (1.74 to 2.16), and without those one spoke for 0.64% (0.46 to 0.83); people mixed by anything 3.58% (3.33 to 3.83); joined pairs that are right 95.41% (95.03 to 95.78); true pairs found 87.64% (87.08 to 88.20); of those with a chain of facts 100.00% (100.00 to 100.00)
+credit: records credited to their ad 82.17% (81.63 to 82.71); of records credited, to another's ad 1.46% (1.31 to 1.61); of those with a chain of facts to the ad, to it 92.58% (91.99 to 93.17); of records of people who never came by an ad, credited to one 0.23% (0.09 to 0.38)
+beside default, over the same worlds, in points: people whose record is with another's 0.00 (0.00 to 0.00); people mixed by anything -0.22 (-0.35 to -0.09); joined pairs right -0.40 (-0.91 to 0.10). Of what that found, lost: true pairs 0.04 (0.01 to 0.07); of records alone 0.00 (0.00 to 0.00); records credited to their ad 0.31 (0.24 to 0.38). Callers and browsers with a record that is not theirs, pairs a world: 14.45 (9.44 to 19.46)
+lost, pooled: true pairs 13 of 34372 (0.04%); of records alone 0 of 1238 (0.00%); records credited to their ad 43 of 13849 (0.31%). Records mixed, pooled: 388 of 21576 (1.80%)
+in all: {"wrong":3836,"found":40653,"mixed":2837,"people":125066,"mixedRecords":388,"mixedApart":196,"recorded":21576,"wrongClusters":1395,"exhausted":36071} {"right":15998,"wrong":237,"none":3236,"reachable":15645,"reachableRight":14484,"cold":4187,"coldWrong":10}
+  pairs call call: 17 true, 0 found, 0 wrong
+  pairs call caller: 606 true, 34 found, 3 wrong
+  pairs call contact: 772 true, 134 found, 10 wrong
+  pairs call visitor: 582 true, 315 found, 36 wrong
+  pairs caller caller: 284 true, 39 found, 27 wrong
+  pairs caller contact: 14759 true, 12993 found, 505 wrong
+  pairs caller visitor: 11322 true, 9659 found, 898 wrong
+  pairs contact contact: 2123 true, 1238 found, 223 wrong
+  pairs contact visitor: 20514 true, 16206 found, 1398 wrong
+  pairs visitor visitor: 8684 true, 35 found, 736 wrong
+  links by phone: 12372, 297 between two people
+  links by device: 11095, 391 between two people
+  links by lease: 10235, 804 between two people
+  links by email + phone: 931, 67 between two people
+  links by dial: 431, 84 between two people
+  links by email: 131, 87 between two people
+  links by device + email + phone: 24, 24 between two people
+  links by device + phone: 2, 2 between two people
+  links by device + email: 2, 2 between two people
+  links by dial + lease: 2, 0 between two people
+
+
+## busy, household: 20 worlds of 6000 people over 5 days, seeds from 20270201
+account-graph: people whose record is with another's 1.78% (1.53 to 2.04), and without those one spoke for 0.91% (0.69 to 1.13); people mixed by anything 2.32% (2.18 to 2.45); joined pairs that are right 90.13% (89.63 to 90.64); true pairs found 32.89% (32.38 to 33.39); of those with a chain of facts 48.75% (48.15 to 49.36)
+any shared fact: people whose record is with another's 2.22% (1.96 to 2.47), and without those one spoke for 0.92% (0.70 to 1.14); people mixed by anything 1.17% (1.08 to 1.25); joined pairs that are right 95.43% (95.03 to 95.84); true pairs found 54.21% (53.57 to 54.85); of those with a chain of facts 80.23% (79.63 to 80.82)
+account-graph, of records and callers: people whose record is with another's 1.78% (1.53 to 2.04), and without those one spoke for 0.91% (0.69 to 1.13); people mixed by anything 3.15% (2.91 to 3.40); joined pairs that are right 84.68% (83.61 to 85.75); true pairs found 16.43% (15.88 to 16.98); of those with a chain of facts 17.83% (17.27 to 18.40)
+same phone or email, of records and callers: people whose record is with another's 1.95% (1.74 to 2.16), and without those one spoke for 0.64% (0.46 to 0.83); people mixed by anything 3.58% (3.33 to 3.83); joined pairs that are right 95.41% (95.03 to 95.78); true pairs found 87.64% (87.08 to 88.20); of those with a chain of facts 100.00% (100.00 to 100.00)
+credit: records credited to their ad 58.54% (57.50 to 59.57); of records credited, to another's ad 1.23% (0.99 to 1.47); of those with a chain of facts to the ad, to it 72.84% (71.81 to 73.87); of records of people who never came by an ad, credited to one 0.00% (0.00 to 0.00)
+in all: {"wrong":2149,"found":19613,"mixed":2898,"people":125066,"mixedRecords":384,"mixedApart":196,"recorded":21576,"wrongClusters":1461,"exhausted":0} {"right":11399,"wrong":142,"none":7930,"reachable":15645,"reachableRight":11399,"cold":4187,"coldWrong":0}
+  pairs call call: 17 true, 0 found, 0 wrong
+  pairs call caller: 606 true, 0 found, 0 wrong
+  pairs call contact: 772 true, 66 found, 7 wrong
+  pairs call visitor: 582 true, 148 found, 34 wrong
+  pairs caller caller: 284 true, 0 found, 1 wrong
+  pairs caller contact: 14759 true, 2023 found, 327 wrong
+  pairs caller visitor: 11322 true, 4856 found, 967 wrong
+  pairs contact contact: 2123 true, 959 found, 217 wrong
+  pairs contact visitor: 20514 true, 11542 found, 535 wrong
+  pairs visitor visitor: 8684 true, 19 found, 61 wrong
+  links by device: 11095, 391 between two people
+  links by dial: 5983, 984 between two people
+  links by email + phone: 806, 67 between two people
+  links by email: 125, 87 between two people
+  links by email + name + phone: 125, 0 between two people
+  links by name + phone: 51, 0 between two people
+  links by device + email + phone: 24, 24 between two people
+  links by email + name: 6, 0 between two people
+  links by device + phone: 2, 2 between two people
+  links by device + email: 2, 2 between two people
+
+## busy, household staff: 20 worlds of 6000 people over 5 days, seeds from 20270201
+account-graph: people whose record is with another's 2.50% (2.17 to 2.84), and without those one spoke for 1.52% (1.27 to 1.78); people mixed by anything 2.67% (2.53 to 2.81); joined pairs that are right 90.27% (89.81 to 90.73); true pairs found 57.37% (56.82 to 57.92); of those with a chain of facts 81.49% (80.80 to 82.18)
+any shared fact: people whose record is with another's 2.22% (1.96 to 2.47), and without those one spoke for 0.92% (0.70 to 1.14); people mixed by anything 1.17% (1.08 to 1.25); joined pairs that are right 95.43% (95.03 to 95.84); true pairs found 54.21% (53.57 to 54.85); of those with a chain of facts 80.23% (79.63 to 80.82)
+account-graph, of records and callers: people whose record is with another's 2.50% (2.17 to 2.84), and without those one spoke for 1.52% (1.27 to 1.78); people mixed by anything 4.98% (4.63 to 5.34); joined pairs that are right 91.85% (91.24 to 92.46); true pairs found 74.79% (73.75 to 75.83); of those with a chain of facts 77.51% (76.58 to 78.44)
+same phone or email, of records and callers: people whose record is with another's 1.95% (1.74 to 2.16), and without those one spoke for 0.64% (0.46 to 0.83); people mixed by anything 3.58% (3.33 to 3.83); joined pairs that are right 95.41% (95.03 to 95.78); true pairs found 87.64% (87.08 to 88.20); of those with a chain of facts 100.00% (100.00 to 100.00)
+credit: records credited to their ad 70.40% (69.75 to 71.05); of records credited, to another's ad 2.72% (2.36 to 3.08); of those with a chain of facts to the ad, to it 87.28% (86.72 to 87.83); of records of people who never came by an ad, credited to one 4.94% (4.30 to 5.59)
+beside household, over the same worlds, in points: people whose record is with another's 0.72 (0.55 to 0.89); people mixed by anything 0.35 (0.28 to 0.41); joined pairs right 0.14 (-0.21 to 0.48). Of what that found, lost: true pairs 0.89 (0.71 to 1.08); of records alone 0.00 (0.00 to 0.00); records credited to their ad 0.51 (0.33 to 0.68). Callers and browsers with a record that is not theirs, pairs a world: 52.85 (48.48 to 57.22)
+lost, pooled: true pairs 176 of 19613 (0.90%); of records alone 0 of 959 (0.00%); records credited to their ad 58 of 11399 (0.51%). Records mixed, pooled: 539 of 21576 (2.50%)
+in all: {"wrong":3691,"found":34225,"mixed":3335,"people":125066,"mixedRecords":539,"mixedApart":329,"recorded":21576,"wrongClusters":1659,"exhausted":0} {"right":13707,"wrong":385,"none":5379,"reachable":15645,"reachableRight":13654,"cold":4187,"coldWrong":209}
+  pairs call call: 17 true, 7 found, 0 wrong
+  pairs call caller: 606 true, 265 found, 15 wrong
+  pairs call contact: 772 true, 532 found, 36 wrong
+  pairs call visitor: 582 true, 274 found, 48 wrong
+  pairs caller caller: 284 true, 166 found, 147 wrong
+  pairs caller contact: 14759 true, 11945 found, 728 wrong
+  pairs caller visitor: 11322 true, 6192 found, 1066 wrong
+  pairs contact contact: 2123 true, 960 found, 305 wrong
+  pairs contact visitor: 20514 true, 13859 found, 1162 wrong
+  pairs visitor visitor: 8684 true, 25 found, 184 wrong
+  links by device: 11095, 391 between two people
+  links by phone + review: 10818, 287 between two people
+  links by dial: 5983, 984 between two people
+  links by review: 931, 169 between two people
+  links by email + phone: 806, 67 between two people
+  links by email: 125, 87 between two people
+  links by email + name + phone: 125, 0 between two people
+  links by name + phone: 51, 0 between two people
+  links by device + email + phone: 24, 24 between two people
+  links by email + name: 6, 0 between two people
+  links by device + phone: 2, 2 between two people
+  links by device + email: 2, 2 between two people
+
+## busy, household staff birth: 20 worlds of 6000 people over 5 days, seeds from 20270201
+account-graph: people whose record is with another's 1.92% (1.68 to 2.17), and without those one spoke for 1.22% (1.02 to 1.42); people mixed by anything 2.61% (2.47 to 2.75); joined pairs that are right 90.86% (90.43 to 91.30); true pairs found 57.21% (56.65 to 57.77); of those with a chain of facts 81.34% (80.62 to 82.05)
+any shared fact: people whose record is with another's 2.22% (1.96 to 2.47), and without those one spoke for 0.92% (0.70 to 1.14); people mixed by anything 1.17% (1.08 to 1.25); joined pairs that are right 95.43% (95.03 to 95.84); true pairs found 54.21% (53.57 to 54.85); of those with a chain of facts 80.23% (79.63 to 80.82)
+account-graph, of records and callers: people whose record is with another's 1.92% (1.68 to 2.17), and without those one spoke for 1.22% (1.02 to 1.42); people mixed by anything 4.65% (4.31 to 5.00); joined pairs that are right 92.67% (92.11 to 93.22); true pairs found 74.59% (73.53 to 75.66); of those with a chain of facts 77.31% (76.35 to 78.28)
+same phone or email, of records and callers: people whose record is with another's 1.95% (1.74 to 2.16), and without those one spoke for 0.64% (0.46 to 0.83); people mixed by anything 3.58% (3.33 to 3.83); joined pairs that are right 95.41% (95.03 to 95.78); true pairs found 87.64% (87.08 to 88.20); of those with a chain of facts 100.00% (100.00 to 100.00)
+credit: records credited to their ad 70.34% (69.70 to 70.99); of records credited, to another's ad 2.66% (2.33 to 2.99); of those with a chain of facts to the ad, to it 87.21% (86.65 to 87.76); of records of people who never came by an ad, credited to one 4.94% (4.30 to 5.59)
+beside household staff, over the same worlds, in points: people whose record is with another's -0.58 (-0.74 to -0.42); people mixed by anything -0.05 (-0.07 to -0.04); joined pairs right 0.59 (0.38 to 0.81). Of what that found, lost: true pairs 0.28 (0.18 to 0.37); of records alone 1.48 (0.49 to 2.47); records credited to their ad 0.10 (0.05 to 0.14). Callers and browsers with a record that is not theirs, pairs a world: -6.45 (-8.71 to -4.19)
+lost, pooled: true pairs 94 of 34225 (0.27%); of records alone 14 of 960 (1.46%); records credited to their ad 13 of 13707 (0.09%). Records mixed, pooled: 415 of 21576 (1.92%)
+in all: {"wrong":3433,"found":34131,"mixed":3267,"people":125066,"mixedRecords":415,"mixedApart":263,"recorded":21576,"wrongClusters":1629,"exhausted":0} {"right":13696,"wrong":375,"none":5400,"reachable":15645,"reachableRight":13643,"cold":4187,"coldWrong":209}
+  pairs call call: 17 true, 7 found, 0 wrong
+  pairs call caller: 606 true, 265 found, 15 wrong
+  pairs call contact: 772 true, 531 found, 35 wrong
+  pairs call visitor: 582 true, 273 found, 48 wrong
+  pairs caller caller: 284 true, 166 found, 138 wrong
+  pairs caller contact: 14759 true, 11924 found, 673 wrong
+  pairs caller visitor: 11322 true, 6180 found, 1039 wrong
+  pairs contact contact: 2123 true, 946 found, 234 wrong
+  pairs contact visitor: 20514 true, 13824 found, 1089 wrong
+  pairs visitor visitor: 8684 true, 15 found, 162 wrong
+  links by device: 11090, 386 between two people
+  links by phone + review: 10818, 287 between two people
+  links by dial: 5983, 984 between two people
+  links by review: 931, 169 between two people
+  links by email + phone: 774, 46 between two people
+  links by email + name + phone: 125, 0 between two people
+  links by email: 106, 68 between two people
+  links by name + phone: 51, 0 between two people
+  links by device + email + phone: 22, 22 between two people
+  links by email + name: 6, 0 between two people
+  links by device + phone: 2, 2 between two people
+  links by device + email: 1, 1 between two people

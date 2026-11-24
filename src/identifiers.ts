@@ -115,9 +115,21 @@ export function nameKeys(secret: string, first: string, last: string, known: { z
   const keys: Identifier[] = []
   const zip = /^(\d{5})(-?\d{4})?$/.exec(known.zip5?.trim() ?? '')?.[1]
   if (zip && zip !== '00000' && zip !== '99999') keys.push(key('zip', zip))
-  const born = known.dob?.trim() ?? ''
-  const day = /^\d{4}-\d{2}-\d{2}$/.test(born) ? Date.parse(`${born}T00:00:00Z`) : NaN
-  // A date that systems write where none was given is nobody's birthday.
-  if (!Number.isNaN(day) && new Date(day).toISOString().slice(0, 10) === born && !['1900-01-01', '1970-01-01'].includes(born)) keys.push(key('born', born))
+  const born = birthday(known.dob)
+  if (born) keys.push(key('born', born))
   return keys
+}
+
+/** The key of a date of birth, by which two people are told apart. It links nothing, and is made with a secret because dates are few enough to guess. */
+export function birthKey(secret: string, dob: string | undefined): Identifier | undefined {
+  if (typeof secret !== 'string' || secret.length < 32) throw new TypeError('A birth key requires a secret of at least 32 characters')
+  const born = birthday(dob)
+  return born && `birth:${createHmac('sha256', secret).update(JSON.stringify(['birth', born])).digest('hex')}`
+}
+
+/** A date of birth that is one, or undefined: a date that systems write where none was given is nobody's birthday. */
+function birthday(dob: string | undefined): string | undefined {
+  const born = dob?.trim() ?? ''
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(born) ? Date.parse(`${born}T00:00:00Z`) : NaN
+  return !Number.isNaN(day) && new Date(day).toISOString().slice(0, 10) === born && !['1900-01-01', '1970-01-01'].includes(born) ? born : undefined
 }

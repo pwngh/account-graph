@@ -65,7 +65,7 @@ An identifier is written `kind:value`. A kind missing from the policy gets 400. 
 | --- | --- |
 | `GET /subject?subject=` | One subject: cluster, links, separations and their authors, flows, rings, newest sightings. |
 | `GET /cluster?subject=` | The subject's cluster: `{ id, members, oversized }`, or `null`. |
-| `GET /links?subject=` | Every subject linked to this one, with score and reasons. |
+| `GET /links?subject=` | Every subject linked to this one, with score and reasons, and `conflict` where a [fact](deciding.md#facts-that-keep-people-apart) says they are two people. |
 | `GET /between?a=&b=` | What two subjects share at any strength, excluding reviewer marks: `{ known, joined, apart, score, reasons, idle }`. `idle` lists shared identifiers that are muted or over their cap. |
 | `GET /history?subject=` | Every sighting of the subject, oldest first. |
 | `GET /journey?subject=&before=` | Everything recorded about the subject's person, oldest first, newest 200: `{ entries, subjects, next, more }`. Pass `next` as `before` for earlier entries. |
