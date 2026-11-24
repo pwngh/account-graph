@@ -43,7 +43,8 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
 
   // The connection drops while a decision is being saved: the question and the reason stay.
   await keepApart('account:2')
-  await until('what it would do', async () => /^Now one person of 3 subjects\. After this, 2 people, of 2 and 1 subjects\. [12] subjects? changes? cluster\.Which clusters/.test(await text('#ask-effect')))
+  await until('what it would do', async () => (await text('#ask-effect')).includes('Which clusters'))
+  assert.equal(await text('#ask-effect'), 'Now one person of 3 subjects. After this, 2 people, of 2 and 1 subjects. 2 subjects change cluster.Which clustersNow account:1 (3)After account:2 (2), account:1 (1)')
   await run(`document.getElementById('ask-reason').value = 'brothers, one family email'`)
   down = true
   await run(`document.getElementById('ask-yes').click()`)
