@@ -1837,8 +1837,26 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
         ['team:b', 'team:b', 'team:a', T0],
       ])
       assert.equal((await graph.recent(1)).length, 1)
+      // A system that keeps the number it got to reads each change once, whatever size its pages are.
+      const read = async (from: number) => {
+        const out = []
+        for (let page = await graph.changes({ after: from, limit: 3 }); ; page = await graph.changes({ after: page.next, limit: 3 })) {
+          out.push(...page.changes)
+          if (!page.more) return { out, next: page.next }
+        }
+      }
+      const all = await read(0)
+      assert.deepEqual(all.out.slice(-4).reverse().map(({ seq: _, ...move }) => move), recent.slice(0, 4))
+      assert.deepEqual([...all.out].sort((x, y) => x.seq - y.seq), all.out)
+      assert.deepEqual(await graph.changes({ after: 'now' }), { changes: [], next: all.next, more: false })
+      assert.deepEqual(await graph.changes({ after: all.next }), { changes: [], next: all.next, more: false })
+      for (const bad of [-1, 1.5, NaN]) await assert.rejects(graph.changes({ after: bad }), TypeError)
       await graph.forget('pair:y')
       assert.equal((await graph.recent()).some((move) => move.subject === 'pair:y'), false)
+      // Numbers are not used again, so what comes after a deletion is still after where the reader got to.
+      assert.equal((await read(0)).out.some((move) => move.subject === 'pair:y'), false)
+      await graph.observe([{ subject: 'late:1', identifiers: ['device:late'], at: T0 }, { subject: 'late:2', identifiers: ['device:late'], at: T0 }])
+      assert.deepEqual((await read(all.next)).out.map((move) => move.subject).filter((subject) => subject.startsWith('late:')), ['late:2'])
     })
 
     test('reviewer decisions become the checked pairs that set the weights', async () => {

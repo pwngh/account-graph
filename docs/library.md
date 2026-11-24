@@ -360,6 +360,7 @@ A join leaves a mark on both subjects, `review:join-` and its decision number. `
 | `clusters()` | The largest clusters, the starting point for review. |
 | `search('account:4')` | Subjects by the start of their id. |
 | `recent()` | The newest cluster changes. |
+| `changes({ after })` | Every cluster change after a number, oldest first, with the number to pass next. |
 
 On the benchmark's 124,000 edges in PostgreSQL, `undecided()` took 0.13 seconds, against 0.33 to score every pair. Only the latter grows with the graph.
 

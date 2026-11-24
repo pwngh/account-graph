@@ -443,6 +443,12 @@ test('a reviewer\'s token opens the review routes and nothing a service writes t
   const call = (token: string, method: string, path: string, body?: object) =>
     fetch(`${base}${path}`, { method, headers: { authorization: `Bearer ${token}` }, ...(body && { body: JSON.stringify(body) }) }).then((r) => r.status)
   try {
+    assert.equal(await call('reviewer', 'GET', '/changes'), 403)
+    const page = async (query: string) => (await fetch(`${base}/changes${query}`, { headers: { authorization: 'Bearer service' } })).json()
+    const { changes, ...rest } = await page('')
+    assert.deepEqual([changes.map(({ at: _, ...change }: { at: number }) => change), rest], [[{ seq: 1, subject: 'account:2', from: 'account:2', to: 'account:1' }], { next: 1, more: false }])
+    assert.deepEqual([await page('?after=1'), await page('?after=now')], [{ changes: [], next: 1, more: false }, { changes: [], next: 1, more: false }])
+    for (const query of ['?after=x', '?after=-1', '?after=', '?limit=0']) assert.equal(await call('service', 'GET', `/changes${query}`), 400, query)
     for (const path of ['/subject?subject=account:1', '/clusters', '/clusters?offset=50', '/search?q=account', '/recent', '/links?subject=account:1', '/flows?subject=account:1', '/decisions', '/decisions?author=system&limit=5', '/disputes', '/consent?subject=account:1', '/policy', '/pulse', '/audit']) {
       assert.equal(await call('reviewer', 'GET', path), 200, path)
     }
