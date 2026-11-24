@@ -129,6 +129,10 @@ test('a kind that only confirms is a sound rule, names its policy, and fit gives
   const lone = fit([...labeled, ...Array.from({ length: 200 }, () => ({ same: false, reasons: [reason('name', 0.6)] }))], policy)
   assert.deepEqual(lone.kinds, without.kinds)
   assert.ok(without.kinds.name!.after > 0 && without.loss.after <= without.loss.before)
+  // Rounded up, a weight just under `related` would let the name count. Where that is worse, the weights are given back as they were.
+  const edge = policyFrom({ kinds: { name, address: { weight: 0.4999 } } })
+  const kept = fit(Array.from({ length: 40 }, (_, i) => ({ same: i < 20, reasons: [reason('address', 0.4999), reason('name', 0.6)] })), edge, 1e9)
+  assert.deepEqual([kept.kinds.address!.after, kept.policy.kinds.address!.weight, kept.loss.after], [0.4999, 0.4999, kept.loss.before])
 })
 
 test('the household preset is a sound policy, and fit counts a group once', () => {

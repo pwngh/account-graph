@@ -140,13 +140,15 @@ export function fit(labeled: readonly Labeled[], policy: Policy, prior = 1): Fit
   const starts = [start, ...kinds.filter((kind) => kinds.some((other) => other !== kind && groupOf(kind) !== undefined && groupOf(other) === groupOf(kind))).map((kind) => ({ ...start, ...Object.fromEntries(kinds.filter((other) => groupOf(other) === groupOf(kind)).map((other) => [other, logit(other === kind ? 0.9 : 0.01)])) }))]
   const found = starts.map(descend).reduce((best, next) => (cost(next) < cost(best) ? next : best))
   // What is reported is what the weights given back do. Rounded, one may fall on the other side of where a kind that only confirms counts.
-  const rounded = Object.fromEntries(kinds.map((kind) => [kind, logit(Math.round(weight(kind, found) * 1000) / 1000)]))
-  const theta = loss(rounded) <= loss(start) ? rounded : start
+  const rounded = Object.fromEntries(kinds.map((kind) => [kind, Math.round(weight(kind, found) * 1000) / 1000]))
+  const as = (weights: Record<string, number>) => Object.fromEntries(kinds.map((kind) => [kind, logit(weights[kind]!)]))
+  const given = loss(as(rounded)) <= loss(start) ? rounded : Object.fromEntries(kinds.map((kind) => [kind, policy.kinds[kind]!.weight]))
+  const theta = as(given)
 
   const fitted: Policy = { ...policy, kinds: { ...policy.kinds } }
   const report: Fitted['kinds'] = {}
   for (const kind of kinds) {
-    const after = Math.round(weight(kind, theta) * 1000) / 1000
+    const after = given[kind]!
     ;(fitted.kinds as Record<string, Policy['kinds'][string]>)[kind] = { ...policy.kinds[kind]!, weight: after }
     report[kind] = { before: policy.kinds[kind]!.weight, after, pairs: pairs.filter((pair) => pair.parts.some((part) => part.kind === kind)).length }
   }
