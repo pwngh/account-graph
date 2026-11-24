@@ -86,6 +86,7 @@
 - `examples/call-tracking.ts` takes a call tracking webhook, checks its signature and posts the call. `docs/pilot.md` is a trial that sends nothing to ad platforms.
 - `OPEN_HOURS` takes `us` and `us-tx` for holidays. Spanish words ask for no more texts, and none undoes it. `POST /call/ringing` says where in Texas a number is from.
 - A `zip` tag with a Texas ZIP code adds `county`. `SERVER_RANGES_FILE` names the address ranges of data centers.
+- A tap two callers could have made ties neither. On a number others are using, a tap has to be within thirty seconds of its call. A caller who is one visitor's takes another's pool number only while it is shown.
 - `npm run firm` starts a sample firm, and `npm run bench -- scale` measures large graphs.
 
 ### Reviewer screen
