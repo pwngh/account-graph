@@ -39,7 +39,7 @@ The story runs from a Monday to a Thursday that have passed. Each scene moves th
 | 2 | A phone tap, what the firm's screen says while it rings, and a call held uncounted until its result | Accounts |
 | 3 | A caller who hung up in the queue: missed, uncounted, unsent | Board |
 | 4 | A call back that reaches the person | Journey |
-| 5 | Details entered by staff: the contact is tied to the call by phone at 85%, and the ad is not credited | Accounts |
+| 5 | Details entered by staff, checked for a duplicate first: the contact is tied to the call by phone at 85%, and the ad is not credited | Accounts |
 | 6 | A signed link to the form, recorded with its purpose and texted to the contact | Accounts |
 | 7 | The link opened in the browser of the visit: tied at 92%, and the ad is credited | Accounts |
 | 8, 9 | A form sent and documents signed, on the same person | Board |
