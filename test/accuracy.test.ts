@@ -81,6 +81,7 @@ test('a world is the same for the same seed, and every subject of it has an owne
     if (event.kind === 'record') assert.ok(told.has(event.subject))
     else if (event.kind === 'call') assert.ok(calls.has(event.id))
     else if (event.kind === 'join') assert.ok(calls.has(event.call) && told.has(event.subject))
+    else if (event.kind === 'speaks') assert.ok(told.has(event.subject))
     else assert.ok(told.has(`visitor:${event.device}`))
   }
 })
@@ -100,4 +101,26 @@ test('under the default policy names and birth dates change no group', async () 
   const world = makeWorld(SETTINGS.base!.rates, { people: 80, days: 40, start: Date.parse('2026-03-02T15:00:00Z'), seed: 5 })
   const without = { ...world, events: world.events.map((event) => (event.kind === 'record' ? { ...event, name: undefined, dob: undefined } : event)) } as unknown as typeof world
   assert.deepEqual((await report(world)).clusterOf, (await report(without)).clusterOf)
+})
+
+test('the third world adds to the others without changing them, and says whose facts are whose', async () => {
+  const names = { english: [{ name: 'robert', share: 3, shorts: ['bob', 'rob'] }, { name: 'mary', share: 2, shorts: ['molly'] }], spanish: [{ name: 'guadalupe', share: 1, shorts: ['lupe'], english: [] }], spanishShare: 0.3 }
+  const size = { people: 2_000, days: 120, start: Date.parse('2026-03-02T15:00:00Z'), seed: 7 }
+  const { events, truths } = makeWorld(SETTINGS.high3!.rates, size, names)
+  assert.deepEqual(makeWorld(SETTINGS.high3!.rates, size, names).events, events)
+  assert.throws(() => makeWorld(SETTINGS.high3!.rates, size), /list of names/)
+  const told = events.filter((event) => event.kind === 'record' && event.speaker)
+  assert.ok(told.length > 0)
+  // What is said to be the speaker's was given, and is among the facts of the record.
+  for (const event of told) {
+    if (event.kind !== 'record') continue
+    const { facts } = truths.find((each) => each.subject === event.subject)!
+    for (const [kind, value] of Object.entries(event.speaker!)) assert.ok(facts.includes(`${kind} ${value}`) || kind === 'phone', `${kind} of ${event.subject}`)
+  }
+  const reported = events.map((event) => (event.kind === 'call' && event.told) || event.at)
+  assert.deepEqual(reported, [...reported].sort((x, y) => x - y))
+  // Nobody who does not ask hears of a speaker.
+  const world = makeWorld(SETTINGS.base3!.rates, { ...size, people: 60, days: 30 }, names)
+  const { clusterOf } = await report(world)
+  for (const { subject } of world.truths) assert.ok(clusterOf.has(subject), subject)
 })

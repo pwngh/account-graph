@@ -4,7 +4,7 @@
  * suit a result. The run at 17b7a53 had those here then; what is new since is
  * for the second run.
  */
-import type { Rates } from './world.ts'
+import type { Rates, Third } from './world.ts'
 
 interface Setting {
   rates: Rates
@@ -69,6 +69,18 @@ const base: Rates = {
   visits: 1.5,
 }
 
+/** Low, base and high of what the third run added, all assumed. */
+function third(at: 0 | 1 | 2): Third {
+  const of = (...values: [number, number, number]) => values[at]
+  return {
+    shortGiven: of(0.15, 0.3, 0.45), englishGiven: of(0.1, 0.2, 0.35), compound: of(0.15, 0.25, 0.4), compoundHalved: of(0.3, 0.5, 0.7),
+    swapped: of(0.005, 0.01, 0.02), speakersName: of(0.03, 0.06, 0.12), alike: of(0.005, 0.01, 0.02),
+    staffTold: of(0.8, 0.6, 0.3), formTold: of(0.75, 0.5, 0.25), ownGiven: of(0.7, 0.5, 0.3), staffToldWrongly: of(0.01, 0.02, 0.03), formToldWrongly: of(0.005, 0.01, 0.02), toldLate: of(0.1, 0.2, 0.3),
+    formAgain: of(0.1, 0.15, 0.2), otherBrowser: of(0.05, 0.1, 0.2), otherLine: of(0.05, 0.1, 0.2), quick: of(0.85, 0.75, 0.6), middle: of(0.1, 0.15, 0.2), late: of(0.05, 0.1, 0.2), oldNumber: of(0.02, 0.04, 0.08),
+    placeholder: 0, office: 0,
+  }
+}
+
 export const SETTINGS: Record<string, Setting> = {
   /** The middle of every range. */
   base: { rates: base, people: 2_000, days: 120, pool: 10 },
@@ -88,4 +100,13 @@ export const SETTINGS: Record<string, Setting> = {
   },
   /** The middle rates on a busy line, where strangers tap and call at about the same time. */
   busy: { rates: base, people: 6_000, days: 5, pool: 40 },
+  /** The third run's, beside those above, which stay as they were. */
+  base3: { rates: { ...base, third: third(1) }, people: 2_000, days: 120, pool: 10 },
+  low3: { rates: {} as Rates, people: 2_000, days: 120, pool: 10 },
+  high3: { rates: {} as Rates, people: 2_000, days: 120, pool: 10 },
+  busy3: { rates: { ...base, third: third(1) }, people: 6_000, days: 5, pool: 40 },
+  /** Base with placeholder numbers and shared office emails. */
+  dirty3: { rates: { ...base, third: { ...third(1), placeholder: 0.03, office: 0.03 } }, people: 2_000, days: 120, pool: 10 },
 }
+SETTINGS.low3!.rates = { ...SETTINGS.low!.rates, third: third(0) }
+SETTINGS.high3!.rates = { ...SETTINGS.high!.rates, third: third(2) }

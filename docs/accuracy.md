@@ -268,6 +268,53 @@ All that was printed is in [accuracy-held.txt](accuracy-held.txt), and the devel
 
 **A pool mixes more people in base, low and high.** People mixed by anything go up 2.05, 1.22 and 2.15 points, and in base joined pairs right go from 94.68% to 88.38%. Records with another's do not change. In busy, people mixed go down 0.22 points and true pairs found up from 57.63% to 68.15%. Records credited to their ad go from 64.63% to 71.29% in base, with 38 of 5,808 (0.65%) of those credited without it lost. Looked at after the run, on six of the base seeds: 12.6% of the `lease` links are wrong with calls again on the number shown before, and 1.0% without them.
 
+## The third run
+
+Written before any of its seeds was run. The two runs above stand as they are, and their settings make the same people as then, draw for draw. `base3`, `low3`, `high3`, `busy3` and `dirty3` are new settings, and are not `base` and the rest. The held seeds of the third run are opened once. This page counts the rounds: three so far, with this one.
+
+### What is new in the world
+
+All assumed unless it says otherwise, and set before anything was run.
+
+| Rate | Low | Base | High |
+| --- | --- | --- | --- |
+| First names | From a list the author of the product's table had not seen, by its SHA-256. English names by their share in the 1990 census. Spanish names by shares that are assumed, and read by no fluent speaker | | |
+| A record has a short form; an English form of a Spanish name | 15%; 10% | 30%; 20% | 45%; 35% |
+| A Spanish name of two; a record has one of them | 15%; 30% | 25%; 50% | 40%; 70% |
+| First and last name swapped | 0.5% | 1% | 2% |
+| The speaker's name on the record of who they speak for | 3% | 6% | 12% |
+| Two of a household with names a letter apart | 0.5% | 1% | 2% |
+| Where somebody speaks for another, staff say so; a form's box is ticked | 80%; 75% | 60%; 50% | 30%; 25% |
+| Said wrongly: by staff; by the box. Said a day or three late | 1%; 0.5%; 10% | 2%; 1%; 20% | 3%; 2%; 30% |
+| The client's own number and email given beside, where the box is ticked | 70% | 50% | 30% |
+| A form filed again from one browser, with another email or number | 10% | 15% | 20% |
+| Calls again from another browser; from another line | 5%; 5% | 10%; 10% | 20%; 20% |
+| How long a tap is before its call: up to 30 s; up to 60; up to 180 | 85/10/5 | 75/15/10 | 60/20/20 |
+| Calls reported 5 to 120 seconds late | 5% | 10% | 20% |
+| Cold callers who dial a number somebody else was shown | 2% | 4% | 8% |
+| `dirty3`, base with placeholder numbers; shared office emails | | 3%; 3% of records | |
+
+Somebody who speaks for another is told of by a field on `/identify`, and the arms that ask send it. The others send what was given as the subject's, as before. What a record was given is the same for both, so a chain of facts is the same.
+
+### What would be bad
+
+Of the held seeds, for the configuration named before them, beside the code of `b9bba69` under the default policy (`today`), on the new settings. Shares are pooled. **The old marks are repeated on the old settings too**, and a mark that tying less could meet has a floor.
+
+| In | Bad |
+| --- | --- |
+| base3 | More than 1% of people with a record share a cluster with somebody else's |
+| base3 | Fewer than 98% of joined pairs are right |
+| base3 | A kind of link with 200 links or more has over 5% of them between two people |
+| high3 | More than 2.5% of people with a record share a cluster with somebody else's |
+| busy3, and base3 with a pool | More than 5% of the links that rest on a tap or a number shown are between two people |
+| base3, and dirty3 | More than 2% of credited records go to somebody else's ad |
+| base3 | Fewer than 90% of the pairs with a chain of facts that `today` finds, and fewer than 90% of its records credited to their ad |
+| busy3 | Fewer than 90% of the `dial` ties that are right under `today` |
+| base3 and high3 | More than 2% and 5% of the true pairs of records `today` finds are lost |
+| dirty3 | More than 1.5% of people with a record share a cluster with somebody else's |
+
+Each is written down as held, bad, or not run. The configuration is written here, by its policy and commit, before the development seeds are chosen from: 20270301 to 20270320. Held: 20270401 to 20270420.
+
 ## Limitations
 
 - Most rates are assumed. Under `high`, every one is at its hard end at once.

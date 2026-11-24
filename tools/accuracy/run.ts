@@ -9,6 +9,7 @@
  * desk would. `docs/accuracy.md` says
  * where the rates are from, what is counted, and what would be bad.
  */
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -19,7 +20,7 @@ import { interval, score } from './score.ts'
 import type { Score, Truth } from './score.ts'
 import { SETTINGS } from './rates.ts'
 import { makeWorld } from './world.ts'
-import type { Size, World } from './world.ts'
+import type { Names, Size, World } from './world.ts'
 
 const SITE = 'https://www.example.org'
 const LINE = '+15550100000'
@@ -40,7 +41,7 @@ export const ARMS = {
   'default pool': { pool: true },
   'default birth': { policy: { apart: ['birth'] } },
   'household staff birth': { policy: { ...HOUSEHOLD, apart: ['birth'] }, staff: true },
-} satisfies Record<string, { policy?: object; staff?: boolean; pool?: boolean }>
+} satisfies Record<string, { policy?: object; staff?: boolean; pool?: boolean; speaker?: boolean }>
 export type Arm = keyof typeof ARMS
 /** What each arm is compared with over the same worlds. */
 const BESIDE: Partial<Record<Arm, Arm>> = {
@@ -75,7 +76,7 @@ export interface Outcome {
 
 /** Reports a world to a server of its own, in the order it happened, and reads who was joined. */
 export async function report(world: World, arm: Arm = 'default', pool = 10): Promise<Outcome> {
-  const set: { policy?: object; staff?: boolean; pool?: boolean } = ARMS[arm]
+  const set: { policy?: object; staff?: boolean; pool?: boolean; speaker?: boolean } = ARMS[arm]
   const numbers = set.pool ? Array.from({ length: pool }, (_, i) => `+1555010${String(100 + i).padStart(4, '0')}`) : []
   let now = START
   const graph = createGraph(createMemoryStore(), set.policy && policyFrom(set.policy), { now: () => now })
@@ -107,7 +108,7 @@ export async function report(world: World, arm: Arm = 'default', pool = 10): Pro
   }
   try {
     for (const event of world.events) {
-      now = event.at
+      now = (event.kind === 'call' && event.told) || event.at
       if (event.kind === 'visit') {
         await post('/collect', { device: event.device, url: `${SITE}/`, ...(event.ad && { touch: { gclid: event.ad, landing: `${SITE}/` } }) }, page(event.address, event.agent))
         await shown(event)
@@ -117,8 +118,15 @@ export async function report(world: World, arm: Arm = 'default', pool = 10): Pro
         const caller = callerOf.get(event.call)
         if (set.staff && caller !== undefined) await post('/join', { source: 'desk', pairs: [{ a: caller, b: event.subject, reason: 'answered by staff' }] }, service)
       }
-      else if (event.kind === 'record') await post('/identify', { subject: event.subject, event: 'form', ...(event.device && { device: event.device }), ...(event.email && { email: event.email }), ...(event.phone && { phone: event.phone }), name: event.name, ...(event.dob && { dob: event.dob }) }, service)
-      else {
+      else if (event.kind === 'record') {
+        // A firm that asks who speaks says whose each is. One that does not sends what was given as the subject's.
+        const { device, email, phone } = event
+        const mine = set.speaker && event.speaker ? { ...Object.fromEntries(Object.entries({ device, email, phone }).filter(([key]) => !(key in event.speaker!))), ...event.own } : { device, email, phone }
+        await post('/identify', { subject: event.subject, event: 'form', ...Object.fromEntries(Object.entries(mine).filter(([, value]) => value !== undefined)), ...(set.speaker && event.speaker && { speaker: event.speaker }), name: event.name, ...(event.dob && { dob: event.dob }) }, service)
+      } else if (event.kind === 'speaks') {
+        if (set.speaker) await post('/identify', { subject: event.subject, event: 'told', speaker: event.speaker }, service)
+      }
+      else if (event.kind === 'call') {
         const to = event.page ? await shown(event.page) : (event.redial !== undefined && dialed.get(event.redial)) || LINE
         dialed.set(event.id, to)
         const { subject } = await post('/call', { id: event.id, to, at: event.at, duration: event.seconds, answered: event.answered, ...(event.from && { from: event.from }) }, service)
@@ -219,17 +227,18 @@ const percent = ({ mean, low, high }: ReturnType<typeof interval>) => `${(mean *
 const added = <T extends object>(into: T, more: T): T => Object.fromEntries(Object.entries(into).map(([key, value]) => [key, value + (more as Record<string, number>)[key]!])) as T
 
 async function main() {
-  const { values, positionals } = parseArgs({ allowPositionals: true, options: { worlds: { type: 'string', default: '20' }, people: { type: 'string' }, seed: { type: 'string', default: '20261124' }, arm: { type: 'string' }, dry: { type: 'boolean', default: false } } })
+  const { values, positionals } = parseArgs({ allowPositionals: true, options: { worlds: { type: 'string', default: '20' }, names: { type: 'string' }, people: { type: 'string' }, seed: { type: 'string', default: '20261124' }, arm: { type: 'string' }, dry: { type: 'boolean', default: false } } })
   const [worlds, seed] = [Number(values.worlds), Number(values.seed)]
+  const list: Names | undefined = values.names === undefined ? undefined : JSON.parse(readFileSync(values.names, 'utf8'))
   const names = positionals.length > 0 ? positionals : Object.keys(SETTINGS)
-  if (!values.dry) console.log(`Node ${process.version}`)
+  if (!values.dry) console.log(`Node ${process.version}${values.names === undefined ? '' : `, names ${createHash('sha256').update(readFileSync(values.names)).digest('hex')}`}`)
   for (const name of names) {
     const setting = SETTINGS[name]
     if (!setting) throw new Error(`Say one of: ${Object.keys(SETTINGS).join(', ')}`)
     const people = values.people === undefined ? setting.people : Number(values.people)
     const size = (world: number): Size => ({ people, days: setting.days, start: START, seed: seed + world })
     if (values.dry) {
-      const { events, truths } = makeWorld(setting.rates, size(0))
+      const { events, truths } = makeWorld(setting.rates, size(0), list)
       const by = (kind: string) => events.filter((event) => event.kind === kind).length
       console.log(`${name}: ${people} people, ${by('visit')} visits, ${by('tap')} taps, ${by('call')} calls, ${by('record')} records, ${truths.length} subjects before callers`)
       continue
@@ -241,7 +250,7 @@ async function main() {
     /** Pooled over the worlds: of what the arm beside found, what is lost. */
     const lostIn = new Map<Arm, Record<'pairs' | 'recordPairs' | 'credit', [lost: number, of: number]>>()
     for (let world = 0; world < worlds; world++) {
-      const made = makeWorld(setting.rates, size(world))
+      const made = makeWorld(setting.rates, size(world), list)
       const of = new Map<Arm, { result: Score; outcome: Outcome }>()
       for (const arm of arms) {
         const outcome = await report(made, arm, setting.pool)
