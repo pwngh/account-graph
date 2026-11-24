@@ -660,19 +660,24 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     const reached: Reached = new Map(from.map((subject) => [subject, { confidence: 1, via: [] }]))
     // Two subjects kept apart are two people, so nothing of the one is reached from the other, through a third subject either.
     const apart = new Set((await tx.separatedOf(from)).flat().filter((subject) => !reached.has(subject)))
-    for (const others of (await beyond(tx, from)).values()) for (const each of others) if (!reached.has(each)) apart.add(each)
+    const borders = bordersOf(tx)
     let frontier = [...from]
-    for (let hop = 0; hop < hops && frontier.length > 0; hop++) frontier = spread(reached, apart, frontier, await neighbors(tx, frontier), only, last)
+    for (let hop = 0; hop < hops && frontier.length > 0; hop++) {
+      const links = await neighbors(tx, frontier)
+      await borders.load([...from, ...frontier, ...[...links.values()].flat().map((link) => link.subject)])
+      frontier = spread(reached, apart, frontier, links, borders, from, only, last)
+    }
     return reached
   }
 
   /** One hop of a search: goes over the links of the frontier, and returns the subjects it found a better chain to. */
-  function spread(reached: Reached, apart: ReadonlySet<Subject>, frontier: Subject[], links: ReadonlyMap<Subject, Link[]>, only?: ReadonlySet<Subject>, last?: Map<Subject, Link>): Subject[] {
+  function spread(reached: Reached, apart: ReadonlySet<Subject>, frontier: Subject[], links: ReadonlyMap<Subject, Link[]>, borders: ReturnType<typeof bordersOf>, from: readonly Subject[], only?: ReadonlySet<Subject>, last?: Map<Subject, Link>): Subject[] {
     const improved = new Set<Subject>()
     // As the hop began: a chain made better during it is followed in the next one, or it would be a link longer.
     for (const [near, start] of frontier.sort().map((each) => [each, reached.get(each)!] as const)) {
       for (const link of links.get(near) ?? []) {
         if (link.conflict || apart.has(link.subject) || (only && !only.has(link.subject))) continue
+        if (borders.between(near, link.subject) || from.some((origin) => borders.between(origin, link.subject))) continue
         const confidence = start.confidence * link.score
         const known = reached.get(link.subject)
         if (known && known.confidence >= confidence) continue
@@ -684,32 +689,36 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     return [...improved]
   }
 
-  /**
-   * By subject, whoever a search from it may not go to: those kept apart from it by a fact, and all that was cut off with
-   * them. A browser that went with the other of two people is the other's, however strong its link to this one.
-   */
-  async function beyond(tx: Tx, subjects: readonly Subject[]): Promise<Map<Subject, Set<Subject>>> {
-    const out = new Map<Subject, Set<Subject>>()
-    if (!policy.apart?.length) return out
-    const labels = await tx.labelsOf(unique(subjects))
-    const members = new Map<Subject, Labels>()
-    const ids = unique([...labels.values()].map(({ component }) => component))
-    for (let i = 0; i < ids.length; i += TOGETHER) for (const [subject, own] of await tx.membersOf(ids.slice(i, i + TOGETHER))) members.set(subject, own)
-    const facts = await known(tx, [...members.keys()])
-    const told = new Map<Subject, Subject[]>()
-    const inCluster = new Map<Subject, Subject[]>()
-    for (const [subject, own] of members) {
-      inCluster.set(own.cluster, [...(inCluster.get(own.cluster) ?? []), subject])
-      if (facts.get(subject)?.facts.size) told.set(own.component, [...(told.get(own.component) ?? []), subject])
+  /** Where groups were cut because facts in them differ. A search crosses no such border, at any hop and from either side. */
+  function bordersOf(tx: Tx) {
+    const labels = new Map<Subject, Labels>()
+    const told = new Map<Subject, Known[]>()
+    const read = new Set<Subject>()
+    const decided = new Map<string, boolean>()
+    return {
+      async load(subjects: Iterable<Subject>): Promise<void> {
+        if (!policy.apart?.length) return
+        const unread = unique([...subjects].filter((subject) => !labels.has(subject)))
+        for (let i = 0; i < unread.length; i += TOGETHER) for (const [subject, own] of await tx.labelsOf(unread.slice(i, i + TOGETHER))) labels.set(subject, own)
+        const ids = unique(unread.flatMap((subject) => labels.get(subject)?.component ?? [])).filter((id) => !read.has(id))
+        for (let i = 0; i < ids.length; i += TOGETHER) {
+          const members = await tx.membersOf(ids.slice(i, i + TOGETHER))
+          for (const [subject, facts] of await known(tx, [...members.keys()])) {
+            const { cluster } = members.get(subject)!
+            if (facts.facts.size > 0) told.set(cluster, [...(told.get(cluster) ?? []), facts])
+          }
+        }
+        for (const id of ids) read.add(id)
+      },
+      between(a: Subject, b: Subject): boolean {
+        const [x, y] = [labels.get(a), labels.get(b)]
+        if (!x || !y || x.cluster === y.cluster || x.component !== y.component) return false
+        const key = pairKey(x.cluster, y.cluster)
+        let found = decided.get(key)
+        if (found === undefined) decided.set(key, (found = (told.get(x.cluster) ?? []).some((one) => (told.get(y.cluster) ?? []).some((other) => conflict(policy, one, other)))))
+        return found
+      },
     }
-    for (const [subject, own] of labels) {
-      const all = told.get(own.component) ?? []
-      // Whoever is one with the one searched from speaks for them.
-      const theirs = all.filter((each) => members.get(each)!.cluster === own.cluster)
-      const others = new Set(all.filter((each) => members.get(each)!.cluster !== own.cluster && theirs.some((mine) => conflict(policy, facts.get(mine), facts.get(each)))).map((each) => members.get(each)!.cluster))
-      out.set(subject, new Set([...others].flatMap((cluster) => inCluster.get(cluster)!)))
-    }
-    return out
   }
 
   /** `reach` from each of many subjects by itself, read together: one read a hop for a thousand of them, not one for each. */
@@ -718,7 +727,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     for (let i = 0; i < subjects.length; i += TOGETHER) {
       const searches = subjects.slice(i, i + TOGETHER).map((subject) => ({ subject, reached: new Map([[subject, { confidence: 1, via: [] }]]) as Reached, apart: new Set<Subject>(), frontier: [subject] }))
       const bySubject = new Map(searches.map((search) => [search.subject, search]))
-      for (const [subject, others] of await beyond(tx, [...bySubject.keys()])) for (const each of others) bySubject.get(subject)!.apart.add(each)
+      const borders = bordersOf(tx)
+      await borders.load(bySubject.keys())
       for (const [a, b] of await tx.separatedOf([...bySubject.keys()])) {
         bySubject.get(a)?.apart.add(b)
         bySubject.get(b)?.apart.add(a)
@@ -730,8 +740,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
           const some = unread.slice(j, j + TOGETHER)
           const found = await neighbors(tx, some)
           for (const subject of some) links.set(subject, found.get(subject) ?? [])
+          await borders.load([...found.values()].flat().map((link) => link.subject))
         }
-        for (const search of searches) search.frontier = spread(search.reached, search.apart, search.frontier, links)
+        for (const search of searches) search.frontier = spread(search.reached, search.apart, search.frontier, links, borders, [search.subject])
       }
       for (const { subject, reached } of searches) out.set(subject, reached)
     }

@@ -2614,6 +2614,9 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await graph.observe([{ subject: 'visitor:1', identifiers: ['carry:c'], at: T0 }, { subject: 'visitor:8', identifiers: ['carry:c', 'email:w'], at: T0 }, { subject: 'account:9', identifiers: ['email:w'], at: T0 }])
       await graph.touch({ subject: 'visitor:8', at: T0 + 1, gclid: 'eight' })
       assert.equal(await credit('contact:1'), undefined)
+      await graph.touch({ subject: 'contact:1', at: T0 + 2, gclid: 'one' })
+      assert.notEqual(await credit('visitor:8'), 'one')
+      assert.notEqual(await credit('account:9'), 'one')
       // Joined one and two, and two to three by an email six hold. One and three differ, and the join stands.
       const { graph: joined } = await fresh(policyFrom({ apart: ['birth'] }))
       await joined.observe([
