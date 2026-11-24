@@ -34,6 +34,7 @@ import { createOps } from './ops.ts'
 import { createOutbox } from './outbox.ts'
 import type { Target } from './outbox.ts'
 import { createPostgresStore } from './postgres.ts'
+import { bodySignature } from './sign.ts'
 import type { Pool } from './postgres.ts'
 import { createHandler, networks, reviewerProblems } from './server.ts'
 import type { HandlerOptions, Reviewers } from './server.ts'
@@ -107,7 +108,8 @@ export function configFrom(env: Env) {
     outboxInterval: number('OUTBOX_INTERVAL_MS', 30_000),
     outboxDelay: number('OUTBOX_DELAY_MS', 0),
     forgetAds: env.FORGET_ADS === 'true',
-    changeWebhook: env.CHANGE_WEBHOOK,
+    changeWebhook: env.CHANGE_WEBHOOK || undefined,
+    changeSecret: env.CHANGE_SECRET || undefined,
     linkSecret: env.LINK_SECRET || undefined,
     identifierSecret: env.IDENTIFIER_SECRET || undefined,
     alertWebhook: env.ALERT_WEBHOOK || undefined,
@@ -180,6 +182,7 @@ export function configFrom(env: Env) {
   } catch {
     wrong.push('REPORT_TIME_ZONE must be a time zone, such as America/New_York')
   }
+  if (config.changeSecret && !config.changeWebhook) wrong.push('CHANGE_SECRET requires CHANGE_WEBHOOK')
   if (config.callTapSeconds > 3600) wrong.push('CALL_TAP_SECONDS must be at most 3600')
   if (config.openHours !== undefined) for (const problem of hoursProblems(config.openHours)) wrong.push(`OPEN_HOURS: ${problem}`)
   for (const each of config.staffNetworks) {
@@ -258,7 +261,9 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
   // Tell another system whenever a cluster changes, if asked to.
   const webhook = config.changeWebhook
   const notify = async (changes: Change[]) => {
-    const response = await fetch(webhook!, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ changes }) })
+    const body = JSON.stringify({ changes })
+    const signed = config.changeSecret && { 'x-account-graph-signature': bodySignature(config.changeSecret, Date.now(), body) }
+    const response = await fetch(webhook!, { method: 'POST', headers: { 'content-type': 'application/json', ...signed }, body })
     if (!response.ok) throw new Error(`The change webhook returned ${response.status}`)
   }
   const policy = config.policy ?? defaultPolicy

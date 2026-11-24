@@ -1,6 +1,6 @@
 import type { Feed, OpsStore } from './ops.ts'
 import type { Job, OutboxStore } from './outbox.ts'
-import type { CallResult, Change, Consent, ConsentAnswer, CostRow, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Lease, Moved, NotLead, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, Change, Consent, ConsentAnswer, CostRow, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Lease, Moved, NotLead, NumberedChange, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
 
 /**
  * Where the graph lives. Sightings and touches are the record; edges and
@@ -63,6 +63,8 @@ export interface Tx {
   addChanges(at: number, changes: readonly Change[]): Promise<void>
   /** The newest cluster changes, newest first. */
   recentChanges(limit: number): Promise<Moved[]>
+  /** Cluster changes numbered above `seq`, oldest first. */
+  changesAfter(seq: number, limit: number): Promise<NumberedChange[]>
   /** Notes that a feed wrote something down at a time. */
   fed(feed: Feed, at: number): Promise<void>
   /** Whether no subject has been recorded. */

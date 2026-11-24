@@ -318,6 +318,30 @@ The Health view and `GET /ops` list the background jobs: the outbox, each cost i
 
 Set `CHANGE_WEBHOOK` to a URL. The server posts `{"changes": [...]}` there each time a cluster changes. Each change names a subject, the cluster it left, and the cluster it joined.
 
+Each post is sent once. Use it to learn at once that something changed, and read the [change feed](#change-feed) for what did.
+
+With `CHANGE_SECRET`, each post carries `x-account-graph-signature: t=<ms>,v1=<hex>`. `v1` is the HMAC-SHA256 of `<t>.<body>` under the secret. Check it over the body as received, and refuse an old `t`.
+
+### Change feed
+
+`GET /changes` answers every cluster change in order, so a system of yours can follow along without missing one.
+
+```sh
+curl "https://graph.example.org/changes?after=4180" -H "authorization: Bearer $GRAPH_TOKEN"
+```
+
+```json
+{ "changes": [{ "seq": 4181, "at": 1795460000000, "subject": "account:42", "from": "account:42", "to": "account:17" }], "next": 4181, "more": false }
+```
+
+1. Start with `after=0`. A subject no change has named is in the cluster of its own name.
+2. Read with the number you kept, act on the changes, then keep the new `next`.
+3. Read again at once while `more` is true. Otherwise read again every minute or so, and whenever the webhook arrives.
+
+If you stop between acting and keeping `next`, the same changes come again, so act on them in a way that can be repeated. `limit` is 500 unless you set it, and at most 1,000.
+
+> **A deletion takes its changes with it.** A subject you delete with `/forget` is gone from the feed. Delete your own copy when you ask for the deletion.
+
 ## Shutdown
 
 On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes in progress, and closes its database connections. If a conversion's send is interrupted, the next start sends it again. The ad platforms keep the first copy.
@@ -371,6 +395,7 @@ A partially set group stops the server at startup, with a message naming the mis
 | `OUTBOX_DELAY_MS` | `0` | Delay before the first send of a new outcome. |
 | `FORGET_ADS` | none | `true` asks ad platforms that support it to retract conversions when a person is [deleted](privacy.md#data-at-ad-platforms). |
 | `CHANGE_WEBHOOK` | none | URL that receives cluster changes. |
+| `CHANGE_SECRET` | none | Signs each post to `CHANGE_WEBHOOK`. |
 | `ALERT_WEBHOOK` | none | URL that receives alerts, as `{"text": "…"}`. |
 | `AUDIT_HEAD_HOURS` | `0` | Posts the newest audit hash to `ALERT_WEBHOOK` at startup and at this interval, at least one hour. Requires `ALERT_WEBHOOK`. `0` disables it. |
 | `QUIET_TOUCHES_HOURS`, `QUIET_CALLS_HOURS`, `QUIET_RESULTS_HOURS`, `QUIET_COSTS_HOURS` | `0` | Hours before a feed is [stale](#stale-feeds). `0` disables the check. |

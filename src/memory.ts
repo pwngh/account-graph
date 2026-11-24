@@ -3,7 +3,7 @@ import { createMemoryOutbox } from './outbox.ts'
 import { standingFirst } from './store.ts'
 import type { Store, Tx } from './store.ts'
 import { CLICK_IDS } from './touch.ts'
-import type { CallResult, Consent, ConsentAnswer, CostRow, Counted, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Lease, Moved, NotLead, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, Consent, ConsentAnswer, CostRow, Counted, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Lease, Moved, NotLead, NumberedChange, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
 
 /**
  * Keeps the graph in process memory. Writes run one at a time; a write that
@@ -33,7 +33,8 @@ export function createMemoryStore(): Store {
   /** By number, the one that began first, first. */
   const leases = new Map<string, Lease[]>()
   const costs = new Map<string, CostRow>()
-  const moves: Moved[] = []
+  const moves: NumberedChange[] = []
+  let lastMove = 0
   let writes = 0
   const ops = createMemoryOps()
   let built: string | undefined
@@ -230,11 +231,15 @@ export function createMemoryStore(): Store {
     },
 
     async addChanges(at, changes) {
-      for (const change of changes) moves.push({ ...change, at })
+      for (const change of changes) moves.push({ ...change, at, seq: ++lastMove })
     },
 
     async recentChanges(limit) {
-      return moves.slice(Math.max(0, moves.length - limit)).reverse().map((move) => ({ ...move }))
+      return moves.slice(Math.max(0, moves.length - limit)).reverse().map(({ seq: _, ...move }) => move)
+    },
+
+    async changesAfter(seq, limit) {
+      return moves.filter((move) => move.seq > seq).slice(0, limit).map((move) => ({ ...move }))
     },
 
     async fed(feed, at) {

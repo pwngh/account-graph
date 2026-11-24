@@ -780,6 +780,10 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return find((await json(request)).text)
       case 'POST /foresee':
         return graph.foresee(await json(request))
+      case 'GET /changes': {
+        const [after, limit] = [url.searchParams.get('after') ?? '0', url.searchParams.get('limit') ?? '500']
+        return graph.changes({ after: /^\d+$/.test(after) ? Number(after) : NaN, limit: /^\d+$/.test(limit) ? Math.min(Number(limit), 1_000) : NaN })
+      }
       case 'GET /recent':
         return graph.recent()
       case 'POST /separate': {

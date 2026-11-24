@@ -66,6 +66,8 @@ export type {
   Link,
   Loss,
   Moved,
+  ChangePage,
+  NumberedChange,
   NotLead,
   Observation,
   OpenCall,

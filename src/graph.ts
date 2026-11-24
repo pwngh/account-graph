@@ -45,6 +45,7 @@ import type {
   Link,
   Loss,
   Moved,
+  ChangePage,
   NotLead,
   Observation,
   OpenCall,
@@ -248,6 +249,11 @@ export interface Graph {
   search(text: string, limit?: number): Promise<Subject[]>
   /** The newest cluster changes, newest first: who joined or left which cluster, and when. */
   recent(limit?: number): Promise<Moved[]>
+  /**
+   * Every cluster change numbered above `after`, oldest first, so a system that keeps the number it got to misses none.
+   * `after` defaults to 0, the first change kept. A subject no change has named is in the cluster of its own name.
+   */
+  changes(options?: { after?: number; limit?: number }): Promise<ChangePage>
   /** What two subjects share, however weak, without any reviewer's mark, and how they stand. */
   between(a: Subject, b: Subject): Promise<Between>
   /**
@@ -1380,6 +1386,16 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
     search(text, limit = 20) {
       return store.read((tx) => tx.subjectsStarting(text, limit))
+    },
+
+    async changes({ after = 0, limit = 500 } = {}) {
+      if (!(Number.isSafeInteger(after) && after >= 0)) throw new TypeError('`after` must be the number of a change')
+      if (!(Number.isSafeInteger(limit) && limit > 0)) throw new TypeError('`limit` must be a positive integer')
+      return store.read(async (tx) => {
+        const found = await tx.changesAfter(after, limit + 1)
+        const changes = found.slice(0, limit)
+        return { changes, next: changes.at(-1)?.seq ?? after, more: found.length > limit }
+      })
     },
 
     recent(limit = 50) {

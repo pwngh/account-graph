@@ -243,6 +243,19 @@ export interface Moved extends Change {
   at: number
 }
 
+/** A cluster change in the order they were written. `seq` only grows, and some numbers are missing. */
+export interface NumberedChange extends Moved {
+  seq: number
+}
+
+/** One page of cluster changes, oldest first. Pass `next` as `after` for what came later. */
+export interface ChangePage {
+  changes: NumberedChange[]
+  next: number
+  /** Whether there is another page already. */
+  more: boolean
+}
+
 /** A subject whose cluster moved. `from` is undefined for a subject not seen before. */
 export interface Change {
   subject: Subject

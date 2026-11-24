@@ -18,6 +18,7 @@
 - `asOf(time)` rebuilds the graph at a past time. `prune(before)` deletes older records. `forget(subject)` deletes a subject and its data.
 - `transfer`, `flows`, `collusion` and `rings` report value moving between subjects. Each transfer has an `id`, and a repeat returns `duplicate: true`.
 - `createMemoryStore` and `createPostgresStore` share one test suite. `verify` compares stored clusters with a full recompute, and `PostgresStore.migrate` applies numbered upgrades.
+- `changes` and `GET /changes` list every cluster change in order, from a number. `CHANGE_SECRET` signs the posts to `CHANGE_WEBHOOK` (`bodySignature`).
 - `rebuild`, `verify` and `asOf` read the graph in pages. `createBatcher` combines concurrent observations into one transaction.
 
 ### Identification

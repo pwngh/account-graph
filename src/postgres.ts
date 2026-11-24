@@ -256,7 +256,12 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
 
     async recentChanges(limit) {
       const { rows } = await db.query(`select * from ${t('change')} order by id desc limit $1`, [limit])
-      return rows.map((row): Moved => ({ subject: row.subject, from: row.from_cluster ?? undefined, to: row.to_cluster ?? undefined, at: Number(row.at) }))
+      return rows.map(moved)
+    },
+
+    async changesAfter(seq, limit) {
+      const { rows } = await db.query(`select * from ${t('change')} where id > $1 order by id limit $2`, [seq, limit])
+      return rows.map((row) => ({ ...moved(row), seq: Number(row.id) }))
     },
 
     async fed(feed, at) {
@@ -852,6 +857,8 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     },
   }
 }
+
+const moved = (row: any): Moved => ({ subject: row.subject, from: row.from_cluster ?? undefined, to: row.to_cluster ?? undefined, at: Number(row.at) })
 
 function toSighting(row: any): Sighting {
   const sighting = { subject: row.subject, identifier: row.identifier, at: Number(row.at), recorded: Number(row.recorded_at) }
