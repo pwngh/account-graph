@@ -221,6 +221,7 @@ The server normalizes and hashes the email, phone and postal address. `device` i
 
 - [Pilot](docs/pilot.md): a trial on your own data, with nothing sent to ad platforms
 - [Matching](docs/deciding.md): scores, weights, clusters and policy
+- [Accuracy](docs/accuracy.md): who is joined, rightly and wrongly, over made-up people
 - [Presets](docs/presets.md): a policy for contacts entered by staff
 - [Library](docs/library.md): using the graph from Node
 - [Performance](docs/performance.md): measured speeds and sizes
@@ -263,7 +264,7 @@ The server normalizes and hashes the email, phone and postal address. `device` i
 
 **Matching**
 
-- A score is a model's, uncalibrated as a probability. Accuracy on data with known answers is unmeasured.
+- A score is a model's, uncalibrated as a probability. On made-up people, one run missed five of the marks set for it: see [Accuracy](docs/accuracy.md). It is unmeasured on real people.
 - Kinds count as independent evidence unless the policy groups them. The default policy has no groups.
 - Matches covers subjects in the newest 10,000 sightings.
 - Multiple separations in one component are resolved one at a time, which can cut more links than necessary.
