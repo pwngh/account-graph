@@ -495,15 +495,14 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       const [waits] = await next.store.outbox.get('waits')
       await next.store.outbox.swap(waits!, { ...waits!, state: 'held' })
       await telling.run()
-      assert.deepEqual((await next.store.outbox.of('contact:1')).map((job) => [job.transactionId, job.target, job.state]), [['enroll-1', 'keeps', 'sent'], ['enroll-1', 'lost', 'pending'], ['enroll-1', 'microsoft', 'sent'], ['waits', 'microsoft', 'held']])
 
       const at = T0 + HOUR
       const told = await telling.forget('contact:1', { by: 'dana' })
       assert.ok(told.changes.length > 0)
       assert.deepEqual(told.sent, [
         { transactionId: 'enroll-1', target: 'keeps', action: 'a', at, state: 'untold' },
-        { transactionId: 'enroll-1', target: 'microsoft', action: 'Enrolled', at, state: 'told' },
         { transactionId: 'enroll-1', target: 'lost', action: 'b', at, state: 'untold', note: 'may not have arrived' },
+        { transactionId: 'enroll-1', target: 'microsoft', action: 'Enrolled', at, state: 'told' },
       ])
       // Only what had arrived there, and nothing about what had not.
       assert.equal(retractions().length, 1)
@@ -513,7 +512,7 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       assert.deepEqual(adjustment, { AdjustmentType: 'Retract', ConversionName: 'Enrolled', ConversionTime: new Date(at).toISOString(), MicrosoftClickId: 'M1', HashedEmailAddress: sha256('pat1@example.org') })
       assert.deepEqual(others, [])
       // Gone here, and nothing of it is kept for later.
-      assert.deepEqual(await next.store.outbox.of('contact:1'), [])
+      assert.deepEqual([await telling.get('enroll-1'), await telling.get('waits')], [[], []])
       assert.equal((await graph.decisions()).at(0)!.action, 'forget')
       assert.deepEqual(await telling.forget('contact:1'), { changes: [], sent: [] })
 
@@ -524,15 +523,21 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       const refused = (await telling.forget('contact:3')).sent.find((each) => each.target === 'microsoft')!
       assert.equal(refused.state, 'refused')
       assert.match(refused.note!, /500: no such \(left out\)/)
-      assert.deepEqual([await next.store.outbox.of('contact:2'), await next.store.outbox.of('contact:3')], [[], []])
+      assert.deepEqual([await telling.get('enroll-2'), await telling.get('enroll-3')], [[], []])
 
       // A decision refused because somebody decided first tells nobody. Nor does anything, unless it was asked for.
       const before = retractions().length
       await graph.separate('contact:4', 'contact:6')
       await assert.rejects(telling.forget('contact:4', { seen: 0 }))
-      assert.equal((await next.store.outbox.of('contact:4')).length, 3)
-      assert.deepEqual((await quiet.forget('contact:5')).sent.map((each) => [each.target, each.state]), [['keeps', 'untold'], ['microsoft', 'untold'], ['lost', 'untold']])
+      assert.equal((await telling.get('enroll-4')).length, 3)
+      assert.deepEqual((await quiet.forget('contact:5')).sent.map((each) => [each.target, each.state]), [['keeps', 'untold'], ['lost', 'untold'], ['microsoft', 'untold']])
       assert.equal(retractions().length, before)
+
+      // Forgotten twice in one moment, it is told once. A target's own words are kept clear of what it was given.
+      const own = createOutbox(graph, next.store.outbox, { ...options, tellForgotten: true, targets: [{ ...keeps('keeps', async () => ({})), forget: async (jobs) => jobs.map((job) => `unknown ${job.keys.k}`) }] })
+      const both = (await Promise.all([own.forget('contact:4'), own.forget('contact:4')])).map((each) => each.sent)
+      assert.deepEqual(both.find((each) => each.length > 0)!.map((each) => [each.target, each.state, each.note]), [['keeps', 'refused', 'unknown (left out)'], ['lost', 'untold', 'may not have arrived'], ['microsoft', 'untold', undefined]])
+      assert.equal(both.filter((each) => each.length > 0).length, 1)
     })
 
     test('failed and skipped conversions can be listed and put back in line', async () => {

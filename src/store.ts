@@ -1,5 +1,5 @@
 import type { Feed, OpsStore } from './ops.ts'
-import type { OutboxStore } from './outbox.ts'
+import type { Job, OutboxStore } from './outbox.ts'
 import type { CallResult, Change, Consent, ConsentAnswer, CostRow, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Lease, Moved, NotLead, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
 
 /**
@@ -30,7 +30,7 @@ export interface Tx {
   /** Logs sightings and folds them into edges. Returns how many new edges each identifier gained. */
   addSightings(sightings: readonly Sighting[]): Promise<Map<Identifier, number>>
   /** Deletes a subject with its sightings, edges, touches, outcomes, calls, leases, flows, consent, alerts, conversions, and reviewer decisions. */
-  removeSubject(subject: Subject): Promise<void>
+  removeSubject(subject: Subject): Promise<Job[]>
   edgesOf(subjects: readonly Subject[]): Promise<Edge[]>
   edgesOn(identifiers: readonly Identifier[]): Promise<Edge[]>
   /**

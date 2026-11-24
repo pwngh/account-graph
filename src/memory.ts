@@ -93,7 +93,7 @@ export function createMemoryStore(): Store {
     },
 
     async removeSubject(subject) {
-      await outbox.remove(subject)
+      const jobs = await outbox.remove(subject)
       for (const identifier of bySubject.get(subject)?.keys() ?? []) {
         const holders = byIdentifier.get(identifier)!
         holders.delete(subject)
@@ -130,6 +130,7 @@ export function createMemoryStore(): Store {
       consents.delete(subject)
       ops.forget(subject)
       for (let i = moves.length - 1; i >= 0; i--) if (moves[i]!.subject === subject) moves.splice(i, 1)
+      return jobs
     },
 
     async edgesOf(subjects) {

@@ -95,8 +95,6 @@ export interface OutboxStore {
   standing(jobs: readonly Job[]): Promise<Job[]>
   /** Every job of one transaction, one per target. */
   get(transactionId: string): Promise<Job[]>
-  /** Every job of one subject, by transaction. */
-  of(subject: Subject): Promise<Job[]>
   /** Jobs in one state, the most recently due first. */
   list(state: JobState, limit: number): Promise<Job[]>
   counts(): Promise<Record<JobState, number>>
@@ -201,6 +199,18 @@ export interface Outbox {
 
 const DAY = 86_400_000
 
+const reached = (job: Job) => Boolean(job.delivered || job.state === 'sent' || job.requestId)
+
+/** Which of these jobs had reached their platform, or may have, in order. None is told of here. */
+export function sentOf(jobs: readonly Job[]): Sent[] {
+  return jobs
+    .map((job): [Job, boolean] => [job, reached(job)])
+    // One that was picked up may have arrived with no answer. Telling a platform of it could be the first it hears.
+    .filter(([job, arrived]) => arrived || (job.attempts > 0 && job.state !== 'skipped' && job.note !== 'unknown_target'))
+    .map(([{ transactionId, target, action, at }, arrived]): Sent => ({ transactionId, target, action, at, state: 'untold', ...(!arrived && { note: 'may not have arrived' }) }))
+    .sort((x, y) => (x.transactionId < y.transactionId ? -1 : x.transactionId > y.transactionId ? 1 : x.target < y.target ? -1 : 1))
+}
+
 /** What went wrong, without what was sent. A platform may answer with it, and whoever reads the note has no need of a hashed email or phone, this one's or another's in the same request. */
 const noted = (error: unknown, keys: readonly string[]) =>
   [...keys].filter((key) => key.length > 3).sort((a, b) => b.length - a.length).reduce((text, key) => text.replaceAll(new RegExp(key.replace(/[^\w]/g, '\\$&'), 'gi'), '(left out)'), String((error as Error)?.message ?? error)).slice(0, 500)
@@ -242,7 +252,6 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
   }
 
   /** Whether a job reached its platform. A job from before that was noted says so by its state, or by the request that carried it. */
-  const reached = (job: Job) => Boolean(job.delivered || job.state === 'sent' || job.requestId)
 
   /** A job whose outcome was taken back: held if it never arrived, worth nothing where the platform can be told, and left where it cannot. */
   function takenBack(job: Job): Job {
@@ -275,7 +284,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
   function landed(sent: Job, current: Job, target: Target): Job | undefined {
     // Already known to have arrived, with the value it has now: there is nothing to put right.
     if (current.delivered && current.value === sent.value) return undefined
-    const arrived: Job = { ...current, delivered: true }
+    const arrived: Job = { ...current, delivered: true, ...(sent.click && { click: sent.click }) }
     if (current.withdrawn) return takenBack(arrived)
     if (!target.restates || current.value === sent.value) return arrived
     return { ...arrived, restated: true, state: 'pending', attempts: 0, due: now() }
@@ -416,32 +425,30 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
     },
 
     async forget(subject, why) {
-      const jobs = await store.of(subject)
-      const changes = await graph.forget(subject, why)
-      const sent: Sent[] = []
-      const add = ({ transactionId, target, action, at }: Job, state: Sent['state'], note?: string) => sent.push({ transactionId, target, action, at, state, ...(note && { note }) })
-      const arrived = jobs.filter(reached)
-      for (const name of new Set(arrived.map((job) => job.target))) {
-        const target = targets.get(name)
-        const theirs = arrived.filter((job) => job.target === name)
-        if (!options.tellForgotten || !target?.forget) {
-          for (const job of theirs) add(job, 'untold')
-          continue
-        }
+      let jobs: Job[] = []
+      const changes = await graph.forget(subject, why, (gone) => void (jobs = gone))
+      const sent = sentOf(jobs)
+      if (!options.tellForgotten) return { changes, sent }
+      for (const [name, target] of targets) {
+        const theirs = jobs.filter((job) => job.target === name && reached(job))
+        if (!target.forget) continue
         for (let i = 0; i < theirs.length; i += target.batch) {
           const some = theirs.slice(i, i + target.batch)
+          const keys = some.flatMap((job) => [...Object.values(job.keys), ...Object.values(job.click ?? {})])
           let refusals: (string | undefined)[]
           try {
             refusals = await target.forget(some)
           } catch (error) {
-            const note = noted(error, some.flatMap((job) => [...Object.values(job.keys), ...Object.values(job.click ?? {})]))
-            refusals = some.map(() => note)
+            refusals = some.map(() => String((error as Error)?.message ?? error))
           }
-          some.forEach((job, j) => add(job, refusals[j] === undefined ? 'told' : 'refused', refusals[j]))
+          some.forEach((job, j) => {
+            const found = sent.find((each) => each.transactionId === job.transactionId && each.target === name)!
+            const refusal = refusals[j]
+            if (refusal === undefined) found.state = 'told'
+            else [found.state, found.note] = ['refused', noted(refusal, keys)]
+          })
         }
       }
-      // Picked up and not known to have arrived: telling a platform about it could be the first it hears.
-      for (const job of jobs) if (!reached(job) && job.attempts > 0 && job.state !== 'skipped') add(job, 'untold', 'may not have arrived')
       return { changes, sent }
     },
 
@@ -557,7 +564,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
 }
 
 /** An outbox store in process memory, for tests and demos. */
-export function createMemoryOutbox(): OutboxStore & { remove(subject: Subject): Promise<void> } {
+export function createMemoryOutbox(): OutboxStore & { remove(subject: Subject): Promise<Job[]> } {
   const jobs = new Map<string, Job>()
   const key = (job: { transactionId: string; target: string }) => `${job.transactionId}\u0000${job.target}`
   const unchanged = (job: Job) => {
@@ -589,10 +596,6 @@ export function createMemoryOutbox(): OutboxStore & { remove(subject: Subject): 
     async get(transactionId) {
       return [...jobs.values()].filter((job) => job.transactionId === transactionId).map((job) => structuredClone(job))
     },
-    async of(subject) {
-      const found = [...jobs.values()].filter((job) => job.subject === subject)
-      return found.sort((x, y) => (x.transactionId < y.transactionId ? -1 : x.transactionId > y.transactionId ? 1 : x.target < y.target ? -1 : 1)).map((job) => structuredClone(job))
-    },
     async list(state, limit) {
       const found = [...jobs.values()].filter((job) => job.state === state)
       return found.sort((x, y) => y.due - x.due || (x.transactionId < y.transactionId ? -1 : 1)).slice(0, limit).map((job) => structuredClone(job))
@@ -608,7 +611,9 @@ export function createMemoryOutbox(): OutboxStore & { remove(subject: Subject): 
       return out
     },
     async remove(subject) {
-      for (const [id, job] of jobs) if (job.subject === subject) jobs.delete(id)
+      const gone: Job[] = []
+      for (const [id, job] of jobs) if (job.subject === subject && jobs.delete(id)) gone.push(job)
+      return gone
     },
   }
 }
