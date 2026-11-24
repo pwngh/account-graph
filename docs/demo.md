@@ -55,24 +55,25 @@ Costs per client depend on the day the demo runs, so do not read them out. Texts
 | 3 | A caller who hung up in the queue: missed, uncounted, unsent | Board |
 | 4 | A call back that reaches the person | Journey |
 | 5 | Details entered by staff: the contact is tied to the call by phone at 85%, and the ad is not credited | Accounts |
-| 6 | A signed link made for the contact, as staff would text it | Accounts |
+| 6 | A signed link to the form, recorded with its purpose and texted to the contact | Accounts |
 | 7 | The link opened in the browser of the visit: tied at 92%, and the ad is credited | Accounts |
 | 8, 9 | A form sent and documents signed, on the same person | Board |
 | 10 | A call scheduled with a director, who is a tag on the step | Board |
 | 11 | The director's call, on the same timeline | Journey |
-| 12 | A signed link to enroll and pay | Journey |
-| 13 | The payment recorded, by a different office than the ad named | Journey |
-| 14 | The conversion sent to the ad platform for the first ad click | Journey |
-| 15 | The client's value restated, from 400 to 1,250 | Journey |
-| 16 | The other side of the matter with the same family phone and email, separated by the case system | Accounts |
-| 17 | A call to a map listing's number, without a page load, filed under that listing | Channels |
-| 18 | A parent and child on one phone: related without joining | Matches |
-| 19 | A night without calls: a stale feed and a delivered alert | Health |
+| 12 | A signed link to enroll and pay, texted and not opened | Journey |
+| 13 | The link opened, and not yet paid | Journey |
+| 14 | The payment recorded, by a different office than the ad named | Journey |
+| 15 | The conversion sent to the ad platform for the first ad click | Journey |
+| 16 | The client's value restated, from 400 to 1,250 | Journey |
+| 17 | The other side of the matter with the same family phone and email, separated by the case system | Accounts |
+| 18 | A call to a map listing's number, without a page load, filed under that listing | Channels |
+| 19 | A parent and child on one phone: related without joining | Matches |
+| 20 | A night without calls: a stale feed and a delivered alert | Health |
 
 ## Limitations
 
 - **Scale.** The demo has a few hundred people. See [Performance](performance.md) for measured speeds.
-- **Clock.** Scene 19 moves the clock forward fourteen hours. Run it last.
+- **Clock.** Scene 20 moves the clock forward fourteen hours. Run it last.
 - **Repeats.** Each scene runs once. Press R to start over.
 - **Firm systems.** Call answering, scheduling, texts, forms, signing and card payment belong to a firm's own systems. The demo shows made-up screens for them, and makes the requests such systems would, with each text as `POST /text`.
 - **Links.** The demo opens every link in the browser of the first visit. One opened in another browser is another visitor.

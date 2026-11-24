@@ -274,9 +274,14 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
     return { share: Math.max(0, ...touches.map((touch: { confidence: number }) => touch.confidence)), campaign: (credited?.campaign ?? null) as string | null }
   }
   /** A signed link for the contact, as staff would text it. */
-  const linkTo = async (page: string): Promise<string> => (await ask('POST', '/link', { url: `${siteAt}/es/${page}`, subject: demo.contact })).url
+  const linkTo = async (page: string, purpose: string): Promise<string> => (await ask('POST', '/link', { url: `${siteAt}/es/${page}`, subject: demo.contact, purpose })).url
+  /** What became of the newest link sent for a purpose, in words. */
+  const became = async (purpose: string) => {
+    const { at: made, opened } = (await ask('GET', `/sent?subject=${demo.contact}`)).findLast((link: { purpose?: string }) => link.purpose === purpose)
+    return opened === undefined ? `Link for ${purpose}: not opened` : `Link for ${purpose}: opened after ${Math.round((opened - made) / 60_000)} minutes`
+  }
   /** The contact opens the link in the browser they came with. The script tag reads the token and takes it out of the address. */
-  const opens = (url: string) => browser('/collect', { device: 'v-4821', url: url.split('?')[0], known: new URL(url).searchParams.get('ag') })
+  const opens = (url: string) => browser('/collect', { device: 'v-4821', url: url.split('?')[0], link: new URL(url).searchParams.get('ag') })
   const steps = (stage: keyof typeof STEPS, tags: object = {}) => ask('POST', '/convert', { transactionId: `demo-${stage}`, subject: demo.contact, at: clock(), stage, tags: { language: 'es', ...tags } })
   const links: Record<string, string> = {}
   /** A text staff send the contact. Only its time and the two numbers are kept. */
@@ -334,9 +339,9 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       title: 'Form texted', text: 'Staff text a signed link to the intake form.', see: ['Accounts', review(`accounts/${encodeURIComponent(demo.contact)}`)], stage: person('accounts'), shown: { phone: 'text-form' },
       async run() {
         await at(0, 14, 8)
-        links.form = await linkTo('datos')
+        links.form = await linkTo('datos', 'form')
         await sends('demo-text-1')
-        return { lines: ['Text recorded, with a signed link for the contact. Not opened yet.'], credit: await credit(), link: links.form }
+        return { lines: [`Text recorded. ${await became('form')}.`], credit: await credit(), link: links.form }
       },
     },
     {
@@ -361,9 +366,11 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
     {
       title: 'Documents signed', text: 'Staff text a link to the documents. They open it and sign.', see: ['Board', review('board/7')], spot: ['contact:ines-vega'], shown: { phone: 'signed' },
       async run() {
-        await at(0, 14, 31)
+        await at(0, 14, 25)
+        const documents = await linkTo('firmar', 'documents')
         await sends('demo-text-2')
-        await opens(await linkTo('firmar'))
+        await at(0, 14, 31)
+        await opens(documents)
         await steps('signed')
         return { lines: ['Step recorded: signed.'] }
       },
@@ -386,19 +393,26 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       },
     },
     {
-      title: 'Enrollment texted', text: 'Staff text a signed link to enroll and pay.', see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], stage: person('journey'), spot: ['1,290 s', 'Sent'], shown: { phone: 'text-pay' },
+      title: 'Enrollment texted', text: 'Staff text a signed link to enroll and pay.', see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], stage: person('journey'), spot: ['Link sent · payment'], shown: { phone: 'text-pay' },
       async run() {
         await at(2, 11, 24)
-        links.pay = await linkTo('inscripcion')
+        links.pay = await linkTo('inscripcion', 'payment')
         await sends('demo-text-4')
-        return { lines: ['Text recorded, with a signed link for the contact. Not opened yet.'], link: links.pay }
+        return { lines: [`Text recorded. ${await became('payment')}.`], link: links.pay }
       },
     },
     {
-      title: 'Paid', text: 'They open the link and pay. The payment page is the firm’s, and reports the payment.', see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], stage: person('journey'), spot: ['client'], shown: { phone: 'paid' },
+      title: 'Enrollment opened', text: 'They open the link, and have not paid yet.', see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], stage: person('journey'), spot: ['Link sent · payment'], shown: { phone: 'pay' },
+      async run() {
+        await at(2, 11, 27)
+        await opens(links.pay!)
+        return { lines: [`${await became('payment')}. Not paid yet.`] }
+      },
+    },
+    {
+      title: 'Paid', text: 'They pay. The payment page is the firm’s, and reports the payment.', see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], stage: person('journey'), spot: ['client'], shown: { phone: 'paid' },
       async run() {
         await at(2, 11, 29)
-        await opens(links.pay!)
         await steps('client', { office_served: 'river', director: 'ortega' })
         const { credited } = await ask('GET', `/attribute?subject=${demo.contact}&at=${clock()}`)
         return { lines: [`Payment recorded: 400 USD. Advertised: ${credited.custom.office}. Served: river. Attributed to ${credited.campaign} at ${Math.round(credited.confidence * 100)}%.`] }

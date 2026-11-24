@@ -4,7 +4,7 @@
   /** What each state of the phone is, for who cannot read its Spanish. */
   const CAPTIONS = {
     ad: 'They search and see the ad', site: 'They open the firm’s site', calling: 'They call', missed: 'Nobody answers', back: 'Staff call back', talking: 'Staff call back', 'text-form': 'Staff text the intake form', form: 'They open it',
-    'form-sent': 'They have sent it', signed: 'They have signed', 'text-time': 'Their call is confirmed', director: 'The director calls', 'text-pay': 'Staff text the enroll-and-pay link', pay: 'They enroll and pay', paid: 'They have paid', 'text-sign': 'Staff text the documents', sign: 'They sign the documents',
+    'form-sent': 'They have sent it', signed: 'They have signed', 'text-time': 'Their call is confirmed', director: 'The director calls', 'text-pay': 'Staff text the enroll-and-pay link', pay: 'They open it', paid: 'They have paid', 'text-sign': 'Staff text the documents', sign: 'They sign the documents',
   }
   /** The firm's texts, in the order they come, each by the state of the phone that brings it. */
   const TEXTS = [
@@ -192,15 +192,18 @@
       caption.textContent = CAPTIONS.director
       await wait(1200)
     },
-    paid: async () => {
+    pay: async () => {
       await tapped(bubble())
       sheet('Inscripción', 'Pago inicial de su caso.', field('Total', '$400.00'), field('Pago', 'Tarjeta de prueba'), go('Inscribirse y pagar'))
       phone('pay')
-      await wait(900)
+      await wait(500)
+    },
+    paid: async () => {
       const button = paper.querySelector('.send')
+      if (!button) return
       await tapped(button)
       button.textContent = 'Procesando…'
-      await wait(500)
+      await wait(600)
     },
   }
   /** The firm's own screen: what staff type in it, before its requests are made. */
@@ -295,7 +298,7 @@
   const SHOW = [
     [1, () => next()], [4.5, () => next()], [8, () => next()], [15, () => next()], [20, () => next()], [28, () => next()],
     // The moment the story turns on is held.
-    [31, () => next()], [39, () => next()], [43.5, () => next()], [49, () => next()], [55, () => next()], [60, () => next()], [63, () => next()], [69, () => next()],
+    [31, () => next()], [39, () => next()], [43.5, () => next()], [49, () => next()], [55, () => next()], [59.5, () => next()], [62.5, () => next()], [66, () => next()], [70, () => next()],
     [74, () => turn(CLIENTS, ['Busqueda: North'])], [82, () => turn('#/journey/contact%3Aines-vega')],
   ]
   const turn = async (address, words) => {
