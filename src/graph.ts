@@ -712,10 +712,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         // Who a subject can reach does not depend on when, so one subject's outcomes share one search.
         const reached = new Map<Subject, Reached>()
         // Looked for over a year, so how many arrivals the window leaves out can be said. Only those inside it are credited.
-        const creditOf = async (subject: Subject, at: number) => {
+        const creditOf = async (subject: Subject, at: number, back = Math.max(window, 365 * DAY)) => {
           let from = reached.get(subject)
           if (!from) reached.set(subject, (from = await reach(tx, subject, hops)))
-          const { credited: touch } = await credit(subject, at, Math.max(window, 365 * DAY), from, tx)
+          const { credited: touch } = await credit(subject, at, back, from, tx)
           const inside = touch !== undefined && touch.at >= at - window
           return { touch: inside ? touch : undefined, delay: touch && at - touch.at, inside }
         }
@@ -723,9 +723,14 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const labels = await tx.labelsOf(unique(outcomes.map((outcome) => outcome.subject)))
         const credited: Credited[] = []
         for (const outcome of outcomes) credited.push({ outcome, person: labels.get(outcome.subject)?.cluster ?? outcome.subject, ...(await creditOf(outcome.subject, outcome.at)) })
+        // How long steps take is read from the last half year and not from the days asked about: the newest days hold
+        // few outcomes, which is what it has to say. The newest few hundred are enough to say it.
+        const recent = await tx.outcomesBetween(now() - 180 * DAY, now())
+        const history: Credited[] = []
+        for (const outcome of recent.slice(-500)) history.push({ outcome, ...(await creditOf(outcome.subject, outcome.at)) })
         const missed: { at: number; touch: Touch | undefined; tags: Record<string, string> | undefined }[] = []
-        for (const call of await tx.callsBetween(start, end)) if (call.direction === 'inbound' && call.result?.answered === false) missed.push({ at: call.at, touch: (await creditOf(call.subject, call.at)).touch, tags: call.tags })
-        return fold(from, to, await tx.costsBetween(from, to), await tx.touchesBetween(start, end), credited, { missed, by, timeZone, through: dayIn(now(), timeZone) })
+        for (const call of await tx.callsBetween(start, end)) if (call.direction === 'inbound' && call.result?.answered === false) missed.push({ at: call.at, touch: (await creditOf(call.subject, call.at, window)).touch, tags: call.tags })
+        return fold(from, to, await tx.costsBetween(from, to), await tx.touchesBetween(start, end), credited, { missed, by, timeZone, through: dayIn(now(), timeZone), history })
       })
     },
 

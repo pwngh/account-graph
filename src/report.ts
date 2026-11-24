@@ -156,8 +156,8 @@ export interface Credited {
   inside?: boolean
 }
 
-/** Counts one outcome among others. */
-function count(into: Tally, { outcome, person = outcome.subject, delay, inside }: Credited): void {
+/** Counts one outcome among others. With no timing given, a credited touch gives its own. */
+function count(into: Tally, { outcome, touch, person = outcome.subject, delay = touch && outcome.at - touch.at, inside = touch !== undefined }: Credited): void {
   const step = into.stages.get(outcome.stage) ?? { count: 0, value: 0, people: new Set(), days: [], inside: 0 }
   into.stages.set(outcome.stage, step)
   step.count += 1
@@ -174,13 +174,15 @@ function count(into: Tally, { outcome, person = outcome.subject, delay, inside }
 
 /** The smallest value that at least this share of sorted values do not exceed. */
 const percentile = (sorted: readonly number[], share: number) => sorted[Math.max(0, Math.ceil(sorted.length * share) - 1)]!
+/** The middle of sorted values, or the middle of the middle two. */
+const middle = (sorted: readonly number[]) => (sorted[Math.floor((sorted.length - 1) / 2)]! + sorted[Math.floor(sorted.length / 2)]!) / 2
 const tenth = (days: number) => Math.round(days * 10) / 10
 
 function plainSteps(stages: ReadonlyMap<string, Step>): Record<string, StageCount> {
   return Object.fromEntries(
     [...stages].map(([name, { count, value, people, days, inside }]) => {
       const sorted = [...days].sort((x, y) => x - y)
-      const delay = sorted.length > 0 && { count: sorted.length, median: tenth(percentile(sorted, 0.5)), p95: tenth(percentile(sorted, 0.95)), inside: round(inside / sorted.length) }
+      const delay = sorted.length > 0 && { count: sorted.length, median: tenth(middle(sorted)), p95: tenth(percentile(sorted, 0.95)), inside: round(inside / sorted.length) }
       return [name, { count, value: round(value), people: people.size, ...(delay && { delay }) }]
     }),
   )
@@ -204,6 +206,15 @@ export interface FoldOptions {
   timeZone?: string | undefined
   /** The last day costs could have been recorded for. Defaults to `to`. */
   through?: string
+  /** Outcomes of the months before `through`, for how long steps take. Defaults to the credited ones. */
+  history?: readonly Credited[]
+}
+
+/** How many whole days the slowest step takes, for 95 in 100. A handful of outcomes says nothing, so a step needs twenty. */
+function slowest(history: readonly Credited[]): number {
+  const all = tally()
+  for (const each of history) count(all, each)
+  return Math.ceil(Math.max(0, ...[...all.stages.values()].map(({ days }) => (days.length >= 20 ? percentile(days.sort((x, y) => x - y), 0.95) : 0))))
 }
 
 /** Below this share of days with cost data, what anything cost is not said. */
@@ -242,7 +253,7 @@ export function fold(
   costs: readonly Required<Cost>[],
   touches: readonly Touch[],
   credited: readonly Credited[],
-  { missed = [], by, timeZone, through = to }: FoldOptions = {},
+  { missed = [], by, timeZone, through = to, history = credited }: FoldOptions = {},
 ): Report {
   // Days still to come have no cost yet, whatever rows there are for them.
   const last = through < to ? through : to
@@ -367,14 +378,13 @@ export function fold(
   })
   const said = new Set([...all.flatMap(touchTags).map((name) => `touch.${name}`), ...[...credited.map(({ outcome }) => outcome.tags), ...missed.map(({ tags }) => tags)].flatMap((tags) => Object.keys(tags ?? {})).map((name) => `outcome.${name}`)])
   const steps = plainSteps(everything.stages)
-  // The slowest step decides how recent is too recent. A handful of outcomes says nothing of how long they take.
-  const slowest = Math.ceil(Math.max(0, ...Object.values(steps).map((step) => (step.delay && step.delay.count >= 20 ? step.delay.p95 : 0))))
-  const after = new Date(Date.parse(`${through}T00:00:00Z`) - slowest * 86_400_000).toISOString().slice(0, 10)
+  const wait = slowest(history)
+  const after = new Date(Date.parse(`${through}T00:00:00Z`) - wait * 86_400_000).toISOString().slice(0, 10)
   return {
     from,
     to,
     rows,
-    ...(slowest > 0 && after < last && days > 0 && { filling: { after, days: slowest } }),
+    ...(wait > 0 && after < last && days > 0 && { filling: { after, days: wait } }),
     days,
     leftOut,
     total: { ...total, costDays: anyCost.size, missingDays: Math.max(0, days - anyCost.size), thin: counted === 0 && leftOut > 0, ...ratios(known), people: everything.people.size, stages: steps, ...(valueOf && { breakdown: plain(whole) }) },

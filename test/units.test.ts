@@ -441,6 +441,14 @@ test('the report is the same whatever order its rows arrive in', () => {
   }
 })
 
+test('how recent is too recent is worked out from the days as they are, not as they are shown', () => {
+  const history = Array.from({ length: 20 }, (_, n) => ({ outcome: { transactionId: `t${n}`, subject: 's', at: 10 * 86_400_000, stage: 'sale', value: 0, currency: '' }, touch: undefined, delay: 4.04 * 86_400_000, inside: true }))
+  assert.deepEqual(fold('2026-03-01', '2026-03-10', [], [], [], { history }).filling, { after: '2026-03-05', days: 5 })
+  const quick = history.map((each) => ({ ...each, delay: 60_000 }))
+  assert.deepEqual(fold('2026-03-01', '2026-03-10', [], [], [], { history: quick }).filling, { after: '2026-03-09', days: 1 })
+  assert.equal(fold('2026-03-01', '2026-03-10', [], [], [], { history: history.slice(1) }).filling, undefined)
+})
+
 test('what an outcome cost uses the outcomes of that campaign, on the days whose cost is known', () => {
   const cost = (day: string, campaignId: string, amount: number) => ({ day, source: 'google', campaignId, campaign: '', amount, currency: 'USD', clicks: 0, impressions: 0 })
   const days = (count: number) => Array.from({ length: count }, (_, i) => `2026-03-${String(i + 1).padStart(2, '0')}`)

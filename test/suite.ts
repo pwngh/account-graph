@@ -426,7 +426,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(counts(line('(none)', '')!.stages), { enrolled: { count: 1, value: 200 } })
       assert.deepEqual(report.total, {
         cost: 81.3, clicks: 51, impressions: 1300, visits: 3, missed: 0,
-        stages: { inquiry: { count: 2, value: 10, people: 2, delay: { count: 2, median: 0.1, p95: 0.1, inside: 1 } }, enrolled: { count: 3, value: 550.5, people: 3, delay: { count: 2, median: 1, p95: 2, inside: 1 } } }, outcomes: 5, value: 560.5, people: 4,
+        stages: { inquiry: { count: 2, value: 10, people: 2, delay: { count: 2, median: 0.1, p95: 0.1, inside: 1 } }, enrolled: { count: 3, value: 550.5, people: 3, delay: { count: 2, median: 1.5, p95: 2, inside: 1 } } }, outcomes: 5, value: 560.5, people: 4,
         // Of the campaigns with enough cost data alone: never all spend over all outcomes.
         costDays: 2, missingDays: 1, thin: false, costPerOutcome: 60.3, returnOnCost: 0.082919,
       })
@@ -723,7 +723,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual([report.total.outcomes, report.total.people, report.total.stages.sale!.people], [5, 3, 3])
       // Two and three days after the arrival, and a hundred: the step takes a median of three, and two in three came inside the window.
       assert.deepEqual(report.total.stages.sale!.delay, { count: 3, median: 3, p95: 100, inside: 0.666667 })
-      assert.deepEqual(google.stages.sale!.delay, { count: 2, median: 2, p95: 3, inside: 1 })
+      assert.deepEqual(google.stages.sale!.delay, { count: 2, median: 2.5, p95: 3, inside: 1 })
       // Keep the two accounts apart and they are two people again.
       await graph.separate('account:1', 'account:1b')
       assert.equal((await graph.report({ from: '2026-03-01', to: '2026-03-31' })).total.stages.sale!.people, 4)
@@ -738,6 +738,8 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       // 95 in 100 sign-ups come within four days, so arrivals of the last four have not had theirs.
       assert.deepEqual(await filling('2026-03-12', '2026-03-30'), { after: '2026-03-27', days: 4 })
       assert.equal(await filling('2026-03-12', '2026-03-27'), undefined)
+      // Asked about a day with arrivals and no outcomes yet, it still says so: that is the day it is for.
+      assert.deepEqual(await filling('2026-03-30', '2026-03-30'), { after: '2026-03-27', days: 4 })
     })
 
     test('the report is broken down by what an arrival said, what is known of an outcome, and when it happened', async () => {
