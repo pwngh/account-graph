@@ -8,7 +8,7 @@
 - `observe` returns the subjects whose cluster changed. `links`, `cluster`, `history`, `holders`, `between` and `GET /between` read the graph.
 - `defaultPolicy` sets a weight, cap and half-life for each identifier kind. `phone` and `voip` use a dilution of 1, and `phone`, `email` and `voip` have a cap of 10.
 - `POLICY` and `POLICY_FILE` override the default policy (`policyFrom`, `policyProblems`). `GET /policy`, `GET /stats` and Health report when a rebuild is required. `POST /rebuild` recomputes clusters.
-- A link below `policy.bridge` (default 0.97) cannot join two groups of two or more subjects by itself.
+- A link below `policy.bridge` (default 0.97) cannot join two groups of two or more subjects by itself. A group that names nobody (`Policy.unnamed`) goes back to the one named group it was cut from. Rebuild after upgrading.
 - `Rule.group` counts grouped kinds once (`Reason.group`, `Reason.counted`). `Rule.corroborates` marks kinds that confirm a link. `examples/household.json` is a policy for contacts entered by staff.
 - `separate`, `join` and `ignore` record decisions. `decisions` and `audit` list and verify the hash chain. `GET /audit` returns the newest entry, and `AUDIT_HEAD_HOURS` posts it to `ALERT_WEBHOOK`.
 - `separate`, `join`, `ignore` and `forget` accept `seen`, and a newer decision rejects an outdated one with 409 (`Outdated`). `join` returns its mark, so a join can be undone.

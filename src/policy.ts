@@ -30,6 +30,12 @@ export interface Policy {
   related: number
   /** A single link below this score cannot be the only thing joining two groups. At or below `same`, the rule is off. */
   bridge: number
+  /**
+   * Subjects that name nobody, by what their ids start with: a browser, a phone number that called. A weak link may join
+   * a group of these alone to one named group, because it makes no two records one. `UNNAMED` when left out, and not in a
+   * settings file.
+   */
+  unnamed?: readonly string[]
   /** A cluster with more members than this is flagged for review. */
   review: number
   kinds: Readonly<Record<string, Rule>>
@@ -99,6 +105,9 @@ export const defaultPolicy: Policy = {
     dialed: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
   },
 }
+
+/** The subjects this server makes for a browser, a phone number that called, and a call with no number. */
+export const UNNAMED: readonly string[] = ['visitor', 'caller', 'call']
 
 /** The kinds that are notes. The graph counts on them linking nothing, so a setting may not give them weight. */
 const NOTES = new Set(['opened', 'place', 'dialed'])
@@ -171,7 +180,7 @@ export function plainPolicy(policy: Policy) {
 /** The same for two policies exactly when they score and cluster alike. What only flags, `review`, is not part of it. */
 export function policyHash(policy: Policy): string {
   const { review: _, ...rest } = plainPolicy(policy)
-  return createHash('sha256').update(JSON.stringify(rest)).digest('hex')
+  return createHash('sha256').update(JSON.stringify({ ...rest, unnamed: [...new Set(policy.unnamed ?? UNNAMED)].sort() })).digest('hex')
 }
 
 export function ruleFor(policy: Policy, identifier: Identifier): Rule {

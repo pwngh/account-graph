@@ -58,7 +58,7 @@ Every subject reachable over `same` links forms a component. Three cuts, applied
 
 1. **Separated pairs.** The direct link of each separated pair is removed.
 2. **Paths between separated pairs.** If the two are still connected through others, the weakest set of links between them is cut. Strengths add up, so two weak links outweigh one.
-3. **Weak bridges.** A link below 0.97 (`bridge`) cannot be the sole connection between two groups of two or more subjects. The weakest is cut first, until none remains. It may still add a single subject to a group.
+3. **Weak bridges.** A link below 0.97 (`bridge`) cannot be the sole connection between two groups of two or more subjects. The weakest is cut first, until none remains. It may still add a single subject to a group. A group that names nobody, made only of browsers and phone numbers that called (`visitor:`, `caller:` and `call:`), then goes back to the named group it was cut from, if there is exactly one. With none or several, it stays apart.
 
 For example, a chain of four accounts, each sharing one machine with the next, becomes two pairs. If the outer two also share a phone, all four form one cluster, because the groups are then connected twice.
 
