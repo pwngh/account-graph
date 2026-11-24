@@ -69,8 +69,36 @@ const meter = (share, marks = []) => {
 /** Notes on how a view is worked out, there for whoever wants them and not in the way of the numbers. */
 const notes = (...texts) => el('details', {}, el('summary', { class: 'muted' }, 'How to read this'), ...texts.map((text) => el('p', { class: 'muted' }, text)))
 /** The few numbers a view is about, large, each with what it is of. `tone` marks one that needs someone, in words as well as color. */
-const tiles = (...list) => el('dl', { class: 'tiles' }, ...list.filter(Boolean).map(([label, value, note = '', tone = '']) =>
-  el('div', tone ? { class: tone } : {}, el('dt', {}, label), el('dd', {}, el('b', {}, value), note ? el('span', { class: 'reason' }, note) : ''))))
+const tiles = (...list) => el('dl', { class: 'tiles' }, ...list.filter(Boolean).map(([label, value, note = '', tone = '', more]) =>
+  el('div', tone ? { class: tone } : {}, el('dt', {}, label), el('dd', {}, el('span', { class: 'tile-line' }, el('b', {}, value), more?.change ?? ''), note ? el('span', { class: 'reason' }, note) : '', more?.bars ?? ''))))
+/** The same number of days just before a period. */
+function daysBefore({ from, to }) {
+  const day = 86400000
+  const [start, end] = [from, to].map((each) => Date.parse(`${each}T00:00:00Z`))
+  const count = Math.round((end - start) / day) + 1
+  return { from: new Date(start - count * day).toISOString().slice(0, 10), to: new Date(start - day).toISOString().slice(0, 10), count }
+}
+/**
+ * How a number stands to what it was in the days before, in words as well as
+ * color. `good` says which way is better, and undefined that neither is.
+ * A share changes by points: a percent of a percent says something else.
+ * Nothing is said where either is not known.
+ */
+function changed(now, then, words, before, good, points = false) {
+  if (now === null || then === null || now === undefined || then === undefined) return ''
+  const by = points ? now - then : then === 0 ? (now === 0 ? 0 : undefined) : (now - then) / Math.abs(then)
+  const way = by === undefined || by > 0.0049 ? 'up' : by < -0.0049 ? 'down' : 'level'
+  const tone = way === 'level' || good === undefined ? '' : (way === good ? 'same' : 'apart')
+  const told = by === undefined ? 'from none' : way === 'level' ? 'no change' : `${way === 'up' ? '+' : '−'}${Math.abs(by) >= 10 ? `${amount(Math.round(Math.abs(by)))}×` : points ? `${amount(Math.round(Math.abs(by) * 100))} points` : percent(Math.abs(by))}`
+  return el('span', { class: `change ${way} ${tone}`, title: `${words(then)} in the ${amount(before.count)} ${before.count === 1 ? 'day' : 'days'} before, ${reviewDisplay.day(before.from)} to ${reviewDisplay.day(before.to)}` }, told, el('span', { class: 'sr-only' }, ` against ${words(then)} before`))
+}
+/** A few numbers as bars, to see their shape. What they are is in the title. */
+function shape(values, title) {
+  const top = Math.max(...values, 1)
+  const drawing = svg('svg', { class: 'shape', viewBox: `0 0 ${values.length * 4} 24`, preserveAspectRatio: 'none', 'aria-hidden': 'true', focusable: 'false' }, svg('title', {}, title))
+  values.forEach((value, i) => drawing.append(svg('rect', { class: value === 0 ? 'none' : '', x: i * 4 + 0.5, width: 3, y: value === 0 ? 23 : 24 - Math.max(1.5, (24 * value) / top), height: value === 0 ? 1 : Math.max(1.5, (24 * value) / top), rx: 0.6 })))
+  return drawing
+}
 /** Parts left out of a bar, by the bar's label and the part's name, kept while the screen is open. */
 const partsOff = new Set()
 /**

@@ -45,6 +45,10 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
   box.append(section)
   const report = await api('GET', `/report?${query}${by ? `&by=${encodeURIComponent(by)}` : ''}${per ? `&per=${encodeURIComponent(per)}` : ''}`)
   resolved(report)
+  const before = daysBefore(report)
+  const then = (await api('GET', `/report?from=${before.from}&to=${before.to}${per ? `&per=${encodeURIComponent(per)}` : ''}`))
+  // Compared only where the days before hold something of the same kind, in the same one currency.
+  const alike = then.rows.length > 0 && report.currencies.length <= 1 && String(then.currencies) === String(report.currencies)
   const address = (now) => {
     const next = { by, step, within, per, ...now }
     const [from, to] = [...pick.querySelectorAll('input')].map((input) => input.value)
@@ -77,9 +81,9 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
       ...edge([...stages.map((stage) => th(stage, 'num')), th('People', 'num'), ...(report.total.missed > 0 ? [th('Missed', 'num', 'Missed calls')] : [])]),
       ...edge([th('Value', 'num'), th(`Cost / ${per || 'outcome'}`, 'num', per ? `Cost per ${per}` : 'Cost per outcome'), th('Return', 'num')])))
   const all = report.total
-  if (report.rows.length > 0) section.append(tiles(['Spent', all.costDays > 0 ? cash(all.cost) : '(not recorded)', all.missingDays > 0 && all.costDays > 0 ? `${amount(all.missingDays)} of ${amount(report.days)} days missing` : ''], ['Worth', cash(all.value), `${amount(all.outcomes)} ${all.outcomes === 1 ? 'outcome' : 'outcomes'}`], ['People', amount(all.people), `${amount(all.visits)} arrivals seen`],
+  if (report.rows.length > 0) section.append(tiles(['Spent', all.costDays > 0 ? cash(all.cost) : '(not recorded)', all.missingDays > 0 && all.costDays > 0 ? `${amount(all.missingDays)} of ${amount(report.days)} days missing` : '', '', { change: alike && all.missingDays === 0 && then.total.missingDays === 0 && then.total.costDays > 0 ? changed(all.cost, then.total.cost, cash, before) : '' }], ['Worth', cash(all.value), `${amount(all.outcomes)} ${all.outcomes === 1 ? 'outcome' : 'outcomes'}`, '', { change: alike && !report.filling ? changed(all.value, then.total.value, cash, before, 'up') : '' }], ['People', amount(all.people), `${amount(all.visits)} arrivals seen`, '', { change: then.rows.length > 0 && !report.filling ? changed(all.people, then.total.people, amount, before, 'up') : '' }],
     [per ? `Cost per ${per}` : 'Cost per outcome', all.costPerOutcome !== null ? cash(all.costPerOutcome) : all.thin ? 'withheld' : '—', report.leftOut > 0 ? `leaves out ${amount(report.leftOut)} ${report.leftOut === 1 ? 'campaign' : 'campaigns'}` : ''], ['Return', all.returnOnCost !== null ? `${all.returnOnCost.toFixed(1)}×` : all.thin ? 'withheld' : '—', report.leftOut > 0 ? `leaves out ${amount(report.leftOut)} ${report.leftOut === 1 ? 'campaign' : 'campaigns'}` : ''],
-    all.missed > 0 && ['Missed calls', amount(all.missed), 'by result, returned ones too']))
+    all.missed > 0 && ['Missed calls', amount(all.missed), 'by result, returned ones too', '', { change: then.rows.length > 0 ? changed(all.missed, then.total.missed, amount, before, 'down') : '' }]))
   const note = (parts) => (parts.some(Boolean) ? el('span', { class: 'reason' }, parts.filter(Boolean).join(' · ')) : '')
   const rows = report.rows.map((row) => ({ row, lines: [] }))
   for (const { row, lines } of rows) {

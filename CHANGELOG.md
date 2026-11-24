@@ -109,6 +109,7 @@
 - Campaigns sort by any heading and stay beside their numbers while the table scrolls. A source and a tag have a color of their own wherever they are shown.
 - Channels rank campaigns by value, cost, people, arrivals or any step, with a bar behind each. Call results have their share behind the row.
 - A bar of parts says its shares inside it. Resting on a part brings it forward, and one pressed is left out of the shares.
+- Tiles say how their number stands to the same number of days before, and call tiles show the hours. Nothing is compared while outcomes are still coming in, or where the days before are not known.
 - The reviewer screen has one scale of type and space, tables that fit what they hold, and rows that become cards on a phone. Times are told by how long ago, with the exact time in a title.
 - The graph keeps room around every disc, name and line: names move to a free side, lines bend around what is in their way, and nothing lies over the paper. The strongest way to whoever is picked is shown, and weak ties can be left out.
 - Accounts opens on the largest cluster's graph, and its long lists scroll in their own boxes.

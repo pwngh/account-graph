@@ -122,13 +122,23 @@ view('calls', 'Calls', async (box, first, last) => {
   const top = el('section', {}, reviewDisplay.heading('Calls', form))
   box.append(top)
   const [open, summary] = await Promise.all([api('GET', `/calls?${asked}`), api('GET', `/calls/summary?${asked}`)])
+  const before = daysBefore(summary)
+  const then = (await api('GET', `/calls/summary?from=${before.from}&to=${before.to}`)).total
+  // With no calls in the days before there is nothing to compare with: it may be before any were kept.
+  const against = (now, was, words, good, points) => (then.calls > 0 ? changed(now, was, words, before, good, points) : '')
+  const byHour = (kind) => Array.from({ length: 24 }, (_, hour) => summary.cells.filter((cell) => cell.hour === hour).reduce((sum, cell) => sum + cell[kind], 0))
   const query = resolved(summary)
   const { total, coverage } = summary
   top.append(reviewDisplay.range(summary))
 
   const lost = total.missed + total.voicemail
-  if (total.calls > 0) top.append(tiles(['Calls to you', amount(total.calls)], ['Answered', percent(total.answered / total.calls), `${amount(total.answered)} ${summary.expected ? 'by a person' : 'by result or by length'}`],
-    ['Missed or voicemail', amount(lost), percent(lost / total.calls)],
+  // Returns are not compared: the newest callers have had less time to be rung back.
+  const lostThen = then.missed + then.voicemail
+  const part = (n, whole) => (whole > 0 ? n / whole : null)
+  if (total.calls > 0) top.append(tiles(
+    ['Calls to you', amount(total.calls), '', '', { change: against(total.calls, then.calls, amount), bars: shape(byHour('calls'), 'Calls by the hour they began, midnight to midnight') }],
+    ['Answered', percent(total.answered / total.calls), `${amount(total.answered)} ${summary.expected ? 'by a person' : 'by result or by length'}`, '', { change: against(part(total.answered, total.calls), part(then.answered, then.calls), percent, 'up', true) }],
+    ['Missed or voicemail', amount(lost), percent(lost / total.calls), '', { change: against(lost, lostThen, amount, 'down'), bars: shape(byHour('missed').map((n, hour) => n + byHour('voicemail')[hour]), 'Missed and voicemail by the hour they began, midnight to midnight') }],
     lost > 0 && ['Returned', percent(total.returned / lost), `${amount(total.returned)} of ${amount(lost)}${summary.returnedWithin === null ? '' : `, half within ${lasted(summary.returnedWithin)}`}`],
     ['Waiting for a callback', `${amount(open.calls.length)}${open.next === null ? '' : ' or more'}`, open.calls[0] ? el('span', {}, 'Oldest: ', reviewDisplay.time(open.calls[0].at, open.at)) : '', open.calls.length > 0 ? 'apart' : 'same']))
   top.append(notes('Caller IDs are hashes, not phone numbers. Look up the number in your phone system by call time.',
