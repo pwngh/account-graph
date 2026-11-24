@@ -241,6 +241,8 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   assert.deepEqual(await run(`[document.getElementById('ask-yes').textContent, document.getElementById('ask-reason').value]`), ['Continue', 'kept all along'])
   await run(`document.getElementById('ask-yes').click()`)
   await until('the join to be taken', async () => (await decisions()).at(-1)![3] === 'kept all along')
+  // The question is open until its answer comes, and until then nobody can search.
+  await until('the question to close', () => run(`!document.getElementById('ask').open && opening === 0`))
   // Found by phone, one person opens at once. Two with one email are offered, and nobody is said to be nobody.
   const look = (what: string) => run(`(() => { const s = document.getElementById('subject'); s.value = ${JSON.stringify(what)}; s.dispatchEvent(new Event('input')); document.getElementById('find').requestSubmit() })()`)
   await look('(713) 555-0194')
