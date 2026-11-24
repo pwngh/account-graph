@@ -728,7 +728,9 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       }
       case 'POST /forget': {
         const body = await json(request)
-        return graph.forget(body.subject, signed(request, body))
+        if (body.ads !== undefined && typeof body.ads !== 'boolean') throw new Refusal(400, '`ads` must be true or false')
+        const { changes, sent } = options.outbox ? await options.outbox.forget(body.subject, signed(request, body)) : { changes: await graph.forget(body.subject, signed(request, body)), sent: [] }
+        return body.ads ? { changes, sent } : changes
       }
       case 'POST /consent': {
         const body = await json(request)

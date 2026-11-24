@@ -106,6 +106,7 @@ export function configFrom(env: Env) {
     limit: env.RATE_LIMIT === 'off' ? (false as const) : { perMinute: number('RATE_PER_MINUTE', 120), burst: number('RATE_BURST', 60) },
     outboxInterval: number('OUTBOX_INTERVAL_MS', 30_000),
     outboxDelay: number('OUTBOX_DELAY_MS', 0),
+    forgetAds: env.FORGET_ADS === 'true',
     changeWebhook: env.CHANGE_WEBHOOK,
     linkSecret: env.LINK_SECRET || undefined,
     identifierSecret: env.IDENTIFIER_SECRET || undefined,
@@ -297,6 +298,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
       ? createOutbox(graph, store.outbox, {
           targets,
           delay: config.outboxDelay,
+          tellForgotten: config.forgetAds,
           onFailed: (jobs) => {
             const lines = jobs.slice(0, 10).map((job) => `• ${job.transactionId} to ${job.target}: ${job.note ?? 'no reason given'}`)
             const more = jobs.length > 10 ? `\n…and ${jobs.length - 10} more` : ''

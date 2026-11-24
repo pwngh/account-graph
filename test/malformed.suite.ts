@@ -20,7 +20,7 @@ const POST: Record<string, object> = {
   '/observe': { subject: 'account:1', identifiers: ['device:d1'], at: T0, event: 'login' },
   '/identify': { subject: 'account:1', device: 'd1', email: 'a@example.com', phone: '+15551230001', ip: '203.0.113.9', at: T0, event: 'x' },
   '/touch': { subject: 'account:1', at: T0, gclid: 'g', source: 'google', campaign: 'c', campaignId: '1', custom: { office: 'north' } },
-  '/ignore': { identifier: 'device:d9', ignored: true, by: 'me', reason: 'r', seen: 99 },
+  '/ignore': { identifier: 'device:d9', ignored: true, by: 'me', reason: 'r', seen: 99, ads: true },
   '/join': { a: 'account:1', b: 'account:2', by: 'me', reason: 'r', seen: 99 },
   '/separate': { a: 'account:1', b: 'account:3', separated: true, by: 'me', reason: 'r', seen: 99 },
   '/forget': { subject: 'account:gone', by: 'me', reason: 'r', seen: 99 },

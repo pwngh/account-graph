@@ -1,5 +1,5 @@
 import type { Graph } from './graph.ts'
-import type { Attribution, AttributedTouch, Consent, Loss, Outcome, Subject } from './types.ts'
+import type { Attribution, AttributedTouch, Change, Consent, Deciding, Loss, Outcome, Subject } from './types.ts'
 
 export type { Outcome }
 
@@ -61,6 +61,12 @@ export interface Target {
   deliver(action: string, items: readonly Item[]): Promise<{ requestId?: string }>
   /** Whether trying again could fix a refusal: a rate limit, an outage, a credential that needs repair. */
   retryable(error: unknown): boolean
+  /**
+   * Takes back what was sent of someone who was forgotten, where the platform
+   * has a way. Answers with why each was refused, or undefined where it was
+   * taken back, in the order given. Throws when all of it was refused.
+   */
+  forget?(jobs: readonly Job[]): Promise<(string | undefined)[]>
   /** Most jobs in one request. */
   batch: number
   /** The platform refuses outcomes older than this many milliseconds. */
@@ -89,11 +95,25 @@ export interface OutboxStore {
   standing(jobs: readonly Job[]): Promise<Job[]>
   /** Every job of one transaction, one per target. */
   get(transactionId: string): Promise<Job[]>
+  /** Every job of one subject, by transaction. */
+  of(subject: Subject): Promise<Job[]>
   /** Jobs in one state, the most recently due first. */
   list(state: JobState, limit: number): Promise<Job[]>
   counts(): Promise<Record<JobState, number>>
   /** When the pending job that has been due the longest fell due. */
   oldestDue(): Promise<number | undefined>
+}
+
+/** A conversion of someone who was forgotten, and whether its platform was told. It says nothing of the person. */
+export interface Sent {
+  transactionId: string
+  target: string
+  action: string
+  at: number
+  /** `told` was taken back there, `refused` was not, and `untold` is for you to ask, with the platform's own tools. */
+  state: 'told' | 'refused' | 'untold'
+  /** Why it was refused, or that it may not have arrived. */
+  note?: string
 }
 
 export interface OutboxOptions {
@@ -116,6 +136,8 @@ export interface OutboxOptions {
    * to alert someone. A throw here is logged and changes nothing.
    */
   onFailed?: (jobs: Job[]) => void | Promise<void>
+  /** Tell platforms that have a way when someone is forgotten. Off unless asked for. */
+  tellForgotten?: boolean
   now?: () => number
   random?: () => number
 }
@@ -157,6 +179,13 @@ export interface Outbox {
   takeBack(transactionId: string): Promise<Job[]>
   /** Gives back the jobs `takeBack` took, at what the outcome is worth now. */
   giveBack(transactionId: string): Promise<Job[]>
+  /**
+   * Forgets a subject the way `graph.forget` does, and says which of its
+   * conversions had reached a platform. With `tellForgotten`, a platform that
+   * has a way is told, once, after the subject is gone here. What was not
+   * told is in the answer and kept nowhere.
+   */
+  forget(subject: Subject, why?: Deciding): Promise<{ changes: Change[]; sent: Sent[] }>
   /** Sends every job that is due. Call it on a timer, from as many workers as you like. */
   run(): Promise<Pass>
   /** Calls `run` every `interval` milliseconds. Returns a function that stops it. */
@@ -171,6 +200,10 @@ export interface Outbox {
 }
 
 const DAY = 86_400_000
+
+/** What went wrong, without what was sent. A platform may answer with it, and whoever reads the note has no need of a hashed email or phone, this one's or another's in the same request. */
+const noted = (error: unknown, keys: readonly string[]) =>
+  [...keys].filter((key) => key.length > 3).sort((a, b) => b.length - a.length).reduce((text, key) => text.replaceAll(new RegExp(key.replace(/[^\w]/g, '\\$&'), 'gi'), '(left out)'), String((error as Error)?.message ?? error)).slice(0, 500)
 
 /**
  * Sends recorded outcomes to ad platforms at least once. Each platform keeps
@@ -261,9 +294,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
         pass.sent += 1
       }
     } catch (error) {
-      // A platform may answer with what it was sent. Whoever reads the note has no need of a hashed email or phone, this one's or another's in the same request.
-      const sent = items.flatMap(({ job }) => Object.values(job.keys)).filter((key) => key.length > 3).sort((a, b) => b.length - a.length)
-      const note = sent.reduce((text, key) => text.replaceAll(new RegExp(key.replace(/[^\w]/g, '\\$&'), 'gi'), '(left out)'), String((error as Error)?.message ?? error)).slice(0, 500)
+      const note = noted(error, items.flatMap(({ job }) => Object.values(job.keys)))
       if (target.retryable(error)) {
         for (const { job } of items) {
           if (job.attempts >= maxAttempts) await fail(job, note, pass, failed)
@@ -382,6 +413,36 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
         if (done) changed.push(next)
       }
       return changed
+    },
+
+    async forget(subject, why) {
+      const jobs = await store.of(subject)
+      const changes = await graph.forget(subject, why)
+      const sent: Sent[] = []
+      const add = ({ transactionId, target, action, at }: Job, state: Sent['state'], note?: string) => sent.push({ transactionId, target, action, at, state, ...(note && { note }) })
+      const arrived = jobs.filter(reached)
+      for (const name of new Set(arrived.map((job) => job.target))) {
+        const target = targets.get(name)
+        const theirs = arrived.filter((job) => job.target === name)
+        if (!options.tellForgotten || !target?.forget) {
+          for (const job of theirs) add(job, 'untold')
+          continue
+        }
+        for (let i = 0; i < theirs.length; i += target.batch) {
+          const some = theirs.slice(i, i + target.batch)
+          let refusals: (string | undefined)[]
+          try {
+            refusals = await target.forget(some)
+          } catch (error) {
+            const note = noted(error, some.flatMap((job) => [...Object.values(job.keys), ...Object.values(job.click ?? {})]))
+            refusals = some.map(() => note)
+          }
+          some.forEach((job, j) => add(job, refusals[j] === undefined ? 'told' : 'refused', refusals[j]))
+        }
+      }
+      // Picked up and not known to have arrived: telling a platform about it could be the first it hears.
+      for (const job of jobs) if (!reached(job) && job.attempts > 0 && job.state !== 'skipped') add(job, 'untold', 'may not have arrived')
+      return { changes, sent }
     },
 
     async run() {
@@ -527,6 +588,10 @@ export function createMemoryOutbox(): OutboxStore & { remove(subject: Subject): 
     },
     async get(transactionId) {
       return [...jobs.values()].filter((job) => job.transactionId === transactionId).map((job) => structuredClone(job))
+    },
+    async of(subject) {
+      const found = [...jobs.values()].filter((job) => job.subject === subject)
+      return found.sort((x, y) => (x.transactionId < y.transactionId ? -1 : x.transactionId > y.transactionId ? 1 : x.target < y.target ? -1 : 1)).map((job) => structuredClone(job))
     },
     async list(state, limit) {
       const found = [...jobs.values()].filter((job) => job.state === state)

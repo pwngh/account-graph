@@ -462,6 +462,79 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       assert.deepEqual(await outbox.run(), { sent: 0, skipped: 0, failed: 0, retried: 1 })
     })
 
+    test('a platform that has a way is told when someone is forgotten, only where that is asked for', async () => {
+      const next = await open()
+      opened.push(next)
+      const graph = createGraph(next.store)
+      const posted: { url: string; body: any }[] = []
+      let answer: () => Response = () => new Response('{}')
+      const fetcher = (async (url: any, init: any) => {
+        const body = JSON.parse(init.body)
+        posted.push({ url: String(url), body })
+        return String(url).includes('Adjustments') ? answer() : new Response('{}')
+      }) as typeof fetch
+      const clock = { now: T0 + 2 * HOUR }
+      const keeps = (name: string, deliver: () => Promise<object>) => ({ name, restates: false, batch: 10, retryable: () => true, keys: () => ({ k: 'hashed' }), click: () => undefined, deliver })
+      const targets = [
+        microsoftAds({ accessToken: 'ms-token', developerToken: 'dev', customerId: '11', customerAccountId: '22', fetch: fetcher }),
+        keeps('keeps', async () => ({})),
+        keeps('lost', async () => { throw new Error('timed out') }),
+      ]
+      const options = { targets, now: () => clock.now, random: () => 1 }
+      const telling = createOutbox(graph, next.store.outbox, { ...options, tellForgotten: true })
+      const quiet = createOutbox(graph, next.store.outbox, options)
+      const enroll = async (n: number) => {
+        await graph.observe({ subject: `visitor:v${n}`, identifiers: [`device:v${n}`], at: T0 })
+        await graph.touch({ subject: `visitor:v${n}`, at: T0, msclkid: `M${n}` })
+        await graph.observe({ subject: `contact:${n}`, identifiers: [`device:v${n}`], at: T0 + HOUR })
+        await telling.record({ ...outcome(n), action: { microsoft: 'Enrolled', keeps: 'a', lost: 'b' }, email: `pat${n}@example.org` })
+      }
+      const retractions = () => posted.filter((each) => each.url.includes('Adjustments'))
+      for (const n of [1, 2, 3, 4, 5]) await enroll(n)
+      await telling.record({ ...outcome(1), transactionId: 'waits', action: { microsoft: 'Enrolled' }, email: 'pat1@example.org' })
+      const [waits] = await next.store.outbox.get('waits')
+      await next.store.outbox.swap(waits!, { ...waits!, state: 'held' })
+      await telling.run()
+      assert.deepEqual((await next.store.outbox.of('contact:1')).map((job) => [job.transactionId, job.target, job.state]), [['enroll-1', 'keeps', 'sent'], ['enroll-1', 'lost', 'pending'], ['enroll-1', 'microsoft', 'sent'], ['waits', 'microsoft', 'held']])
+
+      const at = T0 + HOUR
+      const told = await telling.forget('contact:1', { by: 'dana' })
+      assert.ok(told.changes.length > 0)
+      assert.deepEqual(told.sent, [
+        { transactionId: 'enroll-1', target: 'keeps', action: 'a', at, state: 'untold' },
+        { transactionId: 'enroll-1', target: 'microsoft', action: 'Enrolled', at, state: 'told' },
+        { transactionId: 'enroll-1', target: 'lost', action: 'b', at, state: 'untold', note: 'may not have arrived' },
+      ])
+      // Only what had arrived there, and nothing about what had not.
+      assert.equal(retractions().length, 1)
+      assert.equal(retractions()[0]!.url, 'https://campaign.api.bingads.microsoft.com/CampaignManagement/v13/OfflineConversionAdjustments/Apply')
+      const [{ AdjustmentTime, ...adjustment }, ...others] = retractions()[0]!.body.OfflineConversionAdjustments
+      assert.ok(Number.isFinite(Date.parse(AdjustmentTime)))
+      assert.deepEqual(adjustment, { AdjustmentType: 'Retract', ConversionName: 'Enrolled', ConversionTime: new Date(at).toISOString(), MicrosoftClickId: 'M1', HashedEmailAddress: sha256('pat1@example.org') })
+      assert.deepEqual(others, [])
+      // Gone here, and nothing of it is kept for later.
+      assert.deepEqual(await next.store.outbox.of('contact:1'), [])
+      assert.equal((await graph.decisions()).at(0)!.action, 'forget')
+      assert.deepEqual(await telling.forget('contact:1'), { changes: [], sent: [] })
+
+      // A refusal, of one or of all, does not stop a person from being forgotten, and says nothing of what was sent.
+      answer = () => new Response(JSON.stringify({ PartialErrors: [{ Index: 0, ErrorCode: 'OfflineConversionAdjustmentNotFound', Message: sha256('pat2@example.org') }] }))
+      assert.deepEqual((await telling.forget('contact:2')).sent.find((each) => each.target === 'microsoft'), { transactionId: 'enroll-2', target: 'microsoft', action: 'Enrolled', at, state: 'refused', note: 'OfflineConversionAdjustmentNotFound' })
+      answer = () => new Response(`no such ${sha256('pat3@example.org')} with M3 clicks`, { status: 500 })
+      const refused = (await telling.forget('contact:3')).sent.find((each) => each.target === 'microsoft')!
+      assert.equal(refused.state, 'refused')
+      assert.match(refused.note!, /500: no such \(left out\)/)
+      assert.deepEqual([await next.store.outbox.of('contact:2'), await next.store.outbox.of('contact:3')], [[], []])
+
+      // A decision refused because somebody decided first tells nobody. Nor does anything, unless it was asked for.
+      const before = retractions().length
+      await graph.separate('contact:4', 'contact:6')
+      await assert.rejects(telling.forget('contact:4', { seen: 0 }))
+      assert.equal((await next.store.outbox.of('contact:4')).length, 3)
+      assert.deepEqual((await quiet.forget('contact:5')).sent.map((each) => [each.target, each.state]), [['keeps', 'untold'], ['microsoft', 'untold'], ['lost', 'untold']])
+      assert.equal(retractions().length, before)
+    })
+
     test('failed and skipped conversions can be listed and put back in line', async () => {
       const { graph, outbox, remote, clock } = await fresh()
       for (const n of [1, 2]) await enroll(graph, n)

@@ -1216,6 +1216,15 @@ test('steps give page events, calls and outcomes their value and their ad platfo
     assert.equal((await outbox.get('call:CA1'))[0]!.value, 4)
     const { total } = (await (await fetch(`${base}/report?from=2026-03-02&to=2026-03-02`, { headers: { authorization: 'Bearer reviewer' } })).json()) as any
     assert.deepEqual([total.worth.refunded, total.worth.writtenOff], [6, 0])
+
+    // Forgetting says what had reached a platform where it is asked to, and is refused when it is asked in words.
+    const caller = (await outbox.get('call:CA1'))[0]!.subject
+    assert.equal((await post('/forget', { subject: caller, ads: 'yes' })).status, 400)
+    assert.equal((await outbox.get('call:CA1')).length, 1)
+    const forgotten = (await (await post('/forget', { subject: caller, ads: true })).json()) as any
+    assert.deepEqual(forgotten.sent, [{ transactionId: 'call:CA1', target: 'google', action: '222', at, state: 'untold' }])
+    assert.deepEqual([Array.isArray(forgotten.changes), await outbox.get('call:CA1')], [true, []])
+    assert.ok(Array.isArray(await (await post('/forget', { subject: 'nobody' })).json()))
   } finally {
     server.close()
   }

@@ -733,6 +733,10 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       const { rows } = await pool.query(`select * from ${t('conversion')} where transaction_id = $1 order by target`, [transactionId])
       return rows.map(toJob)
     },
+    async of(subject) {
+      const { rows } = await pool.query(`select * from ${t('conversion')} where job->>'subject' = $1 order by transaction_id collate "C", target`, [subject])
+      return rows.map(toJob)
+    },
     async list(state, limit) {
       const { rows } = await pool.query(`select * from ${t('conversion')} where state = $1 order by due desc, transaction_id limit $2`, [state, limit])
       return rows.map(toJob)

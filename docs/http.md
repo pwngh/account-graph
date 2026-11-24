@@ -91,7 +91,7 @@ A token goes in the `authorization` header as `Bearer …`. There are two.
 | `POST /separate` | `{ a, b, separated?, by?, reason? }`. Keeps two subjects apart, or with `separated: false` allows them again. |
 | `POST /join` | `{ a, b, by?, reason?, mark? }`. Records that two subjects are one person. With `mark: true` the answer is `{ moved, mark }`, where `mark` is the identifier to `/ignore` to take the join back. |
 | `POST /ignore` | `{ identifier, ignored?, by?, reason? }`. Stops linking through one identifier, or resumes. |
-| `POST /forget` | `{ subject, by?, reason? }`. Deletes a subject and everything recorded about it. |
+| `POST /forget` | `{ subject, by?, reason?, ads? }`. Deletes a subject and everything recorded about it. With `ads: true` the answer is `{ changes, sent }`, where `sent` is [what had reached an ad platform](privacy.md#what-ad-platforms-hold). |
 
 The four `POST` routes answer with the subjects whose cluster moved. With the service token, `/separate` and `/join` also take a list from one of your systems: see [decisions from your own systems](deciding.md#decisions-from-your-own-systems).
 
