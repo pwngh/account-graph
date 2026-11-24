@@ -50,9 +50,10 @@ export interface Channel {
  * `blocked` the caller hid their number; `toll_free` the caller's number is
  * a toll-free line, which is a business or a machine, not a person;
  * `short` it ended before `minimumSeconds`; `repeat` this number has called
- * before; `ambiguous` more than one visitor tapped the number just before.
+ * before; `ambiguous` more than one visitor tapped the number just before;
+ * `pool` it was tied to the visitor the number was shown to.
  */
-export type CallFlag = 'blocked' | 'toll_free' | 'short' | 'repeat' | 'ambiguous'
+export type CallFlag = 'blocked' | 'toll_free' | 'short' | 'repeat' | 'ambiguous' | 'pool'
 
 export interface CallOptions {
   /** Your tracking numbers, each with the channel it is published on. Written any way a phone number is. */
@@ -61,6 +62,8 @@ export interface CallOptions {
   minimumSeconds?: number
   /** How long before a call a tap on its number may be, in milliseconds. Defaults to three minutes. */
   clickWindow?: number
+  /** Numbers shown to one visitor at a time, and how long after a visitor's turn a call still counts as theirs when nobody has had the number since, in milliseconds. */
+  pool?: { numbers: readonly string[]; grace: number }
   /** The step a counted call is recorded as. Defaults to `call`. */
   stage?: string
   /** The country code for numbers written without one. Defaults to 1. */
@@ -110,7 +113,7 @@ export interface RecordedCall {
   counted: boolean
   /** How it stands: answered, missed, gone to voicemail, waiting for its result, or not known. */
   state: CallState
-  /** The visitor who tapped the number just before, when there was exactly one. The two are now linked. */
+  /** The visitor the number was shown to, or who tapped it just before when there was exactly one. The two are now linked. */
   visitor?: Subject
   /** The call had been recorded before, and nothing was written. */
   duplicate: boolean
@@ -136,8 +139,8 @@ export function dialed(number: string, at: number, country?: string): Identifier
 /**
  * Records a phone call. The caller becomes a subject carrying their phone
  * number, so an account that later gives the same number is tied to the
- * call. If exactly one visitor tapped the number on your site just before,
- * the call is tied to that visitor, and so to the ad click that brought them.
+ * call. If the number was shown to one visitor, or exactly one tapped it on
+ * your site just before, the call is tied to that visitor, and so to the ad click that brought them.
  * Otherwise the call is filed under the channel its tracking number is published on.
  */
 export async function recordCall(graph: Graph, call: Call, options: CallOptions = {}): Promise<RecordedCall> {
@@ -193,7 +196,10 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   const buckets: Identifier[] = []
   for (let bucket = Math.floor((at - window) / BUCKET); bucket <= Math.floor((at + SLACK) / BUCKET); bucket++) buckets.push(`dialed:${to}@${bucket}`)
   const taps = (await graph.holders(buckets)).filter((edge) => edge.last >= at - window && edge.first <= at + SLACK)
-  const tapped = [...new Set(taps.map((edge) => edge.subject))]
+  // A number shown to one visitor says whose call it is, whether or not they tapped it.
+  const pooled = options.pool?.numbers.some((number) => numberOrSelf(number, options.country) === to)
+  const holder = pooled ? await graph.leaseholder(to, at, options.pool!.grace) : undefined
+  const tapped = holder !== undefined ? [holder] : [...new Set(taps.map((edge) => edge.subject))]
   // One visitor, one caller. A visitor already tied to a different caller by an earlier call is passed over,
   // so a browser cannot collect call after call by tapping again. The same caller ringing back still counts.
   // A visitor a reviewer has kept apart from this caller is passed over too.
@@ -201,18 +207,12 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   const visitors: Subject[] = []
   for (const candidate of tapped) {
     if (apart.has(candidate)) continue
-    const earlier = (await graph.links(candidate)).filter((link) => link.reasons.some((reason) => reason.identifier.startsWith('dial:')))
+    const earlier = (await graph.links(candidate)).filter((link) => link.reasons.some((reason) => /^(dial|lease):/.test(reason.identifier)))
     if (earlier.every((link) => link.subject === subject)) visitors.push(candidate)
   }
-  const visitor = visitors.length === 1 ? visitors[0] : undefined
   if (visitors.length > 1) flags.push('ambiguous')
-  if (visitor) {
-    const tie = `dial:${id}`
-    await graph.observe([
-      { subject, identifiers: [tie], at, event: 'call' },
-      { subject: visitor, identifiers: [tie], at, event: 'call' },
-    ])
-  }
+  const visitor = visitors.length === 1 && (await graph.tieCall(subject, visitors[0]!, `${holder === undefined ? 'dial' : 'lease'}:${id}`, at, holder === undefined ? { notes: buckets } : { pool: to, grace: options.pool!.grace })) ? visitors[0] : undefined
+  if (visitor !== undefined && holder !== undefined) flags.push('pool')
 
   // The outcome comes before the touch: if recording it fails, the call is reported again and nothing has been written twice.
   // What would be sent is held before the call is kept, while the number is at hand: a result that finds the call then finds that too.

@@ -1,7 +1,7 @@
 import type { Feed, KeptAlert, OpsStore } from './ops.ts'
 import type { Job, JobState, OutboxStore } from './outbox.ts'
 import type { Store, Tx } from './store.ts'
-import type { CallResult, Consent, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Moved, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, Consent, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Lease, Moved, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
 
 /** The part of a `pg` client the store calls. */
 export interface Queryable {
@@ -107,6 +107,8 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       await db.query(`delete from ${t('flow')} where source = $1 or target = $1`, [subject])
       await db.query(`delete from ${t('transfer')} where source = $1 or target = $1`, [subject])
       await db.query(`delete from ${t('consent_log')} where subject = $1`, [subject])
+      // Who held a number is forgotten. That somebody did stays, or a call in that time would go to whoever held it before.
+      await db.query(`update ${t('lease')} set subject = '' where subject = $1`, [subject])
       await db.query(`delete from ${t('alert')} where subject = $1`, [subject])
       await db.query(`delete from ${t('change')} where subject = $1`, [subject])
     },
@@ -426,6 +428,24 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
     async callsBetween(from, to) {
       const { rows } = await db.query(`${callRows} where c.at >= $1 and c.at < $2 order by c.at, c.id collate "C"`, [from, to])
       return rows.map(toCall)
+    },
+
+    async newestLeases(numbers, by) {
+      const { rows } = await db.query(`select distinct on (number) * from ${t('lease')} where number = any($1::text[]) and start_at <= $2 order by number, start_at desc`, [numbers, by])
+      return rows.map((row): Lease => ({ number: row.number, subject: row.subject, start: Number(row.start_at), until: Number(row.until_at) }))
+    },
+
+    async setLease({ number, subject, start, until }) {
+      await db.query(
+        `insert into ${t('lease')} (number, subject, start_at, until_at) values ($1, $2, $3, $4)
+         on conflict (number, start_at) do update set subject = excluded.subject, until_at = excluded.until_at`,
+        [number, subject, start, until],
+      )
+    },
+
+    async pruneLeases(before) {
+      const { rows } = await db.query(`with gone as (delete from ${t('lease')} where until_at < $1 returning 1) select count(*)::int as n from gone`, [before])
+      return rows[0].n
     },
 
     async pruneCallResults(before) {
@@ -1020,6 +1040,19 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
             create index if not exists outcome_value_subject on ${schema}.outcome_value (subject);
             insert into ${schema}.outcome_value (transaction_id, subject, value, currency, at)
               select transaction_id, subject, value, currency, 0 from ${schema}.outcome;`,
+    },
+    {
+      id: 15,
+      name: 'numbers shown to one visitor',
+      sql: `create table if not exists ${schema}.lease (
+              number text not null,
+              subject text not null,
+              start_at bigint not null,
+              until_at bigint not null,
+              primary key (number, start_at)
+            );
+            create index if not exists lease_subject on ${schema}.lease (subject);
+            create index if not exists lease_until on ${schema}.lease (until_at);`,
     },
   ]
 }

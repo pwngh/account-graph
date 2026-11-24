@@ -85,6 +85,7 @@ The `device:` value is the `ag_device` cookie the script set, which your backend
 - **Steps with a value.** Name your steps once (inquiry 5, call 10, client 200) and every outcome, page event and call takes its value and its ad platform action from its step.
 - **Alerts.** A conversion that fails for good, an outbox that cannot run, or costs that cannot be read are posted to a Slack-style webhook. So is a feed that has gone quiet, and a missed caller from an ad whom nobody has rung back. An alert that does not arrive is kept until it does.
 - **Page events and phone calls.** The script tag reports taps and marked clicks, and a call that follows a tap is tied to the visitor who tapped, so calls land under the ad click that produced them.
+- **A number for each visitor.** An optional pool shows each visitor from an ad a number of their own, so a call they dial by hand is still tied to their click.
 - **Calls that were really answered.** A queue hang-up is not an answer. Your phone system reports how each call went, and a call can be held, uncounted and unsent, until it does. Each missed call says whether it was returned, and after how long, and a Calls view lists the ones still open.
 - **Links that name a person.** A signed link in an email or text ties the browser that opens it to the person it was sent to, and a visitor stays one visitor across your sites.
 - **One call to say who someone is.** Send an email, phone, address and device as they are; the server hashes them, checks the address with the postal service, and counts a throwaway phone number for less.
@@ -162,6 +163,7 @@ PostgreSQL writes take one advisory lock, so they run one at a time; the write q
 
 - No request has been made with real credentials. A successful Fingerprint lookup, MaxMind answer, token from Google or Microsoft, upload to any ad platform, cost report from Google Ads or Meta, Twilio line lookup, and Smarty address check are all untested. `npm run live-check` is how to run them with yours.
 - No real phone call has arrived from Twilio, and no alert has been posted to a real webhook.
+- A pool number is only right while it is that visitor's. One saved and rung much later ties to nobody, or to whoever has the number by then.
 - The queue of pairs to decide looks at the subjects of the newest 10,000 sightings, not at everyone.
 - The board is read from what is recorded. It does not assign work, and only people who reached a step or had a call in its period are on it.
 - A journey reads at most 60 subjects of one person, and says how many it left out. How a conversion stands is kept, and when it was sent is not.

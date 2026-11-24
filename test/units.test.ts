@@ -756,3 +756,12 @@ test('a phone number counts by the kind of line it is', () => {
   assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', TWILIO_ACCOUNT_SID: 'AC1', SMARTY_AUTH_ID: 'id' }), (error: Error) =>
     ['TWILIO_AUTH_TOKEN must be set along with TWILIO_ACCOUNT_SID', 'SMARTY_AUTH_TOKEN must be set along with SMARTY_AUTH_ID'].every((line) => error.message.includes(line)))
 })
+
+test('the number pool is off until numbers are given, and its settings are checked', () => {
+  const env = { DATABASE_URL: 'x', GRAPH_TOKEN: 'y', ALERT_WEBHOOK: 'https://hooks.example/x' }
+  assert.deepEqual(configFrom(env).poolNumbers, [])
+  const { poolNumbers, poolMinutes, poolGrace } = configFrom({ ...env, POOL_NUMBERS: '+15550100001, (555) 010-0002', POOL_MINUTES: '20', POOL_GRACE_MINUTES: '0' })
+  assert.deepEqual([poolNumbers, poolMinutes, poolGrace], [['+15550100001', '(555) 010-0002'], 20, 0])
+  assert.throws(() => configFrom({ ...env, POOL_NUMBERS: 'nonsense' }), /POOL_NUMBERS: "nonsense" is not a phone number/)
+  assert.throws(() => configFrom({ ...env, POOL_NUMBERS: '+15550100001', POOL_MINUTES: '0' }), /POOL_MINUTES must be at least 1/)
+})

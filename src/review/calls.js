@@ -72,6 +72,6 @@ view('calls', 'Calls', async (box, first, last) => {
   const grid = el('div', { class: 'wide', tabindex: 0, role: 'region', 'aria-label': 'Calls by hour and weekday' }, hours(summary))
   box.append(el('section', {}, el('h2', {}, 'By hour and weekday'), el('div', { class: 'row' }, pick), grid, el('p', { class: 'muted' }, 'Blank: no calls. Darker: more.')))
 
-  box.append(el('section', {}, el('h2', {}, 'How calls were placed'), parts('How calls were placed', [['Tied to a visitor', coverage.visitor, 'Followed a tap on the number, so the call has their arrival.'], ['Filed under a channel', coverage.channel, 'Only the number rung says where it came from.'], ['Neither', coverage.neither, 'The number is not listed and nobody tapped it.']]),
+  box.append(el('section', {}, el('h2', {}, 'How calls were placed'), parts('How calls were placed', [['Tied to a visitor', coverage.visitor, 'Came to the number shown to them, or followed a tap, so the call has their arrival.'], ['Filed under a channel', coverage.channel, 'Only the number rung says where it came from.'], ['Neither', coverage.neither, 'The number is not listed and nobody tapped it.']]),
     coverage.noResult > 0 ? el('p', { class: 'muted' }, `${amount(coverage.noResult)} of these have no result.`) : ''))
 }, { every: 60_000 })

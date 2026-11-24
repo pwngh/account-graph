@@ -38,6 +38,7 @@ import type {
   Journey,
   KeptCall,
   Labels,
+  Lease,
   Link,
   Moved,
   Observation,
@@ -130,6 +131,24 @@ export interface Graph {
   keepCallResult(id: string, result: Omit<CallResult, 'recorded'>): Promise<void>
   /** A kept call with its result, or undefined for an id no call was kept for. */
   keptCall(id: string): Promise<KeptCall | undefined>
+  /** Whether an arrival since a time is on record for a subject, and no standing opt-out from measuring ads. */
+  followable(subject: Subject, since: number): Promise<boolean>
+  /**
+   * Shows a subject one of your numbers as their own for some minutes, or the one they hold for that much longer. No
+   * two subjects hold one number at one time. Undefined when every number is held. With `arrivedSince`, null for a
+   * subject with no arrival since then, or whose standing answer is no to measuring ads.
+   */
+  lease(subject: Subject, options: { numbers: readonly string[]; minutes: number; at?: number; arrivedSince?: number }): Promise<Lease | null | undefined>
+  /** Who a number was shown to at a time, or within `grace` milliseconds before it when nobody held it since. */
+  leaseholder(number: string, at: number, grace?: number): Promise<Subject | undefined>
+  /** How many of the numbers are held at a time. */
+  leasesAt(numbers: readonly string[], at?: number): Promise<number>
+  /**
+   * Ties a caller to the visitor whose call it is, by an identifier both then carry. Not where a reviewer keeps the two
+   * apart, the visitor is already tied to another caller, or what matched them no longer does: that they held the pool
+   * number, or one of the notes their taps left. Returns whether they are tied. `recordCall` does this.
+   */
+  tieCall(caller: Subject, visitor: Subject, identifier: Identifier, at: number, by: { pool: string; grace: number } | { notes: readonly Identifier[] }): Promise<boolean>
   /** Every kept call to or from the given subjects, oldest first. */
   callsOf(subjects: readonly Subject[]): Promise<KeptCall[]>
   /**
@@ -514,6 +533,13 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     return { subject, at, touches, credited, reason }
   }
 
+  const followable = async (tx: Tx, subject: Subject, since: number, at: number) => (await tx.touchesOf([subject], since, at)).length > 0 && (await tx.consentOf([subject])).get(subject)?.adUserData !== false
+
+  const holderOf = async (tx: Tx, number: string, at: number, grace: number): Promise<Subject | undefined> => {
+    const [last] = await tx.newestLeases([number], at)
+    return last && (at < last.until || (grace > 0 && at - last.until <= grace)) ? last.subject || undefined : undefined
+  }
+
   /** Appends decisions to the record, each sealed to the one before it. Returns their sequence numbers. */
   async function decideAll(tx: Tx, entries: readonly { action: Decision['action']; about: string[]; why?: Why | undefined }[]): Promise<number[]> {
     let last = await tx.lastDecision()
@@ -790,7 +816,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
     async keepCall(call) {
       await store.write(async (tx) => {
-        await tx.setCall({ ...call, recorded: now() })
+        // Only a visitor still tied by this call: one forgotten meanwhile is not written down again.
+        const { visitor, ...rest } = call
+        const tied = visitor !== undefined && (await tx.edgesOn([`dial:${call.id}`, `lease:${call.id}`])).some((edge) => edge.subject === visitor)
+        await tx.setCall({ ...rest, ...(tied && { visitor }), recorded: now() })
         await tx.fed('calls', now())
       })
     },
@@ -806,6 +835,60 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
     keptCall(id) {
       return store.read((tx) => tx.callOf(id))
+    },
+
+    async tieCall(caller, visitor, identifier, at, by) {
+      ruleFor(policy, identifier)
+      let tied = false
+      // One transaction: two calls reported at once cannot both find the visitor free.
+      await changing(async (tx) => {
+        const apart = (await tx.separatedOf([caller])).some((pair) => pair.includes(visitor))
+        const others = ((await neighbors(tx, [visitor])).get(visitor) ?? []).some((link) => link.subject !== caller && link.reasons.some((reason) => /^(dial|lease):/.test(reason.identifier)))
+        // What matched the two is read again: whoever was forgotten meanwhile is not tied, even where they have been seen since.
+        const matched = 'pool' in by ? (await holderOf(tx, by.pool, at, by.grace)) === visitor : (await tx.edgesOn(by.notes)).some((edge) => edge.subject === visitor)
+        tied = !apart && !others && matched
+        return tied ? record(tx, [caller, visitor].map((subject) => ({ subject, identifier, at, event: 'call', recorded: now() }))) : []
+      })
+      return tied
+    },
+
+    followable(subject, since) {
+      return store.read((tx) => followable(tx, subject, since, now()))
+    },
+
+    async lease(subject, { numbers, minutes, at = now(), arrivedSince }) {
+      if (typeof subject !== 'string' || !subject) throw new TypeError('A lease needs a subject')
+      if (!Number.isSafeInteger(at)) throw new TypeError('A lease needs a time in whole epoch milliseconds')
+      if (!(Number.isFinite(minutes) && minutes > 0)) throw new TypeError('A lease needs its length in minutes, above zero')
+      const until = at + Math.ceil(minutes * 60_000)
+      return store.write(async (tx) => {
+        // Asked here, where nobody can forget the visitor or write down an opt-out in between.
+        if (arrivedSince !== undefined && !(await followable(tx, subject, arrivedSince, at))) return null
+        const newest = new Map((await tx.newestLeases(numbers, Number.MAX_SAFE_INTEGER)).map((lease) => [lease.number, lease]))
+        // Whoever holds one keeps it, a while longer.
+        const own = [...newest.values()].find((lease) => lease.subject === subject && lease.until > at)
+        if (own) {
+          const longer = { ...own, until: Math.max(own.until, until) }
+          await tx.setLease(longer)
+          return longer
+        }
+        // Of those free, the one released longest ago: a number seen last week is still on somebody's screen more than one seen last year.
+        const ended = (number: string) => newest.get(number)?.until ?? -Infinity
+        const free = unique(numbers).filter((number) => ended(number) <= at)
+        if (free.length === 0) return undefined
+        const number = free.reduce((best, next) => (ended(next) < ended(best) ? next : best))
+        const lease = { number, subject, start: at, until }
+        await tx.setLease(lease)
+        return lease
+      })
+    },
+
+    leaseholder(number, at, grace = 0) {
+      return store.read((tx) => holderOf(tx, number, at, grace))
+    },
+
+    leasesAt(numbers, at = now()) {
+      return store.read(async (tx) => (await tx.newestLeases(numbers, at)).filter((lease) => lease.until > at).length)
     },
 
     callsOf(subjects) {
@@ -1325,7 +1408,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       if (!Number.isSafeInteger(before)) throw new TypeError('prune needs a time in whole epoch milliseconds')
       return store.write(async (tx) => {
         await decide(tx, 'prune', [String(before)], why)
-        return (await tx.pruneSightings(before)) + (await tx.pruneConsent(before)) + (await tx.pruneCallResults(before))
+        return (await tx.pruneSightings(before)) + (await tx.pruneConsent(before)) + (await tx.pruneCallResults(before)) + (await tx.pruneLeases(before))
       })
     },
 

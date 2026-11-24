@@ -1,6 +1,6 @@
 import type { Feed, OpsStore } from './ops.ts'
 import type { OutboxStore } from './outbox.ts'
-import type { CallResult, Change, Consent, ConsentAnswer, Cost, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Moved, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, Change, Consent, ConsentAnswer, Cost, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Lease, Moved, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
 
 /**
  * Where the graph lives. Sightings and touches are the record; edges and
@@ -29,7 +29,7 @@ export interface DecisionPage {
 export interface Tx {
   /** Logs sightings and folds them into edges. Returns how many new edges each identifier gained. */
   addSightings(sightings: readonly Sighting[]): Promise<Map<Identifier, number>>
-  /** Deletes a subject with its sightings, edges, touches, outcomes, calls, flows, consent, alerts, conversions, and reviewer decisions. */
+  /** Deletes a subject with its sightings, edges, touches, outcomes, calls, leases, flows, consent, alerts, conversions, and reviewer decisions. */
   removeSubject(subject: Subject): Promise<void>
   edgesOf(subjects: readonly Subject[]): Promise<Edge[]>
   edgesOn(identifiers: readonly Identifier[]): Promise<Edge[]>
@@ -116,6 +116,12 @@ export interface Tx {
   openCalls(from: number, to: number, limit: number, after?: { at: number; id: string }): Promise<KeptCall[]>
   /** Calls with `from <= at < to`, oldest first. */
   callsBetween(from: number, to: number): Promise<KeptCall[]>
+  /** The newest lease of each given number that began by a time. A number never leased by then is absent. */
+  newestLeases(numbers: readonly string[], by: number): Promise<Lease[]>
+  /** Keeps a lease, replacing the one of the same number that began at the same time. */
+  setLease(lease: Lease): Promise<void>
+  /** Deletes leases that ended before a time. Returns how many went. */
+  pruneLeases(before: number): Promise<number>
   /** Deletes results written down before a time whose call never came. Returns how many went. */
   pruneCallResults(before: number): Promise<number>
   /** Outcomes with `from <= at < to`, oldest first. */

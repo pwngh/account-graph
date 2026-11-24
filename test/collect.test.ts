@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { carry, collect, event, fields, fill, read, watch } from '../src/collect.ts'
+import { carry, collect, event, fields, fill, pool, read, watch } from '../src/collect.ts'
 
 /** Just enough of a browser for the collector: a URL, cookies, storage, and a beacon. */
 function browser(href: string, cookies: Record<string, string> = {}, gpc = false) {
@@ -340,4 +340,79 @@ test('a form carries the device id and the landing page to whatever receives it'
   // A form the script filled before the visitor opted out gives up the landing page it was holding.
   submit(plain)
   assert.deepEqual(plain.inputs.map((input) => [input.name, input.value]), [['ag_device', device], ['ag_landing', '']])
+})
+
+test('a marked element shows the visitor a number of their own while it is theirs, and then its own again', async (t) => {
+  const page = browser('https://site.example/')
+  const realFetch = globalThis.fetch
+  t.after(() => (globalThis.fetch = realFetch))
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1_000_000 })
+  const asked: any[] = []
+  let answer: object | undefined
+  globalThis.fetch = (async (url: string, init: RequestInit) => {
+    asked.push({ url, body: JSON.parse(String(init.body)) })
+    return answer ? new Response(JSON.stringify(answer)) : new Response(null, { status: 204 })
+  }) as typeof fetch
+  const texts = [{ nodeValue: 'Call us: (555) 010-0100, day or night' }, { nodeValue: 'or write' }]
+  const link = { href: 'tel:+15550100100', getAttribute: () => link.href, setAttribute: (_: string, value: string) => void (link.href = value) }
+  const listeners = new Map<string, () => void>()
+  const document = Object.assign((globalThis as any).document, {
+    visibilityState: 'visible',
+    addEventListener: (name: string, listener: () => void) => void listeners.set(name, listener),
+    removeEventListener: (name: string) => void listeners.delete(name),
+    querySelector: () => link,
+    querySelectorAll: () => [link],
+    createTreeWalker: () => {
+      let at = -1
+      return { nextNode: () => texts[++at] ?? null }
+    },
+  })
+  Object.defineProperty(globalThis, 'NodeFilter', { value: { SHOW_TEXT: 4 }, configurable: true })
+  const turn = async (ms: number) => {
+    t.mock.timers.tick(ms)
+    for (let i = 0; i < 20; i++) await Promise.resolve()
+  }
+  const stop = pool({ endpoint: 'https://graph.example/collect' })
+  // The visit may not have arrived yet, so a visitor who gets nothing asks again soon.
+  await turn(1_000)
+  assert.deepEqual([asked.length, asked[0].url, asked[0].body], [1, 'https://graph.example/number', { device: page.jar.get('ag_device') }])
+  assert.equal(link.href, 'tel:+15550100100')
+  answer = { number: '+15550100001', until: 0, lasts: 900_000 }
+  await turn(3_000)
+  assert.deepEqual([asked.length, link.href, texts.map((text) => text.nodeValue)], [2, 'tel:+15550100001', ['Call us: (555) 010-0001, day or night', 'or write']])
+  // Kept every five minutes while in view.
+  await turn(300_000)
+  assert.equal(asked.length, 3)
+  // Out of view nobody renews it. When it runs out, the page shows its own number.
+  document.visibilityState = 'hidden'
+  await turn(890_000)
+  assert.deepEqual([asked.length, link.href], [3, 'tel:+15550100001'])
+  await turn(20_000)
+  assert.deepEqual([link.href, texts[0]!.nodeValue], ['tel:+15550100100', 'Call us: (555) 010-0100, day or night'])
+  // Back in view it asks at once, and may get another.
+  document.visibilityState = 'visible'
+  answer = { number: '+442071838750', until: 0, lasts: 900_000 }
+  listeners.get('visibilitychange')!()
+  await turn(0)
+  assert.deepEqual([asked.length, link.href, texts[0]!.nodeValue], [4, 'tel:+442071838750', 'Call us: +442071838750, day or night'])
+  // An answer that took long counts from when it was asked for, and one too late is no answer.
+  answer = { number: '+15550100002', until: 0, lasts: 60_000 }
+  const quick = globalThis.fetch
+  globalThis.fetch = (async (...given: Parameters<typeof fetch>) => (t.mock.timers.tick(70_000), quick(...given))) as typeof fetch
+  listeners.get('visibilitychange')!()
+  await turn(0)
+  assert.equal(link.href, 'tel:+442071838750')
+  globalThis.fetch = quick
+  answer = { number: '+442071838750', until: 0, lasts: 900_000 }
+  listeners.get('visibilitychange')!()
+  await turn(0)
+  // With none to give, what is shown stands until it runs out.
+  answer = undefined
+  await turn(300_000)
+  assert.equal(link.href, 'tel:+442071838750')
+  await turn(600_000)
+  assert.equal(link.href, 'tel:+15550100100')
+  stop()
+  await turn(600_000)
+  assert.deepEqual([listeners.size, link.href], [0, 'tel:+15550100100'])
 })

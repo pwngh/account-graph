@@ -94,6 +94,20 @@ if (!url) {
     }
   })
 
+  test('a database from before numbers were shown to one visitor lends them', async () => {
+    const schema = `ag_test_${process.pid}_lease`
+    try {
+      const store = await madeBefore(schema, 15)
+      await pool.query(`insert into ${schema}.subject values ('visitor:1', 'visitor:1', 'visitor:1')`)
+      assert.deepEqual((await store.migrate()).slice(0, 1), ['numbers shown to one visitor'])
+      const graph = createGraph(store)
+      assert.equal((await graph.lease('visitor:1', { numbers: ['+15550100001'], minutes: 15, at: 1000 }))!.until, 901_000)
+      assert.equal(await graph.leaseholder('+15550100001', 1000), 'visitor:1')
+    } finally {
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
+
   test('a database from before calls were kept takes calls, and what it counted stays counted', async () => {
     const schema = `ag_test_${process.pid}_calls`
     try {

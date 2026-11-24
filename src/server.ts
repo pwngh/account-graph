@@ -114,6 +114,12 @@ export interface HandlerOptions {
    * `/report` lists the steps in this order.
    */
   stages?: Ladder
+  /**
+   * Numbers shown to one visitor at a time, and for how many minutes after
+   * they last asked. `grace` is how many minutes after that a call still counts
+   * as theirs when nobody has had the number since. Off by default.
+   */
+  pool?: { numbers: readonly string[]; minutes: number; grace: number }
   /** How many hours a missed call may wait before `/board` says it has waited too long. Left out or 0, it never does. */
   returnHours?: number
     /** The time zone `/report` reads its days in when the request names none. Use the ad account's. Defaults to UTC. */
@@ -207,8 +213,10 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     return Boolean(options.linkSecret && readToken(options.linkSecret, 'staff', body?.staff, now()))
   }
 
+  const pool = [...new Set((options.pool?.numbers ?? []).map((number) => normalizePhone(number, options.calls?.country)))]
+
   /** What this process has done since it started, for `/stats`. */
-  const tally = { since: now(), collected: 0, limited: 0, bots: 0, staff: 0, errors: 0 }
+  const tally = { since: now(), leased: 0, exhausted: 0, collected: 0, limited: 0, bots: 0, staff: 0, errors: 0 }
 
   /** A program that says what it is: a search crawler, a link previewer, an uptime check. Its visits are nobody's. */
   // "bot/" and not just "bot": phones are sold under names like Cubot, and their browsers are people.
@@ -267,6 +275,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     const sends = (outcome: Outcome) => Boolean(outbox && staged(outcome).action)
     return {
       ...options.calls,
+      ...(pool.length > 0 && { pool: { numbers: pool, grace: options.pool!.grace * 60_000 } }),
       now,
       convert,
       ...(outbox && {
@@ -315,7 +324,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       try {
         const note = dialed(body.number, at, options.calls?.country)
         // When the tracking numbers are known, a tap on any other number is not worth a note.
-        const tracked = !trackingNumbers || trackingNumbers.has(note.slice('dialed:'.length, note.lastIndexOf('@')))
+        const rung = note.slice('dialed:'.length, note.lastIndexOf('@'))
+        const tracked = !trackingNumbers || trackingNumbers.has(rung) || pool.includes(rung)
         if (tracked && tapsFrom(addressOf(request), device, at)) identifiers.push(note)
       } catch {}
     }
@@ -329,6 +339,27 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     // The same occurrence reported again is already on its way; recording it twice with a new time would be refused.
     if (options.outbox && (await options.outbox.get(transactionId)).length > 0) return
     await convert({ transactionId, subject, at, stage: body.event })
+  }
+
+  /**
+   * A number of their own for a visitor an arrival is on record for, or nothing: then the page keeps the number it has.
+   * A visitor who opted out of advertising is not followed to the phone either.
+   */
+  async function number(request: IncomingMessage, response: ServerResponse) {
+    const body = await json(request)
+    if (fromStaff(request, body)) return void (tally.staff += 1)
+    const device = deviceOf(request, response, body)
+    const subject = `visitor:${device}`
+    const at = now()
+    if (request.headers['sec-gpc'] === '1' || body.gpc === true || body.consent?.adUserData === false) return undefined
+    const since = at - 90 * 86_400_000
+    if (!(await graph.followable(subject, since))) return undefined
+    // A program inventing visitors would take every number, so one network gets few.
+    if (!tapsFrom(addressOf(request), device, at)) return undefined
+    const lease = await graph.lease(subject, { numbers: pool, minutes: options.pool!.minutes, at, arrivedSince: since })
+    if (lease === null) return undefined
+    tally[lease ? 'leased' : 'exhausted'] += 1
+    return lease && { number: lease.number, until: lease.until, lasts: lease.until - at }
   }
 
   /** Records one browser visit. The subject is the visitor; nothing here names an account. */
@@ -579,7 +610,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     const path = `${request.method} ${url.pathname}`
     const origin = request.headers.origin
 
-    if (url.pathname === '/collect' || url.pathname === '/event' || (url.pathname === '/carry' && options.linkSecret)) {
+    if (url.pathname === '/collect' || url.pathname === '/event' || (url.pathname === '/carry' && options.linkSecret) || (url.pathname === '/number' && pool.length > 0)) {
       if (!origin || !options.origins.includes(origin)) throw new Refusal(403, 'Origin is not allowed')
       response.setHeader('access-control-allow-origin', origin)
       response.setHeader('vary', 'origin')
@@ -600,6 +631,11 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       if (BOT.test(String(request.headers['user-agent'] ?? ''))) {
         tally.bots += 1
         return undefined
+      }
+      if (url.pathname === '/number') {
+        // The page reads this answer, and may send the server's own cookie with the request.
+        response.setHeader('access-control-allow-credentials', 'true')
+        return number(request, response)
       }
       if (url.pathname === '/event') await happened(request, response)
       else {
@@ -680,7 +716,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return profile(subject)
       case 'GET /ops':
         if (!options.ops) break
-        return { ...(await options.ops.state()), outbox: options.outbox ? await options.outbox.counts() : null }
+        return { ...(await options.ops.state()), pool: pool.length > 0 ? { numbers: pool.length, held: await graph.leasesAt(pool, now()), since: tally.since, leased: tally.leased, exhausted: tally.exhausted, minutes: options.pool!.minutes } : null, outbox: options.outbox ? await options.outbox.counts() : null }
       case 'POST /alerts/test':
         if (!options.ops) break
         return options.ops.test()
