@@ -151,4 +151,16 @@ button.addEventListener('click', run)
 addEventListener('keydown', (event) => { if (event.code === 'Space' && !event.target.closest('a, button')) { event.preventDefault(); run() } })
 </script></html>`
 
+/** Runs first in the reviewer screen of the demo: its time is the demo's, which the server says with every answer. */
+export const clockScript = (ahead: number): string => `(() => {
+  let ahead = ${ahead}
+  const Real = Date, real = fetch
+  globalThis.Date = class extends Real { constructor(...of) { if (of.length) super(...of); else super(Real.now() + ahead) } static now() { return Real.now() + ahead } }
+  globalThis.fetch = async (...of) => {
+    const answer = await real(...of), told = answer.headers.get('x-demo-ahead')
+    if (told !== null) ahead = Number(told)
+    return answer
+  }
+})()`
+
 export const page = (which: 'en' | 'es' | 'present', graph: string): string => (which === 'present' ? presenter(graph) : landing(which, graph))
