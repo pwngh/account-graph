@@ -537,6 +537,47 @@ const share = (part, whole) => (whole > 0 ? `${amount(part)} (${percent(part / w
 const caller = (subject) => reviewDisplay.subject(subject)
 // A menu is placed by where its button was, so it goes when the page moves under it.
 addEventListener('scroll', () => document.querySelector('.filter-menu:popover-open')?.hidePopover(), { passive: true })
+/** A color of its own for a name, the same wherever it is shown. It only helps the eye: the name is always there. */
+const toneOf = (name) => `tone${[...name].reduce((sum, letter) => (sum * 31 + letter.codePointAt(0)) >>> 0, 7) % 6}`
+/** Where something came from: a letter in its color, which is drawn and not text, and its name. */
+const sourced = (name) => el('span', { class: 'sourced' }, el('i', { class: `letter ${toneOf(name)}`, 'aria-hidden': 'true', 'data-letter': name.slice(0, 1).toUpperCase() }), name)
+/** How each table was sorted, kept while the screen is open. */
+const sorted = new Map()
+/**
+ * Makes the headings of a table sort it. `columns` gives, for a heading's
+ * place, what a row is worth there; null goes last either way. Each of
+ * `rows` is a record and the lines it has in the table, which stay together.
+ */
+function sortable(label, table, columns, rows) {
+  const heads = [...table.querySelectorAll('tr')].findLast((row) => row.querySelector('th[scope=col]')).cells
+  const body = rows[0]?.lines[0].parentNode
+  if (!body) return
+  const after = rows.at(-1).lines.at(-1).nextSibling
+  const apply = () => {
+    const now = sorted.get(label)
+    for (const [i, head] of [...heads].entries()) if (columns[i]) head.setAttribute('aria-sort', now?.at === i ? now.way : 'none')
+    const value = now && columns[now.at]
+    const order = value ? [...rows].sort((x, y) => {
+      const [a, b] = [value(x.row), value(y.row)]
+      if (a === null || b === null) return (a === null) - (b === null)
+      const by = typeof a === 'string' ? a.localeCompare(b) : a - b
+      return now.way === 'ascending' ? by : -by
+    }) : rows
+    for (const { lines } of order) for (const line of lines) body.insertBefore(line, after)
+  }
+  for (const [i, head] of [...heads].entries()) if (columns[i]) {
+    const button = el('button', { type: 'button', class: 'sort', 'data-key': `sort ${label} ${i}`, on: { click: () => {
+      const now = sorted.get(label)
+      // Largest first, then smallest, then as it came.
+      if (now?.at !== i) sorted.set(label, { at: i, way: head.classList.contains('num') ? 'descending' : 'ascending' })
+      else if (now.way === (head.classList.contains('num') ? 'descending' : 'ascending')) now.way = now.way === 'ascending' ? 'descending' : 'ascending'
+      else sorted.delete(label)
+      apply()
+    } } }, ...head.childNodes, el('i', { class: 'way', 'aria-hidden': 'true' }))
+    head.append(button)
+  }
+  apply()
+}
 /** The groups folded away, by table and name, kept while the screen is open. */
 const foldedAway = new Set()
 /** Rows under a heading that folds them away: its name, how many, and what else there is to say of them. */
