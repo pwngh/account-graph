@@ -56,8 +56,8 @@ export interface Firm {
   close(): Promise<void>
 }
 
-/** Starts the firm over a store. With `quick`, it has a tenth of its history, for tests. */
-export async function startFirm(store: Store, { ports = [0, 0], quick = false, say = () => {} }: { ports?: [number, number]; quick?: boolean; say?: (line: string) => void } = {}): Promise<Firm> {
+/** Starts the firm over a store. With `quick`, it has a tenth of its history, for tests. `restart` is asked for from the stage, and starts over. */
+export async function startFirm(store: Store, { ports = [0, 0], quick = false, say = () => {}, restart }: { ports?: [number, number]; quick?: boolean; say?: (line: string) => void; restart?: () => void } = {}): Promise<Firm> {
   // What is seeded is written down when it happened. The story takes a Monday to a Thursday that have passed, and each scene moves the clock on to when it happens.
   let writing: number | undefined
   const monday = new Date()
@@ -95,9 +95,15 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
     response.setHeader('x-demo-ahead', ahead)
     const path = `${request.method} ${new URL(request.url ?? '/', 'http://localhost').pathname}`
     const json = (status: number, body: object) => void response.writeHead(status, { 'content-type': 'application/json', 'x-demo-ahead': ahead }).end(JSON.stringify(body))
-    if (path === 'GET /stage/scenes') return json(200, { next, scenes: scenes.map(({ title, text, see, stage, spot }) => ({ title, text, see, stage, spot })) })
+    if (path === 'GET /stage/scenes') return json(200, { boot, ready, next, scenes: scenes.map(({ title, text, see, stage, spot }) => ({ title, text, see, stage, spot })) })
     // A page elsewhere cannot send the header, so only the stage moves the story on.
     if (path === 'POST /stage/run') return void (request.headers['x-stage'] ? runScene().then(([status, body]) => json(status, body)) : json(403, { error: 'Only the stage runs scenes' }))
+    if (path === 'POST /stage/restart') {
+      if (!request.headers['x-stage']) return json(403, { error: 'Only the stage starts over' })
+      if (!restart || running || !ready) return json(409, { error: !restart ? 'This demo cannot start over by itself' : ready ? 'A scene is running' : 'The sample data is still loading' })
+      json(202, {})
+      return restart()
+    }
     if (path !== 'GET /review' && path !== 'GET /stage') return handler(request, response)
     const staged = path === 'GET /stage'
     const first = `${clockScript(ahead)}${staged ? `\nsessionStorage.getItem('token') ?? sessionStorage.setItem('token', 'demo')` : ''}`
@@ -346,11 +352,16 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
     },
   ]
 
+  /** Which start this is, so the stage sees when another has begun. */
+  const boot = randomUUID()
+  /** Nothing is run until the sample data is in. */
+  let ready = false
   let next = 0
   let running = false
   /** Runs the next scene: what to answer with. */
   async function runScene(): Promise<[number, object]> {
     const scene = scenes[next]
+    if (!ready) return [409, { error: 'The sample data is still loading' }]
     if (!scene || running) return [409, { error: 'There is no next scene to run' }]
     running = true
     const began = performance.now()
@@ -385,6 +396,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
   await fill()
   // Whoever has waited since before the show is told of now, so that what is told during it is about it.
   await ops.check()
+  ready = true
   return {
     graph: graphAt,
     site: siteAt,
@@ -434,7 +446,7 @@ if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).
   process.once('SIGTERM', () => void stop(0))
   try {
     made = process.env.MEMORY ? undefined : throwaway()
-    let store: Store = createMemoryStore()
+    let fresh = async (): Promise<Store> => createMemoryStore()
     if (made) {
       const { default: pg } = await import('pg')
       const { createPostgresStore } = await import('../src/postgres.ts')
@@ -450,12 +462,31 @@ if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).
           await new Promise((resolve) => setTimeout(resolve, 200))
         }
       }
-      const postgres = createPostgresStore(pool)
-      await postgres.migrate()
-      store = postgres
+      // The database was made for this demo alone, so starting over empties it.
+      fresh = async () => {
+        await pool.query('drop schema if exists account_graph cascade')
+        const postgres = createPostgresStore(pool)
+        await postgres.migrate()
+        return postgres
+      }
     }
     console.log(made ? 'Loading sample data into PostgreSQL. This takes about a minute.' : 'Loading sample data into memory.')
-    firm = await startFirm(store, { ports: [Number(process.env.PORT ?? 8790), Number(process.env.SITE_PORT ?? 8791)], say: console.log })
+    const ports: [number, number] = [Number(process.env.PORT ?? 8790), Number(process.env.SITE_PORT ?? 8791)]
+    const begin = async () => {
+      firm = await startFirm(await fresh(), {
+        ports, say: console.log,
+        restart: () => void (async () => {
+          console.log('Starting over.')
+          await firm?.close()
+          await begin()
+        })().catch((error) => {
+          if (!stopping) console.error(error)
+          void stop(1)
+        }),
+      })
+      return firm
+    }
+    firm = await begin()
     console.log(`
   Stage            ${firm.graph}/stage
   Reviewer screen  ${firm.graph}/review        sign in with the token: demo
