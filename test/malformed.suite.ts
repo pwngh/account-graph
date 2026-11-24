@@ -30,7 +30,7 @@ const POST: Record<string, object> = {
   '/foresee': { action: 'join', a: 'a', b: 'b' },
   '/rebuild': { by: 'me', reason: 'r' }, '/prune': { before: 1, by: 'me', reason: 'r' },
   '/convert': { transactionId: 't1', subject: 'account:1', at: T0, stage: 's', value: 1, currency: 'USD', tags: { office: 'north' } },
-  '/restate': { transactionId: 't1', value: 1, currency: 'USD' },
+  '/restate': { transactionId: 't1', value: 1, currency: 'USD', kind: 'refund' },
   '/link': { url: 'https://e.example/', subject: 'account:1', days: 1 }, '/staff-link': { url: 'https://e.example/', days: 1 },
   '/call': { id: 'C1', from: '+15551230001', to: '+15551230002', at: T0, duration: 60, direction: 'inbound', answered: true, waited: 1, tags: { language: 'es' } },
   '/call/result': { id: 'C1', answered: true, voicemail: false, waited: 1 },

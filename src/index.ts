@@ -62,6 +62,7 @@ export type {
   Labels,
   Level,
   Link,
+  Loss,
   Moved,
   NotLead,
   Observation,

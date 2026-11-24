@@ -382,7 +382,14 @@ export function createMemoryStore(): Store {
       return new Map(
         given.flatMap(({ transactionId, subject }) => {
           const [first, ...rest] = values.get(subject)?.get(transactionId) ?? []
-          return first ? [[transactionId, { ...first, most: rest.reduce((most, each) => Math.max(most, each.value), first.value) }]] : []
+          if (!first) return []
+          const lost = { refund: 0, write_off: 0 }
+          let before = first
+          for (const each of rest) {
+            if (each.kind && each.currency === rest.at(-1)!.currency) lost[each.kind] += before.value - each.value
+            before = each
+          }
+          return [[transactionId, { ...first, most: rest.reduce((most, each) => Math.max(most, each.value), first.value), refunded: lost.refund, writtenOff: lost.write_off }]]
         }),
       )
     },

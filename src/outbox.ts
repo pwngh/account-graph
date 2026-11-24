@@ -1,5 +1,5 @@
 import type { Graph } from './graph.ts'
-import type { Attribution, AttributedTouch, Consent, Outcome, Subject } from './types.ts'
+import type { Attribution, AttributedTouch, Consent, Loss, Outcome, Subject } from './types.ts'
 
 export type { Outcome }
 
@@ -138,7 +138,7 @@ export interface Outbox {
    * Changes the value of an outcome, for a refund or a corrected amount, and
    * sends it again to every platform that can restate. Others keep what they have.
    */
-  restate(transactionId: string, value: number, currency?: string): Promise<Job[]>
+  restate(transactionId: string, value: number, currency?: string, kind?: Loss): Promise<Job[]>
   /**
    * Keeps an outcome's jobs without sending them or counting the outcome,
    * until `release` with the same id. The keys are hashed now, so what they
@@ -368,8 +368,8 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
       })))
     },
 
-    async restate(transactionId, value, currency) {
-      await graph.restate(transactionId, value, currency)
+    async restate(transactionId, value, currency, kind) {
+      await graph.restate(transactionId, value, currency, kind)
       const changed: Job[] = []
       for (const job of await store.get(transactionId)) {
         if (!targets.get(job.target)?.restates) continue

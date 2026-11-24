@@ -308,13 +308,30 @@ curl -X POST https://graph.example.org/restate -H "authorization: Bearer $GRAPH_
   -d '{"transactionId":"client-42","value":420.50}'
 ```
 
+`value` is what the outcome is worth after the change. Where money went back, or will not come, say so with `kind`, and the report counts it apart:
+
+| `kind` | Says |
+| --- | --- |
+| `refund` | Some of it was given back |
+| `write_off` | Some of it will not be paid |
+| left out | What was known has been corrected |
+
+```sh
+curl -X POST https://graph.example.org/restate -H "authorization: Bearer $GRAPH_TOKEN" \
+  -d '{"transactionId":"client-42","value":300,"kind":"refund"}'
+```
+
+The difference from the value before is what was refunded or written off. One said by mistake is taken back with the same `kind` and the higher value, up to what was said. Anything else that would raise the value with a `kind` answers 400, and so does another currency. Sending the same value again changes nothing, so a `kind` cannot be added to a change already made without one.
+
 Every value an outcome has had is kept, and `GET /outcome?id=client-42` lists them. The report shows these for each campaign (`worth`) and for each month outcomes were first recorded in (`months`):
 
 | Figure | Says |
 | --- | --- |
 | `first` | What the outcomes were worth when first recorded |
 | `firstUnknown` | How many were recorded before values were kept. They are not in `first` |
-| `now` | What all of them are worth now |
+| `now` | What all of them are worth now, net of the two below |
+| `refunded` | How much was given back, where a change said so |
+| `writtenOff` | How much will not be paid, where a change said so |
 | `zeroed` | How many were worth something once and are now worth nothing |
 
 Restating also tells the platforms that can be told.

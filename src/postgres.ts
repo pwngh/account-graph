@@ -404,23 +404,28 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       return rows[0] && toCounted(rows[0])
     },
 
-    async addValue(transactionId, subject, { value, currency, at }) {
-      await db.query(`insert into ${t('outcome_value')} (transaction_id, subject, value, currency, at) values ($1, $2, $3, $4, $5)`, [transactionId, subject, value, currency, at])
+    async addValue(transactionId, subject, { value, currency, at, kind }) {
+      await db.query(`insert into ${t('outcome_value')} (transaction_id, subject, value, currency, at, kind) values ($1, $2, $3, $4, $5, $6)`, [transactionId, subject, value, currency, at, kind ?? null])
     },
 
     async valuesOf(transactionId, subject) {
-      const { rows } = await db.query(`select value, currency, at from ${t('outcome_value')} where transaction_id = $1 and subject = $2 order by id`, [transactionId, subject])
+      const { rows } = await db.query(`select value, currency, at, kind from ${t('outcome_value')} where transaction_id = $1 and subject = $2 order by id`, [transactionId, subject])
       return rows.map(toValue)
     },
 
     async firstValues(given) {
       if (given.length === 0) return new Map()
       const { rows } = await db.query(
-        `select distinct on (v.transaction_id) v.*, max(v.value) over (partition by v.transaction_id) as most
-         from unnest($1::text[], $2::text[]) as o (id, subject) join ${t('outcome_value')} v on v.transaction_id = o.id and v.subject = o.subject order by v.transaction_id, v.id`,
+        `with theirs as (
+           select v.*, lag(v.value) over (partition by v.transaction_id order by v.id) - v.value as lost,
+             v.currency = first_value(v.currency) over (partition by v.transaction_id order by v.id desc) as same
+           from unnest($1::text[], $2::text[]) as o (id, subject) join ${t('outcome_value')} v on v.transaction_id = o.id and v.subject = o.subject)
+         select distinct on (transaction_id) *, max(value) over mine as most, coalesce(sum(lost) filter (where same and kind = 'refund') over mine, 0) as refunded,
+           coalesce(sum(lost) filter (where same and kind = 'write_off') over mine, 0) as written_off
+         from theirs window mine as (partition by transaction_id) order by transaction_id, id`,
         [given.map((each) => each.transactionId), given.map((each) => each.subject)],
       )
-      return new Map(rows.map((row) => [row.transaction_id as string, { ...toValue(row), most: row.most as number }]))
+      return new Map(rows.map((row) => [row.transaction_id as string, { ...toValue(row), most: row.most as number, refunded: row.refunded as number, writtenOff: row.written_off as number }]))
     },
 
     async removeOutcome(transactionId) {
@@ -852,7 +857,7 @@ function toCounted(row: any): Counted {
 }
 
 function toValue(row: any): OutcomeValue {
-  return { value: row.value, currency: row.currency, at: Number(row.at) }
+  return { value: row.value, currency: row.currency, at: Number(row.at), ...(row.kind && { kind: row.kind }) }
 }
 
 function toResult(row: any): CallResult {
@@ -1151,6 +1156,11 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
       id: 18,
       name: 'what was no lead',
       sql: `create table if not exists ${schema}.not_lead (id text primary key, kind text not null, at bigint not null);`,
+    },
+    {
+      id: 19,
+      name: 'why values changed',
+      sql: `alter table ${schema}.outcome_value add column if not exists kind text;`,
     },
   ]
 }

@@ -118,7 +118,7 @@ The four `POST` routes answer with the subjects whose cluster moved. With the se
 | `GET /attribute?subject=&at=` | The touches that led to a conversion by this subject, and the one credited. |
 | `POST /transfer` | `{ id, from, to, amount, at, asset? }`. Records value moving, and answers with the identity tie between the two and whether it was a `duplicate`. Sent again with the same details it adds nothing; the same `id` with other details is refused with 400. |
 | `POST /convert` | An outcome: `{ transactionId, subject, at, stage?, value?, currency?, action?, email?, phone?, tags? }`. Counted for the report; with `action`, also sent to the ad platforms. A `stage` listed in `STAGES` supplies the value, currency and action it leaves out. |
-| `POST /restate` | `{ transactionId, value, currency? }`. Changes an outcome's value, in the report and on the platforms that can restate. Earlier values are kept. |
+| `POST /restate` | `{ transactionId, value, currency?, kind? }`. Changes an outcome's value, in the report and on the platforms that can restate. Earlier values are kept. `kind` is `refund` or `write_off`: the report [counts those apart](report.md#what-an-outcome-turned-out-to-be-worth). |
 | `POST /link` | `{ url, subject, days? }`. Answers `{ url }`: the address with a token naming the person it is for. See [links](links.md). |
 | `POST /staff-link` | `{ url, days? }`. Answers `{ url }`: the address that marks the browser that opens it as staff. |
 | `POST /call` | A phone call: `{ id, from?, to, at, duration?, direction?, answered?, voicemail?, waited?, tags? }`. With `direction: "outbound"` it is a call you placed, and `from` is yours. Answers `{ subject, flags, counted, state, visitor?, duplicate }`. See [calls](calls.md). |

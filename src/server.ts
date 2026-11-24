@@ -946,8 +946,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return { followUp: (await recordReturn(graph, await json(request), calling())) ?? null }
       case 'POST /restate': {
         const body = await json(request)
-        if (options.outbox) return options.outbox.restate(body.transactionId, body.value, body.currency)
-        await graph.restate(body.transactionId, body.value, body.currency)
+        if (options.outbox) return options.outbox.restate(body.transactionId, body.value, body.currency, body.kind)
+        await graph.restate(body.transactionId, body.value, body.currency, body.kind)
         return []
       }
       case 'POST /costs': {
