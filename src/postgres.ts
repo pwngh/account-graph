@@ -604,15 +604,17 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
     async jobStarted(run, name, at, forgotten) {
       await pool.query(
         `with gone as (delete from ${t('job_run')} where name = $2 and started_at < $4), begun as (insert into ${t('job_run')} (id, name, started_at) values ($1, $2, $3))
-         insert into ${t('job')} (name, started_at) values ($2, $3) on conflict (name) do update set started_at = excluded.started_at`,
+         insert into ${t('job')} (name, started_at, run) values ($2, $3, $1) on conflict (name) do update set started_at = excluded.started_at, run = excluded.run, outcome = null`,
         [run, name, at, forgotten],
       )
     },
     async jobEnded(run, name, at, error) {
       await pool.query(
         `with ended as (delete from ${t('job_run')} where id = $1)
-         insert into ${t('job')} as j (name, started_at, succeeded_at, failed_at, error) values ($2, $3, case when $4::text is null then $3::bigint end, case when $4::text is not null then $3::bigint end, $4)
-         on conflict (name) do update set succeeded_at = coalesce(excluded.succeeded_at, j.succeeded_at), failed_at = coalesce(excluded.failed_at, j.failed_at), error = coalesce(excluded.error, j.error)`,
+         insert into ${t('job')} as j (name, started_at, run, succeeded_at, failed_at, error, outcome)
+           values ($2, $3, $1, case when $4::text is null then $3::bigint end, case when $4::text is not null then $3::bigint end, $4, case when $4::text is null then 'done' else 'failed' end)
+         on conflict (name) do update set succeeded_at = coalesce(excluded.succeeded_at, j.succeeded_at), failed_at = coalesce(excluded.failed_at, j.failed_at), error = coalesce(excluded.error, j.error),
+           outcome = case when j.run = $1 then excluded.outcome else j.outcome end`,
         [run, name, at, error ?? null],
       )
     },
@@ -624,6 +626,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
         ...(row.succeeded_at !== null && { succeeded: Number(row.succeeded_at) }),
         ...(row.failed_at !== null && { failed: Number(row.failed_at) }),
         ...(row.error !== null && { error: row.error }),
+        ...(row.outcome !== null && { outcome: row.outcome }),
         open: row.open.map(Number),
       }))
     },
@@ -641,7 +644,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
     async claimAlert(now, before) {
       const { rows } = await pool.query(
         `update ${t('alert')} set tried_at = $1::bigint where key = (
-           select key from ${t('alert')} where delivered_at is null and tried_at <= $2::bigint order by at limit 1 for update skip locked
+           select key from ${t('alert')} where delivered_at is null and tried_at <= $2::bigint order by tried_at, at limit 1 for update skip locked
          ) returning *`,
         [now, before],
       )
@@ -898,7 +901,9 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
               started_at bigint not null,
               succeeded_at bigint,
               failed_at bigint,
-              error text
+              error text,
+              run text,
+              outcome text
             );
             create table if not exists ${schema}.job_run (id text primary key, name text not null, started_at bigint not null);
             create index if not exists job_run_name on ${schema}.job_run (name);

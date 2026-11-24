@@ -17,6 +17,8 @@ export interface JobRun {
   failed?: number
   /** Why it failed, the last time it did. */
   error?: string
+  /** How the run that began last ended, whatever an older one did since. Absent while it has not. */
+  outcome?: 'done' | 'failed'
   /** When each run that has begun and not ended began, newest first. */
   open: number[]
 }
@@ -54,7 +56,7 @@ export interface OpsStore {
   addAlert(alert: KeptAlert): Promise<boolean>
   /** Keeps an alert as not delivered. One with its key that is still waiting stays as it is; one that was delivered waits again. */
   keepAlert(alert: KeptAlert): Promise<void>
-  /** Hands out the oldest undelivered alert not tried since `before`, and notes that it is tried now, so no two servers deliver one. */
+  /** Hands out the undelivered alert tried longest ago, if not since `before`, and notes that it is tried now, so no two servers deliver one. */
   claimAlert(now: number, before: number): Promise<KeptAlert | undefined>
   alertDelivered(key: string, at: number): Promise<void>
   alertFailed(key: string, error: string): Promise<void>
@@ -223,8 +225,10 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
 
       // One at a time, so a slow webhook never has two servers working through the same list. A webhook that
       // refuses one will refuse the rest, so the first that does not arrive ends the pass.
-      const before = now() - 60_000
-      for (let n = 0; n < 50; n++) {
+      const begun = now()
+      const before = begun - 60_000
+      // Well inside the time to the next look, so it never waits on a slow webhook.
+      while (now() - begun < 120_000) {
         const alert = await store.claimAlert(now(), before)
         if (!alert || !(await post(alert))) break
       }
@@ -240,9 +244,7 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
           return { name, last: last ?? null, hours, quiet: hours > 0 && at - (last ?? watched ?? at) >= hours * HOUR }
         }),
         jobs: (await store.jobs()).map((job) => {
-          // How the run that began last stands, whatever an older one did since.
-          const [newest] = job.open
-          const state = newest !== undefined && newest >= job.started ? (at - newest >= STUCK ? 'stuck' : 'running') : (job.failed ?? 0) > (job.succeeded ?? 0) ? 'failed' : 'done'
+          const state = job.outcome ?? (at - job.started >= STUCK ? 'stuck' : 'running')
           return { ...job, open: job.open.filter((began) => at - began >= STUCK), state } as const
         }),
         undelivered: await store.undelivered(),
@@ -265,7 +267,7 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
 /** Where a memory store keeps what runs by itself. `fed` is how its writes say what they fed, and `forget` how it loses a subject. */
 export function createMemoryOps(): OpsStore & { fed(feed: Feed, at: number): void; forget(subject: string): void } {
   const feeds = new Map<Feed, FeedNote>()
-  const jobs = new Map<string, Omit<JobRun, 'open'>>()
+  const jobs = new Map<string, Omit<JobRun, 'open'> & { run?: string }>()
   const runs = new Map<string, { name: string; at: number }>()
   const alerts = new Map<string, KeptAlert & { delivered?: number; tried: number }>()
   const open = () => [...alerts.values()].filter((alert) => alert.delivered === undefined).sort((x, y) => x.at - y.at)
@@ -284,16 +286,17 @@ export function createMemoryOps(): OpsStore & { fed(feed: Feed, at: number): voi
     async jobStarted(run, name, at, forgotten) {
       for (const [id, each] of runs) if (each.name === name && each.at < forgotten) runs.delete(id)
       runs.set(run, { name, at })
-      jobs.set(name, { ...jobs.get(name), name, started: at })
+      const { outcome: _, ...job } = jobs.get(name) ?? {}
+      jobs.set(name, { ...job, name, started: at, run })
     },
     async jobEnded(run, name, at, error) {
       runs.delete(run)
-      const job = jobs.get(name) ?? { name, started: at }
-      jobs.set(name, error === undefined ? { ...job, succeeded: at } : { ...job, failed: at, error })
+      const job = jobs.get(name) ?? { name, started: at, run }
+      jobs.set(name, { ...job, ...(error === undefined ? { succeeded: at } : { failed: at, error }), ...(job.run === run && { outcome: error === undefined ? ('done' as const) : ('failed' as const) }) })
     },
     async jobs() {
       const began = (name: string) => [...runs.values()].filter((run) => run.name === name).map((run) => run.at).sort((x, y) => y - x)
-      return [...jobs.values()].sort((x, y) => (x.name < y.name ? -1 : 1)).map((job) => ({ ...job, open: began(job.name) }))
+      return [...jobs.values()].sort((x, y) => (x.name < y.name ? -1 : 1)).map(({ run: _, ...job }) => ({ ...job, open: began(job.name) }))
     },
     async addAlert(alert) {
       if (alerts.has(alert.key)) return false
@@ -306,7 +309,7 @@ export function createMemoryOps(): OpsStore & { fed(feed: Feed, at: number): voi
       alerts.set(alert.key, { ...alert, tried: alert.at })
     },
     async claimAlert(now, before) {
-      const due = open().find((alert) => alert.tried <= before)
+      const [due] = open().filter((alert) => alert.tried <= before).sort((x, y) => x.tried - y.tried)
       if (due) due.tried = now
       return due && bare(due)
     },

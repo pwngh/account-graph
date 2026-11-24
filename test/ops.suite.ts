@@ -20,9 +20,9 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       opened.push(next)
       const clock = { now: T0 }
       const posted: string[] = []
-      const hook = { status: 200 }
+      const hook = { status: 200, refuse: '' }
       const fetcher = (async (_url: string, init: { body: string }) => {
-        if (hook.status !== 200) return new Response('no', { status: hook.status })
+        if (hook.status !== 200 || (hook.refuse && JSON.parse(init.body).text === hook.refuse)) return new Response('no', { status: hook.status === 200 ? 400 : hook.status })
         posted.push(JSON.parse(init.body).text)
         return new Response('ok')
       }) as unknown as typeof fetch
@@ -172,6 +172,21 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       clock.now += 60_000
       await ops.check()
       assert.deepEqual((await ops.state()).undelivered, [])
+      // One the webhook will never take does not keep the others from their turn.
+      hook.refuse = 'poison'
+      await ops.alert('a', 'poison')
+      hook.status = 500
+      await ops.alert('b', 'ordinary')
+      hook.status = 200
+      for (let pass = 0; pass < 3; pass++) {
+        clock.now += 60_000
+        await ops.check()
+      }
+      assert.deepEqual((await ops.state()).undelivered.map((alert) => alert.text), ['poison'])
+      hook.refuse = ''
+      clock.now += 60_000
+      await ops.check()
+      assert.deepEqual((await ops.state()).undelivered, [])
       // The same kind is held back for ten minutes.
       assert.equal(await ops.alert('costs:google', 'again'), false)
 
@@ -208,7 +223,7 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       await new Promise((resolve) => setTimeout(resolve, 20))
       const read = async () => Object.fromEntries((await ops.state()).jobs.map((job) => [job.name, job]))
       let jobs = await read()
-      assert.deepEqual(jobs.costs, { name: 'costs', started: T0 + 1000, succeeded: T0, failed: T0 + 1000, error: 'refused with 401', open: [], state: 'failed' })
+      assert.deepEqual(jobs.costs, { name: 'costs', started: T0 + 1000, succeeded: T0, failed: T0 + 1000, error: 'refused with 401', outcome: 'failed', open: [], state: 'failed' })
       assert.equal(jobs.outbox!.state, 'running')
       // Restarted a minute later and run again: the run that never finished stays on record as its own.
       clock.now += 60_000
@@ -229,6 +244,16 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       assert.deepEqual([jobs.outbox!.state, jobs.outbox!.open], ['stuck', [began]])
       finishNewer()
       await newer
+      // The newer run succeeds, then an older one fails: the state is still the newer one's, and the failure is on record.
+      let failOlder!: (error: Error) => void
+      const older = ops.run('outbox', () => new Promise<void>((_, reject) => (failOlder = reject)))
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      clock.now += 1
+      await make().run('outbox', async () => undefined)
+      clock.now += 1
+      failOlder(new Error('late'))
+      await assert.rejects(older, /late/)
+      assert.deepEqual([(await read()).outbox!.state, (await read()).outbox!.failed, (await read()).outbox!.error], ['done', clock.now, 'late'])
       assert.deepEqual([(await read()).outbox!.state, (await read()).outbox!.open], ['done', []])
       // None of it counts as a write, so no screen reloads because a job ran.
       assert.equal(await graph.version(), version)
