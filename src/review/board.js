@@ -12,7 +12,7 @@ function person(row, column, at) {
   return el('li', {},
     el('div', { class: 'top' }, reviewDisplay.subject(row.subject, `#/journey/${encodeURIComponent(row.subject)}`),
       el('span', { class: row.late ? 'board-age apart' : 'board-age muted' }, el('time', { datetime: new Date(row.at).toISOString(), title: `${when(row.at)}${row.late ? ', overdue' : ''}` }, brief(at - row.at)), row.late ? el('span', { class: 'sr-only' }, ', overdue') : '')),
-    el('div', { class: 'board-meta reason' }, arrival, row.language ? ` · ${row.language}` : '', worth ? ' · ' : '', worth),
+    el('div', { class: 'board-meta reason' }, el('span', { title: `${arrival}${row.language ? ` · ${row.language}` : ''}` }, arrival, row.language ? ` · ${row.language}` : ''), worth),
     el('div', { class: 'board-chips' },
       column.step === null && row.step ? reviewDisplay.chip(row.step, 'muted') : '',
       reviewDisplay.chip(call ? `${call.direction === 'outbound' ? 'Outbound' : 'Inbound'} · ${REACHED[call.state]}` : 'No calls',

@@ -63,7 +63,7 @@ function profileOf(profile, more) {
   const verdicts = new Map(profile.verdicts.map((verdict) => [`${verdict.a}\n${verdict.b}`, verdict]))
   const verdict = (other) => verdicts.get(profile.subject < other ? `${profile.subject}\n${other}` : `${other}\n${profile.subject}`)
   const contested = (other) => (verdict(other)?.reversals >= 3 ? el('span', { class: 'chip apart', title: `Systems have reversed this decision ${verdict(other).reversals} times` }, 'Conflict') : '')
-  const links = el('table', {}, el('tr', {}, th('ID'), th('Status'), ...edge([th(term('Score', 'score'), 'num'), th(term('Evidence', 'evidence'))]), ...edge([th('Action')])))
+  const links = el('table', { class: 'links' }, el('tr', {}, th('ID'), th('Status'), ...edge([th(term('Score', 'score'), 'num'), th(term('Evidence', 'evidence'))]), ...edge([th('Action')])))
   const kinds = { same: [], strong: [], related: [], apart: [] }
   for (const link of profile.links) {
     const inCluster = members.has(link.subject)
@@ -176,8 +176,8 @@ async function decisionList(audit) {
     if (d.action === 'ignore' || d.action === 'restore') seen.add(d.about[0])
     const about = d.action === 'prune' ? [reviewDisplay.time(Number(d.about[0]))] : d.about.map((id) => reviewDisplay.id(id, true))
     return el('li', {}, el('b', {}, ACTIONS[d.action] ?? d.action),
-      about.length ? el('span', { class: 'reason' }, ...about.flatMap((each, i) => i ? [' · ', each] : [each])) : '',
-      el('div', { class: 'meta decision-by' }, author(d.by), ' · ', reviewDisplay.time(d.at, Date.now()), d.reason ? `: ${d.reason}` : ''),
+      about.length ? el('span', { class: 'reason', title: d.about.join(' · ') }, ...about.flatMap((each, i) => i ? [' · ', each] : [each])) : '',
+      el('div', { class: 'meta decision-by', title: d.reason ?? '' }, author(d.by), ' · ', reviewDisplay.time(d.at, Date.now()), d.reason ? `: ${d.reason}` : ''),
       d.action === 'ignore' && newest ? el('button', { class: 'link', 'data-key': `decision-${d.seq}`, on: { click: () => act('Restore identifier', d.about[0], '/ignore', { identifier: d.about[0], ignored: false }, 'Restore', { undo: true }) } }, 'Undo') : '')
   }
   const list = el('ul', { id: 'decisions' }, ...(page.decisions.length > 0 ? page.decisions.map(entry) : [el('li', { class: 'muted' }, listing.author ? 'None' : 'None')]))

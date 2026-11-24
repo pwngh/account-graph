@@ -57,7 +57,8 @@ function why(entry, ties, subject) {
   if (tie.how === 'self') return [caller(entry.subject)]
   const steps = tie.via.filter((each) => each !== subject)
   const chain = steps.length > 0 ? ` via ${steps.map(reviewDisplay.idText).join(' → ')}` : ''
-  return [caller(entry.subject), el('span', { class: 'reason' }, `${tie.how === 'cluster' ? 'Same person' : 'High confidence'}${tie.score === null ? '' : ` · ${percent(tie.score)}`}${tie.kinds.length > 0 ? ` · ${tie.kinds.join(', ')}` : ''}${chain}`)]
+  const words = `${tie.how === 'cluster' ? 'Same person' : 'High confidence'}${tie.score === null ? '' : ` · ${percent(tie.score)}`}${tie.kinds.length > 0 ? ` · ${tie.kinds.join(', ')}` : ''}${chain}`
+  return [caller(entry.subject), el('span', { class: 'reason', title: words }, words)]
 }
 
 const dayOf = (at) => (at > 0 ? new Date(at).toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }) : 'No date')
