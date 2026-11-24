@@ -117,7 +117,7 @@ export interface MetaCostOptions {
 /** What Meta lists under one action. An action that did not happen, or has no value, is not listed. */
 const counted = (list: any, action: string): number | undefined => {
   const found = (Array.isArray(list) ? list : []).find((each) => each?.action_type === action)?.value
-  return found === undefined ? undefined : Number(found)
+  return found === undefined || found === null ? undefined : Number(found)
 }
 
 /** Daily spend per campaign from Meta's Insights API. */

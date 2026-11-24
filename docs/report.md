@@ -363,7 +363,7 @@ curl -X POST https://graph.example.org/costs -H "authorization: Bearer $GRAPH_TO
   -d '[{"day":"2026-11-14","source":"microsoft","campaignId":"55","amount":300,"currency":"USD","conversions":7.5,"conversionValue":900}]'
 ```
 
-In a CSV the columns are `conversions` and `conversionValue`. For Google Ads and Meta the server reads them with the costs, when asked to:
+A `conversionValue` needs `conversions` beside it. In a CSV the columns are called the same. For Google Ads and Meta the server reads them with the costs, when asked to:
 
 | Setting | Reads |
 | --- | --- |
