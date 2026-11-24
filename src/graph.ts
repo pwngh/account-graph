@@ -166,6 +166,8 @@ export interface Graph {
   policy(): Promise<PolicyState>
   /** Compares stored clusters with a full recompute. Empty when they agree. */
   verify(): Promise<Change[]>
+  /** `verify` and `policy` together, both as of one moment. */
+  check(): Promise<{ changes: Change[]; policy: PolicyState }>
 }
 
 export interface PolicyState {
@@ -374,6 +376,20 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     return settle(tx, affected)
   }
 
+  async function policyState(tx: Tx): Promise<PolicyState> {
+    const builtWith = await tx.builtWith()
+    return { hash, builtWith, due: builtWith !== hash && !(await tx.empty()), rules: plainPolicy(policy) }
+  }
+
+  /** The subjects whose stored labels are not what a full recompute gives. */
+  async function differences(tx: Tx): Promise<Change[]> {
+    const stored = await tx.allLabels()
+    const next = await recompute(tx)
+    const wrong = (subject: Subject) =>
+      stored.get(subject)?.component !== next.get(subject)?.component || stored.get(subject)?.cluster !== next.get(subject)?.cluster
+    return diff(stored, next).filter((change) => wrong(change.subject))
+  }
+
   const graph: Graph = {
     async observe(input) {
       const observations = Array.isArray(input) ? (input as readonly Observation[]) : [input as Observation]
@@ -493,9 +509,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         // Asked for what already holds, nothing is decided: a server that mutes an address again after a restart adds no entry.
         if ((before?.ignored ?? false) === ignored) return []
         await decide(tx, ignored ? 'ignore' : 'restore', [identifier], why)
-        await mark(tx)
         await tx.setIgnored(identifier, ignored)
         if (!before || before.fanout > cap) return []
+        await mark(tx)
         return settle(tx, new Set((await tx.edgesOn([identifier])).map((edge) => edge.subject)))
       })
     },
@@ -718,20 +734,15 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     policy() {
-      return store.read(async (tx) => {
-        const builtWith = await tx.builtWith()
-        return { hash, builtWith, due: builtWith !== hash && !(await tx.empty()), rules: plainPolicy(policy) }
-      })
+      return store.read(policyState)
     },
 
     verify() {
-      return store.read(async (tx) => {
-        const stored = await tx.allLabels()
-        const next = await recompute(tx)
-        const wrong = (subject: Subject) =>
-          stored.get(subject)?.component !== next.get(subject)?.component || stored.get(subject)?.cluster !== next.get(subject)?.cluster
-        return diff(stored, next).filter((change) => wrong(change.subject))
-      })
+      return store.read(differences)
+    },
+
+    check() {
+      return store.read(async (tx) => ({ changes: await differences(tx), policy: await policyState(tx) }))
     },
   }
   return graph

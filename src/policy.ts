@@ -105,7 +105,7 @@ export function policyProblems(given: unknown): string[] {
   else {
     for (const [kind, rule] of Object.entries(given.kinds ?? {})) {
       const base = Object.hasOwn(defaultPolicy.kinds, kind)
-      if (!base && !/^[^:\s]+$/.test(kind)) wrong.push(`kind "${kind}" must be a name without spaces or colons`)
+      if (!base && (!kind || kind.includes(':'))) wrong.push(`kind "${kind}" must be a name without a colon`)
       if (!plain(rule)) {
         wrong.push(`kind "${kind}" must be an object, such as {"weight":0.85}`)
         continue
@@ -129,12 +129,12 @@ export function policyProblems(given: unknown): string[] {
 
 /** The default policy with what a setting names laid over it, kind by kind. Check the setting with `policyProblems` first. */
 export function policyFrom(given: any): Policy {
-  const kinds: Record<string, Rule> = { ...defaultPolicy.kinds }
+  const kinds = new Map(Object.entries(defaultPolicy.kinds))
   for (const [kind, { halfLife, ...rule }] of Object.entries<any>(given.kinds ?? {})) {
-    kinds[kind] = { ...kinds[kind], ...rule, ...(halfLife !== undefined && { halfLife: halfLife === 'none' ? Infinity : halfLife }) }
+    kinds.set(kind, { ...kinds.get(kind), ...rule, ...(halfLife !== undefined && { halfLife: halfLife === 'none' ? Infinity : halfLife }) })
   }
   const levels = Object.fromEntries([...LEVELS, 'review'].filter((name) => given[name] !== undefined).map((name) => [name, given[name]]))
-  return { ...defaultPolicy, ...levels, kinds }
+  return { ...defaultPolicy, ...levels, kinds: Object.fromEntries(kinds) }
 }
 
 /** A policy as plain JSON: kinds in name order, and a half-life that never ends written `none`. */
@@ -162,7 +162,9 @@ export function ruleFor(policy: Policy, identifier: Identifier): Rule {
   if (colon <= 0 || colon === identifier.length - 1) {
     throw new TypeError(`Identifier "${identifier}" must be written "kind:value"`)
   }
-  const rule = policy.kinds[identifier.slice(0, colon)]
+  const kind = identifier.slice(0, colon)
+  // Own rules only: every object has things like a constructor, and none of them is a rule.
+  const rule = Object.hasOwn(policy.kinds, kind) ? policy.kinds[kind] : undefined
   if (!rule) throw new TypeError(`Identifier "${identifier}" has a kind the policy does not name`)
   return rule
 }

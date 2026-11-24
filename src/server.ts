@@ -2,7 +2,7 @@ import { randomUUID, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dialed, numberOrSelf, recordCall } from './calls.ts'
 import type { CallOptions } from './calls.ts'
-import type { Graph } from './graph.ts'
+import type { Graph, PolicyState } from './graph.ts'
 import { email, hashPhone, identifier, ip, normalizePhone, phoneOfType } from './identifiers.ts'
 import { trusted } from './integrations/fingerprint.ts'
 import type { FingerprintVerifier } from './integrations/fingerprint.ts'
@@ -430,13 +430,10 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     const { hash, rules } = await graph.policy()
     return `${hash.slice(0, 12)}-${rules.review}`
   }
-  let running: Promise<string> | undefined
+  let running: string | undefined
 
   /** Which policy runs, which one the stored clusters were built with, and whether a rebuild is due. */
-  const policyDue = async () => {
-    const { hash, builtWith, due } = await graph.policy()
-    return { hash, builtWith: builtWith ?? null, due }
-  }
+  const brief = ({ hash, builtWith, due }: PolicyState) => ({ hash, builtWith: builtWith ?? null, due })
 
   /** Everything the reviewer screen shows about one subject, in one answer. */
   async function profile(subject: Subject) {
@@ -564,7 +561,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       case 'GET /pulse': {
         // One small row: a screen asks this often, and reads the rest only when the answer differs.
         const version = await graph.version()
-        const tag = `"${version}-${(await (running ??= runningPolicy()))}"`
+        const tag = `"${version}-${(running ??= await runningPolicy())}"`
         response.setHeader('etag', tag)
         if (request.headers['if-none-match'] === tag) {
           response.writeHead(304).end()
@@ -609,12 +606,11 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return graph.rebuild(why(sent.trim() ? JSON.parse(sent) : {}))
       }
       case 'GET /verify': {
-        // The policy first: a rebuild that lands in between then reads as due with nothing to change, and never the other way round.
-        const policy = await policyDue()
-        return { changes: await graph.verify(), policy }
+        const { changes, policy } = await graph.check()
+        return { changes, policy: brief(policy) }
       }
       case 'GET /stats':
-        return { ...tally, policy: await policyDue(), graph: await graph.counts(), ...(options.outbox && { outbox: await options.outbox.counts() }) }
+        return { ...tally, policy: brief(await graph.policy()), graph: await graph.counts(), ...(options.outbox && { outbox: await options.outbox.counts() }) }
       case 'POST /prune': {
         const body = await json(request)
         return { pruned: await graph.prune(body.before, why(body)) }

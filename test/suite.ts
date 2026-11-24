@@ -749,6 +749,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
 
     test('an identifier of an unknown kind is refused and nothing is written', async () => {
       const { graph } = await fresh()
+      await assert.rejects(graph.observe({ subject: 'a', identifiers: ['constructor:x'], at: T0 }), TypeError)
       await assert.rejects(graph.observe({ subject: 'account:1', identifiers: ['email:a', 'shoe:9'], at: T0 }), TypeError)
       assert.equal(await graph.cluster('account:1'), undefined)
     })

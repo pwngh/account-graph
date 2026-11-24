@@ -202,6 +202,11 @@ test('a policy setting is laid over the default kind by kind, and everything wro
   assert.deepEqual(policy.kinds.badge, { weight: 0.8, dilution: 1, cap: 4, halfLife: Infinity })
   assert.deepEqual([policy.same, policy.related, policy.kinds.email], [defaultPolicy.same, 0.4, defaultPolicy.kinds.email])
 
+  // A kind may share its name with something every object has, and nothing but a rule of its own counts as one.
+  const odd = policyFrom(JSON.parse('{"kinds":{"__proto__":{"weight":0.8,"dilution":0,"cap":4,"halfLife":"none"}}}'))
+  assert.equal(Object.hasOwn(odd.kinds, '__proto__'), true)
+  assert.notEqual(policyHash(odd), policyHash(defaultPolicy))
+
   // The hash names what scores and clusters, whatever order it was written in. The review size only flags, so it is not part of it.
   const backwards = { kinds: Object.fromEntries(Object.entries(given.kinds).reverse()), related: 0.4 }
   assert.equal(policyHash(policyFrom(backwards)), policyHash(policy))
@@ -216,7 +221,7 @@ test('a policy setting is laid over the default kind by kind, and everything wro
     '"same" must be a number from 0 to 1',
     '"review" must be a whole number above 0',
     'kind "phone" needs a weight from 0 to 1',
-    'kind "Bad:kind" must be a name without spaces or colons',
+    'kind "Bad:kind" must be a name without a colon',
     'kind "Bad:kind" must be an object, such as {"weight":0.85}',
     'kind "badge" is new, so it needs its dilution',
     'kind "badge" is new, so it needs its cap',
