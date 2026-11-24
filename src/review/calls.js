@@ -138,7 +138,7 @@ view('calls', 'Calls', async (box, first, last) => {
   if (total.calls > 0) top.append(tiles(
     ['Calls to you', amount(total.calls), '', '', { change: against(total.calls, then.calls, amount), bars: shape(byHour('calls'), 'Calls by the hour they began, midnight to midnight') }],
     ['Answered', percent(total.answered / total.calls), `${amount(total.answered)} ${summary.expected ? 'by a person' : 'by result or by length'}`, '', { change: against(part(total.answered, total.calls), part(then.answered, then.calls), percent, 'up', true) }],
-    ['Missed or voicemail', amount(lost), percent(lost / total.calls), '', { change: against(lost, lostThen, amount, 'down'), bars: shape(byHour('missed').map((n, hour) => n + byHour('voicemail')[hour]), 'Missed and voicemail by the hour they began, midnight to midnight') }],
+    ['Missed or voicemail', amount(lost), `${percent(lost / total.calls)}${summary.closed ? `, ${amount(summary.closed.missed + summary.closed.voicemail)} while closed` : ''}`, '', { change: against(lost, lostThen, amount, 'down'), bars: shape(byHour('missed').map((n, hour) => n + byHour('voicemail')[hour]), 'Missed and voicemail by the hour they began, midnight to midnight') }],
     lost > 0 && ['Returned', percent(total.returned / lost), `${amount(total.returned)} of ${amount(lost)}${summary.returnedWithin === null ? '' : `, half within ${lasted(summary.returnedWithin)}`}`],
     ['Waiting for a callback', `${amount(open.calls.length)}${open.next === null ? '' : ' or more'}`, open.calls[0] ? el('span', {}, 'Oldest: ', reviewDisplay.time(open.calls[0].at, open.at)) : '', open.calls.length > 0 ? 'apart' : 'same']))
   top.append(notes('Caller IDs are hashes, not phone numbers. Look up the number in your phone system by call time.',
@@ -157,8 +157,9 @@ view('calls', 'Calls', async (box, first, last) => {
     ...[['Answered', total.answered, total.calls, summary.expected ? 'A person answered.' : 'Answer by result or length.'],
       ['Missed', total.missed, total.calls, 'No answer.'], ['Voicemail', total.voicemail, total.calls, 'Reached voicemail.'],
       ['Waiting', total.waiting, total.calls, 'Result still expected.'], ['Unknown', total.unknown, total.calls, 'Answer not known.'],
-      ['Returned', total.returned, lost, `Reached by callback after a miss or voicemail.${summary.returnedWithin === null ? '' : ` Half within ${lasted(summary.returnedWithin)}.`}`],
-      ['Tried again', total.triedAgain, lost, 'Caller rang again and got through after a miss or voicemail.']].map(([name, count, whole, meaning], i) =>
+      ['Returned', total.returned, lost, `Reached after a miss or voicemail.${total.told > 0 ? ` ${amount(total.told)} of them only as your own system reported.` : ''}${summary.returnedWithin === null ? '' : ` Half within ${lasted(summary.returnedWithin)}.`}`],
+      ['Tried again', total.triedAgain, lost, 'Caller rang again and got through after a miss or voicemail.'],
+      ...(total.notLeads > 0 ? [['No lead', total.notLeads, 0, 'Spam, or otherwise nobody\'s inquiry. In no other count here.']] : [])].map(([name, count, whole, meaning], i) =>
       behind(el('tr', i === 5 ? { class: 'second' } : {}, td('', reviewDisplay.chip(name, reviewDisplay.callTone(name.toLowerCase()))), td('num', tally(count)),
         td('num share', whole > 0 ? percent(count / whole) : none()), td('muted', meaning)), whole > 0 ? count / whole : 0)))
   const results = el('section', {}, reviewDisplay.section('Call results', saved(`calls-${summary.from}-${summary.to}`, states)), wide('How calls went', states),

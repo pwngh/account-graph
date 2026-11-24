@@ -29,8 +29,8 @@ function told(entry) {
   if (entry.kind === 'call') {
     const { call, state, followUp } = entry
     const how = { answered: 'answered by a person', missed: 'missed', voicemail: 'went to voicemail', waiting: 'waiting for a result', unknown: 'not known whether anyone answered' }[state] ?? 'not known whether anyone answered'
-    const after = followUp && { open: 'not returned yet', returned: `returned after ${lasted(followUp.delay)}`, 'tried again': `rang again and got through after ${lasted(followUp.delay)}`, hidden: 'hid their number, so it cannot be returned' }[followUp.state]
-    return [call.direction === 'outbound' ? 'Outbound ' : 'Inbound ', reviewDisplay.chip(how[0].toUpperCase() + how.slice(1), reviewDisplay.callTone(state)),
+    const after = followUp && { open: 'not returned yet', returned: `returned after ${lasted(followUp.delay)}${followUp.told ? ', as your own system reported' : ''}`, 'tried again': `rang again and got through after ${lasted(followUp.delay)}`, hidden: 'hid their number, so it cannot be returned' }[followUp.state]
+    return [call.direction === 'outbound' ? 'Outbound ' : 'Inbound ', reviewDisplay.chip(how[0].toUpperCase() + how.slice(1), reviewDisplay.callTone(state)), notLead(entry.notLead),
       facts(after && `${after}${followUp.attempts > 0 ? `, tried ${amount(followUp.attempts)} ${followUp.attempts === 1 ? 'time' : 'times'}` : ''}`,
         call.duration === undefined ? 'length not recorded' : `${amount(Math.round(call.duration))} s`,
         call.result?.waited === undefined ? '' : `waited ${amount(Math.round(call.result.waited))} s`,
@@ -40,7 +40,7 @@ function told(entry) {
   if (entry.kind === 'step') {
     const { outcome, first, sent } = entry
     const began = first === null || first.at === 0 ? 'first value not recorded' : `first recorded at ${worthOf(first.value, first.currency)}`
-    return [el('b', {}, outcome.stage), `, worth ${worthOf(outcome.value, outcome.currency)} now`,
+    return [el('b', {}, outcome.stage), `, worth ${worthOf(outcome.value, outcome.currency)} now`, notLead(entry.notLead),
       first && first.at > 0 && first.value === outcome.value && first.currency === outcome.currency ? '' : el('span', { class: 'meta' }, ` · ${began}`),
       tags(outcome.tags, words),
       ...(sent.length > 0 ? sent.map((job) => more(el('span', { class: job.state === 'failed' ? 'apart' : '' }, `${SENT[job.state]} ${job.state === 'held' ? 'for ' : ''}${job.target}`), job.note ? `: ${words(job.note)}` : '')) : [more('not sent to any ad platform')])]
@@ -281,6 +281,8 @@ function chart(entries, shown, ties, subject, show) {
   new ResizeObserver(() => draw()).observe(track)
   return root
 }
+/** Said to be nobody's inquiry, so it is in no count. */
+const notLead = (kind) => (kind ? reviewDisplay.chip(kind === 'spam' ? 'Spam, not counted' : 'No lead, not counted') : '')
 /** How long a thing lasted, when that is known. */
 const spanOf = (entry) => (entry.kind === 'call' && entry.call.duration > 0 ? entry.call.duration * 1000 : 0)
 // Kinds left out of the list, kept while the screen is open.

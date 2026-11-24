@@ -4,7 +4,7 @@
  * Then open the printed address and enter the reviewer token `demo`.
  */
 import { createServer } from 'node:http'
-import { createGraph, createMemoryStore, createOps, createOutbox, dialed, hashPhone, recordCall, recordCallResult } from '../src/index.ts'
+import { createGraph, createHours, createMemoryStore, createOps, createOutbox, dialed, hashPhone, recordCall, recordCallResult, recordNotLead, recordReturn } from '../src/index.ts'
 import { createHandler } from '../src/server.ts'
 
 // What is recorded below is written down at the time it happened, so the months of first record are real ones.
@@ -121,6 +121,13 @@ for (let i = 0; i < 120; i++) {
   if (roll > 0.68 && chance() < 0.4) await recordCall(graph, { id: `back-${i}`, direction: 'outbound', from: to, to: from, at: at + Math.floor(chance() * 20 * HOUR), duration: 60, answered: chance() < 0.6 })
 }
 
+// Two missed callers reached from another line, as the office's own system says, and two calls that were nobody's inquiry.
+const unanswered: string[] = []
+for (let i = 0; i < 120; i++) if ((await graph.keptCall(`call-${i}`))?.result?.answered === false) unanswered.push(`call-${i}`)
+for (const id of unanswered.slice(0, 2)) await recordReturn(graph, { id, at: (await graph.keptCall(id))!.at + 3 * HOUR })
+await recordNotLead(graph, { call: unanswered[4]!, kind: 'spam' })
+await recordNotLead(graph, { call: unanswered[7]!, kind: 'other' })
+
 // What some callers went on to do, for what followed a call. Those rung back or answered sign up a little more often, as made up here.
 for (let i = 0; i < 110; i++) {
   const from = `+1555010${String(300 + i).padStart(4, '0')}`
@@ -189,6 +196,7 @@ const handler = createHandler(graph, {
   linkSecret: 'demo-link-secret-not-for-real-use',
   // The steps in order, with what each is worth. The Channels view lists them this way.
   returnHours: 24,
+  hours: createHours({ mon: ['08:00-18:00'], tue: ['08:00-18:00'], wed: ['08:00-18:00'], thu: ['08:00-18:00'], fri: ['08:00-17:00'], sat: ['09:00-13:00'] }),
   stages: { phone_click: {}, brochure: { value: 2, currency: 'USD' }, inquiry: { value: 5, currency: 'USD', wait: 72 }, call: { value: 10, currency: 'USD' }, signup: { value: 25, currency: 'USD' }, enrolled: { value: 200, currency: 'USD' } },
   calls: { numbers: { ...numbers, '+15551230001': { source: 'google', campaignId: '20222' } }, results: 'expected' },
 })
