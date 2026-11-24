@@ -145,7 +145,7 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       for (const [n, who] of [[2, 'contact:2'], [3, 'visitor:v3']] as const) {
         await enroll(graph, n)
         await outbox.record(outcome(n, { consent: { adUserData: true, adPersonalization: true } }))
-        await graph.consent(who, { adUserData: false, adPersonalization: false }, { at: outcome(n).at + 1 })
+        await graph.consent(who, { adUserData: false, adPersonalization: false }, { at: outcome(n).at + (n - 2) })
         assert.deepEqual([await outbox.run(), (await outbox.get(`enroll-${n}`))[0]!.note], [{ sent: 0, skipped: 1, failed: 0, retried: 0 }, 'consent_denied'])
       }
       // A refusal from before the outcome does not stand against it.

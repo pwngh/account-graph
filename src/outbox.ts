@@ -279,7 +279,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
         let consent = job.consent
         if (consent) {
           // What the outcome said was true when it happened. A refusal given since is newer, so it decides.
-          const since = (await Promise.all(subjects.map((subject) => graph.consentHistory(subject, 1)))).flat().filter((answer) => answer.at > job.at)
+          const since = (await Promise.all(subjects.map((subject) => graph.consentHistory(subject, 1)))).flat().filter((answer) => answer.at >= job.at)
           if (since.some((answer) => !answer.adUserData)) {
             await skip('consent_denied')
             continue
