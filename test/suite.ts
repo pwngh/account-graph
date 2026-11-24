@@ -65,6 +65,24 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await graph.history('account:2', 0), [])
     })
 
+    test('what one store could not keep, neither takes', async () => {
+      const { graph } = await fresh()
+      const seen = (subject: unknown, more: Record<string, unknown> = {}) => graph.observe({ subject, identifiers: ['device:d'], at: T0, ...more } as Observation)
+      // Kept in PostgreSQL, both halves would be one replacement character and these two one subject.
+      for (const subject of ['account:\ud800', 'account:\udfff', 'account:\0', ['account:1'], '']) await assert.rejects(seen(subject), TypeError)
+      for (const more of [{ identifiers: ['device:\ud800'] }, { identifiers: ['device:\0'] }, { event: '\0' }, { event: [] }, { at: T0 + 0.5 }, { at: 1e21 }, { at: NaN }]) await assert.rejects(seen('account:1', more), TypeError)
+      await assert.rejects(graph.touch({ subject: 'account:1', at: T0 + 0.5 }), TypeError)
+      await assert.rejects(graph.transfer({ from: 'account:1', to: 'account:2', amount: 1, at: T0 + 0.5 }), TypeError)
+      await assert.rejects(graph.transfer({ from: ['account:1'] as unknown as string, to: 'account:2', amount: 1, at: T0 }), TypeError)
+      await assert.rejects(graph.ignore('device:d', 'yes' as unknown as boolean), TypeError)
+      await assert.rejects(graph.forget([] as unknown as string), TypeError)
+      await assert.rejects(graph.prune(T0 + 0.5), TypeError)
+      assert.equal((await graph.counts()).subjects, 0)
+      assert.deepEqual(await graph.decisions(), [])
+      await seen('account:\u{1f600}')
+      assert.deepEqual(await graph.search('account:'), ['account:\u{1f600}'])
+    })
+
     test('a shared address alone links nothing', async () => {
       const { graph } = await fresh()
       await graph.observe([

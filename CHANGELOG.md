@@ -92,5 +92,7 @@
 - `attribute` and `report` reach nothing of a subject kept apart from the one asked about, through a third subject either.
 - `recordCall` ties no call to a visitor a reviewer kept apart from the caller; the call is filed under its number.
 - `CallOptions.numbers` with a key that is not a phone number no longer stops calls to the other numbers.
+- A request that holds a NUL, half of a character, or bytes that are not UTF-8 answers 400, not 500, and is not stored. Two subjects that differed only in such text were kept as one.
+- `observe`, `touch`, `transfer`, `prune` and `outbox.record` take whole milliseconds only, on both stores; `GET /attribute` and `GET /clusters` no longer answer 500 to a malformed number.
 - `/collect` records no touch for an arrival whose fields are all empty.
 - `fill` clears `ag_landing` in a form it filled before the visitor opted out of advertising.

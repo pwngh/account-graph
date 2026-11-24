@@ -3,6 +3,7 @@ import type { Labeled } from './calibrate.ts'
 import { summarizeCalls } from './callreport.ts'
 import type { CallSummary } from './callreport.ts'
 import { followUp } from './calls.ts'
+import { UNSTORABLE } from './identifiers.ts'
 import { createMemoryStore } from './memory.ts'
 import { defaultPolicy, plainPolicy, policyHash, ruleFor, usable } from './policy.ts'
 import type { Policy } from './policy.ts'
@@ -530,9 +531,12 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       const sightings: Sighting[] = []
       const recorded = now()
       for (const { subject, identifiers, at, event } of observations) {
-        if (!subject) throw new TypeError('An observation needs a subject')
-        if (!Number.isFinite(at)) throw new TypeError(`Observation of "${subject}" needs a time in epoch milliseconds`)
+        if (typeof subject !== 'string' || !subject) throw new TypeError('An observation needs a subject')
+        if (!Number.isSafeInteger(at)) throw new TypeError(`Observation of "${subject}" needs a time in whole epoch milliseconds`)
+        if (event !== undefined && typeof event !== 'string') throw new TypeError(`Observation of "${subject}" needs its event as text`)
+        if (UNSTORABLE.test(subject) || (event !== undefined && UNSTORABLE.test(event))) throw new TypeError('An observation holds text that cannot be kept')
         for (const identifier of new Set(identifiers)) {
+          if (UNSTORABLE.test(identifier)) throw new TypeError('An observation holds text that cannot be kept')
           ruleFor(policy, identifier)
           sightings.push(event === undefined ? { subject, identifier, at, recorded } : { subject, identifier, at, event, recorded })
         }
@@ -560,8 +564,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     async touch(touch) {
-      if (!touch.subject) throw new TypeError('A touch needs a subject')
-      if (!Number.isFinite(touch.at)) throw new TypeError('A touch needs a time in epoch milliseconds')
+      if (typeof touch.subject !== 'string' || !touch.subject) throw new TypeError('A touch needs a subject')
+      if (!Number.isSafeInteger(touch.at)) throw new TypeError('A touch needs a time in whole epoch milliseconds')
       await store.write((tx) => tx.addTouch(touch))
     },
 
@@ -699,7 +703,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       })
     },
 
-    ignore(identifier, ignored = true, why) {
+    async ignore(identifier, ignored = true, why) {
+      if (typeof ignored !== 'boolean') throw new TypeError('ignore needs true or false')
       const { cap } = ruleFor(policy, identifier)
       return changing(async (tx) => {
         const before = (await tx.states([identifier])).get(identifier)
@@ -850,9 +855,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
     async transfer(flow) {
       const { from, to, amount, at } = flow
-      if (!from || !to || from === to) throw new TypeError('A flow needs two different subjects')
+      if (typeof from !== 'string' || typeof to !== 'string' || !from || !to || from === to) throw new TypeError('A flow needs two different subjects')
       if (!Number.isSafeInteger(amount) || amount <= 0) throw new TypeError('A flow needs a whole, positive amount in the smallest unit')
-      if (!Number.isFinite(at)) throw new TypeError('A flow needs a time in epoch milliseconds')
+      if (!Number.isSafeInteger(at)) throw new TypeError('A flow needs a time in whole epoch milliseconds')
       const asset = flow.asset ?? ''
       return store.write(async (tx) => {
         await tx.addFlow({ from, to, amount, at, asset })
@@ -917,6 +922,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     async forget(subject, why) {
+      if (typeof subject !== 'string') throw new TypeError('forget needs a subject')
       await store.outbox.remove(subject)
       return changing(async (tx) => {
         await decide(tx, 'forget', [subject], why)
@@ -948,7 +954,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     async prune(before, why) {
-      if (!Number.isFinite(before)) throw new TypeError('prune needs a time in epoch milliseconds')
+      if (!Number.isSafeInteger(before)) throw new TypeError('prune needs a time in whole epoch milliseconds')
       return store.write(async (tx) => {
         await decide(tx, 'prune', [String(before)], why)
         return (await tx.pruneSightings(before)) + (await tx.pruneConsent(before)) + (await tx.pruneCallResults(before))

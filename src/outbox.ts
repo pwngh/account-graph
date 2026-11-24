@@ -259,7 +259,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
   function prepare(outcome: Outcome, state: 'pending' | 'held'): Job[] {
     const { transactionId, subject, at } = outcome
     if (!transactionId || !subject) throw new TypeError('An outcome needs a transactionId and a subject')
-    if (!Number.isFinite(at)) throw new TypeError(`Outcome "${transactionId}" needs a time in epoch milliseconds`)
+    if (!Number.isSafeInteger(at)) throw new TypeError(`Outcome "${transactionId}" needs a time in whole epoch milliseconds`)
     let actions = outcome.action
     if (typeof actions === 'string') {
       if (targets.size > 1) throw new TypeError(`Outcome "${transactionId}" must name its action per target, such as { google: '…' }`)

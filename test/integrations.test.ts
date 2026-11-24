@@ -453,6 +453,42 @@ test('staff visits are dropped and counted, and no browser can make itself staff
   assert.throws(() => createHandler(graph, { token: 'x', origins: [], staffNetworks: ['198.51.100.0/33'] }), TypeError)
 })
 
+test('what cannot be kept is refused, and nothing else answers 500', async () => {
+  const graph = createGraph(createMemoryStore())
+  const server = createServer(createHandler(graph, { token: 'service', origins: ['https://site.example'], now: () => T0, linkSecret: 'x'.repeat(32) })).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const headers = { authorization: 'Bearer service' }
+  const post = async (path: string, body: string | Uint8Array<ArrayBuffer>) => (await fetch(base + path, { method: 'POST', headers, body })).status
+  const get = async (path: string) => (await fetch(base + path, { headers })).status
+  const seen = (subject: string, more = '') => `{"subject":"${subject}","identifiers":["device:d"],"at":${T0}${more}}`
+  try {
+    for (const bad of ['\\u0000', '\\ud800', '\\udfff', '\\udc00\\ud800']) {
+      assert.equal(await post('/observe', seen(`account:${bad}`)), 400)
+      assert.equal(await post('/observe', seen('account:1', `,"event":"${bad}"`)), 400)
+      assert.equal(await post('/touch', `{"subject":"account:1","at":${T0},"gclid":"${bad}"}`), 400)
+      assert.equal(await post('/separate', `{"source":"crm","pairs":[{"a":"account:1","b":"account:${bad}"}]}`), 400)
+      assert.equal(await post('/rebuild', `{"reason":"${bad}"}`), 400)
+      assert.equal(await post('/touch', `{"subject":"account:1","at":${T0},"${bad}":1}`), 400)
+    }
+    assert.equal(await post('/observe', new Uint8Array([...Buffer.from(seen('account:'))].flatMap((byte, i) => (i === 20 ? [0xff, byte] : [byte])))), 400)
+    for (const path of ['/search?q=%00', '/subject?subject=a%00', '/history?subject=%00', '/decisions?author=%00', '/call?id=%00', '/attribute?subject=account:1&at=x', '/attribute?subject=account:1&at=1.5']) assert.equal(await get(path), 400, path)
+    for (const path of ['/clusters?offset=1.5', '/clusters?offset=1e308', '/clusters?offset=-1']) assert.equal(await get(path), 200, path)
+    for (const at of ['1.5', '1e308', '"x"', 'null']) assert.equal(await post('/observe', `{"subject":"account:1","identifiers":["device:d"],"at":${at}}`), 400)
+    assert.equal(await post('/ignore', '{"identifier":"device:d","ignored":"yes"}'), 400)
+    assert.deepEqual([(await graph.counts()).subjects, await graph.decisions()], [0, []])
+
+    // A whole character written as two escapes is text like any other, and so is a backslash before a u.
+    assert.equal(await post('/observe', seen('account:\\ud83d\\ude00')), 200)
+    assert.equal(await post('/observe', seen('account:\\\\u0000')), 200)
+    // Nested deeper than the stack, and still an answer.
+    assert.equal(await post('/observe', seen('account:1', `,"x":"\\u0061","deep":${'['.repeat(20_000)}${']'.repeat(20_000)}`)), 200)
+    assert.equal(((await (await fetch(`${base}/stats`, { headers })).json()) as any).errors, 0)
+  } finally {
+    server.close()
+  }
+})
+
 test('one address cannot flood collect, and health and stats answer', async () => {
   const graph = createGraph(createMemoryStore())
   const clock = { now: T0 }
