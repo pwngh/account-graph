@@ -23,9 +23,9 @@ export interface Rule {
   corroborates?: true
 }
 
-/** A fact about somebody that links nothing: the date of birth. */
-export type Fact = 'birth'
-export const FACTS: readonly Fact[] = ['birth']
+/** A fact about somebody that links nothing: the date of birth, and the names their first name may stand for. */
+export type Fact = 'birth' | 'given'
+export const FACTS: readonly Fact[] = ['birth', 'given']
 
 export interface Policy {
   /** At or above this score two subjects join one cluster. */
@@ -41,8 +41,9 @@ export interface Policy {
    */
   unnamed?: readonly string[]
   /**
-   * Facts that no two values of are one person's: `birth`. Two subjects of one group that both have such a fact and share
-   * no value of it are kept apart, whatever joins them, unless a reviewer or a system joined the two. Left out, nobody is.
+   * Facts that no two values of are one person's: `birth`, and `given`. Two subjects of one group that both have such a
+   * fact and share no value of it are kept apart, whatever joins them, unless a reviewer or a system joined the two. A
+   * `given` keeps apart nobody whose births agree. Left out, nobody is.
    */
   apart?: readonly Fact[]
   /** A cluster with more members than this is flagged for review. */
@@ -111,8 +112,9 @@ export const defaultPolicy: Policy = {
     text: { weight: 0.95, dilution: 0, cap: 2, halfLife: Infinity },
     // A note, not evidence: where an address places a visit. It links nothing.
     place: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
-    // A note, not evidence: what is known of a person that cannot be two people's. It links nothing.
+    // Notes, not evidence: what is known of a person that cannot be two people's. They link nothing.
     birth: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
+    given: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     // A note, not evidence: the number a visitor tapped, or a call that was recorded. It links nothing.
     dialed: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
   },
