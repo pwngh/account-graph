@@ -43,6 +43,7 @@ import type {
   Subject,
   Told,
   Touch,
+  Transferred,
   Verdict,
   Why,
 } from './types.ts'
@@ -182,8 +183,11 @@ export interface Graph {
    * authors whose name starts with it: `system:` keeps only what people decided.
    */
   reviewed(options?: { exclude?: string }): Promise<Labeled[]>
-  /** Records value moving between two subjects, and says how the two are tied by identity. */
-  transfer(flow: Flow): Promise<Counterparty>
+  /**
+   * Records value moving between two subjects, and says how the two are tied by identity.
+   * A flow already recorded under its id adds nothing; another flow under that id is refused.
+   */
+  transfer(flow: Flow): Promise<Transferred>
   /** Everyone a subject has exchanged value with, largest volume first. */
   flows(subject: Subject): Promise<Counterparty[]>
   /** The counterparties tied to this subject by identity, with at least `count` flows between them. */
@@ -904,14 +908,21 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     async transfer(flow) {
-      const { from, to, amount, at } = flow
+      const { id, from, to, amount, at, asset = '' } = flow
+      if (typeof id !== 'string' || !id.trim() || id.length > 200) throw new TypeError('A flow needs an id of its own, as text of at most 200 characters')
       if (typeof from !== 'string' || typeof to !== 'string' || !from || !to || from === to) throw new TypeError('A flow needs two different subjects')
       if (!Number.isSafeInteger(amount) || amount <= 0) throw new TypeError('A flow needs a whole, positive amount in the smallest unit')
       if (!Number.isSafeInteger(at)) throw new TypeError('A flow needs a time in whole epoch milliseconds')
-      const asset = flow.asset ?? ''
+      if (typeof asset !== 'string') throw new TypeError('A flow needs its asset as text')
+      if ([id, from, to, asset].some((text) => UNSTORABLE.test(text))) throw new TypeError('A flow holds text that cannot be kept')
       return store.write(async (tx) => {
-        await tx.addFlow({ from, to, amount, at, asset })
-        return (await counterparties(tx, from)).find((row) => row.subject === to && row.asset === asset)!
+        const before = await tx.flowOf(id)
+        if (before && !(before.from === from && before.to === to && before.amount === amount && before.at === at && before.asset === asset)) {
+          throw new TypeError(`Flow "${id}" was already recorded with different details`)
+        }
+        if (!before) await tx.addFlow({ id, from, to, amount, at, asset })
+        const tie = (await counterparties(tx, from)).find((row) => row.subject === to && row.asset === asset)!
+        return { ...tie, duplicate: before !== undefined }
       })
     },
 

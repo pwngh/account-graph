@@ -261,7 +261,7 @@ test('the reviewer screen is a locked-down shell, and its data needs the token',
     { subject: 'account:3', identifiers: ['email:e1'], at: T0 },
     { subject: 'account:9', identifiers: ['email:e9'], at: T0 },
   ])
-  await graph.transfer({ from: 'account:2', to: 'account:1', amount: 500, at: T0 })
+  await graph.transfer({ id: 't1', from: 'account:2', to: 'account:1', amount: 500, at: T0 })
   await graph.separate('account:1', 'account:9')
   const server = createServer(createHandler(graph, { token: 'secret', origins: [], now: () => T0 })).listen(0, '127.0.0.1')
   await new Promise((resolve) => server.once('listening', resolve))
@@ -375,7 +375,7 @@ test('the reviewer token opens the review routes and nothing a service writes th
 
     const before = await graph.history('account:1')
     assert.equal(await call('reviewer', 'POST', '/observe', { subject: 'account:1', identifiers: ['email:x'], at: T0 }), 403)
-    assert.equal(await call('reviewer', 'POST', '/transfer', { from: 'account:1', to: 'account:2', amount: 5, at: T0 }), 403)
+    assert.equal(await call('reviewer', 'POST', '/transfer', { id: 't1', from: 'account:1', to: 'account:2', amount: 5, at: T0 }), 403)
     assert.equal(await call('reviewer', 'POST', '/touch', { subject: 'account:1', at: T0, gclid: 'G' }), 403)
     assert.equal(await call('reviewer', 'POST', '/consent', { subject: 'account:1', consent: { adUserData: true, adPersonalization: true } }), 403)
     assert.equal(await call('reviewer', 'POST', '/convert', {}), 403)

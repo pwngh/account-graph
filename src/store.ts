@@ -69,8 +69,9 @@ export interface Tx {
   setSeparated(a: Subject, b: Subject, separated: boolean): Promise<void>
   /** Every separated pair with at least one end among the given subjects. */
   separatedOf(subjects: readonly Subject[]): Promise<[Subject, Subject][]>
-  /** Folds one flow of value into the running totals between its two subjects. */
+  /** Keeps one flow of value under its id, and folds it into the running totals between its two subjects. */
   addFlow(flow: Required<Flow>): Promise<void>
+  flowOf(id: string): Promise<Required<Flow> | undefined>
   /** Every folded flow into or out of the given subjects. */
   flowsOf(subjects: readonly Subject[]): Promise<FlowEdge[]>
   /** Adds one answer about advertising to a subject's history. */

@@ -90,6 +90,8 @@ export interface Labels {
 
 /** Value moving from one subject to another: a trade, a transfer, a lost match. */
 export interface Flow {
+  /** Your id for it, at most 200 characters. The same flow sent twice is counted once. */
+  id: string
   from: Subject
   to: Subject
   /** A whole number of the asset's smallest unit: cents, gold pieces. */
@@ -108,6 +110,11 @@ export interface FlowEdge {
   total: number
   first: number
   last: number
+}
+
+/** What recording a flow answers: the tie between the two, and whether the flow was already recorded. */
+export interface Transferred extends Counterparty {
+  duplicate: boolean
 }
 
 /** Someone a subject has exchanged value with, and how the two are tied by identity. */
