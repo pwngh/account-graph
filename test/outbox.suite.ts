@@ -700,6 +700,8 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       await recordNotLead(graph, { transactionId: 'enroll-1', kind: 'spam' }, options)
       await outbox.run()
       assert.deepEqual([values(), (await job(1)).state, (await graph.outcomeOf('enroll-1'))!.value], [[], 'held', 200])
+      // Restated while it waits, it goes out at that.
+      await outbox.restate('enroll-1', 260, 'EUR')
       // Said before it was queued, the pass finds it.
       await enroll(graph, 2)
       await recordNotLead(graph, { transactionId: 'enroll-2' }, options)
@@ -720,7 +722,8 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       await outbox.run()
       for (const n of [1, 2, 3]) await recordNotLead(graph, { transactionId: `enroll-${n}`, lead: true }, options)
       await outbox.run()
-      assert.deepEqual(values().slice(2).sort(), [['enroll-1', 200], ['enroll-2', 200], ['enroll-3', 350]])
+      assert.deepEqual(values().slice(2).sort(), [['enroll-1', 260], ['enroll-2', 200], ['enroll-3', 350]])
+      assert.equal((await job(1)).currency, 'EUR')
       // Said while it was on its way, it is retracted by the next pass.
       let during: (() => Promise<unknown>) | undefined
       const slow = createOutbox(graph, store.outbox, { targets: [googleAds({ customerId: '1', send: async (request) => (await during?.(), remote.send(request)) })], now: () => clock.now, random: () => 1 })

@@ -517,7 +517,7 @@ export interface ReportRow {
   visits: number
   /** Calls no one answered, by result, credited the way outcomes are. They are never outcomes. */
   missed: number
-  /** Outcomes and missed calls said to be no lead, credited the same way. They are in no other number here. */
+  /** Outcomes and calls said to be no lead, credited the same way. They are in no other number here. */
   notLeads: number
   /** Outcomes credited to this row, per step, how many people they are, and how long after their arrival they came. */
   stages: Record<string, StageCount>

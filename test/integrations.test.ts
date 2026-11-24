@@ -1497,6 +1497,20 @@ test('a visitor with an arrival is shown a number of their own, and nobody else 
   assert.throws(() => createHandler(graph, { ...options, pool: { numbers: ['nonsense'], minutes: 15, grace: 0 } }), TypeError)
 })
 
+test('a call marked before it counted takes its step when that is taken back, with no ad platform', async (t) => {
+  const graph = createGraph(createMemoryStore())
+  const server = createServer(createHandler(graph, { token: 'service', origins: [], calls: { results: 'expected' }, stages: { call: { value: 10, currency: 'USD' } } })).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  t.after(() => void server.close())
+  const post = async (path: string, body: object) => (await (await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}${path}`, { method: 'POST', headers: { authorization: 'Bearer service' }, body: JSON.stringify(body) })).json()) as any
+  await post('/not-lead', { call: 'N1' })
+  await post('/call', { id: 'N1', from: '+15550100091', to: '+15550100001', at: T0, duration: 60, answered: true })
+  assert.equal(await graph.outcomeOf('call:N1'), undefined)
+  await post('/not-lead', { call: 'N1', lead: true })
+  const { stage, value, currency } = (await graph.outcomeOf('call:N1'))!
+  assert.deepEqual([stage, value, currency], ['call', 10, 'USD'])
+})
+
 test('the labels tool resolves a file of checked pairs against a running server, and counts what it could not use', async (t) => {
   const graph = createGraph(createMemoryStore())
   const see = (subject: string, ...identifiers: string[]) => graph.observe({ subject, identifiers, at: T0, event: 'login' })

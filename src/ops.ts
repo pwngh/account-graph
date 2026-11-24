@@ -229,7 +229,9 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
             if (call.at > due || call.at < past || seen.has(call.subject) || !touch || !paid(touch)) continue
             seen.add(call.subject)
             // Named after the first miss nobody has answered for, however old, so ringing again is not a new alert.
-            const calls = await graph.callsOf([call.subject])
+            const all = await graph.callsOf([call.subject])
+            const not = await graph.notLeads(all.map((each) => `call:${each.id}`))
+            const calls = all.filter((each) => !not.has(`call:${each.id}`))
             const first = calls.find((each) => each.direction === 'inbound' && each.result?.answered === false && followUp(each, calls).state === 'open') ?? call
             const tries = attempts === 0 ? 'Nobody has rung back.' : attempts === 1 ? 'Rung back once, not reached.' : `Rung back ${attempts} times, not reached.`
             await ops.once(`unreturned:${call.subject}:${first.id}`, `account-graph: a caller from ${sourceOf(touch)}${touch.campaign || touch.campaignId ? `, ${touch.campaign || touch.campaignId}` : ''} has waited over ${hours} ${options.hours ? 'open ' : ''}${hours === 1 ? 'hour' : 'hours'} for a call back. Missed ${when(call.at)} (${timeZone}). ${tries} ${call.subject}`, call.subject)

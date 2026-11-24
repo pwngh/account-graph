@@ -1491,6 +1491,21 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const rang = (await graph.journey(`caller:${hashPhone('+15550100072')}`)).entries.find((entry) => entry.kind === 'call') as any
       assert.equal(rang.notLead, 'other')
       assert.equal((await graph.notLeads(['call:C1', 'nothing'])).size, 1)
+      // An answered call that was no lead is no conversation with them: the miss before it is still waiting, everywhere.
+      await recordCall(graph, { id: 'C6', from: '+15550100075', to: '+15550100001', at: T0 + 2400, duration: 20, answered: false }, options)
+      await recordCall(graph, { id: 'C5', from: '+15550100075', to: '+15550100001', at: T0 + 2500, duration: 60, answered: true }, options)
+      assert.deepEqual((await graph.openCalls(days)).map((each) => each.call.id), ['C3'])
+      await recordNotLead(graph, { call: 'C5' }, options)
+      const [, waiting] = await graph.openCalls(days)
+      assert.deepEqual([waiting!.call.id, waiting!.followUp.state], ['C6', 'open'])
+      const after = (await graph.callSummary({ ...days, at: T0 + DAY, ...options })).total
+      assert.deepEqual([after.triedAgain, after.notLeads], [0, 3])
+      assert.equal((await graph.board({ steps: [{ name: 'call' }], at: T0 + DAY })).columns[0]!.people, 2)
+      // In the report once, whether or not it ever was an outcome.
+      assert.equal((await graph.report(days)).total.notLeads, 4)
+      await graph.withdraw('call:C5')
+      assert.equal((await graph.report(days)).total.notLeads, 4)
+      await graph.forget(`caller:${hashPhone('+15550100075')}`)
       // A call said to be none before it came, or before its result did, is not counted when it comes.
       await recordNotLead(graph, { call: 'C4' }, options)
       await recordCall(graph, { id: 'C4', from: '+15550100074', to: '+15550100001', at: T0 + 2100, duration: 60 }, options)
@@ -1498,6 +1513,11 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal(await graph.outcomeOf('call:C4'), undefined)
       await recordNotLead(graph, { call: 'C4', lead: true }, options)
       assert.equal((await graph.outcomeOf('call:C4'))!.stage, 'call')
+      // What it was restated to meanwhile is kept when the mark is taken back.
+      await graph.restate('call:C4', 77)
+      await recordNotLead(graph, { call: 'C4' }, options)
+      await recordNotLead(graph, { call: 'C4', lead: true }, options)
+      assert.equal((await graph.outcomeOf('call:C4'))!.value, 77)
       await graph.forget(`caller:${hashPhone('+15550100074')}`)
       // Taken back, everything is as it was.
       for (const report of [{ transactionId: 'inquiry-a' }, { call: 'C1' }, { call: 'C2' }]) await recordNotLead(graph, { ...report, lead: true }, options)

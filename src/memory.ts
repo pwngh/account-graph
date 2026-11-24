@@ -437,6 +437,8 @@ export function createMemoryStore(): Store {
       const answered = new Map<Subject, number>()
       // When each was last spoken to, by a call answered or by a return reported for one of theirs.
       for (const call of calls.values()) {
+        // What was no lead is no conversation with them either.
+        if (spurned.has(`call:${call.id}`)) continue
         const { answered: spoke, returned = -Infinity } = results.get(call.id) ?? {}
         // A return reported for a call that was not missed, or that began after it, says nothing.
         const told = call.direction === 'inbound' && spoke === false && returned > call.at ? returned : -Infinity

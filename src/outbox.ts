@@ -220,12 +220,13 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
   }
 
   /** A job whose outcome counts after all. */
-  function givenBack(job: Job, value: number): Job {
-    const { withdrawn: _, note: __, ...rest } = job
+  function givenBack(job: Job, worth: Pick<Outcome, 'value' | 'currency'>): Job {
+    const { withdrawn: _, note: __, value: ___, ...kept } = job
+    const rest = { ...kept, ...(worth.value !== undefined && { value: worth.value }), ...(worth.currency && { currency: worth.currency }) }
     if (!reached(job)) return { ...rest, state: 'pending', due: now() + (options.delay ?? 0) }
     // It had arrived, and may have been restated to nothing since: give it its value again.
     if (!targets.get(job.target)?.restates) return { ...rest, state: 'sent' }
-    return { ...rest, value, state: 'pending', attempts: 0, due: now() }
+    return { ...rest, value: worth.value ?? 0, state: 'pending', attempts: 0, due: now() }
   }
 
   /**
@@ -336,7 +337,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
       return Promise.all(
         before.map((job) =>
           change(job, (current) => {
-            return current.state === 'held' || current.withdrawn ? givenBack(current, outcome.value ?? 0) : undefined
+            return current.state === 'held' || current.withdrawn ? givenBack(current, outcome) : undefined
           }),
         ),
       )
@@ -353,7 +354,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
 
     async giveBack(transactionId) {
       const outcome = await graph.outcomeOf(transactionId)
-      return Promise.all((await store.get(transactionId)).map((job) => change(job, (current) => (outcome && current.withdrawn ? givenBack(current, outcome.value) : undefined))))
+      return Promise.all((await store.get(transactionId)).map((job) => change(job, (current) => (outcome && current.withdrawn ? givenBack(current, outcome) : undefined))))
     },
 
     async restate(transactionId, value, currency) {
@@ -382,6 +383,8 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
         // Said to be no lead before it was queued: it waits, and one that is taking a conversion back goes out.
         if (spurned.has(job.transactionId) && !job.withdrawn) {
           await change(job, (current) => (current.withdrawn ? undefined : takenBack(current)))
+          // Taken back in between, it is given back: whoever did that may have found nothing to give.
+          if ((await graph.notLeads([job.transactionId])).size === 0) await outbox.giveBack(job.transactionId)
           continue
         }
         const skip = async (note: string) => {

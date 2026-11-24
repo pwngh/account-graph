@@ -294,6 +294,9 @@ function resultIn(given: { answered?: unknown; voicemail?: unknown; waited?: unk
   return { ...(heard !== undefined && { answered: heard }), ...(voicemail !== undefined && { voicemail: voicemail as boolean }), ...(waited !== undefined && { waited: waited as number }) }
 }
 
+/** Whether a call counts by what is known of it: it was long enough, and a person answered, or no result is expected and none says otherwise. */
+const countsBy = (call: KeptCall, options: CallOptions): boolean => !tooShort(call, options) && (call.result?.answered ?? options.results !== 'expected')
+
 /** Whether a call ended too soon to count. */
 function tooShort(call: { duration?: number }, options: CallOptions): boolean {
   return (call.duration ?? Infinity) < (options.minimumSeconds ?? 30)
@@ -322,7 +325,7 @@ async function settle(graph: Graph, id: string, options: CallOptions, phone?: st
     // A call you placed is never an outcome.
     if (!call || call.direction === 'outbound') return false
     const answered = call.result?.answered
-    const counts = !tooShort(call, options) && (answered ?? options.results !== 'expected')
+    const counts = countsBy(call, options)
     const outcome = outcomeOf(call, options, phone)
     // Said to be no lead, it is not sent or counted anew. What was counted stays on record, and counts nowhere.
     if (counts && (await graph.notLeads([outcome.transactionId])).size > 0) return false
@@ -400,8 +403,11 @@ export async function recordNotLead(graph: Graph, report: { call?: string; trans
   await graph.markNotLead(id, lead ? undefined : kind)
   if (!lead) await options.takeBack?.(id)
   // A call is counted by what is known of it now, which may not be what was known when it was marked.
-  else if (id.startsWith('call:') && (await graph.keptCall(id.slice(5)))) await settle(graph, id.slice(5), options)
-  else await options.giveBack?.(id)
+  // What was recorded keeps its value.
+  else if (await graph.outcomeOf(id)) {
+    const kept = id.startsWith('call:') ? await graph.keptCall(id.slice(5)) : undefined
+    if (!kept || countsBy(kept, options)) await options.giveBack?.(id)
+  } else if (id.startsWith('call:')) await settle(graph, id.slice(5), options)
   return { id, lead }
 }
 

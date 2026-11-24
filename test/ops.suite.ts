@@ -182,6 +182,28 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       assert.equal(posted.slice(count).filter((text) => text.includes('call back')).length, 1)
     })
 
+    test('a miss that was no lead is told to nobody, and does not hide the next one', async () => {
+      const { graph, ops, clock, posted } = await fresh({ returnHours: 1 })
+      const from = '+15550100074'
+      const miss = (id: string, at: number) => recordCall(graph, { id, from, to: '+15550100001', at, duration: 20, answered: false }, { results: 'expected', now: () => clock.now })
+      await graph.touch({ subject: `caller:${hashPhone(from)}`, at: T0, gclid: 'G' })
+      await miss('S1', T0 + 1000)
+      clock.now = T0 + 2 * HOUR
+      await ops.check()
+      assert.equal(posted.length, 1)
+      await graph.markNotLead('call:S1', 'other')
+      await miss('S2', T0 + 2 * HOUR)
+      clock.now = T0 + 4 * HOUR
+      await ops.check()
+      assert.equal(posted.length, 2)
+      await miss('S3', T0 + 5 * HOUR)
+      await graph.markNotLead('call:S3', 'spam')
+      await graph.markNotLead('call:S2', 'spam')
+      clock.now = T0 + 9 * HOUR
+      await ops.check()
+      assert.equal(posted.length, 2)
+    })
+
     test('an alert that could not be delivered stays until it is', async () => {
       const { graph, ops, make, clock, posted, hook, errors, store } = await fresh({ quiet: { touches: 1 }, returnHours: 1 })
       await graph.touch({ subject: 'visitor:1', at: T0, gclid: 'G' })

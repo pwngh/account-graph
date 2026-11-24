@@ -990,7 +990,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       const [start, end] = range(from, to, timeZone)
       return store.read(async (tx) => {
         const open = await tx.openCalls(start, end, limit, after)
-        const later = await tx.callsOf(unique(open.map((call) => call.subject)))
+        const later = await leadsOf(tx, await tx.callsOf(unique(open.map((call) => call.subject))), callId)
         const out: OpenCall[] = []
         for (const call of open) {
           const { credited } = await credit(call.subject, call.at, 90 * DAY, await reach(tx, [call.subject], 2), tx)
@@ -1008,7 +1008,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         // A call filed under its number's channel left a touch of its own, on the caller, at the moment it began.
         const own = new Set((await tx.touchesBetween(start, end)).filter((touch) => touch.landing?.startsWith('tel:')).map((touch) => `${touch.at} ${touch.landing} ${touch.subject}`))
         const filed = new Set(calls.filter((call) => own.has(`${call.at} tel:${call.to} ${call.subject}`)).map((call) => call.id))
-        return summarizeCalls(calls, await tx.callsOf(unique(missed.map((call) => call.subject))), filed, at, timeZone, { ...options, notLeads: new Set((await tx.notLeads(calls.map(callId))).keys()) })
+        return summarizeCalls(calls, await leadsOf(tx, await tx.callsOf(unique(missed.map((call) => call.subject))), callId), filed, at, timeZone, { ...options, notLeads: new Set((await tx.notLeads(calls.map(callId))).keys()) })
       })
     },
 
@@ -1061,7 +1061,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
           return out
         }
         const called = group(inPeriod)
-        const calls = group(await tx.callsOf(subjects))
+        const calls = group(await leadsOf(tx, await tx.callsOf(subjects), callId))
         const reached = group(await leadsOf(tx, (await tx.outcomesOf(subjects)).filter((outcome) => outcome.stage === options.step), outcomeId))
         return followed([...called].map(([who, mine]) => ({ called: mine, calls: calls.get(who) ?? [], reached: (reached.get(who) ?? []).map((outcome) => outcome.at) })), { ...options, at })
       })
@@ -1133,14 +1133,14 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const lead = new Set(outcomes)
         for (const outcome of recorded) if (!lead.has(outcome)) notLeads.push({ at: outcome.at, touch: (await creditOf(outcome.subject, outcome.at)).touch, tags: outcome.tags })
         const missed: typeof notLeads = []
-        const misses = (await tx.callsBetween(start, end)).filter((call) => call.direction === 'inbound' && call.result?.answered === false)
-        const called = new Set(await leadsOf(tx, misses, callId))
-        // A missed call that was once counted is an outcome still, and is not counted twice.
+        const inbound = (await tx.callsBetween(start, end)).filter((call) => call.direction === 'inbound')
+        const spurned = await tx.notLeads(inbound.map(callId))
+        // A call that was counted is an outcome, and is counted once.
         const counted = new Set(recorded.map(outcomeId))
-        for (const call of misses) {
-          if (!called.has(call) && counted.has(callId(call))) continue
-          const credited = { at: call.at, touch: (await creditOf(call.subject, call.at, window)).touch, tags: call.tags }
-          ;(called.has(call) ? missed : notLeads).push(credited)
+        for (const call of inbound) {
+          const not = spurned.has(callId(call))
+          if (not ? counted.has(callId(call)) : call.result?.answered !== false) continue
+          ;(not ? notLeads : missed).push({ at: call.at, touch: (await creditOf(call.subject, call.at, window)).touch, tags: call.tags })
         }
         return fold(from, to, await tx.costsBetween(from, to), await tx.touchesBetween(start, end), credited, { missed, notLeads, by, per, timeZone, through: dayIn(now(), timeZone), history })
       })
@@ -1496,7 +1496,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const outcomes = await tx.outcomesOf(people)
         const not = await tx.notLeads([...calls.map(callId), ...outcomes.map(outcomeId)])
         const spurned = (id: string) => (not.has(id) ? { notLead: not.get(id)!.kind } : {})
-        for (const call of calls) entries.push({ at: call.at, subject: call.subject, kind: 'call', call, ...spurned(callId(call)), ...(call.direction === 'inbound' && call.result?.answered === false && { followUp: followUp(call, calls) }) })
+        for (const call of calls) entries.push({ at: call.at, subject: call.subject, kind: 'call', call, ...spurned(callId(call)), ...(call.direction === 'inbound' && call.result?.answered === false && { followUp: followUp(call, calls.filter((each) => !not.has(callId(each)))) }) })
         for (const each of people) {
           // One moment is many sightings, one for each identifier. What a call or a reviewer's join left is told by the call and the decision.
           const rang = new Set(calls.filter((call) => call.subject === each || call.visitor === each).map((call) => call.at))
