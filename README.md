@@ -76,7 +76,7 @@ The `device:` value is the `ag_device` cookie the script set, which your backend
 - **Reviewer decisions.** Join two subjects, keep two apart, or mute an identifier. Each decision is recorded with who and why, and sealed so the record cannot be quietly edited.
 - **Money flows.** Trades and transfers between accounts are reported with how the two are tied by identity, and value that goes round in a circle is found, so collusion shows up.
 - **Attribution with confidence.** A conversion lists every touch that could have led to it and credits one only when the chain of links is strong.
-- **A report of cost against outcomes.** Campaign costs are read from Google Ads and Meta, or posted, and set beside the inquiries, sign-ups and sales each campaign's visitors produced.
+- **A report of cost against outcomes.** Campaign costs are read from Google Ads and Meta, or posted, and set beside the inquiries, sign-ups and sales each campaign's visitors produced. A cost per outcome counts only days whose cost is known, and is withheld when too few are. People are counted beside outcomes, and recent days are marked as still filling. Every value an outcome has had is kept, so what was expected stands beside what was collected.
 - **Broken down your way.** By the office an ad was for, the office that served, language, hour or weekday, with what was not recorded always shown. Costs are never split by guesswork.
 - **Steps with a value.** Name your steps once (inquiry 5, call 10, client 200) and every outcome, page event and call takes its value and its ad platform action from its step.
 - **Alerts.** A conversion that fails for good, an outbox that cannot run, or costs that cannot be read are posted to a Slack-style webhook. So is a feed that has gone quiet, and a missed caller from an ad whom nobody has rung back. An alert that does not arrive is kept until it does.
@@ -157,6 +157,7 @@ PostgreSQL writes take one advisory lock, so they run one at a time; the write q
 
 - No request has been made with real credentials. A successful Fingerprint lookup, MaxMind answer, token from Google or Microsoft, upload to any ad platform, cost report from Google Ads or Meta, Twilio line lookup, and Smarty address check are all untested. `npm run live-check` is how to run them with yours.
 - No real phone call has arrived from Twilio, and no alert has been posted to a real webhook.
+- A day a platform sends no cost row for counts as missing, although a paused campaign looks the same.
 - The report credits the newest strong touch with the whole outcome, and is worked out each time it is asked for.
 - Without call results, a call is counted by its length, which a queue hang-up can reach. Platforms that cannot restate keep a conversion sent for a call that turned out missed.
 - A quiet feed is noticed by hours without a record, so a feed that still sends something wrong is not.

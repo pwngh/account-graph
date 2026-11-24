@@ -5,12 +5,12 @@ import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
 import { components, conversionEvent, createAlerter, createGraph, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, ingestRequest, ip, knownLink, ladderProblems, measure, normalizeEmail, normalizePhone, phoneOfType, policyFrom, policyHash, policyProblems, readToken, scorePairs, signToken, sourceOf, withStage } from '../src/index.ts'
 import { summarizeCalls } from '../src/callreport.ts'
-import { dayIn } from '../src/report.ts'
-import { paid } from '../src/ops.ts'
+import { dayIn, paid } from '../src/report.ts'
 import { weigh } from '../src/policy.ts'
 import type { Edge, IdentifierState, KeptCall, Reason } from '../src/index.ts'
 import { configFrom } from '../src/serve.ts'
 import { createHandler } from '../src/server.ts'
+import { counts } from './suite.ts'
 
 const T0 = 1_700_000_000_000
 
@@ -416,7 +416,7 @@ test('the report is the same whatever order its rows arrive in', () => {
   ]
   // Broken down, the parts do not depend on the order either.
   const missed = touches.map((each, i) => ({ at: i, touch: each, ...(i % 2 && { tags: { office: `o${i % 3}` } }) }))
-  const parts = (flip: boolean) => fold('2026-03-01', '2026-03-02', costs, touches, flip ? [...credited].reverse() : credited, flip ? [...missed].reverse() : missed, 'outcome.office').total.breakdown
+  const parts = (flip: boolean) => fold('2026-03-01', '2026-03-02', costs, touches, flip ? [...credited].reverse() : credited, { missed: flip ? [...missed].reverse() : missed, by: 'outcome.office' }).total.breakdown
   assert.deepEqual(parts(true), parts(false))
   const expected = fold('2026-03-01', '2026-03-02', costs, touches, credited)
   assert.deepEqual(expected.rows.map((row) => [row.source, row.campaignId, row.campaign, row.cost, row.visits, Object.keys(row.stages)]), [
@@ -431,7 +431,7 @@ test('the report is the same whatever order its rows arrive in', () => {
     ['__proto__', '', '', 0, 1, []],
     ['meta', '799', 'Retarget', 0, 1, []],
   ])
-  assert.deepEqual(Object.entries(expected.total.stages).sort(), [['__proto__', { count: 1, value: 1 }], ['constructor', { count: 1, value: 2 }], ['enrolled', { count: 1, value: 200 }]])
+  assert.deepEqual(Object.entries(counts(expected.total.stages)).sort(), [['__proto__', { count: 1, value: 1 }], ['constructor', { count: 1, value: 2 }], ['enrolled', { count: 1, value: 200 }]])
   assert.equal(({} as any).count, undefined)
   // Every rotation and the reverse of each list gives the same report.
   const turn = <T>(list: T[], by: number) => [...list.slice(by), ...list.slice(0, by)]
@@ -439,6 +439,76 @@ test('the report is the same whatever order its rows arrive in', () => {
     assert.deepEqual(fold('2026-03-01', '2026-03-02', turn(costs, by % costs.length), turn(touches, by), turn(credited, by % credited.length)), expected)
     assert.deepEqual(fold('2026-03-01', '2026-03-02', turn(costs, by % costs.length).reverse(), turn(touches, by).reverse(), credited), expected)
   }
+})
+
+test('how recent is too recent is worked out from the days as they are, not as they are shown', () => {
+  const history = Array.from({ length: 20 }, (_, n) => ({ outcome: { transactionId: `t${n}`, subject: 's', at: 10 * 86_400_000, stage: 'sale', value: 0, currency: '' }, touch: undefined, delay: 4.04 * 86_400_000, inside: true }))
+  assert.deepEqual(fold('2026-03-01', '2026-03-10', [], [], [], { history }).filling, { after: '2026-03-05', days: 5 })
+  const quick = history.map((each) => ({ ...each, delay: 60_000 }))
+  assert.deepEqual(fold('2026-03-01', '2026-03-10', [], [], [], { history: quick }).filling, { after: '2026-03-09', days: 1 })
+  assert.equal(fold('2026-03-01', '2026-03-10', [], [], [], { history: history.slice(1) }).filling, undefined)
+  // What came too late to be credited is not waited for.
+  assert.deepEqual(fold('2026-03-01', '2026-03-10', [], [], [], { history: [...history, ...history.map((each) => ({ ...each, delay: 100 * 86_400_000, inside: false }))] }).filling, { after: '2026-03-05', days: 5 })
+})
+
+test('what an outcome cost uses the outcomes of that campaign, on the days whose cost is known', () => {
+  const cost = (day: string, campaignId: string, amount: number) => ({ day, source: 'google', campaignId, campaign: '', amount, currency: 'USD', clicks: 0, impressions: 0 })
+  const days = (count: number) => Array.from({ length: count }, (_, i) => `2026-03-${String(i + 1).padStart(2, '0')}`)
+  const touch = (campaignId: string) => ({ subject: 's', at: 0, gclid: 'G', campaignId })
+  let n = 0
+  const sale = (day: string, campaignId: string | undefined, value = 100) => ({ outcome: { transactionId: `t${n++}`, subject: 's', at: Date.parse(`${day}T12:00:00Z`), stage: 'sale', value, currency: 'USD' }, touch: campaignId ? touch(campaignId) : undefined })
+  const credited = [
+    // Full: ten days of cost at 10, four sales, one of them with nothing to say what it cost if it fell outside.
+    ...['2026-03-02', '2026-03-05', '2026-03-05', '2026-03-09'].map((day) => sale(day, 'full')),
+    // Gaps: six days of cost, two sales inside them and three on days with none.
+    ...['2026-03-01', '2026-03-06', '2026-03-08', '2026-03-09', '2026-03-10'].map((day) => sale(day, 'gaps')),
+    // Thin: four of ten days.
+    sale('2026-03-01', 'thin'),
+    // No cost at all, and nobody credited.
+    sale('2026-03-01', 'free'),
+    sale('2026-03-01', undefined, 5000),
+  ]
+  const costs = [...days(10).map((day) => cost(day, 'full', 10)), ...days(6).map((day) => cost(day, 'gaps', 5)), ...days(4).map((day) => cost(day, 'thin', 50)), cost('2026-03-01', 'idle', 7)]
+  const report = fold('2026-03-01', '2026-03-10', costs, [], credited)
+  const row = (id: string) => {
+    const { costDays, missingDays, thin, costPerOutcome, returnOnCost } = report.rows.find((each) => each.campaignId === id)!
+    return [costDays, missingDays, thin, costPerOutcome, returnOnCost]
+  }
+  assert.deepEqual(row('full'), [10, 0, false, 25, 4])
+  // 30 over the two sales on those days, and not over all five.
+  assert.deepEqual(row('gaps'), [6, 4, false, 15, 6.666667])
+  assert.deepEqual(row('thin'), [4, 6, true, null, null])
+  assert.deepEqual(row('free'), [0, 10, true, null, null])
+  // The total covers the campaigns whose cost is known: 130 over six sales. Not the 337 spent over the twelve there were.
+  assert.deepEqual([report.total.costPerOutcome, report.total.returnOnCost, report.leftOut, report.days], [21.666667, 4.615385, 3, 10])
+  assert.equal(report.total.cost, 337)
+  // A campaign known only by its name may be a newsletter, and spend on no campaign is nobody's: neither is withheld for want of days.
+  const unnumbered = fold('2026-03-01', '2026-03-10', [cost('2026-03-01', '', 5)], [{ subject: 's', at: 0, source: 'newsletter', campaign: 'march' }], [])
+  assert.deepEqual(unnumbered.rows.map((each) => [each.source, each.thin]), [['google', false], ['newsletter', false]])
+  assert.equal(unnumbered.leftOut, 0)
+  // One known by its name whose arrivals were ad clicks was paid for, so its cost is missing.
+  const clicked = fold('2026-03-01', '2026-03-10', [], [{ subject: 's', at: 0, gclid: 'G', campaign: 'spring' }], [])
+  assert.deepEqual([clicked.rows[0]!.thin, clicked.rows[0]!.missingDays, clicked.leftOut], [true, 10, 1])
+  // Days still to come are not missing.
+  const early = fold('2026-03-01', '2026-03-31', costs, [], credited, { through: '2026-03-10' })
+  assert.deepEqual([early.days, early.rows.find((each) => each.campaignId === 'full')!.missingDays], [10, 0])
+  assert.equal(fold('2026-04-01', '2026-04-05', [], [], [], { through: '2026-03-10' }).days, 0)
+  // A day belongs to the time zone: at noon in London it is already the next day in Kiritimati.
+  const shifted = fold('2026-03-03', '2026-03-03', [cost('2026-03-03', 'full', 10)], [], [sale('2026-03-02', 'full')], { timeZone: 'Pacific/Kiritimati' })
+  assert.equal(shifted.rows[0]!.costPerOutcome, 10)
+  // A row for a day still to come is not cost data yet.
+  const ahead = fold('2026-03-01', '2026-03-04', [cost('2026-03-03', 'full', 10), cost('2026-03-04', 'full', 10)], [], [sale('2026-03-03', 'full')], { through: '2026-03-02' })
+  assert.deepEqual([ahead.days, ahead.rows[0]!.costDays, ahead.rows[0]!.costPerOutcome, ahead.total.cost], [2, 0, null, 20])
+  // A campaign known to have cost nothing has outcomes that cost nothing, and they count in the total.
+  const free = fold('2026-03-01', '2026-03-01', [cost('2026-03-01', 'gift', 0), cost('2026-03-01', 'paid', 30)], [], [sale('2026-03-01', 'gift'), sale('2026-03-01', 'paid')])
+  assert.deepEqual(free.rows.map((each) => [each.campaignId, each.costPerOutcome, each.returnOnCost]), [['paid', 30, 3.333333], ['gift', 0, null]])
+  assert.equal(free.total.costPerOutcome, 15)
+  // Spend on no campaign in particular is in the total's cost, and is nobody's cost per outcome.
+  const loose = fold('2026-03-01', '2026-03-01', [cost('2026-03-01', '', 500), cost('2026-03-01', 'paid', 30)], [], [{ ...sale('2026-03-01', undefined), touch: { subject: 's', at: 0, gclid: 'G' } }, sale('2026-03-01', 'paid')])
+  assert.deepEqual([loose.rows.find((each) => each.campaignId === '')!.costPerOutcome, loose.total.costPerOutcome, loose.total.cost], [null, 30, 530])
+  // Two campaigns each known on half the days they need: between them every day, and still nothing can be said.
+  const halves = fold('2026-03-01', '2026-03-10', [...days(4).map((day) => cost(day, 'a', 10)), ...days(10).slice(6).map((day) => cost(day, 'b', 10))], [], [sale('2026-03-01', 'a'), sale('2026-03-08', 'b')])
+  assert.deepEqual([halves.total.thin, halves.total.costPerOutcome, halves.leftOut, halves.total.costDays], [true, null, 2, 8])
 })
 
 test('a touch is filed under the platform of its click id, then its tag, then the site that referred it', () => {
@@ -476,8 +546,12 @@ test('the server counts outcomes without an ad platform, takes costs, and report
 
     const report = (await (await fetch(`${base}/report?from=2026-03-01&to=2026-03-02`, { headers: { authorization: 'Bearer reviewer' } })).json()) as any
     assert.deepEqual(report.rows, [
-      { source: 'google', campaignId: '111', campaign: 'Spring', cost: 50, clicks: 10, impressions: 0, visits: 1, missed: 0, stages: { enrolled: { count: 1, value: 120 } }, outcomes: 1, value: 120 },
+      { source: 'google', campaignId: '111', campaign: 'Spring', cost: 50, clicks: 10, impressions: 0, visits: 1, missed: 0, stages: { enrolled: { count: 1, value: 120, people: 1, delay: { count: 1, median: 0, p95: 0, inside: 1 } } }, outcomes: 1, value: 120, people: 1, worth: { outcomes: 1, first: 200, now: 120, zeroed: 0, firstUnknown: 0 }, costDays: 1, missingDays: 1, thin: false, costPerOutcome: 50, returnOnCost: 2.4 },
     ])
+    // One outcome with every value it has had, for a reviewer.
+    const asked = (await (await fetch(`${base}/outcome?id=enr-9`, { headers: { authorization: 'Bearer reviewer' } })).json()) as any
+    assert.deepEqual([asked.value, asked.values.map((each: any) => each.value)], [120, [200, 120]])
+    assert.equal(await (await fetch(`${base}/outcome?id=nobody`, { headers: { authorization: 'Bearer reviewer' } })).json(), null)
     // With no days named, the report covers the thirty days up to today.
     const recent = (await (await fetch(`${base}/report`, { headers: { authorization: 'Bearer secret' } })).json()) as any
     assert.deepEqual([recent.from, recent.to, recent.total.cost], ['2026-02-01', '2026-03-02', 50])

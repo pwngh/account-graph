@@ -174,10 +174,67 @@ A touch is filed under a source in this order: the platform of its click id, the
 | Column | Meaning |
 | --- | --- |
 | Cost, Clicks, Impressions | What the platform billed and counted, from the costs. |
+| Cost per outcome | The campaign's cost over the outcomes credited to it, on the days that have cost data for it. See below. |
+| Return | The value of those outcomes over the same cost. |
 | Arrivals | Visits the script tag recorded with a click id or a campaign. Far fewer arrivals than clicks means the tag is missing from landing pages. |
 | One column per step | How many outcomes of that step were credited to the line, and their value. |
 | `(none)` | Outcomes with no arrival to credit. |
 | A source with no campaign | Arrivals whose address carried no campaign id or name. Add the tracking setting above. |
+| `(not recorded)` under Cost | Nobody reported a cost for that line. It may have cost nothing, or anything. |
+
+### People, and how long it takes
+
+Outcomes are counted, and so are the people they belong to. A person is a cluster: one person with two accounts is one, and a renewal is a second outcome and not a second person. Where a step's people and outcomes differ, the Channels view shows both.
+
+For each step the report says how long it takes: the days from the newest arrival to the outcome.
+
+| Field of `stages.<step>.delay` | Says |
+| --- | --- |
+| `count` | Outcomes that have an arrival in the year before them |
+| `median`, `p95` | Half came within this many days, and 95 in 100 within that many |
+| `inside` | The share that came inside the window, and so could be credited |
+
+Costs arrive the day they are spent, and outcomes days or weeks later. So the last part of a period is always short of outcomes. When the period reaches into those days, the report has `filling`, the Channels view says so, and `after` is the last day that has had its time. How long is read from the newest 200 outcomes of each step in the last half year, whatever days were asked about. The slowest step with at least 20 that could be credited decides. With fewer, nothing is said.
+
+### What an outcome turned out to be worth
+
+A step's value is a guess. What was collected is known later, differs from person to person, and is sometimes nothing. So record the step with its value when it happens, and restate it when you know:
+
+```sh
+curl -X POST https://graph.example.org/convert -H "authorization: Bearer $GRAPH_TOKEN" \
+  -d '{"transactionId":"client-42","subject":"contact:42","at":1795460000000,"stage":"client"}'
+curl -X POST https://graph.example.org/restate -H "authorization: Bearer $GRAPH_TOKEN" \
+  -d '{"transactionId":"client-42","value":420.50}'
+```
+
+Every value an outcome has had is kept, and `GET /outcome?id=client-42` lists them. The report shows these for each campaign (`worth`) and for each month outcomes were first recorded in (`months`):
+
+| Figure | Says |
+| --- | --- |
+| `first` | What the outcomes were worth when first recorded |
+| `firstUnknown` | How many were recorded before values were kept. They are not in `first` |
+| `now` | What all of them are worth now |
+| `zeroed` | How many were worth something once and are now worth nothing |
+
+Restating also tells the platforms that can be told.
+
+| Platform | When a value is restated |
+| --- | --- |
+| Google Ads | The value is sent again under the same id, and Google overwrites what it holds. It cannot retract a conversion: at zero it still counts as one. |
+| Meta, Microsoft, TikTok | They keep the first value. Only the report changes. |
+
+### What an outcome cost
+
+A cost per outcome is easy to get wrong in two ways: dividing all the money by all the clients, or by outcomes from days whose cost never arrived. So the report does neither.
+
+- It uses **only outcomes credited to that campaign**. Outcomes nothing could be credited with cost no campaign anything.
+- It uses **only days that have cost data for that campaign**, on both sides. An outcome on a day with no cost would look free.
+- It says how many days are missing: `missingDays` of `days`. Days still to come are not missing.
+- When fewer than half of the days have cost data, `thin` is true and both figures are withheld. A campaign whose arrivals were not paid for, and which has no cost at all, is not counted as missing any: it may be a newsletter. Spend on no campaign in particular gives no figure.
+- The total is worked out the same way, over the campaigns that were not withheld. `leftOut` says how many were.
+
+A day with no row is a missing day, even where the campaign was simply paused: a platform that sends no row does not say which. Post a row of zero for a day you know cost nothing.
+
 
 ## Limits
 

@@ -1,5 +1,5 @@
 import { DIMENSION, NOT_RECORDED, touchTag, touchTags } from './tags.ts'
-import type { Breakdown, Cost, Counted, Report, ReportRow, Touch } from './types.ts'
+import type { Breakdown, Cost, Counted, OutcomeValue, Report, ReportRow, StageCount, Touch, ValueChange } from './types.ts'
 
 /** The platform each click id belongs to. A click id says where the visitor came from more surely than a tag does. */
 const CLICK_IDS = [
@@ -42,18 +42,30 @@ export function sourceOf(touch: Touch): string {
   return '(other)'
 }
 
+/**
+ * Whether an arrival was paid for: it carries an ad click, names a campaign
+ * by its id, or says so in its medium. Meta's click id alone does not say
+ * so, because links nobody paid for carry it too.
+ */
+export function paid(touch: Touch): boolean {
+  return Boolean(touch.gclid || touch.gbraid || touch.wbraid || touch.msclkid || touch.ttclid || touch.campaignId) || /^(cpc|ppc|cpm|cpv|paid.*|display)$/i.test(touch.medium ?? '')
+}
+
+// Making one is slow and asking it is not, so each zone's is kept.
+const clocks = new Map<string, Intl.DateTimeFormat>()
+function clockOf(timeZone: string): Intl.DateTimeFormat {
+  let clock = clocks.get(timeZone)
+  if (!clock) {
+    clock = new Intl.DateTimeFormat('en-US', { timeZone, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' })
+    if (clocks.size >= 100) clocks.clear()
+    clocks.set(timeZone, clock)
+  }
+  return clock
+}
+
 /** How far a time zone is ahead of UTC at an instant, in milliseconds. */
 function ahead(at: number, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    hourCycle: 'h23',
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: 'numeric',
-    second: 'numeric',
-  }).formatToParts(at)
+  const parts = clockOf(timeZone).formatToParts(at)
   const part = (type: string) => Number(parts.find((each) => each.type === type)!.value)
   return Date.UTC(part('year'), part('month') - 1, part('day'), part('hour'), part('minute'), part('second')) - Math.floor(at / 1000) * 1000
 }
@@ -119,26 +131,130 @@ export function nextDay(day: string): string {
 
 const round = (amount: number) => Math.round(amount * 1e6) / 1e6
 
-type Tally = { stages: Map<string, { count: number; value: number }>; outcomes: number; value: number; missed: number }
-type Line = Omit<ReportRow, 'stages' | 'breakdown'> & { stages: Map<string, { count: number; value: number }>; named: string; parts: Map<string, Tally> }
+interface Step {
+  count: number
+  value: number
+  people: Set<string>
+  /** Days from arrival to outcome, for those that have an arrival, and how many of those came inside the window. */
+  days: number[]
+  inside: number
+}
+type Tally = { stages: Map<string, Step>; outcomes: number; value: number; people: Set<string>; missed: number }
+const tally = (): Tally => ({ stages: new Map(), outcomes: 0, value: 0, people: new Set(), missed: 0 })
+type Worked = 'costDays' | 'missingDays' | 'thin' | 'costPerOutcome' | 'returnOnCost'
+type Line = Omit<ReportRow, 'stages' | 'breakdown' | 'people' | Worked> & Tally & { costed: Map<string, number>; bought: boolean; onDays: Map<string, { outcomes: number; value: number }>; named: string; parts: Map<string, Tally> }
 
-/** Counts one outcome among others. */
-function count(into: Tally, outcome: Counted): void {
-  const stage = into.stages.get(outcome.stage) ?? { count: 0, value: 0 }
-  into.stages.set(outcome.stage, stage)
-  stage.count += 1
-  stage.value += outcome.value
+/** An outcome, what it is credited to, whose it is, and how long after their arrival it came. */
+export interface Credited {
+  outcome: Counted
+  touch: Touch | undefined
+  /** Its first value, with no time when it may not be the first, and the most it was ever worth. */
+  first?: (OutcomeValue & { most: number }) | undefined
+  /** Who it is: the cluster of its subject. Defaults to the subject. */
+  person?: string
+  /** Milliseconds from the newest strong arrival in the year before it, inside the window or not. */
+  delay?: number | undefined
+  /** Whether that arrival was inside the window. */
+  inside?: boolean
+}
+
+/** Counts one outcome among others. With no timing given, a credited touch gives its own. */
+function count(into: Tally, { outcome, touch, person = outcome.subject, delay = touch && outcome.at - touch.at, inside = touch !== undefined }: Credited): void {
+  const step = into.stages.get(outcome.stage) ?? { count: 0, value: 0, people: new Set(), days: [], inside: 0 }
+  into.stages.set(outcome.stage, step)
+  step.count += 1
+  step.value += outcome.value
+  step.people.add(person)
+  if (delay !== undefined) {
+    step.days.push(delay / 86_400_000)
+    if (inside) step.inside += 1
+  }
   into.outcomes += 1
   into.value += outcome.value
+  into.people.add(person)
+}
+
+const unchanged = (): ValueChange => ({ outcomes: 0, first: 0, now: 0, zeroed: 0, firstUnknown: 0 })
+
+/** Adds what an outcome was first worth, and is worth now, to a sum of them. */
+function revalued(into: ValueChange, { outcome, first }: Credited): void {
+  into.outcomes += 1
+  into.now += outcome.value
+  if (outcome.value === 0 && first && first.most > 0) into.zeroed += 1
+  // A value carried over from before there was a history may not be the first.
+  if (first && first.at > 0) into.first += first.value
+  else into.firstUnknown += 1
+}
+
+const roundedChange = (change: ValueChange): ValueChange => ({ ...change, first: round(change.first), now: round(change.now) })
+
+/** The smallest value that at least this share of sorted values do not exceed. */
+const percentile = (sorted: readonly number[], share: number) => sorted[Math.max(0, Math.ceil(sorted.length * share) - 1)]!
+/** The middle of sorted values, or the middle of the middle two. */
+const middle = (sorted: readonly number[]) => (sorted[Math.floor((sorted.length - 1) / 2)]! + sorted[Math.floor(sorted.length / 2)]!) / 2
+const tenth = (days: number) => Math.round(days * 10) / 10
+
+function plainSteps(stages: ReadonlyMap<string, Step>): Record<string, StageCount> {
+  return Object.fromEntries(
+    [...stages].map(([name, { count, value, people, days, inside }]) => {
+      const sorted = [...days].sort((x, y) => x - y)
+      const delay = sorted.length > 0 && { count: sorted.length, median: tenth(middle(sorted)), p95: tenth(percentile(sorted, 0.95)), inside: round(inside / sorted.length) }
+      return [name, { count, value: round(value), people: people.size, ...(delay && { delay }) }]
+    }),
+  )
 }
 
 /** Hours and days of the week in their own order, other values by name, and what was not recorded last. */
 const rank = (value: string) => (value === NOT_RECORDED ? '\uffff' : WEEKDAYS.includes(value) ? `${(WEEKDAYS.indexOf(value) + 6) % 7}` : value)
 
 function plain(parts: Map<string, Tally>): Breakdown {
-  if (!parts.has(NOT_RECORDED)) parts.set(NOT_RECORDED, { stages: new Map(), outcomes: 0, value: 0, missed: 0 })
-  const rounded = ([name, part]: [string, Tally]) => ({ name, ...part, value: round(part.value), stages: Object.fromEntries([...part.stages].map(([step, stage]) => [step, { count: stage.count, value: round(stage.value) }])) })
+  if (!parts.has(NOT_RECORDED)) parts.set(NOT_RECORDED, tally())
+  const rounded = ([name, part]: [string, Tally]) => ({ name, ...part, value: round(part.value), people: part.people.size, stages: plainSteps(part.stages) })
   return [...parts].sort(([x], [y]) => (rank(x) < rank(y) ? -1 : 1)).map(rounded)
+}
+
+export interface FoldOptions {
+  /** Each missed call, with the touch it is credited to, or undefined for one nothing can be credited with. */
+  missed?: readonly Told[]
+  /** The dimension to break each line down by. */
+  by?: string | undefined
+  /** The time zone days and hours are in. Defaults to UTC. */
+  timeZone?: string | undefined
+  /** The last day costs could have been recorded for. Defaults to `to`. */
+  through?: string
+  /** Outcomes of the months before `through`, for how long steps take. Defaults to the credited ones. */
+  history?: readonly Credited[]
+}
+
+/** How many whole days the slowest step takes, for 95 in 100 of those that can be credited. A handful of outcomes says nothing, so a step needs twenty. */
+function slowest(history: readonly Credited[]): number {
+  const all = tally()
+  for (const each of history) if (each.inside ?? each.touch !== undefined) count(all, each)
+  return Math.ceil(Math.max(0, ...[...all.stages.values()].map(({ days }) => (days.length >= 20 ? percentile(days.sort((x, y) => x - y), 0.95) : 0))))
+}
+
+/** Below this share of days with cost data, what anything cost is not said. */
+const ENOUGH = 0.5
+
+/** What was spent on some outcomes, by days that have cost data on both sides. */
+type Spent = { cost: number; outcomes: number; value: number }
+
+const ratios = ({ cost, outcomes, value }: Spent) => ({
+  costPerOutcome: outcomes > 0 ? round(cost / outcomes) : null,
+  returnOnCost: cost > 0 && value > 0 ? round(value / cost) : null,
+})
+
+/**
+ * What a campaign's outcomes cost. Only the days that have cost data count,
+ * on both sides: an outcome on a day whose cost is not known would look
+ * free. A recorded zero is cost data, and so is a day that cost nothing.
+ */
+function worth(costDays: number, days: number, { campaign, campaignId, bought }: { campaign: string; campaignId: string; bought: boolean }, spent: Spent): Pick<ReportRow, Worked> {
+  // Money spent on no campaign in particular says nothing of what one campaign's outcomes cost. A campaign with
+  // paid arrivals has a cost somewhere; one without may be a newsletter, so with no cost data nothing is missing.
+  const named = Boolean(campaignId || campaign)
+  const thin = named && costDays < days * ENOUGH && (costDays > 0 || bought)
+  return { costDays, missingDays: Math.max(0, days - costDays), thin, ...(named && costDays > 0 && !thin ? ratios(spent) : { costPerOutcome: null, returnOnCost: null }) }
 }
 
 /**
@@ -152,13 +268,12 @@ export function fold(
   to: string,
   costs: readonly Required<Cost>[],
   touches: readonly Touch[],
-  credited: readonly { outcome: Counted; touch: Touch | undefined }[],
-  /** Each missed call, with the touch it is credited to, or undefined for one nothing can be credited with. */
-  missed: readonly Told[] = [],
-  /** The dimension to break each line down by, and the time zone its hours and days are in. */
-  by?: string,
-  timeZone?: string,
+  credited: readonly Credited[],
+  { missed = [], by, timeZone, through = to, history = credited }: FoldOptions = {},
 ): Report {
+  // Days still to come have no cost yet, whatever rows there are for them.
+  const last = through < to ? through : to
+  const days = last < from ? 0 : Math.round((Date.parse(`${last}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1
   const lines = new Map<string, Line>()
   const currencies = new Set<string>()
   // A campaign with an id is one line whatever it is called; without one, its name is all there is.
@@ -166,7 +281,7 @@ export function fold(
   const line = (source: string, campaignId: string, campaign: string): Line => {
     const key = keyOf(source, campaignId, campaign)
     let found = lines.get(key)
-    if (!found) lines.set(key, (found = { source, campaignId, campaign: campaignId ? '' : campaign, named: '', cost: 0, clicks: 0, impressions: 0, visits: 0, missed: 0, stages: new Map(), outcomes: 0, value: 0, parts: new Map() }))
+    if (!found) lines.set(key, (found = { source, campaignId, campaign: campaignId ? '' : campaign, named: '', cost: 0, clicks: 0, impressions: 0, visits: 0, ...tally(), worth: unchanged(), parts: new Map(), costed: new Map(), bought: false, onDays: new Map() }))
     // A campaign known only by name keeps one spelling of it, the first in order.
     if (!campaignId && campaign < found.campaign) found.campaign = campaign
     return found
@@ -178,6 +293,7 @@ export function fold(
     found.cost += cost.amount
     found.clicks += cost.clicks
     found.impressions += cost.impressions
+    if (cost.day <= last) found.costed.set(cost.day, (found.costed.get(cost.day) ?? 0) + cost.amount)
     if (cost.currency) currencies.add(cost.currency)
     if (cost.campaignId && cost.campaign && cost.day >= found.named) [found.named, found.campaign] = [cost.day, cost.day === found.named && found.campaign > cost.campaign ? found.campaign : cost.campaign]
   }
@@ -213,6 +329,7 @@ export function fold(
   }
 
   for (const touch of touches) lineOf(touch).visits += 1
+  for (const touch of all) if (paid(touch)) lineOf(touch).bought = true
   const valueOf = by === undefined ? undefined : dimension(by, timeZone)
   const whole = new Map<string, Tally>()
   // Where an outcome or a missed call is counted: its line, and under its value there and in the total.
@@ -220,32 +337,40 @@ export function fold(
     if (!valueOf) return [found]
     const value = valueOf(told)
     const part = (parts: Map<string, Tally>) => {
-      const tally = parts.get(value) ?? { stages: new Map(), outcomes: 0, value: 0, missed: 0 }
-      parts.set(value, tally)
-      return tally
+      const found = parts.get(value) ?? tally()
+      parts.set(value, found)
+      return found
     }
     return [found, part(found.parts), part(whole)]
   }
   const missing = (touch: Touch | undefined) => (touch ? lineOf(touch) : line('(none)', '', ''))
-  for (const call of missed) for (const tally of tallies(missing(call.touch), call)) tally.missed += 1
-  for (const { outcome, touch } of credited) {
-    for (const tally of tallies(missing(touch), { at: outcome.at, touch, tags: outcome.tags })) count(tally, outcome)
-    if (outcome.currency) currencies.add(outcome.currency)
+  for (const call of missed) for (const into of tallies(missing(call.touch), call)) into.missed += 1
+  const everything = tally()
+  const worthAll = unchanged()
+  const months = new Map<string, ValueChange>()
+  for (const each of credited) {
+    const { outcome, touch } = each
+    for (const into of [everything, ...tallies(missing(touch), { at: outcome.at, touch, tags: outcome.tags })]) count(into, each)
+    for (const currency of [outcome.currency, each.first?.currency]) if (currency) currencies.add(currency)
+    const found = missing(touch)
+    const month = each.first && each.first.at > 0 ? dayIn(each.first.at, timeZone).slice(0, 7) : NOT_RECORDED
+    if (!months.has(month)) months.set(month, unchanged())
+    for (const change of [found.worth, worthAll, months.get(month)!]) revalued(change, each)
+    const day = dayIn(outcome.at, timeZone)
+    const on = found.onDays.get(day) ?? { outcomes: 0, value: 0 }
+    found.onDays.set(day, { outcomes: on.outcomes + 1, value: on.value + outcome.value })
   }
 
-  const sums = new Map<string, { count: number; value: number }>()
   const total = { cost: 0, clicks: 0, impressions: 0, visits: 0, missed: 0, outcomes: 0, value: 0 }
+  // The total of what things cost: campaigns with enough cost data, and the outcomes credited to them. Never all spend over all outcomes.
+  const known: Spent = { cost: 0, outcomes: 0, value: 0 }
+  let counted = 0
+  const anyCost = new Set<string>()
+  let leftOut = 0
   const order = (found: Line) => `${found.source}\u0000${found.campaignId}\u0000${found.campaign}`
   const sorted = [...lines.values()].sort((x, y) => y.cost - x.cost || y.value - x.value || y.visits - x.visits || (order(x) < order(y) ? -1 : 1))
   // A step is named by whoever recorded the outcome, so the names are kept in maps until the very end.
-  const rows = sorted.map(({ named: _, stages, parts, ...found }): ReportRow => {
-    for (const [name, stage] of stages) {
-      stage.value = round(stage.value)
-      const sum = sums.get(name) ?? { count: 0, value: 0 }
-      sums.set(name, sum)
-      sum.count += stage.count
-      sum.value = round(sum.value + stage.value)
-    }
+  const rows = sorted.map(({ named: _, stages, parts, costed: costDays, onDays, bought, people, ...found }): ReportRow => {
     found.cost = round(found.cost)
     found.value = round(found.value)
     total.cost = round(total.cost + found.cost)
@@ -255,14 +380,36 @@ export function fold(
     total.visits += found.visits
     total.missed += found.missed
     total.outcomes += found.outcomes
-    return { ...found, stages: Object.fromEntries(stages), ...(valueOf && { breakdown: plain(parts) }) }
+    const spent: Spent = { cost: 0, outcomes: 0, value: 0 }
+    for (const [day, cost] of costDays) {
+      anyCost.add(day)
+      spent.cost += cost
+      spent.outcomes += onDays.get(day)?.outcomes ?? 0
+      spent.value += onDays.get(day)?.value ?? 0
+    }
+    const worked = worth(costDays.size, days, { ...found, bought }, spent)
+    if (worked.thin) leftOut += 1
+    else if (costDays.size > 0 && (found.campaignId || found.campaign)) {
+      counted += 1
+      known.cost += spent.cost
+      known.outcomes += spent.outcomes
+      known.value += spent.value
+    }
+    return { ...found, ...worked, people: people.size, worth: roundedChange(found.worth), stages: plainSteps(stages), ...(valueOf && { breakdown: plain(parts) }) }
   })
   const said = new Set([...all.flatMap(touchTags).map((name) => `touch.${name}`), ...[...credited.map(({ outcome }) => outcome.tags), ...missed.map(({ tags }) => tags)].flatMap((tags) => Object.keys(tags ?? {})).map((name) => `outcome.${name}`)])
+  const steps = plainSteps(everything.stages)
+  const wait = slowest(history)
+  const after = new Date(Date.parse(`${through}T00:00:00Z`) - wait * 86_400_000).toISOString().slice(0, 10)
   return {
     from,
     to,
     rows,
-    total: { ...total, stages: Object.fromEntries(sums), ...(valueOf && { breakdown: plain(whole) }) },
+    ...(wait > 0 && after < last && days > 0 && { filling: { after, days: wait } }),
+    days,
+    leftOut,
+    months: [...months].sort(([x], [y]) => (rank(x) < rank(y) ? -1 : 1)).map(([month, change]) => ({ month, ...roundedChange(change) })),
+    total: { ...total, costDays: anyCost.size, missingDays: Math.max(0, days - anyCost.size), thin: counted === 0 && leftOut > 0, ...ratios(known), people: everything.people.size, worth: roundedChange(worthAll), stages: steps, ...(valueOf && { breakdown: plain(whole) }) },
     ...(by !== undefined && { by }),
     dimensions: ['hour', 'weekday', ...[...said].sort()],
     currencies: [...currencies].sort(),

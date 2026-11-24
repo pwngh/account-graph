@@ -2,8 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { Alerter } from './alerts.ts'
 import { followUp } from './calls.ts'
 import type { Graph } from './graph.ts'
-import { dayIn, sourceOf } from './report.ts'
-import type { Touch } from './types.ts'
+import { dayIn, paid, sourceOf } from './report.ts'
 
 /** What the graph is fed with. A feed's time is when its last record was written down. */
 export const FEEDS = ['touches', 'calls', 'results', 'costs'] as const
@@ -109,15 +108,6 @@ const STUCK = 15 * 60_000
 const LOOKBACK = 14 * 24 * HOUR
 /** After how long a run that never ended is no longer shown. */
 const FORGOTTEN = 30 * 24 * HOUR
-
-/**
- * Whether an arrival was paid for: it carries an ad click, names a campaign
- * by its id, or says so in its medium. Meta's click id alone does not say
- * so, because links nobody paid for carry it too.
- */
-export function paid(touch: Touch): boolean {
-  return Boolean(touch.gclid || touch.gbraid || touch.wbraid || touch.msclkid || touch.ttclid || touch.campaignId) || /^(cpc|ppc|cpm|cpv|paid.*|display)$/i.test(touch.medium ?? '')
-}
 
 export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {}): Ops {
   const now = options.now ?? Date.now

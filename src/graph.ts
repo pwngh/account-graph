@@ -7,7 +7,8 @@ import { UNSTORABLE } from './identifiers.ts'
 import { createMemoryStore } from './memory.ts'
 import { defaultPolicy, plainPolicy, policyHash, ruleFor, usable } from './policy.ts'
 import type { Policy } from './policy.ts'
-import { dayStart, dimension, fold, nextDay } from './report.ts'
+import { dayIn, dayStart, dimension, fold, nextDay } from './report.ts'
+import type { Credited } from './report.ts'
 import { partition, scorePairs } from './resolve.ts'
 import { checkTags } from './tags.ts'
 import type { DecisionPage, Store, Tx } from './store.ts'
@@ -34,6 +35,7 @@ import type {
   Observation,
   OpenCall,
   Outcome,
+  OutcomeValue,
   Recorded,
   Report,
   Ring,
@@ -105,6 +107,8 @@ export interface Graph {
   restate(transactionId: string, value: number, currency?: string): Promise<boolean>
   /** Takes a recorded outcome out of the report: it turned out not to have happened. Resolves to false for an unknown id. */
   withdraw(transactionId: string): Promise<boolean>
+  /** Every value a recorded outcome has had, oldest first. */
+  values(transactionId: string): Promise<OutcomeValue[]>
   /** An outcome as it was recorded, or undefined when it was not. */
   outcomeOf(transactionId: string): Promise<Counted | undefined>
   /** Keeps a call. `recordCall` does this. */
@@ -486,6 +490,12 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     return pairs.map((told) => ({ pair: pairOf(told?.a, told?.b, verb), separated: told.separated ?? true, why: { ...why, ...(told.reason && { reason: String(told.reason) }) } }))
   }
 
+  /** Adds an outcome's value to its history, unless it is the one it already has. */
+  async function revalue(tx: Tx, { transactionId, subject, value, currency }: Counted): Promise<void> {
+    const last = (await tx.valuesOf(transactionId, subject)).at(-1)
+    if (last?.value !== value || last.currency !== currency) await tx.addValue(transactionId, subject, { value, currency, at: now() })
+  }
+
   const pairOf = (a: Subject, b: Subject, verb: string): [Subject, Subject] => {
     if (typeof a !== 'string' || typeof b !== 'string' || !a || !b || a === b) throw new TypeError(`${verb} needs two different subjects`)
     return a < b ? [a, b] : [b, a]
@@ -599,6 +609,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return store.write(async (tx) => {
         if (await tx.outcomeOf(transactionId)) return false
         await tx.setOutcome(counted)
+        await revalue(tx, counted)
         return true
       })
     },
@@ -609,7 +620,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return store.write(async (tx) => {
         const found = await tx.outcomeOf(transactionId)
         if (!found) return false
-        await tx.setOutcome({ ...found, value, ...(currency && { currency }) })
+        const restated = { ...found, value, ...(currency && { currency }) }
+        await tx.setOutcome(restated)
+        await revalue(tx, restated)
         return true
       })
     },
@@ -619,6 +632,13 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         if (!(await tx.outcomeOf(transactionId))) return false
         await tx.removeOutcome(transactionId)
         return true
+      })
+    },
+
+    values(transactionId) {
+      return store.read(async (tx) => {
+        const outcome = await tx.outcomeOf(transactionId)
+        return outcome ? tx.valuesOf(transactionId, outcome.subject) : []
       })
     },
 
@@ -714,16 +734,26 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return store.read(async (tx) => {
         // Who a subject can reach does not depend on when, so one subject's outcomes share one search.
         const reached = new Map<Subject, Reached>()
-        const creditOf = async (subject: Subject, at: number) => {
+        // Looked for over a year, so how many arrivals the window leaves out can be said. Only those inside it are credited.
+        const creditOf = async (subject: Subject, at: number, back = Math.max(window, 365 * DAY)) => {
           let from = reached.get(subject)
           if (!from) reached.set(subject, (from = await reach(tx, subject, hops)))
-          return (await credit(subject, at, window, from, tx)).credited
+          const { credited: touch } = await credit(subject, at, back, from, tx)
+          const inside = touch !== undefined && touch.at >= at - window
+          return { touch: inside ? touch : undefined, delay: touch && at - touch.at, inside }
         }
-        const credited: { outcome: Counted; touch: Touch | undefined }[] = []
-        for (const outcome of await tx.outcomesBetween(start, end)) credited.push({ outcome, touch: await creditOf(outcome.subject, outcome.at) })
+        const outcomes = await tx.outcomesBetween(start, end)
+        const labels = await tx.labelsOf(unique(outcomes.map((outcome) => outcome.subject)))
+        const first = await tx.firstValues(outcomes)
+        const credited: Credited[] = []
+        for (const outcome of outcomes) credited.push({ outcome, first: first.get(outcome.transactionId), person: labels.get(outcome.subject)?.cluster ?? outcome.subject, ...(await creditOf(outcome.subject, outcome.at)) })
+        // How long steps take is read from the last half year and not from the days asked about: the newest days hold
+        // few outcomes, which is what it has to say. Some of each step, so a common quick one does not hide a slow one.
+        const history: Credited[] = []
+        for (const outcome of await tx.newestOutcomes(now() - 180 * DAY, now(), 200)) history.push({ outcome, ...(await creditOf(outcome.subject, outcome.at, window)) })
         const missed: { at: number; touch: Touch | undefined; tags: Record<string, string> | undefined }[] = []
-        for (const call of await tx.callsBetween(start, end)) if (call.direction === 'inbound' && call.result?.answered === false) missed.push({ at: call.at, touch: await creditOf(call.subject, call.at), tags: call.tags })
-        return fold(from, to, await tx.costsBetween(from, to), await tx.touchesBetween(start, end), credited, missed, by, timeZone)
+        for (const call of await tx.callsBetween(start, end)) if (call.direction === 'inbound' && call.result?.answered === false) missed.push({ at: call.at, touch: (await creditOf(call.subject, call.at, window)).touch, tags: call.tags })
+        return fold(from, to, await tx.costsBetween(from, to), await tx.touchesBetween(start, end), credited, { missed, by, timeZone, through: dayIn(now(), timeZone), history })
       })
     },
 

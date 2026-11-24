@@ -77,10 +77,15 @@
 - `outbox.hold`, `release` and `withdraw` keep back, send and take back an outcome; a job can be `held`.
 - `ReportRow.missed` counts missed calls per campaign; calls are kept with their results (`keptCall`, `callResult`).
 - `Outcome.tags`, `Call.tags` and `Channel.tags` carry facts; `report({ by })` and `GET /report?by=` break each line down by `touch.<name>`, `outcome.<name>`, `hour` or `weekday`, with `(not recorded)` always a line of its own.
+- `ReportRow` has `costPerOutcome` and `returnOnCost`, over the campaign's own outcomes on days with cost data, with `costDays`, `missingDays` and `thin`; both are null below half the days. The total leaves out thin campaigns (`Report.leftOut`).
+- The report counts `people` beside outcomes, says how long each step takes (`StageCount.delay`), and marks a period that is too recent (`Report.filling`).
+- Every value an outcome has had is kept (`values`, `GET /outcome`); the report shows what outcomes were first worth and are worth now, by campaign (`ReportRow.worth`) and by month of first record (`Report.months`).
 - The Channels view has a Break down by selector; the Calls view shows tags.
 
 ### Changed
 
+- Breaking: `fold` takes its options as one object.
+- The Channels view shows `(not recorded)` where no cost was reported, marks missing days, and withholds a cost per outcome that too little data supports.
 - Breaking: `Store` has `ops`, an `OpsStore`.
 - Breaking: `OutboxStore` has `swap` and `standing` in place of `save`; a worker's pass no longer overwrites a change made since it claimed a job.
 - Twilio's `busy`, `no-answer`, `failed` and `canceled` calls are recorded as not answered.

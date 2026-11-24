@@ -322,6 +322,26 @@ export interface Counted {
   tags?: Record<string, string>
 }
 
+/** One value an outcome has had. Values are added to and never changed. */
+export interface OutcomeValue {
+  value: number
+  currency: string
+  /** When it was written down, in epoch milliseconds. 0 when that is not known: a value kept from before there was a history. */
+  at: number
+}
+
+/** What outcomes were worth when they were first recorded, and what they are worth now. */
+export interface ValueChange {
+  outcomes: number
+  /** Of outcomes whose first value is known. `firstUnknown` counts the others, which are in none of this sum. */
+  first: number
+  firstUnknown: number
+  /** What all of them are worth now. */
+  now: number
+  /** How many were worth something once and are worth nothing now. */
+  zeroed: number
+}
+
 /** A phone call as it is kept, with its result once one is known. */
 export interface KeptCall {
   id: string
@@ -396,6 +416,26 @@ export interface Cost {
   impressions?: number
 }
 
+/** Outcomes of one step. */
+export interface StageCount {
+  count: number
+  value: number
+  people: number
+  /** How long after the arrival they came, over the outcomes that have one in the year before. Absent when none has. */
+  delay?: Delay
+}
+
+/** Days from arrival to outcome. */
+export interface Delay {
+  /** How many outcomes have an arrival in the year before them. */
+  count: number
+  /** Half of them came within this many days, and 95 in 100 within that many. */
+  median: number
+  p95: number
+  /** The share that came inside the window, and so can be credited. */
+  inside: number
+}
+
 /** One line of the report: a campaign, or a source with no campaign, and what it cost and brought in. */
 export interface ReportRow {
   /** The platform or site the visitor came from. `(none)` holds outcomes no arrival could be credited with. */
@@ -409,17 +449,33 @@ export interface ReportRow {
   visits: number
   /** Calls no one answered, by result, credited the way outcomes are. They are never outcomes. */
   missed: number
-  /** Outcomes credited to this row, per step. */
-  stages: Record<string, { count: number; value: number }>
+  /** Outcomes credited to this row, per step, how many people they are, and how long after their arrival they came. */
+  stages: Record<string, StageCount>
   /** Outcomes credited to this row, all steps together. */
   outcomes: number
   value: number
+  /** How many people those outcomes are, whatever accounts they used. A renewal is a second outcome and not a second person. */
+  people: number
+  /** What those outcomes were first worth and are worth now. */
+  worth: ValueChange
+  /** How many days of the period, up to today, have cost data for this campaign, and how many have none. */
+  costDays: number
+  missingDays: number
+  /** Fewer than half of the days have cost data, which is too few to say what anything cost. Never so for spend on no campaign, nor for a campaign with no paid arrival and no cost at all. On the total, every campaign that would count is so. */
+  thin: boolean
+  /**
+   * The cost over the outcomes credited to this campaign on the days that
+   * have cost data. Null when there is no cost, no such outcome, or too few days.
+   */
+  costPerOutcome: number | null
+  /** The value of those outcomes over the same cost. Null for the same reasons, or when they are worth nothing. */
+  returnOnCost: number | null
   /** The same outcomes by the dimension asked for. Costs are not split: a campaign is charged whole. */
   breakdown?: Breakdown
 }
 
 /** Outcomes and missed calls by the value of one dimension, each named by that value, in order. `(not recorded)` is always the last. */
-export type Breakdown = { name: string; stages: Record<string, { count: number; value: number }>; outcomes: number; value: number; missed: number }[]
+export type Breakdown = { name: string; stages: Record<string, StageCount>; outcomes: number; value: number; people: number; missed: number }[]
 
 export interface Report {
   from: string
@@ -427,6 +483,18 @@ export interface Report {
   /** Highest cost first, then highest value. */
   rows: ReportRow[]
   total: Omit<ReportRow, 'source' | 'campaignId' | 'campaign'>
+  /** Over how many days of the period costs could have been recorded: those up to today. */
+  days: number
+  /**
+   * Set when part of the period is too recent for its arrivals to have done
+   * all they will. `after` is the last day that has had its time, and `days`
+   * how long that is: 95 in 100 outcomes of the slowest step come within it.
+   */
+  filling?: { after: string; days: number }
+  /** The outcomes of the period by the month they were first recorded in, `YYYY-MM`, oldest first. Those from before there was a history are under `(not recorded)`. */
+  months: (ValueChange & { month: string })[]
+  /** Campaigns with cost data on too few days, left out of the total's cost per outcome and return. */
+  leftOut: number
   /** The dimension the rows are broken down by, when one was asked for. */
   by?: string
   /** The dimensions something in these days was recorded under, for choosing one. */
