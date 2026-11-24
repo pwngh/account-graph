@@ -136,6 +136,8 @@ curl -X POST https://graph.example.org/payment -H "authorization: Bearer $GRAPH_
 
 From the first payment on, the outcome is worth what was paid less what was given back, and never below zero. **Refunded** in the report is the sum of the refunds. Payments may come in any order, and before their outcome. Reporting one again changes nothing. The same `id` with other details, and a second currency for one outcome, are refused. A value you restate stands until the next payment.
 
+An amount is from 0.00001 to 10,000,000,000. The outcome's value, payments less refunds, is rounded to five decimals. Payments stay with the outcome's `transactionId` after it is withdrawn, so use a new `transactionId` for a different outcome.
+
 A conversion not sent yet goes out at its time with the new value. Platforms that can restate are told each later change. Use either payments or `/restate` for one outcome.
 
 ### Cost per step
