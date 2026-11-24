@@ -27,7 +27,7 @@ function workings(ops) {
 
   if (ops.pool) {
     const asked = `${amount(ops.pool.leased + ops.pool.exhausted)} ${ops.pool.leased + ops.pool.exhausted === 1 ? 'time' : 'times'} one was asked for since the server started, ${when(ops.pool.since)}`
-    out.push(el('section', {}, el('h2', {}, 'Number pool'), parts('Numbers', [['Shown to a visitor now', ops.pool.held, `For ${amount(ops.pool.minutes)} minutes after their page last asked.`], ['Free', ops.pool.numbers - ops.pool.held]]),
+    out.push(el('section', {}, el('h2', {}, `Number pool, each number for ${amount(ops.pool.minutes)} minutes after the page last asked`), parts('Numbers', [['Shown to a visitor', ops.pool.held], ['Free', ops.pool.numbers - ops.pool.held]]),
       el('p', {}, ...(ops.pool.exhausted > 0 ? [el('b', { class: 'apart' }, `Every number was taken ${amount(ops.pool.exhausted)} ${ops.pool.exhausted === 1 ? 'time' : 'times'}, of the ${asked}.`), ' Whoever got none saw the page\'s own number. Add numbers, or shorten POOL_MINUTES.'] : [`A number was free each of the ${asked}.`]))))
   }
 
