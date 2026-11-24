@@ -5,6 +5,7 @@ import { callState, dialed, followUp, numberOrSelf, recordCall, recordCallResult
 import type { CallOptions } from './calls.ts'
 import { Outdated } from './graph.ts'
 import type { Graph, PolicyState } from './graph.ts'
+import type { Hours } from './hours.ts'
 import { email, hashPhone, identifier, ip, nameKeys, normalizePhone, phoneOfType, UNSTORABLE } from './identifiers.ts'
 import { trusted } from './integrations/fingerprint.ts'
 import type { FingerprintVerifier } from './integrations/fingerprint.ts'
@@ -124,7 +125,9 @@ export interface HandlerOptions {
   identifierSecret?: string
   /** How many hours a missed call may wait before `/board` says it has waited too long. Left out or 0, it never does. */
   returnHours?: number
-    /** The time zone `/report` reads its days in when the request names none. Use the ad account's. Defaults to UTC. */
+    /** When you are open. With it, the board counts waiting, and the call summary calls that came while you were closed. */
+  hours?: Hours
+  /** The time zone `/report` reads its days in when the request names none. Use the ad account's. Defaults to UTC. */
   timeZone?: string
   /** What runs by itself and who is told about it, for `/ops` and `/alerts/test`. */
   ops?: Ops
@@ -886,7 +889,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       }
       case 'GET /calls/summary': {
         const days = period(url)
-        return { ...days, expected: options.calls?.results === 'expected', ...(await graph.callSummary({ ...days, at: now(), ...(options.calls?.results && { results: options.calls.results }), ...(options.calls?.resultWait !== undefined && { resultWait: options.calls.resultWait }) })) }
+        return { ...days, expected: options.calls?.results === 'expected', ...(await graph.callSummary({ ...days, at: now(), ...(options.calls?.results && { results: options.calls.results }), ...(options.calls?.resultWait !== undefined && { resultWait: options.calls.resultWait }), ...(options.hours && { hours: options.hours }) })) }
       }
       case 'GET /outcome': {
         const id = url.searchParams.get('id') ?? ''
@@ -903,9 +906,9 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       case 'GET /board': {
         const steps = Object.entries(options.stages ?? {}).map(([name, { wait }]) => ({ name, ...(wait && { wait }) }))
         const days = url.searchParams.has('days') ? Number(url.searchParams.get('days')) : 90
-        const { columns, ...board } = await graph.board({ steps, days, at: now(), ...(options.timeZone && { timeZone: options.timeZone }), ...(options.returnHours && { returnHours: options.returnHours }) })
+        const { columns, ...board } = await graph.board({ steps, days, at: now(), ...(options.timeZone && { timeZone: options.timeZone }), ...(options.returnHours && { returnHours: options.returnHours }), ...(options.hours && { hours: options.hours }) })
         return {
-          ...board, days, timeZone: options.timeZone ?? 'UTC',
+          ...board, days, openHours: options.hours !== undefined, timeZone: options.timeZone ?? 'UTC',
           columns: columns.map((column) => ({
             ...column,
             rows: column.rows.map(({ outcome, call, touch, language, ...row }) => ({

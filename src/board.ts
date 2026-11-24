@@ -1,4 +1,6 @@
 import { followUp } from './calls.ts'
+import { longAgo } from './hours.ts'
+import type { Hours } from './hours.ts'
 import type { Counted, KeptCall, Subject } from './types.ts'
 
 /** A step as the board needs it: its name, and how long a person may stand at it before they have waited too long. */
@@ -52,13 +54,15 @@ export interface BoardColumn<Row = BoardPlace> {
  */
 export function board(
   people: readonly BoardPerson[],
-  options: { steps: readonly BoardStep[]; at: number; today: number; returnWait?: number },
+  options: { steps: readonly BoardStep[]; at: number; today: number; returnWait?: number; hours?: Hours },
 ): { columns: BoardColumn[]; unplaced: number } {
-  const { steps, at, today, returnWait } = options
+  const { steps, at, today, returnWait, hours } = options
   const rank = new Map(steps.map((step, i) => [step.name, i]))
   const column = (step: string | null, wait: number | undefined, last: boolean): BoardColumn => ({ step, wait: wait ?? null, people: 0, fresh: 0, late: wait === undefined ? null : 0, done: last ? null : 0, rows: [] })
   const missed = column(null, returnWait, false)
   const columns = steps.map(({ name, wait }, i) => column(name, wait, i === steps.length - 1))
+  // Waited longer than the limit: since this or before. Counted in the time you were open, where that is known.
+  const limits = new Map([missed, ...columns].map((each) => [each, each.wait === null ? -Infinity : longAgo(hours, at, each.wait + 1)]))
   let unplaced = 0
 
   for (const person of people) {
@@ -91,7 +95,7 @@ export function board(
       continue
     }
     const began = open[0]?.at ?? since
-    const late = here.wait !== null && at - began > here.wait
+    const late = began <= limits.get(here)!
     here.people += 1
     here.fresh += Number(began >= today)
     if (late) here.late! += 1

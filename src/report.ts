@@ -64,7 +64,7 @@ function clockOf(timeZone: string): Intl.DateTimeFormat {
 }
 
 /** How far a time zone is ahead of UTC at an instant, in milliseconds. */
-function ahead(at: number, timeZone: string): number {
+export function ahead(at: number, timeZone: string): number {
   const parts = clockOf(timeZone).formatToParts(at)
   const part = (type: string) => Number(parts.find((each) => each.type === type)!.value)
   return Date.UTC(part('year'), part('month') - 1, part('day'), part('hour'), part('minute'), part('second')) - Math.floor(at / 1000) * 1000

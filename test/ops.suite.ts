@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, describe, test } from 'node:test'
-import { createGraph, createOps, hashPhone, recordCall } from '../src/index.ts'
+import { createGraph, createHours, createOps, hashPhone, recordCall } from '../src/index.ts'
 import type { OpsOptions } from '../src/index.ts'
 import type { Opened } from './suite.ts'
 
@@ -144,6 +144,42 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       clock.now += 20 * DAY
       await make({ returnHours: 480 }).check()
       assert.equal(posted.length, 3)
+    })
+
+    test('with opening hours, a night says nothing about calls, and a caller waits while you are open', async () => {
+      // T0 is a Tuesday, 22:13 in UTC. Open 9 to 17 on weekdays, and Thursday is a holiday.
+      const week = ['09:00-17:00']
+      const hours = createHours({ mon: week, tue: week, wed: week, thu: week, fri: week, holidays: ['2023-11-16'] })
+      const { graph, ops, clock, posted } = await fresh({ quiet: { calls: 4, touches: 4 }, returnHours: 8, hours })
+      const at = (day: number, hour: number) => Date.UTC(2023, 10, day, hour)
+      clock.now = at(14, 16)
+      await graph.touch({ subject: 'visitor:1', at: at(14, 15), gclid: 'G', campaign: 'Search' })
+      await graph.observe({ subject: 'visitor:1', identifiers: [`phone:${hashPhone('+15550100071')}`], at: at(14, 15) })
+      await recordCall(graph, { id: 'N1', from: '+15550100071', to: '+15550100001', at: at(14, 16), duration: 20, answered: false }, { results: 'expected', now: () => clock.now })
+      // All night, and until noon, under four hours open have passed. Visits come at night too, so their feed is counted by the clock.
+      clock.now = at(15, 11)
+      await ops.check()
+      assert.deepEqual(posted.map((text) => /no (touches|calls) for (\d+ \w+)/.exec(text)?.slice(1)), [['touches', '4 hours']])
+      assert.deepEqual((await ops.state()).feeds.map((feed) => [feed.name, feed.quiet]).slice(0, 2), [['touches', true], ['calls', false]])
+      clock.now = at(15, 12)
+      await ops.check()
+      assert.match(posted.at(-1)!, /no calls for 4 open hours/)
+      assert.equal((await ops.state()).feeds[1]!.quiet, true)
+      // Eight hours open since the miss: an hour on Tuesday, and seven on Wednesday. Thursday is a holiday.
+      clock.now = at(15, 15)
+      await ops.check()
+      assert.equal(posted.some((text) => text.includes('call back')), false)
+      clock.now = at(15, 16)
+      await ops.check()
+      assert.match(posted.at(-1)!, /has waited over 8 open hours for a call back/)
+      // Two weeks past due and no more, counted from when it was due and not from when they rang.
+      await recordCall(graph, { id: 'N2', from: '+15550100072', to: '+15550100001', at: at(15, 16), duration: 20, answered: false }, { results: 'expected', now: () => clock.now })
+      await graph.touch({ subject: `caller:${hashPhone('+15550100072')}`, at: at(15, 15), gclid: 'H' })
+      // Due on Friday at 16: an hour on Wednesday, none on Thursday, seven on Friday.
+      clock.now = at(17, 16) + 14 * DAY - HOUR
+      const count = posted.length
+      await ops.check()
+      assert.equal(posted.slice(count).filter((text) => text.includes('call back')).length, 1)
     })
 
     test('an alert that could not be delivered stays until it is', async () => {
