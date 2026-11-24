@@ -393,13 +393,57 @@ td.bar { min-width: 9rem; vertical-align: top; }
 .rules td.bar { width: 22%; min-width: 8rem; }
 .rules td:last-child { width: 26%; }
 
-.lanes { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--s1) var(--s3); align-items: center; padding: var(--s2) var(--s3); border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--muted); font-size: var(--small); }
-.lanes .lane { height: var(--s4); margin: 0 var(--s1); background: linear-gradient(var(--line), var(--line)) center / 100% 1px no-repeat; }
-.lanes .lane svg { height: 100%; overflow: visible; fill: var(--muted); }
-.lanes .arrival { fill: var(--accent); }
-.lanes .call { fill: var(--related); }
-.lanes .step, .lanes .value { fill: var(--same); }
-.lanes .decision { fill: var(--apart); }
+/* The journey over time. */
+.segments { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--soft); }
+.segments button { height: 26px; min-height: 0; padding: 0 12px; border: 0; border-radius: 6px; background: none; color: var(--muted); font-size: var(--small); font-weight: 500; transition: background .15s, color .15s; }
+.segments button:hover { color: var(--ink); }
+.segments button[aria-pressed=true] { background: color-mix(in srgb, var(--ink) 12%, var(--panel)); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / .12); }
+.chart { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overflow: hidden; }
+.chart-head { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s3); align-items: center; justify-content: space-between; padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); }
+.chart-body { display: grid; grid-template-columns: max-content minmax(0, 1fr); }
+.chart.picked .chart-body { grid-template-columns: max-content minmax(0, 1fr) 296px; }
+.chart .names { border-right: 1px solid var(--line); }
+.chart .ruler { position: relative; height: 44px; border-bottom: 1px solid var(--line); }
+.chart .name { display: flex; gap: var(--s2); align-items: center; height: 40px; padding: 0 var(--s3); font-size: var(--body); }
+.chart .name .count { margin-left: auto; padding-left: var(--s3); color: var(--muted); font-size: var(--small); }
+.chart .track { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
+.chart .canvas { position: relative; min-width: 100%; }
+.chart .tick { position: absolute; bottom: 4px; padding-left: 6px; color: var(--muted); font-size: var(--small); white-space: nowrap; }
+.chart .tick b { position: absolute; bottom: 18px; left: 6px; color: var(--ink); font-weight: 600; }
+.chart .tick.edge { left: 0; }
+.chart .today { position: absolute; bottom: 3px; z-index: 2; white-space: nowrap; padding: 1px 8px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: var(--small); font-weight: 600; transform: translateX(-50%); }
+.chart .grid { position: absolute; inset: 44px 0 0; pointer-events: none; }
+.chart .grid i { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line); opacity: .6; }
+.chart .grid .weekend { background: var(--soft); opacity: .5; }
+.chart .grid .now { z-index: 1; background: var(--accent); opacity: 1; }
+.chart .lane { position: relative; height: 40px; }
+.chart .lane + .lane { border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
+.chart .arrival { --hue: var(--accent); } .chart .call { --hue: var(--related); } .chart .step, .chart .value { --hue: var(--same); } .chart .decision { --hue: var(--apart); } .chart .seen, .chart .consent { --hue: var(--muted); }
+.glyph { width: 16px; height: 16px; flex: none; fill: color-mix(in srgb, var(--hue) 22%, transparent); stroke: var(--hue); stroke-width: 1.5; stroke-linejoin: round; }
+.chart .mark { position: absolute; top: 7px; z-index: 1; display: grid; place-items: center; width: 26px; height: 26px; min-height: 0; min-width: 0; margin-left: -13px; padding: 0; border: 0; border-radius: 999px; background: none; transition: background .15s, transform .12s; }
+.chart .mark:hover { background: color-mix(in srgb, var(--hue) 16%, transparent); }
+.chart .mark:active { transform: scale(.92); }
+.chart .mark[aria-pressed=true] { background: color-mix(in srgb, var(--hue) 18%, var(--panel)); box-shadow: 0 0 0 2px var(--hue); }
+.chart .mark.missed { --hue: var(--apart); }
+.chart .mark.long { margin-left: 0; border-radius: 5px; background: color-mix(in srgb, var(--hue) 22%, var(--panel)); box-shadow: inset 0 0 0 1px var(--hue); }
+.chart .mark.heap { width: auto; min-width: 26px; padding: 0 7px; background: color-mix(in srgb, var(--hue) 16%, var(--panel)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--hue) 55%, transparent); color: var(--hue); font-size: var(--small); font-weight: 650; }
+.chart .wait { position: absolute; top: 19px; height: 2px; background: repeating-linear-gradient(90deg, var(--apart) 0 4px, transparent 4px 8px); opacity: .7; }
+.chart .told { padding: var(--s3); border-left: 1px solid var(--line); }
+.told-head { display: flex; gap: var(--s1); align-items: center; }
+.told-head .meta { margin: 0 auto 0 var(--s2); }
+.told-head button { width: 28px; height: 28px; min-height: 0; padding: 0; border: 0; background: none; font-size: 18px; color: var(--muted); border-radius: 6px; }
+.told-head button:hover:not(:disabled) { background: var(--soft); color: var(--ink); }
+.told-when { margin: var(--s3) 0 var(--s2); color: var(--muted); }
+.told-when b { color: var(--ink); font-size: var(--section); }
+.told-on { margin: var(--s3) 0; padding-top: var(--s2); border-top: 1px solid var(--line); }
+.timeline-entry { transition: background .4s; }
+.timeline-entry.found { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+@media (max-width: 900px) {
+  .chart.picked .chart-body { grid-template-columns: max-content minmax(0, 1fr); }
+  .chart .told { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line); }
+}
+@media (max-width: 560px) { .chart .name { padding: 0 var(--s2); } .chart .name > span:nth-child(2) { display: none; } .chart .name .count { padding-left: 0; } }
+@media (prefers-reduced-motion: reduce) { .chart *, .segments *, .timeline-entry { transition: none !important; } }
 .filters label { padding: var(--s1) var(--s2); border: 1px solid var(--line); border-radius: 4px; background: var(--panel); }
 .filters label:hover { background: var(--hover); }
 .wide.timeline { max-height: none; }
