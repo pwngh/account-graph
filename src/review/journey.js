@@ -6,12 +6,20 @@ const worthOf = (value, currency) => `${money(value)}${currency ? ` ${currency}`
 /** What happened, in words, with the rest of it on lines below. */
 function told(entry) {
   const more = (...text) => el('span', { class: 'reason' }, ...text)
+  const facts = (...text) => text.some(Boolean) ? more(text.filter(Boolean).join(' · ')) : ''
+  const tags = (values, rename = (name) => name) => {
+    const chips = Object.entries(values ?? {}).map(([name, value]) => reviewDisplay.chip(`${rename(name)}: ${value}`, 'muted'))
+    return chips.length ? el('span', { class: 'entry-tags' }, ...chips) : ''
+  }
+  const words = (name) => name.replaceAll('_', ' ')
   if (entry.kind === 'arrival') {
     const { touch } = entry
     const click = CLICKS.find(([field]) => touch[field])
-    return [`From ${entry.source}${touch.campaign || touch.campaignId ? `, ${touch.campaign || touch.campaignId}` : ''}. `, click ? el('span', { class: 'chip' }, click[1]) : touch.medium ? el('span', { class: 'chip' }, touch.medium) : '',
-      touch.landing ? more(touch.landing.startsWith('tel:') ? 'filed under the number that was rung' : `landed on ${touch.landing}`) : '', touch.term ? more(`searched ${touch.term}`) : '',
-      ...Object.entries(touch.custom ?? {}).map(([name, value]) => more(`${name}: ${value}`))]
+    return [`From ${entry.source}${touch.campaign || touch.campaignId ? `, ${touch.campaign || touch.campaignId}` : ''}. `,
+      click || touch.medium ? reviewDisplay.chip(click ? click[1] : touch.medium, 'muted') : '',
+      facts(touch.landing && (touch.landing.startsWith('tel:') ? 'filed under the number that was rung' : `landed on ${touch.landing}`),
+        touch.term && `searched ${touch.term}`),
+      tags(touch.custom)]
   }
   if (entry.kind === 'seen') {
     const kinds = new Map()
@@ -23,21 +31,24 @@ function told(entry) {
     const how = { answered: 'answered by a person', missed: 'missed', voicemail: 'went to voicemail', waiting: 'waiting for a result', unknown: 'not known whether anyone answered' }[state]
     const after = followUp && { open: 'not returned yet', returned: `returned after ${lasted(followUp.delay)}`, 'tried again': `rang again and got through after ${lasted(followUp.delay)}`, hidden: 'hid their number, so it cannot be returned' }[followUp.state]
     return [call.direction === 'outbound' ? 'Outbound ' : 'Inbound ', reviewDisplay.chip(how[0].toUpperCase() + how.slice(1), reviewDisplay.callTone(state)),
-      after ? more(`${after}${followUp.attempts > 0 ? `, tried ${amount(followUp.attempts)} ${followUp.attempts === 1 ? 'time' : 'times'}` : ''}`) : '',
-      more([call.duration === undefined ? 'length not recorded' : `${amount(Math.round(call.duration))} s`, call.result?.waited === undefined ? '' : `waited ${amount(Math.round(call.result.waited))} s`, call.visitor ? (call.flags.includes('pool') ? 'on the number shown to them' : 'followed a tap') : ''].filter(Boolean).join(', ')),
-      ...Object.entries(call.tags ?? {}).map(([name, value]) => more(`${name.replaceAll('_', ' ')}: ${value}`))]
+      facts(after && `${after}${followUp.attempts > 0 ? `, tried ${amount(followUp.attempts)} ${followUp.attempts === 1 ? 'time' : 'times'}` : ''}`,
+        call.duration === undefined ? 'length not recorded' : `${amount(Math.round(call.duration))} s`,
+        call.result?.waited === undefined ? '' : `waited ${amount(Math.round(call.result.waited))} s`,
+        call.visitor && (call.flags.includes('pool') ? 'on the number shown to them' : 'followed a tap')),
+      tags(call.tags, words)]
   }
   if (entry.kind === 'step') {
     const { outcome, first, sent } = entry
     const began = first === null || first.at === 0 ? 'first value not recorded' : `first recorded at ${worthOf(first.value, first.currency)}`
-    return [el('b', {}, outcome.stage), `, worth ${worthOf(outcome.value, outcome.currency)} now`, first && first.at > 0 && first.value === outcome.value ? '' : more(began),
-      ...Object.entries(outcome.tags ?? {}).map(([name, value]) => more(`${name.replaceAll('_', ' ')}: ${value}`)),
-      ...(sent.length > 0 ? sent.map((job) => more(el('span', { class: job.state === 'failed' ? 'apart' : '' }, `${SENT[job.state]} ${job.target}`), job.note ? `: ${job.note.replaceAll('_', ' ')}` : '')) : [more('not sent to any ad platform')])]
+    return [el('b', {}, outcome.stage), `, worth ${worthOf(outcome.value, outcome.currency)} now`,
+      first && first.at > 0 && first.value === outcome.value && first.currency === outcome.currency ? '' : el('span', { class: 'meta' }, ` · ${began}`),
+      tags(outcome.tags, words),
+      ...(sent.length > 0 ? sent.map((job) => more(el('span', { class: job.state === 'failed' ? 'apart' : '' }, `${SENT[job.state]} ${job.state === 'held' ? 'for ' : ''}${job.target}`), job.note ? `: ${words(job.note)}` : '')) : [more('not sent to any ad platform')])]
   }
-  if (entry.kind === 'value') return [`${entry.stage}: ${worthOf(entry.from.value, entry.from.currency)} → ${worthOf(entry.to.value, entry.to.currency)}`]
+  if (entry.kind === 'value') return [`${entry.stage}: from ${worthOf(entry.from.value, entry.from.currency)} to ${worthOf(entry.to.value, entry.to.currency)}`, el('span', { class: 'meta' }, ' · written down then')]
   if (entry.kind === 'consent') return [`Measuring ads ${entry.answer.adUserData ? 'granted' : 'denied'}, personalizing ${entry.answer.adPersonalization ? 'granted' : 'denied'}`, more(entry.answer.source ?? 'where is not recorded')]
   const { decision } = entry
-  return [`${ACTIONS[decision.action] ?? decision.action} `, ...decision.about.map((each) => more(each)), more('by ', author(decision.by), decision.reason ? `: ${decision.reason}` : '')]
+  return [`${ACTIONS[decision.action] ?? decision.action} ${decision.about.join(' · ')}`, more('by ', author(decision.by), decision.reason ? `: ${decision.reason}` : '')]
 }
 
 /** Whose it is, and why that is this person. */
@@ -87,13 +98,11 @@ function lanes(entries, shown) {
   if (dated.length === 0 || first === last) return ''
   const drawing = el('div', { class: 'lanes', 'aria-hidden': 'true' })
   for (const kind of kinds) {
-    const lane = el('div', { class: 'lane' })
+    const lane = svg('svg', { focusable: 'false' })
     for (const entry of dated) if (entry.kind === kind) {
-      const dot = el('i', { class: kind })
-      dot.style.left = `${(100 * (entry.at - first)) / (last - first)}%`
-      lane.append(dot)
+      lane.append(svg('circle', { class: kind, cx: `${(100 * (entry.at - first)) / (last - first)}%`, cy: 8, r: 4 }))
     }
-    drawing.append(el('span', {}, WHAT[kind]), lane)
+    drawing.append(el('span', {}, WHAT[kind]), el('div', { class: 'lane' }, lane))
   }
   return drawing
 }
@@ -107,7 +116,7 @@ view('journey', 'Journey', async (box, subject) => {
     return
   }
   const journey = await api('GET', `/journey?subject=${encodeURIComponent(subject)}`)
-  const top = el('section', {}, reviewDisplay.heading(reviewDisplay.id(subject), el('a', { class: 'link', href: subjectHash(subject) }, 'Account')))
+  const top = el('section', {}, reviewDisplay.heading(reviewDisplay.id(subject, true), el('a', { class: 'link', href: subjectHash(subject) }, 'Account')))
   box.append(top)
   if (journey.entries.length === 0) {
     top.append(el('p', { class: 'muted' }, 'No events recorded for this subject.'))

@@ -11,7 +11,7 @@ function hours(summary) {
   const at = new Map(summary.cells.map((cell) => [`${cell.weekday} ${cell.hour}`, cell]))
   const most = Math.max(1, ...summary.cells.map(value))
   const name = MEASURES.find(([key]) => key === measure)[1]
-  const table = el('table', { class: 'hours' }, el('caption', {}, `${name} · Call start hour · ${summary.timeZone}`),
+  const table = el('table', { class: 'hours' }, el('caption', {}, `${name} · Call start hour · ${summary.from} to ${summary.to} · ${summary.timeZone}`),
     el('tr', {}, th(''), ...Array.from({ length: 24 }, (_, hour) => th(String(hour).padStart(2, '0'), 'num')), th('All', 'num')))
   WEEKDAYS.forEach((day, i) => {
     const cells = Array.from({ length: 24 }, (_, hour) => at.get(`${i + 1} ${hour}`))
@@ -55,7 +55,7 @@ view('calls', 'Calls', async (box, first, last) => {
     el('tr', {}, th('Caller'), th('Age'), th('Result'), ...edge([th('Began'), th('Waited', 'num'), th('Tries', 'num')]), ...edge([th('Credited to'), th('Tags')])),
     ...open.calls.map(openRow(open.at)))
   box.append(el('section', {}, el('h2', {}, 'Missed and not returned, oldest first'),
-    open.calls.length > 0 ? wide('Missed and not returned', table) : el('p', { class: 'muted' }, total.calls === 0 ? 'No inbound calls recorded in this period.' : lost > 0 ? 'All callers who could be rung back have since been reached.' : 'No known missed calls in this period.'),
+    open.calls.length > 0 ? wide('Missed and not returned', table, true) : el('p', { class: 'muted' }, total.calls === 0 ? 'No inbound calls recorded in this period.' : lost > 0 ? 'All callers who could be rung back have since been reached.' : 'No known missed calls in this period.'),
     open.calls.length > 0 ? paged(table, open.next, 'Show more', async (next) => {
       const page = await api('GET', `/calls?${query}&after=${encodeURIComponent(next)}`)
       return { rows: page.calls.map(openRow(page.at)), next: page.next }
@@ -74,7 +74,7 @@ view('calls', 'Calls', async (box, first, last) => {
   const results = el('section', {}, reviewDisplay.section('Call results', saved(`calls-${summary.from}-${summary.to}`, states)), wide('How calls went', states),
     notes('Returned and tried again are shares of missed calls and voicemail. Other shares are of all inbound calls.'))
   const placement = el('section', {}, el('h2', {}, 'How calls were placed'), parts('How calls were placed', [
-    ['Tied to a visitor', coverage.visitor, 'Used a number shown to them or followed a tap.'],
+    ['Tied to a visitor', coverage.visitor, 'Used a number shown to them or followed a tap, so the call has their arrival.'],
     ['Filed under a channel', coverage.channel, 'Attributed by the number dialed.'],
     ['Neither', coverage.neither, 'Number not listed; no tap.'],
   ]), coverage.noResult > 0 ? el('p', { class: 'meta' }, `${amount(coverage.noResult)} have no result.`) : '')
@@ -82,5 +82,5 @@ view('calls', 'Calls', async (box, first, last) => {
 
   const pick = el('select', { 'aria-label': 'Which calls', on: { change: () => { measure = pick.value; grid.replaceChildren(hours(summary)) } } }, ...MEASURES.map(([key, text]) => el('option', { value: key, ...(key === measure && { selected: '' }) }, text)))
   const grid = el('div', { class: 'wide', tabindex: 0, role: 'region', 'aria-label': 'Calls by hour and weekday' }, hours(summary))
-  box.append(el('section', {}, reviewDisplay.section('By hour and weekday', pick), grid, el('p', { class: 'meta' }, 'Blank: no calls. 0: calls, but none of this result.')))
+  box.append(el('section', {}, reviewDisplay.section('By hour and weekday', pick), grid, el('p', { class: 'meta' }, 'Blank: no calls. 0: calls, but none of this result. Stronger shading: more calls of this kind.')))
 }, { every: 60_000 })

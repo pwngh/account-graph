@@ -73,8 +73,9 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
   // A campaign is charged whole, so its cost, clicks and arrivals stay on its own line and are not split.
   const split = (row) => (row.breakdown ?? []).filter((part) => part.outcomes + part.missed > 0 || part.name === '(not recorded)').map((part) => el('tr', { class: 'part' }, td(''), td('who', part.name), ...edge([td(''), td(''), td('')]), ...reached(part), ...edge([td('num', cash(part.value)), td(''), td('')])))
   const table = el('table', { class: 'campaign-report' }, el('tr', {}, group('Attribution', 2, true), group('Spend and traffic', 3), group('What followed', stages.length + 1 + (report.total.missed > 0 ? 1 : 0)), group('What it was worth', 3)),
-    el('tr', {}, th('Source'), th('Campaign'), ...edge([th('Cost', 'num'), th('Clicks billed', 'num'), th('Arrivals seen', 'num')]),
-      ...edge([...stages.map((stage) => th(stage, 'num')), th('People', 'num'), ...(report.total.missed > 0 ? [th('Missed calls', 'num')] : [])]), ...edge([th('Value', 'num'), th(per ? `Cost per ${per}` : 'Cost per outcome', 'num'), th('Return', 'num')])))
+    el('tr', {}, th('Source'), th('Campaign'), ...edge([th('Cost', 'num'), th('Clicks', 'num', 'Clicks billed'), th('Arrivals', 'num', 'Arrivals seen')]),
+      ...edge([...stages.map((stage) => th(stage, 'num')), th('People', 'num'), ...(report.total.missed > 0 ? [th('Missed', 'num', 'Missed calls')] : [])]),
+      ...edge([th('Value', 'num'), th(`Cost / ${per || 'outcome'}`, 'num', per ? `Cost per ${per}` : 'Cost per outcome'), th('Return', 'num')])))
   const all = report.total
   if (report.rows.length > 0) section.append(tiles(['Spent', all.costDays > 0 ? cash(all.cost) : '(not recorded)', all.missingDays > 0 && all.costDays > 0 ? `${amount(all.missingDays)} of ${amount(report.days)} days missing` : ''], ['Worth', cash(all.value), `${amount(all.outcomes)} ${all.outcomes === 1 ? 'outcome' : 'outcomes'}`], ['People', amount(all.people), `${amount(all.visits)} arrivals seen`],
     [per ? `Cost per ${per}` : 'Cost per outcome', all.costPerOutcome !== null ? cash(all.costPerOutcome) : all.thin ? 'withheld' : '—', report.leftOut > 0 ? `leaves out ${amount(report.leftOut)} ${report.leftOut === 1 ? 'campaign' : 'campaigns'}` : ''], ['Return', all.returnOnCost !== null ? `${all.returnOnCost.toFixed(1)}×` : all.thin ? 'withheld' : '—', report.leftOut > 0 ? `leaves out ${amount(report.leftOut)} ${report.leftOut === 1 ? 'campaign' : 'campaigns'}` : ''],
@@ -82,8 +83,8 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
   const note = (parts) => (parts.some(Boolean) ? el('span', { class: 'reason' }, parts.filter(Boolean).join(' · ')) : '')
   for (const row of report.rows) {
     table.append(el('tr', {}, td('', row.source === '(none)' ? el('span', { class: 'muted' }, 'no arrival credited') : row.source),
-      td('who', row.campaign || (row.campaignId ? reviewDisplay.id(row.campaignId) : el('span', { class: 'muted' }, 'No campaign named')),
-        row.campaign && row.campaignId ? el('span', { class: 'reason' }, reviewDisplay.id(row.campaignId)) : '',
+      td('who', row.campaign || row.campaignId || el('span', { class: 'muted' }, 'No campaign named'),
+        row.campaign && row.campaignId ? el('span', { class: 'reason' }, row.campaignId) : '',
         note([row.missingDays > 0 && (row.costDays > 0 || row.thin) && `${amount(row.missingDays)} of ${amount(report.days)} days missing`])), ...cells(row)), ...split(row))
   }
   table.append(el('tr', { class: 'sum' }, td('', 'All'), td('who', note([report.leftOut > 0 && `cost and return leave out ${amount(report.leftOut)} ${report.leftOut === 1 ? 'campaign' : 'campaigns'}`])), ...cells(report.total)), ...split(report.total))
@@ -92,17 +93,19 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
   const choose = el('select', { on: { change: () => go(address({ per: choose.value })) } }, el('option', { value: '' }, 'every outcome'),
     ...[...new Set([...report.steps, ...(per ? [per] : [])])].map((stage) => el('option', { value: stage, ...(stage === per && { selected: '' }) }, stage)))
   pick.append(el('label', {}, 'Break down by', breakdown), el('label', {}, 'Cost per', choose))
-  section.append(reviewDisplay.range(report),
-    report.currencies.length === 1 ? el('p', { class: 'meta' }, `Currency: ${report.currencies[0]}`) : '',
-    notes(`Outcomes count on the day they happen, under the credited arrival. Cost per outcome and return compare each campaign's costs with its outcomes on days with cost data. Both are withheld if data covers fewer than half of the ${amount(report.days)} days.`,
+  const range = reviewDisplay.range(report)
+  if (report.currencies.length === 1) range.append(` · Currency: ${report.currencies[0]}`)
+  section.append(el('div', { class: 'report-meta' },
+    el('div', {}, range, notes(
+      `Outcomes count on the day they happen, under the credited arrival. Cost per outcome and return compare each campaign's costs with its outcomes on days with cost data. Both are withheld if data covers fewer than half of the ${amount(report.days)} days.`,
       per ? `Cost per outcome counts only "${per}". Return still uses all value.` : '',
       by.startsWith('touch.') ? 'Breakdown uses the credited arrival.' : by.startsWith('outcome.') ? 'Breakdown uses the recorded outcome.' : '',
       by ? 'Costs, clicks and arrivals stay on the campaign row.' : '',
-      '0 means known to be none. A dash means no applicable cost or credited value.'))
-  if (report.filling) section.append(el('p', { class: 'banner' }, el('b', {}, 'Outcomes still coming in. '),
-    `At the slowest step, 95 in 100 outcomes arrive within ${amount(report.filling.days)} days. Costs for arrivals after ${reviewDisplay.day(report.filling.after)} are included, but some outcomes are not.`))
+      'Clicks are billed clicks; arrivals are arrivals seen. 0 means known to be none. A dash means no applicable cost or credited value.')),
+    report.filling ? el('p', { class: 'banner' }, el('b', {}, 'Outcomes still coming in. '),
+      `At the slowest step, 95 in 100 outcomes arrive within ${amount(report.filling.days)} days of the arrival. Costs for arrivals after ${reviewDisplay.day(report.filling.after)} are included, but some outcomes are not.`) : ''))
   const campaigns = el('section', {}, report.rows.length > 0
-    ? reviewDisplay.section('Campaigns', saved(`channels-${report.from}-${report.to}`, table))
+    ? reviewDisplay.section('Campaigns', el('span', { class: 'meta campaign-pan' }, 'Scroll for more columns'), saved(`channels-${report.from}-${report.to}`, table))
     : el('h2', {}, 'Campaigns'),
   report.currencies.length > 1 ? el('p', { class: 'apart' }, `Totals mix currencies: ${report.currencies.join(', ')}.`) : '',
   report.rows.length > 0 ? wide('Channels', table) : el('p', { class: 'muted' }, 'No campaign data in this period.'))

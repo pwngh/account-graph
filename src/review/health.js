@@ -29,15 +29,15 @@ function workings(ops, refused) {
   const feeds = el('table', {}, el('tr', {}, th('Feed'), th('Last written down'), th('Quiet after'), th('State')),
     ...ops.feeds.map((feed) => el('tr', {}, td('', NAMES[feed.name]), td('', ago(feed.last, ops.at)), td('', feed.hours > 0 ? `${amount(feed.hours)} h` : 'not watched'),
       td('', feed.quiet ? el('span', { class: 'chip apart' }, 'quiet') : feed.hours > 0 ? el('span', { class: 'chip same' }, 'heard from') : ''))))
-  out.push(el('section', {}, el('h2', {}, 'Feeds'), wide('Feeds', feeds)))
-
+ 
   const jobs = el('table', {}, el('tr', {}, th('Job'), th('State'), th('Began'), th('Last success'), th('Last failure'), th('Why')),
     ...ops.jobs.map((job) => el('tr', {}, td('', job.name), td('', el('span', { class: `chip ${job.state === 'done' ? 'same' : job.state === 'running' ? '' : 'apart'}` }, JOB[job.state])), td('', ago(job.started, ops.at)),
       td('', ago(job.succeeded, ops.at)), td('', job.failed === undefined ? el('span', { class: 'muted' }, 'none') : ago(job.failed, ops.at)),
       td('who', job.error && job.state === 'failed' ? job.error : '', ...job.open.slice(0, 3).map((began) => el('span', { class: 'reason' }, `A run that began ${when(began)} never finished.`))))))
   out.push(el('div', { class: 'panel-grid ops-grid' },
-    el('section', {}, el('h2', {}, 'Jobs'), ops.jobs.length > 0 ? wide('Jobs', jobs) : el('p', { class: 'muted' }, 'No jobs have run yet.')),
-    el('section', {}, el('h2', {}, 'Feeds'), wide('Feeds', feeds))))
+    el('section', {}, el('h2', {}, 'Feeds'), wide('Feeds', feeds)),
+    el('section', ops.jobs.length ? {} : { class: 'ops-empty' }, el('h2', {}, 'Jobs'),
+      ops.jobs.length > 0 ? wide('Jobs', jobs) : el('p', { class: 'muted' }, 'No jobs have run yet.'))))
 
   if (ops.pool) {
     const asked = `${amount(ops.pool.leased + ops.pool.exhausted)} ${ops.pool.leased + ops.pool.exhausted === 1 ? 'time' : 'times'} one was asked for since the server started, ${when(ops.pool.since)}`
@@ -48,9 +48,9 @@ function workings(ops, refused) {
   if (ops.outbox !== null) out.push(el('section', {}, el('h2', {}, 'Conversions to ad platforms, all time'), parts('Conversions by state', [['Sent', ops.outbox.sent], ['Waiting to be sent', ops.outbox.pending], ['Held for a call result', ops.outbox.held], ['Not sent, with a reason', ops.outbox.skipped], ['Refused for good', ops.outbox.failed]])))
   if (refused.length > 0) out.push(el('section', {}, el('h2', {}, `Refused conversions, ${refused.length < ops.outbox.failed ? `newest ${amount(refused.length)} of ${amount(ops.outbox.failed)}` : amount(refused.length)}`),
     wide('Refused conversions', el('table', {}, el('tr', {}, group('What', 4, true), group('Why it was refused', 2), el('td', { class: 'edge' })),
-      el('tr', {}, th('Happened'), th('Sent as'), th('Worth', 'num'), th('Who'), ...edge([th('Platform'), th('Answer')]), ...edge([th('')])),
-      ...refused.map((job) => el('tr', {}, td('nowrap', ago(job.at, ops.at)), td('', job.action), td('num', job.value === undefined ? none() : `${money(job.value)} ${job.currency ?? ''}`), td('who', caller(job.subject)),
-        ...edge([td('', job.target), td('why', job.note || unrecorded())]), td('edge', el('button', { 'aria-label': `Send ${job.transactionId} to ${job.target} again`, on: { click: (event) => again(job, event.currentTarget) } }, 'Send again')))))),
+      el('tr', {}, th('Happened'), th('Sent as'), th('Worth', 'num'), th('Who'), ...edge([th('Platform'), th('Answer')]), ...edge([th('Action')])),
+      ...refused.map((job) => el('tr', {}, td('nowrap', ago(job.at, ops.at)), td('', job.action), td('num', job.value === undefined ? none() : `${money(job.value)} ${job.currency ?? ''}`), td('who', open(job.subject)),
+        ...edge([td('', job.target), td('why', job.note || unrecorded())]), td('edge', el('button', { 'aria-label': `Send ${job.transactionId} to ${job.target} again`, on: { click: (event) => again(job, event.currentTarget) } }, 'Send again'))))), true),
     notes('Fix the refusal reason before sending again.')))
   return out
 }
@@ -88,16 +88,7 @@ view('health', 'Health', async (box) => {
   // What one shared identifier of a kind does by itself, which is what its weight means.
   const kinds = Object.entries(policy.rules.kinds).sort(([x, a], [y, b]) => b.weight - a.weight || (x < y ? -1 : 1))
   const bands = [['At or above what joins', (w) => w >= same], ['At or above what relates', (w) => w >= related && w < same], ['Below both, adds to others', (w) => w > 0 && w < related], ['Only confirms what the others relate']]
-  const scale = (weight) => {
-    const bar = meter(weight)
-    for (const [at, name] of [[related, 'related'], [same, 'same'], [bridge, 'bridge']]) {
-      const mark = el('i', { class: name })
-      mark.style.left = `${at * 100}%`
-      bar.append(mark)
-    }
-    bar.classList.add('scale')
-    return bar
-  }
+  const scale = (weight) => meter(weight, [[related, 'related'], [same, 'same'], [bridge, 'bridge']])
   const rules = el('table', { class: 'rules' }, el('tr', {}, el('td', {}), group('Evidence when only two share it, just seen', 2), group('What weakens it', 3), el('td', { class: 'edge' })),
     el('tr', {}, th('Kind'), ...edge([th('Weight', 'num'), th('Relative weight')]), ...edge([th('Shared by 4', 'num'), th('Half-life', 'num'), th('Links nothing past', 'num')]), th('Notes', 'edge')))
   for (const [name, holds] of bands) {
@@ -134,7 +125,7 @@ view('health', 'Health', async (box) => {
 
   const table = el('table', {}, el('tr', {}, th('One'), th('The other'), th('Contradictions, all time', 'num'), th('Last report'), th('By')))
   for (const { a, b, last, reversals } of disputes) {
-    table.append(el('tr', {}, td('who', caller(a)), td('who', caller(b)), td('num', amount(reversals)),
+    table.append(el('tr', {}, td('who', open(a)), td('who', open(b)), td('num', amount(reversals)),
       td('', reviewDisplay.chip(last.action === 'separate' ? 'Kept apart' : last.action === 'join' ? 'Joined' : 'Allowed to join', last.action === 'separate' ? 'apart' : 'same'),
         el('span', { class: 'reason' }, ago(last.at, Date.now()))), td('', author(last.by))))
   }

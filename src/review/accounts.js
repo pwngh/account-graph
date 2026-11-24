@@ -15,7 +15,7 @@ const kept = (verdict) => (verdict?.apart ? [el('span', { class: 'muted' }, 'Dec
 
 function profileOf(profile, more) {
   const detail = []
-  const title = el('h3', { class: 'page-title' }, reviewDisplay.id(profile.subject))
+  const title = el('h3', { class: 'page-title' }, reviewDisplay.id(profile.subject, true))
   if (!profile.known) return [el('section', {}, el('div', { class: 'page-head' }, title), el('p', { class: 'muted' }, 'No records for this subject.'))]
   const size = profile.cluster.members.length
   detail.push(el('section', {}, el('div', { class: 'page-head' }, title, el('div', { class: 'row' },
@@ -37,33 +37,33 @@ function profileOf(profile, more) {
   const verdicts = new Map(profile.verdicts.map((verdict) => [`${verdict.a}\n${verdict.b}`, verdict]))
   const verdict = (other) => verdicts.get(profile.subject < other ? `${profile.subject}\n${other}` : `${other}\n${profile.subject}`)
   const contested = (other) => (verdict(other)?.reversals >= 3 ? el('span', { class: 'chip apart', title: 'Find out which system is right, and stop the other from sending.' }, `systems disagree, ${verdict(other).reversals} times`) : '')
-  const links = el('table', {}, el('tr', {}, group('Who', 2, true), group('How strong, and why', 2), el('td', { class: 'edge' })), el('tr', {}, th('Subject'), th('Tie'), ...edge([th('Score', 'num'), th('Why')]), ...edge([th('')])))
+  const links = el('table', {}, el('tr', {}, group('Who', 2, true), group('How strong, and why', 2), el('td', { class: 'edge' })), el('tr', {}, th('Subject'), th('Tie'), ...edge([th('Score', 'num'), th('Why')]), ...edge([th('Action')])))
   for (const link of profile.links) {
     const inCluster = members.has(link.subject)
     links.append(el('tr', {},
-      td('who', caller(link.subject)),
+      td('who', open(link.subject)),
       td('', el('span', { class: `chip ${link.level}` }, link.level === 'same' ? (inCluster ? 'Same person' : 'Strong, not joined') : 'Related'), ' ', contested(link.subject)),
       ...edge([td('num score', reviewDisplay.compare(percent(link.score), link.score)), td('why', ...reasons(link.reasons))]),
       td('edge', el('button', { on: { click: () => act('Keep these two apart', `${profile.subject} and ${link.subject} will never share a cluster, whatever they share later.`, '/separate', { a: profile.subject, b: link.subject }, 'Keep apart') } }, 'Keep apart'))))
   }
   for (const other of profile.separated) {
-    links.append(el('tr', {}, td('who', caller(other)), td('', el('span', { class: 'chip apart' }, 'Kept apart'), ' ', contested(other)), ...edge([td('num score', none()), td('why', ...kept(verdict(other)))]),
+    links.append(el('tr', {}, td('who', open(other)), td('', el('span', { class: 'chip apart' }, 'Kept apart'), ' ', contested(other)), ...edge([td('num score', none()), td('why', ...kept(verdict(other)))]),
       td('edge', el('button', { on: { click: () => act('Allow these two to join again', `${profile.subject} and ${other}`, '/separate', { a: profile.subject, b: other, separated: false }, 'Allow', { undo: true }) } }, 'Allow again'))))
   }
-  detail.push(el('section', {}, el('h2', {}, 'Ties'), profile.links.length + profile.separated.length > 0 ? wide('Ties', links) : el('p', { class: 'muted' }, 'No ties meet the score threshold.')))
+  detail.push(el('section', {}, el('h2', {}, 'Ties'), profile.links.length + profile.separated.length > 0 ? wide('Ties', links, true) : el('p', { class: 'muted' }, 'No ties meet the score threshold.')))
 
   if (profile.flows.length > 0) {
     const moved = (n, asset) => (n > 0 ? `${amount(n)} ${asset}` : tally(0))
     const flows = el('table', {}, el('tr', {}, group('With whom', 2, true), group('What moved', 4)), el('tr', {}, th('Subject'), th('Tie'), ...edge([th('Sent', 'num'), th('Received', 'num'), th('Times', 'num'), th('Last')])))
     for (const flow of profile.flows) {
-      flows.append(el('tr', {}, td('who', caller(flow.subject)),
+      flows.append(el('tr', {}, td('who', open(flow.subject)),
         td('', reviewDisplay.chip(flow.relation === 'none' ? 'No tie' : flow.relation === 'same' ? 'Same person' : 'Related', flow.relation === 'none' ? '' : flow.relation)),
         ...edge([td('num', moved(flow.sent, flow.asset)), td('num', moved(flow.received, flow.asset)), td('num', amount(flow.count)), td('nowrap', reviewDisplay.time(flow.last))])))
     }
     const section = el('section', {}, el('h2', {}, 'Money, all time'), wide('Money', flows))
     if (profile.rings.length > 0) {
       section.append(el('h2', {}, 'Rings: value that came back'), el('ul', {}, ...profile.rings.map((ring) => el('li', {},
-        ...ring.subjects.flatMap((subject) => [caller(subject), ' paid ']), reviewDisplay.id(profile.subject), '. ',
+        ...ring.subjects.flatMap((subject) => [open(subject), ' paid ']), reviewDisplay.id(profile.subject, true), '. ',
         el('span', { class: 'muted' }, `${amount(ring.amount)} ${ring.asset} went all the way round. `),
         ring.tied > 0 ? el('span', { class: 'chip apart' }, `${ring.tied} of them in this cluster`) : ''))))
     }
@@ -83,7 +83,7 @@ function profileOf(profile, more) {
   }
 
   const history = el('table', {}, el('tr', {}, th('When'), th('Event'), th('Identifier')))
-  for (const sighting of profile.history) history.append(el('tr', {}, td('nowrap', reviewDisplay.time(sighting.at)), td('', sighting.event ?? ''), td('who', reviewDisplay.id(sighting.identifier))))
+  for (const sighting of profile.history) history.append(el('tr', {}, td('', reviewDisplay.time(sighting.at)), td('', sighting.event ?? ''), td('who', reviewDisplay.id(sighting.identifier, true))))
   records.append(el('section', {}, el('h2', {}, `Sightings, newest ${amount(profile.history.length)}`),
     profile.history.length > 0 ? wide('Sightings', history) : el('p', { class: 'muted' }, 'No sightings recorded.')))
   detail.push(records)
@@ -137,9 +137,10 @@ async function decisionList(audit) {
     // Only the newest entry about an identifier can be undone, and only a list of everyone's decisions shows which that is.
     const newest = !listing.author && !seen.has(d.about[0])
     if (d.action === 'ignore' || d.action === 'restore') seen.add(d.about[0])
-    const about = d.action === 'prune' ? [reviewDisplay.time(Number(d.about[0]))] : d.about.map(reviewDisplay.id)
-    return el('li', {}, el('b', {}, ACTIONS[d.action] ?? d.action), ...about.map((each) => el('span', { class: 'reason' }, each)),
-      author(d.by), el('span', { class: 'muted' }, ' · ', reviewDisplay.time(d.at, Date.now()), d.reason ? `: ${d.reason} ` : ' '),
+    const about = d.action === 'prune' ? [reviewDisplay.time(Number(d.about[0]))] : d.about.map((id) => reviewDisplay.id(id, true))
+    return el('li', {}, el('b', {}, ACTIONS[d.action] ?? d.action),
+      about.length ? el('span', { class: 'reason' }, ...about.flatMap((each, i) => i ? [' · ', each] : [each])) : '',
+      el('div', { class: 'meta decision-by' }, author(d.by), ' · ', reviewDisplay.time(d.at, Date.now()), d.reason ? `: ${d.reason}` : ''),
       d.action === 'ignore' && newest ? el('button', { class: 'link', 'data-key': `decision-${d.seq}`, on: { click: () => act('Resume linking through this identifier', d.about[0], '/ignore', { identifier: d.about[0], ignored: false }, 'Resume', { undo: true }) } }, 'undo') : '')
   }
   const list = el('ul', { id: 'decisions' }, ...(page.decisions.length > 0 ? page.decisions.map(entry) : [el('li', { class: 'muted' }, listing.author ? 'None by these.' : 'None yet.')]))

@@ -13,7 +13,7 @@ function side(profile) {
   const count = (list) => Object.entries(list.reduce((out, each) => ({ ...out, [each]: (out[each] ?? 0) + 1 }), {})).sort(([, x], [, y]) => y - x).map(([name, n]) => `${name} (${amount(n)})`).join(', ')
   const own = [...new Set(history.map((sighting) => sighting.identifier))].map((identifier) => identifier.slice(0, identifier.indexOf(':')))
   const part = (name, ...told) => [el('dt', {}, name), el('dd', {}, ...told)]
-  return el('section', { 'aria-label': subject }, el('div', { class: 'section-head' }, el('h3', {}, caller(subject)),
+  return el('section', { 'aria-label': subject }, el('div', { class: 'section-head' }, el('h3', {}, open(subject)),
     el('a', { class: 'link', href: `#/journey/${encodeURIComponent(subject)}` }, 'Journey')),
     el('dl', {}, ...part('Cluster', profile.cluster && profile.cluster.members.length > 1 ? `one of ${amount(profile.cluster.members.length)}${profile.cluster.oversized ? ', larger than the review size' : ''}` : 'on its own'),
       ...part('Seen', ...(history.length === 0 ? [unrecorded()] : [
@@ -55,7 +55,7 @@ view('decide', 'Decide', async (box) => {
     passed > 0 ? el('button', { on: { click: reset } }, 'Show them again') : ''),
   tiles(['Related, not joined', amount(found.total), 'Strongest first'], ['Subjects checked', amount(found.seen), 'From the newest 10,000 sightings'],
     passed > 0 && ['Skipped', amount(passed), 'Until this screen is closed']),
-  notes('Only subjects in the newest 10,000 sightings are checked.')))
+  notes('Only subjects in the newest 10,000 sightings are checked. Pairs of subjects not seen in those sightings are not listed.')))
 
   if (pair) {
     const [left, right] = await Promise.all([pair.a, pair.b].map((subject) => api('GET', `/subject?subject=${encodeURIComponent(subject)}`)))
@@ -72,14 +72,14 @@ view('decide', 'Decide', async (box) => {
   } else box.append(el('section', {}, el('p', { class: 'muted' }, found.total === 0 ? 'No unjoined ties among the subjects checked.' : 'Every pair in this list was skipped.')))
 
   const lists = el('div', { class: 'panel-grid' })
-  if (decided.length > 0) lists.append(el('section', {}, el('h2', {}, 'Decided here, newest first'), el('ul', {}, ...decided.map((entry) => el('li', {}, entry.what === 'join' ? 'Joined ' : 'Kept apart ', caller(entry.a), ' and ', caller(entry.b), ' ',
+  if (decided.length > 0) lists.append(el('section', {}, el('h2', {}, 'Decided here, newest first'), el('ul', {}, ...decided.map((entry) => el('li', {}, entry.what === 'join' ? 'Joined ' : 'Kept apart ', open(entry.a), ' and ', open(entry.b), ' ',
     el('button', { class: 'link', 'data-key': `undo-${entry.what}-${pairName(entry)}`, on: { click: () => undo(entry) } }, 'undo'))))))
   const rest = queue.filter((each) => each !== pair)
   if (rest.length > 0) {
-    const table = el('table', {}, el('tr', {}, th('First subject'), th('Second subject'), th('Score', 'num'), th('Evidence'), th('')), ...rest.slice(0, 20).map((each) => el('tr', {}, td('who', caller(each.a)), td('who', caller(each.b)), td('num score', reviewDisplay.compare(percent(each.score), each.score)),
+    const table = el('table', {}, el('tr', {}, th('First subject'), th('Second subject'), th('Score', 'num'), th('Evidence'), th('Action')), ...rest.slice(0, 20).map((each) => el('tr', {}, td('who', open(each.a)), td('who', open(each.b)), td('num score', reviewDisplay.compare(percent(each.score), each.score)),
       td('', [...new Set(each.reasons.filter((reason) => reason.counted !== false).map((reason) => reason.identifier.split(':')[0]))].join(', ')),
       td('', el('button', { class: 'link', 'data-key': pairName(each), on: { click: async () => { picked = pairName(each); await load(); picked = undefined } } }, 'look')))))
-    lists.append(el('section', {}, el('h2', {}, `Next${rest.length > 20 ? ', first 20' : ''}`), wide('Next', table)))
+    lists.append(el('section', {}, el('h2', {}, `Next${rest.length > 20 ? ', first 20' : ''}`), wide('Next', table, true)))
   }
   if (lists.childElementCount > 0) box.append(lists)
 })

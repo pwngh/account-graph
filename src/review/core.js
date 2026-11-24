@@ -26,7 +26,8 @@ const days = (gap) => {
 }
 const amount = (n) => n.toLocaleString()
 const money = (n) => n.toLocaleString(undefined, { maximumFractionDigits: 2 })
-const th = (text, kind) => el('th', { scope: 'col', ...(kind && { class: kind }) }, text)
+const th = (text, kind, full) => el('th', { scope: 'col', ...(kind && { class: kind }),
+  ...(full && { title: full, 'aria-label': full, 'data-csv-label': full }) }, text)
 const td = (kind, ...children) => el('td', kind ? { class: kind } : {}, ...children)
 // Three things an empty cell may mean, told apart: known to be none, nothing to say, and not recorded.
 const none = () => el('span', { class: 'muted' }, '—')
@@ -35,7 +36,7 @@ const unrecorded = () => el('span', { class: 'muted' }, '(not recorded)')
 
 const reviewDisplay = {
   idText: (value) => value.length > 24 ? `${value.slice(0, 18)}…` : value,
-  id: (value) => el('span', { title: value }, reviewDisplay.idText(value)),
+  id: (value, full = false) => el('span', { title: value }, full ? value : reviewDisplay.idText(value)),
   subject: (value, href = subjectHash(value)) => el('a', { class: 'link', href, title: value }, reviewDisplay.idText(value)),
   time: (at, now) => {
     if (at === null || at === undefined) return unrecorded()
@@ -57,10 +58,13 @@ const reviewDisplay = {
 const edge = ([cell, ...rest]) => (cell.classList.add('edge'), [cell, ...rest])
 const group = (text, columns, first) => el('th', { scope: 'col', colspan: columns, class: first ? 'group' : 'edge group' }, text)
 /** A share drawn as a bar beside its number. The number says it; the bar only lets rows be compared. */
-const meter = (share) => {
-  const bar = el('span', {})
-  bar.style.width = `${Math.max(0, Math.min(1, share)) * 100}%`
-  return el('span', { class: 'meter', 'aria-hidden': 'true' }, bar)
+const meter = (share, marks = []) => {
+  const at = (n) => Math.max(0, Math.min(1, n)) * 100
+  const bar = svg('svg', { viewBox: '0 0 100 8', preserveAspectRatio: 'none', focusable: 'false' },
+    svg('rect', { class: 'track', x: 0, y: 2, width: 100, height: 4 }),
+    svg('rect', { class: 'fill', x: 0, y: 2, width: at(share), height: 4 }),
+    ...marks.map(([share, name]) => svg('line', { class: name, x1: at(share), x2: at(share), y1: 0, y2: 8, 'vector-effect': 'non-scaling-stroke' })))
+  return el('span', { class: marks.length ? 'meter scale' : 'meter', 'aria-hidden': 'true' }, bar)
 }
 /** Notes on how a view is worked out, there for whoever wants them and not in the way of the numbers. */
 const notes = (...texts) => el('details', {}, el('summary', { class: 'muted' }, 'How to read this'), ...texts.map((text) => el('p', { class: 'muted' }, text)))
@@ -70,18 +74,19 @@ const tiles = (...list) => el('dl', { class: 'tiles' }, ...list.filter(Boolean).
 /** Parts of a whole as one bar, and the same numbers as a list under it. A part of none keeps its place in the list. */
 function parts(label, list) {
   const whole = list.reduce((sum, [, n]) => sum + n, 0)
-  const bar = el('div', { class: 'parts', 'aria-hidden': 'true' })
+  const drawing = svg('svg', { viewBox: '0 0 100 12', preserveAspectRatio: 'none', focusable: 'false' })
+  let soFar = 0
   list.forEach(([, n], i) => {
     if (n === 0) return
-    const part = el('span', { class: `part${i}` })
-    part.style.flexGrow = n
-    bar.append(part)
+    drawing.append(svg('rect', { class: `part${i}`, x: 100 * soFar / whole, y: 0, width: 100 * n / whole, height: 12 }))
+    soFar += n
   })
-  return el('div', {}, bar, el('ul', { class: 'legend', 'aria-label': label }, ...list.map(([name, n, note], i) => el('li', {}, el('span', { class: `key part${i}`, 'aria-hidden': 'true' }),
+  const bar = el('div', { class: 'parts', 'aria-hidden': 'true' }, drawing)
+  return el('div', { class: 'part-summary' }, bar, el('ul', { class: 'legend', 'aria-label': label }, ...list.map(([name, n, note], i) => el('li', {}, el('span', { class: `key part${i}`, 'aria-hidden': 'true' }),
     el('span', {}, name, note ? el('span', { class: 'reason' }, note) : ''), el('b', {}, tally(n)), el('span', { class: 'muted' }, whole > 0 ? percent(n / whole) : '—')))))
 }
 /** A table that scrolls inside its own box. The box takes the keyboard, so arrow keys can scroll it. */
-const wide = (label, table) => {
+const wide = (label, table, cards = false) => {
   // Keep both lines of a grouped heading pinned together.
   const heading = el('thead')
   const rows = [...table.children].filter((node) => node.tagName !== 'CAPTION' && node.tagName !== 'COLGROUP')
@@ -89,6 +94,34 @@ const wide = (label, table) => {
     if (row.tagName !== 'TR' || !row.querySelector('th[scope=col]')) break
     if (!heading.parentNode) table.insertBefore(heading, row)
     heading.append(row)
+  }
+  if (cards) {
+    // These rows keep their headers in the accessibility tree even when laid out as cards.
+    table.classList.add('table-cards')
+    table.setAttribute('role', 'table')
+    heading.setAttribute('role', 'rowgroup')
+    for (const row of heading.rows) {
+      row.setAttribute('role', 'row')
+      for (const cell of row.cells) cell.setAttribute('role', cell.tagName === 'TH' ? 'columnheader' : 'cell')
+    }
+    const prefix = `review-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
+    const heads = [...heading.lastElementChild.cells]
+    heads.forEach((cell, i) => { cell.id = `${prefix}-col-${i + 1}` })
+    const body = el('tbody', { role: 'rowgroup' })
+    table.append(body)
+    table.appendRows = (...added) => {
+      for (const row of added) {
+        row.setAttribute('role', 'row')
+        for (const [i, cell] of [...row.cells].entries()) {
+          cell.setAttribute('role', 'cell')
+          cell.setAttribute('headers', heads[i].id)
+          const value = el('div', { class: 'card-value' }, ...cell.childNodes)
+          cell.append(el('span', { class: 'card-label', 'aria-hidden': 'true' }, heads[i].textContent), value)
+        }
+        body.append(row)
+      }
+    }
+    table.appendRows(...rows.filter((row) => row.tagName === 'TR' && row.parentNode === table))
   }
   return el('div', { class: 'wide', tabindex: 0, role: 'region', 'aria-label': label }, table)
 }
@@ -432,7 +465,7 @@ function lasted(ms) {
  */
 function saved(name, table) {
   const cell = (node) => {
-    const parts = [...node.childNodes].map((each) => each.textContent.trim()).filter(Boolean).join(' · ')
+    const parts = node.dataset.csvLabel ?? [...node.childNodes].map((each) => each.textContent.trim()).filter(Boolean).join(' · ')
     const text = /^\s*[=+\-@\uff1d\uff0b\uff0d\uff20]/.test(parts) && !/^-?\d+(\.\d+)?$/.test(parts) ? `'${parts}` : parts
     return `"${text.replaceAll('"', '""')}"${','.repeat(node.colSpan - 1)}`
   }
@@ -458,7 +491,8 @@ function paged(table, next, more, fetchPage) {
     try {
       const page = await fetchPage(next)
       if (turn !== loading) return
-      table.append(...page.rows)
+      if (table.appendRows) table.appendRows(...page.rows)
+      else table.append(...page.rows)
       browsing = true
       next = page.next
       button.hidden = next === null
