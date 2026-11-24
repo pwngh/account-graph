@@ -139,6 +139,36 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   await until('the new record', async () => (await text('#decisions')).includes('cousins, one account'))
   const taken = (await decisions()).length
 
+  // The graph: one mark a subject, one line a tie. Picked with the keyboard, opened out, and left so by a refresh.
+  const marks = () => run(`[...document.querySelectorAll('.graph .node')].map((mark) => mark.node.id).sort().join(' ')`)
+  const kinds = () => run(`[...document.querySelectorAll('.graph .edge')].map((line) => line.classList[1]).sort().join(' ')`)
+  const key = (id: string, name: string) => run(`[...document.querySelectorAll('.graph .node')].find((mark) => mark.node.id === '${id}').dispatchEvent(new KeyboardEvent('keydown', { key: '${name}', bubbles: true }))`)
+  await until('the graph', async () => (await marks()) === 'account:1 account:2 account:3')
+  assert.equal(await kinds(), 'apart related')
+  await key('account:3', 'Enter')
+  assert.match(await text('.graph .card'), /account:3.*tied, not joined.*email/)
+  await graph.observe({ subject: 'account:3', identifiers: ['ip:near'], at: T0 })
+  await graph.observe({ subject: 'account:40', identifiers: ['ip:near', 'email:forty'], at: T0 })
+  await graph.observe([{ subject: 'account:3', identifiers: ['canvas:near'], at: T0 }, { subject: 'account:40', identifiers: ['canvas:near'], at: T0 }])
+  await run(`[...document.querySelectorAll('.graph .card button')].find((each) => each.textContent === 'Show its ties').click()`)
+  await until('the ties of another', async () => (await marks()).includes('account:40'))
+  const places = await until('it to come to rest', async () => {
+    const one = await run(`JSON.stringify([...drawn.spots])`)
+    await pause(300)
+    return one === (await run(`JSON.stringify([...drawn.spots])`)) && one
+  })
+  await run(`load(beat)`)
+  assert.deepEqual([await run(`JSON.stringify([...drawn.spots])`), (await marks()).includes('account:40'), (await text('.graph .card')).includes('account:3')], [places, true, true])
+  // A refresh does not take the graph from under a hand, and one kind of tie can be hidden.
+  await run(`document.querySelector('.graph').classList.add('held')`)
+  assert.equal(await run(`interrupting()`), true)
+  await run(`document.querySelector('.graph').classList.remove('held')`)
+  await run(`document.querySelector('.graph .keys .apart').click()`)
+  assert.equal(await run(`getComputedStyle(document.querySelector('.graph .edge.apart')).display`), 'none')
+  await run(`document.querySelector('.graph .keys .apart').click()`)
+  await key('account:3', 'Escape')
+  assert.equal(await shown('.graph .card'), false)
+
   // Escape decides nothing. Signing out forgets the token and what was on screen.
   await keepApart('account:3')
   await press('Escape')
@@ -146,7 +176,7 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   assert.equal((await decisions()).length, taken)
   await run(`decided.push({ a: 'x', b: 'y', what: 'apart' }); skipped.add('x y')`)
   await run(`document.getElementById('leave').click()`)
-  assert.deepEqual(await run(`[decided.length, skipped.size]`), [0, 0])
+  assert.deepEqual(await run(`[decided.length, skipped.size, drawn.spots.size, drawn.more.size]`), [0, 0, 0, 0])
   await until('the token field', () => shown('#token'))
   assert.deepEqual([await run(`sessionStorage.getItem('token')`), (await text('#view')).includes('account:1'), await shown('#who')], ['', false, false])
   await enter('dana-token')

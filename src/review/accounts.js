@@ -9,40 +9,6 @@ function reasons(list) {
   return list.filter((reason) => reason.counted !== false).flatMap((reason) => [line(reason), ...list.filter((other) => reason.group !== undefined && other.group === reason.group && other.counted === false).map(line)])
 }
 
-/** The subject in the middle, the subjects tied to it around it, and the ties between them. */
-const ROOM = 24
-/** Everyone to draw around a subject: its own ties and separations first, then the rest of its cluster. */
-const around = (profile) => [...new Set([...profile.separated, ...profile.links.map((link) => link.subject), ...(profile.cluster?.members ?? [])])].filter((each) => each !== profile.subject)
-
-function picture(profile) {
-  const others = around(profile).slice(0, ROOM)
-  const members = new Set(profile.cluster?.members ?? [])
-  const spot = new Map([[profile.subject, [300, 170]]])
-  others.forEach((subject, i) => {
-    const angle = (2 * Math.PI * i) / others.length - Math.PI / 2
-    spot.set(subject, [300 + 220 * Math.cos(angle), 170 + 125 * Math.sin(angle)])
-  })
-  const drawing = svg('svg', { viewBox: '0 0 600 340', role: 'group', 'aria-label': `Ties of ${profile.subject}` })
-  const line = (a, b, kind, width, label) => {
-    const [from, to] = [spot.get(a), spot.get(b)]
-    if (from && to) drawing.append(svg('line', { class: `tie ${kind}`, x1: from[0], y1: from[1], x2: to[0], y2: to[1], 'stroke-width': width }, svg('title', {}, label)))
-  }
-  // A strong tie that a cut left out of the cluster is drawn like a related one: tied, not joined.
-  for (const tie of profile.ties) {
-    const joined = tie.level === 'same' && members.has(tie.a) && members.has(tie.b)
-    line(tie.a, tie.b, joined ? 'same' : 'related', 1 + 3 * tie.score, `${tie.a} and ${tie.b}: ${joined ? 'joined' : 'tied, not joined'}, ${percent(tie.score)}`)
-  }
-  for (const [a, b] of [...profile.separated.map((other) => [profile.subject, other]), ...profile.apart]) line(a, b, 'apart', 2, `${a} and ${b}: kept apart`)
-  for (const [subject, [x, y]] of spot) {
-    const me = subject === profile.subject
-    const node = svg('circle', { class: `node${me ? ' me' : members.has(subject) ? ' member' : ''}`, cx: x, cy: y, r: me ? 11 : 8, tabindex: 0, role: 'link', 'aria-label': subject }, svg('title', {}, subject))
-    node.addEventListener('click', () => go(subjectHash(subject)))
-    node.addEventListener('keydown', (event) => event.key === 'Enter' && go(subjectHash(subject)))
-    drawing.append(node, svg('text', { x, y: y + (y < 170 ? -14 : 22), 'text-anchor': 'middle' }, subject.length > 22 ? `${subject.slice(0, 21)}…` : subject))
-  }
-  return drawing
-}
-
 /** Why two are kept apart, in the words of whoever decided it. */
 const kept = (verdict) => (verdict?.apart ? [el('span', { class: 'muted' }, 'Decided by '), author(verdict.apart.by), el('span', { class: 'muted' }, `, ${when(verdict.apart.at)}: ${verdict.apart.reason ?? '(no reason recorded)'}`),
   verdict.last.action === 'join' ? el('span', { class: 'reason' }, 'A later decision joined them, which does not undo this one. By ', author(verdict.last.by), `, ${when(verdict.last.at)}`) : ''] : [el('span', { class: 'muted' }, '(no decision recorded)')])
@@ -63,8 +29,8 @@ function profileOf(profile) {
       el('button', { on: { click: () => act('Join as one person', `${profile.subject} and the subject you name will be treated as one person.`, '/join', { a: profile.subject }, 'Join', { otherKey: 'b' }) } }, 'Join with another…'),
       el('button', { class: 'danger', on: { click: () => act('Forget this subject', `Everything recorded about ${profile.subject} will be deleted. This cannot be undone.`, '/forget', { subject: profile.subject }, 'Delete') } }, 'Forget…'))))
 
-  if (profile.ties.length > 0 || profile.separated.length > 0) detail.push(el('section', {}, el('h2', {}, 'Picture'), picture(profile),
-    el('p', { class: 'muted' }, `Solid: joined. Dashed: tied, not joined. Dotted red: kept apart by a decision. Open a circle to see that subject.${around(profile).length > ROOM ? ` ${ROOM} of ${amount(around(profile).length)} are drawn; the ties are all listed below.` : ''}`)))
+  if (profile.ties.length > 0 || profile.separated.length > 0) detail.push(el('section', {}, el('h2', {}, 'Graph'), graphOf(profile),
+    around(profile).length > ROOM ? el('p', { class: 'muted' }, `${ROOM} of ${amount(around(profile).length)} are drawn. The ties are all listed below.`) : ''))
 
   const members = new Set(profile.cluster.members)
   // What was last decided about this subject and another, and whether systems keep reversing it.
@@ -206,7 +172,11 @@ view('accounts', 'Accounts', async (box, subject) => {
   // The record first: a decision that lands while the rest is read is then newer than what is shown, and refuses one made on it.
   const audit = await api('GET', '/audit')
   box.dataset.seen = audit.head?.seq ?? 0
-  const [queue, recent, profile] = await Promise.all([clusterList(), api('GET', '/recent'), subject ? api('GET', `/subject?subject=${encodeURIComponent(subject)}`) : undefined])
+  const read = (each) => api('GET', `/subject?subject=${encodeURIComponent(each)}`)
+  // Whoever was opened out on the graph is read again with it.
+  const beyond = drawn.subject === subject ? [...drawn.more.keys()] : []
+  const [queue, recent, profile, ...more] = await Promise.all([clusterList(), api('GET', '/recent'), subject ? read(subject) : undefined, ...beyond.map(read)])
+  for (const each of more) if (drawn.subject === subject && drawn.more.has(each.subject)) if (each.known) drawn.more.set(each.subject, each); else drawn.more.delete(each.subject)
   const decisions = await decisionList(audit)
 
   left.append(el('section', {}, el('h2', {}, 'Largest clusters, now'), ...queue))

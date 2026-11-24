@@ -320,7 +320,7 @@ function fresh(problem) {
 }
 /** Typing or answering a question is not interrupted: the next look finds the change again. */
 const busy = () => $('ask').open || ($('view').contains(document.activeElement) && document.activeElement.matches('input:not([readonly]), select, textarea'))
-const interrupting = () => document.hidden || busy() || browsing
+const interrupting = () => document.hidden || busy() || browsing || holding()
 let looking = false
 async function look() {
   if (interrupting() || looking || pending || !$('token').value || !loadedAt) return fresh()

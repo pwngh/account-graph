@@ -116,12 +116,6 @@ tr.sum td { font-weight: 600; border-bottom: 0; }
 .reason b { color: var(--ink); font-weight: 500; }
 svg { width: 100%; height: auto; max-height: 360px; display: block; }
 svg text { font: 11px system-ui, sans-serif; fill: var(--ink); }
-svg .node { fill: var(--panel); stroke: var(--muted); stroke-width: 1.5; cursor: pointer; }
-svg .node.me { fill: var(--accent); stroke: var(--accent); }
-svg .node.member { stroke: var(--same); stroke-width: 2.5; }
-svg .node:focus-visible { outline: none; stroke: var(--accent); stroke-width: 4; }
-svg .tie.same { stroke: var(--same); } svg .tie.related { stroke: var(--related); stroke-dasharray: 5 4; }
-svg .tie.apart { stroke: var(--apart); stroke-dasharray: 2 5; }
 #notice { padding: 6px 16px; background: var(--soft); border-bottom: 1px solid var(--line); }
 #notice.bad { color: var(--apart); }
 #notice.bad:not(:empty)::before { content: "Problem: "; font-weight: 600; }
@@ -157,3 +151,53 @@ dialog p { overflow-wrap: anywhere; }
 dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0 12px; margin: 0 0 4px; }
 dt { color: var(--muted); }
 dd { margin: 0; overflow-wrap: anywhere; }
+/* The graph: marks take their color from what they mean, and the rest falls back when one is brought forward. */
+.graph { position: relative; height: 520px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background-color: var(--panel); background-image: radial-gradient(var(--line) 1px, transparent 1px); background-size: 22px 22px; background-position: -1px -1px; }
+.graph:fullscreen { height: 100%; border: 0; border-radius: 0; }
+.graph > svg { width: 100%; height: 100%; max-height: none; cursor: grab; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+.graph.held > svg { cursor: grabbing; }
+.graph path.mine { --hue: var(--same); }
+.graph > svg > g > g:first-child path { --hue: var(--muted); fill: var(--hue); stroke: var(--hue); stroke-width: 84; stroke-linejoin: round; stroke-linecap: round; opacity: .07; }
+.graph > svg > g > g:first-child path.mine { --hue: var(--same); opacity: .1; }
+.graph .joined { --hue: var(--same); } .graph .related { --hue: var(--related); } .graph .apart { --hue: var(--apart); } .graph .member { --hue: var(--same); } .graph .far { --hue: var(--muted); } .graph .me { --hue: var(--accent); }
+.graph .edge { transition: opacity .18s; }
+.graph .edge .line { stroke: var(--hue); stroke-linecap: round; opacity: .55; transition: opacity .18s; }
+.graph .edge.related .line { stroke-dasharray: 7 6; } .graph .edge.apart .line { stroke-dasharray: 1 7; stroke-width: 3; }
+.graph .edge .reach { stroke: transparent; stroke-width: 16; }
+.graph .edge.lit .line { opacity: 1; }
+.graph .off { display: none; }
+.graph .tag { opacity: 0; pointer-events: none; transition: opacity .18s; }
+.graph .tag rect { fill: var(--panel); stroke: var(--hue); stroke-opacity: .5; }
+.graph .tag text { font-size: 11px; fill: var(--ink); font-variant-numeric: tabular-nums; }
+.graph .tag.worded, .graph .tag.lit { opacity: 1; }
+.graph .node { cursor: pointer; transition: opacity .18s; outline: none; touch-action: none; }
+.graph .node .disc { fill: color-mix(in srgb, var(--hue) 16%, var(--panel)); stroke: var(--hue); stroke-width: 2; filter: drop-shadow(0 2px 5px rgb(0 0 0 / .16)); transition: stroke-width .18s; }
+.graph .node.me .disc { fill: var(--hue); }
+.graph .node .halo { fill: none; stroke: var(--hue); stroke-width: 2; opacity: 0; transition: opacity .18s; }
+.graph .node.me .halo { opacity: .28; stroke-width: 6; }
+.graph .node:hover .halo { opacity: .35; } .graph .node[aria-pressed=true] .halo, .graph .node:focus-visible .halo { opacity: 1; stroke: var(--accent); stroke-width: 2.5; }
+.graph .node .icon { fill: var(--hue); pointer-events: none; } .graph .node .icon.line { fill: none; stroke: var(--hue); stroke-width: 1.4; stroke-linejoin: round; stroke-linecap: round; }
+.graph .node.me .icon { fill: var(--on-accent); } .graph .node.me .icon.line { fill: none; stroke: var(--on-accent); }
+.graph .node .no { stroke: var(--hue); stroke-width: 2; }
+.graph .node text { paint-order: stroke; stroke: var(--panel); stroke-width: 4px; stroke-linejoin: round; pointer-events: none; }
+.graph .name { font-size: 12px; font-weight: 600; } .graph .me .name { font-size: 13px; }
+.graph .type { font-size: 10.5px; fill: var(--muted); }
+.graph .small .type { display: none; }
+.graph .alone { opacity: .25; }
+.graph .dimmed .node:not(.lit) { opacity: .22; } .graph .dimmed .edge:not(.lit) { opacity: .18; } .graph .dimmed .tag:not(.lit) { opacity: 0; }
+.graph .tools { position: absolute; right: 12px; bottom: 12px; display: flex; gap: 4px; }
+.graph .keys { position: absolute; left: 12px; bottom: 12px; display: flex; flex-wrap: wrap; gap: 4px; max-width: calc(100% - 250px); }
+.graph .keys button { display: inline-flex; gap: 6px; align-items: center; color: var(--ink); font-weight: 400; border-color: var(--line); }
+.graph .keys button[aria-pressed=false] { color: var(--muted); text-decoration: line-through; } .graph .keys button[aria-pressed=false] svg { opacity: .3; }
+.graph .keys svg { width: 22px; height: 8px; } .graph .keys line { stroke: var(--hue); stroke-width: 3; stroke-linecap: round; } .graph .keys .related line { stroke-dasharray: 5 4; } .graph .keys .apart line { stroke-dasharray: 1 5; }
+.graph .card { position: absolute; top: 12px; right: 12px; width: 288px; max-height: calc(100% - 64px); overflow: auto; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); box-shadow: 0 8px 28px rgb(0 0 0 / .14); }
+.graph .card .title { display: block; padding-right: 24px; overflow-wrap: anywhere; font-size: 14px; }
+.graph .card .shut { position: absolute; top: 6px; right: 6px; width: 28px; padding: 0; border: 0; background: none; font-size: 18px; color: var(--muted); }
+.graph .card .row { margin-top: 8px; }
+@media (max-width: 760px) {
+  .graph { height: 460px; }
+  .graph .keys { top: 8px; bottom: auto; left: 8px; max-width: calc(100% - 16px); }
+  .graph .tools { right: 8px; bottom: 8px; }
+  .graph .card { top: auto; bottom: 8px; left: 8px; right: 8px; width: auto; max-height: 55%; }
+}
+@media (prefers-reduced-motion: reduce) { .graph * { transition: none !important; } }

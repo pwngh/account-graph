@@ -34,6 +34,26 @@ await graph.transfer({ id: 'trade-1', from: 'account:ana', to: 'account:gus', am
 await graph.transfer({ id: 'trade-2', from: 'account:ana', to: 'account:ana-shop', amount: 90_000, at: start + 70 * HOUR, asset: 'gold' })
 await graph.transfer({ id: 'trade-3', from: 'account:ana-shop', to: 'account:ben', amount: 85_000, at: start + 71 * HOUR, asset: 'gold' })
 await graph.transfer({ id: 'trade-4', from: 'account:ben', to: 'account:ana', amount: 80_000, at: start + 72 * HOUR, asset: 'gold' })
+// A reseller's accounts: many in one hand, a few who only look close, and two a reviewer has kept apart.
+await graph.observe([
+  login('account:max', ['device:m-laptop', 'email:max', 'payment:m-card', 'canvas:m-phone'], 10),
+  login('account:max-2', ['device:m-laptop', 'payment:m-card'], 12),
+  login('account:max-store', ['device:m-laptop', 'email:max'], 14),
+  login('account:deals4u', ['payment:m-card', 'phone:m-burner'], 30),
+  login('account:quickflip', ['phone:m-burner', 'device:m-tablet'], 44),
+  login('account:flipper77', ['device:m-tablet'], 52),
+  login('visitor:m-914', ['device:m-laptop'], 9),
+  login('lead:m-signup', ['email:max'], 11),
+  ...['rosa', 'tomas', 'wen'].map((name, i) => login(`account:${name}`, ['canvas:m-phone', `email:${name}`], 60 + i)),
+  login('account:wen-work', ['email:wen', 'hardware:hw-wen'], 70),
+  login('account:rosa-2', ['email:rosa'], 72),
+  login('account:lena', ['device:m-laptop', 'email:lena'], 80),
+  login('account:lena-shop', ['email:lena'], 84),
+  login('account:rosa', ['address:elm-12'], 90),
+  login('account:max', ['address:elm-12'], 91),
+  login('account:omar', ['address:elm-12'], 92),
+])
+for (const other of ['account:lena', 'account:rosa-2']) await graph.separate('account:max', other, true, { by: 'dana', reason: other === 'account:lena' ? 'bought the laptop from max' : 'checked by phone, two people' })
 await graph.separate('account:cy', 'account:dee', true, { by: 'dana', reason: 'siblings, one family computer' })
 
 // Two systems that disagree about one pair, and a list of pairs kept apart by a case system.
