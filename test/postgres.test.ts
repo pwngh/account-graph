@@ -46,6 +46,34 @@ if (!url) {
     }
   })
 
+  /** Makes a database as it stood after the upgrade with this id, and hands over a store on it. */
+  const madeBefore = async (schema: string, id: number) => {
+    await pool.query(`create schema ${schema}; create table ${schema}.upgrade (id int primary key, name text not null, applied_at bigint not null)`)
+    for (const upgrade of upgrades(schema).filter((each) => each.id < id)) {
+      await pool.query(upgrade.sql)
+      await pool.query(`insert into ${schema}.upgrade values ($1, $2, 0)`, [upgrade.id, upgrade.name])
+    }
+    return createPostgresStore(pool, schema)
+  }
+
+  test('a database made before writes were counted starts counting', async () => {
+    const schema = `ag_test_${process.pid}_pulse`
+    try {
+      const store = await madeBefore(schema, 5)
+      await pool.query(`insert into ${schema}.subject values ('account:1', 'account:1', 'account:1')`)
+      assert.ok((await store.migrate()).includes('write count'))
+      const graph = createGraph(store)
+      assert.equal(await graph.version(), 0)
+      await graph.observe({ subject: 'account:1', identifiers: ['email:e'], at: 1 })
+      assert.equal(await graph.version(), 1)
+      // A write that fails counts for nothing.
+      await assert.rejects(store.write(() => Promise.reject(new Error('no'))), /no/)
+      assert.equal(await graph.version(), 1)
+    } finally {
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
+
   test('the server starts from the environment alone and serves a visit end to end', async () => {
     const schema = `ag_test_${process.pid}_serve`
     const lines: string[] = []

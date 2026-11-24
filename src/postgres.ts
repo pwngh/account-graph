@@ -166,6 +166,11 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       return rows[0]
     },
 
+    async version() {
+      const { rows } = await db.query(`select writes from ${t('pulse')}`)
+      return Number(rows[0]?.writes ?? 0)
+    },
+
     async largestClusters(limit, offset = 0) {
       const { rows } = await db.query(
         `select cluster, count(*)::int as size from ${t('subject')} group by cluster having count(*) > 1 order by size desc, cluster collate "C" limit $1 offset $2`,
@@ -381,7 +386,8 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       await client.query(begin)
       if (lock) await client.query(`select pg_advisory_xact_lock(hashtext($1))`, [`account-graph:${schema}`])
       const result = await work(bind(client))
-      await client.query('commit')
+      // A write is counted as it commits, in the same trip to the database.
+      await client.query(lock ? `update ${t('pulse')} set writes = writes + 1; commit` : 'commit')
       return result
     } catch (error) {
       await client.query('rollback').catch(() => undefined)
@@ -568,6 +574,16 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
               primary key (day, source, campaign_id)
             );
             create index if not exists touch_at on ${schema}.touch (at);`,
+    },
+    {
+      id: 5,
+      name: 'write count',
+      // One row, counted up by every write, so a screen can ask cheaply whether anything changed.
+      sql: `create table if not exists ${schema}.pulse (
+              one boolean primary key default true check (one),
+              writes bigint not null
+            );
+            insert into ${schema}.pulse (writes) values (0) on conflict do nothing;`,
     },
   ]
 }

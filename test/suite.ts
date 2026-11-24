@@ -291,6 +291,21 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual((await graph.clusters(2)).map((cluster) => cluster.id), ['B1', '_x'])
     })
 
+    test('the version changes with every write and with nothing else', async () => {
+      const { graph } = await fresh()
+      const start = await graph.version()
+      await graph.observe({ subject: 'a', identifiers: ['email:e'], at: T0 })
+      const seen = await graph.version()
+      assert.ok(seen > start)
+      await graph.links('a')
+      await graph.verify()
+      assert.equal(await graph.version(), seen)
+      await graph.outcome({ transactionId: 't1', subject: 'a', at: T0, value: 1 })
+      const counted = await graph.version()
+      await graph.restate('t1', 2)
+      assert.ok(counted > seen && (await graph.version()) > counted)
+    })
+
     test('counts say how much the graph holds', async () => {
       const { graph } = await fresh()
       assert.deepEqual(await graph.counts(), { subjects: 0, clusters: 0, identifiers: 0, edges: 0, sightings: 0, touches: 0, decisions: 0, outcomes: 0 })

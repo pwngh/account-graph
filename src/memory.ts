@@ -23,6 +23,7 @@ export function createMemoryStore(): Store {
   const outcomes = new Map<string, Counted>()
   const costs = new Map<string, Required<Cost>>()
   const moves: Moved[] = []
+  let writes = 0
 
   const index = (groups: Map<Subject, Set<Subject>>, key: Subject, subject: Subject) => {
     const group = groups.get(key)
@@ -156,6 +157,10 @@ export function createMemoryStore(): Store {
         decisions: decisions.length,
         outcomes: outcomes.size,
       }
+    },
+
+    async version() {
+      return writes
     },
 
     async largestClusters(limit, offset = 0) {
@@ -323,7 +328,7 @@ export function createMemoryStore(): Store {
     return run
   }
 
-  return { write: queue, read: queue, outbox: createMemoryOutbox() }
+  return { write: (work) => queue((bound) => (writes += 1, work(bound))), read: queue, outbox: createMemoryOutbox() }
 }
 
 function copy(edge: Edge): Edge {

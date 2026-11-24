@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { Script } from 'node:vm'
 import { createHash, createVerify, generateKeyPairSync } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -295,6 +296,19 @@ test('the reviewer screen is a locked-down shell, and its data needs the token',
     assert.equal(profile.history.length, 2)
     assert.deepEqual(await (await fetch(`${base}/subject?subject=nobody`, { headers: auth })).json(), { subject: 'nobody', known: false })
     assert.deepEqual(await (await fetch(`${base}/clusters`, { headers: auth })).json(), [{ id: 'account:1', size: 3, oversized: false }])
+
+    // The page asks whether anything changed with one conditional request, and is told only when something has.
+    const beat = async (tag?: string) => fetch(`${base}/pulse`, { headers: { ...auth, ...(tag && { 'if-none-match': tag }) } })
+    const tag = (await beat()).headers.get('etag')!
+    const still = await beat(tag)
+    assert.deepEqual([still.status, await still.text()], [304, ''])
+    assert.equal((await fetch(`${base}/pulse`)).status, 401)
+    await graph.consent('account:1', { adUserData: true, adPersonalization: true })
+    const changed = await beat(tag)
+    assert.equal(changed.status, 200)
+    assert.notEqual(changed.headers.get('etag'), tag)
+    // The scripts are put together from several files; together they must parse.
+    assert.doesNotThrow(() => new Script(new RegExp('<script>([\\s\\S]*?)</script>').exec(html)![1]!))
 
     // A reviewer joins two accounts by hand; the decision is on the record.
     const joined = await fetch(`${base}/join`, { method: 'POST', headers: auth, body: JSON.stringify({ a: 'account:9', b: 'account:3', by: 'dana', reason: 'same caller' }) })

@@ -107,6 +107,8 @@ export interface Graph {
   consentOf(subjects: readonly Subject[]): Promise<Map<Subject, Consent>>
   /** Records a reviewer's decision that two subjects are one person. They join one cluster unless separated. */
   join(a: Subject, b: Subject, why?: Why): Promise<Change[]>
+  /** A number that is different after every write: the same number means nothing has changed. */
+  version(): Promise<number>
   /** How much the graph holds: subjects, clusters, identifiers, edges, sightings, touches, decisions. */
   counts(): Promise<Counts>
   /** The subjects a reviewer has separated from this one. */
@@ -484,6 +486,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const at = now()
         return record(tx, pair.map((subject) => ({ subject, identifier, at, event: 'review', recorded: at })))
       })
+    },
+
+    version() {
+      return store.read((tx) => tx.version())
     },
 
     counts() {

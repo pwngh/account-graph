@@ -54,6 +54,9 @@
 - `/collect` records no touch for an arrival whose only source is a referrer among `origins`: a visitor moving between your own sites.
 - `compose.yaml` passes every server setting through, and switches on page events, a tracking number and signed links for the example site.
 - `ignore` records no decision when the identifier is already in the state asked for.
+- The reviewer screen has a view per address (`/review#/accounts/…`, `/review#/channels/…`), keyboard-operable pictures, and tables that scroll inside their own box.
+- `GET /pulse` answers `{ version }` with an `etag`, and 304 until something is written (`graph.version`); the reviewer screen reads a view again only then.
+- `GET /report` names the `timeZone` its days are in.
 
 ### Fixed
 

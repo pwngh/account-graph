@@ -98,6 +98,19 @@ Start the new version. On start the server applies every database change the dat
 
 Each change has a number and runs once. Several servers may start at the same moment; one applies the changes and the others wait. `upgrades()` in `account-graph/postgres` is the list.
 
+## The reviewer screen
+
+Open `/review` and enter a token. Each view has an address of its own, so it can be linked, reloaded and gone back to.
+
+| Address | Shows |
+| --- | --- |
+| `/review#/accounts` | The largest clusters, recent changes, and decisions. |
+| `/review#/accounts/account:42` | One subject: its cluster, its ties and why, its money, its sightings. |
+| `/review#/channels` | What each campaign cost and brought in, over the last 30 days. |
+| `/review#/channels/2026-11-01/2026-11-30` | The same, for the days named. |
+
+Every ten seconds the screen asks one small question, whether anything was written since it last looked, and reads the view again only when the answer is yes. It does not ask while its tab is hidden, and it does not redraw while someone is typing in the view or answering a question.
+
 ## Watching it
 
 | Route | Token | Answers |
