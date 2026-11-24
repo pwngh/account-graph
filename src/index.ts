@@ -28,6 +28,7 @@ export type { Ladder, Stage } from './ladder.ts'
 export type { AlertOptions, Alerter } from './alerts.ts'
 export type { Feed, JobRun, KeptAlert, Ops, OpsOptions, OpsState, OpsStore } from './ops.ts'
 export type { CallCounts, CallSummary } from './callreport.ts'
+export type { Followed, FollowedGroup, FollowedRow } from './followed.ts'
 export type { Call, CallFlag, CallOptions, CallState, Channel, RecordedCall } from './calls.ts'
 export type { Fitted, Labeled, Measured } from './calibrate.ts'
 export type {

@@ -159,6 +159,37 @@ The advertised office and the serving office are two facts, and often differ. Ne
 
 An outcome or a call carries at most 8 tags, each name of lowercase letters and underscores up to 32 characters, each value up to 64. `(not recorded)` is not a value: it is what a missing one is called.
 
+## What followed a call
+
+Choose a step and a number of days, and the report counts who went on to reach it after calling.
+
+```sh
+curl -H "authorization: Bearer $REVIEW_TOKEN" \
+  "https://graph.example.org/followed?from=2026-09-01&to=2026-09-30&step=client&days=30"
+```
+
+```json
+{ "step": "client", "days": 30, "least": 20, "leftOut": { "first": { "already": 4, "running": 0 }, "returned": { "already": 9, "running": 0, "through": 31 } }, "groups": [
+  { "by": "returned", "thin": 0, "rows": [
+    { "name": "returned within a day", "people": 64, "reached": 16, "share": 0.25 },
+    { "name": "not returned within a day", "people": 51, "reached": 9, "share": 0.1765 } ] } ] }
+```
+
+| Group | Splits people by | The clock starts |
+| --- | --- | --- |
+| `answer` | Whether their first call in the period was answered, missed, or went to voicemail | When that call ended |
+| `talk` | How long they talked, if it was answered: its length without the wait, and `(not recorded)` unless both are known | When that call ended |
+| `language` | The `language` tag of that call | When that call ended |
+| `returned` | Whether their first missed call was returned within a day | A day after the miss, for everyone |
+
+People are counted, not calls: someone who rings from two numbers on file as theirs is one person, and what they did under an account is theirs. Whoever had reached the step before the clock started, or is still inside their days, is left out and counted under `leftOut`.
+
+> **This is what followed, not what it caused.** People choose whether to call and how long to talk. Whoever rings back chooses whom. A row with a higher share may hold people who were going to sign up anyway.
+
+The day after a miss is there for one bias in particular. People who are already signing up get rung about it, so a plain count makes ringing back look like the cause of sign-ups it only went with. Everyone's clock starts a day after the miss, and whoever had signed up or got through by themselves before then is in neither row. That removes this bias and not the others.
+
+Rows of fewer than 20 people are not shown, and `thin` says how many people were in them. Nothing here ranks staff or scores callers.
+
 ## How an outcome finds its campaign
 
 The report asks the graph the same question `/attribute` answers. Starting from the account, it follows links to the visitors that are the same person, and takes the newest arrival within 90 days that is tied at 0.9 or better.

@@ -2,8 +2,36 @@
 /** A dimension in words: which side it is from matters as much as its name. */
 const dimensionName = (by) => (by === 'hour' ? 'Hour it happened' : by === 'weekday' ? 'Weekday it happened' : by.startsWith('touch.') ? `Arrival: ${by.slice(6).replaceAll('_', ' ')}` : `Outcome: ${by.slice(8).replaceAll('_', ' ')}`)
 
-view('channels', 'Channels', async (box, first, last, by = '') => {
-  const { form: pick, query, resolved } = period('channels', first, last, by)
+const GROUPS = { answer: 'How the first call went', talk: 'How long they talked, of those answered', language: 'Language of the first call', returned: 'Whether a missed call was returned' }
+
+/** What followed calls: who reached a step within some days. Asked for only once a step is chosen. */
+async function whatFollowed(box, report, address, step, within) {
+  const days = Number(within) || 30
+  const steps = [...new Set([...report.steps, ...(step ? [step] : [])])]
+  // A step reached only after these days is not in the report's list, so any may be typed.
+  const pick = el('input', { list: 'steps', value: step, required: '', autocomplete: 'off', placeholder: 'a step', size: 14 })
+  const known = el('datalist', { id: 'steps' }, ...steps.map((each) => el('option', { value: each })))
+  const count = el('input', { type: 'number', min: 1, max: 365, value: days, required: '' })
+  const form = el('form', { class: 'row', on: { submit: (event) => { event.preventDefault(); go(address(pick.value.trim(), count.value)) } } },
+    el('label', {}, 'Who went on to', pick), known, el('label', {}, 'within days', count), el('button', { class: 'primary' }, 'Show'))
+  const section = el('section', {}, el('h2', {}, 'What followed a call, not what it caused'), form)
+  box.append(section)
+  if (!step) return void section.append(el('p', { class: 'muted' }, 'Name a step to see who reached it after calling.'))
+  const answer = await api('GET', `/followed?from=${report.from}&to=${report.to}&step=${encodeURIComponent(step)}&days=${days}`)
+  section.append(el('p', { class: 'muted' }, `People whose call was ${answer.from} to ${answer.to}, days in ${answer.timeZone}, and how many reached "${answer.step}" within ${amount(answer.days)} days. People choose whether to call and how long to talk, and someone chooses whom to ring back, so a difference between two rows is not an effect.`))
+  for (const group of answer.groups) {
+    const rows = group.rows.map((row) => el('tr', {}, td('', row.name), td('num', amount(row.people)), td('num', amount(row.reached)), td('num', percent(row.share))))
+    section.append(el('h2', {}, GROUPS[group.by]))
+    if (group.by === 'returned') section.append(el('p', { class: 'muted' }, 'The clock starts a day after the miss for everyone. Whoever had reached the step or got through on their own by then is left out.'))
+    section.append(rows.length > 0 ? wide(GROUPS[group.by], el('table', {}, el('tr', {}, th(''), th('People', 'num'), th('Reached it', 'num'), th('Share', 'num')), ...rows)) : el('p', {}, group.thin > 0 ? '' : 'Nobody to count.'),
+      group.thin > 0 ? el('p', { class: 'muted' }, `${amount(group.thin)} ${group.thin === 1 ? 'person is' : 'people are'} in rows of fewer than ${amount(answer.least)}, which are not shown.`) : '')
+  }
+  const { first, returned } = answer.leftOut
+  section.append(el('p', { class: 'muted' }, `Left out of the first three tables: ${amount(first.already)} who had reached the step before the call ended, ${amount(first.running)} still inside their days. Left out of the last: ${amount(returned.already)} who had reached the step by the landmark, ${amount(returned.running)} still inside their days, ${amount(returned.through)} who got through on their own before it.`))
+}
+
+view('channels', 'Channels', async (box, first, last, by = '', step = '', within = '30') => {
+  const { form: pick, query, resolved } = period('channels', first, last, by, ...(step ? [step, within] : []))
   const section = el('section', {}, el('h3', {}, 'Channels'), el('p', { class: 'muted' }, 'What each campaign cost and what it brought in. An outcome counts on the day it happened, under the arrival that earned it.'), pick)
   box.append(section)
   const report = await api('GET', `/report?${query}${by ? `&by=${encodeURIComponent(by)}` : ''}`)
@@ -33,7 +61,7 @@ view('channels', 'Channels', async (box, first, last, by = '') => {
   table.append(el('tr', { class: 'sum' }, td('', 'All'), td(''), ...cells(report.total)), ...split(report.total))
   const breakdown = el('select', { on: { change: () => {
     const [from, to] = [...pick.querySelectorAll('input')].map((input) => input.value)
-    go(`#/channels/${from || report.from}/${to || report.to}${breakdown.value ? `/${encodeURIComponent(breakdown.value)}` : ''}`)
+    go(`#/channels/${from || report.from}/${to || report.to}${breakdown.value || step ? `/${encodeURIComponent(breakdown.value)}` : ''}${step ? `/${encodeURIComponent(step)}/${within}` : ''}`)
   } } }, el('option', { value: '' }, 'Nothing'),
     ...[...new Set([...report.dimensions, ...(by ? [by] : [])])].map((each) => el('option', { value: each, ...(each === by && { selected: '' }) }, dimensionName(each))))
   pick.append(el('label', {}, 'Break down by', breakdown))
@@ -60,4 +88,5 @@ view('channels', 'Channels', async (box, first, last, by = '') => {
     const byMonth = el('table', {}, el('tr', {}, th('Month first recorded'), ...heads()), ...report.months.map((each) => el('tr', {}, td('', each.month), ...valued(each))))
     box.append(el('section', {}, el('h2', {}, 'Value: first recorded, and now'), el('p', { class: 'muted' }, `Outcomes of ${report.from} to ${report.to}. Now is all of them. First recorded is of those whose first value is known. A value first recorded is often a step's, and is restated once what was collected is known.`), wide('Value by campaign', byCampaign), el('p', {}), wide('Value by month of first record', byMonth)))
   }
+  await whatFollowed(box, report, (chosen, days) => `#/channels/${report.from}/${report.to}/${encodeURIComponent(by)}${chosen ? `/${encodeURIComponent(chosen)}/${days}` : ''}`, step, within)
 })

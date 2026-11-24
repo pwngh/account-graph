@@ -118,6 +118,8 @@ export interface Tx {
   pruneCallResults(before: number): Promise<number>
   /** Outcomes with `from <= at < to`, oldest first. */
   outcomesBetween(from: number, to: number): Promise<Counted[]>
+  /** Every outcome of the given subjects, oldest first. */
+  outcomesOf(subjects: readonly Subject[]): Promise<Counted[]>
   /** The newest outcomes of each step with `from <= at < to`, at most `each` of one step. */
   newestOutcomes(from: number, to: number, each: number): Promise<Counted[]>
   /** Records what campaigns cost, replacing any row with the same day, source and campaign. */

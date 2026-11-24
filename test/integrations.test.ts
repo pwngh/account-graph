@@ -943,7 +943,9 @@ test('a call whose result is awaited is held, and nothing is sent until a person
     const broken = (await (await read(`/report?${days}&by=outcome.language`)).json()) as any
     assert.deepEqual([broken.by, broken.total.breakdown.map((part: any) => part.name)], ['outcome.language', ['(not recorded)']])
     assert.equal((await read('/report?by=nonsense')).status, 400)
-    for (const bad of ['/calls?after=x', '/calls?from=2026-13-01', '/calls/summary?tz=Mars']) assert.equal((await read(bad)).status, 400, bad)
+    const after = (await (await read(`/followed?${days}&step=client&days=10`)).json()) as any
+    assert.deepEqual([after.step, after.days, after.least, after.groups.length, after.timeZone], ['client', 10, 20, 4, 'America/New_York'])
+    for (const bad of ['/followed?days=10', '/followed?step=client&days=x', '/calls?after=x', '/calls?from=2026-13-01', '/calls/summary?tz=Mars']) assert.equal((await read(bad)).status, 400, bad)
     // A result that comes first waits for its call.
     assert.deepEqual((await post('/call/result', { id: 'CA3', answered: true })).body, { state: 'waiting', counted: false })
     assert.equal((await post('/call', call('CA3'))).body.state, 'answered')

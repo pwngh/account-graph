@@ -4,7 +4,7 @@
  * Then open the printed address and enter the reviewer token `demo`.
  */
 import { createServer } from 'node:http'
-import { createGraph, createMemoryStore, recordCall, recordCallResult } from '../src/index.ts'
+import { createGraph, createMemoryStore, hashPhone, recordCall, recordCallResult } from '../src/index.ts'
 import { createHandler } from '../src/server.ts'
 
 // What is recorded below is written down at the time it happened, so the months of first record are real ones.
@@ -98,6 +98,20 @@ for (let i = 0; i < 120; i++) {
   await recordCall(graph, { id: `call-${i}`, from: chance() < 0.04 ? '' : from, to, at, duration: 20 + Math.floor(chance() * 300), ...(chance() < 0.7 && { tags: { language: chance() < 0.3 ? 'es' : 'en' } }) }, { numbers, results: 'expected' })
   if (roll < 0.93) await recordCallResult(graph, { id: `call-${i}`, answered: roll < 0.68, waited: Math.floor(chance() * 90), ...(roll > 0.85 && { voicemail: true }) }, { results: 'expected' })
   if (roll > 0.68 && chance() < 0.4) await recordCall(graph, { id: `back-${i}`, direction: 'outbound', from: to, to: from, at: at + Math.floor(chance() * 20 * HOUR), duration: 60, answered: chance() < 0.6 })
+}
+
+// What some callers went on to do, for what followed a call. Those rung back or answered sign up a little more often, as made up here.
+for (let i = 0; i < 110; i++) {
+  const from = `+1555010${String(300 + i).padStart(4, '0')}`
+  const at = Date.now() - (45 - (i % 12)) * 24 * HOUR
+  const answered = chance() < 0.55
+  await recordCall(graph, { id: `past-${i}`, from, to: '+15550100001', at, duration: 30 + Math.floor(chance() * 1100), answered, ...(chance() < 0.8 && { waited: Math.floor(chance() * 25) }), ...(chance() < 0.8 && { tags: { language: chance() < 0.4 ? 'es' : 'en' } }) }, { numbers, results: 'expected' })
+  const back = !answered && chance() < 0.5
+  if (back) await recordCall(graph, { id: `past-back-${i}`, direction: 'outbound', from: '+15550100001', to: from, at: at + 5 * HOUR, answered: true })
+  if (chance() < (answered || back ? 0.3 : 0.15)) {
+    await graph.observe({ subject: `lead:p${i}`, identifiers: [`phone:${hashPhone(from)}`], at: at + 48 * HOUR })
+    await graph.outcome({ transactionId: `enrolled-p${i}`, subject: `lead:p${i}`, at: at + (30 + Math.floor(chance() * 300)) * HOUR, stage: 'enrolled', value: 200, currency: 'USD' })
+  }
 }
 
 // The example site (examples/site.ts) can report to this server too.

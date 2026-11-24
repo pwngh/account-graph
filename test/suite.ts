@@ -880,6 +880,33 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       for (const by of ['office', 'touch.', 'touch.a b', 'outcome', 'minute']) await assert.rejects(graph.report({ from: '2026-03-02', to: '2026-03-03', by }), TypeError)
     })
 
+    test('what followed a call is counted by person, whatever account or number they used', async () => {
+      const clock = { now: T0 + 60 * DAY }
+      const { graph } = await fresh(undefined, { now: () => clock.now })
+      const call = (id: string, from: string, hours: number, more: object = {}) => recordCall(graph, { id, from, to: '+15550100001', at: T0 + hours * HOUR, duration: 120, answered: true, ...more }, { results: 'expected' })
+      // One person rings from two numbers on file as theirs, and becomes a client under their account.
+      const owns = (subject: string, ...numbers: string[]) => graph.observe({ subject, identifiers: numbers.map((number) => `phone:${hashPhone(number)}`), at: T0 })
+      await call('A1', '+15550100071', 1, { tags: { language: 'es' } })
+      await call('A2', '+15550100072', 5)
+      await owns('contact:a', '+15550100071', '+15550100072')
+      await graph.outcome({ transactionId: 'client-a', subject: 'contact:a', at: T0 + 10 * DAY, stage: 'client', value: 1 })
+      await graph.outcome({ transactionId: 'inquiry-a', subject: 'contact:a', at: T0, stage: 'inquiry' })
+      // Another is missed and rung back, and does not.
+      await call('B1', '+15550100073', 2, { answered: false })
+      await recordCall(graph, { id: 'B2', direction: 'outbound', from: '+15550100001', to: '+15550100073', at: T0 + 4 * HOUR, answered: true })
+      const asked = await graph.followed({ from: '2023-11-14', to: '2023-11-20', step: 'client', days: 30, least: 1 })
+      const rows = (by: string) => asked.groups.find((each) => each.by === by)!.rows.map((row) => [row.name, row.people, row.reached])
+      assert.deepEqual(rows('answer'), [['answered', 1, 1], ['missed', 1, 0]])
+      assert.deepEqual(rows('language'), [['es', 1, 1], ['(not recorded)', 1, 0]])
+      assert.deepEqual(rows('returned'), [['returned within a day', 1, 0]])
+      // With the usual least of twenty, nothing so thin is shown.
+      const usual = await graph.followed({ from: '2023-11-14', to: '2023-11-20', step: 'client', days: 30 })
+      assert.deepEqual(usual.groups.map((each) => [each.rows.length, each.thin]), [[0, 2], [0, 1], [0, 2], [0, 1]])
+      await graph.forget('contact:a')
+      assert.deepEqual((await graph.followed({ from: '2023-11-14', to: '2023-11-20', step: 'client', days: 30, least: 1 })).groups[0]!.rows.map((row) => row.reached), [0, 0])
+      for (const bad of [{ step: '' }, { days: 0 }, { days: 1.5 }, { days: 400 }, { from: '2023-12-01' }]) await assert.rejects(graph.followed({ from: '2023-11-14', to: '2023-11-20', step: 'client', days: 30, ...bad }), TypeError)
+    })
+
     test('the review queue pages, subjects are found by prefix, and recent changes are listed', async () => {
       const clock = { now: T0 }
       const { graph } = await fresh(undefined, { now: () => clock.now })
