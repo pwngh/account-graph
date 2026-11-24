@@ -1080,6 +1080,16 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await assert.rejects(graph.restate('typo', 11, undefined, 'refund'), /not had that much refunded/)
       assert.equal(await graph.restate('typo', 10, undefined, 'refund'), true)
       await graph.withdraw('typo')
+      // Many small ones after a large one round down as they are added, and still come back in full.
+      await graph.outcome({ transactionId: 'many', subject: 'lead:2', at: clock.now - 90 * DAY, stage: 'client', value: 1e8, currency: 'USD' })
+      await graph.restate('many', 0, undefined, 'refund')
+      for (let n = 0; n < 20; n++) {
+        await graph.restate('many', 0.02)
+        await graph.restate('many', 0, undefined, 'refund')
+      }
+      await assert.rejects(graph.restate('many', 100_000_000.41, undefined, 'refund'), /not had that much refunded/)
+      assert.equal(await graph.restate('many', 100_000_000.4, undefined, 'refund'), true)
+      await graph.withdraw('many')
       // In another currency now, what was lost in the one before stays in the sum, and the report says which it adds up.
       // It cannot be taken back in the new one.
       await graph.restate('s1', 250, 'CAD')
