@@ -106,6 +106,8 @@ async function clusterList() {
   const list = el('ul', { id: 'queue' }, ...(clusters.length > 0 ? clusters.map(queued) : [el('li', { class: 'muted' }, 'No clusters yet.')]))
   // The list comes 50 at a time. A full page means there may be more.
   const more = el('button', { on: { click: async () => {
+    // Something else is being opened: this list is about to go.
+    if (opening) return
     // A refresh under way would replace the list this page is added to, so it gives way.
     loading += 1
     pending += 1

@@ -122,6 +122,8 @@ const which = (node) => [node.tagName, node.dataset.key, node.matches('a, button
 
 let loading = 0
 let pending = 0
+/** Loads under way that the reviewer asked for, as against a refresh. */
+let opening = 0
 /**
  * Fills the view the address names. Resolves to whether it loaded. `tag` is
  * what a look just found: the reload is one nobody asked for, so it gives
@@ -146,6 +148,7 @@ async function load(tag) {
   }
   const box = el('div')
   pending += 1
+  if (!quiet) opening += 1
   try {
     // Read the tag before the view: a change that lands while the view loads is then noticed on the next look.
     const seen = tag ?? (await pulse())
@@ -175,6 +178,7 @@ async function load(tag) {
     return false
   } finally {
     pending -= 1
+    if (!quiet) opening -= 1
   }
 }
 
