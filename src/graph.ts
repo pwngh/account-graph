@@ -101,6 +101,8 @@ export interface Graph {
   keepCallResult(id: string, result: Omit<CallResult, 'recorded'>): Promise<void>
   /** A kept call with its result, or undefined for an id no call was kept for. */
   keptCall(id: string): Promise<KeptCall | undefined>
+  /** Every kept call to or from the given subjects, oldest first. */
+  callsOf(subjects: readonly Subject[]): Promise<KeptCall[]>
   /** How a call went, whether or not the call itself was kept. */
   callResult(id: string): Promise<CallResult | undefined>
   /** Records what campaigns cost. A row for the same day, source and campaign replaces the one before. */
@@ -603,6 +605,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return store.read((tx) => tx.callOf(id))
     },
 
+    callsOf(subjects) {
+      return store.read((tx) => tx.callsOf(subjects))
+    },
+
     callResult(id) {
       return store.read((tx) => tx.callResultOf(id))
     },
@@ -645,7 +651,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const credited: { outcome: Counted; touch: Touch | undefined }[] = []
         for (const outcome of await tx.outcomesBetween(start, end)) credited.push({ outcome, touch: await creditOf(outcome.subject, outcome.at) })
         const missed: (Touch | undefined)[] = []
-        for (const call of await tx.callsBetween(start, end)) if (call.result?.answered === false) missed.push(await creditOf(call.subject, call.at))
+        for (const call of await tx.callsBetween(start, end)) if (call.direction === 'inbound' && call.result?.answered === false) missed.push(await creditOf(call.subject, call.at))
         return fold(from, to, await tx.costsBetween(from, to), await tx.touchesBetween(start, end), credited, missed)
       })
     },

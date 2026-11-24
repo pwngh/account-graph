@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { after, describe, test } from 'node:test'
-import { brokenAt, callState, createGraph, defaultPolicy, dialed, email, fit, hashPhone, policyFrom, recordCall, recordCallResult } from '../src/index.ts'
+import { brokenAt, callState, createGraph, defaultPolicy, dialed, email, fit, followUp, hashPhone, policyFrom, recordCall, recordCallResult } from '../src/index.ts'
 import type { Change, GraphOptions, Observation, Policy, Store } from '../src/index.ts'
 
 export interface Opened {
@@ -588,7 +588,6 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       for (let i = 0; i < 12; i++) assert.equal(Boolean(await graph.outcomeOf(`call:R${i}`)), i % 2 === 0, `R${i}`)
 
       for (const bad of [{ id: 'X', answered: 'yes' }, { id: 'X' }, { id: 'bad id', answered: true }, { id: 'X', answered: true, voicemail: true }, { id: 'X', answered: false, waited: -1 }]) await assert.rejects(recordCallResult(graph, bad as never, options), TypeError)
-      await assert.rejects(recordCall(graph, call('X', { direction: 'outbound' }) as never, options), TypeError)
       assert.equal(await graph.callResult('X'), undefined)
 
       // Forgetting the caller deletes their calls and results. Forgetting a visitor leaves the call without them.
@@ -604,6 +603,59 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       clock.now += DAY
       await graph.prune(clock.now)
       assert.deepEqual([await graph.callResult('never'), (await graph.callResult('Q1'))!.answered], [undefined, false])
+    })
+
+    test('a missed call is returned by ringing back, or closed by the caller getting through', async () => {
+      const { graph, store } = await fresh(undefined, { now: () => T0 + 40 * HOUR })
+      const options = { results: 'expected' as const, now: () => T0 + 40 * HOUR }
+      const inbound = (id: string, hours: number, answered?: boolean, from = '+15550100041') => recordCall(graph, { id, from, to: '+15550100001', at: T0 + hours * HOUR, duration: 60, ...(answered !== undefined && { answered }) }, options)
+      const outbound = (id: string, hours: number, answered?: boolean, to = '+15550100041') => recordCall(graph, { id, direction: 'outbound', from: '+15550100001', to, at: T0 + hours * HOUR, duration: 20, ...(answered !== undefined && { answered }) }, options)
+      const became = async (id: string) => {
+        const miss = (await graph.keptCall(id))!
+        return followUp(miss, await graph.callsOf([miss.subject]))
+      }
+      // Rung before the miss: it says nothing about it, even when reported after. Rung twice with no answer, then answered.
+      await inbound('M1', 10, false)
+      await outbound('O0', 9, true)
+      assert.deepEqual(await became('M1'), { state: 'open', attempts: 0 })
+      const tried = await outbound('O1', 11, false)
+      assert.deepEqual([tried.counted, tried.state, tried.flags], [false, 'missed', []])
+      await outbound('O2', 12)
+      assert.deepEqual(await became('M1'), { state: 'open', attempts: 2 })
+      await outbound('O3', 14, true)
+      assert.deepEqual(await became('M1'), { state: 'returned', by: 'O3', delay: 4 * HOUR, attempts: 2 })
+      // An outbound call is settled by its result too, and is never an outcome.
+      assert.deepEqual(await recordCallResult(graph, { id: 'O2', answered: true }, options), { state: 'answered', counted: false })
+      assert.deepEqual(await became('M1'), { state: 'returned', by: 'O2', delay: 2 * HOUR, attempts: 1 })
+      assert.deepEqual([await graph.outcomeOf('call:O2'), await graph.outcomeOf('call:O3')], [undefined, undefined])
+
+      // Missed twice more, then the caller gets through: one answer closes every miss before it.
+      await inbound('M2', 20, false)
+      await inbound('M3', 21, false)
+      await inbound('A1', 23, true)
+      assert.deepEqual(await became('M2'), { state: 'tried again', by: 'A1', delay: 3 * HOUR, attempts: 0 })
+      assert.deepEqual(await became('M3'), { state: 'tried again', by: 'A1', delay: 2 * HOUR, attempts: 0 })
+      // Ringing in and missing again is not getting through, and somebody else answering is nothing to this caller.
+      await inbound('M4', 30, false)
+      await inbound('M5', 31, false)
+      await outbound('O9', 32, true, '+15550100042')
+      assert.equal((await became('M4')).state, 'open')
+      // A hidden caller cannot be rung back.
+      await recordCall(graph, { id: 'H1', to: '+15550100001', at: T0 + 5 * HOUR, duration: 9, answered: false }, options)
+      assert.deepEqual(await became('H1'), { state: 'hidden', attempts: 0 })
+
+      // Ringing someone records nothing about who they are, and is not a missed call in the report.
+      assert.deepEqual([await graph.cluster(`caller:${hashPhone('+15550100042')}`), (await graph.counts()).touches], [undefined, 0])
+      assert.equal((await graph.report({ from: '2023-11-14', to: '2023-11-17' })).total.missed, 6)
+      // Reported twice it is kept once, and an id cannot be both.
+      assert.equal((await outbound('O1', 11, false)).duplicate, true)
+      await assert.rejects(inbound('O1', 11), TypeError)
+      await assert.rejects(outbound('M1', 10), TypeError)
+      await assert.rejects(recordCall(graph, { id: 'O10', direction: 'outbound', to: '+15550100041', at: T0 }, options), TypeError)
+      await assert.rejects(recordCall(graph, { id: 'O10', direction: 'sideways' as 'inbound', to: '+15550100041', at: T0 }, options), TypeError)
+      // Forgetting the caller deletes the calls you placed to them.
+      await graph.forget(`caller:${hashPhone('+15550100042')}`)
+      assert.deepEqual([await graph.keptCall('O9'), (await store.read((tx) => tx.callsBetween(0, T0 + 99 * HOUR))).length], [undefined, 11])
     })
 
     test('the review queue pages, subjects are found by prefix, and recent changes are listed', async () => {
@@ -1187,7 +1239,8 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
           // A call, its result, or both, in whatever order, with results expected.
           const id = `F${pick(30)}`
           const call = { id, from: `+1555010${String(pick(20)).padStart(4, '0')}`, to: '+15550100001', at: T0 + pick(200) * DAY, duration: pick(120) }
-          if (next() < 0.6) await recordCall(graph, call, { results: 'expected' })
+          const placed = id.endsWith('7')
+          if (next() < 0.6) await recordCall(graph, placed ? { ...call, direction: 'outbound', from: call.to, to: call.from } : call, { results: 'expected' })
           if (next() < 0.6) await recordCallResult(graph, { id, answered: next() < 0.5, waited: pick(40) }, { results: 'expected' })
         } else if (roll < 0.99) {
           // Pairs from a system, separations and withdrawals together, some of them named twice.
@@ -1207,7 +1260,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       // Every call counts exactly when a person answered it and it was long enough.
       for (let n = 0; n < 30; n++) {
         const call = await graph.keptCall(`F${n}`)
-        const counts = call?.result?.answered === true && call.duration! >= 30
+        const counts = call?.direction === 'inbound' && call.result?.answered === true && call.duration! >= 30
         assert.equal(Boolean(await graph.outcomeOf(`call:F${n}`)), counts, `F${n}`)
       }
     })

@@ -339,6 +339,11 @@ export function createMemoryStore(): Store {
       return result && { ...result }
     },
 
+    async callsOf(subjects) {
+      const wanted = new Set(subjects)
+      return [...calls.values()].filter((call) => wanted.has(call.subject)).sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1)).map(withResult)
+    },
+
     async callsBetween(from, to) {
       const found = [...calls.values()].filter((call) => call.at >= from && call.at < to)
       return found.sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1)).map(withResult)

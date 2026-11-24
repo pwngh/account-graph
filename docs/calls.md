@@ -115,6 +115,31 @@ Without the setting, a call is counted by its length as it is reported. If a res
 
 Turn `CALL_RESULTS` on only when something posts results. Without one, every call reads as unknown and none is counted.
 
+## Was it returned?
+
+Report the calls you place as well, and each missed call says what became of it.
+
+```sh
+curl -X POST https://graph.example.org/call -H "authorization: Bearer $GRAPH_TOKEN" \
+  -d '{"id":"CB1","direction":"outbound","from":"+15550100001","to":"+15550100041","at":1795463600000,"duration":80,"answered":true}'
+curl "https://graph.example.org/call?id=CA2" -H "authorization: Bearer $REVIEW_TOKEN"
+```
+
+```json
+{ "id": "CA2", "state": "missed", "followUp": { "state": "returned", "by": "CB1", "delay": 3600000, "attempts": 1 } }
+```
+
+| State of a missed call | Meaning |
+| --- | --- |
+| `open` | Nobody has spoken to the caller since. `attempts` is how often you rang and nothing says they answered. |
+| `returned` | You rang and the same number answered. `delay` is the time from the miss, in milliseconds. |
+| `tried again` | The caller rang again and got through. |
+| `hidden` | The caller hid their number, so there is nothing to ring back. |
+
+A call before the miss says nothing about it. One later answer closes every earlier miss of that number. The answer is worked out from the calls themselves each time, so the order they are reported in does not matter.
+
+A call you place is never an outcome and records nothing about who was rung. For an outbound call, `from` is your number and `to` is theirs. The number is kept as its hash.
+
 ### From Twilio
 
 Twilio can report each call itself. The server checks every request against Twilio's signature, so the route needs no token.
@@ -129,7 +154,7 @@ TWILIO_WEBHOOK_URL=https://graph.example.org/calls/twilio   # exactly as entered
 
 The signature is made from that address, so the two must match to the character. A request that fails the check gets 403.
 
-This callback only reports: Twilio expects no instructions in its answer, and gets none. A status of `busy`, `no-answer`, `failed` or `canceled` is recorded as not answered. `completed` means Twilio connected the call, to a person, a menu or voicemail, so it answers nothing.
+This callback only reports: Twilio expects no instructions in its answer, and gets none. Calls you place are not taken from Twilio, because a forwarded call looks like one: post those from your backend. A status of `busy`, `no-answer`, `failed` or `canceled` is recorded as not answered. `completed` means Twilio connected the call, to a person, a menu or voicemail, so it answers nothing.
 
 > **Do not point an `action` address at this server.** The answer to `<Dial action>`, `<Record action>` and the like is what the call does next, so this server would take over the call. Let your own application handle those, and post the result to `/call/result` from there.
 
@@ -147,6 +172,7 @@ Post the same facts to `/call` with the service token: the provider's id for the
 | Taps only | A visitor who reads the number and dials it by hand leaves no tap. That call is filed under the number's channel. |
 | The tap window | Three minutes before the call began, with thirty seconds of allowance for clocks that disagree. `clickWindow` changes it in the library. |
 | Sending calls to ad platforms | A counted call is always in the report. It is sent to an ad platform when the `call` step in `STAGES` has an action; the caller's number goes along, hashed, as a match key. |
+| Returned from another line | A caller is their number. Reached on a different number, the miss stays open. |
 | Calls from before | A call recorded before calls were kept has no state, and a result for it finds no call. Its outcome stays counted. |
 | Retention | `forget` deletes a caller's calls and results. `prune` deletes results whose call never came, and keeps calls. |
 | Not confirmed | Twilio's statuses and what its callbacks expect were read from its documentation in November 2026. The console's field names were not. The signature check was run against the example on Twilio's webhook security page and matches it. No real Twilio request has been received. |

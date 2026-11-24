@@ -859,6 +859,12 @@ test('a call whose result is awaited is held, and nothing is sent until a person
     // Answered by nobody: held for good, and never sent.
     await post('/call', call('CA2'))
     assert.deepEqual((await post('/call/result', { id: 'CA2', answered: false })).body, { state: 'missed', counted: false })
+    // The miss and what became of it, for a reviewer too.
+    const asked = async () => (await (await fetch(`${base}/call?id=CA2`, { headers: { authorization: 'Bearer review' } })).json()) as any
+    assert.deepEqual([(await asked()).state, (await asked()).followUp], ['missed', { state: 'open', attempts: 0 }])
+    await post('/call', { id: 'CB1', direction: 'outbound', from: '+15550100001', to: '+15550100021', at: T0 + 60_000, duration: 80, answered: true })
+    assert.deepEqual((await asked()).followUp, { state: 'returned', by: 'CB1', delay: 60_000, attempts: 0 })
+    assert.equal(await (await fetch(`${base}/call?id=none`, { headers: { authorization: 'Bearer review' } })).json(), null)
     // A result that comes first waits for its call.
     assert.deepEqual((await post('/call/result', { id: 'CA3', answered: true })).body, { state: 'waiting', counted: false })
     assert.equal((await post('/call', call('CA3'))).body.state, 'answered')
