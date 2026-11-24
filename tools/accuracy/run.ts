@@ -38,10 +38,19 @@ export const ARMS = {
   'household staff': { policy: HOUSEHOLD, staff: true },
   'default staff': { staff: true },
   'default pool': { pool: true },
+  'default birth': { policy: { apart: ['birth'] } },
+  'default initial': { policy: { apart: ['initial'] } },
+  'default both': { policy: { apart: ['birth', 'initial'] } },
+  'household staff birth': { policy: { ...HOUSEHOLD, apart: ['birth'] }, staff: true },
+  'household staff initial': { policy: { ...HOUSEHOLD, apart: ['initial'] }, staff: true },
+  'household staff both': { policy: { ...HOUSEHOLD, apart: ['birth', 'initial'] }, staff: true },
 } satisfies Record<string, { policy?: object; staff?: boolean; pool?: boolean }>
 export type Arm = keyof typeof ARMS
-/** What each arm is compared with over the same worlds. The options to keep people apart are added to `ARMS` and here with the code that makes them. */
-const BESIDE: Partial<Record<Arm, Arm>> = { 'household staff': 'household', 'default staff': 'default', 'default pool': 'default' }
+/** What each arm is compared with over the same worlds. */
+const BESIDE: Partial<Record<Arm, Arm>> = {
+  'household staff': 'household', 'default staff': 'default', 'default pool': 'default', 'default birth': 'default', 'default initial': 'default', 'default both': 'default',
+  'household staff birth': 'household staff', 'household staff initial': 'household staff', 'household staff both': 'household staff',
+}
 
 /** Whether each record's ad is credited: the ad its person came by, another's, or none. Cold records have none to credit. */
 export interface Credit {
@@ -233,6 +242,8 @@ async function main() {
     for (const arm of arms) if (!ARMS[arm]) throw new Error(`Say arms of: ${Object.keys(ARMS).join(', ')}`)
     const kept = new Map(arms.map((arm) => [arm, { lines: new Map<string, ReturnType<typeof figures>[]>(LINES.map((label) => [label, []])), credits: [] as ReturnType<typeof creditFigures>[], kinds: new Map<string, { same: number; found: number; wrong: number }>(), links: new Map<string, { links: number; wrong: number }>(), credited: { right: 0, wrong: 0, none: 0, reachable: 0, reachableRight: 0, cold: 0, coldWrong: 0 } as Credit, total: { wrong: 0, found: 0, mixed: 0, people: 0, mixedRecords: 0, mixedApart: 0, recorded: 0, wrongClusters: 0, exhausted: 0 } }]))
     const differ = new Map<Arm, Record<string, number[]>>()
+    /** Pooled over the worlds: of what the arm beside found, what is lost. */
+    const lostIn = new Map<Arm, Record<'pairs' | 'recordPairs' | 'credit', [lost: number, of: number]>>()
     for (let world = 0; world < worlds; world++) {
       const made = makeWorld(setting.rates, size(world))
       const of = new Map<Arm, { result: Score; outcome: Outcome }>()
@@ -263,9 +274,15 @@ async function main() {
         for (const key of ['mixedRecords', 'mixed', 'right'] as const) row[key]!.push(now[key] - then[key])
         const lost = [...before.result.pairs].filter((pair) => !result.pairs.has(pair))
         const records = (pair: string) => pair.split('\n').every((subject) => subject.startsWith('contact:'))
-        row.pairsLost!.push(share(lost.length, before.result.pairs.size))
-        row.recordPairsLost!.push(share(lost.filter(records).length, [...before.result.pairs].filter(records).length))
-        row.creditLost!.push(share([...before.outcome.creditedRight].filter((subject) => !outcome.creditedRight.has(subject)).length, before.outcome.creditedRight.size))
+        const pooled = lostIn.get(arm) ?? { pairs: [0, 0], recordPairs: [0, 0], credit: [0, 0] }
+        lostIn.set(arm, pooled)
+        const lose = (what: keyof typeof pooled, key: string, part: number, whole: number) => {
+          row[key]!.push(share(part, whole))
+          pooled[what] = [pooled[what][0] + part, pooled[what][1] + whole]
+        }
+        lose('pairs', 'pairsLost', lost.length, before.result.pairs.size)
+        lose('recordPairs', 'recordPairsLost', lost.filter(records).length, [...before.result.pairs].filter(records).length)
+        lose('credit', 'creditLost', [...before.outcome.creditedRight].filter((subject) => !outcome.creditedRight.has(subject)).length, before.outcome.creditedRight.size)
         // Callers and browsers in a cluster with a record of somebody who is not theirs.
         const side = ({ kinds }: Score) => ['caller contact', 'contact visitor', 'call contact'].reduce((sum, kind) => sum + (kinds.get(kind)?.wrong ?? 0), 0)
         row.wrongSide!.push(side(result) - side(before.result))
@@ -284,6 +301,9 @@ async function main() {
       if (beside) {
         const line = (key: string, scale: number) => { const { mean, low, high } = interval(beside[key]!); return `${(mean * scale).toFixed(2)} (${(low * scale).toFixed(2)} to ${(high * scale).toFixed(2)})` }
         console.log(`beside ${BESIDE[arm]}, over the same worlds, in points: people whose record is with another's ${line('mixedRecords', 100)}; people mixed by anything ${line('mixed', 100)}; joined pairs right ${line('right', 100)}. Of what that found, lost: true pairs ${line('pairsLost', 100)}; of records alone ${line('recordPairsLost', 100)}; records credited to their ad ${line('creditLost', 100)}. Callers and browsers with a record that is not theirs, pairs a world: ${line('wrongSide', 1)}`)
+        const part = ([lost, of]: [number, number]) => `${lost} of ${of} (${(share(lost, of) * 100).toFixed(2)}%)`
+        const pooled = lostIn.get(arm)!
+        console.log(`lost, pooled: true pairs ${part(pooled.pairs)}; of records alone ${part(pooled.recordPairs)}; records credited to their ad ${part(pooled.credit)}. Records mixed, pooled: ${total.mixedRecords} of ${total.recorded} (${(share(total.mixedRecords, total.recorded) * 100).toFixed(2)}%)`)
       }
       console.log(`in all: ${JSON.stringify(total)} ${JSON.stringify(credited)}`)
       for (const [kind, row] of [...kinds].sort()) console.log(`  pairs ${kind}: ${row.same} true, ${row.found} found, ${row.wrong} wrong`)

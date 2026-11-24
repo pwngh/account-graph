@@ -17,7 +17,8 @@ import { defaultPolicy, evidence, plainPolicy, policyHash, ruleFor, usable, weig
 import type { Policy } from './policy.ts'
 import { dayIn, dayStart, dimension, fold, nextDay } from './report.ts'
 import type { Credited } from './report.ts'
-import { partition, scorePairs } from './resolve.ts'
+import { conflict, knownOf, partition, scorePairs } from './resolve.ts'
+import type { Known } from './resolve.ts'
 import { checkTags, touchTag } from './tags.ts'
 import type { DecisionPage, Store, Tx } from './store.ts'
 import type {
@@ -401,6 +402,8 @@ export interface Between {
   joined: boolean
   /** Whether a reviewer keeps them apart. */
   apart: boolean
+  /** The fact that says they are two people, under a policy that keeps people apart by it. Nobody decided it. */
+  conflict?: 'birth' | 'initial'
   /** What the shared identifiers alone come to, 0 for none. */
   score: number
   reasons: Reason[]
@@ -510,7 +513,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       separated = separated.filter(([a, b]) => !(a === supposing.a && b === supposing.b) && !(a === supposing.b && b === supposing.a))
       if (supposing.separated ?? true) separated.push([supposing.a, supposing.b])
     }
-    return partition(subjects, scorePairs(policy, edges, states), separated, policy)
+    return partition(subjects, scorePairs(policy, edges, states), separated, policy, knownOf(policy, edges, (identifier) => states.get(identifier)?.ignored ?? false))
   }
 
   /**
@@ -558,7 +561,19 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     }
     const subjects = [...joined]
     const separated = (await tx.separatedOf(subjects)).filter(([a, b]) => joined.has(a) && joined.has(b))
-    return partition(subjects, pairs, separated, policy)
+    return partition(subjects, pairs, separated, policy, await known(tx, subjects))
+  }
+
+  /** What is known of these subjects that cannot be two people's. Nothing is read where the policy keeps nobody apart by it. */
+  async function known(tx: Tx, subjects: readonly Subject[]): Promise<Map<Subject, Known>> {
+    const out = new Map<Subject, Known>()
+    if (!policy.apart?.length) return out
+    for (let i = 0; i < subjects.length; i += TOGETHER) {
+      const edges = (await tx.edgesOf(subjects.slice(i, i + TOGETHER))).filter(({ identifier }) => /^(birth|initial|review):/.test(identifier))
+      const states = await tx.states(unique(edges.map((edge) => edge.identifier).filter((identifier) => identifier.startsWith('review:'))))
+      for (const [subject, facts] of knownOf(policy, edges, (identifier) => states.get(identifier)?.ignored ?? false)) out.set(subject, facts)
+    }
+    return out
   }
 
   /** Every subject whose stored labels are not what a full recompute gives, with what they should be: undefined where nothing is held any more. */
@@ -587,10 +602,15 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       if (links) links.push(link)
       else out.set(subject, [link])
     }
-    for (const { a, b, score, level, reasons } of scorePairs(policy, await tx.edgesOn(open), states, from)) {
+    const found = scorePairs(policy, await tx.edgesOn(open), states, from)
+    const facts = await known(tx, unique(found.flatMap(({ a, b }) => [a, b])))
+    for (const { a, b, score, level, reasons } of found) {
       if (apart.has(pairKey(a, b))) continue
-      add(a, { subject: b, score, level, reasons })
-      add(b, { subject: a, score, level, reasons })
+      const between = conflict(policy, facts.get(a), facts.get(b))
+      // However strong what they share is, they are two people, and are shown as related.
+      const link = { score, level: between ? ('related' as const) : level, reasons, ...(between && { conflict: between }) }
+      add(a, { subject: b, ...link })
+      add(b, { subject: a, ...link })
     }
     for (const links of out.values()) {
       links.sort((x, y) => y.score - x.score || (x.subject < y.subject ? -1 : 1))
@@ -640,6 +660,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     const apart = new Set((await tx.separatedOf(from)).flat().filter((subject) => !reached.has(subject)))
     let frontier = [...from]
     for (let hop = 0; hop < hops && frontier.length > 0; hop++) frontier = spread(reached, apart, frontier, await neighbors(tx, frontier), only, last)
+    const facts = await known(tx, [...reached.keys()])
+    for (const each of facts.size > 0 ? [...reached.keys()] : []) if (from.some((subject) => conflict(policy, facts.get(subject), facts.get(each)))) reached.delete(each)
     return reached
   }
 
@@ -649,7 +671,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     // As the hop began: a chain made better during it is followed in the next one, or it would be a link longer.
     for (const [near, start] of frontier.sort().map((each) => [each, reached.get(each)!] as const)) {
       for (const link of links.get(near) ?? []) {
-        if (apart.has(link.subject) || (only && !only.has(link.subject))) continue
+        if (link.conflict || apart.has(link.subject) || (only && !only.has(link.subject))) continue
         const confidence = start.confidence * link.score
         const known = reached.get(link.subject)
         if (known && known.confidence >= confidence) continue
@@ -681,7 +703,12 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         }
         for (const search of searches) search.frontier = spread(search.reached, search.apart, search.frontier, links)
       }
-      for (const { subject, reached } of searches) out.set(subject, reached)
+      // Nothing of somebody is reached from whoever cannot be them, through a third subject either.
+      const facts = await known(tx, unique(searches.flatMap(({ reached }) => [...reached.keys()])))
+      for (const { subject, reached } of searches) {
+        for (const each of facts.size > 0 ? [...reached.keys()] : []) if (conflict(policy, facts.get(subject), facts.get(each))) reached.delete(each)
+        out.set(subject, reached)
+      }
     }
     return out
   }
@@ -962,7 +989,13 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const labels = await tx.labelsOf(found.map((pair) => pair.b))
         found.sort((x, y) => y.score - x.score || (x.b < y.b ? -1 : 1))
         const out: Candidate[] = []
-        for (const { b: subject, score, level, reasons } of found.slice(0, limit)) out.push({ subject, score, level, reasons, members: (await tx.clusterOf(labels.get(subject)!.cluster)).sort() })
+        const some = found.slice(0, limit)
+        const facts = await known(tx, some.map((pair) => pair.b))
+        const own = knownOf(policy, given.map((identifier): Edge => ({ subject: nobody, identifier, first: at, last: at, count: 1 })), () => false).get(nobody)
+        for (const { b: subject, score, level, reasons } of some) {
+          const between = conflict(policy, own, facts.get(subject))
+          out.push({ subject, score, level: between ? 'related' : level, reasons, ...(between && { conflict: between }), members: (await tx.clusterOf(labels.get(subject)!.cluster)).sort() })
+        }
         return out
       })
     },
@@ -978,7 +1011,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
           const who = new Map<Subject, Conflict['how']>([[subject, 'recorded']])
           const members = own ? await tx.clusterOf(own.cluster) : []
           for (const member of members) if (!who.has(member)) who.set(member, 'same')
-          const related = unique([...(await neighbors(tx, [...who.keys()])).values()].flat().map((link) => link.subject)).filter((each) => !who.has(each))
+          const related = unique([...(await neighbors(tx, [...who.keys()])).values()].flat().filter((link) => !link.conflict).map((link) => link.subject)).filter((each) => !who.has(each))
           const theirs = await tx.labelsOf(related)
           // Whoever any of them is kept apart from is somebody else, and so is everyone that person is.
           const others = new Set((await tx.separatedOf([...who.keys()])).flat().filter((each) => !who.has(each)))
@@ -1023,10 +1056,13 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const [pair] = scorePairs(policy, edges, states, undefined, 0)
         const of = (subject: Subject) => new Set(edges.filter((edge) => edge.subject === subject).map((edge) => edge.identifier))
         const [held, others] = [of(a), of(b)]
+        const facts = await known(tx, unique([a, b]))
+        const between = a === b ? undefined : conflict(policy, facts.get(a), facts.get(b))
         return {
           known: held.size > 0 && others.size > 0,
           joined: x !== undefined && x.cluster === y?.cluster,
           apart: (await tx.separatedOf([a])).some((each) => each.includes(b)),
+          ...(between && { conflict: between }),
           score: pair?.score ?? 0,
           reasons: pair?.reasons ?? [],
           idle: a === b ? [] : [...held].filter((identifier) => others.has(identifier) && !usable(policy, identifier, states.get(identifier))).sort(),
@@ -1688,7 +1724,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
           for (const link of links) {
             if (link.reasons.some((reason) => reason.identifier.startsWith('review:join-'))) continue
             const [a, b] = subject < link.subject ? [subject, link.subject] : [link.subject, subject]
-            pairs.set(pairKey(a, b), { a, b, score: link.score, level: link.level, reasons: link.reasons })
+            pairs.set(pairKey(a, b), { a, b, score: link.score, level: link.level, reasons: link.reasons, ...(link.conflict && { conflict: link.conflict }) })
           }
         }
         const labels = await tx.labelsOf(unique([...pairs.values()].flatMap(({ a, b }) => [a, b])))

@@ -299,14 +299,14 @@ export function makeWorld(rates: Rates, { people: count, days, start, seed }: Si
   }
 
   let records = 0
-  /** By person, the records that are theirs, for staff to join a later call to. */
-  const recordsOf = new Map<string, string[]>()
+  /** Records as they are made, for staff to join a call to one there is by then. */
+  const made: { subject: string; person: string; at: number }[] = []
   const record = (person: Person, at: number, facts: { device?: string; email?: string; phone?: string }, staff: boolean) => {
     const subject = `contact:${records++}`
     note(subject, person.id, facts.device && `device ${facts.device}`, facts.email && `email ${facts.email}`, facts.phone && `phone ${facts.phone}`)
     ads.set(subject, { ad: person.ad, at })
     events.push({ kind: 'record', at, subject, ...facts, name: typedName(person.name, staff), ...(r.chance(rates.birthAsked) && { dob: typedBirth(person.dob, staff) }) })
-    recordsOf.set(person.id, [...(recordsOf.get(person.id) ?? []), subject])
+    made.push({ subject, person: person.id, at })
     return subject
   }
   // A digit of the area code mistyped could be anybody's, so the seven after it stand for all ten. Any of them can be wrong.
@@ -416,8 +416,9 @@ export function makeWorld(rates: Rates, { people: count, days, start, seed }: Si
         record(person, when + 5 * MINUTE, { phone: typedPhone(given, hidden ? rates.staffPhoneTypo : 0), ...(r.chance(rates.emailAsked) && { email: typedEmail(r.one(speaker.emails), rates.staffEmailTypo) }) }, true)
       }
       // Whoever answers opens the record the call is about, where there is one, and now and then somebody else's.
-      const theirs = recordsOf.get(person.id)
-      if (theirs && r.chance(rates.staffJoins)) events.push({ kind: 'join', at: when + 6 * MINUTE, call: id, subject: r.chance(rates.staffJoinsWrong) ? `contact:${r.under(records)}` : theirs.at(-1)! })
+      const there = made.filter((each) => each.at <= when + 6 * MINUTE)
+      const theirs = there.filter((each) => each.person === person.id)
+      if (theirs.length > 0 && r.chance(rates.staffJoins)) events.push({ kind: 'join', at: when + 6 * MINUTE, call: id, subject: (r.chance(rates.staffJoinsWrong) ? r.one(there) : theirs.at(-1)!).subject })
     }
   }
 

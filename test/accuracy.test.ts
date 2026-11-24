@@ -95,3 +95,9 @@ test('a world is reported to a server, and everyone told of is found there', asy
     assert.equal(credit.right + credit.wrong + credit.none + credit.cold, world.ads.size)
   }
 })
+
+test('under the default policy names and birth dates change no group', async () => {
+  const world = makeWorld(SETTINGS.base!.rates, { people: 80, days: 40, start: Date.parse('2026-03-02T15:00:00Z'), seed: 5 })
+  const without = { ...world, events: world.events.map((event) => (event.kind === 'record' ? { ...event, name: undefined, dob: undefined } : event)) } as unknown as typeof world
+  assert.deepEqual((await report(world)).clusterOf, (await report(without)).clusterOf)
+})

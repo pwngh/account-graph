@@ -115,9 +115,27 @@ export function nameKeys(secret: string, first: string, last: string, known: { z
   const keys: Identifier[] = []
   const zip = /^(\d{5})(-?\d{4})?$/.exec(known.zip5?.trim() ?? '')?.[1]
   if (zip && zip !== '00000' && zip !== '99999') keys.push(key('zip', zip))
-  const born = known.dob?.trim() ?? ''
-  const day = /^\d{4}-\d{2}-\d{2}$/.test(born) ? Date.parse(`${born}T00:00:00Z`) : NaN
-  // A date that systems write where none was given is nobody's birthday.
-  if (!Number.isNaN(day) && new Date(day).toISOString().slice(0, 10) === born && !['1900-01-01', '1970-01-01'].includes(born)) keys.push(key('born', born))
+  const born = birthday(known.dob)
+  if (born) keys.push(key('born', born))
   return keys
+}
+
+/**
+ * What cannot be two people's: the date of birth, and the first letter of the
+ * first name. Each is a key of its own, and links nothing. There are 26 letters,
+ * so a letter's key hides little from whoever has the tables.
+ */
+export function factKeys(secret: string, { first, dob }: { first?: string | undefined; dob?: string | undefined }): Identifier[] {
+  if (typeof secret !== 'string' || secret.length < 32) throw new TypeError('A fact key requires a secret of at least 32 characters')
+  const key = (kind: string, value: string): Identifier => `${kind}:${createHmac('sha256', secret).update(JSON.stringify([kind, value])).digest('hex')}`
+  const name = normalizeName(first ?? '')
+  const born = birthday(dob)
+  return [...(born ? [key('birth', born)] : []), ...(name.length > 1 && !NOBODYS.has(name) ? [key('initial', name[0]!)] : [])]
+}
+
+/** A date of birth that is one, or undefined: a date that systems write where none was given is nobody's birthday. */
+function birthday(dob: string | undefined): string | undefined {
+  const born = dob?.trim() ?? ''
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(born) ? Date.parse(`${born}T00:00:00Z`) : NaN
+  return !Number.isNaN(day) && new Date(day).toISOString().slice(0, 10) === born && !['1900-01-01', '1970-01-01'].includes(born) ? born : undefined
 }

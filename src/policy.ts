@@ -23,6 +23,10 @@ export interface Rule {
   corroborates?: true
 }
 
+/** A fact about somebody that links nothing: the date of birth, and the first letter of the first name. */
+export type Fact = 'birth' | 'initial'
+export const FACTS: readonly Fact[] = ['birth', 'initial']
+
 export interface Policy {
   /** At or above this score two subjects join one cluster. */
   same: number
@@ -36,6 +40,12 @@ export interface Policy {
    * settings file.
    */
   unnamed?: readonly string[]
+  /**
+   * Facts that no two values of are one person's: `birth`, and `initial`. Two subjects of one group that both have such a
+   * fact and share no value of it are kept apart, whatever joins them, unless a reviewer or a system joined the two. An
+   * `initial` keeps apart nobody whose births agree. Left out, nothing is.
+   */
+  apart?: readonly Fact[]
   /** A cluster with more members than this is flagged for review. */
   review: number
   kinds: Readonly<Record<string, Rule>>
@@ -102,6 +112,9 @@ export const defaultPolicy: Policy = {
     text: { weight: 0.95, dilution: 0, cap: 2, halfLife: Infinity },
     // A note, not evidence: where an address places a visit. It links nothing.
     place: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
+    // Notes, not evidence: what is known of a person that cannot be two people's. They link nothing.
+    birth: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
+    initial: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     // A note, not evidence: the number a visitor tapped, or a call that was recorded. It links nothing.
     dialed: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
   },
@@ -111,7 +124,7 @@ export const defaultPolicy: Policy = {
 export const UNNAMED: readonly string[] = ['visitor', 'caller', 'call']
 
 /** The kinds that are notes. The graph counts on them linking nothing, so a setting may not give them weight. */
-const NOTES = new Set(['opened', 'place', 'dialed'])
+const NOTES = new Set(['opened', 'place', 'dialed', ...FACTS])
 const LEVELS = ['same', 'related', 'bridge'] as const
 const FIELDS = ['weight', 'dilution', 'cap', 'halfLife'] as const
 const OPTIONAL = ['group', 'corroborates'] as const
@@ -122,9 +135,10 @@ export function policyProblems(given: unknown): string[] {
   if (!plain(given)) return ['must be an object, such as {"kinds":{"phone":{"weight":0.85}}}']
   const wrong: string[] = []
   const number = (value: unknown, least: number, most: number) => typeof value === 'number' && value >= least && value <= most
-  for (const name of Object.keys(given)) if (name !== 'kinds' && name !== 'review' && !(LEVELS as readonly string[]).includes(name)) wrong.push(`"${name}" is not a setting`)
+  for (const name of Object.keys(given)) if (name !== 'kinds' && name !== 'review' && name !== 'apart' && !(LEVELS as readonly string[]).includes(name)) wrong.push(`"${name}" is not a setting`)
   for (const name of LEVELS) if (given[name] !== undefined && !number(given[name], 0, 1)) wrong.push(`"${name}" must be a number from 0 to 1`)
   if (given.review !== undefined && !(Number.isSafeInteger(given.review) && given.review > 0)) wrong.push('"review" must be a positive integer')
+  if (given.apart !== undefined && !(Array.isArray(given.apart) && given.apart.every((fact: unknown) => FACTS.includes(fact as Fact)))) wrong.push(`"apart" must be a list of ${FACTS.map((fact) => `"${fact}"`).join(' and ')}`)
   if (given.kinds !== undefined && !plain(given.kinds)) wrong.push('"kinds" must be an object of rules')
   else {
     for (const [kind, rule] of Object.entries(given.kinds ?? {})) {
@@ -161,7 +175,7 @@ export function policyFrom(given: any): Policy {
     kinds.set(kind, { ...kinds.get(kind), ...rule, ...(halfLife !== undefined && { halfLife: halfLife === 'none' ? Infinity : halfLife }) })
   }
   const levels = Object.fromEntries([...LEVELS, 'review'].filter((name) => given[name] !== undefined).map((name) => [name, given[name]]))
-  return { ...defaultPolicy, ...levels, kinds: Object.fromEntries(kinds) }
+  return { ...defaultPolicy, ...levels, ...(given.apart?.length > 0 && { apart: FACTS.filter((fact) => given.apart.includes(fact)) }), kinds: Object.fromEntries(kinds) }
 }
 
 /** A policy as plain JSON: kinds in name order, and a half-life that never ends written `none`. */
@@ -171,6 +185,7 @@ export function plainPolicy(policy: Policy) {
     same: policy.same,
     related: policy.related,
     bridge: policy.bridge,
+    ...(policy.apart?.length && { apart: FACTS.filter((fact) => policy.apart!.includes(fact)) }),
     review: policy.review,
     kinds: Object.fromEntries(
       kinds.map(([kind, { weight, dilution, cap, halfLife, group, corroborates }]) => [kind, { weight, dilution, cap, halfLife: Number.isFinite(halfLife) ? halfLife : ('none' as const), ...(group !== undefined && { group }), ...(corroborates && { corroborates }) }]),

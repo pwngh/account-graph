@@ -195,7 +195,7 @@ Two facts of a contact may be kept, keyed as names are: the date of birth (`birt
 
 Seeds 20270101 to 20270120 are for choosing between `birth`, `initial` and `both`, in base and high. Seeds 20270201 to 20270220 are held back. They are run once, at one commit, over the four settings, with the chosen option and what it is beside. Three options are tried, and the best of three looks better than it is; the held seeds say how much.
 
-**How one is chosen.** Of the options that lose no more than 2% of the true pairs of records, and 2% of the records credited to their ad, that the arm beside finds in base, the one with the fewest people's records mixed under the default policy. Where `birth` is within 0.3 points of it, `birth` is chosen, because a single letter is close to plain. Where none loses so little, none is chosen, and no policy is changed.
+**How one is chosen.** Of the options that lose no more than 2% of the true pairs of records, and 2% of the records credited to their ad, that the arm beside finds in base, pooled over the worlds, under the default policy and under `household staff` both, the one with the fewest people's records mixed under the default policy, pooled. Where `birth` is within 0.3 points of it, `birth` is chosen, because a single letter is close to plain. Where none loses so little, none is chosen, and no policy is changed.
 
 ### What is new in the world
 
@@ -213,18 +213,18 @@ All assumed, and set before anything was run.
 | Calls again on the number shown before | 80% | 70% | 60% |
 | Numbers in the pool | 10 | 10, and 40 in busy | 10 |
 
-First letters are uneven, as they are in life, so one couple in fourteen or so share theirs.
+First letters are uneven, as they are in life, so one couple in fourteen or so share theirs. No pool number is a fact here, so the plain rules and what is reachable are the same with a pool as without.
 
 ### What would be bad
 
-Of the held seeds.
+Of the held seeds. A share is of counts pooled over the worlds. A comparison is by the mean of the paired differences, and is bad only where its 95% interval does not reach zero, except where the row says the interval.
 
 | In | Bad |
 | --- | --- |
 | Base, the chosen option beside its arm | The difference in people whose record is with another's is not below zero over its whole interval |
 | Base, default and the option | More than 1% of people with a record share a cluster with somebody else's |
 | Base, the option | More than 2% of the true pairs of records found beside are lost, or more than 2% of the records credited to their ad |
-| Base and high, the option | More callers and browsers are with a record that is not theirs than beside it |
+| Base and high, the option | More callers and browsers are with a record that is not theirs than beside it: a mean difference above zero whose interval does not reach zero |
 | High, the option | More than 2.5% of people with a record share a cluster with somebody else's, or more than 5% of the pairs or 5% of the credit are lost |
 | Base, `household staff` | Fewer than 70% of the true pairs of records and callers are found |
 | Busy, `default pool` | More than 5% of the links by a tap or by a number shown are between two people |
@@ -235,6 +235,7 @@ Of the held seeds.
 - Most rates are assumed. Under `high`, every one is at its hard end at once.
 - People act alone or with their household. Friends, offices and shelters that share a telephone or computer are not made up.
 - Nobody lies about who they are. In the first run, nicknames and married names are not made up.
+- Half of the records have a birth date, so both of a pair do a quarter of the time. That is the main limit on what `birth` can do.
 - Twins, and a parent and child of one name, are cases that neither fact can see.
 - A record's chain of facts may run through another person's subjects, so a few of those counted as reachable are so by a mistake.
 - A digit of the area code mistyped is not made up, because it could be a real number.

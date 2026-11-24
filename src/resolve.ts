@@ -1,5 +1,5 @@
 import { UNNAMED, evidence, usable, weigh } from './policy.ts'
-import type { Policy } from './policy.ts'
+import type { Fact, Policy } from './policy.ts'
 import type { Edge, Identifier, IdentifierState, Labels, Pair, Reason, Subject } from './types.ts'
 
 /**
@@ -87,6 +87,42 @@ export function components(subjects: Iterable<Subject>, pairs: readonly Pair[]):
   return out
 }
 
+/** What is known of somebody that cannot be two people's, and the joins a reviewer or a system made of them. */
+export interface Known {
+  facts: Map<Fact, Set<Identifier>>
+  joins: Set<Identifier>
+}
+
+/** The facts of the subjects that have one, of the facts a policy keeps people apart by. An undone join is none. */
+export function knownOf(policy: Policy, edges: readonly Edge[], undone: (identifier: Identifier) => boolean): Map<Subject, Known> {
+  const out = new Map<Subject, Known>()
+  if (!policy.apart?.length) return out
+  for (const { subject, identifier } of edges) {
+    const kind = identifier.slice(0, identifier.indexOf(':'))
+    const fact = policy.apart.find((each) => each === kind)
+    // `birth` is read for an initial to be weighed against, whether or not it keeps anyone apart by itself.
+    if (!fact && kind !== 'birth' && !(kind === 'review' && !undone(identifier))) continue
+    const known = out.get(subject) ?? { facts: new Map(), joins: new Set() }
+    out.set(subject, known)
+    if (kind === 'review') known.joins.add(identifier)
+    else known.facts.set(kind as Fact, (known.facts.get(kind as Fact) ?? new Set()).add(identifier))
+  }
+  return out
+}
+
+/** The fact two subjects cannot both be one person by, if there is one. */
+export function conflict(policy: Policy, a: Known | undefined, b: Known | undefined): Fact | undefined {
+  if (!a || !b || !policy.apart?.length) return undefined
+  if ([...a.joins].some((identifier) => b.joins.has(identifier))) return undefined
+  /** Whether they agree on a fact, or undefined where one of them has none. */
+  const agree = (fact: Fact) => {
+    const [own, others] = [a.facts.get(fact), b.facts.get(fact)]
+    return own && others && [...own].some((value) => others.has(value))
+  }
+  if (policy.apart.includes('birth') && agree('birth') === false) return 'birth'
+  return policy.apart.includes('initial') && agree('initial') === false && agree('birth') !== true ? 'initial' : undefined
+}
+
 type Adjacency = Map<Subject, Map<Subject, number>>
 
 /**
@@ -95,7 +131,8 @@ type Adjacency = Map<Subject, Map<Subject, number>>
  * A component is every subject reachable over `same` pairs. A cluster is what
  * is left of a component after three kinds of cut, applied in this order:
  *
- * 1. A pair a reviewer separated is never linked directly.
+ * 1. A pair a reviewer separated, or whose facts say it is two people, is
+ *    never linked directly.
  * 2. If the two are still connected through others, the weakest set of links
  *    between them is removed.
  * 3. A single link below `policy.bridge` may add one subject to a group, but
@@ -111,6 +148,7 @@ export function partition(
   pairs: readonly Pair[],
   separated: readonly (readonly [Subject, Subject])[],
   policy: Policy,
+  known: ReadonlyMap<Subject, Known> = new Map(),
 ): Map<Subject, Labels> {
   const component = components(subjects, pairs)
   const members = new Map<Subject, Subject[]>()
@@ -143,7 +181,10 @@ export function partition(
       out.set(id, { component: id, cluster: id })
       continue
     }
-    for (const piece of split(group, links.get(id) ?? [], apart.get(id) ?? [], policy)) {
+    const own = apart.get(id) ?? []
+    const told = group.filter((subject) => known.get(subject)?.facts.size).sort()
+    for (const [i, a] of told.entries()) for (const b of told.slice(i + 1)) if (conflict(policy, known.get(a), known.get(b)) && !own.some(([x, y]) => x === a && y === b)) own.push([a, b])
+    for (const piece of split(group, links.get(id) ?? [], own, policy)) {
       let cluster = piece[0]!
       for (const subject of piece) if (subject < cluster) cluster = subject
       for (const subject of piece) out.set(subject, { component: id, cluster })
