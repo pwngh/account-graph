@@ -7,7 +7,7 @@
  *
  * It starts a throwaway PostgreSQL in Docker (or keeps everything in memory
  * where there is no Docker, or with MEMORY=1), the graph server with its reviewer screen, the
- * firm's site and its presenter page, and fills them. docs/demo.md has the
+ * firm's site and a stage to present it on, and fills them. docs/demo.md has the
  * script. Ctrl-C stops and deletes all of it.
  */
 import { execFileSync } from 'node:child_process'
@@ -20,7 +20,7 @@ import { createGraph, createMemoryStore, createOps, createOutbox, googleAds, has
 import type { Store } from '../src/index.ts'
 import { reviewPage } from '../src/review.ts'
 import { createHandler } from '../src/server.ts'
-import { clockScript, page } from './firm-page.ts'
+import { clockScript, landing } from './firm-page.ts'
 
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
@@ -50,7 +50,7 @@ const FIRST = ['Ana', 'Luis', 'Maria', 'Jorge', 'Elena', 'Pat', 'Sam', 'Robin', 
 const LAST = ['Rivera', 'Santos', 'Moreno', 'Hill', 'Stone', 'Brook', 'Vale', 'Cruz', 'Marsh', 'Field']
 
 export interface Firm {
-  /** The graph server with its reviewer screen, and the firm's site with its presenter page. */
+  /** The graph server with its reviewer screen and the stage, and the firm's site. */
   graph: string
   site: string
   close(): Promise<void>
@@ -86,14 +86,26 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
     token: 'service-demo', reviewers: { dana: 'demo' }, origins: [siteAt], now: clock, outbox, ops, stages: STEPS, calls, returnHours: 24, limit: false,
     events: ['phone_click'], linkSecret: SECRET, identifierSecret: SECRET, pool: { numbers: ['+15550100111', '+15550100112'], minutes: 15, grace: 120 },
   })
-  // The reviewer screen goes by the demo's clock: the page is served with it, and every answer carries it.
+  // The reviewer screen goes by the demo's clock: the page is served with it, and every answer carries it. The stage is the same page with the caller's phone and the scenes.
   const { html, headers } = reviewPage()
+  const hash = (text: string) => `'sha256-${createHash('sha256').update(text).digest('base64')}'`
+  const beside = (file: string) => readFileSync(new URL(`./${file}`, import.meta.url), 'utf8').replace(/\r\n?/g, '\n')
+  const stage = { style: beside('stage.css'), script: `const STAGE = ${JSON.stringify({ phone: `${siteAt}/es?phone=1` })}\n${beside('stage.js')}` }
   const server = createServer((request, response) => {
     response.setHeader('x-demo-ahead', ahead)
-    if (request.method !== 'GET' || new URL(request.url ?? '/', 'http://localhost').pathname !== '/review') return handler(request, response)
-    const script = clockScript(ahead)
-    const allowed = `script-src 'sha256-${createHash('sha256').update(script).digest('base64')}' `
-    response.writeHead(200, { ...headers, 'content-security-policy': headers['content-security-policy']!.replace('script-src ', () => allowed) }).end(html.replace('<style>', () => `<script>${script}</script>\n<style>`))
+    const path = `${request.method} ${new URL(request.url ?? '/', 'http://localhost').pathname}`
+    const json = (status: number, body: object) => void response.writeHead(status, { 'content-type': 'application/json', 'x-demo-ahead': ahead }).end(JSON.stringify(body))
+    if (path === 'GET /stage/scenes') return json(200, { next, scenes: scenes.map(({ title, text, see, stage }) => ({ title, text, see, stage })) })
+    // A page elsewhere cannot send the header, so only the stage moves the story on.
+    if (path === 'POST /stage/run') return void (request.headers['x-stage'] ? runScene().then(([status, body]) => json(status, body)) : json(403, { error: 'Only the stage runs scenes' }))
+    if (path !== 'GET /review' && path !== 'GET /stage') return handler(request, response)
+    const staged = path === 'GET /stage'
+    const first = `${clockScript(ahead)}${staged ? `\nsessionStorage.getItem('token') ?? sessionStorage.setItem('token', 'demo')` : ''}`
+    let policy = headers['content-security-policy']!.replace('script-src ', () => `script-src ${hash(first)}${staged ? ` ${hash(stage.script)}` : ''} `)
+    if (staged) policy = policy.replace('style-src ', () => `style-src ${hash(stage.style)} `) + `; frame-src ${siteAt}`
+    let text = html.replace('<style>', () => `<script>${first}</script>\n<style>`)
+    if (staged) text = text.replace('</head>', () => `<style>${stage.style}</style></head>`).replace('</body>', () => `<script>${stage.script}</script></body>`)
+    response.writeHead(200, { ...headers, 'content-security-policy': policy }).end(text)
   })
   await once(server.listen(ports[0], '127.0.0.1'), 'listening').catch((error) => {
     site.close()
@@ -232,9 +244,9 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
   const caller = `caller:${hashPhone(demo.phone)}`
   const review = (view: string) => `${graphAt}/review#/${view}`
   /** The scenes, in order. Each does over HTTP what the site, the phone system or the office would, and says what came of it. */
-  const scenes: { title: string; text: string; see: [string, string]; run(): Promise<string[]> }[] = [
+  const scenes: { title: string; text: string; see: [string, string]; stage?: string; run(): Promise<string[]> }[] = [
     {
-      title: 'Ad visit', text: 'A visitor arrives from a Spanish ad for the North office. The landing address carries office=north and lang=es.', see: ['Channels', review('channels')],
+      title: 'Ad visit', text: 'A visitor arrives from a Spanish ad for the North office. The landing address carries office=north and lang=es.', stage: '#/journey/visitor%3Av-4821', see: ['Channels', review('channels')],
       async run() {
         await at(0, 9, 2)
         await browser('/collect', { device: 'v-4821', url: `${siteAt}/es`, touch: { gclid: 'demo-click', source: 'google', medium: 'cpc', campaignId: '30333', campaign: 'Busqueda: North', landing: `${siteAt}/es`, custom: { office: 'north', lang: 'es' } } })
@@ -243,7 +255,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       },
     },
     {
-      title: 'Tap to call', text: 'The visitor taps the phone number. The phone system reports a connected call and holds it for a result.', see: ['Calls', review('calls')],
+      title: 'Tap to call', text: 'The visitor taps the phone number. The phone system reports a connected call and holds it for a result.', stage: '#/accounts/visitor%3Av-4821', see: ['Calls', review('calls')],
       async run() {
         await at(0, 9, 4)
         await browser('/event', { device: 'v-4821', event: 'phone_click', number: demo.line })
@@ -261,7 +273,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       },
     },
     {
-      title: 'Callback', text: 'Staff return the call, create a contact and join it to the caller.', see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)],
+      title: 'Callback', text: 'Staff return the call, create a contact and join it to the caller.', stage: '#/accounts/visitor%3Av-4821', see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)],
       async run() {
         await at(0, 14, 0)
         await ask('POST', '/call', { id: 'demo-2', direction: 'outbound', from: demo.line, to: demo.phone, at: clock(), duration: 410, answered: true })
@@ -336,30 +348,33 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
 
   let next = 0
   let running = false
+  /** Runs the next scene: what to answer with. */
+  async function runScene(): Promise<[number, object]> {
+    const scene = scenes[next]
+    if (!scene || running) return [409, { error: 'There is no next scene to run' }]
+    running = true
+    const began = performance.now()
+    try {
+      const lines = await scene.run()
+      next += 1
+      return [200, { lines, ms: Math.round(performance.now() - began) }]
+    } catch (error) {
+      return [500, { error: String((error as Error).message) }]
+    } finally {
+      running = false
+    }
+  }
   async function answer(request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse) {
     const url = new URL(request.url ?? '/', siteAt)
     const html = (text: string) => void response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }).end(text)
     try {
-      if (url.pathname === '/') return html(page('en', graphAt))
-      if (url.pathname === '/es') return html(page('es', graphAt))
-      if (url.pathname === '/present') return html(page('present', graphAt))
-      if (url.pathname === '/scenes') return void response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ next, scenes: scenes.map(({ title, text, see }) => ({ title, text, see })) }))
+      const phone = url.searchParams.has('phone')
+      if (url.pathname === '/') return html(landing('en', graphAt, phone))
+      if (url.pathname === '/es') return html(landing('es', graphAt, phone))
+      if (url.pathname === '/present') return void response.writeHead(302, { location: `${graphAt}/stage` }).end()
       if (url.pathname === '/hook' && request.method === 'POST') {
         alerts.push(JSON.parse(await new Response(request as unknown as ReadableStream).text()).text)
         return void response.writeHead(204).end()
-      }
-      if (url.pathname === '/run' && request.method === 'POST') {
-        const scene = scenes[next]
-        if (!scene || running) return void response.writeHead(409, { 'content-type': 'application/json' }).end('{"error":"There is no next scene to run"}')
-        running = true
-        const began = performance.now()
-        try {
-          const lines = await scene.run()
-          next += 1
-          return void response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ lines, ms: Math.round(performance.now() - began) }))
-        } finally {
-          running = false
-        }
       }
       response.writeHead(404).end('Not found')
     } catch (error) {
@@ -442,7 +457,7 @@ if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).
     console.log(made ? 'Loading sample data into PostgreSQL. This takes about a minute.' : 'Loading sample data into memory.')
     firm = await startFirm(store, { ports: [Number(process.env.PORT ?? 8790), Number(process.env.SITE_PORT ?? 8791)], say: console.log })
     console.log(`
-  Presenter page   ${firm.site}/present
+  Stage            ${firm.graph}/stage
   Reviewer screen  ${firm.graph}/review        sign in with the token: demo
   Sample site      ${firm.site}/?gclid=you&utm_id=30111   and ${firm.site}/es?gclid=you&utm_id=30333
 

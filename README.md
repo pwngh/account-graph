@@ -78,7 +78,7 @@ git clone https://github.com/pwngh/account-graph && cd account-graph
 npm ci && npm run firm
 ```
 
-This starts a sample law firm with two months of data: the server, a bilingual site, and a presenter page with ten scenes. Press Ctrl-C to stop it and delete its data. See [Demo](docs/demo.md) for a 90-second script.
+This starts a sample law firm with two months of data: the server, a bilingual site, and a stage with ten scenes. Press Ctrl-C to stop it and delete its data. See [Demo](docs/demo.md) for a 90-second script.
 
 ### Example site
 
@@ -222,7 +222,7 @@ The server normalizes and hashes the email, phone and postal address. `device` i
 
 | Command | Purpose |
 | --- | --- |
-| `npm run firm` | Sample firm with a presenter page |
+| `npm run firm` | Sample firm with a stage for presenting |
 | `npm run review` | Reviewer screen with sample data (`tools/review-demo.ts`) |
 | `examples/site.ts` | Two-page site with the script tag and a signup form |
 | `tools/browser-check.ts` | Runs `collect`, the server and the outbox against a browser |

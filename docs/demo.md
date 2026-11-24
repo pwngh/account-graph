@@ -1,6 +1,6 @@
 # Demo
 
-The demo runs a fictional law firm with three offices, North, River and Online, and two languages. It starts the server, the firm's site and a presenter page with one command:
+The demo runs a fictional law firm with three offices, North, River and Online, and two languages. It starts the server, the firm's site and a stage for presenting with one command:
 
 ```sh
 npm ci
@@ -10,9 +10,9 @@ npm run firm
 | Component | Location |
 | --- | --- |
 | PostgreSQL, in Docker | Deleted on stop. Without Docker, or with `MEMORY=1`, all data is in memory. |
+| Stage: the reviewer screen with a caller's phone and the scenes | `http://localhost:8790/stage`. Signed in already. |
 | Graph server and reviewer screen | `http://localhost:8790/review`. Sign in with the token `demo`. |
 | Firm site, in English and Spanish | `http://localhost:8791/?gclid=you&utm_id=30111` and `/es` |
-| Presenter page | `http://localhost:8791/present` |
 | Two months of seeded history | Filled in a few seconds in memory, about a minute in PostgreSQL. |
 
 Docker downloads the database image once. After that the demo runs offline without keys, and includes its own ad platform and alert receiver. Every name, number, amount and address is fictional.
@@ -21,9 +21,11 @@ The site is live. Open it with `?gclid=you&utm_id=30333` and its number becomes 
 
 ## Setup
 
-1. Open the presenter page, and the reviewer screen in a second tab. Sign in.
-2. Press Space on the presenter page to run each scene. It shows the result and duration, and links to the view that changed.
-3. Run all ten scenes before the presentation, or run them as you go. Each takes well under a second.
+1. Open the stage. The caller's phone is at left, and the reviewer screen at right.
+2. Press Space to run each scene. The phone shows what the caller does, and the screen opens the view that changed.
+3. Press H to hide the bar.
+
+The story runs from a Monday to a Thursday that have passed. Each scene moves the demo's clock on, and the screens served by the demo go by that clock.
 
 ## Ninety-second script
 
@@ -46,14 +48,14 @@ The site is live. Open it with `?gclid=you&utm_id=30333` and its number becomes 
 | 4 | A callback that reaches the person, with a contact named by staff and an inquiry credited to the ad and sent | Journey |
 | 5 | A call to a map listing's number, without a page load, filed under that listing | Channels |
 | 6 | A client served by a different office than the ad named | Channels |
-| 7 | The other side of the matter with the same family phone and email, separated by the case system | Accounts |
-| 8 | A parent and child on one phone: related without joining | Matches |
-| 9 | The client's payment is recorded and the step restated | Journey |
+| 7 | The client's payment is recorded and the step restated | Journey |
+| 8 | The other side of the matter with the same family phone and email, separated by the case system | Accounts |
+| 9 | A parent and child on one phone: related without joining | Matches |
 | 10 | A night without calls: a stale feed and a delivered alert | Health |
 
 ## Limitations
 
 - **Scale.** The demo has a few hundred people. See [Performance](performance.md) for measured speeds.
-- **Clock.** Scene 10 moves the demo server's clock forward fourteen hours. The browser's clock stays put, so ages there and times here differ afterward. Run it last.
+- **Clock.** Scene 10 moves the clock forward fourteen hours. Run it last.
 - **Repeats.** Each scene runs once. Restart the command to start over.
 - **Firm systems.** Call answering, assignment and client messages belong to a firm's own systems. The demo only simulates their reports.
