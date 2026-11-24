@@ -153,6 +153,12 @@ const REVIEW_ROUTES = new Set([
   'GET /undecided', 'GET /between', 'GET /conversions', 'POST /retry', 'POST /foresee',
 ])
 
+/** What takes long to work out, and changes little in a few seconds. */
+const SLOW_ROUTES = new Set(['GET /board', 'GET /report', 'GET /followed', 'GET /calls/summary'])
+
+/** What changes who is who, or takes someone out, and is seen in every answer from then on. */
+const DECISIONS = new Set(['POST /forget', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /rebuild', 'POST /not-lead', 'POST /call/returned'])
+
 /** Answers hold people's data, so nothing keeps a copy of one. */
 const JSON_HEADERS = { 'content-type': 'application/json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }
 
@@ -694,7 +700,49 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     return after ? { at: Number(after.slice(0, cut)), id: after.slice(cut + 1) } : undefined
   }
 
-  async function route(request: IncomingMessage, response: ServerResponse): Promise<unknown> {
+  // What takes long to work out is worked out once for everybody who asks at the same time, and is good until something is
+  // written. While things are being written all the time, it is good for a few times as long as it took, so a screen left
+  // open costs a small share of the server however many are.
+  const answers = new Map<string, { version: number; at: number; until: number; made: boolean; answer: Promise<unknown> }>()
+  // Goes up with each decision and deletion: an answer that was being worked out meanwhile is worked out again.
+  let decided = 0
+  // While one is under way nothing is shared: it can be done already, and waiting for what follows it.
+  let deciding = 0
+  const remembered = async (url: URL, response: ServerResponse, work: () => Promise<unknown>): Promise<unknown> => {
+    const key = url.pathname + url.search
+    for (;;) {
+      const since = decided
+      if (deciding > 0) {
+        const answer = await work()
+        if (decided !== since) continue
+        return answer
+      }
+      const version = await graph.version()
+      let known = answers.get(key)
+      // Who has waited too long changes with the clock, so nothing is good for more than a minute.
+      if (known?.made && !(now() - known.at < 60_000 && (known.version === version || now() < known.until))) known = undefined
+      if (!known) {
+        const at = now()
+        const next = (known = { version, at, until: Infinity, made: false, answer: work() })
+        for (const [old, { made }] of answers) if (answers.size >= 200 && made) answers.delete(old)
+        answers.set(key, next)
+        next.answer.then(
+          () => Object.assign(next, { made: true, until: now() + 4 * (now() - at) }),
+          () => answers.get(key) === next && answers.delete(key),
+        )
+      }
+      const waited = !known.made
+      const answer = await known.answer
+      const newest = waited ? await graph.version() : version
+      // Nothing is awaited between this and the answer being given.
+      if (decided !== since || deciding > 0) continue
+      // Made before the newest write: the screen that gets it asks again.
+      if (known.version !== newest) response.setHeader('age', String(Math.max(1, Math.ceil((now() - known.at) / 1000))))
+      return answer
+    }
+  }
+
+  async function route(request: IncomingMessage, response: ServerResponse, remember = true): Promise<unknown> {
     const url = new URL(request.url ?? '/', 'http://localhost')
     const path = `${request.method} ${url.pathname}`
     const origin = request.headers.origin
@@ -790,6 +838,18 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     authorize(request, path)
     storable([...url.searchParams.values()])
     const subject = url.searchParams.get('subject') ?? ''
+    if (remember && SLOW_ROUTES.has(path)) return remembered(url, response, () => route(request, response, false))
+    if (remember && DECISIONS.has(path)) {
+      // Whoever decides something is shown what came of it, and what is deleted is in no answer any more.
+      deciding += 1
+      try {
+        return await route(request, response, false)
+      } finally {
+        deciding -= 1
+        decided += 1
+        answers.clear()
+      }
+    }
     switch (path) {
       case 'POST /observe':
         return graph.observe(await json(request))

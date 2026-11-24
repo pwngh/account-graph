@@ -483,6 +483,32 @@ export function createMemoryStore(): Store {
       return found.sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1)).map(withResult)
     },
 
+    async callsWith(ids) {
+      return ids.flatMap((id) => calls.get(id) ?? []).map(withResult)
+    },
+
+    async callTimes(subjects) {
+      const wanted = new Set(subjects)
+      const found = [...calls.values()].filter((call) => wanted.has(call.subject) && !spurned.has(`call:${call.id}`))
+      return found.sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1)).map(({ id, direction, subject, at }) => {
+        const result = results.get(id)
+        return { id, direction, subject, at, ...(result && { result: { ...(result.answered !== undefined && { answered: result.answered }), ...(result.returned !== undefined && { returned: result.returned }), ...(result.waited !== undefined && { waited: result.waited }) } }) }
+      })
+    },
+
+    async aroundOf(subjects) {
+      return this.membersOf([...new Set(subjects.flatMap((subject) => labels.get(subject)?.component ?? []))])
+    },
+
+    async calledBetween(from, to) {
+      return [...new Set([...calls.values()].filter((call) => call.at >= from && call.at < to && !spurned.has(`call:${call.id}`)).map((call) => call.subject))]
+    },
+
+    async missesBetween(from, to) {
+      const found = [...calls.values()].filter((call) => call.direction === 'inbound' && call.at >= from && call.at < to && (results.get(call.id)?.answered === false || spurned.has(`call:${call.id}`)))
+      return found.sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1)).map(withResult)
+    },
+
     async setLink(link) {
       sent.set(link.id, { ...link })
     },

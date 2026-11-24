@@ -117,6 +117,8 @@ Send `by` only with the service token. A reviewer's decision carries the name of
 | `GET /conversions?state=` | The 100 jobs in one state most recently due: `held`, `pending`, `sent`, `skipped`, or `failed`, without the hashed email and phone. `held` waits for a call's result. |
 | `POST /retry` | `{ transactionId, target? }`. Queues its failed and skipped jobs again, optionally for one platform. |
 
+`/board`, `/report`, `/followed` and `/calls/summary` are worked out once for everybody who asks at the same time. While data is being written, an answer is shared for four times as long as it took, up to a minute, and has an `age` header when something has been written since. A decision or a deletion through the same server ends that at once.
+
 ### Status
 
 | Route | Description |

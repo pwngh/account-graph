@@ -1676,3 +1676,114 @@ test('texts are taken from the page, your own systems and Twilio, and what they 
     server.close()
   }
 })
+
+test('a slow answer is worked out once for everybody, shared for a moment while things are written, and never outlives a decision', async () => {
+  const inner = createGraph(createMemoryStore())
+  let worked = 0
+  const clock = { now: Date.parse('2026-03-02T12:00:00Z') }
+  let held: Promise<void> | undefined
+  let release: (() => void) | undefined
+  let reached = false
+  let after: Promise<void> | undefined
+  const graph = { ...inner, forget: async (...given: Parameters<typeof inner.forget>) => {
+    const changes = await inner.forget(...given)
+    await after
+    return changes
+  }, board: async (...given: Parameters<typeof inner.board>) => {
+    worked += 1
+    const board = await inner.board(...given)
+    if (held) reached = true
+    await held
+    // It takes two seconds.
+    clock.now += 2_000
+    return board
+  } }
+  const server = createServer(createHandler(graph, { token: 'service', reviewers: { dana: 'reviewer' }, origins: [], now: () => clock.now, stages: { signup: {} } })).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const read = async (query = '') => {
+    const response = await fetch(`${base}/board${query}`, { headers: { authorization: 'Bearer reviewer' } })
+    return { age: response.headers.get('age'), people: ((await response.json()) as any).columns?.[1]?.people, status: response.status }
+  }
+  const post = (path: string, body: object, token = 'service') => fetch(`${base}${path}`, { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify(body) })
+  const sign = (n: number) => post('/convert', { transactionId: `o${n}`, subject: `account:${n}`, at: clock.now, stage: 'signup' })
+  try {
+    await sign(1)
+    assert.deepEqual((await Promise.all([read(), read(), read()])).map(({ age, people }) => [age, people]), Array(3).fill([null, 1]))
+    assert.equal(worked, 1)
+    // Asked differently, it is another answer. A mistake is worked out again.
+    assert.equal((await read('?days=7')).people, 1)
+    for (const _ of [1, 2]) assert.equal((await read('?days=0')).status, 400)
+    assert.equal(worked, 4)
+    // Something is written: the answer stands for four times as long as it took, and says it is from before.
+    await sign(2)
+    assert.deepEqual(await read(), { age: '4', people: 1, status: 200 })
+    clock.now += 8_000
+    assert.deepEqual(await read(), { age: null, people: 2, status: 200 })
+    // With nothing written it is good for a minute, because lateness goes by the clock.
+    const before = worked
+    clock.now += 50_000
+    await read()
+    assert.equal(worked, before)
+    clock.now += 20_000
+    await read()
+    assert.equal(worked, before + 1)
+    // Whoever decides something sees it at once, and so it is for a deletion.
+    await post('/separate', { a: 'account:1', b: 'account:2' })
+    assert.equal((await read()).age, null)
+    const reads = worked
+    await post('/find', { text: 'account:1' }, 'reviewer')
+    await read()
+    assert.equal(worked, reads, 'looking decides nothing')
+    await post('/forget?', { subject: 'account:1' })
+    assert.deepEqual(await read(), { age: null, people: 1, status: 200 })
+    // One being worked out when somebody is deleted is worked out again before anyone gets it.
+    await sign(3)
+    clock.now += 70_000
+    held = new Promise((resolve) => (release = resolve))
+    const waiting = Promise.all([read(), read()])
+    while (!reached) await new Promise((resolve) => setImmediate(resolve))
+    await post('/forget', { subject: 'account:3' })
+    held = undefined
+    release!()
+    assert.deepEqual((await waiting).map(({ people }) => people), [1, 1])
+    // And one during which something else was written says it is from before.
+    clock.now += 70_000
+    reached = false
+    held = new Promise((resolve) => (release = resolve))
+    const during = read()
+    while (!reached) await new Promise((resolve) => setImmediate(resolve))
+    await sign(4)
+    held = undefined
+    release!()
+    assert.deepEqual([(await during).people, (await during).age !== null], [1, true])
+    // A deletion that is done and waits for what it set off is already in no answer.
+    await sign(5)
+    clock.now += 70_000
+    assert.equal((await read()).people, 3)
+    let finish: (() => void) | undefined
+    after = new Promise((resolve) => (finish = resolve))
+    const deleting = post('/forget', { subject: 'account:5' })
+    while ((await inner.cluster('account:5')) || (await inner.outcomeOf('o5'))) await new Promise((resolve) => setImmediate(resolve))
+    const seen = (await read()).people
+    // One that began before it was over is read again when it is.
+    reached = false
+    held = new Promise((resolve) => (release = resolve))
+    const begun = worked
+    const overlapping = read()
+    while (!reached) await new Promise((resolve) => setImmediate(resolve))
+    finish!()
+    await deleting
+    held = undefined
+    release!()
+    assert.deepEqual([seen, (await overlapping).people, worked - begun], [2, 2, 2])
+    // The first of two values is the one that counts, so the order of them is another question.
+    await read('?days=7&days=30')
+    const first = worked
+    await read('?days=30&days=7')
+    assert.equal(worked, first + 1)
+    assert.equal((await fetch(`${base}/board`)).status, 401)
+  } finally {
+    server.close()
+  }
+})

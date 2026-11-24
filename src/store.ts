@@ -1,6 +1,6 @@
 import type { Feed, OpsStore } from './ops.ts'
 import type { Job, OutboxStore } from './outbox.ts'
-import type { CallResult, Change, Consent, ConsentAnswer, CostRow, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, NumberedChange, SentLink, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, CallTime, Change, Consent, ConsentAnswer, CostRow, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, NumberedChange, SentLink, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
 
 /**
  * Where the graph lives. Sightings and touches are the record; edges and
@@ -133,6 +133,16 @@ export interface Tx {
   openCalls(from: number, to: number, limit: number, after?: { at: number; id: string }): Promise<KeptCall[]>
   /** Calls with `from <= at < to`, oldest first. */
   callsBetween(from: number, to: number): Promise<KeptCall[]>
+  /** The same, of those with one of these ids. */
+  callsWith(ids: readonly string[]): Promise<KeptCall[]>
+  /** When each call of the given subjects was and how it went, oldest first, without calls that were no lead: all that says who waits for whom. */
+  callTimes(subjects: readonly Subject[]): Promise<CallTime[]>
+  /** Everyone in the components the given subjects are in. */
+  aroundOf(subjects: readonly Subject[]): Promise<Map<Subject, Labels>>
+  /** Who called or was called in a range of time, leaving out calls that were no lead. */
+  calledBetween(from: number, to: number): Promise<Subject[]>
+  /** Calls to you in a range of time that nobody answered, or that were no lead. */
+  missesBetween(from: number, to: number): Promise<KeptCall[]>
   /** Keeps a link sent to one person, or what is known of it now. */
   setLink(link: SentLink): Promise<void>
   linkOf(id: string): Promise<SentLink | undefined>

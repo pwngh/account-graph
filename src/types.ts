@@ -460,6 +460,9 @@ export interface SentLink {
   openings: number
 }
 
+/** What of a kept call says when it was and whether anyone was reached. */
+export type CallTime = Pick<KeptCall, 'id' | 'direction' | 'subject' | 'at'> & { result?: Pick<CallResult, 'answered' | 'returned' | 'waited'> }
+
 /** How a call went, as whoever runs the phones reports it. */
 export interface CallResult {
   /** A person spoke to the caller. The phone system picking up is not an answer, and neither is voicemail. Absent when it is not known. */

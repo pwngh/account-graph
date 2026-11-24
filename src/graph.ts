@@ -49,6 +49,7 @@ import type {
   Link,
   Loss,
   Moved,
+  CallTime,
   ChangePage,
   NotLead,
   Observation,
@@ -408,7 +409,9 @@ export interface BoardOptions {
 }
 
 /** A person on the board, with the arrival credited with where they stand. */
-export interface BoardRow extends BoardPlace {
+export interface BoardRow extends Omit<BoardPlace, 'call'> {
+  /** Their newest call. */
+  call?: KeptCall
   touch?: AttributedTouch
   /** From their furthest step, their newest call, or else that arrival. */
   language?: string
@@ -1240,24 +1243,27 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       const from = dayStart(new Date(Date.parse(day) - (days - 1) * DAY).toISOString().slice(0, 10), timeZone)
       return store.read(async (tx) => {
         const outcomes = await leadsOf(tx, await tx.outcomesBetween(from, at + 1), outcomeId)
-        const found = unique([...outcomes, ...(await leadsOf(tx, await tx.callsBetween(from, at + 1), callId))].map((each) => each.subject))
-        const labels = await tx.labelsOf(found)
-        const everyone = await tx.membersOf(unique([...labels.values()].map((label) => label.component)))
+        const found = unique([...outcomes.map((each) => each.subject), ...(await tx.calledBetween(from, at + 1))])
+        const everyone = await tx.aroundOf(found)
         const person = (subject: Subject) => everyone.get(subject)?.cluster ?? subject
-        const people = new Map(found.map((subject) => [person(subject), { outcomes: [] as Counted[], calls: [] as KeptCall[] }]))
+        const people = new Map(found.map((subject) => [person(subject), { outcomes: [] as Counted[], calls: [] as CallTime[] }]))
         const theirs = unique([...found, ...everyone.keys()]).filter((subject) => people.has(person(subject)))
         for (const outcome of await leadsOf(tx, await tx.outcomesOf(theirs), outcomeId)) people.get(person(outcome.subject))!.outcomes.push(outcome)
-        for (const call of await leadsOf(tx, await tx.callsOf(theirs), callId)) people.get(person(call.subject))!.calls.push(call)
+        for (const call of await tx.callTimes(theirs)) people.get(person(call.subject))!.calls.push(call)
         const { columns, unplaced } = board([...people.values()], { steps: steps.map(({ name, wait }) => ({ name, ...(wait && { wait: wait * HOUR }) })), at, today, ...(returnHours > 0 && { returnWait: returnHours * HOUR }), ...(hours && { hours }) })
         // Only those shown are traced to an ad: it is the slow part.
         const shown: BoardColumn<BoardRow>[] = []
-        const creditOf = await creditAll(tx, columns.flatMap((column) => column.rows.slice(0, limit)), 90 * DAY, 2)
+        const placed = columns.flatMap((column) => column.rows.slice(0, limit))
+        const creditOf = await creditAll(tx, placed, 90 * DAY, 2)
+        const calls = new Map((await tx.callsWith(placed.flatMap((place) => place.call?.id ?? []))).map((call) => [call.id, call]))
         for (const column of columns) {
           const rows: BoardRow[] = []
           for (const place of column.rows.slice(0, limit)) {
             const { credited } = creditOf(place.subject, place.at)
-            const language = place.outcome?.tags?.language ?? place.call?.tags?.language ?? touchTag(credited, 'language')
-            rows.push({ ...place, ...(credited && { touch: credited }), ...(language !== undefined && { language }) })
+            const { call: newest, ...rest } = place
+            const call = newest && calls.get(newest.id)
+            const language = place.outcome?.tags?.language ?? call?.tags?.language ?? touchTag(credited, 'language')
+            rows.push({ ...rest, ...(call && { call }), ...(credited && { touch: credited }), ...(language !== undefined && { language }) })
           }
           shown.push({ ...column, rows })
         }
@@ -1346,7 +1352,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         // How long steps take is read from the last half year and not from the days asked about: the newest days hold
         // few outcomes, which is what it has to say. Some of each step, so a common quick one does not hide a slow one.
         const newest = await leadsOf(tx, await tx.newestOutcomes(now() - 180 * DAY, now(), 200), outcomeId)
-        const inbound = (await tx.callsBetween(start, end)).filter((call) => call.direction === 'inbound')
+        const inbound = await tx.missesBetween(start, end)
         const spurned = await tx.notLeads(inbound.map(callId))
         // A call that was counted is an outcome, and is counted once.
         const counted = new Set(recorded.map(outcomeId))

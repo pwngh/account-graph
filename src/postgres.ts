@@ -2,7 +2,7 @@ import type { Feed, KeptAlert, OpsStore } from './ops.ts'
 import type { Job, JobState, OutboxStore } from './outbox.ts'
 import type { Store, Tx } from './store.ts'
 import { CLICK_IDS } from './touch.ts'
-import type { CallResult, Consent, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, OutcomeValue, SentLink, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, CallTime, Consent, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, OutcomeValue, SentLink, Sighting, Subject, Touch } from './types.ts'
 
 /** Every ad click id a touch carries, as the index on them has it. */
 const CLICKED = `array[${CLICK_IDS.map((name) => `detail->>'${name}'`).join(', ')}]`
@@ -506,6 +506,51 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
            and not exists (select 1 from ${t('call')} d join ${t('call_result')} s on s.id = d.id where d.subject = c.subject and not exists (select 1 from ${t('not_lead')} n where n.id = 'call:' || d.id) and ((d.at > c.at and s.answered) or (d.direction = 'inbound' and s.answered = false and s.returned_at > d.at and s.returned_at > c.at)))
          order by c.at, c.id collate "C" limit $3`,
         [from, to, limit, after?.at ?? null, after?.id ?? null],
+      )
+      return rows.map(toCall)
+    },
+
+    async callsWith(ids) {
+      if (ids.length === 0) return []
+      const { rows } = await db.query(`${callRows} where c.id = any($1::text[])`, [ids])
+      return rows.map(toCall)
+    },
+
+    async callTimes(subjects) {
+      if (subjects.length === 0) return []
+      const { rows } = await db.query(
+        `select c.id, c.direction, c.subject, c.at, r.answered, r.returned_at, r.waited from ${t('call')} c left join ${t('call_result')} r on r.id = c.id
+         where c.subject = any($1::text[]) and not exists (select 1 from ${t('not_lead')} n where n.id = 'call:' || c.id) order by c.at, c.id collate "C"`,
+        [subjects],
+      )
+      return rows.map(({ id, direction, subject, at, answered, returned_at: returned, waited }): CallTime => ({
+        id,
+        direction,
+        subject,
+        at: Number(at),
+        ...((answered !== null || returned !== null) && { result: { ...(answered !== null && { answered }), ...(returned !== null && { returned: Number(returned) }), ...(waited !== null && { waited }) } }),
+      }))
+    },
+
+    async aroundOf(subjects) {
+      if (subjects.length === 0) return new Map()
+      const { rows } = await db.query(`select id, component, cluster from ${t('subject')} where component in (select component from ${t('subject')} where id = any($1::text[]))`, [subjects])
+      return toLabels(rows)
+    },
+
+    async calledBetween(from, to) {
+      const { rows } = await db.query(
+        `select distinct c.subject from ${t('call')} c where c.at >= $1 and c.at < $2 and not exists (select 1 from ${t('not_lead')} n where n.id = 'call:' || c.id)`,
+        [from, to],
+      )
+      return rows.map((row) => row.subject as Subject)
+    },
+
+    async missesBetween(from, to) {
+      const { rows } = await db.query(
+        `${callRows} where c.direction = 'inbound' and c.at >= $1 and c.at < $2 and (r.answered = false or exists (select 1 from ${t('not_lead')} n where n.id = 'call:' || c.id))
+         order by c.at, c.id collate "C"`,
+        [from, to],
       )
       return rows.map(toCall)
     },

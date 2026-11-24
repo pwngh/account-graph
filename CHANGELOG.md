@@ -50,6 +50,7 @@
 
 ### Attribution and reporting
 
+- The board and reports read less, and `/board`, `/report`, `/followed` and `/calls/summary` are shared between readers for a moment (`age` header).
 - `touch` and `attribute` attribute an outcome to a visit at `policy.same` confidence or above.
 - `outcome`, `POST /convert` and `POST /event` record outcomes. `STAGES` sets the value, currency and action of each step.
 - `restate` and `POST /restate` change a value. `kind` is `refund` or `write_off`. `values` and `GET /outcome` return the value history.
