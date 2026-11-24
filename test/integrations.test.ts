@@ -1817,3 +1817,32 @@ test('a screen can ask who somebody may be, who is ringing, and who is kept apar
     server.close()
   }
 })
+
+test('payments, several people and a whole person to delete are taken in one request each', async () => {
+  const graph = createGraph(createMemoryStore())
+  const at = Date.parse('2026-03-02T12:00:00Z')
+  const server = createServer(createHandler(graph, { token: 'service', reviewers: { dana: 'reviewer' }, origins: [], now: () => at })).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const post = async (path: string, body: object, token = 'service') => {
+    const response = await fetch(`${base}${path}`, { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify(body) })
+    return { status: response.status, body: (await response.json()) as any }
+  }
+  try {
+    for (const subject of ['contact:1', 'contact:2', 'contact:3']) await post('/identify', { subject, email: 'pat@example.org' })
+    await post('/convert', { transactionId: 'o1', subject: 'contact:1', at, stage: 'client', value: 1250, currency: 'USD' })
+    assert.deepEqual((await post('/payment', { id: 'p1', transactionId: 'o1', amount: 300 })).body, { duplicate: false, value: 300, jobs: [] })
+    assert.equal((await post('/payment', { id: 'p1', transactionId: 'o1', amount: 300 }, 'reviewer')).status, 403)
+    assert.equal((await post('/payment', { id: 'p2', transactionId: 'o1', amount: -1 })).status, 400)
+    const { body } = await post('/people', { subjects: ['contact:1', 'contact:9'] }, 'reviewer')
+    assert.deepEqual(body.people.map((each: any) => [each.subject, each.members.length]), [['contact:1', 3], ['contact:9', 1]])
+    assert.equal((await post('/people', { subjects: Array(101).fill('x') })).status, 400)
+    for (const bad of [{ subjects: [] }, { subjects: ['contact:1'], subject: 'contact:2' }, { subjects: [5] }]) assert.equal((await post('/forget', bad)).status, 400)
+    const { body: gone } = await post('/forget', { subjects: ['contact:1', 'contact:2'], ads: true })
+    assert.deepEqual(gone.sent, [])
+    assert.deepEqual([await graph.cluster('contact:1'), await graph.cluster('contact:2'), (await graph.cluster('contact:3'))!.members], [undefined, undefined, ['contact:3']])
+    assert.deepEqual((await graph.decisions()).filter((each) => each.action === 'forget').map((each) => each.about), [['contact:1'], ['contact:2']])
+  } finally {
+    server.close()
+  }
+})

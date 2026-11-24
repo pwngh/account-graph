@@ -1,6 +1,6 @@
 import type { Feed, OpsStore } from './ops.ts'
 import type { Job, OutboxStore } from './outbox.ts'
-import type { CallResult, CallTime, Change, Consent, ConsentAnswer, CostRow, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, NumberedChange, SentLink, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, CallTime, Change, Consent, ConsentAnswer, CostRow, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, NumberedChange, SentLink, OutcomeValue, Payment, Sighting, Subject, Touch } from './types.ts'
 
 /**
  * Where the graph lives. Sightings and touches are the record; edges and
@@ -143,6 +143,10 @@ export interface Tx {
   calledBetween(from: number, to: number): Promise<Subject[]>
   /** Calls to you in a range of time that nobody answered, or that were no lead. */
   missesBetween(from: number, to: number): Promise<KeptCall[]>
+  addPayment(payment: Required<Payment>): Promise<void>
+  paymentOf(id: string): Promise<Required<Payment> | undefined>
+  /** Every payment of an outcome, in no order. */
+  paymentsOf(transactionId: string): Promise<Required<Payment>[]>
   /** Keeps a link sent to one person, or what is known of it now. */
   setLink(link: SentLink): Promise<void>
   linkOf(id: string): Promise<SentLink | undefined>

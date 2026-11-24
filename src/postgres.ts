@@ -2,7 +2,7 @@ import type { Feed, KeptAlert, OpsStore } from './ops.ts'
 import type { Job, JobState, OutboxStore } from './outbox.ts'
 import type { Store, Tx } from './store.ts'
 import { CLICK_IDS } from './touch.ts'
-import type { CallResult, CallTime, Consent, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, OutcomeValue, SentLink, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, CallTime, Consent, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, OutcomeValue, Payment, SentLink, Sighting, Subject, Touch } from './types.ts'
 
 /** Every ad click id a touch carries, as the index on them has it. */
 const CLICKED = `array[${CLICK_IDS.map((name) => `detail->>'${name}'`).join(', ')}]`
@@ -107,6 +107,8 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       await db.query(`delete from ${t('sighting')} where subject = $1`, [subject])
       await db.query(`delete from ${t('touch')} where subject = $1`, [subject])
       await db.query(`delete from ${t('outcome')} where subject = $1`, [subject])
+      // Of its outcomes, and those taken back, unless they are somebody else's since.
+      await db.query(`delete from ${t('payment')} p where transaction_id in (select transaction_id from ${t('outcome_value')} where subject = $1) and not exists (select from ${t('outcome')} o where o.transaction_id = p.transaction_id)`, [subject])
       await db.query(`delete from ${t('outcome_value')} where subject = $1`, [subject])
       await db.query(`with gone as (delete from ${t('call')} where subject = $1 returning id) delete from ${t('call_result')} where id in (select id from gone)`, [subject])
       await db.query(`update ${t('call')} set visitor = null where visitor = $1`, [subject])
@@ -428,9 +430,10 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
         `with theirs as (
            select v.*, lag(v.value) over (partition by v.transaction_id order by v.id) - v.value as lost
            from unnest($1::text[], $2::text[]) as o (id, subject) join ${t('outcome_value')} v on v.transaction_id = o.id and v.subject = o.subject)
-         select distinct on (transaction_id) *, max(value) over mine as most, coalesce(sum(lost) filter (where kind = 'refund') over mine, 0) as refunded,
+         select distinct on (transaction_id) *, max(value) over mine as most,
+           coalesce(sum(lost) filter (where kind = 'refund') over mine, 0) + coalesce((select sum(amount) from ${t('payment')} p where p.transaction_id = theirs.transaction_id and p.kind = 'refund'), 0) as refunded,
            coalesce(sum(lost) filter (where kind = 'write_off') over mine, 0) as written_off,
-           array_agg(currency) filter (where kind is not null) over mine as lost_in
+           array_agg(currency) filter (where kind is not null) over mine || array(select currency from ${t('payment')} p where p.transaction_id = theirs.transaction_id and p.kind = 'refund') as lost_in
          from theirs window mine as (partition by transaction_id) order by transaction_id, id`,
         [given.map((each) => each.transactionId), given.map((each) => each.subject)],
       )
@@ -553,6 +556,20 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
         [from, to],
       )
       return rows.map(toCall)
+    },
+
+    async addPayment({ id, transactionId, amount, kind, currency }) {
+      await db.query(`insert into ${t('payment')} (id, transaction_id, amount, kind, currency) values ($1, $2, $3, $4, $5)`, [id, transactionId, amount, kind, currency])
+    },
+
+    async paymentOf(id) {
+      const { rows } = await db.query(`select * from ${t('payment')} where id = $1`, [id])
+      return rows[0] && toPayment(rows[0])
+    },
+
+    async paymentsOf(transactionId) {
+      const { rows } = await db.query(`select * from ${t('payment')} where transaction_id = $1`, [transactionId])
+      return rows.map(toPayment)
     },
 
     async setLink({ id, subject, purpose, at, expires, opened, openings }) {
@@ -1005,6 +1022,8 @@ function toCall(row: any): KeptCall {
   }
 }
 
+const toPayment = (row: any): Required<Payment> => ({ id: row.id, transactionId: row.transaction_id, amount: row.amount, kind: row.kind, currency: row.currency })
+
 function toLink(row: any): SentLink {
   return {
     id: row.id,
@@ -1350,6 +1369,12 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
             );
             create index if not exists sent_link_subject on ${schema}.sent_link (subject, at);
             create index if not exists sent_link_expires on ${schema}.sent_link (expires_at);`,
+    },
+    {
+      id: 23,
+      name: 'payments',
+      sql: `create table if not exists ${schema}.payment (id text primary key, transaction_id text not null, amount float8 not null, kind text not null, currency text not null);
+            create index if not exists payment_transaction on ${schema}.payment (transaction_id);`,
     },
   ]
 }

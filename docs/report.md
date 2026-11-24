@@ -125,6 +125,19 @@ Report columns follow the order of `STAGES`. The server refuses to start if an a
 
 > **Page-reported steps can be forged.** A step listed in both `EVENTS` and `STAGES` can be created by a browser: once a day per browser, at the step's value. See [Page events](calls.md#page-events) for choosing which steps to allow.
 
+### Payments
+
+Report each payment as it happens, and the outcome's value follows.
+
+```sh
+curl -X POST https://graph.example.org/payment -H "authorization: Bearer $GRAPH_TOKEN" \
+  -d '{"id":"pay-771","transactionId":"client-1001","amount":300}'
+```
+
+From the first payment on, the outcome is worth what was paid less what was given back, and never below zero. **Refunded** in the report is the sum of the refunds. Payments may come in any order, and before their outcome. Reporting one again changes nothing. The same `id` with other details, and a second currency for one outcome, are refused. A value you restate stands until the next payment.
+
+A conversion not sent yet goes out at its time with the new value. Platforms that can restate are told each later change. Use either payments or `/restate` for one outcome.
+
 ### Cost per step
 
 Cost per outcome counts every step. Pass `per=enrolled`, or use **Cost per** on the Channels view, to count one step. A campaign that cost 1,872 with nine calls and three clients cost 156 per outcome and 624 per client. ROAS always uses all value.
