@@ -2610,6 +2610,10 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const credit = async (subject: string) => (await graph.attribute(subject, { at: T0 + HOUR })).credited?.gclid
       assert.equal((await members(graph, 'contact:2')).includes('visitor:1'), true)
       assert.deepEqual([await credit('contact:1'), await credit('contact:2')], [undefined, 'two'])
+      // Nor through it: a site it walked on to, and what is tied to that, are in a group of their own.
+      await graph.observe([{ subject: 'visitor:1', identifiers: ['carry:c'], at: T0 }, { subject: 'visitor:8', identifiers: ['carry:c', 'email:w'], at: T0 }, { subject: 'account:9', identifiers: ['email:w'], at: T0 }])
+      await graph.touch({ subject: 'visitor:8', at: T0 + 1, gclid: 'eight' })
+      assert.equal(await credit('contact:1'), undefined)
       // Joined one and two, and two to three by an email six hold. One and three differ, and the join stands.
       const { graph: joined } = await fresh(policyFrom({ apart: ['birth'] }))
       await joined.observe([
@@ -2620,6 +2624,14 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await members(joined, 'account:1')).includes('account:2'), true)
       assert.equal((await members(joined, 'account:1')).includes('account:3'), false)
       assert.deepEqual(await joined.verify(), [])
+      // Two who differ, held in one group by joins through a third, are one, and nothing says otherwise.
+      const { graph: chained } = await fresh(policyFrom({ apart: ['birth'] }))
+      await chained.observe([{ subject: 'contact:1', identifiers: ['birth:1', 'email:e'], at: T0 }, { subject: 'contact:2', identifiers: ['birth:2', 'email:e'], at: T0 }, { subject: 'contact:3', identifiers: ['ip:3'], at: T0 }])
+      await chained.join('contact:1', 'contact:3', { by: 'dana' })
+      await chained.join('contact:3', 'contact:2', { by: 'dana' })
+      await chained.touch({ subject: 'contact:2', at: T0, gclid: 'two' })
+      const told = await chained.between('contact:1', 'contact:2')
+      assert.deepEqual([told.joined, told.conflict, (await chained.attribute('contact:1', { at: T0 + HOUR })).credited?.gclid], [true, undefined, 'two'])
       // A reviewer who separates the two is heard before either.
       await joined.separate('account:1', 'account:2')
       assert.equal((await members(joined, 'account:1')).includes('account:2'), false)
