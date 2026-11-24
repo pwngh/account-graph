@@ -153,11 +153,12 @@ dt { color: var(--muted); }
 dd { margin: 0; overflow-wrap: anywhere; }
 /* The graph: marks take their color from what they mean, and the rest falls back when one is brought forward. */
 .graph { position: relative; height: 520px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background-color: var(--panel); background-image: radial-gradient(var(--line) 1px, transparent 1px); background-size: 22px 22px; background-position: -1px -1px; }
+.graph:fullscreen > svg { touch-action: none; }
 .graph:fullscreen { height: 100%; border: 0; border-radius: 0; }
 .graph > svg { width: 100%; height: 100%; max-height: none; cursor: grab; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
 .graph.held > svg { cursor: grabbing; }
 .graph path.mine { --hue: var(--same); }
-.graph > svg > g > g:first-child path { --hue: var(--muted); fill: var(--hue); stroke: var(--hue); stroke-width: 84; stroke-linejoin: round; stroke-linecap: round; opacity: .07; }
+.graph > svg > g > g:first-child path { --hue: var(--muted); fill: var(--hue); stroke: var(--hue); stroke-linejoin: round; stroke-linecap: round; opacity: .07; }
 .graph > svg > g > g:first-child path.mine { --hue: var(--same); opacity: .1; }
 .graph .joined { --hue: var(--same); } .graph .related { --hue: var(--related); } .graph .apart { --hue: var(--apart); } .graph .member { --hue: var(--same); } .graph .far { --hue: var(--muted); } .graph .me { --hue: var(--accent); }
 .graph .edge { transition: opacity .18s; }
@@ -185,19 +186,24 @@ dd { margin: 0; overflow-wrap: anywhere; }
 .graph .small .type { display: none; }
 .graph .alone { opacity: .25; }
 .graph .dimmed .node:not(.lit) { opacity: .22; } .graph .dimmed .edge:not(.lit) { opacity: .18; } .graph .dimmed .tag:not(.lit) { opacity: 0; }
-.graph .tools { position: absolute; right: 12px; bottom: 12px; display: flex; gap: 4px; }
+.graph .tools { position: absolute; right: 12px; bottom: 12px; height: 28px; display: flex; gap: 4px; }
 .graph .keys { position: absolute; left: 12px; bottom: 12px; display: flex; flex-wrap: wrap; gap: 4px; max-width: calc(100% - 250px); }
 .graph .keys button { display: inline-flex; gap: 6px; align-items: center; color: var(--ink); font-weight: 400; border-color: var(--line); }
 .graph .keys button[aria-pressed=false] { color: var(--muted); text-decoration: line-through; } .graph .keys button[aria-pressed=false] svg { opacity: .3; }
 .graph .keys svg { width: 22px; height: 8px; } .graph .keys line { stroke: var(--hue); stroke-width: 3; stroke-linecap: round; } .graph .keys .related line { stroke-dasharray: 5 4; } .graph .keys .apart line { stroke-dasharray: 1 5; }
 .graph .card { position: absolute; top: 12px; right: 12px; width: 288px; max-height: calc(100% - 64px); overflow: auto; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); box-shadow: 0 8px 28px rgb(0 0 0 / .14); }
+.graph .card.left { right: auto; left: 12px; }
 .graph .card .title { display: block; padding-right: 24px; overflow-wrap: anywhere; font-size: 14px; }
 .graph .card .shut { position: absolute; top: 6px; right: 6px; width: 28px; padding: 0; border: 0; background: none; font-size: 18px; color: var(--muted); }
 .graph .card .row { margin-top: 8px; }
 @media (max-width: 760px) {
-  .graph { height: 460px; }
+  /* The card stands under the paper, which would otherwise be mostly card. Full screen has room for both. */
+  .graph:not(:fullscreen) { height: auto; }
+  .graph:not(:fullscreen) > svg { height: 460px; }
+  .graph:not(:fullscreen) .tools { top: 420px; }
+  .graph:not(:fullscreen) .card { position: relative; inset: auto; margin: 0 8px 8px; width: auto; max-height: none; box-shadow: none; }
   .graph .keys { top: 8px; bottom: auto; left: 8px; max-width: calc(100% - 16px); }
   .graph .tools { right: 8px; bottom: 8px; }
-  .graph .card { top: auto; bottom: 8px; left: 8px; right: 8px; width: auto; max-height: 55%; }
+  .graph:fullscreen .card { top: auto; bottom: 48px; left: 8px; right: 8px; width: auto; max-height: 50%; }
 }
 @media (prefers-reduced-motion: reduce) { .graph * { transition: none !important; } }

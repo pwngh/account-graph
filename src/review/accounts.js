@@ -13,7 +13,7 @@ function reasons(list) {
 const kept = (verdict) => (verdict?.apart ? [el('span', { class: 'muted' }, 'Decided by '), author(verdict.apart.by), el('span', { class: 'muted' }, `, ${when(verdict.apart.at)}: ${verdict.apart.reason ?? '(no reason recorded)'}`),
   verdict.last.action === 'join' ? el('span', { class: 'reason' }, 'A later decision joined them, which does not undo this one. By ', author(verdict.last.by), `, ${when(verdict.last.at)}`) : ''] : [el('span', { class: 'muted' }, '(no decision recorded)')])
 
-function profileOf(profile) {
+function profileOf(profile, more) {
   const detail = []
   if (!profile.known) return [el('section', {}, el('h3', {}, profile.subject), el('p', { class: 'muted' }, 'Nothing has been recorded about this subject.'))]
   const size = profile.cluster.members.length
@@ -29,7 +29,7 @@ function profileOf(profile) {
       el('button', { on: { click: () => act('Join as one person', `${profile.subject} and the subject you name will be treated as one person.`, '/join', { a: profile.subject }, 'Join', { otherKey: 'b' }) } }, 'Join with another…'),
       el('button', { class: 'danger', on: { click: () => act('Forget this subject', `Everything recorded about ${profile.subject} will be deleted. This cannot be undone.`, '/forget', { subject: profile.subject }, 'Delete') } }, 'Forget…'))))
 
-  if (profile.ties.length > 0 || profile.separated.length > 0) detail.push(el('section', {}, el('h2', {}, 'Graph'), graphOf(profile),
+  if (profile.ties.length > 0 || profile.separated.length > 0) detail.push(el('section', {}, el('h2', {}, 'Graph'), graphOf(profile, more),
     around(profile).length > ROOM ? el('p', { class: 'muted' }, `${ROOM} of ${amount(around(profile).length)} are drawn. The ties are all listed below.`) : ''))
 
   const members = new Set(profile.cluster.members)
@@ -174,9 +174,8 @@ view('accounts', 'Accounts', async (box, subject) => {
   box.dataset.seen = audit.head?.seq ?? 0
   const read = (each) => api('GET', `/subject?subject=${encodeURIComponent(each)}`)
   // Whoever was opened out on the graph is read again with it.
-  const beyond = drawn.subject === subject ? [...drawn.more.keys()] : []
-  const [queue, recent, profile, ...more] = await Promise.all([clusterList(), api('GET', '/recent'), subject ? read(subject) : undefined, ...beyond.map(read)])
-  for (const each of more) if (drawn.subject === subject && drawn.more.has(each.subject)) if (each.known) drawn.more.set(each.subject, each); else drawn.more.delete(each.subject)
+  const spread = drawn.subject === subject ? [...drawn.more.keys()] : []
+  const [queue, recent, profile, ...more] = await Promise.all([clusterList(), api('GET', '/recent'), subject ? read(subject) : undefined, ...spread.map(read)])
   const decisions = await decisionList(audit)
 
   left.append(el('section', {}, el('h2', {}, 'Largest clusters, now'), ...queue))
@@ -185,5 +184,5 @@ view('accounts', 'Accounts', async (box, subject) => {
     el('span', { class: 'muted' }, ` ${when(move.at)}`))) : [el('li', { class: 'muted' }, 'None yet.')]))))
   left.append(decisions)
 
-  detail.append(...(profile ? profileOf(profile) : [el('section', {}, el('p', { class: 'muted' }, 'Open a subject or pick a cluster.'))]))
+  detail.append(...(profile ? profileOf(profile, more) : [el('section', {}, el('p', { class: 'muted' }, 'Open a subject or pick a cluster.'))]))
 }, { subject: true })
