@@ -809,6 +809,32 @@ tr.behind:hover { background-image: linear-gradient(color-mix(in srgb, var(--acc
 .shape rect.none { fill: var(--line); }
 .tiles > div:hover .shape rect:not(.none) { fill: var(--accent); }
 
+/* Find or do, from anywhere. */
+#summon { padding: 0 8px; color: var(--muted); }
+#palette { width: min(600px, calc(100vw - 24px)); max-height: min(560px, 80vh); margin: 12vh auto auto; padding: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--ink); box-shadow: 0 24px 80px rgb(0 0 0 / .32); overflow: hidden; }
+#palette[open] { display: flex; flex-direction: column; animation: arrive .16s cubic-bezier(.22, 1, .36, 1); }
+#palette::backdrop { background: rgb(0 0 0 / .38); }
+@keyframes arrive { from { opacity: 0; transform: translateY(-6px) scale(.985); } }
+.palette-top { display: flex; gap: var(--s3); align-items: center; padding: 0 var(--s4); border-bottom: 1px solid var(--line); }
+.palette-top input { flex: 1; height: 54px; padding: 0; border: 0; background: none; font-size: 16px; outline: none; box-shadow: none; }
+.palette-top kbd { color: var(--muted); height: 22px; padding: 0 6px; }
+.glass { position: relative; width: 12px; height: 12px; border: 1.8px solid var(--muted); border-radius: 50%; }
+.glass::after { content: ''; position: absolute; left: 9px; top: 10px; width: 6px; height: 1.8px; background: var(--muted); transform: rotate(45deg); }
+#palette-list { flex: 1; overflow-y: auto; padding: var(--s2); scrollbar-width: thin; }
+.palette-item { display: flex; gap: var(--s2); align-items: center; min-height: 40px; padding: 0 var(--s3); border-radius: 8px; cursor: pointer; }
+.palette-item[aria-selected=true] { background: color-mix(in srgb, var(--accent) 13%, var(--panel)); }
+.palette-item > span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette-item .meta { margin: 0 0 0 auto; }
+.palette-item .badge { margin-right: 0; }
+.palette-item mark { background: none; color: var(--accent); font-weight: 700; }
+.palette-mark { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; background: var(--soft); color: var(--muted); font-style: normal; font-size: 12px; }
+.palette-none { padding: var(--s4); text-align: center; }
+.palette-foot { display: flex; gap: var(--s2); align-items: center; padding: var(--s2) var(--s4); border-top: 1px solid var(--line); background: var(--soft); color: var(--muted); font-size: var(--small); }
+.palette-foot span { display: inline-flex; gap: 3px; }
+.palette-foot span:not(:first-child) { margin-left: var(--s3); }
+@media (max-width: 560px) { #summon { display: none; } #palette { margin-top: 8px; } }
+@media (prefers-reduced-motion: reduce) { #palette[open] { animation: none; } }
+
 /* A table of a few plain columns is read along its rows, so they do not stand far apart. */
 @media (min-width: 761px) { .wide:has(> table):not(:has(th[colspan])) { max-width: 1040px; } }
 

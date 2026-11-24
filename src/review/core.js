@@ -465,6 +465,7 @@ async function load(tag) {
       if (views.get(name).subject && parts[0] && edits === sought) $('subject').value = parts[0]
     }
     if (!quiet) browsing = false
+    if (!quiet && views.get(name).subject && parts[0]) remember(parts[0])
     loadedAt = readAt = Date.now()
     fresh()
     return true
@@ -509,7 +510,7 @@ function fresh(problem) {
   $('fresh').textContent = problem ? `Not refreshed: ${problem} ${at}` : document.hidden ? `${at} Paused while this tab is hidden.` : busy() ? `${at} Waiting while a field here has the cursor.` : browsing ? `${at} Not refreshed while further pages are shown. Reload to start again.` : at && `${at} Looks for changes every ${EVERY / 1000} seconds.`
 }
 /** Typing or answering a question is not interrupted: the next look finds the change again. */
-const busy = () => $('ask').open || ($('view').contains(document.activeElement) && document.activeElement.matches('input:not([readonly]), select, textarea'))
+const busy = () => $('ask').open || palette.open || ($('view').contains(document.activeElement) && document.activeElement.matches('input:not([readonly]), select, textarea'))
 const interrupting = () => document.hidden || busy() || browsing || holding()
 let looking = false
 async function look() {
