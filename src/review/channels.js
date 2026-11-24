@@ -8,13 +8,15 @@ const GROUPS = { answer: 'How the first call went', talk: 'How long they talked,
 async function whatFollowed(box, report, address, step, within) {
   const days = Number(within) || 30
   const steps = [...new Set([...report.steps, ...(step ? [step] : [])])]
-  const pick = el('select', {}, el('option', { value: '' }, 'Choose a step'), ...steps.map((each) => el('option', { value: each, ...(each === step && { selected: '' }) }, each)))
+  // A step reached only after these days is not in the report's list, so any may be typed.
+  const pick = el('input', { list: 'steps', value: step, required: '', autocomplete: 'off', placeholder: 'a step', size: 14 })
+  const known = el('datalist', { id: 'steps' }, ...steps.map((each) => el('option', { value: each })))
   const count = el('input', { type: 'number', min: 1, max: 365, value: days, required: '' })
-  const form = el('form', { class: 'row', on: { submit: (event) => { event.preventDefault(); go(address(pick.value, count.value)) } } },
-    el('label', {}, 'Who went on to', pick), el('label', {}, 'within days', count), el('button', { class: 'primary' }, 'Show'))
+  const form = el('form', { class: 'row', on: { submit: (event) => { event.preventDefault(); go(address(pick.value.trim(), count.value)) } } },
+    el('label', {}, 'Who went on to', pick), known, el('label', {}, 'within days', count), el('button', { class: 'primary' }, 'Show'))
   const section = el('section', {}, el('h2', {}, 'What followed a call, not what it caused'), form)
   box.append(section)
-  if (!step) return void section.append(el('p', { class: 'muted' }, 'Choose a step to see who reached it after calling.'))
+  if (!step) return void section.append(el('p', { class: 'muted' }, 'Name a step to see who reached it after calling.'))
   const answer = await api('GET', `/followed?from=${report.from}&to=${report.to}&step=${encodeURIComponent(step)}&days=${days}`)
   section.append(el('p', { class: 'muted' }, `People whose call was ${answer.from} to ${answer.to}, days in ${answer.timeZone}, and how many reached "${answer.step}" within ${amount(answer.days)} days. People choose whether to call and how long to talk, and someone chooses whom to ring back, so a difference between two rows is not an effect.`))
   for (const group of answer.groups) {
@@ -24,8 +26,8 @@ async function whatFollowed(box, report, address, step, within) {
     section.append(rows.length > 0 ? wide(GROUPS[group.by], el('table', {}, el('tr', {}, th(''), th('People', 'num'), th('Reached it', 'num'), th('Share', 'num')), ...rows)) : el('p', {}, group.thin > 0 ? '' : 'Nobody to count.'),
       group.thin > 0 ? el('p', { class: 'muted' }, `${amount(group.thin)} ${group.thin === 1 ? 'person is' : 'people are'} in rows of fewer than ${amount(answer.least)}, which are not shown.`) : '')
   }
-  const { already, running, through } = answer.leftOut
-  section.append(el('p', { class: 'muted' }, `Left out: ${amount(already)} had reached the step before the clock started, ${amount(running)} are still inside their days, ${amount(through)} got through on their own before it started. Someone can be counted in one table and left out of another.`))
+  const { first, returned } = answer.leftOut
+  section.append(el('p', { class: 'muted' }, `Left out of the first three tables: ${amount(first.already)} who had reached the step before the call ended, ${amount(first.running)} still inside their days. Left out of the last: ${amount(returned.already)} who had reached the step by the landmark, ${amount(returned.running)} still inside their days, ${amount(returned.through)} who got through on their own before it.`))
 }
 
 view('channels', 'Channels', async (box, first, last, by = '', step = '', within = '30') => {

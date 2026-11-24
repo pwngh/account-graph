@@ -105,7 +105,7 @@ for (let i = 0; i < 110; i++) {
   const from = `+1555010${String(300 + i).padStart(4, '0')}`
   const at = Date.now() - (45 - (i % 12)) * 24 * HOUR
   const answered = chance() < 0.55
-  await recordCall(graph, { id: `past-${i}`, from, to: '+15550100001', at, duration: 30 + Math.floor(chance() * 1100), answered, ...(chance() < 0.8 && { tags: { language: chance() < 0.4 ? 'es' : 'en' } }) }, { numbers, results: 'expected' })
+  await recordCall(graph, { id: `past-${i}`, from, to: '+15550100001', at, duration: 30 + Math.floor(chance() * 1100), answered, ...(chance() < 0.8 && { waited: Math.floor(chance() * 25) }), ...(chance() < 0.8 && { tags: { language: chance() < 0.4 ? 'es' : 'en' } }) }, { numbers, results: 'expected' })
   const back = !answered && chance() < 0.5
   if (back) await recordCall(graph, { id: `past-back-${i}`, direction: 'outbound', from: '+15550100001', to: from, at: at + 5 * HOUR, answered: true })
   if (chance() < (answered || back ? 0.3 : 0.15)) {

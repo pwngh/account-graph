@@ -1,4 +1,3 @@
-import { followUp } from './calls.ts'
 import type { KeptCall } from './types.ts'
 
 /** One person who called, with everything that counts about them. */
@@ -38,14 +37,12 @@ export interface Followed {
   /** A row of fewer people than this is not shown: one person more or less would move it too far. */
   least: number
   groups: FollowedGroup[]
-  /** People left out, and why. A person may be in one group and left out of another, so these are for each. */
+  /** People left out, and why, apart for the two questions: someone may count for one and not for the other. */
   leftOut: {
-    /** They had reached the step before the clock started. */
-    already: number
-    /** Their days are not over yet. */
-    running: number
-    /** They got through on their own before the landmark, so whether they were rung back says nothing. */
-    through: number
+    /** Of the groups by what their first call was like. */
+    first: { already: number; running: number }
+    /** Of the group by whether a miss was returned. `through`: they got through on their own before the landmark, so whether they were rung back says nothing. */
+    returned: { already: number; running: number; through: number }
   }
 }
 
@@ -54,21 +51,23 @@ export interface FollowedOptions {
   /** Within how many days of the start. */
   days: number
   at: number
-  /** How long after a miss the clock starts, in milliseconds. Defaults to 24 hours. */
-  landmark?: number
   /** The fewest people a row may have. Defaults to 20. */
   least?: number
 }
 
 const DAY = 86_400_000
+/** How long after a miss the clock starts, whether or not anyone rang back. */
+const LANDMARK = DAY
 const MINUTE = 60
 /** Talk time in bands, in seconds, so one long call does not stand for the rest. */
 const BANDS: readonly [number, string][] = [[MINUTE, 'under 1 minute'], [5 * MINUTE, '1 to 5 minutes'], [15 * MINUTE, '5 to 15 minutes'], [Infinity, '15 minutes or more']]
 const ORDER = [...BANDS.map(([, name]) => name), 'answered', 'missed', 'voicemail', 'returned within a day', 'not returned within a day']
 const NOT_RECORDED = '(not recorded)'
 
-/** How long someone talked: the call without the wait. Undefined when its length was not reported. */
-const talk = (call: KeptCall) => (call.duration === undefined ? undefined : Math.max(0, call.duration - (call.result?.waited ?? 0)))
+/** How long someone talked: the call without the wait. Undefined when either was not reported, because neither says it alone. */
+const talk = (call: KeptCall) => (call.duration === undefined || call.result?.waited === undefined ? undefined : Math.max(0, call.duration - call.result.waited))
+/** When a person was reached on a call: after the wait, where that is known. */
+const connected = (call: KeptCall) => call.at + (call.result?.waited ?? 0) * 1000
 
 /**
  * Counts, among people who called, how many reached a step within some days.
@@ -83,9 +82,9 @@ const talk = (call: KeptCall) => (call.duration === undefined ? undefined : Math
  * who are already signing up get called, and the call looks like the cause.
  * Pure, and the answer does not depend on the order of its input.
  */
-export function followed(callers: readonly Caller[], { step, days, at, landmark = DAY, least = 20 }: FollowedOptions): Followed {
+export function followed(callers: readonly Caller[], { step, days, at, least = 20 }: FollowedOptions): Followed {
   const counts = new Map<FollowedGroup['by'], Map<string, { people: number; reached: number }>>()
-  const leftOut = { already: 0, running: 0, through: 0 }
+  const leftOut = { first: { already: 0, running: 0 }, returned: { already: 0, running: 0, through: 0 } }
   const add = (by: FollowedGroup['by'], name: string, reached: boolean) => {
     const rows = counts.get(by) ?? new Map()
     counts.set(by, rows)
@@ -104,7 +103,7 @@ export function followed(callers: readonly Caller[], { step, days, at, landmark 
     const [first] = calls
     if (!first) continue
     const result = outcome(caller, first.at + (first.duration ?? 0) * 1000)
-    if (typeof result === 'string') leftOut[result] += 1
+    if (typeof result === 'string') leftOut.first[result] += 1
     else {
       const answer = first.result?.answered === undefined ? NOT_RECORDED : first.result.answered ? 'answered' : first.result.voicemail ? 'voicemail' : 'missed'
       add('answer', answer, result)
@@ -118,16 +117,15 @@ export function followed(callers: readonly Caller[], { step, days, at, landmark 
 
     const miss = calls.find((call) => call.result?.answered === false && call.subject !== `call:${call.id}`)
     if (!miss) continue
-    const start = miss.at + landmark
-    const became = followUp(miss, caller.calls.map((call) => ({ ...call, subject: miss.subject })))
-    const inTime = became.delay !== undefined && miss.at + became.delay <= start
-    if (inTime && became.state === 'tried again') {
-      leftOut.through += 1
+    const start = miss.at + LANDMARK
+    const since = caller.calls.filter((call) => call.at > miss.at && call.result?.answered && connected(call) <= start)
+    if (since.some((call) => call.direction === 'inbound')) {
+      leftOut.returned.through += 1
       continue
     }
     const after = outcome(caller, start)
-    if (typeof after === 'string') leftOut[after] += 1
-    else add('returned', inTime && became.state === 'returned' ? 'returned within a day' : 'not returned within a day', after)
+    if (typeof after === 'string') leftOut.returned[after] += 1
+    else add('returned', since.length > 0 ? 'returned within a day' : 'not returned within a day', after)
   }
 
   const rank = (name: string) => (name === NOT_RECORDED ? '~' : ORDER.includes(name) ? String(ORDER.indexOf(name)).padStart(2, '0') : name)

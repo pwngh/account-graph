@@ -384,7 +384,13 @@ test('what followed a call starts the clock at a landmark, and leaves out whoeve
   const through = person([call(T, false)], [call(T + 1_800_000, true)], [T + 4 * DAY])
   const biased = run([returned, left, signing, through])
   assert.deepEqual(group(biased, 'returned'), [['returned within a day', 1, 1], ['not returned within a day', 1, 0]])
-  assert.deepEqual([biased.leftOut.already, biased.leftOut.through], [1, 1])
+  assert.deepEqual(biased.leftOut, { first: { already: 0, running: 0 }, returned: { already: 1, running: 0, through: 1 } })
+  // Rung back first and ringing in afterwards is getting through too.
+  const both = person([call(T, false)], [back(T + 600_000), call(T + 7_200_000, true)], [T + 4 * DAY])
+  assert.equal(run([both]).leftOut.returned.through, 1)
+  // Ringing just before the landmark and answered after the wait is getting through after it.
+  const waiting = person([call(T, false)], [call(T + DAY - 60_000, true, { result: { answered: true, waited: 120, recorded: T } })], [T + 4 * DAY])
+  assert.deepEqual(group(run([waiting]), 'returned'), [['not returned within a day', 1, 1]])
   // Getting through after the landmark was still to come when the clock started, so it stays.
   const afterwards = person([call(T, false)], [call(T + 2 * DAY, true)], [T + 4 * DAY])
   assert.deepEqual(group(run([afterwards]), 'returned'), [['not returned within a day', 1, 1]])
@@ -393,13 +399,13 @@ test('what followed a call starts the clock at a landmark, and leaves out whoeve
   const edge = (days: number) => person([call(T, true)], [], [T + 120_000 + days * DAY])
   assert.deepEqual(group(run([edge(30), edge(30.01)]), 'answer'), [['answered', 2, 1]])
   const running = run([edge(5)], { at: T + 10 * DAY })
-  assert.deepEqual([group(running, 'answer'), running.leftOut.running], [[], 1])
+  assert.deepEqual([group(running, 'answer'), running.leftOut.first.running], [[], 1])
   // Reached before the call ended, whatever they do after.
-  assert.equal(run([person([call(T, true)], [], [T + 60_000, T + DAY])]).leftOut.already, 1)
+  assert.equal(run([person([call(T, true)], [], [T + 60_000, T + DAY])]).leftOut.first.already, 1)
 
-  // How long they talked leaves out the wait, and a call nobody answered was not talked on. Only a person's first call counts.
+  // How long they talked leaves out the wait, and is not known when the wait is not. A call nobody answered was not talked on. Only a person's first call counts.
   const talked = (seconds: number, waited = 0) => person([call(T, true, { duration: seconds, result: { answered: true, waited, recorded: T } }), call(T + DAY, true, { duration: 9999 })])
-  assert.deepEqual(group(run([talked(59), talked(60), talked(400, 350), talked(301), talked(900), person([call(T, false, { duration: 500 })]), person([call(T, undefined)])]), 'talk'), [['under 1 minute', 2, 0], ['1 to 5 minutes', 1, 0], ['5 to 15 minutes', 1, 0], ['15 minutes or more', 1, 0]])
+  assert.deepEqual(group(run([talked(59), talked(60), talked(400, 350), talked(301), talked(900), person([call(T, true, { duration: 500 })]), person([call(T, false, { duration: 500 })]), person([call(T, undefined)])]), 'talk'), [['under 1 minute', 2, 0], ['1 to 5 minutes', 1, 0], ['5 to 15 minutes', 1, 0], ['15 minutes or more', 1, 0], ['(not recorded)', 1, 0]])
   const answers = run([person([call(T, true, { tags: { language: 'es' } })]), person([call(T, undefined)]), person([call(T, false, { result: { answered: false, voicemail: true, recorded: T } })]), person([call(T, false)])])
   assert.deepEqual(group(answers, 'answer'), [['answered', 1, 0], ['missed', 1, 0], ['voicemail', 1, 0], ['(not recorded)', 1, 0]])
   assert.deepEqual(group(answers, 'language'), [['es', 1, 0], ['(not recorded)', 3, 0]])

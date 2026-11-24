@@ -169,7 +169,7 @@ curl -H "authorization: Bearer $REVIEW_TOKEN" \
 ```
 
 ```json
-{ "step": "client", "days": 30, "least": 20, "leftOut": { "already": 9, "running": 0, "through": 31 }, "groups": [
+{ "step": "client", "days": 30, "least": 20, "leftOut": { "first": { "already": 4, "running": 0 }, "returned": { "already": 9, "running": 0, "through": 31 } }, "groups": [
   { "by": "returned", "thin": 0, "rows": [
     { "name": "returned within a day", "people": 64, "reached": 16, "share": 0.25 },
     { "name": "not returned within a day", "people": 51, "reached": 9, "share": 0.1765 } ] } ] }
@@ -178,7 +178,7 @@ curl -H "authorization: Bearer $REVIEW_TOKEN" \
 | Group | Splits people by | The clock starts |
 | --- | --- | --- |
 | `answer` | Whether their first call in the period was answered, missed, or went to voicemail | When that call ended |
-| `talk` | How long they talked, without the wait, if it was answered | When that call ended |
+| `talk` | How long they talked, if it was answered: its length without the wait, and `(not recorded)` unless both are known | When that call ended |
 | `language` | The `language` tag of that call | When that call ended |
 | `returned` | Whether their first missed call was returned within a day | A day after the miss, for everyone |
 
