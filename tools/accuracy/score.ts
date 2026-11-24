@@ -34,6 +34,8 @@ export interface Score {
   /** The same of contacts alone: people with a record, and those who share a cluster with somebody else's record. */
   recorded: number
   mixedRecords: number
+  /** The same, leaving out two people of whom one spoke for the other. */
+  mixedApart: number
   /** Subjects in clusters that hold two or more people who are not joined by a shared browser or telephone. */
   wrongClusters: number
   clusters: number
@@ -49,7 +51,7 @@ const push = <K, V>(map: Map<K, V[]>, key: K, value: V) => {
 }
 
 /** `clusterOf` says what the graph decided. A subject it does not know is in a cluster of its own. */
-export function score(truths: readonly Truth[], clusterOf: ReadonlyMap<string, string>): Score {
+export function score(truths: readonly Truth[], clusterOf: ReadonlyMap<string, string>, spoke: ReadonlySet<string> = new Set()): Score {
   const all = none()
   const kinds = new Map<string, Count>()
   const count = (a: Truth, b: Truth, what: keyof Count) => {
@@ -88,17 +90,19 @@ export function score(truths: readonly Truth[], clusterOf: ReadonlyMap<string, s
   const recorded = new Set(truths.flatMap((each) => (kindOf(each.subject) === 'contact' ? each.people : [])))
   const mixed = new Set<string>()
   const mixedRecords = new Set<string>()
+  const mixedApart = new Set<string>()
   let wrongClusters = 0
   for (const members of clusters.values()) {
     for (const [i, a] of members.entries()) for (const b of members.slice(i + 1)) if (!meets(a.people, b.people)) count(a, b, 'wrong')
     const records = new Set(members.flatMap((each) => (kindOf(each.subject) === 'contact' ? each.people : [])))
     if (records.size > 1) for (const person of records) mixedRecords.add(person)
+    for (const person of records) if ([...records].some((other) => other !== person && !spoke.has(`${person} ${other}`) && !spoke.has(`${other} ${person}`))) mixedApart.add(person)
     const inside = new Set(members.flatMap((each) => alone(each) ?? []))
     if (inside.size < 2) continue
     wrongClusters += 1
     for (const person of inside) mixed.add(person)
   }
-  return { all, kinds, people: owners.size, mixed: mixed.size, recorded: recorded.size, mixedRecords: mixedRecords.size, wrongClusters, clusters: clusters.size }
+  return { all, kinds, people: owners.size, mixed: mixed.size, recorded: recorded.size, mixedRecords: mixedRecords.size, mixedApart: mixedApart.size, wrongClusters, clusters: clusters.size }
 }
 
 /** Which of one person's subjects hang together by facts they have in common. */

@@ -9,10 +9,12 @@
  * desk would. The default policy and settings decide. `docs/accuracy.md` says
  * where the rates are from, what is counted, and what would be bad.
  */
+import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { parseArgs } from 'node:util'
-import { createGraph, createMemoryStore } from '../../src/index.ts'
+import { createGraph, createMemoryStore, policyFrom } from '../../src/index.ts'
+import type { Policy } from '../../src/index.ts'
 import { createHandler } from '../../src/server.ts'
 import { interval, score } from './score.ts'
 import type { Score, Truth } from './score.ts'
@@ -24,19 +26,40 @@ const SITE = 'https://www.example.org'
 const LINE = '+15550100000'
 const START = Date.parse('2026-03-02T15:00:00Z')
 
+/** The default policy, and the preset for contacts entered by staff with the names and dates of birth it uses. */
+export const ARMS = {
+  default: {},
+  household: { policy: policyFrom(JSON.parse(readFileSync(new URL('../../examples/household.json', import.meta.url), 'utf8'))), secret: 'a made-up secret for made-up people' },
+} as const
+export type Arm = keyof typeof ARMS
+
+/** Whether each record's ad is credited: the ad its person came by, another's, or none. Cold records have none to credit. */
+export interface Credit {
+  right: number
+  wrong: number
+  none: number
+  /** Of those who came by an ad, the records with a chain of facts to a browser of theirs that the ad was seen on. */
+  reachable: number
+  reachableRight: number
+  cold: number
+  coldWrong: number
+}
+
 /** What the graph came to, and what each link it made by itself rests on. */
 export interface Outcome {
   truths: Truth[]
   clusterOf: Map<string, string>
   /** By the kinds a direct link of `same` strength rests on: how many, and how many are between two people. */
   links: Map<string, { links: number; wrong: number }>
+  credit: Credit
 }
 
 /** Reports a world to a server of its own, in the order it happened, and reads who was joined. */
-export async function report(world: World): Promise<Outcome> {
+export async function report(world: World, arm: Arm = 'default'): Promise<Outcome> {
+  const { policy, secret } = ARMS[arm] as { policy?: Policy; secret?: string }
   let now = START
-  const graph = createGraph(createMemoryStore(), undefined, { now: () => now })
-  const handler = createHandler(graph, { token: 'service', origins: [SITE], events: ['phone_click'], calls: { numbers: { [LINE]: { source: 'line' } } }, trustProxy: true, limit: false, now: () => now })
+  const graph = createGraph(createMemoryStore(), policy, { now: () => now })
+  const handler = createHandler(graph, { token: 'service', origins: [SITE], events: ['phone_click'], calls: { numbers: { [LINE]: { source: 'line' } } }, trustProxy: true, limit: false, ...(secret && { identifierSecret: secret }), now: () => now })
   const server = createServer(handler).listen(0, '127.0.0.1')
   await new Promise((resolve) => server.once('listening', resolve))
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
@@ -54,7 +77,7 @@ export async function report(world: World): Promise<Outcome> {
       now = event.at
       if (event.kind === 'visit') await post('/collect', { device: event.device, url: `${SITE}/`, ...(event.ad && { touch: { gclid: event.ad, landing: `${SITE}/` } }) }, page(event.address, event.agent))
       else if (event.kind === 'tap') await post('/event', { device: event.device, event: 'phone_click', number: LINE }, page(event.address, event.agent))
-      else if (event.kind === 'record') await post('/identify', { subject: event.subject, event: 'form', ...(event.device && { device: event.device }), ...(event.email && { email: event.email }), ...(event.phone && { phone: event.phone }) }, service)
+      else if (event.kind === 'record') await post('/identify', { subject: event.subject, event: 'form', ...(event.device && { device: event.device }), ...(event.email && { email: event.email }), ...(event.phone && { phone: event.phone }), ...(secret && { name: event.name, ...(event.dob && { dob: event.dob }) }) }, service)
       else {
         const { subject } = await post('/call', { id: event.id, to: LINE, at: event.at, duration: event.seconds, answered: event.answered, ...(event.from && { from: event.from }) }, service)
         const known = callers.get(subject) ?? { people: new Set<string>(), facts: new Set<string>() }
@@ -86,36 +109,72 @@ export async function report(world: World): Promise<Outcome> {
       if (!people.some((each) => other.includes(each))) row.wrong += 1
     }
   }
-  return { truths, clusterOf, links }
+
+  // Asked an hour after the record was made, as things are known at the end, the way a report asks.
+  const credit: Credit = { right: 0, wrong: 0, none: 0, reachable: 0, reachableRight: 0, cold: 0, coldWrong: 0 }
+  const chains = joinedBy(truths, () => true)
+  const adSeen = new Set<string>()
+  for (const event of world.events) if (event.kind === 'visit' && event.ad) adSeen.add(`${event.ad} ${chains.get(`visitor:${event.device}`)}`)
+  for (const [subject, { ad, at }] of world.ads) {
+    const { credited } = await graph.attribute(subject, { at: at + 3_600_000 })
+    const given = credited?.gclid
+    if (ad === undefined) {
+      credit.cold += 1
+      if (given !== undefined) credit.coldWrong += 1
+      continue
+    }
+    if (given === undefined) credit.none += 1
+    else if (given === ad) credit.right += 1
+    else credit.wrong += 1
+    if (!adSeen.has(`${ad} ${chains.get(subject)}`)) continue
+    credit.reachable += 1
+    if (given === ad) credit.reachableRight += 1
+  }
+  return { truths, clusterOf, links, credit }
 }
 
-/** The plainest rule there is, to compare with: whoever shares any one fact is one person, and whoever they share one with. */
-export function anyFact(truths: readonly Truth[]): Map<string, string> {
+/** Whoever shares a fact the rule looks at is one person, and so is whoever they share one with. */
+function joinedBy(truths: readonly Truth[], looks: (fact: string, subject: string) => boolean): Map<string, string> {
   const parent = new Map<string, string>()
   const root = (key: string): string => {
     let at = key
     while ((parent.get(at) ?? at) !== at) at = parent.get(at)!
     return at
   }
-  // That a tap and a call are one is known to whoever made them up, and to no rule.
-  for (const { subject, facts } of truths) for (const fact of facts) if (!fact.startsWith('tap ')) parent.set(root(subject), root(`fact ${fact}`))
+  for (const { subject, facts } of truths) for (const fact of facts) if (looks(fact, subject)) parent.set(root(subject), root(`fact ${fact}`))
   return new Map(truths.map(({ subject }) => [subject, root(subject)]))
 }
 
-export const figures = ({ all, people, mixed, recorded, mixedRecords }: Score) => ({
+/** Two plain rules to compare with. That a tap and a call are one is known to whoever made them up, and to no rule. */
+export const PLAIN = {
+  'any shared fact': (truths: readonly Truth[]) => joinedBy(truths, (fact) => !fact.startsWith('tap ')),
+  'same phone or email': (truths: readonly Truth[]) => joinedBy(truths, (fact, subject) => /^(phone|email) /.test(fact) && !subject.startsWith('visitor:')),
+}
+
+export const figures = ({ all, people, mixed, recorded, mixedRecords, mixedApart }: Score) => ({
   found: all.found / all.same,
   foundOfJoinable: all.joinable === 0 ? 1 : all.foundJoinable / all.joinable,
   right: all.found + all.wrong === 0 ? 1 : all.found / (all.found + all.wrong),
   mixed: mixed / people,
   mixedRecords: mixedRecords / recorded,
+  mixedApart: mixedApart / recorded,
+})
+const share = (part: number, whole: number) => (whole === 0 ? 0 : part / whole)
+const creditFigures = (credit: Credit) => ({
+  right: share(credit.right, credit.right + credit.wrong + credit.none),
+  wrong: share(credit.wrong, credit.right + credit.wrong),
+  reachableRight: share(credit.reachableRight, credit.reachable),
+  coldWrong: share(credit.coldWrong, credit.cold),
 })
 
 const percent = ({ mean, low, high }: ReturnType<typeof interval>) => `${(mean * 100).toFixed(2)}% (${(Math.max(0, low) * 100).toFixed(2)} to ${(Math.min(1, high) * 100).toFixed(2)})`
+const added = <T extends object>(into: T, more: T): T => Object.fromEntries(Object.entries(into).map(([key, value]) => [key, value + (more as Record<string, number>)[key]!])) as T
 
 async function main() {
-  const { values, positionals } = parseArgs({ allowPositionals: true, options: { worlds: { type: 'string', default: '20' }, people: { type: 'string' }, seed: { type: 'string', default: '20261124' }, dry: { type: 'boolean', default: false } } })
+  const { values, positionals } = parseArgs({ allowPositionals: true, options: { worlds: { type: 'string', default: '20' }, people: { type: 'string' }, seed: { type: 'string', default: '20261124' }, arm: { type: 'string' }, dry: { type: 'boolean', default: false } } })
   const [worlds, seed] = [Number(values.worlds), Number(values.seed)]
   const names = positionals.length > 0 ? positionals : Object.keys(SETTINGS)
+  if (!values.dry) console.log(`Node ${process.version}`)
   for (const name of names) {
     const setting = SETTINGS[name]
     if (!setting) throw new Error(`Say one of: ${Object.keys(SETTINGS).join(', ')}`)
@@ -127,41 +186,39 @@ async function main() {
       console.log(`${name}: ${people} people, ${by('visit')} visits, ${by('tap')} taps, ${by('call')} calls, ${by('record')} records, ${truths.length} subjects before callers`)
       continue
     }
-    const ours: ReturnType<typeof figures>[] = []
-    const plain: ReturnType<typeof figures>[] = []
-    const kinds = new Map<string, { same: number; found: number; wrong: number }>()
-    const links = new Map<string, { links: number; wrong: number }>()
-    const total = { wrong: 0, found: 0, mixed: 0, people: 0, mixedRecords: 0, recorded: 0, wrongClusters: 0 }
-    for (let world = 0; world < worlds; world++) {
-      const outcome = await report(makeWorld(setting.rates, size(world)))
-      const result = score(outcome.truths, outcome.clusterOf)
-      ours.push(figures(result))
-      plain.push(figures(score(outcome.truths, anyFact(outcome.truths))))
-      total.wrong += result.all.wrong
-      total.found += result.all.found
-      total.mixed += result.mixed
-      total.people += result.people
-      total.mixedRecords += result.mixedRecords
-      total.recorded += result.recorded
-      total.wrongClusters += result.wrongClusters
-      for (const [kind, count] of result.kinds) {
-        const row = kinds.get(kind) ?? { same: 0, found: 0, wrong: 0 }
-        kinds.set(kind, { same: row.same + count.same, found: row.found + count.found, wrong: row.wrong + count.wrong })
+    for (const arm of Object.keys(ARMS) as Arm[]) {
+      if (values.arm !== undefined && values.arm !== arm) continue
+      const ours: ReturnType<typeof figures>[] = []
+      const plain = new Map<string, ReturnType<typeof figures>[]>(Object.keys(PLAIN).map((rule) => [rule, []]))
+      const credits: ReturnType<typeof creditFigures>[] = []
+      const kinds = new Map<string, { same: number; found: number; wrong: number }>()
+      const links = new Map<string, { links: number; wrong: number }>()
+      let credited: Credit = { right: 0, wrong: 0, none: 0, reachable: 0, reachableRight: 0, cold: 0, coldWrong: 0 }
+      let total = { wrong: 0, found: 0, mixed: 0, people: 0, mixedRecords: 0, mixedApart: 0, recorded: 0, wrongClusters: 0 }
+      for (let world = 0; world < worlds; world++) {
+        const made = makeWorld(setting.rates, size(world))
+        const outcome = await report(made, arm)
+        const result = score(outcome.truths, outcome.clusterOf, made.spoke)
+        ours.push(figures(result))
+        for (const [rule, join] of Object.entries(PLAIN)) plain.get(rule)!.push(figures(score(outcome.truths, join(outcome.truths), made.spoke)))
+        credits.push(creditFigures(outcome.credit))
+        credited = added(credited, outcome.credit)
+        total = added(total, { wrong: result.all.wrong, found: result.all.found, mixed: result.mixed, people: result.people, mixedRecords: result.mixedRecords, mixedApart: result.mixedApart, recorded: result.recorded, wrongClusters: result.wrongClusters })
+        for (const [kind, { same, found, wrong }] of result.kinds) kinds.set(kind, added(kinds.get(kind) ?? { same: 0, found: 0, wrong: 0 }, { same, found, wrong }))
+        for (const [kind, count] of outcome.links) links.set(kind, added(links.get(kind) ?? { links: 0, wrong: 0 }, count))
       }
-      for (const [kind, count] of outcome.links) {
-        const row = links.get(kind) ?? { links: 0, wrong: 0 }
-        links.set(kind, { links: row.links + count.links, wrong: row.wrong + count.wrong })
+      console.log(`\n## ${name}, ${arm} policy: ${worlds} worlds of ${people} people over ${setting.days} days, seeds from ${seed}`)
+      for (const [label, list] of [['account-graph', ours], ...plain] as [string, typeof ours][]) {
+        const of = (key: keyof ReturnType<typeof figures>) => percent(interval(list.map((each) => each[key])))
+        console.log(`${label}: people whose record is with another's ${of('mixedRecords')}, and without those one spoke for ${of('mixedApart')}; people mixed by anything ${of('mixed')}; joined pairs that are right ${of('right')}; true pairs found ${of('found')}; of those with a chain of facts ${of('foundOfJoinable')}`)
       }
+      const of = (key: keyof ReturnType<typeof creditFigures>) => percent(interval(credits.map((each) => each[key])))
+      console.log(`credit: records credited to their ad ${of('right')}; of records credited, to another's ad ${of('wrong')}; of those with a chain of facts to the ad, to it ${of('reachableRight')}; of records of people who never came by an ad, credited to one ${of('coldWrong')}`)
+      console.log(`in all: ${JSON.stringify(total)} ${JSON.stringify(credited)}`)
+      for (const [kind, row] of [...kinds].sort()) console.log(`  pairs ${kind}: ${row.same} true, ${row.found} found, ${row.wrong} wrong`)
+      for (const [kind, row] of [...links].sort((x, y) => y[1].links - x[1].links)) console.log(`  links by ${kind}: ${row.links}, ${row.wrong} between two people`)
     }
-    console.log(`\n## ${name}: ${worlds} worlds of ${people} people over ${setting.days} days, seeds from ${seed}`)
-    for (const [label, list] of [['account-graph', ours], ['any shared fact', plain]] as const) {
-      const of = (key: keyof ReturnType<typeof figures>) => percent(interval(list.map((each) => each[key])))
-      console.log(`${label}: people whose record is with another's ${of('mixedRecords')}; people mixed with another by anything ${of('mixed')}; joined pairs that are right ${of('right')}; true pairs found ${of('found')}; of those with a chain of facts ${of('foundOfJoinable')}`)
-    }
-    console.log(`in all: ${total.wrong} wrong pairs, ${total.found} right; ${total.mixedRecords} of ${total.recorded} people with a record share a cluster with another's; ${total.mixed} of ${total.people} people mixed by anything, in ${total.wrongClusters} clusters`)
-    for (const [kind, row] of [...kinds].sort()) console.log(`  pairs ${kind}: ${row.same} true, ${row.found} found, ${row.wrong} wrong`)
-    for (const [kind, row] of [...links].sort((x, y) => y[1].links - x[1].links)) console.log(`  links by ${kind}: ${row.links}, ${row.wrong} between two people`)
   }
 }
 
-if (import.meta.main ?? process.argv[1]?.endsWith('accuracy/run.ts')) await main()
+if (process.argv[1]?.endsWith('accuracy/run.ts')) await main()

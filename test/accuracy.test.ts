@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { SETTINGS } from '../tools/accuracy/rates.ts'
-import { report } from '../tools/accuracy/run.ts'
+import { PLAIN, report } from '../tools/accuracy/run.ts'
 import { interval, score } from '../tools/accuracy/score.ts'
 import { makeWorld } from '../tools/accuracy/world.ts'
 
@@ -45,6 +45,22 @@ test('a subject the graph never heard of is alone', () => {
   assert.deepEqual(score(truths, new Map()).all, { same: 0, joinable: 0, found: 0, foundJoinable: 0, wrong: 0 })
 })
 
+test('two people of whom one spoke for the other are counted with the rest, and left out of the second figure', () => {
+  const truths = [contact(1, ['pat'], 'a'), contact(2, ['lee'], 'a'), contact(3, ['kim'], 'a')]
+  const together = new Map([['contact:1', 'x'], ['contact:2', 'x']])
+  const { mixedRecords, mixedApart } = score(truths, together, new Set(['lee pat']))
+  assert.deepEqual([mixedRecords, mixedApart], [2, 0])
+  // A third who is nobody's speaker mixes all three.
+  assert.equal(score(truths, new Map([...together, ['contact:3', 'x']]), new Set(['lee pat'])).mixedApart, 3)
+})
+
+test('the plain rules join what they look at', () => {
+  const truths = [contact(1, ['pat'], 'phone 1', 'device 1'), contact(2, ['lee'], 'phone 1'), contact(3, ['kim'], 'device 1'), { subject: 'visitor:1', people: ['kim'], facts: ['device 1', 'tap c'] }, { subject: 'caller:1', people: ['sam'], facts: ['tap c'] }]
+  const groups = (joined: Map<string, string>) => truths.map(({ subject }) => truths.filter((other) => joined.get(other.subject) === joined.get(subject)).length)
+  assert.deepEqual(groups(PLAIN['any shared fact'](truths)), [4, 4, 4, 4, 1])
+  assert.deepEqual(groups(PLAIN['same phone or email'](truths)), [2, 2, 1, 1, 1])
+})
+
 test('an interval is wider the more the worlds differ', () => {
   const { mean, low, high } = interval([1, 2, 3])
   assert.equal(mean, 2)
@@ -70,8 +86,11 @@ test('a world is the same for the same seed, and every subject of it has an owne
 
 test('a world is reported to a server, and everyone told of is found there', async () => {
   const world = makeWorld(SETTINGS.base!.rates, { people: 60, days: 30, start: Date.parse('2026-03-02T15:00:00Z'), seed: 3 })
-  const { truths, clusterOf } = await report(world)
-  // A caller who hid their number is a subject of its own.
-  assert.ok(truths.length >= world.truths.length)
-  for (const { subject } of world.truths) assert.ok(clusterOf.has(subject), subject)
+  for (const arm of ['default', 'household'] as const) {
+    const { truths, clusterOf, credit } = await report(world, arm)
+    // A caller who hid their number is a subject of its own.
+    assert.ok(truths.length >= world.truths.length)
+    for (const { subject } of world.truths) assert.ok(clusterOf.has(subject), subject)
+    assert.equal(credit.right + credit.wrong + credit.none + credit.cold, world.ads.size)
+  }
 })
