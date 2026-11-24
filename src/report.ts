@@ -149,7 +149,7 @@ export interface Credited {
   outcome: Counted
   touch: Touch | undefined
   /** Its first value, with no time when it may not be the first, and the most it was ever worth. */
-  first?: (OutcomeValue & { most: number; refunded: number; writtenOff: number }) | undefined
+  first?: (OutcomeValue & { most: number; refunded?: number; writtenOff?: number; lostIn?: readonly string[] }) | undefined
   /** Who it is: the cluster of its subject. Defaults to the subject. */
   person?: string
   /** Milliseconds from the newest strong arrival in the year before it, inside the window or not. */
@@ -358,7 +358,7 @@ export function fold(
   for (const each of credited) {
     const { outcome, touch } = each
     for (const into of [everything, ...tallies(missing(touch), { at: outcome.at, touch, tags: outcome.tags })]) count(into, each)
-    for (const currency of [outcome.currency, each.first?.currency]) if (currency) currencies.add(currency)
+    for (const currency of [outcome.currency, each.first?.currency, ...(each.first?.lostIn ?? [])]) if (currency) currencies.add(currency)
     const found = missing(touch)
     const month = each.first && each.first.at > 0 ? dayIn(each.first.at, timeZone).slice(0, 7) : NOT_RECORDED
     if (!months.has(month)) months.set(month, unchanged())

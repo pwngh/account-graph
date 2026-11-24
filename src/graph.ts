@@ -870,8 +870,12 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         if (kind !== undefined) {
           if (currency && currency !== found.currency) throw new TypeError('A refund or a write-off is in the currency the outcome is in')
           // One said by mistake is taken back by saying it the other way, and no more than was said.
-          const lost = (await tx.firstValues([found])).get(transactionId)
-          if (((kind === 'refund' ? lost?.refunded : lost?.writtenOff) ?? 0) + found.value - value < -1e-9) throw new TypeError(`Outcome "${transactionId}" has not had that much ${kind === 'refund' ? 'refunded' : 'written off'}`)
+          let said = 0
+          if (value > found.value) {
+            const values = await tx.valuesOf(transactionId, found.subject)
+            values.forEach((each, i) => (said += each.kind === kind && each.currency === found.currency ? values[i - 1]!.value - each.value : 0))
+          }
+          if (value > found.value && (said <= 0 || value - found.value > said + 1e-6)) throw new TypeError(`Outcome "${transactionId}" has not had that much ${kind === 'refund' ? 'refunded' : 'written off'}`)
         }
         const restated = { ...found, value, ...(currency && { currency }) }
         await tx.setOutcome(restated)

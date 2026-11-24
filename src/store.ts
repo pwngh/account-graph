@@ -104,8 +104,8 @@ export interface Tx {
   addValue(transactionId: string, subject: Subject, value: OutcomeValue): Promise<void>
   /** Every value an outcome of a subject has had, oldest first. An id used again for someone else has a history of its own. */
   valuesOf(transactionId: string, subject: Subject): Promise<OutcomeValue[]>
-  /** The first value of each given outcome, by its id, the most it was ever worth, and how much of it was refunded and written off in the currency it has now. */
-  firstValues(outcomes: readonly Counted[]): Promise<Map<string, OutcomeValue & { most: number; refunded: number; writtenOff: number }>>
+  /** The first value of each given outcome, by its id, the most it was ever worth, and how much of it was refunded and written off, and in which currencies. */
+  firstValues(outcomes: readonly Counted[]): Promise<Map<string, OutcomeValue & { most: number; refunded: number; writtenOff: number; lostIn: string[] }>>
   /** Takes an outcome out of the report. Its values stay in its history. */
   removeOutcome(transactionId: string): Promise<void>
   /** Which of these outcomes, by transaction id, were said to be no lead. A call is `call:` and its id. */

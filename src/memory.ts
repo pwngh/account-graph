@@ -384,12 +384,16 @@ export function createMemoryStore(): Store {
           const [first, ...rest] = values.get(subject)?.get(transactionId) ?? []
           if (!first) return []
           const lost = { refund: 0, write_off: 0 }
+          const lostIn: string[] = []
           let before = first
           for (const each of rest) {
-            if (each.kind && each.currency === rest.at(-1)!.currency) lost[each.kind] += before.value - each.value
+            if (each.kind) {
+              lost[each.kind] += before.value - each.value
+              lostIn.push(each.currency)
+            }
             before = each
           }
-          return [[transactionId, { ...first, most: rest.reduce((most, each) => Math.max(most, each.value), first.value), refunded: lost.refund, writtenOff: lost.write_off }]]
+          return [[transactionId, { ...first, most: rest.reduce((most, each) => Math.max(most, each.value), first.value), refunded: lost.refund, writtenOff: lost.write_off, lostIn }]]
         }),
       )
     },

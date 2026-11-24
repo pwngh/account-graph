@@ -369,7 +369,8 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
     },
 
     async restate(transactionId, value, currency, kind) {
-      await graph.restate(transactionId, value, currency, kind)
+      // A loss is of something counted: without it there is nothing to say what was lost.
+      if (!(await graph.restate(transactionId, value, currency, kind)) && kind) return []
       const changed: Job[] = []
       for (const job of await store.get(transactionId)) {
         if (!targets.get(job.target)?.restates) continue

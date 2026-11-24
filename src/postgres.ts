@@ -417,15 +417,15 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       if (given.length === 0) return new Map()
       const { rows } = await db.query(
         `with theirs as (
-           select v.*, lag(v.value) over (partition by v.transaction_id order by v.id) - v.value as lost,
-             v.currency = first_value(v.currency) over (partition by v.transaction_id order by v.id desc) as same
+           select v.*, lag(v.value) over (partition by v.transaction_id order by v.id) - v.value as lost
            from unnest($1::text[], $2::text[]) as o (id, subject) join ${t('outcome_value')} v on v.transaction_id = o.id and v.subject = o.subject)
-         select distinct on (transaction_id) *, max(value) over mine as most, coalesce(sum(lost) filter (where same and kind = 'refund') over mine, 0) as refunded,
-           coalesce(sum(lost) filter (where same and kind = 'write_off') over mine, 0) as written_off
+         select distinct on (transaction_id) *, max(value) over mine as most, coalesce(sum(lost) filter (where kind = 'refund') over mine, 0) as refunded,
+           coalesce(sum(lost) filter (where kind = 'write_off') over mine, 0) as written_off,
+           array_agg(currency) filter (where kind is not null) over mine as lost_in
          from theirs window mine as (partition by transaction_id) order by transaction_id, id`,
         [given.map((each) => each.transactionId), given.map((each) => each.subject)],
       )
-      return new Map(rows.map((row) => [row.transaction_id as string, { ...toValue(row), most: row.most as number, refunded: row.refunded as number, writtenOff: row.written_off as number }]))
+      return new Map(rows.map((row) => [row.transaction_id as string, { ...toValue(row), most: row.most as number, refunded: row.refunded as number, writtenOff: row.written_off as number, lostIn: (row.lost_in ?? []) as string[] }]))
     },
 
     async removeOutcome(transactionId) {

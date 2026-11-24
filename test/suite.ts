@@ -1027,10 +1027,15 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await graph.restate('s1', 299.9, undefined, 'write_off')
       await graph.restate('s2', 200, undefined, 'refund')
       assert.deepEqual(await worth(), { outcomes: 3, first: 600, now: 649.9, refunded: 50.1, writtenOff: 0, zeroed: 0, firstUnknown: 0 })
-      // In another currency now, what was given back in the first is in no sum with it.
+      // In another currency now, what was lost in the one before stays in the sum, and the report says which it adds up.
+      // It cannot be taken back in the new one.
       await graph.restate('s1', 250, 'CAD')
       await graph.restate('s1', 240, undefined, 'refund')
-      assert.equal((await worth()).refunded, 10)
+      await assert.rejects(graph.restate('s1', 251, undefined, 'refund'), /not had that much refunded/)
+      await graph.restate('s1', 250, undefined, 'refund')
+      await graph.restate('s1', 250, 'EUR')
+      assert.equal((await worth()).refunded, 50.1)
+      assert.deepEqual((await graph.report({ from: '2026-03-02', to: '2026-03-02' })).currencies, ['CAD', 'EUR', 'USD'])
       assert.equal(await graph.restate('nobody', 1, undefined, 'refund'), false)
       // Forgotten with the rest of their values, and an outcome nobody changed has none.
       await graph.forget('lead:1')
