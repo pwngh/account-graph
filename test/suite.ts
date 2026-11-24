@@ -72,8 +72,8 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       for (const subject of ['account:\ud800', 'account:\udfff', 'account:\0', ['account:1'], '']) await assert.rejects(seen(subject), TypeError)
       for (const more of [{ identifiers: ['device:\ud800'] }, { identifiers: ['device:\0'] }, { event: '\0' }, { event: [] }, { at: T0 + 0.5 }, { at: 1e21 }, { at: NaN }]) await assert.rejects(seen('account:1', more), TypeError)
       await assert.rejects(graph.touch({ subject: 'account:1', at: T0 + 0.5 }), TypeError)
-      await assert.rejects(graph.transfer({ from: 'account:1', to: 'account:2', amount: 1, at: T0 + 0.5 }), TypeError)
-      await assert.rejects(graph.transfer({ from: ['account:1'] as unknown as string, to: 'account:2', amount: 1, at: T0 }), TypeError)
+      await assert.rejects(graph.transfer({ id: 'x', from: 'account:1', to: 'account:2', amount: 1, at: T0 + 0.5 }), TypeError)
+      await assert.rejects(graph.transfer({ id: 'x', from: ['account:1'] as unknown as string, to: 'account:2', amount: 1, at: T0 }), TypeError)
       await assert.rejects(graph.ignore('device:d', 'yes' as unknown as boolean), TypeError)
       await assert.rejects(graph.forget([] as unknown as string), TypeError)
       await assert.rejects(graph.prune(T0 + 0.5), TypeError)
@@ -927,6 +927,30 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await graph.cluster('account:1'))!.oversized, true)
     })
 
+    test('a flow sent twice is counted once, and its id is kept for it', async () => {
+      const { graph } = await fresh()
+      const flow = { id: 'trade 1:a', from: 'a', to: 'b', amount: 500, at: T0, asset: 'gold' }
+      assert.equal((await graph.transfer(flow)).duplicate, false)
+      const again = await graph.transfer(flow)
+      assert.deepEqual([again.duplicate, again.subject, again.sent, again.count], [true, 'b', 500, 1])
+      // Sent many times at once, as by a client that gave up waiting.
+      const many = await Promise.all(Array.from({ length: 8 }, () => graph.transfer({ ...flow, id: 'trade 2' })))
+      assert.equal(many.filter((each) => !each.duplicate).length, 1)
+      const total = async () => (await graph.flows('a')).map((row) => [row.subject, row.asset, row.sent, row.received, row.count])
+      assert.deepEqual(await total(), [['b', 'gold', 1000, 0, 2]])
+
+      for (const other of [{ from: 'c' }, { to: 'c' }, { amount: 501 }, { at: T0 + 1 }, { asset: 'silver' }, { asset: undefined }]) await assert.rejects(graph.transfer({ ...flow, ...other } as typeof flow), /different details/)
+      for (const id of [undefined, '', ' ', 7, null, 'x'.repeat(201), 'a\0', '\ud800']) await assert.rejects(graph.transfer({ ...flow, id } as typeof flow), TypeError)
+      await assert.rejects(graph.transfer({ ...flow, id: 'x', asset: 7 as unknown as string }), TypeError)
+      assert.deepEqual(await total(), [['b', 'gold', 1000, 0, 2]])
+      assert.deepEqual(await graph.flows('c'), [])
+
+      // Nothing of a forgotten subject is kept, the ids of its flows included, whichever side it was on.
+      await graph.transfer({ ...flow, id: 'trade 3', from: 'z', to: 'a' })
+      await graph.forget('a')
+      for (const id of ['trade 1:a', 'trade 2', 'trade 3']) assert.equal((await graph.transfer({ id, from: 'm', to: 'n', amount: 1, at: T0 })).duplicate, false)
+    })
+
     test('value moving between tied accounts is reported with the tie', async () => {
       const { graph } = await fresh()
       await graph.observe([
@@ -935,17 +959,17 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
         { subject: 'd', identifiers: ['canvas:c', 'ip:198.51.100.9'], at: T0 },
         { subject: 'stranger', identifiers: ['email:s'], at: T0 },
       ])
-      const first = await graph.transfer({ from: 'a', to: 'b', amount: 500, at: T0 })
+      const first = await graph.transfer({ id: 'f1', from: 'a', to: 'b', amount: 500, at: T0 })
       assert.equal(first.relation, 'same')
       assert.equal(first.score, 0.95)
       assert.deepEqual(first.reasons.map((reason) => reason.identifier), ['hardware:h'])
       assert.deepEqual([first.sent, first.received, first.count, first.imbalance], [500, 0, 1, 1])
 
-      await graph.transfer({ from: 'a', to: 'b', amount: 500, at: T0 + HOUR })
-      await graph.transfer({ from: 'b', to: 'a', amount: 200, at: T0 + 2 * HOUR })
-      await graph.transfer({ from: 'a', to: 'stranger', amount: 5000, at: T0 })
-      await graph.transfer({ from: 'd', to: 'a', amount: 40, at: T0, asset: 'gold' })
-      assert.equal((await graph.transfer({ from: 'a', to: 'unknown', amount: 1, at: T0 })).relation, 'none')
+      await graph.transfer({ id: 'f2', from: 'a', to: 'b', amount: 500, at: T0 + HOUR })
+      await graph.transfer({ id: 'f3', from: 'b', to: 'a', amount: 200, at: T0 + 2 * HOUR })
+      await graph.transfer({ id: 'f4', from: 'a', to: 'stranger', amount: 5000, at: T0 })
+      await graph.transfer({ id: 'f5', from: 'd', to: 'a', amount: 40, at: T0, asset: 'gold' })
+      assert.equal((await graph.transfer({ id: 'f6', from: 'a', to: 'unknown', amount: 1, at: T0 })).relation, 'none')
 
       const flows = await graph.flows('a')
       assert.deepEqual(
@@ -963,9 +987,9 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual((await graph.collusion('a', 1)).map((row) => row.subject), ['b', 'd'])
       assert.deepEqual((await graph.flows('b')).map((row) => [row.subject, row.sent, row.received]), [['a', 200, 1000]])
 
-      await assert.rejects(graph.transfer({ from: 'a', to: 'a', amount: 1, at: T0 }), TypeError)
-      await assert.rejects(graph.transfer({ from: 'a', to: 'b', amount: 1.5, at: T0 }), TypeError)
-      await assert.rejects(graph.transfer({ from: 'a', to: 'b', amount: 0, at: T0 }), TypeError)
+      await assert.rejects(graph.transfer({ id: 'f7', from: 'a', to: 'a', amount: 1, at: T0 }), TypeError)
+      await assert.rejects(graph.transfer({ id: 'f8', from: 'a', to: 'b', amount: 1.5, at: T0 }), TypeError)
+      await assert.rejects(graph.transfer({ id: 'f9', from: 'a', to: 'b', amount: 0, at: T0 }), TypeError)
 
       await graph.forget('b')
       assert.equal((await graph.flows('a')).some((row) => row.subject === 'b'), false)
@@ -977,7 +1001,8 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
         { subject: 'a', identifiers: ['hardware:h'], at: T0 },
         { subject: 'b', identifiers: ['hardware:h'], at: T0 },
       ])
-      const pay = (from: string, to: string, amount: number, asset?: string) => graph.transfer({ from, to, amount, at: T0, ...(asset && { asset }) })
+      let paid = 0
+      const pay = (from: string, to: string, amount: number, asset?: string) => graph.transfer({ id: `p${paid++}`, from, to, amount, at: T0, ...(asset && { asset }) })
       // a -> b -> c -> a, and a second, smaller ring a -> d -> a.
       await pay('a', 'b', 900)
       await pay('b', 'c', 700)
@@ -1361,7 +1386,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
           assert.equal(told.recorded + told.already, pairs.length)
         } else {
           const a = pick(40)
-          await graph.transfer({ from: `account:${a}`, to: `account:${(a + 1 + pick(39)) % 40}`, amount: 1 + pick(1000), at: T0 })
+          await graph.transfer({ id: `flow-${step}`, from: `account:${a}`, to: `account:${(a + 1 + pick(39)) % 40}`, amount: 1 + pick(1000), at: T0 })
         }
         assert.deepEqual(await graph.verify(), [], `seed ${seed}, step ${step}`)
       }

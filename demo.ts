@@ -68,8 +68,8 @@ await graph.observe(ring.map((subject, i) => ({ subject, identifiers: [`hardware
 console.log('one weak link may not join two groups:', (await graph.cluster('account:r1'))!.members.join(', '), '|', (await graph.cluster('account:r4'))!.members.join(', '))
 
 // Value only ever moves one way inside the first pair.
-for (let i = 0; i < 4; i++) await graph.transfer({ from: 'account:r2', to: 'account:r1', amount: 250_000, at: noon + i * HOUR, asset: 'gold' })
-const held = await graph.transfer({ from: 'account:r2', to: 'account:r1', amount: 250_000, at: noon + 5 * HOUR, asset: 'gold' })
+for (let i = 0; i < 4; i++) await graph.transfer({ id: `trade-${i}`, from: 'account:r2', to: 'account:r1', amount: 250_000, at: noon + i * HOUR, asset: 'gold' })
+const held = await graph.transfer({ id: 'trade-held', from: 'account:r2', to: 'account:r1', amount: 250_000, at: noon + 5 * HOUR, asset: 'gold' })
 console.log(`a trade between them comes back flagged: relation ${held.relation}, ${held.count} trades, imbalance ${held.imbalance}`)
 console.log('collusion report for r1:', (await graph.collusion('account:r1')).map((row) => `${row.subject} sent ${row.received} ${row.asset} over ${row.count} trades`).join('; '))
 

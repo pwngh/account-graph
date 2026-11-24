@@ -26,12 +26,12 @@ await graph.observe([
   // A front-desk mailbox shared by four customers.
   ...['eve', 'fay', 'gus', 'hal'].map((name, i) => login(`account:${name}`, ['email:front-desk', `hardware:hw-${name}`], 40 + i)),
 ])
-for (let i = 0; i < 4; i++) await graph.transfer({ from: 'account:ana-alt', to: 'account:ana', amount: 250_000, at: start + (50 + i) * HOUR, asset: 'gold' })
-await graph.transfer({ from: 'account:ana', to: 'account:gus', amount: 1_200, at: start + 60 * HOUR, asset: 'gold' })
+for (let i = 0; i < 4; i++) await graph.transfer({ id: `gold-${i}`, from: 'account:ana-alt', to: 'account:ana', amount: 250_000, at: start + (50 + i) * HOUR, asset: 'gold' })
+await graph.transfer({ id: 'trade-1', from: 'account:ana', to: 'account:gus', amount: 1_200, at: start + 60 * HOUR, asset: 'gold' })
 // A ring: ana pays ana-shop, who pays ben, who pays ana back.
-await graph.transfer({ from: 'account:ana', to: 'account:ana-shop', amount: 90_000, at: start + 70 * HOUR, asset: 'gold' })
-await graph.transfer({ from: 'account:ana-shop', to: 'account:ben', amount: 85_000, at: start + 71 * HOUR, asset: 'gold' })
-await graph.transfer({ from: 'account:ben', to: 'account:ana', amount: 80_000, at: start + 72 * HOUR, asset: 'gold' })
+await graph.transfer({ id: 'trade-2', from: 'account:ana', to: 'account:ana-shop', amount: 90_000, at: start + 70 * HOUR, asset: 'gold' })
+await graph.transfer({ id: 'trade-3', from: 'account:ana-shop', to: 'account:ben', amount: 85_000, at: start + 71 * HOUR, asset: 'gold' })
+await graph.transfer({ id: 'trade-4', from: 'account:ben', to: 'account:ana', amount: 80_000, at: start + 72 * HOUR, asset: 'gold' })
 await graph.separate('account:cy', 'account:dee', true, { by: 'dana', reason: 'siblings, one family computer' })
 
 // Two systems that disagree about one pair, and a list of pairs kept apart by a case system.

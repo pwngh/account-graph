@@ -176,7 +176,7 @@ PostgreSQL writes take one advisory lock, so they run one at a time; the write q
 - The consent kept is about advertising. It is not a record of consent to be contacted.
 - Each page view adds a row to the consent history when the page reports an answer. `prune` deletes the ones that no longer stand.
 - Pairs kept apart by your own systems are only as right as those systems. One person entered on both sides is split, and keeping two apart is not a conflict check.
-- Flows are kept as running totals per pair, not as a ledger.
+- Flows and rings are worked out from running totals per pair, so they do not say in what order value moved. Each transfer is kept only to count it once.
 - `rebuild`, `verify`, and `asOf` load every edge into memory.
 - The memory store does not roll back a failed write.
 - Not published to npm. Until it is, installing means cloning.

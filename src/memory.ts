@@ -2,7 +2,7 @@ import { createMemoryOps } from './ops.ts'
 import { createMemoryOutbox } from './outbox.ts'
 import { standingFirst } from './store.ts'
 import type { Store, Tx } from './store.ts'
-import type { CallResult, Consent, ConsentAnswer, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Moved, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, Consent, ConsentAnswer, Cost, Counted, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Moved, Sighting, Subject, Touch } from './types.ts'
 
 /**
  * Keeps the graph in process memory. Writes run one at a time; a write that
@@ -20,6 +20,7 @@ export function createMemoryStore(): Store {
   const separated = new Map<Subject, Set<Subject>>()
   const flows = new Map<string, FlowEdge>()
   const flowsBy = new Map<Subject, Set<string>>()
+  const flowIds = new Map<string, Required<Flow>>()
   const consents = new Map<Subject, ConsentAnswer[]>()
   const decisions: Decision[] = []
   const outcomes = new Map<string, Counted>()
@@ -110,6 +111,7 @@ export function createMemoryStore(): Store {
         flows.delete(key)
       }
       flowsBy.delete(subject)
+      for (const [id, flow] of flowIds) if (flow.from === subject || flow.to === subject) flowIds.delete(id)
       consents.delete(subject)
       ops.forget(subject)
       for (let i = moves.length - 1; i >= 0; i--) if (moves[i]!.subject === subject) moves.splice(i, 1)
@@ -247,7 +249,13 @@ export function createMemoryStore(): Store {
       return [...out.values()]
     },
 
-    async addFlow({ from, to, amount, at, asset }) {
+    async flowOf(id) {
+      const flow = flowIds.get(id)
+      return flow && { ...flow }
+    },
+
+    async addFlow({ id, from, to, amount, at, asset }) {
+      flowIds.set(id, { id, from, to, amount, at, asset })
       const key = [from, to, asset].join('\u0000')
       const flow = flows.get(key)
       if (flow) {

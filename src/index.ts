@@ -47,6 +47,7 @@ export type {
   Edge,
   Flow,
   FlowEdge,
+  Transferred,
   FollowUp,
   Identifier,
   IdentifierState,

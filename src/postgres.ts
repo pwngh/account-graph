@@ -103,6 +103,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       await db.query(`delete from ${t('subject')} where id = $1`, [subject])
       await db.query(`delete from ${t('apart')} where a = $1 or b = $1`, [subject])
       await db.query(`delete from ${t('flow')} where source = $1 or target = $1`, [subject])
+      await db.query(`delete from ${t('transfer')} where source = $1 or target = $1`, [subject])
       await db.query(`delete from ${t('consent_log')} where subject = $1`, [subject])
       await db.query(`delete from ${t('alert')} where subject = $1`, [subject])
       await db.query(`delete from ${t('change')} where subject = $1`, [subject])
@@ -256,7 +257,14 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       return rows.map((row) => [row.a, row.b] as [Subject, Subject])
     },
 
-    async addFlow({ from, to, amount, at, asset }) {
+    async flowOf(id) {
+      const { rows } = await db.query(`select * from ${t('transfer')} where id = $1`, [id])
+      const row = rows[0]
+      return row && { id: row.id, from: row.source, to: row.target, asset: row.asset, amount: Number(row.amount), at: Number(row.at) }
+    },
+
+    async addFlow({ id, from, to, amount, at, asset }) {
+      await db.query(`insert into ${t('transfer')} (id, source, target, asset, amount, at) values ($1, $2, $3, $4, $5, $6)`, [id, from, to, asset, amount, at])
       await db.query(
         `insert into ${t('flow')} (source, target, asset, transfers, total, first_at, last_at) values ($1, $2, $3, 1, $4, $5, $5)
          on conflict (source, target, asset) do update set
@@ -925,6 +933,20 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
       name: 'tags on outcomes and calls',
       sql: `alter table ${schema}.outcome add column if not exists tags jsonb;
             alter table ${schema}.call add column if not exists tags jsonb;`,
+    },
+    {
+      id: 13,
+      name: 'transfers kept by id',
+      sql: `create table if not exists ${schema}.transfer (
+              id text primary key,
+              source text not null,
+              target text not null,
+              asset text not null,
+              amount bigint not null,
+              at bigint not null
+            );
+            create index if not exists transfer_source on ${schema}.transfer (source);
+            create index if not exists transfer_target on ${schema}.transfer (target);`,
     },
   ]
 }

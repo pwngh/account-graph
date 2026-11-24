@@ -341,12 +341,14 @@ await graph.prune(Date.now() - 180 * 24 * 60 * 60 * 1000, { by: 'ops', reason: '
 Identity says who is who. Flows say who pays whom. Collusion is the two together: value moving between accounts that are the same person or tied to them.
 
 ```ts
-let tie = await graph.transfer({ from: 'account:2', to: 'account:1', amount: 250_000, at: Date.now(), asset: 'gold' })
+let tie = await graph.transfer({ id: 'trade-81', from: 'account:2', to: 'account:1', amount: 250_000, at: Date.now(), asset: 'gold' })
 // tie.relation: 'same' | 'related' | 'none', with the score and reasons. Hold the trade on anything but 'none'.
 
 await graph.flows('account:1')     // every counterparty: sent, received, count, imbalance, and the tie
 await graph.collusion('account:1') // only those tied by identity, with three or more flows
 ```
+
+`id` is yours, one per flow. A flow sent again with the same details adds nothing and answers `duplicate: true`, so a request that timed out is safe to repeat as it was, `at` included. The same id with other details is refused.
 
 `amount` is a whole number of the asset's smallest unit. `imbalance` is 1 when value only ever moved one way.
 

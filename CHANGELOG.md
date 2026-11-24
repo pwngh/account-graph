@@ -89,6 +89,7 @@
 - A name that starts with `system:` is refused with the reviewer token.
 
 - Breaking: in `defaultPolicy`, `phone` and `voip` thin as more subjects share them (dilution 1), and `phone`, `email` and `voip` link nothing past 10 subjects. Run `rebuild`, or keep the earlier rules with `POLICY`.
+- Breaking: `Flow` and `POST /transfer` need an `id`. The same flow sent twice is counted once and answers `duplicate: true` (`Transferred`); the same id with other details is refused. A `Store` needs `flowOf`.
 - Breaking: `GET /verify` answers `{ changes, policy }`, not a list.
 - A server whose database holds an identifier of a kind the policy does not name refuses to start.
 
