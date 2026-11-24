@@ -753,6 +753,10 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal(await graph.keptCall('N1'), undefined)
       await recordCall(graph, { id: 'N2', from: '+15550100064', to: '+15550100008', at: day, duration: 60 }, { numbers: { '+15550100008': { source: 'x', tags: { office_advertised: ' north ' } } } })
       assert.equal((await graph.report({ from: '2026-03-02', to: '2026-03-02', by: 'touch.office_advertised' })).rows.find((row) => row.source === 'x')!.breakdown![0]!.name, 'north')
+      // An arrival that says it is not recorded is one that says nothing.
+      await graph.touch({ subject: 'visitor:8', at: day, gclid: 'G8', custom: { office: ' (not recorded) ' } })
+      await graph.outcome({ transactionId: 'e8', subject: 'visitor:8', at: day + HOUR, stage: 'enrolled' })
+      assert.equal((await graph.report({ from: '2026-03-02', to: '2026-03-03', by: 'touch.office_advertised' })).total.breakdown!.filter((part) => part.name.includes('not recorded')).length, 1)
       // A parameter that cannot be asked for is not offered.
       await graph.touch({ subject: 'visitor:9', at: day, gclid: 'G9', custom: { 'two words': 'x' } })
       assert.ok((await graph.report({ from: '2026-03-02', to: '2026-03-02' })).dimensions.every((each) => !each.includes(' ')))

@@ -31,7 +31,10 @@ const READ = new Map(Object.entries(WRITTEN).flatMap(([name, written]) => writte
 /** What an arrival says of a dimension, from the parameters of your own that it carried. */
 export function touchTag(touch: Touch | undefined, name: string): string | undefined {
   const custom = touch?.custom
-  for (const written of Object.hasOwn(WRITTEN, name) ? WRITTEN[name]! : [name]) if (custom && Object.hasOwn(custom, written) && custom[written]) return custom[written]
+  for (const written of Object.hasOwn(WRITTEN, name) ? WRITTEN[name]! : [name]) {
+    const value = custom && Object.hasOwn(custom, written) ? custom[written]!.trim() : ''
+    if (value) return value
+  }
   return undefined
 }
 

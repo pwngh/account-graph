@@ -157,7 +157,7 @@ Use these names, so reports read the same from month to month. Values are short 
 
 The advertised office and the serving office are two facts, and often differ. Neither is ever filled in from the other.
 
-An outcome or a call carries at most 8 tags, each name of lowercase letters and underscores up to 32 characters, each value up to 64.
+An outcome or a call carries at most 8 tags, each name of lowercase letters and underscores up to 32 characters, each value up to 64. `(not recorded)` is not a value: it is what a missing one is called.
 
 ## How an outcome finds its campaign
 
