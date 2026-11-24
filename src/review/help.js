@@ -25,6 +25,7 @@ const HELP = {
   board: ['Board', 'Each person appears once. Unreturned missed calls come first. Everyone else is at the furthest step they reached.'],
   overdue: ['Overdue', 'People who have waited longer than the limit for their column. The age on a card is total elapsed time.'],
   advanced: ['Advanced today', 'People who reached a later step today, or whose missed call was returned.'],
+  textsColumn: ['Unanswered texts', 'People whose text has had no reply by text or answered call. They are also counted at their step.'],
   missedColumn: ['Missed calls', 'People with a missed call that has not been returned. They move on when they are reached or call again and get through.'],
   pending: ['Pending', 'Pairs that share identifiers and have not been joined or separated.'],
   checked: ['IDs checked', 'IDs in the newest 10,000 sightings. Pairs not seen in those sightings are not listed.'],

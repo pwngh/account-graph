@@ -279,6 +279,8 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
   const opens = (url: string) => browser('/collect', { device: 'v-4821', url: url.split('?')[0], known: new URL(url).searchParams.get('ag') })
   const steps = (stage: keyof typeof STEPS, tags: object = {}) => ask('POST', '/convert', { transactionId: `demo-${stage}`, subject: demo.contact, at: clock(), stage, tags: { language: 'es', ...tags } })
   const links: Record<string, string> = {}
+  /** A text staff send the contact. Only its time and the two numbers are kept. */
+  const sends = (id: string) => ask('POST', '/text', { id, direction: 'outbound', from: demo.line, to: demo.phone, at: clock() })
 
   /** The scenes, in order. Each does over HTTP what the site, the phone system or the office would, and says what came of it. */
   const scenes: { title: string; text: string; see: [string, string]; stage?: string; spot?: string[]; shown?: Shown; run(): Promise<Told> }[] = [
@@ -333,7 +335,8 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       async run() {
         await at(0, 14, 8)
         links.form = await linkTo('datos')
-        return { lines: ['Signed link made for the contact. Not opened yet.'], credit: await credit(), link: links.form }
+        await sends('demo-text-1')
+        return { lines: ['Text recorded, with a signed link for the contact. Not opened yet.'], credit: await credit(), link: links.form }
       },
     },
     {
@@ -359,6 +362,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       title: 'Documents signed', text: 'Staff text a link to the documents. They open it and sign.', see: ['Board', review('board/7')], spot: ['contact:ines-vega'], shown: { phone: 'signed' },
       async run() {
         await at(0, 14, 31)
+        await sends('demo-text-2')
         await opens(await linkTo('firmar'))
         await steps('signed')
         return { lines: ['Step recorded: signed.'] }
@@ -369,6 +373,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       async run() {
         await at(0, 14, 36)
         await steps('scheduled', { director: 'ortega' })
+        await sends('demo-text-3')
         return { lines: ['Step recorded: scheduled, director ortega.'] }
       },
     },
@@ -381,11 +386,12 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       },
     },
     {
-      title: 'Enrollment texted', text: 'Staff text a signed link to enroll and pay.', see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], stage: person('journey'), spot: ['scheduled', 'Outbound'], shown: { phone: 'text-pay' },
+      title: 'Enrollment texted', text: 'Staff text a signed link to enroll and pay.', see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], stage: person('journey'), spot: ['1,290 s', 'Sent'], shown: { phone: 'text-pay' },
       async run() {
         await at(2, 11, 24)
         links.pay = await linkTo('inscripcion')
-        return { lines: ['Signed link made for the contact. Not opened yet.'], link: links.pay }
+        await sends('demo-text-4')
+        return { lines: ['Text recorded, with a signed link for the contact. Not opened yet.'], link: links.pay }
       },
     },
     {

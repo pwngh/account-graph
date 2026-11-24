@@ -19,9 +19,21 @@ function person(row, column, at) {
         call ? reviewDisplay.callTone(call.state) : 'muted')))
 }
 
+/** A sender nobody has answered: how long ago they wrote, where they came from, and how many texts wait. */
+function unanswered(text, at) {
+  const campaign = text.campaign || text.campaignId
+  const arrival = text.source ? `${text.source}${campaign ? ` · ${campaign}` : ''}` : 'Unattributed'
+  return el('li', {},
+    el('div', { class: 'top' }, reviewDisplay.subject(text.subject, `#/journey/${encodeURIComponent(text.subject)}`),
+      el('span', { class: 'board-age muted' }, el('time', { datetime: new Date(text.at).toISOString(), title: when(text.at) }, brief(at - text.at)))),
+    el('div', { class: 'board-meta reason' }, el('span', { title: arrival }, arrival, text.tags?.language ? ` · ${text.tags.language}` : '')),
+    el('div', { class: 'board-chips' }, reviewDisplay.chip(`${amount(text.unanswered)} unanswered`, 'related')))
+}
+
 // Everybody once, at the furthest step they reached, with missed calls nobody returned first.
 view('board', 'Board', async (box, days = '90') => {
   const board = await api('GET', `/board?days=${encodeURIComponent(days)}`)
+  const { texts, next: further } = await api('GET', `/texts?from=${board.from}&to=${board.day}`)
   const sum = (of) => board.columns.reduce((total, column) => total + (of(column) ?? 0), 0)
   const [people, late, fresh, moved] = [sum((column) => column.people), sum((column) => column.late), sum((column) => column.fresh), sum((column) => column.done)]
   const pick = el('select', { on: { change: () => go(`#/board/${pick.value}`) } }, ...PERIODS.map(([value, text]) => el('option', { value, ...(value === board.days && { selected: '' }) }, text)))
@@ -40,5 +52,12 @@ view('board', 'Board', async (box, days = '90') => {
       el('p', { class: 'counts' }, ...counts.map((count, i) => count ? el('span', i === 2 ? { class: 'apart' } : {}, count) : '')), lane,
       column.people > column.rows.length ? el('p', { class: 'muted board-foot' }, `${amount(column.rows.length)} of ${amount(column.people)}`) : '')
   })
+  if (texts.length > 0) {
+    // Beside the missed calls, which wait for the same people to be reached.
+    const missed = board.columns.findIndex((column) => column.step === null)
+    columns.splice(missed + 1, 0, el('section', { 'aria-label': 'Unanswered texts' }, el('h2', {}, term('Unanswered texts', 'textsColumn')),
+      el('p', { class: 'counts' }, el('span', {}, `${amount(texts.length)}${further ? '+' : ''} ${texts.length === 1 ? 'person' : 'people'}`)),
+      el('div', { class: 'scroll', tabindex: 0, role: 'region', 'aria-label': 'Unanswered texts: people' }, el('ol', { role: 'list' }, ...texts.map((text) => unanswered(text, board.at))))))
+  }
   box.append(el('div', { class: 'board wide', tabindex: 0, role: 'region', 'aria-label': 'Columns' }, ...columns))
 }, { every: 60_000 })

@@ -53,7 +53,7 @@ test('every scene of the demo runs, says what came of it within a second, and ca
     [/Step recorded: signed/, column('signed')],
     [/Step recorded: scheduled, director ortega/, column('scheduled')],
     [/Outbound call answered/, (text) => (text.includes('Duration 1,290 s') ? 'called' : '')],
-    [/Not opened yet/, () => 'nothing yet'],
+    [/Text recorded.*Not opened yet/, (text) => `${text.match(/\nText\nSent/g)?.length ?? 0} texts`],
     [/Payment recorded: 400 USD\. Advertised: north\. Served: river\. Attributed to Busqueda: North at 92%/, (text) => step('client', '400 USD')(text) && `${/office served: river/.test(text)} ${/director: ortega/.test(text)}`],
     [/Sent to the sample ad platform: 400 USD, for the first ad click/, (text) => (/client · 400 USD[^]{0,120}Sent to google/.test(text) ? 'sent' : '')],
     [/Initial value 400 USD, current value 1250 USD.*ad platform: 1250 USD/, (text) => (text.includes('from 400 USD to 1,250 USD') ? 'restated' : '')],
@@ -77,8 +77,8 @@ test('every scene of the demo runs, says what came of it within a second, and ca
     assert.equal(await run(`document.body.classList.contains('with-phone')`), i < 13)
     assert.equal(await run(`document.getElementById('stage-light').classList.contains('on')`), Boolean(scenes[i]!.spot), `scene ${i + 1} lights its row`)
     const after = seen(await view(links[i]!))
-    // A link that was made and not opened changes nothing.
-    if (scenes[i]!.title.endsWith('texted')) assert.equal(after, before)
+    // A link that was made and not opened changes nothing in the account.
+    if (scenes[i]!.title === 'Form texted') assert.equal(after, before)
     else assert.ok(after && after !== before, `scene ${i + 1} shows on its view: ${JSON.stringify([before, after])}`)
   }
   // There is nothing after the last.
