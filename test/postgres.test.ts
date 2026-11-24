@@ -4,6 +4,7 @@ import pg from 'pg'
 import { createGraph, recordCall } from '../src/index.ts'
 import { createPostgresStore, upgrades } from '../src/postgres.ts'
 import { serve } from '../src/serve.ts'
+import { malformedSuite } from './malformed.suite.ts'
 import { opsSuite } from './ops.suite.ts'
 import { outboxSuite } from './outbox.suite.ts'
 import { counts, suite } from './suite.ts'
@@ -237,4 +238,5 @@ if (!url) {
   suite('postgres store', open, 400)
   outboxSuite('postgres store', open)
   opsSuite('postgres store', open)
+  malformedSuite('postgres store', open)
 }

@@ -110,6 +110,7 @@
 
 - A reviewer's `restore` of an identifier the line check or the address lookup had muted stands after a restart (`Deciding.automatic`).
 - `touch` takes text only, in the fields a touch has; a field nested thousands deep no longer answers 500. `separate`, `join`, `ignore`, `forget`, `outcome`, `restate`, `consent` and `spend` refuse text the database cannot keep.
+- A body nested more than 32 levels answers 400; one nested thousands deep answered 500 on `/observe`, `/ignore`, `/link`, `/staff-link` and `/costs`.
 - JSON answers are not stored by browsers or proxies (`no-store`, `nosniff`).
 - `tools/export.ts` writes no cell a spreadsheet would run as a formula.
 - The reviewer screen's question stays open, with what was typed, when a decision could not be saved.

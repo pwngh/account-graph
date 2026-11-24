@@ -947,20 +947,23 @@ async function json(request: IncomingMessage): Promise<any> {
 
 function parsed(sent: string): any {
   const body = JSON.parse(sent)
-  // Only an escape can spell what cannot be kept, so a body without one is not searched.
-  if (sent.includes('\\u')) storable(body)
+  storable(body)
   return body
 }
 
-/** Refuses a value that holds, at any depth, text the database cannot keep. */
+/** How many levels a body may have. The deepest a route takes has four. */
+const LEVELS = 32
+
+/** Refuses a value that holds text the database cannot keep, or that is nested so deep that reading it as text would fail. */
 function storable(value: unknown): void {
   // A list and not recursion: a body can be nested deeper than the stack.
-  const left = [value]
+  const left: [unknown, number][] = [[value, 0]]
   while (left.length > 0) {
-    const each = left.pop()
+    const [each, level] = left.pop()!
     if (typeof each === 'string' && UNSTORABLE.test(each)) throw new Refusal(400, 'Text may not hold a NUL or half of a character')
     if (typeof each !== 'object' || each === null) continue
-    for (const [key, inner] of Object.entries(each)) left.push(key, inner)
+    if (level >= LEVELS) throw new Refusal(400, `A body may have ${LEVELS} levels at most`)
+    for (const [key, inner] of Object.entries(each)) left.push([key, level + 1], [inner, level + 1])
   }
 }
 
