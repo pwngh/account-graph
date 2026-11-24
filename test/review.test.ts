@@ -274,7 +274,9 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
     await run(`(() => { const all = views.get('accounts'), real = all.show; all.show = async (...given) => { all.show = real; await new Promise((resolve) => (window.release = resolve)); if (${broken}) throw new Error('the view broke'); return real(...given) }; notice(''); load(); document.getElementById('find').requestSubmit() })()`)
     await until('its answer', async () => (await text('#notice')).includes('No results'))
     assert.ok((await run(`opening`)) > 0)
-    await run(`window.release()`)
+    // The answer can come before the view is asked for what it shows.
+    await until('the view to be asked', () => run(`Boolean(window.release)`))
+    await run(`(() => { window.release(); window.release = undefined })()`)
     await until('it to open', () => run(`opening === 0`))
     assert.match(await text('#notice'), /No results/)
     assert.equal(await run(`document.getElementById('subject').value`), 'typed meanwhile')
