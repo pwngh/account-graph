@@ -11,3 +11,8 @@ http://127.0.0.1:8080/attribute?subject=account:1&at=1
 http://127.0.0.1:8080/clusters?offset=0
 http://127.0.0.1:8080/decisions?limit=5&before=9&author=people
 http://127.0.0.1:8080/report?from=2026-01-01&to=2026-01-02&tz=UTC
+http://127.0.0.1:8080/call?id=a
+http://127.0.0.1:8080/calls?from=2026-01-01&to=2026-01-02&tz=UTC&after=1
+http://127.0.0.1:8080/calls/summary?from=2026-01-01&to=2026-01-02&tz=UTC
+http://127.0.0.1:8080/conversions?state=failed
+http://127.0.0.1:8080/conversion?id=a
