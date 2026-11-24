@@ -57,6 +57,13 @@
 - The reviewer screen has a view per address (`/review#/accounts/…`, `/review#/channels/…`), keyboard-operable pictures, and tables that scroll inside their own box.
 - `GET /pulse` answers `{ version }` with an `etag`, and 304 until something is written (`graph.version`); the reviewer screen reads a view again only then.
 - `GET /report` names the `timeZone` its days are in.
+- `POLICY` or `POLICY_FILE` lays your weights, caps and half-lives over the default policy (`policyFrom`, `policyProblems`); a problem stops the server at start.
+- `graph.policy()`, `GET /policy`, `GET /stats` and the reviewer screen's Health view say when the running policy is not the one the stored clusters were built with; `POST /rebuild` recomputes them.
+
+### Changed
+
+- Breaking: `GET /verify` answers `{ changes, policy }`, not a list.
+- A server whose database holds an identifier of a kind the policy does not name refuses to start.
 
 ### Fixed
 

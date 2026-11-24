@@ -74,6 +74,34 @@ if (!url) {
     }
   })
 
+  test('a database from before the policy was recorded is due a rebuild, and a kind with no rule stops the server', async () => {
+    const schema = `ag_test_${process.pid}_policy`
+    const env = { DATABASE_URL: url, GRAPH_SCHEMA: schema, GRAPH_TOKEN: 'service', REVIEW_TOKEN: 'review', PORT: '0', HOST: '127.0.0.1' }
+    try {
+      const old = await madeBefore(schema, 6)
+      await pool.query(`insert into ${schema}.subject values ('account:1', 'account:1', 'account:1');
+        insert into ${schema}.edge values ('account:1', 'badge:7', 1, 1, 1); insert into ${schema}.identifier values ('badge:7', 1)`)
+      await old.migrate()
+      await assert.rejects(serve(env, () => {}), /identifiers of kind "badge" are stored, and the policy names no such kind/)
+      const lines: string[] = []
+      const running = await serve({ ...env, POLICY: '{"kinds":{"badge":{"weight":0.5,"dilution":0,"cap":3,"halfLife":"none"},"phone":{"weight":0.85}}}' }, (line) => lines.push(line))
+      try {
+        assert.ok(lines.some((line) => /^policy [0-9a-f]{12} from settings; .*rebuild is due/.test(line)), lines.join('\n'))
+        const ask = (path: string, token: string, body?: object) => fetch(`http://127.0.0.1:${running.port}${path}`, { method: body ? 'POST' : 'GET', headers: { authorization: `Bearer ${token}` }, ...(body && { body: JSON.stringify(body) }) })
+        const policy = (await (await ask('/policy', 'review')).json()) as any
+        assert.deepEqual([policy.builtWith, policy.due, policy.changed, policy.rules.kinds.badge], [null, true, ['badge', 'phone'], { weight: 0.5, dilution: 0, cap: 3, halfLife: 'none' }])
+        assert.equal((await ask('/rebuild', 'review', {})).status, 403)
+        assert.equal((await ask('/rebuild', 'service', { by: 'ops', reason: 'new weights' })).status, 200)
+        assert.deepEqual((await (await ask('/verify', 'service')).json()) as any, { changes: [], policy: { hash: policy.hash, builtWith: policy.hash, due: false } })
+        assert.equal(((await (await ask('/stats', 'service')).json()) as any).policy.due, false)
+      } finally {
+        await running.close()
+      }
+    } finally {
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
+
   test('the server starts from the environment alone and serves a visit end to end', async () => {
     const schema = `ag_test_${process.pid}_serve`
     const lines: string[] = []

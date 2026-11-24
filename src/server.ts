@@ -15,6 +15,7 @@ import type { IpLookup } from './integrations/maxmind.ts'
 import type { Outbox } from './outbox.ts'
 import { withStage } from './ladder.ts'
 import type { Ladder } from './ladder.ts'
+import { defaultPolicy, plainPolicy } from './policy.ts'
 import { reviewPage } from './review.ts'
 import { browserMark, knownLink, readToken, signToken } from './sign.ts'
 import { browserScripts, scriptHeaders } from './tag.ts'
@@ -113,7 +114,7 @@ const NAME = /^[\w.-]{1,64}$/
 /** What the reviewer token opens: what the reviewer screen reads, and the decisions a reviewer makes. */
 const REVIEW_ROUTES = new Set([
   'GET /subject', 'GET /clusters', 'GET /search', 'GET /recent', 'GET /links', 'GET /cluster', 'GET /history', 'GET /flows', 'GET /collusion', 'GET /rings',
-  'GET /decisions', 'GET /audit', 'GET /report', 'GET /pulse', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
+  'GET /decisions', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
 ])
 
 /** A route that wrote its own answer. */
@@ -424,7 +425,13 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     return { changes, identifiers, notes }
   }
 
-    /** Everything the reviewer screen shows about one subject, in one answer. */
+    /** Which policy runs, which one the stored clusters were built with, and whether a rebuild is due. */
+  const policyDue = async () => {
+    const { hash, builtWith, due } = await graph.policy()
+    return { hash, builtWith: builtWith ?? null, due }
+  }
+
+  /** Everything the reviewer screen shows about one subject, in one answer. */
   async function profile(subject: Subject) {
     const cluster = await graph.cluster(subject)
     if (!cluster) return { subject, known: false }
@@ -584,10 +591,19 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return graph.history(subject)
       case 'GET /attribute':
         return graph.attribute(subject, { at: Number(url.searchParams.get('at') ?? now()) })
+      case 'GET /policy': {
+        const { builtWith, ...state } = await graph.policy()
+        const standard = plainPolicy(defaultPolicy)
+        return { ...state, builtWith: builtWith ?? null, changed: Object.keys(state.rules.kinds).filter((kind) => JSON.stringify(state.rules.kinds[kind]) !== JSON.stringify(standard.kinds[kind])) }
+      }
+      case 'POST /rebuild': {
+        const body = await json(request)
+        return graph.rebuild(why(body))
+      }
       case 'GET /verify':
-        return graph.verify()
+        return { changes: await graph.verify(), policy: await policyDue() }
       case 'GET /stats':
-        return { ...tally, graph: await graph.counts(), ...(options.outbox && { outbox: await options.outbox.counts() }) }
+        return { ...tally, policy: await policyDue(), graph: await graph.counts(), ...(options.outbox && { outbox: await options.outbox.counts() }) }
       case 'POST /prune': {
         const body = await json(request)
         return { pruned: await graph.prune(body.before, why(body)) }

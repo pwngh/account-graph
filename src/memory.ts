@@ -24,6 +24,7 @@ export function createMemoryStore(): Store {
   const costs = new Map<string, Required<Cost>>()
   const moves: Moved[] = []
   let writes = 0
+  let built: string | undefined
 
   const index = (groups: Map<Subject, Set<Subject>>, key: Subject, subject: Subject) => {
     const group = groups.get(key)
@@ -181,6 +182,22 @@ export function createMemoryStore(): Store {
 
     async recentChanges(limit) {
       return moves.slice(Math.max(0, moves.length - limit)).reverse().map((move) => ({ ...move }))
+    },
+
+    async empty() {
+      return labels.size === 0
+    },
+
+    async builtWith() {
+      return built
+    },
+
+    async setBuiltWith(hash) {
+      built = hash
+    },
+
+    async kinds() {
+      return [...new Set([...byIdentifier.keys()].map((identifier) => identifier.slice(0, identifier.indexOf(':'))))].sort()
     },
 
     async allLabels() {

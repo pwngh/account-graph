@@ -1,7 +1,7 @@
 import { brokenAt, seal } from './audit.ts'
 import type { Labeled } from './calibrate.ts'
 import { createMemoryStore } from './memory.ts'
-import { defaultPolicy, ruleFor, usable } from './policy.ts'
+import { defaultPolicy, plainPolicy, policyHash, ruleFor, usable } from './policy.ts'
 import type { Policy } from './policy.ts'
 import { dayStart, fold, nextDay } from './report.ts'
 import { partition, scorePairs } from './resolve.ts'
@@ -159,14 +159,45 @@ export interface Graph {
    * what they folded. `history` and `asOf` lose what was deleted. Returns how many went.
    */
   prune(before: number, why?: Why): Promise<number>
+  /**
+   * The policy this graph runs, and whether the stored clusters were built
+   * with it. `due` means they were not, or that it is not known: call `rebuild`.
+   */
+  policy(): Promise<PolicyState>
   /** Compares stored clusters with a full recompute. Empty when they agree. */
   verify(): Promise<Change[]>
 }
 
+export interface PolicyState {
+  /** Names the running policy. Two policies that score and cluster alike have the same hash. */
+  hash: string
+  /** The hash the stored clusters were built with, `mixed` when more than one policy has written them, or undefined when it was not recorded. */
+  builtWith: string | undefined
+  due: boolean
+  /** The running policy as plain JSON, with a half-life that never ends written `none`. */
+  rules: ReturnType<typeof plainPolicy>
+}
+
 const DAY = 86_400_000
+const MIXED = 'mixed'
 const pairKey = (a: Subject, b: Subject) => (a < b ? `${a}\u0000${b}` : `${b}\u0000${a}`)
 
 export function createGraph(store: Store, policy: Policy = defaultPolicy, options: GraphOptions = {}): Graph {
+  const hash = policyHash(policy)
+  let marked = false
+  /**
+   * Notes which policy the clusters are being written with: this one for a
+   * new database, and more than one when another has written them already.
+   * Asked of the database until it says the clusters are this policy's own,
+   * and then not again.
+   */
+  async function mark(tx: Tx): Promise<void> {
+    if (marked) return
+    const before = await tx.builtWith()
+    if (before === hash) marked = true
+    else if (before !== MIXED) await tx.setBuiltWith(before === undefined && (await tx.empty()) ? hash : MIXED)
+  }
+
   /** Components and clusters of the given subjects, from their edges and the reviewer's separations. */
   async function compute(tx: Tx, subjects: readonly Subject[]): Promise<Map<Subject, Labels>> {
     const edges = await tx.edgesOf(subjects)
@@ -184,6 +215,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
    * components, which is why components, not clusters, bound the work.
    */
   async function settle(tx: Tx, affected: ReadonlySet<Subject>): Promise<Change[]> {
+    await mark(tx)
     const own = await tx.labelsOf([...affected])
     const stored = await tx.membersOf(unique([...own.values()].map((labels) => labels.component)))
     return apply(tx, stored, await compute(tx, [...stored.keys()]))
@@ -327,6 +359,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
   /** Writes sightings and recomputes the clusters they can affect. */
   async function record(tx: Tx, sightings: readonly Sighting[]): Promise<Change[]> {
+    await mark(tx)
     const added = await tx.addSightings(sightings)
     const touched = unique(sightings.map((sighting) => sighting.identifier))
     const states = await tx.states(touched)
@@ -642,6 +675,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     rebuild(why) {
       return changing(async (tx) => {
         await decide(tx, 'rebuild', [], why)
+        await tx.setBuiltWith(hash)
         return apply(tx, await tx.allLabels(), await recompute(tx))
       })
     },
@@ -678,6 +712,13 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         if (action === 'separate' || action === 'rejoin') await past.separate(about[0]!, about[1]!, action === 'separate')
       }
       return past
+    },
+
+    policy() {
+      return store.read(async (tx) => {
+        const builtWith = await tx.builtWith()
+        return { hash, builtWith, due: builtWith !== hash && !(await tx.empty()), rules: plainPolicy(policy) }
+      })
     },
 
     verify() {

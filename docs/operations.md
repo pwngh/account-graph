@@ -108,16 +108,33 @@ Open `/review` and enter a token. Each view has an address of its own, so it can
 | `/review#/accounts/account:42` | One subject: its cluster, its ties and why, its money, its sightings. |
 | `/review#/channels` | What each campaign cost and brought in, over the last 30 days. |
 | `/review#/channels/2026-11-01/2026-11-30` | The same, for the days named. |
+| `/review#/health` | The running policy by kind, and a banner when a rebuild is due. |
 
 Every ten seconds the screen asks one small question, whether anything was written since it last looked, and reads the view again only when the answer is yes. It does not ask while its tab is hidden, and it does not redraw while someone is typing in the view or answering a question.
+
+## The policy
+
+The server runs the default weights, caps and half-lives until you name something different. Name only what differs; the rest stays as it is.
+
+```sh
+POLICY='{"kinds":{"phone":{"weight":0.85,"halfLife":63072000000}}}' npm start
+```
+
+A longer one goes in a file named by `POLICY_FILE`. [How it decides](deciding.md) says what each part of a rule does. A new kind needs all four parts, and a half-life that never ends is written `"none"`.
+
+> **A changed policy needs a rebuild.** Scores follow the new policy at once. Stored clusters stay as they were, and new writes mix the two, until someone posts to `/rebuild` with the service token.
+
+The server stores a hash of the policy the clusters were built with. When the running one differs, the start log, `GET /stats`, `GET /verify` and the Health view say that a rebuild is due. A database from before the hash was kept says so too, because which policy built it is not known.
+
+A setting the server cannot use stops it at start, with a line for each problem. So does a stored identifier whose kind the policy does not name, such as a kind of your own that was taken out of the setting.
 
 ## Watching it
 
 | Route | Token | Answers |
 | --- | --- | --- |
 | `GET /health` | none | `{"ok":true}` once the database answers. Use it for a load balancer's check. |
-| `GET /stats` | service | Visits collected, visits refused by the limit, visits from declared bots, and errors since start; what the graph holds; outbox jobs by state. |
-| `GET /verify` | service | The subjects whose stored cluster differs from a full recompute. Empty when sound. It reads every edge. |
+| `GET /stats` | service | Visits collected, visits refused by the limit, visits from declared bots, and errors since start; what the graph holds; whether a rebuild is due; outbox jobs by state. |
+| `GET /verify` | service | `{ changes, policy }`. `changes` lists the subjects whose stored cluster differs from a full recompute, and is empty when sound. It reads every edge. |
 
 Set `ALERT_WEBHOOK` to a Slack incoming webhook, or anything that takes `{"text": "…"}`, and the server posts there when something needs a person:
 
@@ -153,6 +170,7 @@ On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes i
 | `OUTBOX_DELAY_MS` | `0` | How long to hold a new outcome before its first send. |
 | `CHANGE_WEBHOOK` | none | A URL to post cluster changes to. |
 | `ALERT_WEBHOOK` | none | A URL to post failures to, as `{"text": "…"}`. |
+| `POLICY`, `POLICY_FILE` | the default policy | What differs from it, as JSON or as a file of JSON. Set one at most. |
 | `STAGES` | none | Your steps in order, as JSON, each with a `value`, `currency` and `action`. See [the report](report.md#steps-and-what-each-is-worth). |
 | `LINK_SECRET` | none | Signs links that name a person, and the tokens that carry a visitor between your sites. At least 16 characters. |
 | `EVENTS` | none | Names of page events to keep, separated by commas: `inquiry,phone_click`. |

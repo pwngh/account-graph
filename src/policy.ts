@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { Edge, Identifier, IdentifierState, Reason } from './types.ts'
 
 export interface Rule {
@@ -81,9 +82,79 @@ export const defaultPolicy: Policy = {
     dial: { weight: 0.92, dilution: 0, cap: 2, halfLife: Infinity },
     // A note, not evidence: where an address places a visit. It links nothing.
     place: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
-        // A note, not evidence: the number a visitor tapped, or a call that was recorded. It links nothing.
+    // A note, not evidence: the number a visitor tapped, or a call that was recorded. It links nothing.
     dialed: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
   },
+}
+
+/** The kinds that are notes. The graph counts on them linking nothing, so a setting may not give them weight. */
+const NOTES = new Set(['opened', 'place', 'dialed'])
+const LEVELS = ['same', 'related', 'bridge'] as const
+const FIELDS = ['weight', 'dilution', 'cap', 'halfLife'] as const
+
+/** What is wrong with a policy read from a setting, one line each. The setting only needs what differs from the default. */
+export function policyProblems(given: unknown): string[] {
+  const plain = (value: unknown): value is Record<string, any> => Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+  if (!plain(given)) return ['must be an object, such as {"kinds":{"phone":{"weight":0.85}}}']
+  const wrong: string[] = []
+  const number = (value: unknown, least: number, most: number) => typeof value === 'number' && value >= least && value <= most
+  for (const name of Object.keys(given)) if (name !== 'kinds' && name !== 'review' && !(LEVELS as readonly string[]).includes(name)) wrong.push(`"${name}" is not a setting`)
+  for (const name of LEVELS) if (given[name] !== undefined && !number(given[name], 0, 1)) wrong.push(`"${name}" must be a number from 0 to 1`)
+  if (given.review !== undefined && !(Number.isSafeInteger(given.review) && given.review > 0)) wrong.push('"review" must be a whole number above 0')
+  if (given.kinds !== undefined && !plain(given.kinds)) wrong.push('"kinds" must be an object of rules')
+  else {
+    for (const [kind, rule] of Object.entries(given.kinds ?? {})) {
+      const base = Object.hasOwn(defaultPolicy.kinds, kind)
+      if (!base && !/^[a-z][a-z0-9_]{0,31}$/.test(kind)) wrong.push(`kind "${kind}" must be lowercase letters, digits and underscores, at most 32`)
+      if (!plain(rule)) {
+        wrong.push(`kind "${kind}" must be an object, such as {"weight":0.85}`)
+        continue
+      }
+      for (const name of Object.keys(rule)) if (!(FIELDS as readonly string[]).includes(name)) wrong.push(`kind "${kind}" has "${name}", which is not part of a rule`)
+      if (!base) for (const name of FIELDS) if (rule[name] === undefined) wrong.push(`kind "${kind}" is new, so it needs its ${name}`)
+      if (rule.weight !== undefined && !number(rule.weight, 0, 1)) wrong.push(`kind "${kind}" needs a weight from 0 to 1`)
+      if (rule.dilution !== undefined && !number(rule.dilution, 0, 10)) wrong.push(`kind "${kind}" needs a dilution from 0 to 10`)
+      if (rule.cap !== undefined && !(Number.isSafeInteger(rule.cap) && rule.cap >= 0)) wrong.push(`kind "${kind}" needs a cap of zero or more, in whole subjects`)
+      if (rule.halfLife !== undefined && rule.halfLife !== 'none' && !(number(rule.halfLife, 0, Number.MAX_VALUE) && rule.halfLife > 0)) wrong.push(`kind "${kind}" needs a halfLife in milliseconds, or "none"`)
+      if (NOTES.has(kind) && rule.weight) wrong.push(`kind "${kind}" is a note and links nothing, so its weight must stay 0`)
+    }
+  }
+  if (wrong.length > 0) return wrong
+  const policy = policyFrom(given)
+  if (policy.related > policy.same) wrong.push('"related" must not be above "same"')
+  const { review } = policy.kinds
+  if (review!.weight < policy.same || review!.dilution > 0 || review!.cap < 2) wrong.push('kind "review" is a reviewer\'s join, so it must join on its own: a weight of at least "same", no dilution, a cap of at least 2')
+  return wrong
+}
+
+/** The default policy with what a setting names laid over it, kind by kind. Check the setting with `policyProblems` first. */
+export function policyFrom(given: any): Policy {
+  const kinds: Record<string, Rule> = { ...defaultPolicy.kinds }
+  for (const [kind, { halfLife, ...rule }] of Object.entries<any>(given.kinds ?? {})) {
+    kinds[kind] = { ...kinds[kind], ...rule, ...(halfLife !== undefined && { halfLife: halfLife === 'none' ? Infinity : halfLife }) }
+  }
+  const levels = Object.fromEntries([...LEVELS, 'review'].filter((name) => given[name] !== undefined).map((name) => [name, given[name]]))
+  return { ...defaultPolicy, ...levels, kinds }
+}
+
+/** A policy as plain JSON: kinds in name order, and a half-life that never ends written `none`. */
+export function plainPolicy(policy: Policy) {
+  const kinds = Object.entries(policy.kinds).sort(([x], [y]) => (x < y ? -1 : 1))
+  return {
+    same: policy.same,
+    related: policy.related,
+    bridge: policy.bridge,
+    review: policy.review,
+    kinds: Object.fromEntries(
+      kinds.map(([kind, { weight, dilution, cap, halfLife }]) => [kind, { weight, dilution, cap, halfLife: Number.isFinite(halfLife) ? halfLife : ('none' as const) }]),
+    ),
+  }
+}
+
+/** The same for two policies exactly when they score and cluster alike. What only flags, `review`, is not part of it. */
+export function policyHash(policy: Policy): string {
+  const { review: _, ...rest } = plainPolicy(policy)
+  return createHash('sha256').update(JSON.stringify(rest)).digest('hex')
 }
 
 export function ruleFor(policy: Policy, identifier: Identifier): Rule {
