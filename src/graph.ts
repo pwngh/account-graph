@@ -13,7 +13,7 @@ import { UNSTORABLE } from './identifiers.ts'
 import { CLICK_IDS, checkTouch } from './touch.ts'
 import { createMemoryStore } from './memory.ts'
 import type { Job } from './outbox.ts'
-import { defaultPolicy, evidence, plainPolicy, policyHash, ruleFor, usable, weigh } from './policy.ts'
+import { UNNAMED, defaultPolicy, evidence, plainPolicy, policyHash, ruleFor, usable, weigh } from './policy.ts'
 import type { Policy } from './policy.ts'
 import { dayIn, dayStart, dimension, fold, nextDay } from './report.ts'
 import type { Credited } from './report.ts'
@@ -1950,7 +1950,14 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const within = new Set(members)
         const links = new Map<Subject, Link>()
         const reached = await reach(tx, members, 2, undefined, links)
-        const strong = [...reached].filter(([, { confidence }]) => confidence >= policy.same).map(([each]) => each)
+        const tied = [...reached].filter(([each, { confidence }]) => confidence >= policy.same && !within.has(each)).map(([each]) => each)
+        // Whoever is in a group with somebody named is that person's, however strong the tie: one person's record shows nothing of another's.
+        const homes = await tx.labelsOf(tied)
+        const unnamed = new Set(policy.unnamed ?? UNNAMED)
+        const isNamed = (each: Subject) => !unnamed.has(each.slice(0, Math.max(0, each.indexOf(':'))))
+        const others = new Set<Subject>()
+        for (const cluster of unique([...homes.values()].map((label) => label.cluster))) if ((await tx.clusterOf(cluster)).some(isNamed)) others.add(cluster)
+        const strong = tied.filter((each) => !isNamed(each) && !others.has(homes.get(each)?.cluster ?? each))
         const everyone = unique([subject, ...members, ...strong.sort()])
         const people = everyone.slice(0, MOST)
         // Inside the cluster a tie is the best chain from the subject asked about, however long.

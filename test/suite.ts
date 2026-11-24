@@ -1823,18 +1823,18 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(asked.entries.map((entry) => entry.subject), ['w:1', 'w:2', 'w:3', 'w:4'])
       assert.deepEqual([asked.subjects['w:4']!.how, asked.subjects['w:4']!.via, asked.subjects['w:4']!.kinds], ['cluster', ['w:1', 'w:2', 'w:3'], ['device']])
       assert.ok(asked.subjects['w:4']!.score! > 0.8)
-      // Four of one person, and y kept apart from one of them, with a cut between. x is tied to one of the four only, and z best through y.
+      // Four of one person, and a browser y kept apart from one of them, with a cut between, and nobody named on the other side. x is tied to one of the four only, and z best through y.
       for (const each of ['a:1', 'a:2', 'a:3', 'a:4']) await see(each, 'device:a', 'email:a')
       await see('a:1', 'device:y', 'device:z')
-      await see('y', 'device:y', 'email:yz', 'device:yz')
-      await see('z', 'device:z', 'email:yz', 'device:yz')
-      await see('x', 'device:yz', 'device:x')
+      await see('visitor:y', 'device:y', 'email:yz', 'device:yz')
+      await see('visitor:z', 'device:z', 'email:yz', 'device:yz')
+      await see('visitor:x', 'device:yz', 'device:x')
       await see('a:4', 'device:x')
-      await graph.separate('a:2', 'y', true)
-      assert.notEqual((await graph.cluster('a:1'))!.id, (await graph.cluster('z'))!.id)
+      await graph.separate('a:2', 'visitor:y', true)
+      assert.notEqual((await graph.cluster('a:1'))!.id, (await graph.cluster('visitor:z'))!.id)
       const people = async (subject: string) => Object.keys((await graph.journey(subject)).subjects).sort()
-      for (const each of ['a:1', 'a:2', 'a:3', 'a:4']) assert.deepEqual(await people(each), ['a:1', 'a:2', 'a:3', 'a:4', 'x', 'z'])
-      assert.deepEqual((await graph.journey('a:3')).subjects.x!.via, ['a:4'])
+      for (const each of ['a:1', 'a:2', 'a:3', 'a:4']) assert.deepEqual(await people(each), ['a:1', 'a:2', 'a:3', 'a:4', 'visitor:x', 'visitor:z'])
+      assert.deepEqual((await graph.journey('a:3')).subjects['visitor:x']!.via, ['a:4'])
       // A sighting called after a call or a review that no call or decision tells stays.
       await graph.observe({ subject: 'w:1', identifiers: ['device:12'], at: T0 + 1, event: 'call' })
       await graph.observe({ subject: 'w:1', identifiers: ['device:12'], at: T0 + 2, event: 'review' })
@@ -2672,6 +2672,20 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
         else await graph.forget(subject)
         if (i % 10 === 9) assert.deepEqual(await graph.verify(), [])
       }
+    })
+
+    test('a journey shows nothing of a person in another group, however strong the tie to them', async () => {
+      const { graph } = await fresh()
+      // One phone between two people, who each have a second record. One weak link joins no two such groups.
+      for (const n of [1, 2]) await graph.observe([{ subject: `contact:${n}`, identifiers: [`device:${n}`, 'phone:p'], at: T0 }, { subject: `account:${n}`, identifiers: [`device:${n}`], at: T0 }])
+      await graph.outcome({ transactionId: 'two', subject: 'contact:2', at: T0 + 1, stage: 'secret' })
+      assert.equal((await graph.links('contact:1')).find((link) => link.subject === 'contact:2')!.level, 'same')
+      const of = async (subject: string) => [...new Set((await graph.journey(subject)).entries.flatMap((entry) => ('subject' in entry ? [entry.subject] : [])))].sort()
+      assert.deepEqual(await of('contact:1'), ['account:1', 'contact:1'])
+      assert.deepEqual(await of('contact:2'), ['account:2', 'contact:2'])
+      // A browser of theirs is theirs too, and one that is nobody else's is shown.
+      await graph.observe([{ subject: 'visitor:2', identifiers: ['device:2', 'phone:p'], at: T0 }])
+      assert.deepEqual(await of('contact:1'), ['account:1', 'contact:1'])
     })
 
     test('several subjects are forgotten together, or none is', async () => {
