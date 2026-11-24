@@ -510,6 +510,7 @@ function graphOf(profile, more) {
     // A drag is no first press of two.
     tapped = undefined
     drawn.still = 0
+    root.classList.remove('waiting')
     // What is being moved stays still on the paper otherwise, so the view does not slide under the hand.
     drawn.camera = { ...drawn.camera, held: true }
     if (!grip.node) {
