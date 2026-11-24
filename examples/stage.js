@@ -47,7 +47,7 @@
       for (;;) {
         await wait(400)
         const now = await fetch('/stage/scenes').then((answer) => answer.json()).catch(() => undefined)
-        if (now && now.boot !== boot) break
+        if (now && now.boot !== boot && now.ready) break
       }
       history.replaceState(null, '', location.pathname)
       location.reload()
@@ -58,10 +58,10 @@
       draw()
     }
   }
-  let starting = false
+  let starting = true
   const draw = () => {
     where.textContent = at ? `${at} of ${scenes.length}` : ''
-    title.textContent = at ? scenes[at - 1].title : `${scenes.length} scenes`
+    title.textContent = at ? scenes[at - 1].title : scenes.length ? `${scenes.length} scenes` : ''
     const over = at > 0 && at >= scenes.length
     button.disabled = running || starting || over
     button.hidden = over
@@ -239,7 +239,18 @@
   // A press on the call button of the page in the phone is the second scene.
   addEventListener('message', ({ origin, data }) => { if (origin === new URL(STAGE.phone).origin && data === 'call' && at === 1 && !playing) next() })
 
-  fetch('/stage/scenes').then((answer) => answer.json()).then((answer) => {
+  const look = () => fetch('/stage/scenes').then((answer) => answer.json())
+  draw()
+  look().then(async (answer) => {
+    while (!answer.ready) {
+      told.textContent = 'Loading sample data…'
+      await wait(400)
+      answer = await look().catch(() => answer)
+    }
+    // What was on screen while the data came in holds only part of it.
+    if (told.textContent) load()
+    told.textContent = ''
+    starting = false
     ;({ scenes, next: at, boot } = answer)
     if (at < PHONE.length) {
       document.body.classList.add('with-phone')

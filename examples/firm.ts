@@ -95,12 +95,12 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
     response.setHeader('x-demo-ahead', ahead)
     const path = `${request.method} ${new URL(request.url ?? '/', 'http://localhost').pathname}`
     const json = (status: number, body: object) => void response.writeHead(status, { 'content-type': 'application/json', 'x-demo-ahead': ahead }).end(JSON.stringify(body))
-    if (path === 'GET /stage/scenes') return json(200, { boot, next, scenes: scenes.map(({ title, text, see, stage, spot }) => ({ title, text, see, stage, spot })) })
+    if (path === 'GET /stage/scenes') return json(200, { boot, ready, next, scenes: scenes.map(({ title, text, see, stage, spot }) => ({ title, text, see, stage, spot })) })
     // A page elsewhere cannot send the header, so only the stage moves the story on.
     if (path === 'POST /stage/run') return void (request.headers['x-stage'] ? runScene().then(([status, body]) => json(status, body)) : json(403, { error: 'Only the stage runs scenes' }))
     if (path === 'POST /stage/restart') {
       if (!request.headers['x-stage']) return json(403, { error: 'Only the stage starts over' })
-      if (!restart || running) return json(409, { error: restart ? 'A scene is running' : 'This demo cannot start over by itself' })
+      if (!restart || running || !ready) return json(409, { error: !restart ? 'This demo cannot start over by itself' : ready ? 'A scene is running' : 'The sample data is still loading' })
       json(202, {})
       return restart()
     }
@@ -354,11 +354,14 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
 
   /** Which start this is, so the stage sees when another has begun. */
   const boot = randomUUID()
+  /** Nothing is run until the sample data is in. */
+  let ready = false
   let next = 0
   let running = false
   /** Runs the next scene: what to answer with. */
   async function runScene(): Promise<[number, object]> {
     const scene = scenes[next]
+    if (!ready) return [409, { error: 'The sample data is still loading' }]
     if (!scene || running) return [409, { error: 'There is no next scene to run' }]
     running = true
     const began = performance.now()
@@ -393,6 +396,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
   await fill()
   // Whoever has waited since before the show is told of now, so that what is told during it is about it.
   await ops.check()
+  ready = true
   return {
     graph: graphAt,
     site: siteAt,
