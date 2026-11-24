@@ -13,6 +13,9 @@ const T0 = 1_700_000_000_000
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
 
+/** Counts and values of steps alone, for tests that are not about people or time. */
+export const counts = (stages: Record<string, { count: number; value: number }>) => Object.fromEntries(Object.entries(stages).map(([name, { count, value }]) => [name, { count, value }]))
+
 /** A small deterministic generator, so a failing fuzz run can be replayed from its seed. */
 function random(seed: number) {
   return () => {
@@ -408,22 +411,22 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       ])
       assert.deepEqual(line('google', '111'), {
         source: 'google', campaignId: '111', campaign: 'Spring sale', cost: 60.3, clicks: 42, impressions: 1300, visits: 1, missed: 0,
-        stages: { inquiry: { count: 1, value: 5 }, enrolled: { count: 1, value: 200 } }, outcomes: 2, value: 205,
+        stages: { inquiry: { count: 1, value: 5, people: 1, delay: { count: 1, median: 0.1, p95: 0.1, inside: 1 } }, enrolled: { count: 1, value: 200, people: 1, delay: { count: 1, median: 2, p95: 2, inside: 1 } } }, outcomes: 2, value: 205, people: 1,
         // Cost data for two of three days. The enrollment on the third is not set against their cost.
         costDays: 2, missingDays: 1, thin: false, costPerOutcome: 60.3, returnOnCost: 0.082919,
       })
       // The Meta touch named its campaign only by name, in another case, and its source by an alias.
       assert.deepEqual(line('meta', '777'), {
         source: 'meta', campaignId: '777', campaign: 'Retarget', cost: 15, clicks: 9, impressions: 0, visits: 1, missed: 0,
-        stages: { enrolled: { count: 1, value: 150.5 } }, outcomes: 1, value: 150.5,
+        stages: { enrolled: { count: 1, value: 150.5, people: 1, delay: { count: 1, median: 1, p95: 1, inside: 1 } } }, outcomes: 1, value: 150.5, people: 1,
         // One day of three is too few to say what anything cost.
         costDays: 1, missingDays: 2, thin: true, costPerOutcome: null, returnOnCost: null,
       })
       assert.equal(line('google', '222')!.cost, 6)
-      assert.deepEqual(line('(none)', '')!.stages, { enrolled: { count: 1, value: 200 } })
+      assert.deepEqual(counts(line('(none)', '')!.stages), { enrolled: { count: 1, value: 200 } })
       assert.deepEqual(report.total, {
         cost: 81.3, clicks: 51, impressions: 1300, visits: 3, missed: 0,
-        stages: { inquiry: { count: 2, value: 10 }, enrolled: { count: 3, value: 550.5 } }, outcomes: 5, value: 560.5,
+        stages: { inquiry: { count: 2, value: 10, people: 2, delay: { count: 2, median: 0.1, p95: 0.1, inside: 1 } }, enrolled: { count: 3, value: 550.5, people: 3, delay: { count: 2, median: 1, p95: 2, inside: 1 } } }, outcomes: 5, value: 560.5, people: 4,
         // Of the campaigns with enough cost data alone: never all spend over all outcomes.
         costDays: 2, missingDays: 1, thin: false, costPerOutcome: 60.3, returnOnCost: 0.082919,
       })
@@ -437,7 +440,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual([kiritimati.total.outcomes, kiritimati.total.visits, kiritimati.total.cost], [0, 0, 40.1])
       // And in Pago Pago, eleven hours behind, 2 March runs until 11:00 UTC on the 3rd, an hour before the enrollments.
       const pagoPago = await graph.report({ from: '2026-03-02', to: '2026-03-02', timeZone: 'Pacific/Pago_Pago' })
-      assert.deepEqual(pagoPago.total.stages, { inquiry: { count: 1, value: 5 } })
+      assert.deepEqual(counts(pagoPago.total.stages), { inquiry: { count: 1, value: 5 } })
 
       // The custom parameter came back with the touch.
       assert.deepEqual((await graph.attribute('contact:1', { at: day(2) })).credited!.custom, { placement: 'top' })
@@ -527,7 +530,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
 
       // Counted calls are outcomes of the `call` step: CA1, CA1b, CA1c, CA2, CA4, CA5, CA6, CA7.
       const report = await graph.report({ from: '2023-11-14', to: '2023-11-15' })
-      assert.deepEqual(report.total.stages, { call: { count: 8, value: 0 } })
+      assert.deepEqual(counts(report.total.stages), { call: { count: 8, value: 0 } })
       assert.equal(report.rows.find((row) => row.campaignId === '111')!.stages.call!.count, 5)
       assert.deepEqual(await graph.verify(), [])
 
@@ -588,7 +591,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const answered = await recordCall(graph, call('Q2', { at: T0 + 1000, duration: 120 }), options)
       assert.deepEqual([answered.state, answered.counted], ['answered', true])
       for (let i = 0; i < 2; i++) assert.deepEqual(await recordCallResult(graph, { id: 'Q2', answered: true, waited: 8 }, options), { state: 'answered', counted: true })
-      assert.deepEqual((await count()).stages, { call: { count: 1, value: 0 } })
+      assert.deepEqual(counts((await count()).stages), { call: { count: 1, value: 0 } })
       // How long the caller waited may be known when nothing says whether they were answered. It is kept, and it answers nothing.
       const waited = await recordCall(graph, call('Q3', { at: T0 + 2000, waited: 20 }), options)
       assert.deepEqual([waited.state, waited.counted, (await graph.callResult('Q3'))!.waited], ['waiting', false, 20])
@@ -695,6 +698,46 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       // Forgetting the caller deletes the calls you placed to them.
       await graph.forget(`caller:${hashPhone('+15550100042')}`)
       assert.equal(await graph.keptCall('O9'), undefined)
+    })
+
+    test('the report counts people beside outcomes, and says how long each step takes', async () => {
+      const NOW = Date.parse('2026-03-31T12:00:00Z')
+      const { graph } = await fresh(undefined, { now: () => NOW })
+      const visit = (n: number, daysAgo: number) => graph.touch({ subject: `visitor:${n}`, at: NOW - daysAgo * DAY, gclid: `G${n}`, campaignId: '111' })
+      const sale = (id: string, subject: string, daysAgo: number, stage = 'sale') => graph.outcome({ transactionId: id, subject, at: NOW - daysAgo * DAY, stage, value: 10 })
+      // One person under two accounts and a renewal: three sales, one person.
+      await graph.observe([{ subject: 'visitor:1', identifiers: ['device:1'], at: T0 }, { subject: 'account:1', identifiers: ['device:1', 'email:a'], at: T0 }, { subject: 'account:1b', identifiers: ['email:a'], at: T0 }])
+      await visit(1, 12)
+      await sale('a', 'account:1', 10)
+      await sale('b', 'account:1b', 9)
+      await sale('c', 'account:1', 2, 'renewal')
+      // Someone else, whose newest arrival is 100 days before their sale: outside the window, so credited to nothing and still counted as late.
+      await graph.observe([{ subject: 'visitor:2', identifiers: ['device:2'], at: T0 }, { subject: 'account:2', identifiers: ['device:2'], at: T0 }])
+      await visit(2, 105)
+      await sale('d', 'account:2', 5)
+      // And one with no arrival at all, who is not in the cluster of anyone.
+      await sale('e', 'account:3', 5)
+      const report = await graph.report({ from: '2026-03-01', to: '2026-03-31' })
+      const google = report.rows.find((row) => row.campaignId === '111')!
+      assert.deepEqual([google.outcomes, google.people, google.stages.sale!.count, google.stages.sale!.people], [3, 1, 2, 1])
+      assert.deepEqual([report.total.outcomes, report.total.people, report.total.stages.sale!.people], [5, 3, 3])
+      // Two and three days after the arrival, and a hundred: the step takes a median of three, and two in three came inside the window.
+      assert.deepEqual(report.total.stages.sale!.delay, { count: 3, median: 3, p95: 100, inside: 0.666667 })
+      assert.deepEqual(google.stages.sale!.delay, { count: 2, median: 2, p95: 3, inside: 1 })
+      // Keep the two accounts apart and they are two people again.
+      await graph.separate('account:1', 'account:1b')
+      assert.equal((await graph.report({ from: '2026-03-01', to: '2026-03-31' })).total.stages.sale!.people, 4)
+      // Three say too little of how long a step takes to call anything too recent.
+      assert.equal('filling' in report, false)
+      for (let n = 0; n < 20; n++) {
+        await graph.observe({ subject: `visitor:f${n}`, identifiers: [`device:f${n}`], at: T0 })
+        await graph.touch({ subject: `visitor:f${n}`, at: NOW - 20 * DAY, gclid: 'F', campaignId: '222' })
+        await sale(`f${n}`, `visitor:f${n}`, 20 - (n < 19 ? 4 : 6.5), 'signup')
+      }
+      const filling = async (from: string, to: string) => (await graph.report({ from, to })).filling
+      // 95 in 100 sign-ups come within four days, so arrivals of the last four have not had theirs.
+      assert.deepEqual(await filling('2026-03-12', '2026-03-30'), { after: '2026-03-27', days: 4 })
+      assert.equal(await filling('2026-03-12', '2026-03-27'), undefined)
     })
 
     test('the report is broken down by what an arrival said, what is known of an outcome, and when it happened', async () => {

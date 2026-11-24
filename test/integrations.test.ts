@@ -16,6 +16,7 @@ import { createDatabaseLookup, createMaxMindLookup, placeOf, shared } from '../s
 import { addressIdentifier, createAddressVerifier } from '../src/integrations/smarty.ts'
 import { createLineTypeLookup, fromTwilio, twilioCall, twilioSignature } from '../src/integrations/twilio.ts'
 import { createHandler } from '../src/server.ts'
+import { counts } from './suite.ts'
 
 const T0 = 1_708_102_555_327
 
@@ -732,7 +733,7 @@ test('the server takes page events and phone calls, and ties a call to the visit
 
     // Two inquiries (one a day, plus the one with its own id), one tap, one counted call, all on the campaign of the ad click.
     const report = await graph.report({ from: '2026-03-02', to: '2026-03-02' })
-    assert.deepEqual(report.rows.map((row) => [row.source, row.campaignId, row.stages]), [
+    assert.deepEqual(report.rows.map((row) => [row.source, row.campaignId, counts(row.stages)]), [
       ['google', '111', { inquiry: { count: 2, value: 0 }, phone_click: { count: 1, value: 0 }, call: { count: 1, value: 0 } }],
       // The visitors made up above arrived from no campaign, so their events are credited to nobody.
       ['(none)', '', { phone_click: { count: 4, value: 0 }, inquiry: { count: 1, value: 0 } }],
@@ -1008,7 +1009,7 @@ test('steps give page events, calls and outcomes their value and their ad platfo
     await post('/convert', { transactionId: 'other-1', subject: 'account:1', at, stage: 'brochure' })
     const report = (await (await fetch(`${base}/report?from=2026-03-02&to=2026-03-02`, { headers: { authorization: 'Bearer reviewer' } })).json()) as any
     assert.deepEqual(report.steps, ['inquiry', 'call', 'client', 'brochure'])
-    assert.deepEqual(report.total.stages, { inquiry: { count: 1, value: 5 }, call: { count: 1, value: 10 }, client: { count: 2, value: 1450 }, brochure: { count: 1, value: 0 } })
+    assert.deepEqual(counts(report.total.stages), { inquiry: { count: 1, value: 5 }, call: { count: 1, value: 10 }, client: { count: 2, value: 1450 }, brochure: { count: 1, value: 0 } })
   } finally {
     server.close()
   }

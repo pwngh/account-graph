@@ -66,6 +66,15 @@ for (const { visitors, enroll, daily, ...campaign } of campaigns) {
     if (i < enroll) await graph.outcome({ transactionId: `enrolled-${n}`, subject: `lead:${n}`, at: at + 5 * HOUR, stage: 'enrolled', value: 200, currency: 'USD', tags: { office_served: n % 2 ? 'river' : 'online' } })
   }
 }
+// Earlier customers, some of whom took weeks and some of whom came back: people beside outcomes, and time beside both.
+for (let n = 0; n < 30; n++) {
+  const at = Date.now() - (40 + n) * 24 * HOUR
+  await graph.observe([{ subject: `visitor:e${n}`, identifiers: [`device:e${n}`], at, event: 'visit' }, { subject: `lead:e${n}`, identifiers: [`device:e${n}`], at, event: 'inquiry' }])
+  await graph.touch({ subject: `visitor:e${n}`, at, gclid: `early-${n}`, campaignId: '20111' })
+  const enrolled = at + (2 + ((n * 7) % 38)) * 24 * HOUR
+  if (enrolled < Date.now()) await graph.outcome({ transactionId: `enrolled-e${n}`, subject: `lead:e${n}`, at: enrolled, stage: 'enrolled', value: 200, currency: 'USD', tags: { office_served: n % 3 ? 'north' : 'river' } })
+  if (n % 4 === 0) await graph.outcome({ transactionId: `renewed-e${n}`, subject: `lead:e${n}`, at: Date.now() - n * 12 * HOUR, stage: 'enrolled', value: 100, currency: 'USD' })
+}
 // One enrollment nobody's ad can claim.
 await graph.observe({ subject: 'lead:walk-in', identifiers: ['email:walk-in'], at: Date.now() - 2 * 24 * HOUR })
 await graph.outcome({ transactionId: 'enrolled-walk-in', subject: 'lead:walk-in', at: Date.now() - 2 * 24 * HOUR, stage: 'enrolled', value: 200, currency: 'USD' })

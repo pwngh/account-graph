@@ -182,6 +182,20 @@ A touch is filed under a source in this order: the platform of its click id, the
 | A source with no campaign | Arrivals whose address carried no campaign id or name. Add the tracking setting above. |
 | `(not recorded)` under Cost | Nobody reported a cost for that line. It may have cost nothing, or anything. |
 
+### People, and how long it takes
+
+Outcomes are counted, and so are the people they belong to. A person is a cluster: one person with two accounts is one, and a renewal is a second outcome and not a second person. Where a step's people and outcomes differ, the Channels view shows both.
+
+For each step the report says how long it takes: the days from the newest arrival to the outcome.
+
+| Field of `stages.<step>.delay` | Says |
+| --- | --- |
+| `count` | Outcomes that have an arrival in the year before them |
+| `median`, `p95` | Half came within this many days, and 95 in 100 within that many |
+| `inside` | The share that came inside the window, and so could be credited |
+
+Costs arrive the day they are spent, and outcomes days or weeks later. So the last part of a period is always short of outcomes. When the period reaches into those days, the report has `filling`, the Channels view says so, and `after` is the last day that has had its time. It is worked out from the slowest step with at least 20 timed outcomes; with fewer, nothing is said.
+
 ### What an outcome cost
 
 A cost per outcome is easy to get wrong in two ways: dividing all the money by all the clients, or by outcomes from days whose cost never arrived. So the report does neither.

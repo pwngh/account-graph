@@ -6,7 +6,7 @@ import { createPostgresStore, upgrades } from '../src/postgres.ts'
 import { serve } from '../src/serve.ts'
 import { opsSuite } from './ops.suite.ts'
 import { outboxSuite } from './outbox.suite.ts'
-import { suite } from './suite.ts'
+import { counts, suite } from './suite.ts'
 
 const url = process.env.DATABASE_URL
 
@@ -205,7 +205,7 @@ if (!url) {
       assert.deepEqual(await (await convert({ transactionId: 'enr-1', subject: 'account:1', at: Date.now(), stage: 'enrolled', value: 200 })).json(), [])
       const today = new Date().toISOString().slice(0, 10)
       const report = (await (await fetch(`${base}/report?from=${today}&to=${today}`, { headers: { authorization: 'Bearer review' } })).json()) as any
-      assert.deepEqual([report.rows[0].source, report.rows[0].stages], ['google', { enrolled: { count: 1, value: 200 } }])
+      assert.deepEqual([report.rows[0].source, counts(report.rows[0].stages)], ['google', { enrolled: { count: 1, value: 200 } }])
     } finally {
       await running.close()
       await pool.query(`drop schema if exists ${schema} cascade`)
