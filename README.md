@@ -78,7 +78,7 @@ git clone https://github.com/pwngh/account-graph && cd account-graph
 npm ci && npm run firm
 ```
 
-This starts a sample law firm with two months of data: the server, a bilingual site, and a stage with ten scenes. Press Ctrl-C to stop it and delete its data. See [Demo](docs/demo.md) for a 90-second script.
+This starts a sample law firm with two months of data: the server, a bilingual site, and a stage with nineteen scenes. Press Ctrl-C to stop it and delete its data. See [Demo](docs/demo.md) for a 90-second script.
 
 ### Example site
 
