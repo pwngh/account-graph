@@ -84,6 +84,7 @@
 - Requests with invalid UTF-8, NUL characters or more than 32 levels of nesting return 400.
 - `examples/call-tracking.ts` takes a call tracking webhook, checks its signature and posts the call. `docs/pilot.md` is a trial that sends nothing to ad platforms.
 - `OPEN_HOURS` takes `us` and `us-tx` for holidays. Spanish words ask for no more texts, and none undoes it. `POST /call/ringing` says where in Texas a number is from.
+- A `zip` tag with a Texas ZIP code adds `county`. `SERVER_RANGES_FILE` names the address ranges of data centers.
 - `npm run firm` starts a sample firm, and `npm run bench -- scale` measures large graphs.
 
 ### Reviewer screen

@@ -1,3 +1,4 @@
+import { texasCounty } from './lookups.ts'
 import type { Touch } from './types.ts'
 
 /** Facts about an outcome or a call, by name: `{ office_served: 'north', language: 'es' }`. */
@@ -21,7 +22,12 @@ export function checkTags(given: unknown, what: string): Tags | undefined {
     // It would read as a value that was never recorded.
     if (value.trim() === NOT_SET) throw new TypeError(`${what} cannot have "${NOT_SET}" as its tag "${name}"; leave the tag out`)
   }
-  return entries.length > 0 ? Object.fromEntries(entries.map(([name, value]) => [name, value.trim()])) : undefined
+  if (entries.length === 0) return undefined
+  const tags: Tags = Object.fromEntries(entries.map(([name, value]) => [name, value.trim()]))
+  // A Texas ZIP says its county, where there is one, unless you have said it.
+  // Tags of a call are checked again as its outcome's, so one is added only where there is room.
+  const county = tags.zip && !tags.county && entries.length < 8 ? texasCounty(tags.zip) : undefined
+  return county ? { ...tags, county } : tags
 }
 
 /** Names an arrival may carry a documented code under, the first one present winning: what fits in an ad's address is shorter. */

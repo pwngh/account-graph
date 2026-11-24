@@ -22,6 +22,8 @@ import type { CostSource } from './integrations/costs.ts'
 import { createFingerprintVerifier } from './integrations/fingerprint.ts'
 import { createGoogleTokens } from './integrations/google-auth.ts'
 import { createMaxMindLookup } from './integrations/maxmind.ts'
+import type { IpLookup } from './integrations/maxmind.ts'
+import { createRangeLookup } from './lookups.ts'
 import { createHours, hoursProblems } from './hours.ts'
 import type { OpenHours } from './hours.ts'
 import { ladderProblems } from './ladder.ts'
@@ -73,6 +75,14 @@ export function configFrom(env: Env) {
       return parsed('CALL_NUMBERS_FILE', readFileSync(env.CALL_NUMBERS_FILE, 'utf8'))
     } catch {
       return void wrong.push(`CALL_NUMBERS_FILE: "${env.CALL_NUMBERS_FILE}" cannot be read`)
+    }
+  }
+  const serverRanges = (): IpLookup | undefined => {
+    if (!env.SERVER_RANGES_FILE) return undefined
+    try {
+      return createRangeLookup(readFileSync(env.SERVER_RANGES_FILE, 'utf8'))
+    } catch (error) {
+      return void wrong.push(`SERVER_RANGES_FILE: ${error instanceof TypeError ? error.message : `"${env.SERVER_RANGES_FILE}" cannot be read`}`)
     }
   }
   // A group of variables that only make sense together: all or none.
@@ -158,6 +168,7 @@ export function configFrom(env: Env) {
       : undefined,
     metaCosts: group(['META_AD_ACCOUNT_ID', 'META_ADS_TOKEN']) ? { adAccountId: env.META_AD_ACCOUNT_ID!, accessToken: env.META_ADS_TOKEN!, ...(env.META_ADS_CONVERSIONS && { conversions: env.META_ADS_CONVERSIONS }) } : undefined,
     fingerprint: env.FINGERPRINT_SECRET ? { secretKey: env.FINGERPRINT_SECRET, region: (env.FINGERPRINT_REGION || 'us') as 'us' | 'eu' | 'ap' } : undefined,
+    serverRanges: serverRanges(),
     maxmind: group(['MAXMIND_ACCOUNT_ID', 'MAXMIND_LICENSE_KEY'])
       ? {
           accountId: env.MAXMIND_ACCOUNT_ID!,
@@ -378,6 +389,12 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
   const batcher = createBatcher(graph)
   const queued: Graph = { ...graph, observe: (input) => (Array.isArray(input) ? graph.observe(input) : batcher.observe(input as Parameters<typeof batcher.observe>[0])) }
 
+  const maxmind = config.maxmind && createMaxMindLookup(config.maxmind)
+  const ranges = config.serverRanges
+  const ipInfo: IpLookup | undefined = ranges && maxmind ? async (address) => {
+    const [known, info] = [await ranges(address), await maxmind(address)]
+    return known && info ? { ...info, hosting: true } : (known ?? info)
+  } : (ranges ?? maxmind)
   const options: HandlerOptions = {
     token: config.token,
     origins: config.origins,
@@ -398,7 +415,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
     ...(config.reviewers && { reviewers: config.reviewers }),
     ...(config.cookie && { cookie: config.cookie }),
     ...(config.fingerprint && { fingerprint: createFingerprintVerifier(config.fingerprint) }),
-    ...(config.maxmind && { ipInfo: createMaxMindLookup(config.maxmind) }),
+    ...(ipInfo && { ipInfo }),
     ...(config.smarty && { address: createAddressVerifier(config.smarty) }),
     ...(config.lineType && { lineType: createLineTypeLookup(config.lineType) }),
     ...(outbox && { outbox }),
@@ -411,7 +428,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
   const on = (name: string, enabled: unknown) => `${name} ${enabled ? 'on' : 'off'}`
   log(`listening on ${config.host}:${port}`)
   log(`collect accepts ${config.origins.length > 0 ? config.origins.join(', ') : 'no origins yet (set ORIGINS)'}`)
-  log([Object.keys(config.reviewers ?? {}).length > 0 ? `reviewers ${Object.keys(config.reviewers!).join(', ')}` : 'reviewers none', on('server cookie', config.cookie), on('fingerprint', config.fingerprint), on('maxmind', config.maxmind), on('signed links', config.linkSecret), on('staff networks', config.staffNetworks.length > 0), on('opening hours', hours), on('alerts', config.alertWebhook), on('address checks', config.smarty), on('phone line checks', config.lineType)].join(', '))
+  log([Object.keys(config.reviewers ?? {}).length > 0 ? `reviewers ${Object.keys(config.reviewers!).join(', ')}` : 'reviewers none', on('server cookie', config.cookie), on('fingerprint', config.fingerprint), on('maxmind', config.maxmind), on('server ranges', config.serverRanges), on('signed links', config.linkSecret), on('staff networks', config.staffNetworks.length > 0), on('opening hours', hours), on('alerts', config.alertWebhook), on('address checks', config.smarty), on('phone line checks', config.lineType)].join(', '))
   log(`outbox sends to ${targets.length > 0 ? targets.map((target) => target.name).join(', ') : 'none (no ad platform configured)'}`)
   if (config.stages) log(`steps: ${Object.entries(config.stages).map(([name, stage]) => `${name}${stage.value === undefined ? '' : ` ${stage.value}`}`).join(', ')}`)
     log(`page events: ${options.events!.length > 0 ? options.events!.join(', ') : 'none (set EVENTS)'}; calls from twilio ${config.twilio ? 'on' : 'off'}; texts from twilio ${config.twilioTexts ? 'on' : 'off'}; text codes ${config.textCodes ? 'on' : 'off'}; call results ${config.callResults === 'expected' ? `expected within ${config.callResultWait} minutes` : 'not expected'}; number pool ${config.poolNumbers.length > 0 ? `of ${config.poolNumbers.length}` : 'off'}`)
