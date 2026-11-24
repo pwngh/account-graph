@@ -118,6 +118,7 @@ export function configFrom(env: Env) {
     timeZone: env.REPORT_TIME_ZONE || 'UTC',
     events: (env.EVENTS ?? '').split(',').map((name) => name.trim()).filter(Boolean),
     callNumbers: parsed('CALL_NUMBERS'),
+    callExclude: (env.CALL_EXCLUDE ?? '').split(',').map((each) => each.trim()).filter(Boolean),
     callMinimum: number('CALL_MIN_SECONDS', 30),
     callResults: env.CALL_RESULTS || undefined,
     callResultWait: number('CALL_RESULT_WAIT', 30),
@@ -192,6 +193,13 @@ export function configFrom(env: Env) {
       checkTags(channel?.tags, `"${number}"`)
     } catch (error) {
       wrong.push(`CALL_NUMBERS: ${(error as Error).message}`)
+    }
+  }
+  for (const each of config.callExclude) {
+    try {
+      normalizePhone(each)
+    } catch {
+      wrong.push(`CALL_EXCLUDE: "${each}" is not a phone number`)
     }
   }
   for (const each of config.poolNumbers) {
@@ -355,7 +363,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
     returnHours: config.returnHours,
     // A tap on a phone link is what ties a call to a visitor, so taking calls means taking that event.
     events: [...new Set([...config.events, ...(config.callNumbers || config.twilio || config.poolNumbers.length > 0 ? ['phone_click'] : [])])],
-    calls: { minimumSeconds: config.callMinimum, resultWait: config.callResultWait * 60_000, ...(config.callResults === 'expected' && { results: 'expected' as const }), ...(config.callNumbers && { numbers: config.callNumbers }), ...(config.twilio && { twilio: config.twilio }) },
+    calls: { exclude: config.callExclude, minimumSeconds: config.callMinimum, resultWait: config.callResultWait * 60_000, ...(config.callResults === 'expected' && { results: 'expected' as const }), ...(config.callNumbers && { numbers: config.callNumbers }), ...(config.twilio && { twilio: config.twilio }) },
     ...(config.poolNumbers.length > 0 && { pool: { numbers: config.poolNumbers, minutes: config.poolMinutes, grace: config.poolGrace } }),
     ...(config.reviewers && { reviewers: config.reviewers }),
     ...(config.cookie && { cookie: config.cookie }),

@@ -306,6 +306,7 @@ function graphOf(profile, more) {
       const starts = nodes.some((node) => node.known) ? 1 : nodes.length <= 30 ? 12 : 3
       const first = nodes.map(({ x, y }) => ({ x, y }))
       let best
+      const began = performance.now()
       for (let turn = 0; turn < starts; turn++) {
         nodes.forEach((node, i) => {
           const from = first[i === 0 ? 0 : 1 + ((i - 1) * (turn % 2 ? 1 : 1 + turn) + turn * 5) % (nodes.length - 1)]
@@ -316,7 +317,8 @@ function graphOf(profile, more) {
         for (let i = 0, warm = 1; i < 320; i++, warm *= 0.985) step(nodes, edges, warm, size.w < size.h * 1.2)
         const cost = starts === 1 ? 0 : tangle(nodes, edges)
         if (!best || cost < best.cost) best = { cost, spots: nodes.map(({ x, y }) => ({ x, y })) }
-        if (cost === 0) break
+        // A phone gets fewer tries, not a longer wait.
+        if (cost === 0 || performance.now() - began > 150) break
       }
       nodes.forEach((node, i) => Object.assign(node, best.spots[i], { held: false }))
     }

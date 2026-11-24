@@ -1,7 +1,11 @@
 import type { Feed, KeptAlert, OpsStore } from './ops.ts'
 import type { Job, JobState, OutboxStore } from './outbox.ts'
 import type { Store, Tx } from './store.ts'
+import { CLICK_IDS } from './touch.ts'
 import type { CallResult, Consent, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Lease, Moved, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
+
+/** Every ad click id a touch carries, as the index on them has it. */
+const CLICKED = `array[${CLICK_IDS.map((name) => `detail->>'${name}'`).join(', ')}]`
 
 /** The part of a `pg` client the store calls. */
 export interface Queryable {
@@ -338,6 +342,11 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
         [subjects, from, to],
       )
       return rows.map((row) => ({ ...row.detail, subject: row.subject, at: Number(row.at) }) as Touch)
+    },
+
+    async clicked(id, limit) {
+      const { rows } = await db.query(`select distinct subject collate "C" as subject from ${t('touch')} where ${CLICKED} @> array[$1::text] order by 1 limit $2`, [id, limit])
+      return rows.map((row) => row.subject as Subject)
     },
 
     async touchesBetween(from, to) {
@@ -1053,6 +1062,11 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
             );
             create index if not exists lease_subject on ${schema}.lease (subject);
             create index if not exists lease_until on ${schema}.lease (until_at);`,
+    },
+    {
+      id: 16,
+      name: 'touches found by ad click id',
+      sql: `create index if not exists touch_clicked on ${schema}.touch using gin ((${CLICKED}));`,
     },
   ]
 }

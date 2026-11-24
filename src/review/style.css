@@ -47,6 +47,7 @@ li:first-child { border-top: 0; }
 /* A table wider than its place scrolls inside this box, and the page itself never scrolls sideways. */
 .wide { overflow-x: auto; }
 .wide > table { min-width: 100%; }
+.scroll { max-height: 340px; overflow-y: auto; padding-right: 8px; scrollbar-width: thin; }
 table { border-collapse: collapse; }
 th { text-align: left; font-weight: 500; color: var(--muted); font-size: 12px; padding: 3px 12px 3px 0; white-space: nowrap; border-bottom: 1px solid var(--line); }
 td { padding: 3px 12px 4px 0; border-bottom: 1px solid var(--line); vertical-align: top; height: 28px; }

@@ -65,7 +65,7 @@ A token goes in the `authorization` header as `Bearer …`. There are two.
 | `GET /history?subject=` | Every sighting of the subject, oldest first. |
 | `GET /clusters?offset=` | The largest clusters, 50 at a time. |
 | `GET /search?q=` | Subjects whose id starts with the text. |
-| `POST /find` | `{ text }`: an email address or phone number, looked up whole by its hash, or how a subject's id begins. Answers `{ by, subjects }`, at most 20. The text is in the body so that no log of addresses holds it. |
+| `POST /find` | `{ text }`: an email address or phone number, looked up whole by its hash; how a subject's id begins; or, when none begins so, a whole ad click id. Answers `{ by, subjects }`, at most 20. The text is in the body so that no log of addresses holds it. |
 | `GET /policy` | The running rules by kind, the hash the stored clusters were built with, whether a rebuild is `due`, and which kinds were `changed` from the default. |
 | `GET /ops` | How the server runs: `{ feeds, jobs, undelivered, alerts, outbox }`. |
 | `GET /pulse` | `{ version }`, with an `etag`. Ask again with `if-none-match` and it answers 304 until something is written. |
@@ -101,6 +101,8 @@ The four `POST` routes answer with the subjects whose cluster moved. With the se
 | Route | What it does |
 | --- | --- |
 | `GET /me` | `{ reviewer }`: whose token this is, or `null` for the service token. |
+| `GET /conversions?state=` | The 100 jobs in one state most recently due: `held`, `pending`, `sent`, `skipped`, or `failed`, without the hashed email and phone. `held` waits for a call's result. |
+| `POST /retry` | `{ transactionId, target? }`. Puts its failed and skipped jobs back in line, or only one platform's. |
 
 ## Service token only
 
@@ -122,8 +124,6 @@ The four `POST` routes answer with the subjects whose cluster moved. With the se
 | `POST /call/result` | How a call went: `{ id, answered, voicemail?, waited? }`, before or after the call. Answers `{ state, counted }`; `waiting` while the call itself has not come. |
 | `POST /costs` | A list of `{ day, source, amount, campaignId?, campaign?, currency?, clicks?, impressions? }`. A row for the same day, source and campaign replaces the one before. |
 | `GET /conversion?id=` | The jobs of one transaction, one per ad platform. |
-| `GET /conversions?state=` | Jobs in one state: `held`, `pending`, `sent`, `skipped`, or `failed`. `held` waits for a call's result. |
-| `POST /retry` | `{ transactionId }`. Puts its failed and skipped jobs back in line. |
 | `POST /alerts/test` | Posts a test alert. Answers `{ delivered, error? }`. |
 | `POST /prune` | `{ before, by?, reason? }`. Deletes sightings written down before a time, answers about advertising that no longer stand, and call results whose call never came. |
 | `GET /stats` | Counts since start, what the graph holds, and outbox jobs by state. |

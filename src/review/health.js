@@ -6,8 +6,20 @@ const NAMES = { touches: 'Arrivals', calls: 'Calls', results: 'Call results', co
 const JOB = { running: 'running', stuck: 'never finished', done: 'succeeded', failed: 'failed' }
 const ago = (at, now) => (at === null || at === undefined ? el('span', { class: 'muted' }, '(not recorded)') : el('span', { title: when(at) }, `${lasted(now - at)} ago`))
 
+/** Puts a conversion back in line for the platform that refused it. */
+async function again(job, button) {
+  button.disabled = true
+  try {
+    const put = await api('POST', '/retry', { transactionId: job.transactionId, target: job.target })
+    if (await load()) notice(put.length > 0 ? `${job.action} is back in line, to be sent with the next pass.` : `${job.action} was no longer refused. Nothing was changed.`)
+  } catch (error) {
+    button.disabled = false
+    notice(error.message, true)
+  }
+}
+
 /** Alerts that did not arrive, what feeds the graph, the jobs that run by themselves, and what waits to be sent. */
-function workings(ops) {
+function workings(ops, refused) {
   const out = []
   if (ops.undelivered.length > 0) {
     out.push(el('section', {}, el('h2', {}, 'Alerts not delivered'),
@@ -32,6 +44,12 @@ function workings(ops) {
   }
 
   if (ops.outbox !== null) out.push(el('section', {}, el('h2', {}, 'Conversions to ad platforms, all time'), parts('Conversions by state', [['Sent', ops.outbox.sent], ['Waiting to be sent', ops.outbox.pending], ['Held for a call result', ops.outbox.held], ['Not sent, with a reason', ops.outbox.skipped], ['Refused for good', ops.outbox.failed]])))
+  if (refused.length > 0) out.push(el('section', {}, el('h2', {}, `Refused conversions, ${refused.length < ops.outbox.failed ? `newest ${amount(refused.length)} of ${amount(ops.outbox.failed)}` : amount(refused.length)}`),
+    wide('Refused conversions', el('table', {}, el('tr', {}, group('What', 4, true), group('Why it was refused', 2), el('td', { class: 'edge' })),
+      el('tr', {}, th('Happened'), th('Sent as'), th('Worth', 'num'), th('Who'), ...edge([th('Platform'), th('Answer')]), ...edge([th('')])),
+      ...refused.map((job) => el('tr', {}, td('nowrap', when(job.at)), td('', job.action), td('num', job.value === undefined ? none() : `${money(job.value)} ${job.currency ?? ''}`), td('who', caller(job.subject)),
+        ...edge([td('', job.target), td('why', job.note || unrecorded())]), td('edge', el('button', { 'aria-label': `Send ${job.transactionId} to ${job.target} again`, on: { click: (event) => again(job, event.currentTarget) } }, 'Send again')))))),
+    el('p', { class: 'muted' }, 'Fix what stopped one before sending it again.')))
   return out
 }
 
@@ -49,7 +67,7 @@ view('health', 'Health', async (box) => {
     policy.due && ['A rebuild is due.', `${policy.builtWith === null ? 'It is not recorded which policy the stored clusters were built with.' : policy.builtWith === 'mixed' ? 'More than one policy has written the stored clusters.' : `The stored clusters were built with policy ${short(policy.builtWith)}.`} Policy ${short(policy.hash)} runs now. Clusters stay as they were until someone with the service token posts to /rebuild.`],
     ...quiet.map((feed) => [`${NAMES[feed.name]} have gone quiet.`, feed.last === null ? 'None has ever been written down.' : `The last was written down ${lasted(ops.at - feed.last)} ago.`]),
     ...broken.map((job) => [`The job "${job.name}" ${job.state === 'stuck' ? 'never finished' : 'failed'}.`, job.error ?? '']),
-    states?.failed > 0 && [`${amount(states.failed)} ${states.failed === 1 ? 'conversion was' : 'conversions were'} refused for good.`, 'They are listed by GET /conversions?state=failed and put back with POST /retry.'],
+    states?.failed > 0 && [`${amount(states.failed)} ${states.failed === 1 ? 'conversion was' : 'conversions were'} refused for good.`, 'They are listed below. Fix what stopped them, then send them again.'],
     ops?.undelivered.length > 0 && [`${amount(ops.undelivered.length)} ${ops.undelivered.length === 1 ? 'alert was' : 'alerts were'} not delivered.`, ops.alerts ? 'Each is tried again every five minutes.' : 'No webhook is set, so nobody has been told. Set ALERT_WEBHOOK.'],
     disputes.length > 0 && [`Systems disagree about ${amount(disputes.length)} ${disputes.length === 1 ? 'pair' : 'pairs'}.`, 'Find out which system is right, and stop the other from sending.'],
   ].filter(Boolean)
@@ -61,7 +79,7 @@ view('health', 'Health', async (box) => {
     states && ['Sent', amount(states.sent), `${amount(states.skipped)} not sent, ${amount(states.failed)} refused`, states.failed > 0 ? 'apart' : ''],
     ops && ['Alerts', ops.alerts ? 'Webhook set' : 'No webhook', ops.undelivered.length > 0 ? `${amount(ops.undelivered.length)} not delivered` : '', ops.undelivered.length > 0 ? 'apart' : '']),
   needs.length > 0 ? el('ul', { class: 'needs' }, ...needs.map(([what, more]) => el('li', {}, el('b', {}, what), more ? ` ${more}` : ''))) : ''))
-  if (ops) box.append(...workings(ops))
+  if (ops) box.append(...workings(ops, states?.failed > 0 ? await api('GET', '/conversions?state=failed') : []))
 
   // What one shared identifier of a kind does by itself, which is what its weight means.
   const kinds = Object.entries(policy.rules.kinds).sort(([x, a], [y, b]) => b.weight - a.weight || (x < y ? -1 : 1))

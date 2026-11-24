@@ -363,6 +363,10 @@ test('someone is found by phone or email without either being in an address', as
     for (const text of ['7135550194', '(713) 555-0194', '+1 713.555.0194', '1-713-555-0194']) assert.deepEqual(await find(text), { by: 'phone', subjects: ['account:1', 'contact:2'] }, text)
     assert.deepEqual(await find('nobody@example.com'), { by: 'email', subjects: [] })
     assert.deepEqual(await find('account:'), { by: 'subject', subjects: ['account:1', 'account:30'] })
+    // An ad click id, whole. How an id begins comes first.
+    for (const gclid of ['EAIaIQobChMI-x_Y', 'account:3']) await graph.touch({ subject: 'contact:2', at: T0, gclid })
+    assert.deepEqual(await find('EAIaIQobChMI-x_Y'), { by: 'click', subjects: ['contact:2'] })
+    assert.deepEqual([(await find('EAIaIQobChMI')).subjects, (await find('account:3')).subjects], [[], ['account:30']])
     // Digits that are not a whole number are how an id begins, and an id may hold an @.
     assert.deepEqual([(await find('713')).by, (await find('email:a@b')).by], ['subject', 'subject'])
     for (const wrong of ['', ' ', 5, null, 'x'.repeat(513)]) assert.equal(await find(wrong), 400)
@@ -1068,6 +1072,46 @@ test('a call whose result is awaited is held, and nothing is sent until a person
     assert.deepEqual([corrected.transactionId, corrected.userData.userIdentifiers], ['call:CA4', [{ phoneNumber: hashPhone('+15550100021') }]])
     const held = (await (await fetch(`${base}/conversions?state=held`, { headers: { authorization: 'Bearer service' } })).json()) as any[]
     assert.deepEqual(held.map((job) => job.transactionId).sort(), ['call:CA2', 'call:CA9'])
+  } finally {
+    server.close()
+  }
+})
+
+test('a reviewer sees refused conversions without keys and puts them back in line', async () => {
+  const store = createMemoryStore()
+  const graph = createGraph(store)
+  const at = Date.now() - 60_000
+  let refuse = true
+  // Refused as a whole request, with everything it held repeated in the answer.
+  const target = (name: string) => ({ name, restates: false, batch: 10, keys: (outcome: { email?: string }) => ({ email: `Key+of:${outcome.email}` }), click: () => undefined, retryable: () => true, deliver: async (_action: string, items: readonly { job: { keys: Record<string, string> } }[]) => {
+    if (refuse) throw new Error(`action_111 was not found for ${items.map(({ job }) => job.keys.email!.toUpperCase()).join(' and ')}`)
+    return {}
+  } })
+  const outbox = createOutbox(graph, store.outbox, { maxAttempts: 1, targets: [target('ads'), target('more')] })
+  const server = createServer(createHandler(graph, { token: 'service', reviewers: { dana: 'reviewer' }, outbox, origins: [] })).listen(0)
+  try {
+    const base = `http://localhost:${(server.address() as AddressInfo).port}`
+    const call = async (token: string, method: string, path: string, body?: unknown) => {
+      const response = await fetch(base + path, { method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, ...(body !== undefined && { body: JSON.stringify(body) }) })
+      return { status: response.status, body: (await response.json()) as any }
+    }
+    for (const n of [1, 2]) await call('service', 'POST', '/convert', { transactionId: `t${n}`, subject: `a${n}`, at, stage: 'enrolled', action: { ads: '111', more: '111' }, value: 5, currency: 'USD', email: `a${n}@example.com` })
+    await outbox.run()
+    const { body: failed } = await call('reviewer', 'GET', '/conversions?state=failed')
+    assert.deepEqual(failed.map((job: any) => `${job.transactionId} ${job.target} ${'keys' in job}`).sort(), ['t1 ads false', 't1 more false', 't2 ads false', 't2 more false'])
+    assert.ok(failed.every((job: any) => job.note === 'action_111 was not found for (left out) and (left out)'))
+    assert.deepEqual((await call('service', 'GET', '/conversions?state=failed')).body, failed)
+    assert.equal((await call('service', 'GET', '/conversion?id=t1')).body[0].keys.email, 'Key+of:a1@example.com')
+    for (const bad of [{}, { transactionId: 5 }, { transactionId: ['t1'] }, { transactionId: 't1', target: 5 }]) assert.equal((await call('reviewer', 'POST', '/retry', bad)).status, 400)
+    refuse = false
+    // Only the platform named, and then the rest.
+    const again = async (token: string, body: object) => (await call(token, 'POST', '/retry', body)).body.map((job: any) => `${job.transactionId} ${job.target} ${job.state} ${'keys' in job}`)
+    assert.deepEqual(await again('reviewer', { transactionId: 't1', target: 'ads' }), ['t1 ads pending false'])
+    assert.deepEqual(await again('service', { transactionId: 't1' }), ['t1 more pending false'])
+    await outbox.run()
+    assert.deepEqual(await outbox.counts().then((counts) => [counts.sent, counts.failed]), [2, 2])
+    assert.deepEqual(await again('reviewer', { transactionId: 't1' }), [])
+    assert.equal((await call('reviewer', 'GET', '/conversion?id=t1')).status, 403)
   } finally {
     server.close()
   }

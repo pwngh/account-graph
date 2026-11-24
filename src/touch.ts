@@ -1,10 +1,13 @@
 import { UNSTORABLE } from './identifiers.ts'
 import type { Touch } from './types.ts'
 
+/** The fields that hold an ad platform's id of one click. */
+export const CLICK_IDS = ['gclid', 'gbraid', 'wbraid', 'fbclid', 'msclkid', 'ttclid'] as const
+
 /** The fields of a touch that hold one text each. */
 export const TOUCH_FIELDS = [
   'source', 'medium', 'campaign', 'campaignId', 'adGroupId', 'adId', 'term', 'content',
-  'gclid', 'gbraid', 'wbraid', 'fbclid', 'fbp', 'msclkid', 'ttclid', 'landing', 'referrer',
+  ...CLICK_IDS, 'fbp', 'landing', 'referrer',
 ] as const
 const KNOWN = new Set<string>(['subject', 'at', 'custom', ...TOUCH_FIELDS])
 

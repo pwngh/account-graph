@@ -69,6 +69,7 @@ The answer carries flags for what was noticed:
 | `short` | It ended before `CALL_MIN_SECONDS`. | Recorded, not counted. |
 | `repeat` | This number has called before. | None. It is there for you to act on. |
 | `pool` | The number rung was shown to one visitor, and the call is tied to them. | None beyond the tie. |
+| `left_out` | The other number is in `CALL_EXCLUDE`: your own people, or a test phone. | Nothing is recorded. |
 | `ambiguous` | More than one visitor tapped the number just before. | Tied to none of them; filed under the number's channel. |
 
 Reporting the same call id again writes nothing and answers `"duplicate": true`. If the second report carries a result, the result is taken.

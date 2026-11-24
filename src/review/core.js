@@ -61,6 +61,8 @@ function parts(label, list) {
 }
 /** A table that scrolls inside its own box. The box takes the keyboard, so arrow keys can scroll it. */
 const wide = (label, table) => el('div', { class: 'wide', tabindex: 0, role: 'region', 'aria-label': label }, table)
+/** A long list that scrolls in its own box, so what follows it is not far below. */
+const scroll = (label, list) => el('div', { class: 'scroll', tabindex: 0, role: 'region', 'aria-label': label }, list)
 
 $('token').value = sessionStorage.getItem('token') ?? ''
 $('zone').textContent = `Times are shown in ${Intl.DateTimeFormat().resolvedOptions().timeZone}, this browser's zone.`
@@ -269,11 +271,11 @@ async function load(tag) {
     if (turn !== loading || (quiet && interrupting())) return false
     if (seen) beat = seen
     const held = $('view').contains(document.activeElement) ? which(document.activeElement) : undefined
-    const scrolled = quiet ? [...$('view').querySelectorAll('.wide')].map((each) => each.scrollLeft) : []
+    const scrolled = quiet ? [...$('view').querySelectorAll('.wide, .scroll')].map((each) => [each.scrollLeft, each.scrollTop]) : []
     const unfolded = quiet ? [...$('view').querySelectorAll('details[open]')].map(fold) : []
     $('view').replaceChildren(box)
     for (const each of box.querySelectorAll('.graph')) each.begin()
-    ;[...$('view').querySelectorAll('.wide')].forEach((each, i) => (each.scrollLeft = scrolled[i] ?? 0))
+    ;[...$('view').querySelectorAll('.wide, .scroll')].forEach((each, i) => ([each.scrollLeft, each.scrollTop] = scrolled[i] ?? [0, 0]))
     for (const each of $('view').querySelectorAll('details')) each.open = unfolded.includes(fold(each))
     if (held) [...$('view').querySelectorAll('a, button, input, select, [tabindex]')].find((node) => which(node) === held)?.focus({ preventScroll: true })
     if (!quiet) {

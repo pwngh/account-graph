@@ -118,7 +118,7 @@ async function clusterList() {
     }
   } } }, 'Show more')
   more.hidden = clusters.length === 0 || clusters.length % 50 > 0
-  return [list, el('p', {}, more)]
+  return { largest: clusters[0], shown: [scroll('Largest clusters', list), el('p', {}, more)] }
 }
 
 /** Which decisions to list, and how many are on screen, so a refresh reads the same again. */
@@ -162,7 +162,7 @@ async function decisionList(audit) {
     ...[['', 'by anyone'], ['people', 'by people'], ['system', 'by systems']].map(([value, text]) => el('option', { value, ...(value === listing.author && { selected: '' }) }, text)))
   return el('section', {}, el('h2', {}, 'Decisions, newest first'), el('div', { class: 'row' }, pick),
     el('p', { id: 'seal', class: audit.sound ? 'muted' : 'apart' }, audit.sound ? `${amount(page.total)} recorded in all. The record is whole.` : `The record was altered at entry ${audit.brokenAt}.`),
-    list, el('p', {}, more))
+    scroll('Decisions', list), el('p', {}, more))
 }
 
 view('accounts', 'Accounts', async (box, subject) => {
@@ -174,15 +174,26 @@ view('accounts', 'Accounts', async (box, subject) => {
   box.dataset.seen = audit.head?.seq ?? 0
   const read = (each) => api('GET', `/subject?subject=${encodeURIComponent(each)}`)
   // Whoever was opened out on the graph is read again with it.
-  const spread = drawn.subject === subject ? [...drawn.more.keys()] : []
-  const [queue, recent, profile, ...more] = await Promise.all([clusterList(), api('GET', '/recent'), subject ? read(subject) : undefined, ...spread.map(read)])
+  const [queue, recent] = await Promise.all([clusterList(), api('GET', '/recent')])
+  // With nobody opened, the largest cluster is drawn: where a reviewer should look first.
+  const about = subject || queue.largest?.id
+  const spread = drawn.subject === about ? [...drawn.more.keys()] : []
+  const [profile, ...more] = await Promise.all([about ? read(about) : undefined, ...spread.map(read)])
   const decisions = await decisionList(audit)
 
-  left.append(el('section', {}, el('h2', {}, 'Largest clusters, now'), ...queue))
-  left.append(el('section', {}, el('h2', {}, 'Recent changes, newest 30'), el('ul', { id: 'recent' }, ...(recent.length > 0 ? recent.slice(0, 30).map((move) => el('li', {}, caller(move.subject),
+  left.append(el('section', {}, el('h2', {}, 'Largest clusters, now'), ...queue.shown))
+  left.append(el('section', {}, el('h2', {}, 'Recent changes, newest 30'), scroll('Recent changes', el('ul', { id: 'recent' }, ...(recent.length > 0 ? recent.slice(0, 30).map((move) => el('li', {}, caller(move.subject),
     el('span', {}, move.to === undefined ? ' was removed ' : move.to === move.subject ? ' is on its own again ' : ' joined '), move.to !== undefined && move.to !== move.subject ? caller(move.to) : '',
-    el('span', { class: 'muted' }, ` ${when(move.at)}`))) : [el('li', { class: 'muted' }, 'None yet.')]))))
+    el('span', { class: 'muted' }, ` ${when(move.at)}`))) : [el('li', { class: 'muted' }, 'None yet.')])))))
   left.append(decisions)
 
-  detail.append(...(profile ? profileOf(profile, more) : [el('section', {}, el('p', { class: 'muted' }, 'Open a subject or pick a cluster.'))]))
+  if (subject) detail.append(...profileOf(profile, more))
+  else {
+    detail.append(el('section', {}, tiles(['Largest cluster', queue.largest ? `${amount(queue.largest.size)} accounts` : 'None yet', queue.largest?.oversized ? 'larger than the review size' : '', queue.largest?.oversized ? 'apart' : ''],
+      recent[0] && ['Last change', when(recent[0].at)],
+      ['Record of decisions', audit.sound ? 'Whole' : 'Altered', audit.head ? `${amount(audit.head.seq)} ${audit.head.seq === 1 ? 'decision' : 'decisions'}` : 'no decision yet', audit.sound ? '' : 'apart'])))
+    // It may have been forgotten since the list was read.
+    if (profile?.known) detail.append(el('section', {}, el('h2', {}, 'Largest cluster'), el('p', {}, open(profile.subject)), graphOf(profile, more),
+      around(profile).length > ROOM ? el('p', { class: 'muted' }, `${ROOM} of ${amount(around(profile).length)} are drawn.`) : ''))
+  }
 }, { subject: true })

@@ -97,7 +97,13 @@
 - `report({ per })`, `GET /report?per=` and **Cost per** on the Channels view count one step in the cost per outcome. The view groups its columns, shows the report's own currency, and tells none, not recorded and does not apply apart.
 - `.env.example` names what compose needs; `docs/operations.md` covers backups, HTTPS and a name under the site.
 - The reviewer screen's picture says how many of those around a subject it draws.
+- Accounts opens on the largest cluster's graph, and its long lists scroll in their own boxes.
 - The reviewer screen draws a subject's ties as a graph to move, zoom, filter and open out. A line says what is shared and how strongly, an outline takes in one person, and whoever is picked has a card with the reasons and what can be done.
+- Health lists the conversions an ad platform refused, with why, and a button to send each again. `GET /conversions` and `POST /retry` take a reviewer's token, and no longer answer with the click or the hashed email and phone; `GET /conversion` still does, for the service token.
+- Health lists the conversions an ad platform refused, with why, and a button to send each again. `GET /conversions` and `POST /retry` take a reviewer's token, and no longer answer with the hashed email and phone; `GET /conversion` still does, for the service token.
+- Health lists the conversions an ad platform refused, with why, and a button to send each again. `GET /conversions` and `POST /retry` take a reviewer's token, and no longer answer with the hashed email and phone; `GET /conversion` still does, for the service token. `POST /retry` takes a `target`, and a platform's answer is kept without the keys it repeats.
+- Find takes a whole ad click id, and `graph.clicked` answers who arrived with one. Database upgrade 16 indexes them.
+- `CALL_EXCLUDE` names your own people's numbers and test phones. Calls from them, and calls placed to them, are not recorded.
 - The Channels and Calls views have buttons for common periods, and save their tables as CSV.
 - Each reviewer view opens with the few numbers it is about. Health says first what needs someone, and by what evidence two subjects are taken for one person; a journey shows when things happened before it lists them.
 - The reviewer screen groups the columns of its tables, draws shares and scores as bars beside their numbers, shows a journey day by day, and gives the board's empty steps little room.

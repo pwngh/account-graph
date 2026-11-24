@@ -161,8 +161,8 @@ export interface Outbox {
   get(transactionId: string): Promise<Job[]>
   /** Jobs in one state, the most recently due first: what failed, what was skipped and why. */
   list(state: JobState, limit?: number): Promise<Job[]>
-  /** Puts a transaction's failed and skipped jobs back in line, after you fixed what stopped them. */
-  retry(transactionId: string): Promise<Job[]>
+  /** Puts a transaction's failed and skipped jobs back in line, after you fixed what stopped them. With `target`, only that platform's. */
+  retry(transactionId: string, target?: string): Promise<Job[]>
   counts(): Promise<Record<JobState, number>>
 }
 
@@ -242,7 +242,9 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
         pass.sent += 1
       }
     } catch (error) {
-      const note = String((error as Error)?.message ?? error).slice(0, 500)
+      // A platform may answer with what it was sent. Whoever reads the note has no need of a hashed email or phone, this one's or another's in the same request.
+      const sent = items.flatMap(({ job }) => Object.values(job.keys)).filter((key) => key.length > 3).sort((a, b) => b.length - a.length)
+      const note = sent.reduce((text, key) => text.replaceAll(new RegExp(key.replace(/[^\w]/g, '\\$&'), 'gi'), '(left out)'), String((error as Error)?.message ?? error)).slice(0, 500)
       if (target.retryable(error)) {
         for (const { job } of items) {
           if (job.attempts >= maxAttempts) await fail(job, note, pass, failed)
@@ -439,10 +441,10 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
     get: (transactionId) => store.get(transactionId),
     list: (state, limit = 100) => store.list(state, limit),
 
-    async retry(transactionId) {
+    async retry(transactionId, target) {
       const again: Job[] = []
       for (const job of await store.get(transactionId)) {
-        if (job.state !== 'failed' && job.state !== 'skipped') continue
+        if ((job.state !== 'failed' && job.state !== 'skipped') || (target !== undefined && job.target !== target)) continue
         const next = await change(job, (current) => (current.state === 'failed' || current.state === 'skipped' ? { ...current, state: 'pending', attempts: 0, due: now(), note: 'retried' } : undefined))
         if (next.state === 'pending') again.push(next)
       }

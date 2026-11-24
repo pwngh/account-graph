@@ -15,7 +15,7 @@ import { fromTwilio, twilioCall } from './integrations/twilio.ts'
 import type { LineTypeLookup } from './integrations/twilio.ts'
 import type { IpLookup } from './integrations/maxmind.ts'
 import type { Ops } from './ops.ts'
-import type { JobState, Outbox } from './outbox.ts'
+import type { Job, JobState, Outbox } from './outbox.ts'
 import { withStage } from './ladder.ts'
 import { dayIn, dayStart, sourceOf } from './report.ts'
 import type { Ladder } from './ladder.ts'
@@ -139,11 +139,14 @@ const NAME = /^[\w.-]{1,64}$/
 const REVIEW_ROUTES = new Set([
   'GET /me', 'GET /subject', 'GET /clusters', 'GET /search', 'GET /recent', 'GET /links', 'GET /cluster', 'GET /history', 'GET /journey', 'GET /board', 'GET /flows', 'GET /collusion', 'GET /rings',
   'GET /decisions', 'GET /disputes', 'GET /consent', 'GET /outcome', 'GET /followed', 'GET /call', 'GET /calls', 'GET /calls/summary', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'GET /ops', 'POST /find', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
-  'GET /undecided', 'GET /between',
+  'GET /undecided', 'GET /between', 'GET /conversions', 'POST /retry',
 ])
 
 /** Answers hold people's data, so nothing keeps a copy of one. */
 const JSON_HEADERS = { 'content-type': 'application/json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }
+
+/** A job as a person is shown it: the hashed email and phone are for its platform only. */
+const shownJob = ({ keys, ...job }: Job) => job
 
 /** A route that wrote its own answer. */
 const SENT = Symbol('sent')
@@ -563,7 +566,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
    * Who a text may mean: an email address or a phone number, hashed here and looked up whole, or how a subject's id begins.
    * Neither is kept, and neither is ever part of an address, which servers and browsers write down.
    */
-  async function find(given: unknown): Promise<{ by: 'email' | 'phone' | 'subject'; subjects: Subject[] }> {
+  async function find(given: unknown): Promise<{ by: 'email' | 'phone' | 'click' | 'subject'; subjects: Subject[] }> {
     if (typeof given !== 'string' || !given.trim() || given.length > 512) throw new Refusal(400, 'Body needs the text to find, at most 512 characters')
     const text = given.trim()
     const holding = async (identifiers: Identifier[]) => [...new Set((await graph.holders(identifiers)).map((edge) => edge.subject))].sort().slice(0, 20)
@@ -575,7 +578,10 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       } catch {}
       if (hash) return { by: 'phone', subjects: await holding([`phone:${hash}`, `voip:${hash}`]) }
     }
-    return { by: 'subject', subjects: await graph.search(text) }
+    const subjects = await graph.search(text)
+    // An ad click id is looked up whole, once no subject's id begins like it.
+    const clicked = subjects.length === 0 ? await graph.clicked(text) : []
+    return clicked.length > 0 ? { by: 'click', subjects: clicked } : { by: 'subject', subjects }
   }
 
   /** Everything the reviewer screen shows about one subject, in one answer. */
@@ -952,11 +958,13 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         if (!options.outbox) break
         const state = url.searchParams.get('state') ?? 'failed'
         if (!['held', 'pending', 'sent', 'skipped', 'failed'].includes(state)) throw new Refusal(400, 'state must be held, pending, sent, skipped, or failed')
-        return options.outbox.list(state as JobState)
+        return (await options.outbox.list(state as JobState)).map(shownJob)
       }
       case 'POST /retry': {
         if (!options.outbox) break
-        return options.outbox.retry((await json(request)).transactionId)
+        const { transactionId, target } = await json(request)
+        if (typeof transactionId !== 'string' || (target !== undefined && typeof target !== 'string')) throw new Refusal(400, 'transactionId and target must be text')
+        return (await options.outbox.retry(transactionId, target)).map(shownJob)
       }
       case 'GET /conversion':
         if (!options.outbox) break
