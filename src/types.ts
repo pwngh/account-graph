@@ -190,6 +190,8 @@ export interface Deciding extends Why {
    * the same subject or identifier refuses theirs with `Outdated`. Left out, nothing is checked.
    */
   seen?: number
+  /** Decided by a program on its own. A `restore` someone has made since stands over it, so it decides nothing. */
+  automatic?: boolean
 }
 
 /** One entry in the record of decisions people made about the graph. Entries are never changed. */

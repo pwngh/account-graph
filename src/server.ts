@@ -23,6 +23,7 @@ import { defaultPolicy, plainPolicy } from './policy.ts'
 import { reviewPage } from './review.ts'
 import { browserMark, knownLink, readToken, signToken, staffLink } from './sign.ts'
 import { browserScripts, scriptHeaders } from './tag.ts'
+import { TOUCH_FIELDS } from './touch.ts'
 import type { Deciding, Identifier, Level, Observation, Outcome, Subject, Told, Touch, Why } from './types.ts'
 
 /** Each reviewer's name, and the token or tokens that are theirs. */
@@ -124,10 +125,6 @@ export interface HandlerOptions {
 }
 
 const ID = /^[\w.-]{1,128}$/
-const TOUCH_FIELDS = [
-  'source', 'medium', 'campaign', 'campaignId', 'adGroupId', 'adId', 'term', 'content',
-  'gclid', 'gbraid', 'wbraid', 'fbclid', 'msclkid', 'ttclid', 'landing', 'referrer',
-] as const
 const NAME = /^[\w.-]{1,64}$/
 
 /** What a reviewer's token opens: what the reviewer screen reads, and the decisions a reviewer makes. */
@@ -135,6 +132,9 @@ const REVIEW_ROUTES = new Set([
   'GET /me', 'GET /subject', 'GET /clusters', 'GET /search', 'GET /recent', 'GET /links', 'GET /cluster', 'GET /history', 'GET /journey', 'GET /board', 'GET /flows', 'GET /collusion', 'GET /rings',
   'GET /decisions', 'GET /disputes', 'GET /consent', 'GET /outcome', 'GET /followed', 'GET /call', 'GET /calls', 'GET /calls/summary', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'GET /ops', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
 ])
+
+/** Answers hold people's data, so nothing keeps a copy of one. */
+const JSON_HEADERS = { 'content-type': 'application/json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }
 
 /** A route that wrote its own answer. */
 const SENT = Symbol('sent')
@@ -370,7 +370,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         const place = shared(info) ? undefined : placeOf(info)
         if (place) identifiers.push(identifier('place', place.slice(0, 120)))
         if (shared(info)) {
-          await graph.ignore(seen)
+          await graph.ignore(seen, true, { by: 'address check', reason: 'an address many people share', automatic: true })
           if (ignoredAddresses.size >= 100_000) ignoredAddresses.clear()
           ignoredAddresses.add(seen)
         }
@@ -442,7 +442,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       const line = await options.lineType!(number)
       const plain = `phone:${hashPhone(number)}`
       if (line?.type === 'nonFixedVoip' && !mutedPhones.has(plain)) {
-        await graph.ignore(plain, true, { by: 'line check', reason: 'a number from an internet calling app' })
+        await graph.ignore(plain, true, { by: 'line check', reason: 'a number from an internet calling app', automatic: true })
         if (mutedPhones.size >= 100_000) mutedPhones.clear()
         mutedPhones.add(plain)
       }
@@ -667,7 +667,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         const tag = `"${version}-${(running ??= await runningPolicy())}"`
         response.setHeader('etag', tag)
         if (request.headers['if-none-match'] === tag) {
-          response.writeHead(304).end()
+          response.writeHead(304, { 'cache-control': 'no-store' }).end()
           return SENT
         }
         return { version }
@@ -881,11 +881,11 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       const result = await route(request, response)
       if (result === SENT) return
       if (result === undefined) return void response.writeHead(204).end()
-      response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result))
+      response.writeHead(200, JSON_HEADERS).end(JSON.stringify(result))
     } catch (error) {
       if (error instanceof Outdated) {
         const { seq, at, action, about, by, reason } = error.decision
-        return void response.writeHead(409, { 'content-type': 'application/json' }).end(JSON.stringify({ error: error.message, decision: { seq, at, action, about, by, reason } }))
+        return void response.writeHead(409, JSON_HEADERS).end(JSON.stringify({ error: error.message, decision: { seq, at, action, about, by, reason } }))
       }
       const refused = error instanceof Refusal || error instanceof TypeError || error instanceof SyntaxError
       const status = error instanceof Refusal ? error.status : refused ? 400 : 500
@@ -894,7 +894,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         tally.errors += 1
         console.error(error)
       }
-      response.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: message }))
+      response.writeHead(status, JSON_HEADERS).end(JSON.stringify({ error: message }))
     }
   }
 }

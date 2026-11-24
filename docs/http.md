@@ -106,7 +106,7 @@ The four `POST` routes answer with the subjects whose cluster moved. With the se
 | `POST /separate`, list | `{ source, pairs: [{ a, b, separated?, reason? }], reason? }`, at most 1,000 pairs. One transaction, one decision each, by `system:<source>`. Answers `{ changes, recorded, already }`. |
 | `POST /join`, list | The same without `separated`: two records another system merged are one person here too. |
 | `POST /observe` | One observation, or a list: `{ subject, identifiers, at, event? }`. Answers with the cluster changes. |
-| `POST /touch` | A marketing touch: `{ subject, at, gclid?, source?, medium?, campaign?, campaignId?, … }`. |
+| `POST /touch` | A marketing touch: `{ subject, at, gclid?, source?, medium?, campaign?, campaignId?, … }`. Each field is text, and a field a touch does not have is refused; your own go in `custom`. |
 | `POST /consent` | `{ subject, consent: { adUserData, adPersonalization }, at?, source? }`. Adds an answer about advertising; the newest by `at` stands. An `at` more than a day ahead is refused, and so is a `source` over 200 characters. |
 | `GET /attribute?subject=&at=` | The touches that led to a conversion by this subject, and the one credited. |
 | `POST /transfer` | `{ id, from, to, amount, at, asset? }`. Records value moving, and answers with the identity tie between the two and whether it was a `duplicate`. Sent again with the same details it adds nothing; the same `id` with other details is refused with 400. |

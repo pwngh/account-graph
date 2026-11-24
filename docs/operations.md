@@ -80,6 +80,8 @@ Three things can: the script tag's `domains` option, which carries a visitor alo
 REVIEW_TOKENS='{"dana":"…","lee":"…"}'
 ```
 
+> **The values in `compose.yaml` that start with `change-me` are public.** The server does not start with one of them once `ORIGINS` has a site that is not on your own machine.
+
 > **Each decision is signed with the name its token belongs to.** It says whose token was used, so it is worth as much as the care taken of that token. Do not share one.
 
 To replace a token, list both, `{"dana":["new","old"]}`, restart, and take the old one out once nobody uses it. Taking a name out ends its access; what that person decided stays on the record.
@@ -285,7 +287,7 @@ On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes i
 | `QUIET_TOUCHES_HOURS`, `QUIET_CALLS_HOURS`, `QUIET_RESULTS_HOURS`, `QUIET_COSTS_HOURS` | `0` | Hours of silence before a feed is said to be quiet. `0` is not watched. |
 | `RETURN_HOURS` | `24` | Hours before a missed caller from a paid arrival is said to be waiting, and before the board says any missed caller has waited too long. `0` is never. |
 | `STAGES` | none | Your steps in order, as JSON, each with a `value`, `currency`, `action` and `wait`. See [the report](report.md#steps-and-what-each-is-worth). |
-| `LINK_SECRET` | none | Signs links that name a person, and the tokens that carry a visitor between your sites. At least 16 characters. |
+| `LINK_SECRET` | none | Signs links that name a person, and the tokens that carry a visitor between your sites. At least 32 characters. |
 | `EVENTS` | none | Names of page events to keep, separated by commas: `inquiry,phone_click`. |
 | `CALL_NUMBERS` | none | Your tracking numbers and the channel of each, as JSON: `{"+15551230001":{"source":"google","campaignId":"20222"}}`. Each may carry `tags`. |
 | `CALL_MIN_SECONDS` | `30` | A shorter call is recorded but not counted. |

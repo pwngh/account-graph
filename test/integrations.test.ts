@@ -354,6 +354,10 @@ test('a decision is signed with the name its token belongs to, and one made on a
   try {
     assert.deepEqual((await call('dana-new', '/me')).answer, { reviewer: 'dana' })
     assert.deepEqual((await call('service', '/me')).answer, { reviewer: null })
+    for (const path of ['/me', '/nowhere']) {
+      const { headers } = await fetch(base + path, { headers: { authorization: 'Bearer service' } })
+      assert.deepEqual([headers.get('cache-control'), headers.get('x-content-type-options')], ['no-store', 'nosniff'])
+    }
     assert.equal((await call('dana', '/me')).status, 401)
 
     // The name is the token's, whichever of hers she used, and cannot be another's.

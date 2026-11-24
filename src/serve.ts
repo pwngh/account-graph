@@ -198,8 +198,12 @@ export function configFrom(env: Env) {
     const targets = [config.google && 'google', config.meta && 'meta', config.tiktok && 'tiktok', config.microsoft && 'microsoft'].filter((name): name is string => Boolean(name))
     for (const problem of ladderProblems(config.stages, targets)) wrong.push(`STAGES: ${problem}`)
   }
-    if (config.linkSecret !== undefined && config.linkSecret.length < 16) wrong.push('LINK_SECRET must be at least 16 characters')
+    if (config.linkSecret !== undefined && config.linkSecret.length < 32) wrong.push('LINK_SECRET must be at least 32 characters')
   for (const problem of reviewerProblems(config.reviewers, config.token)) wrong.push(`REVIEW_TOKENS: ${problem}`)
+  // The secrets in compose.yaml are in the repository for anyone to read, so they are only for trying it out.
+  const far = config.origins.find((origin) => !/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|[^/]+\.localhost)(:\d+)?$/.test(origin))
+  const secrets = { GRAPH_TOKEN: [config.token], REVIEW_TOKENS: Object.values(config.reviewers ?? {}).flat(), LINK_SECRET: [config.linkSecret] }
+  if (far) for (const [name, held] of Object.entries(secrets)) if (held.some((each) => String(each).startsWith('change-me'))) wrong.push(`${name} must be changed before taking visits from ${far}`)
   if (config.auditHours > 0 && !config.alertWebhook) wrong.push('ALERT_WEBHOOK must be set along with AUDIT_HEAD_HOURS')
   if (wrong.length > 0) throw new Error(`Cannot start:\n  ${wrong.join('\n  ')}`)
   return config

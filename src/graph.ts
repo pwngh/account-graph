@@ -8,6 +8,7 @@ import { followUp } from './calls.ts'
 import { followed } from './followed.ts'
 import type { Followed } from './followed.ts'
 import { UNSTORABLE } from './identifiers.ts'
+import { checkTouch } from './touch.ts'
 import { createMemoryStore } from './memory.ts'
 import { defaultPolicy, plainPolicy, policyHash, ruleFor, usable } from './policy.ts'
 import type { Policy } from './policy.ts'
@@ -484,6 +485,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     let last = await tx.lastDecision()
     const seqs: number[] = []
     for (const { action, about, why } of entries) {
+      keepable(why?.by, why?.reason)
       const entry = { seq: (last?.seq ?? 0) + 1, at: now(), action, about, ...(why?.by && { by: why.by }), ...(why?.reason && { reason: why.reason }) }
       last = { ...entry, hash: seal(last?.hash ?? '', entry) }
       await tx.addDecision(last)
@@ -574,8 +576,14 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     if (last?.value !== value || last.currency !== currency) await tx.addValue(transactionId, subject, { value, currency, at: now() })
   }
 
+  /** Refuses text the database cannot keep, before anything is written. */
+  const keepable = (...texts: (string | undefined)[]) => {
+    for (const text of texts) if (text !== undefined && UNSTORABLE.test(text)) throw new TypeError('Text may not hold a NUL or half of a character')
+  }
+
   const pairOf = (a: Subject, b: Subject, verb: string): [Subject, Subject] => {
     if (typeof a !== 'string' || typeof b !== 'string' || !a || !b || a === b) throw new TypeError(`${verb} needs two different subjects`)
+    keepable(a, b)
     return a < b ? [a, b] : [b, a]
   }
 
@@ -662,8 +670,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     async touch(touch) {
-      if (typeof touch.subject !== 'string' || !touch.subject) throw new TypeError('A touch needs a subject')
-      if (!Number.isSafeInteger(touch.at)) throw new TypeError('A touch needs a time in whole epoch milliseconds')
+      checkTouch(touch)
       await store.write(async (tx) => {
         await tx.addTouch(touch)
         await tx.fed('touches', now())
@@ -682,6 +689,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       const value = outcome.value ?? 0
       if (typeof value !== 'number' || !Number.isFinite(value)) throw new TypeError(`Outcome "${transactionId}" has a value that is not a number`)
       for (const text of [outcome.stage, outcome.currency]) if (text !== undefined && typeof text !== 'string') throw new TypeError(`Outcome "${transactionId}" needs its stage and currency as text`)
+      keepable(transactionId, subject, outcome.stage, outcome.currency)
       const tags = checkTags(outcome.tags, `Outcome "${transactionId}"`)
       const counted: Counted = { transactionId, subject, at, stage: outcome.stage || 'outcome', value, currency: outcome.currency ?? '', ...(tags && { tags }) }
       return store.write(async (tx) => {
@@ -695,6 +703,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     async restate(transactionId, value, currency) {
       if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) throw new TypeError('A restated value must be zero or more')
       if (currency !== undefined && typeof currency !== 'string') throw new TypeError('A restated currency must be text')
+      keepable(transactionId, currency)
       return store.write(async (tx) => {
         const found = await tx.outcomeOf(transactionId)
         if (!found) return false
@@ -842,6 +851,11 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         for (const count of [cost.clicks, cost.impressions]) {
           if (count !== undefined && (!Number.isSafeInteger(count) || count < 0)) throw new TypeError(`The cost of ${cost.day} has a count that is not a whole number`)
         }
+        const named = [cost.campaignId, cost.campaign, cost.currency].map((text) => {
+          if (typeof text === 'object' && text !== null) throw new TypeError(`The cost of ${cost.day} needs its campaign and currency as text`)
+          return String(text ?? '')
+        })
+        keepable(cost.source, ...named)
         return {
           day: cost.day,
           source: cost.source.trim().toLowerCase(),
@@ -892,12 +906,14 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
     async ignore(identifier, ignored = true, why) {
       if (typeof ignored !== 'boolean') throw new TypeError('ignore needs true or false')
+      keepable(identifier)
       const { cap } = ruleFor(policy, identifier)
       return changing(async (tx) => {
         if (ignored) await current(tx, [identifier], why)
         const before = (await tx.states([identifier])).get(identifier)
         // Asked for what already holds, nothing is decided: a server that mutes an address again after a restart adds no entry.
         if ((before?.ignored ?? false) === ignored) return []
+        if (ignored && why?.automatic && (await tx.newestNaming([identifier], 0))?.action === 'restore') return []
         await decide(tx, ignored ? 'ignore' : 'restore', [identifier], why)
         await tx.setIgnored(identifier, ignored)
         if (!before || before.fanout > cap) return []
@@ -1020,7 +1036,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     async consent(subject, consent, given = {}) {
-      if (!subject) throw new TypeError('Consent needs a subject')
+      if (typeof subject !== 'string' || !subject) throw new TypeError('Consent needs a subject')
       if (typeof consent?.adUserData !== 'boolean' || typeof consent.adPersonalization !== 'boolean') {
         throw new TypeError('Consent needs adUserData and adPersonalization, each true or false')
       }
@@ -1030,6 +1046,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       // An answer dated ahead would stand over every real one until that day came.
       if (at > recorded + DAY) throw new TypeError('An answer cannot be dated in the future')
       if (source !== undefined && (typeof source !== 'string' || source.length > 200)) throw new TypeError('The source of an answer must be text of at most 200 characters')
+      keepable(subject, source)
       await store.write((tx) => tx.addConsent(subject, { at, adUserData: consent.adUserData, adPersonalization: consent.adPersonalization, ...(source && { source }), recorded }))
     },
 
@@ -1118,6 +1135,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
     async forget(subject, why) {
       if (typeof subject !== 'string') throw new TypeError('forget needs a subject')
+      keepable(subject)
       return changing(async (tx) => {
         await decide(tx, 'forget', [subject], why)
         const edges = await tx.edgesOf([subject])
