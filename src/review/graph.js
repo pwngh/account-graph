@@ -5,7 +5,7 @@ const MOST = 90
 const around = (profile) => [...new Set([...profile.separated, ...profile.links.map((link) => link.subject), ...(profile.cluster?.members ?? [])])].filter((each) => each !== profile.subject)
 
 /** What was done to the graph on screen, so a refresh draws it as it was left: where each stands, what was moved, opened out, picked and hidden. */
-const drawn = { subject: undefined, spots: new Map(), pins: new Set(), more: new Map(), off: new Set(), camera: undefined, chosen: undefined, left: false, still: 0 }
+const drawn = { subject: undefined, spots: new Map(), pins: new Set(), more: new Map(), off: new Set(), camera: undefined, chosen: undefined, left: false, still: 0, least: 0 }
 function redrawn(subject) {
   if (drawn.subject === subject) return
   Object.assign(drawn, { subject, pins: new Set(), more: new Map(), camera: undefined, chosen: undefined })
@@ -57,6 +57,8 @@ function gathered(profile) {
     node.role = node.id === profile.subject ? 'me' : tie?.kind === 'apart' ? 'apart' : node.cluster === own ? 'member' : tie ? 'related' : 'far'
     node.degree = [...edges.values()].filter((each) => each.a === node.id || each.b === node.id).length
     node.r = node.role === 'me' ? 24 : Math.min(21, 15 + node.degree)
+    node.wide = Math.max(widthOf(nameOf(node.id), node.role === 'me' ? '600 14px' : '600 13px'), widthOf(typeOf(node.id), '400 12px'))
+    node.side = drawn.spots.get(node.id)?.side ?? 'below'
   }
   return { nodes: [...nodes.values()], edges: [...edges.values()] }
 }
@@ -72,7 +74,7 @@ function step(nodes, edges, heat, tall) {
       const far = Math.max(1, Math.hypot(dx, dy))
       const strangers = a.cluster === undefined || a.cluster !== b.cluster
       // Names are wider than they are tall, so two side by side need more room than one above the other.
-      const room = 92 + 40 * Math.abs(dx / far)
+      const room = 110 + (a.wide + b.wide) / 3 * Math.abs(dx / far)
       const push = heat * ((strangers ? 16000 : 6500) / (far * far) + (far < room ? (room - far) * 0.22 : 0))
       a.vx -= (push * dx) / far
       a.vy -= (push * dy) / far
@@ -84,27 +86,10 @@ function step(nodes, edges, heat, tall) {
     const dx = to.x - from.x
     const dy = to.y - from.y
     const far = Math.max(1, Math.hypot(dx, dy))
-    const pull = heat * (kind === 'joined' ? 0.07 * (far - 205 + 30 * score) : kind === 'related' ? 0.05 * (far - 270) : 0.025 * (far - 310))
+    const pull = heat * (kind === 'joined' ? 0.07 * (far - 215 + 30 * score) : kind === 'related' ? 0.05 * (far - 270) : 0.025 * (far - 310))
     for (const [node, way] of [[from, 1], [to, -1]]) {
       node.vx += (way * pull * dx) / far
       node.vy += (way * pull * dy) / far
-    }
-  }
-  // A line that runs through someone it has nothing to do with reads as theirs, so they step off it.
-  for (const { from, to } of edges) for (const node of nodes) {
-    if (node === from || node === to) continue
-    const [ex, ey] = [to.x - from.x, to.y - from.y]
-    const t = ((node.x - from.x) * ex + (node.y - from.y) * ey) / Math.max(1, ex * ex + ey * ey)
-    if (t < 0.05 || t > 0.95) continue
-    const [dx, dy] = [node.x - from.x - t * ex, node.y - from.y - t * ey]
-    const far = Math.max(0.5, Math.hypot(dx, dy))
-    if (far > 46) continue
-    const push = (heat * 0.3 * (46 - far)) / far
-    node.vx += push * dx
-    node.vy += push * dy
-    for (const end of [from, to]) {
-      end.vx -= (push * dx) / 3
-      end.vy -= (push * dy) / 3
     }
   }
   for (const node of nodes) {
@@ -117,23 +102,225 @@ function step(nodes, edges, heat, tall) {
   }
 }
 
-/** How hard a layout is to read: lines that cross or run through someone, and strangers inside an outline that is not theirs. */
+/** How much room is always kept: around discs and names, and between either and a line. */
+const GAP = 12
+const CLEAR = 8
+let ruler
+const widths = new Map()
+/** How wide a text is, from the browser's own fonts and not from how many letters it has. */
+function widthOf(text, font) {
+  const key = `${font}\n${text}`
+  if (!widths.has(key)) {
+    ruler ??= document.createElement('canvas').getContext('2d')
+    ruler.font = `${font} ${getComputedStyle(document.body).fontFamily}`
+    widths.set(key, Math.ceil(ruler.measureText(text).width))
+  }
+  return widths.get(key)
+}
+/** Where a name may stand by its disc. */
+const SIDES = ['below', 'above', 'right', 'left']
+/** What a subject takes up: its disc with the ring around it, and its name. Each is a middle and half of its size. */
+function shapes(node, side = node.side) {
+  const ring = node.r + (node.role === 'me' ? 11 : 9)
+  const [w, h] = [node.wide / 2 + 2, 18]
+  const [dx, dy] = side === 'below' ? [0, ring - 1 + h] : side === 'above' ? [0, -ring + 1 - h] : side === 'right' ? [ring + 4 + w, 0] : [-ring - 4 - w, 0]
+  return [{ x: node.x, y: node.y, w: ring, h: ring, round: true }, { x: node.x + dx, y: node.y + dy, w, h, round: false }]
+}
+/** How far two boxes are into each other, and along which way they part soonest. */
+function overlap(one, two, gap = 0) {
+  const [dx, dy] = [two.x - one.x, two.y - one.y]
+  const [ox, oy] = [one.w + two.w + gap - Math.abs(dx), one.h + two.h + gap - Math.abs(dy)]
+  if (ox <= 0 || oy <= 0) return undefined
+  return ox < oy ? { x: Math.sign(dx || 1) * ox, y: 0 } : { x: 0, y: Math.sign(dy || 1) * oy }
+}
+/** The stretch of a line that is inside a box, as shares of the line, or undefined. */
+function crossing(from, to, box, gap = 0) {
+  let [enter, leave] = [0, 1]
+  for (const [start, way, middle, half] of [[from.x, to.x - from.x, box.x, box.w + gap], [from.y, to.y - from.y, box.y, box.h + gap]]) {
+    if (Math.abs(way) < 1e-9) {
+      if (Math.abs(start - middle) >= half) return undefined
+      continue
+    }
+    const [a, b] = [(middle - half - start) / way, (middle + half - start) / way]
+    enter = Math.max(enter, Math.min(a, b))
+    leave = Math.min(leave, Math.max(a, b))
+  }
+  return enter < leave ? [enter, leave] : undefined
+}
+/** How to move a box off a line it has nothing to do with, or undefined when it is clear of it. */
+function offLine(from, to, box, gap) {
+  const [ex, ey] = [to.x - from.x, to.y - from.y]
+  const long = Math.max(1, Math.hypot(ex, ey))
+  const [nx, ny] = [-ey / long, ex / long]
+  const far = (box.x - from.x) * nx + (box.y - from.y) * ny
+  if (box.round) {
+    const t = Math.max(0, Math.min(1, ((box.x - from.x) * ex + (box.y - from.y) * ey) / (long * long)))
+    if (Math.hypot(box.x - from.x - t * ex, box.y - from.y - t * ey) >= box.w + gap) return undefined
+  } else if (!crossing(from, to, box, gap)) return undefined
+  const need = (box.round ? box.w : Math.abs(nx) * box.w + Math.abs(ny) * box.h) + gap - Math.abs(far)
+  if (need <= 0) return undefined
+  const way = far < 0 ? -1 : 1
+  return { x: nx * way * need, y: ny * way * need }
+}
+/** What is too near to what: each with how the second would move to be clear. */
+function* crowding(nodes, edges) {
+  const taken = nodes.map((node) => shapes(node))
+  for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+    for (const one of taken[i]) for (const two of taken[j]) {
+      const push = overlap(one, two, GAP)
+      if (push) yield { push, node: nodes[j], others: [nodes[i]] }
+    }
+  }
+  for (const { from, to, bend } of edges) for (let i = 0; i < nodes.length; i++) {
+    if (bend || nodes[i] === from || nodes[i] === to) continue
+    for (const box of taken[i]) {
+      const push = offLine(from, to, box, CLEAR)
+      if (push) yield { push, node: nodes[i], others: [from, to] }
+    }
+  }
+}
+/** Moves whatever is too near apart, a little at a time, until nothing is. What was put somewhere by hand gives way last. */
+function spread(nodes, edges, rounds) {
+  for (let round = 0; round < rounds; round++) {
+    let moved = false
+    for (const { push, node, others } of crowding(nodes, edges)) {
+      moved = true
+      const still = (each) => each.held || (drawn.pins.has(each.id) && round < rounds / 2)
+      const part = others.length === 0 || others.every(still) ? 1 : still(node) ? 0 : 0.55
+      if (!still(node)) {
+        node.x += push.x * part
+        node.y += push.y * part
+      }
+      for (const other of others) if (!still(other) && part < 1) {
+        other.x -= (push.x * (1 - part)) / (others.length === 2 ? 1.6 : 1)
+        other.y -= (push.y * (1 - part)) / (others.length === 2 ? 1.6 : 1)
+      }
+    }
+    if (!moved) return true
+  }
+  return false
+}
+/** Puts each name on the side of its disc where the fewest lines leave and nobody else is. */
+function sides(nodes, edges) {
+  for (const node of nodes) {
+    const own = edges.filter((edge) => edge.from === node || edge.to === node)
+    const cost = (side) => {
+      const [, name] = shapes(node, side)
+      let sum = side === 'below' ? 0 : side === 'above' ? 0.2 : 0.3
+      for (const { from, to } of own) if (crossing(from, to, name, 3)) sum += 1
+      for (const other of nodes) if (other !== node) for (const box of shapes(other)) if (overlap(name, box, GAP)) sum += 4
+      for (const edge of edges) if (!own.includes(edge) && crossing(edge.from, edge.to, name, CLEAR)) sum += 3
+      return sum
+    }
+    const costs = SIDES.map(cost)
+    // A name stays where it is unless another side is plainly better, so nothing flickers.
+    const best = SIDES[costs.indexOf(Math.min(...costs))]
+    if (Math.min(...costs) < costs[SIDES.indexOf(node.side)] - 0.5) node.side = best
+  }
+}
+/** Moves whoever stands in an outline that is not theirs out of it. */
+function outward(nodes, edges) {
+  for (let round = 0; round < 30; round++) {
+    let moved = false
+    for (const { id, points } of outlines(nodes, edges)) {
+      const middle = { x: points.reduce((sum, p) => sum + p.x, 0) / points.length, y: points.reduce((sum, p) => sum + p.y, 0) / points.length }
+      for (const node of nodes) {
+        if (node.cluster === id || node.held || drawn.pins.has(node.id)) continue
+        if (Math.min(...corners(shapes(node)).map((p) => beyond(p, points))) >= MARGIN + CLEAR) continue
+        const [dx, dy] = [node.x - middle.x, node.y - middle.y]
+        const long = Math.max(1, Math.hypot(dx, dy))
+        node.x += (dx / long) * 22
+        node.y += (dy / long) * 22
+        moved = true
+      }
+    }
+    if (!moved) return
+  }
+}
+/** A line as points along it: straight, or bent to one side by so much at its middle. */
+function course({ from, to, bend = 0 }, sides = bend) {
+  const long = Math.max(1, Math.hypot(to.x - from.x, to.y - from.y))
+  const [nx, ny] = [-(to.y - from.y) / long, (to.x - from.x) / long]
+  const count = sides ? 24 : 1
+  return Array.from({ length: count + 1 }, (_, i) => {
+    const t = i / count
+    const off = sides * 4 * t * (1 - t)
+    return { x: from.x + (to.x - from.x) * t + nx * off, y: from.y + (to.y - from.y) * t + ny * off }
+  })
+}
+/** Whether a course is clear of every disc and name but those at its own ends. */
+function freeOf(edge, points, taken) {
+  return taken.every(({ node, boxes }) => node === edge.from || node === edge.to || boxes.every((box) => points.every((p, i) => {
+    if (i === 0) return true
+    if (box.round) return apartFrom(points[i - 1], p, box) >= box.w + CLEAR - 4
+    return !crossing(points[i - 1], p, box, CLEAR - 4)
+  })))
+}
+/** How far a point is from a stretch of line. */
+function apartFrom(a, b, p) {
+  const [ex, ey] = [b.x - a.x, b.y - a.y]
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * ex + (p.y - a.y) * ey) / Math.max(1, ex * ex + ey * ey)))
+  return Math.hypot(p.x - a.x - t * ex, p.y - a.y - t * ey)
+}
+/** Bends each line that runs through someone around them, as little as will do. Answers how many it could not. */
+function route(nodes, edges) {
+  const taken = nodes.map((node) => ({ node, boxes: shapes(node) }))
+  const left = new Map()
+  let stuck = 0
+  for (const edge of edges) {
+    const long = Math.hypot(edge.to.x - edge.from.x, edge.to.y - edge.from.y)
+    const ways = [0, 0.1, -0.1, 0.18, -0.18, 0.26, -0.26, 0.36, -0.36, 0.48, -0.48, 0.62, -0.62].map((part) => part * Math.max(160, long))
+    // Best is one that also keeps off the names at its own ends and leaves them apart from other lines. A line may have to do without.
+    const clear = ways.filter((sides) => freeOf(edge, course(edge, sides), taken))
+    const leaves = (sides) => {
+      const points = course(edge, sides)
+      const [a, b] = [points[1], points.at(-2)]
+      return [[edge.from, Math.atan2(a.y - edge.from.y, a.x - edge.from.x)], [edge.to, Math.atan2(b.y - edge.to.y, b.x - edge.to.x)]]
+    }
+    const named = clear.filter((sides) => [edge.from, edge.to].every((node) => {
+      const [, name] = shapes(node)
+      return course(edge, sides).every((p, i, all) => i === 0 || !crossing(all[i - 1], p, name, 3))
+    }))
+    const alone = named.filter((sides) => leaves(sides).every(([node, angle]) => (left.get(node) ?? []).every((other) => Math.abs(Math.atan2(Math.sin(angle - other), Math.cos(angle - other))) > 0.16)))
+    const way = alone[0] ?? named[0] ?? clear[0]
+    for (const [node, angle] of leaves(way ?? 0)) left.set(node, [...(left.get(node) ?? []), angle])
+    edge.bend = way ?? 0
+    if (way === undefined) stuck += 1
+  }
+  return stuck
+}
+/** Gives everything its room: names to their best side, then apart, lines around what is in their way, and wider only when that is not enough. */
+function settle(nodes, edges, tries = 16) {
+  for (const edge of edges) edge.bend = 0
+  for (let i = 0; i < tries; i++) {
+    sides(nodes, edges)
+    outward(nodes, edges)
+    spread(nodes, edges, 24)
+    const still = [...crowding(nodes, [])].length === 0 || spread(nodes, [], 80)
+    if (still && route(nodes, edges) === 0) return true
+    for (const edge of edges) edge.bend = 0
+    for (const [n, node] of nodes.entries()) {
+      node.x = node.x * 1.06 + (n % 3) - 1
+      node.y = node.y * 1.06 + (n % 2)
+    }
+  }
+  spread(nodes, [], 200)
+  route(nodes, edges)
+  return false
+}
+
+/** How hard a layout is to read: how often lines cross, and how far it reaches. */
 function tangle(nodes, edges) {
-  let cost = 0
   const side = (p, q, r) => Math.sign((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x))
+  let cost = 0
   edges.forEach((one, i) => {
     for (const two of edges.slice(i + 1)) {
       if (one.from === two.from || one.from === two.to || one.to === two.from || one.to === two.to) continue
       if (side(one.from, one.to, two.from) !== side(one.from, one.to, two.to) && side(two.from, two.to, one.from) !== side(two.from, two.to, one.to)) cost += 1
     }
-    for (const node of nodes) if (node !== one.from && node !== one.to) {
-      const [ex, ey] = [one.to.x - one.from.x, one.to.y - one.from.y]
-      const t = ((node.x - one.from.x) * ex + (node.y - one.from.y) * ey) / Math.max(1, ex * ex + ey * ey)
-      if (t > 0 && t < 1 && Math.hypot(node.x - one.from.x - t * ex, node.y - one.from.y - t * ey) < 34) cost += 3
-    }
   })
-  for (const { margin } of outlines(nodes, edges)) if (margin !== 42) cost += margin ? 1 : 8
-  return cost
+  const reach = Math.max(...nodes.map((node) => Math.hypot(node.x, node.y)))
+  return cost + reach / 120 + edges.filter((edge) => edge.bend).length * 0.5 + outlines(nodes, edges).filter(({ clear }) => !clear).length * 3
 }
 
 /** The outline around points, in order. */
@@ -160,14 +347,16 @@ function beyond(p, shape) {
   }))
 }
 
-/** The outline of each cluster that has two or more drawn, and how wide a margin it can have without taking in anyone else: none at all when it cannot help it. */
+/** Points around boxes, close enough together to draw an outline through. */
+const corners = (boxes) => boxes.flatMap(({ x, y, w, h, round }) => (round ? [0, 1, 2, 3, 4, 5, 6, 7].map((n) => ({ x: x + w * Math.cos((n * Math.PI) / 4), y: y + h * Math.sin((n * Math.PI) / 4) })) : [[-1, -1], [1, -1], [1, 1], [-1, 1], [0, -1], [0, 1], [-1, 0], [1, 0]].map(([dx, dy]) => ({ x: x + dx * w, y: y + dy * h }))))
+const MARGIN = 14
+/** The outline of each cluster that has two or more drawn, around their discs and names, and whether it is clear of everyone else. */
 function outlines(nodes, edges) {
   const clusters = new Map()
   for (const node of nodes) if (node.cluster !== undefined) clusters.set(node.cluster, [...(clusters.get(node.cluster) ?? []), node])
   return [...clusters].filter(([id, list]) => list.length > 1 && !edges.some((edge) => edge.kind === 'apart' && edge.from.cluster === id && edge.to.cluster === id)).map(([id, list]) => {
-    const points = outline(list)
-    const strangers = nodes.filter((node) => node.cluster !== id).map((node) => beyond(node, points) - node.r)
-    return { id, points, margin: [42, 36, 30].find((margin) => strangers.every((far) => far > margin + 2)) }
+    const points = outline(list.flatMap((node) => corners(shapes(node))))
+    return { id, points, clear: nodes.every((node) => node.cluster === id || corners(shapes(node)).every((p) => beyond(p, points) > MARGIN + 2)) }
   })
 }
 
@@ -205,19 +394,67 @@ function graphOf(profile, more) {
   const said = (edge) => (edge.kind === 'apart' ? `kept apart by a decision${edge.score === undefined ? '' : `, which stands over a tie of ${shared(edge)}`}` : `${edge.kind === 'joined' ? 'joined' : together(edge) ? 'tied, joined through others' : 'tied, not joined'}, ${shared(edge)}`)
   const verdict = (a, b) => [profile, ...drawn.more.values()].flatMap((each) => each.verdicts).find((each) => each.a === a && each.b === b)
 
+  /** The part of a line that is drawn: from clear of one disc, and of its name if the line leaves that way, to clear of the other. */
+  function span(edge) {
+    const fine = course(edge).length > 2 ? course(edge) : Array.from({ length: 49 }, (_, i) => ({ x: edge.from.x + ((edge.to.x - edge.from.x) * i) / 48, y: edge.from.y + ((edge.to.y - edge.from.y) * i) / 48 }))
+    const within = (near) => {
+      const [, name] = shapes(near)
+      const room = near.r + (near.role === 'me' ? 12 : 4)
+      return (p) => Math.hypot(p.x - near.x, p.y - near.y) < room || (Math.abs(p.x - name.x) < name.w + 3 && Math.abs(p.y - name.y) < name.h + 2)
+    }
+    // Walked in small steps from each end to the last place that is still within, and on to just past it.
+    const walk = (points, near) => {
+      const inside = within(near)
+      const [, name] = shapes(near)
+      for (let i = points.length - 1; i > 0; i--) {
+        const [out, back] = [points[i], points[i - 1]]
+        if (!inside(back) && i > 1) {
+          // Across a corner of the name, with neither end in it.
+          if (crossing(back, out, name, 2)) return points.slice(i)
+          continue
+        }
+        let [lo, hi] = [0, 1]
+        for (let n = 0; n < 12; n++) {
+          const mid = (lo + hi) / 2
+          if (inside({ x: back.x + (out.x - back.x) * mid, y: back.y + (out.y - back.y) * mid })) lo = mid
+          else hi = mid
+        }
+        return [{ x: back.x + (out.x - back.x) * hi, y: back.y + (out.y - back.y) * hi }, ...points.slice(i)]
+      }
+      return points
+    }
+    return walk(walk(fine, edge.from).reverse(), edge.to).reverse()
+  }
+  /** A place along a drawn line, by share of its length. */
+  function along(points, share) {
+    const longs = points.slice(1).map((p, i) => Math.hypot(p.x - points[i].x, p.y - points[i].y))
+    let left = share * longs.reduce((sum, long) => sum + long, 0)
+    for (const [i, long] of longs.entries()) {
+      if (left <= long && long > 0) return { x: points[i].x + ((points[i + 1].x - points[i].x) * left) / long, y: points[i].y + ((points[i + 1].y - points[i].y) * left) / long }
+      left -= long
+    }
+    return points.at(-1)
+  }
   /** Everything is put where the layout has it. Answers whether the view is still on its way to showing it all. */
   function place(ease = false) {
     for (const node of nodes) {
       node.mark.setAttribute('transform', `translate(${node.x.toFixed(1)} ${node.y.toFixed(1)})`)
-      drawn.spots.set(node.id, { x: node.x, y: node.y })
+      const [, name] = shapes(node)
+      const anchor = node.side === 'right' ? 'start' : node.side === 'left' ? 'end' : 'middle'
+      const x = name.x - node.x + (node.side === 'right' ? -name.w : node.side === 'left' ? name.w : 0)
+      for (const [text, y] of [[node.texts[0], name.y - node.y - 2], [node.texts[1], name.y - node.y + 13]]) for (const [key, value] of [['x', x.toFixed(1)], ['y', y.toFixed(1)], ['text-anchor', anchor]]) text.setAttribute(key, value)
+      drawn.spots.set(node.id, { x: node.x, y: node.y, side: node.side })
     }
     for (const edge of edges) {
-      for (const line of edge.lines) for (const [name, value] of [['x1', edge.from.x], ['y1', edge.from.y], ['x2', edge.to.x], ['y2', edge.to.y]]) line.setAttribute(name, value.toFixed(1))
-      edge.tag.setAttribute('transform', `translate(${(edge.from.x + (edge.to.x - edge.from.x) * edge.along).toFixed(1)} ${(edge.from.y + (edge.to.y - edge.from.y) * edge.along).toFixed(1)})`)
+      edge.span = span(edge)
+      const d = `M${edge.span.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}`
+      for (const line of edge.lines) line.setAttribute('d', d)
+      const spot = along(edge.span, edge.along)
+      edge.tag.setAttribute('transform', `translate(${spot.x.toFixed(1)} ${spot.y.toFixed(1)})`)
     }
     // An outline that would also take in someone else says what is not so, and is left out.
-    hulls.replaceChildren(...outlines(nodes, edges).filter(({ margin }) => margin)
-      .map(({ id, points, margin }) => svg('path', { 'stroke-width': margin * 2, class: id === byId.get(me).cluster ? 'mine' : '', d: `M${points.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}Z` })))
+    hulls.replaceChildren(...outlines(nodes, edges).filter(({ clear }) => clear)
+      .map(({ id, points }) => svg('path', { 'stroke-width': MARGIN * 2, class: id === byId.get(me).cluster ? 'mine' : '', d: `M${points.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}Z` })))
     const from = drawn.camera
     const to = from && (from.held || performance.now() < drawn.still) ? from : fitted()
     const part = ease && from && !from.held ? 0.16 : 1
@@ -230,30 +467,46 @@ function graphOf(profile, more) {
   }
   /** Puts the words of a line where they cover nobody's name and no other line's words, as near its middle as there is room. */
   function word() {
-    const taken = nodes.flatMap((node) => {
-      const wide = Math.max(nameOf(node.id).length, typeOf(node.id).length) * 3.6 + 4
-      return [{ l: node.x - node.r - 4, r: node.x + node.r + 4, t: node.y - node.r - 4, b: node.y + node.r + 4 }, { l: node.x - wide, r: node.x + wide, t: node.y + node.r, b: node.y + node.r + 34 }]
-    })
+    const taken = nodes.flatMap((node) => shapes(node))
     for (const edge of edges) {
-      if (!edge.mark.classList.contains('worded') && !edge.mark.classList.contains('lit')) continue
-      const spot = (t) => ({ x: edge.from.x + (edge.to.x - edge.from.x) * t, y: edge.from.y + (edge.to.y - edge.from.y) * t })
-      const box = ({ x, y }) => ({ l: x - edge.wide / 2, r: x + edge.wide / 2, t: y - 10, b: y + 10 })
-      const free = (one) => !taken.some((two) => one.l < two.r && two.l < one.r && one.t < two.b && two.t < one.b)
-      edge.along = [0.5, 0.45, 0.55, 0.4, 0.6, 0.34, 0.66, 0.28, 0.72].find((t) => free(box(spot(t)))) ?? 0.5
-      taken.push(box(spot(edge.along)))
-      const { x, y } = spot(edge.along)
+      const told = edge.mark.classList.contains('worded') || edge.mark.classList.contains('lit')
+      if (!told || edge.mark.classList.contains('off') || !edge.span) continue
+      const spot = (t) => ({ ...along(edge.span, t), w: edge.wide / 2, h: 10 })
+      const free = (box) => !taken.some((other) => overlap(box, other, 4)) && !edges.some((other) => other !== edge && !other.mark.classList.contains('off') && other.span && other.span.some((p, i) => i > 0 && crossing(other.span[i - 1], p, box, 2)))
+      const at = [0.5, 0.44, 0.56, 0.38, 0.62, 0.32, 0.68, 0.26, 0.74, 0.2, 0.8, 0.14, 0.86].find((t) => free(spot(t)))
+      // With no room anywhere on its line its words are left to the card and the title.
+      edge.tag.classList.toggle('full', at === undefined)
+      if (at === undefined) continue
+      edge.along = at
+      taken.push(spot(at))
+      const { x, y } = spot(at)
       edge.tag.setAttribute('transform', `translate(${x.toFixed(1)} ${y.toFixed(1)})`)
     }
   }
   /** The whole graph, in the middle of the room beside the card. */
   function fitted() {
-    const [left, right, top, bottom] = [Math.min, Math.max, Math.min, Math.max].map((pick, i) => pick(...nodes.map((node) => (glide ? node.end : node)[i < 2 ? 'x' : 'y'])))
+    const boxes = nodes.flatMap((node) => shapes(glide ? { ...node, ...node.end } : node))
+    const [left, right, top, bottom] = [Math.min(...boxes.map((box) => box.x - box.w)), Math.max(...boxes.map((box) => box.x + box.w)), Math.min(...boxes.map((box) => box.y - box.h)), Math.max(...boxes.map((box) => box.y + box.h))]
     // Room is left for what lies over the paper: the keys and tools, and the card when someone is picked.
     const narrow = root.classList.contains('narrow')
     const over = { top: narrow ? legend.offsetHeight + 8 : 0, right: !narrow && !card.hidden ? 300 : 0, bottom: 44 + (narrow && document.fullscreenElement === root && !card.hidden ? card.offsetHeight + 8 : 0) }
     const [w, h] = [size.w - over.right, size.h - over.top - over.bottom]
-    const k = Math.max(0.25, Math.min(1.3, w / (right - left + 130), h / (bottom - top + 116)))
-    return { k, x: w / 2 + (card.classList.contains('left') ? over.right : 0) - (k * (left + right)) / 2, y: over.top + h / 2 - k * ((top + bottom) / 2 + 12) }
+    const whole = Math.max(0.1, Math.min(1.25, w / (right - left + 56), h / (bottom - top + 48)))
+    // Never so small that names cannot be read: the subject in the middle, and the rest by panning.
+    const k = Math.max(0.55, whole)
+    const [cx, cy] = k === whole ? [(left + right) / 2, (top + bottom) / 2] : [byId.get(me).x, byId.get(me).y]
+    return { k, x: w / 2 + (card.classList.contains('left') ? over.right : 0) - k * cx, y: over.top + h / 2 - k * cy }
+  }
+  /** Whether something was moved by hand since everything last had its room. */
+  let loose = false
+  function rest() {
+    loose = false
+    const start = nodes.map(({ x, y }) => ({ x, y }))
+    settle(nodes, edges)
+    nodes.forEach((node, i) => {
+      Object.assign(node, { start: start[i], end: { x: node.x, y: node.y } }, calm ? {} : start[i])
+    })
+    if (!calm) glide = { gone: 0 }
   }
   function run() {
     if (running) return
@@ -274,8 +527,14 @@ function graphOf(profile, more) {
         }
         if (t === 1) glide = undefined
       } else {
-        if (heat > 0.02) step(nodes, edges, heat, size.w < size.h * 1.2)
+        if (heat > 0.02) {
+          step(nodes, edges, heat, size.w < size.h * 1.2)
+          spread(nodes, [], 3)
+          route(nodes, edges)
+        }
         heat *= 0.97
+        // Let go of and at rest: whatever is still too near is moved apart, for all to see.
+        if (heat <= 0.02 && loose && !nodes.some((node) => node.held)) rest()
       }
       const moving = place(true)
       if (moving || glide || heat > 0.02) return void requestAnimationFrame(frame)
@@ -315,21 +574,22 @@ function graphOf(profile, more) {
         // Two may have been given one place, which would never part them.
         nodes.forEach((node, i) => { if (!node.known) { node.x += i * 0.7; node.y += i * 0.3 } else node.held = keep })
         for (let i = 0, warm = 1; i < 320; i++, warm *= 0.985) step(nodes, edges, warm, size.w < size.h * 1.2)
+        settle(nodes, edges)
         const cost = starts === 1 ? 0 : tangle(nodes, edges)
-        if (!best || cost < best.cost) best = { cost, spots: nodes.map(({ x, y }) => ({ x, y })) }
+        if (!best || cost < best.cost) best = { cost, spots: nodes.map(({ x, y, side }) => ({ x, y, side })), bends: edges.map((edge) => edge.bend) }
         // A phone gets fewer tries, not a longer wait.
-        if (cost === 0 || performance.now() - began > 150) break
+        if (performance.now() - began > 250) break
       }
       nodes.forEach((node, i) => Object.assign(node, best.spots[i], { held: false }))
-    }
+      edges.forEach((edge, i) => (edge.bend = best.bends[i]))
+    } else route(nodes, edges)
     const roomy = edges.length <= 9
     lines.replaceChildren(...edges.map((edge) => {
       const width = edge.kind === 'apart' ? 1.5 : 1 + 2 * (edge.score ?? 0)
-      edge.lines = [svg('line', { class: 'line', 'stroke-width': width.toFixed(1) }), svg('line', { class: 'reach' })]
+      edge.lines = [svg('path', { class: 'line', 'stroke-width': width.toFixed(1) }), svg('path', { class: 'flow' }), svg('path', { class: 'reach' })]
       const words = edge.kind === 'apart' ? 'apart' : `${edge.reasons[0] ? `${edge.reasons[0].identifier.split(':')[0]}${edge.reasons.length > 1 ? ` +${edge.reasons.length - 1}` : ''} ` : ''}${percent(edge.score)}`
-      const wide = words.length * 6.1 + 12
-      Object.assign(edge, { wide, along: 0.5 })
-      edge.tag = svg('g', { class: `tag ${edge.kind}${roomy ? ' worded' : ''}` }, svg('rect', { x: -wide / 2, y: -9, width: wide, height: 18, rx: 9 }), svg('text', { 'text-anchor': 'middle', y: 4 }, words))
+      Object.assign(edge, { wide: widthOf(words, '400 12px') + 14, along: 0.5 })
+      edge.tag = svg('g', { class: `tag ${edge.kind}${roomy ? ' worded' : ''}` }, svg('rect', { x: -edge.wide / 2, y: -10, width: edge.wide, height: 20, rx: 10 }), svg('text', { 'text-anchor': 'middle', y: 4 }, words))
       edge.mark = svg('g', { class: `edge ${edge.kind}${roomy ? ' worded' : ''}` }, ...edge.lines, svg('title', {}, `${edge.a} and ${edge.b}: ${said(edge)}`))
       edge.mark.addEventListener('pointerenter', () => !running && light(new Set([edge.a, edge.b]), edge))
       edge.mark.addEventListener('pointerleave', () => light())
@@ -343,7 +603,7 @@ function graphOf(profile, more) {
         svg('circle', { class: 'halo', r: node.r + 7 }), svg('circle', { class: 'disc', r: node.r }),
         svg('path', { class: icon ? 'icon line' : 'icon', d: icon ?? PERSON, transform: `scale(${(node.r / 15).toFixed(2)})` }),
         node.role === 'apart' ? svg('path', { class: 'no', d: `M${-node.r * 0.71} ${node.r * 0.71}L${node.r * 0.71} ${-node.r * 0.71}` }) : '',
-        svg('text', { class: 'name', 'text-anchor': 'middle', y: node.r + 16 }, nameOf(node.id)), svg('text', { class: 'type', 'text-anchor': 'middle', y: node.r + 29 }, typeOf(node.id)), svg('title', {}, node.id))
+        ...(node.texts = [svg('text', { class: 'name' }, nameOf(node.id)), svg('text', { class: 'type' }, typeOf(node.id))]), svg('title', {}, node.id))
       node.mark.node = node
       node.mark.addEventListener('pointerenter', () => !running && light(near(node.id)))
       node.mark.addEventListener('pointerleave', () => light())
@@ -368,6 +628,16 @@ function graphOf(profile, more) {
       } } }, svg('svg', { viewBox: '0 0 22 8', 'aria-hidden': 'true' }, svg('line', { x1: 1, x2: 21, y1: 4, y2: 4 })), text, el('span', { class: 'muted' }, amount(edges.filter((edge) => edge.kind === kind).length)))
       return button
     }))
+    if (edges.some((edge) => edge.score !== undefined)) {
+      const least = el('input', { type: 'range', min: 0, max: 100, step: 5, value: drawn.least, 'aria-label': 'Weakest tie drawn, in percent', on: { input: () => {
+        drawn.least = Number(least.value)
+        shown.textContent = drawn.least > 0 ? `${drawn.least}% and over` : 'Any strength'
+        hide()
+        light()
+      } } })
+      const shown = el('span', {}, drawn.least > 0 ? `${drawn.least}% and over` : 'Any strength')
+      legend.append(el('label', { class: 'least' }, least, shown))
+    }
     hide()
     if (!byId.has(drawn.chosen)) drawn.chosen = undefined
     tell()
@@ -380,9 +650,29 @@ function graphOf(profile, more) {
     glide = { gone: 0 }
     if (size.w > 0) run()
   }
+  const hidden = (edge) => drawn.off.has(edge.kind) || (edge.kind !== 'apart' && edge.score * 100 < drawn.least)
+  /** The strongest chain of ties from the subject to another, as the lines it goes by. */
+  function chain(id) {
+    const best = new Map([[me, { score: 1, by: [] }]])
+    const open = new Set([me])
+    while (open.size > 0) {
+      const at = [...open].reduce((a, b) => (best.get(b).score > best.get(a).score ? b : a))
+      open.delete(at)
+      for (const edge of edges) {
+        if (edge.kind === 'apart' || hidden(edge) || (edge.a !== at && edge.b !== at)) continue
+        const next = edge.a === at ? edge.b : edge.a
+        const score = best.get(at).score * edge.score
+        if (score > (best.get(next)?.score ?? 0)) {
+          best.set(next, { score, by: [...best.get(at).by, edge] })
+          open.add(next)
+        }
+      }
+    }
+    return best.get(id)?.by ?? []
+  }
   function hide() {
-    for (const edge of edges) for (const mark of [edge.mark, edge.tag]) mark.classList.toggle('off', drawn.off.has(edge.kind))
-    for (const node of nodes) node.mark.classList.toggle('alone', node.id !== me && !edges.some((edge) => (edge.a === node.id || edge.b === node.id) && !drawn.off.has(edge.kind)))
+    for (const edge of edges) for (const mark of [edge.mark, edge.tag]) mark.classList.toggle('off', hidden(edge))
+    for (const node of nodes) node.mark.classList.toggle('alone', node.id !== me && !edges.some((edge) => (edge.a === node.id || edge.b === node.id) && !hidden(edge)))
   }
   /** Brings some forward and lets the rest fall back. Nothing named goes back to whoever is picked. */
   function light(some, only) {
@@ -391,6 +681,10 @@ function graphOf(profile, more) {
     paper.classList.toggle('dimmed', lit !== undefined)
     for (const node of nodes) node.mark.classList.toggle('lit', lit?.has(node.id) ?? false)
     for (const edge of edges) for (const mark of [edge.mark, edge.tag]) mark.classList.toggle('lit', only ? edge === only : lit !== undefined && (edge.a === about || edge.b === about))
+    const path = drawn.chosen === undefined || some ? [] : chain(drawn.chosen)
+    for (const edge of edges) edge.mark.classList.toggle('path', path.includes(edge))
+    for (const edge of path) for (const node of [edge.from, edge.to]) node.mark.classList.add('lit')
+    for (const edge of path) for (const mark of [edge.mark, edge.tag]) mark.classList.add('lit')
     word()
   }
   /** Picks one, or whoever was picked no longer. The view moves to make room after `wait`, so a second press is not made on someone else. */
@@ -438,6 +732,7 @@ function graphOf(profile, more) {
       tie?.score === undefined ? '' : meter(tie.score),
       ...(mine ? reasons(mine.reasons) : node.role === 'member' ? [el('span', { class: 'reason' }, 'No tie of its own to this subject. Joined through others.')] : []),
       ...edges.filter((edge) => edge.from === node || edge.to === node).filter((edge) => edge !== tie).map((edge) => el('span', { class: 'reason' }, el('b', {}, edge.from === node ? edge.b : edge.a), ` ${said(edge)}`, ...(edge.kind === 'apart' ? ['. ', ...kept(verdict(edge.a, edge.b))] : []))),
+      ...(chain(node.id).length > 1 ? [el('span', { class: 'reason' }, `Strongest way from ${me}: `, el('b', {}, [...chain(node.id).reduce((on, edge) => [...on, edge.a === on.at(-1) ? edge.b : edge.a], [me])].slice(1).join(', then ')))] : []),
       el('div', { class: 'row' },
         node.id === me ? '' : el('button', { class: 'primary', type: 'button', on: { click: () => go(subjectHash(node.id)) } }, 'Open'),
         node.id === me ? '' : el('button', { type: 'button', 'data-key': 'ties', on: { click: (event) => outward(node.id, event.currentTarget) } }, drawn.more.has(node.id) ? 'Hide its ties' : 'Show its ties'),
@@ -524,6 +819,7 @@ function graphOf(profile, more) {
     drawn.pins.add(grip.node.id)
     grip.node.x = (now.x - drawn.camera.x) / drawn.camera.k
     grip.node.y = (now.y - drawn.camera.y) / drawn.camera.k
+    loose = true
     if (calm) place()
     else {
       heat = Math.max(heat, 0.35)
@@ -544,6 +840,10 @@ function graphOf(profile, more) {
     down.delete(event.pointerId)
     if (grip?.node) grip.node.held = false
     grip = undefined
+    if (calm && loose) {
+      rest()
+      place()
+    }
     if (down.size === 0) root.classList.remove('held')
   })
   // A wheel scrolls the page, as anywhere else on it. With Ctrl or Cmd, or pinched, it zooms.
@@ -566,6 +866,7 @@ function graphOf(profile, more) {
   root.begin = () => {
     const same = drawn.subject === me
     redrawn(me)
+    root.style.setProperty('--tall', `${Math.round(Math.max(520, Math.min(860, 420 + 14 * (around(profile).length + 1))))}px`)
     for (const each of more) if (drawn.more.has(each.subject)) if (each.known) drawn.more.set(each.subject, each); else drawn.more.delete(each.subject)
     const measure = () => {
       // Narrow, the card has no room beside anyone and stands under the paper.
