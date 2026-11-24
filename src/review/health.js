@@ -69,7 +69,7 @@ view('health', 'Health', async (box) => {
     policy.due && ['Rebuild due.', el('span', {},
       policy.builtWith === null ? 'Stored policy not recorded.' : policy.builtWith === 'mixed' ? 'Multiple policies wrote the stored clusters.' : el('span', {}, 'Stored policy: ', short(policy.builtWith), '.'),
       ' Current policy: ', short(policy.hash), '. Clusters stay unchanged until a service token is used to post to /rebuild.')],
-    ...quiet.map((feed) => [`${NAMES[feed.name]} went quiet.`, feed.last === null ? 'Nothing recorded yet.' : el('span', {}, 'Last recorded ', ago(feed.last, ops.at), '.')]),
+    ...quiet.map((feed) => [`${NAMES[feed.name]} have gone quiet.`, feed.last === null ? 'Nothing recorded yet.' : el('span', {}, 'Last recorded ', ago(feed.last, ops.at), '.')]),
     ...broken.map((job) => [`${job.name}: ${job.state === 'stuck' ? 'never finished' : 'failed'}.`, job.error ?? '']),
     states?.failed > 0 && [`${amount(states.failed)} ${states.failed === 1 ? 'conversion was' : 'conversions were'} refused for good.`, 'Fix the refusal reason before retrying.'],
     ops?.undelivered.length > 0 && [`${amount(ops.undelivered.length)} ${ops.undelivered.length === 1 ? 'alert was' : 'alerts were'} not delivered.`, ops.alerts ? 'Each is tried again every five minutes.' : 'No webhook is set, so nobody has been told. Set ALERT_WEBHOOK.'],
