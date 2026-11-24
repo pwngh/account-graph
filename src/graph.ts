@@ -876,12 +876,16 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
           if (currency && currency !== found.currency) throw new TypeError('A refund or a write-off is in the currency the outcome is in')
           // One said by mistake is taken back by saying it the other way, and no more than was said.
           let said = 0
-          // As much as subtracting these values can be off by, which grows with them.
-          let off = 0
+          // As much as the subtractions below can be off by, which grows with what they are made of.
+          let off = Number.EPSILON * value
           if (value > found.value) {
             const values = await tx.valuesOf(transactionId, found.subject)
-            values.forEach((each, i) => (said += each.kind === kind && each.currency === found.currency ? values[i - 1]!.value - each.value : 0))
-            off = Number.EPSILON * values.length * Math.max(value, ...values.map((each) => each.value))
+            values.forEach((each, i) => {
+              if (each.kind !== kind || each.currency !== found.currency) return
+              const before = values[i - 1]!.value
+              said += before - each.value
+              off += Number.EPSILON * Math.max(before, each.value)
+            })
           }
           if (value > found.value && (said <= 0 || value - found.value > said + off)) throw new TypeError(`Outcome "${transactionId}" has not had that much ${kind === 'refund' ? 'refunded' : 'written off'}`)
         }

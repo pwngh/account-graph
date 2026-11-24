@@ -757,9 +757,11 @@ test('what a platform says it brought is read only when it is asked for', async 
     { ...row, campaign_id: '779' },
     { ...row, campaign_id: '780', actions: [{ action_type: 'lead', value: '4' }], action_values: [{ action_type: 'other', value: '1' }] },
     { ...row, campaign_id: '781', actions: [{ action_type: 'lead', value: '4' }], action_values: [{ action_type: 'lead', value: '0' }] },
+    { ...row, campaign_id: '782', actions: [{ action_type: 'lead', value: null }], action_values: [{ action_type: 'lead', value: '9' }] },
+    { ...row, campaign_id: '783', actions: [{ action_type: 'lead', value: '4' }], action_values: [{ action_type: 'lead', value: null }] },
   ] } }))
   const ads = { adAccountId: '12', accessToken: 'token', fetch: meta.fetcher }
-  assert.deepEqual((await metaCosts({ ...ads, conversions: 'lead' })('2026-03-01', '2026-03-01')).map((each) => [each.conversions, each.conversionValue]), [[3, 15.5], [0, undefined], [0, undefined], [4, undefined], [4, 0]])
+  assert.deepEqual((await metaCosts({ ...ads, conversions: 'lead' })('2026-03-01', '2026-03-01')).map((each) => [each.conversions, each.conversionValue]), [[3, 15.5], [0, undefined], [0, undefined], [4, undefined], [4, 0], [undefined, undefined], [4, undefined]])
   assert.equal('conversions' in (await metaCosts(ads)('2026-03-01', '2026-03-01'))[0]!, false)
   assert.deepEqual(meta.calls.map((call) => new URL(call.url).searchParams.get('fields')!.endsWith(',account_currency,actions,action_values')), [true, false])
 

@@ -1073,6 +1073,13 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal(await graph.restate('large', 1.1, undefined, 'refund'), true)
       await assert.rejects(graph.restate('large', 1.2, undefined, 'refund'), /not had that much refunded/)
       await graph.withdraw('large')
+      // What it was corrected from has no part in how much may be taken back.
+      await graph.outcome({ transactionId: 'typo', subject: 'lead:2', at: clock.now - 90 * DAY, stage: 'client', value: 1e16, currency: 'USD' })
+      await graph.restate('typo', 10)
+      await graph.restate('typo', 9, undefined, 'refund')
+      await assert.rejects(graph.restate('typo', 11, undefined, 'refund'), /not had that much refunded/)
+      assert.equal(await graph.restate('typo', 10, undefined, 'refund'), true)
+      await graph.withdraw('typo')
       // In another currency now, what was lost in the one before stays in the sum, and the report says which it adds up.
       // It cannot be taken back in the new one.
       await graph.restate('s1', 250, 'CAD')
