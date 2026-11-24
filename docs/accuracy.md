@@ -306,7 +306,7 @@ Somebody who speaks for another is told of by a field on `/identify`, and the ar
 | `new` | The named code, the default policy with `apart: ["birth", "given"]`, and the field for who speaks |
 | `today pool`, `new pool` | The same, with a pool of numbers |
 
-The code named is the branch `feat/round3` at a commit written here before 20270301. The held names and the table:
+The code of the development seeds is `199cddf` on `feat/round3`. The code of the held seeds is named here before they are opened. The held names and the table:
 
 | File | SHA-256 |
 | --- | --- |
