@@ -234,7 +234,7 @@ Suppose 25% of the people rung back become clients, and 18% of the rest. Four th
 | The ready ones answer when they are rung, and an answered call is what counts as returned. | Ringing back wins clients. |
 | Calls on weekday mornings are rung back more, and weekday mornings bring readier callers. | Ringing back wins clients. |
 
-To know, ring back some at random and not others, and compare. If that is not possible, use the table to find what to look into, and not to say what something was worth.
+To know, choose at random whom to ring back, keep the list, and compare everybody chosen with everybody not chosen, whether or not they answered. The rows above are not that: they are split by who was reached. If that is not possible, use the table to find what to look into, and not to say what something was worth.
 
 Rows of fewer than 20 people are not shown, and `thin` says how many people were in them. Nothing here ranks staff or scores callers.
 

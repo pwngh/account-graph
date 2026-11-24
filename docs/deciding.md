@@ -53,29 +53,29 @@ A cluster with more than 50 members is flagged `oversized`. A cluster that big i
 
 ### The model, and what it leaves out
 
-The score is a noisy-OR. Read each shared identifier as one way two subjects could be one person, right with the probability its evidence says. The pair is two people only if every one of them is a coincidence, so the score is `1 − Π(1 − evidence)`.
+The score is a noisy-OR of the evidence that counts. Read each piece as one way two subjects could be one person, right as often as its evidence says. The pair is two people only if every piece is a coincidence, so the score is `1 − Π(1 − evidence)`. What counts is decided first: an identifier past its cap or muted gives none, only the strongest of a group counts, and a kind that only corroborates counts where the rest already reaches `related`. The result is a score of the model. It is as good a probability as its weights are, and [`fit`](library.md) says how good that is on pairs you have checked.
 
 | What it assumes | Where that fails, and what is done |
 | --- | --- |
 | Coincidences are independent. | A household shares its phone, its address and its connection for one reason. Kinds in one `group` count once. Two kinds that go together in some other way, and are in no group, count twice. |
 | Evidence only adds. | Nothing a pair shares can lower its score, and nothing it does not share does either. Two different dates of birth say nothing here. Say it with `separate`. |
 | One weight fits a kind. | A phone in a list staff type in is weaker than one a caller rang from. That is what [presets](presets.md) are for. |
-| Old sightings fade by one half-life. | Each kind has its own, and within a kind every value fades alike. |
+| Evidence fades with the gap between the two. | The gap is from the last time one subject was seen with the identifier to the first time the other was, and none where the two overlap. Two sightings years old that overlap do not fade. A kind with no half-life never does. |
 
-Clusters come from three rules, none of which is a probability.
+Clusters come from the three cuts above, and none of them is a probability.
 
-| Rule | How it is worked out | What to expect |
+| Cut | How it is worked out | What to expect |
 | --- | --- | --- |
-| Separated pairs | The weakest set of links between the two is a minimum cut, found as a maximum flow by shortest paths (Edmonds-Karp). Links weigh `−log(1 − score)`, so evidence along a path adds. The cut nearest the first of the two is taken, and it is unique, so the answer never depends on the order things arrived in. | At worst `O(V·E²)` in the subjects and links of one component. A component of hundreds is quick. One of tens of thousands is a shared identifier that should have been capped or muted. |
-| Many separations in one component | Each pair is cut in turn, in order of its ids. | The best cut for all of them at once is the multiway cut, which is hard to find exactly. Taking them one after another may remove more than the fewest links. |
-| One weak link between two groups | Links whose removal would split the component, below `bridge`. The weakest goes first. | Two groups need a strong link, or two. |
+| Separated pairs | First the direct link of every separated pair is removed. Then, for each pair in turn, if the two are still connected, a minimum cut: the set of links whose strengths add up to least. A link's strength is `−log(1 − score)`, held to a maximum and rounded. It is found as a maximum flow by shortest paths (Edmonds-Karp). Of all cheapest cuts the one nearest the first of the two is taken, which is unique, so the answer never depends on the order things arrived in. | Each flow is at worst `O(V·E²)` in the subjects and links of one component. A component of hundreds is quick. One of tens of thousands is a shared identifier that should have been capped or muted. |
+| Many separations in one component | Pairs are cut one after another, in order of their ids. | Cutting them all at once for the least total is a multicut, and where everyone must be apart from everyone the multiway cut; both are hard to find exactly. One after another can remove more in total than the best. |
+| One weak link between two groups | A link below `bridge` that alone joins two sides of two subjects or more. The weakest goes first. | A weak link may still add one subject to a group. Where `bridge` is not above `same` the rule is off. |
 
 ### What your own systems decide
 
 | What the graph cannot know | Who does, and what to send |
 | --- | --- |
 | Who is on the other side of a matter | Sides cannot be read from relationships. Two people who share a phone, a child or a case may be on one side or on two. Your case system knows, so it sends the pair to `/separate`. |
-| Which contact a call was about | Staff do, when they take the call. Their system sends the caller and the contact to `/join`. [The preset for contacts entered by staff](presets.md#what-the-preset-costs) depends on it. |
+| Which contact a call was about | Staff do, when they take the call. Where the caller is the contact, their system sends the two to `/join`. A call about somebody else, such as a parent ringing about a child, is not a reason to join them. [The preset for contacts entered by staff](presets.md#what-the-preset-costs) depends on it. |
 | Whether somebody may be called or written to | Consent here is about advertising, and nothing else. Consent to messages, opt-outs, quiet hours and how often somebody is contacted belong to the system that sends. |
 | Whom you may serve | Nothing here is a conflict check. |
 

@@ -148,4 +148,5 @@
 - `/collect` records no touch for an arrival whose fields are all empty.
 - `fill` clears `ag_landing` in a form it filled before the visitor opted out of advertising.
 - A chain of links behind a credited arrival is never longer than `hops`, whatever its subjects are called.
+- `forget` on PostgreSQL deletes an identifier nobody holds any more, unless it is muted.
 - `reviewed` leaves out a join that was taken back by no longer linking through its mark.

@@ -185,7 +185,7 @@ A call's tags go on to its outcome. A number's tags go on the arrival a call to 
 
 ### One number for each listing
 
-A map listing, a directory or a printed page loads no script, so nothing can be shown to one visitor and nobody taps. Give each its own number in `CALL_NUMBERS`, and never one from the pool. Then every call to it is filed under that listing:
+A map listing, a directory or a printed page loads no script, so nothing can be shown to one visitor and nobody taps. Give each its own number in `CALL_NUMBERS`, and never one from the pool. Then a call to it that no tap ties to a visitor is filed under that listing:
 
 ```sh
 CALL_NUMBERS='{
