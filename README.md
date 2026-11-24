@@ -42,7 +42,7 @@ Here is the same story, record by record:
 | Wednesday | They sign up in that browser | Links the contact at 98% and 90% |
 | Thursday | They pay $1,250 | Credits $1,250 to the campaign |
 
-The call is linked by the tap on your number. The contact is linked to the visitor at 98% by the device, and to the caller at 90% by the mobile number they called from.
+The call is linked by the tap on your number. The contact is linked to the visitor at 98% by the device, and to the caller at 90% by the mobile number they called from. Each percentage is a score from the policy's weights. It is not a measured rate of correct matches. See [Matching](docs/deciding.md).
 
 It runs as a server beside your site, phone system and backend. Reviewers work in a built-in screen that shows the evidence behind every match, missed calls awaiting a callback, and the return on each campaign.
 
@@ -80,7 +80,7 @@ git clone https://github.com/pwngh/account-graph && cd account-graph
 npm ci && npm run firm
 ```
 
-This starts a sample law firm with two months of data: the server, a bilingual site, and a stage with twenty scenes. Press Ctrl-C to stop it and delete its data. See [Demo](docs/demo.md) for a 90-second script.
+This starts a sample law firm with two months of data: the server, a bilingual site, and a stage with 21 scenes. Press Ctrl-C to stop it and delete its data. See [Demo](docs/demo.md) for its scenes.
 
 ### Example site
 
@@ -261,6 +261,7 @@ The server normalizes and hashes the email, phone and postal address. `device` i
 
 **Matching**
 
+- A score is a model's, uncalibrated as a probability. Accuracy on data with known answers is unmeasured.
 - Kinds count as independent evidence unless the policy groups them. The default policy has no groups.
 - Matches covers subjects in the newest 10,000 sightings.
 - Multiple separations in one component are resolved one at a time, which can cut more links than necessary.

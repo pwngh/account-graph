@@ -4,11 +4,12 @@
  * from a seeded generator, and nothing leaves this machine.
  *
  *   npm run firm
+ *   npm run firm -- injury
  *
  * It starts a throwaway PostgreSQL in Docker (or keeps everything in memory
  * where there is no Docker, or with MEMORY=1), the graph server with its reviewer screen, the
  * firm's site and a stage to present it on, and fills them. docs/demo.md has the
- * script. Ctrl-C stops and deletes all of it.
+ * scenes. Ctrl-C stops and deletes all of it.
  */
 import { execFileSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
@@ -21,6 +22,8 @@ import type { Store } from '../src/index.ts'
 import { reviewPage } from '../src/review.ts'
 import { createHandler } from '../src/server.ts'
 import { clockScript, landing } from './firm-page.ts'
+import { PRACTICES } from './practice.ts'
+import type { Practice } from './practice.ts'
 
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
@@ -40,14 +43,14 @@ const CAMPAIGNS = [
   { source: 'google', campaignId: '30333', campaign: 'Busqueda: North', office: 'north', lang: 'es', line: '+15550100103', daily: 38, share: 0.24, client: 0.2 },
   { source: 'meta', campaignId: '40444', campaign: 'Online consultations', office: 'online', lang: 'en', line: '+15550100105', daily: 45, share: 0.18, client: 0.06 },
 ] as const
-const STEPS = {
+const stepsOf = ({ papers, won, value }: Practice): Record<string, { value: number; currency: string; wait?: number; action?: { google: string } }> => ({
   call: { value: 5, currency: 'USD', action: { google: '222' } },
   inquiry: { value: 10, currency: 'USD', wait: 48, action: { google: '111' } },
   intake: { value: 20, currency: 'USD' },
-  signed: { value: 40, currency: 'USD' },
+  [papers]: { value: 40, currency: 'USD' },
   scheduled: { value: 60, currency: 'USD' },
-  client: { value: 400, currency: 'USD', action: { google: '333' } },
-}
+  [won]: { value, currency: 'USD', action: { google: '333' } },
+})
 const FIRST = ['Ana', 'Luis', 'Maria', 'Jorge', 'Elena', 'Pat', 'Sam', 'Robin', 'Lee', 'Dana', 'Alex', 'Noor']
 const LAST = ['Rivera', 'Santos', 'Moreno', 'Hill', 'Stone', 'Brook', 'Vale', 'Cruz', 'Marsh', 'Field']
 
@@ -59,7 +62,9 @@ export interface Firm {
 }
 
 /** Starts the firm over a store. With `quick`, it has a tenth of its history, for tests. `restart` is asked for from the stage, and starts over. */
-export async function startFirm(store: Store, { ports = [0, 0], quick = false, say = () => {}, restart }: { ports?: [number, number]; quick?: boolean; say?: (line: string) => void; restart?: () => void } = {}): Promise<Firm> {
+export async function startFirm(store: Store, { ports = [0, 0], quick = false, practice = 'family', say = () => {}, restart }: { ports?: [number, number]; quick?: boolean; practice?: keyof typeof PRACTICES; say?: (line: string) => void; restart?: () => void } = {}): Promise<Firm> {
+  const kind = PRACTICES[practice]
+  const STEPS = stepsOf(kind)
   // What is seeded is written down when it happened. The story takes a Monday to a Thursday that have passed, and each scene moves the clock on to when it happens.
   let writing: number | undefined
   const monday = new Date()
@@ -92,7 +97,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
   const { html, headers } = reviewPage()
   const hash = (text: string) => `'sha256-${createHash('sha256').update(text).digest('base64')}'`
   const beside = (file: string) => readFileSync(new URL(`./${file}`, import.meta.url), 'utf8').replace(/\r\n?/g, '\n')
-  const stage = { style: beside('stage.css'), script: `const STAGE = ${JSON.stringify({ phone: `${siteAt}/es?phone=1` })}\n${beside('stage.js')}` }
+  const stage = { style: beside('stage.css'), script: `const STAGE = ${JSON.stringify({ phone: `${siteAt}/es?phone=1`, won: kind.won, ...kind.stage })}\n${beside('stage.js')}` }
   const server = createServer((request, response) => {
     response.setHeader('x-demo-ahead', ahead)
     const path = `${request.method} ${new URL(request.url ?? '/', 'http://localhost').pathname}`
@@ -140,7 +145,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
     if (spentOn.has(day)) return
     spentOn.add(day)
     await graph.spend(CAMPAIGNS.filter(({ campaignId }) => !(campaignId === '40444' && ago >= 10 && ago < 17)).map(({ source, campaignId, campaign, daily }) => {
-      const amount = Math.round(daily * (0.8 + chance() * 0.4) * 100) / 100
+      const amount = Math.round(daily * kind.cost * (0.8 + chance() * 0.4) * 100) / 100
       return { day, source, campaignId, campaign, amount, currency: 'USD', clicks: Math.round(amount / 4), impressions: Math.round(amount * 12) }
     }))
   }
@@ -155,7 +160,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       if (new Date(rang).getHours() < 9 || new Date(rang).getHours() > 17) continue
       const { lang, line } = pick(CAMPAIGNS)
       writing = rang
-      await recordCall(graph, { id: `day-${rang}`, from: phoneOf(2000 + ++others), to: line, at: rang, duration: 120 + Math.floor(chance() * 600), answered: true, tags: { language: lang } }, { ...calls, now: clock, convert: (outcome) => graph.outcome({ ...outcome, value: STEPS.call.value, currency: 'USD' }) })
+      await recordCall(graph, { id: `day-${rang}`, from: phoneOf(2000 + ++others), to: line, at: rang, duration: 120 + Math.floor(chance() * 600), answered: true, tags: { language: lang } }, { ...calls, now: clock, convert: (outcome) => graph.outcome({ ...outcome, value: STEPS.call!.value, currency: 'USD' }) })
     }
     writing = undefined
     ahead = then - Date.now()
@@ -196,7 +201,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
         const answered = roll < 0.74
         const call = { from, to: line, duration: answered ? 120 + Math.floor(chance() * 900) : 20 + Math.floor(chance() * 80), waited: Math.floor(chance() * 60), ...(chance() < 0.8 && { tags: { language: lang } }) }
         writing = rang
-        await recordCall(graph, { id: `s${n}`, at: rang, answered, ...(roll > 0.9 && { voicemail: true }), ...call }, { ...calls, now: clock, convert: (outcome) => graph.outcome({ ...outcome, value: STEPS.call.value, currency: 'USD' }) })
+        await recordCall(graph, { id: `s${n}`, at: rang, answered, ...(roll > 0.9 && { voicemail: true }), ...call }, { ...calls, now: clock, convert: (outcome) => graph.outcome({ ...outcome, value: STEPS.call!.value, currency: 'USD' }) })
         reached = answered
         met = rang + (call.duration + call.waited) * 1000
         // Staff call back the same day, and again on the next ones until somebody picks up.
@@ -219,7 +224,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       await graph.observe({ subject: contact, identifiers: [...(called ? [] : [`device:s${n}`]), `phone:${hashPhone(from)}`, `email:made-up-${n}`, ...nameKeys(SECRET, ...name, { dob: `19${60 + (n % 40)}-0${1 + (n % 9)}-1${n % 9}` })], at: asked, event: 'inquiry' })
       if (called) await graph.joinAll([{ a: `caller:${hashPhone(from)}`, b: contact, reason: 'answered by staff' }], { by: 'system:desk' })
       if (called) await graph.observe({ subject: contact, identifiers: [`device:s${n}`], at: asked, event: 'inquiry' })
-      const step = async (stage: keyof typeof STEPS, moment: number, value: number = STEPS[stage].value) => {
+      const step = async (stage: string, moment: number, value: number = STEPS[stage]!.value) => {
         const when = Math.floor(moment)
         if (when > start) return false
         writing = when
@@ -229,10 +234,10 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
         return true
       }
       if (!(await step('inquiry', asked)) || (chance() > 0.6 && start - asked < 30 * HOUR)) continue
-      // They fill in the form, sign, and are scheduled with a director, some not as far.
+      // They fill in the form, sign, and are scheduled, some not as far.
       let moment = asked
       let reachedAll = true
-      for (const [stage, least, most, share] of [['intake', 0.02, 0.5, 1], ['signed', 0.02, 0.4, 0.92], ['scheduled', 0.05, 0.6, 0.95]] as const) {
+      for (const [stage, least, most, share] of [['intake', 0.02, 0.5, 1], [kind.papers, 0.02, 0.4, 0.92], ['scheduled', 0.05, 0.6, 0.95]] as const) {
         moment += (least + chance() * (most - least)) * DAY
         if (chance() > share || !(await step(stage, moment))) {
           reachedAll = false
@@ -241,12 +246,12 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       }
       if (!reachedAll || chance() > campaign.client * 2.2) continue
       const signed = Math.floor(moment + (2 + chance() * 24) * DAY)
-      if (!(await step('client', signed))) continue
+      if (!(await step(kind.won, signed))) continue
       // What was collected came later: less from some, more from others, nothing from a few.
       const settled = signed + (4 + chance() * 12) * DAY
       if (settled < start) {
         writing = Math.floor(settled)
-        await graph.restate(`client-${n}`, chance() < 0.15 ? 0 : Math.round(250 + chance() * 1400))
+        await graph.restate(`${kind.won}-${n}`, chance() < 0.15 ? 0 : Math.round((250 + chance() * 1400) * (kind.value / 400)))
       }
     }
     writing = undefined
@@ -282,7 +287,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
   }
   /** The contact opens the link in the browser they came with. The script tag reads the token and takes it out of the address. */
   const opens = (url: string) => browser('/collect', { device: 'v-4821', url: url.split('?')[0], link: new URL(url).searchParams.get('ag') })
-  const steps = (stage: keyof typeof STEPS, tags: object = {}) => ask('POST', '/convert', { transactionId: `demo-${stage}`, subject: demo.contact, at: clock(), stage, tags: { language: 'es', ...tags } })
+  const steps = (stage: string, tags: object = {}) => ask('POST', '/convert', { transactionId: `demo-${stage}`, subject: demo.contact, at: clock(), stage, tags: { language: 'es', ...tags } })
   const links: Record<string, string> = {}
   const forms = new Map<string, number>()
   /** A text staff send the contact. Only its time and the two numbers are kept. */
@@ -327,7 +332,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       },
     },
     {
-      title: 'Details entered', text: 'On the call, staff enter the name, phone and date of birth.', see: ['Accounts', review(`accounts/${encodeURIComponent(demo.contact)}`)], stage: person('accounts'), shown: { phone: 'talking', caption: 'Staff take the details', desk: { name: 'New contact', fields: [['Name', 'Inés Vega'], ['Phone', '(555) 010-0042'], ['Date of birth', 'May 6, 1984'], ['Matter', 'Divorce, with children']], done: 'Contact saved' } },
+      title: 'Details entered', text: 'On the call, staff enter the name, phone and date of birth.', see: ['Accounts', review(`accounts/${encodeURIComponent(demo.contact)}`)], stage: person('accounts'), shown: { phone: 'talking', caption: 'Staff take the details', desk: { name: 'New contact', fields: [['Name', 'Inés Vega'], ['Phone', '(555) 010-0042'], ['Date of birth', 'May 6, 1984'], ['Matter', kind.matter]], done: 'Contact saved' } },
       async run() {
         await at(0, 14, 6)
         await ask('POST', '/identify', { subject: demo.contact, phone: demo.phone, name: { first: 'Inés', last: 'Vega' }, dob: '1984-05-06', event: 'inquiry' })
@@ -365,28 +370,28 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       },
     },
     {
-      title: 'Documents signed', text: 'Staff text a link to the documents. They open it and sign.', see: ['Board', review('board/7')], spot: ['contact:ines-vega'], shown: { phone: 'signed' },
+      title: kind.scenes.papers[0], text: kind.scenes.papers[1], see: ['Board', review('board/7')], spot: ['contact:ines-vega'], shown: { phone: 'signed' },
       async run() {
         await at(0, 14, 25)
-        const documents = await linkTo('firmar', 'documents')
+        const documents = await linkTo(kind.links.papersPage, kind.links.papers)
         await sends('demo-text-2')
         await at(0, 14, 31)
         await opens(documents)
-        await steps('signed')
-        return { lines: ['Step recorded: signed.'] }
+        await steps(kind.papers)
+        return { lines: [`Step recorded: ${kind.papers}.`] }
       },
     },
     {
-      title: 'Director scheduled', text: 'Staff schedule a call with a director.', see: ['Board', review('board/7')], spot: ['contact:ines-vega'], shown: { phone: 'text-time', caption: 'Staff schedule the director', desk: { name: 'Schedule', fields: [['With', 'M. Ortega, director'], ['When', 'Wednesday, 11:00 AM'], ['How', 'By phone, in Spanish']], done: 'Call scheduled' } },
+      title: kind.scenes.scheduled[0], text: kind.scenes.scheduled[1], see: ['Board', review('board/7')], spot: ['contact:ines-vega'], shown: { phone: 'text-time', caption: `Staff schedule the ${kind.lead}`, desk: { name: 'Schedule', fields: [['With', `M. Ortega, ${kind.lead}`], ['When', 'Wednesday, 11:00 AM'], ['How', 'By phone, in Spanish']], done: 'Call scheduled' } },
       async run() {
         await at(0, 14, 36)
-        await steps('scheduled', { director: 'ortega' })
+        await steps('scheduled', { [kind.lead]: 'ortega' })
         await sends('demo-text-3')
-        return { lines: ['Step recorded: scheduled, director ortega.'] }
+        return { lines: [`Step recorded: scheduled, ${kind.lead} ortega.`] }
       },
     },
     {
-      title: 'Director calls', text: 'On Wednesday the director calls, and is answered.', see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], stage: person('journey'), spot: ['scheduled', 'Outbound'], shown: { phone: 'director', seconds: 1290 },
+      title: kind.scenes.lead[0], text: kind.scenes.lead[1], see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], stage: person('journey'), spot: ['scheduled', 'Outbound'], shown: { phone: 'director', seconds: 1290 },
       async run() {
         await at(2, 11, 0)
         await ask('POST', '/call', { id: 'demo-4', direction: 'outbound', from: demo.line, to: demo.phone, at: clock(), duration: 1290, answered: true, tags: { language: 'es' } })
@@ -394,51 +399,51 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       },
     },
     {
-      title: 'Enrollment texted', text: 'Staff text a signed link to enroll and pay.', see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], stage: person('journey'), spot: ['Link sent · payment'], shown: { phone: 'text-pay' },
+      title: kind.scenes.lastSent[0], text: kind.scenes.lastSent[1], see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], stage: person('journey'), spot: [`Link sent · ${kind.links.last}`], shown: { phone: 'text-pay' },
       async run() {
         await at(2, 11, 24)
-        links.pay = await linkTo('inscripcion', 'payment')
+        links.pay = await linkTo(kind.links.lastPage, kind.links.last)
         await sends('demo-text-4')
-        return { lines: [`Text recorded. ${await became('payment')}.`], link: links.pay }
+        return { lines: [`Text recorded. ${await became(kind.links.last)}.`], link: links.pay }
       },
     },
     {
-      title: 'Enrollment opened', text: 'They open the link, and have not paid yet.', see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], stage: person('journey'), spot: ['Link sent · payment'], shown: { phone: 'pay' },
+      title: kind.scenes.lastOpened[0], text: kind.scenes.lastOpened[1], see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], stage: person('journey'), spot: [`Link sent · ${kind.links.last}`], shown: { phone: 'pay' },
       async run() {
         await at(2, 11, 27)
         await opens(links.pay!)
-        return { lines: [`${await became('payment')}. Not paid yet.`] }
+        return { lines: [`${await became(kind.links.last)}. ${kind.told.lastOpen}`] }
       },
     },
     {
-      title: 'Paid', text: 'They pay. The payment page is the firm’s, and reports the payment.', see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], stage: person('journey'), spot: ['client'], shown: { phone: 'paid' },
+      title: kind.scenes.won[0], text: kind.scenes.won[1], see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], stage: person('journey'), spot: [kind.won], shown: { phone: 'paid' },
       async run() {
         await at(2, 11, 29)
-        await steps('client', { office_served: 'river', director: 'ortega' })
+        await steps(kind.won, { office_served: 'river', [kind.lead]: 'ortega' })
         const { credited } = await ask('GET', `/attribute?subject=${demo.contact}&at=${clock()}`)
-        return { lines: [`Payment recorded: 400 USD. Advertised: ${credited.custom.office}. Served: river. Attributed to ${credited.campaign} at ${Math.round(credited.confidence * 100)}%.`] }
+        return { lines: [`${kind.told.won}: ${kind.value} USD. Advertised: ${credited.custom.office}. Served: river. Attributed to ${credited.campaign} at ${Math.round(credited.confidence * 100)}%.`] }
       },
     },
     {
-      title: 'Conversion sent', text: 'The payment is sent to the ad platform as a conversion of the first ad click.', see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], stage: person('journey'), spot: ['client'], shown: {},
+      title: kind.scenes.sent[0], text: kind.scenes.sent[1], see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], stage: person('journey'), spot: [kind.won], shown: {},
       async run() {
         await at(2, 11, 40)
         await outbox.run()
-        return { lines: [`Sent to the sample ad platform: ${wasSent('demo-client') ? `${sent.findLast((each) => each.id === 'demo-client')!.value} USD, for the first ad click` : 'no'}.`] }
+        return { lines: [`Sent to the sample ad platform: ${wasSent(`demo-${kind.won}`) ? `${sent.findLast((each) => each.id === `demo-${kind.won}`)!.value} USD, for the first ad click` : 'no'}.`] }
       },
     },
     {
-      title: 'Value change', text: 'The client value is updated from the initial 400 USD and restated at the ad platform.', see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], stage: person('journey'), spot: ['from 400 USD to 1,250 USD'],
+      title: kind.scenes.value[0], text: kind.scenes.value[1], see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], stage: person('journey'), spot: [`from ${kind.value.toLocaleString('en-US')} USD to ${kind.later.toLocaleString('en-US')} USD`],
       async run() {
         await at(3, 16, 0)
-        await ask('POST', '/restate', { transactionId: 'demo-client', value: 1250 })
+        await ask('POST', '/restate', { transactionId: `demo-${kind.won}`, value: kind.later })
         await outbox.run()
-        const { values } = await ask('GET', '/outcome?id=demo-client')
-        return { lines: [`Initial value ${values[0].value} USD, current value ${values.at(-1).value} USD.`, `Sent to the ad platform: ${sent.filter((each) => each.id === 'demo-client').at(-1)?.value} USD.`] }
+        const { values } = await ask('GET', `/outcome?id=demo-${kind.won}`)
+        return { lines: [`Initial value ${values[0].value} USD, current value ${values.at(-1).value} USD.`, `Sent to the ad platform: ${sent.filter((each) => each.id === `demo-${kind.won}`).at(-1)?.value} USD.`] }
       },
     },
     {
-      title: 'Separation', text: 'An opposing party shares the family phone and email. The case system separates the two contacts.', see: ['Accounts', review(`accounts/${encodeURIComponent(demo.contact)}`)], stage: person('accounts'),
+      title: kind.scenes.apart[0], text: kind.scenes.apart[1], see: ['Accounts', review(`accounts/${encodeURIComponent(demo.contact)}`)], stage: person('accounts'),
       async run() {
         await at(3, 16, 30)
         for (const subject of [demo.contact, demo.other]) await ask('POST', '/identify', { subject, phone: demo.phone, email: 'family@example.org', event: 'staff entry' })
@@ -518,8 +523,8 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
     try {
       const phone = url.searchParams.has('phone')
       const asked = url.searchParams.has('sent')
-      if (url.pathname === '/') return html(landing('en', graphAt, phone, asked))
-      if (url.pathname === '/es') return html(landing('es', graphAt, phone, asked))
+      if (url.pathname === '/') return html(landing('en', graphAt, phone, asked, practice))
+      if (url.pathname === '/es') return html(landing('es', graphAt, phone, asked, practice))
       if (url.pathname === '/inquiry' && request.method === 'POST') return await inquired(request, response)
       if (url.pathname === '/present') return void response.writeHead(302, { location: `${graphAt}/stage` }).end()
       if (url.pathname === '/hook' && request.method === 'POST') {
@@ -626,9 +631,10 @@ if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).
     }
     console.log(made ? 'Loading sample data into PostgreSQL. This takes about a minute.' : 'Loading sample data into memory.')
     const ports: [number, number] = [Number(process.env.PORT ?? 8790), Number(process.env.SITE_PORT ?? 8791)]
+    const practice = process.argv[2] === 'injury' ? 'injury' : 'family'
     const begin = async () => {
       firm = await startFirm(await fresh(), {
-        ports, say: console.log,
+        ports, practice, say: console.log,
         restart: () => void (async () => {
           console.log('Starting over.')
           await firm?.close()
@@ -646,7 +652,7 @@ if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).
   Reviewer screen  ${firm.graph}/review        sign in with the token: demo
   Sample site      ${firm.site}/?gclid=you&utm_id=30111   and ${firm.site}/es?gclid=you&utm_id=30333
 
-  See docs/demo.md for the script. Press Ctrl-C to stop and delete the data.`)
+  See docs/demo.md for the scenes. Press Ctrl-C to stop and delete the data.`)
   } catch (error) {
     if (!stopping) console.error(error)
     await stop(1)

@@ -82,9 +82,29 @@ const WORDS = {
   },
 } satisfies Record<'en' | 'es', { help: [string, string[][]]; then: [string, string[][]]; where: [string, string[][]]; other: string[]; [word: string]: unknown }>
 
+/** What an injury firm says in place of the above. */
+const INJURY = {
+  en: {
+    title: 'Tessaly Injury Law', head: 'Hurt in an accident? Talk to someone today.', lead: 'Injury law for North, River and online clients, in English and Spanish.',
+    help: ['How we help', [
+      ['Car accidents', 'Drivers, passengers and pedestrians, and the insurance claims that follow.'],
+      ['Truck accidents', 'Records kept, vehicles inspected and the company asked for its logs.'],
+      ['Work injuries', 'What happened, who was responsible and what was reported.'],
+    ]] as [string, string[][]],
+  },
+  es: {
+    title: 'Tessaly Lesiones Personales', head: '¿Tuvo un accidente? Hable con nosotros hoy.', lead: 'Lesiones personales para clientes de North, River y en línea, en español y en inglés.',
+    help: ['Cómo le ayudamos', [
+      ['Accidentes de auto', 'Conductores, pasajeros y peatones, y los reclamos al seguro.'],
+      ['Accidentes de camión', 'Se guardan los registros, se inspeccionan los vehículos y se piden las bitácoras.'],
+      ['Lesiones en el trabajo', 'Qué pasó, quién fue responsable y qué se reportó.'],
+    ]] as [string, string[][]],
+  },
+}
+
 /** A landing page. In the phone of the stage the scenes say what happens, so it reports nothing, has no form, and its call button tells the stage. */
-export const landing = (lang: 'en' | 'es', graph: string, phone = false, sent = false): string => {
-  const { title, head, lead, call, number, hours, other, help, then, where, text, form, made } = WORDS[lang]
+export const landing = (lang: 'en' | 'es', graph: string, phone = false, sent = false, practice: 'family' | 'injury' = 'family'): string => {
+  const { title, head, lead, call, number, hours, other, help, then, where, text, form, made } = { ...WORDS[lang], ...(practice === 'injury' ? INJURY[lang] : {}) }
   const [write, first, last, tel, helped, agree, send, received] = form
   const asked = `<section id="write"><div class="wrap"><h2>${write}</h2>${sent ? `<p class="received" role="status">${received}</p>` : `<form action="/inquiry" method="post" data-ag-fields><input type="hidden" name="lang" value="${lang}"><label class="half">${first}<input name="first" autocomplete="given-name" maxlength="60" required></label><label class="half">${last}<input name="last" autocomplete="family-name" maxlength="60" required></label><label>${tel}<input name="phone" type="tel" autocomplete="tel" maxlength="30" required></label><label>${helped}<textarea name="about" maxlength="500"></textarea></label><label class="check"><input type="checkbox" name="texts" value="yes">${agree}</label><button>${send}</button></form>`}</div></section>`
   const list = (kind: string, [name, items]: [string, string[][]], tag = 'ul') => `<section><div class="wrap"><h2>${name}</h2><${tag} class="${kind}">${items.map(([what, text]) => `<li><div><h3>${what}</h3><p>${text}</p></div></li>`).join('')}</${tag}></div></section>`
