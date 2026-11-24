@@ -138,7 +138,7 @@ export function read(params: readonly string[] = []): Collected {
  */
 function staffMark(): string | undefined {
   const given = new URL(location.href).searchParams.get('ag_staff')
-  if (given) document.cookie = `ag_staff=${given === 'off' ? '' : encodeURIComponent(given)}; Max-Age=${given === 'off' ? 0 : YEAR}; Path=/; SameSite=Lax; Secure`
+  if (given) document.cookie = `ag_staff=${given === 'off' ? '' : encodeURIComponent(given)}; Max-Age=${given === 'off' ? 0 : 366 * 24 * 60 * 60}; Path=/; SameSite=Lax; Secure`
   return given === 'off' ? undefined : (given ?? cookie('ag_staff'))
 }
 
@@ -199,7 +199,7 @@ export interface EventDetail {
  */
 export async function event(options: CollectOptions, name: string, detail: EventDetail = {}): Promise<void> {
   const page = new URL(location.href)
-  const staff = cookie('ag_staff')
+  const staff = staffMark()
   const body = JSON.stringify({
     device: deviceId(),
     event: name,

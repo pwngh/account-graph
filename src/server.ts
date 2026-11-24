@@ -266,8 +266,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
   /** Records something a visitor did on a page. Only names the server was told to accept are kept. */
   async function happened(request: IncomingMessage, response: ServerResponse) {
     const body = await json(request)
-    if (fromStaff(request, body)) return void (tally.staff += 1)
     if (typeof body.event !== 'string' || !events.has(body.event)) throw new Refusal(400, 'This server does not take that event')
+    if (fromStaff(request, body)) return void (tally.staff += 1)
     const device = deviceOf(request, response, body)
     const subject = `visitor:${device}`
     const at = now()
@@ -294,9 +294,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
   }
 
   /** Records one browser visit. The subject is the visitor; nothing here names an account. */
-  async function collect(request: IncomingMessage, response: ServerResponse) {
-    const body = await json(request)
-    if (fromStaff(request, body)) return void (tally.staff += 1)
+  async function collect(request: IncomingMessage, response: ServerResponse, body: any) {
     const at = now()
     const device = deviceOf(request, response, body)
     const subject = `visitor:${device}`
@@ -373,7 +371,6 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     }
     const visit = { subject, identifiers, at, event: 'visit' }
     await graph.observe(also.length > 0 ? [visit, ...also] : visit)
-    tally.collected += 1
     if (consent) await graph.consent(subject, consent, { at, source: optedOut ? 'browser signal' : 'banner' })
 
     if (advertising && body.touch && typeof body.touch === 'object') {
@@ -540,7 +537,14 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return undefined
       }
       if (url.pathname === '/event') await happened(request, response)
-      else await collect(request, response)
+      else {
+        const body = await json(request)
+        if (fromStaff(request, body)) tally.staff += 1
+        else {
+          await collect(request, response, body)
+          tally.collected += 1
+        }
+      }
       return undefined
     }
 
@@ -692,7 +696,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         if (!options.linkSecret) break
         const body = await json(request)
         if (body.days !== undefined && typeof body.days !== 'number') throw new Refusal(400, '`days` must be a number')
-        return { url: staffLink(String(body.url), { secret: options.linkSecret, now, ...(body.label !== undefined && { label: body.label }), ...(body.days !== undefined && { lasts: body.days * 86_400_000 }) }) }
+        return { url: staffLink(String(body.url), { secret: options.linkSecret, now, ...(body.days !== undefined && { lasts: body.days * 86_400_000 }) }) }
       }
       case 'POST /call':
         return recordCall(graph, await json(request), { ...options.calls, convert, ...(lineOf && { lineType: lineOf }) })

@@ -129,7 +129,7 @@ A browser that moves around is marked by opening a link. Ask the server for one,
 
 ```sh
 curl -X POST https://graph.example.org/staff-link -H "authorization: Bearer $GRAPH_TOKEN" \
-  -d '{"url":"https://example.org/team","label":"intake desk","days":90}'
+  -d '{"url":"https://example.org/team","days":90}'
 ```
 
 Opening it on your site leaves a first-party cookie named `ag_staff`. From then on the visits and page events of that browser on that site are dropped, until the days are over or someone opens any page with `?ag_staff=off`.
@@ -140,6 +140,8 @@ Opening it on your site leaves a first-party cookie named `ag_staff`. From then 
 | --- | --- |
 | Behind a proxy | Set `TRUST_PROXY`, or every visit comes from the proxy's address. If that address is in a staff network, every visit is dropped. |
 | One site at a time | A cookie belongs to a site. Open the link on each of yours. |
+| How long a mark lasts | The days count from when the link was made. The cookie is set by script, and some browsers drop such a cookie sooner: Safari after seven days without a visit. Open the link again. |
+| HTTPS only | The link must lead to an `https` address, because the cookie is marked `Secure`. `localhost` is the exception. |
 | A staff link is a key | Anyone who opens it is marked. Published by mistake, it hides real visitors until it expires. A new `LINK_SECRET` ends every mark, and every other link. |
 | Earlier visits | What a browser did before it was marked is still recorded. `forget` its `visitor:` subject to remove it. |
 | Phone calls | Not covered. A call has no browser. |

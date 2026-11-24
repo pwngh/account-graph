@@ -193,6 +193,11 @@ test('a staff link leaves a mark in the browser, sent with each visit and event 
   const replaced: string[] = []
   Object.defineProperty(globalThis, 'history', { value: { state: null, replaceState: (_state: unknown, _title: string, url: string) => void replaced.push(url) }, configurable: true })
   const options = { endpoint: 'https://graph.example/collect' }
+  // An event on the page the link led to may be reported before the visit is.
+  await event(options, 'inquiry')
+  await settle()
+  assert.equal(page.sent.shift().staff, 'STAFF.token.z')
+  page.jar.delete('ag_staff')
   await collect(options)
   await settle()
   assert.deepEqual([page.sent[0].staff, replaced, page.jar.get('ag_staff')], ['STAFF.token.z', ['https://site.example/team'], 'STAFF.token.z'])
@@ -202,8 +207,8 @@ test('a staff link leaves a mark in the browser, sent with each visit and event 
   await settle()
   assert.deepEqual(page.sent.slice(1).map((sent: any) => sent.staff), ['STAFF.token.z', 'STAFF.token.z'])
   page.go('https://site.example/?ag_staff=off')
-  await collect(options)
   await event(options, 'inquiry')
+  await collect(options)
   await settle()
   assert.deepEqual(page.sent.slice(3).map((sent: any) => [sent.staff, Boolean(sent.device)]), [[undefined, true], [undefined, true]])
   assert.equal(replaced.at(-1), 'https://site.example/')

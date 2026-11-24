@@ -73,7 +73,7 @@ await graph.outcome({ transactionId: 'enrolled-walk-in', subject: 'lead:walk-in'
 const handler = createHandler(graph, {
   token: 'service-demo',
   reviewToken: 'demo',
-  origins: (process.env.ORIGINS ?? 'http://localhost:3000,http://127.0.0.1:3000').split(','),
+  origins: ['http://localhost:3000', 'http://127.0.0.1:3000'],
   events: ['brochure', 'phone_click'],
   linkSecret: 'demo-link-secret-not-for-real-use',
   // The steps in order, with what each is worth. The Channels view lists them this way.

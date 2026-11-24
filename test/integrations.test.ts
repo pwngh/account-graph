@@ -415,8 +415,11 @@ test('staff visits are dropped and counted, and no browser can make itself staff
       await page('desk', address, {}, '/event')
     }
     await page('client', '192.0.2.11')
+    // An event the server does not take is refused as ever, and counted as nothing.
+    const untaken = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/event`, { method: 'POST', headers: { origin: 'https://site.example', 'x-forwarded-for': '192.0.2.10' }, body: JSON.stringify({ device: 'desk', event: 'nap' }) })
+    assert.equal(untaken.status, 400)
     // A browser marked by a staff link, from anywhere.
-    const { url } = (await (await ask('/staff-link', { url: 'https://site.example/team', label: 'intake desk', days: 10 })).json()) as any
+    const { url } = (await (await ask('/staff-link', { url: 'https://site.example/team', days: 10 })).json()) as any
     const mark = new URL(url).searchParams.get('ag_staff')!
     await page('laptop', '203.0.113.5', { staff: mark })
     await page('laptop', '203.0.113.5', { staff: mark }, '/event')
@@ -432,7 +435,9 @@ test('staff visits are dropped and counted, and no browser can make itself staff
     await page('laptop', '203.0.113.5', { staff: mark })
     assert.deepEqual([(await stats()).staff, (await stats()).collected], [10, 8])
     assert.equal((await ask('/staff-link', { url: 'https://site.example/', days: 400 })).status, 400)
-    assert.equal((await ask('/staff-link', { url: 'https://site.example/', label: 5 })).status, 400)
+    // The mark is kept in a cookie browsers only take over HTTPS.
+    assert.equal((await ask('/staff-link', { url: 'http://site.example/' })).status, 400)
+    assert.equal((await ask('/staff-link', { url: 'http://localhost:3000/' })).status, 200)
   } finally {
     server.close()
   }

@@ -65,9 +65,7 @@ export function knownLink(url: string, subject: Subject, options: KnownLinkOptio
 export interface StaffLinkOptions {
   /** The secret the server reads marks with: `LINK_SECRET`. */
   secret: string
-  /** Who the link is for, so a mark can be told from another. Not shown to anyone. */
-  label?: string
-  /** How long a browser it marks stays marked, in milliseconds. Defaults to 90 days; at most 366. */
+  /** How long it works, and how long a browser it marked stays marked, in milliseconds from now. Defaults to 90 days; at most 366. */
   lasts?: number
   now?: () => number
 }
@@ -79,12 +77,12 @@ export interface StaffLinkOptions {
  */
 export function staffLink(url: string, options: StaffLinkOptions): string {
   const address = new URL(url)
-  if (address.protocol !== 'https:' && address.protocol !== 'http:') throw new TypeError('A link must lead to an http or https address')
+  // The mark is kept in a Secure cookie, which a browser only takes over HTTPS, or from this machine.
+  const local = address.protocol === 'http:' && /^(localhost|127\.0\.0\.1|\[::1\]|.*\.localhost)$/.test(address.hostname)
+  if (address.protocol !== 'https:' && !local) throw new TypeError('A staff link must lead to an https address')
   const lasts = options.lasts ?? 90 * DAY
   if (!(lasts > 0 && lasts <= 366 * DAY)) throw new TypeError('A mark lasts between a moment and 366 days')
-  const label = options.label ?? 'staff'
-  if (typeof label !== 'string' || !label || Buffer.byteLength(label) > 128) throw new TypeError('A label must be text of at most 128 bytes')
-  address.searchParams.set('ag_staff', signToken(options.secret, 'staff', label, (options.now ?? Date.now)() + lasts))
+  address.searchParams.set('ag_staff', signToken(options.secret, 'staff', 'staff', (options.now ?? Date.now)() + lasts))
   return address.href
 }
 
