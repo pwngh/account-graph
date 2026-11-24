@@ -114,8 +114,11 @@ export interface MetaCostOptions {
   fetch?: typeof fetch
 }
 
-/** What Meta lists under one action. An action that did not happen is not listed. */
-const counted = (list: any, action: string) => Number((Array.isArray(list) ? list : []).find((each) => each?.action_type === action)?.value ?? 0)
+/** What Meta lists under one action. An action that did not happen, or has no value, is not listed. */
+const counted = (list: any, action: string): number | undefined => {
+  const found = (Array.isArray(list) ? list : []).find((each) => each?.action_type === action)?.value
+  return found === undefined ? undefined : Number(found)
+}
 
 /** Daily spend per campaign from Meta's Insights API. */
 export function metaCosts(options: MetaCostOptions): CostSource {
@@ -141,6 +144,7 @@ export function metaCosts(options: MetaCostOptions): CostSource {
         throw new CostError(`Meta refused the cost report with ${response.status}: ${body?.error?.message ?? 'no reason given'}`, response.status, body?.error?.fbtrace_id)
       }
       for (const row of body?.data ?? []) {
+        const value = options.conversions && counted(row.action_values, options.conversions)
         costs.push({
           day: row.date_start,
           source: 'meta',
@@ -150,7 +154,8 @@ export function metaCosts(options: MetaCostOptions): CostSource {
           ...(row.account_currency && { currency: row.account_currency }),
           clicks: Number(row.clicks ?? 0),
           impressions: Number(row.impressions ?? 0),
-          ...(options.conversions && { conversions: counted(row.actions, options.conversions), conversionValue: counted(row.action_values, options.conversions) }),
+          ...(options.conversions && { conversions: counted(row.actions, options.conversions) ?? 0 }),
+          ...(typeof value === 'number' && { conversionValue: value }),
         })
       }
       next = typeof body?.paging?.next === 'string' ? body.paging.next : undefined

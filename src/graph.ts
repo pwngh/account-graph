@@ -1099,8 +1099,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
           if (count !== undefined && (!Number.isSafeInteger(count) || count < 0)) throw new TypeError(`The cost of ${cost.day} has a count that is not a whole number`)
         }
         for (const claim of [cost.conversions, cost.conversionValue]) {
-          if (claim !== undefined && (typeof claim !== 'number' || !Number.isFinite(claim) || claim < 0)) throw new TypeError(`The cost of ${cost.day} has conversions that are not zero or more`)
+          if (claim !== undefined && (typeof claim !== 'number' || !Number.isFinite(claim))) throw new TypeError(`The cost of ${cost.day} has conversions that are not a number`)
         }
+        if (cost.conversions !== undefined && cost.conversions < 0) throw new TypeError(`The cost of ${cost.day} needs conversions of zero or more`)
         if (cost.conversionValue !== undefined && cost.conversions === undefined) throw new TypeError(`The cost of ${cost.day} has a conversion value and no conversions`)
         const named = [cost.campaignId, cost.campaign, cost.currency].map((text) => {
           if (typeof text === 'object' && text !== null) throw new TypeError(`The cost of ${cost.day} needs its campaign and currency as text`)

@@ -370,7 +370,7 @@ In a CSV the columns are `conversions` and `conversionValue`. For Google Ads and
 | `GOOGLE_ADS_CONVERSIONS=true` | `metrics.conversions` and its value: the actions you let Google count as conversions |
 | `META_ADS_CONVERSIONS=offsite_conversion.fb_pixel_lead` | How many of that one action Meta reports, and its value |
 
-Nothing is read or shown without them. The report then has `claimed` on those campaigns, and on the total:
+Without them the server reads none. The report has `claimed` on campaigns with a number, and on the total:
 
 | Figure | Says |
 | --- | --- |

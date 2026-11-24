@@ -1023,12 +1023,15 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal(after.total.outcomes, 4)
       const clients = await read({ per: 'client' })
       assert.deepEqual([of(clients, '111')!.credited, of(clients, '111')!.creditedValue, clients.total.claimed!.credited], [1, 100, 2])
+      // A value may be below nothing, where the platform took back more than it added.
+      await graph.spend({ day: '2026-03-01', source: 'meta', campaignId: '777', amount: 5, conversions: 0, conversionValue: -20 })
+      assert.deepEqual(of(await read(), '777'), { days: 1, conversions: 0, value: -20, credited: 1, creditedValue: 50 })
       // A row sent again replaces all of the one before, and one that says nothing of conversions takes them out.
       await graph.spend({ day: '2026-03-01', source: 'meta', campaignId: '777', amount: 5, conversions: 1, conversionValue: 0 })
       assert.equal(of(await read(), '777')!.value, 0)
       await graph.spend({ day: '2026-03-01', source: 'meta', campaignId: '777', amount: 5 })
       assert.equal(of(await read(), '777'), undefined)
-      for (const bad of [{ conversions: -1 }, { conversions: Number.NaN }, { conversions: '2' }, { conversionValue: 5 }, { conversions: 1, conversionValue: -5 }]) await assert.rejects(graph.spend({ day: '2026-03-01', source: 'google', amount: 1, ...bad } as never), TypeError)
+      for (const bad of [{ conversions: -1 }, { conversions: Number.NaN }, { conversions: '2' }, { conversionValue: 5 }, { conversions: 1, conversionValue: Infinity }]) await assert.rejects(graph.spend({ day: '2026-03-01', source: 'google', amount: 1, ...bad } as never), TypeError)
     })
 
     test('what was refunded and written off is counted apart from what was corrected', async () => {
