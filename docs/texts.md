@@ -32,7 +32,7 @@ curl -X POST https://graph.example.org/text -H "authorization: Bearer $GRAPH_TOK
 
 1. **Sender.** The sender is the same subject as a caller from that number, so their calls, their texts and a contact with that number are tied.
 2. **Visitor.** The code links the text to the one visitor it was given to, at 0.95. Without a code, the one visitor who tapped your text link within the [tap window](calls.md#busy-numbers) is linked, at 0.92. Either joins the two.
-3. **Lead.** The first text of a conversation is an outcome of the step `text`. A conversation ends after 30 days of silence. It is the same whatever order texts are reported in: one that arrives late can take a lead counted from a later text back.
+3. **Lead.** The first text of a conversation is an outcome of the step `text`. A conversation ends after 30 days of silence. It is the same whatever order texts are reported in: one that arrives late can take a lead counted from a later text back. Add `text` to `STAGES` to give it a value and a column on the Board.
 4. **Channel.** A text without a visitor is filed under the channel `CALL_NUMBERS` gives its number, with the medium `text`.
 
 > **What a text says is never stored.** It is read for the code and for a word such as STOP, and dropped. To keep it from reaching the server at all, read the code yourself and send `code` in place of `text`.

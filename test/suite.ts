@@ -2404,6 +2404,43 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await graph.attribute('contact:7', { at: T0 + DAY })).credited!.gclid, 'G1')
     })
 
+    test('an ad click or a campaign is credited before the phone line someone called, inside the window and not outside it', async () => {
+      const line = (subject: string, at: number) => ({ subject, at, source: 'listing', medium: 'call', campaign: 'Map', landing: 'tel:+15550100101' })
+      const credit = async (touches: { at: number; [field: string]: unknown }[], at = 100 * DAY) => {
+        const { graph } = await fresh()
+        await graph.observe([{ subject: 'visitor:1', identifiers: ['device:1'], at: T0 }, { subject: 'contact:1', identifiers: ['device:1', 'phone:1'], at: T0 }, { subject: 'caller:1', identifiers: ['phone:1'], at: T0 }])
+        for (const touch of touches) await graph.touch(touch as never)
+        await graph.outcome({ transactionId: 'o', subject: 'contact:1', at: T0 + at, stage: 'client' })
+        const { credited } = await graph.attribute('contact:1', { at: T0 + at })
+        const day = new Date(T0 + at).toISOString().slice(0, 10)
+        const [row] = (await graph.report({ from: day, to: day })).rows.filter((each) => each.outcomes > 0)
+        assert.deepEqual([row!.source, row!.campaign], [credited?.gclid ? 'google' : credited?.source ?? '', credited?.campaign ?? ''], 'the report agrees')
+        // And so do the lists that name an ad: a missed call, an unanswered text, the board.
+        await graph.keepCallResult('k', { answered: false })
+        await graph.keepCall({ id: 'k', direction: 'inbound', subject: 'contact:1', at: T0 + at, to: '+15550100101', flags: [] })
+        await graph.keepText({ id: 'm', direction: 'inbound', subject: 'contact:1', at: T0 + at, to: '+15550100101', flags: [] })
+        const days = { from: day, to: day }
+        const board = await graph.board({ steps: [{ name: 'client' }], days: 1, at: T0 + at })
+        const named = [await graph.openCalls(days), await graph.openTexts(days), board.columns.flatMap((column) => column.rows)]
+        assert.deepEqual(named.map((rows) => rows.map((each) => each.touch)), [[credited], [credited], [credited]])
+        return credited?.landing ?? credited?.gclid ?? credited?.campaign ?? credited?.referrer
+      }
+      const visit = (days: number, more: object) => ({ subject: 'visitor:1', at: T0 + days * DAY, ...more })
+      // The ad brought them, and the line is where they called, whichever came last.
+      assert.equal(await credit([visit(80, { gclid: 'G' }), line('caller:1', T0 + 99 * DAY)]), 'G')
+      assert.equal(await credit([visit(80, { source: 'mailer', campaign: 'Postcard' }), line('caller:1', T0 + 99 * DAY)]), 'Postcard')
+      assert.equal(await credit([visit(80, { gclid: 'G' }), visit(99, { gclid: 'H' }), line('caller:1', T0 + 98 * DAY)]), 'H')
+      // With no ad, or one from before the window, the line has it. A bare referrer is no campaign.
+      assert.equal(await credit([line('caller:1', T0 + 99 * DAY)]), 'tel:+15550100101')
+      assert.equal(await credit([visit(1, { gclid: 'G' }), line('caller:1', T0 + 99 * DAY)]), 'tel:+15550100101')
+      assert.equal(await credit([visit(80, { source: 'example.org', referrer: 'https://example.org/' }), line('caller:1', T0 + 99 * DAY)]), 'tel:+15550100101')
+      assert.equal(await credit([visit(80, { source: 'google', medium: 'organic' }), line('caller:1', T0 + 99 * DAY)]), 'tel:+15550100101')
+      // A text's line is a line.
+      assert.equal(await credit([visit(80, { gclid: 'G' }), { ...line('caller:1', T0 + 99 * DAY), medium: 'text', landing: 'sms:+15550100101' }]), 'G')
+      // A visit of any kind after the line is the newest, and stands.
+      assert.equal(await credit([line('caller:1', T0 + 80 * DAY), visit(99, { source: 'example.org', referrer: 'https://example.org/' })]), 'https://example.org/')
+    })
+
     test('a text is tied by its code, or by the tap before it, and what it said is not kept', async () => {
       const { graph, store } = await fresh()
       const [A, B] = [textCode(), textCode()]

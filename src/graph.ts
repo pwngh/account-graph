@@ -10,7 +10,7 @@ import { followed } from './followed.ts'
 import type { Followed } from './followed.ts'
 import type { Hours } from './hours.ts'
 import { UNSTORABLE } from './identifiers.ts'
-import { checkTouch } from './touch.ts'
+import { CLICK_IDS, checkTouch } from './touch.ts'
 import { createMemoryStore } from './memory.ts'
 import type { Job } from './outbox.ts'
 import { defaultPolicy, evidence, plainPolicy, policyHash, ruleFor, usable, weigh } from './policy.ts'
@@ -696,11 +696,25 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
   /** The touches in the window before a conversion, on every subject reached, and the one that earns the credit. */
   const credit = async (subject: Subject, at: number, window: number, reached: Reached, tx: Tx): Promise<Attribution> => credited(subject, at, reached, await tx.touchesOf([...reached.keys()], at - window, at))
 
+  /** A call or text filed under its number's own channel, which is where it was made and no visit. */
+  const byLine = (touch: Touch) => /^(tel|sms):/.test(touch.landing ?? '')
+  /** An arrival that says which ad or campaign brought it. */
+  const campaigned = (touch: Touch) => !byLine(touch) && Boolean(CLICK_IDS.some((id) => touch[id]) || touch.campaign || touch.campaignId)
+  /**
+   * Of touches newest first, the one that earns the credit: the newest that is the person's. Where that is a phone line, an
+   * ad click or a campaign that brought them before it comes first, because the line is only where they called.
+   */
+  const own = (touches: readonly AttributedTouch[]) => touches.filter((touch) => touch.confidence >= policy.same || (touch.joined && !byLine(touch)))
+  const earning = (touches: readonly AttributedTouch[]): AttributedTouch | undefined => {
+    const theirs = own(touches)
+    return (theirs[0] && byLine(theirs[0]) && theirs.find(campaigned)) || theirs[0]
+  }
+
   function credited(subject: Subject, at: number, reached: Reached, found: readonly Touch[]): Attribution {
     const touches: AttributedTouch[] = found
       .map((touch) => ({ ...touch, joined: false, ...reached.get(touch.subject)! }))
       .sort((x, y) => y.at - x.at || y.confidence - x.confidence || (x.subject < y.subject ? -1 : 1))
-    const best = touches.find((touch) => touch.confidence >= policy.same || (touch.joined && !/^(tel|sms):/.test(touch.landing ?? '')))
+    const best = earning(touches)
     const reason = best ? 'credited' : touches.length > 0 ? 'low_confidence' : 'no_touch'
     return { subject, at, touches, credited: best, reason }
   }
@@ -1315,7 +1329,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const ofCall = await creditAll(tx, uncounted, window, hops, reached)
         const ofNewest = await creditAll(tx, newest, window, hops, reached)
         const creditOf = ({ subject, at }: { subject: Subject; at: number }, find = ofOutcome) => {
-          const { credited: touch } = find(subject, at)
+          const { touches } = find(subject, at)
+          // An ad outside the window takes nothing from what is inside it.
+          const touch = earning(touches.filter((each) => each.at >= at - window)) ?? own(touches)[0]
           const inside = touch !== undefined && touch.at >= at - window
           return { touch: inside ? touch : undefined, delay: touch && at - touch.at, inside }
         }
