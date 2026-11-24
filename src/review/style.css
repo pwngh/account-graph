@@ -66,6 +66,18 @@ th.edge, td.edge { border-left: 1px solid var(--line); padding-left: 12px; }
 th.group { font-weight: 600; }
 button[aria-pressed=true] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
 summary { cursor: pointer; width: fit-content; }
+.line { display: flex; gap: 8px; align-items: baseline; }
+.line > a { margin-right: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.line > span { white-space: nowrap; }
+.nowrap { white-space: nowrap; }
+.meter { display: block; width: 100%; min-width: 56px; height: 4px; margin-top: 4px; background: var(--soft); border-radius: 2px; overflow: hidden; }
+.meter > span { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+td.bar { width: 120px; vertical-align: middle; }
+td.bar .meter { margin-top: 0; }
+td.score { min-width: 64px; }
+tr.second td { border-top: 1px solid var(--line); }
+tr.day th { padding: 12px 0 4px; color: var(--ink); font-weight: 600; }
+.chip.kind.call { border-color: var(--related); color: var(--related); } .chip.kind.step, .chip.kind.value { border-color: var(--same); color: var(--same); } .chip.kind.arrival { border-color: var(--accent); color: var(--accent); }
 tr.part td { color: var(--muted); border-bottom-style: dotted; }
 tr.part td.num { color: var(--ink); }
 tr.part td.who { padding-left: 16px; }
@@ -107,6 +119,8 @@ dialog p { overflow-wrap: anywhere; }
 /* Columns side by side, scrolling in their own box when there are more than fit. */
 .board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(184px, 1fr); gap: 0 16px; align-items: start; border-top: 1px solid var(--line); overflow-x: auto; }
 .board section, .board section:first-child { border-top: 0; padding-top: 8px; }
+.board .idle { color: var(--muted); }
+.board .idle h2 { color: var(--muted); font-weight: 500; }
 .board h2 { font-size: 13px; color: var(--ink); overflow-wrap: anywhere; }
 .board ol { list-style: none; margin: 4px 0 0; padding: 0; }
 .board li:first-child { border-top: 1px solid var(--line); }

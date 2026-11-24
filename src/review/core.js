@@ -28,6 +28,21 @@ const amount = (n) => n.toLocaleString()
 const money = (n) => n.toLocaleString(undefined, { maximumFractionDigits: 2 })
 const th = (text, kind) => el('th', { scope: 'col', ...(kind && { class: kind }) }, text)
 const td = (kind, ...children) => el('td', kind ? { class: kind } : {}, ...children)
+// Three things an empty cell may mean, told apart: known to be none, nothing to say, and not recorded.
+const none = () => el('span', { class: 'muted' }, '—')
+const tally = (n) => (n > 0 ? amount(n) : el('span', { class: 'muted' }, '0'))
+const unrecorded = () => el('span', { class: 'muted' }, '(not recorded)')
+/** Columns that belong together: the first carries the line that sets them apart, and a heading spans them. */
+const edge = ([cell, ...rest]) => (cell.classList.add('edge'), [cell, ...rest])
+const group = (text, columns, first) => el('th', { scope: 'colgroup', colspan: columns, class: first ? 'group' : 'edge group' }, text)
+/** A share drawn as a bar beside its number. The number says it; the bar only lets rows be compared. */
+const meter = (share) => {
+  const bar = el('span', {})
+  bar.style.width = `${Math.max(0, Math.min(1, share)) * 100}%`
+  return el('span', { class: 'meter', 'aria-hidden': 'true' }, bar)
+}
+/** Notes on how a view is worked out, there for whoever wants them and not in the way of the numbers. */
+const notes = (...texts) => el('details', {}, el('summary', { class: 'muted' }, 'How to read this'), ...texts.map((text) => el('p', { class: 'muted' }, text)))
 /** A table that scrolls inside its own box. The box takes the keyboard, so arrow keys can scroll it. */
 const wide = (label, table) => el('div', { class: 'wide', tabindex: 0, role: 'region', 'aria-label': label }, table)
 

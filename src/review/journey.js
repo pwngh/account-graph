@@ -49,7 +49,10 @@ function why(entry, ties, subject) {
   return [caller(entry.subject), el('span', { class: 'reason' }, `${tie.how === 'cluster' ? 'same person' : 'strong tie, in another cluster'}${tie.score === null ? ', no path scored' : `, ${percent(tie.score)}`}${tie.kinds.length > 0 ? ` by ${tie.kinds.join(' and ')}` : ''}${chain}`)]
 }
 
-const row = (ties, subject) => (entry) => el('tr', {}, td('nowrap', entry.at > 0 ? when(entry.at) : '(not recorded)'), td('', el('span', { class: 'chip' }, WHAT[entry.kind])), td('what', ...told(entry)), td('why', ...why(entry, ties, subject)))
+const dayOf = (at) => (at > 0 ? new Date(at).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : 'When is not recorded')
+/** Each day's entries under its name, so the hours read as a day and the gaps between days show. */
+const byDay = (entries, draw) => entries.flatMap((entry, i) => [...(i === 0 || dayOf(entry.at) !== dayOf(entries[i - 1].at) ? [el('tr', { class: 'day' }, el('th', { scope: 'rowgroup', colspan: 4 }, dayOf(entry.at)))] : []), draw(entry)])
+const row = (ties, subject) => (entry) => el('tr', {}, td('nowrap num', entry.at > 0 ? new Date(entry.at).toLocaleTimeString(undefined, { timeStyle: 'short' }) : ''), td('', el('span', { class: `chip kind ${entry.kind}` }, WHAT[entry.kind])), td('what', ...told(entry)), td('why', ...why(entry, ties, subject)))
 // Kinds left out of the list, kept while the screen is open.
 const leaving = new Set()
 
@@ -71,7 +74,7 @@ view('journey', 'Journey', async (box, subject) => {
   let entries = journey.entries
   const ties = { ...journey.ties }
   const table = el('table', { class: 'journey' })
-  const draw = () => table.replaceChildren(el('tr', {}, th('When'), th('What'), th('Details'), th('On, and why')), ...entries.filter((entry) => !leaving.has(entry.kind)).map(row(ties, subject)))
+  const draw = () => table.replaceChildren(el('tr', {}, th('When', 'num'), th('What'), th('Details'), th('On, and why')), ...byDay(entries.filter((entry) => !leaving.has(entry.kind)), row(ties, subject)))
   const kinds = el('div', { class: 'row', role: 'group', 'aria-label': 'Show' })
   const boxes = () => kinds.replaceChildren(...Object.keys(WHAT).filter((kind) => entries.some((entry) => entry.kind === kind)).map((kind) => {
     const check = el('input', { type: 'checkbox', ...(!leaving.has(kind) && { checked: '' }), on: { change: () => { if (check.checked) leaving.delete(kind); else leaving.add(kind); draw() } } })

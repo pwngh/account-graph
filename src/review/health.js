@@ -39,10 +39,10 @@ view('health', 'Health', async (box) => {
   box.append(el('section', {}, el('h3', {}, 'Health'), el('p', { class: 'muted' }, 'What this server runs, as it stands now.')))
   if (ops) box.append(...workings(ops))
 
-  const rules = el('table', {}, el('tr', {}, th('Kind'), th('Weight', 'num'), th('Dilution', 'num'), th('Cap, subjects', 'num'), th('Half-life', 'num'), th('Group'), th('')))
+  const rules = el('table', {}, el('tr', {}, el('td', {}), group('What it counts for', 4), group('What limits it', 3)), el('tr', {}, th('Kind'), ...edge([th('Weight', 'num'), th(''), th('Dilution', 'num'), th('Half-life', 'num')]), ...edge([th('Cap, subjects', 'num'), th('Group'), th('')])))
   const kinds = Object.entries(policy.rules.kinds).sort(([x, a], [y, b]) => b.weight - a.weight || (x < y ? -1 : 1))
   for (const [kind, rule] of kinds) {
-    rules.append(el('tr', {}, td('', kind), td('num', rule.weight.toFixed(2)), td('num', rule.dilution), td('num', amount(rule.cap)), td('num', lasting(rule.halfLife)), td('', rule.group ?? ''),
+    rules.append(el('tr', {}, td('', kind), ...edge([td('num', rule.weight.toFixed(2)), td('bar', meter(rule.weight)), td('num', rule.dilution > 0 ? rule.dilution : tally(0)), td('num', rule.halfLife === 'none' ? el('span', { class: 'muted' }, 'none') : lasting(rule.halfLife))]), ...edge([td('num', tally(rule.cap)), td('', rule.group ?? none())]),
       td('', policy.changed.includes(kind) ? el('span', { class: 'chip' }, 'changed from the default') : rule.weight === 0 ? el('span', { class: 'muted' }, 'a note, links nothing') : '')))
   }
   const { same, related, bridge, review } = policy.rules

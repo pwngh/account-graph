@@ -95,6 +95,7 @@
 - `.env.example` names what compose needs; `docs/operations.md` covers backups, HTTPS and a name under the site.
 - The reviewer screen's picture says how many of those around a subject it draws.
 - The Channels and Calls views have buttons for common periods, and save their tables as CSV.
+- The reviewer screen groups the columns of its tables, draws shares and scores as bars beside their numbers, shows a journey day by day, and gives the board's empty steps little room.
 
 ### Changed
 

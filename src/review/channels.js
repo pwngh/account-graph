@@ -47,11 +47,8 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
     if (report.currencies.length === 1) coin = new Intl.NumberFormat(undefined, { style: 'currency', currency: report.currencies[0] })
   } catch {}
   const cash = (n) => (coin ? coin.format(n) : money(n))
-  const none = () => el('span', { class: 'muted' }, '—')
-  // Nothing happened, which is known. Not the same as not recorded, nor as not applying.
-  const tally = (n) => (n > 0 ? amount(n) : el('span', { class: 'muted' }, '0'))
   const stages = report.steps.filter((step) => report.total.stages[step])
-  const unknown = () => el('span', { class: 'muted' }, '(not recorded)')
+  const unknown = unrecorded
   const withheld = (row) => el('span', { class: 'muted', title: row === report.total ? 'No campaign has cost data on enough days to say.' : `Cost data for ${row.costDays} of ${report.days} days is too little to say.` }, 'withheld')
   const each = (row) => (row.costPerOutcome !== null ? cash(row.costPerOutcome) : row.thin ? withheld(row) : none())
   const back = (row) => (row.returnOnCost !== null ? `${row.returnOnCost.toFixed(1)}×` : row.thin ? withheld(row) : none())
@@ -62,13 +59,10 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
   }
   // How many people, where that is not how many outcomes: a renewal is a second outcome and not a second person.
   const counted = (step) => (step ? [amount(step.count), step.people === step.count ? '' : el('span', { class: 'reason' }, `${amount(step.people)} ${step.people === 1 ? 'person' : 'people'}`)] : [tally(0)])
-  // The first column of a group carries the line that sets it apart.
-  const edge = ([cell, ...rest]) => (cell.classList.add('edge'), [cell, ...rest])
   const reached = (row) => edge([...stages.map((stage) => td('num', ...counted(row.stages[stage]))), td('num', tally(row.people)), ...(report.total.missed > 0 ? [td('num', tally(row.missed))] : [])])
   const cells = (row) => [...edge([...spent(row), td('num', tally(row.visits))]), ...reached(row), ...edge([td('num', cash(row.value)), td('num', each(row)), td('num', back(row))])]
   // A campaign is charged whole, so its cost, clicks and arrivals stay on its own line and are not split.
   const split = (row) => (row.breakdown ?? []).filter((part) => part.outcomes + part.missed > 0 || part.name === '(not recorded)').map((part) => el('tr', { class: 'part' }, td(''), td('who', part.name), ...edge([td(''), td(''), td('')]), ...reached(part), ...edge([td('num', cash(part.value)), td(''), td('')])))
-  const group = (text, columns) => el('th', { scope: 'colgroup', colspan: columns, class: 'edge group' }, text)
   const table = el('table', {}, el('tr', {}, el('td', { colspan: 2 }), group('Spend and traffic', 3), group('What followed', stages.length + 1 + (report.total.missed > 0 ? 1 : 0)), group('What it was worth', 3)),
     el('tr', {}, th('Source'), th('Campaign'), ...edge([th('Cost', 'num'), th('Clicks billed', 'num'), th('Arrivals seen', 'num')]),
       ...edge([...stages.map((stage) => th(stage, 'num')), th('People', 'num'), ...(report.total.missed > 0 ? [th('Missed calls', 'num')] : [])]), ...edge([th('Value', 'num'), th(per ? `Cost per ${per}` : 'Cost per outcome', 'num'), th('Return', 'num')])))
