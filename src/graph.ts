@@ -723,7 +723,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const edges = (await tx.edgesOf(unique([a, b]))).filter((edge) => !edge.identifier.startsWith('review:'))
         // However weak what they share is.
         const states = await tx.states(unique(edges.map((edge) => edge.identifier)))
-        const [pair] = scorePairs({ ...policy, related: 0 }, edges, states)
+        const [pair] = scorePairs(policy, edges, states, undefined, 0)
         const of = (subject: Subject) => new Set(edges.filter((edge) => edge.subject === subject).map((edge) => edge.identifier))
         const [held, others] = [of(a), of(b)]
         return {
@@ -1187,13 +1187,12 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
           if (action === 'rejoin') verdicts.set(pairKey(a, b), undefined)
         }
         // Score every shared identifier, however weak, and leave out the reviewer's own mark: it is the answer, not evidence.
-        const open = { ...policy, related: 0 }
         const out: Labeled[] = []
         for (const verdict of verdicts.values()) {
           if (!verdict) continue
           const edges = await tx.edgesOf([verdict.a, verdict.b])
           const states = await tx.states(unique(edges.map((edge) => edge.identifier)))
-          const shared = scorePairs(open, edges, states).flatMap((pair) => pair.reasons)
+          const shared = scorePairs(policy, edges, states, undefined, 0).flatMap((pair) => pair.reasons)
           const reasons = shared.filter((reason) => !reason.identifier.startsWith('review:'))
           // A join stands while a mark links the two, unless it is the mark of a join left out. Muted, it was taken back, and says nothing.
           if (verdict.same && !shared.some(({ identifier }) => identifier.startsWith('review:') && !theirs.has(Number.parseInt(identifier.slice(12), 10)))) continue

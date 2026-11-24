@@ -5,7 +5,7 @@ import { callState, dialed, followUp, numberOrSelf, recordCall, recordCallResult
 import type { CallOptions } from './calls.ts'
 import { Outdated } from './graph.ts'
 import type { Graph, PolicyState } from './graph.ts'
-import { email, hashPhone, identifier, ip, normalizePhone, phoneOfType, UNSTORABLE } from './identifiers.ts'
+import { email, hashPhone, identifier, ip, nameKeys, normalizePhone, phoneOfType, UNSTORABLE } from './identifiers.ts'
 import { trusted } from './integrations/fingerprint.ts'
 import type { FingerprintVerifier } from './integrations/fingerprint.ts'
 import { placeOf, shared } from './integrations/maxmind.ts'
@@ -120,6 +120,8 @@ export interface HandlerOptions {
    * as theirs when nobody has had the number since. Off by default.
    */
   pool?: { numbers: readonly string[]; minutes: number; grace: number }
+  /** Makes the keys of names sent to `/identify`. Without it, names are not used. At least 32 characters; changing it makes every key new. */
+  identifierSecret?: string
   /** How many hours a missed call may wait before `/board` says it has waited too long. Left out or 0, it never does. */
   returnHours?: number
     /** The time zone `/report` reads its days in when the request names none. Use the ad account's. Defaults to UTC. */
@@ -490,6 +492,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     if (typeof body?.subject !== 'string' || !body.subject) throw new Refusal(400, 'Body needs a subject')
     const identifiers: Identifier[] = (Array.isArray(body.identifiers) ? body.identifiers : []).map(String)
     const notes: Record<string, string> = {}
+    let zip: string | undefined
     if (body.device !== undefined) {
       if (typeof body.device !== 'string' || !ID.test(body.device)) throw new Refusal(400, 'The device id is malformed')
       identifiers.push(identifier('device', body.device))
@@ -519,7 +522,22 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         }
         const found = checked && addressIdentifier(checked)
         if (found) identifiers.push(found)
+        // The postal service's code for a delivery point begins with its zip code.
+        if (found && /^\d{12}$/.test(checked!.barcode)) zip = checked!.barcode.slice(0, 5)
         notes.address = failed ? 'not checked: the address service did not answer' : !checked ? 'not found' : found ? 'confirmed' : checked.mailDrop ? 'a rented mail box: not used' : checked.vacant ? 'vacant: not used' : 'not confirmed to the apartment: not used'
+      }
+    }
+    if (body.name !== undefined) {
+      const { first, last } = body.name ?? {}
+      if (typeof first !== 'string' || typeof last !== 'string' || first.length > 200 || last.length > 200) throw new Refusal(400, 'A name needs its first and last as text')
+      if (body.dob !== undefined && typeof body.dob !== 'string') throw new Refusal(400, 'A date of birth is written YYYY-MM-DD')
+      if (!options.identifierSecret) notes.name = 'not used: IDENTIFIER_SECRET is not set'
+      else if (!(await graph.policy()).rules.kinds.name?.corroborates) notes.name = 'not used: the policy has no "name" kind that only corroborates'
+      else {
+        // The zip code is the one the postal service confirmed, or there is none.
+        const keys = nameKeys(options.identifierSecret, first, last, { zip5: zip, dob: body.dob })
+        identifiers.push(...keys)
+        notes.name = keys.length > 0 ? 'used' : 'not used: a placeholder, or neither a confirmed address nor a date of birth'
       }
     }
     if (body.at !== undefined && !Number.isSafeInteger(body.at)) throw new Refusal(400, '`at` must be a time in whole epoch milliseconds')

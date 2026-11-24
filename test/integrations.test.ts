@@ -2,14 +2,14 @@ import assert from 'node:assert/strict'
 import { Script } from 'node:vm'
 import { createHash, createVerify, generateKeyPairSync } from 'node:crypto'
 import { execFile } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { test } from 'node:test'
-import { createGraph, createMemoryStore, createOps, createOutbox, googleAds, hashPhone, knownLink, staffLink, email, phone, phoneOfType } from '../src/index.ts'
+import { createGraph, createMemoryStore, createOps, createOutbox, googleAds, hashPhone, knownLink, policyFrom, staffLink, email, phone, phoneOfType } from '../src/index.ts'
 import type { IngestRequest } from '../src/index.ts'
 import { CostError, costsFromCsv, googleCosts, metaCosts } from '../src/integrations/costs.ts'
 import { createFingerprintVerifier, trusted } from '../src/integrations/fingerprint.ts'
@@ -1320,6 +1320,48 @@ test('with the server cookie on, the id a page quotes still names the visitor', 
   } finally {
     server.close()
   }
+})
+
+test('a name sent to /identify confirms, where a secret and a policy for it are set', async (t) => {
+  const household = policyFrom(JSON.parse(readFileSync(new URL('../examples/household.json', import.meta.url), 'utf8')))
+  const address = async ({ street }: { street: string }) => ({ barcode: '627011234025', line1: street, lastLine: '', match: street === 'nowhere' ? 'N' : 'Y', residential: true, mailDrop: false, vacant: false })
+  const serve = async (policy: typeof household | undefined, identifierSecret?: string) => {
+    const graph = createGraph(createMemoryStore(), policy)
+    const server = createServer(createHandler(graph, { token: 'service', origins: [], address, ...(identifierSecret && { identifierSecret }) })).listen(0, '127.0.0.1')
+    await new Promise((resolve) => server.once('listening', resolve))
+    t.after(() => void server.close())
+    const identify = async (body: object) => {
+      const response = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/identify`, { method: 'POST', headers: { authorization: 'Bearer service' }, body: JSON.stringify(body) })
+      const answer = (await response.json()) as any
+      return { status: response.status, kinds: (answer.identifiers ?? []).map((each: string) => each.split(':')[0]), ...answer }
+    }
+    return { graph, identify }
+  }
+  const secret = 'a-secret-of-thirty-two-characters!'
+  const { graph, identify } = await serve(household, secret)
+  const one = await identify({ subject: 'contact:1', phone: '+15550100051', name: { first: 'Ana', last: 'Lima' }, dob: '1990-02-03' })
+  assert.deepEqual([one.kinds, one.notes], [['phone', 'name'], { name: 'used' }])
+  assert.ok(!JSON.stringify(one).includes('Lima') && !JSON.stringify(await graph.history('contact:1')).includes('Lima'))
+  // The same phone and another name is a household. The same phone and name is one person.
+  await identify({ subject: 'contact:2', phone: '+15550100052', name: { first: 'Rui', last: 'Lima' }, dob: '1960-01-02' })
+  await identify({ subject: 'contact:2b', phone: '+15550100052', name: { first: 'Eva', last: 'Lima' }, dob: '1960-01-02' })
+  assert.deepEqual((await graph.links('contact:2')).map((link) => link.level), ['related'])
+  await identify({ subject: 'contact:3', phone: '+15550100051', name: { first: 'ANA', last: 'lima' }, dob: '1990-02-03' })
+  assert.deepEqual((await graph.cluster('contact:3'))!.members, ['contact:1', 'contact:3'])
+  // A confirmed address gives the zip code, and one that is not confirmed gives none.
+  assert.deepEqual((await identify({ subject: 'contact:4', name: { first: 'Eva', last: 'Reis' }, address: { street: '1 Main St' } })).kinds, ['address', 'name'])
+  assert.deepEqual((await identify({ subject: 'contact:5', email: 'eva@example.org', name: { first: 'Eva', last: 'Reis' }, address: { street: 'nowhere' } })).notes.name, 'not used: a placeholder, or neither a confirmed address nor a date of birth')
+  assert.equal((await identify({ subject: 'contact:6', email: 'x@example.org', name: { first: 'Unknown', last: 'Unknown' }, dob: '1990-02-03' })).notes.name, 'not used: a placeholder, or neither a confirmed address nor a date of birth')
+  for (const bad of [{ name: 'Ana Lima' }, { name: { first: 'Ana' } }, { name: { first: 'Ana', last: 'Lima' }, dob: 19900203 }]) assert.equal((await identify({ subject: 'contact:7', email: 'y@example.org', ...bad })).status, 400, JSON.stringify(bad))
+  // Off without its secret, and where the policy has no such kind: the rest is still recorded.
+  const named = { subject: 'contact:1', email: 'z@example.org', name: { first: 'Ana', last: 'Lima' }, dob: '1990-02-03' }
+  assert.deepEqual((await (await serve(household)).identify(named)).notes, { name: 'not used: IDENTIFIER_SECRET is not set' })
+  const plain = await (await serve(undefined, secret)).identify(named)
+  assert.deepEqual([plain.kinds, plain.notes], [['email'], { name: 'not used: the policy has no "name" kind that only corroborates' }])
+  const loud = await (await serve(policyFrom({ kinds: { name: { weight: 0.95, dilution: 0, cap: 5, halfLife: 'none' } } }), secret)).identify(named)
+  assert.deepEqual([loud.kinds, loud.notes.name], [['email'], 'not used: the policy has no "name" kind that only corroborates'])
+  // A date of birth with no name is nobody's, and the rest is recorded.
+  assert.deepEqual((await identify({ subject: 'contact:8', email: 'w@example.org', dob: '1990-02-03' })).kinds, ['email'])
 })
 
 test('a visitor with an arrival is shown a number of their own, and nobody else is', async (t) => {

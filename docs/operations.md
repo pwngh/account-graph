@@ -325,6 +325,7 @@ On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes i
 | `CALL_NUMBERS` | none | Your tracking numbers and the channel of each, as JSON: `{"+15551230001":{"source":"google","campaignId":"20222"}}`. Each may carry `tags`. |
 | `CALL_MIN_SECONDS` | `30` | A shorter call is recorded but not counted. |
 | `CALL_RESULTS` | none | `expected` to hold each call until something reports whether a person answered. See [calls](calls.md#was-it-answered). |
+| `IDENTIFIER_SECRET` | none | Makes the keys of names sent to `/identify`, at least 32 characters. Keep it: changing it makes every key new. |
 | `POOL_NUMBERS` | none | Numbers shown to one visitor at a time, separated by commas. Off until set. |
 | `POOL_MINUTES` | `15` | Minutes a visitor keeps a number after their page last asked. |
 | `POOL_GRACE_MINUTES` | `120` | Minutes after that in which a call is still theirs, when nobody has had the number since. |

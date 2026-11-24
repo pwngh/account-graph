@@ -106,6 +106,7 @@ export function configFrom(env: Env) {
     outboxDelay: number('OUTBOX_DELAY_MS', 0),
     changeWebhook: env.CHANGE_WEBHOOK,
     linkSecret: env.LINK_SECRET || undefined,
+    identifierSecret: env.IDENTIFIER_SECRET || undefined,
     alertWebhook: env.ALERT_WEBHOOK || undefined,
     auditHours: number('AUDIT_HEAD_HOURS', 0),
     quiet: { touches: number('QUIET_TOUCHES_HOURS', 0), calls: number('QUIET_CALLS_HOURS', 0), results: number('QUIET_RESULTS_HOURS', 0), costs: number('QUIET_COSTS_HOURS', 0) },
@@ -211,6 +212,7 @@ export function configFrom(env: Env) {
     for (const problem of ladderProblems(config.stages, targets)) wrong.push(`STAGES: ${problem}`)
   }
     if (config.linkSecret !== undefined && config.linkSecret.length < 32) wrong.push('LINK_SECRET must be at least 32 characters')
+  if (config.identifierSecret !== undefined && config.identifierSecret.length < 32) wrong.push('IDENTIFIER_SECRET must be at least 32 characters')
   for (const problem of reviewerProblems(config.reviewers, config.token)) wrong.push(`REVIEW_TOKENS: ${problem}`)
   // The secrets in compose.yaml are in the repository for anyone to read, so they are only for trying it out.
   const far = config.origins.find((origin) => !/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|[^/]+\.localhost)(:\d+)?$/.test(origin))
@@ -348,6 +350,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
     timeZone: config.timeZone,
     staffNetworks: config.staffNetworks,
     ...(config.linkSecret && { linkSecret: config.linkSecret }),
+    ...(config.identifierSecret && { identifierSecret: config.identifierSecret }),
     ...(config.stages && { stages: config.stages }),
     returnHours: config.returnHours,
     // A tap on a phone link is what ties a call to a visitor, so taking calls means taking that event.

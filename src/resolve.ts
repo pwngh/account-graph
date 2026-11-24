@@ -5,6 +5,7 @@ import type { Edge, Identifier, IdentifierState, Labels, Pair, Reason, Subject }
 /**
  * Scores every pair of subjects that share a usable identifier among `edges`.
  * With `from`, only pairs that touch one of those subjects are scored.
+ * Pairs that score under `least`, by default the policy's `related`, are left out.
  * Pure: no I/O, no clock, and the result does not depend on the order of `edges`.
  */
 export function scorePairs(
@@ -12,6 +13,7 @@ export function scorePairs(
   edges: readonly Edge[],
   states: ReadonlyMap<Identifier, IdentifierState>,
   from?: ReadonlySet<Subject>,
+  least = policy.related,
 ): Pair[] {
   const byIdentifier = new Map<Identifier, Edge[]>()
   for (const edge of edges) {
@@ -45,7 +47,7 @@ export function scorePairs(
   for (const [a, row] of found) {
     for (const [b, reasons] of row) {
       const score = weigh(policy, reasons)
-      if (score < policy.related) continue
+      if (score < least) continue
       pairs.push({ a, b, score, level: score >= policy.same ? 'same' : 'related', reasons })
     }
   }

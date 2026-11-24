@@ -106,7 +106,7 @@ The four `POST` routes answer with the subjects whose cluster moved. With the se
 
 | Route | What it does |
 | --- | --- |
-| `POST /identify` | Who a subject is, from plain facts: `{ subject, device?, email?, phone?, ip?, address?, identifiers?, at?, event? }`. Answers `{ changes, identifiers, notes }`. See [identify](identify.md). |
+| `POST /identify` | Who a subject is, from plain facts: `{ subject, device?, email?, phone?, ip?, address?, name?, dob?, identifiers?, at?, event? }`. Answers `{ changes, identifiers, notes }`. See [identify](identify.md). |
 | `POST /separate`, list | `{ source, pairs: [{ a, b, separated?, reason? }], reason? }`, at most 1,000 pairs. One transaction, one decision each, by `system:<source>`. Answers `{ changes, recorded, already }`. |
 | `POST /join`, list | The same without `separated`: two records another system merged are one person here too. |
 | `POST /observe` | One observation, or a list: `{ subject, identifiers, at, event? }`. Answers with the cluster changes. |

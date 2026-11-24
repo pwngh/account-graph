@@ -37,10 +37,11 @@ The graph only knows what it is told. An account seen once, at sign-up, is tied 
 | `ip` | `ip:…`; an IPv6 address as its /64. | Nothing. |
 | `phone` | `phone:` and a hash. With a line check: `voip:` for a number from an internet calling app, and nothing at all for a switchboard, a premium line or a pager. | Optional: Twilio, for the line check. |
 | `address` | `address:` and a hash of the one delivery point the postal service knows it as, so two spellings of one address match. | Smarty. Without it, addresses are not used. |
+| `name`, `dob` | `name:` and a keyed hash. See [names](#names). | `IDENTIFIER_SECRET`, and a policy with a `name` kind. |
 | `identifiers` | Whatever you already have, as written: `payment:tok_…`, `passkey:…`. | Nothing. |
 | `at`, `event` | When it happened, and what the person was doing. Default: now. | Nothing. |
 
-Only hashes are kept. The email, the number and the address themselves are not stored.
+Only hashes are kept. The email, the number, the address, the name and the date of birth themselves are not stored.
 
 > **An address names a household, not a person.** Two accounts at one confirmed address are related at 0.6 and never joined by it alone. A rented mail box, a vacant address, and a building with the apartment missing tie nobody.
 
@@ -96,6 +97,25 @@ When your backend can read the `ag_device` cookie, prefer it to the field. With 
 
 With MaxMind, each visit is also noted with where its address places it, `place:US/FL/Miami`. The note links nothing. A reviewer sees it among the subject's sightings.
 
+
+## Names
+
+```json
+{ "subject": "contact:7", "phone": "(555) 010-0007", "name": { "first": "José", "last": "Muñoz" }, "dob": "1990-02-03" }
+```
+
+A name confirms that two people who share a phone are one, and never makes a tie by itself. Names are off until two things are set: `IDENTIFIER_SECRET`, and a policy with a `name` kind that only corroborates, such as [the preset for contacts entered by staff](presets.md#contacts-entered-by-staff).
+
+| Step | What happens |
+| --- | --- |
+| Folded | Accents, case and punctuation do not matter: `José Muñoz-Ruiz` and `JOSE MUNOZ RUIZ` are one name. |
+| Placeholders dropped | `Unknown`, `Test`, `John Doe`, a single initial and the like make no key. |
+| Tied to a place or a date | A key needs the zip code of a confirmed address, or a date of birth. A name with neither makes none. |
+| Keyed | The key is an HMAC under `IDENTIFIER_SECRET`. Names are few enough to guess, so a plain hash of one could be reversed. Name keys are never sent to an ad platform. |
+| Capped | A key that more than five people hold confirms nobody. |
+
+`notes.name` says whether it was used, and if not, why. Any `dob` written by default, such as 1900-01-01, is ignored.
+
 ## Limits
 
 | Limit | Detail |
@@ -104,5 +124,6 @@ With MaxMind, each visit is also noted with where its address places it, `place:
 | A number that changes hands | Once a number is found to be from an internet calling app it stays muted as a `phone`, even if a later check calls it a mobile. Restore it by hand with `POST /ignore` and `ignored: false`. |
 | Line checks cost money | Each new number is one paid Twilio lookup. Answers are kept for thirty days. |
 | A bot that lies | Only bots that name themselves are filtered by user agent. One that pretends to be a browser needs Fingerprint. |
-| Names | Names are not matched. Two accounts are not tied because both are called Pat Lee. |
+| Names | A name never ties two accounts by itself. It confirms a tie they already have, under a policy that has names. Nicknames, married names and spellings that differ by more than accents are different names. |
+| `IDENTIFIER_SECRET` | Every name key is made with it. Change it and new keys match none of the old ones, and the old ones cannot be made again. |
 | Not confirmed | No call has been made with real Smarty or Twilio keys. Both readers were written from the providers' documented answers. Smarty refuses a wrong key the same way however it is sent, so only a real key shows that it accepts the key in a header, as its authentication page says. |

@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, createHmac } from 'node:crypto'
 import type { Identifier } from './types.ts'
 
 /** What no text may hold: a NUL, or half of a character. PostgreSQL refuses the first, and keeps every one of the second as the same replacement character, so two subjects would become one. */
@@ -83,4 +83,41 @@ export function identifier(kind: string, value: string): Identifier {
   const clean = value.trim()
   if (!kind || !clean) throw new TypeError('An identifier needs a kind and a value')
   return `${kind}:${clean}`
+}
+
+/** Letters that are one letter with a mark to their readers, and letters of their own to Unicode. */
+const FOLDED: Record<string, string> = { ß: 'ss', æ: 'ae', œ: 'oe', ø: 'o', đ: 'd', ð: 'd', ł: 'l', þ: 'th', ı: 'i' }
+/** What is written where a name is not known. */
+const NOBODYS = new Set(['unknown', 'unk', 'none', 'null', 'undefined', 'na', 'n a', 'noname', 'no name', 'nobody', 'not given', 'not provided', 'not available', 'placeholder', 'test', 'tester', 'testing', 'dummy', 'firstname', 'first name', 'lastname', 'last name', 'caller', 'wireless caller', 'customer', 'client'])
+const SAMPLES = new Set(['john doe', 'jane doe'])
+
+/** A name as it is compared: without case, accents or punctuation. */
+function normalizeName(name: string): string {
+  const letters = name.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[ßæœøđðłþı]/g, (letter) => FOLDED[letter]!)
+  return letters.replace(/['’ʼ.]/g, '').replace(/[^\p{L}]+/gu, ' ').trim()
+}
+
+/**
+ * Name identifiers: one for the name with a zip code, one for the name with a
+ * date of birth, whichever are known. A name alone is nobody's, so with
+ * neither there is none, and none for a placeholder such as "Unknown". The
+ * keys are made with a secret, because names are few enough to guess: a plain
+ * hash could be reversed by hashing them all. Give the policy a `name` kind
+ * that only corroborates, as `examples/household.json` does.
+ */
+export function nameKeys(secret: string, first: string, last: string, known: { zip5?: string | undefined; dob?: string | undefined }): Identifier[] {
+  if (typeof secret !== 'string' || secret.length < 32) throw new TypeError('A name key needs a secret of at least 32 characters')
+  if (typeof first !== 'string' || typeof last !== 'string') throw new TypeError('A name needs its first and last as text')
+  const name = [normalizeName(first), normalizeName(last)]
+  // A single letter is an initial, except where a letter is a word of its own.
+  if (name.some((part) => !part || /^[a-z]$/.test(part) || NOBODYS.has(part)) || NOBODYS.has(name.join(' ')) || SAMPLES.has(name.join(' '))) return []
+  const key = (by: string, value: string): Identifier => `name:${createHmac('sha256', secret).update(JSON.stringify([...name, by, value])).digest('hex')}`
+  const keys: Identifier[] = []
+  const zip = /^(\d{5})(-?\d{4})?$/.exec(known.zip5?.trim() ?? '')?.[1]
+  if (zip && zip !== '00000' && zip !== '99999') keys.push(key('zip', zip))
+  const born = known.dob?.trim() ?? ''
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(born) ? Date.parse(`${born}T00:00:00Z`) : NaN
+  // A date that systems write where none was given is nobody's birthday.
+  if (!Number.isNaN(day) && new Date(day).toISOString().slice(0, 10) === born && !['1900-01-01', '1970-01-01'].includes(born)) keys.push(key('born', born))
+  return keys
 }

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
-import { components, conversionEvent, createAlerter, createGraph, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, ingestRequest, ip, knownLink, ladderProblems, measure, normalizeEmail, normalizePhone, phoneOfType, policyFrom, policyHash, policyProblems, readToken, scorePairs, signToken, sourceOf, withStage } from '../src/index.ts'
+import { components, conversionEvent, createAlerter, createGraph, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, ingestRequest, ip, knownLink, ladderProblems, measure, nameKeys, normalizeEmail, normalizePhone, phoneOfType, policyFrom, policyHash, policyProblems, readToken, scorePairs, signToken, sourceOf, withStage } from '../src/index.ts'
 import { summarizeCalls } from '../src/callreport.ts'
 import { followed } from '../src/followed.ts'
 import type { Caller, Followed } from '../src/followed.ts'
@@ -70,6 +70,69 @@ test('with no groups a score is what it always was, and with groups only the str
     assert.ok(Math.abs(weigh(grouped, inGroups) - (1 - [...best.values()].reduce((rest, evidence) => rest * (1 - evidence), 1))) < 1e-12)
     assert.equal(inGroups.filter((reason) => reason.counted !== false).length, best.size)
   }
+})
+
+test('names fold to one key, and placeholders to none', () => {
+  const secret = 'a-secret-of-thirty-two-characters!'
+  const key = (first: string, last: string, known: object = { zip5: '62701' }) => nameKeys(secret, first, last, known)
+  for (const [x, y] of [
+    [['José', 'Núñez'], ['JOSE', 'Nunez']],
+    [['Jose\u0301', 'Nu\u0301n\u0303ez'], ['josé', 'núñez']],
+    [['Søren', 'Łukasz'], ['soren', 'lukasz']],
+    [['Weiß', 'Æsop'], ['WEISS', 'aesop']],
+    [['İpek', 'Yıldız'], ['ipek', 'yildiz']],
+    [['Anne-Marie', "O'Brien"], [' anne  marie ', 'OBrien']],
+    [['J. R.', 'Smith, Jr.'], ['j r', 'smith jr']],
+    [['Ａｎａ', 'Lima'], ['ana', 'lima']],
+  ] as const) assert.deepEqual(key(x[0], x[1]), key(y[0], y[1]), `${x} ${y}`)
+  // A letter that is a word of its own is a name, and another name is another key.
+  assert.equal(key('李', '王').length, 1)
+  assert.notDeepEqual(key('李', '王'), key('王', '李'))
+  assert.notDeepEqual(key('Ana', 'Lima'), key('Ana', 'Lime'))
+  // Which of the two fields a word is in matters, and so does where the two meet.
+  assert.notDeepEqual(key('Ana Maria', 'Lima'), key('Ana', 'Maria Lima'))
+  for (const [first, last] of [['Unknown', 'Lima'], ['Ana', 'UNKNOWN'], ['No', ''], ['', ''], ['Test', 'Test'], ['John', 'Doe'], ['n/a', 'N/A'], ['J', 'Lima'], ['123', '456'], ['Wireless', 'Caller'], ['No', 'Name'], ['Not', 'Given']] as const) assert.deepEqual(key(first, last), [], `${first} ${last}`)
+  // A name alone is nobody's. A zip code or a date of birth each make a key, and neither makes the other's.
+  assert.deepEqual(key('Ana', 'Lima', {}), [])
+  const [byZip, byBirth] = key('Ana', 'Lima', { zip5: '62701-1234', dob: '1990-02-03' })
+  assert.deepEqual([[byZip], [byBirth]], [key('Ana', 'Lima'), key('Ana', 'Lima', { dob: '1990-02-03' })])
+  assert.match(byZip!, /^name:[0-9a-f]{64}$/)
+  for (const known of [{ zip5: '6270' }, { zip5: '00000' }, { zip5: 'abcde' }, { dob: '1990-02-30' }, { dob: '02/03/1990' }, { dob: '1900-01-01' }, { dob: '1970-01-01' }]) assert.deepEqual(key('Ana', 'Lima', known), [], JSON.stringify(known))
+  // Another secret makes other keys, and a short one is refused.
+  assert.notDeepEqual(nameKeys('another-secret-of-thirty-two-chars!', 'Ana', 'Lima', { zip5: '62701' }), key('Ana', 'Lima'))
+  assert.throws(() => nameKeys('short', 'Ana', 'Lima', { zip5: '62701' }), TypeError)
+  assert.throws(() => nameKeys(secret, 'Ana', 5 as never, {}), TypeError)
+})
+
+test('a kind that only confirms is a sound rule, names its policy, and fit gives it no more than it confirms', () => {
+  const name = { weight: 0.6, dilution: 1, cap: 5, halfLife: 'none', corroborates: true }
+  assert.deepEqual(policyProblems({ kinds: { name } }), [])
+  assert.deepEqual(policyProblems({ kinds: { name: { ...name, corroborates: false } } }), ['kind "name" needs its corroborates as true, or left out'])
+  assert.deepEqual(policyProblems({ kinds: { review: { corroborates: true } } }), ['kind "review" is a reviewer\'s join, so it cannot only corroborate'])
+  const policy = policyFrom({ kinds: { name } })
+  assert.notEqual(policyHash(policy), policyHash(policyFrom({ kinds: { name: { ...name, corroborates: undefined } } })))
+  const reason = (kind: string, evidence: number): Reason => ({ identifier: `${kind}:x`, evidence, fanout: 2, gap: 0 })
+  // Weighed beside an address it counts, and beside an IP, or alone, it does not, however strong it is.
+  assert.ok(Math.abs(weigh(policy, [reason('name', 0.6), reason('address', 0.6)]) - 0.84) < 1e-9)
+  assert.ok(Math.abs(weigh(policy, [reason('name', 0.99), reason('ip', 0.3)]) - 0.3) < 1e-9)
+  assert.equal(weigh(policy, [reason('name', 0.99)]), 0)
+  // In a group with the rest, the strongest that may count does, whichever it is.
+  const oneGroup = policyFrom({ kinds: { name: { ...name, group: 'g' }, address: { group: 'g' } } })
+  const both = [reason('address', 0.55), reason('name', 0.9)]
+  assert.deepEqual([Math.round(weigh(oneGroup, both) * 100), both.map((each) => each.counted)], [90, [undefined, false]])
+  const weak = [reason('address', 0.45), reason('name', 0.9)]
+  assert.deepEqual([Math.round(weigh(oneGroup, weak) * 100), weak.map((each) => [each.identifier, each.counted])], [45, [['name:x', false], ['address:x', undefined]]])
+  assert.equal(weigh({ ...policy, related: 0 }, [reason('name', 0.99)]), 0)
+  // Pairs a name alone would relate teach nothing, so their labels move nothing.
+  const labeled = [...Array.from({ length: 50 }, (_, i) => ({ same: i < 40, reasons: [reason('phone', 0.9), reason('name', 0.6)] })), ...Array.from({ length: 50 }, (_, i) => ({ same: i < 25, reasons: [reason('phone', 0.9)] }))]
+  const without = fit(labeled, policy)
+  const lone = fit([...labeled, ...Array.from({ length: 200 }, () => ({ same: false, reasons: [reason('name', 0.6)] }))], policy)
+  assert.deepEqual(lone.kinds, without.kinds)
+  assert.ok(without.kinds.name!.after > 0 && without.loss.after <= without.loss.before)
+  // Rounded up, a weight just under `related` would let the name count. Where that is worse, the weights are given back as they were.
+  const edge = policyFrom({ kinds: { name, address: { weight: 0.4999 } } })
+  const kept = fit(Array.from({ length: 40 }, (_, i) => ({ same: i < 20, reasons: [reason('address', 0.4999), reason('name', 0.6)] })), edge, 1e9)
+  assert.deepEqual([kept.kinds.address!.after, kept.policy.kinds.address!.weight, kept.loss.after], [0.4999, 0.4999, kept.loss.before])
 })
 
 test('the household preset is a sound policy, and fit counts a group once', () => {
@@ -755,6 +818,13 @@ test('a phone number counts by the kind of line it is', () => {
   assert.deepEqual([lookupOnly.twilio, lookupOnly.lineType], [undefined, { accountSid: 'AC1', authToken: 't' }])
   assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', TWILIO_ACCOUNT_SID: 'AC1', SMARTY_AUTH_ID: 'id' }), (error: Error) =>
     ['TWILIO_AUTH_TOKEN must be set along with TWILIO_ACCOUNT_SID', 'SMARTY_AUTH_TOKEN must be set along with SMARTY_AUTH_ID'].every((line) => error.message.includes(line)))
+})
+
+test('IDENTIFIER_SECRET is checked', () => {
+  const env = { DATABASE_URL: 'x', GRAPH_TOKEN: 'y', ALERT_WEBHOOK: 'https://hooks.example/x' }
+  assert.equal(configFrom(env).identifierSecret, undefined)
+  assert.equal(configFrom({ ...env, IDENTIFIER_SECRET: 'x'.repeat(32) }).identifierSecret, 'x'.repeat(32))
+  assert.throws(() => configFrom({ ...env, IDENTIFIER_SECRET: 'short' }), /IDENTIFIER_SECRET must be at least 32 characters/)
 })
 
 test('the number pool is off until numbers are given, and its settings are checked', () => {
