@@ -399,6 +399,8 @@ export interface Board {
 const KIND_ORDER: Record<Entry['kind'], number> = { visit: 0, call: 1, consent: 2, decision: 3, sighting: 4, outcome: 5, value: 6 }
 /** The most subjects of one person a journey reads. */
 const MOST = 60
+/** How many subjects one read of many takes at a time. */
+const TOGETHER = 1_000
 const MIXED = 'mixed'
 /** The moments a range of days begins and ends in a time zone. */
 function range(from: string, to: string, timeZone?: string): [number, number] {
@@ -584,34 +586,84 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     // Two subjects kept apart are two people, so nothing of the one is reached from the other, through a third subject either.
     const apart = new Set((await tx.separatedOf(from)).flat().filter((subject) => !reached.has(subject)))
     let frontier = [...from]
-    for (let hop = 0; hop < hops && frontier.length > 0; hop++) {
-      const links = await neighbors(tx, frontier)
-      const improved = new Set<Subject>()
-      // As the hop began: a chain made better during it is followed in the next one, or it would be a link longer.
-      for (const [near, start] of frontier.sort().map((each) => [each, reached.get(each)!] as const)) {
-        for (const link of links.get(near) ?? []) {
-          if (apart.has(link.subject) || (only && !only.has(link.subject))) continue
-          const confidence = start.confidence * link.score
-          const known = reached.get(link.subject)
-          if (known && known.confidence >= confidence) continue
-          reached.set(link.subject, { confidence, via: [...start.via, near] })
-          last?.set(link.subject, link)
-          improved.add(link.subject)
-        }
-      }
-      frontier = [...improved]
-    }
+    for (let hop = 0; hop < hops && frontier.length > 0; hop++) frontier = spread(reached, apart, frontier, await neighbors(tx, frontier), only, last)
     return reached
   }
 
+  /** One hop of a search: goes over the links of the frontier, and returns the subjects it found a better chain to. */
+  function spread(reached: Reached, apart: ReadonlySet<Subject>, frontier: Subject[], links: ReadonlyMap<Subject, Link[]>, only?: ReadonlySet<Subject>, last?: Map<Subject, Link>): Subject[] {
+    const improved = new Set<Subject>()
+    // As the hop began: a chain made better during it is followed in the next one, or it would be a link longer.
+    for (const [near, start] of frontier.sort().map((each) => [each, reached.get(each)!] as const)) {
+      for (const link of links.get(near) ?? []) {
+        if (apart.has(link.subject) || (only && !only.has(link.subject))) continue
+        const confidence = start.confidence * link.score
+        const known = reached.get(link.subject)
+        if (known && known.confidence >= confidence) continue
+        reached.set(link.subject, { confidence, via: [...start.via, near] })
+        last?.set(link.subject, link)
+        improved.add(link.subject)
+      }
+    }
+    return [...improved]
+  }
+
+  /** `reach` from each of many subjects by itself, read together: one read a hop for a thousand of them, not one for each. */
+  async function reachEach(tx: Tx, subjects: readonly Subject[], hops: number): Promise<Map<Subject, Reached>> {
+    const out = new Map<Subject, Reached>()
+    for (let i = 0; i < subjects.length; i += TOGETHER) {
+      const searches = subjects.slice(i, i + TOGETHER).map((subject) => ({ subject, reached: new Map([[subject, { confidence: 1, via: [] }]]) as Reached, apart: new Set<Subject>(), frontier: [subject] }))
+      const bySubject = new Map(searches.map((search) => [search.subject, search]))
+      for (const [a, b] of await tx.separatedOf([...bySubject.keys()])) {
+        bySubject.get(a)?.apart.add(b)
+        bySubject.get(b)?.apart.add(a)
+      }
+      const links = new Map<Subject, Link[]>()
+      for (let hop = 0; hop < hops; hop++) {
+        const unread = unique(searches.flatMap((search) => search.frontier)).filter((subject) => !links.has(subject))
+        if (unread.length > 0) {
+          const found = await neighbors(tx, unread)
+          for (const subject of unread) links.set(subject, found.get(subject) ?? [])
+        }
+        for (const search of searches) search.frontier = spread(search.reached, search.apart, search.frontier, links)
+      }
+      for (const { subject, reached } of searches) out.set(subject, reached)
+    }
+    return out
+  }
+
+  /** The same credit as `credit` for many conversions, read together. Each is asked for as it was given, or with a shorter window. */
+  async function creditAll(tx: Tx, asked: readonly { subject: Subject; at: number }[], window: number, hops: number): Promise<(subject: Subject, at: number, window: number) => Attribution> {
+    const reached = await reachEach(tx, unique(asked.map(({ subject }) => subject)), hops)
+    const touches = new Map<Subject, Touch[]>()
+    if (asked.length > 0) {
+      let [from, to] = [Infinity, -Infinity]
+      for (const { at } of asked) [from, to] = [Math.min(from, at - window), Math.max(to, at)]
+      const everyone = unique([...reached.values()].flatMap((each) => [...each.keys()]))
+      for (let i = 0; i < everyone.length; i += TOGETHER) {
+        for (const touch of await tx.touchesOf(everyone.slice(i, i + TOGETHER), from, to)) {
+          const theirs = touches.get(touch.subject)
+          if (theirs) theirs.push(touch)
+          else touches.set(touch.subject, [touch])
+        }
+      }
+    }
+    return (subject, at, window) => {
+      const within = reached.get(subject)!
+      return credited(subject, at, within, [...within.keys()].flatMap((each) => (touches.get(each) ?? []).filter((touch) => touch.at >= at - window && touch.at <= at)))
+    }
+  }
+
   /** The touches in the window before a conversion, on every subject reached, and the one that earns the credit. */
-  async function credit(subject: Subject, at: number, window: number, reached: Reached, tx: Tx): Promise<Attribution> {
-    const touches: AttributedTouch[] = (await tx.touchesOf([...reached.keys()], at - window, at))
+  const credit = async (subject: Subject, at: number, window: number, reached: Reached, tx: Tx): Promise<Attribution> => credited(subject, at, reached, await tx.touchesOf([...reached.keys()], at - window, at))
+
+  function credited(subject: Subject, at: number, reached: Reached, found: readonly Touch[]): Attribution {
+    const touches: AttributedTouch[] = found
       .map((touch) => ({ ...touch, ...reached.get(touch.subject)! }))
       .sort((x, y) => y.at - x.at || y.confidence - x.confidence || (x.subject < y.subject ? -1 : 1))
-    const credited = touches.find((touch) => touch.confidence >= policy.same)
-    const reason = credited ? 'credited' : touches.length > 0 ? 'low_confidence' : 'no_touch'
-    return { subject, at, touches, credited, reason }
+    const best = touches.find((touch) => touch.confidence >= policy.same)
+    const reason = best ? 'credited' : touches.length > 0 ? 'low_confidence' : 'no_touch'
+    return { subject, at, touches, credited: best, reason }
   }
 
   /** Those of some outcomes, or of some calls, that nobody said were no lead. */
@@ -1023,8 +1075,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const open = await tx.openCalls(start, end, limit, after)
         const later = await leadsOf(tx, await tx.callsOf(unique(open.map((call) => call.subject))), callId)
         const out: OpenCall[] = []
+        const creditOf = await creditAll(tx, open, 90 * DAY, 2)
         for (const call of open) {
-          const { credited } = await credit(call.subject, call.at, 90 * DAY, await reach(tx, [call.subject], 2), tx)
+          const { credited } = creditOf(call.subject, call.at, 90 * DAY)
           out.push({ call, followUp: followUp(call, later), ...(credited && { touch: credited }) })
         }
         return out
@@ -1061,10 +1114,11 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const { columns, unplaced } = board([...people.values()], { steps: steps.map(({ name, wait }) => ({ name, ...(wait && { wait: wait * HOUR }) })), at, today, ...(returnHours > 0 && { returnWait: returnHours * HOUR }), ...(hours && { hours }) })
         // Only those shown are traced to an ad: it is the slow part.
         const shown: BoardColumn<BoardRow>[] = []
+        const creditOf = await creditAll(tx, columns.flatMap((column) => column.rows.slice(0, limit)), 90 * DAY, 2)
         for (const column of columns) {
           const rows: BoardRow[] = []
           for (const place of column.rows.slice(0, limit)) {
-            const { credited } = await credit(place.subject, place.at, 90 * DAY, await reach(tx, [place.subject], 2), tx)
+            const { credited } = creditOf(place.subject, place.at, 90 * DAY)
             const language = place.outcome?.tags?.language ?? place.call?.tags?.language ?? touchTag(credited, 'language')
             rows.push({ ...place, ...(credited && { touch: credited }), ...(language !== undefined && { language }) })
           }
@@ -1146,40 +1200,34 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       if (by !== undefined) dimension(by)
       const [start, end] = range(from, to, timeZone)
       return store.read(async (tx) => {
-        // Who a subject can reach does not depend on when, so one subject's outcomes share one search.
-        const reached = new Map<Subject, Reached>()
         // Looked for over a year, so how many arrivals the window leaves out can be said. Only those inside it are credited.
-        const creditOf = async (subject: Subject, at: number, back = Math.max(window, 365 * DAY)) => {
-          let from = reached.get(subject)
-          if (!from) reached.set(subject, (from = await reach(tx, [subject], hops)))
-          const { credited: touch } = await credit(subject, at, back, from, tx)
-          const inside = touch !== undefined && touch.at >= at - window
-          return { touch: inside ? touch : undefined, delay: touch && at - touch.at, inside }
-        }
+        const year = Math.max(window, 365 * DAY)
         const recorded = await tx.outcomesBetween(start, end)
         const outcomes = await leadsOf(tx, recorded, outcomeId)
         const labels = await tx.labelsOf(unique(outcomes.map((outcome) => outcome.subject)))
         const first = await tx.firstValues(outcomes)
-        const credited: Credited[] = []
-        for (const outcome of outcomes) credited.push({ outcome, first: first.get(outcome.transactionId), person: labels.get(outcome.subject)?.cluster ?? outcome.subject, ...(await creditOf(outcome.subject, outcome.at)) })
         // How long steps take is read from the last half year and not from the days asked about: the newest days hold
         // few outcomes, which is what it has to say. Some of each step, so a common quick one does not hide a slow one.
-        const history: Credited[] = []
-        for (const outcome of await leadsOf(tx, await tx.newestOutcomes(now() - 180 * DAY, now(), 200), outcomeId)) history.push({ outcome, ...(await creditOf(outcome.subject, outcome.at, window)) })
-        // What was no lead is counted apart, where it would have been credited.
-        const notLeads: { at: number; touch: Touch | undefined; tags: Record<string, string> | undefined }[] = []
-        const lead = new Set(outcomes)
-        for (const outcome of recorded) if (!lead.has(outcome)) notLeads.push({ at: outcome.at, touch: (await creditOf(outcome.subject, outcome.at)).touch, tags: outcome.tags })
-        const missed: typeof notLeads = []
+        const newest = await leadsOf(tx, await tx.newestOutcomes(now() - 180 * DAY, now(), 200), outcomeId)
         const inbound = (await tx.callsBetween(start, end)).filter((call) => call.direction === 'inbound')
         const spurned = await tx.notLeads(inbound.map(callId))
         // A call that was counted is an outcome, and is counted once.
         const counted = new Set(recorded.map(outcomeId))
-        for (const call of inbound) {
-          const not = spurned.has(callId(call))
-          if (not ? counted.has(callId(call)) : call.result?.answered !== false) continue
-          ;(not ? notLeads : missed).push({ at: call.at, touch: (await creditOf(call.subject, call.at, window)).touch, tags: call.tags })
+        const uncounted = inbound.filter((call) => (spurned.has(callId(call)) ? !counted.has(callId(call)) : call.result?.answered === false))
+        const find = await creditAll(tx, [...recorded, ...newest, ...uncounted], year, hops)
+        const creditOf = (subject: Subject, at: number, back = year) => {
+          const { credited: touch } = find(subject, at, back)
+          const inside = touch !== undefined && touch.at >= at - window
+          return { touch: inside ? touch : undefined, delay: touch && at - touch.at, inside }
         }
+        const credited: Credited[] = outcomes.map((outcome) => ({ outcome, first: first.get(outcome.transactionId), person: labels.get(outcome.subject)?.cluster ?? outcome.subject, ...creditOf(outcome.subject, outcome.at) }))
+        const history: Credited[] = newest.map((outcome) => ({ outcome, ...creditOf(outcome.subject, outcome.at, window) }))
+        // What was no lead is counted apart, where it would have been credited.
+        const notLeads: { at: number; touch: Touch | undefined; tags: Record<string, string> | undefined }[] = []
+        const lead = new Set(outcomes)
+        for (const outcome of recorded) if (!lead.has(outcome)) notLeads.push({ at: outcome.at, touch: creditOf(outcome.subject, outcome.at).touch, tags: outcome.tags })
+        const missed: typeof notLeads = []
+        for (const call of uncounted) (spurned.has(callId(call)) ? notLeads : missed).push({ at: call.at, touch: creditOf(call.subject, call.at, window).touch, tags: call.tags })
         return fold(from, to, await tx.costsBetween(from, to), await tx.touchesBetween(start, end), credited, { missed, notLeads, by, per, timeZone, through: dayIn(now(), timeZone), history })
       })
     },

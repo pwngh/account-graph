@@ -538,6 +538,48 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await assert.rejects(graph.report({ from: '2026-03-01', to: '2026-03-01', timeZone: 'Mars/Olympus' }), TypeError)
     })
 
+    test('a report, open calls and the board read many people together, and credit each as attribute does', async () => {
+      const { graph, store } = await fresh()
+      const next = random(7)
+      const day = Date.parse('2026-03-02T00:00:00Z')
+      const PEOPLE = 40
+      for (let i = 0; i < PEOPLE; i++) {
+        // Chains of two links, links too weak to credit, arrivals at one moment, people kept apart, and a browser two people share.
+        await graph.observe([
+          { subject: `visitor:${i}`, identifiers: [`device:d${i}`, `ip:${i % 5}`], at: day - 2 * DAY },
+          { subject: `account:${i}`, identifiers: [`device:d${next() < 0.2 ? (i + 1) % PEOPLE : i}`, `email:e${i}`], at: day - DAY },
+          { subject: `lead:${i}`, identifiers: [`email:e${i}`, `canvas:c${i % 9}`], at: day - DAY },
+        ])
+        for (let k = 0; k < 2; k++) await graph.touch({ subject: `visitor:${i}`, at: day - Math.floor(next() * 4) * 60 * DAY, source: 'google', campaignId: `c${i}${k}` })
+        if (next() < 0.2) await graph.separate(`visitor:${i}`, `lead:${i}`)
+        await graph.outcome({ transactionId: `o${i}`, subject: `lead:${i}`, at: day + i, stage: 'signup' })
+        await graph.keepCallResult(`k${i}`, { answered: false })
+        await graph.keepCall({ id: `k${i}`, direction: 'inbound', subject: `account:${i}`, at: day + i, to: '+15550100101', flags: [] })
+      }
+      const reads = new Map<string, number>()
+      const counting: Store = {
+        ...store,
+        read: (fn) => store.read((tx) => fn(new Proxy(tx, { get: (it, key) => (reads.set(String(key), (reads.get(String(key)) ?? 0) + 1), Reflect.get(it, key)) }))),
+      }
+      const counted = createGraph(counting)
+      const range = { from: '2026-03-02', to: '2026-03-02' }
+      const own = async (subject: string, at: number) => (await graph.attribute(subject, { at })).credited
+      const credits = new Map<string, number>()
+      for (let i = 0; i < PEOPLE; i++) {
+        const touch = await own(`lead:${i}`, day + i)
+        const campaign = touch?.campaignId ?? ''
+        credits.set(campaign, (credits.get(campaign) ?? 0) + 1)
+      }
+      assert.ok(credits.size > 10)
+      const rows = (await counted.report(range)).rows.filter((row) => row.outcomes > 0)
+      assert.deepEqual(new Map(rows.map((row) => [row.campaignId, row.outcomes] as const).sort()), new Map([...credits].sort()))
+      for (const each of await counted.openCalls({ ...range, limit: PEOPLE })) assert.deepEqual(each.touch, await own(each.call.subject, each.call.at))
+      const { columns } = await counted.board({ steps: [{ name: 'signup' }], days: 7, at: day + HOUR })
+      assert.ok(columns.some((column) => column.rows.length > 0))
+      for (const { rows } of columns) for (const row of rows) assert.deepEqual(row.touch, await own(row.subject, row.at))
+      for (const key of ['edgesOf', 'edgesOn', 'states', 'separatedOf', 'touchesOf']) assert.ok(reads.get(key)! <= 12, `${key} was read ${reads.get(key)} times`)
+    })
+
     test('what a decision would do is what it does, and foreseeing it writes nothing', async () => {
       const { graph } = await fresh()
       await graph.observe([1, 2, 3].map((n) => ({ subject: `a:${n}`, identifiers: ['device:a'], at: T0 })))
