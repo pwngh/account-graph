@@ -2441,6 +2441,31 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal(await credit([line('caller:1', T0 + 80 * DAY), visit(99, { source: 'example.org', referrer: 'https://example.org/' })]), 'https://example.org/')
     })
 
+    test('a link sent to one person is kept with what it is for and whether it was opened', async () => {
+      const { graph } = await fresh()
+      await graph.observe([{ subject: 'contact:1', identifiers: ['email:e'], at: T0 }, { subject: 'contact:2', identifiers: ['email:e'], at: T0 }])
+      const link = (id: string, subject: string, days: number) => ({ id, subject, at: T0 + days * DAY, expires: T0 + (days + 30) * DAY })
+      await graph.keepLink({ ...link('a', 'contact:1', 0), purpose: 'form' })
+      await graph.keepLink({ ...link('b', 'contact:2', 1), purpose: 'payment' })
+      await graph.keepLink(link('c', 'contact:3', 2))
+      assert.equal(await graph.linkOpened('a', 'contact:1', T0 + 3 * HOUR), true)
+      assert.equal(await graph.linkOpened('a', 'contact:1', T0 + 2 * HOUR), true)
+      assert.equal(await graph.linkOpened('none', 'contact:1', T0), false)
+      assert.equal(await graph.linkOpened('a', 'contact:2', T0), false)
+      // The person's, whichever of their ids a link was made for.
+      const sent = await graph.linksSent('contact:1')
+      assert.deepEqual(sent, [
+        { ...link('a', 'contact:1', 0), purpose: 'form', opened: T0 + 2 * HOUR, openings: 2 },
+        { ...link('b', 'contact:2', 1), purpose: 'payment', openings: 0 },
+      ])
+      const { entries } = await graph.journey('contact:2')
+      assert.deepEqual(entries.filter((entry) => entry.kind === 'link').map((entry) => [entry.at, entry.kind === 'link' && entry.link.id]), [[T0, 'a'], [T0 + DAY, 'b']])
+      await graph.forget('contact:1')
+      assert.deepEqual((await graph.linksSent('contact:2')).map((each) => each.id), ['b'])
+      await graph.prune(T0 + 32 * DAY)
+      assert.deepEqual([await graph.linksSent('contact:2'), (await graph.linksSent('contact:3')).length], [[], 1])
+    })
+
     test('a text is tied by its code, or by the tap before it, and what it said is not kept', async () => {
       const { graph, store } = await fresh()
       const [A, B] = [textCode(), textCode()]

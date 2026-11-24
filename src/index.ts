@@ -65,6 +65,7 @@ export type {
   KeptCall,
   KeptText,
   OpenText,
+  SentLink,
   TextReply,
   Labels,
   Level,

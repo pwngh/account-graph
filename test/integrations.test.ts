@@ -916,6 +916,23 @@ test('a link sent to one person ties the browser that opens it, and a visitor is
 
     // A second person's link opened in the same browser. Both are there by a link alone, so neither wins: each thins, and the browser is joined to nobody.
     const linkFor = async (subject: string) => new URL(((await (await service('/link', { url: 'https://site.example/offer', subject })).json()) as { url: string }).url).searchParams.get('ag')!
+    // The opening is noted on the link, whichever of its two names the token comes under.
+    assert.equal((await page('/collect', { device: 'phone-1', link: known })).status, 204)
+    const sentTo = async (subject: string, token = 'service') => fetch(`${base}/sent?subject=${subject}`, { headers: { authorization: `Bearer ${token}` } })
+    const [first] = (await (await sentTo('contact:1')).json()) as any[]
+    assert.deepEqual([first.openings, first.purpose, typeof first.opened, first.expires % 1000, (await sentTo('contact:1', 'reviewer')).status], [2, undefined, 'number', 0, 403])
+    for (const purpose of ['two words', '', 5]) assert.equal((await service('/link', { url: 'https://site.example/', subject: 'contact:1', purpose })).status, 400)
+    const gone = new URL(((await (await service('/link', { url: 'https://site.example/pay', subject: 'contact:gone', days: 0.3, purpose: 'payment' })).json()) as { url: string }).url)
+    assert.ok(gone.searchParams.get('ag'))
+    assert.ok(Number.isInteger(((await (await sentTo('contact:gone')).json()) as any[])[0].expires))
+    // Opened once its person is forgotten, a link brings nobody back.
+    const late = new URL(((await (await service('/link', { url: 'https://site.example/pay', subject: 'contact:late' })).json()) as { url: string }).url).searchParams.get('ag')
+    await graph.forget('contact:late')
+    await page('/collect', { device: 'phone-late', known: late })
+    assert.equal(await members('contact:late'), undefined)
+    // One made by the library alone is kept nowhere, and names its person as it did.
+    await page('/collect', { device: 'phone-lib', known: new URL(knownLink('https://site.example/', 'contact:lib', { secret: 'a-long-secret-value', now: () => clock })).searchParams.get('ag') })
+    assert.deepEqual(await members('contact:lib'), ['contact:lib', 'visitor:phone-lib'])
     await page('/collect', { device: 'phone-1', known: await linkFor('contact:2') })
     assert.deepEqual(await members('contact:1'), ['contact:1'])
     assert.deepEqual((await graph.links('visitor:phone-1')).map((link) => [link.subject, link.level]), [['contact:1', 'related'], ['contact:2', 'related']])

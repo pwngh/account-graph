@@ -2,7 +2,7 @@ import type { Feed, KeptAlert, OpsStore } from './ops.ts'
 import type { Job, JobState, OutboxStore } from './outbox.ts'
 import type { Store, Tx } from './store.ts'
 import { CLICK_IDS } from './touch.ts'
-import type { CallResult, Consent, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, Consent, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, OutcomeValue, SentLink, Sighting, Subject, Touch } from './types.ts'
 
 /** Every ad click id a touch carries, as the index on them has it. */
 const CLICKED = `array[${CLICK_IDS.map((name) => `detail->>'${name}'`).join(', ')}]`
@@ -110,6 +110,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       await db.query(`delete from ${t('outcome_value')} where subject = $1`, [subject])
       await db.query(`with gone as (delete from ${t('call')} where subject = $1 returning id) delete from ${t('call_result')} where id in (select id from gone)`, [subject])
       await db.query(`update ${t('call')} set visitor = null where visitor = $1`, [subject])
+      await db.query(`delete from ${t('sent_link')} where subject = $1`, [subject])
       await db.query(`delete from ${t('message')} where subject = $1`, [subject])
       await db.query(`update ${t('message')} set visitor = null where visitor = $1`, [subject])
       await db.query(`delete from ${t('subject')} where id = $1`, [subject])
@@ -507,6 +508,30 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
         [from, to, limit, after?.at ?? null, after?.id ?? null],
       )
       return rows.map(toCall)
+    },
+
+    async setLink({ id, subject, purpose, at, expires, opened, openings }) {
+      await db.query(
+        `insert into ${t('sent_link')} (id, subject, purpose, at, expires_at, opened_at, openings) values ($1, $2, $3, $4, $5, $6, $7)
+         on conflict (id) do update set opened_at = excluded.opened_at, openings = excluded.openings`,
+        [id, subject, purpose ?? null, at, expires, opened ?? null, openings],
+      )
+    },
+
+    async linkOf(id) {
+      const { rows } = await db.query(`select * from ${t('sent_link')} where id = $1`, [id])
+      return rows[0] && toLink(rows[0])
+    },
+
+    async linksSent(subjects) {
+      if (subjects.length === 0) return []
+      const { rows } = await db.query(`select * from ${t('sent_link')} where subject = any($1::text[]) order by at, id collate "C"`, [subjects])
+      return rows.map(toLink)
+    },
+
+    async pruneLinks(before) {
+      const { rows } = await db.query(`with gone as (delete from ${t('sent_link')} where expires_at < $1 returning 1) select count(*)::int as n from gone`, [before])
+      return rows[0].n
     },
 
     async setText({ id, direction, subject, at, to, flags, visitor, tags, recorded }) {
@@ -935,6 +960,18 @@ function toCall(row: any): KeptCall {
   }
 }
 
+function toLink(row: any): SentLink {
+  return {
+    id: row.id,
+    subject: row.subject,
+    ...(row.purpose !== null && { purpose: row.purpose }),
+    at: Number(row.at),
+    expires: Number(row.expires_at),
+    ...(row.opened_at !== null && { opened: Number(row.opened_at) }),
+    openings: row.openings,
+  }
+}
+
 function toText(row: any): KeptText {
   return {
     id: row.id,
@@ -1253,6 +1290,21 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
             create index if not exists message_subject on ${schema}.message (subject, at);
             create index if not exists message_at on ${schema}.message (at);
             create index if not exists message_visitor on ${schema}.message (visitor);`,
+    },
+    {
+      id: 22,
+      name: 'links that were sent',
+      sql: `create table if not exists ${schema}.sent_link (
+              id text primary key,
+              subject text not null,
+              purpose text,
+              at bigint not null,
+              expires_at bigint not null,
+              opened_at bigint,
+              openings integer not null
+            );
+            create index if not exists sent_link_subject on ${schema}.sent_link (subject, at);
+            create index if not exists sent_link_expires on ${schema}.sent_link (expires_at);`,
     },
   ]
 }

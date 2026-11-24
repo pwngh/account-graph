@@ -1,4 +1,4 @@
-const WHAT = { visit: 'Visit', sighting: 'Sighting', call: 'Call', text: 'Text', outcome: 'Outcome', value: 'Value change', consent: 'Consent', decision: 'Decision' }
+const WHAT = { visit: 'Visit', sighting: 'Sighting', call: 'Call', text: 'Text', link: 'Link', outcome: 'Outcome', value: 'Value change', consent: 'Consent', decision: 'Decision' }
 const SENT = { held: 'Held for a call result', pending: 'Queued for', sent: 'Sent to', skipped: 'Skipped for', failed: 'Rejected by' }
 const CLICKS = [['gclid', 'Google ad click'], ['gbraid', 'Google ad click'], ['wbraid', 'Google ad click'], ['fbclid', 'Meta click id'], ['msclkid', 'Microsoft ad click'], ['ttclid', 'TikTok ad click']]
 const worthOf = (value, currency) => `${money(value)}${currency ? ` ${currency}` : ''}`
@@ -42,6 +42,10 @@ function told(entry) {
     const how = text.flags.includes('opt_out') ? 'Asked for no more texts' : text.flags.includes('opt_in') ? 'Asked for texts again' : ''
     const after = reply && { open: 'Not answered', stopped: 'Not answered before they asked for no more texts', replied: `Answered by ${reply.how} after ${lasted(reply.delay)}` }[reply.state]
     return [text.direction === 'outbound' ? 'Sent' : 'Received', notLead(entry.notLead), facts(how, after, text.visitor && (text.flags.includes('code') ? 'Code from the site' : 'Tap to text')), tags(text.tags, words)]
+  }
+  if (entry.kind === 'link') {
+    const { link } = entry
+    return [`Link sent${link.purpose ? ` · ${words(link.purpose)}` : ''}`, facts(link.opened === undefined ? 'Not opened' : `Opened after ${lasted(link.opened - link.at)}`, link.openings > 1 && `${amount(link.openings)} times`)]
   }
   if (entry.kind === 'outcome') {
     const { outcome, first, sent } = entry
@@ -103,7 +107,7 @@ const DAYS = 86400000
 /** How much time fits about 700 points at each zoom. */
 const ZOOMS = { All: 0, Month: 30 * DAYS, Week: 7 * DAYS, Day: DAYS }
 const GLYPHS = {
-  visit: 'M-5 4L5 0L-5 -4L-2.5 0Z', sighting: 'M-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0Z', call: 'M-5-3.5h10v7h-10Z', text: 'M-5-4h10v6h-6l-4 3Z', outcome: 'M0-6L6 0L0 6L-6 0Z', value: 'M0-4.5L4.5 0L0 4.5L-4.5 0Z',
+  visit: 'M-5 4L5 0L-5 -4L-2.5 0Z', sighting: 'M-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0Z', call: 'M-5-3.5h10v7h-10Z', text: 'M-5-4h10v6h-6l-4 3Z', link: 'M-5-2h4v-2l5 4l-5 4v-2h-4Z', outcome: 'M0-6L6 0L0 6L-6 0Z', value: 'M0-4.5L4.5 0L0 4.5L-4.5 0Z',
   consent: 'M-5 0a5 5 0 1 0 10 0a5 5 0 1 0-10 0Z', decision: 'M-4.5 6V-6H5L2.5-2.5L5 1H-2.5V6Z',
 }
 const glyph = (kind) => svg('svg', { class: `glyph ${kind}`, viewBox: '-8 -8 16 16', 'aria-hidden': 'true', focusable: 'false' }, svg('path', { d: GLYPHS[kind] }))
