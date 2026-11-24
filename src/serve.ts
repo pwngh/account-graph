@@ -391,12 +391,12 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
   log(`listening on ${config.host}:${port}`)
   log(`collect accepts ${config.origins.length > 0 ? config.origins.join(', ') : 'no origins yet (set ORIGINS)'}`)
   log([Object.keys(config.reviewers ?? {}).length > 0 ? `reviewers ${Object.keys(config.reviewers!).join(', ')}` : 'reviewers none', on('server cookie', config.cookie), on('fingerprint', config.fingerprint), on('maxmind', config.maxmind), on('signed links', config.linkSecret), on('staff networks', config.staffNetworks.length > 0), on('opening hours', hours), on('alerts', config.alertWebhook), on('address checks', config.smarty), on('phone line checks', config.lineType)].join(', '))
-  log(`outbox sends to ${targets.length > 0 ? targets.map((target) => target.name).join(', ') : 'nobody (no ad platform configured)'}`)
+  log(`outbox sends to ${targets.length > 0 ? targets.map((target) => target.name).join(', ') : 'none (no ad platform configured)'}`)
   if (config.stages) log(`steps: ${Object.entries(config.stages).map(([name, stage]) => `${name}${stage.value === undefined ? '' : ` ${stage.value}`}`).join(', ')}`)
-    log(`page events taken: ${options.events!.length > 0 ? options.events!.join(', ') : 'none (set EVENTS)'}; calls from twilio ${config.twilio ? 'on' : 'off'}; call results ${config.callResults === 'expected' ? `expected within ${config.callResultWait} minutes` : 'not expected'}; number pool ${config.poolNumbers.length > 0 ? `of ${config.poolNumbers.length}` : 'off'}`)
-  log(`costs are read from ${sources.length > 0 ? sources.map(([name]) => name).join(', ') : 'nobody (post them to /costs)'}`)
+    log(`page events: ${options.events!.length > 0 ? options.events!.join(', ') : 'none (set EVENTS)'}; calls from twilio ${config.twilio ? 'on' : 'off'}; call results ${config.callResults === 'expected' ? `expected within ${config.callResultWait} minutes` : 'not expected'}; number pool ${config.poolNumbers.length > 0 ? `of ${config.poolNumbers.length}` : 'off'}`)
+  log(`cost sources: ${sources.length > 0 ? sources.map(([name]) => name).join(', ') : 'none (POST /costs)'}`)
   const { hash, due } = await graph.policy()
-  log(`policy ${hash.slice(0, 12)} ${config.policy ? 'from settings' : 'by default'}${due ? '; the stored clusters were not built with it, so a rebuild is due (POST /rebuild)' : ''}`)
+  log(`policy ${hash.slice(0, 12)} ${config.policy ? '(configured)' : '(default)'}${due ? '; rebuild required (POST /rebuild)' : ''}`)
   for (const { pass } of [...readCosts, ...(sendHead ? [sendHead] : []), checks]) pass()
 
   return {

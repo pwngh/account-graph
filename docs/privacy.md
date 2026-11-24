@@ -1,89 +1,104 @@
-# What is kept about people
+# Privacy
 
-What the graph holds, what deletes it, and what the words for it are. This page makes no claim about any law.
+The graph stores identifiers, campaign visits, calls, outcomes and consent. `POST /forget` deletes a person's data, and `POST /prune` deletes old records.
 
-## What is kept
+## Stored data
 
-| | Kept as | Can it be turned back? |
+Hashed data here is **pseudonymous**: anyone who holds the original value can identify the person. Protect the database as you would the list it was made from.
+
+| Data | Stored as | Reversible |
 | --- | --- | --- |
-| Email, phone, postal address, sent to `/identify`, `/call`, `/convert` or the outbox, or made with the hashing helpers | A hash of the normalized value | By guessing. Phone numbers are few enough to hash them all, and a known email can be hashed and compared. The hashes are the ones ad platforms match on, so they carry no secret. |
-| An identifier you write yourself, with `/observe` or `graph.observe` | As you wrote it, whatever its kind. Nothing hashes it for you: use `email()`, `phone()` and the rest. | It is what you wrote. |
+| Email, phone, postal address, sent to `/identify`, `/call`, `/convert` or the outbox, or made with the hashing helpers | A hash of the normalized value | By guessing. The set of phone numbers is small enough to hash in full, and a known email can be hashed and compared. The hashes match those of ad platforms, so they carry no secret. |
+| An identifier you write with `/observe` or `graph.observe` | As written, for any kind. Hash it first with `email()`, `phone()` and the other helpers. | Yes, unless you hashed it. |
 | Name | A keyed hash, only under a policy that uses names | Only with `IDENTIFIER_SECRET`. |
-| Your own ids, such as `contact:7` | As written | They are yours. |
-| A browser | The id its first-party cookie holds | It names a browser, not a person, until something ties the two. |
-| IP address | As written; IPv6 as its /64 | It is the address. |
-| Ad clicks, campaign ids, the parameters you named, landing pages without their query | As they came | They say what was clicked. |
-| Calls | When, how long, how it went, which of your numbers, and the caller as a hash | As a phone number. Nothing said on a call is here. |
-| Steps and their values | With the ids you gave | They are yours. |
-| Decisions | Who decided, when, about which ids, and the reason as typed | They are what they say. |
+| Your own ids, such as `contact:7` | As written | By you. |
+| Browser | The id in its first-party cookie | It identifies a browser, and a person once something links the two. |
+| IP address | As written; IPv6 as its /64 | Yes. |
+| Ad clicks, campaign ids, the parameters you named, landing pages without their query | As received | They identify what was clicked. |
+| Calls | Time, duration, result, your number, and the caller as a hash. Call content is not stored. | As a phone number. |
+| Steps and their values | With the ids you gave | By you. |
+| Decisions | Author, time, ids concerned, and the reason as typed | Yes. |
 
-The right word for hashed data here is **pseudonymous**: it says who somebody is to whoever holds the value that was hashed. Do not describe it as if nobody could be found in it. Treat the database as you would the list it was made from.
+> **Audit log entries are permanent.** In a reason, name the kind of matter and leave out the matter itself. Keep names, phones and emails out of ids.
 
-## What is sent
+## Data sent
 
-| To | What | When |
+| Recipient | Data | When |
 | --- | --- | --- |
-| Ad platforms you set up | The outcome, with whichever of these there are: the click id of that platform, the email and phone hashed the way it matches them, and for Meta its browser id beside its click | For a step that names an action, where there is a click id or a hash to match by, and not where measuring ads was refused |
-| Services you set up: a fingerprint, an address check, a line check, a lookup of addresses | The one value being checked | When it arrives |
+| Ad platforms you set up | The outcome, with whichever of these exist: that platform's click id, the email and phone hashed the way it matches them, and for Meta its browser id beside its click | For a step that names an action, when there is a click id or a hash to match by, and ad measurement was not refused |
+| Services you set up: fingerprint, address check, line check, IP lookup | The one value being checked | On arrival |
 | Your own webhooks | Alerts and cluster changes, by id | When they happen |
-| Anyone else | Nothing | |
 
-## What deletes it
+Data goes to these recipients only.
 
-| | Deletes | Keeps |
+## Deletion
+
+Deleting a person takes one `POST /forget` per subject, because it leaves the person's other subjects in place.
+
+| Action | Deletes | Keeps |
 | --- | --- | --- |
-| `forget` one subject | Its sightings and ties, identifiers nobody else holds, arrivals, steps and their values, calls it made and their results, conversions, consent, separations, value moved, alerts, and the changes of its own cluster | In the record of decisions: that it was forgotten, with its id, and earlier entries that name it, because the record is sealed. Changes of other subjects that name it as the cluster they were in. An identifier that is muted. Calls of another subject that were tied to it, with the tie removed. That a pool number was held by somebody then. Other subjects of the same person, until they are forgotten too. |
-| `prune` before a time | Sightings written down before it, answers about advertising written down before it that no longer stand, results written down before it whose call never came, and turns of pool numbers that ended before it | Ties and clusters, because each tie keeps its first and last sighting and its count. Arrivals, steps, calls, and the answer that stands. |
-| Restating a step | Nothing | Every value it has had. |
-| Taking back a call that was not answered after all | Its outcome, so the report no longer counts it | The call, its result, and the history of its value. |
+| `forget` one subject | Its sightings and links, identifiers with no other holder, visits, steps and their values, not-a-lead marks, its calls and their results, conversions, consent, separations, transfers, alerts, and the changes of its own cluster | See the list below |
+| `prune` before a time | Sightings, superseded consent answers, and call results without a call, all stored before it. Also pool assignments that ended before it, and not-a-lead marks set before it without a recorded outcome or call | Links and clusters, because each link keeps its first and last sighting and its count. Visits, steps, calls, and the consent answer that applies |
+| Restating a step | None | Every value it has had |
+| Correcting a call to unanswered | Its outcome, which leaves the report | The call, its result, and the history of its value |
 
-What was already sent to an ad platform [is there](#what-ad-platforms-hold). Backups keep what they hold until they are gone: forget again after restoring one.
+`forget` keeps:
 
-Two things to hold to when writing a reason or an id, because the record of decisions keeps them for good: name the kind of matter and never the matter, and do not put a name, a phone or an email in an id.
+- Audit log entries that name the subject, including the deletion itself, because entries are hashed in a chain.
+- Changes of other subjects that name it as their cluster.
+- A muted identifier.
+- Calls of another subject that were linked to it, with the link removed.
+- The fact that a pool number was held at that time, without the holder.
+- Other subjects of the same person.
 
-## What ad platforms hold
+Backups keep their data until you delete them. Run `forget` again after restoring one.
 
-Forgetting a person here deletes nothing at a platform their conversions were sent to. `POST /forget` with `"ads": true` answers with what had arrived where:
+## Data at ad platforms
+
+`forget` deletes data here and leaves sent conversions at the platforms. Call `POST /forget` with `"ads": true` to list them:
 
 ```json
 { "changes": [], "sent": [{ "transactionId": "client-42", "target": "google", "action": "333", "at": 1795460000000, "state": "untold" }] }
 ```
 
-| `state` | Says |
+| `state` | Meaning |
 | --- | --- |
-| `told` | The platform was asked to take it back, and refused nothing |
-| `refused` | It was asked and refused. `note` says why |
-| `untold` | It was not asked. It is for you to ask, with the platform's own tools. With the note `may not have arrived`, it was picked up to be sent, and that it arrived was never confirmed |
+| `told` | The platform was asked to take it back and rejected nothing. |
+| `refused` | The platform rejected the request. `note` has the reason. |
+| `untold` | No request was made. Ask with the platform's own tools. The note `may not have arrived` means the job was picked up, and its delivery was never confirmed. |
 
-**The answer is the only place this is said.** Nothing about a forgotten person is kept to say it again, so keep the answer until you have asked.
+> **Save the response.** The server keeps no copy of this list after the deletion.
 
-With `FORGET_ADS=true`, a platform that documents a way is asked each time somebody is forgotten, whether or not `ads` was set. It is asked after the person is gone here. What is refused is not tried again, and does not bring them back. It is off by default, because it sends the platform the click id and the hashed email and phone it was sent before.
+With `FORGET_ADS=true`, each deletion also asks every platform with a documented method to take the conversions back, with or without `ads`. The request follows the local deletion. A rejected request is not retried and does not restore the person.
 
-| Platform | What its documents offer | Here |
+The setting is off by default, because it sends the platform the click id and the hashed email and phone again.
+
+| Platform | Documented method | Support |
 | --- | --- | --- |
 | Microsoft Advertising | [A retraction](https://learn.microsoft.com/en-us/advertising/campaign-management-service/offlineconversionadjustment), up to 90 days after the conversion | Asked, with `FORGET_ADS` |
-| Google Ads | [Removing users](https://developers.google.com/data-manager/api/reference/rest/v1/users/remove), for accounts on a list Google keeps. [A retraction](https://developers.google.com/google-ads/api/docs/conversions/upload-adjustments) in the Google Ads API takes a conversion out of reports and is not said to delete it | Not asked |
-| Meta | Taking people out of audiences. The pages on sending events name no way to delete one | Not asked |
-| TikTok | Its documents could not be read | Not asked |
+| Google Ads | [Removing users](https://developers.google.com/data-manager/api/reference/rest/v1/users/remove), for accounts on a list Google keeps. [A retraction](https://developers.google.com/google-ads/api/docs/conversions/upload-adjustments) in the Google Ads API removes a conversion from reports, without a stated deletion | Not asked |
+| Meta | Removing people from audiences. The pages on sending events name no way to delete one | Not asked |
+| TikTok | Unknown, because its documentation could not be read | Not asked |
 
-A retraction takes a conversion back. No platform's documents say it also deletes what was matched to reach it. Asking is not knowing: a request from a person is answered by your own letter to the platform, and this list says what to name in it.
-
-Your own target can take part: give it `forget(jobs)`.
+To answer a person's request, write to the platform yourself and name the conversions in `sent`. A custom target can support deletion by implementing `forget(jobs)`.
 
 ## Consent
 
-Two answers are kept apart: measuring ads (`adUserData`) and personalizing them (`adPersonalization`).
+Two answers are stored separately: measuring ads (`adUserData`) and personalizing them (`adPersonalization`).
 
-| Where | What an answer does |
+| Point | Effect |
 | --- | --- |
-| The page | With the browser's Global Privacy Control signal, or a banner's no to measuring ads, the script leaves out the arrival, the click id and the Analytics id. The visit itself is still reported. |
-| The server, at a visit | The answer is kept. Meta's browser id is not kept for somebody whose standing answer is no to measuring ads. |
-| A pool number | None for a browser that sends the signal or the no, or whose standing answer is no to measuring ads. |
-| The outbox, at sending | Nothing is sent where the outcome itself says no to measuring ads. Nor where the subject, or the browser that clicked, last said no: for an outcome that carries a yes, only a no given since counts. |
-| Personalization | A no to it does not stop the outcome being sent. It is passed on where the outcome carries an answer of its own, or where the subject has answered and so has the browser that clicked, if that is a different subject. Otherwise the platform is sent no answer, and what it does then is set in the ad account. |
-| A later answer | Stands over an earlier one, except that a dated answer always stands over one whose time is not known. |
+| Page | With the Global Privacy Control signal, or a banner's no to measuring ads, the script omits the `touch`, the click id and the Analytics id. It still reports the page view. |
+| Server, on a page view | The answer is stored. Meta's browser id is dropped when the applicable answer is no to measuring ads. |
+| Pool number | Withheld from a browser that sends the signal or the no, or whose applicable answer is no to measuring ads. |
+| Outbox, on send | Skipped when the outcome says no to measuring ads, or when the last answer of the subject or the clicking browser was no. For an outcome that carries a yes, only a no given since counts. |
+| Personalization | A no does not stop the send. The answer is passed on when the outcome carries one, or when the subject and the clicking browser, if different, have both answered. Otherwise the platform gets no answer and applies the ad account's setting. |
+| Later answer | Replaces an earlier one. A dated answer always replaces one without a time. |
 
-| What consent here is not | |
-| --- | --- |
-| Being called or written to | Consent to messages, opt-outs, hours and how often somebody is contacted belong to the system that calls or sends. Nothing here is a record of them. |
-| Being kept at all | It does not stop a visit, a call or a step being kept for your own report. If somebody must not be kept, `forget` them. |
+## Limitations
+
+- This page makes no claim about any law.
+- Platform documentation does not state that a retraction deletes the data matched to reach a conversion.
+- A request marked `told` is unconfirmed beyond the platform's response.
+- Consent covers advertising. Message consent, opt-outs, quiet hours and contact frequency belong to the system that calls or sends.
+- A no to advertising still records visits, calls and steps for your own report. Use `forget` to delete them.

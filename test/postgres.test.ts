@@ -280,7 +280,7 @@ if (!url) {
       const lines: string[] = []
       const running = await serve({ ...env, POLICY: '{"kinds":{"badge":{"weight":0.5,"dilution":0,"cap":3,"halfLife":"none"},"phone":{"weight":0.85}}}' }, (line) => lines.push(line))
       try {
-        assert.ok(lines.some((line) => /^policy [0-9a-f]{12} from settings; .*rebuild is due/.test(line)), lines.join('\n'))
+        assert.ok(lines.some((line) => /^policy [0-9a-f]{12} \(configured\); rebuild required/.test(line)), lines.join('\n'))
         const ask = (path: string, token: string, body?: object) => fetch(`http://127.0.0.1:${running.port}${path}`, { method: body ? 'POST' : 'GET', headers: { authorization: `Bearer ${token}` }, ...(body && { body: JSON.stringify(body) }) })
         const policy = (await (await ask('/policy', 'review')).json()) as any
         assert.deepEqual([policy.builtWith, policy.due, policy.changed, policy.rules.kinds.badge], [null, true, ['badge', 'phone'], { weight: 0.5, dilution: 0, cap: 3, halfLife: 'none' }])
