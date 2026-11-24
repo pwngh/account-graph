@@ -299,8 +299,10 @@ function route(nodes, edges) {
 }
 /** Gives everything its room: names to their best side, then apart, lines around what is in their way, and wider only when that is not enough. */
 function settle(nodes, edges, tries = 40) {
+  // It is better to be a little untidy than not to answer a press.
+  const until = performance.now() + 700
   for (const edge of edges) edge.bend = 0
-  for (let i = 0; i < tries; i++) {
+  for (let i = 0; i < tries && performance.now() < until; i++) {
     sides(nodes, edges)
     outward(nodes, edges)
     spread(nodes, edges, 24)
@@ -551,6 +553,7 @@ function graphOf(profile, more) {
       if (moving || glide || heat > 0.02) return void requestAnimationFrame(frame)
       running = false
       word()
+      if (document.activeElement?.node && dots.contains(document.activeElement)) reveal(document.activeElement.node)
     }
     requestAnimationFrame(frame)
   }
@@ -662,6 +665,8 @@ function graphOf(profile, more) {
       const shown = el('span', {}, drawn.least > 0 ? `${drawn.least}% and over` : 'Any strength')
       legend.append(el('label', { class: 'least' }, least, shown))
     }
+    // Places of those no longer drawn are not kept: a long day opens many.
+    for (const id of drawn.spots.keys()) if (!byId.has(id)) drawn.spots.delete(id)
     hide()
     if (!byId.has(drawn.chosen)) drawn.chosen = undefined
     tell()
@@ -698,8 +703,11 @@ function graphOf(profile, more) {
   function reveal(node) {
     if (!drawn.camera || glide) return
     const { x, y, k } = drawn.camera
-    const off = (at, size) => Math.max(0, 60 - at) - Math.max(0, at - (size - 60))
-    const [dx, dy] = [off(node.x * k + x, size.w), off(node.y * k + y, size.h)]
+    // What lies under the card cannot be seen either.
+    const under = !card.hidden && !root.classList.contains('narrow') ? 300 : 0
+    const off = (at, low, high) => Math.max(0, low + 60 - at) - Math.max(0, at - (high - 60))
+    const left = card.classList.contains('left')
+    const [dx, dy] = [off(node.x * k + x, left ? under : 0, left ? size.w : size.w - under), off(node.y * k + y, 0, size.h)]
     if (dx === 0 && dy === 0) return
     drawn.camera = { x: x + dx, y: y + dy, k, held: true }
     place()
@@ -931,8 +939,6 @@ function graphOf(profile, more) {
     }
     measure()
     draw(same)
-    // Places of those no longer drawn are not kept: a long day opens many.
-    for (const id of drawn.spots.keys()) if (!byId.has(id)) drawn.spots.delete(id)
     new ResizeObserver(measure).observe(paper)
   }
   return root
