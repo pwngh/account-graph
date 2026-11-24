@@ -53,7 +53,7 @@ A cluster with more than 50 members is flagged `oversized`. A cluster that big i
 
 ### The model, and what it leaves out
 
-The score is a noisy-OR of the evidence that counts. Read each piece as one way two subjects could be one person, right as often as its evidence says. The pair is two people only if every piece is a coincidence, so the score is `1 − Π(1 − evidence)`. What counts is decided first: an identifier past its cap or muted gives none, only the strongest of a group counts, and a kind that only corroborates counts where the rest already reaches `related`. The result is a score of the model. It is as good a probability as its weights are, and [`fit`](library.md) says how good that is on pairs you have checked.
+The score is a noisy-OR of the evidence that counts. Read each piece as one way two subjects could be one person, right as often as its evidence says. The pair is two people only if every piece is a coincidence, so the score is `1 − Π(1 − evidence)`. What counts is decided first: an identifier past its cap or muted gives none, only the strongest of a group counts, and a kind that only corroborates counts where the rest already reaches `related`. The result is a model score, and not a calibrated probability: evidence that goes together makes it too sure, whatever the weights. [`fit`](library.md) compares it with pairs you have checked.
 
 | What it assumes | Where that fails, and what is done |
 | --- | --- |

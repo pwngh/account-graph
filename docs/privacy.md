@@ -51,7 +51,7 @@ Two answers are kept apart: measuring ads (`adUserData`) and personalizing them 
 | The server, at a visit | The answer is kept. Meta's browser id is not kept for somebody whose standing answer is no to measuring ads. |
 | A pool number | None for a browser that sends the signal or the no, or whose standing answer is no to measuring ads. |
 | The outbox, at sending | Nothing is sent where the outcome itself says no to measuring ads. Nor where the subject, or the browser that clicked, last said no: for an outcome that carries a yes, only a no given since counts. |
-| Personalization | A no to it does not stop the outcome being sent. It is passed on with it, so the platform measures and does not personalize. |
+| Personalization | A no to it does not stop the outcome being sent. It is passed on where the outcome carries an answer of its own, or where both the subject and the browser that clicked have answered. Where one of them never did, the platform is sent no answer, and what it does then is set in the ad account. |
 | A later answer | Stands over an earlier one, except that a dated answer always stands over one whose time is not known. |
 
 | What consent here is not | |
