@@ -4,6 +4,7 @@ const enter = (token) => {
   $('token').value = token
   sessionStorage.setItem('token', token)
   beat = undefined
+  edits += 1
   signedIn(undefined)
   // What one reviewer skipped or decided here is not the next one's to undo.
   skipped.clear()
@@ -23,13 +24,13 @@ const find = (text) => api('POST', '/find', { text })
 const suggest = (subjects) => $('found').replaceChildren(...subjects.map((subject) => el('option', { value: subject })))
 $('find').addEventListener('submit', async (event) => {
   event.preventDefault()
-  edits += 1
+  const asked = ++edits
   const text = $('subject').value.trim()
   const token = $('token').value
   if (!text || !token) return
   try {
     const { by, subjects } = await find(text)
-    if ($('token').value !== token || $('subject').value.trim() !== text) return
+    if (edits !== asked) return
     // Only what the server answered with is ever put in the address.
     const whole = subjects.length === 1 ? subjects[0] : by === 'subject' && subjects.find((each) => each === text)
     if (whole) return void go(subjectHash(whole))
@@ -40,7 +41,7 @@ $('find').addEventListener('submit', async (event) => {
     $('subject').focus()
     notice(`${subjects.length === 20 ? 'At least 20' : subjects.length} subjects have ${what}. Pick one from the list: ${subjects.join(', ')}`)
   } catch (error) {
-    notice(error.message, true)
+    if (edits === asked) notice(error.message, true)
   }
 })
 

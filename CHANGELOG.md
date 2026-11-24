@@ -99,6 +99,7 @@
 - `report({ per })`, `GET /report?per=` and **Cost per** on the Channels view count one step in the cost per outcome. The view groups its columns, shows the report's own currency, and tells none, not recorded and does not apply apart.
 - `.env.example` names what compose needs; `docs/operations.md` covers backups, HTTPS and a name under the site.
 - The reviewer screen's picture says how many of those around a subject it draws.
+- A search made while a view is still opening keeps its words and its answer, and only the newest search speaks.
 - A question on the reviewer screen says what the decision would do to the clusters before it is made. `graph.foresee` and `POST /foresee` answer the same.
 - The reviewer screen has one scale of type and space, tables that fit what they hold, and rows that become cards on a phone. Times are told by how long ago, with the exact time in a title.
 - The graph keeps room around every disc, name and line: names move to a free side, lines bend around what is in their way, and nothing lies over the paper. The strongest way to whoever is picked is shown, and weak ties can be left out.
