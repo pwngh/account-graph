@@ -174,7 +174,9 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   assert.equal(await run(`document.getElementById('ask-option-label').hidden`), true)
   await run(`retraction = { targets: ['microsoft'], always: false }; load()`)
   await until('the option', () => run(`(() => { if (opening > 0) return false; [...document.querySelectorAll('button')].find((b) => b.textContent === 'Delete…').click(); return document.getElementById('ask').open })()`))
-  assert.deepEqual([await shown('#ask-option-label'), await text('#ask-option-text'), await run(`document.getElementById('ask-option').checked`)], [true, 'Ask microsoft to retract conversions', false])
+  // The dialog comes in over a moment, and may still be on its way out from before.
+  await until('the option to be seen', () => shown('#ask-option-label'))
+  assert.deepEqual([await text('#ask-option-text'), await run(`document.getElementById('ask-option').checked`)], ['Ask microsoft to retract conversions', false])
   await press('Escape')
   await until('it to close again', () => run(`!document.getElementById('ask').open`))
   await run(`retraction = { targets: [], always: false }; load()`)
@@ -246,7 +248,7 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   await look('person:2')
   await until('the exact one', async () => (await text('#detail h3')) === 'person:2')
   await pause(400)
-  assert.deepEqual([...asked, await run('location.href')].filter((each) => /555|example\.com/.test(decodeURIComponent(each))), [])
+  assert.deepEqual([...asked, await run('location.pathname + location.search + location.hash')].filter((each) => /555|example\.com/.test(decodeURIComponent(each))), [])
 
   // A table is saved as it is shown, a name that starts like a formula as text.
   const today = new Date().toISOString().slice(0, 10)
