@@ -286,7 +286,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       ...(pool.length > 0 && { pool: { numbers: pool, grace: options.pool!.grace * 60_000 } }),
       now,
       convert,
-      release: convert,
+      release: options.calls?.release ?? convert,
       ...(outbox && {
         hold: async (outcome: Outcome) => (sends(outcome) ? outbox.hold(staged(outcome)) : []),
         release: async (outcome: Outcome) => (sends(outcome) ? outbox.release(staged(outcome)) : convert(outcome)),

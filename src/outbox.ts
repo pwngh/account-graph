@@ -219,14 +219,19 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
     return { ...gone, value: 0, restated: true, state: 'pending', attempts: 0, due: now(), note: 'withdrawn' }
   }
 
+  /** A job with what its outcome is worth now. One whose worth is the same stays as it is, so that the same outcome recorded again is still the same. */
+  function worthNow(job: Job, { value, currency }: Pick<Outcome, 'value' | 'currency'>): Job {
+    if ((value ?? 0) === (job.value ?? 0) && (!currency || !job.currency || currency === job.currency)) return job
+    return { ...job, value: value ?? 0, ...(currency && { currency }), restated: true }
+  }
+
   /** A job whose outcome counts after all. */
   function givenBack(job: Job, worth: Pick<Outcome, 'value' | 'currency'>): Job {
-    const { withdrawn: _, note: __, value: ___, ...kept } = job
-    const rest = { ...kept, ...(worth.value !== undefined && { value: worth.value }), ...(worth.currency && { currency: worth.currency }) }
-    if (!reached(job)) return { ...rest, state: 'pending', due: now() + (options.delay ?? 0) }
+    const { withdrawn: _, note: __, ...rest } = job
+    if (!reached(job)) return { ...worthNow(rest, worth), state: 'pending', due: now() + (options.delay ?? 0) }
     // It had arrived, and may have been restated to nothing since: give it its value again.
     if (!targets.get(job.target)?.restates) return { ...rest, state: 'sent' }
-    return { ...rest, value: worth.value ?? 0, state: 'pending', attempts: 0, due: now() }
+    return { ...worthNow(rest, worth), value: worth.value ?? 0, state: 'pending', attempts: 0, due: now() }
   }
 
   /**
@@ -354,7 +359,13 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
 
     async giveBack(transactionId) {
       const outcome = await graph.outcomeOf(transactionId)
-      return Promise.all((await store.get(transactionId)).map((job) => change(job, (current) => (outcome && current.withdrawn ? givenBack(current, outcome) : undefined))))
+      return Promise.all((await store.get(transactionId)).map((job) => change(job, (current) => {
+        if (!outcome) return undefined
+        if (current.withdrawn) return givenBack(current, outcome)
+        // Marked and given back before any pass saw it, it was never held, and may have been restated meanwhile.
+        const next = current.state === 'pending' && !reached(current) ? worthNow(current, outcome) : current
+        return next === current ? undefined : next
+      })))
     },
 
     async restate(transactionId, value, currency) {

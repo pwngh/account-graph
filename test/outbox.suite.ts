@@ -736,6 +736,25 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       await slow.run()
       await slow.run()
       assert.deepEqual(values().filter(([id]) => id === 'enroll-4'), [['enroll-4', 200], ['enroll-4', 0]])
+      // Marked before it is recorded, restated and given back before any pass, on a platform that keeps what it is sent.
+      const kept: [string, number | undefined][] = []
+      const keeps = createOutbox(graph, store.outbox, { targets: [{ name: 'keeps', restates: false, batch: 1, retryable: () => false, keys: () => ({ k: 'hashed' }), click: () => undefined, deliver: async (_action, items) => (kept.push(...items.map(({ job }) => [job.transactionId, job.value] as [string, number | undefined])), {}) }], now: () => clock.now })
+      await enroll(graph, 5)
+      await recordNotLead(graph, { transactionId: 'enroll-5' }, { takeBack: keeps.takeBack })
+      const again = { ...outcome(5), action: { keeps: 'x' } }
+      await keeps.record(again)
+      await keeps.restate('enroll-5', 90)
+      await recordNotLead(graph, { transactionId: 'enroll-5', lead: true }, { giveBack: keeps.giveBack })
+      await keeps.run()
+      assert.deepEqual(kept, [['enroll-5', 90]])
+      // The same outcome recorded again is still the same one, with or without a value of its own.
+      await keeps.record(again)
+      const { value: _, ...bare } = { ...outcome(6), action: { keeps: 'x' } }
+      await enroll(graph, 6)
+      await keeps.record(bare)
+      await recordNotLead(graph, { transactionId: 'enroll-6' }, { takeBack: keeps.takeBack })
+      await recordNotLead(graph, { transactionId: 'enroll-6', lead: true }, { giveBack: keeps.giveBack })
+      await keeps.record(bare)
       // Where there is no such outcome, nothing is given back.
       await outbox.withdraw('enroll-1')
       await recordNotLead(graph, { transactionId: 'enroll-1', lead: true }, options)
