@@ -131,8 +131,8 @@ async function scale(sizes: readonly number[]) {
     // Made by this run and by no other, so it is this run's to drop.
     const schema = `ag_bench_${randomUUID().replaceAll('-', '')}`
     await pool.query(`create schema ${schema}`)
-    await createPostgresStore(pool, schema).migrate()
     try {
+      await createPostgresStore(pool, schema).migrate()
       const start = performance.now()
       await fill(pool, schema, edges)
       const { rows } = await pool.query(`select count(*)::int as edges from ${schema}.edge`)
