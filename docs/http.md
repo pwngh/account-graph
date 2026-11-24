@@ -71,6 +71,8 @@ An identifier is written `kind:value`. A kind missing from the policy gets 400. 
 | `GET /journey?subject=&before=` | Everything recorded about the subject's person, oldest first, newest 200: `{ entries, subjects, next, more }`. Pass `next` as `before` for earlier entries. |
 | `GET /clusters?offset=` | The largest clusters, 50 at a time. |
 | `GET /search?q=` | Subjects whose id starts with the text. |
+| `POST /match` | Who somebody may be, before you save them: the same plain facts as [`/identify`](identify.md), without a `subject`. Answers `{ candidates: [{ subject, score, level, reasons, members }], notes }`, strongest first. Writes nothing. |
+| `POST /conflicts` | `{ subjects }`, 1 to 50: who of them is kept apart from another of them, or from anyone on record. Answers `{ conflicts: [{ a, b, how, rests }] }`. See [conflicts](deciding.md#asking-about-conflicts). Writes nothing. |
 | `POST /find` | `{ text }`: a full email or phone number, looked up by hash; the start of a subject's id; or, with no such id, a full ad click id. Answers `{ by, subjects }`, at most 20. The body keeps the text out of address logs. |
 | `GET /recent` | The newest cluster changes. |
 | `GET /changes?after=&limit=` | Every cluster change after a number, oldest first. Requires the service token. See [the change feed](operations.md#change-feed). |
@@ -108,6 +110,7 @@ Send `by` only with the service token. A reviewer's decision carries the name of
 | `GET /followed?from=&to=&tz=&step=&days=` | People who reached a step within some days of a call. See [the report](report.md#outcomes-after-a-call). |
 | `GET /call?id=` | One call with its state and, when missed, its follow-up, or `null`. |
 | `GET /sent?subject=` | The links made for the subject's person, with their purpose and openings. |
+| `POST /call/ringing` | `{ from?, to, at? }`, while the phone rings: `{ subject?, known, people, visitor?, waiting, source?, campaign?, campaignId?, landing? }`. Writes nothing. Report the call when it ends. See [calls](calls.md#while-the-phone-rings). |
 | `GET /text?id=` | One text with what became of it, or `null`. |
 | `GET /texts?from=&to=&tz=&after=` | The oldest unanswered text of each sender, 50 at a time: `{ from, to, timeZone, at, texts, next }`. |
 | `GET /texting?subject=` | Whether the subject's person last asked for no more texts: `{ optedOut, at }`, or `null`. |

@@ -13,6 +13,7 @@
 - `separate`, `join` and `ignore` record decisions. `decisions` and `audit` list and verify the hash chain. `GET /audit` returns the newest entry, and `AUDIT_HEAD_HOURS` posts it to `ALERT_WEBHOOK`.
 - `separate`, `join`, `ignore` and `forget` accept `seen`, and a newer decision rejects an outdated one with 409 (`Outdated`). `join` returns its mark, so a join can be undone.
 - `POST /separate` and `POST /join` accept `{ source, pairs }` from a service token (`separateAll`, `joinAll`). `GET /disputes` lists conflicting system decisions.
+- `match` and `POST /match` say who somebody may be before they are saved. `conflicts` and `POST /conflicts` list who of some people is kept apart. `ringing` and `POST /call/ringing` say who is calling. None of them writes.
 - `foresee` and `POST /foresee` preview a decision. `undecided` and `GET /undecided` list pending matches.
 - `measure` and `fit` compute weights from reviewed pairs. `reviewed` exports those pairs, and `tools/labels.ts` reads them from CSV.
 - `asOf(time)` rebuilds the graph at a past time. `prune(before)` deletes older records. `forget(subject)` deletes a subject and its data.

@@ -521,6 +521,30 @@ export interface Tie {
   kinds: string[]
 }
 
+/** Who somebody not yet recorded may be, by what is known of them. */
+export interface Candidate {
+  subject: Subject
+  score: number
+  level: Level
+  reasons: Reason[]
+  /** Everyone in the subject's cluster, itself included. */
+  members: Subject[]
+}
+
+/** Two that are kept apart, or may be the same as two who are, of those asked about. */
+export interface Conflict {
+  /** Who was asked about, and who they may be against: another that was asked about, or somebody on record. */
+  a: Subject
+  b: Subject
+  /**
+   * `recorded` the two were separated. `same` one of their clusters holds somebody separated from somebody in the other's.
+   * `possible` the same, of someone either is only related to, so a person has to look.
+   */
+  how: 'recorded' | 'same' | 'possible'
+  /** The separated pair it rests on. */
+  rests: [Subject, Subject]
+}
+
 /** One thing that happened to a person. */
 export type Entry = { at: number; subject: Subject } & (
   | { kind: 'visit'; touch: Touch }

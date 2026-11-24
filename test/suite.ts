@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { after, describe, test } from 'node:test'
-import { Outdated, brokenAt, callState, createGraph, createHours, defaultPolicy, dialed, email, fit, followUp, hashPhone, nameKeys, policyFrom, recordCall, recordCallResult, recordNotLead, recordReturn, recordText, replyTo, beginnings, textCode, codeNote, texted } from '../src/index.ts'
+import { Outdated, brokenAt, callState, createGraph, createHours, defaultPolicy, dialed, email, fit, followUp, hashPhone, nameKeys, policyFrom, recordCall, recordCallResult, recordNotLead, recordReturn, recordText, ringing, replyTo, beginnings, textCode, codeNote, texted } from '../src/index.ts'
 import type { Change, GraphOptions, Observation, Policy, Store } from '../src/index.ts'
 
 export interface Opened {
@@ -2464,6 +2464,115 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual((await graph.linksSent('contact:2')).map((each) => each.id), ['b'])
       await graph.prune(T0 + 32 * DAY)
       assert.deepEqual([await graph.linksSent('contact:2'), (await graph.linksSent('contact:3')).length], [[], 1])
+    })
+
+    test('match says who somebody may be as if they had been seen, and writes nothing', async () => {
+      const { graph } = await fresh()
+      await graph.observe([
+        { subject: 'contact:1', identifiers: ['email:e', 'phone:p'], at: T0 },
+        { subject: 'visitor:1', identifiers: ['email:e'], at: T0 },
+        { subject: 'contact:2', identifiers: ['phone:q', 'address:a'], at: T0 },
+        { subject: 'contact:3', identifiers: ['address:a', 'ip:203.0.113.9'], at: T0 },
+      ])
+      const version = await graph.version()
+      const found = await graph.match(['phone:p', 'email:e', 'address:a', 'dialed:x'], { at: T0 })
+      assert.equal(await graph.version(), version)
+      assert.deepEqual(found.map((each) => [each.subject, each.level, each.members]), [
+        ['contact:1', 'same', ['contact:1', 'visitor:1']],
+        ['visitor:1', 'same', ['contact:1', 'visitor:1']],
+      ])
+      // What it says is what comes of it when they are seen.
+      await graph.observe({ subject: 'contact:new', identifiers: ['phone:p', 'email:e', 'address:a'], at: T0 })
+      const links = await graph.links('contact:new')
+      assert.deepEqual(links.map((link) => [link.subject, link.score]), found.map((each) => [each.subject, each.score]))
+      assert.equal((await graph.match(['phone:p', 'email:e'], { limit: 1 })).length, 1)
+      assert.deepEqual(await graph.match([]), [])
+      assert.deepEqual(await graph.match(['email:nobody']), [])
+      await assert.rejects(graph.match(['nokind:x']), TypeError)
+    })
+
+    test('a conflict is found between those asked about and with anyone on record, themselves or through who they may be', async () => {
+      const { graph } = await fresh()
+      const see = (subject: string, ...identifiers: string[]) => graph.observe({ subject, identifiers, at: T0 })
+      await see('contact:ana', 'email:ana')
+      await see('contact:ben', 'email:ben', 'phone:ben')
+      await graph.separate('contact:ana', 'contact:ben')
+      // Ana's second record, and somebody who may be Ben.
+      await see('contact:ana-2', 'email:ana')
+      await see('contact:maybe', 'address:b')
+      await see('contact:ben-home', 'address:b', 'hardware:b')
+      await see('contact:ben', 'hardware:b')
+      await see('contact:cy', 'email:cy')
+      const found = async (...subjects: string[]) => (await graph.conflicts(subjects)).map(({ a, b, how }) => [a, b, how])
+      assert.deepEqual(await found('contact:ana', 'contact:ben'), [['contact:ana', 'contact:ben', 'recorded'], ['contact:ben', 'contact:ana', 'recorded']])
+      assert.deepEqual(await found('contact:ana-2', 'contact:ben'), [['contact:ana-2', 'contact:ben', 'same'], ['contact:ben', 'contact:ana-2', 'same']])
+      // Nobody else was asked about: it is with the one on record.
+      assert.deepEqual(await found('contact:ana-2'), [['contact:ana-2', 'contact:ben', 'same']])
+      assert.deepEqual(await found('contact:ana-2', 'contact:maybe'), [['contact:ana-2', 'contact:ben', 'same'], ['contact:ana-2', 'contact:maybe', 'possible'], ['contact:maybe', 'contact:ana-2', 'possible']])
+      assert.deepEqual(await found('contact:cy', 'contact:nobody'), [])
+      assert.deepEqual((await graph.conflicts(['contact:ana-2']))[0]!.rests, ['contact:ana', 'contact:ben'])
+      // Through a second record's relation, and for somebody who may be either side.
+      await see('contact:dee', 'email:dee')
+      await see('contact:dee-2', 'email:dee', 'address:b2')
+      await see('contact:ben-old', 'address:b2', 'email:ben')
+      assert.ok((await found('contact:dee')).some(([a, b, how]) => a === 'contact:dee' && b === 'contact:ana' && how === 'possible'))
+      await see('contact:ana-home', 'email:ana', 'address:both')
+      await see('contact:ben-home', 'address:both-2')
+      await see('contact:either', 'address:both', 'address:both-2')
+      assert.deepEqual((await found('contact:either')).map(([, b, how]) => [b, how]).sort(), [['contact:ana', 'possible'], ['contact:ben', 'possible']])
+      // Whoever their other record is kept apart from is nobody they may be.
+      await see('contact:ed', 'email:ed', 'address:ed')
+      await see('contact:ed-2', 'email:ed')
+      await see('contact:flo', 'address:ed')
+      await see('contact:gil', 'email:gil')
+      await graph.separate('contact:ed-2', 'contact:flo')
+      await graph.separate('contact:flo', 'contact:gil')
+      assert.deepEqual(await found('contact:ed'), [['contact:ed', 'contact:flo', 'same']])
+      // Asking about somebody weaker as well hides nothing.
+      const withMaybe = await found('contact:ana', 'contact:maybe')
+      assert.ok(withMaybe.some(([a, b, how]) => a === 'contact:ana' && b === 'contact:ben' && how === 'recorded'))
+      assert.ok(withMaybe.some(([a, b, how]) => a === 'contact:ana' && b === 'contact:maybe' && how === 'possible'))
+      await graph.separate('contact:ana', 'contact:ben', false)
+      assert.deepEqual(await found('contact:ana', 'contact:ben', 'contact:ana-2', 'contact:maybe'), [])
+    })
+
+    test('while a phone rings, the caller, who they may be and what brought them are known, and nothing is written', async () => {
+      const { graph } = await fresh()
+      const ours = '+15550100101'
+      const call = (from: string | undefined, minutes: number) => ({ ...(from && { from }), to: ours, at: T0 + minutes * 60_000 })
+      await graph.touch({ subject: 'visitor:1', at: T0, gclid: 'G1' })
+      await graph.observe({ subject: 'visitor:1', identifiers: ['device:1', dialed(ours, T0)], at: T0, event: 'phone_click' })
+      await graph.observe({ subject: 'contact:1', identifiers: [`phone:${hashPhone('+15550100191')}`], at: T0 })
+      const version = await graph.version()
+      // Somebody new, who tapped the number a minute ago; and a number one of your records has.
+      const fresh1 = await ringing(graph, call('+15550100190', 1))
+      assert.deepEqual([fresh1.known, fresh1.people, fresh1.visitor, fresh1.touch!.gclid, fresh1.waiting], [false, [], 'visitor:1', 'G1', { calls: 0, texts: 0 }])
+      const named = await ringing(graph, call('+15550100191', 60))
+      assert.deepEqual([named.known, named.people.map((each) => [each.subject, each.level]), named.visitor, named.touch], [false, [['contact:1', 'same']], undefined, undefined])
+      assert.deepEqual(await ringing(graph, call(undefined, 60)), { known: false, people: [], waiting: { calls: 0, texts: 0 } })
+      assert.equal(await graph.version(), version)
+      // It says what the call is then tied to.
+      const made = await recordCall(graph, { ...call('+15550100190', 1), id: 'R1', answered: false, duration: 0 })
+      assert.equal(made.visitor, fresh1.visitor)
+      await recordText(graph, { id: 'RT', from: '+15550100190', to: ours, at: T0 + 90 * 60_000, text: 'hello?' })
+      const again = await ringing(graph, call('+15550100190', 120))
+      assert.deepEqual([again.known, again.subject, again.touch!.gclid, again.waiting, again.people.map((each) => each.subject)], [true, made.subject, 'G1', { calls: 1, texts: 1 }, ['visitor:1']])
+      // A visitor who is another caller's is not shown for this one, nor one who is kept apart, nor a record that is.
+      await graph.observe({ subject: 'visitor:1', identifiers: ['device:1', dialed(ours, T0 + 200 * 60_000)], at: T0 + 200 * 60_000, event: 'phone_click' })
+      assert.equal((await ringing(graph, call('+15550100192', 201))).visitor, undefined)
+      await graph.observe({ subject: 'visitor:2', identifiers: ['device:2', dialed(ours, T0 + 300 * 60_000)], at: T0 + 300 * 60_000, event: 'phone_click' })
+      const caller = `caller:${hashPhone('+15550100193')}`
+      assert.equal((await ringing(graph, call('+15550100193', 301))).visitor, 'visitor:2')
+      await graph.separate(caller, 'visitor:2')
+      assert.equal((await ringing(graph, call('+15550100193', 301))).visitor, undefined)
+      await graph.observe({ subject: 'contact:3', identifiers: [`phone:${hashPhone('+15550100193')}`], at: T0 })
+      await graph.separate(caller, 'contact:3')
+      assert.deepEqual((await ringing(graph, call('+15550100193', 301))).people, [])
+      // What was no lead waits for nobody.
+      await graph.markNotLead('call:R1', 'spam')
+      await graph.markNotLead('text:RT', 'spam')
+      assert.deepEqual((await ringing(graph, call('+15550100190', 120))).waiting, { calls: 0, texts: 0 })
+      for (const bad of [{ to: ours, at: 1.5 }, { to: 'x', at: T0 }, { at: T0 }]) await assert.rejects(ringing(graph, bad as never), TypeError)
     })
 
     test('a text is tied by its code, or by the tap before it, and what it said is not kept', async () => {

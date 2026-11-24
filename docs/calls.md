@@ -72,6 +72,22 @@ Reporting a call id again answers `"duplicate": true`. A result in the second re
 | `left_out` | The other number is in `CALL_EXCLUDE`: your own people, or a test phone | The call is not recorded |
 | `ambiguous` | More than one visitor tapped the number just before | Filed under the number's channel |
 
+### While the phone rings
+
+`POST /call/ringing` says who is calling, for the screen of whoever picks up. Nothing is written, so report the call as usual when it ends.
+
+```json
+{ "subject": "caller:96f2c503…", "known": true, "people": [{ "subject": "contact:7", "score": 0.9, "level": "same", "reasons": [], "members": ["caller:96f2c503…", "contact:7"] }], "visitor": "visitor:fb919054…", "waiting": { "calls": 1, "texts": 0 }, "source": "google", "campaign": "Search", "campaignId": "20222", "landing": "https://example.org/help" }
+```
+
+| Field | Meaning |
+| --- | --- |
+| `known` | The number has called or texted before |
+| `people` | Who they may be, strongest first: their ties when they are on record, or whoever has the number. Several share a number. |
+| `visitor` | The one visitor who was shown the number or tapped it just before |
+| `source`, `campaign`, `campaignId`, `landing` | What brought them, where it can be credited already |
+| `waiting` | Their missed calls and texts nobody has returned |
+
 ### Busy numbers
 
 A call is linked to a tap by time, so on a number that rings often, some calls follow a stranger's tap by chance. A shorter window has fewer of these, and loses callers who took longer to dial. It can also leave only a stranger's tap where a longer one finds two and ties nobody.
