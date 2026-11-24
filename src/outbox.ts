@@ -221,7 +221,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
 
   /** A job with what its outcome is worth now. One whose worth is the same stays as it is, so that the same outcome recorded again is still the same. */
   function worthNow(job: Job, { value, currency }: Pick<Outcome, 'value' | 'currency'>): Job {
-    if ((value ?? 0) === (job.value ?? 0) && (!currency || !job.currency || currency === job.currency)) return job
+    if ((value ?? 0) === (job.value ?? 0) && (!currency || currency === job.currency)) return job
     return { ...job, value: value ?? 0, ...(currency && { currency }), restated: true }
   }
 

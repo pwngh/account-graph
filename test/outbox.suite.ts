@@ -747,6 +747,14 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       await recordNotLead(graph, { transactionId: 'enroll-5', lead: true }, { giveBack: keeps.giveBack })
       await keeps.run()
       assert.deepEqual(kept, [['enroll-5', 90]])
+      // Only its currency restated while it waits, and it had named none.
+      const { currency: __, ...unnamed } = { ...outcome(7), action: { keeps: 'x' } }
+      await enroll(graph, 7)
+      await keeps.record(unnamed)
+      await recordNotLead(graph, { transactionId: 'enroll-7' }, { takeBack: keeps.takeBack })
+      await keeps.restate('enroll-7', 200, 'EUR')
+      await recordNotLead(graph, { transactionId: 'enroll-7', lead: true }, { giveBack: keeps.giveBack })
+      assert.deepEqual((await keeps.get('enroll-7')).map((each) => [each.value, each.currency]), [[200, 'EUR']])
       // The same outcome recorded again is still the same one, with or without a value of its own.
       await keeps.record(again)
       const { value: _, ...bare } = { ...outcome(6), action: { keeps: 'x' } }
