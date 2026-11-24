@@ -82,6 +82,7 @@
 - `GET /health`, `GET /stats`, `GET /verify` and `GET /pulse` report server status.
 - `LINK_SECRET` is at least 32 characters. Responses are sent with `no-store` and `nosniff`.
 - Requests with invalid UTF-8, NUL characters or more than 32 levels of nesting return 400.
+- `examples/call-tracking.ts` takes a call tracking webhook, checks its signature and posts the call. `docs/pilot.md` is a trial that sends nothing to ad platforms.
 - `npm run firm` starts a sample firm, and `npm run bench -- scale` measures large graphs.
 
 ### Reviewer screen

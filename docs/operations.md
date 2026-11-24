@@ -159,13 +159,22 @@ All data lives in one PostgreSQL schema, `account_graph` or the value of `GRAPH_
 
 ```sh
 pg_dump --format=custom --schema=account_graph "$DATABASE_URL" > graph.dump
-pg_restore --clean --if-exists --dbname="$DATABASE_URL" graph.dump   # with the server stopped
-curl https://graph.example.org/verify -H "authorization: Bearer $GRAPH_TOKEN"   # then, with it running
 ```
+
+Restore into a new, empty database, then start the server on it:
+
+```sh
+pg_restore --no-owner --single-transaction --exit-on-error --dbname="$NEW_DATABASE_URL" graph.dump
+curl https://graph.example.org/verify -H "authorization: Bearer $GRAPH_TOKEN"   # no changes
+curl https://graph.example.org/audit -H "authorization: Bearer $GRAPH_TOKEN"    # sound
+```
+
+A dump cut short restores nothing. The server upgrades an older dump when it starts.
 
 | Topic | Guidance |
 | --- | --- |
 | Restore tests | Restore a dump elsewhere before you need one. |
+| Over a database in use | Restore beside it instead. `--clean` keeps any table newer than the dump, with its rows. Without `--no-owner`, another role gets an error for each table. |
 | Audit hash | Store the newest hash apart from the dumps. After a restore, `/audit` verifies the chain, and the stored hash confirms it is the same log. |
 | Deleted people | Older dumps still contain them. Keep dumps only as long as you need them, and run `forget` again after a restore. |
 | Conversions | Conversions sent since the dump may be sent again with the same id. Meta keeps the first copy, and Google reads the second as a correction. |
