@@ -166,6 +166,7 @@ PostgreSQL writes take one advisory lock, so they run one at a time; the write q
 - Subject search matches the start of an id and reads the subject table to do it.
 - `asOf` cannot bring back a forgotten subject or a pruned sighting; both are gone from every past.
 - A separation between two subjects cuts the weakest links between them. With several separations in one component the cuts are made one after another, which is not always the fewest possible.
+- Pairs kept apart by your own systems are only as right as those systems. One person entered on both sides is split, and keeping two apart is not a conflict check.
 - Flows are kept as running totals per pair, not as a ledger.
 - `rebuild`, `verify`, and `asOf` load every edge into memory.
 - The memory store does not roll back a failed write.
