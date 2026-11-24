@@ -172,6 +172,14 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       clock.now = at(15, 16)
       await ops.check()
       assert.match(posted.at(-1)!, /has waited over 8 open hours for a call back/)
+      // Two weeks past due and no more, counted from when it was due and not from when they rang.
+      await recordCall(graph, { id: 'N2', from: '+15550100072', to: '+15550100001', at: at(15, 16), duration: 20, answered: false }, { results: 'expected', now: () => clock.now })
+      await graph.touch({ subject: `caller:${hashPhone('+15550100072')}`, at: at(15, 15), gclid: 'H' })
+      // Due on Friday at 16: an hour on Wednesday, none on Thursday, seven on Friday.
+      clock.now = at(17, 16) + 14 * DAY - HOUR
+      const count = posted.length
+      await ops.check()
+      assert.equal(posted.slice(count).filter((text) => text.includes('call back')).length, 1)
     })
 
     test('an alert that could not be delivered stays until it is', async () => {

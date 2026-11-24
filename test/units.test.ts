@@ -884,6 +884,18 @@ test('opening hours count time while open, across nights, holidays, clock change
   // A span that runs into the next day's counts each moment once.
   const round = createHours({ mon: ['18:00-10:00'], tue: ['09:00-17:00'] })
   assert.equal(new Date(round.before(Date.parse('2026-01-06T12:00Z'), 5 * HOUR)).toISOString(), '2026-01-06T07:00:00.000Z')
+  // One that holds another whole, from the day before, does too.
+  const nested = createHours({ mon: ['18:00-10:00'], tue: ['06:00-07:00'] })
+  assert.equal(new Date(nested.before(Date.parse('2026-01-06T12:00Z'), 2 * HOUR)).toISOString(), '2026-01-06T08:00:00.000Z')
+  // A span that begins in the hour the clocks skip begins when they have, and one in the hour they repeat is open twice.
+  const night = createHours({ sun: ['01:15-01:45', '02:30-04:00'] }, 'America/New_York')
+  const opened = (text: string) => night.isOpen(Date.parse(text))
+  assert.deepEqual(['2026-03-08T06:30Z', '2026-03-08T06:45Z', '2026-03-08T07:00Z', '2026-03-08T07:59Z', '2026-03-08T08:00Z'].map(opened), [true, false, true, true, false])
+  assert.deepEqual(['2026-11-01T05:30Z', '2026-11-01T06:00Z', '2026-11-01T06:30Z', '2026-11-01T07:15Z', '2026-11-01T07:45Z'].map(opened), [true, false, true, false, true])
+  assert.equal(night.before(Date.parse('2026-11-01T07:00Z'), HOUR), Date.parse('2026-11-01T05:15Z'))
+  // Where the clocks change at midnight itself, the day still begins and ends once.
+  const beirut = createHours({ sun: ['00:00-24:00'], sat: ['00:00-24:00'] }, 'Asia/Beirut')
+  for (let hour = 0; hour < 47; hour++) assert.equal(beirut.isOpen(Date.parse('2026-03-27T23:00Z') + hour * HOUR), hour < 46, String(hour))
   // The clocks go forward on 8 March 2026: nine on that day is nine, and a night across it is an hour shorter.
   const sunday = createHours({ sat: ['22:00-06:00'], sun: ['09:00-10:00'] }, 'America/New_York')
   assert.deepEqual([sunday.isOpen(Date.parse('2026-03-08T13:00:00Z')), sunday.isOpen(Date.parse('2026-03-08T12:59:00Z')), sunday.isOpen(Date.parse('2026-03-08T14:00:00Z'))], [true, false, false])
@@ -907,6 +919,7 @@ test('opening hours count time while open, across nights, holidays, clock change
     [[], 'must be an object, such as {"mon":["09:00-17:00"]}'], [{}, 'names no time you are open'], [{ mon: [] }, 'names no time you are open'], [{ monday: ['09:00-17:00'] }, '"monday" is not a day of the week, "holidays" or "timeZone"'],
     [{ mon: '09:00-17:00' }, '"mon" must be a list, such as ["09:00-17:00"]'], [{ mon: ['9-17'] }, '"mon" has "9-17", which is not written 09:00-17:00'], [{ mon: ['09:00-24:30'] }, '"mon" has "09:00-24:30", which is not written 09:00-17:00'],
     [{ mon: ['09:00-09:00'] }, '"mon" has "09:00-09:00", which is not written 09:00-17:00'], [{ mon: ['09:00-12:00', '11:00-13:00'] }, '"mon" has spans that overlap'], [{ mon: ['09:00-17:00'], holidays: ['2026-02-30'] }, '"holidays" has "2026-02-30", which is not a day written YYYY-MM-DD'],
+    [{ mon: ['09:00-17:00'], holidays: '2026-12-25' }, '"holidays" must be a list, such as ["2026-12-25"]'],
     [{ mon: ['09:00-17:00'], timeZone: 'Mars' }, '"timeZone" must be a time zone, such as America/New_York'],
   ] as const) assert.deepEqual(hoursProblems(given), [problem])
   const env = { DATABASE_URL: 'x', GRAPH_TOKEN: 'y', ALERT_WEBHOOK: 'https://hooks.example/x' }

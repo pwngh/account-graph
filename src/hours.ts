@@ -23,7 +23,7 @@ export interface OpenHours {
 /** Time as it passes while you are open. */
 export interface Hours {
   isOpen(at: number): boolean
-  /** The latest moment since when you have been open for that long, in milliseconds. `-Infinity` when that is more than three years back. */
+  /** The latest moment since when you have been open for that long, in milliseconds. `-Infinity` when that is more than ten years back. */
   before(at: number, open: number): number
 }
 
@@ -56,8 +56,9 @@ export function hoursProblems(given: unknown): string[] {
       } catch {
         wrong.push('"timeZone" must be a time zone, such as America/New_York')
       }
-    } else if (name === 'holidays') {
-      for (const day of Array.isArray(value) ? value : [value]) {
+    } else if (name === 'holidays' && !Array.isArray(value)) wrong.push('"holidays" must be a list, such as ["2026-12-25"]')
+    else if (name === 'holidays') {
+      for (const day of value) {
         try {
           dayStart(day)
         } catch {
@@ -83,44 +84,63 @@ export function createHours(given: OpenHours, timeZone = 'UTC'): Hours {
   const zone = given.timeZone ?? timeZone
   const closed = new Set(given.holidays)
   const days = new Map<string, readonly (readonly [number, number])[]>()
+  const dayBefore = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10)
+  const spansOf = (day: string) => (closed.has(day) ? [] : (given[WEEK[new Date(`${day}T00:00:00Z`).getUTCDay()]!] ?? []).map((text) => span(text)!))
 
-  /** The spans that begin on a day, as instants, the last first. */
-  function spansOf(day: string): readonly (readonly [number, number])[] {
+  /** When you are open on a day, as instants, the last first and none touching another. */
+  function openOn(day: string): readonly (readonly [number, number])[] {
     const known = days.get(day)
     if (known) return known
-    const midnight = dayStart(day, zone)
-    const offset = ahead(midnight, zone)
-    // Where clocks change on the day, a time of day is not midnight and so many minutes.
-    const instant = (minutes: number) => {
-      const guess = midnight + minutes * MINUTE
-      return guess - (ahead(guess, zone) - offset)
+    // Its own spans, and what runs into it from the day before.
+    const spans = [...spansOf(day), ...spansOf(dayBefore(day)).map(([start, end]) => [start - DAY, end - DAY] as const)].map(([start, end]) => [Math.max(0, start), Math.min(DAY, end)] as const)
+    const local = Date.parse(`${day}T00:00:00Z`)
+    const [midnight, end] = [dayStart(day, zone), dayStart(nextDay(day), zone)]
+    // The day in stretches of one offset from UTC: one, or two where the clocks change in it.
+    const stretches: [number, number, number][] = []
+    for (let from = midnight; from < end; ) {
+      const offset = ahead(from, zone)
+      let until = end
+      if (ahead(end - MINUTE, zone) !== offset) {
+        let [same, other] = [from, end - MINUTE]
+        while (other - same > MINUTE) {
+          const middle = same + Math.floor((other - same) / MINUTE / 2) * MINUTE
+          if (ahead(middle, zone) === offset) same = middle
+          else other = middle
+        }
+        until = other
+      }
+      stretches.push([from, until, offset])
+      from = until
     }
-    const spans = closed.has(day) ? [] : (given[WEEK[new Date(`${day}T00:00:00Z`).getUTCDay()]!] ?? []).map((text) => span(text)!)
-    const read = spans.map(([start, end]) => [instant(start), instant(end)] as const).sort((x, y) => y[0] - x[0])
+    const open = stretches
+      .flatMap(([from, until, offset]) => spans.map(([start, stop]) => [Math.max(from, local + start * MINUTE - offset), Math.min(until, local + stop * MINUTE - offset)] as [number, number]))
+      .filter(([start, stop]) => start < stop)
+      .sort((x, y) => x[0] - y[0])
+    const merged: [number, number][] = []
+    for (const [start, stop] of open) {
+      const last = merged.at(-1)
+      if (last && start <= last[1]) last[1] = Math.max(last[1], stop)
+      else merged.push([start, stop])
+    }
     if (days.size >= 5_000) days.clear()
-    days.set(day, read)
-    return read
+    days.set(day, merged.reverse())
+    return merged
   }
-  const dayBefore = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10)
 
   return {
     isOpen(at) {
-      const day = dayIn(at, zone)
-      return [...spansOf(day), ...spansOf(dayBefore(day))].some(([start, end]) => at >= start && at < end)
+      return openOn(dayIn(at, zone)).some(([start, end]) => at >= start && at < end)
     },
     before(at, open) {
       if (open <= 0) return at
       let left = open
-      // A span that runs past midnight may meet the next day's, and no moment counts twice.
-      let until = at
       let day = dayIn(at, zone)
-      for (let read = 0; read < 1_100; read++, day = dayBefore(day)) {
-        for (const [start, end] of spansOf(day)) {
-          const counted = Math.min(end, until) - start
+      for (let read = 0; read < 3_700; read++, day = dayBefore(day)) {
+        for (const [start, end] of openOn(day)) {
+          const counted = Math.min(end, at) - start
           if (counted <= 0) continue
-          if (counted >= left) return Math.min(end, until) - left
+          if (counted >= left) return Math.min(end, at) - left
           left -= counted
-          until = start
         }
       }
       return -Infinity

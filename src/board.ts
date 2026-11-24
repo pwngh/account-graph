@@ -61,8 +61,8 @@ export function board(
   const column = (step: string | null, wait: number | undefined, last: boolean): BoardColumn => ({ step, wait: wait ?? null, people: 0, fresh: 0, late: wait === undefined ? null : 0, done: last ? null : 0, rows: [] })
   const missed = column(null, returnWait, false)
   const columns = steps.map(({ name, wait }, i) => column(name, wait, i === steps.length - 1))
-  // Waited too long: since before this. Counted in the time you were open, where that is known.
-  const limits = new Map([missed, ...columns].map((each) => [each, each.wait === null ? -Infinity : longAgo(hours, at, each.wait)]))
+  // Waited longer than the limit: since this or before. Counted in the time you were open, where that is known.
+  const limits = new Map([missed, ...columns].map((each) => [each, each.wait === null ? -Infinity : longAgo(hours, at, each.wait + 1)]))
   let unplaced = 0
 
   for (const person of people) {
@@ -95,7 +95,7 @@ export function board(
       continue
     }
     const began = open[0]?.at ?? since
-    const late = began < limits.get(here)!
+    const late = began <= limits.get(here)!
     here.people += 1
     here.fresh += Number(began >= today)
     if (late) here.late! += 1

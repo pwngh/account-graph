@@ -1440,6 +1440,8 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await recordCall(graph, { id: 'D3', from: '+15550100093', to: '+15550100001', at: at(14, 20), duration: 60, answered: true }, options)
       await graph.outcome({ transactionId: 'i', subject: 'a', at: at(14, 12), stage: 'inquiry', value: 1, currency: 'USD' })
       const late = async (more: object) => (await graph.board({ steps: [{ name: 'inquiry', wait: 5 }], at: T0, returnHours: 16.5, ...more })).columns.map((column) => [column.late, column.rows.filter((row) => row.late).map((row) => row.at)])
+      // Exactly the limit is not longer than it, whether or not the wait began while you were closed.
+      assert.deepEqual([(await late({ hours, returnHours: 16 }))[0], (await late({ hours, returnHours: 17 }))[0]], [[1, [at(10, 16)]], [0, []]])
       // By the clock all have waited. Open, the Friday miss has waited 17 hours and the Saturday one 16, and the inquiry of noon 5.
       assert.deepEqual(await late({}), [[2, [at(10, 16), at(11, 12)]], [1, [at(14, 12)]]])
       assert.deepEqual(await late({ hours }), [[1, [at(10, 16)]], [0, []]])

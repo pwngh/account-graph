@@ -908,7 +908,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         const days = url.searchParams.has('days') ? Number(url.searchParams.get('days')) : 90
         const { columns, ...board } = await graph.board({ steps, days, at: now(), ...(options.timeZone && { timeZone: options.timeZone }), ...(options.returnHours && { returnHours: options.returnHours }), ...(options.hours && { hours: options.hours }) })
         return {
-          ...board, days, open: options.hours !== undefined, timeZone: options.timeZone ?? 'UTC',
+          ...board, days, openHours: options.hours !== undefined, timeZone: options.timeZone ?? 'UTC',
           columns: columns.map((column) => ({
             ...column,
             rows: column.rows.map(({ outcome, call, touch, language, ...row }) => ({

@@ -218,13 +218,15 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
 
       const hours = options.returnHours ?? 0
       if (hours > 0) {
+        // Due between these: not yet, and so long ago that the Calls view is where to look.
         const due = longAgo(options.hours, at, hours * HOUR)
+        const past = longAgo(options.hours, at - LOOKBACK, hours * HOUR)
         const seen = new Set<string>()
         let after: { at: number; id: string } | undefined
-        for (;;) {
-          const page = await graph.openCalls({ from: dayIn(Math.max(0, due - LOOKBACK)), to: dayIn(at), ...(after && { after }) })
+        while (Number.isFinite(due)) {
+          const page = await graph.openCalls({ from: dayIn(Math.max(0, past)), to: dayIn(at), ...(after && { after }) })
           for (const { call, followUp: { attempts }, touch } of page) {
-            if (call.at > due || call.at < due - LOOKBACK || seen.has(call.subject) || !touch || !paid(touch)) continue
+            if (call.at > due || call.at < past || seen.has(call.subject) || !touch || !paid(touch)) continue
             seen.add(call.subject)
             // Named after the first miss nobody has answered for, however old, so ringing again is not a new alert.
             const calls = await graph.callsOf([call.subject])
