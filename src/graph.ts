@@ -1120,6 +1120,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     async board({ steps, days = 90, timeZone, at = now(), returnHours = 0, limit = 50, hours }) {
+      if (!Array.isArray(steps) || !steps.every((step) => typeof step?.name === 'string' && step.name)) throw new TypeError('`steps` must be a list, such as [{ name: "inquiry" }]')
       if (!Number.isSafeInteger(days) || days < 1 || days > 365) throw new TypeError('`days` must be an integer from 1 to 365')
       const day = dayIn(at, timeZone)
       const today = dayStart(day, timeZone)

@@ -1624,6 +1624,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       // A shifted zone moves today.
       assert.equal((await graph.board({ steps, at: T0, timeZone: 'Asia/Tokyo' })).day, '2023-11-15')
       for (const days of [0, 1.5, 366]) await assert.rejects(graph.board({ steps, at: T0, days }), TypeError)
+      for (const steps of [undefined, [null], [{}], [{ name: '' }]]) await assert.rejects(graph.board({ steps } as never), /`steps` must be a list/)
       await graph.forget('a:late')
       assert.deepEqual((await graph.board({ steps, at: T0 })).columns[1]!.rows.map((row) => row.subject), ['a:new'])
     })
