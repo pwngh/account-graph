@@ -4,7 +4,7 @@ import { createHash, createVerify, generateKeyPairSync } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
-import { createGraph, createMemoryStore, createOutbox, googleAds, hashPhone } from '../src/index.ts'
+import { createGraph, createMemoryStore, createOutbox, googleAds, hashPhone, knownLink, staffLink } from '../src/index.ts'
 import type { IngestRequest } from '../src/index.ts'
 import { CostError, costsFromCsv, googleCosts, metaCosts } from '../src/integrations/costs.ts'
 import { createFingerprintVerifier, trusted } from '../src/integrations/fingerprint.ts'
@@ -392,6 +392,60 @@ test('the reviewer token opens the review routes and nothing a service writes th
   } finally {
     server.close()
   }
+})
+
+test('staff visits are dropped and counted, and no browser can make itself staff', async () => {
+  const graph = createGraph(createMemoryStore())
+  const clock = { now: T0 }
+  const secret = 'a-link-secret-for-tests'
+  const start = async (more: object) => {
+    const server = createServer(createHandler(graph, { token: 'service', origins: ['https://site.example'], events: ['inquiry'], trustProxy: true, now: () => clock.now, ...more })).listen(0, '127.0.0.1')
+    await new Promise((resolve) => server.once('listening', resolve))
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+    const page = async (device: string, address: string, body: object = {}, path = '/collect') =>
+      assert.equal((await fetch(`${base}${path}`, { method: 'POST', headers: { origin: 'https://site.example', 'x-forwarded-for': address }, body: JSON.stringify({ device, event: 'inquiry', ...body }) })).status, 204)
+    const ask = (path: string, body?: object) => fetch(`${base}${path}`, { method: body ? 'POST' : 'GET', headers: { authorization: 'Bearer service' }, ...(body && { body: JSON.stringify(body) }) })
+    return { server, page, ask, stats: async () => (await (await ask('/stats')).json()) as any }
+  }
+  const { server, page, ask, stats } = await start({ staffNetworks: ['192.0.2.10', '198.51.100.0/24', '2001:db8::/32'], linkSecret: secret })
+  try {
+    // Their networks, however the address is written; the address next door is a visitor.
+    for (const address of ['192.0.2.10', '198.51.100.77', '::ffff:198.51.100.78', '2001:db8:1::5']) {
+      await page('desk', address)
+      await page('desk', address, {}, '/event')
+    }
+    await page('client', '192.0.2.11')
+    // A browser marked by a staff link, from anywhere.
+    const { url } = (await (await ask('/staff-link', { url: 'https://site.example/team', label: 'intake desk', days: 10 })).json()) as any
+    const mark = new URL(url).searchParams.get('ag_staff')!
+    await page('laptop', '203.0.113.5', { staff: mark })
+    await page('laptop', '203.0.113.5', { staff: mark }, '/event')
+    assert.equal(await graph.cluster('visitor:laptop'), undefined)
+    assert.equal(await graph.cluster('visitor:desk'), undefined)
+    assert.deepEqual([(await stats()).staff, (await stats()).collected], [10, 1])
+
+    // A claim nobody signed, one signed for something else, and one past its time are all visitors.
+    const known = new URL(knownLink('https://site.example/', 'contact:1', { secret, now: () => clock.now })).searchParams.get('ag')!
+    const forged = new URL(staffLink('https://site.example/', { secret: 'another-secret-entirely', now: () => clock.now })).searchParams.get('ag_staff')!
+    for (const [n, staff] of [true, 'staff', known, forged, `${mark}x`, mark.replace('.', '..')].entries()) await page(`claims-${n}`, '203.0.113.6', { staff })
+    clock.now += 11 * 24 * 3_600_000
+    await page('laptop', '203.0.113.5', { staff: mark })
+    assert.deepEqual([(await stats()).staff, (await stats()).collected], [10, 8])
+    assert.equal((await ask('/staff-link', { url: 'https://site.example/', days: 400 })).status, 400)
+    assert.equal((await ask('/staff-link', { url: 'https://site.example/', label: 5 })).status, 400)
+  } finally {
+    server.close()
+  }
+  // Off until set: no network is staff, no link can be made, and a mark means nothing.
+  const off = await start({})
+  try {
+    await off.page('office', '192.0.2.10', { staff: 'x' })
+    assert.deepEqual([(await off.stats()).staff, (await off.stats()).collected], [0, 1])
+    assert.equal((await off.ask('/staff-link', { url: 'https://site.example/' })).status, 404)
+  } finally {
+    off.server.close()
+  }
+  assert.throws(() => createHandler(graph, { token: 'x', origins: [], staffNetworks: ['198.51.100.0/33'] }), TypeError)
 })
 
 test('one address cannot flood collect, and health and stats answer', async () => {

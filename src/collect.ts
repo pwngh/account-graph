@@ -30,6 +30,8 @@ export interface Collected {
   known?: string
   /** The token another of your sites put on the link that led here, from `ag_from`. The server checks it. */
   carried?: string
+  /** The mark of a staff browser, from a staff link. The server checks it, and records nothing of a visit that carries a good one. */
+  staff?: string
   /** The browser sent its Global Privacy Control signal. */
   gpc?: boolean
   consent?: { adUserData: boolean; adPersonalization: boolean }
@@ -113,6 +115,7 @@ export function read(params: readonly string[] = []): Collected {
   const arrived = Object.keys(touch).length > 0
   if (arrived) touch.landing = url.origin + url.pathname
 
+  const staff = staffMark()
   const ga = cookie('_ga')?.split('.').slice(-2).join('.')
   const known = url.searchParams.get('ag')
   const carried = url.searchParams.get('ag_from')
@@ -123,16 +126,29 @@ export function read(params: readonly string[] = []): Collected {
     ...(arrived && { touch }),
     ...(known && { known }),
     ...(carried && { carried }),
+    ...(staff && { staff }),
   }
 }
 
-/** Takes the two tokens out of the address bar once they have been read, so they are not bookmarked or passed on. */
+/**
+ * The mark of a staff browser, kept in a cookie of this site. A staff link
+ * sets it with its `ag_staff` parameter, and `ag_staff=off` on any page
+ * removes it. The mark is signed, and only the server can say whether it is
+ * good: a browser that makes one up is counted like any other.
+ */
+function staffMark(): string | undefined {
+  const given = new URL(location.href).searchParams.get('ag_staff')
+  if (given) document.cookie = `ag_staff=${given === 'off' ? '' : encodeURIComponent(given)}; Max-Age=${given === 'off' ? 0 : YEAR}; Path=/; SameSite=Lax; Secure`
+  return given === 'off' ? undefined : (given ?? cookie('ag_staff'))
+}
+
+/** Takes the tokens out of the address bar once they have been read, so they are not bookmarked or passed on. */
 function tidy(): void {
   try {
     const url = new URL(location.href)
-    if (!url.searchParams.has('ag') && !url.searchParams.has('ag_from')) return
-    url.searchParams.delete('ag')
-    url.searchParams.delete('ag_from')
+    const tokens = ['ag', 'ag_from', 'ag_staff'].filter((name) => url.searchParams.has(name))
+    if (tokens.length === 0) return
+    for (const name of tokens) url.searchParams.delete(name)
     history.replaceState(history.state, '', url.href)
   } catch {}
 }
@@ -183,12 +199,14 @@ export interface EventDetail {
  */
 export async function event(options: CollectOptions, name: string, detail: EventDetail = {}): Promise<void> {
   const page = new URL(location.href)
+  const staff = cookie('ag_staff')
   const body = JSON.stringify({
     device: deviceId(),
     event: name,
     url: page.origin + page.pathname,
     ...(detail.id && { id: detail.id }),
     ...(detail.number && { number: detail.number }),
+    ...(staff && { staff }),
   })
   await post(new URL('event', options.endpoint).href, body)
 }

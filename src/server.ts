@@ -1,5 +1,6 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { BlockList, isIP } from 'node:net'
 import { dialed, numberOrSelf, recordCall } from './calls.ts'
 import type { CallOptions } from './calls.ts'
 import type { Graph, PolicyState } from './graph.ts'
@@ -17,7 +18,7 @@ import { withStage } from './ladder.ts'
 import type { Ladder } from './ladder.ts'
 import { defaultPolicy, plainPolicy } from './policy.ts'
 import { reviewPage } from './review.ts'
-import { browserMark, knownLink, readToken, signToken } from './sign.ts'
+import { browserMark, knownLink, readToken, signToken, staffLink } from './sign.ts'
 import { browserScripts, scriptHeaders } from './tag.ts'
 import type { Identifier, Level, Observation, Outcome, Subject, Told, Touch, Why } from './types.ts'
 
@@ -69,6 +70,12 @@ export interface HandlerOptions {
    * of 60. Pass `false` to turn it off, when a proxy in front already limits.
    */
   limit?: false | { perMinute?: number; burst?: number }
+  /**
+   * Networks your own staff browse from, as addresses or ranges:
+   * `192.0.2.10`, `198.51.100.0/24`, `2001:db8::/32`. Visits and page events
+   * from them are dropped and counted.
+   */
+  staffNetworks?: readonly string[]
   /** Sends outcomes posted to `/convert` to ad platforms. Without it, they are only counted for the report. */
   outbox?: Outbox
   /**
@@ -171,8 +178,17 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
 
   const ignoredAddresses = new Set<Identifier>()
 
+  const staffed = networks(options.staffNetworks ?? [])
+  /** Whether a request comes from one of your own people: their network, or a browser marked by a staff link. A mark nobody signed is nothing. */
+  const fromStaff = (request: IncomingMessage, body: any): boolean => {
+    const address = addressOf(request).replace(/^::ffff:(?=\d+\.)/i, '')
+    const family = isIP(address)
+    if (family > 0 && staffed.check(address, family === 6 ? 'ipv6' : 'ipv4')) return true
+    return Boolean(options.linkSecret && readToken(options.linkSecret, 'staff', body?.staff, now()))
+  }
+
   /** What this process has done since it started, for `/stats`. */
-  const tally = { since: now(), collected: 0, limited: 0, bots: 0, errors: 0 }
+  const tally = { since: now(), collected: 0, limited: 0, bots: 0, staff: 0, errors: 0 }
 
   /** A program that says what it is: a search crawler, a link previewer, an uptime check. Its visits are nobody's. */
   // "bot/" and not just "bot": phones are sold under names like Cubot, and their browsers are people.
@@ -250,6 +266,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
   /** Records something a visitor did on a page. Only names the server was told to accept are kept. */
   async function happened(request: IncomingMessage, response: ServerResponse) {
     const body = await json(request)
+    if (fromStaff(request, body)) return void (tally.staff += 1)
     if (typeof body.event !== 'string' || !events.has(body.event)) throw new Refusal(400, 'This server does not take that event')
     const device = deviceOf(request, response, body)
     const subject = `visitor:${device}`
@@ -279,6 +296,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
   /** Records one browser visit. The subject is the visitor; nothing here names an account. */
   async function collect(request: IncomingMessage, response: ServerResponse) {
     const body = await json(request)
+    if (fromStaff(request, body)) return void (tally.staff += 1)
     const at = now()
     const device = deviceOf(request, response, body)
     const subject = `visitor:${device}`
@@ -355,6 +373,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     }
     const visit = { subject, identifiers, at, event: 'visit' }
     await graph.observe(also.length > 0 ? [visit, ...also] : visit)
+    tally.collected += 1
     if (consent) await graph.consent(subject, consent, { at, source: optedOut ? 'browser signal' : 'banner' })
 
     if (advertising && body.touch && typeof body.touch === 'object') {
@@ -521,10 +540,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return undefined
       }
       if (url.pathname === '/event') await happened(request, response)
-      else {
-        await collect(request, response)
-        tally.collected += 1
-      }
+      else await collect(request, response)
       return undefined
     }
 
@@ -672,6 +688,12 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         if (body.days !== undefined && typeof body.days !== 'number') throw new Refusal(400, '`days` must be a number')
         return { url: knownLink(String(body.url), body.subject, { secret: options.linkSecret, now, ...(body.days !== undefined && { lasts: body.days * 86_400_000 }) }) }
       }
+      case 'POST /staff-link': {
+        if (!options.linkSecret) break
+        const body = await json(request)
+        if (body.days !== undefined && typeof body.days !== 'number') throw new Refusal(400, '`days` must be a number')
+        return { url: staffLink(String(body.url), { secret: options.linkSecret, now, ...(body.label !== undefined && { label: body.label }), ...(body.days !== undefined && { lasts: body.days * 86_400_000 }) }) }
+      }
       case 'POST /call':
         return recordCall(graph, await json(request), { ...options.calls, convert, ...(lineOf && { lineType: lineOf }) })
       case 'POST /restate': {
@@ -732,6 +754,19 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       response.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: message }))
     }
   }
+}
+
+/** A list of addresses and ranges, to ask whether an address is in it. Throws for one that is neither. */
+export function networks(list: readonly string[]): BlockList {
+  const found = new BlockList()
+  for (const each of list) {
+    const [address = '', prefix, ...rest] = each.trim().split('/')
+    const family = isIP(address)
+    const bits = prefix === undefined ? (family === 6 ? 128 : 32) : /^\d{1,3}$/.test(prefix) ? Number(prefix) : NaN
+    if (family === 0 || rest.length > 0 || !(bits >= 0 && bits <= (family === 6 ? 128 : 32))) throw new TypeError(`"${each}" is not an address or a range, such as 198.51.100.0/24`)
+    found.addSubnet(address, bits, family === 6 ? 'ipv6' : 'ipv4')
+  }
+  return found
 }
 
 /** Who is deciding and why, from a request body, for the record of decisions. */
