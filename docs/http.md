@@ -77,6 +77,7 @@ A token goes in the `authorization` header as `Bearer …`. There are two.
 | `GET /disputes` | Pairs whose reports from systems have switched between kept apart and joined (or withdrawn) three times or more. |
 | `GET /consent?subject=` | Every answer the subject gave about advertising, the standing one first. |
 | `GET /outcome?id=` | One outcome with every value it has had, or `null`. |
+| `GET /between?a=&b=` | What two subjects share, however weak, without any reviewer's mark: `{ known, joined, apart, score, reasons }`. |
 | `GET /undecided?limit=` | Pairs that are related and not joined, strongest first: `{ pairs, total, seen }`. Looks at the subjects of the newest 10,000 sightings, of which there are `seen`. `limit` is at most 500. |
 | `GET /board?days=` | People by the furthest step they reached, missed calls nobody returned first: `{ columns, unplaced }`, each column with `people`, `fresh`, `late`, `done` and its `rows`. See [the report](report.md#people-by-step). |
 | `GET /followed?from=&to=&tz=&step=&days=` | Who reached a step within some days of a call. See [the report](report.md#what-followed-a-call). |

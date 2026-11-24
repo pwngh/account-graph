@@ -131,7 +131,7 @@ const NAME = /^[\w.-]{1,64}$/
 const REVIEW_ROUTES = new Set([
   'GET /me', 'GET /subject', 'GET /clusters', 'GET /search', 'GET /recent', 'GET /links', 'GET /cluster', 'GET /history', 'GET /journey', 'GET /board', 'GET /flows', 'GET /collusion', 'GET /rings',
   'GET /decisions', 'GET /disputes', 'GET /consent', 'GET /outcome', 'GET /followed', 'GET /call', 'GET /calls', 'GET /calls/summary', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'GET /ops', 'POST /find', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
-  'GET /undecided',
+  'GET /undecided', 'GET /between',
 ])
 
 /** Answers hold people's data, so nothing keeps a copy of one. */
@@ -829,6 +829,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         const outcome = await graph.outcomeOf(id)
         return outcome ? { ...outcome, values: await graph.values(id) } : null
       }
+      case 'GET /between':
+        return graph.between(url.searchParams.get('a') ?? '', url.searchParams.get('b') ?? '')
       case 'GET /undecided': {
         const limit = url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : 50
         if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new Refusal(400, '`limit` must be a whole number from 1 to 500')

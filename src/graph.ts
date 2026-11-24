@@ -45,6 +45,7 @@ import type {
   Outcome,
   OutcomeValue,
   Pair,
+  Reason,
   Recorded,
   Report,
   Ring,
@@ -195,6 +196,8 @@ export interface Graph {
   search(text: string, limit?: number): Promise<Subject[]>
   /** The newest cluster changes, newest first: who joined or left which cluster, and when. */
   recent(limit?: number): Promise<Moved[]>
+  /** What two subjects share, however weak, without any reviewer's mark, and how they stand. */
+  between(a: Subject, b: Subject): Promise<Between>
   /**
    * Pairs that are related and not joined, strongest first, for someone to decide. Only pairs with a subject of the newest
    * sightings, 10,000 unless told otherwise: scoring every pair reads the whole graph.
@@ -282,6 +285,19 @@ export interface PolicyState {
 
 const DAY = 86_400_000
 const HOUR = 3_600_000
+/** What two subjects share, and how they stand. */
+export interface Between {
+  /** Whether the graph knows both. */
+  known: boolean
+  /** Whether they are in one cluster, by whatever put them there. */
+  joined: boolean
+  /** Whether a reviewer keeps them apart. */
+  apart: boolean
+  /** What the shared identifiers alone come to, 0 for none. */
+  score: number
+  reasons: Reason[]
+}
+
 /** Pairs the graph finds related and has not joined, strongest first. */
 export interface Undecided {
   pairs: Pair[]
@@ -670,6 +686,23 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
     links(subject) {
       return store.read(async (tx) => (await neighbors(tx, [subject])).get(subject) ?? [])
+    },
+
+    between(a, b) {
+      return store.read(async (tx) => {
+        const labels = await tx.labelsOf([a, b])
+        const [x, y] = [labels.get(a), labels.get(b)]
+        const edges = (await tx.edgesOf(unique([a, b]))).filter((edge) => !edge.identifier.startsWith('review:'))
+        // However weak what they share is.
+        const [pair] = scorePairs({ ...policy, related: 0 }, edges, await tx.states(unique(edges.map((edge) => edge.identifier))))
+        return {
+          known: x !== undefined && y !== undefined,
+          joined: x !== undefined && x.cluster === y?.cluster,
+          apart: (await tx.separatedOf([a])).some((each) => each.includes(b)),
+          score: pair?.score ?? 0,
+          reasons: pair?.reasons ?? [],
+        }
+      })
     },
 
     holders(identifiers) {

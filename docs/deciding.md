@@ -122,3 +122,18 @@ await graph.rebuild({ by: 'ops', reason: 'hardware ids are shared in internet ca
 > **Measure before you guess.** `fit(await graph.reviewed(), policy)` sets every weight from the pairs your reviewers joined or kept apart, and reports how far each moved.
 
 A setting applies to every subject. To fix one pair, use a reviewer decision instead: `separate`, `join`, or `ignore`.
+
+### From a file of checked pairs
+
+`tools/labels.ts` takes a CSV of pairs somebody has checked, and asks a running server what each pair shares. It prints precision and recall for each kind, with the counts behind them, and the weights `fit` would give. It writes nothing, so a reviewer's token is enough.
+
+```sh
+printf 'a,b,label\ncontact:1,contact:2,same\ncontact:3,contact:9,different\n' > pairs.csv
+GRAPH_URL=https://graph.example.org GRAPH_TOKEN=$REVIEWER npm run labels -- pairs.csv
+```
+
+| What limits it | Why |
+| --- | --- |
+| Labels from staff are biased | They find the pairs that already look alike. A kind they search by looks better than it is, and strangers who share it are hardly in the file. |
+| A merged record whose evidence was deleted cannot be used | Nothing is left to say what the two shared. The tool counts these, and they were often the surest pairs. |
+| A pair labelled both ways | Left out, and counted. |

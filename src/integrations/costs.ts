@@ -182,7 +182,7 @@ export function costsFromCsv(text: string): Cost[] {
 }
 
 /** Splits CSV text into rows of cells. A cell in double quotes may hold commas, line breaks, and doubled quotes. */
-function parseCsv(text: string): string[][] {
+export function parseCsv(text: string): string[][] {
   const rows: string[][] = [[]]
   let cell = ''
   let quoted = false
