@@ -37,7 +37,7 @@ Press P on the stage. After a count of three the bar hides and the show plays by
 | --- | --- | --- |
 | 0:00 | The phone: a search, the ad, the firm's site, a call, no answer. The caller on the **Board** | When someone clicks a law firm's ad and calls, and nobody picks up, that call often gets cut off from the ad that paid for it. |
 | 0:15 | The call back, and staff entering the details | This is a sample firm with made-up data. Staff call back and take a name. The call and the visit are now tied to it, but not firmly enough to credit the ad. |
-| 0:28 | The text, and the form it opens. Ad credit goes from 78% to 92% | They open a link staff texted, in the browser they came with. We now know whose phone this is, and the ad is credited. |
+| 0:28 | The text, and the form it opens. Ad credit goes from 78% to 92% | They open a link staff texted, in the browser they came with. We now know whose browser this is, and the ad is credited. |
 | 0:39 | The form sent, the documents signed. Their card moves along the **Board** | The form and the signature land on the same person, with no second contact. |
 | 0:49 | A director scheduled, then calling on Wednesday | Staff schedule a director, who calls. Same timeline, still tied to the ad. |
 | 1:00 | The enroll-and-pay link, and the payment | They enroll and pay, the payment is recorded, and it goes to a sample ad platform for that first click. |

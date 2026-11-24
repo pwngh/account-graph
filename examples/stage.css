@@ -10,6 +10,8 @@
   body.with-phone #stage { left: calc(50% + 166px); max-width: calc(100vw - 372px); }
 }
 body:is(.with-phone, .playing) .split { grid-template-columns: minmax(0, 1fr); } body:is(.with-phone, .playing) .account-rail { display: none; }
+/* The whole graph is in the window, with the credit above it and the bar below. */
+body.with-phone .graph .stage { height: clamp(260px, calc(100vh - 372px), var(--tall, 520px)); } body.with-phone:has(.stage-credit) .graph .stage { height: clamp(260px, calc(100vh - 486px), var(--tall, 520px)); }
 #stage-phone > small { color: var(--muted); font-size: var(--small); }
 .device { position: relative; width: 292px; height: min(620px, calc(100vh - 96px)); padding: 9px; border-radius: 44px; background: #111; box-shadow: 0 24px 60px rgb(0 0 0 / .28), inset 0 0 0 1px rgb(255 255 255 / .12); }
 .device .screen { position: relative; display: block; width: 274px; height: 100%; border: 0; border-radius: 36px; overflow: hidden; background: #fbfbfa; color: #1a1a19; color-scheme: light; }

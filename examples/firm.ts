@@ -344,7 +344,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
         // The inquiry waited for an ad to be credited, and is sent now.
         await outbox.run()
         const sure = await credit()
-        return { lines: [`We now know whose phone this is. Ad credit: ${Math.round(sure.share * 100)}%, to ${sure.campaign}.`], credit: sure }
+        return { lines: [`We now know whose browser this is. Ad credit: ${Math.round(sure.share * 100)}%, to ${sure.campaign}.`], credit: sure }
       },
     },
     {
