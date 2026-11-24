@@ -10,6 +10,7 @@
  * peak memory is its own.
  */
 import { execFileSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { createBatcher, createGraph, createMemoryStore } from './src/index.ts'
 import type { Graph, Observation } from './src/index.ts'
@@ -127,7 +128,9 @@ async function scale(sizes: readonly number[]) {
   const { createPostgresStore } = await import('./src/postgres.ts')
   for (const edges of sizes) {
     const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
-    const schema = `ag_bench_${process.pid}`
+    // Made by this run and by no other, so it is this run's to drop.
+    const schema = `ag_bench_${randomUUID().replaceAll('-', '')}`
+    await pool.query(`create schema ${schema}`)
     await createPostgresStore(pool, schema).migrate()
     try {
       const start = performance.now()

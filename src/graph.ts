@@ -439,7 +439,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
    */
   async function recompute(tx: Tx): Promise<Map<Subject, Labels>> {
     const caps = Object.fromEntries(Object.entries(policy.kinds).map(([kind, rule]) => [kind, rule.cap]))
-    const alone = Object.entries(policy.kinds).filter(([, rule]) => rule.weight >= policy.same && !rule.corroborates).map(([kind]) => kind)
+    const alone = Object.entries(policy.kinds).filter(([, rule]) => policy.same <= 0 || (!rule.corroborates && rule.weight >= policy.same - 1e-9)).map(([kind]) => kind)
     const pairs: Pair[] = []
     const joined = new Set<Subject>()
     for await (const batch of tx.sharing(caps, alone)) {
@@ -1480,11 +1480,17 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       // Stamp the copy's sightings with the time asked about, so the copy's own log reads as of then.
       const past = createGraph(createMemoryStore(), policy, { now: () => at })
       const decisions = await store.read(async (tx) => {
+        // A thousand to a write, however many come at a time.
+        let batch: Observation[] = []
         for await (const sightings of tx.sightingsUntil(at)) {
-          for (let i = 0; i < sightings.length; i += 1000) {
-            await past.observe(sightings.slice(i, i + 1000).map(({ subject, identifier, at: seen, event }) => ({ subject, identifiers: [identifier], at: seen, ...(event !== undefined && { event }) })))
+          for (const { subject, identifier, at: seen, event } of sightings) {
+            batch.push({ subject, identifiers: [identifier], at: seen, ...(event !== undefined && { event }) })
+            if (batch.length < 1000) continue
+            await past.observe(batch)
+            batch = []
           }
         }
+        if (batch.length > 0) await past.observe(batch)
         return (await tx.decisions()).filter((decision) => decision.at <= at)
       })
       for (const { action, about } of decisions) {

@@ -138,7 +138,9 @@ export function createMemoryStore(): Store {
       const pairs = new Map<string, { a: Edge; b: Edge; fanout: number }[]>()
       for (const [identifier, holders] of byIdentifier) {
         const kind = identifier.slice(0, identifier.indexOf(':'))
-        if (ignored.has(identifier) || !Object.hasOwn(caps, kind) || holders.size < 2 || holders.size > caps[kind]!) continue
+        if (ignored.has(identifier) || holders.size < 2) continue
+        if (!Object.hasOwn(caps, kind)) throw new TypeError(`Identifier "${identifier}" has a kind the policy does not name`)
+        if (holders.size > caps[kind]!) continue
         const edges = [...holders.values()]
         for (const [i, x] of edges.entries()) {
           for (const y of edges.slice(i + 1)) {

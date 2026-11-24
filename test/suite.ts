@@ -1853,7 +1853,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await graph.separate('account:1', 'account:2')
       await graph.ignore('email:3')
       assert.deepEqual(await graph.verify(), [])
-      // One joined to a stranger, one split off, one whose row is gone, and one that holds nothing.
+      // One split off from its own, and one put with a stranger.
       const before = new Map<string, { component: string; cluster: string } | undefined>()
       await store.read(async (tx) => {
         for await (const batch of tx.everyone()) for (const { subject, labels } of batch) before.set(subject, labels)
@@ -1866,8 +1866,16 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual((await graph.rebuild()).map((change) => change.subject), [joined[0]!, single[0]!].sort())
       assert.deepEqual(await graph.verify(), [])
       assert.deepEqual(await graph.rebuild(), [])
-      // As of now, the copy is the graph.
+      // A kind the policy no longer names is refused where it would link, and not passed over.
+      const card = { weight: 0.95, dilution: 0, cap: 10, halfLife: Infinity }
+      const wide = createGraph(store, { ...defaultPolicy, kinds: { ...defaultPolicy.kinds, card } })
+      await wide.observe([{ subject: 'z:1', identifiers: ['card:x'], at: T0 }, { subject: 'z:2', identifiers: ['card:x'], at: T0 }, { subject: 'z:3', identifiers: ['card:y'], at: T0 }])
+      await assert.rejects(graph.verify(), /"card:x" has a kind the policy does not name/)
+      await assert.rejects(graph.rebuild(), /"card:x" has a kind the policy does not name/)
+      for (const subject of ['z:1', 'z:2', 'z:3']) await wide.forget(subject)
+      // As of now, the copy is the graph, and it moved as often as if it had been read at once.
       const past = await graph.asOf(Date.now())
+      assert.equal(await past.version(), 3)
       for (const subject of before.keys()) assert.deepEqual((await past.cluster(subject))!.members, (await graph.cluster(subject))!.members)
     })
 
