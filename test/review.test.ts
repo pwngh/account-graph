@@ -115,6 +115,16 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   await key('account:3', 'Escape')
   assert.equal(await shown('.graph .card'), false)
 
+  // What cannot be undone is held: pressed for a moment, or Enter in a field, it does nothing.
+  await run(`[...document.querySelectorAll('button')].find((b) => b.textContent === 'Forget…').click()`)
+  await run(`document.getElementById('ask-reason').focus()`)
+  for (let i = 0; i < 2; i++) await press('Enter')
+  await run(`(() => { const yes = document.getElementById('ask-yes'); for (const type of ['pointerdown', 'pointerup']) yes.dispatchEvent(new PointerEvent(type, { bubbles: true, button: 0 })); yes.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 })) })()`)
+  assert.deepEqual([await run(`document.getElementById('ask').open`), await text('#ask-problem'), (await decisions()).length], [true, 'Hold the button down to confirm.', taken])
+  await press('Escape')
+  await until('it to close', () => run(`!document.getElementById('ask').open`))
+  await until('an ordinary button again', () => run(`!document.getElementById('ask-yes').classList.contains('hold')`))
+
   // Escape decides nothing. Signing out forgets the token and what was on screen.
   await keepApart('account:3')
   await press('Escape')

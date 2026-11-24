@@ -741,7 +741,7 @@ tr.folded { display: none !important; }
 .letter::before { content: attr(data-letter); }
 .what .letter { width: 16px; height: 16px; border-radius: 5px; font-size: 10px; }
 .what .sourced { display: inline; }
-.what .letter { margin: 0 5px 0 1px; vertical-align: -3px; }
+.what .letter { margin: 0 5px 0 1px; vertical-align: 1px; }
 .sort { position: relative; overflow-wrap: normal; word-break: keep-all; white-space: normal; display: inline-flex; align-items: center; height: auto; min-height: 0; padding: 2px 4px; margin: -2px -4px; border: 0; border-radius: 4px; background: none; color: inherit; font: inherit; }
 th.num .sort { text-align: right; }
 th.num .way { right: auto; left: 50%; top: -5px; margin: 0 0 0 -4px; }
@@ -834,6 +834,12 @@ tr.behind:hover { background-image: linear-gradient(color-mix(in srgb, var(--acc
 .palette-foot span:not(:first-child) { margin-left: var(--s3); }
 @media (max-width: 560px) { #summon { display: none; } #palette { margin-top: 8px; } }
 @media (prefers-reduced-motion: reduce) { #palette[open] { animation: none; } }
+
+/* A button held down before it does what cannot be undone. */
+button.hold.hold, button.hold.hold.primary:hover:not(:disabled) { position: relative; isolation: isolate; overflow: hidden; border-color: var(--apart); background: none; box-shadow: none; color: var(--apart); user-select: none; -webkit-user-select: none; touch-action: none; transition: color .2s, transform .12s; }
+button.hold::before { content: ''; position: absolute; z-index: -1; inset: 0; background: color-mix(in srgb, var(--apart) 30%, transparent); transform: scaleX(0); transform-origin: left; transition: transform .22s ease-out; }
+button.hold.hold.holding.holding { transform: scale(.98); }
+button.hold.holding::before { transform: scaleX(1); transition: transform 1.2s linear; }
 
 /* A table of a few plain columns is read along its rows, so they do not stand far apart. */
 @media (min-width: 761px) { .wide:has(> table):not(:has(th[colspan])) { max-width: 1040px; } }

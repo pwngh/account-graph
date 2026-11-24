@@ -233,13 +233,74 @@ async function api(method, path, body) {
   return answer
 }
 
+/** How long a button that cannot be undone is held before it does anything. */
+const HOLD = 1200
+/**
+ * Makes a button one to hold: pressed for a while, by pointer or key, it does
+ * what it does, and let go of sooner it does not. A press with no hold, as
+ * some assistive tools make it, is asked for a second time. Returns what
+ * makes it an ordinary button again.
+ */
+function held(button) {
+  const aside = new AbortController()
+  const { signal } = aside
+  let timer
+  let sure = false
+  let through = false
+  button.classList.add('hold')
+  const start = () => {
+    if (timer || button.disabled) return
+    button.classList.add('holding')
+    timer = setTimeout(() => {
+      stop()
+      through = true
+      button.click()
+    }, HOLD)
+  }
+  const stop = () => {
+    clearTimeout(timer)
+    timer = undefined
+    button.classList.remove('holding')
+  }
+  button.addEventListener('pointerdown', (event) => event.button === 0 && start(), { signal })
+  for (const gone of ['pointerup', 'pointerleave', 'pointercancel', 'blur']) button.addEventListener(gone, stop, { signal })
+  button.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    // Enter would press it at once.
+    event.preventDefault()
+    if (!event.repeat) start()
+  }, { signal })
+  button.addEventListener('keyup', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      stop()
+    }
+  }, { signal })
+  button.addEventListener('click', (event) => {
+    if (through) return void (through = false)
+    // A pointer's click is the end of a press let go of too soon. One from nowhere is a tool's, and is asked again.
+    if (event.detail === 0 && sure && !document.activeElement?.matches('input')) return
+    event.preventDefault()
+    // Enter in a field of the question presses its first button, which is nobody's yes.
+    if (event.detail === 0 && !document.activeElement?.matches('input')) {
+      sure = true
+      $('ask-problem').textContent = 'Press again to confirm.'
+    } else $('ask-problem').textContent = 'Hold the button down to confirm.'
+  }, { signal })
+  return () => {
+    stop()
+    aside.abort()
+    button.classList.remove('hold')
+  }
+}
 /**
  * Asks the reviewer to confirm, with a reason, and does it. With `wantsOther`,
  * also asks which other subject. The question stays open, with what was typed,
  * until `save` has succeeded or the reviewer cancels. Resolves to what `save`
  * answered, or to undefined when cancelled.
  */
-function ask(title, text, confirm, wantsOther, save) {
+function ask(title, text, confirm, wantsOther, save, hold = false) {
+  const ease = hold ? held($('ask-yes')) : () => {}
   $('ask-title').textContent = title
   $('ask-text').textContent = text
   $('ask-yes').textContent = confirm
@@ -278,6 +339,7 @@ function ask(title, text, confirm, wantsOther, save) {
   dialog.addEventListener('cancel', cancel)
   return new Promise((resolve) => {
     dialog.addEventListener('close', () => {
+      ease()
       form.removeEventListener('submit', submit)
       dialog.removeEventListener('cancel', cancel)
       resolve(saved)
@@ -294,7 +356,7 @@ function ask(title, text, confirm, wantsOther, save) {
  * answered again, knowing it. An undo is not refused: it is about a decision already made.
  * `done` is told the answer, before the reload.
  */
-async function act(title, text, path, body, confirm, { otherKey, undo = false, done } = {}) {
+async function act(title, text, path, body, confirm, { otherKey, undo = false, done, hold = false } = {}) {
   foretell(path, body, otherKey)
   const shown = undo ? undefined : $('view').firstElementChild?.dataset.seen
   // The newer decisions this question has shown, by the other subject it named at the time: one seen says nothing of another.
@@ -317,7 +379,7 @@ async function act(title, text, path, body, confirm, { otherKey, undo = false, d
       }
       throw new Error(`${by ?? 'Someone'} decided first, ${when(at)}: ${ACTIONS[action] ?? action} ${about.join(' and ')}${why ? `, "${why}"` : ''}.`)
     }
-  })
+  }, hold)
   // The question is closed, and nothing more is said in it.
   foretelling.abort()
   if (!saved) return refused ? load() : undefined

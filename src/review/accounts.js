@@ -27,7 +27,7 @@ function profileOf(profile, more) {
   detail.push(el('section', {}, el('div', { class: 'page-head' }, title, el('div', { class: 'row' },
     el('a', { class: 'link', href: `#/journey/${encodeURIComponent(profile.subject)}` }, 'Journey'),
     el('button', { on: { click: () => act('Join as one person', `${profile.subject} and the subject you name will be treated as one person.`, '/join', { a: profile.subject }, 'Join', { otherKey: 'b' }) } }, 'Join with another…'),
-    el('button', { class: 'danger', on: { click: () => act('Forget this subject', `Everything recorded about ${profile.subject} will be deleted. This cannot be undone.`, '/forget', { subject: profile.subject }, 'Delete') } }, 'Forget…'))),
+    el('button', { class: 'danger', on: { click: () => act('Forget this subject', `Everything recorded about ${profile.subject} will be deleted. This cannot be undone.`, '/forget', { subject: profile.subject }, 'Hold to delete', { hold: true }) } }, 'Forget…'))),
   tiles(['Cluster size', `${amount(size)} ${size === 1 ? 'subject' : 'subjects'}`, profile.cluster.oversized ? 'Above the review limit' : '', profile.cluster.oversized ? 'apart' : ''],
     profile.links[0] && ['Strongest tie', percent(Math.max(...profile.links.map((link) => link.score))), `${amount(profile.links.length)} scored ties`],
     profile.separated.length > 0 && ['Kept apart from', amount(profile.separated.length)],
