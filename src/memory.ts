@@ -1,6 +1,7 @@
 import { createMemoryOutbox } from './outbox.ts'
+import { standingFirst } from './store.ts'
 import type { Store, Tx } from './store.ts'
-import type { Consent, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, Labels, Moved, Sighting, Subject, Touch } from './types.ts'
+import type { Consent, ConsentAnswer, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, Labels, Moved, Sighting, Subject, Touch } from './types.ts'
 
 /**
  * Keeps the graph in process memory. Writes run one at a time; a write that
@@ -18,7 +19,7 @@ export function createMemoryStore(): Store {
   const separated = new Map<Subject, Set<Subject>>()
   const flows = new Map<string, FlowEdge>()
   const flowsBy = new Map<Subject, Set<string>>()
-  const consents = new Map<Subject, Consent>()
+  const consents = new Map<Subject, ConsentAnswer[]>()
   const decisions: Decision[] = []
   const outcomes = new Map<string, Counted>()
   const costs = new Map<string, Required<Cost>>()
@@ -250,17 +251,34 @@ export function createMemoryStore(): Store {
       return [...keys].map((key) => ({ ...flows.get(key)! }))
     },
 
-    async setConsent(subject, consent) {
-      consents.set(subject, { ...consent })
+    async addConsent(subject, answer) {
+      const answers = consents.get(subject)
+      if (answers) answers.push({ ...answer })
+      else consents.set(subject, [{ ...answer }])
     },
 
     async consentOf(subjects) {
       const out = new Map<Subject, Consent>()
       for (const subject of subjects) {
-        const consent = consents.get(subject)
-        if (consent) out.set(subject, { ...consent })
+        const [standing] = [...(consents.get(subject) ?? [])].sort(standingFirst)
+        if (standing) out.set(subject, { adUserData: standing.adUserData, adPersonalization: standing.adPersonalization })
       }
       return out
+    },
+
+    async consentHistory(subject, limit) {
+      return (consents.get(subject) ?? []).map((answer) => ({ ...answer })).sort(standingFirst).slice(0, limit)
+    },
+
+    async pruneConsent(before) {
+      let gone = 0
+      for (const [subject, answers] of consents) {
+        const [standing, ...rest] = [...answers].sort(standingFirst)
+        const kept = [standing!, ...rest.filter((answer) => answer.recorded >= before)]
+        gone += answers.length - kept.length
+        consents.set(subject, kept)
+      }
+      return gone
     },
 
     async addTouch(touch) {

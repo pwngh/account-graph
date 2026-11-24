@@ -84,7 +84,7 @@ The `device:` value is the `ag_device` cookie the script set, which your backend
 - **One call to say who someone is.** Send an email, phone, address and device as they are; the server hashes them, checks the address with the postal service, and counts a throwaway phone number for less.
 - **Real integrations.** Fingerprint, the operating system's machine id, MaxMind, Twilio, Smarty, the Google tag's cookies, the cost reports of Google Ads and Meta, and the conversion APIs of Google, Meta, Microsoft, and TikTok.
 - **An outbox for conversions.** Outcomes are recorded once, sent in batches to each ad platform, retried with backoff, and never sent by two workers at once. Failed ones can be listed and retried.
-- **Consent.** A browser's opt-out signal and a banner's answer are stored and honoured before anything goes to an ad platform.
+- **Consent.** Every answer, from a browser's opt-out signal, a banner or your backend, is kept, and the one given last is honoured before anything goes to an ad platform.
 - **A write queue.** Observations that arrive together are written together, four times faster on PostgreSQL.
 - **Two stores, one suite.** Memory and PostgreSQL pass the same tests, including a fuzz test that checks stored clusters against a full recompute after every operation.
 - **No runtime dependencies.** `pg` is needed only for the PostgreSQL store.
@@ -168,6 +168,8 @@ PostgreSQL writes take one advisory lock, so they run one at a time; the write q
 - `asOf` cannot bring back a forgotten subject or a pruned sighting; both are gone from every past.
 - A separation between two subjects cuts the weakest links between them. With several separations in one component the cuts are made one after another, which is not always the fewest possible.
 - Kinds count as independent evidence unless the policy puts them in one group. The default has no groups.
+- The consent kept is about advertising. It is not a record of consent to be contacted.
+- Each page view adds a row to the consent history when the page reports an answer. `prune` deletes the ones that no longer stand.
 - Pairs kept apart by your own systems are only as right as those systems. One person entered on both sides is split, and keeping two apart is not a conflict check.
 - Flows are kept as running totals per pair, not as a ledger.
 - `rebuild`, `verify`, and `asOf` load every edge into memory.

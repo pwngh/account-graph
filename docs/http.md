@@ -72,7 +72,8 @@ A token goes in the `authorization` header as `Bearer …`. There are two.
 | `GET /rings?subject=` | Value that left the subject and came back through others. |
 | `GET /decisions?limit=&before=&author=` | The record of decisions, newest first, 50 at a time: `{ decisions, next, total }`. Pass `next` as `before` for the page after. `author` is `people`, `system`, or one name. |
 | `GET /disputes` | Pairs whose reports from systems have switched between kept apart and joined (or withdrawn) three times or more. |
-| `GET /audit` | Whether that record is whole: `{ sound }`, with `brokenAt` when it is not. |
+| `GET /consent?subject=` | Every answer the subject gave about advertising, the standing one first. |
+| `GET /audit` | Whether that record is whole: `{ sound, head }`, with `brokenAt` when it is not. `head` is the newest entry's `seq` and `hash`. |
 | `GET /report?from=&to=&tz=` | What each campaign cost and brought in between two days, with `steps` naming the steps in your order and `timeZone` the zone its days are in. See [the report](report.md). |
 | `POST /separate` | `{ a, b, separated?, by?, reason? }`. Keeps two subjects apart, or with `separated: false` allows them again. |
 | `POST /join` | `{ a, b, by?, reason? }`. Records that two subjects are one person. |
@@ -90,7 +91,7 @@ The four `POST` routes answer with the subjects whose cluster moved. With the se
 | `POST /join`, list | The same without `separated`: two records another system merged are one person here too. |
 | `POST /observe` | One observation, or a list: `{ subject, identifiers, at, event? }`. Answers with the cluster changes. |
 | `POST /touch` | A marketing touch: `{ subject, at, gclid?, source?, medium?, campaign?, campaignId?, … }`. |
-| `POST /consent` | `{ subject, consent: { adUserData, adPersonalization } }`. |
+| `POST /consent` | `{ subject, consent: { adUserData, adPersonalization }, at?, source? }`. Adds an answer about advertising; the newest by `at` stands. An `at` more than a day ahead is refused, and so is a `source` over 200 characters. |
 | `GET /attribute?subject=&at=` | The touches that led to a conversion by this subject, and the one credited. |
 | `POST /transfer` | `{ from, to, amount, at, asset? }`. Records value moving, and answers with the identity tie between the two. |
 | `POST /convert` | An outcome: `{ transactionId, subject, at, stage?, value?, currency?, action?, email?, phone? }`. Counted for the report; with `action`, also sent to the ad platforms. A `stage` listed in `STAGES` supplies the value, currency and action it leaves out. |
@@ -101,7 +102,7 @@ The four `POST` routes answer with the subjects whose cluster moved. With the se
 | `GET /conversion?id=` | The jobs of one transaction, one per ad platform. |
 | `GET /conversions?state=` | Jobs in one state: `pending`, `sent`, `skipped`, or `failed`. |
 | `POST /retry` | `{ transactionId }`. Puts its failed and skipped jobs back in line. |
-| `POST /prune` | `{ before, by?, reason? }`. Deletes sightings written down before a time. |
+| `POST /prune` | `{ before, by?, reason? }`. Deletes sightings written down before a time, and answers about advertising that no longer stand. |
 | `GET /stats` | Counts since start, what the graph holds, and outbox jobs by state. |
 | `POST /rebuild` | `{ by?, reason? }`. Recomputes every cluster under the running policy, and answers with the subjects that moved. No other write runs meanwhile. |
 | `GET /verify` | `{ changes, policy }`: the subjects whose stored cluster differs from a full recompute, and whether the policy changed since they were stored. |

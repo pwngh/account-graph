@@ -114,7 +114,7 @@ const NAME = /^[\w.-]{1,64}$/
 /** What the reviewer token opens: what the reviewer screen reads, and the decisions a reviewer makes. */
 const REVIEW_ROUTES = new Set([
   'GET /subject', 'GET /clusters', 'GET /search', 'GET /recent', 'GET /links', 'GET /cluster', 'GET /history', 'GET /flows', 'GET /collusion', 'GET /rings',
-  'GET /decisions', 'GET /disputes', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
+  'GET /decisions', 'GET /disputes', 'GET /consent', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
 ])
 
 /** A route that wrote its own answer. */
@@ -355,7 +355,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     }
     const visit = { subject, identifiers, at, event: 'visit' }
     await graph.observe(also.length > 0 ? [visit, ...also] : visit)
-    if (consent) await graph.consent(subject, consent)
+    if (consent) await graph.consent(subject, consent, { at, source: optedOut ? 'browser signal' : 'banner' })
 
     if (advertising && body.touch && typeof body.touch === 'object') {
       const touch: Touch = { subject, at }
@@ -488,6 +488,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       apart: among,
       flows: await graph.flows(subject),
       rings: await graph.rings(subject),
+      consent: await graph.consentHistory(subject, 50),
       history: (await graph.history(subject, 100)).reverse(),
     }
   }
@@ -578,7 +579,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       }
       case 'POST /consent': {
         const body = await json(request)
-        return graph.consent(body.subject, body.consent)
+        return graph.consent(body.subject, body.consent, { ...(body.at !== undefined && { at: body.at }), ...(body.source !== undefined && { source: body.source }) })
       }
       case 'POST /join': {
         const body = await json(request)
@@ -657,6 +658,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         const decisions = found.slice(0, limit)
         return { decisions, next: found.length > limit ? decisions.at(-1)!.seq : null, total: (await graph.decisionPage({ limit: 1 }))[0]?.seq ?? 0 }
       }
+      case 'GET /consent':
+        return graph.consentHistory(subject)
       case 'GET /disputes':
         return graph.disputes()
       case 'GET /audit':

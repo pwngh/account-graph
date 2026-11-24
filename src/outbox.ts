@@ -274,10 +274,18 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
         let attribution = attributions.get(asked)
         if (!attribution) attributions.set(asked, (attribution = await graph.attribute(job.subject, { at: job.at, window: options.window ?? 90 * DAY })))
         const touch = target.click(attribution, confidence)
+        const subjects = touch && touch.subject !== job.subject ? [job.subject, touch.subject] : [job.subject]
         // With no consent on the outcome, use what the person and the browser that clicked told us.
         let consent = job.consent
-        if (!consent) {
-          const subjects = touch && touch.subject !== job.subject ? [job.subject, touch.subject] : [job.subject]
+        if (consent) {
+          // What the outcome said was true when it happened. A refusal given since is newer, so it decides.
+          const since = (await Promise.all(subjects.map((subject) => graph.consentHistory(subject, 1)))).flat().filter((answer) => answer.at >= job.at)
+          if (since.some((answer) => !answer.adUserData)) {
+            await skip('consent_denied')
+            continue
+          }
+          if (since.some((answer) => !answer.adPersonalization)) consent = { ...consent, adPersonalization: false }
+        } else {
           const known = [...(await graph.consentOf(subjects)).values()]
           if (known.some((each) => !each.adUserData)) {
             await skip('consent_denied')

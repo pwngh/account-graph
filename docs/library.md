@@ -139,7 +139,7 @@ A browser that sends the Global Privacy Control signal is still seen, because fr
 
 ```ts
 collect({ endpoint, consent: { adUserData: true, adPersonalization: false } }) // the banner's answer
-await graph.consent('contact:1001', { adUserData: true, adPersonalization: true }) // or from your server
+await graph.consent('contact:1001', { adUserData: true, adPersonalization: true }, { at, source: 'form' }) // or from your server
 ```
 
 ### Google tag and Google Ads
@@ -204,7 +204,7 @@ Google gets one click id per conversion: `gclid`, else `gbraid`, else `wbraid`. 
 | Still failing after 8 tries | `failed`, with the last error |
 | The platform rejects a request for one bad event | Each event is sent alone; only the bad one is `failed` |
 | No trusted click and no email or phone | `skipped`: `no_match_key` |
-| The person, or the browser that clicked, refused ad measurement | `skipped`: `consent_denied` |
+| The person, or the browser that clicked, refused ad measurement, or has since the outcome that said yes | `skipped`: `consent_denied` |
 | The outcome is older than the platform accepts: 7 days for Meta, 90 for Microsoft | `skipped`: `too_old` |
 | A click below 0.9 confidence, but an email or phone | Sent with the email or phone alone |
 
@@ -330,7 +330,7 @@ Pass `onChange` to `createGraph` to be told, after each write commits, which sub
 
 ### Keeping the log small
 
-Every observation adds rows to the sighting log. `prune` deletes the ones written down before a time. Links and clusters do not change, because each edge keeps its first and last sighting and its count; only `history` and `asOf` lose what was deleted. Pruning is itself recorded as a decision.
+Every observation adds rows to the sighting log. `prune` deletes the ones written down before a time. Links and clusters do not change, because each edge keeps its first and last sighting and its count; only `history`, `consentHistory` and `asOf` lose what was deleted. Answers about advertising go too, except the one that stands for each subject. Pruning is itself recorded as a decision.
 
 ```ts
 await graph.prune(Date.now() - 180 * 24 * 60 * 60 * 1000, { by: 'ops', reason: '180 day retention' })

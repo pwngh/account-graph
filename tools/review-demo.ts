@@ -40,6 +40,11 @@ for (let turn = 0; turn < 2; turn++) {
   await graph.joinAll([{ a: 'account:fay', b: 'account:gus' }], { by: 'system:crm', reason: 'records merged' })
 }
 
+// What ana answered about advertising, over time.
+await graph.consent('account:ana', { adUserData: true, adPersonalization: true }, { at: start, source: 'banner' })
+await graph.consent('account:ana', { adUserData: true, adPersonalization: false }, { at: start + 200 * HOUR, source: 'preferences page' })
+await graph.consent('account:ana', { adUserData: false, adPersonalization: false }, { at: start + 400 * HOUR, source: 'browser signal' })
+
 // Marketing: three campaigns with a daily cost, the visitors each brought, and what those visitors went on to do.
 const day = (ago: number) => new Date(Date.now() - ago * 24 * HOUR).toISOString().slice(0, 10)
 const campaigns = [

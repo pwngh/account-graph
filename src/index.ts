@@ -33,6 +33,7 @@ export type {
   Change,
   Cluster,
   Consent,
+  ConsentAnswer,
   Cost,
   Counted,
   Counterparty,

@@ -201,7 +201,7 @@ function fresh(problem) {
   $('fresh').textContent = problem ? `Not refreshed: ${problem} ${at}` : document.hidden ? `${at} Paused while this tab is hidden.` : busy() ? `${at} Waiting while a field here has the cursor.` : at && `${at} Looks for changes every ${EVERY / 1000} seconds.`
 }
 /** Typing or answering a question is not interrupted: the next look finds the change again. */
-const busy = () => $('ask').open || ($('view').contains(document.activeElement) && document.activeElement.matches('input, select, textarea'))
+const busy = () => $('ask').open || ($('view').contains(document.activeElement) && document.activeElement.matches('input:not([readonly]), select, textarea'))
 const interrupting = () => document.hidden || busy()
 let looking = false
 async function look() {

@@ -78,6 +78,37 @@ Three things can: the script tag's `domains` option, which carries a visitor alo
 
 > **`/collect`, `/event`, `/carry`, `/collect.js`, `/review` and `/health` need no token.** `/review` is only a page; nothing it shows arrives without one.
 
+## Consent
+
+Every answer about advertising is kept, with when it was given and where. The newest by when it was given stands, so an answer that arrives late does not undo a later one.
+
+| Where an answer comes from | Its source |
+| --- | --- |
+| The browser's Global Privacy Control signal | `browser signal` |
+| The banner's answer, passed by the page | `banner` |
+| Your backend, with `POST /consent` | what you name |
+| An answer kept before there was a history | `before history`, with no time known |
+
+Every page view reports again what the browser says. So where a banner once said yes and the browser's signal now says no, the signal stands from the first visit that carries it. A visit that carries both counts as the signal.
+
+> **This covers advertising only.** It says what may be sent to ad platforms. It is not a record of consent to be called, texted or written to, and it is not a legal record of anything.
+
+`forget` deletes a subject's answers, and that deletion is itself on the record of decisions. `prune` deletes old answers but never the one that stands.
+
+## The record of decisions
+
+Each decision is sealed to the one before it, and `GET /audit` checks the whole chain. The chain shows that part of it was not edited. Someone who can rewrite the whole table could still rebuild it, so keep the newest hash where they cannot write.
+
+```sh
+curl -s https://graph.example.org/audit -H "authorization: Bearer $REVIEW_TOKEN" | tee -a /somewhere/else/heads.log
+```
+
+```json
+{ "sound": true, "head": { "seq": 418, "hash": "9c1f…" } }
+```
+
+Copy it daily. The Health view has a Copy button, and `AUDIT_HEAD_HOURS=24` posts the line to `ALERT_WEBHOOK` once a day. To check an old copy, find that entry with `GET /decisions?before=419&limit=1` and compare its hash.
+
 ## Behind a proxy
 
 Set `TRUST_PROXY=true` when a proxy or load balancer you run sits in front. The server then reads each visitor's address from `x-forwarded-for`. Without it, every visit appears to come from the proxy, and the per-address limit below would count them as one sender.
@@ -110,7 +141,7 @@ Open `/review` and enter a token. Each view has an address of its own, so it can
 | `/review#/accounts/account:42` | One subject: its cluster, its ties and why, its money, its sightings. |
 | `/review#/channels` | What each campaign cost and brought in, over the last 30 days. |
 | `/review#/channels/2026-11-01/2026-11-30` | The same, for the days named. |
-| `/review#/health` | The running policy by kind, and a banner when a rebuild is due. |
+| `/review#/health` | The record's newest hash, the running policy by kind, and a banner when a rebuild is due. |
 
 Every ten seconds the screen asks one small question, whether anything was written since it last looked, and reads the view again only when the answer is yes. It does not ask while its tab is hidden, and it does not redraw while someone is typing in the view or answering a question.
 
@@ -173,6 +204,7 @@ On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes i
 | `CHANGE_WEBHOOK` | none | A URL to post cluster changes to. |
 | `ALERT_WEBHOOK` | none | A URL to post failures to, as `{"text": "…"}`. |
 | `POLICY`, `POLICY_FILE` | the default policy | What differs from it, as JSON or as a file of JSON. Set one at most. |
+| `AUDIT_HEAD_HOURS` | `0` | Post the newest decision's hash to `ALERT_WEBHOOK` at start and every so many hours, at least one. `0` is never. |
 | `STAGES` | none | Your steps in order, as JSON, each with a `value`, `currency` and `action`. See [the report](report.md#steps-and-what-each-is-worth). |
 | `LINK_SECRET` | none | Signs links that name a person, and the tokens that carry a visitor between your sites. At least 16 characters. |
 | `EVENTS` | none | Names of page events to keep, separated by commas: `inquiry,phone_click`. |

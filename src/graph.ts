@@ -12,6 +12,7 @@ import type {
   Change,
   Cluster,
   Consent,
+  ConsentAnswer,
   Cost,
   Counted,
   Counterparty,
@@ -112,10 +113,16 @@ export interface Graph {
   separateAll(pairs: readonly Told[], why?: Why): Promise<Recorded>
   /** Records a list of joins the same way: two records another system merged are one person here too. */
   joinAll(pairs: readonly Told[], why?: Why): Promise<Recorded>
-  /** Records the advertising consent a subject gave. The outbox honours it. */
-  consent(subject: Subject, consent: Consent): Promise<void>
-  /** The latest consent of each given subject. A subject that never answered is absent. */
+  /**
+   * Records an answer a subject gave about advertising. Every answer is kept.
+   * The newest by when it was given stands, whatever order they arrive in,
+   * and the outbox honours that one. `at` defaults to now.
+   */
+  consent(subject: Subject, consent: Consent, given?: { at?: number; source?: string }): Promise<void>
+  /** The standing answer of each given subject. A subject that never answered is absent. */
   consentOf(subjects: readonly Subject[]): Promise<Map<Subject, Consent>>
+  /** Every answer a subject gave, the standing one first. With `limit`, only that many. */
+  consentHistory(subject: Subject, limit?: number): Promise<ConsentAnswer[]>
   /** Records a reviewer's decision that two subjects are one person. They join one cluster unless separated. */
   join(a: Subject, b: Subject, why?: Why): Promise<Change[]>
   /** A number that is different after every write: the same number means nothing has changed. */
@@ -162,8 +169,8 @@ export interface Graph {
   verdicts(pairs: readonly (readonly [Subject, Subject])[]): Promise<Verdict[]>
   /** Pairs that systems have contradicted themselves or each other about three times or more, the most recently decided first. */
   disputes(limit?: number): Promise<Verdict[]>
-  /** Checks that the record of decisions is whole and unaltered. `brokenAt` names the first entry that does not fit. */
-  audit(): Promise<{ sound: boolean; brokenAt?: number }>
+  /** Checks that the record of decisions is whole and unaltered. `brokenAt` names the first entry that does not fit, `head` the newest entry and its hash. */
+  audit(): Promise<{ sound: boolean; brokenAt?: number; head?: { seq: number; hash: string } }>
   /**
    * The graph as it stood at a time: a copy in memory, built from the
    * sightings written down and the decisions made up to then. A sighting
@@ -172,9 +179,11 @@ export interface Graph {
    */
   asOf(at: number): Promise<Graph>
   /**
-   * Deletes sightings written down before a time, to keep the log from
-   * growing forever. Links and clusters do not change, because edges keep
-   * what they folded. `history` and `asOf` lose what was deleted. Returns how many went.
+   * Deletes sightings written down before a time, and answers about
+   * advertising, to keep the logs from growing forever. Links and clusters do
+   * not change, because edges keep what they folded, and each subject keeps
+   * the answer that stands. `history`, `consentHistory` and `asOf` lose what
+   * was deleted. Returns how many went.
    */
   prune(before: number, why?: Why): Promise<number>
   /**
@@ -718,16 +727,26 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       })
     },
 
-    async consent(subject, consent) {
+    async consent(subject, consent, given = {}) {
       if (!subject) throw new TypeError('Consent needs a subject')
       if (typeof consent?.adUserData !== 'boolean' || typeof consent.adPersonalization !== 'boolean') {
         throw new TypeError('Consent needs adUserData and adPersonalization, each true or false')
       }
-      await store.write((tx) => tx.setConsent(subject, { adUserData: consent.adUserData, adPersonalization: consent.adPersonalization }))
+      const recorded = now()
+      const { at = recorded, source } = given
+      if (!Number.isSafeInteger(at) || at < 0) throw new TypeError('An answer needs its time in whole epoch milliseconds')
+      // An answer dated ahead would stand over every real one until that day came.
+      if (at > recorded + DAY) throw new TypeError('An answer cannot be dated in the future')
+      if (source !== undefined && (typeof source !== 'string' || source.length > 200)) throw new TypeError('The source of an answer must be text of at most 200 characters')
+      await store.write((tx) => tx.addConsent(subject, { at, adUserData: consent.adUserData, adPersonalization: consent.adPersonalization, ...(source && { source }), recorded }))
     },
 
     consentOf(subjects) {
       return store.read((tx) => tx.consentOf(subjects))
+    },
+
+    consentHistory(subject, limit) {
+      return store.read((tx) => tx.consentHistory(subject, limit))
     },
 
     async transfer(flow) {
@@ -833,7 +852,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       if (!Number.isFinite(before)) throw new TypeError('prune needs a time in epoch milliseconds')
       return store.write(async (tx) => {
         await decide(tx, 'prune', [String(before)], why)
-        return tx.pruneSightings(before)
+        return (await tx.pruneSightings(before)) + (await tx.pruneConsent(before))
       })
     },
 
@@ -858,8 +877,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     async audit() {
-      const broken = brokenAt(await graph.decisions())
-      return broken === undefined ? { sound: true } : { sound: false, brokenAt: broken }
+      const decisions = await graph.decisions()
+      const broken = brokenAt(decisions)
+      const last = decisions.at(-1)
+      return { sound: broken === undefined, ...(broken !== undefined && { brokenAt: broken }), ...(last && { head: { seq: last.seq, hash: last.hash } }) }
     },
 
     async asOf(at) {

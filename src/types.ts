@@ -160,6 +160,16 @@ export interface Consent {
   adPersonalization: boolean
 }
 
+/** One answer about advertising, as it was given. Answers are added to and never changed. */
+export interface ConsentAnswer extends Consent {
+  /** When it was given, in epoch milliseconds. 0 when it is not known: an answer kept from before there was a history. */
+  at: number
+  /** Where it was given: `banner`, `browser signal`, or a name of your own. */
+  source?: string
+  /** When it was written down. */
+  recorded: number
+}
+
 /** Who made a decision and why, for the record. */
 export interface Why {
   by?: string
