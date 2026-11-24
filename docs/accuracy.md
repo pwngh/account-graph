@@ -176,11 +176,66 @@ Looked for on the same seeds, once the figures above were known. These were not 
 - **Names.** Every link in the household arm that rests on a name is one person's: 0 of 141 wrong in base. A name or birth date that disagrees weighs nothing today.
 - **Taps.** Counted from the worlds and not from links: in busy, of 32,037 calls, in the three minutes before and half a minute after, 3,793 have taps by two browsers or more, 3,871 by one that the caller has used, and 3,438 by one that the caller has never used. The results give the `dial` links in all.
 
+## The second run
+
+Written before any of its seeds was run. It asks whether two people who cannot be one can be kept apart, and at what cost. Nothing of the first run is replaced. Its code is at its commit, and the world has changed since, so its seeds now make other people.
+
+### What is tried
+
+Two facts of a contact may be kept, keyed as names are: the date of birth (`birth`), and the first letter of the first name, accents folded (`initial`). They link nothing. A policy may list one or both in `apart`: two subjects that would be in one group, that both have such a fact and share no value of it, are kept apart, whatever path joins them. An `initial` keeps apart nobody whose birth dates agree. A reviewer's join, and a join by one of your systems, overrule it, whichever came first. No weight changes.
+
+| Arm | Beside |
+| --- | --- |
+| `default`, `household` | Nothing |
+| `household staff`: staff join the caller to the record | `household` |
+| `default staff` | `default` |
+| `default pool`: a number of one's own | `default` |
+| `default birth`, `default initial`, `default both` | `default` |
+| `household staff birth`, `household staff initial`, `household staff both` | `household staff` |
+
+Seeds 20270101 to 20270120 are for choosing between `birth`, `initial` and `both`, in base and high. Seeds 20270201 to 20270220 are held back. They are run once, at one commit, over the four settings, with the chosen option and what it is beside. Three options are tried, and the best of three looks better than it is; the held seeds say how much.
+
+**How one is chosen.** Of the options that lose no more than 2% of the true pairs of records, and 2% of the records credited to their ad, that the arm beside finds in base, the one with the fewest people's records mixed under the default policy. Where `birth` is within 0.3 points of it, `birth` is chosen, because a single letter is close to plain. Where none loses so little, none is chosen, and no policy is changed.
+
+### What is new in the world
+
+All assumed, and set before anything was run.
+
+| Rate | Low | Base | High |
+| --- | --- | --- | --- |
+| Has a short form; a record has it; it begins with another letter | 20%; 15%; 15% | 35%; 30%; 25% | 50%; 45%; 35% |
+| Surname changed, the new one on half of their records | 1% | 3% | 8% |
+| Two surnames; a record has one | 10%; 20% | 20%; 35% | 35%; 50% |
+| Spelled as another alphabet does, three in ten with another first letter | 0.5% | 1.5% | 4% |
+| Name heard wrongly by staff; birth date | 3%; 1% | 8%; 2% | 15%; 5% |
+| Two of a household born on one day; with one first name | 0.3%; 0.5% | 0.7%; 1% | 1.5%; 2% |
+| Calls with a record that staff join; to somebody else's | 95%; 0.2% | 85%; 1% | 60%; 3% |
+| Calls again on the number shown before | 80% | 70% | 60% |
+| Numbers in the pool | 10 | 10, and 40 in busy | 10 |
+
+First letters are uneven, as they are in life, so one couple in fourteen or so share theirs.
+
+### What would be bad
+
+Of the held seeds.
+
+| In | Bad |
+| --- | --- |
+| Base, the chosen option beside its arm | The difference in people whose record is with another's is not below zero over its whole interval |
+| Base, default and the option | More than 1% of people with a record share a cluster with somebody else's |
+| Base, the option | More than 2% of the true pairs of records found beside are lost, or more than 2% of the records credited to their ad |
+| Base and high, the option | More callers and browsers are with a record that is not theirs than beside it |
+| High, the option | More than 2.5% of people with a record share a cluster with somebody else's, or more than 5% of the pairs or 5% of the credit are lost |
+| Base, `household staff` | Fewer than 70% of the true pairs of records and callers are found |
+| Busy, `default pool` | More than 5% of the links by a tap or by a number shown are between two people |
+| Base, default and the option | Fewer than 98% of joined pairs are right. It is expected to be bad: shared browsers are not touched by this |
+
 ## Limitations
 
 - Most rates are assumed. Under `high`, every one is at its hard end at once.
 - People act alone or with their household. Friends, offices and shelters that share a telephone or computer are not made up.
-- Nobody lies about who they are. Nicknames and married names are not made up.
+- Nobody lies about who they are. In the first run, nicknames and married names are not made up.
+- Twins, and a parent and child of one name, are cases that neither fact can see.
 - A record's chain of facts may run through another person's subjects, so a few of those counted as reachable are so by a mistake.
 - A digit of the area code mistyped is not made up, because it could be a real number.
 - A world is small. Stranger pairs meet more often where more people are known, and fewer where fewer are.

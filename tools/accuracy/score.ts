@@ -39,6 +39,8 @@ export interface Score {
   /** Subjects in clusters that hold two or more people who are not joined by a shared browser or telephone. */
   wrongClusters: number
   clusters: number
+  /** The pairs found, as two subjects and a line break, so what one arm finds and another loses can be told. */
+  pairs: Set<string>
 }
 
 const kindOf = (subject: string) => subject.slice(0, subject.indexOf(':'))
@@ -65,6 +67,7 @@ export function score(truths: readonly Truth[], clusterOf: ReadonlyMap<string, s
   const ofPerson = new Map<string, Truth[]>()
   for (const each of truths) for (const person of each.people) push(ofPerson, person, each)
   const seen = new Set<string>()
+  const pairs = new Set<string>()
   for (const own of ofPerson.values()) {
     const group = groups(own)
     for (const [i, a] of own.entries()) {
@@ -75,7 +78,10 @@ export function score(truths: readonly Truth[], clusterOf: ReadonlyMap<string, s
         seen.add(key)
         count(a, b, 'same')
         const joined = cluster(a) === cluster(b)
-        if (joined) count(a, b, 'found')
+        if (joined) {
+          count(a, b, 'found')
+          pairs.add(key)
+        }
         if (group.get(a) !== group.get(b)) continue
         count(a, b, 'joinable')
         if (joined) count(a, b, 'foundJoinable')
@@ -102,7 +108,7 @@ export function score(truths: readonly Truth[], clusterOf: ReadonlyMap<string, s
     wrongClusters += 1
     for (const person of inside) mixed.add(person)
   }
-  return { all, kinds, people: owners.size, mixed: mixed.size, recorded: recorded.size, mixedRecords: mixedRecords.size, mixedApart: mixedApart.size, wrongClusters, clusters: clusters.size }
+  return { all, kinds, people: owners.size, mixed: mixed.size, recorded: recorded.size, mixedRecords: mixedRecords.size, mixedApart: mixedApart.size, wrongClusters, clusters: clusters.size, pairs }
 }
 
 /** Which of one person's subjects hang together by facts they have in common. */

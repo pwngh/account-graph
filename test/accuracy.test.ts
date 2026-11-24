@@ -80,13 +80,14 @@ test('a world is the same for the same seed, and every subject of it has an owne
   for (const event of events) {
     if (event.kind === 'record') assert.ok(told.has(event.subject))
     else if (event.kind === 'call') assert.ok(calls.has(event.id))
+    else if (event.kind === 'join') assert.ok(calls.has(event.call) && told.has(event.subject))
     else assert.ok(told.has(`visitor:${event.device}`))
   }
 })
 
 test('a world is reported to a server, and everyone told of is found there', async () => {
   const world = makeWorld(SETTINGS.base!.rates, { people: 60, days: 30, start: Date.parse('2026-03-02T15:00:00Z'), seed: 3 })
-  for (const arm of ['default', 'household'] as const) {
+  for (const arm of ['default', 'household', 'household staff', 'default pool'] as const) {
     const { truths, clusterOf, credit } = await report(world, arm)
     // A caller who hid their number is a subject of its own.
     assert.ok(truths.length >= world.truths.length)
