@@ -25,6 +25,7 @@ import { createGoogleTokens } from './integrations/google-auth.ts'
 import { createMaxMindLookup } from './integrations/maxmind.ts'
 import { ladderProblems } from './ladder.ts'
 import type { Ladder } from './ladder.ts'
+import { defaultPolicy, policyFrom, policyProblems } from './policy.ts'
 import { createMicrosoftTokens } from './integrations/microsoft-auth.ts'
 import { createAddressVerifier } from './integrations/smarty.ts'
 import { createLineTypeLookup } from './integrations/twilio.ts'
@@ -66,6 +67,29 @@ export function configFrom(env: Env) {
     return set.length === names.length
   }
 
+  // The policy, from a variable or a file. Only what differs from the default is named.
+  const policyGiven = (): unknown => {
+    if (env.POLICY && env.POLICY_FILE) return void wrong.push('POLICY and POLICY_FILE must not both be set')
+    const name = env.POLICY ? 'POLICY' : 'POLICY_FILE'
+    if (!env[name]) return undefined
+    let text = env.POLICY ?? ''
+    try {
+      if (env.POLICY_FILE) text = readFileSync(env.POLICY_FILE, 'utf8')
+    } catch {
+      return void wrong.push(`POLICY_FILE: "${env.POLICY_FILE}" cannot be read`)
+    }
+    let value: unknown
+    try {
+      value = JSON.parse(text)
+    } catch {
+      return void wrong.push(`${name} must be JSON`)
+    }
+    const problems = policyProblems(value)
+    for (const problem of problems) wrong.push(`${name}: ${problem}`)
+    return problems.length > 0 ? undefined : value
+  }
+  const policy = policyGiven()
+
   const config = {
     databaseUrl: need('DATABASE_URL'),
     schema: env.GRAPH_SCHEMA || 'account_graph',
@@ -83,6 +107,7 @@ export function configFrom(env: Env) {
     linkSecret: env.LINK_SECRET || undefined,
     alertWebhook: env.ALERT_WEBHOOK || undefined,
     stages: parsed('STAGES') as Ladder | undefined,
+    policy: policy === undefined ? undefined : policyFrom(policy),
     timeZone: env.REPORT_TIME_ZONE || 'UTC',
     events: (env.EVENTS ?? '').split(',').map((name) => name.trim()).filter(Boolean),
     callNumbers: parsed('CALL_NUMBERS'),
@@ -182,7 +207,14 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
     const response = await fetch(webhook!, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ changes }) })
     if (!response.ok) throw new Error(`The change webhook answered ${response.status}`)
   }
-  const graph = createGraph(store, undefined, webhook ? { onChange: notify } : {})
+  const policy = config.policy ?? defaultPolicy
+  // A kind that is stored but not named would stop every link that reaches it, so say so before anything is served.
+  const unnamed = (await store.read((tx) => tx.kinds())).filter((kind) => !Object.hasOwn(policy.kinds, kind))
+  if (unnamed.length > 0) {
+    await pool.end()
+    throw new Error(`Cannot start:\n  identifiers of kind ${unnamed.map((kind) => `"${kind}"`).join(', ')} are stored, and the policy names no such kind`)
+  }
+  const graph = createGraph(store, policy, webhook ? { onChange: notify } : {})
 
   const targets: Target[] = []
   if (config.google) {
@@ -278,6 +310,8 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
   if (config.stages) log(`steps: ${Object.entries(config.stages).map(([name, stage]) => `${name}${stage.value === undefined ? '' : ` ${stage.value}`}`).join(', ')}`)
     log(`page events taken: ${options.events!.length > 0 ? options.events!.join(', ') : 'none (set EVENTS)'}; calls from twilio ${config.twilio ? 'on' : 'off'}`)
   log(`costs are read from ${sources.length > 0 ? sources.map(([name]) => name).join(', ') : 'nobody (post them to /costs)'}`)
+  const { hash, due } = await graph.policy()
+  log(`policy ${hash.slice(0, 12)} ${config.policy ? 'from settings' : 'by default'}${due ? '; the stored clusters were not built with it, so a rebuild is due (POST /rebuild)' : ''}`)
   if (sources.length > 0) readCosts()
 
   return {

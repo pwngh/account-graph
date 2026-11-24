@@ -64,6 +64,7 @@ A token goes in the `authorization` header as `Bearer …`. There are two.
 | `GET /history?subject=` | Every sighting of the subject, oldest first. |
 | `GET /clusters?offset=` | The largest clusters, 50 at a time. |
 | `GET /search?q=` | Subjects whose id starts with the text. |
+| `GET /policy` | The running rules by kind, the hash the stored clusters were built with, whether a rebuild is `due`, and which kinds were `changed` from the default. |
 | `GET /pulse` | `{ version }`, with an `etag`. Ask again with `if-none-match` and it answers 304 until something is written. |
 | `GET /recent` | The newest cluster changes. |
 | `GET /flows?subject=` | Everyone the subject exchanged value with, and the identity tie to each. |
@@ -99,7 +100,8 @@ The four `POST` routes answer with the subjects whose cluster moved.
 | `POST /retry` | `{ transactionId }`. Puts its failed and skipped jobs back in line. |
 | `POST /prune` | `{ before, by?, reason? }`. Deletes sightings written down before a time. |
 | `GET /stats` | Counts since start, what the graph holds, and outbox jobs by state. |
-| `GET /verify` | The subjects whose stored cluster differs from a full recompute. |
+| `POST /rebuild` | `{ by?, reason? }`. Recomputes every cluster under the running policy, and answers with the subjects that moved. No other write runs meanwhile. |
+| `GET /verify` | `{ changes, policy }`: the subjects whose stored cluster differs from a full recompute, and whether the policy changed since they were stored. |
 
 `/conversion`, `/conversions` and `/retry` answer 404 when no ad platform is configured, and `/link` when `LINK_SECRET` is not set.
 

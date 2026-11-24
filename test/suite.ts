@@ -749,6 +749,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
 
     test('an identifier of an unknown kind is refused and nothing is written', async () => {
       const { graph } = await fresh()
+      await assert.rejects(graph.observe({ subject: 'a', identifiers: ['constructor:x'], at: T0 }), TypeError)
       await assert.rejects(graph.observe({ subject: 'account:1', identifiers: ['email:a', 'shoe:9'], at: T0 }), TypeError)
       assert.equal(await graph.cluster('account:1'), undefined)
     })
@@ -820,6 +821,52 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(attribution.touches[0]!.via, ['account:5', 'visitor:b'])
       assert.ok(Math.abs(attribution.touches[0]!.confidence - 0.98 * 0.9) < 1e-12)
       assert.equal(attribution.reason, 'low_confidence')
+    })
+
+    test('a changed policy is noticed, and a rebuild brings every cluster to it', async () => {
+      const { graph, store } = await fresh()
+      assert.equal((await graph.policy()).due, false)
+      const next = random(7)
+      const pick = (count: number) => Math.floor(next() * count)
+      for (let i = 0; i < 120; i++) await graph.observe({ subject: `account:${pick(30)}`, identifiers: [`phone:${pick(12)}`, `hardware:${pick(12)}`], at: T0 + i })
+      const before = await graph.policy()
+      assert.deepEqual([before.builtWith, before.due], [before.hash, false])
+      assert.deepEqual(await graph.verify(), [])
+
+      // The same database under another policy: scores follow it at once, stored clusters do not.
+      const other: Policy = { ...defaultPolicy, kinds: { ...defaultPolicy.kinds, phone: { ...defaultPolicy.kinds.phone!, weight: 0.6 }, hardware: { ...defaultPolicy.kinds.hardware!, weight: 0.7 } } }
+      const changed = createGraph(store, other)
+      const state = await changed.policy()
+      assert.deepEqual([state.builtWith, state.due], [before.hash, true])
+      assert.notDeepEqual(await changed.verify(), [])
+      // A write under it leaves clusters of both, and going back does not make that the first policy's work again.
+      await changed.observe({ subject: 'account:1', identifiers: ['phone:1'], at: T0 })
+      assert.equal((await graph.policy()).builtWith, 'mixed')
+      assert.equal((await createGraph(store).policy()).due, true)
+
+      await changed.rebuild({ by: 'ops' })
+      const after = await changed.policy()
+      assert.deepEqual([after.builtWith, after.due], [after.hash, false])
+      assert.deepEqual(await changed.verify(), [])
+      assert.equal((await graph.policy()).due, true)
+      // A server still running the first policy writes after the rebuild: the clusters are no longer all of one policy.
+      await graph.observe({ subject: 'account:2', identifiers: ['phone:2'], at: T0 })
+      assert.equal((await changed.policy()).due, true)
+      await changed.rebuild()
+      // When the last subject is gone, whoever writes next starts afresh.
+      const gone = await fresh()
+      await gone.graph.observe({ subject: 'a', identifiers: ['phone:1'], at: T0 })
+      await gone.graph.forget('a')
+      const anew = createGraph(gone.store, other)
+      await anew.observe({ subject: 'b', identifiers: ['phone:1'], at: T0 })
+      assert.equal((await anew.policy()).due, false)
+      // The caller's own copy of the policy can change without changing what this graph runs.
+      const own = structuredClone(other)
+      const fixed = createGraph(gone.store, own)
+      ;(own.kinds as any).phone.weight = 0.1
+      assert.equal((await fixed.policy()).rules.kinds.phone!.weight, 0.6)
+      // The review size only flags clusters, so changing it calls for nothing.
+      assert.equal((await createGraph(store, { ...other, review: 3 }).policy()).due, false)
     })
 
     test('overlapping writes leave clusters sound', async () => {

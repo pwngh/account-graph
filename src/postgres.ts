@@ -198,6 +198,25 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       return rows.map((row): Moved => ({ subject: row.subject, from: row.from_cluster ?? undefined, to: row.to_cluster ?? undefined, at: Number(row.at) }))
     },
 
+    async empty() {
+      const { rows } = await db.query(`select 1 from ${t('subject')} limit 1`)
+      return rows.length === 0
+    },
+
+    async builtWith() {
+      const { rows } = await db.query(`select policy from ${t('built')}`)
+      return (rows[0]?.policy as string | undefined) ?? undefined
+    },
+
+    async setBuiltWith(hash) {
+      await db.query(`insert into ${t('built')} (policy) values ($1) on conflict (one) do update set policy = excluded.policy`, [hash])
+    },
+
+    async kinds() {
+      const { rows } = await db.query(`select distinct split_part(id, ':', 1) as kind from ${t('identifier')} where fanout > 0 order by 1`)
+      return rows.map((row) => row.kind as string)
+    },
+
     async allLabels() {
       const { rows } = await db.query(`select id, component, cluster from ${t('subject')}`)
       return toLabels(rows)
@@ -584,6 +603,15 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
               writes bigint not null
             );
             insert into ${schema}.pulse (writes) values (0) on conflict do nothing;`,
+    },
+    {
+      id: 6,
+      name: 'policy of the stored clusters',
+      // One row at most: the hash of the policy the clusters were built with. A database from before has none, and it is not known.
+      sql: `create table if not exists ${schema}.built (
+              one boolean primary key default true check (one),
+              policy text not null
+            );`,
     },
   ]
 }

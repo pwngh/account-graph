@@ -52,6 +52,8 @@ td.who { min-width: 120px; max-width: 360px; overflow-wrap: anywhere; }
 tr.sum td { font-weight: 600; border-bottom: 0; }
 .chip { display: inline-block; padding: 0 6px; border: 1px solid var(--line); border-radius: 3px; background: var(--soft); font-size: 12px; line-height: 18px; white-space: nowrap; }
 .same { color: var(--same); } .related { color: var(--related); } .apart { color: var(--apart); }
+/* A state that needs someone: a rule down the side and bold words, so it never rests on color alone. */
+.banner { border-left: 3px solid var(--apart); padding: 4px 10px; background: var(--soft); margin: 4px 0 8px; max-width: 900px; }
 .reason { display: block; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 .reason b { color: var(--ink); font-weight: 500; }
 svg { width: 100%; height: auto; max-height: 360px; display: block; }

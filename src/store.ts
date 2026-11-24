@@ -43,6 +43,13 @@ export interface Tx {
   addChanges(at: number, changes: readonly Change[]): Promise<void>
   /** The newest cluster changes, newest first. */
   recentChanges(limit: number): Promise<Moved[]>
+  /** Whether no subject has been recorded. */
+  empty(): Promise<boolean>
+  /** Which policy the stored clusters were built with, by its hash. */
+  builtWith(): Promise<string | undefined>
+  setBuiltWith(hash: string): Promise<void>
+  /** Every kind some stored identifier has. Reads every identifier. */
+  kinds(): Promise<string[]>
   allLabels(): Promise<Map<Subject, Labels>>
   setLabels(labels: ReadonlyMap<Subject, Labels>): Promise<void>
   /** Records, or with `false` withdraws, a reviewer's decision that two subjects are different people. */

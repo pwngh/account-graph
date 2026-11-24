@@ -2,7 +2,7 @@ import { randomUUID, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dialed, numberOrSelf, recordCall } from './calls.ts'
 import type { CallOptions } from './calls.ts'
-import type { Graph } from './graph.ts'
+import type { Graph, PolicyState } from './graph.ts'
 import { email, hashPhone, identifier, ip, normalizePhone, phoneOfType } from './identifiers.ts'
 import { trusted } from './integrations/fingerprint.ts'
 import type { FingerprintVerifier } from './integrations/fingerprint.ts'
@@ -15,6 +15,7 @@ import type { IpLookup } from './integrations/maxmind.ts'
 import type { Outbox } from './outbox.ts'
 import { withStage } from './ladder.ts'
 import type { Ladder } from './ladder.ts'
+import { defaultPolicy, plainPolicy } from './policy.ts'
 import { reviewPage } from './review.ts'
 import { browserMark, knownLink, readToken, signToken } from './sign.ts'
 import { browserScripts, scriptHeaders } from './tag.ts'
@@ -113,7 +114,7 @@ const NAME = /^[\w.-]{1,64}$/
 /** What the reviewer token opens: what the reviewer screen reads, and the decisions a reviewer makes. */
 const REVIEW_ROUTES = new Set([
   'GET /subject', 'GET /clusters', 'GET /search', 'GET /recent', 'GET /links', 'GET /cluster', 'GET /history', 'GET /flows', 'GET /collusion', 'GET /rings',
-  'GET /decisions', 'GET /audit', 'GET /report', 'GET /pulse', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
+  'GET /decisions', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
 ])
 
 /** A route that wrote its own answer. */
@@ -424,7 +425,17 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     return { changes, identifiers, notes }
   }
 
-    /** Everything the reviewer screen shows about one subject, in one answer. */
+    /** Names the policy this server runs, the flagging size included, so a screen left open over a restart reads it again. */
+  const runningPolicy = async () => {
+    const { hash, rules } = await graph.policy()
+    return `${hash.slice(0, 12)}-${rules.review}`
+  }
+  let running: string | undefined
+
+  /** Which policy runs, which one the stored clusters were built with, and whether a rebuild is due. */
+  const brief = ({ hash, builtWith, due }: PolicyState) => ({ hash, builtWith: builtWith ?? null, due })
+
+  /** Everything the reviewer screen shows about one subject, in one answer. */
   async function profile(subject: Subject) {
     const cluster = await graph.cluster(subject)
     if (!cluster) return { subject, known: false }
@@ -550,7 +561,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       case 'GET /pulse': {
         // One small row: a screen asks this often, and reads the rest only when the answer differs.
         const version = await graph.version()
-        const tag = `"${version}"`
+        const tag = `"${version}-${(running ??= await runningPolicy())}"`
         response.setHeader('etag', tag)
         if (request.headers['if-none-match'] === tag) {
           response.writeHead(304).end()
@@ -584,10 +595,22 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return graph.history(subject)
       case 'GET /attribute':
         return graph.attribute(subject, { at: Number(url.searchParams.get('at') ?? now()) })
-      case 'GET /verify':
-        return graph.verify()
+      case 'GET /policy': {
+        const { builtWith, ...state } = await graph.policy()
+        const standard = plainPolicy(defaultPolicy)
+        return { ...state, builtWith: builtWith ?? null, changed: Object.keys(state.rules.kinds).filter((kind) => JSON.stringify(state.rules.kinds[kind]) !== JSON.stringify(standard.kinds[kind])) }
+      }
+      case 'POST /rebuild': {
+        // Nothing in the body is needed, so none has to be sent.
+        const sent = await text(request)
+        return graph.rebuild(why(sent.trim() ? JSON.parse(sent) : {}))
+      }
+      case 'GET /verify': {
+        const { changes, policy } = await graph.check()
+        return { changes, policy: brief(policy) }
+      }
       case 'GET /stats':
-        return { ...tally, graph: await graph.counts(), ...(options.outbox && { outbox: await options.outbox.counts() }) }
+        return { ...tally, policy: brief(await graph.policy()), graph: await graph.counts(), ...(options.outbox && { outbox: await options.outbox.counts() }) }
       case 'POST /prune': {
         const body = await json(request)
         return { pruned: await graph.prune(body.before, why(body)) }

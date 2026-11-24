@@ -2,33 +2,7 @@ import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
-import {
-  components,
-  conversionEvent,
-  createAlerter,
-  createGraph,
-  createMemoryStore,
-  dayStart,
-  defaultPolicy,
-  fold,
-  fit,
-  googleClick,
-  hashEmail,
-  hashPhone,
-  ingestRequest,
-  ip,
-  knownLink,
-  ladderProblems,
-  measure,
-  normalizeEmail,
-  normalizePhone,
-  phoneOfType,
-  readToken,
-  scorePairs,
-  signToken,
-  sourceOf,
-  withStage,
-} from '../src/index.ts'
+import { components, conversionEvent, createAlerter, createGraph, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, ingestRequest, ip, knownLink, ladderProblems, measure, normalizeEmail, normalizePhone, phoneOfType, policyFrom, policyHash, policyProblems, readToken, scorePairs, signToken, sourceOf, withStage } from '../src/index.ts'
 import type { Edge, IdentifierState } from '../src/index.ts'
 import { configFrom } from '../src/serve.ts'
 import { createHandler } from '../src/server.ts'
@@ -217,6 +191,57 @@ test('the server reads its settings from the environment and names everything wr
     (error: Error) =>
       ['DATABASE_URL is required', 'PORT must be a number', 'MAXMIND_LICENSE_KEY must be set along with MAXMIND_ACCOUNT_ID', 'META_ACCESS_TOKEN, META_SITE_URL must be set along with META_PIXEL_ID', 'FINGERPRINT_REGION must be us, eu, or ap', 'REVIEW_TOKEN must differ from GRAPH_TOKEN'].every((line) => error.message.includes(line)),
   )
+})
+
+test('a policy setting is laid over the default kind by kind, and everything wrong with it is named', () => {
+  const given = { related: 0.4, kinds: { phone: { weight: 0.85, halfLife: 63_072_000_000 }, ip: { halfLife: 'none' }, badge: { weight: 0.8, dilution: 1, cap: 4, halfLife: 'none' } } }
+  assert.deepEqual(policyProblems(given), [])
+  const policy = policyFrom(given)
+  assert.deepEqual(policy.kinds.phone, { ...defaultPolicy.kinds.phone, weight: 0.85, halfLife: 63_072_000_000 })
+  assert.equal(policy.kinds.ip!.halfLife, Infinity)
+  assert.deepEqual(policy.kinds.badge, { weight: 0.8, dilution: 1, cap: 4, halfLife: Infinity })
+  assert.deepEqual([policy.same, policy.related, policy.kinds.email], [defaultPolicy.same, 0.4, defaultPolicy.kinds.email])
+
+  // A kind may share its name with something every object has, and nothing but a rule of its own counts as one.
+  const odd = policyFrom(JSON.parse('{"kinds":{"__proto__":{"weight":0.8,"dilution":0,"cap":4,"halfLife":"none"}}}'))
+  assert.equal(Object.hasOwn(odd.kinds, '__proto__'), true)
+  assert.notEqual(policyHash(odd), policyHash(defaultPolicy))
+
+  // The hash names what scores and clusters, whatever order it was written in. The review size only flags, so it is not part of it.
+  const backwards = { kinds: Object.fromEntries(Object.entries(given.kinds).reverse()), related: 0.4 }
+  assert.equal(policyHash(policyFrom(backwards)), policyHash(policy))
+  assert.equal(policyHash(policyFrom({})), policyHash(defaultPolicy))
+  assert.equal(policyHash(policyFrom({ review: 9 })), policyHash(defaultPolicy))
+  assert.notEqual(policyHash(policy), policyHash(defaultPolicy))
+  assert.notEqual(policyHash(policyFrom({ kinds: { ip: { halfLife: 'none' } } })), policyHash(defaultPolicy))
+
+  assert.deepEqual(policyProblems([]), ['must be an object, such as {"kinds":{"phone":{"weight":0.85}}}'])
+  assert.deepEqual(policyProblems({ smae: 1, same: 2, review: 0, kinds: { phone: { weight: '0.9' }, 'Bad:kind': 5, badge: { weight: 1 }, ip: { cap: 1.5, dilution: -1, halfLife: 0, colour: 1 }, dialed: { weight: 0.1 } } }), [
+    '"smae" is not a setting',
+    '"same" must be a number from 0 to 1',
+    '"review" must be a whole number above 0',
+    'kind "phone" needs a weight from 0 to 1',
+    'kind "Bad:kind" must be a name without a colon',
+    'kind "Bad:kind" must be an object, such as {"weight":0.85}',
+    'kind "badge" is new, so it needs its dilution',
+    'kind "badge" is new, so it needs its cap',
+    'kind "badge" is new, so it needs its halfLife',
+    'kind "ip" has "colour", which is not part of a rule',
+    'kind "ip" needs a dilution of zero or more',
+    'kind "ip" needs a cap of zero or more, in whole subjects',
+    'kind "ip" needs a halfLife in milliseconds, or "none"',
+    'kind "dialed" is a note and links nothing, so its weight must stay 0',
+  ])
+  assert.deepEqual(policyProblems({ same: 0.4 }), ['"related" must not be above "same"'])
+  assert.equal(policyProblems({ kinds: { review: { weight: 0.95 } } }).length, 1)
+
+  const env = { DATABASE_URL: 'x', GRAPH_TOKEN: 'y' }
+  assert.equal(configFrom(env).policy, undefined)
+  assert.equal(configFrom({ ...env, POLICY: '{"same":0.95}' }).policy!.same, 0.95)
+  assert.throws(() => configFrom({ ...env, POLICY: '{"same":9}' }), /POLICY: "same" must be a number from 0 to 1/)
+  assert.throws(() => configFrom({ ...env, POLICY: 'nope' }), /POLICY must be JSON/)
+  assert.throws(() => configFrom({ ...env, POLICY: '{}', POLICY_FILE: '/x' }), /must not both be set/)
+  assert.throws(() => configFrom({ ...env, POLICY_FILE: '/no/such/file' }), /POLICY_FILE: "\/no\/such\/file" cannot be read/)
 })
 
 test('a day begins at local midnight, across a clock change', () => {

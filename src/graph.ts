@@ -1,7 +1,7 @@
 import { brokenAt, seal } from './audit.ts'
 import type { Labeled } from './calibrate.ts'
 import { createMemoryStore } from './memory.ts'
-import { defaultPolicy, ruleFor, usable } from './policy.ts'
+import { defaultPolicy, plainPolicy, policyHash, ruleFor, usable } from './policy.ts'
 import type { Policy } from './policy.ts'
 import { dayStart, fold, nextDay } from './report.ts'
 import { partition, scorePairs } from './resolve.ts'
@@ -159,14 +159,48 @@ export interface Graph {
    * what they folded. `history` and `asOf` lose what was deleted. Returns how many went.
    */
   prune(before: number, why?: Why): Promise<number>
+  /**
+   * The policy this graph runs, and whether the stored clusters were built
+   * with it. `due` means they were not, or that it is not known: call `rebuild`.
+   */
+  policy(): Promise<PolicyState>
   /** Compares stored clusters with a full recompute. Empty when they agree. */
   verify(): Promise<Change[]>
+  /** `verify` and `policy` together, both as of one moment. */
+  check(): Promise<{ changes: Change[]; policy: PolicyState }>
+}
+
+export interface PolicyState {
+  /** Names the running policy. Two policies that score and cluster alike have the same hash. */
+  hash: string
+  /** The hash the stored clusters were built with, `mixed` when more than one policy has written them, or undefined when it was not recorded. */
+  builtWith: string | undefined
+  due: boolean
+  /** The running policy as plain JSON, with a half-life that never ends written `none`. */
+  rules: ReturnType<typeof plainPolicy>
 }
 
 const DAY = 86_400_000
+const MIXED = 'mixed'
 const pairKey = (a: Subject, b: Subject) => (a < b ? `${a}\u0000${b}` : `${b}\u0000${a}`)
 
 export function createGraph(store: Store, policy: Policy = defaultPolicy, options: GraphOptions = {}): Graph {
+  // A copy, so a caller that edits its own policy later changes nothing here: the hash always names what scores.
+  policy = structuredClone(policy)
+  const hash = policyHash(policy)
+  /**
+   * Notes which policy the clusters are being written with: this one when
+   * nothing was stored before, and more than one when another has written
+   * them already. Asked on every write, because another server may have
+   * rebuilt them since.
+   */
+  async function mark(tx: Tx): Promise<void> {
+    const before = await tx.builtWith()
+    if (before === hash) return
+    if (await tx.empty()) await tx.setBuiltWith(hash)
+    else if (before !== MIXED) await tx.setBuiltWith(MIXED)
+  }
+
   /** Components and clusters of the given subjects, from their edges and the reviewer's separations. */
   async function compute(tx: Tx, subjects: readonly Subject[]): Promise<Map<Subject, Labels>> {
     const edges = await tx.edgesOf(subjects)
@@ -327,6 +361,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
   /** Writes sightings and recomputes the clusters they can affect. */
   async function record(tx: Tx, sightings: readonly Sighting[]): Promise<Change[]> {
+    await mark(tx)
     const added = await tx.addSightings(sightings)
     const touched = unique(sightings.map((sighting) => sighting.identifier))
     const states = await tx.states(touched)
@@ -339,6 +374,20 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     const affected = new Set(sightings.map((sighting) => sighting.subject))
     for (const edge of await tx.edgesOn(open)) affected.add(edge.subject)
     return settle(tx, affected)
+  }
+
+  async function policyState(tx: Tx): Promise<PolicyState> {
+    const builtWith = await tx.builtWith()
+    return { hash, builtWith, due: builtWith !== hash && !(await tx.empty()), rules: plainPolicy(policy) }
+  }
+
+  /** The subjects whose stored labels are not what a full recompute gives. */
+  async function differences(tx: Tx): Promise<Change[]> {
+    const stored = await tx.allLabels()
+    const next = await recompute(tx)
+    const wrong = (subject: Subject) =>
+      stored.get(subject)?.component !== next.get(subject)?.component || stored.get(subject)?.cluster !== next.get(subject)?.cluster
+    return diff(stored, next).filter((change) => wrong(change.subject))
   }
 
   const graph: Graph = {
@@ -462,6 +511,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         await decide(tx, ignored ? 'ignore' : 'restore', [identifier], why)
         await tx.setIgnored(identifier, ignored)
         if (!before || before.fanout > cap) return []
+        await mark(tx)
         return settle(tx, new Set((await tx.edgesOn([identifier])).map((edge) => edge.subject)))
       })
     },
@@ -470,6 +520,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       const pair = pairOf(a, b, 'separate')
       return changing(async (tx) => {
         await decide(tx, separated ? 'separate' : 'rejoin', pair, why)
+        await mark(tx)
         await tx.setSeparated(a, b, separated)
         return settle(tx, new Set([a, b]))
       })
@@ -624,6 +675,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const edges = await tx.edgesOf([subject])
         const component = (await tx.labelsOf([subject])).get(subject)?.component
         const affected = new Set(component === undefined ? [] : (await tx.membersOf([component])).keys())
+        await mark(tx)
         await tx.removeSubject(subject)
         affected.delete(subject)
         // Losing a subject can bring an identifier back under its cap, which links the rest again.
@@ -642,6 +694,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     rebuild(why) {
       return changing(async (tx) => {
         await decide(tx, 'rebuild', [], why)
+        await tx.setBuiltWith(hash)
         return apply(tx, await tx.allLabels(), await recompute(tx))
       })
     },
@@ -680,14 +733,16 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return past
     },
 
+    policy() {
+      return store.read(policyState)
+    },
+
     verify() {
-      return store.read(async (tx) => {
-        const stored = await tx.allLabels()
-        const next = await recompute(tx)
-        const wrong = (subject: Subject) =>
-          stored.get(subject)?.component !== next.get(subject)?.component || stored.get(subject)?.cluster !== next.get(subject)?.cluster
-        return diff(stored, next).filter((change) => wrong(change.subject))
-      })
+      return store.read(differences)
+    },
+
+    check() {
+      return store.read(async (tx) => ({ changes: await differences(tx), policy: await policyState(tx) }))
     },
   }
   return graph

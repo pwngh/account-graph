@@ -68,7 +68,7 @@ The other rows are priors. `measure` and `fit` compute the real values from pair
 
 ## Changing the settings
 
-Change a setting when the graph is wrong in a way you can name. Then call `rebuild()`, which recomputes every cluster under the new policy.
+Change a setting when the graph is wrong in a way you can name. Then call `rebuild()`, which recomputes every cluster under the new policy. On the server, name the change in `POLICY` and post to `/rebuild`; [the policy](operations.md#the-policy) says how.
 
 ```ts
 import { createGraph, defaultPolicy } from 'account-graph'

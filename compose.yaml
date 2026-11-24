@@ -26,6 +26,8 @@ services:
       DATABASE_URL: postgres://postgres:graph@postgres:5432/graph
       GRAPH_TOKEN: ${GRAPH_TOKEN:-change-me-service-token}
       REVIEW_TOKEN: ${REVIEW_TOKEN:-change-me-review-token}
+      # What differs from the default policy, as JSON.
+      POLICY: ${POLICY:-}
       # The sites whose pages may report visits. The example site answers on these two.
       ORIGINS: ${ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
       # What the example site needs to show page events, a call tied to a tap, and signed links.
