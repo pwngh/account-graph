@@ -323,6 +323,7 @@ On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes i
 | `LINK_SECRET` | none | Signs links that name a person, and the tokens that carry a visitor between your sites. At least 32 characters. |
 | `EVENTS` | none | Names of page events to keep, separated by commas: `inquiry,phone_click`. |
 | `CALL_NUMBERS` | none | Your tracking numbers and the channel of each, as JSON: `{"+15551230001":{"source":"google","campaignId":"20222"}}`. Each may carry `tags`. |
+| `CALL_EXCLUDE` | none | Numbers of your own people and test phones, separated by commas. Calls from them, and calls you place to them, are not recorded. |
 | `CALL_MIN_SECONDS` | `30` | A shorter call is recorded but not counted. |
 | `CALL_RESULTS` | none | `expected` to hold each call until something reports whether a person answered. See [calls](calls.md#was-it-answered). |
 | `IDENTIFIER_SECRET` | none | Makes the keys of names sent to `/identify`, at least 32 characters. Keep it: changing it makes every key new. |

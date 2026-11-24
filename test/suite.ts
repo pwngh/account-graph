@@ -538,6 +538,21 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await assert.rejects(graph.report({ from: '2026-03-01', to: '2026-03-01', timeZone: 'Mars/Olympus' }), TypeError)
     })
 
+    test('a call from a number left out, or placed to one, records nothing, and one recorded before still settles', async () => {
+      const { graph } = await fresh()
+      const options = { exclude: ['(555) 010-0021'], results: 'expected' as const }
+      const call = { from: '+15550100021', to: '+15550100001', at: T0, duration: 60 }
+      const left = await recordCall(graph, { id: 'X1', ...call, answered: true }, options)
+      assert.deepEqual([left.flags, left.counted, left.duplicate], [['left_out'], false, false])
+      const rung = await recordCall(graph, { id: 'X2', direction: 'outbound', ...call, from: call.to, to: call.from }, options)
+      assert.deepEqual(rung.flags, ['left_out'])
+      assert.deepEqual([await graph.keptCall('X1'), await graph.keptCall('X2'), await graph.cluster(left.subject)].map((each) => each ?? null), [null, null, null])
+      assert.equal((await recordCall(graph, { id: 'X3', ...call, from: '+15550100022' }, options)).flags.includes('left_out'), false)
+      // Recorded before the number was left out: what is known of it can still be made right.
+      await recordCall(graph, { id: 'X4', ...call }, { results: 'expected' })
+      assert.deepEqual([(await recordCall(graph, { id: 'X4', ...call, answered: true }, options)).counted, (await graph.keptCall('X4'))!.subject], [true, left.subject])
+    })
+
     test('a call is tied to the visitor who tapped the number, or filed under the number it rang', async () => {
       const { graph } = await fresh()
       const numbers = { '(555) 123-0001': { source: 'google', campaignId: '111' }, '+15551230002': { source: 'mailer', campaign: 'postcard' } }

@@ -103,6 +103,7 @@
 - Health lists the conversions an ad platform refused, with why, and a button to send each again. `GET /conversions` and `POST /retry` take a reviewer's token, and no longer answer with the hashed email and phone; `GET /conversion` still does, for the service token.
 - Health lists the conversions an ad platform refused, with why, and a button to send each again. `GET /conversions` and `POST /retry` take a reviewer's token, and no longer answer with the hashed email and phone; `GET /conversion` still does, for the service token. `POST /retry` takes a `target`, and a platform's answer is kept without the keys it repeats.
 - Find takes a whole ad click id, and `graph.clicked` answers who arrived with one. Database upgrade 16 indexes them.
+- `CALL_EXCLUDE` names your own people's numbers and test phones. Calls from them, and calls placed to them, are not recorded.
 - The Channels and Calls views have buttons for common periods, and save their tables as CSV.
 - Each reviewer view opens with the few numbers it is about. Health says first what needs someone, and by what evidence two subjects are taken for one person; a journey shows when things happened before it lists them.
 - The reviewer screen groups the columns of its tables, draws shares and scores as bars beside their numbers, shows a journey day by day, and gives the board's empty steps little room.

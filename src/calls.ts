@@ -53,11 +53,13 @@ export interface Channel {
  * before; `ambiguous` more than one visitor tapped the number just before;
  * `pool` it was tied to the visitor the number was shown to.
  */
-export type CallFlag = 'blocked' | 'toll_free' | 'short' | 'repeat' | 'ambiguous' | 'pool'
+export type CallFlag = 'blocked' | 'toll_free' | 'short' | 'repeat' | 'ambiguous' | 'pool' | 'left_out'
 
 export interface CallOptions {
   /** Your tracking numbers, each with the channel it is published on. Written any way a phone number is. */
   numbers?: Readonly<Record<string, Channel>>
+  /** Numbers of your own people and test phones. A call from one, or one you placed to it, is not recorded at all. Written any way a phone number is. */
+  exclude?: readonly string[]
   /** A call shorter than this is recorded but not counted as an outcome. Defaults to 30 seconds. */
   minimumSeconds?: number
   /** How long before a call a tap on its number may be, in milliseconds. Defaults to three minutes. */
@@ -175,6 +177,7 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
     const kept = await graph.keptCall(id)
     return { subject: before.subject, flags: [], counted: settled?.counted ?? false, state: kept ? callState(kept, (options.now ?? Date.now)(), options) : 'unknown', duplicate: true }
   }
+  if (from !== undefined && leftOut(from, options)) return { subject, flags: ['left_out'], counted: false, state: 'unknown', duplicate: false }
   if ((await graph.keptCall(id))?.direction === 'outbound') throw new TypeError(`Call "${id}" was already recorded as a call you placed`)
   if (result) await graph.keepCallResult(id, result)
 
@@ -238,6 +241,7 @@ async function placed(graph: Graph, call: Call, theirs: string, result: Omit<Cal
   const subject = `caller:${hashPhone(theirs)}`
   const before = await graph.keptCall(call.id)
   if (before && before.direction !== 'outbound') throw new TypeError(`Call "${call.id}" was already recorded as a call to you`)
+  if (!before && leftOut(theirs, options)) return { subject, flags: ['left_out'], counted: false, state: 'unknown', duplicate: false }
   if (result) await graph.keepCallResult(call.id, result)
   if (!before) {
     await graph.keepCall({ id: call.id, direction: 'outbound', subject, at: call.at, to: ours, flags: [], ...(call.duration !== undefined && { duration: call.duration }), ...(tags && { tags }) })
@@ -335,6 +339,9 @@ export async function recordCallResult(graph: Graph, report: { id: string; answe
   if (result?.answered === undefined) throw new TypeError(`The result of call "${report.id}" needs answered, true or false`)
   return tell(graph, report.id, result, options)
 }
+
+/** Whether a number is one of those left out. */
+const leftOut = (number: string, options: CallOptions) => (options.exclude ?? []).some((each) => numberOrSelf(each, options.country) === number)
 
 /** A phone number in the form calls arrive in, or as written when it is not a phone number. */
 export function numberOrSelf(number: string, country?: string): string {

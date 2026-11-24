@@ -832,6 +832,8 @@ test('the number pool is off until numbers are given, and its settings are check
   assert.deepEqual(configFrom(env).poolNumbers, [])
   const { poolNumbers, poolMinutes, poolGrace } = configFrom({ ...env, POOL_NUMBERS: '+15550100001, (555) 010-0002', POOL_MINUTES: '20', POOL_GRACE_MINUTES: '0' })
   assert.deepEqual([poolNumbers, poolMinutes, poolGrace], [['+15550100001', '(555) 010-0002'], 20, 0])
+  assert.deepEqual(configFrom({ ...env, CALL_EXCLUDE: '+15550100001, (555) 010-0002' }).callExclude, ['+15550100001', '(555) 010-0002'])
+  assert.throws(() => configFrom({ ...env, CALL_EXCLUDE: 'office' }), /CALL_EXCLUDE: "office" is not a phone number/)
   assert.throws(() => configFrom({ ...env, POOL_NUMBERS: 'nonsense' }), /POOL_NUMBERS: "nonsense" is not a phone number/)
   assert.throws(() => configFrom({ ...env, POOL_NUMBERS: '+15550100001', POOL_MINUTES: '0' }), /POOL_MINUTES must be at least 1/)
 })
