@@ -557,6 +557,8 @@ dialog p:empty { display: none; }
   .board section, .board .idle { flex: none; }
   .board .scroll { max-height: min(44vh, 320px); }
 }
+/* One list alone needs no frame around the frame of its table. */
+.panel-grid > section:only-child { padding: 0; border: 0; background: none; }
 /* Words for a screen reader alone are placed within what scrolls, or they would lengthen the page. */
 .scroll, .wide { position: relative; }
 /* A table of a few plain columns is read along its rows, so they do not stand far apart. */
