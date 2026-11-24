@@ -128,12 +128,12 @@ Run once, at commit `17b7a532740eda99855ebf7d31e8b6d53c3f14cc` with Node v22.23.
 | Base, default: fewer than 70% of the true pairs with a chain of facts are found | Held. 90.14% |
 | Base, default: any shared fact mixes no more | Held. It mixes 3.66% |
 | Base, default: same phone or email mixes fewer and finds as many, of records and callers | Held. It mixes 3.36% and finds 86.94%, against 2.86% and 74.18% |
-| Base, default: over 2% of credited records go to another's ad, or of records of people who came by none to one | Held. 1.63% (94 of 5,832) of records of people who came by an ad; counting every credited record, 97 of 5,835 (1.66%). 0.23% (3 of 1,333) |
+| Base, default: over 2% of credited records go to another's ad, or of records of people who came by none to one | Held. Among credited records of people who came by an ad, 1.63% as a mean over the worlds, and 94 of 5,832 pooled (1.61%). Counting every credited record, 97 of 5,835 pooled (1.66%). Of records of people who came by none, 3 of 1,333 pooled (0.23%) |
 | Base, default: fewer than 70% of the records with a chain of facts to their ad are credited to it | Held. 93.42% |
 | Base, household: fewer than 50% of those pairs are found | Held. 56.08% |
 | High, either: over 5% of people with a record share a cluster with somebody else's | Held. 4.54% and 4.52%; the intervals reach 5.03 and 5.02 |
 
-| Setting, policy | Records with another's | Without those one spoke for | Joined pairs right | True pairs found, with a chain | Credited to another's ad, of records of people who came by one |
+| Setting, policy | Records with another's | Without those one spoke for | Joined pairs right | True pairs found, with a chain | To another's ad, among credited records of people who came by one, mean over the worlds |
 | --- | --- | --- | --- | --- | --- |
 | Base, default | 2.86% (2.40 to 3.33) | 1.57% (1.21 to 1.93) | 94.94% | 90.14% | 1.63% |
 | Base, household | 2.86% (2.40 to 3.33) | 1.57% (1.21 to 1.93) | 94.56% | 56.08% | 1.95% |
@@ -144,7 +144,7 @@ Run once, at commit `17b7a532740eda99855ebf7d31e8b6d53c3f14cc` with Node v22.23.
 | Busy, default | 2.28% (1.94 to 2.63) | 1.36% (1.06 to 1.65) | 91.00% | 85.90% | 2.44% |
 | Busy, household | 2.25% (1.90 to 2.59) | 1.36% (1.06 to 1.65) | 88.73% | 48.64% | 1.30% |
 
-In busy, 4.00% of the records of people who came by no ad are credited to one under the default policy. Counting every credited record there, 505 of 14,162 (3.57%) go to the wrong ad.
+In busy, 4.00% of the records of people who came by no ad are credited to one under the default policy, a mean over the worlds. Counting every credited record there, 505 of 14,162 pooled (3.57%) go to the wrong ad.
 
 ### Beside the plain rules
 
