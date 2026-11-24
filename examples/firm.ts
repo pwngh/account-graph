@@ -95,7 +95,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
     response.setHeader('x-demo-ahead', ahead)
     const path = `${request.method} ${new URL(request.url ?? '/', 'http://localhost').pathname}`
     const json = (status: number, body: object) => void response.writeHead(status, { 'content-type': 'application/json', 'x-demo-ahead': ahead }).end(JSON.stringify(body))
-    if (path === 'GET /stage/scenes') return json(200, { next, scenes: scenes.map(({ title, text, see, stage }) => ({ title, text, see, stage })) })
+    if (path === 'GET /stage/scenes') return json(200, { next, scenes: scenes.map(({ title, text, see, stage, spot }) => ({ title, text, see, stage, spot })) })
     // A page elsewhere cannot send the header, so only the stage moves the story on.
     if (path === 'POST /stage/run') return void (request.headers['x-stage'] ? runScene().then(([status, body]) => json(status, body)) : json(403, { error: 'Only the stage runs scenes' }))
     if (path !== 'GET /review' && path !== 'GET /stage') return handler(request, response)
@@ -244,9 +244,9 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
   const caller = `caller:${hashPhone(demo.phone)}`
   const review = (view: string) => `${graphAt}/review#/${view}`
   /** The scenes, in order. Each does over HTTP what the site, the phone system or the office would, and says what came of it. */
-  const scenes: { title: string; text: string; see: [string, string]; stage?: string; run(): Promise<string[]> }[] = [
+  const scenes: { title: string; text: string; see: [string, string]; stage?: string; spot?: string[]; run(): Promise<string[]> }[] = [
     {
-      title: 'Ad visit', text: 'A visitor arrives from a Spanish ad for the North office. The landing address carries office=north and lang=es.', stage: '#/journey/visitor%3Av-4821', see: ['Channels', review('channels')],
+      title: 'Ad visit', text: 'A visitor arrives from a Spanish ad for the North office. The landing address carries office=north and lang=es.', stage: '#/journey/visitor%3Av-4821', see: ['Channels', review('channels')], spot: ['Busqueda: North'],
       async run() {
         await at(0, 9, 2)
         await browser('/collect', { device: 'v-4821', url: `${siteAt}/es`, touch: { gclid: 'demo-click', source: 'google', medium: 'cpc', campaignId: '30333', campaign: 'Busqueda: North', landing: `${siteAt}/es`, custom: { office: 'north', lang: 'es' } } })
@@ -264,7 +264,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       },
     },
     {
-      title: 'Missed call', text: 'The result reports no answer. The call is excluded from outcomes and conversions.', see: ['Board', review('board/90')],
+      title: 'Missed call', text: 'The result reports no answer. The call is excluded from outcomes and conversions.', see: ['Board', review('board/90')], spot: [caller.slice(0, 16)],
       async run() {
         await at(0, 9, 6)
         const { state, counted } = await ask('POST', '/call/result', { id: 'demo-1', answered: false, waited: 95 })
@@ -286,7 +286,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       },
     },
     {
-      title: 'Listing call', text: 'A call to a number published on a map listing is attributed to that listing.', see: ['Channels', review('channels')],
+      title: 'Listing call', text: 'A call to a number published on a map listing is attributed to that listing.', see: ['Channels', review('channels')], spot: ['Map listing, River'],
       async run() {
         await at(1, 10, 15)
         const call = await ask('POST', '/call', { id: 'demo-3', from: '+15550100043', to: '+15550100104', at: clock(), duration: 260, answered: true })
@@ -295,7 +295,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       },
     },
     {
-      title: 'Client at another office', text: 'The ad was for North and River serves the client. The report keeps both offices.', see: ['Channels by office served', review('channels///outcome.office_served')],
+      title: 'Client at another office', text: 'The ad was for North and River serves the client. The report keeps both offices.', see: ['Channels by office served', review('channels///outcome.office_served')], spot: ['Busqueda: North', 'river'],
       async run() {
         await at(3, 10, 0)
         await ask('POST', '/convert', { transactionId: 'demo-client', subject: demo.contact, at: clock(), stage: 'client', tags: { office_served: 'river', language: 'es' } })
@@ -305,7 +305,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       },
     },
     {
-      title: 'Value change', text: 'The client value is updated from the initial 400 USD and restated at the ad platform.', see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)],
+      title: 'Value change', text: 'The client value is updated from the initial 400 USD and restated at the ad platform.', see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], spot: ['from 400 USD to 1,250 USD'],
       async run() {
         await at(3, 16, 0)
         await ask('POST', '/restate', { transactionId: 'demo-client', value: 1250 })
@@ -326,7 +326,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       },
     },
     {
-      title: 'Shared phone', text: 'A parent and a child share a phone. The link is below the join threshold and waits for review.', see: ['Matches', review('decide')],
+      title: 'Shared phone', text: 'A parent and a child share a phone. The link is below the join threshold and waits for review.', see: ['Matches', review('decide')], spot: ['marta-lago'],
       async run() {
         await at(3, 16, 45)
         await ask('POST', '/identify', { subject: 'contact:marta-lago', phone: '+15550100044', name: { first: 'Marta', last: 'Lago' }, dob: '1970-02-03', event: 'staff entry' })
@@ -336,7 +336,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       },
     },
     {
-      title: 'Stale feed', text: 'The clock advances 14 hours without a call, and an alert is sent.', see: ['Health', review('health')],
+      title: 'Stale feed', text: 'The clock advances 14 hours without a call, and an alert is sent.', see: ['Health', review('health')], spot: ['Calls feed is stale'],
       async run() {
         ahead += 14 * HOUR
         await ops.check()
