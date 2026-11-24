@@ -91,12 +91,13 @@ Reporting a call id again answers `"duplicate": true`. A result in the second re
 
 ### Busy numbers
 
-A call is linked to a tap by time, so on a number that rings often, some calls follow a stranger's tap by chance. Three rules keep those few:
+A call is linked to a tap by time, so on a number that rings often, some calls follow a stranger's tap by chance. Four rules keep those few:
 
 | Rule | Effect |
 | --- | --- |
 | A busy number has a shorter window | Where somebody else called or tapped the number in the last twenty minutes, a tap has to be within thirty seconds of its call. |
 | A tap two callers could have made is neither's | A call from somebody else within a minute after the tap unties the first, in whichever order the two are reported. Both are `ambiguous`, and the undone tie is in the decision log as a mute by `calls`. |
+| A tie is undone and never added late | A call reported late can untie calls around it, and gives none of them a visitor it did not have. |
 | A caller's own visitor is theirs | A tap by the visitor a caller is tied to already counts in the whole window, however busy the number is. |
 
 ```sh
@@ -329,7 +330,7 @@ Callers are stored as a hash of their number, so the view shows an ID. To find t
 | Channel numbers | Without a [pool](#number-pools), two visitors who tap a number within the tap window (three minutes by default, see [Busy numbers](#busy-numbers)) cannot be told apart, and a call dialed by hand is filed under the number's channel. |
 | Forged taps | A program can send taps. With `CALL_NUMBERS` set, the server keeps taps on tracking numbers only. It trusts three browsers per network in ten minutes, and links one caller per visitor. A forged tap can still make a call `ambiguous`. |
 | One caller per visitor | The rule is permanent. Each hidden call is its own caller, so a visitor linked to one is skipped for the next. |
-| Saved pool numbers | A call after the grace period is not linked to the visitor who saved the number, and one during another visitor's lease is linked to that visitor in error, unless the caller is tied to somebody already and the lease has ended. More numbers mean longer rests and fewer errors. |
+| Saved pool numbers | A call after the grace period is not linked to the visitor who saved the number, and one during another visitor's lease is linked to that visitor in error, unless the caller dialed that number before, when it was not that visitor's, or is tied to somebody already and the lease has ended. More numbers mean longer rests and fewer errors. |
 | Copied pages | A saved or printed page keeps showing a pool number. |
 | Pool numbers | People behind one address, such as an office, share the three-browser limit. Carriers may label a number that many strangers are called back from. |
 | Tap window | Thirty seconds are allowed for clock differences. `CALL_TAP_SECONDS`, or `clickWindow` in the library, changes the three minutes. See [Busy numbers](#busy-numbers). |

@@ -5,7 +5,7 @@ import type { BoardColumn, BoardPlace } from './board.ts'
 import type { Labeled } from './calibrate.ts'
 import { summarizeCalls } from './callreport.ts'
 import type { CallSummary } from './callreport.ts'
-import { followUp } from './calls.ts'
+import { followUp, isTie } from './calls.ts'
 import { Gone, asks, beginnings, replyTo } from './texts.ts'
 import { followed } from './followed.ts'
 import type { Followed } from './followed.ts'
@@ -199,10 +199,10 @@ export interface Graph {
    */
   tieCall(caller: Subject, visitor: Subject, identifier: Identifier, at: number, by: { pool: string; grace: number } | { notes: readonly Identifier[] }): Promise<boolean>
   /**
-   * Unties a call from whoever tapped the number, or keeps it from being tied, because another caller could have made the
-   * same tap. Untied, it is filed under `line`, the channel of the number it rang.
+   * Unties a call from whoever tapped the number, or keeps it from being tied: another call could have come of the same tap,
+   * or came of it, or makes the number busy. Untied, it is filed under `line`, the channel of the number it rang.
    */
-  doubtCall(id: string, line?: Omit<Touch, 'subject' | 'at'>): Promise<void>
+  doubtCall(id: string, ambiguous: boolean, line?: Omit<Touch, 'subject' | 'at'>): Promise<void>
   /** Kept calls to a number with `from <= at < to`, oldest first. */
   callsTo(number: string, from: number, to: number): Promise<KeptCall[]>
   /** Every kept call to or from the given subjects, oldest first. */
@@ -1303,7 +1303,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         // One doubted meanwhile is not tied either.
         const doubted = (await tx.states([`dial:${call.id}`])).get(`dial:${call.id}`)?.ignored === true
         const tied = visitor !== undefined && (await tx.edgesOn([...(doubted ? [] : [`dial:${call.id}`]), `lease:${call.id}`])).some((edge) => edge.subject === visitor)
-        await tx.setCall({ ...rest, ...(doubted && !call.flags.includes('pool') && { flags: [...new Set([...call.flags, 'ambiguous'])] }), ...(tied && { visitor }), recorded: now() })
+        // What was said of it meanwhile stays said.
+        const said = (await tx.callOf(call.id))?.flags.includes('ambiguous') && doubted && !call.flags.includes('pool')
+        await tx.setCall({ ...rest, ...(said && { flags: [...new Set([...call.flags, 'ambiguous'])] }), ...(tied && { visitor }), recorded: now() })
         await tx.fed('calls', now())
       })
     },
@@ -1363,7 +1365,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       // One transaction: two calls reported at once cannot both find the visitor free.
       await changing(async (tx) => {
         const apart = (await tx.separatedOf([caller])).some((pair) => pair.includes(visitor))
-        const others = ((await neighbors(tx, [visitor])).get(visitor) ?? []).some((link) => link.subject !== caller && link.reasons.some((reason) => /^(dial|lease|text):/.test(reason.identifier)))
+        const others = ((await neighbors(tx, [visitor])).get(visitor) ?? []).some((link) => link.subject !== caller && link.reasons.some((reason) => isTie(reason.identifier, visitor, link.subject)))
         // What matched the two is read again: whoever was forgotten meanwhile is not tied, even where they have been seen since.
         const matched = 'pool' in by ? (await holderOf(tx, by.pool, at, by.grace)) === visitor : (await tx.edgesOn(by.notes)).some((edge) => edge.subject === visitor)
         // Another call reported meanwhile may have cast doubt on it.
@@ -1373,7 +1375,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return tied
     },
 
-    async doubtCall(id, line) {
+    async doubtCall(id, ambiguous, line) {
       const identifier = `dial:${id}`
       await changing(async (tx) => {
         // What a person has looked at and restored stays.
@@ -1381,15 +1383,15 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const call = await tx.callOf(id)
         // Shown the number, it is of no tap.
         if (call?.flags.includes('pool')) return []
-        if (call && (call.visitor !== undefined || !call.flags.includes('ambiguous'))) {
+        if (call && (call.visitor !== undefined || (ambiguous && !call.flags.includes('ambiguous')))) {
           const { visitor, ...rest } = call
-          await tx.setCall({ ...rest, flags: [...new Set([...call.flags, 'ambiguous'])] })
+          await tx.setCall({ ...rest, flags: [...new Set([...call.flags, ...(ambiguous ? ['ambiguous'] : [])])] })
           if (line && visitor !== undefined) await tx.addTouch({ ...line, subject: call.subject, at: call.at })
         }
         if ((await tx.states([identifier])).get(identifier)?.ignored) return []
         const holders = (await tx.edgesOn([identifier])).map((edge) => edge.subject)
         // Not tied yet, it is kept from being tied, and there is nothing to have decided.
-        if (holders.length > 0) await decide(tx, 'ignore', [identifier], { by: 'calls', reason: 'another caller could have made the tap it rests on', automatic: true })
+        if (holders.length > 0) await decide(tx, 'ignore', [identifier], { by: 'calls', reason: 'another call leaves the tap it rests on in doubt', automatic: true })
         await tx.setIgnored(identifier, true)
         if (holders.length === 0) return []
         await mark(tx)

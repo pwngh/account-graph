@@ -812,6 +812,24 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
         await call(graph, 'FOUR', '+15550100165', T0 + 22 * SECOND)
         assert.deepEqual(await tied(graph, one), ['visitor:a'])
       }
+      // A visitor a reviewer joined to a caller is that caller's.
+      {
+        const { graph } = await fresh()
+        await graph.observe({ subject: `caller:${hashPhone(one)}`, identifiers: [`phone:${hashPhone(one)}`], at: T0 - DAY })
+        await click(graph, 'a', T0)
+        await graph.join('visitor:a', `caller:${hashPhone(one)}`)
+        assert.equal((await call(graph, 'TWO', two, T0 + 12 * SECOND)).visitor, undefined)
+        assert.equal((await call(graph, 'ONE', one, T0 + 25 * SECOND)).visitor, 'visitor:a')
+      }
+      // What made a line busy at the edge of what is read does not say whose a visitor is.
+      {
+        const { graph } = await fresh()
+        await call(graph, 'B', two, T0 - 1320 * SECOND)
+        await click(graph, 'v', T0 - 1230 * SECOND)
+        assert.equal((await call(graph, 'A', one, T0 - 1190 * SECOND)).visitor, undefined)
+        await click(graph, 'v', T0 - 10 * SECOND)
+        assert.equal((await call(graph, 'C', three, T0)).visitor, 'visitor:v')
+      }
       // Quiet, a tap two minutes before is theirs. With somebody else on the line in the last twenty minutes, thirty seconds is as far as it goes.
       const { graph } = await fresh()
       await click(graph, 'b', T0)
@@ -844,9 +862,20 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       // Nor is it theirs by a tap made while it was shown.
       await graph.observe({ subject: 'visitor:b', identifiers: ['device:b', dialed(pool.numbers[0]!, T0 + 3 * DAY + 15 * 60_000 - 5000)], at: T0 + 3 * DAY + 15 * 60_000 - 5000, event: 'phone_click' })
       assert.equal((await recordCall(graph, { id: 'P5', from: '+15550100172', to: pool.numbers[0]!, at: T0 + 3 * DAY + 15 * 60_000 + 5000, duration: 60 }, { pool: { ...pool, grace: 0 } })).visitor, undefined)
-      // While it is shown, it can be the same person in another browser.
+      // A caller whom nothing ties, and who dialed the number while it was another's, is not the one it is shown to now.
+      await graph.observe({ subject: 'visitor:d', identifiers: ['device:d'], at: T0, event: 'visit' })
+      await graph.separate('visitor:a', `caller:${hashPhone('+15550100174')}`)
+      await show('a', T0 + 4 * DAY)
+      assert.equal((await ring('P6', '+15550100174', T0 + 4 * DAY + 60_000)).visitor, undefined)
+      await show('d', T0 + 5 * DAY)
+      assert.equal((await ring('P7', '+15550100174', T0 + 5 * DAY + 60_000)).visitor, undefined)
+      assert.equal((await ring('P8', '+15550100175', T0 + 5 * DAY + 120_000)).visitor, 'visitor:d')
+      // Shown to another, it is not theirs either while they have it from before. On a number they never dialed, it can be them in another browser.
       await show('c', T0 + 6 * DAY)
-      assert.equal((await ring('P4', '+15550100172', T0 + 6 * DAY + 60_000)).visitor, 'visitor:c')
+      assert.equal((await ring('P4', '+15550100172', T0 + 6 * DAY + 60_000)).visitor, undefined)
+      const second = { numbers: ['+15550100176'], grace: 2 * HOUR }
+      await graph.lease('visitor:c', { numbers: second.numbers, minutes: 15, at: T0 + 7 * DAY })
+      assert.equal((await recordCall(graph, { id: 'P9', from: '+15550100172', to: second.numbers[0]!, at: T0 + 7 * DAY + 60_000, duration: 60 }, { pool: second })).visitor, 'visitor:c')
     })
 
     test('a call is tied to the visitor who tapped the number, or filed under the number it rang', async () => {

@@ -135,6 +135,8 @@ const NEAR = 30_000
 const SLACK = 30_000
 /** The same where others use the number, and any more than a little would count strangers. */
 const SKEW = 5_000
+/** How long a call is being recorded at most. One that is has no tie yet, and may be about to have one. */
+const STAGED = 60_000
 const TOLL_FREE = /^\+18(00|33|44|55|66|77|88)\d{7}$/
 /** What a hidden caller's number is reported as: the words anonymous, restricted, unavailable, blocked and unknown, spelled on a keypad. */
 const HIDDEN = new Set(['+266696687', '+7378742833', '+86282452253', '+2562533', '+8656696'])
@@ -219,8 +221,8 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   if (!saved) await graph.keepCall(kept)
 
   const { holder, grace, visitor: found, notes, doubtful, undone } = await visitorFor(graph, kept, options)
-  for (const other of undone) await graph.doubtCall(other.id, line)
-  if (saved?.visitor !== undefined && !saved.flags.includes('pool') && saved.visitor !== found) await graph.doubtCall(id, line)
+  for (const other of undone) await graph.doubtCall(other.id, other.ambiguous, line)
+  if (saved?.visitor !== undefined && !saved.flags.includes('pool') && saved.visitor !== found) await graph.doubtCall(id, doubtful, line)
   // A visitor already tied to a different caller is passed over, so a browser cannot collect call after call by tapping again.
   // The same caller ringing back still counts. A visitor a reviewer has kept apart from this caller is passed over too.
   const visitor = found !== undefined && (await graph.tieCall(subject, found, `${holder ? 'lease' : 'dial'}:${id}`, at, holder ? { pool: to, grace } : { notes })) ? found : undefined
@@ -282,9 +284,12 @@ export async function ringing(graph: Graph, call: { from?: string; to: string; a
   return { ...(subject && { subject }), ...(area && { area }), known: calls.length > 0 || texts.length > 0, people, ...(visitor && { visitor }), ...(touch && { touch }), waiting: { calls: missed, texts: unanswered } }
 }
 
-/** The callers a subject is tied to by calls and texts, and by which. */
+/** Whether an identifier two hold says whose a visitor is: a call, a text, or a decision about a caller and a visitor. */
+export const isTie = (identifier: Identifier, one: Subject, other: Subject): boolean => /^(dial|lease|text):/.test(identifier) || (identifier.startsWith('review:') && [one, other].some((each) => /^(caller|call):/.test(each)) && [one, other].some((each) => each.startsWith('visitor:')))
+
+/** The callers a subject is tied to by calls and texts, or joined to by a decision, and by which. */
 const tiesOf = async (graph: Graph, subject: Subject) =>
-  (await graph.links(subject)).flatMap((link) => link.reasons.filter(({ identifier }) => /^(dial|lease|text):/.test(identifier)).map(({ identifier }) => ({ subject: link.subject, identifier })))
+  (await graph.links(subject)).flatMap((link) => link.reasons.filter(({ identifier }) => isTie(identifier, subject, link.subject)).map(({ identifier }) => ({ subject: link.subject, identifier })))
 
 type Heard = Pick<KeptCall, 'id' | 'direction' | 'subject' | 'at' | 'to' | 'flags' | 'visitor'>
 interface Tap { visitor: Subject; note: Identifier; when: number }
@@ -296,7 +301,7 @@ interface Tap { visitor: Subject; note: Identifier; when: number }
  * first. `undone` are the calls of others that are tied and no longer should
  * be, or could be about to be tied.
  */
-async function visitorFor(graph: Graph, call: Heard, options: CallOptions): Promise<{ holder: boolean; grace: number; visitor?: Subject; notes: Identifier[]; doubtful: boolean; undone: KeptCall[] }> {
+async function visitorFor(graph: Graph, call: Heard, options: CallOptions): Promise<{ holder: boolean; grace: number; visitor?: Subject; notes: Identifier[]; doubtful: boolean; undone: { id: string; ambiguous: boolean }[] }> {
   const { to, at } = call
   const window = options.clickWindow ?? 3 * 60_000
   const near = Math.min(window, NEAR)
@@ -304,37 +309,40 @@ async function visitorFor(graph: Graph, call: Heard, options: CallOptions): Prom
   const claim = 2 * near
   const pooled = options.pool?.numbers.some((number) => numberOrSelf(number, options.country) === to) === true
 
-  /** Who a call was shown the number, if anybody, and whether it can be of a tap of somebody its caller is not tied to. */
-  const shown = async (each: Heard): Promise<{ holder?: Subject | undefined; grace: number; own?: Set<Subject> }> => {
-    if (!pooled) return { grace: 0 }
-    const { grace } = options.pool!
-    const own = new Set((await tiesOf(graph, each.subject)).map((tie) => tie.subject))
-    const holder = await graph.leaseholder(to, each.at, grace)
-    if (own.size === 0) return { holder, grace }
-    // A caller who is somebody's already may be dialing what they were shown another day. It is another visitor's call only while they are shown it.
-    return holder === undefined || own.has(holder) ? { holder, grace, own } : { holder: await graph.leaseholder(to, each.at, 0), grace: 0, own }
-  }
-  const here = await shown(call)
-  if (here.holder !== undefined) {
-    const apart = await graph.separations(call.subject)
-    const free = !apart.includes(here.holder) && (await tiesOf(graph, here.holder)).every((tie) => tie.subject === call.subject)
-    return { holder: true, grace: here.grace, ...(free && { visitor: here.holder }), notes: [], doubtful: false, undone: [] }
-  }
-
   // The calls this one bears on, as a rival for a tap or as what makes the number busy, and what bears on those.
-  const [first, last] = [at - claim - SLACK, at + QUIET]
+  const [first, last] = [at - claim - SLACK - window, at + QUIET]
   const notes: Identifier[] = []
-  for (let bucket = Math.floor((first - QUIET) / BUCKET); bucket <= Math.floor((last + SLACK) / BUCKET); bucket++) notes.push(`dialed:${to}@${bucket}`)
+  for (let bucket = Math.floor((first - Math.max(QUIET, window)) / BUCKET); bucket <= Math.floor((last + SLACK) / BUCKET); bucket++) notes.push(`dialed:${to}@${bucket}`)
   // Of what a note says only its first tap and its last are known to have happened.
   const taps: Tap[] = (await graph.holders(notes)).flatMap((edge) => [...new Set([edge.first, edge.last])].map((when) => ({ visitor: edge.subject, note: edge.identifier, when })))
   const kept = (await graph.callsTo(to, first - QUIET, last + SLACK + claim + 1)).filter((each) => each.direction === 'inbound' && each.id !== call.id)
   const heard: Heard[] = [...kept, call].sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1))
   const redone = new Set(heard.filter((each) => each.at >= first && each.at <= last).map((each) => each.id))
 
+  /** A tie to be worked out again is no evidence of itself. */
+  const deciding = (identifier: Identifier) => identifier.startsWith('dial:') && redone.has(identifier.slice('dial:'.length))
+
+  /** Who a call was shown the number, if anybody, and whether it can be of a tap of somebody its caller is not tied to. */
+  const shown = async (each: Heard): Promise<{ holder?: Subject | undefined; grace: number; own?: Set<Subject> }> => {
+    if (!pooled) return { grace: 0 }
+    const { grace } = options.pool!
+    const ties = await tiesOf(graph, each.subject)
+    const all = new Set(ties.map((tie) => tie.subject))
+    const sure = new Set(ties.filter(({ identifier }) => !deciding(identifier)).map((tie) => tie.subject))
+    const own = sure.size > 0 && { own: sure }
+    const holder = await graph.leaseholder(to, each.at, grace)
+    if (holder === undefined || all.has(holder)) return { holder, grace, ...own }
+    // A caller who dialed this number when it was somebody else's, or nobody's, has it from then.
+    for (const before of await graph.callsOf([each.subject])) if (before.to === to && before.direction === 'inbound' && before.at < each.at && (await graph.leaseholder(to, before.at, grace)) !== holder) return { grace, ...own }
+    // A caller who is somebody's already may be dialing what they were shown another day. It is another visitor's call only while they are shown it.
+    return all.size === 0 ? { holder, grace, ...own } : { holder: await graph.leaseholder(to, each.at, 0), grace: 0, ...own }
+  }
+  const here = await shown(call)
+
   const owners = new Map<Subject, Set<Subject>>()
   const apart = new Map<Subject, Set<Subject>>()
   for (const visitor of new Set(taps.map((tap) => tap.visitor))) {
-    owners.set(visitor, new Set((await tiesOf(graph, visitor)).filter(({ identifier }) => !redone.has(identifier.slice('dial:'.length)) || !identifier.startsWith('dial:')).map((tie) => tie.subject)))
+    owners.set(visitor, new Set((await tiesOf(graph, visitor)).filter(({ identifier }) => !deciding(identifier)).map((tie) => tie.subject)))
     apart.set(visitor, new Set(await graph.separations(visitor)))
   }
   const views = new Map<string, Awaited<ReturnType<typeof shown>>>([[call.id, here]])
@@ -342,9 +350,13 @@ async function visitorFor(graph: Graph, call: Heard, options: CallOptions): Prom
   const tapped = heard.filter((each) => views.get(each.id)?.holder === undefined)
   const may = (each: Heard, visitor: Subject) => !apart.get(visitor)!.has(each.subject) && (views.get(each.id)?.own?.has(visitor) ?? true)
 
-  const result = ties(tapped, heard, taps, owners, may, { window, near, claim })
+  const result = ties(tapped, heard, taps, owners, may, redone, { window, near, claim })
+  const undone = kept.filter((each) => redone.has(each.id) && !each.flags.includes('pool') && views.get(each.id)?.holder === undefined && (each.visitor === undefined ? result.get(each.id)!.visitor === undefined && each.recorded > (options.now ?? Date.now)() - STAGED : result.get(each.id)!.visitor !== each.visitor)).map((each) => ({ id: each.id, ambiguous: result.get(each.id)!.doubtful }))
+  if (here.holder !== undefined) {
+    const free = !(await graph.separations(call.subject)).includes(here.holder) && (await tiesOf(graph, here.holder)).every((tie) => tie.subject === call.subject)
+    return { holder: true, grace: here.grace, ...(free && { visitor: here.holder }), notes: [], doubtful: false, undone }
+  }
   const mine = result.get(call.id)!
-  const undone = kept.filter((each) => redone.has(each.id) && !each.flags.includes('pool') && views.get(each.id)?.holder === undefined && (each.visitor === undefined ? result.get(each.id)!.doubtful : result.get(each.id)!.visitor !== each.visitor))
   return { holder: false, grace: 0, ...(mine.visitor !== undefined && { visitor: mine.visitor }), notes: taps.filter((tap) => tap.visitor === mine.visitor && tap.when <= at + SLACK && tap.when >= at - window).map((tap) => tap.note), doubtful: mine.doubtful, undone }
 }
 
@@ -355,10 +367,10 @@ async function visitorFor(graph: Graph, call: Heard, options: CallOptions): Prom
  * else could have made. On a number others are using, a tap has to be closer
  * to the call. Pure, and the result does not depend on the order of its inputs.
  */
-function ties(calls: readonly Heard[], heard: readonly Heard[], taps: readonly Tap[], tied: ReadonlyMap<Subject, ReadonlySet<Subject>>, may: (call: Heard, visitor: Subject) => boolean, { window, near, claim }: { window: number; near: number; claim: number }): Map<string, { visitor?: Subject; doubtful: boolean }> {
+function ties(calls: readonly Heard[], heard: readonly Heard[], taps: readonly Tap[], tied: ReadonlyMap<Subject, ReadonlySet<Subject>>, may: (call: Heard, visitor: Subject) => boolean, full: ReadonlySet<string>, { window, near, claim }: { window: number; near: number; claim: number }): Map<string, { visitor?: Subject; doubtful: boolean }> {
   const within = (when: number, tap: number, time: number, early: number) => when >= tap - early && when <= tap + time
-  const rivals = new Map(taps.map((tap) => [tap, calls.filter((call) => within(call.at, tap.when, claim, SKEW) && may(call, tap.visitor))]))
   const busy = new Map(calls.map((call) => [call.id, heard.some((each) => each.subject !== call.subject && each.at <= call.at && each.at >= call.at - QUIET) || new Set(taps.filter((tap) => tap.when >= call.at - QUIET && tap.when <= call.at + SLACK).map((tap) => tap.visitor)).size > 1]))
+  const rivals = new Map(taps.map((tap) => [tap, calls.filter((call) => within(call.at, tap.when, claim, busy.get(call.id) ? SKEW : SLACK) && may(call, tap.visitor))]))
   const decide = (call: Heard, owners: ReadonlyMap<Subject, ReadonlySet<Subject>>): { visitor?: Subject; doubtful: boolean } => {
     const of = (tap: Tap) => owners.get(tap.visitor)!
     const contested = (tap: Tap) => of(tap).size === 0 && rivals.get(tap)!.some((each) => each.subject !== call.subject)
@@ -366,13 +378,15 @@ function ties(calls: readonly Heard[], heard: readonly Heard[], taps: readonly T
     // A tap by somebody this caller is tied to already is theirs, however busy the number is.
     const eligible = free.filter((tap) => (busy.get(call.id) && !of(tap).has(call.subject) ? within(call.at, tap.when, near, SKEW) : within(call.at, tap.when, window, SLACK)))
     const visitors = new Set(eligible.filter((tap) => !contested(tap)).map((tap) => tap.visitor))
-    const doubtful = visitors.size > 1 || free.some((tap) => within(call.at, tap.when, claim, SKEW) && contested(tap))
-    const sure = visitors.size === 1 && eligible.some((tap) => !contested(tap))
+    const doubtful = visitors.size > 1 || free.some((tap) => within(call.at, tap.when, claim, busy.get(call.id) ? SKEW : SLACK) && contested(tap))
+    const sure = visitors.size === 1
     return { ...(sure && { visitor: [...visitors][0]! }), doubtful: doubtful && !sure }
   }
   // First by the ties there are. What that makes sure of then says whose the other taps of the same visitor are, the earliest call first.
   const owners = new Map([...tied].map(([visitor, callers]) => [visitor, new Set(callers)]))
+  // Of a call at the edge not everything that bears on it was read, so it makes nobody sure: what it is tied to is among the ties there are.
   for (const call of calls) {
+    if (!full.has(call.id)) continue
     const { visitor } = decide(call, tied)
     if (visitor !== undefined && owners.get(visitor)!.size === 0) owners.get(visitor)!.add(call.subject)
   }
