@@ -385,6 +385,8 @@ export interface CallResult {
   voicemail?: boolean
   /** How long the caller waited before someone answered or they gave up, in seconds. */
   waited?: number
+  /** When a system of yours says somebody reached the caller, however they did: from another line, by a text answered, in person. */
+  returned?: number
   /** When it was written down. */
   recorded: number
 }
@@ -393,13 +395,15 @@ export interface CallResult {
 export interface FollowUp {
   /**
    * `open` nobody has spoken to the caller since. `returned` you rang back
-   * and they answered. `tried again` they rang again and got through.
+   * and they answered, or a system of yours says they were reached. `tried again` they rang again and got through.
    * `hidden` they hid their number, so it cannot be returned.
    */
   state: 'open' | 'returned' | 'tried again' | 'hidden'
-  /** The call that closed it, and how long after the miss it began, in milliseconds. */
+  /** The call that closed it, or that a return was reported for, and how long after the miss that was, in milliseconds. */
   by?: string
   delay?: number
+  /** A system of yours reported the return, and no call shows it. */
+  told?: true
   /** How often you rang and nothing says they answered, before it was closed. */
   attempts: number
 }

@@ -41,7 +41,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
   if (!(Number.isSafeInteger(page) && page > 0)) throw new TypeError('`page` must be a whole number above zero')
   const t = (table: string) => `${schema}.${table}`
 
-  const callRows = `select c.*, r.answered, r.voicemail, r.waited, r.recorded_at as result_at from ${t('call')} c left join ${t('call_result')} r on r.id = c.id`
+  const callRows = `select c.*, r.answered, r.voicemail, r.waited, r.returned_at, r.recorded_at as result_at from ${t('call')} c left join ${t('call_result')} r on r.id = c.id`
 
   const bind = (db: Queryable): Tx => ({
     async addSightings(rows) {
@@ -435,12 +435,16 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       )
     },
 
-    async setCallResult(id, { answered, voicemail, waited, recorded }) {
+    async setCallResult(id, { answered, voicemail, waited, returned, recorded }) {
       await db.query(
-        `insert into ${t('call_result')} (id, answered, voicemail, waited, recorded_at) values ($1, $2, $3, $4, $5)
-         on conflict (id) do update set answered = excluded.answered, voicemail = excluded.voicemail, waited = excluded.waited, recorded_at = excluded.recorded_at`,
-        [id, answered ?? null, voicemail ?? null, waited ?? null, recorded],
+        `insert into ${t('call_result')} (id, answered, voicemail, waited, returned_at, recorded_at) values ($1, $2, $3, $4, $5, $6)
+         on conflict (id) do update set answered = excluded.answered, voicemail = excluded.voicemail, waited = excluded.waited, returned_at = excluded.returned_at, recorded_at = excluded.recorded_at`,
+        [id, answered ?? null, voicemail ?? null, waited ?? null, returned ?? null, recorded],
       )
+    },
+
+    async removeCallResult(id) {
+      await db.query(`delete from ${t('call_result')} where id = $1`, [id])
     },
 
     async callOf(id) {
@@ -449,7 +453,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     },
 
     async callResultOf(id) {
-      const { rows } = await db.query(`select answered, voicemail, waited, recorded_at as result_at from ${t('call_result')} where id = $1`, [id])
+      const { rows } = await db.query(`select answered, voicemail, waited, returned_at, recorded_at as result_at from ${t('call_result')} where id = $1`, [id])
       return rows[0] && toResult(rows[0])
     },
 
@@ -463,7 +467,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       const { rows } = await db.query(
         `${callRows} where c.direction = 'inbound' and c.at >= $1 and c.at < $2 and r.answered = false and c.subject <> 'call:' || c.id
            and ($4::bigint is null or c.at > $4 or (c.at = $4 and c.id collate "C" > $5))
-           and not exists (select 1 from ${t('call')} d join ${t('call_result')} s on s.id = d.id where d.subject = c.subject and d.at > c.at and s.answered)
+           and not exists (select 1 from ${t('call')} d join ${t('call_result')} s on s.id = d.id where d.subject = c.subject and ((d.at > c.at and s.answered) or s.returned_at > c.at))
          order by c.at, c.id collate "C" limit $3`,
         [from, to, limit, after?.at ?? null, after?.id ?? null],
       )
@@ -830,7 +834,7 @@ function toValue(row: any): OutcomeValue {
 }
 
 function toResult(row: any): CallResult {
-  return { ...(row.answered !== null && { answered: row.answered }), ...(row.voicemail !== null && { voicemail: row.voicemail }), ...(row.waited !== null && { waited: row.waited }), recorded: Number(row.result_at) }
+  return { ...(row.answered !== null && { answered: row.answered }), ...(row.voicemail !== null && { voicemail: row.voicemail }), ...(row.waited !== null && { waited: row.waited }), ...(row.returned_at !== null && { returned: Number(row.returned_at) }), recorded: Number(row.result_at) }
 }
 
 function toCall(row: any): KeptCall {
@@ -1115,6 +1119,11 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
       id: 16,
       name: 'touches found by ad click id',
       sql: `create index if not exists touch_clicked on ${schema}.touch using gin ((${CLICKED}));`,
+    },
+    {
+      id: 17,
+      name: 'returns reported by your own systems',
+      sql: `alter table ${schema}.call_result add column if not exists returned_at bigint;`,
     },
   ]
 }

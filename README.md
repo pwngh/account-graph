@@ -141,7 +141,7 @@ Two subjects that share an identifier get evidence from it: a weight for its kin
 ### Calls
 
 - **Page events and phone calls.** The script tag reports taps and marked clicks, and a call that follows a tap is tied to the visitor who tapped, so calls land under the ad click that produced them.
-- **Calls that were really answered.** A queue hang-up is not an answer. Your phone system reports how each call went, and a call can be held, uncounted and unsent, until it does. Each missed call says whether it was returned, and after how long, and a Calls view lists the ones still open.
+- **Calls that were really answered.** A queue hang-up is not an answer. Your phone system reports how each call went, and a call can be held, uncounted and unsent, until it does. Each missed call says whether it was returned, and after how long, from the calls themselves or from your own system, and a Calls view lists the ones still open.
 - **A number for each visitor.** An optional pool shows each visitor from an ad a number of their own, so a call they dial by hand is still tied to their click.
 - **A board of people by step.** Missed calls nobody returned first, then everyone at the furthest step they reached, with who is new today and who has waited too long.
 - **What followed a call.** Who went on to reach a step, by how the call went and whether a miss was returned, with the clock set so people already signing up do not count for it.
@@ -229,6 +229,7 @@ The last column is the median of 300, one at a time. The two larger graphs were 
 - A day a platform sends no cost row for counts as missing, although a paused campaign looks the same.
 - The report credits the newest strong touch with the whole outcome, and is worked out each time it is asked for.
 - Without call results, a call is counted by its length, which a queue hang-up can reach. Platforms that cannot restate keep a conversion sent for a call that turned out missed.
+- A return your own system reports is taken at its word. It is marked, and counted apart.
 - A quiet feed is noticed by hours without a record, so a feed that still sends something wrong is not.
 - Without a tap or the optional pool, a call can be filed under the channel configured for its number, and is tied to no visitor of the site.
 - A signed link is a key: forwarded to a stranger's browser, it ties that browser to the person it names. [Links](docs/links.md) says what limits that and what does not.

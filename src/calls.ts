@@ -255,16 +255,21 @@ async function placed(graph: Graph, call: Call, theirs: string, result: Omit<Cal
  * What became of a call no one answered, from every call to and from its
  * subject. Worked out from the calls themselves each time, so it does not
  * depend on the order they were reported in. A call before the miss says
- * nothing about it, and one later answer closes every miss before it.
+ * nothing about it, and one later answer closes every miss before it. So does
+ * a return reported for any of their calls, at the time it is said to be.
  */
 export function followUp(miss: KeptCall, calls: readonly KeptCall[]): FollowUp {
-  if (miss.subject === `call:${miss.id}`) return { state: 'hidden', attempts: 0 }
   const since = calls.filter((call) => call.subject === miss.subject && call.id !== miss.id && call.at > miss.at).sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1))
+  const told = calls.filter((call) => call.subject === miss.subject && call.result?.returned !== undefined && call.result.returned > miss.at).sort((x, y) => x.result!.returned! - y.result!.returned! || (x.id < y.id ? -1 : 1))[0]
+  // A hidden number cannot be rung back, and whoever it was can still have been reached.
+  if (miss.subject === `call:${miss.id}` && !told) return { state: 'hidden', attempts: 0 }
   let attempts = 0
   for (const call of since) {
+    if (told && told.result!.returned! < call.at) break
     if (call.result?.answered) return { state: call.direction === 'outbound' ? 'returned' : 'tried again', by: call.id, delay: call.at - miss.at, attempts }
     if (call.direction === 'outbound') attempts += 1
   }
+  if (told) return { state: 'returned', by: told.id, delay: told.result!.returned! - miss.at, told: true, attempts }
   return { state: 'open', attempts }
 }
 
@@ -339,6 +344,29 @@ export async function recordCallResult(graph: Graph, report: { id: string; answe
   const result = resultIn(report, `The result of call "${report.id}"`)
   if (result?.answered === undefined) throw new TypeError(`The result of call "${report.id}" needs answered, true or false`)
   return tell(graph, report.id, result, options)
+}
+
+/**
+ * Records that somebody reached a caller some way your phone system does not
+ * report: from another line, by a text they answered, in person. `at` is when,
+ * now unless you say, and `returned: false` takes it back. It may come before
+ * the call it is about, and as often as it likes: the last report stands.
+ * Resolves to what became of the call, or undefined while it has not been
+ * recorded or was not missed.
+ */
+export async function recordReturn(graph: Graph, report: { id: string; at?: number; returned?: boolean }, options: Pick<CallOptions, 'now'> = {}): Promise<FollowUp | undefined> {
+  if (typeof report?.id !== 'string' || !/^[\w.-]{1,128}$/.test(report.id)) throw new TypeError('A return needs the id of the call it is about')
+  if (report.returned !== undefined && typeof report.returned !== 'boolean') throw new TypeError(`The return of call "${report.id}" needs returned as true or false`)
+  const now = (options.now ?? Date.now)()
+  const at = report.at ?? now
+  if (!Number.isSafeInteger(at)) throw new TypeError(`The return of call "${report.id}" needs a time in whole epoch milliseconds`)
+  if (at > now) throw new TypeError(`The return of call "${report.id}" is in the future`)
+  const call = await graph.keptCall(report.id)
+  if (call?.direction === 'outbound') throw new TypeError(`Call "${report.id}" is one you placed, so there is nothing to return`)
+  if (report.returned !== false && call && at <= call.at) throw new TypeError(`Call "${report.id}" began after it is said to have been returned`)
+  await graph.keepReturn(report.id, report.returned === false ? undefined : at)
+  const kept = call && (await graph.keptCall(report.id))
+  return kept?.result?.answered === false ? followUp(kept, await graph.callsOf([kept.subject])) : undefined
 }
 
 /** Whether a number is one of those left out. */

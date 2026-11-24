@@ -1,7 +1,7 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { BlockList, isIP } from 'node:net'
-import { callState, dialed, followUp, numberOrSelf, recordCall, recordCallResult } from './calls.ts'
+import { callState, dialed, followUp, numberOrSelf, recordCall, recordCallResult, recordReturn } from './calls.ts'
 import type { CallOptions } from './calls.ts'
 import { Outdated } from './graph.ts'
 import type { Graph, PolicyState } from './graph.ts'
@@ -932,6 +932,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       }
       case 'POST /call/result':
         return (await recordCallResult(graph, await json(request), calling())) ?? { state: 'waiting', counted: false }
+      case 'POST /call/returned':
+        return { followUp: (await recordReturn(graph, await json(request), calling())) ?? null }
       case 'POST /restate': {
         const body = await json(request)
         if (options.outbox) return options.outbox.restate(body.transactionId, body.value, body.currency)

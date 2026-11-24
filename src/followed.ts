@@ -119,13 +119,14 @@ export function followed(callers: readonly Caller[], { step, days, at, least = 2
     if (!miss) continue
     const start = miss.at + LANDMARK
     const since = caller.calls.filter((call) => call.at > miss.at && call.result?.answered && connected(call) <= start)
+    const told = caller.calls.some((call) => call.result?.returned !== undefined && call.result.returned > miss.at && call.result.returned <= start)
     if (since.some((call) => call.direction === 'inbound')) {
       leftOut.returned.through += 1
       continue
     }
     const after = outcome(caller, start)
     if (typeof after === 'string') leftOut.returned[after] += 1
-    else add('returned', since.length > 0 ? 'returned within a day' : 'not returned within a day', after)
+    else add('returned', since.length > 0 || told ? 'returned within a day' : 'not returned within a day', after)
   }
 
   const rank = (name: string) => (name === NOT_RECORDED ? '~' : ORDER.includes(name) ? String(ORDER.indexOf(name)).padStart(2, '0') : name)
