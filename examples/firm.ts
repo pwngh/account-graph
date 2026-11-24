@@ -11,6 +11,8 @@
  * script. Ctrl-C stops and deletes all of it.
  */
 import { execFileSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
+import { once } from 'node:events'
 import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -65,7 +67,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
   const sent: { id: string; value: number | undefined }[] = []
   const wasSent = (id: string) => sent.some((each) => each.id === id)
   const site = createServer((request, response) => void answer(request, response))
-  await new Promise<void>((resolve) => site.listen(ports[1], '127.0.0.1', resolve))
+  await once(site.listen(ports[1], '127.0.0.1'), 'listening')
   const siteAt = `http://localhost:${(site.address() as AddressInfo).port}`
 
   // An ad platform that takes everything and is not there.
@@ -80,7 +82,10 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
     events: ['phone_click'], linkSecret: SECRET, identifierSecret: SECRET, pool: { numbers: ['+15550100111', '+15550100112'], minutes: 15, grace: 120 },
   })
   const server = createServer(handler)
-  await new Promise<void>((resolve) => server.listen(ports[0], '127.0.0.1', resolve))
+  await once(server.listen(ports[0], '127.0.0.1'), 'listening').catch((error) => {
+    site.close()
+    throw error
+  })
   const graphAt = `http://localhost:${(server.address() as AddressInfo).port}`
   const ask = async (method: string, path: string, body?: unknown, headers: Record<string, string> = { authorization: 'Bearer service-demo' }): Promise<any> => {
     const response = await fetch(graphAt + path, { method, headers: { 'user-agent': 'Mozilla/5.0 (the demo)', ...headers }, ...(body !== undefined && { body: JSON.stringify(body) }) })
@@ -327,15 +332,16 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
 
 /** A throwaway PostgreSQL in Docker, or undefined where there is none. */
 function throwaway(): { address: string; stop(): void } | undefined {
-  let id: string | undefined
+  // Named before it is asked for, so it can be removed however far that got.
+  const name = `account-graph-firm-${randomUUID()}`
   const stop = () => {
     try {
-      if (id) execFileSync('docker', ['rm', '-f', id], { stdio: 'ignore' })
+      execFileSync('docker', ['rm', '-f', name], { stdio: 'ignore' })
     } catch {}
   }
   try {
-    id = execFileSync('docker', ['run', '--rm', '-d', '-e', 'POSTGRES_PASSWORD=demo', '-p', '127.0.0.1::5432', 'postgres:16'], { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
-    const port = execFileSync('docker', ['port', id, '5432']).toString().trim().split('\n')[0]!.split(':').at(-1)
+    execFileSync('docker', ['run', '--rm', '-d', '--name', name, '-e', 'POSTGRES_PASSWORD=demo', '-p', '127.0.0.1::5432', 'postgres:16'], { stdio: 'ignore' })
+    const port = execFileSync('docker', ['port', name, '5432'], { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim().split('\n')[0]!.split(':').at(-1)
     return { address: `postgres://postgres:demo@127.0.0.1:${port}/postgres`, stop }
   } catch {
     stop()

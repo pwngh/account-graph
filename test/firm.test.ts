@@ -36,7 +36,7 @@ test('every scene of the demo runs, says what came of it within a second, and ca
     [/State: missed\. Counted: no\. Sent to the ad platform: no/, (text) => (text.includes(caller.slice(0, 14)) ? 'on the board' : '')],
     [/The miss is returned\..*sent: yes/, (text) => (/returned after/.test(text) && /answered by a person/.test(text) ? 'returned' : '')],
     [/Filed under Map listing, River/, (text) => row(text, 'Map listing, River')],
-    [/Advertised: north\. Served: river/, (text) => row(text, 'Busqueda: North', 900)],
+    [/Advertised: north\. Served: river/, (text) => /river[^]{0,120}/.exec(text.slice(text.indexOf('Busqueda: North')))?.[0] ?? ''],
     [/Before: joined.*In one cluster: no/, (text) => (text.includes('contact:other-side') && text.includes('kept apart') ? 'kept apart' : '')],
     [/85% by the phone: related, and not joined/, (text) => (text.includes('contact:4801') && text.includes('contact:4802') ? 'a pair' : '')],
     [/Recorded at 400 USD, now 1250 USD.*ad platform: 1250 USD/, (text) => (text.includes('from 400 USD to 1,250 USD') ? 'restated' : '')],
