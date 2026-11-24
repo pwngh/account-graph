@@ -4,7 +4,7 @@
  * suit a result. The run at 17b7a53 had those here then; what is new since is
  * for the second run.
  */
-import type { Rates, Third } from './world.ts'
+import type { Dirt, Rates, Third } from './world.ts'
 
 interface Setting {
   rates: Rates
@@ -12,6 +12,7 @@ interface Setting {
   days: number
   /** Numbers in the pool, for the arm that has one. */
   pool: number
+  dirt?: Dirt
 }
 
 const base: Rates = {
@@ -77,7 +78,6 @@ function third(at: 0 | 1 | 2): Third {
     swapped: of(0.005, 0.01, 0.02), speakersName: of(0.03, 0.06, 0.12), alike: of(0.005, 0.01, 0.02),
     staffTold: of(0.8, 0.6, 0.3), formTold: of(0.75, 0.5, 0.25), ownGiven: of(0.7, 0.5, 0.3), staffToldWrongly: of(0.01, 0.02, 0.03), formToldWrongly: of(0.005, 0.01, 0.02), toldLate: of(0.1, 0.2, 0.3),
     formAgain: of(0.1, 0.15, 0.2), otherBrowser: of(0.05, 0.1, 0.2), otherLine: of(0.05, 0.1, 0.2), quick: of(0.85, 0.75, 0.6), middle: of(0.1, 0.15, 0.2), late: of(0.05, 0.1, 0.2), oldNumber: of(0.02, 0.04, 0.08),
-    placeholder: 0, office: 0,
   }
 }
 
@@ -106,7 +106,7 @@ export const SETTINGS: Record<string, Setting> = {
   high3: { rates: {} as Rates, people: 2_000, days: 120, pool: 10 },
   busy3: { rates: { ...base, third: third(1) }, people: 6_000, days: 5, pool: 40 },
   /** Base with placeholder numbers and shared office emails. */
-  dirty3: { rates: { ...base, third: { ...third(1), placeholder: 0.03, office: 0.03 } }, people: 2_000, days: 120, pool: 10 },
+  dirty3: { rates: { ...base, third: third(1) }, people: 2_000, days: 120, pool: 10, dirt: { placeholder: 0.03, office: 0.03 } },
 }
 SETTINGS.low3!.rates = { ...SETTINGS.low!.rates, third: third(0) }
 SETTINGS.high3!.rates = { ...SETTINGS.high!.rates, third: third(2) }

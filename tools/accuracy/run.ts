@@ -72,11 +72,32 @@ export interface Outcome {
   creditedRight: Set<string>
   /** Requests for a number of one's own when all were taken. */
   exhausted: number
+  /** By call: the caller's subject, and the browsers it is tied to by a tap or a number shown. */
+  callerOf: Map<string, string>
+  ties: Map<string, string[]>
+  /** Links that rest on a tap or a number shown, each once, and those between two people. */
+  tapLinks: { links: number; wrong: number }
 }
 
+/** The code a world is reported to: this checkout's, or another's, by the same names. */
+export interface Code {
+  createGraph: typeof createGraph
+  createMemoryStore: typeof createMemoryStore
+  policyFrom: typeof policyFrom
+  createHandler: typeof createHandler
+}
+export interface Switches {
+  policy?: object
+  staff?: boolean
+  pool?: boolean
+  speaker?: boolean
+}
+const HERE: Code = { createGraph, createMemoryStore, policyFrom, createHandler }
+
 /** Reports a world to a server of its own, in the order it happened, and reads who was joined. */
-export async function report(world: World, arm: Arm = 'default', pool = 10): Promise<Outcome> {
-  const set: { policy?: object; staff?: boolean; pool?: boolean; speaker?: boolean } = ARMS[arm]
+export const report = (world: World, arm: Arm = 'default', pool = 10) => play(world, ARMS[arm], pool, HERE)
+
+export async function play(world: World, set: Switches, pool: number, { createGraph, createMemoryStore, policyFrom, createHandler }: Code): Promise<Outcome> {
   const numbers = set.pool ? Array.from({ length: pool }, (_, i) => `+1555010${String(100 + i).padStart(4, '0')}`) : []
   let now = START
   const graph = createGraph(createMemoryStore(), set.policy && policyFrom(set.policy), { now: () => now })
@@ -106,9 +127,17 @@ export async function report(world: World, arm: Arm = 'default', pool = 10): Pro
     if (answer?.number === undefined) exhausted += 1
     return (answer?.number as string | undefined) ?? LINE
   }
+  // A call reported late was dialed when it was, on the number shown then.
+  const steps = world.events.flatMap((event): { at: number; event: World['events'][number]; dial?: true }[] =>
+    event.kind === 'call' && event.told !== undefined ? [{ at: event.at, event, dial: true }, { at: event.told, event }] : [{ at: event.at, event }])
+  const shownTo = async (event: Extract<World['events'][number], { kind: 'call' }>) => (event.page ? await shown(event.page) : (event.redial !== undefined && dialed.get(event.redial)) || LINE)
   try {
-    for (const event of world.events) {
-      now = (event.kind === 'call' && event.told) || event.at
+    for (const { at, event, dial } of steps.sort((x, y) => x.at - y.at)) {
+      now = at
+      if (dial) {
+        if (event.kind === 'call') dialed.set(event.id, await shownTo(event))
+        continue
+      }
       if (event.kind === 'visit') {
         await post('/collect', { device: event.device, url: `${SITE}/`, ...(event.ad && { touch: { gclid: event.ad, landing: `${SITE}/` } }) }, page(event.address, event.agent))
         await shown(event)
@@ -127,7 +156,7 @@ export async function report(world: World, arm: Arm = 'default', pool = 10): Pro
         if (set.speaker) await post('/identify', { subject: event.subject, event: 'told', speaker: event.speaker }, service)
       }
       else if (event.kind === 'call') {
-        const to = event.page ? await shown(event.page) : (event.redial !== undefined && dialed.get(event.redial)) || LINE
+        const to = dialed.get(event.id) ?? (await shownTo(event))
         dialed.set(event.id, to)
         const { subject } = await post('/call', { id: event.id, to, at: event.at, duration: event.seconds, answered: event.answered, ...(event.from && { from: event.from }) }, service)
         callerOf.set(event.id, subject)
@@ -146,6 +175,8 @@ export async function report(world: World, arm: Arm = 'default', pool = 10): Pro
   const peopleOf = new Map(truths.map((each) => [each.subject, each.people]))
   const clusterOf = new Map<string, string>()
   const links: Outcome['links'] = new Map()
+  const ties: Outcome['ties'] = new Map()
+  const tapLinks = { links: 0, wrong: 0 }
   for (const { subject, people } of truths) {
     const cluster = await graph.cluster(subject)
     if (cluster) clusterOf.set(subject, cluster.id)
@@ -156,8 +187,15 @@ export async function report(world: World, arm: Arm = 'default', pool = 10): Pro
       const key = [...new Set(link.reasons.map(({ identifier }) => identifier.slice(0, identifier.indexOf(':'))))].sort().join(' + ')
       const row = links.get(key) ?? { links: 0, wrong: 0 }
       links.set(key, row)
+      const wrong = !people.some((each) => other.includes(each))
       row.links += 1
-      if (!people.some((each) => other.includes(each))) row.wrong += 1
+      if (wrong) row.wrong += 1
+      const tied = link.reasons.filter(({ identifier }) => /^(dial|lease):/.test(identifier))
+      if (tied.length === 0) continue
+      tapLinks.links += 1
+      if (wrong) tapLinks.wrong += 1
+      const browser = [subject, link.subject].find((each) => each.startsWith('visitor:'))
+      if (browser) for (const { identifier } of tied) ties.set(identifier.slice(identifier.indexOf(':') + 1), [...(ties.get(identifier.slice(identifier.indexOf(':') + 1)) ?? []), browser])
     }
   }
 
@@ -185,7 +223,7 @@ export async function report(world: World, arm: Arm = 'default', pool = 10): Pro
     credit.reachable += 1
     if (given === ad) credit.reachableRight += 1
   }
-  return { truths, clusterOf, links, credit, creditedRight, exhausted }
+  return { truths, clusterOf, links, credit, creditedRight, exhausted, callerOf, ties, tapLinks }
 }
 
 /** Whoever shares a fact the rule looks at is one person, and so is whoever they share one with. */

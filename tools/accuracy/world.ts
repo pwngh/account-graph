@@ -137,7 +137,10 @@ export interface Third {
   late: number
   /** Cold callers who dial a number somebody else was shown before. */
   oldNumber: number
-  /** Records with a placeholder number, and those with an office's one email. Zero but in the dirty setting. */
+}
+
+/** Records with a placeholder number, and those with an office's one email, put over a world that is made. */
+export interface Dirt {
   placeholder: number
   office: number
 }
@@ -165,6 +168,8 @@ export interface World {
   spoke: Set<string>
   /** By record: the ad its person came by, or undefined where they never visited, and when the record was made. */
   ads: Map<string, { ad: string | undefined; at: number }>
+  /** By record: the first name its person has, and the one that was written. */
+  written: Map<string, { name: string; written: string }>
 }
 
 const DAY = 86_400_000
@@ -352,7 +357,7 @@ export function makeWorld(rates: Rates, { people: count, days, start, seed }: Si
   }
   const calls: World['calls'] = new Map()
   const otherLines = new Map<string, string>()
-  const shownCalls: string[] = []
+  const shownCalls: { id: string; at: number }[] = []
   const phoneOf = (person: Person, at: number) => (person.later && at >= person.later.at ? person.later.number : person.mobile)
   const home = (person: Person) => `2001:db8:${(person.household + 1).toString(16)}::${(person.household % 250) + 2}`
 
@@ -370,6 +375,12 @@ export function makeWorld(rates: Rates, { people: count, days, start, seed }: Si
     return { device: used.device, address, agent: used.agent }
   }
 
+  const written: World['written'] = new Map()
+  const writeName = (subject: string, person: Person, name: Person['name'], staff: boolean) => {
+    const typed = typedName(name, staff)
+    written.set(subject, { name: person.name.first, written: typed.first })
+    return typed
+  }
   let records = 0
   /** Records as they are made, for staff to join a call to one there is by then. */
   const made: { subject: string; person: string; at: number }[] = []
@@ -386,16 +397,14 @@ export function makeWorld(rates: Rates, { people: count, days, start, seed }: Si
         // A desk knows the line that rang. A form knows all that its sender gave.
         speaks = staff ? { ...(facts.phone !== undefined && { phone: facts.phone }) } : { ...facts }
         late = r.chance(third.toldLate)
-        if (!staff && spokenFor && !late && r.chance(third.ownGiven)) own = { phone: phoneOf(person, at), email: r.one(person.emails) }
+        if (!staff && spokenFor && !late && r.chance(third.ownGiven)) own = { phone: typedPhone(phoneOf(person, at), rates.ownPhoneTypo), email: typedEmail(r.one(person.emails), rates.ownEmailTypo) }
       }
-      if (r.chance(third.placeholder)) facts.phone = r.one(['+15555555555', '+11234567890', '+10000000000', '+15551234567'])
-      if (r.chance(third.office)) facts.email = r.one(['info@office-a.example.org', 'office@office-b.example.org', 'admin@office-c.example.org'])
       if (speaks && Object.keys(speaks).length === 0) speaks = undefined
       if (speaks && late) events.push({ kind: 'speaks', at: at + Math.ceil((1 + r.next() * 2) * DAY), subject, speaker: speaks })
     }
-    note(subject, person.id, facts.device && `device ${facts.device}`, facts.email && `email ${facts.email}`, facts.phone && `phone ${facts.phone}`, own && `email ${own.email}`, own && `phone ${own.phone}`)
+    note(subject, person.id, facts.device && `device ${facts.device}`, facts.email && `email ${facts.email}`, facts.phone && `phone ${facts.phone}`)
     ads.set(subject, { ad: person.ad, at })
-    events.push({ kind: 'record', at, subject, ...facts, ...(speaks && !late && { speaker: speaks }), ...(own && { own }), name: typedName(name, staff), ...(r.chance(rates.birthAsked) && { dob: typedBirth(person.dob, staff) }) })
+    events.push({ kind: 'record', at, subject, ...facts, ...(speaks && !late && { speaker: speaks }), ...(own && { own }), name: writeName(subject, person, name, staff), ...(r.chance(rates.birthAsked) && { dob: typedBirth(person.dob, staff) }) })
     made.push({ subject, person: person.id, at })
     return subject
   }
@@ -482,8 +491,10 @@ export function makeWorld(rates: Rates, { people: count, days, start, seed }: Si
 
   /** A call from a visit. Whoever is on the page can tap the number, and nobody else can. */
   function call(person: Person, speaker: Person, visitor: Person, at: number, here: ReturnType<typeof visit>, filled: boolean) {
-    const when = at + Math.ceil(r.next() * 10 * MINUTE) + (third ? 190_000 : 30_000)
+    const delay = Math.ceil(r.next() * 10 * MINUTE)
     const tapped = visitor === speaker && r.chance(here.agent === AGENT.telephone ? rates.tapsTelephone : rates.tapsComputer)
+    // A tap may be up to three minutes before its call, and comes after the visit.
+    const when = at + delay + (third && tapped ? 190_000 : 30_000)
     ring(person, speaker, when, here, tapped ? here : undefined, !filled || r.chance(rates.duplicate))
   }
 
@@ -519,8 +530,9 @@ export function makeWorld(rates: Rates, { people: count, days, start, seed }: Si
       const redial = i > 0 && !shownOn && r.chance(rates.redialed) ? own[0] : undefined
       own.push(id)
       // Written down by somebody, and passed on.
-      const passed = old && i === 0 && shownCalls.length > 0 ? r.one(shownCalls) : undefined
-      if (shownOn) shownCalls.push(id)
+      const before = old && i === 0 ? shownCalls.filter((each) => each.at < when) : []
+      const passed = before.length > 0 ? r.one(before).id : undefined
+      if (shownOn) shownCalls.push({ id, at: when })
       const dialedAgain = passed ?? redial
       // Of a landline or a number passed on, it is whoever made this call.
       calls.set(id, { people: [speaker.id], facts: [...(hidden ? [] : [`phone ${from}`]), ...(tap ? [`tap ${id}`] : [])] })
@@ -535,13 +547,42 @@ export function makeWorld(rates: Rates, { people: count, days, start, seed }: Si
       // Whoever answers opens the record the call is about, where there is one, and now and then somebody else's.
       const there = made.filter((each) => each.at <= when + 6 * MINUTE)
       const theirs = there.filter((each) => each.person === person.id)
-      if (theirs.length > 0 && r.chance(rates.staffJoins)) events.push({ kind: 'join', at: when + 6 * MINUTE, call: id, subject: (r.chance(rates.staffJoinsWrong) ? r.one(there) : theirs.at(-1)!).subject })
+      if (theirs.length > 0 && r.chance(rates.staffJoins)) events.push({ kind: 'join', at: when + 6 * MINUTE, call: id, subject: staffPick(there, theirs).subject })
     }
+  }
+
+  /** The record staff open: the person's, or now and then another's. Before the third run it was the last made, and a wrong one could be right. */
+  function staffPick(there: typeof made, theirs: typeof made) {
+    if (!third) return r.chance(rates.staffJoinsWrong) ? r.one(there) : theirs.at(-1)!
+    const others = there.filter((each) => each.person !== theirs[0]!.person)
+    return others.length > 0 && r.chance(rates.staffJoinsWrong) ? r.one(others) : theirs.reduce((last, each) => (each.at >= last.at ? each : last))
   }
 
   for (const { run } of todo.sort((x, y) => x.at - y.at)) run()
   const truths = [...factsOf].map(([subject, known]): Truth => ({ subject, people: [...known.people], facts: [...known.facts] }))
   // What was put off to its own time is reported then.
   const reported = (event: Event) => (event.kind === 'call' && event.told) || event.at
-  return { events: events.sort((x, y) => reported(x) - reported(y)), truths, calls, spoke, ads }
+  return { events: events.sort((x, y) => reported(x) - reported(y)), truths, calls, spoke, ads, written }
+}
+
+/** A made world with placeholders and shared office emails over some of its records, from a seed of its own. Nothing else changes. */
+export function dirtied(world: World, dirt: Dirt, seed: number): World {
+  const r = randomly(seed ^ 0x5bd1e995)
+  const truths = new Map(world.truths.map((each) => [each.subject, { ...each, facts: [...each.facts] }]))
+  const swap = (subject: string, kind: 'phone' | 'email', from: string | undefined, to: string) => {
+    const truth = truths.get(subject)!
+    truth.facts = [...truth.facts.filter((fact) => from === undefined || fact !== `${kind} ${from}`), `${kind} ${to}`]
+  }
+  const events = world.events.map((event): Event => {
+    if (event.kind !== 'record') return event
+    let out = event
+    const put = (kind: 'phone' | 'email', to: string) => {
+      swap(out.subject, kind, out[kind], to)
+      out = { ...out, [kind]: to, ...(out.speaker?.[kind] !== undefined && { speaker: { ...out.speaker, [kind]: to } }) }
+    }
+    if (r.chance(dirt.placeholder)) put('phone', r.one(['+15555555555', '+11234567890', '+10000000000', '+15551234567']))
+    if (r.chance(dirt.office)) put('email', r.one(['info@office-a.example.org', 'office@office-b.example.org', 'admin@office-c.example.org']))
+    return out
+  })
+  return { ...world, events, truths: [...truths.values()] }
 }
