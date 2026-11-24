@@ -228,6 +228,15 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   assert.ok(!claims.includes('[object'), claims)
   assert.match(claims, /google\s+=1\+1\s+1\s+7\.5\s+0\s+\(not recorded\)/)
 
+  // What had reached an ad platform of someone forgotten stays until it is put away, as it is kept nowhere.
+  await run(`sentOn([{ transactionId: 'gone-1', target: 'google', action: '333', at: ${rang}, state: 'untold', note: 'may not have arrived' }])`)
+  assert.match(await text('.sent-on'), /google333.*gone-1Not askedmay not have arrived/)
+  await press('Escape')
+  await press('Escape')
+  assert.equal(await shown('.sent-on'), true)
+  await run(`[...document.querySelectorAll('.sent-on button')].at(-1).click()`)
+  await until('it to be put away', () => run(`document.querySelector('.sent-on') === null`))
+
   // A refund is named where the value changed, and has a column of its own.
   await graph.observe({ subject: 'lead:refund', identifiers: ['device:refund'], at: rang })
   await graph.outcome({ transactionId: 'refund-1', subject: 'lead:refund', at: rang, stage: 'enrolled', value: 200, currency: 'USD' })

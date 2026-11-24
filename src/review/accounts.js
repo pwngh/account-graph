@@ -21,6 +21,24 @@ const badge = (subject) => {
 const kept = (verdict) => (verdict?.apart ? [el('span', { class: 'muted' }, 'Decided by '), author(verdict.apart.by), el('span', { class: 'muted' }, `, ${when(verdict.apart.at)}: ${verdict.apart.reason ?? '(no reason recorded)'}`),
   verdict.last.action === 'join' ? el('span', { class: 'reason' }, 'A later decision joined them, which does not undo this one. By ', author(verdict.last.by), `, ${when(verdict.last.at)}`) : ''] : [el('span', { class: 'muted' }, '(no decision recorded)')])
 
+const TOLD = { told: ['Asked to take it back', 'same'], refused: ['Refused to take it back', 'apart'], untold: ['Not asked', 'related'] }
+/** What had reached an ad platform of someone just forgotten. It is said once and kept nowhere, so only its button puts it away. */
+function sentOn(sent) {
+  const table = el('table', {}, el('tr', {}, th('Platform'), th('Sent as'), th('Happened'), th('Transaction'), th('State')),
+    ...sent.map((each) => el('tr', {}, td('', sourced(each.target)), td('', each.action), td('nowrap', reviewDisplay.time(each.at)), td('', each.transactionId),
+      td('', reviewDisplay.chip(...TOLD[each.state]), each.note ? el('span', { class: 'reason' }, each.note) : ''))))
+  const dialog = el('dialog', { class: 'sent-on', closedby: 'none', 'aria-label': 'What ad platforms hold' }, el('h4', {}, 'What ad platforms hold'),
+    el('p', { class: 'muted' }, sent.some(({ state }) => state !== 'told') ? 'Forgotten here. Ask the platforms that were not asked, or refused, with their own tools. Nothing here is kept, so save it first.' : 'Forgotten here. Nothing here is kept.'),
+    wide('What ad platforms hold', table), el('div', { class: 'row' }, saved('sent-to-ad-platforms', table), el('button', { class: 'primary', on: { click: () => dialog.close() } }, 'Close')))
+  // A browser closes a dialog on a second Escape whatever the first was answered, so the key itself is stopped.
+  dialog.addEventListener('keydown', (event) => event.key === 'Escape' && event.preventDefault())
+  dialog.addEventListener('cancel', (event) => event.preventDefault())
+  dialog.addEventListener('close', () => dialog.remove())
+  document.body.append(dialog)
+  dialog.showModal()
+  dialog.querySelector('button').focus()
+}
+
 function profileOf(profile, more) {
   const detail = []
   const title = el('h3', { class: 'page-title' }, badge(profile.subject), reviewDisplay.id(profile.subject, true))
@@ -29,7 +47,7 @@ function profileOf(profile, more) {
   detail.push(el('section', {}, el('div', { class: 'page-head' }, title, el('div', { class: 'row' },
     el('a', { class: 'button', href: `#/journey/${encodeURIComponent(profile.subject)}` }, 'Journey'),
     el('button', { on: { click: () => act('Join as one person', `${profile.subject} and the subject you name will be treated as one person.`, '/join', { a: profile.subject }, 'Join', { otherKey: 'b' }) } }, 'Join with another…'),
-    el('button', { class: 'danger', on: { click: () => act('Forget this subject', `Everything recorded about ${profile.subject} will be deleted. This cannot be undone.`, '/forget', { subject: profile.subject }, 'Hold to delete', { hold: true }) } }, 'Forget…'))),
+    el('button', { class: 'danger', on: { click: () => act('Forget this subject', `Everything recorded about ${profile.subject} will be deleted. This cannot be undone.`, '/forget', { subject: profile.subject, ads: true }, 'Hold to delete', { hold: true, done: ({ sent }) => sent.length > 0 && sentOn(sent) }) } }, 'Forget…'))),
   tiles(['Cluster size', `${amount(size)} ${size === 1 ? 'subject' : 'subjects'}`, profile.cluster.oversized ? 'Above the review limit' : '', profile.cluster.oversized ? 'apart' : ''],
     profile.links[0] && ['Strongest tie', percent(Math.max(...profile.links.map((link) => link.score))), `${amount(profile.links.length)} scored ties`],
     profile.separated.length > 0 && ['Kept apart from', amount(profile.separated.length)],

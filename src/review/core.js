@@ -393,7 +393,7 @@ async function act(title, text, path, body, confirm, { otherKey, undo = false, d
   if (!saved) return refused ? load() : undefined
   // These routes answer with the subjects whose cluster moved. None is a real outcome, so say so.
   done?.(saved.answer)
-  const answer = saved.answer?.moved ?? saved.answer
+  const answer = saved.answer?.moved ?? saved.answer?.changes ?? saved.answer
   // Reloading clears the notice, so speak after it. A failed reload has already said why.
   if (await load()) notice(Array.isArray(answer) && answer.length === 0 ? `${title}: recorded. No cluster changed.` : `${title}: done.`)
 }
