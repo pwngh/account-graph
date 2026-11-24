@@ -207,8 +207,8 @@ export interface Graph {
   asOf(at: number): Promise<Graph>
   /**
    * Deletes sightings written down before a time, with answers about
-   * advertising that no longer stand, call results whose call never came,
-   * and alerts delivered over a month ago, to keep the logs from growing forever. Links and clusters do
+   * advertising that no longer stand and call results whose call never
+   * came, to keep the logs from growing forever. Links and clusters do
    * not change, because edges keep what they folded, and each subject keeps
    * the answer that stands. `history`, `consentHistory` and `asOf` lose what
    * was deleted. Returns how many went.
@@ -963,7 +963,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       if (!Number.isFinite(before)) throw new TypeError('prune needs a time in epoch milliseconds')
       return store.write(async (tx) => {
         await decide(tx, 'prune', [String(before)], why)
-        return (await tx.pruneSightings(before)) + (await tx.pruneConsent(before)) + (await tx.pruneCallResults(before)) + (await tx.pruneAlerts(Math.min(before, now() - 30 * DAY)))
+        return (await tx.pruneSightings(before)) + (await tx.pruneConsent(before)) + (await tx.pruneCallResults(before))
       })
     },
 

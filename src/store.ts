@@ -56,8 +56,6 @@ export interface Tx {
   recentChanges(limit: number): Promise<Moved[]>
   /** Notes that a feed wrote something down at a time. */
   fed(feed: Feed, at: number): Promise<void>
-  /** Deletes delivered alerts from before a time. Returns how many went. */
-  pruneAlerts(before: number): Promise<number>
   /** Whether no subject has been recorded. */
   empty(): Promise<boolean>
   /** Which policy the stored clusters were built with, by its hash. */

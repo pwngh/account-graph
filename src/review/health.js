@@ -11,8 +11,9 @@ function workings(ops) {
   const out = []
   if (ops.undelivered.length > 0) {
     out.push(el('section', {}, el('h2', {}, 'Alerts not delivered'),
-      el('p', { class: 'banner', role: 'alert' }, el('b', {}, `${amount(ops.undelivered.length)} not delivered. `), ops.alerts ? 'Each is tried again every five minutes, and stays here until it arrives.' : 'No webhook is set, so nobody has been told. Set ALERT_WEBHOOK.'),
-      el('ul', {}, ...ops.undelivered.map((alert) => el('li', {}, alert.text, el('span', { class: 'reason' }, `${when(alert.at)}${alert.error ? `. ${alert.error}` : ''}`))))))
+      el('p', { class: 'banner', role: 'alert' }, el('b', {}, `${amount(ops.undeliveredCount)} not delivered. `), ops.alerts ? 'Each is tried again every five minutes, and stays here until it arrives.' : 'No webhook is set, so nobody has been told. Set ALERT_WEBHOOK.'),
+      el('ul', {}, ...ops.undelivered.map((alert) => el('li', {}, alert.text, el('span', { class: 'reason' }, `${when(alert.at)}${alert.error ? `. ${alert.error}` : ''}`)))),
+      ops.undeliveredCount > ops.undelivered.length ? el('p', { class: 'muted' }, `The oldest ${amount(ops.undelivered.length)} are shown.`) : ''))
   } else if (!ops.alerts) out.push(el('section', {}, el('h2', {}, 'Alerts'), el('p', {}, 'No webhook is set, so what goes wrong is shown here and nobody is told.')))
 
   const feeds = el('table', {}, el('tr', {}, th('Feed'), th('Last written down'), th('Quiet after'), th('State')),
@@ -23,7 +24,7 @@ function workings(ops) {
   const jobs = el('table', {}, el('tr', {}, th('Job'), th('State'), th('Began'), th('Last success'), th('Last failure'), th('Why')),
     ...ops.jobs.map((job) => el('tr', {}, td('', job.name), td('', el('span', { class: `chip ${job.state === 'done' ? 'same' : job.state === 'running' ? '' : 'apart'}` }, JOB[job.state])), td('', ago(job.started, ops.at)),
       td('', ago(job.succeeded, ops.at)), td('', job.failed === undefined ? el('span', { class: 'muted' }, 'none') : ago(job.failed, ops.at)),
-      td('who', job.error && job.state === 'failed' ? job.error : '', job.unfinished === undefined ? '' : el('span', { class: 'reason' }, `A run that began ${when(job.unfinished)} never finished.`)))))
+      td('who', job.error && job.state === 'failed' ? job.error : '', ...job.open.slice(0, 3).map((began) => el('span', { class: 'reason' }, `A run that began ${when(began)} never finished.`))))))
   out.push(el('section', {}, el('h2', {}, 'Jobs'), ops.jobs.length > 0 ? wide('Jobs', jobs) : el('p', {}, 'None has run yet.')))
 
   const states = [['held', 'waiting for a call result'], ['pending', 'waiting to be sent'], ['sent', 'sent'], ['skipped', 'not sent, with a reason'], ['failed', 'refused for good']]

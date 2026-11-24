@@ -210,7 +210,7 @@ Set `ALERT_WEBHOOK` to a Slack incoming webhook, or anything that takes `{"text"
 | A feed has gone quiet | Which one, and when it was last heard from. Once for each silence. |
 | A missed caller from a paid arrival has waited `RETURN_HOURS` | Where they came from, when, and how often they were rung back. Once for each wait, never repeated. |
 
-The first three kinds are sent at most once in ten minutes each. An alert that cannot be delivered is logged, kept, shown on the Health view, and tried again every five minutes until it arrives. It never stops the work it was reporting on.
+The first three kinds are sent at most once in ten minutes each. An alert that cannot be delivered is logged, kept, shown on the Health view, and tried again every five minutes until it arrives. It never stops the work it was reporting on. With no webhook set, what would have been said is kept and shown there.
 
 Send one to see that it arrives:
 
@@ -237,13 +237,13 @@ The time is when a record was written down, not the time it carries. Pick hours 
 
 ### Callers waiting
 
-A caller who arrived from an ad, was missed, and has not been reached is told about once after `RETURN_HOURS`. Ringing again does not repeat it; being reached and missed later is a new wait. An arrival counts as paid when it carries an ad click, names its campaign by id, or has a medium such as `cpc`.
+A caller who arrived from an ad, was missed, and has not been reached is told about once after `RETURN_HOURS`. Ringing again does not repeat it; being reached and missed later is a new wait. An arrival counts as paid when it carries an ad click, names its campaign by id, or has a medium such as `cpc`. Meta's click id alone is not enough, because links nobody paid for carry it too.
 
-This needs [call results](calls.md#was-it-answered), because without one nothing says a call was missed. Misses older than two weeks are left to the Calls view.
+This needs [call results](calls.md#was-it-answered), because without one nothing says a call was missed. A miss more than two weeks overdue is left to the Calls view.
 
 ### Jobs
 
-The Health view and `GET /ops` list what runs by itself: the outbox, each cost import, the checks behind these alerts. Each shows when it last began, succeeded and failed, and whether a run began and never finished.
+The Health view and `GET /ops` list what runs by itself: the outbox, each cost import, the checks behind these alerts. Each shows when it last began, succeeded and failed, and whether a run began and never finished. Such a run is shown for a month.
 
 Set `CHANGE_WEBHOOK` to a URL and the server posts `{"changes": [...]}` there each time a cluster changes. Each change names a subject, the cluster it left, and the cluster it joined.
 
@@ -273,7 +273,7 @@ On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes i
 | `AUDIT_HEAD_HOURS` | `0` | Post the newest decision's hash to `ALERT_WEBHOOK` at start and every so many hours, at least one. `0` is never. |
 | `STAFF_NETWORKS` | none | Addresses and ranges whose visits are dropped, separated by commas: `192.0.2.10,198.51.100.0/24`. |
 | `QUIET_TOUCHES_HOURS`, `QUIET_CALLS_HOURS`, `QUIET_RESULTS_HOURS`, `QUIET_COSTS_HOURS` | `0` | Hours of silence before a feed is said to be quiet. `0` is not watched. |
-| `RETURN_HOURS` | `24` | Hours before a missed caller from a paid arrival is said to be waiting. `0` is never. Needs `ALERT_WEBHOOK`. |
+| `RETURN_HOURS` | `24` | Hours before a missed caller from a paid arrival is said to be waiting. `0` is never. |
 | `STAGES` | none | Your steps in order, as JSON, each with a `value`, `currency` and `action`. See [the report](report.md#steps-and-what-each-is-worth). |
 | `LINK_SECRET` | none | Signs links that name a person, and the tokens that carry a visitor between your sites. At least 16 characters. |
 | `EVENTS` | none | Names of page events to keep, separated by commas: `inquiry,phone_click`. |

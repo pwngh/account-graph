@@ -128,7 +128,7 @@ if (!url) {
       await pool.query(`insert into ${schema}.touch (subject, at, detail) values ('visitor:1', 700, '{}'), ('visitor:1', 600, '{}');
         insert into ${schema}.call (id, subject, at, dialed, flags, recorded_at) values ('OLD', 'caller:x', 5, '+15550100001', '{}', 900)`)
       await store.migrate()
-      assert.deepEqual([...(await store.ops.feeds())].sort(), [['calls', 900], ['touches', 700]])
+      assert.deepEqual([...(await store.ops.feeds())].sort(), [['calls', { last: 900 }], ['touches', { last: 700 }]])
     } finally {
       await pool.query(`drop schema if exists ${schema} cascade`)
     }

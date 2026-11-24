@@ -350,7 +350,7 @@ test('quiet hours are off until set, and a call back is due after a day', () => 
   assert.throws(() => configFrom({ ...env, QUIET_COSTS_HOURS: 'often' }), /QUIET_COSTS_HOURS must be a number/)
   // An arrival is paid for when it carries an ad click, names its campaign by id, or says so.
   const touch = (more: object) => paid({ subject: 'visitor:1', at: 0, ...more })
-  assert.deepEqual([{ gclid: 'G' }, { campaignId: '1' }, { medium: 'CPC' }, { medium: 'paid_social' }, { source: 'mailer', medium: 'call' }, { referrer: 'https://partner.example' }].map(touch), [true, true, true, true, false, false])
+  assert.deepEqual([{ gclid: 'G' }, { campaignId: '1' }, { medium: 'CPC' }, { medium: 'paid_social' }, { source: 'mailer', medium: 'call' }, { referrer: 'https://partner.example' }, { fbclid: 'F' }, { fbclid: 'F', campaignId: '9' }].map(touch), [true, true, true, true, false, false, false, true])
 })
 
 test('a day begins at local midnight, across a clock change', () => {

@@ -246,8 +246,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
   const ops = createOps(graph, store.ops, {
     ...(config.alertWebhook && { url: config.alertWebhook }),
     quiet: config.quiet,
-    // With nobody to tell, a caller waiting is on the Calls view and nowhere else.
-    returnHours: config.alertWebhook ? config.returnHours : 0,
+    returnHours: config.returnHours,
     timeZone: config.timeZone,
     onError: (error) => log(`alert: ${String((error as Error)?.message ?? error)}`),
   })

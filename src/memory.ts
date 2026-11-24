@@ -202,10 +202,6 @@ export function createMemoryStore(): Store {
       ops.fed(feed, at)
     },
 
-    async pruneAlerts(before) {
-      return ops.prune(before)
-    },
-
     async empty() {
       return labels.size === 0
     },

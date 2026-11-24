@@ -109,7 +109,7 @@ The four `POST` routes answer with the subjects whose cluster moved. With the se
 | `GET /conversions?state=` | Jobs in one state: `held`, `pending`, `sent`, `skipped`, or `failed`. `held` waits for a call's result. |
 | `POST /retry` | `{ transactionId }`. Puts its failed and skipped jobs back in line. |
 | `POST /alerts/test` | Posts a test alert. Answers `{ delivered, error? }`. |
-| `POST /prune` | `{ before, by?, reason? }`. Deletes sightings written down before a time, answers about advertising that no longer stand, call results whose call never came, and alerts delivered over a month ago. |
+| `POST /prune` | `{ before, by?, reason? }`. Deletes sightings written down before a time, answers about advertising that no longer stand, and call results whose call never came. |
 | `GET /stats` | Counts since start, what the graph holds, and outbox jobs by state. |
 | `POST /rebuild` | `{ by?, reason? }`. Recomputes every cluster under the running policy, and answers with the subjects that moved. No other write runs meanwhile. |
 | `GET /verify` | `{ changes, policy }`: the subjects whose stored cluster differs from a full recompute, and whether the policy changed since they were stored. |

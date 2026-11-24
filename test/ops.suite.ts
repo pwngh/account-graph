@@ -33,7 +33,7 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
     }
 
     test('a feed that goes quiet is said once, and once more when it goes quiet again', async () => {
-      const { graph, ops, clock, posted } = await fresh({ quiet: { touches: 6, costs: 48 }, timeZone: 'America/New_York' })
+      const { graph, ops, make, clock, posted } = await fresh({ quiet: { touches: 6, costs: 48 }, timeZone: 'America/New_York' })
       const touch = () => graph.touch({ subject: 'visitor:1', at: clock.now, gclid: 'G' })
       await touch()
       clock.now += 6 * HOUR - 1
@@ -51,9 +51,9 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       clock.now += 7 * HOUR
       await ops.check()
       assert.equal(posted.length, 2)
-      // A feed that never wrote anything is quiet too, once it has been watched that long.
-      clock.now = T0 + 48 * HOUR
-      await ops.check()
+      // A feed that never wrote anything is quiet too, once it has been watched that long, whatever restarted meanwhile.
+      clock.now = T0 + 6 * HOUR + 48 * HOUR
+      await make().check()
       assert.match(posted.at(-1)!, /no costs for 48 hours\. None has ever been recorded\./)
       // Each feed is fed by its own records. A touch dated in the past still fed it now.
       await graph.spend({ day: '2023-11-14', source: 'google', amount: 1 })
@@ -94,6 +94,10 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       clock.now += 25 * HOUR
       await ops.check()
       assert.equal(posted.length, 2)
+      // Pruning everything does not make it news again.
+      await graph.prune(clock.now)
+      await ops.check()
+      assert.equal(posted.length, 2)
       // Off, nothing is said. Far in the past, it is for the Calls view.
       await miss('D1', '+15550100014')
       clock.now += 25 * HOUR
@@ -102,10 +106,15 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       await ops.check()
       assert.equal(posted.length, 2)
       assert.deepEqual((await ops.state()).undelivered, [])
+      // A wait longer than the look back is told about all the same.
+      await miss('E1', '+15550100015')
+      clock.now += 20 * DAY
+      await make({ returnHours: 480 }).check()
+      assert.equal(posted.length, 3)
     })
 
     test('an alert that could not be delivered stays until it is', async () => {
-      const { graph, ops, make, clock, posted, hook, errors } = await fresh({ quiet: { touches: 1 }, returnHours: 1 })
+      const { graph, ops, make, clock, posted, hook, errors, store } = await fresh({ quiet: { touches: 1 }, returnHours: 1 })
       await graph.touch({ subject: 'visitor:1', at: T0, gclid: 'G' })
       await recordCall(graph, { id: 'A1', from: '+15550100011', to: '+15550100001', at: T0, duration: 9, answered: false }, { numbers: { '+15550100001': { source: 'google', campaignId: '1' } } })
       clock.now += 2 * HOUR
@@ -113,28 +122,30 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       await ops.check()
       assert.equal(await ops.alert('outbox', 'the outbox could not run'), false)
       const left = (await ops.state()).undelivered
-      assert.deepEqual(left.map((alert) => [alert.key.split(':')[0], alert.error]).sort(), [['last', 'The alert webhook answered 500'], ['quiet', 'The alert webhook answered 500'], ['unreturned', 'The alert webhook answered 500']])
+      assert.deepEqual(left.map((alert) => [alert.key.split(':')[0], alert.error]).sort(), [['alert', 'The alert webhook answered 500'], ['quiet', 'The alert webhook answered 500'], ['unreturned', 'The alert webhook answered 500']])
       assert.equal(errors.length, 3)
-      // The same thing again replaces what was not delivered, and is not a second one.
+      // The same words again are the same message. Other words are another, and neither takes the other's place.
+      assert.equal(await ops.alert('outbox', 'the outbox could not run'), false)
+      assert.equal((await ops.state()).undeliveredCount, 3)
       assert.equal(await ops.alert('outbox', 'the outbox still could not run'), false)
-      assert.equal((await ops.state()).undelivered.length, 3)
+      assert.equal((await ops.state()).undeliveredCount, 4)
       // Delivered once the webhook answers, by one server of two, each exactly once.
       hook.status = 200
       clock.now += 60_000
       await Promise.all([ops.check(), make().check()])
-      assert.equal(posted.length, 3)
-      assert.ok(posted.includes('the outbox still could not run'))
+      assert.equal(posted.length, 4)
+      assert.ok(posted.includes('the outbox could not run') && posted.includes('the outbox still could not run'))
       assert.deepEqual((await ops.state()).undelivered, [])
       clock.now += 60_000
       await ops.check()
-      assert.equal(posted.length, 3)
-      // A kind that was not delivered is settled by the next of its kind that is.
+      assert.equal(posted.length, 4)
+      // One that was not delivered is settled by delivering it, and by nothing else.
       hook.status = 500
       clock.now += HOUR
       await ops.alert('costs:google', 'stale')
       hook.status = 200
       assert.equal(await ops.alert('costs:google', 'stale still'), true)
-      assert.deepEqual((await ops.state()).undelivered, [])
+      assert.deepEqual((await ops.state()).undelivered.map((alert) => alert.text), ['stale'])
       // The same kind is held back for ten minutes.
       assert.equal(await ops.alert('costs:google', 'again'), false)
 
@@ -156,7 +167,8 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       assert.deepEqual(await ops.test(), { delivered: true })
       hook.status = 404
       assert.deepEqual(await ops.test(), { delivered: false, error: 'The alert webhook answered 404' })
-      assert.deepEqual(await createOps(graph, {} as never).test(), { delivered: false, error: 'No webhook is set. Set ALERT_WEBHOOK.' })
+      assert.match((await ops.state()).undelivered.at(-1)!.text, /this is a test alert/)
+      assert.deepEqual(await createOps(graph, store.ops, { now: () => clock.now }).test(), { delivered: false, error: 'No webhook is set. Set ALERT_WEBHOOK.' })
     })
 
     test('jobs say when they began and how they ended, and one that never finished says so', async () => {
@@ -170,20 +182,27 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       await new Promise((resolve) => setTimeout(resolve, 20))
       const read = async () => Object.fromEntries((await ops.state()).jobs.map((job) => [job.name, job]))
       let jobs = await read()
-      assert.deepEqual(jobs.costs, { name: 'costs', started: T0 + 1000, succeeded: T0, failed: T0 + 1000, error: 'refused with 401', state: 'failed' })
+      assert.deepEqual(jobs.costs, { name: 'costs', started: T0 + 1000, succeeded: T0, failed: T0 + 1000, error: 'refused with 401', open: [], state: 'failed' })
       assert.equal(jobs.outbox!.state, 'running')
-      clock.now += 15 * 60_000
-      assert.equal((await read()).outbox!.state, 'stuck')
-      // The server was restarted and the job ran again: the run that never finished is still on record.
+      // Restarted a minute later and run again: the run that never finished stays on record as its own.
+      clock.now += 60_000
       await make().run('outbox', async () => undefined)
-      jobs = await read()
-      assert.deepEqual([jobs.outbox!.state, jobs.outbox!.unfinished], ['done', T0 + 1000])
-      // A run that overlaps another for a moment is not one that was given up on.
-      const other = ops.run('costs', () => ops.run('costs', async () => undefined))
-      await other
-      assert.equal((await read()).costs!.unfinished, undefined)
+      assert.deepEqual([(await read()).outbox!.state, (await read()).outbox!.open], ['done', []])
+      clock.now += 15 * 60_000
+      assert.deepEqual([(await read()).outbox!.state, (await read()).outbox!.open], ['done', [T0 + 1000]])
+      // An older run ending does not make a newer one that hangs look finished.
+      let finishNewer!: () => void
+      const newer = make().run('outbox', () => new Promise<void>((resolve) => (finishNewer = resolve)))
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      const began = clock.now
       finish()
       await hanging
+      clock.now += 15 * 60_000
+      jobs = await read()
+      assert.deepEqual([jobs.outbox!.state, jobs.outbox!.open], ['stuck', [began]])
+      finishNewer()
+      await newer
+      assert.deepEqual([(await read()).outbox!.state, (await read()).outbox!.open], ['done', []])
       // None of it counts as a write, so no screen reloads because a job ran.
       assert.equal(await graph.version(), version)
     })
