@@ -6,6 +6,7 @@
  */
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import type { Call } from '../calls.ts'
+import type { Text } from '../texts.ts'
 
 /**
  * The signature Twilio puts in `X-Twilio-Signature`: the address it called,
@@ -47,6 +48,12 @@ export function twilioCall(fields: Readonly<Record<string, string>>, now: number
     // Anything but "completed" never connected. "completed" only says the phone system picked up, so it answers nothing.
     ...(fields.CallStatus !== 'completed' && { answered: false }),
   }
+}
+
+/** The text an incoming message webhook reports, or undefined for a status report of one you sent. `now` is its time, which Twilio does not send. */
+export function twilioText(fields: Readonly<Record<string, string>>, now: number): Text | undefined {
+  if (!fields.MessageSid || !fields.From || !fields.To || (fields.SmsStatus ?? 'received') !== 'received') return undefined
+  return { id: fields.MessageSid, from: fields.From, to: fields.To, at: now, text: fields.Body ?? '' }
 }
 
 /** What kind of line a phone number is, from Twilio Lookup. */

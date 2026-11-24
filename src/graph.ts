@@ -5,6 +5,7 @@ import type { Labeled } from './calibrate.ts'
 import { summarizeCalls } from './callreport.ts'
 import type { CallSummary } from './callreport.ts'
 import { followUp } from './calls.ts'
+import { Gone, asks, beginnings, replyTo } from './texts.ts'
 import { followed } from './followed.ts'
 import type { Followed } from './followed.ts'
 import type { Hours } from './hours.ts'
@@ -40,6 +41,8 @@ import type {
   Identifier,
   Journey,
   KeptCall,
+  KeptText,
+  OpenText,
   Labels,
   Lease,
   Link,
@@ -181,6 +184,19 @@ export interface Graph {
   tieCall(caller: Subject, visitor: Subject, identifier: Identifier, at: number, by: { pool: string; grace: number } | { notes: readonly Identifier[] }): Promise<boolean>
   /** Every kept call to or from the given subjects, oldest first. */
   callsOf(subjects: readonly Subject[]): Promise<KeptCall[]>
+  /** Keeps a text message, with the arrival it is filed under, unless it is kept already. `recordText` does this. Resolves to whether it was written. */
+  keepText(text: Omit<KeptText, 'recorded'>, touch?: Touch): Promise<boolean>
+  /** A kept text, or undefined for an id no text was kept for. */
+  keptText(id: string): Promise<KeptText | undefined>
+  /** Every kept text to or from the given subjects, oldest first. */
+  textsOf(subjects: readonly Subject[]): Promise<KeptText[]>
+  /**
+   * Texts nobody has replied to, the oldest of each sender, oldest first, with what each is credited to. `from` and `to`
+   * are days; pass the last text of a page as `after` for the next.
+   */
+  openTexts(options: { from: string; to: string; timeZone?: string; limit?: number; after?: { at: number; id: string } }): Promise<OpenText[]>
+  /** Whether anyone of a subject's cluster last asked, by STOP or START, for no more texts, and when. Undefined when nobody has said. */
+  texting(subject: Subject): Promise<{ optedOut: boolean; at: number } | undefined>
   /**
    * Missed calls nobody has returned, oldest first, with what each is
    * credited to. `from` and `to` are days; pass the last call of a page as `after` for the next.
@@ -402,7 +418,7 @@ export interface Board {
 }
 
 /** The order of entries at the same moment. A type added to the journey has a place here or does not compile. */
-const KIND_ORDER: Record<Entry['kind'], number> = { visit: 0, call: 1, consent: 2, decision: 3, sighting: 4, outcome: 5, value: 6 }
+const KIND_ORDER: Record<Entry['kind'], number> = { visit: 0, call: 1, text: 1, consent: 2, decision: 3, sighting: 4, outcome: 5, value: 6 }
 /** The most subjects of one person a journey reads. */
 const MOST = 60
 /** How many subjects one read of many takes at a time. */
@@ -684,7 +700,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     const touches: AttributedTouch[] = found
       .map((touch) => ({ ...touch, joined: false, ...reached.get(touch.subject)! }))
       .sort((x, y) => y.at - x.at || y.confidence - x.confidence || (x.subject < y.subject ? -1 : 1))
-    const best = touches.find((touch) => touch.confidence >= policy.same || (touch.joined && !touch.landing?.startsWith('tel:')))
+    const best = touches.find((touch) => touch.confidence >= policy.same || (touch.joined && !/^(tel|sms):/.test(touch.landing ?? '')))
     const reason = best ? 'credited' : touches.length > 0 ? 'low_confidence' : 'no_touch'
     return { subject, at, touches, credited: best, reason }
   }
@@ -695,6 +711,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     return not.size === 0 ? [...list] : list.filter((each) => !not.has(id(each)))
   }
   const outcomeId = (outcome: Counted) => outcome.transactionId
+  /** A text with the flag that says it began a conversation, which is worked out and not kept. */
+  const withFirst = (text: KeptText, own: readonly KeptText[]): KeptText => (beginnings(own).has(text.id) ? { ...text, flags: ['first', ...text.flags] } : text)
   const callId = (call: KeptCall) => `call:${call.id}`
 
   const followable = async (tx: Tx, subject: Subject, since: number, at: number) => (await tx.touchesOf([subject], since, at)).length > 0 && (await tx.consentOf([subject])).get(subject)?.adUserData !== false
@@ -935,6 +953,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       const counted: Counted = { transactionId, subject, at, stage: outcome.stage || 'outcome', value, currency: outcome.currency ?? '', ...(tags && { tags }) }
       return store.write(async (tx) => {
         if (await tx.outcomeOf(transactionId)) return false
+        // Whoever was forgotten while their text was being counted is not written down again.
+        if (outcome.ofText !== undefined && (await tx.textOf(outcome.ofText))?.subject !== subject) throw new Gone()
         await tx.setOutcome(counted)
         await revalue(tx, counted)
         return true
@@ -1040,7 +1060,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       // One transaction: two calls reported at once cannot both find the visitor free.
       await changing(async (tx) => {
         const apart = (await tx.separatedOf([caller])).some((pair) => pair.includes(visitor))
-        const others = ((await neighbors(tx, [visitor])).get(visitor) ?? []).some((link) => link.subject !== caller && link.reasons.some((reason) => /^(dial|lease):/.test(reason.identifier)))
+        const others = ((await neighbors(tx, [visitor])).get(visitor) ?? []).some((link) => link.subject !== caller && link.reasons.some((reason) => /^(dial|lease|text):/.test(reason.identifier)))
         // What matched the two is read again: whoever was forgotten meanwhile is not tied, even where they have been seen since.
         const matched = 'pool' in by ? (await holderOf(tx, by.pool, at, by.grace)) === visitor : (await tx.edgesOn(by.notes)).some((edge) => edge.subject === visitor)
         tied = !apart && !others && matched
@@ -1090,6 +1110,57 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
     callsOf(subjects) {
       return store.read((tx) => tx.callsOf(subjects))
+    },
+
+    async keepText(text, touch) {
+      keepable(text.id, text.subject, text.to, text.visitor, ...text.flags)
+      if (touch) checkTouch(touch)
+      return store.write(async (tx) => {
+        if (await tx.textOf(text.id)) return false
+        const { visitor, ...rest } = text
+        // Whoever was forgotten since the two were tied is not written down again.
+        const tied = visitor !== undefined && (await tx.edgesOn([`text:${text.id}`, `dial:text-${text.id}`])).some((edge) => edge.subject === visitor)
+        await tx.setText({ ...rest, ...(tied && { visitor }), recorded: now() })
+        if (touch) {
+          await tx.addTouch(touch)
+          await tx.fed('touches', now())
+        }
+        return true
+      })
+    },
+
+    keptText(id) {
+      return store.read((tx) => tx.textOf(id))
+    },
+
+    textsOf(subjects) {
+      return store.read((tx) => tx.textsOf(subjects))
+    },
+
+    openTexts({ from, to, timeZone, limit = 50, after }) {
+      const [start, end] = range(from, to, timeZone)
+      return store.read(async (tx) => {
+        const open = await tx.openTexts(start, end, limit, after)
+        const senders = unique(open.map((each) => each.subject))
+        const theirs = await tx.textsOf(senders)
+        const calls = await leadsOf(tx, await tx.callsOf(senders), callId)
+        const creditOf = await creditAll(tx, open, 90 * DAY, 2)
+        return open.map((text) => {
+          const { credited } = creditOf(text.subject, text.at)
+          const [own, spoken] = [theirs.filter((each) => each.subject === text.subject), calls.filter((each) => each.subject === text.subject)]
+          const unanswered = own.filter((each) => asks(each) && replyTo(each, own, spoken).state === 'open').length
+          return { text: withFirst(text, own), unanswered, ...(credited && { touch: credited }) }
+        })
+      })
+    },
+
+    texting(subject) {
+      return store.read(async (tx) => {
+        const own = (await tx.labelsOf([subject])).get(subject)
+        const members = own ? await tx.clusterOf(own.cluster) : [subject]
+        const said = (await tx.textsOf(members)).filter((text) => text.flags.includes('opt_out') || text.flags.includes('opt_in')).at(-1)
+        return said && { optedOut: said.flags.includes('opt_out'), at: said.at }
+      })
     },
 
     openCalls({ from, to, timeZone, limit = 50, after }) {
@@ -1624,12 +1695,19 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const not = await tx.notLeads([...calls.map(callId), ...outcomes.map(outcomeId)])
         const spurned = (id: string) => (not.has(id) ? { notLead: not.get(id)!.kind } : {})
         for (const call of calls) entries.push({ at: call.at, subject: call.subject, kind: 'call', call, ...spurned(callId(call)), ...(call.direction === 'inbound' && call.result?.answered === false && { followUp: followUp(call, calls.filter((each) => !not.has(callId(each)))) }) })
+        const texts = await tx.textsOf(people)
+        const badTexts = await tx.notLeads(texts.map((text) => `text:${text.id}`))
+        for (const text of texts) {
+          const bad = badTexts.get(`text:${text.id}`)
+          const own = texts.filter((each) => each.subject === text.subject)
+          entries.push({ at: text.at, subject: text.subject, kind: 'text', text: withFirst(text, own), ...(bad && { notLead: bad.kind }), ...(asks(text) && { reply: replyTo(text, own, calls.filter((each) => each.subject === text.subject && !not.has(callId(each)))) }) })
+        }
         for (const each of people) {
           // One moment is many sightings, one for each identifier. What a call or a reviewer's join left is told by the call and the decision.
-          const rang = new Set(calls.filter((call) => call.subject === each || call.visitor === each).map((call) => call.at))
+          const rang = new Set([...calls, ...texts].filter((call) => call.subject === each || call.visitor === each).map((call) => call.at))
           const moments = new Map<string, Entry & { kind: 'sighting' }>()
           for (const { at, event = '', identifier } of await tx.history(each)) {
-            if (at >= before || (event === 'call' && rang.has(at)) || (event === 'review' && identifier.startsWith('review:join-'))) continue
+            if (at >= before || ((event === 'call' || event === 'text') && rang.has(at)) || (event === 'review' && identifier.startsWith('review:join-'))) continue
             const key = `${at} ${event}`
             const moment = moments.get(key) ?? { at, subject: each, kind: 'sighting', event, identifiers: [] }
             moments.set(key, moment)

@@ -48,6 +48,8 @@ An identifier is written `kind:value`. A kind missing from the policy gets 400. 
 | `POST /collect` | Records one browser visit. Requires an origin in `ORIGINS`, and is rate limited per address. Answers 204. |
 | `POST /number` | Assigns the visitor a pool number: `{ device }`. Same origins and limit as `/collect`. Answers `{ number, until, lasts }`, or 204 when none is available to them. Requires `POOL_NUMBERS`. |
 | `POST /event` | Records a page event: `{ device, event, id?, number? }`. Same origins and limit as `/collect`. Accepts only names in `EVENTS`. Answers 204. |
+| `POST /text-code` | Answers `{ code }`, which the script tag adds to your text links, or 204 for a visitor who refused ad measurement. Same origins and limit as `/collect`. Requires `TEXT_CODES`. |
+| `POST /texts/twilio` | Receives Twilio's incoming texts and checks Twilio's signature. Requires Twilio settings. |
 | `POST /carry` | Answers `{ token }`, which the script tag adds to links to your other sites. Same origins and limit as `/collect`. Requires `LINK_SECRET`. |
 | `POST /calls/twilio` | Receives Twilio's status callback for a call and checks Twilio's signature. Requires Twilio settings. |
 | `GET /collect.js` | The script tag that posts to `/collect` and `/event`. |
@@ -105,6 +107,9 @@ Send `by` only with the service token. A reviewer's decision carries the name of
 | `GET /board?days=` | People by the furthest step they reached, unreturned missed calls first: `{ columns, unplaced }`, each column with `people`, `fresh`, `late`, `done` and its `rows`. See [the report](report.md#board). |
 | `GET /followed?from=&to=&tz=&step=&days=` | People who reached a step within some days of a call. See [the report](report.md#outcomes-after-a-call). |
 | `GET /call?id=` | One call with its state and, when missed, its follow-up, or `null`. |
+| `GET /text?id=` | One text with what became of it, or `null`. |
+| `GET /texts?from=&to=&tz=&after=` | The oldest unanswered text of each sender, 50 at a time: `{ from, to, timeZone, at, texts, next }`. |
+| `GET /texting?subject=` | Whether the subject's person last asked for no more texts: `{ optedOut, at }`, or `null`. |
 | `GET /calls?from=&to=&tz=&after=` | Unreturned missed calls, oldest first, 50 at a time: `{ from, to, timeZone, at, calls, next }`. Pass `next` as `after`. |
 | `GET /calls/summary?from=&to=&tz=` | Inbound calls by result, hour and weekday, and how many were attributed. |
 | `GET /report?from=&to=&tz=&by=&per=` | The cost and results of each campaign between two days. `steps` names the steps in your order, and `timeZone` the zone of the days. See [the report](report.md). |
@@ -151,6 +156,7 @@ Send `by` only with the service token. A reviewer's decision carries the name of
 
 | Route | Description |
 | --- | --- |
+| `POST /text` | A text message: `{ id, from, to, at, text?, code?, direction?, tags? }`. What it says is read and not stored. Answers `{ subject, flags, counted, visitor?, duplicate }`. See [texts](texts.md). |
 | `POST /call` | A phone call: `{ id, from?, to, at, duration?, direction?, answered?, voicemail?, waited?, tags? }`. With `direction: "outbound"` you placed the call, and `from` is yours. Answers `{ subject, flags, counted, state, visitor?, duplicate }`. See [calls](calls.md). |
 | `POST /call/result` | A call's result: `{ id, answered, voicemail?, waited? }`, before or after the call. Answers `{ state, counted }`; `waiting` until the call arrives. |
 | `POST /call/returned` | Records that staff reached a caller outside your phone system: `{ id, at?, returned? }`, before or after the call. `returned: false` undoes it. Answers `{ followUp }`, null until the call arrives or if it was not missed. |

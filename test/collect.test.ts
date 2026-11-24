@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { carry, collect, event, fields, fill, pool, read, watch } from '../src/collect.ts'
+import { carry, collect, event, fields, fill, pool, read, texts, watch, withCode } from '../src/collect.ts'
 
 /** Just enough of a browser for the collector: a URL, cookies, storage, and a beacon. */
 function browser(href: string, cookies: Record<string, string> = {}, gpc = false) {
@@ -432,4 +432,56 @@ test('a marked element shows the visitor a number of their own while it is their
   stop()
   await turn(600_000)
   assert.deepEqual([listeners.size, link.href], [0, 'tel:+15550100100'])
+})
+
+test('a text link carries the code at the end of what it fills in, once', () => {
+  for (const [href, marked] of [
+    ['sms:+15550100101', 'sms:+15550100101?&body=Ref%20K7Q2MX'],
+    ['sms:+15550100101?body=I%20need%20a%20lawyer', 'sms:+15550100101?body=I%20need%20a%20lawyer%20Ref%20K7Q2MX'],
+    ['sms:+15550100101;?&body=Hi', 'sms:+15550100101;?&body=Hi%20Ref%20K7Q2MX'],
+    ['sms:+15550100101&body=Hi', 'sms:+15550100101&body=Hi%20Ref%20K7Q2MX'],
+    ['sms:+15550100101?body=', 'sms:+15550100101?body=Ref%20K7Q2MX'],
+    ['sms:+15550100101?service=x', 'sms:+15550100101?service=x&body=Ref%20K7Q2MX'],
+    ['sms:+15550100101?body=Hi%20Ref%20ABCDEF', 'sms:+15550100101?body=Hi%20Ref%20ABCDEF%20Ref%20K7Q2MX'],
+    ['sms:+15550100101?body=Hi%20Ref%20K7Q2MX', 'sms:+15550100101?body=Hi%20Ref%20K7Q2MX'],
+    ['tel:+15550100101', 'tel:+15550100101'],
+  ] as const) assert.equal(withCode(href, 'K7Q2MX'), marked)
+})
+
+test('the page asks for a code when it has a text link, and puts it in as the link is followed', async () => {
+  browser('https://site.example/')
+  const listeners = new Map<string, (event: any) => void>()
+  let href = 'sms:+15550100101?body=Hi'
+  let there = false
+  const link = { getAttribute: () => href, setAttribute: (_: string, value: string) => void (href = value) }
+  Object.assign(globalThis.document, {
+    querySelector: () => (there ? link : null),
+    addEventListener: (name: string, listener: (event: any) => void) => listeners.set(name, listener),
+    removeEventListener: (name: string) => listeners.delete(name),
+  })
+  const asked: string[] = []
+  let answer: () => any = () => ({ status: 503 })
+  Object.defineProperty(globalThis, 'fetch', { configurable: true, writable: true, value: async (url: string) => (asked.push(url), answer()) })
+  const stop = texts({ endpoint: 'https://graph.example/collect' })
+  const follow = () => listeners.get('click')!({ target: { closest: () => link } })
+  await settle()
+  assert.deepEqual(asked, [])
+  // A link that comes later is asked for when the page is touched, and again after an answer without one.
+  there = true
+  for (const failing of [() => { throw new TypeError('offline') }, () => ({ status: 429 })]) {
+    answer = failing
+    listeners.get('pointerdown')!({})
+    await settle()
+  }
+  answer = () => ({ status: 200, json: async () => ({ code: 'K7Q2MX' }) })
+  follow()
+  assert.equal(href, 'sms:+15550100101?body=Hi')
+  await settle()
+  assert.deepEqual(asked, Array(3).fill('https://graph.example/text-code'))
+  follow()
+  assert.equal(href, 'sms:+15550100101?body=Hi%20Ref%20K7Q2MX')
+  await settle()
+  assert.equal(href, 'sms:+15550100101?body=Hi')
+  stop()
+  assert.equal(listeners.size, 0)
 })

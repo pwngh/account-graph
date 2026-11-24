@@ -6,7 +6,7 @@ import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { components, conversionEvent, createAlerter, createGraph, createHours, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, hoursProblems, ingestRequest, ip, knownLink, ladderProblems, measure, meta, metaEvent, nameKeys, normalizeEmail, normalizePhone, phoneOfType, policyFrom, policyHash, policyProblems, readToken, scorePairs, signToken, sourceOf, withStage } from '../src/index.ts'
+import { components, conversionEvent, createAlerter, createGraph, createHours, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, hoursProblems, ingestRequest, ip, knownLink, ladderProblems, measure, meta, metaEvent, nameKeys, normalizeEmail, normalizePhone, phoneOfType, codeIn, policyFrom, policyHash, policyProblems, readToken, scorePairs, signToken, sourceOf, textCode, withStage } from '../src/index.ts'
 import { summarizeCalls } from '../src/callreport.ts'
 import { followed } from '../src/followed.ts'
 import type { Caller, Followed } from '../src/followed.ts'
@@ -301,6 +301,7 @@ test('the server reads its settings from the environment and names everything wr
   const listed = join(dir, 'numbers.json')
   writeFileSync(listed, '{"555-123-0002":{"source":"meta"}}')
   const from = (more: object) => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', ...more })
+  assert.deepEqual([from({}).textCodes, from({ TEXT_CODES: 'true' }).textCodes, from({ TWILIO_AUTH_TOKEN: 't', TWILIO_TEXT_WEBHOOK_URL: 'https://g.example/t' }).twilioTexts], [false, true, { authToken: 't', url: 'https://g.example/t' }])
   assert.deepEqual(from({ CALL_NUMBERS_FILE: listed }).callNumbers, { '555-123-0002': { source: 'meta' } })
   assert.throws(() => from({ CALL_NUMBERS_FILE: listed, CALL_NUMBERS: '{}' }), /must not both be set/)
   assert.throws(() => from({ CALL_NUMBERS_FILE: `${listed}.gone` }), /cannot be read/)
@@ -314,7 +315,7 @@ test('the server reads its settings from the environment and names everything wr
   assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', CALL_TAP_SECONDS: '3601' }), /CALL_TAP_SECONDS/)
   assert.deepEqual([calls.events, calls.callNumbers, calls.callMinimum, calls.twilio], [['inquiry', 'brochure'], { '555-123-0001': { source: 'google' } }, 30, { authToken: 't', url: 'https://g.example/calls/twilio' }])
   assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', CALL_NUMBERS: '{"12":{}}', TWILIO_AUTH_TOKEN: 't', REPORT_TIME_ZONE: 'Mars/Olympus' }), (error: Error) =>
-    ['"12" is not a phone number', '"12" requires a source', 'TWILIO_WEBHOOK_URL or TWILIO_ACCOUNT_SID must be set along with TWILIO_AUTH_TOKEN', 'REPORT_TIME_ZONE must be a time zone'].every((line) => error.message.includes(line)))
+    ['"12" is not a phone number', '"12" requires a source', 'TWILIO_WEBHOOK_URL, TWILIO_TEXT_WEBHOOK_URL or TWILIO_ACCOUNT_SID must be set along with TWILIO_AUTH_TOKEN', 'REPORT_TIME_ZONE must be a time zone'].every((line) => error.message.includes(line)))
   assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', CALL_NUMBERS: '[1]' }), /CALL_NUMBERS must be a JSON object/)
 
   const full = configFrom({
@@ -949,4 +950,12 @@ test('opening hours count time while open, across nights, holidays, clock change
   assert.equal(configFrom(env).openHours, undefined)
   assert.deepEqual(configFrom({ ...env, OPEN_HOURS: '{"mon":["09:00-24:00"]}' }).openHours, { mon: ['09:00-24:00'] })
   assert.throws(() => configFrom({ ...env, OPEN_HOURS: '{"mon":["9"]}' }), /OPEN_HOURS: "mon" has "9"/)
+})
+
+test('a code is found in a text only where the site wrote it', () => {
+  const code = textCode()
+  assert.match(code, /^[2-9A-HJKMNP-TV-Z]{6}$/)
+  for (const said of [`I need a lawyer. Ref ${code}`, `ref: ${code.toLowerCase()} thanks`, `(Ref#${code})`, `Necesito un abogado\nREF ${code}.`]) assert.equal(codeIn(said), code, said)
+  assert.equal(codeIn(`My order Ref ABCDEF. Ref ${code}`), code)
+  for (const said of ['THANKS', `${code}`, `Ref ${code}X`, `href ${code}`, 'Ref ABC', 'prefer THANKS', '']) assert.equal(codeIn(said), undefined, said)
 })

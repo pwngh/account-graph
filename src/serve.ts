@@ -138,6 +138,8 @@ export function configFrom(env: Env) {
     callExclude: (env.CALL_EXCLUDE ?? '').split(',').map((each) => each.trim()).filter(Boolean),
     callMinimum: number('CALL_MIN_SECONDS', 30),
     callTapSeconds: number('CALL_TAP_SECONDS', 180),
+    textCodes: env.TEXT_CODES === 'true',
+    twilioTexts: env.TWILIO_AUTH_TOKEN && env.TWILIO_TEXT_WEBHOOK_URL ? { authToken: env.TWILIO_AUTH_TOKEN, url: env.TWILIO_TEXT_WEBHOOK_URL } : undefined,
     callResults: env.CALL_RESULTS || undefined,
     callResultWait: number('CALL_RESULT_WAIT', 30),
     poolNumbers: (env.POOL_NUMBERS ?? '').split(',').map((each) => each.trim()).filter(Boolean),
@@ -232,9 +234,9 @@ export function configFrom(env: Env) {
   }
   if (config.poolNumbers.length > 0 && config.poolMinutes < 1) wrong.push('POOL_MINUTES must be at least 1')
   if (config.callResults !== undefined && config.callResults !== 'expected') wrong.push('CALL_RESULTS must be expected, or not set')
-  const twilioNames = ['TWILIO_AUTH_TOKEN', 'TWILIO_WEBHOOK_URL', 'TWILIO_ACCOUNT_SID'].filter((name) => env[name])
-  if (twilioNames.length > 0 && !config.twilio && !config.lineType) {
-    wrong.push(env.TWILIO_AUTH_TOKEN ? 'TWILIO_WEBHOOK_URL or TWILIO_ACCOUNT_SID must be set along with TWILIO_AUTH_TOKEN' : `TWILIO_AUTH_TOKEN must be set along with ${twilioNames.join(', ')}`)
+  const twilioNames = ['TWILIO_AUTH_TOKEN', 'TWILIO_WEBHOOK_URL', 'TWILIO_TEXT_WEBHOOK_URL', 'TWILIO_ACCOUNT_SID'].filter((name) => env[name])
+  if (twilioNames.length > 0 && !config.twilio && !config.twilioTexts && !config.lineType) {
+    wrong.push(env.TWILIO_AUTH_TOKEN ? 'TWILIO_WEBHOOK_URL, TWILIO_TEXT_WEBHOOK_URL or TWILIO_ACCOUNT_SID must be set along with TWILIO_AUTH_TOKEN' : `TWILIO_AUTH_TOKEN must be set along with ${twilioNames.join(', ')}`)
   }
     if (config.stages) {
     const targets = [config.google && 'google', config.meta && 'meta', config.tiktok && 'tiktok', config.microsoft && 'microsoft'].filter((name): name is string => Boolean(name))
@@ -389,7 +391,8 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
     returnHours: config.returnHours,
     ...(hours && { hours }),
     // A tap on a phone link is what ties a call to a visitor, so taking calls means taking that event.
-    events: [...new Set([...config.events, ...(config.callNumbers || config.twilio || config.poolNumbers.length > 0 ? ['phone_click'] : [])])],
+    events: [...new Set([...config.events, ...(config.callNumbers || config.twilio || config.poolNumbers.length > 0 ? ['phone_click'] : []), ...(config.textCodes || config.twilioTexts ? ['text_click'] : [])])],
+    texts: { codes: config.textCodes, ...(config.twilioTexts && { twilio: config.twilioTexts }) },
     calls: { exclude: config.callExclude, minimumSeconds: config.callMinimum, clickWindow: config.callTapSeconds * 1000, resultWait: config.callResultWait * 60_000, ...(config.callResults === 'expected' && { results: 'expected' as const }), ...(config.callNumbers && { numbers: config.callNumbers }), ...(config.twilio && { twilio: config.twilio }) },
     ...(config.poolNumbers.length > 0 && { pool: { numbers: config.poolNumbers, minutes: config.poolMinutes, grace: config.poolGrace } }),
     ...(config.reviewers && { reviewers: config.reviewers }),
@@ -411,7 +414,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
   log([Object.keys(config.reviewers ?? {}).length > 0 ? `reviewers ${Object.keys(config.reviewers!).join(', ')}` : 'reviewers none', on('server cookie', config.cookie), on('fingerprint', config.fingerprint), on('maxmind', config.maxmind), on('signed links', config.linkSecret), on('staff networks', config.staffNetworks.length > 0), on('opening hours', hours), on('alerts', config.alertWebhook), on('address checks', config.smarty), on('phone line checks', config.lineType)].join(', '))
   log(`outbox sends to ${targets.length > 0 ? targets.map((target) => target.name).join(', ') : 'none (no ad platform configured)'}`)
   if (config.stages) log(`steps: ${Object.entries(config.stages).map(([name, stage]) => `${name}${stage.value === undefined ? '' : ` ${stage.value}`}`).join(', ')}`)
-    log(`page events: ${options.events!.length > 0 ? options.events!.join(', ') : 'none (set EVENTS)'}; calls from twilio ${config.twilio ? 'on' : 'off'}; call results ${config.callResults === 'expected' ? `expected within ${config.callResultWait} minutes` : 'not expected'}; number pool ${config.poolNumbers.length > 0 ? `of ${config.poolNumbers.length}` : 'off'}`)
+    log(`page events: ${options.events!.length > 0 ? options.events!.join(', ') : 'none (set EVENTS)'}; calls from twilio ${config.twilio ? 'on' : 'off'}; texts from twilio ${config.twilioTexts ? 'on' : 'off'}; text codes ${config.textCodes ? 'on' : 'off'}; call results ${config.callResults === 'expected' ? `expected within ${config.callResultWait} minutes` : 'not expected'}; number pool ${config.poolNumbers.length > 0 ? `of ${config.poolNumbers.length}` : 'off'}`)
   log(`cost sources: ${sources.length > 0 ? sources.map(([name]) => name).join(', ') : 'none (POST /costs)'}`)
   const { hash, due } = await graph.policy()
   log(`policy ${hash.slice(0, 12)} ${config.policy ? '(configured)' : '(default)'}${due ? '; rebuild required (POST /rebuild)' : ''}`)

@@ -12,8 +12,10 @@ import type { FingerprintVerifier } from './integrations/fingerprint.ts'
 import { placeOf, shared } from './integrations/maxmind.ts'
 import { addressIdentifier } from './integrations/smarty.ts'
 import type { AddressVerifier } from './integrations/smarty.ts'
-import { fromTwilio, twilioCall } from './integrations/twilio.ts'
+import { fromTwilio, twilioCall, twilioText } from './integrations/twilio.ts'
 import type { LineTypeLookup } from './integrations/twilio.ts'
+import { asks, beginnings, codeNote, recordText, replyTo, textCode, texted } from './texts.ts'
+import type { TextOptions } from './texts.ts'
 import type { IpLookup } from './integrations/maxmind.ts'
 import type { Ops } from './ops.ts'
 import { sentOf } from './outbox.ts'
@@ -103,6 +105,11 @@ export interface HandlerOptions {
    */
   calls?: CallOptions & { twilio?: { authToken: string; url: string } }
   /**
+   * How text messages posted to `/text` are recorded. With `codes`, the script tag asks `/text-code` for the code it puts in
+   * text links. With `twilio`, the server also takes Twilio's incoming messages at `/texts/twilio`.
+   */
+  texts?: TextOptions & { codes?: boolean; twilio?: { authToken: string; url: string } }
+  /**
    * The secret that signs links. With it, `/link` makes an address that
    * names the person it is sent to, a visit that arrives through one ties
    * the browser to that person, and `/carry` lets the script tag keep a
@@ -142,7 +149,7 @@ const NAME = /^[\w.-]{1,64}$/
 /** What a reviewer's token opens: what the reviewer screen reads, and the decisions a reviewer makes. */
 const REVIEW_ROUTES = new Set([
   'GET /me', 'GET /subject', 'GET /clusters', 'GET /search', 'GET /recent', 'GET /links', 'GET /cluster', 'GET /history', 'GET /journey', 'GET /board', 'GET /flows', 'GET /collusion', 'GET /rings',
-  'GET /decisions', 'GET /disputes', 'GET /consent', 'GET /outcome', 'GET /followed', 'GET /call', 'GET /calls', 'GET /calls/summary', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'GET /ops', 'POST /find', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
+  'GET /decisions', 'GET /disputes', 'GET /consent', 'GET /outcome', 'GET /followed', 'GET /call', 'GET /calls', 'GET /calls/summary', 'GET /text', 'GET /texts', 'GET /texting', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'GET /ops', 'POST /find', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
   'GET /undecided', 'GET /between', 'GET /conversions', 'POST /retry', 'POST /foresee',
 ])
 
@@ -299,6 +306,12 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     }
   }
 
+  /** How texts are recorded: with the steps' values, on the tracking numbers calls are recorded on. */
+  const textOptions = (): TextOptions => {
+    const { exclude, clickWindow, country, numbers } = options.calls ?? {}
+    return { ...(exclude && { exclude }), ...(clickWindow !== undefined && { clickWindow }), ...(country && { country }), ...(numbers && { numbers }), ...options.texts, convert, ...(options.outbox && { withdraw: (transactionId: string) => options.outbox!.withdraw(transactionId) }), ...(lineOf && { lineType: lineOf }) }
+  }
+
   const events = new Set(options.events ?? [])
   const trackingNumbers = options.calls?.numbers && new Set(Object.keys(options.calls.numbers).map((number) => numberOrSelf(number, options.calls?.country)))
 
@@ -341,6 +354,13 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         if (tracked && tapsFrom(addressOf(request), device, at)) identifiers.push(note)
       } catch {}
     }
+    if (body.event === 'text_click' && typeof body.number === 'string' && body.number.length <= 40) {
+      try {
+        const note = texted(body.number, at, options.calls?.country)
+        const to = note.slice('dialed:text-'.length, note.lastIndexOf('@'))
+        if ((!trackingNumbers || trackingNumbers.has(to)) && tapsFrom(addressOf(request), device, at)) identifiers.push(note)
+      } catch {}
+    }
     await graph.observe({ subject, identifiers, at, event: body.event })
     // A page may number its own occurrences, but not of a step that is worth something or is sent to an ad platform:
     // those count once a day per browser whatever the page says, because a page can be made to say anything.
@@ -372,6 +392,23 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     if (lease === null) return undefined
     tally[lease ? 'leased' : 'exhausted'] += 1
     return lease && { number: lease.number, until: lease.until, lasts: lease.until - at }
+  }
+
+  /** The code this visitor's text links carry: the one they were given in the last week, or a new one. */
+  async function textCodeFor(request: IncomingMessage, response: ServerResponse) {
+    const body = await json(request)
+    if (fromStaff(request, body)) return void (tally.staff += 1)
+    const device = deviceOf(request, response, body)
+    const subject = `visitor:${device}`
+    const at = now()
+    if (request.headers['sec-gpc'] === '1' || body.gpc === true || body.consent?.adUserData === false) return undefined
+    if ((await graph.consentOf([subject])).get(subject)?.adUserData === false) return undefined
+    const given = (await graph.history(subject, 200)).filter((each) => each.identifier.startsWith('dialed:code-') && each.at > at - 7 * 86_400_000).at(-1)
+    if (given) return { code: given.identifier.slice('dialed:code-'.length) }
+    let code = textCode()
+    while ((await graph.holders([codeNote(code)])).length > 0) code = textCode()
+    await graph.observe({ subject, identifiers: [identifier('device', device), codeNote(code)], at, event: 'text_code' })
+    return { code }
   }
 
   /** Records one browser visit. The subject is the visitor; nothing here names an account. */
@@ -638,12 +675,27 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     return { from, to, timeZone }
   }
 
+  /** A subject's calls, without those that were no lead. */
+  const spokenWith = async (of: Subject) => {
+    const calls = await graph.callsOf([of])
+    const not = await graph.notLeads(calls.map((call) => `call:${call.id}`))
+    return calls.filter((call) => !not.has(`call:${call.id}`))
+  }
+
+  /** Where a page of a list begins, from the `next` of the page before. */
+  const afterOf = (url: URL) => {
+    const after = url.searchParams.get('after') ?? ''
+    const cut = after.indexOf(' ')
+    if (after && !(cut > 0 && Number.isSafeInteger(Number(after.slice(0, cut))))) throw new Refusal(400, '`after` must be a `next` value from a page')
+    return after ? { at: Number(after.slice(0, cut)), id: after.slice(cut + 1) } : undefined
+  }
+
   async function route(request: IncomingMessage, response: ServerResponse): Promise<unknown> {
     const url = new URL(request.url ?? '/', 'http://localhost')
     const path = `${request.method} ${url.pathname}`
     const origin = request.headers.origin
 
-    if (url.pathname === '/collect' || url.pathname === '/event' || (url.pathname === '/carry' && options.linkSecret) || (url.pathname === '/number' && pool.length > 0)) {
+    if (url.pathname === '/collect' || url.pathname === '/event' || (url.pathname === '/carry' && options.linkSecret) || (url.pathname === '/number' && pool.length > 0) || (url.pathname === '/text-code' && options.texts?.codes)) {
       if (!origin || !options.origins.includes(origin)) throw new Refusal(403, 'Origin is not allowed')
       response.setHeader('access-control-allow-origin', origin)
       response.setHeader('vary', 'origin')
@@ -670,6 +722,11 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         response.setHeader('access-control-allow-credentials', 'true')
         return number(request, response)
       }
+      if (url.pathname === '/text-code') {
+        // The page reads this answer, and may send the server's own cookie with the request.
+        response.setHeader('access-control-allow-credentials', 'true')
+        return textCodeFor(request, response)
+      }
       if (url.pathname === '/event') await happened(request, response)
       else {
         const body = await json(request)
@@ -691,6 +748,19 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       const call = twilioCall(fields, now())
       if (call) await recordCall(graph, call, calling())
       return undefined
+    }
+
+    if (path === 'POST /texts/twilio' && options.texts?.twilio) {
+      const fields = Object.fromEntries(new URLSearchParams(await text(request)))
+      const { authToken, url: address } = options.texts.twilio
+      if (!fromTwilio(authToken, address, fields, String(request.headers['x-twilio-signature'] ?? ''))) throw new Refusal(403, 'Invalid signature')
+      const { Body: _, ...rest } = fields
+      storable(rest)
+      const message = twilioText(fields, now())
+      if (message) await recordText(graph, message, textOptions())
+      // Twilio sends the sender whatever the answer says, so it says nothing.
+      response.writeHead(200, { 'content-type': 'text/xml' }).end('<Response/>')
+      return SENT
     }
 
     if (path === 'GET /health') {
@@ -821,6 +891,10 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
           entries: journey.entries.map((entry) => {
             if (entry.kind === 'visit') return { ...entry, source: sourceOf(entry.touch) }
             if (entry.kind === 'outcome') return { ...entry, sent: jobs.get(entry.outcome.transactionId) ?? [] }
+            if (entry.kind === 'text') {
+              const { to: _, ...kept } = entry.text
+              return { ...entry, text: kept }
+            }
             if (entry.kind !== 'call') return entry
             const { to: _, ...call } = entry.call
             return { ...entry, call, state: callState(entry.call, now(), options.calls) }
@@ -886,13 +960,35 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       }
       case 'POST /call':
         return recordCall(graph, await json(request), calling())
+      case 'POST /text':
+        return recordText(graph, await json(request), textOptions())
+      case 'GET /text': {
+        const kept = await graph.keptText(url.searchParams.get('id') ?? '')
+        if (!kept) return null
+        const said = (await graph.notLeads([`text:${kept.id}`])).get(`text:${kept.id}`)
+        const own = await graph.textsOf([kept.subject])
+        return { ...kept, flags: [...(beginnings(own).has(kept.id) ? ['first'] : []), ...kept.flags], ...(said && { notLead: said.kind }), ...(asks(kept) && { reply: replyTo(kept, own, await spokenWith(kept.subject)) }) }
+      }
+      case 'GET /texting':
+        return (await graph.texting(subject)) ?? null
+      case 'GET /texts': {
+        const days = period(url)
+        const after = afterOf(url)
+        const open = await graph.openTexts({ ...days, limit: 51, ...(after && { after }) })
+        const page = open.slice(0, 50)
+        const last = page.at(-1)
+        return {
+          ...days,
+          at: now(),
+          texts: page.map(({ text: { to: _, ...kept }, unanswered, touch }) => ({ ...kept, unanswered, ...(touch && { source: sourceOf(touch), campaign: touch.campaign ?? null, campaignId: touch.campaignId ?? null }) })),
+          next: open.length > 50 && last ? `${last.text.at} ${last.text.id}` : null,
+        }
+      }
       case 'GET /calls': {
         const days = period(url)
-        const after = url.searchParams.get('after') ?? ''
-        const cut = after.indexOf(' ')
-        if (after && !(cut > 0 && Number.isSafeInteger(Number(after.slice(0, cut))))) throw new Refusal(400, '`after` must be a `next` value from a page')
+        const after = afterOf(url)
         const limit = 50
-        const open = await graph.openCalls({ ...days, limit: limit + 1, ...(after && { after: { at: Number(after.slice(0, cut)), id: after.slice(cut + 1) } }) })
+        const open = await graph.openCalls({ ...days, limit: limit + 1, ...(after && { after }) })
         const page = open.slice(0, limit)
         const last = page.at(-1)
         return {

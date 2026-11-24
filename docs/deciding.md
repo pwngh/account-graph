@@ -38,7 +38,8 @@ The default policy has no groups or corroborating kinds. [Presets](presets.md) h
 | `hardware` | 0.95 | 10 | none | Hashed machine id from your client |
 | `carry` | 0.95 | 4 | none | A visitor who followed a link from another of your sites, proven by a token made for that browser. Thins when several browsers use one token |
 | `link` | 0.92 | 5 | none | A link sent to one person, opened in this browser. Thins as more people's links are opened there |
-| `dial` | 0.92 | 2 | none | A phone call that began just after exactly one visitor tapped its number |
+| `dial` | 0.92 | 2 | none | A phone call or a text that began just after exactly one visitor tapped its number |
+| `text` | 0.95 | 2 | none | A text that carried the code one visitor was given |
 | `lease` | 0.90 | 2 | none | A phone call to a number shown to one visitor. An unmeasured prior |
 | `phone` | 0.90 | 10 | none | A mobile or landline. Joins two subjects, relates three, and gives no link among four or more |
 | `ga` | 0.90 | 10 | none | Google Analytics client id |

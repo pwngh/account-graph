@@ -77,8 +77,11 @@ export interface Target {
 
 /** Where jobs are kept. Each call is atomic on its own. */
 export interface OutboxStore {
-  /** Stores the job unless one with its transaction id and target exists. Returns the stored job either way. */
-  add(job: Job): Promise<Job>
+  /**
+   * Stores the job unless one with its transaction id and target exists. Resolves to the stored job either way, or with
+   * `counted` to undefined when there is none and its outcome is not on record: its subject was forgotten meanwhile.
+   */
+  add(job: Job, counted?: boolean): Promise<Job | undefined>
   /**
    * Hands out up to `limit` pending jobs that are due, and pushes each one's
    * due time to `now + lease`. A worker that dies leaves its jobs to be
@@ -351,7 +354,8 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
   async function add(outcome: Outcome, jobs: readonly Job[]): Promise<Job[]> {
     const out: Job[] = []
     for (const job of jobs) {
-      const stored = await store.add(job)
+      const stored = await store.add(job, true)
+      if (!stored) continue
       const same =
         stored.subject === job.subject &&
         stored.at === job.at &&
@@ -374,7 +378,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
 
     async hold(outcome) {
       // One already held, or on its way, stands as it is; a platform left out when this was cut off is added.
-      return Promise.all(prepare(outcome, 'held').map((job) => store.add(job)))
+      return Promise.all(prepare(outcome, 'held').map(async (job) => (await store.add(job))!))
     },
 
     async release(outcome) {
@@ -568,8 +572,8 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
   return outbox
 }
 
-/** An outbox store in process memory, for tests and demos. */
-export function createMemoryOutbox(): OutboxStore & { remove(subject: Subject): Promise<Job[]> } {
+/** An outbox store in process memory, for tests and demos. `recorded` says whether a job's outcome is on record. */
+export function createMemoryOutbox(recorded: (job: Job) => boolean = () => true): OutboxStore & { remove(subject: Subject): Promise<Job[]> } {
   const jobs = new Map<string, Job>()
   const key = (job: { transactionId: string; target: string }) => `${job.transactionId}\u0000${job.target}`
   const unchanged = (job: Job) => {
@@ -577,7 +581,8 @@ export function createMemoryOutbox(): OutboxStore & { remove(subject: Subject): 
     return stored !== undefined && stored.rev === job.rev
   }
   return {
-    async add(job) {
+    async add(job, counted) {
+      if (!jobs.has(key(job)) && counted && !recorded(job)) return undefined
       if (!jobs.has(key(job))) jobs.set(key(job), structuredClone({ ...job, rev: 0 }))
       return structuredClone(jobs.get(key(job))!)
     },

@@ -99,6 +99,8 @@ export const defaultPolicy: Policy = {
     // A phone call that began moments after exactly one visitor tapped its number on your site. `recordCall` writes it.
     lease: { weight: 0.9, dilution: 0, cap: 2, halfLife: Infinity },
     dial: { weight: 0.92, dilution: 0, cap: 2, halfLife: Infinity },
+    // A text that carried the code one visitor was given. Better than a tap's time, and still a prior: a text can be forwarded.
+    text: { weight: 0.95, dilution: 0, cap: 2, halfLife: Infinity },
     // A note, not evidence: where an address places a visit. It links nothing.
     place: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     // A note, not evidence: the number a visitor tapped, or a call that was recorded. It links nothing.
