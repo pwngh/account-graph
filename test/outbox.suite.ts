@@ -224,6 +224,21 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       assert.deepEqual((await outbox.get('enroll-2')).map((job) => job.value), [200])
     })
 
+    test('of two values restated at once, the platform is left with the one on record', async () => {
+      const { graph, outbox, store, clock } = await fresh()
+      await enroll(graph, 1)
+      await outbox.record(outcome(1))
+      await outbox.run()
+      // The first is held up after it is on record, and the second goes by it.
+      const late = createOutbox({ ...graph, restate: async (...given) => {
+        const done = await graph.restate(...given)
+        await outbox.restate('enroll-1', 30)
+        return done
+      } }, store.outbox, { targets: [googleAds({ customerId: '123-456-7890', send: google().send })], now: () => clock.now })
+      await late.restate('enroll-1', 20)
+      assert.deepEqual([(await graph.outcomeOf('enroll-1'))!.value, (await outbox.get('enroll-1'))[0]!.value], [30, 30])
+    })
+
     test('the same id with different details is refused', async () => {
       const { outbox } = await fresh()
       await outbox.record(outcome(1))
