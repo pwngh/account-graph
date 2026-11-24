@@ -55,7 +55,7 @@ export interface Target {
   name: string
   /** The email and phone of an outcome, hashed the way this platform matches them. */
   keys(outcome: Outcome): Record<string, string>
-  /** The touch this platform can credit: the newest one that carries its click id at or above `confidence`. */
+  /** The touch this platform can credit: the newest one that carries its click id at or above `confidence`. The outbox gives only touches it trusts, and 0. */
   click(attribution: Attribution, confidence: number): AttributedTouch | undefined
   /** Sends jobs that share an action in one request. Throws when the platform refuses. */
   deliver(action: string, items: readonly Item[]): Promise<{ requestId?: string }>
@@ -490,9 +490,8 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
         let attribution = attributions.get(asked)
         if (!attribution) attributions.set(asked, (attribution = await graph.attribute(job.subject, { at: job.at, window: options.window ?? 90 * DAY })))
         // A person's own click counts however weak the chain to it, unless a lowest confidence was asked for.
-        const touches = attribution.touches.map((each) => (each.joined && options.confidence === undefined ? { ...each, confidence: Math.max(each.confidence, confidence) } : each))
-        const found = target.click({ ...attribution, touches }, confidence)
-        const touch = found && (attribution.touches[touches.indexOf(found)] ?? found)
+        const touches = attribution.touches.filter((each) => each.confidence >= confidence || (each.joined && options.confidence === undefined))
+        const touch = target.click({ ...attribution, touches }, 0)
         const subjects = touch && touch.subject !== job.subject ? [job.subject, touch.subject] : [job.subject]
         // With no consent on the outcome, use what the person and the browser that clicked told us.
         let consent = job.consent

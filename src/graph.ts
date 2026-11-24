@@ -684,7 +684,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     const touches: AttributedTouch[] = found
       .map((touch) => ({ ...touch, joined: false, ...reached.get(touch.subject)! }))
       .sort((x, y) => y.at - x.at || y.confidence - x.confidence || (x.subject < y.subject ? -1 : 1))
-    const best = touches.find((touch) => touch.joined || touch.confidence >= policy.same)
+    const best = touches.find((touch) => touch.confidence >= policy.same || (touch.joined && !touch.landing?.startsWith('tel:')))
     const reason = best ? 'credited' : touches.length > 0 ? 'low_confidence' : 'no_touch'
     return { subject, at, touches, credited: best, reason }
   }

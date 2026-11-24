@@ -2341,9 +2341,12 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       // The two links make the three one cluster, so the ad is theirs, however the two multiply.
       assert.equal(attribution.touches[0]!.joined, true)
       assert.equal(attribution.reason, 'credited')
-      // Kept apart, they are two people, and the chain goes nowhere.
-      await graph.separate('account:5', 'visitor:a')
-      assert.equal((await graph.attribute('account:5', { at: T0 + 2 * HOUR })).reason, 'no_touch')
+      // Whoever is only related is another person, as far as is known.
+      await graph.observe({ subject: 'account:6', identifiers: ['canvas:c'], at: T0 })
+      await graph.observe({ subject: 'visitor:c', identifiers: ['canvas:c'], at: T0 })
+      await graph.touch({ subject: 'visitor:c', at: T0, gclid: 'G2' })
+      const { touches, reason } = await graph.attribute('account:6', { at: T0 + HOUR })
+      assert.deepEqual([touches[0]!.joined, reason], [false, 'low_confidence'])
     })
 
     test('an ad click is credited to a caller whose name was taken on the phone', async () => {
@@ -2357,6 +2360,9 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.ok(Math.abs(credited!.confidence - 0.92 * 0.9) < 1e-12)
       const { rows } = await graph.report({ from: '2023-11-14', to: '2023-11-16' })
       assert.deepEqual(rows.filter((row) => row.value > 0).map((row) => [row.campaignId, row.value]), [['30111', 1250]])
+      // A phone line is no visit of theirs, so it needs the strength it always did.
+      await graph.touch({ subject: 'visitor:1', at: T0 + HOUR, source: 'line', medium: 'call', landing: 'tel:+15550100101' })
+      assert.equal((await graph.attribute('contact:7', { at: T0 + DAY })).credited!.gclid, 'G1')
     })
 
     test('a changed policy is noticed, and a rebuild brings every cluster to it', async () => {
