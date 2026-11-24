@@ -269,7 +269,7 @@ function route(nodes, edges) {
   let stuck = 0
   for (const edge of edges) {
     const long = Math.hypot(edge.to.x - edge.from.x, edge.to.y - edge.from.y)
-    const ways = [0, 0.1, -0.1, 0.18, -0.18, 0.26, -0.26, 0.36, -0.36, 0.48, -0.48, 0.62, -0.62].map((part) => part * Math.max(160, long))
+    const ways = [0, 0.1, -0.1, 0.18, -0.18, 0.26, -0.26, 0.36, -0.36, 0.48, -0.48, 0.62, -0.62, 0.8, -0.8, 1, -1].map((part) => part * Math.max(160, long))
     // Best is one that also keeps off the names at its own ends and leaves them apart from other lines. A line may have to do without.
     const clear = ways.filter((sides) => freeOf(edge, course(edge, sides), taken))
     const leaves = (sides) => {
@@ -378,7 +378,8 @@ function graphOf(profile, more) {
   const card = el('div', { class: 'card', hidden: '', role: 'region', 'aria-label': 'Picked' })
   const legend = el('div', { class: 'keys', role: 'group', 'aria-label': 'Show' })
   const tools = el('div', { class: 'tools' })
-  root.append(paper, legend, tools, card)
+  const stage = el('div', { class: 'stage' }, paper, card)
+  root.append(stage, el('div', { class: 'bar' }, legend, tools))
   let nodes = []
   let edges = []
   let byId = new Map()
@@ -487,15 +488,15 @@ function graphOf(profile, more) {
   function fitted() {
     const boxes = nodes.flatMap((node) => shapes(glide ? { ...node, ...node.end } : node))
     const [left, right, top, bottom] = [Math.min(...boxes.map((box) => box.x - box.w)), Math.max(...boxes.map((box) => box.x + box.w)), Math.min(...boxes.map((box) => box.y - box.h)), Math.max(...boxes.map((box) => box.y + box.h))]
-    // Room is left for what lies over the paper: the keys and tools, and the card when someone is picked.
+    // Room is left for the card when it lies over the paper. Nothing else does.
     const narrow = root.classList.contains('narrow')
-    const over = { top: narrow ? legend.offsetHeight + 8 : 0, right: !narrow && !card.hidden ? 300 : 0, bottom: 44 + (narrow && document.fullscreenElement === root && !card.hidden ? card.offsetHeight + 8 : 0) }
-    const [w, h] = [size.w - over.right, size.h - over.top - over.bottom]
+    const over = { right: !narrow && !card.hidden ? 300 : 0, bottom: narrow && document.fullscreenElement === root && !card.hidden ? card.offsetHeight + 8 : 0 }
+    const [w, h] = [size.w - over.right, size.h - over.bottom]
     const whole = Math.max(0.1, Math.min(1.25, w / (right - left + 56), h / (bottom - top + 48)))
     // Never so small that names cannot be read: the subject in the middle, and the rest by panning.
     const k = Math.max(0.55, whole)
     const [cx, cy] = k === whole ? [(left + right) / 2, (top + bottom) / 2] : [byId.get(me).x, byId.get(me).y]
-    return { k, x: w / 2 + (card.classList.contains('left') ? over.right : 0) - k * cx, y: over.top + h / 2 - k * cy }
+    return { k, x: w / 2 + (card.classList.contains('left') ? over.right : 0) - k * cx, y: h / 2 - k * cy }
   }
   /** Whether something was moved by hand since everything last had its room. */
   let loose = false
@@ -553,7 +554,7 @@ function graphOf(profile, more) {
       const from = drawn.spots.get(node.id) ?? drawn.spots.get(node.from) ?? { x: 0, y: 0 }
       const turn = i * 2.399963
       node.known = drawn.spots.has(node.id)
-      node.start = { ...from }
+      node.start = { x: from.x, y: from.y }
       node.x = from.x + (node.known || node.id === me ? 0 : Math.cos(turn) * (40 + 9 * i))
       node.y = from.y + (node.known || node.id === me ? 0 : Math.sin(turn) * (40 + 9 * i))
       node.vx = node.vy = 0
@@ -562,7 +563,8 @@ function graphOf(profile, more) {
     // Left as it was when everything on it already had a place.
     if (!nodes.every((node) => node.known)) {
       // Where they start decides how they end, so a few starts are tried and the one easiest to read is kept.
-      const starts = nodes.some((node) => node.known) ? 1 : nodes.length <= 30 ? 12 : 3
+      let starts = nodes.some((node) => node.known) ? 1 : nodes.length <= 30 ? 12 : 3
+      let again = false
       const first = nodes.map(({ x, y }) => ({ x, y }))
       let best
       const began = performance.now()
@@ -574,15 +576,22 @@ function graphOf(profile, more) {
         // Two may have been given one place, which would never part them.
         nodes.forEach((node, i) => { if (!node.known) { node.x += i * 0.7; node.y += i * 0.3 } else node.held = keep })
         for (let i = 0, warm = 1; i < 320; i++, warm *= 0.985) step(nodes, edges, warm, size.w < size.h * 1.2)
-        settle(nodes, edges)
-        const cost = starts === 1 ? 0 : tangle(nodes, edges)
+        const roomy = settle(nodes, edges)
+        // Where they were left may have no way out. Then they start over, as if none had a place.
+        if (!roomy && starts === 1 && !keep && !again) {
+          again = true
+          starts = 8
+          turn = 0
+          first.forEach((spot, n) => Object.assign(spot, n === 0 ? { x: 0, y: 0 } : { x: Math.cos(n * 2.399963) * (60 + 11 * n), y: Math.sin(n * 2.399963) * (60 + 11 * n) }))
+        }
+        const cost = tangle(nodes, edges) + (roomy ? 0 : 1000)
         if (!best || cost < best.cost) best = { cost, spots: nodes.map(({ x, y, side }) => ({ x, y, side })), bends: edges.map((edge) => edge.bend) }
         // A phone gets fewer tries, not a longer wait.
-        if (performance.now() - began > 250) break
+        if (best.cost < 1000 && performance.now() - began > 250) break
       }
       nodes.forEach((node, i) => Object.assign(node, best.spots[i], { held: false }))
       edges.forEach((edge, i) => (edge.bend = best.bends[i]))
-    } else route(nodes, edges)
+    } else if (!crowding(nodes, edges).next().done || route(nodes, edges) > 0) settle(nodes, edges)
     const roomy = edges.length <= 9
     lines.replaceChildren(...edges.map((edge) => {
       const width = edge.kind === 'apart' ? 1.5 : 1 + 2 * (edge.score ?? 0)
@@ -682,7 +691,13 @@ function graphOf(profile, more) {
     for (const node of nodes) node.mark.classList.toggle('lit', lit?.has(node.id) ?? false)
     for (const edge of edges) for (const mark of [edge.mark, edge.tag]) mark.classList.toggle('lit', only ? edge === only : lit !== undefined && (edge.a === about || edge.b === about))
     const path = drawn.chosen === undefined || some ? [] : chain(drawn.chosen)
-    for (const edge of edges) edge.mark.classList.toggle('path', path.includes(edge))
+    let at = me
+    for (const edge of edges) edge.mark.classList.remove('path', 'back')
+    for (const edge of path) {
+      // The flow runs from the subject outward, whichever way round the line was drawn.
+      edge.mark.classList.add('path', ...(edge.a === at ? [] : ['back']))
+      at = edge.a === at ? edge.b : edge.a
+    }
     for (const edge of path) for (const node of [edge.from, edge.to]) node.mark.classList.add('lit')
     for (const edge of path) for (const mark of [edge.mark, edge.tag]) mark.classList.add('lit')
     word()
