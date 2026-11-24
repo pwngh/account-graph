@@ -79,7 +79,7 @@ const row = (ties, subject, lines) => (entry) => {
   const exact = date?.toISOString()
   const time = date ? el('time', { datetime: exact, title: `${when(entry.at)} · ${exact}` }, date.toLocaleTimeString(undefined, { timeStyle: 'short' })) : unrecorded()
   const line = el('li', { class: 'timeline-entry' }, el('span', { class: 'num' }, time),
-    el('span', {}, el('span', { class: `chip kind ${entry.kind}` }, WHAT[entry.kind])),
+    el('span', {}, el('span', { class: `chip kind ${entry.kind}` }, glyph(entry.kind), WHAT[entry.kind])),
     el('div', { class: 'what' }, ...told(entry)), el('div', { class: 'why' }, ...why(entry, ties, subject)))
   lines.set(entry, line)
   return line
@@ -161,7 +161,7 @@ function chart(entries, shown, ties, subject, show) {
     if (!entry) return
     const i = order.indexOf(entry)
     const turn = (step, text, label) => el('button', { type: 'button', 'aria-label': label, 'data-key': label, ...((order[i + step] === undefined) && { disabled: '' }), on: { click: () => { pick(order[i + step]); reach(order[i + step]) } } }, text)
-    card.replaceChildren(el('div', { class: 'told-head' }, el('span', { class: `chip kind ${entry.kind}` }, WHAT[entry.kind]), el('span', { class: 'meta' }, `${amount(i + 1)} of ${amount(order.length)}`), turn(-1, '‹', 'The one before'), turn(1, '›', 'The one after'), el('button', { type: 'button', class: 'shut', 'aria-label': 'Close', on: { click: () => { pick(); marks.get(entry)?.focus({ preventScroll: true }) } } }, '×')),
+    card.replaceChildren(el('div', { class: 'told-head' }, el('span', { class: `chip kind ${entry.kind}` }, glyph(entry.kind), WHAT[entry.kind]), el('span', { class: 'meta' }, `${amount(i + 1)} of ${amount(order.length)}`), turn(-1, '‹', 'The one before'), turn(1, '›', 'The one after'), el('button', { type: 'button', class: 'shut', 'aria-label': 'Close', on: { click: () => { pick(); marks.get(entry)?.focus({ preventScroll: true }) } } }, '×')),
       el('p', { class: 'told-when' }, el('b', {}, new Date(entry.at).toLocaleTimeString(undefined, { timeStyle: 'short' })), ` ${dayOf(entry.at)}`),
       el('div', { class: 'what' }, ...told(entry)), el('p', { class: 'told-on' }, ...why(entry, ties, subject)),
       el('button', { type: 'button', on: { click: () => show(entry) } }, 'Show in the list'))
@@ -190,8 +190,12 @@ function chart(entries, shown, ties, subject, show) {
       ruler.append(el('span', { class: 'tick edge' }, el('b', {}, before.over || before.text)))
       over = before.over
     }
+    // Kept whole at the right edge, and given room: no number is drawn under it.
+    const pin = now >= from && now <= to ? Math.min((now - from) * perMs, (to - from) * perMs - 26) : NaN
     for (const rule of inside) {
-      const tick = el('span', { class: 'tick' }, rule.over === over ? '' : el('b', {}, rule.over), el('span', {}, rule.text))
+      const left = (rule.at - from) * perMs
+      const covered = left + 34 > pin - 24 && left < pin + 24
+      const tick = el('span', { class: 'tick' }, rule.over === over ? '' : el('b', {}, rule.over), el('span', covered ? { class: 'sr-only' } : {}, rule.text))
       over = rule.over
       const line = el('i')
       tick.style.left = line.style.left = at(rule.at)
@@ -211,8 +215,7 @@ function chart(entries, shown, ties, subject, show) {
       const line = el('i', { class: 'now' })
       const pill = el('span', { class: 'today' }, 'Now')
       line.style.left = at(now)
-      // Kept whole at the right edge.
-      pill.style.left = `${Math.min((now - from) * perMs, (to - from) * perMs - 26).toFixed(1)}px`
+      pill.style.left = `${pin.toFixed(1)}px`
       grid.append(line)
       ruler.append(pill)
     }
@@ -290,7 +293,7 @@ view('journey', 'Journey', async (box, subject) => {
     return
   }
   const journey = await api('GET', `/journey?subject=${encodeURIComponent(subject)}`)
-  const top = el('section', {}, reviewDisplay.heading(reviewDisplay.id(subject, true), el('a', { class: 'link', href: subjectHash(subject) }, 'Account')))
+  const top = el('section', {}, reviewDisplay.heading(reviewDisplay.id(subject, true), el('a', { class: 'button', href: subjectHash(subject) }, 'Account')))
   box.append(top)
   if (journey.entries.length === 0) {
     top.append(el('p', { class: 'muted' }, 'No events recorded for this subject.'))
@@ -322,7 +325,7 @@ view('journey', 'Journey', async (box, subject) => {
   const kinds = el('div', { class: 'row filters', role: 'group', 'aria-label': 'Show' })
   const boxes = () => kinds.replaceChildren(...Object.keys(WHAT).filter((kind) => entries.some((entry) => entry.kind === kind)).map((kind) => {
     const check = el('input', { type: 'checkbox', ...(!leaving.has(kind) && { checked: '' }), on: { change: () => { if (check.checked) leaving.delete(kind); else leaving.add(kind); draw() } } })
-    return el('label', {}, check, `${WHAT[kind]} (${amount(entries.filter((entry) => entry.kind === kind).length)})`)
+    return el('label', {}, check, glyph(kind), WHAT[kind], el('span', { class: 'count' }, amount(entries.filter((entry) => entry.kind === kind).length)))
   }))
   boxes()
   draw()

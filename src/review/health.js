@@ -34,18 +34,17 @@ function workings(ops, refused) {
     ...ops.jobs.map((job) => el('tr', {}, td('', job.name), td('', el('span', { class: `chip ${job.state === 'done' ? 'same' : job.state === 'running' ? '' : 'apart'}` }, JOB[job.state])), td('', ago(job.started, ops.at)),
       td('', ago(job.succeeded, ops.at)), td('', job.failed === undefined ? el('span', { class: 'muted' }, 'none') : ago(job.failed, ops.at)),
       td('who', job.error && job.state === 'failed' ? job.error : '', ...job.open.slice(0, 3).map((began) => el('span', { class: 'reason' }, `A run that began ${when(began)} never finished.`))))))
-  out.push(el('div', { class: 'panel-grid ops-grid' },
-    el('section', {}, el('h2', {}, 'Feeds'), wide('Feeds', feeds)),
+  const runs = el('div', {}, el('section', {}, el('h2', {}, 'Feeds'), wide('Feeds', feeds)),
     el('section', ops.jobs.length ? {} : { class: 'ops-empty' }, el('h2', {}, 'Jobs'),
-      ops.jobs.length > 0 ? wide('Jobs', jobs) : el('p', { class: 'muted' }, 'No jobs have run yet.'))))
-
+      ops.jobs.length > 0 ? wide('Jobs', jobs) : el('p', { class: 'muted' }, 'No jobs have run yet.')))
+  const sends = el('div', {})
+  if (ops.outbox !== null) sends.append(el('section', {}, el('h2', {}, 'Conversions to ad platforms, all time'), parts('Conversions by state', [['Sent', ops.outbox.sent], ['Waiting to be sent', ops.outbox.pending], ['Held for a call result', ops.outbox.held], ['Not sent, with a reason', ops.outbox.skipped], ['Refused for good', ops.outbox.failed]])))
   if (ops.pool) {
     const asked = `${amount(ops.pool.leased + ops.pool.exhausted)} ${ops.pool.leased + ops.pool.exhausted === 1 ? 'time' : 'times'} one was asked for since the server started, ${when(ops.pool.since)}`
-    out.push(el('section', {}, el('h2', {}, `Number pool, each number for ${amount(ops.pool.minutes)} minutes after the page last asked`), parts('Numbers', [['Shown to a visitor', ops.pool.held], ['Free', ops.pool.numbers - ops.pool.held]]),
+    sends.append(el('section', {}, el('h2', {}, `Number pool, each number for ${amount(ops.pool.minutes)} minutes after the page last asked`), parts('Numbers', [['Shown to a visitor', ops.pool.held], ['Free', ops.pool.numbers - ops.pool.held]]),
       el('p', {}, ...(ops.pool.exhausted > 0 ? [el('b', { class: 'apart' }, `Every number was taken ${amount(ops.pool.exhausted)} ${ops.pool.exhausted === 1 ? 'time' : 'times'}, of the ${asked}.`), ' Whoever got none saw the page\'s own number. Add numbers, or shorten POOL_MINUTES.'] : [`A number was free each of the ${asked}.`]))))
   }
-
-  if (ops.outbox !== null) out.push(el('section', {}, el('h2', {}, 'Conversions to ad platforms, all time'), parts('Conversions by state', [['Sent', ops.outbox.sent], ['Waiting to be sent', ops.outbox.pending], ['Held for a call result', ops.outbox.held], ['Not sent, with a reason', ops.outbox.skipped], ['Refused for good', ops.outbox.failed]])))
+  out.push(el('div', { class: 'panel-grid ops-grid' }, runs, sends.hasChildNodes() ? sends : ''))
   if (refused.length > 0) out.push(el('section', {}, el('h2', {}, `Refused conversions, ${refused.length < ops.outbox.failed ? `newest ${amount(refused.length)} of ${amount(ops.outbox.failed)}` : amount(refused.length)}`),
     wide('Refused conversions', el('table', {}, el('tr', {}, group('What', 4, true), group('Why it was refused', 2), el('td', { class: 'edge' })),
       el('tr', {}, th('Happened'), th('Sent as'), th('Worth', 'num'), th('Who'), ...edge([th('Platform'), th('Answer')]), ...edge([th('Action')])),

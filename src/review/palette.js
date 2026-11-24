@@ -48,8 +48,8 @@ const palette = el('dialog', { id: 'palette', 'aria-label': 'Find or do' })
 
   const commands = () => [
     ...actions(),
-    ...[...views].map(([name, { title }]) => ({ group: 'Go to', text: title, run: () => go(`#/${name}`), mark: '#' })),
-    { group: 'Go to', text: 'Read this again', run: () => load(), mark: '#' },
+    ...[...views].map(([name, { title }]) => ({ group: 'Go to', text: title, run: () => go(`#/${name}`), icon: VIEW_ICONS[name] })),
+    { group: 'Go to', text: 'Read this again', run: () => load(), icon: 'M13 8a5 5 0 1 1-1.5-3.6M13 2.5v2.6h-2.6' },
   ]
   function draw() {
     const typed = input.value.trim()
@@ -67,7 +67,7 @@ const palette = el('dialog', { id: 'palette', 'aria-label': 'Find or do' })
     list.replaceChildren(...groups.map((group) => el('div', { role: 'group', 'aria-label': group }, el('p', { class: 'inbox-age' }, group), ...shown.filter((item) => item.group === group).map((item) => {
       const i = shown.indexOf(item)
       const letters = [...item.text].map((letter, n) => (item.match.places.includes(n) ? el('mark', {}, letter) : letter))
-      return el('div', { id: `palette-${i}`, class: 'palette-item', role: 'option', 'aria-selected': String(i === at), title: item.text, on: { click: () => choose(i), pointermove: () => { if (at !== i) { at = i; point() } } } }, item.subject ? badge(item.subject) : el('i', { class: 'palette-mark', 'aria-hidden': 'true' }, item.mark), el('span', {}, ...letters), item.note ? el('span', { class: 'meta' }, item.note) : '')
+      return el('div', { id: `palette-${i}`, class: 'palette-item', role: 'option', 'aria-selected': String(i === at), title: item.text, on: { click: () => choose(i), pointermove: () => { if (at !== i) { at = i; point() } } } }, item.subject ? badge(item.subject) : el('i', { class: 'palette-mark', 'aria-hidden': 'true' }, item.icon ? svg('svg', { viewBox: '0 0 16 16', focusable: 'false' }, svg('path', { d: item.icon })) : item.mark), el('span', {}, ...letters), item.note ? el('span', { class: 'meta' }, item.note) : '')
     }))))
     if (shown.length === 0) list.replaceChildren(el('p', { class: 'muted palette-none' }, looking ? 'Looking.' : 'Nothing by that name.'))
     point()

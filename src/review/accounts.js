@@ -25,7 +25,7 @@ function profileOf(profile, more) {
   if (!profile.known) return [el('section', {}, el('div', { class: 'page-head' }, title), el('p', { class: 'muted' }, 'No records for this subject.'))]
   const size = profile.cluster.members.length
   detail.push(el('section', {}, el('div', { class: 'page-head' }, title, el('div', { class: 'row' },
-    el('a', { class: 'link', href: `#/journey/${encodeURIComponent(profile.subject)}` }, 'Journey'),
+    el('a', { class: 'button', href: `#/journey/${encodeURIComponent(profile.subject)}` }, 'Journey'),
     el('button', { on: { click: () => act('Join as one person', `${profile.subject} and the subject you name will be treated as one person.`, '/join', { a: profile.subject }, 'Join', { otherKey: 'b' }) } }, 'Join with another…'),
     el('button', { class: 'danger', on: { click: () => act('Forget this subject', `Everything recorded about ${profile.subject} will be deleted. This cannot be undone.`, '/forget', { subject: profile.subject }, 'Hold to delete', { hold: true }) } }, 'Forget…'))),
   tiles(['Cluster size', `${amount(size)} ${size === 1 ? 'subject' : 'subjects'}`, profile.cluster.oversized ? 'Above the review limit' : '', profile.cluster.oversized ? 'apart' : ''],

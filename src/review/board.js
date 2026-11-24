@@ -1,6 +1,8 @@
 const REACHED = { answered: 'answered', missed: 'missed', voicemail: 'voicemail', waiting: 'waiting for a result', unknown: 'not known whether answered' }
 const PERIODS = [[7, '7 days'], [30, '30 days'], [90, '90 days'], [365, 'a year']]
 
+/** A length of time in its largest unit, for where there is little room. The title beside it has it whole. */
+const brief = (ms) => (ms < 3600000 ? `${Math.max(1, Math.round(ms / 60000))}m` : ms < 172800000 ? `${Math.round(ms / 3600000)}h` : `${Math.floor(ms / 86400000)}d`)
 /** One person: age, recorded facts, then the step and call result when useful. */
 function person(row, column, at) {
   const campaign = row.campaign || row.campaignId
@@ -9,11 +11,10 @@ function person(row, column, at) {
   const worth = row.value != null ? el('b', {}, `${money(row.value)}${row.currency ? ` ${row.currency}` : ''}`) : ''
   return el('li', {},
     el('div', { class: 'top' }, reviewDisplay.subject(row.subject, `#/journey/${encodeURIComponent(row.subject)}`),
-      el('span', { class: row.late ? 'board-age apart' : 'board-age muted' }, reviewDisplay.time(row.at, at),
-        row.late ? ', too long' : '')),
-    el('div', { class: 'board-meta reason' }, arrival, ' · ', row.language ?? 'Language (not recorded)', worth ? ' · ' : '', worth),
+      el('span', { class: row.late ? 'board-age apart' : 'board-age muted' }, el('time', { datetime: new Date(row.at).toISOString(), title: when(row.at) }, brief(at - row.at)), row.late ? ', too long' : '')),
+    el('div', { class: 'board-meta reason' }, arrival, row.language ? ` · ${row.language}` : '', worth ? ' · ' : '', worth),
     el('div', { class: 'board-chips' },
-      column.step === null ? reviewDisplay.chip(row.step ?? 'No step yet', 'muted') : '',
+      column.step === null && row.step ? reviewDisplay.chip(row.step, 'muted') : '',
       reviewDisplay.chip(call ? `${call.direction === 'outbound' ? 'Outbound' : 'Inbound'} · ${REACHED[call.state]}` : 'No call recorded',
         call ? reviewDisplay.callTone(call.state) : 'muted')))
 }
