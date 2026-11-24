@@ -52,7 +52,8 @@ The browser never names an account. It only says "this device, arriving from thi
 Start the server and its database, telling it which site may report to it and giving it secrets of your own:
 
 ```sh
-ORIGINS=https://www.example.org GRAPH_TOKEN=… REVIEW_TOKENS='{"dana":"…"}' LINK_SECRET=… docker compose up --build
+export GRAPH_TOKEN=…             # your backend sends the same one
+ORIGINS=https://www.example.org REVIEW_TOKENS='{"dana":"…"}' LINK_SECRET=… docker compose up --build
 ```
 
 Each secret is a long random string, such as `openssl rand -hex 32` prints. A site that is not in `ORIGINS` is refused. [Running the server](docs/operations.md) covers the rest. Then add one line to every page:
@@ -133,7 +134,7 @@ Two subjects that share an identifier get evidence from it: a weight for its kin
 - **Reviewer decisions.** Join two subjects, keep two apart, or mute an identifier. Each decision is recorded with who and why, and sealed so the record cannot be quietly edited.
 - **A queue of pairs to decide.** Related and not joined, side by side with what they share, one key each to join, keep apart or skip. Every decision can be taken back, and what was decided teaches `fit` the weights.
 - **Names that only confirm.** Under a preset for contacts staff type in, a name with a zip code or a date of birth confirms a shared phone. It never ties anyone by itself.
-- **One call to say who someone is.** Send an email, phone, address and device as they are; the server hashes them, checks the address with the postal service, and counts a throwaway phone number for less.
+- **One call to say who someone is.** Send an email, phone, address and device as they are. The server hashes the first three and keeps the device id. With an address service set up it checks the address, and without one it does not use it; with a line check it counts a throwaway phone number for less.
 - **Links that name a person.** A signed link in an email or text ties the browser that opens it to the person it was sent to, and a visitor stays one visitor across your sites.
 - **Money flows.** Trades and transfers between accounts are reported with how the two are tied by identity, and value that goes round in a circle is found, so collusion shows up.
 
@@ -160,15 +161,15 @@ Two subjects that share an identifier get evidence from it: a weight for its kin
 - **Alerts.** A conversion that fails for good, an outbox that cannot run, or costs that cannot be read are posted to a Slack-style webhook. So is a feed that has gone quiet, and a missed caller from an ad whom nobody has rung back. An alert that does not arrive is kept until it does.
 - **Your own staff left out.** Visits from your networks, or from a browser marked by a signed link, are dropped and counted.
 - **Consent.** Every answer, from a browser's opt-out signal, a banner or your backend, is kept, and the one given last is honoured before anything goes to an ad platform.
-- **A write queue.** Observations that arrive together are written together, four times faster on PostgreSQL.
+- **A write queue.** Observations that arrive together are written together, many times faster on PostgreSQL.
 - **Two stores, one suite.** Memory and PostgreSQL pass the same tests, including a fuzz test that checks stored clusters against a full recompute after every operation.
 - **No runtime dependencies.** `pg` is needed only for the PostgreSQL store.
 
 ### Speed
 
-Measured on an Apple M1 Max with Node 22, on synthetic data. PostgreSQL 16 ran in Docker on the same machine, with two processors and its default settings, `fsync` on. Run `npm run bench` for your own numbers; a database on the machine itself answers sooner than one in Docker.
+Measured on an Apple M1 Max with Node 22, on synthetic data. PostgreSQL 16 ran in Docker on the same machine, with two processors and its default settings, `fsync` on. Run `DATABASE_URL=postgres://… npm run bench` for your own numbers, or leave the variable out to measure the memory store alone; a database on the machine itself answers sooner than one in Docker.
 
-A graph of 20,000 accounts, `npm run bench`:
+A graph of 20,000 accounts:
 
 | Store | One at a time | In batches of 100 | Through the write queue | `links()` |
 | --- | --- | --- | --- | --- |
@@ -177,7 +178,7 @@ A graph of 20,000 accounts, `npm run bench`:
 
 PostgreSQL writes take one advisory lock, so they run one at a time; the write queue is how many callers share one write.
 
-Large graphs, five edges to an account, `npm run bench -- scale 1000000 5000000 10000000`. Each number is time and the most memory the process held:
+Large graphs, five edges to an account, `DATABASE_URL=postgres://… npm run bench -- scale 1000000 5000000 10000000`. Each number is time and the most memory the process held:
 
 | Edges | On disk | `rebuild` | `verify` | `asOf` | An observation, `links()` |
 | --- | --- | --- | --- | --- | --- |
@@ -229,7 +230,7 @@ The last column is the median of 300, one at a time. The two larger graphs were 
 - The report credits the newest strong touch with the whole outcome, and is worked out each time it is asked for.
 - Without call results, a call is counted by its length, which a queue hang-up can reach. Platforms that cannot restate keep a conversion sent for a call that turned out missed.
 - A quiet feed is noticed by hours without a record, so a feed that still sends something wrong is not.
-- Without a tap or the optional pool, a call is credited to its number's channel and tied to no visitor of the site.
+- Without a tap or the optional pool, a call can be filed under the channel configured for its number, and is tied to no visitor of the site.
 - A signed link is a key: forwarded to a stranger's browser, it ties that browser to the person it names. [Links](docs/links.md) says what limits that and what does not.
 - Postal addresses are checked for the United States only. A name never ties two people by itself, and only a policy that has names uses them at all.
 - TikTok keys are not exercised by `npm run live-check`, because any call would record an event.
