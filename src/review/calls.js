@@ -141,8 +141,8 @@ view('calls', 'Calls', async (box, first, last) => {
     ['Missed or voicemail', amount(lost), `${percent(lost / total.calls)}${summary.closed ? `, ${amount(summary.closed.missed + summary.closed.voicemail)} while closed` : ''}`, '', { change: against(lost, lostThen, amount, 'down'), bars: shape(byHour('missed').map((n, hour) => n + byHour('voicemail')[hour]), 'Missed and voicemail by the hour they began, midnight to midnight') }],
     lost > 0 && ['Returned', percent(total.returned / lost), `${amount(total.returned)} of ${amount(lost)}${summary.returnedWithin === null ? '' : `, half within ${lasted(summary.returnedWithin)}`}`],
     ['Waiting for a callback', `${amount(open.calls.length)}${open.next === null ? '' : ' or more'}`, open.calls[0] ? el('span', {}, 'Oldest: ', reviewDisplay.time(open.calls[0].at, open.at)) : '', open.calls.length > 0 ? 'apart' : 'same']))
-  top.append(notes('Caller IDs are hashes, not phone numbers. Look up the number in your phone system by call time.',
-    summary.expected ? 'An answer counts when a result says a person answered.' : 'No results are expected. Calls without a result are classified by length.'))
+  top.append(fine('We never keep phone numbers. A caller’s id is a scrambled form of the number, which cannot be turned back here. To ring someone, find the call by its time in your phone system.',
+    summary.expected ? 'A call counts as answered when your phone system says a person answered it.' : 'Your phone system does not say whether calls were answered. So a call that lasted long enough counts as answered.'))
   const queue = open.calls.length > 0 ? missedCalls(open.calls, open.at) : undefined
   box.append(el('section', {}, el('h2', {}, 'Missed and not returned, oldest first'),
     queue ?? el('p', { class: 'muted' }, total.calls === 0 ? 'No inbound calls recorded in this period.' : lost > 0 ? 'All callers who could be rung back have since been reached.' : 'No known missed calls in this period.'),
@@ -163,7 +163,7 @@ view('calls', 'Calls', async (box, first, last) => {
       behind(el('tr', i === 5 ? { class: 'second' } : {}, td('', reviewDisplay.chip(name, reviewDisplay.callTone(name.toLowerCase()))), td('num', tally(count)),
         td('num share', whole > 0 ? percent(count / whole) : none()), td('muted', meaning)), whole > 0 ? count / whole : 0)))
   const results = el('section', {}, reviewDisplay.section('Call results', saved(`calls-${summary.from}-${summary.to}`, states)), wide('How calls went', states),
-    notes('Returned and tried again are shares of missed calls and voicemail. Other shares are of all inbound calls.'))
+    notes('Returned and Tried again are out of the calls you missed, voicemail too. Every other share is out of all the calls that came in.'))
   const placement = el('section', {}, el('h2', {}, 'How calls were placed'), parts('How calls were placed', [
     ['Tied to a visitor', coverage.visitor, 'Used a number shown to them or followed a tap, so the call has their arrival.'],
     ['Filed under a channel', coverage.channel, 'Attributed by the number dialed.'],

@@ -50,7 +50,7 @@ function workings(ops, refused) {
     el('ul', { class: 'cards rows' }, ...refused.map((job) => el('li', {}, tile('M2.5 13 13 8 2.5 3l2 5ZM4.5 8H8', 'apart'), el('b', {}, job.action, ' ', el('span', { class: 'muted' }, job.value === undefined ? none() : `${money(job.value)} ${job.currency ?? ''}`)),
       el('button', { 'aria-label': `Send ${job.transactionId} to ${job.target} again`, on: { click: (event) => again(job, event.currentTarget) } }, 'Send again'),
       el('span', { class: 'flow' }, ago(job.at, ops.at), el('a', { class: 'who-chip', href: subjectHash(job.subject), title: job.subject }, badge(job.subject), reviewDisplay.idText(job.subject)), el('span', { class: 'sr-only' }, ' to '), el('i', { class: 'to', 'aria-hidden': 'true' }), el('span', { class: 'who-chip' }, sourced(job.target)), el('span', { class: 'meta' }, job.note || unrecorded()))))),
-    notes('Fix the refusal reason before sending again.')))
+    notes('The platform’s answer says why it refused. Put that right first, or it will refuse again.')))
   return out
 }
 
@@ -118,7 +118,7 @@ view('health', 'Health', async (box) => {
       }
     } } }, 'Copy')
     record.append(el('div', { class: 'row' }, el('label', { class: 'grow' }, `Entry ${audit.head.seq}`, hash), copy, copied),
-      notes("Keep a copy somewhere the database's owners cannot write. Whoever can rewrite the whole record can make it whole again, but not with a hash you already hold."))
+      notes('This code is made from every decision so far. Change any of them and the code changes too.', 'So keep a copy somewhere the owners of this database cannot write. They could rewrite the record and make a new code, but not one that matches yours.'))
   } else record.append(el('p', {}, 'No decision has been recorded.'))
   box.append(record)
 
@@ -129,5 +129,5 @@ view('health', 'Health', async (box) => {
         el('span', { class: 'reason' }, ago(last.at, Date.now()))), td('', author(last.by))))
   }
   if (disputes.length > 0) box.append(el('section', {}, el('h2', {}, 'Pairs systems disagree about'), wide('Pairs systems disagree about', table),
-    notes('Two subjects that systems have reported as one person and as two by turns, three times or more. A separation holds over a join, so the pair may have stayed apart throughout.')))
+    notes('One of your systems says the two are one person, another says they are two, and they have gone back and forth three times or more.', 'Keeping apart wins over joining. So the pair may have stayed apart the whole time.')))
 }, { every: 30_000 })

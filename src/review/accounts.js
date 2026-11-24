@@ -44,7 +44,7 @@ function profileOf(profile, more) {
   const title = el('h3', { class: 'page-title' }, badge(profile.subject), reviewDisplay.id(profile.subject, true))
   if (!profile.known) return [el('section', {}, el('div', { class: 'page-head' }, title), el('p', { class: 'muted' }, 'No records for this subject.'))]
   const size = profile.cluster.members.length
-  detail.push(el('section', {}, el('div', { class: 'page-head' }, title, el('div', { class: 'row' },
+  detail.push(el('section', {}, el('div', { class: 'page-head' }, title, explain(), el('div', { class: 'row' },
     el('a', { class: 'button', href: `#/journey/${encodeURIComponent(profile.subject)}` }, 'Journey'),
     el('button', { on: { click: () => act('Join as one person', `${profile.subject} and the subject you name will be treated as one person.`, '/join', { a: profile.subject }, 'Join', { otherKey: 'b' }) } }, 'Join with another…'),
     el('button', { class: 'danger', on: { click: () => act('Forget this subject', `Everything recorded about ${profile.subject} will be deleted. This cannot be undone.`, '/forget', { subject: profile.subject, ads: true }, 'Hold to delete', { hold: true, done: ({ sent }) => sent.length > 0 && sentOn(sent) }) } }, 'Forget…'))),
@@ -53,7 +53,7 @@ function profileOf(profile, more) {
     profile.separated.length > 0 && ['Kept apart from', amount(profile.separated.length)],
     profile.history[0] && ['Last seen', reviewDisplay.time(Math.max(...profile.history.map((each) => each.at)), Date.now())],
     profile.consent[0] && ['Advertising', profile.consent[0].adUserData && profile.consent[0].adPersonalization ? 'Granted' : profile.consent[0].adUserData || profile.consent[0].adPersonalization ? 'In part' : 'Denied', profile.consent[0].source ?? '']),
-  profile.cluster.oversized ? notes('The cluster is above the review limit. A shared identifier may be joining strangers.') : ''))
+  profile.cluster.oversized ? el('p', { class: 'banner' }, el('b', {}, 'This group is very large. '), 'One thing that many people share, like an office phone, may be joining strangers.') : ''))
 
   if (profile.ties.length > 0 || profile.separated.length > 0) detail.push(el('section', {}, el('h2', {}, 'Graph'), graphOf(profile, more),
     around(profile).length > ROOM ? el('p', { class: 'muted' }, `${ROOM} of ${amount(around(profile).length)} are drawn. The ties are all listed below.`) : ''))
@@ -117,7 +117,7 @@ function profileOf(profile, more) {
         td('who', answer.source ?? unrecorded()), td('nowrap', reviewDisplay.time(answer.recorded)), td('', i === 0 ? reviewDisplay.chip('Current') : '')))
     }
     records.append(el('section', {}, el('h2', {}, `Advertising consent, newest ${amount(profile.consent.length)}`), wide('Advertising consent', consent),
-      notes('Advertising consent is not consent to be called or written to.')))
+      notes('This says only whether their data may be used for ads. It does not say you may call or write to them.')))
   }
 
   const history = el('table', {}, el('tr', {}, th('When'), th('Event'), th('Identifier')))
