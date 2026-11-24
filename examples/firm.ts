@@ -532,7 +532,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
     }
   }
 
-  /** The form on the site: a new contact, with the browser it was filled in on. What was written is the firm's, and is not recorded here. */
+  /** The form on the site: a new contact, with the browser it was filled in on. What was written, and whether they may be texted, is kept by the firm's own system and not here. */
   async function inquired(request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse) {
     const form = new URLSearchParams((await new Response(request as unknown as ReadableStream).text()).slice(0, 4000))
     const word = (name: string) => (form.get(name) ?? '').trim().slice(0, 60)
@@ -543,7 +543,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
     forms.set(slug, before + 1)
     const subject = `contact:${slug}${before > 0 ? `-${before + 1}` : ''}`
     await ask('POST', '/identify', { subject, ...(device && { device }), phone: word('phone'), name: { first, last }, event: 'inquiry' })
-    await ask('POST', '/convert', { transactionId: `form-${randomUUID()}`, subject, at: clock(), stage: 'inquiry', tags: { language: form.get('lang') === 'es' ? 'es' : 'en', texts: form.get('texts') === 'yes' ? 'yes' : 'no' } })
+    await ask('POST', '/convert', { transactionId: `form-${randomUUID()}`, subject, at: clock(), stage: 'inquiry', tags: { language: form.get('lang') === 'es' ? 'es' : 'en' } })
     response.writeHead(303, { location: `${form.get('lang') === 'es' ? '/es' : '/'}?sent=1#write` }).end()
   }
 
