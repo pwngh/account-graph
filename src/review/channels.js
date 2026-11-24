@@ -61,7 +61,7 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
   // A campaign nobody reported a cost for may have cost nothing or anything. Only a number somebody sent is shown as one.
   const spent = (row) => {
     if (row.source === '(none)') return [td('num', none()), td('num', none())]
-    return row.costDays === 0 && row.cost === 0 && row.clicks === 0 ? [td('num', unknown()), td('num', unknown())] : [td('num', cash(row.cost)), td('num', amount(row.clicks))]
+    return row.costDays === 0 && row.cost === 0 && row.clicks === 0 ? [td('num', unknown()), td('num', unknown())] : [td('num', cash(row.cost), row !== report.total && row.missingDays > 0 && (row.costDays > 0 || row.insufficientData) ? el('span', { class: 'reason', title: `${amount(row.missingDays)} of ${amount(report.days)} days have no cost data` }, `${amount(row.missingDays)} ${row.missingDays === 1 ? 'day' : 'days'} missing`) : ''), td('num', amount(row.clicks))]
   }
   // How many people, where that is not how many outcomes: a renewal is a second outcome and not a second person.
   const counted = (step) => (step ? [amount(step.count), step.people === step.count ? '' : el('span', { class: 'reason' }, `${amount(step.people)} ${step.people === 1 ? 'person' : 'people'}`)] : [tally(0)])
@@ -78,13 +78,12 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
   if (report.rows.length > 0) section.append(tiles([term('Spend', 'spend'), all.costDays > 0 ? cash(all.cost) : 'No data', all.missingDays > 0 && all.costDays > 0 ? `${amount(all.missingDays)} ${all.missingDays === 1 ? 'day' : 'days'} without data` : '', '', { change: alike && all.missingDays === 0 && then.total.missingDays === 0 && then.total.costDays > 0 ? changed(all.cost, then.total.cost, cash, before) : '' }], [term('Value', 'value'), cash(all.value), `${amount(all.outcomes)} ${all.outcomes === 1 ? 'outcome' : 'outcomes'}`, '', { change: alike && !report.incomplete ? changed(all.value, then.total.value, cash, before, 'up') : '' }], [term('People', 'people'), amount(all.people), `${amount(all.visits)} visits`, '', { change: then.rows.length > 0 && !report.incomplete ? changed(all.people, then.total.people, amount, before, 'up') : '' }],
     [term(per ? `Cost per ${per}` : 'Cost per outcome', 'cost'), all.costPerOutcome !== null ? cash(all.costPerOutcome) : all.insufficientData ? 'Low data' : '—', report.excluded > 0 ? `Excludes ${amount(report.excluded)} ${report.excluded === 1 ? 'campaign' : 'campaigns'}` : ''], [term('ROAS', 'roas'), all.returnOnCost !== null ? `${all.returnOnCost.toFixed(1)}×` : all.insufficientData ? 'Low data' : '—', report.excluded > 0 ? `Excludes ${amount(report.excluded)} ${report.excluded === 1 ? 'campaign' : 'campaigns'}` : ''],
     all.missed > 0 && ['Missed calls', amount(all.missed), '', '', { change: then.rows.length > 0 ? changed(all.missed, then.total.missed, amount, before, 'down') : '' }]))
-  const note = (parts) => (parts.some(Boolean) ? el('span', { class: 'reason' }, parts.filter(Boolean).join(' · ')) : '')
+  const note = (parts) => (parts.some(Boolean) ? el('span', { class: 'reason', title: parts.filter(Boolean).join(' · ') }, parts.filter(Boolean).join(' · ')) : '')
   const rows = report.rows.map((row) => ({ row, lines: [] }))
   for (const { row, lines } of rows) {
     lines.push(el('tr', {}, td('', row.source === '(none)' ? el('span', { class: 'muted' }, 'Unattributed') : sourced(row.source)),
       td('who', row.campaign || row.campaignId || none(),
-        row.campaign && row.campaignId ? el('span', { class: 'reason' }, row.campaignId) : '',
-        note([row.missingDays > 0 && (row.costDays > 0 || row.insufficientData) && `${amount(row.missingDays)} ${row.missingDays === 1 ? 'day' : 'days'} without spend`, spurned(row)])), ...cells(row)), ...split(row))
+        note([row.campaign && row.campaignId, spurned(row)])), ...cells(row)), ...split(row))
     table.append(...lines)
   }
   table.append(el('tr', { class: 'sum' }, td('', 'Total'), td('who', note([report.excluded > 0 && `Excludes ${amount(report.excluded)} ${report.excluded === 1 ? 'campaign' : 'campaigns'} with low data`, spurned(report.total)])), ...cells(report.total)), ...split(report.total))
