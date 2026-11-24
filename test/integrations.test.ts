@@ -1059,6 +1059,11 @@ test('a call whose result is awaited is held, and nothing is sent until a person
     assert.deepEqual([board.days, board.timeZone, board.columns[0].step], [90, 'UTC', null])
     assert.ok(board.columns.every((column: any) => column.rows.every((row: any) => !('outcome' in row) && !('to' in (row.call ?? {})))))
     for (const bad of ['/undecided?limit=0', '/undecided?limit=x', '/board?days=0', '/board?days=x', '/followed?days=10', '/followed?step=client&days=x', '/calls?after=x', '/calls?from=2026-13-01', '/calls/summary?tz=Mars']) assert.equal((await read(bad)).status, 400, bad)
+    // A return your own system reports: for the service alone, and checked.
+    const marked = await post('/call/returned', { id: 'CA-nobody', at: 1_700_000_000_000 })
+    assert.deepEqual([marked.status, marked.body], [200, { followUp: null }])
+    assert.equal((await post('/call/returned', { id: 'CA-nobody', at: 'then' })).status, 400)
+    assert.equal((await fetch(`${base}/call/returned`, { method: 'POST', headers: { authorization: 'Bearer review' }, body: '{"id":"CA-nobody"}' })).status, 403)
     // A result that comes first waits for its call.
     assert.deepEqual((await post('/call/result', { id: 'CA3', answered: true })).body, { state: 'waiting', counted: false })
     assert.equal((await post('/call', call('CA3'))).body.state, 'answered')

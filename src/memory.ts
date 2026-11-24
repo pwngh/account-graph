@@ -393,6 +393,10 @@ export function createMemoryStore(): Store {
       results.set(id, { ...result })
     },
 
+    async removeCallResult(id) {
+      results.delete(id)
+    },
+
     async callOf(id) {
       const call = calls.get(id)
       return call && withResult(call)
@@ -410,7 +414,13 @@ export function createMemoryStore(): Store {
 
     async openCalls(from, to, limit, after) {
       const answered = new Map<Subject, number>()
-      for (const call of calls.values()) if (results.get(call.id)?.answered) answered.set(call.subject, Math.max(call.at, answered.get(call.subject) ?? -Infinity))
+      // When each was last spoken to, by a call answered or by a return reported for one of theirs.
+      for (const call of calls.values()) {
+        const { answered: spoke, returned = -Infinity } = results.get(call.id) ?? {}
+        // A return reported for a call that was not missed, or that began after it, says nothing.
+        const told = call.direction === 'inbound' && spoke === false && returned > call.at ? returned : -Infinity
+        answered.set(call.subject, Math.max(spoke ? call.at : -Infinity, told, answered.get(call.subject) ?? -Infinity))
+      }
       const open = [...calls.values()].filter((call) => {
         if (call.direction !== 'inbound' || call.at < from || call.at >= to || results.get(call.id)?.answered !== false || call.subject === `call:${call.id}`) return false
         if (after && !(call.at > after.at || (call.at === after.at && call.id > after.id))) return false

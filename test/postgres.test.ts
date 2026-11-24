@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
 import pg from 'pg'
-import { createGraph, recordCall } from '../src/index.ts'
+import { createGraph, recordCall, recordReturn } from '../src/index.ts'
 import { createPostgresStore, upgrades } from '../src/postgres.ts'
 import { serve } from '../src/serve.ts'
 import { malformedSuite } from './malformed.suite.ts'
@@ -109,6 +109,21 @@ if (!url) {
       // Seen again, it is counted from one.
       await graph.observe({ subject: 'c', identifiers: ['email:a', 'phone:muted'], at: 2 })
       assert.deepEqual((await pool.query(`select fanout, ignored from ${schema}.identifier where id in ('email:a', 'phone:muted') order by id`)).rows, [{ fanout: 1, ignored: false }, { fanout: 1, ignored: true }])
+    } finally {
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
+
+  test('a database from before returns were reported keeps its results, and takes them', async () => {
+    const schema = `ag_test_${process.pid}_told`
+    try {
+      const store = await madeBefore(schema, 17)
+      await pool.query(`insert into ${schema}.call (id, direction, subject, at, dialed, flags, recorded_at) values ('OLD', 'inbound', 'caller:x', 1000, '+15550100001', '{}', 1000)`)
+      await pool.query(`insert into ${schema}.call_result (id, answered, recorded_at) values ('OLD', false, 1000)`)
+      assert.deepEqual((await store.migrate()).slice(0, 1), ['returns reported by your own systems'])
+      const graph = createGraph(store)
+      assert.deepEqual((await graph.keptCall('OLD'))!.result, { answered: false, recorded: 1000 })
+      assert.deepEqual(await recordReturn(graph, { id: 'OLD', at: 5000 }), { state: 'returned', by: 'OLD', delay: 4000, told: true, attempts: 0 })
     } finally {
       await pool.query(`drop schema if exists ${schema} cascade`)
     }

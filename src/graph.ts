@@ -139,6 +139,8 @@ export interface Graph {
   keepCall(call: Omit<KeptCall, 'result' | 'recorded'>): Promise<void>
   /** Keeps how a call went, which may be known before or after the call itself. What a report leaves out stays as an earlier one said it. */
   keepCallResult(id: string, result: Omit<CallResult, 'recorded'>): Promise<void>
+  /** Keeps when a caller was reached as a system of yours reports it, or with undefined takes that back. `recordReturn` does this. */
+  keepReturn(id: string, at: number | undefined): Promise<void>
   /** A kept call with its result, or undefined for an id no call was kept for. */
   keptCall(id: string): Promise<KeptCall | undefined>
   /** Whether an arrival since a time is on record for a subject, and no standing opt-out from measuring ads. */
@@ -881,6 +883,15 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const { voicemail, ...before } = (await tx.callResultOf(id)) ?? {}
         await tx.setCallResult(id, { ...before, ...(voicemail !== undefined && !result.answered && { voicemail }), ...result, recorded: now() })
         await tx.fed('results', now())
+      })
+    },
+
+    async keepReturn(id, at) {
+      await store.write(async (tx) => {
+        const { returned: _, ...before } = (await tx.callResultOf(id)) ?? { recorded: now() }
+        // Nothing is left of a result that only said this.
+        if (at === undefined && !('answered' in before) && !('voicemail' in before) && !('waited' in before)) await tx.removeCallResult(id)
+        else await tx.setCallResult(id, { ...before, ...(at !== undefined && { returned: at }) })
       })
     },
 

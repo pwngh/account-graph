@@ -403,7 +403,7 @@ test('calls are counted by hour and weekday where they happened, and by what bec
   ]
   const later = [...calls, call('r1', { subject: 'caller:b', direction: 'outbound', at: at + 60_000, result: went(true) }), call('r2', { subject: 'caller:c', at: at + 120_000, result: went(true) })]
   const summary = summarizeCalls(calls, later, new Set(['b', 'c']), at + 7_200_000 + 60_000 + 30 * 60_000 - 1, 'America/New_York', { results: 'expected' })
-  assert.deepEqual(summary.total, { calls: 7, answered: 1, missed: 3, voicemail: 1, waiting: 1, unknown: 1, returned: 1, triedAgain: 1, hidden: 1 })
+  assert.deepEqual(summary.total, { calls: 7, answered: 1, missed: 3, voicemail: 1, waiting: 1, unknown: 1, returned: 1, told: 0, triedAgain: 1, hidden: 1 })
   // Half past five in the morning in London is half past midnight on Monday in New York.
   assert.deepEqual(summary.cells.map((cell) => [cell.weekday, cell.hour, cell.calls]), [[1, 0, 5], [1, 1, 1], [1, 2, 1]])
   assert.deepEqual(summarizeCalls(calls, later, new Set(), at, 'UTC').cells.map((cell) => [cell.weekday, cell.hour, cell.calls]), [[1, 5, 5], [1, 6, 1], [1, 7, 1]])
@@ -416,7 +416,7 @@ test('calls are counted by hour and weekday where they happened, and by what bec
   assert.equal(summarizeCalls([call('long', { duration: 600 }), call('waited', { result: { waited: 5, recorded: at } })], [], new Set(), at).coverage.noResult, 2)
   // Already tomorrow in Tokyo.
   assert.deepEqual([dayIn(Date.parse('2026-03-02T16:00:00Z'), 'Asia/Tokyo'), dayIn(Date.parse('2026-03-02T16:00:00Z'))], ['2026-03-03', '2026-03-02'])
-  assert.deepEqual(summarizeCalls([], [], new Set(), at), { total: { calls: 0, answered: 0, missed: 0, voicemail: 0, waiting: 0, unknown: 0, returned: 0, triedAgain: 0, hidden: 0 }, cells: [], coverage: { visitor: 0, channel: 0, neither: 0, noResult: 0 }, returnedWithin: null })
+  assert.deepEqual(summarizeCalls([], [], new Set(), at), { total: { calls: 0, answered: 0, missed: 0, voicemail: 0, waiting: 0, unknown: 0, returned: 0, told: 0, triedAgain: 0, hidden: 0 }, cells: [], coverage: { visitor: 0, channel: 0, neither: 0, noResult: 0 }, returnedWithin: null })
 })
 
 test('quiet hours are off until set, and a call back is due after a day', () => {
@@ -465,6 +465,11 @@ test('what followed a call starts the clock at a landmark, and leaves out whoeve
   // Ringing just before the landmark and answered after the wait is getting through after it.
   const waiting = person([call(T, false)], [call(T + DAY - 60_000, true, { result: { answered: true, waited: 120, recorded: T } })], [T + 4 * DAY])
   assert.deepEqual(group(run([waiting]), 'returned'), [['not returned within a day', 1, 1]])
+  // A report about a call that was not missed says nothing here either.
+  assert.deepEqual(group(run([person([call(T, false)], [call(T + 1000, false, { direction: 'outbound', result: { answered: false, returned: T + 2000, recorded: T } })])]), 'returned'), [['not returned within a day', 1, 0]])
+  // Reached as your own system says, within the day or after it.
+  const reachedAt = (at: number) => person([call(T, false, { result: { answered: false, returned: at, recorded: T } })])
+  assert.deepEqual(group(run([reachedAt(T + DAY), reachedAt(T + DAY + 1)]), 'returned'), [['returned within a day', 1, 0], ['not returned within a day', 1, 0]])
   // Getting through after the landmark was still to come when the clock started, so it stays.
   const afterwards = person([call(T, false)], [call(T + 2 * DAY, true)], [T + 4 * DAY])
   assert.deepEqual(group(run([afterwards]), 'returned'), [['not returned within a day', 1, 1]])

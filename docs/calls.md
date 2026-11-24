@@ -167,6 +167,19 @@ curl "https://graph.example.org/call?id=CA2" -H "authorization: Bearer $REVIEWER
 | `tried again` | The caller rang again and got through. |
 | `hidden` | The caller hid their number, so there is nothing to ring back. |
 
+A caller may be reached some way no call shows: from a line your phone system does not report, by a text they answered, in person. Have your own system say so:
+
+```sh
+curl -X POST https://graph.example.org/call/returned -H "authorization: Bearer $GRAPH_TOKEN" \
+  -d '{"id":"CA1","at":1795467200000}'
+```
+
+```json
+{ "followUp": { "state": "returned", "by": "CA1", "delay": 7200000, "told": true, "attempts": 1 } }
+```
+
+`at` is when they were reached, now unless you say. It closes every miss of that caller that began before then, as an answered call would, and none that began after. It counts only for a call that was missed, and only from after it began. A call that reached them sooner is what counts. `returned: false` takes it back, and the last report stands. It may come before the call it is about. `told` marks a return that rests on such a report, and the summary counts them apart, so it can be told from one a call shows.
+
 A call before the miss says nothing about it. One later answer closes every earlier miss of that number. The answer is worked out from the calls themselves each time, so the order they are reported in does not matter.
 
 A call you place is never an outcome and records nothing about who was rung. For an outbound call, `from` is your number and `to` is theirs. The number is kept as its hash.

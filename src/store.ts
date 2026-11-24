@@ -111,6 +111,7 @@ export interface Tx {
   /** Keeps a call, replacing one with the same id. Its result is kept apart, and may arrive first. */
   setCall(call: Omit<KeptCall, 'result'>): Promise<void>
   setCallResult(id: string, result: CallResult): Promise<void>
+  removeCallResult(id: string): Promise<void>
   /** A call with its result, or undefined for an id no call was kept for. */
   callOf(id: string): Promise<KeptCall | undefined>
   /** A result, whether or not its call was kept. */
