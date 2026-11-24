@@ -77,7 +77,7 @@ jobs:
         run: |
           flags='-s low,medium,high,critical -etags dos -no-stdin -duc -ni -nc -nmhe -retries 0 -timeout 3 -c 50 -rl 1000'
           ./nuclei -u http://127.0.0.1:8080 -t templates/http/exposures -t templates/http/misconfiguration -t templates/http/vulnerabilities/generic $flags -o root.txt
-          ./nuclei -l .github/nuclei/urls.txt -t templates/dast -dast -H "authorization: Bearer $GRAPH_TOKEN" $flags -o routes.txt
+          ./nuclei -l .github/nuclei/urls.txt -t templates/dast -t .github/nuclei/server-error.yaml -dast -H "authorization: Bearer $GRAPH_TOKEN" $flags -o routes.txt
           curl -sSf http://127.0.0.1:8080/health
           if [ -s root.txt ] || [ -s routes.txt ]; then echo 'nuclei found something'; exit 1; fi
       - if: failure()
