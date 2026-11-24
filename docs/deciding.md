@@ -144,7 +144,7 @@ System separations bias `fit`, because they were picked for what the two share. 
 
 ## Measured weights
 
-The `fingerprint`, `canvas` and `ip` rows are set from how these identifiers behave in production, where the person behind each visit was known.
+The `fingerprint`, `canvas` and `ip` rows are set from these figures.
 
 | Identifier | Values that belonged to one person only | Same person on the next sighting, by days since the last |
 | --- | --- | --- |

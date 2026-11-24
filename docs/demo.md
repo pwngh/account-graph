@@ -25,28 +25,11 @@ The site is live. Open it with `?gclid=you&utm_id=30333` and its number becomes 
 
 1. Open the stage. The caller's phone is at left, and the reviewer screen at right.
 2. Press Space to run each scene. The phone shows what the caller does, and the screen opens the view that changed.
-3. Press P to play the whole show, R to start over, or H to hide the bar.
+3. Press P to play the main story by itself in ninety seconds, R to start over, or H to hide the bar.
 
 The phone is shown in a window at least 1,121 pixels wide. A narrower one shows the reviewer screen and the bar.
 
 The story runs from a Monday to a Thursday that have passed. Each scene moves the demo's clock on, and the screens served by the demo go by that clock.
-
-## Ninety-second script
-
-Press P on the stage. After a count of three the bar hides and the show plays by itself, in time with these lines. Press P or Esc to stop it. It plays once: press R to start over, which takes a few seconds with `MEMORY=1` and about a minute with PostgreSQL.
-
-| Time | On screen | What to say |
-| --- | --- | --- |
-| 0:00 | The phone: a search, the ad, the firm's site, a call, no answer. The caller on the **Board** | When someone clicks a law firm's ad and calls, and nobody picks up, that call often gets cut off from the ad that paid for it. |
-| 0:15 | The call back, and staff entering the details | This is a sample firm with made-up data. Staff call back and take a name. The call and the visit are now tied to it, but not firmly enough to credit the ad. |
-| 0:28 | The text, and the form it opens. Ad credit goes from 78% to 92% | They open a link staff texted, in the browser they came with. We now know whose browser this is, and the ad is credited. |
-| 0:39 | The form sent, the documents signed. Their card moves along the **Board** | The form and the signature land on the same person, with no second contact. |
-| 0:49 | A director scheduled, then calling on Wednesday | Staff schedule a director, who calls. Same timeline, still tied to the ad. |
-| 1:00 | The enroll-and-pay link, and the payment | They enroll and pay, the payment is recorded, and it goes to a sample ad platform for that first click. |
-| 1:14 | **Channels**: cost per client | So this is what each campaign cost per client. |
-| 1:22 | **Journey**: one line from search to payment | The close. |
-
-Costs per client depend on the day the demo runs, so do not read them out. Texts are sent by the firm's own system and recorded here by time and number. Forms, signing and card payment are the firm's too, so do not claim them. No live text, card payment or ad platform is used.
 
 ## Scenes
 
@@ -87,20 +70,11 @@ Costs per client depend on the day the demo runs, so do not read them out. Texts
 | 16 | Restated from 400 to 1,250 | Restated from 2,500 to 6,000 |
 | 17 | The other side of the matter | The driver, a relative the claim is against |
 
-These lines of the script differ:
-
-| Time | What to say |
-| --- | --- |
-| 0:39 | The form and the records authorization land on the same person, with no second contact. |
-| 0:49 | Staff schedule an attorney, who calls. Same timeline, still tied to the ad. |
-| 1:00 | They sign the agreement, the signed case is recorded, and it goes to a sample ad platform for that first click. |
-| 1:14 | So this is what each campaign cost per signed case. |
-
 ## Limitations
 
-- **Scores.** A percentage on screen is a score from the sample policy's weights, not a measured accuracy. Do not present one as accuracy.
+- **Scores.** A percentage on screen is a score from the sample policy's weights, not a measured accuracy.
 - **Scale.** The demo has a few hundred people. See [Performance](performance.md) for measured speeds.
 - **Clock.** Scene 21 moves the clock forward fourteen hours. Run it last.
 - **Repeats.** Each scene runs once. Press R to start over.
-- **Firm systems.** Call answering, scheduling, texts, forms, signing and card payment belong to a firm's own systems. The demo shows made-up screens for them, and makes the requests such systems would, with each text as `POST /text`.
+- **Firm systems.** Call answering, scheduling, texts, forms, signing and card payment belong to a firm's own systems. The demo shows made-up screens for them, and makes the requests such systems would, with each text as `POST /text`. No live text, card payment or ad platform is used.
 - **Links.** The demo opens every link in the browser of the first visit. One opened in another browser is another visitor.
