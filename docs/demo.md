@@ -44,7 +44,7 @@ Press P on the stage. After a count of three the bar hides and the show plays by
 | 1:14 | **Channels**: cost per client | So this is what each campaign cost per client. |
 | 1:22 | **Journey**: one line from search to payment | The close. |
 
-Costs per client depend on the day the demo runs, so do not read them out. Texts, forms, signing and card payment belong to the firm's own systems, so do not claim them. No live text, card payment or ad platform is used.
+Costs per client depend on the day the demo runs, so do not read them out. Texts are sent by the firm's own system and recorded here by time and number. Forms, signing and card payment are the firm's too, so do not claim them. No live text, card payment or ad platform is used.
 
 ## Scenes
 
@@ -74,5 +74,5 @@ Costs per client depend on the day the demo runs, so do not read them out. Texts
 - **Scale.** The demo has a few hundred people. See [Performance](performance.md) for measured speeds.
 - **Clock.** Scene 19 moves the clock forward fourteen hours. Run it last.
 - **Repeats.** Each scene runs once. Press R to start over.
-- **Firm systems.** Call answering, scheduling, texts, forms, signing and card payment belong to a firm's own systems. The demo shows made-up screens for them, and makes the requests such systems would.
+- **Firm systems.** Call answering, scheduling, texts, forms, signing and card payment belong to a firm's own systems. The demo shows made-up screens for them, and makes the requests such systems would, with each text as `POST /text`.
 - **Links.** The demo opens every link in the browser of the first visit. One opened in another browser is another visitor.

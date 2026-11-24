@@ -4,7 +4,7 @@
  * Then open the printed address and enter the reviewer token `demo`.
  */
 import { createServer } from 'node:http'
-import { createGraph, createHours, createMemoryStore, createOps, createOutbox, dialed, hashPhone, recordCall, recordCallResult, recordNotLead, recordReturn } from '../src/index.ts'
+import { createGraph, createHours, createMemoryStore, createOps, createOutbox, dialed, hashPhone, recordCall, recordCallResult, recordNotLead, recordReturn, recordText } from '../src/index.ts'
 import { createHandler } from '../src/server.ts'
 
 // What is recorded below is written down at the time it happened, so the months of first record are real ones.
@@ -107,6 +107,16 @@ await graph.observe({ subject: 'lead:walk-in', identifiers: ['email:walk-in'], a
 await graph.outcome({ transactionId: 'enrolled-walk-in', subject: 'lead:walk-in', at: Date.now() - 2 * 24 * HOUR, stage: 'enrolled', value: 200, currency: 'USD' })
 
 // Two weeks of calls, from a seeded generator so they are the same each time: most answered, some missed, some returned.
+// Texts: one answered by a text, one whose sender asked for no more, and three that wait.
+const text = (id: string, from: string, hours: number, rest: object = {}) => recordText(graph, { id, from, to: '+15550100001', at: Date.now() - hours * HOUR, ...rest }, { numbers: { '+15550100001': { source: 'google', campaignId: '20222' } } })
+await text('t1', '+15550107101', 30, { tags: { language: 'es' } })
+await text('t2', '+15550107101', 29)
+await text('t3', '+15550107102', 20)
+await text('t4', '+15550107103', 4, { tags: { language: 'en' } })
+await text('t5', '+15550107104', 50)
+await recordText(graph, { id: 't6', direction: 'outbound', from: '+15550100001', to: '+15550107104', at: Date.now() - 49 * HOUR })
+await text('t7', '+15550107105', 60, { text: 'STOP' })
+
 let seed = 11
 const chance = () => (seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff) / 0x7fffffff
 const numbers = { '+15550100001': { source: 'google', campaignId: '20222' }, '+15550100002': { source: 'mailer', campaign: 'postcard' } }
@@ -198,7 +208,7 @@ const handler = createHandler(graph, {
   // The steps in order, with what each is worth. The Channels view lists them this way.
   returnHours: 24,
   hours: createHours({ mon: ['08:00-18:00'], tue: ['08:00-18:00'], wed: ['08:00-18:00'], thu: ['08:00-18:00'], fri: ['08:00-17:00'], sat: ['09:00-13:00'] }),
-  stages: { phone_click: {}, brochure: { value: 2, currency: 'USD' }, inquiry: { value: 5, currency: 'USD', wait: 72 }, call: { value: 10, currency: 'USD' }, signup: { value: 25, currency: 'USD' }, enrolled: { value: 200, currency: 'USD' } },
+  stages: { phone_click: {}, text: {}, brochure: { value: 2, currency: 'USD' }, inquiry: { value: 5, currency: 'USD', wait: 72 }, call: { value: 10, currency: 'USD' }, signup: { value: 25, currency: 'USD' }, enrolled: { value: 200, currency: 'USD' } },
   calls: { numbers: { ...numbers, '+15551230001': { source: 'google', campaignId: '20222' } }, results: 'expected' },
 })
 const port = Number(process.env.PORT ?? 8788)

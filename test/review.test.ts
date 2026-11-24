@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
-import { createGraph, createMemoryStore, email, hashPhone, phone, recordCall, recordNotLead, recordReturn } from '../src/index.ts'
+import { createGraph, createMemoryStore, email, hashPhone, phone, recordCall, recordNotLead, recordReturn, recordText } from '../src/index.ts'
 import { createHandler } from '../src/server.ts'
 import { browse, chrome, pause, until, without } from './chrome.ts'
 
@@ -321,6 +321,16 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   assert.deepEqual([await shown('#info'), (await text('#info')).startsWith('Issues')], [true, true])
   await press('Escape')
   assert.equal(await shown('#info'), false)
+
+  // A text nobody has answered waits on the Board, and is gone from it once someone has.
+  const texted = Date.now() - 3_600_000
+  const lane = () => run(`document.querySelector('.board section[aria-label="Unanswered texts"]')?.innerText ?? ''`) as Promise<string>
+  for (const n of [1, 2]) await recordText(graph, { id: `in-${n}`, from: '+17135550188', to: '+15550100001', at: texted + n, tags: { language: 'es' } })
+  await run(`location.hash = '#/board'`)
+  await until('the texts', async () => /1 person[^]*Unattributed · es[^]*2 unanswered/.test(await lane()))
+  await recordText(graph, { id: 'out-1', direction: 'outbound', from: '+15550100001', to: '+17135550188', at: texted + 60_000 })
+  await run(`load()`)
+  await until('the texts to be gone', async () => (await run(`opening === 0`)) && (await lane()) === '')
 
   // Every view has a guide that goes forward, back and shut, and says where it is.
   for (const view of ['accounts', 'journey', 'board', 'decide', 'calls', 'channels', 'health']) {

@@ -164,7 +164,7 @@ A subject is written `type:id`, such as `account:42`, and an identifier `kind:va
 | Area | Capability |
 | --- | --- |
 | Identity | Scored links with their evidence, clusters that can be split, and an audit log |
-| Calls | Call results, callbacks, tap-to-call matching, and optional tracking numbers |
+| Calls and texts | Call results, callbacks, unanswered texts, and optional tracking numbers |
 | Attribution | Spend, cost per outcome and ROAS by campaign, with five breakdowns |
 | Conversions | An outbox for Google, Meta, Microsoft and TikTok, with retries |
 | Reviewer screen | Accounts, Journey, Board, Matches, Calls, Channels and Health |
@@ -213,6 +213,7 @@ The server normalizes and hashes the email, phone and postal address. `device` i
 
 - [Campaign report](docs/report.md): costs, outcomes, attribution and breakdowns
 - [Events and calls](docs/calls.md): page events, call results, callbacks and tracking numbers
+- [Text messages](docs/texts.md): texts tied to a visit by a code or a tap, and the ones nobody has answered
 - [Identify](docs/identify.md): reporting who a person is, hosted forms and filters
 - [Signed links](docs/links.md): personal links and cross-site visitors
 
