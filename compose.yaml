@@ -39,6 +39,7 @@ services:
       POOL_NUMBERS: ${POOL_NUMBERS:-}
       POOL_MINUTES: ${POOL_MINUTES:-15}
       POOL_GRACE_MINUTES: ${POOL_GRACE_MINUTES:-120}
+      IDENTIFIER_SECRET: ${IDENTIFIER_SECRET:-}
       LINK_SECRET: ${LINK_SECRET:-change-me-link-secret-change-me-now}
       # Every other setting in docs/operations.md, passed through when you set it. Unset, each is off.
       REPORT_TIME_ZONE: ${REPORT_TIME_ZONE:-}

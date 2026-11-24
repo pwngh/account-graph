@@ -88,6 +88,7 @@ The `device:` value is the `ag_device` cookie the script set, which your backend
 - **A number for each visitor.** An optional pool shows each visitor from an ad a number of their own, so a call they dial by hand is still tied to their click.
 - **Calls that were really answered.** A queue hang-up is not an answer. Your phone system reports how each call went, and a call can be held, uncounted and unsent, until it does. Each missed call says whether it was returned, and after how long, and a Calls view lists the ones still open.
 - **Links that name a person.** A signed link in an email or text ties the browser that opens it to the person it was sent to, and a visitor stays one visitor across your sites.
+- **Names that only confirm.** Under a preset for contacts staff type in, a name with a zip code or a date of birth confirms a shared phone. It never ties anyone by itself.
 - **One call to say who someone is.** Send an email, phone, address and device as they are; the server hashes them, checks the address with the postal service, and counts a throwaway phone number for less.
 - **Real integrations.** Fingerprint, the operating system's machine id, MaxMind, Twilio, Smarty, the Google tag's cookies, the cost reports of Google Ads and Meta, and the conversion APIs of Google, Meta, Microsoft, and TikTok.
 - **An outbox for conversions.** Outcomes are recorded once, sent in batches to each ad platform, retried with backoff, and never sent by two workers at once. Failed ones can be listed and retried.

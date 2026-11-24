@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { after, describe, test } from 'node:test'
-import { Outdated, brokenAt, callState, createGraph, defaultPolicy, dialed, email, fit, followUp, hashPhone, policyFrom, recordCall, recordCallResult } from '../src/index.ts'
+import { Outdated, brokenAt, callState, createGraph, defaultPolicy, dialed, email, fit, followUp, hashPhone, nameKeys, policyFrom, recordCall, recordCallResult } from '../src/index.ts'
 import type { Change, GraphOptions, Observation, Policy, Store } from '../src/index.ts'
 
 export interface Opened {
@@ -1983,6 +1983,43 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.ok(Math.abs((await old.graph.links('a'))[0]!.score - 0.85 / 4) < 1e-9)
     })
 
+    test('a name confirms a link and never makes one', async () => {
+      const household = policyFrom(JSON.parse(readFileSync(new URL('../examples/household.json', import.meta.url), 'utf8')))
+      const secret = 'a-secret-of-thirty-two-characters!'
+      const key = (first: string, last: string, known: { zip5?: string; dob?: string }) => nameKeys(secret, first, last, known)
+      const score = async (identifiers: string[], policy = household) => {
+        const { graph } = await fresh(policy)
+        await graph.observe(['a', 'b'].map((subject) => ({ subject, identifiers, at: T0 })))
+        const [link] = await graph.links('a')
+        return link && [Math.round(link.score * 10_000) / 10_000, link.level, link.reasons.map((reason) => [reason.identifier.split(':')[0], reason.counted])]
+      }
+      const both = key('Ana', 'Lima', { zip5: '62701', dob: '1990-02-03' })
+      assert.equal(both.length, 2)
+      // A name alone, even by two keys, is nothing at all.
+      assert.equal(await score(both), undefined)
+      // With a phone it makes the pair one person, and two keys of one name count once.
+      assert.deepEqual(await score(['phone:1']), [0.85, 'related', [['phone', undefined]]])
+      assert.deepEqual(await score(['phone:1', both[0]!]), [0.94, 'same', [['phone', undefined], ['name', undefined]]])
+      assert.deepEqual(await score(['phone:1', ...both]), [0.94, 'same', [['phone', undefined], ['name', undefined], ['name', false]]])
+      // What does not relate two without it does not relate them with it: an address many share, and a name.
+      assert.equal(await score(['ip:198.51.100.7', both[0]!]), undefined)
+      const { graph } = await fresh(household)
+      await graph.observe(['a', 'b'].map((subject) => ({ subject, identifiers: ['ip:198.51.100.7', both[0]!], at: T0 })))
+      const between = await graph.between('a', 'b')
+      assert.deepEqual([Math.round(between.score * 100), between.reasons.map((reason) => reason.counted)], [30, [false, undefined]])
+      // Accents and case fold to one key on either store, and past the cap a key is nobody's.
+      await graph.observe([
+        { subject: 'c', identifiers: ['phone:2', ...key('José', 'Muñoz-Ruiz', { zip5: '62701' })], at: T0 },
+        { subject: 'd', identifiers: ['phone:2', ...key('JOSE', 'munoz ruiz', { zip5: '62701-1234' })], at: T0 },
+      ])
+      assert.equal((await graph.links('c'))[0]!.level, 'same')
+      await graph.observe([1, 2, 3, 4].map((n) => ({ subject: `crowd:${n}`, identifiers: key('Jose', 'Munoz Ruiz', { zip5: '62701' }), at: T0 })))
+      assert.equal((await graph.links('c'))[0]!.level, 'related')
+      assert.deepEqual(await graph.verify(), [])
+      // The default policy knows no names.
+      await assert.rejects((await fresh()).graph.observe({ subject: 'a', identifiers: both, at: T0 }), /kind the policy does not name/)
+    })
+
     test('overlapping writes leave clusters sound', async () => {
       const { graph } = await fresh()
       await Promise.all(
@@ -1993,11 +2030,11 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await graph.verify(), [])
     })
 
-    for (const grouped of [false, true]) test(`stored clusters match a full recompute after each of ${fuzzSteps} random operations${grouped ? ', with kinds in groups' : ''}`, async () => {
+    for (const grouped of [false, true]) test(`stored clusters match a full recompute after each of ${fuzzSteps} random operations${grouped ? ', with kinds in groups and one that only confirms' : ''}`, async () => {
       // Low caps, so identifiers cross them in both directions often.
       const policy: Policy = {
         ...defaultPolicy,
-        kinds: Object.fromEntries(Object.entries(defaultPolicy.kinds).map(([kind, rule]) => [kind, { ...rule, cap: kind === 'ip' ? 6 : 3, ...(grouped && ['email', 'device', 'hardware'].includes(kind) && { group: 'one' }), ...(grouped && ['canvas', 'fingerprint'].includes(kind) && { group: 'two' }) }])),
+        kinds: Object.fromEntries(Object.entries(defaultPolicy.kinds).map(([kind, rule]) => [kind, { ...rule, cap: kind === 'ip' ? 6 : 3, ...(grouped && ['email', 'device', 'hardware'].includes(kind) && { group: 'one' }), ...(grouped && ['canvas', 'fingerprint'].includes(kind) && { group: 'two' }), ...(grouped && kind === 'canvas' && { corroborates: true as const }) }])),
       }
       const seed = 20261123 + Number(grouped)
       const next = random(seed)

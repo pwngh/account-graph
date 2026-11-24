@@ -12,6 +12,8 @@ evidence = weight × (2 / subjects sharing it) ^ dilution × 0.5 ^ (gap / halfLi
 
 Evidence that comes together is not independent. Kinds the policy puts in one `group` count once: of the reasons in a group, the strongest adds to the score and the others are shown and do not. The default policy has no groups. [Presets](presets.md) has one that does.
 
+A kind marked `corroborates` never makes a link. It counts only where the pair's other kinds already reach `related` without it. The default policy has none; a name is one under [the preset for contacts entered by staff](presets.md#contacts-entered-by-staff).
+
 Scores depend only on stored data, never on the current time or on arrival order.
 
 | Kind | Weight | Cap | Half-life | What it is |

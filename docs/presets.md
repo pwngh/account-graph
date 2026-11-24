@@ -20,7 +20,8 @@ The default suits people who contact you themselves: whoever calls from a number
     "phone": { "weight": 0.85, "dilution": 1, "cap": 10, "halfLife": 63072000000, "group": "household" },
     "voip": { "group": "household" },
     "address": { "group": "household" },
-    "ip": { "group": "household" }
+    "ip": { "group": "household" },
+    "name": { "weight": 0.6, "dilution": 1, "cap": 5, "halfLife": "none", "group": "name", "corroborates": true }
   }
 }
 ```
@@ -33,6 +34,12 @@ A phone alone no longer joins two people. And a phone, an address and an interne
 | A phone and a confirmed address | 0.96, joined | 0.85, related |
 | A phone and an email | joined | joined |
 | An IP and a confirmed address | 0.72, related | 0.60, related |
+| A phone and a name | 0.90, joined | 0.94, joined |
+| A name | no such kind | nothing |
+
+A name never makes a link. It confirms one that a phone, an email or an address already made: the two are related without it, and the same first and last name with the same zip code or date of birth makes that one person. [Names](identify.md#names) says how the key is made.
+
+> **Names repeat in families.** A father and son of one name at one address, or a mother and daughter, are joined once they also share a phone. Where you know they are two people, `separate` them.
 
 A number changes hands, so under the preset the phone also fades: its evidence halves for each two years between the two sightings.
 

@@ -59,8 +59,7 @@ const clamp = (p: number) => Math.min(1 - 1e-9, Math.max(1e-9, p))
  * pairs that share several kinds at once, so a kind that mostly appears next
  * to a stronger one is not credited with the stronger one's accuracy.
  *
- * Score the pairs with `policy` first, with `related: 0` so weak pairs are
- * kept. Where the policy groups kinds, a pair teaches only the kind that
+ * Score the pairs with `policy` first, keeping weak ones, as `reviewed` does. Where the policy groups kinds, a pair teaches only the kind that
  * counts for it. `prior` pulls each weight toward its current value; raise it when
  * there are few pairs.
  */
@@ -70,27 +69,36 @@ export function fit(labeled: readonly Labeled[], policy: Policy, prior = 1): Fit
     same,
     parts: reasons
       .filter((reason) => policy.kinds[kindOf(reason.identifier)] && policy.kinds[kindOf(reason.identifier)]!.weight > 0)
-      .map((reason) => ({ kind: kindOf(reason.identifier), group: policy.kinds[kindOf(reason.identifier)]!.group, multiplier: Math.min(1, reason.evidence / policy.kinds[kindOf(reason.identifier)]!.weight) })),
-  }))
+      .map((reason) => {
+        const { group, weight, corroborates = false } = policy.kinds[kindOf(reason.identifier)]!
+        return { kind: kindOf(reason.identifier), group, corroborates, multiplier: Math.min(1, reason.evidence / weight) }
+      }),
+    // Nothing but what only corroborates scores nothing, whatever its weight, and so teaches nothing.
+  })).filter(({ parts }) => parts.length === 0 || parts.some((part) => !part.corroborates))
   const kinds = [...new Set(pairs.flatMap((pair) => pair.parts.map((part) => part.kind)))].sort()
   const logit = (w: number) => Math.log(clamp(w) / (1 - clamp(w)))
   const start = Object.fromEntries(kinds.map((kind) => [kind, logit(policy.kinds[kind]!.weight)]))
   const weight = (kind: string, from: Record<string, number>) => 1 / (1 + Math.exp(-from[kind]!))
 
-  type Part = { kind: string; group: string | undefined; multiplier: number }
-  /** The parts that count under the given weights: of each group, only the strongest. */
-  const counting = (parts: readonly Part[], from: Record<string, number>): readonly Part[] => {
+  type Part = { kind: string; group: string | undefined; corroborates: boolean; multiplier: number }
+  const combined = (parts: readonly Part[], from: Record<string, number>) => 1 - parts.reduce((coincidence, part) => coincidence * (1 - weight(part.kind, from) * part.multiplier), 1)
+  /** Of each group, only the strongest. */
+  const strongest = (parts: readonly Part[], from: Record<string, number>): readonly Part[] => {
     if (parts.every((part) => part.group === undefined)) return parts
     const best = new Map<string, Part>()
     const strength = (part: Part) => weight(part.kind, from) * part.multiplier
     for (const part of parts) if (part.group !== undefined && !(best.has(part.group) && strength(best.get(part.group)!) >= strength(part))) best.set(part.group, part)
     return parts.filter((part) => part.group === undefined || best.get(part.group) === part)
   }
-  const predict = (parts: readonly Part[], from: Record<string, number>) => {
-    let coincidence = 1
-    for (const part of counting(parts, from)) coincidence *= 1 - weight(part.kind, from) * part.multiplier
-    return 1 - coincidence
+  /** The parts that count under the given weights: what only corroborates counts where the rest is enough to relate the pair. */
+  const counting = (parts: readonly Part[], from: Record<string, number>): readonly Part[] => {
+    if (!parts.some((part) => part.corroborates)) return strongest(parts, from)
+    const makes = strongest(parts.filter((part) => !part.corroborates), from)
+    if (combined(makes, from) < policy.related) return makes
+    const groups = new Set(makes.map((part) => part.group))
+    return [...makes, ...strongest(parts.filter((part) => part.corroborates && (part.group === undefined || !groups.has(part.group))), from)]
   }
+  const predict = (parts: readonly Part[], from: Record<string, number>) => combined(counting(parts, from), from)
   const loss = (from: Record<string, number>) => {
     let total = 0
     for (const pair of pairs) {

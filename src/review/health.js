@@ -65,7 +65,7 @@ view('health', 'Health', async (box) => {
 
   // What one shared identifier of a kind does by itself, which is what its weight means.
   const kinds = Object.entries(policy.rules.kinds).sort(([x, a], [y, b]) => b.weight - a.weight || (x < y ? -1 : 1))
-  const bands = [['At or above what joins', (w) => w >= same], ['At or above what relates', (w) => w >= related && w < same], ['Below both, adds to others', (w) => w > 0 && w < related]]
+  const bands = [['At or above what joins', (w) => w >= same], ['At or above what relates', (w) => w >= related && w < same], ['Below both, adds to others', (w) => w > 0 && w < related], ['Only confirms what the others relate']]
   const scale = (weight) => {
     const bar = meter(weight)
     for (const [at, name] of [[related, 'related'], [same, 'same'], [bridge, 'bridge']]) {
@@ -79,7 +79,7 @@ view('health', 'Health', async (box) => {
   const rules = el('table', { class: 'rules' }, el('tr', {}, el('td', {}), group('Evidence when only two share it, just seen', 2), group('What weakens it', 3), el('td', { class: 'edge' })),
     el('tr', {}, th('Kind'), ...edge([th('Weight', 'num'), th(`related ${percent(related)}, joined ${percent(same)}, joins groups ${percent(bridge)}`)]), ...edge([th('Shared by 4', 'num'), th('Half-life', 'num'), th('Links nothing past', 'num')]), th('', 'edge')))
   for (const [name, holds] of bands) {
-    const rows = kinds.filter(([, rule]) => holds(rule.weight))
+    const rows = kinds.filter(([, rule]) => (rule.corroborates ? !holds : holds?.(rule.weight)))
     if (rows.length === 0) continue
     rules.append(el('tbody', {}, el('tr', { class: 'day' }, el('th', { scope: 'rowgroup', colspan: 7 }, name)), ...rows.map(([kind, rule]) => el('tr', {}, td('', kind), ...edge([td('num', rule.weight.toFixed(2)), td('bar', scale(rule.weight))]),
       ...edge([td('num', rule.cap < 4 ? el('span', { class: 'muted' }, 'nothing') : rule.dilution === 0 ? el('span', { class: 'muted' }, 'the same') : (rule.weight * 0.5 ** rule.dilution).toFixed(2)), td('num', rule.halfLife === 'none' ? el('span', { class: 'muted' }, 'none') : lasting(rule.halfLife)), td('num', `${amount(rule.cap)} subjects`)]),

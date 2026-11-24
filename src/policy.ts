@@ -16,6 +16,11 @@ export interface Rule {
    * phone, its address and its internet connection, and that is one fact.
    */
   group?: string
+  /**
+   * This kind never makes a link, and only confirms one. It counts where the
+   * pair's other kinds already reach `related` without it.
+   */
+  corroborates?: true
 }
 
 export interface Policy {
@@ -99,7 +104,7 @@ export const defaultPolicy: Policy = {
 const NOTES = new Set(['opened', 'place', 'dialed'])
 const LEVELS = ['same', 'related', 'bridge'] as const
 const FIELDS = ['weight', 'dilution', 'cap', 'halfLife'] as const
-const OPTIONAL = ['group'] as const
+const OPTIONAL = ['group', 'corroborates'] as const
 
 /** What is wrong with a policy read from a setting, one line each. The setting only needs what differs from the default. */
 export function policyProblems(given: unknown): string[] {
@@ -126,6 +131,7 @@ export function policyProblems(given: unknown): string[] {
       if (rule.cap !== undefined && !(Number.isSafeInteger(rule.cap) && rule.cap >= 0)) wrong.push(`kind "${kind}" needs a cap of zero or more, in whole subjects`)
       if (rule.halfLife !== undefined && rule.halfLife !== 'none' && !(number(rule.halfLife, 0, Number.MAX_VALUE) && rule.halfLife > 0)) wrong.push(`kind "${kind}" needs a halfLife in milliseconds, or "none"`)
       if (rule.group !== undefined && !(typeof rule.group === 'string' && rule.group)) wrong.push(`kind "${kind}" needs its group as text`)
+      if (rule.corroborates !== undefined && rule.corroborates !== true) wrong.push(`kind "${kind}" needs its corroborates as true, or left out`)
       if (NOTES.has(kind) && rule.weight) wrong.push(`kind "${kind}" is a note and links nothing, so its weight must stay 0`)
     }
   }
@@ -133,6 +139,7 @@ export function policyProblems(given: unknown): string[] {
   const policy = policyFrom(given)
   if (policy.related > policy.same) wrong.push('"related" must not be above "same"')
   const { review } = policy.kinds
+  if (review!.corroborates) wrong.push('kind "review" is a reviewer\'s join, so it cannot only corroborate')
   if (review!.weight < Math.max(policy.same, policy.bridge) || review!.cap < 2) wrong.push('kind "review" is a reviewer\'s join, so it must join on its own: a weight of at least "same" and "bridge", a cap of at least 2')
   return wrong
 }
@@ -156,7 +163,7 @@ export function plainPolicy(policy: Policy) {
     bridge: policy.bridge,
     review: policy.review,
     kinds: Object.fromEntries(
-      kinds.map(([kind, { weight, dilution, cap, halfLife, group }]) => [kind, { weight, dilution, cap, halfLife: Number.isFinite(halfLife) ? halfLife : ('none' as const), ...(group !== undefined && { group }) }]),
+      kinds.map(([kind, { weight, dilution, cap, halfLife, group, corroborates }]) => [kind, { weight, dilution, cap, halfLife: Number.isFinite(halfLife) ? halfLife : ('none' as const), ...(group !== undefined && { group }), ...(corroborates && { corroborates }) }]),
     ),
   }
 }
@@ -196,23 +203,32 @@ export function evidence(policy: Policy, a: Edge, b: Edge, fanout: number): Reas
  * Sorts the reasons of a pair, strongest first, and scores it by noisy-OR:
  * the pair is one person unless every reason that counts is a coincidence.
  * Of the reasons in one group only the strongest counts, and the rest are
- * marked. The order is total, so the same reasons always give the same score.
+ * marked. A kind that only corroborates counts where the others reach
+ * `related` without it. The order is total, so the same reasons always give
+ * the same score.
  */
 export function weigh(policy: Policy, reasons: Reason[]): number {
   reasons.sort((x, y) => y.evidence - x.evidence || (x.identifier < y.identifier ? -1 : 1))
   const seen = new Set<string>()
   let coincidence = 1
-  for (const reason of reasons) {
+  const count = (reason: Reason) => {
     const { group } = ruleFor(policy, reason.identifier)
     if (group !== undefined) {
       reason.group = group
       if (seen.has(group)) {
         reason.counted = false
-        continue
+        return
       }
       seen.add(group)
     }
     coincidence *= 1 - reason.evidence
+  }
+  const confirming = reasons.filter((reason) => ruleFor(policy, reason.identifier).corroborates)
+  for (const reason of reasons) if (!confirming.includes(reason)) count(reason)
+  const alone = 1 - coincidence
+  for (const reason of confirming) {
+    if (alone > 0 && alone >= policy.related) count(reason)
+    else reason.counted = false
   }
   return 1 - coincidence
 }
