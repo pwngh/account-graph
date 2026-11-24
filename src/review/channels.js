@@ -98,7 +98,7 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
     ...[...new Set([...report.dimensions, ...(by ? [by] : [])])].map((each) => el('option', { value: each, ...(each === by && { selected: '' }) }, dimensionName(each))))
   const choose = el('select', { on: { change: () => go(address({ per: choose.value })) } }, el('option', { value: '' }, 'every outcome'),
     ...[...new Set([...report.steps, ...(per ? [per] : [])])].map((stage) => el('option', { value: stage, ...(stage === per && { selected: '' }) }, stage)))
-  pick.append(el('label', {}, 'Break down by', breakdown), el('label', {}, 'Cost per', choose))
+  const choices = [el('label', {}, 'Break down by', breakdown), el('label', {}, 'Cost per', choose)]
   const range = reviewDisplay.range(report)
   if (report.currencies.length === 1) range.append(` · Currency: ${report.currencies[0]}`)
   section.append(el('div', { class: 'report-meta' },
@@ -111,8 +111,8 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
     report.filling ? el('p', { class: 'banner' }, el('b', {}, 'Outcomes still coming in. '),
       `At the slowest step, 95 in 100 outcomes arrive within ${amount(report.filling.days)} days of the arrival. Costs for arrivals after ${reviewDisplay.day(report.filling.after)} are included, but some outcomes are not.`) : ''))
   const campaigns = el('section', {}, report.rows.length > 0
-    ? reviewDisplay.section('Campaigns', el('span', { class: 'meta campaign-pan' }, 'Scroll for more columns'), saved(`channels-${report.from}-${report.to}`, table))
-    : el('h2', {}, 'Campaigns'),
+    ? reviewDisplay.section('Campaigns', el('span', { class: 'meta campaign-pan' }, 'Scroll for more columns'), el('div', { class: 'row' }, ...choices, saved(`channels-${report.from}-${report.to}`, table)))
+    : reviewDisplay.section('Campaigns', el('div', { class: 'row' }, ...choices)),
   report.currencies.length > 1 ? el('p', { class: 'apart' }, `Totals mix currencies: ${report.currencies.join(', ')}.`) : '',
   ...(report.rows.length > 3 ? [filters('Campaigns', table, [{ name: 'Source', at: 0 }])] : []), report.rows.length > 0 ? wide('Channels', table) : el('p', { class: 'muted' }, 'No campaign data in this period.'))
   // The same numbers ranked, to see at a glance who brings what.

@@ -486,8 +486,11 @@ async function load(tag) {
   const { name, parts } = place()
   const sought = edits
   for (const link of $('views').children) {
-    if (link.dataset.view === name) link.setAttribute('aria-current', 'page')
-    else link.removeAttribute('aria-current')
+    if (link.dataset.view === name) {
+      link.setAttribute('aria-current', 'page')
+      // On a phone the views are a row that scrolls: the one that is open is brought into it.
+      $('views').scrollLeft = link.offsetLeft - ($('views').clientWidth - link.offsetWidth) / 2
+    } else link.removeAttribute('aria-current')
   }
   document.title = `${views.get(name).title} · Account review`
   if (!$('token').value) {

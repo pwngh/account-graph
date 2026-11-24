@@ -104,7 +104,7 @@ function missedCalls(open, at) {
       const entries = [...journey.entries].reverse()
       const subjects = Object.keys(journey.ties).length
       story.replaceChildren(head, el('p', { class: 'inbox-age' }, 'Their story, newest first', el('span', { class: 'count' }, `${amount(entries.length)}${journey.next === null ? '' : ' or more'}`), subjects > 1 ? el('span', { class: 'meta' }, ` across ${amount(subjects)} subjects`) : ''),
-        el('ol', { class: 'story', role: 'list' }, ...entries.slice(0, 14).map((entry) => el('li', { class: `${entry.kind}${entry.kind === 'call' && entry.call.id === call.id ? ' this' : ''}` }, glyph(entry.kind), el('div', {}, el('div', { class: 'what' }, ...told(entry)), el('span', { class: 'meta' }, reviewDisplay.time(entry.at > 0 ? entry.at : null, at)))))),
+        el('ol', { class: 'story', role: 'list' }, ...entries.slice(0, 14).map((entry) => el('li', { class: `${entry.kind}${entry.kind === 'call' && entry.call.id === call.id ? ' this' : ''}` }, glyph(entry.kind), el('div', { class: 'what' }, ...told(entry)), el('span', { class: 'meta' }, reviewDisplay.time(entry.at > 0 ? entry.at : null, at))))),
         entries.length > 14 ? el('p', { class: 'meta' }, `${amount(entries.length - 14)} more in the journey.`) : '')
     } catch (error) {
       if (turn === asked) story.replaceChildren(head, el('p', { class: 'apart' }, `Their story could not be read: ${error.message}`))
