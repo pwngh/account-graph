@@ -127,6 +127,8 @@
 - Breaking: `Flow` and `POST /transfer` need an `id`. The same flow sent twice is counted once and answers `duplicate: true` (`Transferred`); the same id with other details is refused. A `Store` needs `flowOf`.
 - Breaking: `GET /verify` answers `{ changes, policy }`, not a list.
 - A server whose database holds an identifier of a kind the policy does not name refuses to start.
+- `rebuild`, `verify` and `asOf` read the graph a page at a time, so a rebuild no longer needs memory for every edge. `Tx` has `sharing` and `everyone` in place of `allEdges` and `allLabels`, and `sightingsUntil` streams.
+- `npm run bench -- scale` measures large graphs in PostgreSQL.
 
 ### Fixed
 
