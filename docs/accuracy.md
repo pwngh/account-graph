@@ -272,6 +272,7 @@ All that was printed is in [accuracy-held.txt](accuracy-held.txt), and the devel
 - People act alone or with their household. Friends, offices and shelters that share a telephone or computer are not made up.
 - Nobody lies about who they are. In the first run, nicknames and married names are not made up.
 - Half of the records have a birth date, so both of a pair do a quarter of the time. That is the main limit on what `birth` can do.
+- In the second run, staff join a call to a record that was made when the call was generated, so a call again can miss a record that exists by then.
 - Twins, and a parent and child of one name, are cases that neither fact can see.
 - A record's chain of facts may run through another person's subjects, so a few of those counted as reachable are so by a mistake.
 - A digit of the area code mistyped is not made up, because it could be a real number.

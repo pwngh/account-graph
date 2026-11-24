@@ -608,11 +608,10 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         notes.name = keys.length > 0 ? 'used' : 'not used: a placeholder, or neither a confirmed address nor a date of birth'
       }
     }
-    if (body.dob !== undefined && typeof body.dob !== 'string') throw new Refusal(400, 'A date of birth is written YYYY-MM-DD')
     if (body.at !== undefined && !Number.isSafeInteger(body.at)) throw new Refusal(400, '`at` must be an integer in epoch milliseconds')
-    if (identifiers.length === 0) throw new Refusal(400, 'At least one identifying field is required')
-    // Kept only under a policy that keeps people apart by it. It says who somebody is not, and not who they are.
-    const born = options.identifierSecret && body.dob !== undefined && (await graph.policy()).rules.apart?.includes('birth') ? birthKey(options.identifierSecret, body.dob) : undefined
+    // Kept only under a policy that keeps people apart by it. It says who somebody is not, and not who they are, so by itself it finds nobody.
+    const born = options.identifierSecret && typeof body.dob === 'string' && (await graph.policy()).rules.apart?.includes('birth') ? birthKey(options.identifierSecret, body.dob) : undefined
+    if (identifiers.length === 0 && !(saving && born)) throw new Refusal(400, 'At least one identifying field is required')
     if (born) identifiers.push(born)
     return { identifiers, notes, at: (body.at ?? now()) as number }
   }

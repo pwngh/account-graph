@@ -2599,6 +2599,33 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await graph.verify(), [])
     })
 
+    test('credit does not cross a cut through a browser, and no fact cuts a join', async () => {
+      const { graph } = await fresh(policyFrom({ apart: ['birth'] }))
+      await graph.observe([
+        { subject: 'contact:1', identifiers: ['device:d', 'birth:1'], at: T0 },
+        { subject: 'contact:2', identifiers: ['email:e', 'birth:2'], at: T0 },
+        { subject: 'visitor:1', identifiers: ['device:d', 'email:e'], at: T0 },
+      ])
+      await graph.touch({ subject: 'visitor:1', at: T0, gclid: 'two' })
+      const credit = async (subject: string) => (await graph.attribute(subject, { at: T0 + HOUR })).credited?.gclid
+      assert.equal((await members(graph, 'contact:2')).includes('visitor:1'), true)
+      assert.deepEqual([await credit('contact:1'), await credit('contact:2')], [undefined, 'two'])
+      // Joined one and two, and two to three by an email six hold. One and three differ, and the join stands.
+      const { graph: joined } = await fresh(policyFrom({ apart: ['birth'] }))
+      await joined.observe([
+        { subject: 'account:1', identifiers: ['birth:1'], at: T0 },
+        ...[2, 3, 4, 5, 6, 7].map((n) => ({ subject: `account:${n}`, identifiers: ['email:e', ...(n === 3 ? ['birth:3'] : [])], at: T0 })),
+      ])
+      await joined.join('account:1', 'account:2', { by: 'dana' })
+      assert.equal((await members(joined, 'account:1')).includes('account:2'), true)
+      assert.equal((await members(joined, 'account:1')).includes('account:3'), false)
+      assert.deepEqual(await joined.verify(), [])
+      // A reviewer who separates the two is heard before either.
+      await joined.separate('account:1', 'account:2')
+      assert.equal((await members(joined, 'account:1')).includes('account:2'), false)
+      assert.deepEqual(await joined.verify(), [])
+    })
+
     test('kept apart by facts, what is stored after any writes is what a rebuild gives', async () => {
       const next = random(11)
       const { graph } = await fresh(policyFrom({ apart: ['birth'] }))
