@@ -55,7 +55,8 @@ jobs:
           git commit -q --allow-empty -m two
           git switch -q main
           git merge -q --no-ff --no-commit side
-          printf 'ghp_%s\n' "$(openssl rand -hex 18)" > token.txt
+          token=$(openssl rand -hex 18)
+          echo "ghp_$token" > token.txt
           git add token.txt
           git commit -q -m merged
           code=0
