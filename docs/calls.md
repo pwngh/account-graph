@@ -183,6 +183,17 @@ curl -X POST https://graph.example.org/call -H "authorization: Bearer $GRAPH_TOK
 
 A call's tags go on to its outcome. A number's tags go on the arrival a call to it is filed under, so a call that follows a visitor's own tap takes the visitor's instead. [The report](report.md#breaking-it-down) breaks down by either.
 
+### One number for each listing
+
+A map listing, a directory or a printed page loads no script, so nothing can be shown to one visitor and nobody taps. Give each its own number in `CALL_NUMBERS`, and never one from the pool. Then every call to it is filed under that listing:
+
+```sh
+CALL_NUMBERS='{
+  "+15550100104": { "source": "listing", "medium": "map", "campaign": "Map listing, River", "tags": { "office_advertised": "river" } },
+  "+15550100106": { "source": "listing", "medium": "map", "campaign": "Map listing, North", "tags": { "office_advertised": "north" } }
+}'
+```
+
 ## The Calls view
 
 Open `/review#/calls`. It shows, over the days you pick and in the server's time zone:

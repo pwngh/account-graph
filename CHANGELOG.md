@@ -83,6 +83,7 @@
 - `followed` and `GET /followed` count who reached a step within some days of a call, by talk time, answer, language and whether a miss was returned, from a landmark a day after the miss; rows of fewer than 20 people are left out.
 - `journey`, `GET /journey` and the reviewer screen's Journey view show everything recorded about one person in order, with why each subject is them.
 - `between` and `GET /between` say what two subjects share, however weak, and how they stand.
+- `docs/privacy.md` says what is kept about people, what is sent, and what deletes it; `docs/deciding.md` has the model and its limits.
 - `npm run firm` starts a made-up firm, its site and a presenter page over a throwaway database; `docs/demo.md` has the script.
 - `tools/labels.ts` reads a CSV of pairs marked same or different and prints precision and recall for each identifier kind.
 - `Rule.corroborates` marks a kind that confirms a link and never makes one. `nameKeys` and `name`, `dob` on `/identify` make a `name` kind for it, in `examples/household.json` only; `IDENTIFIER_SECRET` makes the keys.

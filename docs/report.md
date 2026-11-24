@@ -38,6 +38,14 @@ A click id says which platform a visitor came from, not which campaign. Add the 
 | Microsoft Advertising | Account settings, Final URL suffix | `utm_id={CampaignId}&adgroupid={AdGroupId}&adid={AdId}` |
 | TikTok | Each ad's address | `utm_id=__CAMPAIGN_ID__&adgroupid=__AID__&adid=__CID__` |
 
+To report by office or by language, add those too, in the same place. They are yours, so each campaign or ad group says its own:
+
+```text
+utm_id={campaignid}&office=north&lang=es
+```
+
+Then name them on the script tag, `collect.js?params=office,lang`. [Breaking it down](#breaking-it-down) reads `office` as the office advertised and `lang` as the language. Which office served somebody is another fact, known later, and goes on the outcome.
+
 The script tag reads these parameters:
 
 | Parameter | Kept as |
@@ -214,6 +222,19 @@ People are counted, not calls: someone who rings from two numbers on file as the
 > **This is what followed, not what it caused.** People choose whether to call and how long to talk. Whoever rings back chooses whom. A row with a higher share may hold people who were going to sign up anyway.
 
 The day after a miss is there for one bias in particular. People who are already signing up get rung about it, so a plain count makes ringing back look like the cause of sign-ups it only went with. Everyone's clock starts a day after the miss, and whoever had signed up or got through by themselves before then is in neither row. That removes this bias and not the others.
+
+### Why a correlation is not an effect
+
+Suppose 25% of the people rung back become clients, and 18% of the rest. Four things could make that so, and the table cannot tell them apart.
+
+| What could be true | In this table it looks like |
+| --- | --- |
+| Ringing back wins clients. | Ringing back wins clients. |
+| Staff ring back the ones who sounded ready. | Ringing back wins clients. |
+| The ready ones answer when they are rung, and an answered call is what counts as returned. | Ringing back wins clients. |
+| Calls on weekday mornings are rung back more, and weekday mornings bring readier callers. | Ringing back wins clients. |
+
+To know, ring back some at random and not others, and compare. If that is not possible, use the table to find what to look into, and not to say what something was worth.
 
 Rows of fewer than 20 people are not shown, and `thin` says how many people were in them. Nothing here ranks staff or scores callers.
 
