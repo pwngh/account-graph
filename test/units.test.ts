@@ -465,6 +465,8 @@ test('what followed a call starts the clock at a landmark, and leaves out whoeve
   // Ringing just before the landmark and answered after the wait is getting through after it.
   const waiting = person([call(T, false)], [call(T + DAY - 60_000, true, { result: { answered: true, waited: 120, recorded: T } })], [T + 4 * DAY])
   assert.deepEqual(group(run([waiting]), 'returned'), [['not returned within a day', 1, 1]])
+  // A report about a call that was not missed says nothing here either.
+  assert.deepEqual(group(run([person([call(T, false)], [call(T + 1000, false, { direction: 'outbound', result: { answered: false, returned: T + 2000, recorded: T } })])]), 'returned'), [['not returned within a day', 1, 0]])
   // Reached as your own system says, within the day or after it.
   const reachedAt = (at: number) => person([call(T, false, { result: { answered: false, returned: at, recorded: T } })])
   assert.deepEqual(group(run([reachedAt(T + DAY), reachedAt(T + DAY + 1)]), 'returned'), [['returned within a day', 1, 0], ['not returned within a day', 1, 0]])

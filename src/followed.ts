@@ -1,3 +1,4 @@
+import { stands } from './calls.ts'
 import type { KeptCall } from './types.ts'
 
 /** One person who called, with everything that counts about them. */
@@ -119,7 +120,7 @@ export function followed(callers: readonly Caller[], { step, days, at, least = 2
     if (!miss) continue
     const start = miss.at + LANDMARK
     const since = caller.calls.filter((call) => call.at > miss.at && call.result?.answered && connected(call) <= start)
-    const told = caller.calls.some((call) => call.result?.returned !== undefined && call.result.returned > miss.at && call.result.returned <= start)
+    const told = caller.calls.some((call) => stands(call) && call.result!.returned! > miss.at && call.result!.returned! <= start)
     if (since.some((call) => call.direction === 'inbound')) {
       leftOut.returned.through += 1
       continue

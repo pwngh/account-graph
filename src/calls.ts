@@ -252,7 +252,7 @@ async function placed(graph: Graph, call: Call, theirs: string, result: Omit<Cal
 }
 
 /** Whether a return reported for a call counts: the call was to you, nobody answered it, and it began before it is said to have been returned. */
-const stands = (call: KeptCall) => call.direction === 'inbound' && call.result?.answered === false && call.result.returned !== undefined && call.result.returned > call.at
+export const stands = (call: KeptCall): boolean => call.direction === 'inbound' && call.result?.answered === false && call.result.returned !== undefined && call.result.returned > call.at
 
 /**
  * What became of a call no one answered, from every call to and from its
@@ -364,10 +364,13 @@ export async function recordReturn(graph: Graph, report: { id: string; at?: numb
   if (typeof report?.id !== 'string' || !/^[\w.-]{1,128}$/.test(report.id)) throw new TypeError('A return needs the id of the call it is about')
   if (report.returned !== undefined && typeof report.returned !== 'boolean') throw new TypeError(`The return of call "${report.id}" needs returned as true or false`)
   const undone = report.returned === false
-  const now = (options.now ?? Date.now)()
-  const at = undone ? 0 : (report.at ?? now)
-  if (!Number.isSafeInteger(at)) throw new TypeError(`The return of call "${report.id}" needs a time in whole epoch milliseconds`)
-  if (at > now) throw new TypeError(`The return of call "${report.id}" is in the future`)
+  let at = 0
+  if (!undone) {
+    const now = (options.now ?? Date.now)()
+    at = report.at ?? now
+    if (!Number.isSafeInteger(at)) throw new TypeError(`The return of call "${report.id}" needs a time in whole epoch milliseconds`)
+    if (at > now) throw new TypeError(`The return of call "${report.id}" is in the future`)
+  }
   const call = await graph.keptCall(report.id)
   if (call?.direction === 'outbound') throw new TypeError(`Call "${report.id}" is one you placed, so there is nothing to return`)
   if (!undone && call && at <= call.at) throw new TypeError(`Call "${report.id}" began after it is said to have been returned`)
