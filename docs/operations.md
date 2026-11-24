@@ -169,6 +169,7 @@ Open `/review` and enter a token. Each view has an address of its own, so it can
 | `/review#/accounts` | The largest clusters, recent changes, and decisions. |
 | `/review#/accounts/account:42` | One subject: its cluster, its ties and why, its money, its sightings. |
 | `/review#/journey/contact:42` | One person's timeline: arrivals, what they were seen doing, calls, steps and their values, consent and decisions, on every subject that is them. |
+| `/review#/board/90` | People by the furthest step they reached, missed calls nobody returned first. |
 | `/review#/calls` | Missed calls not returned, how calls went by hour and weekday, and coverage, over the last 30 days. Takes two days like the next. |
 | `/review#/channels` | What each campaign cost and brought in, over the last 30 days. |
 | `/review#/channels/2026-11-01/2026-11-30` | The same, for the days named. A breakdown, a step and a number of days may follow. |
@@ -274,8 +275,8 @@ On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes i
 | `AUDIT_HEAD_HOURS` | `0` | Post the newest decision's hash to `ALERT_WEBHOOK` at start and every so many hours, at least one. `0` is never. |
 | `STAFF_NETWORKS` | none | Addresses and ranges whose visits are dropped, separated by commas: `192.0.2.10,198.51.100.0/24`. |
 | `QUIET_TOUCHES_HOURS`, `QUIET_CALLS_HOURS`, `QUIET_RESULTS_HOURS`, `QUIET_COSTS_HOURS` | `0` | Hours of silence before a feed is said to be quiet. `0` is not watched. |
-| `RETURN_HOURS` | `24` | Hours before a missed caller from a paid arrival is said to be waiting. `0` is never. |
-| `STAGES` | none | Your steps in order, as JSON, each with a `value`, `currency` and `action`. See [the report](report.md#steps-and-what-each-is-worth). |
+| `RETURN_HOURS` | `24` | Hours before a missed caller from a paid arrival is said to be waiting, and before the board says any missed caller has waited too long. `0` is never. |
+| `STAGES` | none | Your steps in order, as JSON, each with a `value`, `currency`, `action` and `wait`. See [the report](report.md#steps-and-what-each-is-worth). |
 | `LINK_SECRET` | none | Signs links that name a person, and the tokens that carry a visitor between your sites. At least 16 characters. |
 | `EVENTS` | none | Names of page events to keep, separated by commas: `inquiry,phone_click`. |
 | `CALL_NUMBERS` | none | Your tracking numbers and the channel of each, as JSON: `{"+15551230001":{"source":"google","campaignId":"20222"}}`. Each may carry `tags`. |

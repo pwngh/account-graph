@@ -5,6 +5,8 @@ export interface Stage {
   /** The value an outcome of this step has when it names none. */
   value?: number
   currency?: string
+  /** How many hours a person may stand at this step before the board says they have waited too long. Left out or 0, it never does. */
+  wait?: number
   /** What the step counts as on each ad platform, by target name: `{ google: '987654321', meta: 'Lead' }`. */
   action?: string | Record<string, string>
 }
@@ -41,6 +43,7 @@ export function ladderProblems(ladder: unknown, targets: readonly string[]): str
     }
     if (stage.value !== undefined && (typeof stage.value !== 'number' || !Number.isFinite(stage.value) || stage.value < 0)) wrong.push(`step "${name}" needs a value of zero or more`)
     if (stage.currency !== undefined && typeof stage.currency !== 'string') wrong.push(`step "${name}" needs its currency as text`)
+    if (stage.wait !== undefined && (typeof stage.wait !== 'number' || !Number.isFinite(stage.wait) || stage.wait < 0)) wrong.push(`step "${name}" needs its wait as hours, zero or more`)
     const { action } = stage
     if (action === undefined) continue
     const named = typeof action === 'string' ? undefined : action && typeof action === 'object' && !Array.isArray(action) ? Object.entries(action) : null

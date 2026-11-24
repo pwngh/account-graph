@@ -107,6 +107,8 @@ export interface HandlerOptions {
    * `/report` lists the steps in this order.
    */
   stages?: Ladder
+  /** How many hours a missed call may wait before `/board` says it has waited too long. Left out or 0, it never does. */
+  returnHours?: number
     /** The time zone `/report` reads its days in when the request names none. Use the ad account's. Defaults to UTC. */
   timeZone?: string
   /** What runs by itself and who is told about it, for `/ops` and `/alerts/test`. */
@@ -124,7 +126,7 @@ const NAME = /^[\w.-]{1,64}$/
 
 /** What the reviewer token opens: what the reviewer screen reads, and the decisions a reviewer makes. */
 const REVIEW_ROUTES = new Set([
-  'GET /subject', 'GET /clusters', 'GET /search', 'GET /recent', 'GET /links', 'GET /cluster', 'GET /history', 'GET /journey', 'GET /flows', 'GET /collusion', 'GET /rings',
+  'GET /subject', 'GET /clusters', 'GET /search', 'GET /recent', 'GET /links', 'GET /cluster', 'GET /history', 'GET /journey', 'GET /board', 'GET /flows', 'GET /collusion', 'GET /rings',
   'GET /decisions', 'GET /disputes', 'GET /consent', 'GET /outcome', 'GET /followed', 'GET /call', 'GET /calls', 'GET /calls/summary', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'GET /ops', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
 ])
 
@@ -790,6 +792,25 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         const id = url.searchParams.get('id') ?? ''
         const outcome = await graph.outcomeOf(id)
         return outcome ? { ...outcome, values: await graph.values(id) } : null
+      }
+      case 'GET /board': {
+        const steps = Object.entries(options.stages ?? {}).map(([name, { wait }]) => ({ name, ...(wait && { wait }) }))
+        const days = url.searchParams.has('days') ? Number(url.searchParams.get('days')) : 90
+        const { columns, ...board } = await graph.board({ steps, days, at: now(), ...(options.timeZone && { timeZone: options.timeZone }), ...(options.returnHours && { returnHours: options.returnHours }) })
+        return {
+          ...board, days, timeZone: options.timeZone ?? 'UTC',
+          columns: columns.map((column) => ({
+            ...column,
+            rows: column.rows.map(({ outcome, call, touch, language, ...row }) => ({
+              ...row,
+              value: outcome?.value ?? null,
+              currency: outcome?.currency ?? null,
+              language: language ?? null,
+              call: call ? { state: callState(call, now(), options.calls), direction: call.direction } : null,
+              ...(touch && { source: sourceOf(touch), campaign: touch.campaign ?? null, campaignId: touch.campaignId ?? null }),
+            })),
+          })),
+        }
       }
       case 'GET /followed': {
         const days = period(url)

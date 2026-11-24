@@ -907,6 +907,81 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       for (const bad of [{ step: '' }, { days: 0 }, { days: 1.5 }, { days: 400 }, { from: '2023-12-01' }]) await assert.rejects(graph.followed({ from: '2023-11-14', to: '2023-11-20', step: 'client', days: 30, ...bad }), TypeError)
     })
 
+    test('the board has each person once, at the furthest step they reached, with missed calls first', async () => {
+      const { graph } = await fresh(undefined, { now: () => T0 })
+      const steps = [{ name: 'inquiry', wait: 24 }, { name: 'client' }]
+      // T0 is 2023-11-14 22:13:20 UTC, so `today` began 22 hours and some before it.
+      const hours = (n: number) => T0 - n * HOUR
+      const step = (subject: string, stage: string, at: number, value = 5, tags?: Record<string, string>) => graph.outcome({ transactionId: `${stage}-${subject}-${at}`, subject, at, stage, value, currency: 'USD', ...(tags && { tags }) })
+      const miss = (id: string, from: string, at: number) => recordCall(graph, { id, from, to: '+15550100001', at, duration: 20, answered: false, tags: { language: 'es' } }, { results: 'expected' })
+      await step('a:new', 'inquiry', hours(1))
+      await step('a:late', 'inquiry', hours(40))
+      // An inquiry, then a client today: at the last step, and done at the first.
+      await step('a:up', 'inquiry', hours(60))
+      await step('a:up', 'client', hours(2), 200)
+      // A second inquiry does not take a client back.
+      await step('a:again', 'client', hours(50), 200, { language: 'en' })
+      await step('a:again', 'inquiry', hours(3))
+      await step('a:other', 'brochure', hours(5))
+      // Two subjects of one person are in one place, at the further of their steps.
+      await graph.observe([{ subject: 'b:1', identifiers: ['device:b', 'email:b'], at: hours(70) }, { subject: 'b:2', identifiers: ['device:b', 'email:b'], at: hours(70) }])
+      await step('b:1', 'client', hours(70), 300)
+      await step('b:2', 'inquiry', hours(30))
+      await graph.touch({ subject: 'b:2', at: hours(80), source: 'mailer', campaign: 'postcard', custom: { lang: 'es' } })
+      // A client whose call was missed is first of all somebody to ring back.
+      await miss('M1', '+15550100061', hours(30))
+      await graph.observe([{ subject: 'c:1', identifiers: [`phone:${hashPhone('+15550100061')}`, 'email:c'], at: hours(90) }])
+      await step('c:1', 'client', hours(90), 400)
+      // A miss that was returned today is done, and one from a hidden number cannot be returned.
+      await miss('M2', '+15550100062', hours(30))
+      await recordCall(graph, { id: 'R2', direction: 'outbound', from: '+15550100001', to: '+15550100062', at: hours(4), duration: 60, answered: true })
+      await miss('M3', '', hours(30))
+
+      const board = await graph.board({ steps, at: T0, returnHours: 24 })
+      assert.deepEqual(board.columns.map(({ rows, wait, ...column }) => ({ ...column, rows: rows.map((row) => row.subject) })), [
+        { step: null, people: 1, fresh: 0, late: 1, done: 1, rows: [`caller:${hashPhone('+15550100061')}`] },
+        { step: 'inquiry', people: 2, fresh: 1, late: 1, done: 1, rows: ['a:late', 'a:new'] },
+        { step: 'client', people: 3, fresh: 1, late: null, done: null, rows: ['b:1', 'a:again', 'a:up'] },
+      ])
+      assert.deepEqual([board.unplaced, board.day, board.from], [1, '2023-11-14', '2023-08-17'])
+      const [missed, , client] = board.columns
+      assert.deepEqual([missed!.rows[0]!.step, missed!.rows[0]!.outcome?.value, missed!.rows[0]!.call?.id, missed!.rows[0]!.language, missed!.rows[0]!.late], ['client', 400, 'M1', 'es', true])
+      assert.deepEqual([client!.rows[0]!.touch?.campaign, client!.rows[0]!.language, client!.rows[1]!.language, client!.rows[2]!.language], ['postcard', 'es', 'en', undefined])
+
+      // No limit set: nobody waits too long. Fewer rows: the counts are still of everybody.
+      const plain = await graph.board({ steps, at: T0, limit: 1 })
+      assert.deepEqual(plain.columns.map((column) => [column.people, column.late, column.rows.length]), [[1, null, 1], [2, 1, 1], [3, null, 1]])
+      // Reached on one of two numbers, a person is reached. Missed again since, they are done today and waiting too.
+      await graph.observe([{ subject: 'd:1', identifiers: [`phone:${hashPhone('+15550100063')}`, `phone:${hashPhone('+15550100064')}`, 'email:d'], at: hours(95) }])
+      await recordCall(graph, { id: 'A4', from: '+15550100064', to: '+15550100001', at: hours(310), duration: 60, answered: true }, { results: 'expected' })
+      await miss('M4', '+15550100063', hours(300))
+      await recordCall(graph, { id: 'R4', direction: 'outbound', from: '+15550100001', to: '+15550100064', at: hours(6), duration: 60, answered: true })
+      const reached = (await graph.board({ steps, at: T0 })).columns[0]!
+      assert.deepEqual([reached.people, reached.done], [1, 2])
+      await miss('M5', '+15550100064', hours(5))
+      const again = (await graph.board({ steps, at: T0 })).columns[0]!
+      assert.deepEqual([again.people, again.done, again.fresh], [2, 2, 1])
+      // An older miss of somebody on the board still counts as open, before the period's first day.
+      await miss('M6', '+15550100065', hours(60))
+      await graph.observe([{ subject: 'e:1', identifiers: [`phone:${hashPhone('+15550100065')}`, 'email:e'], at: hours(60) }])
+      await step('e:1', 'inquiry', hours(1))
+      assert.equal((await graph.board({ steps, at: T0, days: 2 })).columns[0]!.rows.some((row) => row.subject === `caller:${hashPhone('+15550100065')}`), true)
+      await graph.forget('e:1')
+      // A short call that counts for nothing is still having called.
+      await graph.observe([{ subject: 'f:1', identifiers: [`phone:${hashPhone('+15550100066')}`, 'email:f'], at: hours(2000) }])
+      await step('f:1', 'client', hours(2000))
+      await recordCall(graph, { id: 'S1', from: '+15550100066', to: '+15550100001', at: hours(30), duration: 9, answered: true }, { results: 'expected' })
+      assert.ok((await graph.board({ steps, at: T0, days: 3 })).columns[2]!.rows.some((row) => row.subject === 'f:1'))
+      for (const n of [3, 4, 5]) await graph.forget(`caller:${hashPhone(`+1555010006${n}`)}`)
+      // A shorter period leaves out who did nothing in it.
+      assert.deepEqual((await graph.board({ steps, at: T0, days: 1 })).columns.map((column) => column.rows.map((row) => row.subject)), [[], ['a:new'], ['a:again', 'a:up']])
+      // A shifted zone moves today.
+      assert.equal((await graph.board({ steps, at: T0, timeZone: 'Asia/Tokyo' })).day, '2023-11-15')
+      for (const days of [0, 1.5, 366]) await assert.rejects(graph.board({ steps, at: T0, days }), TypeError)
+      await graph.forget('a:late')
+      assert.deepEqual((await graph.board({ steps, at: T0 })).columns[1]!.rows.map((row) => row.subject), ['a:new'])
+    })
+
     test('a journey is everything about one person, in order, and why each subject is them', async () => {
       const clock = { now: T0 }
       const { graph } = await fresh(undefined, { now: () => clock.now })
@@ -1642,6 +1717,16 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
         const counts = call?.direction === 'inbound' && call.result?.answered === true && call.duration! >= 30
         assert.equal(Boolean(await graph.outcomeOf(`call:F${n}`)), counts, `F${n}`)
       }
+      // The board has each person in one place, and everybody with a call to return in the first column.
+      const board = await graph.board({ steps: [{ name: 'call' }], at: T0 + 201 * DAY, days: 365 })
+      const placed: string[] = []
+      for (const row of board.columns.flatMap((column) => column.rows)) placed.push((await graph.cluster(row.subject))?.id ?? row.subject)
+      assert.equal(new Set(placed).size, placed.length)
+      const open = await graph.openCalls({ from: '2023-11-01', to: '2024-07-01', limit: 1000 })
+      const waiting = new Set<string>()
+      for (const { call } of open) waiting.add((await graph.cluster(call.subject))?.id ?? call.subject)
+      assert.deepEqual(placed.slice(0, board.columns[0]!.people).sort(), [...waiting].sort())
+      assert.equal(board.unplaced, 0)
     })
   })
 }

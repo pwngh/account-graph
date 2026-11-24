@@ -673,13 +673,14 @@ test('a step fills in what an outcome leaves out, and nothing it states', () => 
   assert.deepEqual(withStage(undefined, { ...base, stage: 'inquiry' }), { ...base, stage: 'inquiry' })
 
   assert.deepEqual(ladderProblems(ladder, ['google', 'meta']), [])
-  assert.deepEqual(ladderProblems({ a: { value: -1 }, b: 5, c: { action: 'x' }, d: { action: { tiktok: 'y' } }, e: { action: { google: '' } }, f: { currency: 7 } }, ['google', 'meta']), [
+  assert.deepEqual(ladderProblems({ a: { value: -1 }, b: 5, c: { action: 'x' }, d: { action: { tiktok: 'y' } }, e: { action: { google: '' } }, f: { currency: 7 }, g: { wait: -1 } }, ['google', 'meta']), [
     'step "a" needs a value of zero or more',
     'step "b" must be an object, such as {"value":5}',
     'step "c" must name its action per platform, such as {"google":"…"}',
     'step "d" names "tiktok", which is not set up',
     'step "e" needs its action as text, or as one text per platform',
     'step "f" needs its currency as text',
+    'step "g" needs its wait as hours, zero or more',
   ])
   // With one platform a plain action is enough. With none, an action has nowhere to go, and saying so beats sending nothing quietly.
   assert.deepEqual(ladderProblems({ c: { action: 'x' } }, ['google']), [])

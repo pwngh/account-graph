@@ -142,7 +142,8 @@ const handler = createHandler(graph, {
   events: ['brochure', 'phone_click'],
   linkSecret: 'demo-link-secret-not-for-real-use',
   // The steps in order, with what each is worth. The Channels view lists them this way.
-  stages: { phone_click: {}, brochure: { value: 2, currency: 'USD' }, inquiry: { value: 5, currency: 'USD' }, call: { value: 10, currency: 'USD' }, signup: { value: 25, currency: 'USD' }, enrolled: { value: 200, currency: 'USD' } },
+  returnHours: 24,
+  stages: { phone_click: {}, brochure: { value: 2, currency: 'USD' }, inquiry: { value: 5, currency: 'USD', wait: 72 }, call: { value: 10, currency: 'USD' }, signup: { value: 25, currency: 'USD' }, enrolled: { value: 200, currency: 'USD' } },
   calls: { numbers: { ...numbers, '+15551230001': { source: 'google', campaignId: '20222' } }, results: 'expected' },
 })
 const port = Number(process.env.PORT ?? 8788)

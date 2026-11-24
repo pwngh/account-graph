@@ -159,6 +159,29 @@ The advertised office and the serving office are two facts, and often differ. Ne
 
 An outcome or a call carries at most 8 tags, each name of lowercase letters and underscores up to 32 characters, each value up to 64. `(not recorded)` is not a value: it is what a missing one is called.
 
+## People by step
+
+The Board puts each person in one column. A person is everyone the graph treats as one, whatever subjects they left.
+
+| Column | Who is in it |
+| --- | --- |
+| Missed, not returned | Whoever has a missed call or a voicemail that nobody returned, however far they got. Being reached on any of their numbers returns it. A caller who hid their number cannot be rung back, so is not here. |
+| Each step in `STAGES`, in order | Everybody else, at the furthest step they ever reached. A later inquiry does not move a client back. |
+
+Each column counts its people and three things about today, in the time zone `REPORT_TIME_ZONE`:
+
+| Count | Means |
+| --- | --- |
+| New today | They reached this step today, or their oldest missed call came today. |
+| Waiting | Longer at this step than its `wait`, in hours, or longer unreturned than `RETURN_HOURS`. With no limit set, none is counted. |
+| Went further today, returned or got through today | They left for a further step, or their call was returned or they rang again and got through. |
+
+```sh
+STAGES='{"inquiry":{"value":5,"wait":48},"client":{"value":200}}'
+```
+
+Only people who reached a step or had a call, to you or from you, in the period are read, 90 days unless you say. Rows show who has been there longest, at most 50 to a column; the counts are of everybody. The Board is read from what is recorded. It assigns nothing to anyone.
+
 ## What followed a call
 
 Choose a step and a number of days, and the report counts who went on to reach it after calling.

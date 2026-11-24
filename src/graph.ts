@@ -1,4 +1,6 @@
 import { brokenAt, seal } from './audit.ts'
+import { board } from './board.ts'
+import type { BoardColumn, BoardPlace } from './board.ts'
 import type { Labeled } from './calibrate.ts'
 import { summarizeCalls } from './callreport.ts'
 import type { CallSummary } from './callreport.ts'
@@ -12,7 +14,7 @@ import type { Policy } from './policy.ts'
 import { dayIn, dayStart, dimension, fold, nextDay } from './report.ts'
 import type { Credited } from './report.ts'
 import { partition, scorePairs } from './resolve.ts'
-import { checkTags } from './tags.ts'
+import { checkTags, touchTag } from './tags.ts'
 import type { DecisionPage, Store, Tx } from './store.ts'
 import type {
   Attribution,
@@ -131,6 +133,11 @@ export interface Graph {
   openCalls(options: { from: string; to: string; timeZone?: string; limit?: number; after?: { at: number; id: string } }): Promise<OpenCall[]>
   /** Calls to you over a range of days: how they went, by hour and weekday, and how many could be placed. */
   callSummary(options: { from: string; to: string; timeZone?: string; at?: number; results?: 'expected'; resultWait?: number }): Promise<CallSummary>
+  /**
+   * People by the furthest step they ever reached, with missed calls nobody returned first: whoever reached a step or
+   * had a call in the last `days` days, today included.
+   */
+  board(options: BoardOptions): Promise<Board>
   /** What followed calls in a range of days: who reached a step within some days of one. See `Followed` for what it does not say. */
   followed(options: { from: string; to: string; timeZone?: string; step: string; days: number; at?: number; least?: number }): Promise<Followed>
   /** How a call went, whether or not the call itself was kept. */
@@ -264,6 +271,37 @@ export interface PolicyState {
 }
 
 const DAY = 86_400_000
+const HOUR = 3_600_000
+export interface BoardOptions {
+  /** The steps in order, the furthest last. `wait` is how many hours at it is too long. */
+  steps: readonly { name: string; wait?: number }[]
+  /** Defaults to 90, at most 365. */
+  days?: number
+  timeZone?: string
+  at?: number
+  /** How many hours a missed call may wait. Left out or 0, none has waited too long. */
+  returnHours?: number
+  /** The most rows of one column. Counts are of everybody. Defaults to 50. */
+  limit?: number
+}
+
+/** A person on the board, with the arrival credited with where they stand. */
+export interface BoardRow extends BoardPlace {
+  touch?: AttributedTouch
+  /** From their furthest step, their newest call, or else that arrival. */
+  language?: string
+}
+
+export interface Board {
+  at: number
+  /** Today, and the first day read. */
+  day: string
+  from: string
+  columns: BoardColumn<BoardRow>[]
+  /** People with outcomes of no step you named, and no missed call. */
+  unplaced: number
+}
+
 /** The most subjects of one person a journey reads. */
 const MOST = 60
 const MIXED = 'mixed'
@@ -709,6 +747,37 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const own = new Set((await tx.touchesBetween(start, end)).filter((touch) => touch.landing?.startsWith('tel:')).map((touch) => `${touch.at} ${touch.landing} ${touch.subject}`))
         const filed = new Set(calls.filter((call) => own.has(`${call.at} tel:${call.to} ${call.subject}`)).map((call) => call.id))
         return summarizeCalls(calls, await tx.callsOf(unique(missed.map((call) => call.subject))), filed, at, timeZone, options)
+      })
+    },
+
+    async board({ steps, days = 90, timeZone, at = now(), returnHours = 0, limit = 50 }) {
+      if (!Number.isSafeInteger(days) || days < 1 || days > 365) throw new TypeError('`days` must be a whole number from 1 to 365')
+      const day = dayIn(at, timeZone)
+      const today = dayStart(day, timeZone)
+      const from = dayStart(new Date(Date.parse(day) - (days - 1) * DAY).toISOString().slice(0, 10), timeZone)
+      return store.read(async (tx) => {
+        const outcomes = await tx.outcomesBetween(from, at + 1)
+        const found = unique([...outcomes, ...(await tx.callsBetween(from, at + 1))].map((each) => each.subject))
+        const labels = await tx.labelsOf(found)
+        const everyone = await tx.membersOf(unique([...labels.values()].map((label) => label.component)))
+        const person = (subject: Subject) => everyone.get(subject)?.cluster ?? subject
+        const people = new Map(found.map((subject) => [person(subject), { outcomes: [] as Counted[], calls: [] as KeptCall[] }]))
+        const theirs = unique([...found, ...everyone.keys()]).filter((subject) => people.has(person(subject)))
+        for (const outcome of await tx.outcomesOf(theirs)) people.get(person(outcome.subject))!.outcomes.push(outcome)
+        for (const call of await tx.callsOf(theirs)) people.get(person(call.subject))!.calls.push(call)
+        const { columns, unplaced } = board([...people.values()], { steps: steps.map(({ name, wait }) => ({ name, ...(wait && { wait: wait * HOUR }) })), at, today, ...(returnHours > 0 && { returnWait: returnHours * HOUR }) })
+        // Only those shown are traced to an ad: it is the slow part.
+        const shown: BoardColumn<BoardRow>[] = []
+        for (const column of columns) {
+          const rows: BoardRow[] = []
+          for (const place of column.rows.slice(0, limit)) {
+            const { credited } = await credit(place.subject, place.at, 90 * DAY, await reach(tx, [place.subject], 2), tx)
+            const language = place.outcome?.tags?.language ?? place.call?.tags?.language ?? touchTag(credited, 'language')
+            rows.push({ ...place, ...(credited && { touch: credited }), ...(language !== undefined && { language }) })
+          }
+          shown.push({ ...column, rows })
+        }
+        return { at, day, from: dayIn(from, timeZone), columns: shown, unplaced }
       })
     },
 
