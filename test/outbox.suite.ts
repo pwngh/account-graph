@@ -224,7 +224,7 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       assert.deepEqual((await outbox.get('enroll-2')).map((job) => job.value), [200])
     })
 
-    test('of two values restated at once, the platform is left with the one on record', async () => {
+    test('of two values restated at once, the job is left with the one on record', async () => {
       const { graph, outbox, store, clock } = await fresh()
       await enroll(graph, 1)
       await outbox.record(outcome(1))
