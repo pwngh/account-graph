@@ -216,19 +216,19 @@ test('a policy setting is laid over the default kind by kind, and everything wro
     '"same" must be a number from 0 to 1',
     '"review" must be a whole number above 0',
     'kind "phone" needs a weight from 0 to 1',
-    'kind "Bad:kind" must be lowercase letters, digits and underscores, at most 32',
+    'kind "Bad:kind" must be a name without spaces or colons',
     'kind "Bad:kind" must be an object, such as {"weight":0.85}',
     'kind "badge" is new, so it needs its dilution',
     'kind "badge" is new, so it needs its cap',
     'kind "badge" is new, so it needs its halfLife',
     'kind "ip" has "colour", which is not part of a rule',
-    'kind "ip" needs a dilution from 0 to 10',
+    'kind "ip" needs a dilution of zero or more',
     'kind "ip" needs a cap of zero or more, in whole subjects',
     'kind "ip" needs a halfLife in milliseconds, or "none"',
     'kind "dialed" is a note and links nothing, so its weight must stay 0',
   ])
   assert.deepEqual(policyProblems({ same: 0.4 }), ['"related" must not be above "same"'])
-  assert.equal(policyProblems({ kinds: { review: { weight: 0.5 } } }).length, 1)
+  assert.equal(policyProblems({ kinds: { review: { weight: 0.95 } } }).length, 1)
 
   const env = { DATABASE_URL: 'x', GRAPH_TOKEN: 'y' }
   assert.equal(configFrom(env).policy, undefined)

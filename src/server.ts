@@ -425,7 +425,14 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     return { changes, identifiers, notes }
   }
 
-    /** Which policy runs, which one the stored clusters were built with, and whether a rebuild is due. */
+    /** Names the policy this server runs, the flagging size included, so a screen left open over a restart reads it again. */
+  const runningPolicy = async () => {
+    const { hash, rules } = await graph.policy()
+    return `${hash.slice(0, 12)}-${rules.review}`
+  }
+  let running: Promise<string> | undefined
+
+  /** Which policy runs, which one the stored clusters were built with, and whether a rebuild is due. */
   const policyDue = async () => {
     const { hash, builtWith, due } = await graph.policy()
     return { hash, builtWith: builtWith ?? null, due }
@@ -557,7 +564,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       case 'GET /pulse': {
         // One small row: a screen asks this often, and reads the rest only when the answer differs.
         const version = await graph.version()
-        const tag = `"${version}"`
+        const tag = `"${version}-${(await (running ??= runningPolicy()))}"`
         response.setHeader('etag', tag)
         if (request.headers['if-none-match'] === tag) {
           response.writeHead(304).end()
@@ -597,11 +604,15 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return { ...state, builtWith: builtWith ?? null, changed: Object.keys(state.rules.kinds).filter((kind) => JSON.stringify(state.rules.kinds[kind]) !== JSON.stringify(standard.kinds[kind])) }
       }
       case 'POST /rebuild': {
-        const body = await json(request)
-        return graph.rebuild(why(body))
+        // Nothing in the body is needed, so none has to be sent.
+        const sent = await text(request)
+        return graph.rebuild(why(sent.trim() ? JSON.parse(sent) : {}))
       }
-      case 'GET /verify':
-        return { changes: await graph.verify(), policy: await policyDue() }
+      case 'GET /verify': {
+        // The policy first: a rebuild that lands in between then reads as due with nothing to change, and never the other way round.
+        const policy = await policyDue()
+        return { changes: await graph.verify(), policy }
+      }
       case 'GET /stats':
         return { ...tally, policy: await policyDue(), graph: await graph.counts(), ...(options.outbox && { outbox: await options.outbox.counts() }) }
       case 'POST /prune': {

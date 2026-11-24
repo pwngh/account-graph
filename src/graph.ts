@@ -183,19 +183,20 @@ const MIXED = 'mixed'
 const pairKey = (a: Subject, b: Subject) => (a < b ? `${a}\u0000${b}` : `${b}\u0000${a}`)
 
 export function createGraph(store: Store, policy: Policy = defaultPolicy, options: GraphOptions = {}): Graph {
+  // A copy, so a caller that edits its own policy later changes nothing here: the hash always names what scores.
+  policy = structuredClone(policy)
   const hash = policyHash(policy)
-  let marked = false
   /**
-   * Notes which policy the clusters are being written with: this one for a
-   * new database, and more than one when another has written them already.
-   * Asked of the database until it says the clusters are this policy's own,
-   * and then not again.
+   * Notes which policy the clusters are being written with: this one when
+   * nothing was stored before, and more than one when another has written
+   * them already. Asked on every write, because another server may have
+   * rebuilt them since.
    */
   async function mark(tx: Tx): Promise<void> {
-    if (marked) return
     const before = await tx.builtWith()
-    if (before === hash) marked = true
-    else if (before !== MIXED) await tx.setBuiltWith(before === undefined && (await tx.empty()) ? hash : MIXED)
+    if (before === hash) return
+    if (await tx.empty()) await tx.setBuiltWith(hash)
+    else if (before !== MIXED) await tx.setBuiltWith(MIXED)
   }
 
   /** Components and clusters of the given subjects, from their edges and the reviewer's separations. */
@@ -215,7 +216,6 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
    * components, which is why components, not clusters, bound the work.
    */
   async function settle(tx: Tx, affected: ReadonlySet<Subject>): Promise<Change[]> {
-    await mark(tx)
     const own = await tx.labelsOf([...affected])
     const stored = await tx.membersOf(unique([...own.values()].map((labels) => labels.component)))
     return apply(tx, stored, await compute(tx, [...stored.keys()]))
@@ -493,6 +493,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         // Asked for what already holds, nothing is decided: a server that mutes an address again after a restart adds no entry.
         if ((before?.ignored ?? false) === ignored) return []
         await decide(tx, ignored ? 'ignore' : 'restore', [identifier], why)
+        await mark(tx)
         await tx.setIgnored(identifier, ignored)
         if (!before || before.fanout > cap) return []
         return settle(tx, new Set((await tx.edgesOn([identifier])).map((edge) => edge.subject)))
@@ -503,6 +504,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       const pair = pairOf(a, b, 'separate')
       return changing(async (tx) => {
         await decide(tx, separated ? 'separate' : 'rejoin', pair, why)
+        await mark(tx)
         await tx.setSeparated(a, b, separated)
         return settle(tx, new Set([a, b]))
       })
@@ -657,6 +659,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const edges = await tx.edgesOf([subject])
         const component = (await tx.labelsOf([subject])).get(subject)?.component
         const affected = new Set(component === undefined ? [] : (await tx.membersOf([component])).keys())
+        await mark(tx)
         await tx.removeSubject(subject)
         affected.delete(subject)
         // Losing a subject can bring an identifier back under its cap, which links the rest again.

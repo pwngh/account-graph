@@ -848,6 +848,22 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual([after.builtWith, after.due], [after.hash, false])
       assert.deepEqual(await changed.verify(), [])
       assert.equal((await graph.policy()).due, true)
+      // A server still running the first policy writes after the rebuild: the clusters are no longer all of one policy.
+      await graph.observe({ subject: 'account:2', identifiers: ['phone:2'], at: T0 })
+      assert.equal((await changed.policy()).due, true)
+      await changed.rebuild()
+      // When the last subject is gone, whoever writes next starts afresh.
+      const gone = await fresh()
+      await gone.graph.observe({ subject: 'a', identifiers: ['phone:1'], at: T0 })
+      await gone.graph.forget('a')
+      const anew = createGraph(gone.store, other)
+      await anew.observe({ subject: 'b', identifiers: ['phone:1'], at: T0 })
+      assert.equal((await anew.policy()).due, false)
+      // The caller's own copy of the policy can change without changing what this graph runs.
+      const own = structuredClone(other)
+      const fixed = createGraph(gone.store, own)
+      ;(own.kinds as any).phone.weight = 0.1
+      assert.equal((await fixed.policy()).rules.kinds.phone!.weight, 0.6)
       // The review size only flags clusters, so changing it calls for nothing.
       assert.equal((await createGraph(store, { ...other, review: 3 }).policy()).due, false)
     })

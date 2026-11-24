@@ -92,6 +92,9 @@ if (!url) {
         assert.deepEqual([policy.builtWith, policy.due, policy.changed, policy.rules.kinds.badge], [null, true, ['badge', 'phone'], { weight: 0.5, dilution: 0, cap: 3, halfLife: 'none' }])
         assert.equal((await ask('/rebuild', 'review', {})).status, 403)
         assert.equal((await ask('/rebuild', 'service', { by: 'ops', reason: 'new weights' })).status, 200)
+        // Nothing in the body is needed.
+        assert.equal((await fetch(`http://127.0.0.1:${running.port}/rebuild`, { method: 'POST', headers: { authorization: 'Bearer service' } })).status, 200)
+        assert.match((await ask('/pulse', 'review')).headers.get('etag')!, /^"\d+-[0-9a-f]{12}-50"$/)
         assert.deepEqual((await (await ask('/verify', 'service')).json()) as any, { changes: [], policy: { hash: policy.hash, builtWith: policy.hash, due: false } })
         assert.equal(((await (await ask('/stats', 'service')).json()) as any).policy.due, false)
       } finally {

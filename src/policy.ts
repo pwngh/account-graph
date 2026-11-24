@@ -105,7 +105,7 @@ export function policyProblems(given: unknown): string[] {
   else {
     for (const [kind, rule] of Object.entries(given.kinds ?? {})) {
       const base = Object.hasOwn(defaultPolicy.kinds, kind)
-      if (!base && !/^[a-z][a-z0-9_]{0,31}$/.test(kind)) wrong.push(`kind "${kind}" must be lowercase letters, digits and underscores, at most 32`)
+      if (!base && !/^[^:\s]+$/.test(kind)) wrong.push(`kind "${kind}" must be a name without spaces or colons`)
       if (!plain(rule)) {
         wrong.push(`kind "${kind}" must be an object, such as {"weight":0.85}`)
         continue
@@ -113,7 +113,7 @@ export function policyProblems(given: unknown): string[] {
       for (const name of Object.keys(rule)) if (!(FIELDS as readonly string[]).includes(name)) wrong.push(`kind "${kind}" has "${name}", which is not part of a rule`)
       if (!base) for (const name of FIELDS) if (rule[name] === undefined) wrong.push(`kind "${kind}" is new, so it needs its ${name}`)
       if (rule.weight !== undefined && !number(rule.weight, 0, 1)) wrong.push(`kind "${kind}" needs a weight from 0 to 1`)
-      if (rule.dilution !== undefined && !number(rule.dilution, 0, 10)) wrong.push(`kind "${kind}" needs a dilution from 0 to 10`)
+      if (rule.dilution !== undefined && !number(rule.dilution, 0, Number.MAX_VALUE)) wrong.push(`kind "${kind}" needs a dilution of zero or more`)
       if (rule.cap !== undefined && !(Number.isSafeInteger(rule.cap) && rule.cap >= 0)) wrong.push(`kind "${kind}" needs a cap of zero or more, in whole subjects`)
       if (rule.halfLife !== undefined && rule.halfLife !== 'none' && !(number(rule.halfLife, 0, Number.MAX_VALUE) && rule.halfLife > 0)) wrong.push(`kind "${kind}" needs a halfLife in milliseconds, or "none"`)
       if (NOTES.has(kind) && rule.weight) wrong.push(`kind "${kind}" is a note and links nothing, so its weight must stay 0`)
@@ -123,7 +123,7 @@ export function policyProblems(given: unknown): string[] {
   const policy = policyFrom(given)
   if (policy.related > policy.same) wrong.push('"related" must not be above "same"')
   const { review } = policy.kinds
-  if (review!.weight < policy.same || review!.dilution > 0 || review!.cap < 2) wrong.push('kind "review" is a reviewer\'s join, so it must join on its own: a weight of at least "same", no dilution, a cap of at least 2')
+  if (review!.weight < Math.max(policy.same, policy.bridge) || review!.cap < 2) wrong.push('kind "review" is a reviewer\'s join, so it must join on its own: a weight of at least "same" and "bridge", a cap of at least 2')
   return wrong
 }
 
