@@ -16,6 +16,7 @@ import { fromTwilio, twilioCall, twilioText } from './integrations/twilio.ts'
 import type { LineTypeLookup } from './integrations/twilio.ts'
 import { asks, beginnings, codeNote, recordText, replyTo, textCode, texted } from './texts.ts'
 import type { TextOptions } from './texts.ts'
+import { givenKeys } from './names.ts'
 import type { IpLookup } from './integrations/maxmind.ts'
 import type { Ops } from './ops.ts'
 import { sentOf } from './outbox.ts'
@@ -609,10 +610,12 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       }
     }
     if (body.at !== undefined && !Number.isSafeInteger(body.at)) throw new Refusal(400, '`at` must be an integer in epoch milliseconds')
-    // Kept only under a policy that keeps people apart by it. It says who somebody is not, and not who they are, so by itself it finds nobody.
-    const born = options.identifierSecret && typeof body.dob === 'string' && (await graph.policy()).rules.apart?.includes('birth') ? birthKey(options.identifierSecret, body.dob) : undefined
-    if (identifiers.length === 0 && !(saving && born)) throw new Refusal(400, 'At least one identifying field is required')
-    if (born) identifiers.push(born)
+    // Kept only under a policy that keeps people apart by them. They say who somebody is not, and not who they are, so by themselves they find nobody.
+    const apart = options.identifierSecret && (typeof body.dob === 'string' || typeof body.name?.first === 'string') ? ((await graph.policy()).rules.apart ?? []) : []
+    const born = apart.length > 0 && typeof body.dob === 'string' ? birthKey(options.identifierSecret!, body.dob) : undefined
+    const facts = [...(born ? [born] : []), ...(apart.includes('given') && typeof body.name?.first === 'string' ? givenKeys(options.identifierSecret!, body.name.first) : [])]
+    if (identifiers.length === 0 && !(saving && facts.length > 0)) throw new Refusal(400, 'At least one identifying field is required')
+    identifiers.push(...facts)
     return { identifiers, notes, at: (body.at ?? now()) as number }
   }
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { after, describe, test } from 'node:test'
-import { Outdated, brokenAt, callState, createGraph, createHours, defaultPolicy, dialed, email, fit, followUp, hashPhone, nameKeys, policyFrom, policyProblems, recordCall, recordCallResult, recordNotLead, recordReturn, recordText, ringing, replyTo, beginnings, textCode, codeNote, texted } from '../src/index.ts'
+import { givenKeys, Outdated, brokenAt, callState, createGraph, createHours, defaultPolicy, dialed, email, fit, followUp, hashPhone, nameKeys, policyFrom, policyProblems, recordCall, recordCallResult, recordNotLead, recordReturn, recordText, ringing, replyTo, beginnings, textCode, codeNote, texted } from '../src/index.ts'
 import type { Change, GraphOptions, Observation, Policy, Store } from '../src/index.ts'
 
 export interface Opened {
@@ -2561,7 +2561,24 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await graph.observe({ subject: 'contact:3b', identifiers: ['birth:1'], at: T0 + 1 })
       assert.equal((await members(graph, 'contact:3a')).length, 2)
       assert.deepEqual(policyProblems({ apart: ['birth'] }), [])
+      assert.deepEqual(policyProblems({ apart: ['birth', 'given'] }), [])
       for (const bad of [{ apart: 'birth' }, { apart: ['initial'] }]) assert.equal(policyProblems(bad).length, 1)
+    })
+
+    test('names keep two apart that can stand for no one name, and short forms, accents and spellings do not', async () => {
+      const policy = policyFrom({ apart: ['birth', 'given'] })
+      const secret = 'a secret of more than thirty-two characters'
+      const one = async (a: string, b: string, births: [string?, string?] = []) => {
+        const { graph } = await fresh(policy)
+        await graph.observe([[a, births[0]], [b, births[1]]].map(([first, dob], i) => ({ subject: `contact:${i}`, identifiers: ['email:e', ...givenKeys(secret, first!), ...(dob ? [`birth:${dob}`] : [])], at: T0 })))
+        return (await members(graph, 'contact:0')).length === 2
+      }
+      for (const [a, b] of [['Mike', 'Michael'], ['Bob', 'Robert'], ['Bill', 'William'], ['Liz', 'Elizabeth'], ['José', 'Jose'], ['José', 'Joe'], ['Katherine', 'Catharine'], ['María Guadalupe', 'María']] as const) assert.equal(await one(a, b), true, `${a} and ${b}`)
+      for (const [a, b] of [['Carlos', 'Maria'], ['Robert', 'Mary'], ['Pepe', 'Ana']] as const) assert.equal(await one(a, b), false, `${a} and ${b}`)
+      // A name nobody knows says nothing, and births that agree overrule a name.
+      assert.equal(await one('Xyzzyq', 'Maria'), true)
+      assert.equal(await one('Carlos', 'Maria', ['1', '1']), true)
+      assert.equal(await one('Maria', 'Maria', ['1', '2']), false)
     })
 
     test('a join overrules a fact, whichever is told first, and its undoing gives the fact back', async () => {
@@ -2661,12 +2678,12 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
 
     test('kept apart by facts, what is stored after any writes is what a rebuild gives', async () => {
       const next = random(11)
-      const { graph } = await fresh(policyFrom({ apart: ['birth'] }))
+      const { graph } = await fresh(policyFrom({ apart: ['birth', 'given'] }))
       const pick = (n: number) => Math.floor(next() * n)
       for (let i = 0; i < 120; i++) {
         const subject = `${['contact', 'visitor', 'caller'][pick(3)]}:${pick(10)}`
         const roll = next()
-        if (roll < 0.75) await graph.observe({ subject, identifiers: [`email:${pick(5)}`, `device:${pick(6)}`, `phone:${pick(5)}`].filter(() => next() < 0.5).concat(subject.startsWith('contact') ? [`birth:${pick(3)}`].filter(() => next() < 0.5) : [], [`ip:${pick(20)}`]), at: T0 + i })
+        if (roll < 0.75) await graph.observe({ subject, identifiers: [`email:${pick(5)}`, `device:${pick(6)}`, `phone:${pick(5)}`].filter(() => next() < 0.5).concat(subject.startsWith('contact') ? [`birth:${pick(3)}`, `given:${pick(3)}`].filter(() => next() < 0.4) : [], [`ip:${pick(20)}`]), at: T0 + i })
         else if (roll < 0.85) await graph.join(subject, `contact:${10 + pick(2)}`, { by: 'dana' })
         else if (roll < 0.93) await graph.separate(subject, `contact:${10 + pick(2)}`, next() < 0.6)
         else await graph.forget(subject)

@@ -1,6 +1,7 @@
 export { createGraph, Outdated } from './graph.ts'
 export { createMemoryStore } from './memory.ts'
 export { defaultPolicy, policyFrom, policyHash, policyProblems } from './policy.ts'
+export { givenKeys, namesOf } from './names.ts'
 export { components, partition, scorePairs } from './resolve.ts'
 export { birthKey, email, hashEmail, hashPhone, identifier, ip, nameKeys, normalizeEmail, normalizePhone, phone, phoneOfType } from './identifiers.ts'
 export { GoogleError, conversionEvent, googleClick, ingest, ingestRequest } from './conversions.ts'

@@ -65,7 +65,7 @@ export interface Pair {
   level: Level
   reasons: Reason[]
   /** The fact that says they are two people, as in `Link`. */
-  conflict?: 'birth'
+  conflict?: 'birth' | 'given'
 }
 
 /** A pair seen from one side. */
@@ -75,7 +75,7 @@ export interface Link {
   level: Level
   reasons: Reason[]
   /** The fact that says they are two people, under a policy that keeps people apart by it. They are related then, however high the score. */
-  conflict?: 'birth'
+  conflict?: 'birth' | 'given'
 }
 
 export interface Cluster {
@@ -557,7 +557,7 @@ export interface Candidate {
   level: Level
   reasons: Reason[]
   /** The fact that says they are two people, as in `Link`. */
-  conflict?: 'birth'
+  conflict?: 'birth' | 'given'
   /** Everyone in the subject's cluster, itself included. */
   members: Subject[]
 }
