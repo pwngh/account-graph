@@ -145,11 +145,11 @@ const REVIEW_ROUTES = new Set([
 /** Answers hold people's data, so nothing keeps a copy of one. */
 const JSON_HEADERS = { 'content-type': 'application/json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }
 
-/** A job as a person is shown it: the hashed email and phone are for its platform only. A platform's answer may repeat one, so it is left out there too. */
+/** A job as a person is shown it: the hashed email and phone are for its platform only. A platform's answer may repeat them, and those of the others it was sent with, so any hash is left out there too. */
 function shownJob({ keys, note, ...job }: Job) {
   if (note === undefined) return job
   const held = Object.values(keys).filter((value) => value.length > 3).sort((a, b) => b.length - a.length)
-  return { ...job, note: held.reduce((text, value) => text.replaceAll(new RegExp(value.replace(/[^\w]/g, '\\$&'), 'gi'), '(left out)'), note) }
+  return { ...job, note: held.reduce((text, value) => text.replaceAll(new RegExp(value.replace(/[^\w]/g, '\\$&'), 'gi'), '(left out)'), note.replace(/[0-9a-f]{32,}/gi, '(left out)')) }
 }
 
 /** A route that wrote its own answer. */
