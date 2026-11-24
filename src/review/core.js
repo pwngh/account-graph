@@ -335,6 +335,8 @@ const fold = (node) => {
   return `${section?.querySelector('h2, h3')?.textContent}\n${[...(section?.querySelectorAll('details') ?? [])].indexOf(node)}`
 }
 
+/** Counts what the reviewer does in the Find box. */
+let edits = 0
 let loading = 0
 let pending = 0
 /** Loads under way that the reviewer asked for, as against a refresh. */
@@ -348,6 +350,7 @@ async function load(tag) {
   const turn = ++loading
   const quiet = tag !== undefined
   const { name, parts } = place()
+  const sought = edits
   for (const link of $('views').children) {
     if (link.dataset.view === name) link.setAttribute('aria-current', 'page')
     else link.removeAttribute('aria-current')
@@ -385,8 +388,9 @@ async function load(tag) {
     for (const each of $('view').querySelectorAll('details')) each.open = unfolded.includes(fold(each))
     if (held) [...$('view').querySelectorAll('a, button, input, select, [tabindex]')].find((node) => which(node) === held)?.focus({ preventScroll: true })
     if (!quiet) {
-      notice('')
-      if (views.get(name).subject && parts[0]) $('subject').value = parts[0]
+      // What was typed since is a search of the reviewer's, and stays, as does what was answered.
+      if (edits === sought) notice('')
+      if (views.get(name).subject && parts[0] && edits === sought) $('subject').value = parts[0]
     }
     if (!quiet) browsing = false
     loadedAt = readAt = Date.now()
@@ -398,7 +402,9 @@ async function load(tag) {
     if (quiet) fresh(error.message)
     else {
       $('view').replaceChildren(box)
-      notice(error.message, true)
+      // A search answered meanwhile has the notice, so the problem is told where the view would be.
+      if (edits === sought) notice(error.message, true)
+      else box.append(el('p', { class: 'apart', role: 'alert' }, `Problem: ${error.message}`))
     }
     return false
   } finally {

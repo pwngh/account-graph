@@ -156,6 +156,29 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
     await until(what, async () => (await text('#notice')).includes(said))
   }
   assert.ok(!(await run('location.href')).includes('person'))
+  // What is typed while something opens stays as typed.
+  await run(`(() => { load(); const s = document.getElementById('subject'); s.value = 'typed meanwhile'; s.dispatchEvent(new Event('input')) })()`)
+  await until('it to open', () => run(`opening === 0`))
+  assert.equal(await run(`document.getElementById('subject').value`), 'typed meanwhile')
+  // An answer that comes after something else was opened is too late, and opens nothing.
+  await run(`(() => { const real = window.fetch; window.fetch = async (...all) => { if (all[0] !== '/find') return real(...all); window.fetch = real; await new Promise((resolve) => (window.answer = resolve)); const response = await real(...all); const body = await response.json(); return { ok: true, status: 200, json: async () => { setTimeout(() => (window.answered = true), 0); return body } } }; const s = document.getElementById('subject'); s.value = 'person:2'; document.getElementById('find').requestSubmit(); location.hash = '#/accounts/person%3A1' })()`)
+  await until('what was opened', async () => (await text('#detail h3')) === 'person:1' && (await run(`document.getElementById('subject').value`)) === 'person:1')
+  await run(`window.answer()`)
+  // Set in a task after the one that handles the answer.
+  await until('the late answer', () => run(`window.answered`))
+  assert.deepEqual([await run(`location.hash`), await text('#detail h3')], ['#/accounts/person%3A1', 'person:1'])
+  await run(`(() => { const s = document.getElementById('subject'); s.value = 'typed meanwhile'; s.dispatchEvent(new Event('input')) })()`)
+  // A search made while something opens is answered, and the answer stays when the view comes, or when it fails.
+  for (const broken of [false, true]) {
+    await run(`(() => { const all = views.get('accounts'), real = all.show; all.show = async (...given) => { all.show = real; await new Promise((resolve) => (window.release = resolve)); if (${broken}) throw new Error('the view broke'); return real(...given) }; notice(''); load(); document.getElementById('find').requestSubmit() })()`)
+    await until('its answer', async () => (await text('#notice')).includes('Nobody'))
+    assert.ok((await run(`opening`)) > 0)
+    await run(`window.release()`)
+    await until('it to open', () => run(`opening === 0`))
+    assert.match(await text('#notice'), /Nobody/)
+    assert.equal(await run(`document.getElementById('subject').value`), 'typed meanwhile')
+    assert.equal((await text('#view')).includes('the view broke'), broken)
+  }
   await look('person:2')
   await until('the exact one', async () => (await text('#detail h3')) === 'person:2')
   await pause(400)
