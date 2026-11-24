@@ -5,7 +5,7 @@ const MOST = 90
 const around = (profile) => [...new Set([...profile.separated, ...profile.links.map((link) => link.subject), ...(profile.cluster?.members ?? [])])].filter((each) => each !== profile.subject)
 
 /** What was done to the graph on screen, so a refresh draws it as it was left: where each stands, what was moved, opened out, picked and hidden. */
-const drawn = { subject: undefined, spots: new Map(), pins: new Set(), more: new Map(), off: new Set(), camera: undefined, chosen: undefined }
+const drawn = { subject: undefined, spots: new Map(), pins: new Set(), more: new Map(), off: new Set(), camera: undefined, chosen: undefined, left: false }
 function redrawn(subject) {
   if (drawn.subject === subject) return
   Object.assign(drawn, { subject, pins: new Set(), more: new Map(), camera: undefined, chosen: undefined })
@@ -61,8 +61,8 @@ function gathered(profile) {
   return { nodes: [...nodes.values()], edges: [...edges.values()] }
 }
 
-/** One step of the layout: everything pushes everything away, ties pull, and all of it drifts to the middle. */
-function step(nodes, edges, heat) {
+/** One step of the layout: everything pushes everything away, ties pull, and all of it drifts to the middle, as wide or as tall as the room is. */
+function step(nodes, edges, heat, tall) {
   for (let i = 0; i < nodes.length; i++) {
     const a = nodes[i]
     for (let j = i + 1; j < nodes.length; j++) {
@@ -107,8 +107,6 @@ function step(nodes, edges, heat) {
       end.vy -= (push * dy) / 3
     }
   }
-  // As wide or as tall as the room there is for it.
-  const tall = innerWidth <= 760
   for (const node of nodes) {
     const home = node.role === 'me' ? 0.06 : 0.012
     node.vx = (node.vx - node.x * home * (tall ? 2 : 1) * heat) * 0.62
@@ -169,7 +167,7 @@ function outlines(nodes, edges) {
   return [...clusters].filter(([id, list]) => list.length > 1 && !edges.some((edge) => edge.kind === 'apart' && edge.from.cluster === id && edge.to.cluster === id)).map(([id, list]) => {
     const points = outline(list)
     const strangers = nodes.filter((node) => node.cluster !== id).map((node) => beyond(node, points) - node.r)
-    return { id, points, margin: [42, 36, 30].find((margin) => strangers.every((far) => far > margin)) }
+    return { id, points, margin: [42, 36, 30].find((margin) => strangers.every((far) => far > margin + 2)) }
   })
 }
 
@@ -199,14 +197,14 @@ function graphOf(profile, more) {
   let heat = 0
   let glide
   let running = false
+  // Until when the view stays where it is.
+  let still = 0
+  let later
 
   const near = (id) => new Set([id, ...edges.filter((each) => each.a === id || each.b === id).flatMap((each) => [each.a, each.b])])
   const shared = (edge) => `${edge.score === undefined ? '' : percent(edge.score)}${edge.reasons.length > 0 ? ` by ${edge.reasons.map((reason) => reason.identifier.split(':')[0]).join(' and ')}` : ''}`
   const said = (edge) => (edge.kind === 'apart' ? `kept apart by a decision${edge.score === undefined ? '' : `, which stands over a tie of ${shared(edge)}`}` : `${KINDS[edge.kind].toLowerCase()}, ${shared(edge)}`)
-  const verdict = (other) => {
-    const [a, b] = pairOf(me, other)
-    return profile.verdicts.find((each) => each.a === a && each.b === b)
-  }
+  const verdict = (a, b) => [profile, ...drawn.more.values()].flatMap((each) => each.verdicts).find((each) => each.a === a && each.b === b)
 
   /** Everything is put where the layout has it. Answers whether the view is still on its way to showing it all. */
   function place(ease = false) {
@@ -222,7 +220,7 @@ function graphOf(profile, more) {
     hulls.replaceChildren(...outlines(nodes, edges).filter(({ margin }) => margin)
       .map(({ id, points, margin }) => svg('path', { 'stroke-width': margin * 2, class: id === byId.get(me).cluster ? 'mine' : '', d: `M${points.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}Z` })))
     const from = drawn.camera
-    const to = from?.held ? from : fitted()
+    const to = from && (from.held || performance.now() < still) ? from : fitted()
     const part = ease && from && !from.held ? 0.16 : 1
     drawn.camera = from ? { held: from.held, ...Object.fromEntries(['x', 'y', 'k'].map((name) => [name, from[name] + (to[name] - from[name]) * part])) } : { ...to, held: false }
     const { x, y, k } = drawn.camera
@@ -252,7 +250,7 @@ function graphOf(profile, more) {
   function fitted() {
     const [left, right, top, bottom] = [Math.min, Math.max, Math.min, Math.max].map((pick, i) => pick(...nodes.map((node) => (glide ? node.end : node)[i < 2 ? 'x' : 'y'])))
     // Room is left for what lies over the paper: the keys and tools, and the card when someone is picked.
-    const narrow = size.w <= 720
+    const narrow = root.classList.contains('narrow')
     const over = { top: narrow ? legend.offsetHeight + 8 : 0, right: !narrow && !card.hidden ? 300 : 0, bottom: 44 + (narrow && document.fullscreenElement === root && !card.hidden ? card.offsetHeight + 8 : 0) }
     const [w, h] = [size.w - over.right, size.h - over.top - over.bottom]
     const k = Math.max(0.25, Math.min(1.3, w / (right - left + 130), h / (bottom - top + 116)))
@@ -273,7 +271,7 @@ function graphOf(profile, more) {
         }
         if (t === 1) glide = undefined
       } else {
-        if (heat > 0.02) step(nodes, edges, heat)
+        if (heat > 0.02) step(nodes, edges, heat, size.w < size.h * 1.2)
         heat *= 0.97
       }
       const moving = place(true)
@@ -312,7 +310,7 @@ function graphOf(profile, more) {
         })
         // Two may have been given one place, which would never part them.
         nodes.forEach((node, i) => { if (!node.known) { node.x += i * 0.7; node.y += i * 0.3 } else node.held = keep })
-        for (let i = 0, warm = 1; i < 320; i++, warm *= 0.985) step(nodes, edges, warm)
+        for (let i = 0, warm = 1; i < 320; i++, warm *= 0.985) step(nodes, edges, warm, size.w < size.h * 1.2)
         const cost = starts === 1 ? 0 : tangle(nodes, edges)
         if (!best || cost < best.cost) best = { cost, spots: nodes.map(({ x, y }) => ({ x, y })) }
         if (cost === 0) break
@@ -348,14 +346,13 @@ function graphOf(profile, more) {
       node.mark.addEventListener('blur', () => light())
       node.mark.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' || event.key === ' ') {
-          choose(node.id)
-          if (!card.hidden) card.querySelector('button').focus({ preventScroll: true })
+          chosen(node.id)
         } else if (event.key === 'Escape') choose()
         else return
         event.preventDefault()
       })
       // A press that came from no pointer, as a screen reader makes it. Those that did are told apart from a drag below.
-      node.mark.addEventListener('click', (event) => event.detail === 0 && choose(node.id))
+      node.mark.addEventListener('click', (event) => event.detail === 0 && chosen(node.id))
       return node.mark
     }))
     legend.replaceChildren(...Object.entries(KINDS).filter(([kind]) => edges.some((edge) => edge.kind === kind)).map(([kind, text]) => {
@@ -391,15 +388,21 @@ function graphOf(profile, more) {
     for (const edge of edges) for (const mark of [edge.mark, edge.tag]) mark.classList.toggle('lit', only ? edge === only : lit !== undefined && (edge.a === about || edge.b === about))
     word()
   }
-  /** Picks one, or whoever was picked no longer. The view moves to make room after `wait`, so a second press finds the same one under it. */
+  /** Picks one, or whoever was picked no longer. The view moves to make room after `wait`, so a second press is not made on someone else. */
   function choose(id, wait = 0) {
     drawn.chosen = id === drawn.chosen ? undefined : id
     for (const node of nodes) node.mark.setAttribute('aria-pressed', String(node.id === drawn.chosen))
     const node = byId.get(drawn.chosen)
-    if (node) card.classList.toggle('left', node.x * drawn.camera.k + drawn.camera.x > size.w - 330)
+    drawn.left = node !== undefined && node.x * drawn.camera.k + drawn.camera.x > size.w - 330
     tell()
-    if (calm && wait === 0) place()
-    else setTimeout(() => root.isConnected && (calm ? place() : run()), wait)
+    still = performance.now() + wait
+    clearTimeout(later)
+    later = setTimeout(() => root.isConnected && (calm ? place() : run()), wait)
+  }
+  /** Picked by no pointer, so what is told is where the focus goes. */
+  const chosen = (id) => {
+    choose(id)
+    if (!card.hidden) card.querySelector('button').focus({ preventScroll: true })
   }
   const shut = () => {
     const was = byId.get(drawn.chosen)?.mark
@@ -412,6 +415,7 @@ function graphOf(profile, more) {
     light()
     const node = byId.get(drawn.chosen)
     card.hidden = node === undefined
+    card.classList.toggle('left', drawn.left)
     if (!node) return
     const { tie } = node
     const mine = profile.links.find((link) => link.subject === node.id)
@@ -419,11 +423,11 @@ function graphOf(profile, more) {
       el('button', { class: 'shut', type: 'button', 'aria-label': 'Close', on: { click: shut } }, '×'),
       el('b', { class: 'title' }, node.id),
       node.role === 'me' ? el('p', { class: 'muted' }, 'This subject') : el('p', {}, el('span', { class: `chip ${node.role === 'member' ? 'same' : node.role === 'far' ? '' : node.role}` }, node.role === 'member' ? 'same person' : node.role === 'apart' ? 'kept apart' : node.role === 'related' ? 'tied, not joined' : 'tied through another'),
-        tie?.score === undefined || tie.kind === 'apart' ? '' : ` ${percent(tie.score)}`),
-      ...(tie?.kind === 'apart' ? [el('p', {}, ...kept(verdict(node.id))), tie.score === undefined ? '' : el('p', { class: 'muted' }, `What ties them otherwise, ${percent(tie.score)}`)] : []),
+        tie?.score === undefined || tie.kind === 'apart' ? '' : ` ${percent(tie.score)} with ${me}`),
+      ...(tie?.kind === 'apart' ? [el('p', {}, ...kept(verdict(tie.a, tie.b))), tie.score === undefined ? '' : el('p', { class: 'muted' }, `What ties it to ${me} otherwise, ${percent(tie.score)}`)] : []),
       tie?.score === undefined ? '' : meter(tie.score),
       ...(mine ? reasons(mine.reasons) : node.role === 'member' ? [el('span', { class: 'reason' }, 'No tie of its own to this subject. Joined through others.')] : []),
-      ...edges.filter((edge) => edge.from === node || edge.to === node).filter((edge) => edge !== tie).map((edge) => el('span', { class: 'reason' }, el('b', {}, edge.from === node ? edge.b : edge.a), ` ${said(edge)}`)),
+      ...edges.filter((edge) => edge.from === node || edge.to === node).filter((edge) => edge !== tie).map((edge) => el('span', { class: 'reason' }, el('b', {}, edge.from === node ? edge.b : edge.a), ` ${said(edge)}`, ...(edge.kind === 'apart' ? ['. ', ...kept(verdict(edge.a, edge.b))] : []))),
       el('div', { class: 'row' },
         node.id === me ? '' : el('button', { class: 'primary', type: 'button', on: { click: () => go(subjectHash(node.id)) } }, 'Open'),
         node.id === me ? '' : el('button', { type: 'button', 'data-key': 'ties', on: { click: (event) => outward(node.id, event.currentTarget) } }, drawn.more.has(node.id) ? 'Hide its ties' : 'Show its ties'),
@@ -450,14 +454,14 @@ function graphOf(profile, more) {
       }
     }
     draw()
-    if (held) card.querySelector('[data-key=ties]')?.focus({ preventScroll: true })
+    if (held && drawn.chosen === id) card.querySelector('[data-key=ties]')?.focus({ preventScroll: true })
   }
 
   // Moving: one pointer moves a subject or the paper, two zoom.
-  const zoom = (factor, x = size.w / 2, y = size.h / 2) => {
+  const zoom = (factor, x = size.w / 2, y = size.h / 2, dx = 0, dy = 0) => {
     const from = drawn.camera
     const k = Math.max(0.2, Math.min(3, from.k * factor))
-    drawn.camera = { k, x: x - ((x - from.x) * k) / from.k, y: y - ((y - from.y) * k) / from.k, held: true }
+    drawn.camera = { k, x: x + dx - ((x - from.x) * k) / from.k, y: y + dy - ((y - from.y) * k) / from.k, held: true }
     place()
   }
   const at = (event) => {
@@ -484,9 +488,7 @@ function graphOf(profile, more) {
     if (down.size === 2) {
       const [other] = [...down].filter(([id]) => id !== event.pointerId).map(([, spot]) => spot)
       const was = down.get(event.pointerId)
-      zoom(Math.hypot(now.x - other.x, now.y - other.y) / Math.max(1, Math.hypot(was.x - other.x, was.y - other.y)), (now.x + other.x) / 2, (now.y + other.y) / 2)
-      drawn.camera.x += (now.x - was.x) / 2
-      drawn.camera.y += (now.y - was.y) / 2
+      zoom(Math.hypot(now.x - other.x, now.y - other.y) / Math.max(1, Math.hypot(was.x - other.x, was.y - other.y)), (was.x + other.x) / 2, (was.y + other.y) / 2, (now.x - was.x) / 2, (now.y - was.y) / 2)
     }
     down.set(event.pointerId, now)
     if (!grip) return
@@ -547,15 +549,17 @@ function graphOf(profile, more) {
     const same = drawn.subject === me
     redrawn(me)
     for (const each of more) if (drawn.more.has(each.subject)) if (each.known) drawn.more.set(each.subject, each); else drawn.more.delete(each.subject)
-    draw(same)
     const measure = () => {
+      // Narrow, the card has no room beside anyone and stands under the paper.
+      root.classList.toggle('narrow', root.clientWidth <= 720)
       size = { w: paper.clientWidth, h: paper.clientHeight }
-      if (size.w === 0) return
-      paper.setAttribute('viewBox', `0 0 ${size.w} ${size.h}`)
+      if (size.w > 0) paper.setAttribute('viewBox', `0 0 ${size.w} ${size.h}`)
+      if (size.w === 0 || nodes.length === 0) return
       place()
       if (glide) run()
     }
     measure()
+    draw(same)
     new ResizeObserver(measure).observe(paper)
   }
   return root

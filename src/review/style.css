@@ -196,14 +196,12 @@ dd { margin: 0; overflow-wrap: anywhere; }
 .graph .card .title { display: block; padding-right: 24px; overflow-wrap: anywhere; font-size: 14px; }
 .graph .card .shut { position: absolute; top: 6px; right: 6px; width: 28px; padding: 0; border: 0; background: none; font-size: 18px; color: var(--muted); }
 .graph .card .row { margin-top: 8px; }
-@media (max-width: 760px) {
-  /* The card stands under the paper, which would otherwise be mostly card. Full screen has room for both. */
-  .graph:not(:fullscreen) { height: auto; }
-  .graph:not(:fullscreen) > svg { height: 460px; }
-  .graph:not(:fullscreen) .tools { top: 420px; }
-  .graph:not(:fullscreen) .card { position: relative; inset: auto; margin: 0 8px 8px; width: auto; max-height: none; box-shadow: none; }
-  .graph .keys { top: 8px; bottom: auto; left: 8px; max-width: calc(100% - 16px); }
-  .graph .tools { right: 8px; bottom: 8px; }
-  .graph:fullscreen .card { top: auto; bottom: 48px; left: 8px; right: 8px; width: auto; max-height: 50%; }
-}
+/* Narrow, the card stands under the paper, which would otherwise be mostly card. Full screen has room for both. */
+.graph.narrow:not(:fullscreen) { height: auto; }
+.graph.narrow:not(:fullscreen) > svg { height: 460px; }
+.graph.narrow .tools { right: 8px; bottom: 8px; }
+.graph.narrow:not(:fullscreen) .tools { top: 420px; }
+.graph.narrow .keys { top: 8px; bottom: auto; left: 8px; max-width: calc(100% - 16px); }
+.graph.narrow:not(:fullscreen) .card { position: relative; inset: auto; margin: 0 8px 8px; width: auto; max-height: none; box-shadow: none; }
+.graph.narrow:fullscreen .card { top: auto; bottom: 48px; left: 8px; right: 8px; width: auto; max-height: 50%; }
 @media (prefers-reduced-motion: reduce) { .graph * { transition: none !important; } }
