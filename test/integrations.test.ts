@@ -363,6 +363,10 @@ test('someone is found by phone or email without either being in an address', as
     for (const text of ['7135550194', '(713) 555-0194', '+1 713.555.0194', '1-713-555-0194']) assert.deepEqual(await find(text), { by: 'phone', subjects: ['account:1', 'contact:2'] }, text)
     assert.deepEqual(await find('nobody@example.com'), { by: 'email', subjects: [] })
     assert.deepEqual(await find('account:'), { by: 'subject', subjects: ['account:1', 'account:30'] })
+    // An ad click id, whole. How an id begins comes first.
+    for (const gclid of ['EAIaIQobChMI-x_Y', 'account:3']) await graph.touch({ subject: 'contact:2', at: T0, gclid })
+    assert.deepEqual(await find('EAIaIQobChMI-x_Y'), { by: 'click', subjects: ['contact:2'] })
+    assert.deepEqual([(await find('EAIaIQobChMI')).subjects, (await find('account:3')).subjects], [[], ['account:30']])
     // Digits that are not a whole number are how an id begins, and an id may hold an @.
     assert.deepEqual([(await find('713')).by, (await find('email:a@b')).by], ['subject', 'subject'])
     for (const wrong of ['', ' ', 5, null, 'x'.repeat(513)]) assert.equal(await find(wrong), 400)
