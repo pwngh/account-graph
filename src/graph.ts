@@ -1948,16 +1948,17 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         // The person: their cluster, and whoever is tied to any of it strongly enough that their arrivals would be credited.
         // Nobody kept apart from any of them, though: a browser two people used is tied to both, and they are still two.
         const within = new Set(members)
-        const links = new Map<Subject, Link>()
-        const reached = await reach(tx, members, 2, undefined, links)
-        const tied = [...reached].filter(([each, { confidence }]) => confidence >= policy.same && !within.has(each)).map(([each]) => each)
-        // Whoever is in a group with somebody named is that person's, however strong the tie: one person's record shows nothing of another's.
-        const homes = await tx.labelsOf(tied)
+        // Whoever is in a group with somebody named is that person's, however strong the tie: one person's record shows nothing
+        // of another's, and no path goes through it.
         const unnamed = new Set(policy.unnamed ?? UNNAMED)
         const isNamed = (each: Subject) => !unnamed.has(each.slice(0, Math.max(0, each.indexOf(':'))))
+        const near = [...(await reach(tx, members, 2)).keys()].filter((each) => !within.has(each) && !isNamed(each))
+        const homes = await tx.labelsOf(near)
         const others = new Set<Subject>()
         for (const cluster of unique([...homes.values()].map((label) => label.cluster))) if ((await tx.clusterOf(cluster)).some(isNamed)) others.add(cluster)
-        const strong = tied.filter((each) => !isNamed(each) && !others.has(homes.get(each)?.cluster ?? each))
+        const links = new Map<Subject, Link>()
+        const reached = await reach(tx, members, 2, new Set([...members, ...near.filter((each) => !others.has(homes.get(each)?.cluster ?? each))]), links)
+        const strong = [...reached].filter(([, { confidence }]) => confidence >= policy.same).map(([each]) => each)
         const everyone = unique([subject, ...members, ...strong.sort()])
         const people = everyone.slice(0, MOST)
         // Inside the cluster a tie is the best chain from the subject asked about, however long.
