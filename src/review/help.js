@@ -212,7 +212,7 @@ const GUIDES = {
 }
 
 /** The button that opens the guide of the view that is open. */
-const explain = () => el('button', { type: 'button', class: 'explain', title: 'Guide', 'aria-label': `Guide: ${GUIDES[place().name].title}`, 'data-key': 'explain', on: { click: () => teach(place().name) } }, svg('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true', focusable: 'false' }, svg('path', { d: 'M8 14.2a6.2 6.2 0 1 0 0-12.4a6.2 6.2 0 0 0 0 12.4ZM6.2 6.3a1.8 1.8 0 1 1 2.7 1.6c-.6.35-.9.7-.9 1.4M8 11.4h.01' })))
+const explain = () => el('button', { type: 'button', class: 'explain', title: 'Guide', 'aria-label': `Guide: ${GUIDES[place().name].title}`, 'data-key': 'explain', on: { click: () => teach(place().name) } }, svg('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true', focusable: 'false' }, svg('path', { d: 'M8 14.35a6.35 6.35 0 1 0 0-12.7a6.35 6.35 0 0 0 0 12.7ZM6.2 6.4a1.8 1.8 0 1 1 2.7 1.56c-.6.35-.9.7-.9 1.4M8 11.4h.01' })))
 
 /** One picture and what it changes to. Positions go over in between, and a step back goes the same way. */
 function scene(lesson) {

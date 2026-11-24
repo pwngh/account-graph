@@ -34,7 +34,7 @@ const none = () => el('span', { class: 'muted' }, '—')
 const tally = (n) => (n > 0 ? amount(n) : el('span', { class: 'muted' }, '0'))
 const unrecorded = () => el('span', { class: 'muted' }, 'No data')
 /** The icon that shows a definition. `id` is its place in HELP, and `more` a sentence that depends on the data. */
-const info = (id, more) => el('button', { type: 'button', class: 'info', 'data-help': id, ...(more && { 'data-more': more }), 'aria-label': `About ${HELP[id][0]}`, 'aria-expanded': 'false' }, svg('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true', focusable: 'false' }, svg('path', { d: 'M8 14.2a6.2 6.2 0 1 0 0-12.4a6.2 6.2 0 0 0 0 12.4ZM8 7.4v3.4M8 5.1h.01' })))
+const info = (id, more) => el('button', { type: 'button', class: 'info', 'data-help': id, ...(more && { 'data-more': more }), 'aria-label': `About ${HELP[id][0]}`, 'aria-expanded': 'false' }, svg('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true', focusable: 'false' }, svg('path', { d: 'M8 14.6a6.6 6.6 0 1 0 0-13.2a6.6 6.6 0 0 0 0 13.2ZM8 7.45v3.5M8 5.05h.01' })))
 /** A term with its definition beside it. */
 const term = (text, id, more) => el('span', { class: 'term' }, text, info(id, more))
 
