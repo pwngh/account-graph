@@ -121,6 +121,7 @@
 - The reviewer screen has its views in a column at the left, a neutral palette in light and dark, and one style for its numbers, tables and controls.
 - The reviewer screen shows what your own systems reported: a caller reached without a call, calls and outcomes that were no lead, and how many calls were missed while you were closed.
 - The reviewer screen shows what was refunded and written off, in the value tables of Channels and on a journey.
+- The reviewer screen asks for the access token in the middle of the page.
 - The reviewer screen has one scale of type and space, tables that fit what they hold, and rows that become cards on a phone. Times are told by how long ago, with the exact time in a title.
 - The graph keeps room around every disc, name and line: names move to a free side, lines bend around what is in their way, and nothing lies over the paper. The strongest way to whoever is picked is shown, and weak ties can be left out.
 - Accounts opens on the largest cluster's graph, and its long lists scroll in their own boxes.
