@@ -48,15 +48,15 @@ $('find').addEventListener('submit', async (event) => {
 // Suggest subjects as the reviewer types, a moment after the last key.
 let typing
 $('subject').addEventListener('input', () => {
-  edits += 1
+  const asked = ++edits
   clearTimeout(typing)
   typing = setTimeout(async () => {
     const text = $('subject').value.trim()
     const token = $('token').value
-    if (!text || !token) return
+    if (!text || !token || edits !== asked) return
     try {
       const { subjects } = await find(text)
-      if ($('token').value === token && $('subject').value.trim() === text) suggest(subjects)
+      if (edits === asked) suggest(subjects)
     } catch {}
   }, 200)
 })
