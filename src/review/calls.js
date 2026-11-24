@@ -44,7 +44,7 @@ view('calls', 'Calls', async (box, first, last) => {
     notes('Callers are kept as hashes of their numbers, so this screen shows a subject and never a phone number. Find the number in your phone system by the time of the call.', summary.expected ? 'A call counts once a result says a person answered.' : 'No results are expected, so a call with none is counted by its length.'))
 
   const lost = total.missed + total.voicemail
-  if (total.calls > 0) top.append(tiles(['Calls to you', amount(total.calls)], ['Answered', percent(total.answered / total.calls), `${amount(total.answered)} by a person`],
+  if (total.calls > 0) top.append(tiles(['Calls to you', amount(total.calls)], ['Answered', percent(total.answered / total.calls), `${amount(total.answered)} ${summary.expected ? 'by a person' : 'by result or by length'}`],
     ['Missed or voicemail', amount(lost), percent(lost / total.calls)],
     lost > 0 && ['Returned', percent(total.returned / lost), `${amount(total.returned)} of ${amount(lost)}${summary.returnedWithin === null ? '' : `, half within ${lasted(summary.returnedWithin)}`}`],
     ['Still waiting for a call back', `${amount(open.calls.length)}${open.next === null ? '' : ' or more'}`, open.calls[0] ? `oldest ${lasted(open.at - open.calls[0].at)}` : '', open.calls.length > 0 ? 'apart' : 'same']))

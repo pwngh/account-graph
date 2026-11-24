@@ -73,12 +73,16 @@ function lanes(entries) {
   if (dated.length < 2) return ''
   const [first, last] = [Math.min(...dated.map((entry) => entry.at)), Math.max(...dated.map((entry) => entry.at))]
   if (first === last) return ''
-  const drawing = svg('svg', { class: 'lanes', viewBox: `0 0 1000 ${kinds.length * 22 + 4}`, 'aria-hidden': 'true' })
-  kinds.forEach((kind, i) => {
-    const y = i * 22 + 14
-    drawing.append(svg('text', { x: 0, y: y + 4 }, WHAT[kind]), svg('line', { x1: 110, x2: 990, y1: y, y2: y, class: 'lane' }))
-    for (const entry of dated) if (entry.kind === kind) drawing.append(svg('circle', { class: kind, cx: 110 + (880 * (entry.at - first)) / (last - first), cy: y, r: 5 }))
-  })
+  const drawing = el('div', { class: 'lanes', 'aria-hidden': 'true' })
+  for (const kind of kinds) {
+    const lane = el('div', { class: 'lane' })
+    for (const entry of dated) if (entry.kind === kind) {
+      const dot = el('i', { class: kind })
+      dot.style.left = `${(100 * (entry.at - first)) / (last - first)}%`
+      lane.append(dot)
+    }
+    drawing.append(el('span', {}, WHAT[kind]), lane)
+  }
   return drawing
 }
 // Kinds left out of the list, kept while the screen is open.
@@ -105,8 +109,9 @@ view('journey', 'Journey', async (box, subject) => {
   const ties = { ...journey.ties }
   const table = el('table', { class: 'journey' })
   const draw = () => {
-    strip.replaceChildren(tiles(['Entries', amount(entries.length), next === null ? '' : 'the newest'], ['Subjects', amount(subjects.length), 'that are this person'], ...timespan(entries)), lanes(entries))
-    table.replaceChildren(el('tr', {}, th('When', 'num'), th('What'), th('Details'), th('On, and why')), ...byDay(entries.filter((entry) => !leaving.has(entry.kind)), row(ties, subject)))
+    const shown = entries.filter((entry) => !leaving.has(entry.kind))
+    strip.replaceChildren(tiles(['Entries', amount(entries.length), next === null ? '' : 'the newest'], ['Subjects read', amount(subjects.length)], ...timespan(entries)), lanes(shown))
+    table.replaceChildren(el('tr', {}, th('When', 'num'), th('What'), th('Details'), th('On, and why')), ...byDay(shown, row(ties, subject)))
   }
   const kinds = el('div', { class: 'row', role: 'group', 'aria-label': 'Show' })
   const boxes = () => kinds.replaceChildren(...Object.keys(WHAT).filter((kind) => entries.some((entry) => entry.kind === kind)).map((kind) => {

@@ -219,6 +219,8 @@ function place() {
 
 /** Which control this is, whatever moves around it or changes beside it: what it is and does, and the subject its row is about. */
 const which = (node) => [node.tagName, node.dataset.key, node.matches('a, button') ? node.textContent : '', node.getAttribute('href'), node.getAttribute('aria-label'), node.title, node.closest('tr, li')?.querySelector('a')?.getAttribute('href')].join('\n')
+/** Which notes these are, whatever sections come and go around them. */
+const fold = (node) => `${node.closest('section')?.querySelector('h2, h3')?.textContent}\n${node.querySelector('summary').textContent}`
 
 let loading = 0
 let pending = 0
@@ -263,10 +265,10 @@ async function load(tag) {
     if (seen) beat = seen
     const held = $('view').contains(document.activeElement) ? which(document.activeElement) : undefined
     const scrolled = quiet ? [...$('view').querySelectorAll('.wide')].map((each) => each.scrollLeft) : []
-    const unfolded = quiet ? [...$('view').querySelectorAll('details')].map((each) => each.open) : []
+    const unfolded = quiet ? [...$('view').querySelectorAll('details[open]')].map(fold) : []
     $('view').replaceChildren(box)
     ;[...$('view').querySelectorAll('.wide')].forEach((each, i) => (each.scrollLeft = scrolled[i] ?? 0))
-    ;[...$('view').querySelectorAll('details')].forEach((each, i) => (each.open = unfolded[i] ?? false))
+    for (const each of $('view').querySelectorAll('details')) each.open = unfolded.includes(fold(each))
     if (held) [...$('view').querySelectorAll('a, button, input, select, [tabindex]')].find((node) => which(node) === held)?.focus({ preventScroll: true })
     if (!quiet) {
       notice('')

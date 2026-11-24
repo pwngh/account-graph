@@ -53,13 +53,13 @@ view('health', 'Health', async (box) => {
     ['Policy', policy.due ? 'Rebuild due' : 'In force', short(policy.hash), policy.due ? 'apart' : ''],
     states && ['Waiting to be sent', amount(states.pending), `${amount(states.held)} held for a call result`],
     states && ['Sent', amount(states.sent), `${amount(states.skipped)} not sent, ${amount(states.failed)} refused`, states.failed > 0 ? 'apart' : ''],
-    ops && ['Alerts', ops.alerts ? 'Posted' : 'No webhook', ops.undelivered.length > 0 ? `${amount(ops.undelivered.length)} not delivered` : '', ops.undelivered.length > 0 ? 'apart' : '']),
+    ops && ['Alerts', ops.alerts ? 'Webhook set' : 'No webhook', ops.undelivered.length > 0 ? `${amount(ops.undelivered.length)} not delivered` : '', ops.undelivered.length > 0 ? 'apart' : '']),
   needs.length > 0 ? el('ul', { class: 'needs' }, ...needs.map(([what, more]) => el('li', {}, el('b', {}, what), more ? ` ${more}` : ''))) : ''))
   if (ops) box.append(...workings(ops))
 
   // What one shared identifier of a kind does by itself, which is what its weight means.
   const kinds = Object.entries(policy.rules.kinds).sort(([x, a], [y, b]) => b.weight - a.weight || (x < y ? -1 : 1))
-  const bands = [['Joins two subjects by itself', (w) => w >= same], ['Relates them, and joins with another', (w) => w >= related && w < same], ['Only adds to others', (w) => w > 0 && w < related]]
+  const bands = [['At or above what joins', (w) => w >= same], ['At or above what relates', (w) => w >= related && w < same], ['Below both, adds to others', (w) => w > 0 && w < related]]
   const scale = (weight) => {
     const bar = meter(weight)
     for (const [at, name] of [[related, 'related'], [same, 'same'], [bridge, 'bridge']]) {
@@ -70,7 +70,7 @@ view('health', 'Health', async (box) => {
     bar.classList.add('scale')
     return bar
   }
-  const rules = el('table', { class: 'rules' }, el('tr', {}, el('td', {}), group('Evidence when two share it', 2), group('What weakens it', 3), el('td', { class: 'edge' })),
+  const rules = el('table', { class: 'rules' }, el('tr', {}, el('td', {}), group('Evidence when only two share it, just seen', 2), group('What weakens it', 3), el('td', { class: 'edge' })),
     el('tr', {}, th('Kind'), ...edge([th('Weight', 'num'), th(`related ${percent(related)}, joined ${percent(same)}, joins groups ${percent(bridge)}`)]), ...edge([th('Shared by 4', 'num'), th('Half-life', 'num'), th('Links nothing past', 'num')]), th('', 'edge')))
   for (const [name, holds] of bands) {
     const rows = kinds.filter(([, rule]) => holds(rule.weight))
@@ -79,7 +79,7 @@ view('health', 'Health', async (box) => {
       ...edge([td('num', rule.cap < 4 ? el('span', { class: 'muted' }, 'nothing') : rule.dilution === 0 ? el('span', { class: 'muted' }, 'the same') : (rule.weight * 0.5 ** rule.dilution).toFixed(2)), td('num', rule.halfLife === 'none' ? el('span', { class: 'muted' }, 'none') : lasting(rule.halfLife)), td('num', `${amount(rule.cap)} subjects`)]),
       td('edge', rule.group ? el('span', { class: 'chip' }, `counts once with ${rule.group}`) : '', policy.changed.includes(kind) ? el('span', { class: 'chip' }, 'changed from the default') : '')))))
   }
-  const only = kinds.filter(([, rule]) => rule.weight === 0).map(([kind]) => kind)
+  const only = kinds.filter(([, rule]) => rule.weight === 0).map(([kind]) => (policy.changed.includes(kind) ? `${kind} (changed from the default)` : kind))
   box.append(el('section', {}, el('h2', {}, 'What counts as the same person'), wide('Policy rules by kind', rules),
     el('p', { class: 'muted' }, `${only.length > 0 ? `Kept and linking nothing: ${only.join(', ')}. ` : ''}Clusters over ${amount(review)} subjects are flagged.`)))
 

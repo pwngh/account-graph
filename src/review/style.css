@@ -85,10 +85,10 @@ summary { cursor: pointer; width: fit-content; }
 .scale { position: relative; overflow: visible; }
 .scale i { position: absolute; top: -3px; width: 1px; height: 10px; background: var(--muted); }
 .rules td.bar { min-width: 220px; }
-.lanes { max-height: none; margin: 4px 0 8px; max-width: 1200px; }
-.lanes text { fill: var(--muted); font-size: 12px; }
-.lanes .lane { stroke: var(--line); }
-.lanes circle { fill: var(--muted); fill-opacity: .75; } .lanes .arrival { fill: var(--accent); } .lanes .call { fill: var(--related); } .lanes .step, .lanes .value { fill: var(--same); } .lanes .decision { fill: var(--apart); }
+.lanes { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 12px; align-items: center; margin: 4px 0 8px; max-width: 1200px; font-size: 12px; color: var(--muted); }
+.lanes .lane { position: relative; height: 20px; margin: 0 6px; background: linear-gradient(var(--line), var(--line)) center / 100% 1px no-repeat; }
+.lanes i { position: absolute; top: 5px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: var(--muted); opacity: .8; }
+.lanes .arrival { background: var(--accent); } .lanes .call { background: var(--related); } .lanes .step, .lanes .value { background: var(--same); } .lanes .decision { background: var(--apart); }
 .line { display: flex; gap: 8px; align-items: baseline; }
 .line > a { margin-right: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .line > span { white-space: nowrap; }
