@@ -389,6 +389,26 @@ export interface Cost {
   impressions?: number
 }
 
+/** Outcomes of one step. */
+export interface StageCount {
+  count: number
+  value: number
+  people: number
+  /** How long after the arrival they came, over the outcomes that have one in the year before. Absent when none has. */
+  delay?: Delay
+}
+
+/** Days from arrival to outcome. */
+export interface Delay {
+  /** How many outcomes have an arrival in the year before them. */
+  count: number
+  /** Half of them came within this many days, and 95 in 100 within that many. */
+  median: number
+  p95: number
+  /** The share that came inside the window, and so can be credited. */
+  inside: number
+}
+
 /** One line of the report: a campaign, or a source with no campaign, and what it cost and brought in. */
 export interface ReportRow {
   /** The platform or site the visitor came from. `(none)` holds outcomes no arrival could be credited with. */
@@ -402,11 +422,13 @@ export interface ReportRow {
   visits: number
   /** Calls no one answered, by result, credited the way outcomes are. They are never outcomes. */
   missed: number
-  /** Outcomes credited to this row, per step. */
-  stages: Record<string, { count: number; value: number }>
+  /** Outcomes credited to this row, per step, how many people they are, and how long after their arrival they came. */
+  stages: Record<string, StageCount>
   /** Outcomes credited to this row, all steps together. */
   outcomes: number
   value: number
+  /** How many people those outcomes are, whatever accounts they used. A renewal is a second outcome and not a second person. */
+  people: number
   /** How many days of the period, up to today, have cost data for this campaign, and how many have none. */
   costDays: number
   missingDays: number
@@ -424,7 +446,7 @@ export interface ReportRow {
 }
 
 /** Outcomes and missed calls by the value of one dimension, each named by that value, in order. `(not recorded)` is always the last. */
-export type Breakdown = { name: string; stages: Record<string, { count: number; value: number }>; outcomes: number; value: number; missed: number }[]
+export type Breakdown = { name: string; stages: Record<string, StageCount>; outcomes: number; value: number; people: number; missed: number }[]
 
 export interface Report {
   from: string
@@ -434,6 +456,12 @@ export interface Report {
   total: Omit<ReportRow, 'source' | 'campaignId' | 'campaign'>
   /** Over how many days of the period costs could have been recorded: those up to today. */
   days: number
+  /**
+   * Set when part of the period is too recent for its arrivals to have done
+   * all they will. `after` is the last day that has had its time, and `days`
+   * how long that is: 95 in 100 outcomes of the slowest step come within it.
+   */
+  filling?: { after: string; days: number }
   /** Campaigns with cost data on too few days, left out of the total's cost per outcome and return. */
   leftOut: number
   /** The dimension the rows are broken down by, when one was asked for. */

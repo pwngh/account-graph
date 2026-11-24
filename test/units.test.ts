@@ -10,6 +10,7 @@ import { weigh } from '../src/policy.ts'
 import type { Edge, IdentifierState, KeptCall, Reason } from '../src/index.ts'
 import { configFrom } from '../src/serve.ts'
 import { createHandler } from '../src/server.ts'
+import { counts } from './suite.ts'
 
 const T0 = 1_700_000_000_000
 
@@ -430,7 +431,7 @@ test('the report is the same whatever order its rows arrive in', () => {
     ['__proto__', '', '', 0, 1, []],
     ['meta', '799', 'Retarget', 0, 1, []],
   ])
-  assert.deepEqual(Object.entries(expected.total.stages).sort(), [['__proto__', { count: 1, value: 1 }], ['constructor', { count: 1, value: 2 }], ['enrolled', { count: 1, value: 200 }]])
+  assert.deepEqual(Object.entries(counts(expected.total.stages)).sort(), [['__proto__', { count: 1, value: 1 }], ['constructor', { count: 1, value: 2 }], ['enrolled', { count: 1, value: 200 }]])
   assert.equal(({} as any).count, undefined)
   // Every rotation and the reverse of each list gives the same report.
   const turn = <T>(list: T[], by: number) => [...list.slice(by), ...list.slice(0, by)]
@@ -438,6 +439,16 @@ test('the report is the same whatever order its rows arrive in', () => {
     assert.deepEqual(fold('2026-03-01', '2026-03-02', turn(costs, by % costs.length), turn(touches, by), turn(credited, by % credited.length)), expected)
     assert.deepEqual(fold('2026-03-01', '2026-03-02', turn(costs, by % costs.length).reverse(), turn(touches, by).reverse(), credited), expected)
   }
+})
+
+test('how recent is too recent is worked out from the days as they are, not as they are shown', () => {
+  const history = Array.from({ length: 20 }, (_, n) => ({ outcome: { transactionId: `t${n}`, subject: 's', at: 10 * 86_400_000, stage: 'sale', value: 0, currency: '' }, touch: undefined, delay: 4.04 * 86_400_000, inside: true }))
+  assert.deepEqual(fold('2026-03-01', '2026-03-10', [], [], [], { history }).filling, { after: '2026-03-05', days: 5 })
+  const quick = history.map((each) => ({ ...each, delay: 60_000 }))
+  assert.deepEqual(fold('2026-03-01', '2026-03-10', [], [], [], { history: quick }).filling, { after: '2026-03-09', days: 1 })
+  assert.equal(fold('2026-03-01', '2026-03-10', [], [], [], { history: history.slice(1) }).filling, undefined)
+  // What came too late to be credited is not waited for.
+  assert.deepEqual(fold('2026-03-01', '2026-03-10', [], [], [], { history: [...history, ...history.map((each) => ({ ...each, delay: 100 * 86_400_000, inside: false }))] }).filling, { after: '2026-03-05', days: 5 })
 })
 
 test('what an outcome cost uses the outcomes of that campaign, on the days whose cost is known', () => {
@@ -535,7 +546,7 @@ test('the server counts outcomes without an ad platform, takes costs, and report
 
     const report = (await (await fetch(`${base}/report?from=2026-03-01&to=2026-03-02`, { headers: { authorization: 'Bearer reviewer' } })).json()) as any
     assert.deepEqual(report.rows, [
-      { source: 'google', campaignId: '111', campaign: 'Spring', cost: 50, clicks: 10, impressions: 0, visits: 1, missed: 0, stages: { enrolled: { count: 1, value: 120 } }, outcomes: 1, value: 120, costDays: 1, missingDays: 1, thin: false, costPerOutcome: 50, returnOnCost: 2.4 },
+      { source: 'google', campaignId: '111', campaign: 'Spring', cost: 50, clicks: 10, impressions: 0, visits: 1, missed: 0, stages: { enrolled: { count: 1, value: 120, people: 1, delay: { count: 1, median: 0, p95: 0, inside: 1 } } }, outcomes: 1, value: 120, people: 1, costDays: 1, missingDays: 1, thin: false, costPerOutcome: 50, returnOnCost: 2.4 },
     ])
     // With no days named, the report covers the thirty days up to today.
     const recent = (await (await fetch(`${base}/report`, { headers: { authorization: 'Bearer secret' } })).json()) as any

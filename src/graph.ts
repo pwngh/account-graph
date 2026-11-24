@@ -8,6 +8,7 @@ import { createMemoryStore } from './memory.ts'
 import { defaultPolicy, plainPolicy, policyHash, ruleFor, usable } from './policy.ts'
 import type { Policy } from './policy.ts'
 import { dayIn, dayStart, dimension, fold, nextDay } from './report.ts'
+import type { Credited } from './report.ts'
 import { partition, scorePairs } from './resolve.ts'
 import { checkTags } from './tags.ts'
 import type { DecisionPage, Store, Tx } from './store.ts'
@@ -710,16 +711,25 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return store.read(async (tx) => {
         // Who a subject can reach does not depend on when, so one subject's outcomes share one search.
         const reached = new Map<Subject, Reached>()
-        const creditOf = async (subject: Subject, at: number) => {
+        // Looked for over a year, so how many arrivals the window leaves out can be said. Only those inside it are credited.
+        const creditOf = async (subject: Subject, at: number, back = Math.max(window, 365 * DAY)) => {
           let from = reached.get(subject)
           if (!from) reached.set(subject, (from = await reach(tx, subject, hops)))
-          return (await credit(subject, at, window, from, tx)).credited
+          const { credited: touch } = await credit(subject, at, back, from, tx)
+          const inside = touch !== undefined && touch.at >= at - window
+          return { touch: inside ? touch : undefined, delay: touch && at - touch.at, inside }
         }
-        const credited: { outcome: Counted; touch: Touch | undefined }[] = []
-        for (const outcome of await tx.outcomesBetween(start, end)) credited.push({ outcome, touch: await creditOf(outcome.subject, outcome.at) })
+        const outcomes = await tx.outcomesBetween(start, end)
+        const labels = await tx.labelsOf(unique(outcomes.map((outcome) => outcome.subject)))
+        const credited: Credited[] = []
+        for (const outcome of outcomes) credited.push({ outcome, person: labels.get(outcome.subject)?.cluster ?? outcome.subject, ...(await creditOf(outcome.subject, outcome.at)) })
+        // How long steps take is read from the last half year and not from the days asked about: the newest days hold
+        // few outcomes, which is what it has to say. Some of each step, so a common quick one does not hide a slow one.
+        const history: Credited[] = []
+        for (const outcome of await tx.newestOutcomes(now() - 180 * DAY, now(), 200)) history.push({ outcome, ...(await creditOf(outcome.subject, outcome.at, window)) })
         const missed: { at: number; touch: Touch | undefined; tags: Record<string, string> | undefined }[] = []
-        for (const call of await tx.callsBetween(start, end)) if (call.direction === 'inbound' && call.result?.answered === false) missed.push({ at: call.at, touch: await creditOf(call.subject, call.at), tags: call.tags })
-        return fold(from, to, await tx.costsBetween(from, to), await tx.touchesBetween(start, end), credited, { missed, by, timeZone, through: dayIn(now(), timeZone) })
+        for (const call of await tx.callsBetween(start, end)) if (call.direction === 'inbound' && call.result?.answered === false) missed.push({ at: call.at, touch: (await creditOf(call.subject, call.at, window)).touch, tags: call.tags })
+        return fold(from, to, await tx.costsBetween(from, to), await tx.touchesBetween(start, end), credited, { missed, by, timeZone, through: dayIn(now(), timeZone), history })
       })
     },
 

@@ -412,6 +412,14 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       return rows.map(toCounted)
     },
 
+    async newestOutcomes(from, to, each) {
+      const { rows } = await db.query(
+        `select * from (select o.*, row_number() over (partition by stage order by at desc, transaction_id collate "C" desc) as n from ${t('outcome')} o where at >= $1 and at < $2) as newest where n <= $3`,
+        [from, to, each],
+      )
+      return rows.map(toCounted)
+    },
+
     async addCosts(costs) {
       // Fold repeats first, keeping the last: one statement cannot upsert the same row twice.
       const last = [...new Map(costs.map((cost) => [[cost.day, cost.source, cost.campaignId].join('\u0000'), cost])).values()]

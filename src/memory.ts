@@ -380,6 +380,17 @@ export function createMemoryStore(): Store {
         .map((outcome) => structuredClone(outcome))
     },
 
+    async newestOutcomes(from, to, each) {
+      const counts = new Map<string, number>()
+      const newest = [...outcomes.values()].filter((outcome) => outcome.at >= from && outcome.at < to).sort((x, y) => y.at - x.at || (x.transactionId < y.transactionId ? 1 : -1))
+      return newest
+        .filter(({ stage }) => {
+          counts.set(stage, (counts.get(stage) ?? 0) + 1)
+          return counts.get(stage)! <= each
+        })
+        .map((outcome) => structuredClone(outcome))
+    },
+
     async addCosts(rows) {
       for (const cost of rows) costs.set([cost.day, cost.source, cost.campaignId].join('\u0000'), { ...cost })
     },

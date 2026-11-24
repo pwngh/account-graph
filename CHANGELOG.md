@@ -78,6 +78,7 @@
 - `ReportRow.missed` counts missed calls per campaign; calls are kept with their results (`keptCall`, `callResult`).
 - `Outcome.tags`, `Call.tags` and `Channel.tags` carry facts; `report({ by })` and `GET /report?by=` break each line down by `touch.<name>`, `outcome.<name>`, `hour` or `weekday`, with `(not recorded)` always a line of its own.
 - `ReportRow` has `costPerOutcome` and `returnOnCost`, over the campaign's own outcomes on days with cost data, with `costDays`, `missingDays` and `thin`; both are null below half the days. The total leaves out thin campaigns (`Report.leftOut`).
+- The report counts `people` beside outcomes, says how long each step takes (`StageCount.delay`), and marks a period that is too recent (`Report.filling`).
 - The Channels view has a Break down by selector; the Calls view shows tags.
 
 ### Changed
