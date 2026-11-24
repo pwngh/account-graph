@@ -112,6 +112,7 @@
 - Tiles say how their number stands to the same number of days before, and call tiles show the hours. Nothing is compared while outcomes are still coming in, or where the days before are not known.
 - Ctrl or Cmd and K opens a palette to find someone, go to a view, open again who was opened here, or act on who is open.
 - Pointing at anyone on the graph lights the strongest drawn way back to the subject.
+- Forgetting a subject is held down to confirm. A short press, or Enter in the reason, does nothing.
 - The reviewer screen has one scale of type and space, tables that fit what they hold, and rows that become cards on a phone. Times are told by how long ago, with the exact time in a title.
 - The graph keeps room around every disc, name and line: names move to a free side, lines bend around what is in their way, and nothing lies over the paper. The strongest way to whoever is picked is shown, and weak ties can be left out.
 - Accounts opens on the largest cluster's graph, and its long lists scroll in their own boxes.

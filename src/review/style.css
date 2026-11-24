@@ -835,6 +835,12 @@ tr.behind:hover { background-image: linear-gradient(color-mix(in srgb, var(--acc
 @media (max-width: 560px) { #summon { display: none; } #palette { margin-top: 8px; } }
 @media (prefers-reduced-motion: reduce) { #palette[open] { animation: none; } }
 
+/* A button held down before it does what cannot be undone. */
+button.hold.hold, button.hold.hold.primary:hover:not(:disabled) { position: relative; isolation: isolate; overflow: hidden; border-color: var(--apart); background: none; box-shadow: none; color: var(--apart); user-select: none; -webkit-user-select: none; touch-action: none; transition: color .2s, transform .12s; }
+button.hold::before { content: ''; position: absolute; z-index: -1; inset: 0; background: color-mix(in srgb, var(--apart) 30%, transparent); transform: scaleX(0); transform-origin: left; transition: transform .22s ease-out; }
+button.hold.hold.holding.holding { transform: scale(.98); }
+button.hold.holding::before { transform: scaleX(1); transition: transform 1.2s linear; }
+
 /* A table of a few plain columns is read along its rows, so they do not stand far apart. */
 @media (min-width: 761px) { .wide:has(> table):not(:has(th[colspan])) { max-width: 1040px; } }
 
