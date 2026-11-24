@@ -1806,6 +1806,7 @@ test('a screen can ask who somebody may be, who is ringing, and who is kept apar
     const found = await ask('/match', { email: 'Pat@Example.org', phone: '(555) 010-0181' })
     assert.deepEqual(found.body.candidates.map((each: any) => [each.subject, each.level]), [['contact:1', 'same']])
     assert.equal((await ask('/match', {})).status, 400)
+    assert.equal((await ask('/call/ringing', { from: '+17138120142', to: '+15550100101' })).body.area, 'Houston')
     const ring = await ask('/call/ringing', { from: '+15550100182', to: '+15550100101' })
     assert.deepEqual([ring.body.known, ring.body.people[0].subject, ring.body.source, ring.body.waiting, ring.body.touch], [false, 'contact:2', undefined, { calls: 0, texts: 0 }, undefined])
     assert.equal((await ask('/call/ringing', { from: 'x' })).status, 400)
