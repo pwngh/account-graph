@@ -7,7 +7,9 @@ import { createServer } from 'node:http'
 import { createGraph, createMemoryStore, recordCall, recordCallResult } from '../src/index.ts'
 import { createHandler } from '../src/server.ts'
 
-const graph = createGraph(createMemoryStore())
+// What is recorded below is written down at the time it happened, so the months of first record are real ones.
+let writing: number | undefined
+const graph = createGraph(createMemoryStore(), undefined, { now: () => writing ?? Date.now() })
 const HOUR = 3_600_000
 const start = Date.now() - 20 * 24 * HOUR
 const login = (subject: string, identifiers: string[], hours = 0) => ({ subject, identifiers, at: start + hours * HOUR, event: 'login' })
@@ -72,9 +74,13 @@ for (let n = 0; n < 30; n++) {
   await graph.observe([{ subject: `visitor:e${n}`, identifiers: [`device:e${n}`], at, event: 'visit' }, { subject: `lead:e${n}`, identifiers: [`device:e${n}`], at, event: 'inquiry' }])
   await graph.touch({ subject: `visitor:e${n}`, at, gclid: `early-${n}`, campaignId: '20111' })
   const enrolled = at + (2 + ((n * 7) % 38)) * 24 * HOUR
+  writing = enrolled
   if (enrolled < Date.now()) await graph.outcome({ transactionId: `enrolled-e${n}`, subject: `lead:e${n}`, at: enrolled, stage: 'enrolled', value: 200, currency: 'USD', tags: { office_served: n % 3 ? 'north' : 'river' } })
   if (n % 4 === 0) await graph.outcome({ transactionId: `renewed-e${n}`, subject: `lead:e${n}`, at: Date.now() - n * 12 * HOUR, stage: 'enrolled', value: 100, currency: 'USD' })
 }
+writing = undefined
+// What was collected came in later: more from some, less from others, nothing from a few.
+for (let n = 0; n < 30; n += 2) await graph.restate(`enrolled-e${n}`, n % 10 === 0 ? 0 : 120 + ((n * 37) % 260))
 // One enrollment nobody's ad can claim.
 await graph.observe({ subject: 'lead:walk-in', identifiers: ['email:walk-in'], at: Date.now() - 2 * 24 * HOUR })
 await graph.outcome({ transactionId: 'enrolled-walk-in', subject: 'lead:walk-in', at: Date.now() - 2 * 24 * HOUR, stage: 'enrolled', value: 200, currency: 'USD' })

@@ -74,6 +74,7 @@ A token goes in the `authorization` header as `Bearer …`. There are two.
 | `GET /decisions?limit=&before=&author=` | The record of decisions, newest first, 50 at a time: `{ decisions, next, total }`. Pass `next` as `before` for the page after. `author` is `people`, `system`, or one name. |
 | `GET /disputes` | Pairs whose reports from systems have switched between kept apart and joined (or withdrawn) three times or more. |
 | `GET /consent?subject=` | Every answer the subject gave about advertising, the standing one first. |
+| `GET /outcome?id=` | One outcome with every value it has had, or `null`. |
 | `GET /call?id=` | One call with its state and, for a missed one, what became of it, or `null`. |
 | `GET /calls?from=&to=&tz=&after=` | Missed calls nobody has returned, oldest first, 50 at a time: `{ from, to, timeZone, at, calls, next }`. Pass `next` as `after`. |
 | `GET /calls/summary?from=&to=&tz=` | Calls to you by how they went, by hour and weekday, and how many could be placed. |
@@ -99,7 +100,7 @@ The four `POST` routes answer with the subjects whose cluster moved. With the se
 | `GET /attribute?subject=&at=` | The touches that led to a conversion by this subject, and the one credited. |
 | `POST /transfer` | `{ from, to, amount, at, asset? }`. Records value moving, and answers with the identity tie between the two. |
 | `POST /convert` | An outcome: `{ transactionId, subject, at, stage?, value?, currency?, action?, email?, phone?, tags? }`. Counted for the report; with `action`, also sent to the ad platforms. A `stage` listed in `STAGES` supplies the value, currency and action it leaves out. |
-| `POST /restate` | `{ transactionId, value, currency? }`. Changes an outcome's value, in the report and on the platforms that can restate. |
+| `POST /restate` | `{ transactionId, value, currency? }`. Changes an outcome's value, in the report and on the platforms that can restate. Earlier values are kept. |
 | `POST /link` | `{ url, subject, days? }`. Answers `{ url }`: the address with a token naming the person it is for. See [links](links.md). |
 | `POST /staff-link` | `{ url, days? }`. Answers `{ url }`: the address that marks the browser that opens it as staff. |
 | `POST /call` | A phone call: `{ id, from?, to, at, duration?, direction?, answered?, voicemail?, waited?, tags? }`. With `direction: "outbound"` it is a call you placed, and `from` is yours. Answers `{ subject, flags, counted, state, visitor?, duplicate }`. See [calls](calls.md). |

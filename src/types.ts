@@ -315,6 +315,26 @@ export interface Counted {
   tags?: Record<string, string>
 }
 
+/** One value an outcome has had. Values are added to and never changed. */
+export interface OutcomeValue {
+  value: number
+  currency: string
+  /** When it was written down, in epoch milliseconds. 0 when that is not known: a value kept from before there was a history. */
+  at: number
+}
+
+/** What outcomes were worth when they were first recorded, and what they are worth now. */
+export interface ValueChange {
+  outcomes: number
+  /** Of outcomes whose first value is known. `firstUnknown` counts the others, which are in none of this sum. */
+  first: number
+  firstUnknown: number
+  /** What all of them are worth now. */
+  now: number
+  /** How many were worth something once and are worth nothing now. */
+  zeroed: number
+}
+
 /** A phone call as it is kept, with its result once one is known. */
 export interface KeptCall {
   id: string
@@ -429,6 +449,8 @@ export interface ReportRow {
   value: number
   /** How many people those outcomes are, whatever accounts they used. A renewal is a second outcome and not a second person. */
   people: number
+  /** What those outcomes were first worth and are worth now. */
+  worth: ValueChange
   /** How many days of the period, up to today, have cost data for this campaign, and how many have none. */
   costDays: number
   missingDays: number
@@ -462,6 +484,8 @@ export interface Report {
    * how long that is: 95 in 100 outcomes of the slowest step come within it.
    */
   filling?: { after: string; days: number }
+  /** The outcomes of the period by the month they were first recorded in, `YYYY-MM`, oldest first. Those from before there was a history are under `(not recorded)`. */
+  months: (ValueChange & { month: string })[]
   /** Campaigns with cost data on too few days, left out of the total's cost per outcome and return. */
   leftOut: number
   /** The dimension the rows are broken down by, when one was asked for. */

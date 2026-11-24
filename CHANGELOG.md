@@ -79,6 +79,7 @@
 - `Outcome.tags`, `Call.tags` and `Channel.tags` carry facts; `report({ by })` and `GET /report?by=` break each line down by `touch.<name>`, `outcome.<name>`, `hour` or `weekday`, with `(not recorded)` always a line of its own.
 - `ReportRow` has `costPerOutcome` and `returnOnCost`, over the campaign's own outcomes on days with cost data, with `costDays`, `missingDays` and `thin`; both are null below half the days. The total leaves out thin campaigns (`Report.leftOut`).
 - The report counts `people` beside outcomes, says how long each step takes (`StageCount.delay`), and marks a period that is too recent (`Report.filling`).
+- Every value an outcome has had is kept (`values`, `GET /outcome`); the report shows what outcomes were first worth and are worth now, by campaign (`ReportRow.worth`) and by month of first record (`Report.months`).
 - The Channels view has a Break down by selector; the Calls view shows tags.
 
 ### Changed

@@ -149,6 +149,26 @@ if (!url) {
     }
   })
 
+  test('values from before there was a history start one, and are not said to be the first', async () => {
+    const schema = `ag_test_${process.pid}_values`
+    try {
+      const store = await madeBefore(schema, 14)
+      await pool.query(`insert into ${schema}.outcome values ('t1', 'account:1', 1767225600000, 'sale', 0, 'USD'), ('t2', 'account:1', 1767225600000, 'sale', 90, 'USD')`)
+      await store.migrate()
+      const graph = createGraph(store, undefined, { now: () => 1767312000000 })
+      assert.equal((await graph.report({ from: '2026-01-01', to: '2026-01-02' })).total.worth.now, 90)
+      await graph.restate('t2', 0)
+      assert.deepEqual(await graph.values('t2'), [{ value: 90, currency: 'USD', at: 0 }, { value: 0, currency: 'USD', at: 1767312000000 }])
+      const report = await graph.report({ from: '2026-01-01', to: '2026-01-02' })
+      assert.deepEqual(report.total.worth, { outcomes: 2, first: 0, now: 0, zeroed: 1, firstUnknown: 2 })
+      assert.deepEqual(report.months.map((each) => each.month), ['(not recorded)'])
+      await graph.forget('account:1')
+      assert.deepEqual(await graph.values('t1'), [])
+    } finally {
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
+
   test('a database from before the policy was recorded is due a rebuild, and a kind with no rule stops the server', async () => {
     const schema = `ag_test_${process.pid}_policy`
     const env = { DATABASE_URL: url, GRAPH_SCHEMA: schema, GRAPH_TOKEN: 'service', REVIEW_TOKEN: 'review', PORT: '0', HOST: '127.0.0.1' }

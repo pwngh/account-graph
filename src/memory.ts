@@ -2,7 +2,7 @@ import { createMemoryOps } from './ops.ts'
 import { createMemoryOutbox } from './outbox.ts'
 import { standingFirst } from './store.ts'
 import type { Store, Tx } from './store.ts'
-import type { CallResult, Consent, ConsentAnswer, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Moved, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, Consent, ConsentAnswer, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Moved, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
 
 /**
  * Keeps the graph in process memory. Writes run one at a time; a write that
@@ -23,6 +23,7 @@ export function createMemoryStore(): Store {
   const consents = new Map<Subject, ConsentAnswer[]>()
   const decisions: Decision[] = []
   const outcomes = new Map<string, Counted>()
+  const values = new Map<Subject, Map<string, OutcomeValue[]>>()
   const calls = new Map<string, Omit<KeptCall, 'result'>>()
   const results = new Map<string, CallResult>()
   const costs = new Map<string, Required<Cost>>()
@@ -95,6 +96,7 @@ export function createMemoryStore(): Store {
       sightings.delete(subject)
       touches.delete(subject)
       for (const [id, outcome] of outcomes) if (outcome.subject === subject) outcomes.delete(id)
+      values.delete(subject)
       for (const [id, call] of calls) {
         if (call.subject === subject) {
           calls.delete(id)
@@ -322,6 +324,25 @@ export function createMemoryStore(): Store {
     async outcomeOf(transactionId) {
       const found = outcomes.get(transactionId)
       return found && structuredClone(found)
+    },
+
+    async addValue(transactionId, subject, value) {
+      let own = values.get(subject)
+      if (!own) values.set(subject, (own = new Map()))
+      own.set(transactionId, [...(own.get(transactionId) ?? []), { ...value }])
+    },
+
+    async valuesOf(transactionId, subject) {
+      return (values.get(subject)?.get(transactionId) ?? []).map((value) => ({ ...value }))
+    },
+
+    async firstValues(given) {
+      return new Map(
+        given.flatMap(({ transactionId, subject }) => {
+          const [first, ...rest] = values.get(subject)?.get(transactionId) ?? []
+          return first ? [[transactionId, { ...first, most: rest.reduce((most, each) => Math.max(most, each.value), first.value) }]] : []
+        }),
+      )
     },
 
     async removeOutcome(transactionId) {

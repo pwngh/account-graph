@@ -1,5 +1,5 @@
 import { DIMENSION, NOT_RECORDED, touchTag, touchTags } from './tags.ts'
-import type { Breakdown, Cost, Counted, Report, ReportRow, StageCount, Touch } from './types.ts'
+import type { Breakdown, Cost, Counted, OutcomeValue, Report, ReportRow, StageCount, Touch, ValueChange } from './types.ts'
 
 /** The platform each click id belongs to. A click id says where the visitor came from more surely than a tag does. */
 const CLICK_IDS = [
@@ -148,6 +148,8 @@ type Line = Omit<ReportRow, 'stages' | 'breakdown' | 'people' | Worked> & Tally 
 export interface Credited {
   outcome: Counted
   touch: Touch | undefined
+  /** Its first value, with no time when it may not be the first, and the most it was ever worth. */
+  first?: (OutcomeValue & { most: number }) | undefined
   /** Who it is: the cluster of its subject. Defaults to the subject. */
   person?: string
   /** Milliseconds from the newest strong arrival in the year before it, inside the window or not. */
@@ -171,6 +173,20 @@ function count(into: Tally, { outcome, touch, person = outcome.subject, delay = 
   into.value += outcome.value
   into.people.add(person)
 }
+
+const unchanged = (): ValueChange => ({ outcomes: 0, first: 0, now: 0, zeroed: 0, firstUnknown: 0 })
+
+/** Adds what an outcome was first worth, and is worth now, to a sum of them. */
+function revalued(into: ValueChange, { outcome, first }: Credited): void {
+  into.outcomes += 1
+  into.now += outcome.value
+  if (outcome.value === 0 && first && first.most > 0) into.zeroed += 1
+  // A value carried over from before there was a history may not be the first.
+  if (first && first.at > 0) into.first += first.value
+  else into.firstUnknown += 1
+}
+
+const roundedChange = (change: ValueChange): ValueChange => ({ ...change, first: round(change.first), now: round(change.now) })
 
 /** The smallest value that at least this share of sorted values do not exceed. */
 const percentile = (sorted: readonly number[], share: number) => sorted[Math.max(0, Math.ceil(sorted.length * share) - 1)]!
@@ -265,7 +281,7 @@ export function fold(
   const line = (source: string, campaignId: string, campaign: string): Line => {
     const key = keyOf(source, campaignId, campaign)
     let found = lines.get(key)
-    if (!found) lines.set(key, (found = { source, campaignId, campaign: campaignId ? '' : campaign, named: '', cost: 0, clicks: 0, impressions: 0, visits: 0, ...tally(), parts: new Map(), costed: new Map(), bought: false, onDays: new Map() }))
+    if (!found) lines.set(key, (found = { source, campaignId, campaign: campaignId ? '' : campaign, named: '', cost: 0, clicks: 0, impressions: 0, visits: 0, ...tally(), worth: unchanged(), parts: new Map(), costed: new Map(), bought: false, onDays: new Map() }))
     // A campaign known only by name keeps one spelling of it, the first in order.
     if (!campaignId && campaign < found.campaign) found.campaign = campaign
     return found
@@ -330,11 +346,16 @@ export function fold(
   const missing = (touch: Touch | undefined) => (touch ? lineOf(touch) : line('(none)', '', ''))
   for (const call of missed) for (const into of tallies(missing(call.touch), call)) into.missed += 1
   const everything = tally()
+  const worthAll = unchanged()
+  const months = new Map<string, ValueChange>()
   for (const each of credited) {
     const { outcome, touch } = each
     for (const into of [everything, ...tallies(missing(touch), { at: outcome.at, touch, tags: outcome.tags })]) count(into, each)
-    if (outcome.currency) currencies.add(outcome.currency)
+    for (const currency of [outcome.currency, each.first?.currency]) if (currency) currencies.add(currency)
     const found = missing(touch)
+    const month = each.first && each.first.at > 0 ? dayIn(each.first.at, timeZone).slice(0, 7) : NOT_RECORDED
+    if (!months.has(month)) months.set(month, unchanged())
+    for (const change of [found.worth, worthAll, months.get(month)!]) revalued(change, each)
     const day = dayIn(outcome.at, timeZone)
     const on = found.onDays.get(day) ?? { outcomes: 0, value: 0 }
     found.onDays.set(day, { outcomes: on.outcomes + 1, value: on.value + outcome.value })
@@ -374,7 +395,7 @@ export function fold(
       known.outcomes += spent.outcomes
       known.value += spent.value
     }
-    return { ...found, ...worked, people: people.size, stages: plainSteps(stages), ...(valueOf && { breakdown: plain(parts) }) }
+    return { ...found, ...worked, people: people.size, worth: roundedChange(found.worth), stages: plainSteps(stages), ...(valueOf && { breakdown: plain(parts) }) }
   })
   const said = new Set([...all.flatMap(touchTags).map((name) => `touch.${name}`), ...[...credited.map(({ outcome }) => outcome.tags), ...missed.map(({ tags }) => tags)].flatMap((tags) => Object.keys(tags ?? {})).map((name) => `outcome.${name}`)])
   const steps = plainSteps(everything.stages)
@@ -387,7 +408,8 @@ export function fold(
     ...(wait > 0 && after < last && days > 0 && { filling: { after, days: wait } }),
     days,
     leftOut,
-    total: { ...total, costDays: anyCost.size, missingDays: Math.max(0, days - anyCost.size), thin: counted === 0 && leftOut > 0, ...ratios(known), people: everything.people.size, stages: steps, ...(valueOf && { breakdown: plain(whole) }) },
+    months: [...months].sort(([x], [y]) => (rank(x) < rank(y) ? -1 : 1)).map(([month, change]) => ({ month, ...roundedChange(change) })),
+    total: { ...total, costDays: anyCost.size, missingDays: Math.max(0, days - anyCost.size), thin: counted === 0 && leftOut > 0, ...ratios(known), people: everything.people.size, worth: roundedChange(worthAll), stages: steps, ...(valueOf && { breakdown: plain(whole) }) },
     ...(by !== undefined && { by }),
     dimensions: ['hour', 'weekday', ...[...said].sort()],
     currencies: [...currencies].sort(),
