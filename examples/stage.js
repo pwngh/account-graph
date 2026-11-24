@@ -215,6 +215,13 @@
     await type(rows, fields.map(([, value]) => value), 1500)
     await tapped(desk.querySelector('.send'))
   }
+  let ringer
+  /** What the firm's own screen says of a call while it rings. It stays a moment, and goes when the next scene begins. */
+  function rings(fields) {
+    desk.replaceChildren(el('div', { class: 'desk-head' }, el('b', {}, 'Incoming call'), el('small', {}, 'The firm’s own screen')), ...fields.map(([name, value]) => field(name, value)), el('small', {}, el('code', {}, 'POST /call/ringing')))
+    desk.classList.add('on')
+    ringer = setTimeout(() => desk.classList.remove('on'), 3200)
+  }
   async function leaveDesk({ done: words }) {
     desk.querySelector('.send').replaceChildren(words)
     desk.classList.add('saved')
@@ -365,12 +372,14 @@
     try {
       const shown = scene.shown ?? {}
       spot()
+      clearTimeout(ringer)
+      desk.classList.remove('on')
       await DOES[shown.phone]?.(scene)
       if (shown.caption) caption.textContent = shown.caption
       if (shown.desk) await atDesk(shown.desk)
       const began = marks()
       const answer = await fetch('/stage/run', { method: 'POST', headers: { 'x-stage': '1' } })
-      const { lines, ms, error, credit: sure } = await answer.json()
+      const { lines, ms, error, credit: sure, rings: ringing } = await answer.json()
       if (!answer.ok) throw new Error(error)
       at += 1
       told.textContent = lines.join(' ')
@@ -382,6 +391,7 @@
       if (state === 'paid') done(...STAGE.last.done)
       if (state && !(shown.desk && state === 'talking')) phone(state, shown.seconds)
       if (shown.desk) await leaveDesk(shown.desk)
+      if (ringing) rings(ringing)
       document.body.classList.toggle('with-phone', Boolean(state))
       if (!quiet) {
         await open(scene.stage ?? `#${scene.see[1].split('#')[1]}`, began)
