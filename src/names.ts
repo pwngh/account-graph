@@ -1323,38 +1323,17 @@ zephaniah:zeph
 /** A name as it is compared: without case, accents or punctuation. */
 const folded = (text: string) => text.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^a-z ]+/g, '').trim()
 
-/** How a name sounds in English and Spanish, near enough to spell it wrongly by: `Katherine` and `Catharine`, `Jon` and `John`, `Yesenia` and `Jesenia`. */
-export function sound(text: string): string {
-  return folded(text)
-    .replace(/ /g, '')
-    .replace(/^(?:kn|gn|wr)/, (two) => two[1]!)
-    .replace(/ph/g, 'f')
-    .replace(/sh|ch/g, 'x')
-    .replace(/ck|c(?=[^eiy]|$)|q/g, 'k')
-    .replace(/c(?=[eiy])|z/g, 's')
-    .replace(/g(?=[eiy])|y(?=[aeiou])/g, 'j')
-    .replace(/h/g, '')
-    .replace(/w/g, 'v')
-    .replace(/^[aeiouy]/, 'a')
-    .replace(/(?!^)[aeiouy]/g, '')
-    .replace(/(.)\1+/g, '$1')
-}
-
-/** By every name and short form, the full names it may stand for, and by how each sounds, those that sound so. */
+/** By every name and short form, the full names it may stand for. */
 const standsFor = new Map<string, Set<string>>()
-const soundsLike = new Map<string, Set<string>>()
 for (const line of FORMS.trim().split('\n')) {
   const [full = '', shorts = ''] = line.split(':')
-  for (const form of [full, ...shorts.split(',').filter(Boolean)]) {
-    standsFor.set(form, (standsFor.get(form) ?? new Set()).add(full))
-    soundsLike.set(sound(form), (soundsLike.get(sound(form)) ?? new Set()).add(full))
-  }
+  for (const form of [full, ...shorts.split(',').filter(Boolean)]) standsFor.set(form, (standsFor.get(form) ?? new Set()).add(full))
 }
 
-/** The full names a first name may stand for, or none where it is not known. Two words are two names. A name is looked up as written, and by how it sounds where it is not found so. */
+/** The full names a first name may stand for, or none where it is not known as it is written. Two words are two names. */
 export function namesOf(first: string): string[] {
   const found = new Set<string>()
-  for (const word of folded(first).split(/\s+/).filter(Boolean)) for (const name of standsFor.get(word) ?? (word.length > 2 ? soundsLike.get(sound(word)) : undefined) ?? []) found.add(name)
+  for (const word of folded(first).split(/\s+/).filter(Boolean)) for (const name of standsFor.get(word) ?? []) found.add(name)
   return [...found].sort()
 }
 

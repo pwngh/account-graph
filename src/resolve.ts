@@ -100,8 +100,8 @@ export function knownOf(policy: Policy, edges: readonly Edge[], undone: (identif
   if (!policy.apart?.length) return out
   for (const { subject, identifier } of edges) {
     const kind = identifier.slice(0, identifier.indexOf(':'))
-    // A birth is read for a given name to be weighed against, whether or not it keeps anyone apart by itself.
-    if (!policy.apart.includes(kind as Fact) && kind !== 'birth' && !(kind === 'review' && !undone(identifier))) continue
+    // Each fact is read for the other to be weighed against, whether or not it keeps anyone apart by itself.
+    if (!policy.apart.includes(kind as Fact) && kind !== 'birth' && kind !== 'given' && !(kind === 'review' && !undone(identifier))) continue
     const known = out.get(subject) ?? { facts: new Map(), joins: new Set() }
     out.set(subject, known)
     if (kind === 'review') known.joins.add(identifier)
@@ -119,7 +119,8 @@ export function conflict(policy: Policy, a: Known | undefined, b: Known | undefi
     const [own, others] = [a.facts.get(fact), b.facts.get(fact)]
     return own && others && [...own].some((value) => others.has(value))
   }
-  if (policy.apart.includes('birth') && agree('birth') === false) return 'birth'
+  // A fact that agrees outranks one that differs: a date is mistyped, and a name is short for another that is not known.
+  if (policy.apart.includes('birth') && agree('birth') === false && agree('given') !== true) return 'birth'
   return policy.apart.includes('given') && agree('given') === false && agree('birth') !== true ? 'given' : undefined
 }
 

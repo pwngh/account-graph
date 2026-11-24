@@ -49,7 +49,7 @@ export interface Policy {
   /**
    * Facts that no two values of are one person's: `birth`, and `given`. Two subjects of one group that both have such a
    * fact and share no value of it are kept apart, whatever joins them, unless a reviewer or a system joined the two. A
-   * `given` keeps apart nobody whose births agree. Left out, nobody is.
+   * fact that agrees outranks one that differs. Left out, nobody is kept apart.
    */
   apart?: readonly Fact[]
   /** A cluster with more members than this is flagged for review. */

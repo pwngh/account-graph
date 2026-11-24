@@ -2733,12 +2733,15 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
         await graph.observe([[a, births[0]], [b, births[1]]].map(([first, dob], i) => ({ subject: `contact:${i}`, identifiers: ['email:e', ...givenKeys(secret, first!), ...(dob ? [`birth:${dob}`] : [])], at: T0 })))
         return (await members(graph, 'contact:0')).length === 2
       }
-      for (const [a, b] of [['Mike', 'Michael'], ['Bob', 'Robert'], ['Bill', 'William'], ['Liz', 'Elizabeth'], ['José', 'Jose'], ['José', 'Joe'], ['Katherine', 'Catharine'], ['María Guadalupe', 'María']] as const) assert.equal(await one(a, b), true, `${a} and ${b}`)
+      for (const [a, b] of [['Mike', 'Michael'], ['Bob', 'Robert'], ['Bill', 'William'], ['Liz', 'Elizabeth'], ['José', 'Jose'], ['José', 'Joe'], ['María Guadalupe', 'María']] as const) assert.equal(await one(a, b), true, `${a} and ${b}`)
       for (const [a, b] of [['Carlos', 'Maria'], ['Robert', 'Mary'], ['Pepe', 'Ana']] as const) assert.equal(await one(a, b), false, `${a} and ${b}`)
       // A name nobody knows says nothing, and births that agree overrule a name.
       assert.equal(await one('Xyzzyq', 'Maria'), true)
       assert.equal(await one('Carlos', 'Maria', ['1', '1']), true)
-      assert.equal(await one('Maria', 'Maria', ['1', '2']), false)
+      assert.equal(await one('Carlos', 'Maria', ['1', '2']), false)
+      // A date that differs is mistyped where the names are one. Where nothing is known of a name, it counts.
+      assert.equal(await one('Mary', 'María', ['1', '2']), true)
+      assert.equal(await one('Xyzzyq', 'Maria', ['1', '2']), false)
     })
 
     test('a join overrules a fact, whichever is told first, and its undoing gives the fact back', async () => {

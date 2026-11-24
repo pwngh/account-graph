@@ -66,7 +66,9 @@ function pairsOf(items: readonly Item[]): { found: Set<string>; chained: Set<str
   return { found, chained }
 }
 
-const { values, positionals } = parseArgs({ allowPositionals: true, options: { pinned: { type: 'string' }, names: { type: 'string' }, worlds: { type: 'string', default: '20' }, seed: { type: 'string' }, dry: { type: 'boolean', default: false } } })
+const { values, positionals } = parseArgs({ allowPositionals: true, options: { pinned: { type: 'string' }, names: { type: 'string' }, worlds: { type: 'string', default: '20' }, seed: { type: 'string' }, dry: { type: 'boolean', default: false }, arms: { type: 'string' } } })
+// For a look at fewer arms. Marks of arms left out have nothing to count.
+if (values.arms) for (const arm of Object.keys(ARMS)) if (!values.arms.split(',').includes(arm)) delete ARMS[arm]
 const settings = positionals.length > 0 ? positionals : ['base3', 'low3', 'high3', 'busy3', 'dirty3']
 for (const name of settings) if (!SETTINGS[name]?.rates.third) throw new Error(`"${name}" is not a setting of the third run`)
 if (!values.names || !values.seed || (!values.pinned && !values.dry)) throw new Error('--names, --seed and --pinned are required')
@@ -182,7 +184,7 @@ for (const name of settings) {
     for (const [kind, { links, wrong }] of [...row.links].sort((x, y) => y[1].links - x[1].links)) console.log(`    links by ${kind}: ${links}, ${wrong} between two people`)
   }
   console.log(`names written as they are, in a form the table knows, and in one it does not: ${JSON.stringify(covered)}`)
-  const judged = (arm: string) => ({ row: total.get(arm)!, keep: kept.get(arm)! })
+  const judged = (arm: string) => ({ row: total.get(arm) ?? { mixed: 0, recorded: 0, right: 0, wrongPairs: 0, tap: 0, tapWrong: 0, creditRight: 0, creditWrong: 0, links: new Map<string, { links: number; wrong: number }>() }, keep: kept.get(arm) ?? ({ chained: [0, 0], recordPairs: [0, 0], credit: [0, 0], ties: [0, 0] } as Record<string, [number, number]>) })
   console.log('marks:')
   const now = judged('new')
   if (name === 'base3') {
