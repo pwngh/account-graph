@@ -110,7 +110,7 @@ export function nameKeys(secret: string, first: string, last: string, known: { z
   if (typeof first !== 'string' || typeof last !== 'string') throw new TypeError('A name needs its first and last as text')
   const name = [normalizeName(first), normalizeName(last)]
   // A single letter is an initial, except where a letter is a word of its own.
-  if (name.some((part) => !part || /^[a-z]$/.test(part) || NOBODYS.has(part)) || SAMPLES.has(name.join(' '))) return []
+  if (name.some((part) => !part || /^[a-z]$/.test(part) || NOBODYS.has(part)) || NOBODYS.has(name.join(' ')) || SAMPLES.has(name.join(' '))) return []
   const key = (by: string, value: string): Identifier => `name:${createHmac('sha256', secret).update(JSON.stringify([...name, by, value])).digest('hex')}`
   const keys: Identifier[] = []
   const zip = /^(\d{5})(-?\d{4})?$/.exec(known.zip5?.trim() ?? '')?.[1]

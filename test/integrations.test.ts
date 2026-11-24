@@ -1352,12 +1352,16 @@ test('a name sent to /identify confirms, where a secret and a policy for it are 
   assert.deepEqual((await identify({ subject: 'contact:4', name: { first: 'Eva', last: 'Reis' }, address: { street: '1 Main St' } })).kinds, ['address', 'name'])
   assert.deepEqual((await identify({ subject: 'contact:5', email: 'eva@example.org', name: { first: 'Eva', last: 'Reis' }, address: { street: 'nowhere' } })).notes.name, 'not used: a placeholder, or neither a confirmed address nor a date of birth')
   assert.equal((await identify({ subject: 'contact:6', email: 'x@example.org', name: { first: 'Unknown', last: 'Unknown' }, dob: '1990-02-03' })).notes.name, 'not used: a placeholder, or neither a confirmed address nor a date of birth')
-  for (const bad of [{ name: 'Ana Lima' }, { name: { first: 'Ana' } }, { dob: '1990-02-03' }, { name: { first: 'Ana', last: 'Lima' }, dob: 19900203 }]) assert.equal((await identify({ subject: 'contact:7', email: 'y@example.org', ...bad })).status, 400, JSON.stringify(bad))
+  for (const bad of [{ name: 'Ana Lima' }, { name: { first: 'Ana' } }, { name: { first: 'Ana', last: 'Lima' }, dob: 19900203 }]) assert.equal((await identify({ subject: 'contact:7', email: 'y@example.org', ...bad })).status, 400, JSON.stringify(bad))
   // Off without its secret, and where the policy has no such kind: the rest is still recorded.
   const named = { subject: 'contact:1', email: 'z@example.org', name: { first: 'Ana', last: 'Lima' }, dob: '1990-02-03' }
   assert.deepEqual((await (await serve(household)).identify(named)).notes, { name: 'not used: IDENTIFIER_SECRET is not set' })
   const plain = await (await serve(undefined, secret)).identify(named)
-  assert.deepEqual([plain.kinds, plain.notes], [['email'], { name: 'not used: the policy has no "name" kind' }])
+  assert.deepEqual([plain.kinds, plain.notes], [['email'], { name: 'not used: the policy has no "name" kind that only corroborates' }])
+  const loud = await (await serve(policyFrom({ kinds: { name: { weight: 0.95, dilution: 0, cap: 5, halfLife: 'none' } } }), secret)).identify(named)
+  assert.deepEqual([loud.kinds, loud.notes.name], [['email'], 'not used: the policy has no "name" kind that only corroborates'])
+  // A date of birth with no name is nobody's, and the rest is recorded.
+  assert.deepEqual((await identify({ subject: 'contact:8', email: 'w@example.org', dob: '1990-02-03' })).kinds, ['email'])
 })
 
 test('a visitor with an arrival is shown a number of their own, and nobody else is', async (t) => {

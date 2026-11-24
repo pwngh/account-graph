@@ -94,9 +94,7 @@ export function fit(labeled: readonly Labeled[], policy: Policy, prior = 1): Fit
   const counting = (parts: readonly Part[], from: Record<string, number>): readonly Part[] => {
     if (!parts.some((part) => part.corroborates)) return strongest(parts, from)
     const makes = strongest(parts.filter((part) => !part.corroborates), from)
-    if (combined(makes, from) < policy.related) return makes
-    const groups = new Set(makes.map((part) => part.group))
-    return [...makes, ...strongest(parts.filter((part) => part.corroborates && (part.group === undefined || !groups.has(part.group))), from)]
+    return combined(makes, from) < policy.related ? makes : strongest(parts, from)
   }
   const predict = (parts: readonly Part[], from: Record<string, number>) => combined(counting(parts, from), from)
   const loss = (from: Record<string, number>) => {
@@ -140,7 +138,10 @@ export function fit(labeled: readonly Labeled[], policy: Policy, prior = 1): Fit
   // in which the rest of its group is faint, so that it has a chance to win, and the best of the ends is kept.
   const groupOf = (kind: string) => policy.kinds[kind]!.group
   const starts = [start, ...kinds.filter((kind) => kinds.some((other) => other !== kind && groupOf(kind) !== undefined && groupOf(other) === groupOf(kind))).map((kind) => ({ ...start, ...Object.fromEntries(kinds.filter((other) => groupOf(other) === groupOf(kind)).map((other) => [other, logit(other === kind ? 0.9 : 0.01)])) }))]
-  const theta = starts.map(descend).reduce((best, next) => (cost(next) < cost(best) ? next : best))
+  const found = starts.map(descend).reduce((best, next) => (cost(next) < cost(best) ? next : best))
+  // What is reported is what the weights given back do. Rounded, one may fall on the other side of where a kind that only confirms counts.
+  const rounded = Object.fromEntries(kinds.map((kind) => [kind, logit(Math.round(weight(kind, found) * 1000) / 1000)]))
+  const theta = loss(rounded) <= loss(start) ? rounded : start
 
   const fitted: Policy = { ...policy, kinds: { ...policy.kinds } }
   const report: Fitted['kinds'] = {}

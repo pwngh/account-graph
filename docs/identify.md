@@ -104,7 +104,7 @@ With MaxMind, each visit is also noted with where its address places it, `place:
 { "subject": "contact:7", "phone": "(555) 010-0007", "name": { "first": "José", "last": "Muñoz" }, "dob": "1990-02-03" }
 ```
 
-A name confirms that two people who share a phone are one, and never makes a tie by itself. Names are off until two things are set: `IDENTIFIER_SECRET`, and a policy with a `name` kind, such as [the preset for contacts entered by staff](presets.md#contacts-entered-by-staff).
+A name confirms that two people who share a phone are one, and never makes a tie by itself. Names are off until two things are set: `IDENTIFIER_SECRET`, and a policy with a `name` kind that only corroborates, such as [the preset for contacts entered by staff](presets.md#contacts-entered-by-staff).
 
 | Step | What happens |
 | --- | --- |

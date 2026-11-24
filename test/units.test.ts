@@ -91,7 +91,7 @@ test('names fold to one key, and placeholders to none', () => {
   assert.notDeepEqual(key('Ana', 'Lima'), key('Ana', 'Lime'))
   // Which of the two fields a word is in matters, and so does where the two meet.
   assert.notDeepEqual(key('Ana Maria', 'Lima'), key('Ana', 'Maria Lima'))
-  for (const [first, last] of [['Unknown', 'Lima'], ['Ana', 'UNKNOWN'], ['No', ''], ['', ''], ['Test', 'Test'], ['John', 'Doe'], ['n/a', 'N/A'], ['J', 'Lima'], ['123', '456'], ['Wireless', 'Caller']] as const) assert.deepEqual(key(first, last), [], `${first} ${last}`)
+  for (const [first, last] of [['Unknown', 'Lima'], ['Ana', 'UNKNOWN'], ['No', ''], ['', ''], ['Test', 'Test'], ['John', 'Doe'], ['n/a', 'N/A'], ['J', 'Lima'], ['123', '456'], ['Wireless', 'Caller'], ['No', 'Name'], ['Not', 'Given']] as const) assert.deepEqual(key(first, last), [], `${first} ${last}`)
   // A name alone is nobody's. A zip code or a date of birth each make a key, and neither makes the other's.
   assert.deepEqual(key('Ana', 'Lima', {}), [])
   const [byZip, byBirth] = key('Ana', 'Lima', { zip5: '62701-1234', dob: '1990-02-03' })
@@ -116,6 +116,12 @@ test('a kind that only confirms is a sound rule, names its policy, and fit gives
   assert.ok(Math.abs(weigh(policy, [reason('name', 0.6), reason('address', 0.6)]) - 0.84) < 1e-9)
   assert.ok(Math.abs(weigh(policy, [reason('name', 0.99), reason('ip', 0.3)]) - 0.3) < 1e-9)
   assert.equal(weigh(policy, [reason('name', 0.99)]), 0)
+  // In a group with the rest, the strongest that may count does, whichever it is.
+  const oneGroup = policyFrom({ kinds: { name: { ...name, group: 'g' }, address: { group: 'g' } } })
+  const both = [reason('address', 0.55), reason('name', 0.9)]
+  assert.deepEqual([Math.round(weigh(oneGroup, both) * 100), both.map((each) => each.counted)], [90, [undefined, false]])
+  const weak = [reason('address', 0.45), reason('name', 0.9)]
+  assert.deepEqual([Math.round(weigh(oneGroup, weak) * 100), weak.map((each) => [each.identifier, each.counted])], [45, [['name:x', false], ['address:x', undefined]]])
   assert.equal(weigh({ ...policy, related: 0 }, [reason('name', 0.99)]), 0)
   // Pairs a name alone would relate teach nothing, so their labels move nothing.
   const labeled = [...Array.from({ length: 50 }, (_, i) => ({ same: i < 40, reasons: [reason('phone', 0.9), reason('name', 0.6)] })), ...Array.from({ length: 50 }, (_, i) => ({ same: i < 25, reasons: [reason('phone', 0.9)] }))]

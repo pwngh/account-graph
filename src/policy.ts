@@ -209,26 +209,19 @@ export function evidence(policy: Policy, a: Edge, b: Edge, fanout: number): Reas
  */
 export function weigh(policy: Policy, reasons: Reason[]): number {
   reasons.sort((x, y) => y.evidence - x.evidence || (x.identifier < y.identifier ? -1 : 1))
-  const seen = new Set<string>()
-  let coincidence = 1
-  const count = (reason: Reason) => {
-    const { group } = ruleFor(policy, reason.identifier)
-    if (group !== undefined) {
-      reason.group = group
-      if (seen.has(group)) {
-        reason.counted = false
-        return
-      }
-      seen.add(group)
-    }
-    coincidence *= 1 - reason.evidence
+  const ruled = reasons.map((reason) => ({ reason, ...ruleFor(policy, reason.identifier) }))
+  /** The reasons that count of those given, and what they come to. */
+  const combine = (given: typeof ruled) => {
+    const seen = new Set<string>()
+    const counted = given.filter(({ group }) => group === undefined || (!seen.has(group) && seen.add(group)))
+    return { counted: new Set(counted.map((each) => each.reason)), coincidence: counted.reduce((rest, { reason }) => rest * (1 - reason.evidence), 1) }
   }
-  const confirming = reasons.filter((reason) => ruleFor(policy, reason.identifier).corroborates)
-  for (const reason of reasons) if (!confirming.includes(reason)) count(reason)
-  const alone = 1 - coincidence
-  for (const reason of confirming) {
-    if (alone > 0 && alone >= policy.related) count(reason)
-    else reason.counted = false
+  const alone = combine(ruled.filter((each) => !each.corroborates))
+  const confirmed = alone.counted.size > 0 && 1 - alone.coincidence >= policy.related
+  const { counted, coincidence } = confirmed ? combine(ruled) : alone
+  for (const { reason, group } of ruled) {
+    if (group !== undefined) reason.group = group
+    if (!counted.has(reason)) reason.counted = false
   }
   return 1 - coincidence
 }

@@ -527,12 +527,12 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         notes.address = failed ? 'not checked: the address service did not answer' : !checked ? 'not found' : found ? 'confirmed' : checked.mailDrop ? 'a rented mail box: not used' : checked.vacant ? 'vacant: not used' : 'not confirmed to the apartment: not used'
       }
     }
-    if (body.name !== undefined || body.dob !== undefined) {
+    if (body.name !== undefined) {
       const { first, last } = body.name ?? {}
       if (typeof first !== 'string' || typeof last !== 'string' || first.length > 200 || last.length > 200) throw new Refusal(400, 'A name needs its first and last as text')
       if (body.dob !== undefined && typeof body.dob !== 'string') throw new Refusal(400, 'A date of birth is written YYYY-MM-DD')
       if (!options.identifierSecret) notes.name = 'not used: IDENTIFIER_SECRET is not set'
-      else if (!(await graph.policy()).rules.kinds.name) notes.name = 'not used: the policy has no "name" kind'
+      else if (!(await graph.policy()).rules.kinds.name?.corroborates) notes.name = 'not used: the policy has no "name" kind that only corroborates'
       else {
         // The zip code is the one the postal service confirmed, or there is none.
         const keys = nameKeys(options.identifierSecret, first, last, { zip5: zip, dob: body.dob })
