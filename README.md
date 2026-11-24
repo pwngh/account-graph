@@ -137,6 +137,7 @@ PostgreSQL writes take one advisory lock, so they run one at a time; the write q
 - `tools/browser-check.ts` runs `collect`, the server, and the outbox against a real browser.
 - `tools/live-check.ts` calls each provider's real endpoint, with your keys when they are set, and prints how it answered.
 - `tools/replay.ts` replays an export of your own past traffic and compares attribution with what was sent.
+- `tools/labels.ts` measures the graph against a CSV of pairs you have checked, and prints how often each kind was right.
 - `tools/costs.ts` sends a CSV of campaign costs to a running server.
 - `tools/export.ts` writes edges, flows, or cluster labels as CSV for an analytics engine.
 

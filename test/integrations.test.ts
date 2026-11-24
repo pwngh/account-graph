@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict'
 import { Script } from 'node:vm'
 import { createHash, createVerify, generateKeyPairSync } from 'node:crypto'
+import { execFile } from 'node:child_process'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { promisify } from 'node:util'
 import { test } from 'node:test'
 import { createGraph, createMemoryStore, createOps, createOutbox, googleAds, hashPhone, knownLink, staffLink, email, phone, phoneOfType } from '../src/index.ts'
 import type { IngestRequest } from '../src/index.ts'
@@ -1315,4 +1320,48 @@ test('with the server cookie on, the id a page quotes still names the visitor', 
   } finally {
     server.close()
   }
+})
+
+test('the labels tool resolves a file of checked pairs against a running server, and counts what it could not use', async (t) => {
+  const graph = createGraph(createMemoryStore())
+  const see = (subject: string, ...identifiers: string[]) => graph.observe({ subject, identifiers, at: T0, event: 'login' })
+  // Four of one person by phone, one pair of two people by phone, and an address shared by one pair of each.
+  for (const n of [1, 2, 3, 4]) for (const side of ['a', 'b']) await see(`s${n}${side}`, `phone:s${n}`)
+  for (const side of ['a', 'b']) await see(`d1${side}`, 'phone:d1')
+  for (const side of ['a', 'b']) await see(`s5${side}`, 'address:s5', `email:s5${side}`)
+  for (const side of ['a', 'b']) await see(`d2${side}`, 'address:d2')
+  for (const side of ['a', 'b']) await see(`s6${side}`, `email:s6${side}`)
+  // Muted, a phone links nobody, and the pair that shares it is counted apart.
+  for (const side of ['a', 'b']) await see(`s7${side}`, 'phone:muted')
+  await graph.ignore('phone:muted')
+  // A reviewer joined the two who share nothing: it is the answer, and not evidence for it.
+  await graph.join('s6a', 's6b')
+  const server = createServer(createHandler(graph, { token: 'service', reviewers: { dana: 'dana-token' }, origins: [] })).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  const home = mkdtempSync(join(tmpdir(), 'ag-labels-'))
+  t.after(() => (server.close(), rmSync(home, { recursive: true, force: true })))
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const run = async (csv: string, token = 'dana-token') => {
+    writeFileSync(join(home, 'pairs.csv'), csv)
+    const at = new URL('../tools/labels.ts', import.meta.url).pathname
+    return promisify(execFile)(process.execPath, [decodeURIComponent(at), join(home, 'pairs.csv')], { env: { PATH: process.env.PATH, GRAPH_URL: url, GRAPH_TOKEN: token } })
+  }
+  const same = ['s1a,s1b', 's2a,s2b', 's3b,s3a', 's4a,s4b', 's5a,s5b', 's6a,s6b', 's7a,s7b', 's1a,merged-away'].map((pair) => `${pair},same`)
+  // One pair is in the file twice, the other way round, and one is labelled both ways.
+  const { stdout } = await run(['a,b,label', ...same, 's1b,s1a,same', 'd1a,d1b,different', 'd2a,d2b,different', 'd1a,d2a,same', 'd1a,d2a,different', ''].join('\n'))
+  assert.match(stdout, /13 rows, 11 pairs\. 1 labelled both ways were left out\./)
+  assert.match(stdout, /1 could not be used, because nothing recorded about one of the two is left: 1 same, 0 different\./)
+  assert.match(stdout, /9 used: 7 same, 2 different\./)
+  const find = (name: string) => stdout.split('\n').find((line) => line.startsWith(name))!.trim().split(/\s{2,}/).slice(1)
+  assert.deepEqual(find('phone'), ['6', '5', '1', '83.3%', '71.4%'])
+  assert.deepEqual(find('  muted or over its cap'), ['1', '1', '0', '100.0%', '14.3%'])
+  assert.deepEqual(find('address'), ['2', '1', '1', '50.0%', '14.3%'])
+  assert.deepEqual(find('nothing'), ['1', '1', '0', '100.0%', '14.3%'])
+  assert.deepEqual(find('a score of 0.9 or more'), ['5', '4', '1', '80.0%', '57.1%'])
+  assert.deepEqual(find('in one cluster now'), ['6', '5', '1', '83.3%', '71.4%'])
+  assert.ok(stdout.includes('Labels from staff are biased') && stdout.includes('merged away'))
+  assert.ok(!stdout.includes('s1a'))
+  await assert.rejects(run('a,b,label\ns1a,s1b,maybe'), /Line 2 needs its label as "same" or "different"/)
+  await assert.rejects(run('a,b\ns1a,s1b'), /needs a "label" column/)
+  await assert.rejects(run('a,b,label\ns1a,s1b,same', 'wrong'), /The server answered 401/)
 })

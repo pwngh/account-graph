@@ -984,6 +984,31 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       for (const bad of [{ step: '' }, { days: 0 }, { days: 1.5 }, { days: 400 }, { from: '2023-12-01' }]) await assert.rejects(graph.followed({ from: '2023-11-14', to: '2023-11-20', step: 'client', days: 30, ...bad }), TypeError)
     })
 
+    test('between says what two subjects share, however weak, and how they stand', async () => {
+      const { graph } = await fresh()
+      const see = (subject: string, ...identifiers: string[]) => graph.observe({ subject, identifiers, at: T0, event: 'login' })
+      await see('a', 'ip:192.0.2.1', 'email:a')
+      await see('b', 'ip:192.0.2.1', 'email:b')
+      const weak = await graph.between('a', 'b')
+      assert.deepEqual([weak.known, weak.joined, weak.apart, weak.reasons.map((reason) => reason.identifier)], [true, false, false, ['ip:192.0.2.1']])
+      assert.ok(weak.score > 0 && weak.score < defaultPolicy.related)
+      assert.deepEqual(await graph.links('a'), [])
+      // A reviewer's mark joins them and is not among what they share.
+      await graph.join('a', 'b')
+      assert.deepEqual(await graph.between('b', 'a'), { ...weak, joined: true })
+      await graph.separate('a', 'b')
+      assert.deepEqual(await graph.between('a', 'b'), { ...weak, apart: true })
+      assert.deepEqual(await graph.between('a', 'nobody'), { known: false, joined: false, apart: false, score: 0, reasons: [], idle: [] })
+      assert.deepEqual((await graph.between('a', 'a')).reasons, [])
+      await graph.ignore('ip:192.0.2.1')
+      const muted = await graph.between('a', 'b')
+      assert.deepEqual([muted.score, muted.reasons, muted.idle], [0, [], ['ip:192.0.2.1']])
+      // Known by a reviewer's mark alone, there is nothing to compare.
+      await graph.forget('b')
+      await graph.joinAll([{ a: 'a', b: 'b' }], { by: 'system:crm' })
+      assert.deepEqual([(await graph.between('a', 'b')).known, (await graph.between('a', 'b')).apart], [false, false])
+    })
+
     test('undecided lists pairs related and not joined, and a join taken back by its mark is a label no more', async () => {
       const clock = { now: T0 }
       const { graph } = await fresh(undefined, { now: () => clock.now })

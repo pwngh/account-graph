@@ -84,7 +84,8 @@
     "review": "node tools/review-demo.ts",
     "start": "node src/serve.ts",
     "live-check": "node tools/live-check.ts",
-    "costs": "node tools/costs.ts"
+    "costs": "node tools/costs.ts",
+    "labels": "node tools/labels.ts"
   },
   "peerDependencies": {
     "pg": "^8.11.0"
