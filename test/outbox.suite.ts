@@ -8,6 +8,7 @@ import type { Opened } from './suite.ts'
 const T0 = 1_700_000_000_000
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex')
 const HOUR = 3_600_000
+const DAY = 24 * HOUR
 
 /** A stand-in for Google that records every request and can be told to refuse. */
 function google() {
@@ -132,6 +133,35 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       assert.deepEqual(await outbox.get('enroll-1'), [])
     })
 
+    test('an outcome with nothing to match by waits for a click, and is given up on in the end', async () => {
+      const { graph, outbox, remote, clock } = await fresh()
+      await graph.observe({ subject: 'visitor:v1', identifiers: ['device:v1'], at: T0 })
+      await graph.touch({ subject: 'visitor:v1', at: T0, gclid: 'G1' })
+      await outbox.record(outcome(1))
+      await outbox.record(outcome(2))
+      assert.deepEqual(await outbox.run(), { sent: 0, skipped: 0, failed: 0, retried: 2 })
+      const [waiting] = await outbox.get('enroll-1')
+      assert.deepEqual([waiting!.state, waiting!.note, waiting!.attempts], ['pending', 'no_match_key', 0])
+      // Not due again yet, it is left alone.
+      await outbox.run()
+      assert.equal((await outbox.get('enroll-1'))[0]!.rev, waiting!.rev)
+      // Their browser is known now, and the conversion goes out with its click.
+      await graph.observe({ subject: 'contact:1', identifiers: ['device:v1'], at: T0 + 3 * HOUR })
+      clock.now += DAY
+      assert.equal((await outbox.run()).sent, 1)
+      const [sent] = await outbox.get('enroll-1')
+      assert.deepEqual([sent!.state, sent!.click, sent!.note], ['sent', { gclid: 'G1' }, undefined])
+      // The other is looked at a few dozen times at most, and no more after a week.
+      let looked = 0
+      for (; (await outbox.get('enroll-2'))[0]!.state === 'pending'; looked++) {
+        clock.now = (await outbox.get('enroll-2'))[0]!.due
+        await outbox.run()
+      }
+      assert.ok(looked > 3 && looked < 40, `${looked}`)
+      assert.deepEqual([(await outbox.get('enroll-2'))[0]!.state, remote.requests.length], ['skipped', 1])
+      assert.equal(clock.now, T0 + HOUR + 7 * DAY, 'on the last day, and not after it')
+    })
+
     test('the same id with different details is refused', async () => {
       const { outbox } = await fresh()
       await outbox.record(outcome(1))
@@ -140,7 +170,7 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
     })
 
     test('an outcome with nothing for Google to match is skipped, and so is one without consent', async () => {
-      const { graph, outbox, remote } = await fresh()
+      const { graph, outbox, remote } = await fresh({ patience: 0 })
       await enroll(graph, 1)
       await outbox.record(outcome(7))
       await outbox.record(outcome(1, { consent: { adUserData: false, adPersonalization: false } }))
@@ -585,7 +615,7 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
     })
 
     test('failed and skipped conversions can be listed and put back in line', async () => {
-      const { graph, outbox, remote, clock } = await fresh()
+      const { graph, outbox, remote, clock } = await fresh({ patience: 0 })
       for (const n of [1, 2]) await enroll(graph, n)
       await outbox.record(outcome(1))
       await outbox.record(outcome(2))
@@ -709,7 +739,7 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
     test('what was taken back is not sent by an old pass, a retry, or a later change of mind', async () => {
       let during: (() => Promise<unknown>) | undefined
       let refuse: Error | undefined
-      const { graph, outbox, remote, clock, store } = await fresh()
+      const { graph, outbox, remote, clock, store } = await fresh({ patience: 0 })
       const values = () => remote.requests.flatMap((request) => request.events.map((event: any) => [event.transactionId, event.conversionValue]))
       // Skipped for want of a key, then taken back: putting skipped jobs in line again does not send it.
       await graph.observe({ subject: 'contact:9', identifiers: ['email:none'], at: T0 })

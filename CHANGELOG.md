@@ -54,6 +54,7 @@
 - `outcome`, `POST /convert` and `POST /event` record outcomes. `STAGES` sets the value, currency and action of each step.
 - `restate` and `POST /restate` change a value. `kind` is `refund` or `write_off`. `values` and `GET /outcome` return the value history.
 - `spend`, `POST /costs`, `googleCosts`, `metaCosts` and `costsFromCsv` record campaign costs. `conversions` and `conversionValue` hold platform-reported results (`GOOGLE_ADS_CONVERSIONS`, `META_ADS_CONVERSIONS`).
+- A conversion with nothing to match by waits up to seven days for a click (`OutboxOptions.patience`).
 - An ad click or a campaign visit in the window is credited before a call or text filed under its number.
 - A visit in the same cluster is credited, however weak the chain of links to it (`AttributedTouch.joined`). The outbox sends its click unless `confidence` is set.
 - A report, open calls and the board read the links of a thousand people at a time.

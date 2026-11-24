@@ -229,7 +229,7 @@ Each platform also gets the email and phone hashed the way it matches them, as a
 | Rate limit, outage, bad credential, network error | Stays `pending`. Retried after 30 seconds, doubling to an hour, shortened by up to half |
 | Still failing after 8 tries | `failed`, with the last error |
 | The platform rejects a request for one bad event | Each event is sent alone, and only the bad one is `failed` |
-| Without a trusted click, email or phone | `skipped`: `no_match_key` |
+| Without a trusted click, email or phone | Stays `pending` with the note `no_match_key`, and is looked at again in case the person is tied to a click. `skipped` seven days after it happened (`patience`) |
 | The person, or the browser that clicked, refused ad measurement, including after an outcome that said yes | `skipped`: `consent_denied` |
 | The outcome is older than the platform accepts: 7 days for Meta, 90 for Microsoft | `skipped`: `too_old` |
 | A click below 0.9 confidence that is not in the person's cluster, with an email or phone | Sent with the email or phone alone |
