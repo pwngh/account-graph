@@ -124,7 +124,7 @@ const round = (amount: number) => Math.round(amount * 1e6) / 1e6
 
 type Tally = { stages: Map<string, { count: number; value: number }>; outcomes: number; value: number; missed: number }
 type Worked = 'costDays' | 'missingDays' | 'thin' | 'costPerOutcome' | 'returnOnCost'
-type Line = Omit<ReportRow, 'stages' | 'breakdown' | Worked> & { costed: Set<string>; onDays: Map<string, { outcomes: number; value: number }>; stages: Map<string, { count: number; value: number }>; named: string; parts: Map<string, Tally> }
+type Line = Omit<ReportRow, 'stages' | 'breakdown' | Worked> & { costed: Map<string, number>; onDays: Map<string, { outcomes: number; value: number }>; stages: Map<string, { count: number; value: number }>; named: string; parts: Map<string, Tally> }
 
 /** Counts one outcome among others. */
 function count(into: Tally, outcome: Counted): void {
@@ -159,20 +159,22 @@ export interface FoldOptions {
 /** Below this share of days with cost data, what anything cost is not said. */
 const ENOUGH = 0.5
 
+/** What was spent on some outcomes, by days that have cost data on both sides. */
+type Spent = { cost: number; outcomes: number; value: number }
+
+const ratios = ({ cost, outcomes, value }: Spent) => ({
+  costPerOutcome: outcomes > 0 ? round(cost / outcomes) : null,
+  returnOnCost: cost > 0 && value > 0 ? round(value / cost) : null,
+})
+
 /**
  * What a campaign's outcomes cost. Only the days that have cost data count,
- * on both sides: an outcome on a day whose cost is not known would look free.
+ * on both sides: an outcome on a day whose cost is not known would look
+ * free. A recorded zero is cost data, and so is a day that cost nothing.
  */
-function worth(cost: number, costDays: number, days: number, on: { outcomes: number; value: number }): Pick<ReportRow, Worked> {
+function worth(costDays: number, days: number, campaign: boolean, spent: Spent): Pick<ReportRow, Worked> {
   const thin = costDays > 0 && costDays < days * ENOUGH
-  const known = cost > 0 && !thin
-  return {
-    costDays,
-    missingDays: Math.max(0, days - costDays),
-    thin,
-    costPerOutcome: known && on.outcomes > 0 ? round(cost / on.outcomes) : null,
-    returnOnCost: known && on.value > 0 ? round(on.value / cost) : null,
-  }
+  return { costDays, missingDays: Math.max(0, days - costDays), thin, ...(campaign && costDays > 0 && !thin ? ratios(spent) : { costPerOutcome: null, returnOnCost: null }) }
 }
 
 /**
@@ -189,6 +191,9 @@ export function fold(
   credited: readonly { outcome: Counted; touch: Touch | undefined }[],
   { missed = [], by, timeZone, through = to }: FoldOptions = {},
 ): Report {
+  // Days still to come have no cost yet, whatever rows there are for them.
+  const last = through < to ? through : to
+  const days = last < from ? 0 : Math.round((Date.parse(`${last}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1
   const lines = new Map<string, Line>()
   const currencies = new Set<string>()
   // A campaign with an id is one line whatever it is called; without one, its name is all there is.
@@ -196,7 +201,7 @@ export function fold(
   const line = (source: string, campaignId: string, campaign: string): Line => {
     const key = keyOf(source, campaignId, campaign)
     let found = lines.get(key)
-    if (!found) lines.set(key, (found = { source, campaignId, campaign: campaignId ? '' : campaign, named: '', cost: 0, clicks: 0, impressions: 0, visits: 0, missed: 0, stages: new Map(), outcomes: 0, value: 0, parts: new Map(), costed: new Set(), onDays: new Map() }))
+    if (!found) lines.set(key, (found = { source, campaignId, campaign: campaignId ? '' : campaign, named: '', cost: 0, clicks: 0, impressions: 0, visits: 0, missed: 0, stages: new Map(), outcomes: 0, value: 0, parts: new Map(), costed: new Map(), onDays: new Map() }))
     // A campaign known only by name keeps one spelling of it, the first in order.
     if (!campaignId && campaign < found.campaign) found.campaign = campaign
     return found
@@ -208,7 +213,7 @@ export function fold(
     found.cost += cost.amount
     found.clicks += cost.clicks
     found.impressions += cost.impressions
-    found.costed.add(cost.day)
+    if (cost.day <= last) found.costed.set(cost.day, (found.costed.get(cost.day) ?? 0) + cost.amount)
     if (cost.currency) currencies.add(cost.currency)
     if (cost.campaignId && cost.campaign && cost.day >= found.named) [found.named, found.campaign] = [cost.day, cost.day === found.named && found.campaign > cost.campaign ? found.campaign : cost.campaign]
   }
@@ -267,13 +272,12 @@ export function fold(
     const on = found.onDays.get(day) ?? { outcomes: 0, value: 0 }
     found.onDays.set(day, { outcomes: on.outcomes + 1, value: on.value + outcome.value })
   }
-  const last = through < to ? through : to
-  const days = last < from ? 0 : Math.round((Date.parse(`${last}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1
 
   const sums = new Map<string, { count: number; value: number }>()
   const total = { cost: 0, clicks: 0, impressions: 0, visits: 0, missed: 0, outcomes: 0, value: 0 }
   // The total of what things cost: campaigns with enough cost data, and the outcomes credited to them. Never all spend over all outcomes.
-  const known = { cost: 0, outcomes: 0, value: 0 }
+  const known: Spent = { cost: 0, outcomes: 0, value: 0 }
+  let counted = 0
   const anyCost = new Set<string>()
   let leftOut = 0
   const order = (found: Line) => `${found.source}\u0000${found.campaignId}\u0000${found.campaign}`
@@ -296,18 +300,22 @@ export function fold(
     total.visits += found.visits
     total.missed += found.missed
     total.outcomes += found.outcomes
-    const on = { outcomes: 0, value: 0 }
-    for (const day of costDays) {
+    const spent: Spent = { cost: 0, outcomes: 0, value: 0 }
+    for (const [day, cost] of costDays) {
       anyCost.add(day)
-      on.outcomes += onDays.get(day)?.outcomes ?? 0
-      on.value += onDays.get(day)?.value ?? 0
+      spent.cost += cost
+      spent.outcomes += onDays.get(day)?.outcomes ?? 0
+      spent.value += onDays.get(day)?.value ?? 0
     }
-    const worked = worth(found.cost, costDays.size, days, on)
-    if (worked.thin) leftOut += 1
-    else if (found.cost > 0) {
-      known.cost += found.cost
-      known.outcomes += on.outcomes
-      known.value += on.value
+    // Money spent on no campaign in particular says nothing of what one campaign's outcomes cost.
+    const campaign = Boolean(found.campaignId || found.campaign)
+    const worked = worth(costDays.size, days, campaign, spent)
+    if (campaign && worked.thin) leftOut += 1
+    else if (campaign && costDays.size > 0) {
+      counted += 1
+      known.cost += spent.cost
+      known.outcomes += spent.outcomes
+      known.value += spent.value
     }
     return { ...found, ...worked, stages: Object.fromEntries(stages), ...(valueOf && { breakdown: plain(parts) }) }
   })
@@ -318,7 +326,7 @@ export function fold(
     rows,
     days,
     leftOut,
-    total: { ...total, ...worth(known.cost, anyCost.size, days, known), stages: Object.fromEntries(sums), ...(valueOf && { breakdown: plain(whole) }) },
+    total: { ...total, costDays: anyCost.size, missingDays: Math.max(0, days - anyCost.size), thin: counted === 0 && leftOut > 0, ...ratios(known), stages: Object.fromEntries(sums), ...(valueOf && { breakdown: plain(whole) }) },
     ...(by !== undefined && { by }),
     dimensions: ['hour', 'weekday', ...[...said].sort()],
     currencies: [...currencies].sort(),

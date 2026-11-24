@@ -477,8 +477,21 @@ test('what an outcome cost uses the outcomes of that campaign, on the days whose
   assert.deepEqual([early.days, early.rows.find((each) => each.campaignId === 'full')!.missingDays], [10, 0])
   assert.equal(fold('2026-04-01', '2026-04-05', [], [], [], { through: '2026-03-10' }).days, 0)
   // A day belongs to the time zone: at noon in London it is already the next day in Kiritimati.
-  const shifted = fold('2026-03-01', '2026-03-10', [cost('2026-03-03', 'full', 10)], [], [sale('2026-03-02', 'full')], { timeZone: 'Pacific/Kiritimati', through: '2026-03-01' })
+  const shifted = fold('2026-03-03', '2026-03-03', [cost('2026-03-03', 'full', 10)], [], [sale('2026-03-02', 'full')], { timeZone: 'Pacific/Kiritimati' })
   assert.equal(shifted.rows[0]!.costPerOutcome, 10)
+  // A row for a day still to come is not cost data yet.
+  const ahead = fold('2026-03-01', '2026-03-04', [cost('2026-03-03', 'full', 10), cost('2026-03-04', 'full', 10)], [], [sale('2026-03-03', 'full')], { through: '2026-03-02' })
+  assert.deepEqual([ahead.days, ahead.rows[0]!.costDays, ahead.rows[0]!.costPerOutcome, ahead.total.cost], [2, 0, null, 20])
+  // A campaign known to have cost nothing has outcomes that cost nothing, and they count in the total.
+  const free = fold('2026-03-01', '2026-03-01', [cost('2026-03-01', 'gift', 0), cost('2026-03-01', 'paid', 30)], [], [sale('2026-03-01', 'gift'), sale('2026-03-01', 'paid')])
+  assert.deepEqual(free.rows.map((each) => [each.campaignId, each.costPerOutcome, each.returnOnCost]), [['paid', 30, 3.333333], ['gift', 0, null]])
+  assert.equal(free.total.costPerOutcome, 15)
+  // Spend on no campaign in particular is in the total's cost, and is nobody's cost per outcome.
+  const loose = fold('2026-03-01', '2026-03-01', [cost('2026-03-01', '', 500), cost('2026-03-01', 'paid', 30)], [], [{ ...sale('2026-03-01', undefined), touch: { subject: 's', at: 0, gclid: 'G' } }, sale('2026-03-01', 'paid')])
+  assert.deepEqual([loose.rows.find((each) => each.campaignId === '')!.costPerOutcome, loose.total.costPerOutcome, loose.total.cost], [null, 30, 530])
+  // Two campaigns each known on half the days they need: between them every day, and still nothing can be said.
+  const halves = fold('2026-03-01', '2026-03-10', [...days(4).map((day) => cost(day, 'a', 10)), ...days(10).slice(6).map((day) => cost(day, 'b', 10))], [], [sale('2026-03-01', 'a'), sale('2026-03-08', 'b')])
+  assert.deepEqual([halves.total.thin, halves.total.costPerOutcome, halves.leftOut, halves.total.costDays], [true, null, 2, 8])
 })
 
 test('a touch is filed under the platform of its click id, then its tag, then the site that referred it', () => {
