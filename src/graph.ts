@@ -913,7 +913,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const before = (await tx.states([identifier])).get(identifier)
         // Asked for what already holds, nothing is decided: a server that mutes an address again after a restart adds no entry.
         if ((before?.ignored ?? false) === ignored) return []
-        if (ignored && why?.automatic && (await tx.newestNaming([identifier], 0))?.action === 'restore') return []
+        if (ignored && why?.automatic && (await tx.newestNaming([identifier], 0, ['ignore', 'restore']))?.action === 'restore') return []
         await decide(tx, ignored ? 'ignore' : 'restore', [identifier], why)
         await tx.setIgnored(identifier, ignored)
         if (!before || before.fanout > cap) return []

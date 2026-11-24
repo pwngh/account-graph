@@ -542,8 +542,8 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       return rows.map(toDecision)
     },
 
-    async newestNaming(names, after) {
-      const { rows } = await db.query(`select * from ${t('decision')} where seq > $1 and action <> 'prune' and about ?| $2::text[] order by seq desc limit 1`, [after, names])
+    async newestNaming(names, after, among) {
+      const { rows } = await db.query(`select * from ${t('decision')} where seq > $1 and action <> 'prune' and ($3::text[] is null or action = any($3::text[])) and about ?| $2::text[] order by seq desc limit 1`, [after, names, among ?? null])
       return rows[0] && toDecision(rows[0])
     },
 

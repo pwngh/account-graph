@@ -270,11 +270,13 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const check = { by: 'line check', automatic: true }
       await graph.ignore('phone:p', true, check)
       await graph.ignore('phone:p', false, { by: 'dana' })
+      // A subject may be called what an identifier is called.
+      await graph.join('phone:p', 'z', { by: 'dana' })
       await graph.ignore('phone:p', true, check)
-      assert.deepEqual((await graph.decisions()).map(({ action, by }) => [action, by]), [['ignore', 'line check'], ['restore', 'dana']])
+      assert.deepEqual((await graph.decisions()).map(({ action, by }) => [action, by]), [['ignore', 'line check'], ['restore', 'dana'], ['join', 'dana']])
       // A person may still mute it.
       await graph.ignore('phone:p', true, { by: 'dana' })
-      assert.equal((await graph.decisions()).length, 3)
+      assert.equal((await graph.decisions()).length, 4)
 
       const deep = JSON.parse(`${'['.repeat(20_000)}${']'.repeat(20_000)}`)
       for (const bad of [{ x: 1 }, { x: deep }, { gclid: 5 }, { gclid: deep }, { campaignId: 123 }, { source: null }, { gclid: '\0' }, { custom: { a: deep } }, { custom: ['a'] }, { custom: 'a' }, { custom: { a: 5 } }, { custom: { a: '\ud800' } }]) {
@@ -291,7 +293,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
         await assert.rejects(graph.consent('a', { adUserData: true, adPersonalization: true }, { at: 1, source: half }), TypeError)
         await assert.rejects(graph.spend({ day: '2026-03-01', source: 'google', campaign: half, amount: 1 }), TypeError)
       }
-      assert.equal((await graph.decisions()).length, 3)
+      assert.equal((await graph.decisions()).length, 4)
     })
 
     test('a reviewer keeps two subjects apart, and can change their mind', async () => {

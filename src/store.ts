@@ -136,7 +136,7 @@ export interface Tx {
   addDecision(decision: Decision): Promise<void>
   lastDecision(): Promise<Decision | undefined>
   /** The newest decision after a sequence number that names any of the given subjects or identifiers. A prune names none. */
-  newestNaming(names: readonly string[], after: number): Promise<Decision | undefined>
+  newestNaming(names: readonly string[], after: number, among?: readonly Decision['action'][]): Promise<Decision | undefined>
   /** Every decision, oldest first. */
   decisions(): Promise<Decision[]>
   /** One page of decisions, newest first: those before a sequence number, by people, by systems, or by one author. */

@@ -17,7 +17,7 @@ import type { IpLookup } from './integrations/maxmind.ts'
 import type { Ops } from './ops.ts'
 import type { JobState, Outbox } from './outbox.ts'
 import { withStage } from './ladder.ts'
-import { dayIn, sourceOf } from './report.ts'
+import { dayIn, dayStart, sourceOf } from './report.ts'
 import type { Ladder } from './ladder.ts'
 import { defaultPolicy, plainPolicy } from './policy.ts'
 import { reviewPage } from './review.ts'
@@ -550,7 +550,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
   const period = (url: URL) => {
     const timeZone = url.searchParams.get('tz') || options.timeZone || 'UTC'
     const to = url.searchParams.get('to') || dayIn(now(), timeZone)
-    const from = url.searchParams.get('from') || new Date((Date.parse(`${to}T00:00:00Z`) || now()) - 29 * 86_400_000).toISOString().slice(0, 10)
+    const from = url.searchParams.get('from') || new Date(dayStart(to) - 29 * 86_400_000).toISOString().slice(0, 10)
     return { from, to, timeZone }
   }
 

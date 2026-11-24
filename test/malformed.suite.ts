@@ -34,6 +34,12 @@ const POST: Record<string, object> = {
   '/call/result': { id: 'C1', answered: true, voicemail: false, waited: 1 },
   '/costs': [{ day: '2026-01-01', source: 'google', amount: 1, campaignId: '1', campaign: 'c', currency: 'USD', clicks: 1, impressions: 1 }],
 }
+/** What a browser sends, from a site the server takes visits from. */
+const VISIT: Record<string, object> = {
+  '/collect': { device: 'd1', touch: { gclid: 'g', custom: { office: 'north' } }, consent: { adUserData: true, adPersonalization: true }, gpc: false, known: 'k', carried: 'c', staff: 's', canvas: 'x' },
+  '/event': { device: 'd1', event: 'brochure', id: 'e1', number: '+15551230001' },
+  '/carry': { device: 'd1' },
+}
 const deep = JSON.parse(`${'['.repeat(20_000)}${']'.repeat(20_000)}`)
 const BAD = ['a\0', 'device:\0x', '\ud800', 'device:\udfff', '', ' ', null, true, -1, 0, 1.5, 1e308, 9e15, 9007199254740992, 1e21, {}, [], ['x'], { __proto__: { x: 1 } }, 'x'.repeat(70_000), 'x']
 const BAD_QUERY = ['%00', 'a%00', '%ff', 'x', '-1', '1.5', '1e308', '99999999999999999999', 'NaN', '', 'a'.repeat(6000)]
@@ -41,17 +47,17 @@ const BAD_BODY = ['', 'null', '1', '"x"', '[]', '{}', '[null]', '[1]', '{"pairs"
 
 /** Whatever is sent, the answer says what was wrong with it. Run on each store, because what one cannot keep the other may. */
 export function malformedSuite(name: string, open: () => Promise<Opened>) {
-  test(`${name}: no malformed request gets a server error`, async () => {
+  test(`${name}: no malformed request to a route that reads or records gets a server error`, async () => {
     const { store, close } = await open()
     const graph = createGraph(store)
-    const server = createServer(createHandler(graph, { token: 'service', origins: [], linkSecret: 'x'.repeat(32), now: () => T0 })).listen(0, '127.0.0.1')
+    const server = createServer(createHandler(graph, { token: 'service', origins: ['https://site.example'], events: ['brochure'], limit: false, linkSecret: 'x'.repeat(32), now: () => T0 })).listen(0, '127.0.0.1')
     await new Promise((resolve) => server.once('listening', resolve))
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
     const failed: string[] = []
     let sent = 0
     const send = async (method: string, path: string, body: string | undefined, what: string) => {
       sent += 1
-      const response = await fetch(base + path, { method, headers: { authorization: 'Bearer service' }, ...(body !== undefined && { body }) })
+      const response = await fetch(base + path, { method, headers: path in VISIT ? { origin: 'https://site.example', 'user-agent': 'Mozilla/5.0' } : { authorization: 'Bearer service' }, ...(body !== undefined && { body }) })
       await response.arrayBuffer()
       if (response.status >= 500) failed.push(`${response.status} ${method} ${what}`)
     }
@@ -59,7 +65,7 @@ export function malformedSuite(name: string, open: () => Promise<Opened>) {
     console.error = () => {}
     try {
       await graph.observe([1, 2].map((n) => ({ subject: `account:${n}`, identifiers: ['device:d1', 'payment:p1'], at: T0 })))
-      for (const [path, good] of Object.entries(POST)) {
+      for (const [path, good] of Object.entries({ ...POST, ...VISIT })) {
         for (const body of BAD_BODY) await send('POST', path, body, `${path} ${body.slice(0, 30)}`)
         const list = Array.isArray(good)
         for (const key of Object.keys(list ? good[0] : good)) {
@@ -73,6 +79,8 @@ export function malformedSuite(name: string, open: () => Promise<Opened>) {
       }
       for (const [path, good] of Object.entries(GET)) {
         for (const key of Object.keys(good)) {
+          // Alone too: what is left out is worked out from what was sent.
+          for (const bad of [...BAD_QUERY, '-271821-04-20', '+275760-09-13', '0000-01-01']) await send('GET', `${path}?${key}=${bad}`, undefined, `${path} only ${key}=${bad.slice(0, 20)}`)
           for (const bad of BAD_QUERY) await send('GET', `${path}?${Object.entries(good).map(([name, value]) => `${name}=${name === key ? bad : encodeURIComponent(value)}`).join('&')}`, undefined, `${path} ${key}=${bad.slice(0, 20)}`)
         }
       }
