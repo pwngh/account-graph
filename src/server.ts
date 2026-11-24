@@ -345,7 +345,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       }
       // Parameters of the site's own: a few short ones, so a page cannot fill the table.
       const custom = Object.entries(body.touch.custom && typeof body.touch.custom === 'object' ? body.touch.custom : {})
-        .filter(([name, value]) => NAME.test(name) && typeof value === 'string' && value.length <= 256)
+        .filter(([name, value]) => NAME.test(name) && typeof value === 'string' && value && value.length <= 256)
         .slice(0, 10)
       if (custom.length > 0) touch.custom = Object.fromEntries(custom) as Record<string, string>
       // A visitor walking from one of your sites to another has not arrived from anywhere new.
