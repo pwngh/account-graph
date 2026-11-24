@@ -996,6 +996,22 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await assert.rejects(graph.journey('w:1', { limit: 0 }), TypeError)
     })
 
+    test('a chain of links is never longer than was asked for, whatever its subjects are called', async () => {
+      for (const [x, y] of [['m:1', 'm:2'], ['m:2', 'm:1']] as const) {
+        const { graph } = await fresh()
+        const see = (subject: string, ...identifiers: string[]) => graph.observe({ subject, identifiers, at: T0, event: 'visit' })
+        // From s, x is the better way to y than y itself, and z is one link past y.
+        await see('s', 'device:sx', 'email:sx', 'phone:sy')
+        await see(x, 'device:sx', 'email:sx', 'device:xy', 'email:xy')
+        await see(y, 'phone:sy', 'device:xy', 'email:xy', 'device:yz')
+        await see('z', 'device:yz')
+        await graph.touch({ subject: 'z', at: T0, gclid: 'Z' })
+        const { touches } = await graph.attribute('s', { at: T0 + 1, hops: 2 })
+        assert.deepEqual(touches.map((touch) => touch.via), [['s', y]])
+        assert.ok(touches[0]!.confidence < 0.9)
+      }
+    })
+
     test('the review queue pages, subjects are found by prefix, and recent changes are listed', async () => {
       const clock = { now: T0 }
       const { graph } = await fresh(undefined, { now: () => clock.now })

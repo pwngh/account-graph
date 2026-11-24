@@ -41,14 +41,15 @@ function told(entry) {
 }
 
 /** Whose it is, and why that is this person. */
-function why(entry, ties) {
+function why(entry, ties, subject) {
   const tie = ties[entry.subject]
   if (tie.how === 'self') return [el('span', { class: 'muted' }, 'this subject')]
-  const chain = tie.via.length > 1 ? `, through ${tie.via.slice(1).join(', then ')}` : ''
-  return [caller(entry.subject), el('span', { class: 'reason' }, `${tie.how === 'cluster' ? 'same person' : 'strong tie, in another cluster'}${tie.score === null ? ', by a chain too long to score' : `, ${percent(tie.score)}`}${tie.kinds.length > 0 ? ` by ${tie.kinds.join(' and ')}` : ''}${chain}`)]
+  const steps = tie.via.filter((each) => each !== subject)
+  const chain = steps.length > 0 ? `, through ${steps.join(', then ')}` : ''
+  return [caller(entry.subject), el('span', { class: 'reason' }, `${tie.how === 'cluster' ? 'same person' : 'strong tie, in another cluster'}${tie.score === null ? ', no path scored' : `, ${percent(tie.score)}`}${tie.kinds.length > 0 ? ` by ${tie.kinds.join(' and ')}` : ''}${chain}`)]
 }
 
-const row = (ties) => (entry) => el('tr', {}, td('nowrap', entry.at > 0 ? when(entry.at) : '(not recorded)'), td('', el('span', { class: 'chip' }, WHAT[entry.kind])), td('what', ...told(entry)), td('why', ...why(entry, ties)))
+const row = (ties, subject) => (entry) => el('tr', {}, td('nowrap', entry.at > 0 ? when(entry.at) : '(not recorded)'), td('', el('span', { class: 'chip' }, WHAT[entry.kind])), td('what', ...told(entry)), td('why', ...why(entry, ties, subject)))
 // Kinds left out of the list, kept while the screen is open.
 const leaving = new Set()
 
@@ -70,7 +71,7 @@ view('journey', 'Journey', async (box, subject) => {
   let entries = journey.entries
   const ties = { ...journey.ties }
   const table = el('table', { class: 'journey' })
-  const draw = () => table.replaceChildren(el('tr', {}, th('When'), th('What'), th('Details'), th('On, and why')), ...entries.filter((entry) => !leaving.has(entry.kind)).map(row(ties)))
+  const draw = () => table.replaceChildren(el('tr', {}, th('When'), th('What'), th('Details'), th('On, and why')), ...entries.filter((entry) => !leaving.has(entry.kind)).map(row(ties, subject)))
   const kinds = el('div', { class: 'row', role: 'group', 'aria-label': 'Show' })
   const boxes = () => kinds.replaceChildren(...Object.keys(WHAT).filter((kind) => entries.some((entry) => entry.kind === kind)).map((kind) => {
     const check = el('input', { type: 'checkbox', ...(!leaving.has(kind) && { checked: '' }), on: { change: () => { if (check.checked) leaving.delete(kind); else leaving.add(kind); draw() } } })

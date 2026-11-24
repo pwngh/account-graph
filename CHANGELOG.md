@@ -109,3 +109,4 @@
 - `observe`, `touch`, `transfer`, `prune` and `outbox.record` take whole milliseconds only, on both stores; `GET /attribute` and `GET /clusters` no longer answer 500 to a malformed number.
 - `/collect` records no touch for an arrival whose fields are all empty.
 - `fill` clears `ag_landing` in a form it filled before the visitor opted out of advertising.
+- A chain of links behind a credited arrival is never longer than `hops`, whatever its subjects are called.

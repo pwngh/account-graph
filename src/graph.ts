@@ -403,8 +403,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     for (let hop = 0; hop < hops && frontier.length > 0; hop++) {
       const links = await neighbors(tx, frontier)
       const improved = new Set<Subject>()
-      for (const near of [...frontier].sort()) {
-        const start = reached.get(near)!
+      // As the hop began: a chain made better during it is followed in the next one, or it would be a link longer.
+      for (const [near, start] of frontier.sort().map((each) => [each, reached.get(each)!] as const)) {
         for (const link of links.get(near) ?? []) {
           if (apart.has(link.subject) || (only && !only.has(link.subject))) continue
           const confidence = start.confidence * link.score
