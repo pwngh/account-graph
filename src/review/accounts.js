@@ -50,7 +50,11 @@ function profileOf(profile, more) {
     links.append(el('tr', {}, td('who', open(other)), td('', el('span', { class: 'chip apart' }, 'Kept apart'), ' ', contested(other)), ...edge([td('num score', none()), td('why', ...kept(verdict(other)))]),
       td('edge', el('button', { on: { click: () => act('Allow these two to join again', `${profile.subject} and ${other}`, '/separate', { a: profile.subject, b: other, separated: false }, 'Allow', { undo: true }) } }, 'Allow again'))))
   }
-  detail.push(el('section', {}, el('h2', {}, 'Ties'), profile.links.length + profile.separated.length > 0 ? wide('Ties', links, true) : el('p', { class: 'muted' }, 'No ties meet the score threshold.')))
+  detail.push(el('section', {}, el('h2', {}, 'Ties'), ...(profile.links.length + profile.separated.length > 5 ? [filters('Ties', links, [
+    { name: 'Tie', at: 1, read: (cell) => cell.querySelector('.chip').textContent },
+    { name: 'Shares', at: 3, read: (cell) => [...cell.querySelectorAll('.reason:not(.uncounted) > b')].map((each) => each.textContent) },
+    { name: 'Kind', at: 0, read: (cell) => cell.querySelector('a').textContent.split(':')[0] },
+  ])] : []), profile.links.length + profile.separated.length > 0 ? wide('Ties', links, true) : el('p', { class: 'muted' }, 'No ties meet the score threshold.')))
 
   if (profile.flows.length > 0) {
     const moved = (n, asset) => (n > 0 ? `${amount(n)} ${asset}` : tally(0))
@@ -85,7 +89,7 @@ function profileOf(profile, more) {
   const history = el('table', {}, el('tr', {}, th('When'), th('Event'), th('Identifier')))
   for (const sighting of profile.history) history.append(el('tr', {}, td('', reviewDisplay.time(sighting.at)), td('', sighting.event ?? ''), td('who', reviewDisplay.id(sighting.identifier, true))))
   records.append(el('section', {}, el('h2', {}, `Sightings, newest ${amount(profile.history.length)}`),
-    profile.history.length > 0 ? wide('Sightings', history) : el('p', { class: 'muted' }, 'No sightings recorded.')))
+    ...(profile.history.length > 8 ? [filters('Sightings', history, [{ name: 'Event', at: 1 }, { name: 'Identifier', at: 2, read: (cell) => cell.textContent.split(':')[0] }])] : []), profile.history.length > 0 ? wide('Sightings', history) : el('p', { class: 'muted' }, 'No sightings recorded.')))
   detail.push(records)
   return detail
 }

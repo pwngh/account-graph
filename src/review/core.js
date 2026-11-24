@@ -518,7 +518,7 @@ function saved(name, table) {
     return `"${text.replaceAll('"', '""')}"${','.repeat(node.colSpan - 1)}`
   }
   return el('p', { class: 'table-export' }, el('button', { type: 'button', on: { click: () => {
-    const rows = [...table.rows].map((row) => [...row.cells].map(cell).join(','))
+    const rows = [...table.rows].filter((row) => !row.hidden).map((row) => [...row.cells].map(cell).join(','))
     // A mark that says it is UTF-8, without which Excel reads it as something else.
     const address = URL.createObjectURL(new Blob(['\ufeff', rows.join('\r\n'), '\r\n'], { type: 'text/csv' }))
     el('a', { href: address, download: `${name}.csv` }).click()
@@ -529,6 +529,79 @@ function saved(name, table) {
 const share = (part, whole) => (whole > 0 ? `${amount(part)} (${percent(part / whole)})` : amount(part))
 /** A caller's id is long. Its start is enough to tell it from another, and the whole is in the title and the link. */
 const caller = (subject) => reviewDisplay.subject(subject)
+// A menu is placed by where its button was, so it goes when the page moves under it.
+addEventListener('scroll', () => document.querySelector('.filter-menu:popover-open')?.hidePopover(), { passive: true })
+/** What each table is narrowed to, by its name, kept while the screen is open. */
+const narrowed = new Map()
+/**
+ * A bar over a table that narrows its rows: words to look for, and the values
+ * of the columns named in `by`, each with how many rows have it. What is
+ * chosen shows as chips to take away again. It hides rows and reads nothing:
+ * rows added later are narrowed too.
+ */
+function filters(label, table, by) {
+  if (!narrowed.has(label)) narrowed.set(label, { words: '', on: {} })
+  const state = narrowed.get(label)
+  const rows = () => [...table.querySelectorAll('tr')].filter((row) => row.querySelector('td') && !row.querySelector('th') && !row.classList.contains('sum') && !row.classList.contains('part'))
+  /** What a row holds in a column: one value, or several when the cell keeps them apart. */
+  const values = (row, { at, read }) => {
+    const cell = row.cells[at]
+    if (!cell) return []
+    const found = read ? read(cell, row) : (cell.querySelector('.card-value') ?? cell).textContent.trim()
+    return [found].flat().filter(Boolean)
+  }
+  const find = el('input', { type: 'search', class: 'filter-words', placeholder: `Filter ${label.toLowerCase()}`, 'aria-label': `Filter ${label.toLowerCase()}`, value: state.words, on: { input: () => { state.words = find.value; narrow() } } })
+  const chips = el('span', { class: 'filter-chips' })
+  const told = el('span', { class: 'meta', role: 'status' })
+  const menu = el('div', { class: 'filter-menu', popover: 'auto' })
+  const button = el('button', { type: 'button', class: 'filter-add', 'data-key': `filter ${label}` }, '+ Filter')
+  button.popoverTargetElement = menu
+  const bar = el('div', { class: 'filter-bar', role: 'search', 'aria-label': `Filter ${label.toLowerCase()}` }, find, chips, button, told, menu)
+  const chosen = () => Object.entries(state.on).filter(([, list]) => list.length > 0)
+  function holds(row, but) {
+    const words = state.words.trim().toLowerCase()
+    if (words && !row.textContent.toLowerCase().includes(words)) return false
+    return chosen().every(([name, list]) => name === but || values(row, by.find((each) => each.name === name) ?? {}).some((value) => list.includes(value)))
+  }
+  function narrow() {
+    const all = rows()
+    let left = 0
+    for (const row of all) {
+      row.hidden = !holds(row)
+      if (!row.hidden) left += 1
+      // A row split into parts goes with them.
+      for (let part = row.nextElementSibling; part?.classList.contains('part'); part = part.nextElementSibling) part.hidden = row.hidden
+    }
+    const some = chosen().length > 0 || state.words.trim()
+    told.textContent = some ? `${amount(left)} of ${amount(all.length)}` : ''
+    chips.replaceChildren(...chosen().flatMap(([name, list]) => list.map((value) => el('button', { type: 'button', class: 'filter-chip', 'aria-label': `Remove ${name} ${value}`, on: { click: () => { state.on[name] = list.filter((each) => each !== value); narrow(); button.focus({ preventScroll: true }) } } }, el('span', {}, name), ` ${value}`, el('i', { 'aria-hidden': 'true' }, '×')))),
+      some ? el('button', { type: 'button', class: 'filter-clear', on: { click: () => { state.on = {}; state.words = find.value = ''; narrow(); find.focus({ preventScroll: true }) } } }, 'Clear') : '')
+  }
+  function fill() {
+    const all = rows()
+    menu.replaceChildren(...by.map((column) => {
+      const counts = new Map()
+      for (const row of all) for (const value of values(row, column)) counts.set(value, (counts.get(value) ?? 0) + (holds(row, column.name) ? 1 : 0))
+      const on = () => state.on[column.name] ?? []
+      return el('fieldset', {}, el('legend', {}, column.name), ...[...counts].sort(([x, n], [y, m]) => m - n || (x < y ? -1 : 1)).slice(0, 12).map(([value, n]) => {
+        const check = el('input', { type: 'checkbox', ...(on().includes(value) && { checked: '' }), on: { change: () => { state.on[column.name] = check.checked ? [...on(), value] : on().filter((each) => each !== value); narrow() } } })
+        return el('label', {}, check, el('span', {}, value), el('span', { class: 'count' }, amount(n)))
+      }))
+    }))
+  }
+  menu.addEventListener('beforetoggle', (event) => { if (event.newState === 'open') fill() })
+  menu.addEventListener('toggle', (event) => {
+    if (event.newState !== 'open') return
+    // Under its button, and never off the side of the window.
+    const at = button.getBoundingClientRect()
+    menu.style.left = `${Math.max(8, Math.min(at.left, innerWidth - menu.offsetWidth - 8))}px`
+    menu.style.top = `${at.bottom + menu.offsetHeight + 8 > innerHeight ? Math.max(8, at.top - menu.offsetHeight - 6) : at.bottom + 6}px`
+    menu.querySelector('input')?.focus({ preventScroll: true })
+  })
+  new MutationObserver(narrow).observe(table, { childList: true, subtree: true })
+  narrow()
+  return bar
+}
 /** The same table of rows, a page at a time: `fetchPage(next)` answers `{ rows, next }`. */
 function paged(table, next, more, fetchPage) {
   const button = el('button', { on: { click: async () => {

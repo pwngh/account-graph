@@ -12,6 +12,8 @@ const enter = (token) => {
   redrawn()
   drawn.spots.clear()
   drawn.off.clear()
+  narrowed.clear()
+  inbox.id = charted.subject = undefined
   load()
 }
 $('token').addEventListener('change', () => enter($('token').value))
