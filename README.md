@@ -185,7 +185,7 @@ Large graphs, five edges to an account, `npm run bench -- scale 1000000 5000000 
 | 5 million | 2.1 GB | 45 s, 198 MB | 40 s, 206 MB | 156 s, 3.8 GB | 8.1 ms, 2.9 ms |
 | 10 million | 4.3 GB | 94 s, 291 MB | 85 s, 402 MB | out of memory | 10.7 ms, 3.7 ms |
 
-The last column is the median of 300, one at a time.
+The last column is the median of 300, one at a time. The two larger graphs were measured while tests ran on the same database, so their times are longer than they need be.
 
 ### Tools
 
