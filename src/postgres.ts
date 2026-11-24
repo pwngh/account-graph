@@ -535,6 +535,12 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       return rows.map(toDecision)
     },
 
+    async decisionsNaming(subjects) {
+      if (subjects.length === 0) return []
+      const { rows } = await db.query(`select * from ${t('decision')} where action not in ('ignore', 'restore', 'prune') and about ?| $1::text[] order by seq`, [subjects])
+      return rows.map(toDecision)
+    },
+
     async decisionsAbout(pairs) {
       if (pairs.length === 0) return []
       const { rows } = await db.query(

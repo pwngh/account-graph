@@ -29,7 +29,7 @@ const openRow = (at) => (call) => el('tr', {},
   td('num', lasted(at - call.at)), td('', when(call.at)), td('', call.state === 'voicemail' ? 'voicemail' : 'missed'),
   td('who', call.source ? `${call.source}${call.campaign || call.campaignId ? `, ${call.campaign || call.campaignId}` : ''}` : el('span', { class: 'muted' }, 'no arrival credited')),
   td('num', call.result?.waited === undefined ? el('span', { class: 'muted' }, '(not recorded)') : `${amount(Math.round(call.result.waited))} s`),
-  td('num', call.attempts), td('who', call.tags ? Object.entries(call.tags).map(([name, value]) => `${name.replaceAll('_', ' ')} ${value}`).join(', ') : el('span', { class: 'muted' }, '(not recorded)')), td('', caller(call.subject)))
+  td('num', call.attempts), td('who', call.tags ? Object.entries(call.tags).map(([name, value]) => `${name.replaceAll('_', ' ')} ${value}`).join(', ') : el('span', { class: 'muted' }, '(not recorded)')), td('', el('a', { class: 'link', href: `#/journey/${encodeURIComponent(call.subject)}`, title: call.subject }, `${call.subject.slice(0, 18)}…`)))
 
 // Calls to you: what is still open, how they went, and how many could be placed.
 view('calls', 'Calls', async (box, first, last) => {

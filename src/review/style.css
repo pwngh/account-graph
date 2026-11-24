@@ -51,6 +51,9 @@ table { border-collapse: collapse; }
 th { text-align: left; font-weight: 500; color: var(--muted); font-size: 12px; padding: 3px 12px 3px 0; white-space: nowrap; border-bottom: 1px solid var(--line); }
 td { padding: 3px 12px 4px 0; border-bottom: 1px solid var(--line); vertical-align: top; height: 28px; }
 td.num, th.num { text-align: right; }
+td.nowrap { white-space: nowrap; }
+td.what { min-width: 240px; max-width: 520px; overflow-wrap: anywhere; }
+label input[type=checkbox] { height: auto; }
 td.why { min-width: 240px; }
 td.who { min-width: 120px; max-width: 360px; overflow-wrap: anywhere; }
 caption { text-align: left; font-size: 12px; color: var(--muted); padding: 4px 0; }

@@ -399,6 +399,42 @@ export interface OpenCall {
   touch?: AttributedTouch
 }
 
+/** Why something a subject did belongs to the person asked about. */
+export interface Tie {
+  /** `self` it is the subject asked about. `cluster` the graph treats the two as one person. `linked` they are linked strongly enough to be credited, and a cut keeps them in two clusters. */
+  how: 'self' | 'cluster' | 'linked'
+  /** Strength of the best chain of links: from the subject asked about inside its cluster, and from the nearest of the cluster to anybody else. Null when no chain is left. */
+  score: number | null
+  /** The subjects that chain passes through, starting at the one it begins from. */
+  via: Subject[]
+  /** The kinds of identifier the chain's last link rests on, strongest first. */
+  kinds: string[]
+}
+
+/** One thing that happened to a person. */
+export type Entry = { at: number; subject: Subject } & (
+  | { kind: 'arrival'; touch: Touch }
+  | { kind: 'seen'; event: string; identifiers: Identifier[] }
+  | { kind: 'call'; call: KeptCall; followUp?: FollowUp }
+  | { kind: 'step'; outcome: Counted; first: OutcomeValue | null }
+  | { kind: 'value'; transactionId: string; stage: string; from: OutcomeValue; to: OutcomeValue }
+  | { kind: 'consent'; answer: ConsentAnswer }
+  | { kind: 'decision'; decision: Decision }
+)
+
+/** Everything recorded about one person, across the subjects that are them. */
+export interface Journey {
+  subject: Subject
+  /** Each subject something here was recorded on, and why it is this person. */
+  ties: Record<Subject, Tie>
+  /** Oldest first: the newest that many, or those before the time asked for. */
+  entries: Entry[]
+  /** Pass as `before` for the entries before these, or null when there are none. */
+  next: number | null
+  /** Subjects left out because the person has more than are read. */
+  more: number
+}
+
 /** What an ad platform charged for one campaign on one day. Writing the same day, source and campaign again replaces it. */
 export interface Cost {
   /** The day, written `YYYY-MM-DD` in the ad account's time zone. */

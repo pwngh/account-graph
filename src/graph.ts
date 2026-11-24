@@ -28,8 +28,10 @@ import type {
   Counts,
   Decision,
   Edge,
+  Entry,
   Flow,
   Identifier,
+  Journey,
   KeptCall,
   Labels,
   Link,
@@ -43,6 +45,7 @@ import type {
   Ring,
   Sighting,
   Subject,
+  Tie,
   Told,
   Touch,
   Transferred,
@@ -203,6 +206,12 @@ export interface Graph {
   rings(subject: Subject, length?: number): Promise<Ring[]>
   /** Deletes a subject and everything recorded about it, unsent conversions included. */
   forget(subject: Subject, why?: Why): Promise<Change[]>
+  /**
+   * Everything recorded about the person a subject is: arrivals, what they
+   * were seen doing, calls, steps and their values, consent and decisions,
+   * each with the subject it is on and why that subject is this person.
+   */
+  journey(subject: Subject, options?: { before?: number; limit?: number }): Promise<Journey>
   /** Every sighting of a subject, oldest first. With `limit`, only the newest that many. */
   history(subject: Subject, limit?: number): Promise<Sighting[]>
   /** Recomputes every cluster from edges. Run it after changing the policy. */
@@ -255,6 +264,8 @@ export interface PolicyState {
 }
 
 const DAY = 86_400_000
+/** The most subjects of one person a journey reads. */
+const MOST = 60
 const MIXED = 'mixed'
 /** The moments a range of days begins and ends in a time zone. */
 function range(from: string, to: string, timeZone?: string): [number, number] {
@@ -383,23 +394,24 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
   type Reached = Map<Subject, { confidence: number; via: Subject[] }>
 
-  /** Every subject within `hops` links of one, with the strength of the best chain to each. */
-  async function reach(tx: Tx, subject: Subject, hops: number): Promise<Reached> {
-    const reached: Reached = new Map([[subject, { confidence: 1, via: [] }]])
+  /** Every subject within `hops` links of any of those given, with the strength of the best chain to each. With `only`, through those subjects and to them. */
+  async function reach(tx: Tx, from: readonly Subject[], hops: number, only?: ReadonlySet<Subject>, last?: Map<Subject, Link>): Promise<Reached> {
+    const reached: Reached = new Map(from.map((subject) => [subject, { confidence: 1, via: [] }]))
     // Two subjects kept apart are two people, so nothing of the one is reached from the other, through a third subject either.
-    const apart = new Set((await tx.separatedOf([subject])).map(([a, b]) => (a === subject ? b : a)))
-    let frontier = [subject]
+    const apart = new Set((await tx.separatedOf(from)).flat().filter((subject) => !reached.has(subject)))
+    let frontier = [...from]
     for (let hop = 0; hop < hops && frontier.length > 0; hop++) {
       const links = await neighbors(tx, frontier)
       const improved = new Set<Subject>()
-      for (const near of [...frontier].sort()) {
-        const start = reached.get(near)!
+      // As the hop began: a chain made better during it is followed in the next one, or it would be a link longer.
+      for (const [near, start] of frontier.sort().map((each) => [each, reached.get(each)!] as const)) {
         for (const link of links.get(near) ?? []) {
-          if (apart.has(link.subject)) continue
+          if (apart.has(link.subject) || (only && !only.has(link.subject))) continue
           const confidence = start.confidence * link.score
           const known = reached.get(link.subject)
           if (known && known.confidence >= confidence) continue
           reached.set(link.subject, { confidence, via: [...start.via, near] })
+          last?.set(link.subject, link)
           improved.add(link.subject)
         }
       }
@@ -597,7 +609,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     attribute(subject, { at, window = 90 * DAY, hops = 2 }) {
-      return store.read(async (tx) => credit(subject, at, window, await reach(tx, subject, hops), tx))
+      return store.read(async (tx) => credit(subject, at, window, await reach(tx, [subject], hops), tx))
     },
 
     async outcome(outcome) {
@@ -681,7 +693,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const later = await tx.callsOf(unique(open.map((call) => call.subject)))
         const out: OpenCall[] = []
         for (const call of open) {
-          const { credited } = await credit(call.subject, call.at, 90 * DAY, await reach(tx, call.subject, 2), tx)
+          const { credited } = await credit(call.subject, call.at, 90 * DAY, await reach(tx, [call.subject], 2), tx)
           out.push({ call, followUp: followUp(call, later), ...(credited && { touch: credited }) })
         }
         return out
@@ -765,7 +777,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         // Looked for over a year, so how many arrivals the window leaves out can be said. Only those inside it are credited.
         const creditOf = async (subject: Subject, at: number, back = Math.max(window, 365 * DAY)) => {
           let from = reached.get(subject)
-          if (!from) reached.set(subject, (from = await reach(tx, subject, hops)))
+          if (!from) reached.set(subject, (from = await reach(tx, [subject], hops)))
           const { credited: touch } = await credit(subject, at, back, from, tx)
           const inside = touch !== undefined && touch.at >= at - window
           return { touch: inside ? touch : undefined, delay: touch && at - touch.at, inside }
@@ -1027,6 +1039,77 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const open = identifiers.filter((identifier) => usable(policy, identifier, states.get(identifier)))
         for (const edge of await tx.edgesOn(open)) affected.add(edge.subject)
         return settle(tx, affected)
+      })
+    },
+
+    async journey(subject, { before = Number.MAX_SAFE_INTEGER, limit = 200 } = {}) {
+      if (!(Number.isInteger(limit) && limit > 0)) throw new TypeError('limit must be a whole number above zero')
+      return store.read(async (tx) => {
+        const own = (await tx.labelsOf([subject])).get(subject)
+        const members = own ? (await tx.clusterOf(own.cluster)).sort() : [subject]
+        // The person: their cluster, and whoever is tied to any of it strongly enough that their arrivals would be credited.
+        // Nobody kept apart from any of them, though: a browser two people used is tied to both, and they are still two.
+        const within = new Set(members)
+        const links = new Map<Subject, Link>()
+        const reached = await reach(tx, members, 2, undefined, links)
+        const strong = [...reached].filter(([, { confidence }]) => confidence >= policy.same).map(([each]) => each)
+        const everyone = unique([subject, ...members, ...strong.sort()])
+        const people = everyone.slice(0, MOST)
+        // Inside the cluster a tie is the best chain from the subject asked about, however long.
+        const inside = new Map<Subject, Link>()
+        const chains = await reach(tx, [subject], members.length, within, inside)
+        const tie = (each: Subject): Tie => {
+          const [found, link] = within.has(each) ? [chains.get(each), inside.get(each)] : [reached.get(each), links.get(each)]
+          return {
+            how: each === subject ? 'self' : within.has(each) ? 'cluster' : 'linked',
+            score: found?.confidence ?? null,
+            via: found?.via ?? [],
+            kinds: unique((link?.reasons ?? []).filter((reason) => reason.counted !== false).map((reason) => reason.identifier.slice(0, reason.identifier.indexOf(':')))),
+          }
+        }
+
+        const entries: Entry[] = []
+        for (const touch of await tx.touchesOf(people, 0, before - 1)) entries.push({ at: touch.at, subject: touch.subject, kind: 'arrival', touch })
+        const calls = await tx.callsOf(people)
+        for (const call of calls) entries.push({ at: call.at, subject: call.subject, kind: 'call', call, ...(call.direction === 'inbound' && call.result?.answered === false && { followUp: followUp(call, calls) }) })
+        for (const each of people) {
+          // One moment is many sightings, one for each identifier. What a call or a reviewer's join left is told by the call and the decision.
+          const rang = new Set(calls.filter((call) => call.subject === each || call.visitor === each).map((call) => call.at))
+          const moments = new Map<string, Entry & { kind: 'seen' }>()
+          for (const { at, event = '', identifier } of await tx.history(each)) {
+            if (at >= before || (event === 'call' && rang.has(at)) || (event === 'review' && identifier.startsWith('review:join-'))) continue
+            const key = `${at} ${event}`
+            const moment = moments.get(key) ?? { at, subject: each, kind: 'seen', event, identifiers: [] }
+            moments.set(key, moment)
+            moment.identifiers.push(identifier)
+          }
+          entries.push(...moments.values())
+          for (const answer of await tx.consentHistory(each)) entries.push({ at: answer.at, subject: each, kind: 'consent', answer })
+        }
+        for (const outcome of await tx.outcomesOf(people)) {
+          const [first, ...later] = await tx.valuesOf(outcome.transactionId, outcome.subject)
+          entries.push({ at: outcome.at, subject: outcome.subject, kind: 'step', outcome, first: first ?? null })
+          let from = first
+          for (const to of later) {
+            entries.push({ at: to.at, subject: outcome.subject, kind: 'value', transactionId: outcome.transactionId, stage: outcome.stage, from: from!, to })
+            from = to
+          }
+        }
+        const named = new Set(people)
+        for (const decision of await tx.decisionsNaming(people)) entries.push({ at: decision.at, subject: decision.about.find((each) => named.has(each))!, kind: 'decision', decision })
+
+        const found = entries.filter((entry) => entry.at < before).sort((x, y) => x.at - y.at || (x.kind < y.kind ? -1 : x.kind > y.kind ? 1 : x.subject < y.subject ? -1 : 1))
+        // A page never ends inside a moment, so the next one can begin before it.
+        let cut = Math.max(0, found.length - limit)
+        while (cut > 0 && found[cut - 1]!.at === found[cut]!.at) cut -= 1
+        const page = found.slice(cut)
+        return {
+          subject,
+          ties: Object.fromEntries(unique(page.map((entry) => entry.subject)).map((each) => [each, tie(each)])),
+          entries: page,
+          next: cut > 0 ? page[0]!.at : null,
+          more: everyone.length - people.length,
+        }
       })
     },
 

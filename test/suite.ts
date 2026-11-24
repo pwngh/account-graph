@@ -907,6 +907,111 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       for (const bad of [{ step: '' }, { days: 0 }, { days: 1.5 }, { days: 400 }, { from: '2023-12-01' }]) await assert.rejects(graph.followed({ from: '2023-11-14', to: '2023-11-20', step: 'client', days: 30, ...bad }), TypeError)
     })
 
+    test('a journey is everything about one person, in order, and why each subject is them', async () => {
+      const clock = { now: T0 }
+      const { graph } = await fresh(undefined, { now: () => clock.now })
+      const at = (hours: number) => T0 + hours * HOUR
+      const numbers = { '+15550100001': { source: 'google', campaignId: '111' } }
+      // An ad click, a tap, a missed call that is returned, an inquiry, a client step that is restated, consent, and a decision.
+      await graph.observe({ subject: 'visitor:j', identifiers: ['device:j', 'ip:192.0.2.9'], at: at(0), event: 'visit' })
+      await graph.touch({ subject: 'visitor:j', at: at(0), gclid: 'G', campaignId: '111', custom: { office: 'north' } })
+      await graph.observe({ subject: 'visitor:j', identifiers: ['device:j', dialed('+15550100001', at(1))], at: at(1), event: 'phone_click' })
+      await recordCall(graph, { id: 'J1', from: '+15550100081', to: '+15550100001', at: at(1) + 5000, duration: 20, answered: false, tags: { language: 'es' } }, { numbers })
+      const callerId = `caller:${hashPhone('+15550100081')}`
+      await recordCall(graph, { id: 'J2', direction: 'outbound', from: '+15550100001', to: '+15550100081', at: at(3), duration: 90, answered: true })
+      await graph.observe({ subject: 'contact:j', identifiers: ['device:j', `phone:${hashPhone('+15550100081')}`], at: at(5), event: 'signup' })
+      await graph.consent('contact:j', { adUserData: true, adPersonalization: false }, { at: at(5), source: 'form' })
+      clock.now = at(6)
+      await graph.outcome({ transactionId: 'client-j', subject: 'contact:j', at: at(6), stage: 'client', value: 100, currency: 'USD' })
+      clock.now = at(30)
+      await graph.restate('client-j', 250)
+      clock.now = at(31)
+      await graph.separate('contact:j', 'contact:k', true, { by: 'dana', reason: 'two people' })
+      // Somebody else's, sharing too little to be this person, and somebody kept apart who shares enough.
+      await graph.observe({ subject: 'visitor:stranger', identifiers: ['ip:192.0.2.9'], at: at(0), event: 'visit' })
+      await graph.observe({ subject: 'contact:k', identifiers: ['device:j'], at: at(4), event: 'signup' })
+      await graph.touch({ subject: 'contact:k', at: at(4), gclid: 'K' })
+
+      const journey = await graph.journey('contact:j')
+      const say = (entry: (typeof journey.entries)[number]) => `${(entry.at - T0) / HOUR === Math.floor((entry.at - T0) / HOUR) ? (entry.at - T0) / HOUR : 'x'} ${entry.kind} ${entry.subject === callerId ? 'caller' : entry.subject}`
+      assert.deepEqual(journey.entries.map(say), [
+        '0 arrival visitor:j', '0 seen visitor:j', '1 seen visitor:j', 'x call caller', '3 call caller', '5 consent contact:j', '5 seen contact:j', '6 step contact:j', '30 value contact:j', '31 decision contact:j',
+      ])
+      assert.deepEqual([journey.next, journey.more], [null, 0])
+      const [tap, miss, step, value] = [journey.entries[2], journey.entries[3], journey.entries[7], journey.entries[8]] as any[]
+      assert.deepEqual([tap.event, tap.identifiers.length], ['phone_click', 2])
+      assert.deepEqual([miss.call.id, miss.call.visitor, miss.followUp.state, miss.call.tags], ['J1', 'visitor:j', 'returned', { language: 'es' }])
+      assert.deepEqual([step.first.value, step.outcome.value, value.from.value, value.to.value], [100, 250, 100, 250])
+      // Why each subject is this person: itself, and by what it is tied.
+      assert.deepEqual(Object.keys(journey.ties).sort(), [callerId, 'contact:j', 'visitor:j'].sort())
+      assert.deepEqual([journey.ties['contact:j']!.how, journey.ties['contact:j']!.score], ['self', 1])
+      const tie = journey.ties['visitor:j']!
+      assert.deepEqual([tie.how, tie.kinds, tie.via], ['cluster', ['device'], ['contact:j']])
+      assert.ok(tie.score! > 0.9)
+      // Asked of any of them, it is the same story.
+      assert.deepEqual((await graph.journey('visitor:j')).entries.map(say), journey.entries.map(say))
+
+      // A page holds the newest, and ends between moments and not inside one.
+      const page = await graph.journey('contact:j', { limit: 4 })
+      assert.deepEqual(page.entries.map((entry) => entry.kind), ['consent', 'seen', 'step', 'value', 'decision'])
+      const before = await graph.journey('contact:j', { limit: 99, before: page.next! })
+      assert.deepEqual([...before.entries, ...page.entries].map(say), journey.entries.map(say))
+
+      assert.deepEqual((await graph.journey('nobody')).entries, [])
+      // What was forgotten is in no journey but for the decision to forget it.
+      await graph.forget('visitor:j')
+      assert.equal((await graph.journey('contact:j')).entries.some((entry) => entry.subject === 'visitor:j'), false)
+      await graph.forget('contact:j')
+      assert.deepEqual((await graph.journey('contact:j')).entries.map((entry) => entry.kind), ['decision', 'decision'])
+    })
+
+    test('a journey is the whole cluster\'s, whoever of it is asked about, and a path through somebody kept apart does not hide a direct one', async () => {
+      const { graph } = await fresh()
+      const see = (subject: string, ...identifiers: string[]) => graph.observe({ subject, identifiers, at: T0, event: 'visit' })
+      // A chain of four: each shares a device with the next, so the ends are three links apart.
+      await see('w:1', 'device:12')
+      await see('w:2', 'device:12', 'device:23')
+      await see('w:3', 'device:23', 'device:34')
+      await see('w:4', 'device:34')
+      const asked = await graph.journey('w:1')
+      assert.deepEqual(asked.entries.map((entry) => entry.subject), ['w:1', 'w:2', 'w:3', 'w:4'])
+      assert.deepEqual([asked.ties['w:4']!.how, asked.ties['w:4']!.via, asked.ties['w:4']!.kinds], ['cluster', ['w:1', 'w:2', 'w:3'], ['device']])
+      assert.ok(asked.ties['w:4']!.score! > 0.8)
+      // Four of one person, and y kept apart from one of them, with a cut between. x is tied to one of the four only, and z best through y.
+      for (const each of ['a:1', 'a:2', 'a:3', 'a:4']) await see(each, 'device:a', 'email:a')
+      await see('a:1', 'device:y', 'device:z')
+      await see('y', 'device:y', 'email:yz', 'device:yz')
+      await see('z', 'device:z', 'email:yz', 'device:yz')
+      await see('x', 'device:yz', 'device:x')
+      await see('a:4', 'device:x')
+      await graph.separate('a:2', 'y', true)
+      assert.notEqual((await graph.cluster('a:1'))!.id, (await graph.cluster('z'))!.id)
+      const people = async (subject: string) => Object.keys((await graph.journey(subject)).ties).sort()
+      for (const each of ['a:1', 'a:2', 'a:3', 'a:4']) assert.deepEqual(await people(each), ['a:1', 'a:2', 'a:3', 'a:4', 'x', 'z'])
+      assert.deepEqual((await graph.journey('a:3')).ties.x!.via, ['a:4'])
+      // A sighting called after a call or a review that no call or decision tells stays.
+      await graph.observe({ subject: 'w:1', identifiers: ['device:12'], at: T0 + 1, event: 'call' })
+      await graph.observe({ subject: 'w:1', identifiers: ['device:12'], at: T0 + 2, event: 'review' })
+      assert.deepEqual((await graph.journey('w:1')).entries.slice(-2).map((entry) => entry.kind === 'seen' && entry.event), ['call', 'review'])
+      await assert.rejects(graph.journey('w:1', { limit: 0 }), TypeError)
+    })
+
+    test('a chain of links is never longer than was asked for, whatever its subjects are called', async () => {
+      for (const [x, y] of [['m:1', 'm:2'], ['m:2', 'm:1']] as const) {
+        const { graph } = await fresh()
+        const see = (subject: string, ...identifiers: string[]) => graph.observe({ subject, identifiers, at: T0, event: 'visit' })
+        // From s, x is the better way to y than y itself, and z is one link past y.
+        await see('s', 'device:sx', 'email:sx', 'phone:sy')
+        await see(x, 'device:sx', 'email:sx', 'device:xy', 'email:xy')
+        await see(y, 'phone:sy', 'device:xy', 'email:xy', 'device:yz')
+        await see('z', 'device:yz')
+        await graph.touch({ subject: 'z', at: T0, gclid: 'Z' })
+        const { touches } = await graph.attribute('s', { at: T0 + 1, hops: 2 })
+        assert.deepEqual(touches.map((touch) => touch.via), [['s', y]])
+        assert.ok(touches[0]!.confidence < 0.9)
+      }
+    })
+
     test('the review queue pages, subjects are found by prefix, and recent changes are listed', async () => {
       const clock = { now: T0 }
       const { graph } = await fresh(undefined, { now: () => clock.now })

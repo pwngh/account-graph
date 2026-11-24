@@ -51,6 +51,7 @@ function profileOf(profile) {
   detail.push(el('section', {}, el('h3', {}, profile.subject),
     el('p', {}, size > 1 ? `In a cluster of ${size} that the graph treats as one person.` : 'On its own. The graph treats it as one person with one account.'),
     profile.cluster.oversized ? el('p', { class: 'apart' }, 'This cluster is larger than the review size. A shared identifier may be joining strangers.') : '',
+    el('p', {}, el('a', { class: 'link', href: `#/journey/${encodeURIComponent(profile.subject)}` }, 'Their journey: everything recorded, in order')),
     el('div', { class: 'row' },
       el('button', { on: { click: () => act('Join as one person', `${profile.subject} and the subject you name will be treated as one person.`, '/join', { a: profile.subject }, 'Join', 'b') } }, 'Join with another…'),
       el('button', { class: 'danger', on: { click: () => act('Forget this subject', `Everything recorded about ${profile.subject} will be deleted. This cannot be undone.`, '/forget', { subject: profile.subject }, 'Delete') } }, 'Forget…'))))
@@ -205,4 +206,4 @@ view('accounts', 'Accounts', async (box, subject) => {
   left.append(decisions)
 
   detail.append(...(profile ? profileOf(profile) : [el('section', {}, el('p', { class: 'muted' }, 'Open a subject, or pick a cluster, to see who it is tied to and why.'))]))
-})
+}, { subject: true })

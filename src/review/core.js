@@ -100,10 +100,11 @@ const open = (subject) => el('a', { class: 'link', href: subjectHash(subject) },
  * The views, in the order of the menu. Each has a `title` and
  * `show(box, ...parts)`, which fills the box from what the address names
  * after the view. What it throws is shown as a problem. A view whose answer
- * depends on the time of day says with `every` how often to read it again.
+ * depends on the time of day says with `every` how often to read it again,
+ * and one that is about a subject says so with `subject`.
  */
 const views = new Map()
-const view = (name, title, show, { every } = {}) => views.set(name, { title, show, every })
+const view = (name, title, show, { every, subject } = {}) => views.set(name, { title, show, every, subject })
 
 /** The view an address names, with the parts that follow it. Addresses from before views had names still work. */
 function place() {
@@ -165,7 +166,7 @@ async function load(tag) {
     if (held) [...$('view').querySelectorAll('a, button, input, select, [tabindex]')].find((node) => which(node) === held)?.focus({ preventScroll: true })
     if (!quiet) {
       notice('')
-      if (name === 'accounts' && parts[0]) $('subject').value = parts[0]
+      if (views.get(name).subject && parts[0]) $('subject').value = parts[0]
     }
     if (!quiet) browsing = false
     loadedAt = readAt = Date.now()

@@ -124,7 +124,7 @@ const NAME = /^[\w.-]{1,64}$/
 
 /** What the reviewer token opens: what the reviewer screen reads, and the decisions a reviewer makes. */
 const REVIEW_ROUTES = new Set([
-  'GET /subject', 'GET /clusters', 'GET /search', 'GET /recent', 'GET /links', 'GET /cluster', 'GET /history', 'GET /flows', 'GET /collusion', 'GET /rings',
+  'GET /subject', 'GET /clusters', 'GET /search', 'GET /recent', 'GET /links', 'GET /cluster', 'GET /history', 'GET /journey', 'GET /flows', 'GET /collusion', 'GET /rings',
   'GET /decisions', 'GET /disputes', 'GET /consent', 'GET /outcome', 'GET /followed', 'GET /call', 'GET /calls', 'GET /calls/summary', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'GET /ops', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
 ])
 
@@ -682,6 +682,30 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return graph.links(subject)
       case 'GET /cluster':
         return (await graph.cluster(subject)) ?? null
+      case 'GET /journey': {
+        const before = url.searchParams.has('before') ? Number(url.searchParams.get('before')) : undefined
+        if (before !== undefined && !Number.isSafeInteger(before)) throw new Refusal(400, '`before` must be the `next` of a later page')
+        const journey = await graph.journey(subject, before === undefined ? {} : { before })
+        // What became of each step at the ad platforms. A job keeps how it stands, and not when it got there.
+        const jobs = new Map<string, { target: string; state: JobState; note?: string; value?: number }[]>()
+        if (options.outbox) {
+          for (const entry of journey.entries) {
+            if (entry.kind !== 'step') continue
+            const { transactionId } = entry.outcome
+            jobs.set(transactionId, (await options.outbox.get(transactionId)).map(({ target, state, note, value }) => ({ target, state, ...(note && { note }), ...(value !== undefined && { value }) })))
+          }
+        }
+        return {
+          ...journey,
+          entries: journey.entries.map((entry) => {
+            if (entry.kind === 'arrival') return { ...entry, source: sourceOf(entry.touch) }
+            if (entry.kind === 'step') return { ...entry, sent: jobs.get(entry.outcome.transactionId) ?? [] }
+            if (entry.kind !== 'call') return entry
+            const { to: _, ...call } = entry.call
+            return { ...entry, call, state: callState(entry.call, now(), options.calls) }
+          }),
+        }
+      }
       case 'GET /history':
         return graph.history(subject)
       case 'GET /attribute': {
