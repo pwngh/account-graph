@@ -17,7 +17,7 @@ test('every scene of the demo runs, says what came of it within a second, and ca
   await until('the stage', async () => (await bar('running')) === 'false' && (await run(`typeof loadedAt === 'number'`).catch(() => false)))
   assert.equal(await run(`document.body.classList.contains('with-phone') && document.querySelector('.device').dataset.state`), 'ad')
   const { scenes } = (await run(`fetch('/stage/scenes').then((answer) => answer.json())`)) as { scenes: { title: string; see: [string, string]; spot?: string[] }[] }
-  assert.equal(scenes.length, 20)
+  assert.equal(scenes.length, 21)
   const links = scenes.map(({ see }) => see[1])
   // Only the stage moves the story on.
   assert.equal((await fetch(`${firm.graph}/stage/run`, { method: 'POST' })).status, 403)
@@ -60,6 +60,7 @@ test('every scene of the demo runs, says what came of it within a second, and ca
     [/Initial value 400 USD, current value 1250 USD.*ad platform: 1250 USD/, (text) => (text.includes('from 400 USD to 1,250 USD') ? 'restated' : '')],
     [/Before: joined.*Same cluster: no/, (text) => (text.includes('contact:tomas-vega') && /separated/i.test(text) ? 'separated' : '')],
     [/Attributed to Map listing, River/, (text) => row(text, 'Map listing, River')],
+    [/Step recorded: inquiry\. Credited to Search: River at 9\d%, by the browser/, (text) => (text.includes('contact:rosa-marin') ? 'in inquiry' : '')],
     [/Linked at 85% by phone: related/, (text) => (text.includes('contact:marta-lago') && text.includes('contact:teo-lago') ? 'a pair' : '')],
     [/no calls for 12 hours/, (text) => (text.includes('Calls feed is stale') ? 'quiet' : '')],
   ]

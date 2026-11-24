@@ -31,8 +31,13 @@ h3 { font-size: 16px; font-weight: 600; letter-spacing: -.008em; } .grid p, .ste
 .steps { display: grid; gap: 16px; margin-top: 16px; counter-reset: step; }
 .steps li { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; counter-increment: step; }
 .steps li::before { content: counter(step); display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--tint); color: var(--accent); font-size: 14px; font-weight: 600; }
+.text { display: inline-flex; align-items: center; min-height: 52px; margin: 24px 0 0 18px; color: var(--accent); font-weight: 600; text-underline-offset: 3px; }
+form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; max-width: 620px; margin-top: 16px; } form > :not(.half) { grid-column: 1 / -1; }
+.received { margin-top: 10px; } label { display: grid; gap: 4px; font-size: 14px; } label.check { grid-template-columns: auto 1fr; gap: 8px; align-items: start; color: var(--muted); }
+form input:not([type=checkbox]), textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: inherit; font: inherit; } textarea { min-height: 84px; resize: vertical; }
+button { justify-self: start; min-height: 46px; padding: 0 22px; border: 0; border-radius: 12px; background: var(--accent); color: var(--on); font: inherit; font-weight: 600; cursor: pointer; }
 footer { border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; } footer .wrap { padding-block: 18px 28px; }
-@media (max-width: 560px) { .hero .wrap { padding-block: 30px 34px; } .call { display: flex; } section { padding: 30px 0; } }
+@media (max-width: 560px) { .hero .wrap { padding-block: 30px 34px; } .call { display: flex; } .text { display: flex; justify-content: center; margin: 4px 0 0; } section { padding: 30px 0; } }
 `
 
 /** The phone on the stage is light, whatever the presenter's computer is set to. */
@@ -54,6 +59,7 @@ const WORDS = {
       ['You meet an attorney', 'In person, by phone or by video. If we miss your call, we call you back.'],
     ]],
     where: ['Offices', [['North', 'In person and by phone.'], ['River', 'In person and by phone.'], ['Online', 'By video, anywhere in the state.']]],
+    text: 'Text us', form: ['Write to us', 'First name', 'Last name', 'Phone', 'How can we help?', 'You may text me about my inquiry. Message and data rates may apply. Reply STOP to end texts.', 'Send', 'Received. We will call you back.'],
     made: 'Fictional firm. Sample data. Not legal advice.',
   },
   es: {
@@ -71,18 +77,21 @@ const WORDS = {
       ['Se reúne con un abogado', 'En persona, por teléfono o por video. Si perdemos su llamada, se la devolvemos.'],
     ]],
     where: ['Oficinas', [['North', 'En persona y por teléfono.'], ['River', 'En persona y por teléfono.'], ['En línea', 'Por video, en todo el estado.']]],
+    text: 'Envíe un texto', form: ['Escríbanos', 'Nombre', 'Apellido', 'Teléfono', '¿Cómo podemos ayudarle?', 'Pueden enviarme textos sobre mi consulta. Pueden aplicarse tarifas de mensajes y datos. Responda STOP para dejar de recibirlos.', 'Enviar', 'Recibido. Le llamaremos.'],
     made: 'Firma ficticia. Datos de muestra. No es asesoría legal.',
   },
 } satisfies Record<'en' | 'es', { help: [string, string[][]]; then: [string, string[][]]; where: [string, string[][]]; other: string[]; [word: string]: unknown }>
 
-/** A landing page. In the phone of the stage the scenes say what happens, so it reports nothing and its call button tells the stage. */
-export const landing = (lang: 'en' | 'es', graph: string, phone = false): string => {
-  const { title, head, lead, call, number, hours, other, help, then, where, made } = WORDS[lang]
+/** A landing page. In the phone of the stage the scenes say what happens, so it reports nothing, has no form, and its call button tells the stage. */
+export const landing = (lang: 'en' | 'es', graph: string, phone = false, sent = false): string => {
+  const { title, head, lead, call, number, hours, other, help, then, where, text, form, made } = WORDS[lang]
+  const [write, first, last, tel, helped, agree, send, received] = form
+  const asked = `<section id="write"><div class="wrap"><h2>${write}</h2>${sent ? `<p class="received" role="status">${received}</p>` : `<form action="/inquiry" method="post" data-ag-fields><input type="hidden" name="lang" value="${lang}"><label class="half">${first}<input name="first" autocomplete="given-name" maxlength="60" required></label><label class="half">${last}<input name="last" autocomplete="family-name" maxlength="60" required></label><label>${tel}<input name="phone" type="tel" autocomplete="tel" maxlength="30" required></label><label>${helped}<textarea name="about" maxlength="500"></textarea></label><label class="check"><input type="checkbox" name="texts" value="yes">${agree}</label><button>${send}</button></form>`}</div></section>`
   const list = (kind: string, [name, items]: [string, string[][]], tag = 'ul') => `<section><div class="wrap"><h2>${name}</h2><${tag} class="${kind}">${items.map(([what, text]) => `<li><div><h3>${what}</h3><p>${text}</p></div></li>`).join('')}</${tag}></div></section>`
   return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><link rel="icon" href="data:,"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${title}</title><style>${phone ? LIGHT : SITE}</style></head><body>
 <header><div class="wrap"><a class="brand" href="${lang === 'es' ? '/es' : '/'}"><svg viewBox="0 0 26 26" aria-hidden="true"><rect width="26" height="26" rx="8"/><path d="M7 9h12M13 9v10M9.500 19h7"/></svg>${title}</a><a class="lang" lang="${other[1]}" hreflang="${other[1]}" href="${other[0]}">${other[2]}</a></div></header>
-<main><div class="hero"><div class="wrap"><h1>${head}</h1><p>${lead}</p><a class="call" data-ag-pool href="tel:${number}">${call}</a><p class="hours">${hours}</p></div></div>
-${list('grid', help)}${list('steps', then, 'ol')}${list('grid', where)}</main>
+<main><div class="hero"><div class="wrap"><h1>${head}</h1><p>${lead}</p><a class="call" data-ag-pool href="tel:${number}">${call}</a>${phone ? '' : `<a class="text" data-ag-pool href="sms:${number}">${text}</a>`}<p class="hours">${hours}</p></div></div>
+${list('grid', help)}${phone ? '' : asked}${list('steps', then, 'ol')}${list('grid', where)}</main>
 <footer><div class="wrap">${made}</div></footer>
 ${phone ? `<script>addEventListener('click', (event) => { const link = event.target.closest('a'); if (!link) return; event.preventDefault(); if (link.matches('.call')) parent.postMessage('call', ${JSON.stringify(graph)}) })</script>` : `<script type="module" src="${graph}/collect.js?pool=1&params=office,lang"></script>`}</body></html>`
 }

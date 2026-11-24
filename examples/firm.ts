@@ -86,7 +86,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
   const calls = { numbers: LINES, results: 'expected' as const }
   const handler = createHandler(graph, {
     token: 'service-demo', reviewers: { dana: 'demo' }, origins: [siteAt], now: clock, outbox, ops, stages: STEPS, calls, returnHours: 24, limit: false,
-    events: ['phone_click'], linkSecret: SECRET, identifierSecret: SECRET, pool: { numbers: ['+15550100111', '+15550100112'], minutes: 15, grace: 120 },
+    events: ['phone_click', 'text_click'], linkSecret: SECRET, identifierSecret: SECRET, pool: { numbers: ['+15550100111', '+15550100112'], minutes: 15, grace: 120 },
   })
   // The reviewer screen goes by the demo's clock: the page is served with it, and every answer carries it. The stage is the same page with the caller's phone and the scenes.
   const { html, headers } = reviewPage()
@@ -284,6 +284,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
   const opens = (url: string) => browser('/collect', { device: 'v-4821', url: url.split('?')[0], link: new URL(url).searchParams.get('ag') })
   const steps = (stage: keyof typeof STEPS, tags: object = {}) => ask('POST', '/convert', { transactionId: `demo-${stage}`, subject: demo.contact, at: clock(), stage, tags: { language: 'es', ...tags } })
   const links: Record<string, string> = {}
+  const forms = new Map<string, number>()
   /** A text staff send the contact. Only its time and the two numbers are kept. */
   const sends = (id: string) => ask('POST', '/text', { id, direction: 'outbound', from: demo.line, to: demo.phone, at: clock() })
 
@@ -457,6 +458,17 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
       },
     },
     {
+      title: 'Web form', text: 'Somebody else comes from an ad, and sends the form on the site in place of calling.', see: ['Board', review('board/7')], spot: ['contact:rosa-marin'],
+      async run() {
+        await at(3, 16, 42)
+        await browser('/collect', { device: 'v-5107', url: `${siteAt}/`, touch: { gclid: 'demo-click-2', source: 'google', medium: 'cpc', campaignId: '30222', campaign: 'Search: River', landing: `${siteAt}/`, custom: { office: 'river', lang: 'en' } } })
+        const { status } = await fetch(`${siteAt}/inquiry`, { method: 'POST', redirect: 'manual', body: new URLSearchParams({ first: 'Rosa', last: 'Marin', phone: '(555) 010-0046', texts: 'yes', lang: 'en', ag_device: 'v-5107' }) })
+        if (status !== 303) throw new Error(`The form was answered ${status}`)
+        const { credited } = await ask('GET', `/attribute?subject=contact:rosa-marin&at=${clock()}`)
+        return { lines: [`Step recorded: inquiry. Credited to ${credited.campaign} at ${Math.round(credited.confidence * 100)}%, by the browser.`] }
+      },
+    },
+    {
       title: 'Shared phone', text: 'A parent and a child share a phone. The link is below the join threshold and waits for review.', see: ['Matches', review('decide')], spot: ['marta-lago'],
       async run() {
         await at(3, 16, 45)
@@ -505,8 +517,10 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
     const html = (text: string) => void response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }).end(text)
     try {
       const phone = url.searchParams.has('phone')
-      if (url.pathname === '/') return html(landing('en', graphAt, phone))
-      if (url.pathname === '/es') return html(landing('es', graphAt, phone))
+      const asked = url.searchParams.has('sent')
+      if (url.pathname === '/') return html(landing('en', graphAt, phone, asked))
+      if (url.pathname === '/es') return html(landing('es', graphAt, phone, asked))
+      if (url.pathname === '/inquiry' && request.method === 'POST') return await inquired(request, response)
       if (url.pathname === '/present') return void response.writeHead(302, { location: `${graphAt}/stage` }).end()
       if (url.pathname === '/hook' && request.method === 'POST') {
         alerts.push(JSON.parse(await new Response(request as unknown as ReadableStream).text()).text)
@@ -516,6 +530,21 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, s
     } catch (error) {
       response.writeHead(500, { 'content-type': 'application/json' }).end(JSON.stringify({ error: String((error as Error).message) }))
     }
+  }
+
+  /** The form on the site: a new contact, with the browser it was filled in on. What was written is the firm's, and is not recorded here. */
+  async function inquired(request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse) {
+    const form = new URLSearchParams((await new Response(request as unknown as ReadableStream).text()).slice(0, 4000))
+    const word = (name: string) => (form.get(name) ?? '').trim().slice(0, 60)
+    const [first, last, device] = [word('first'), word('last'), word('ag_device')]
+    const slug = `${first}-${last}`.normalize('NFKD').toLowerCase().replace(/[^a-z-]/g, '')
+    if (!first || !last || word('phone').replace(/\D/g, '').length < 10) return void response.writeHead(400).end('A name and a phone number are needed')
+    const before = forms.get(slug) ?? 0
+    forms.set(slug, before + 1)
+    const subject = `contact:${slug}${before > 0 ? `-${before + 1}` : ''}`
+    await ask('POST', '/identify', { subject, ...(device && { device }), phone: word('phone'), name: { first, last }, event: 'inquiry' })
+    await ask('POST', '/convert', { transactionId: `form-${randomUUID()}`, subject, at: clock(), stage: 'inquiry', tags: { language: form.get('lang') === 'es' ? 'es' : 'en', texts: form.get('texts') === 'yes' ? 'yes' : 'no' } })
+    response.writeHead(303, { location: `${form.get('lang') === 'es' ? '/es' : '/'}?sent=1#write` }).end()
   }
 
   await fill()
