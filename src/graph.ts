@@ -28,6 +28,7 @@ import type {
   Counted,
   Counterparty,
   Counts,
+  Deciding,
   Decision,
   Edge,
   Entry,
@@ -151,13 +152,13 @@ export interface Graph {
    */
   report(options: ReportOptions): Promise<Report>
   /** Stops, or with `false` resumes, linking through one identifier. */
-  ignore(identifier: Identifier, ignored?: boolean, why?: Why): Promise<Change[]>
+  ignore(identifier: Identifier, ignored?: boolean, why?: Deciding): Promise<Change[]>
   /**
    * Records a reviewer's decision that two subjects are different people, or
    * with `false` withdraws it. The two never share a cluster while it stands,
    * whatever they share later.
    */
-  separate(a: Subject, b: Subject, separated?: boolean, why?: Why): Promise<Change[]>
+  separate(a: Subject, b: Subject, separated?: boolean, why?: Deciding): Promise<Change[]>
   /**
    * Records a list of separations, or withdrawals, in one transaction with
    * one decision each. A pair whose last decision already says so is left
@@ -177,7 +178,7 @@ export interface Graph {
   /** Every answer a subject gave, the standing one first. With `limit`, only that many. */
   consentHistory(subject: Subject, limit?: number): Promise<ConsentAnswer[]>
   /** Records a reviewer's decision that two subjects are one person. They join one cluster unless separated. */
-  join(a: Subject, b: Subject, why?: Why): Promise<Change[]>
+  join(a: Subject, b: Subject, why?: Deciding): Promise<Change[]>
   /** A number that is different after every write: the same number means nothing has changed. */
   version(): Promise<number>
   /** How much the graph holds: subjects, clusters, identifiers, edges, sightings, touches, decisions. */
@@ -212,7 +213,7 @@ export interface Graph {
    */
   rings(subject: Subject, length?: number): Promise<Ring[]>
   /** Deletes a subject and everything recorded about it, unsent conversions included. */
-  forget(subject: Subject, why?: Why): Promise<Change[]>
+  forget(subject: Subject, why?: Deciding): Promise<Change[]>
   /**
    * Everything recorded about the person a subject is: arrivals, what they
    * were seen doing, calls, steps and their values, consent and decisions,
@@ -314,6 +315,16 @@ function range(from: string, to: string, timeZone?: string): [number, number] {
 }
 
 const pairKey = (a: Subject, b: Subject) => (a < b ? `${a}\u0000${b}` : `${b}\u0000${a}`)
+
+/** A decision refused because another, made since its author looked, names the same subject or identifier. */
+export class Outdated extends Error {
+  decision: Decision
+  constructor(decision: Decision) {
+    super(`${decision.by ?? 'Someone'} has decided about ${decision.about.join(' and ')} since you looked`)
+    this.name = 'Outdated'
+    this.decision = decision
+  }
+}
 
 export function createGraph(store: Store, policy: Policy = defaultPolicy, options: GraphOptions = {}): Graph {
   // A copy, so a caller that edits its own policy later changes nothing here: the hash always names what scores.
@@ -481,7 +492,20 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     return seqs
   }
 
-  const decide = async (tx: Tx, action: Decision['action'], about: string[], why: Why | undefined) => (await decideAll(tx, [{ action, about, why }]))[0]!
+  /** Refuses someone who decides about what another has decided since they looked. */
+  async function current(tx: Tx, about: readonly string[], why: Deciding | undefined): Promise<void> {
+    const seen = why?.seen
+    if (seen === undefined) return
+    if (!Number.isSafeInteger(seen) || seen < 0) throw new TypeError('`seen` must be the number of a decision')
+    const newer = await tx.newestNaming(about, seen)
+    if (newer) throw new Outdated(newer)
+  }
+
+  const decide = async (tx: Tx, action: Decision['action'], about: string[], why: Deciding | undefined) => {
+    // An undo is about a decision already made, so it is taken whatever came since. A mute was checked before.
+    if (action !== 'restore' && action !== 'rejoin' && action !== 'ignore') await current(tx, about, why)
+    return (await decideAll(tx, [{ action, about, why }]))[0]!
+  }
 
   /** What the record says of each pair, from its decisions. */
   async function verdictsOf(tx: Tx, pairs: readonly (readonly [Subject, Subject])[]): Promise<Map<string, Verdict>> {
@@ -870,6 +894,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       if (typeof ignored !== 'boolean') throw new TypeError('ignore needs true or false')
       const { cap } = ruleFor(policy, identifier)
       return changing(async (tx) => {
+        if (ignored) await current(tx, [identifier], why)
         const before = (await tx.states([identifier])).get(identifier)
         // Asked for what already holds, nothing is decided: a server that mutes an address again after a restart adds no entry.
         if ((before?.ignored ?? false) === ignored) return []
@@ -1093,7 +1118,6 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
     async forget(subject, why) {
       if (typeof subject !== 'string') throw new TypeError('forget needs a subject')
-      await store.outbox.remove(subject)
       return changing(async (tx) => {
         await decide(tx, 'forget', [subject], why)
         const edges = await tx.edgesOf([subject])

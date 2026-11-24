@@ -171,7 +171,7 @@ if (!url) {
 
   test('a database from before the policy was recorded is due a rebuild, and a kind with no rule stops the server', async () => {
     const schema = `ag_test_${process.pid}_policy`
-    const env = { DATABASE_URL: url, GRAPH_SCHEMA: schema, GRAPH_TOKEN: 'service', REVIEW_TOKEN: 'review', PORT: '0', HOST: '127.0.0.1' }
+    const env = { DATABASE_URL: url, GRAPH_SCHEMA: schema, GRAPH_TOKEN: 'service', REVIEW_TOKENS: '{"dana":"review"}', PORT: '0', HOST: '127.0.0.1' }
     try {
       const old = await madeBefore(schema, 6)
       await pool.query(`insert into ${schema}.subject values ('account:1', 'account:1', 'account:1');
@@ -203,7 +203,7 @@ if (!url) {
   test('the server starts from the environment alone and serves a visit end to end', async () => {
     const schema = `ag_test_${process.pid}_serve`
     const lines: string[] = []
-    const running = await serve({ DATABASE_URL: url, GRAPH_SCHEMA: schema, GRAPH_TOKEN: 'service', REVIEW_TOKEN: 'review', ORIGINS: 'https://site.example', PORT: '0', HOST: '127.0.0.1' }, (line) => lines.push(line))
+    const running = await serve({ DATABASE_URL: url, GRAPH_SCHEMA: schema, GRAPH_TOKEN: 'service', REVIEW_TOKENS: '{"dana":"review"}', ORIGINS: 'https://site.example', PORT: '0', HOST: '127.0.0.1' }, (line) => lines.push(line))
     const base = `http://127.0.0.1:${running.port}`
     try {
       assert.equal(lines[0], `database upgraded: ${upgrades().map((upgrade) => upgrade.name).join(', ')}`)

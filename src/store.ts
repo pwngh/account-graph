@@ -29,7 +29,7 @@ export interface DecisionPage {
 export interface Tx {
   /** Logs sightings and folds them into edges. Returns how many new edges each identifier gained. */
   addSightings(sightings: readonly Sighting[]): Promise<Map<Identifier, number>>
-  /** Deletes a subject with its sightings, edges, touches, outcomes, calls, flows, consent, alerts, and reviewer decisions. */
+  /** Deletes a subject with its sightings, edges, touches, outcomes, calls, flows, consent, alerts, conversions, and reviewer decisions. */
   removeSubject(subject: Subject): Promise<void>
   edgesOf(subjects: readonly Subject[]): Promise<Edge[]>
   edgesOn(identifiers: readonly Identifier[]): Promise<Edge[]>
@@ -135,6 +135,8 @@ export interface Tx {
   /** Appends to the record of decisions. */
   addDecision(decision: Decision): Promise<void>
   lastDecision(): Promise<Decision | undefined>
+  /** The newest decision after a sequence number that names any of the given subjects or identifiers. A prune names none. */
+  newestNaming(names: readonly string[], after: number): Promise<Decision | undefined>
   /** Every decision, oldest first. */
   decisions(): Promise<Decision[]>
   /** One page of decisions, newest first: those before a sequence number, by people, by systems, or by one author. */

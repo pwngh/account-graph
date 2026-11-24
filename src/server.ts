@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { BlockList, isIP } from 'node:net'
 import { callState, dialed, followUp, numberOrSelf, recordCall, recordCallResult } from './calls.ts'
 import type { CallOptions } from './calls.ts'
+import { Outdated } from './graph.ts'
 import type { Graph, PolicyState } from './graph.ts'
 import { email, hashPhone, identifier, ip, normalizePhone, phoneOfType, UNSTORABLE } from './identifiers.ts'
 import { trusted } from './integrations/fingerprint.ts'
@@ -22,23 +23,28 @@ import { defaultPolicy, plainPolicy } from './policy.ts'
 import { reviewPage } from './review.ts'
 import { browserMark, knownLink, readToken, signToken, staffLink } from './sign.ts'
 import { browserScripts, scriptHeaders } from './tag.ts'
-import type { Identifier, Level, Observation, Outcome, Subject, Told, Touch, Why } from './types.ts'
+import type { Deciding, Identifier, Level, Observation, Outcome, Subject, Told, Touch, Why } from './types.ts'
+
+/** Each reviewer's name, and the token or tokens that are theirs. */
+export type Reviewers = Readonly<Record<string, string | readonly string[]>>
 
 export interface HandlerOptions {
   /**
    * The bearer token your own services send. It opens every route. Visitors'
-   * browsers never hold it. Give reviewers `reviewToken` instead: the
-   * reviewer screen keeps whichever token is typed for that browser tab.
+   * browsers never hold it. Give people who review a token in `reviewers`.
+   * The reviewer screen keeps whichever token is typed for that browser tab.
    */
   token: string
   /**
-   * A second token, for people who review accounts. It opens the reviewer
-   * screen's routes: reading subjects, clusters, flows and decisions, and
-   * keeping apart, joining, muting and forgetting. It does not open the
-   * routes your services write through, so a reviewer cannot record
-   * observations, transfers, consent, or conversions.
+   * The people who review accounts, each with a token of their own, or
+   * several while one is being replaced. A decision is signed with the name
+   * its token belongs to. Such a token opens the reviewer screen's routes:
+   * reading subjects, clusters, flows and decisions, and keeping apart,
+   * joining, muting and forgetting. It does not open the routes your services
+   * write through, so a reviewer cannot record observations, transfers,
+   * consent, or conversions.
    */
-  reviewToken?: string
+  reviewers?: Reviewers
   /** Site origins allowed to post to `/collect`, such as `https://example.org`. */
   origins: readonly string[]
   /**
@@ -124,9 +130,9 @@ const TOUCH_FIELDS = [
 ] as const
 const NAME = /^[\w.-]{1,64}$/
 
-/** What the reviewer token opens: what the reviewer screen reads, and the decisions a reviewer makes. */
+/** What a reviewer's token opens: what the reviewer screen reads, and the decisions a reviewer makes. */
 const REVIEW_ROUTES = new Set([
-  'GET /subject', 'GET /clusters', 'GET /search', 'GET /recent', 'GET /links', 'GET /cluster', 'GET /history', 'GET /journey', 'GET /board', 'GET /flows', 'GET /collusion', 'GET /rings',
+  'GET /me', 'GET /subject', 'GET /clusters', 'GET /search', 'GET /recent', 'GET /links', 'GET /cluster', 'GET /history', 'GET /journey', 'GET /board', 'GET /flows', 'GET /collusion', 'GET /rings',
   'GET /decisions', 'GET /disputes', 'GET /consent', 'GET /outcome', 'GET /followed', 'GET /call', 'GET /calls', 'GET /calls/summary', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'GET /ops', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
 ])
 
@@ -151,23 +157,28 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
   const now = options.now ?? Date.now
   const token = Buffer.from(options.token)
 
-  const reviewToken = options.reviewToken ? Buffer.from(options.reviewToken) : undefined
-  if (reviewToken && reviewToken.equals(token)) throw new TypeError('The reviewer token must differ from the service token')
+  const [problem] = reviewerProblems(options.reviewers, options.token)
+  if (problem) throw new TypeError(problem)
+  const reviewers = Object.entries(options.reviewers ?? {}).flatMap(([name, tokens]) => [tokens].flat().map((each) => ({ name, token: Buffer.from(each) })))
   const matches = (sent: Buffer, expected: Buffer) => sent.length === expected.length && timingSafeEqual(sent, expected)
 
-  /** Refuses the request unless it carries the service token, or the reviewer token on a route reviewers may use. */
-  const authorize = (request: IncomingMessage, path: string) => {
-    const sent = Buffer.from(request.headers.authorization?.replace(/^Bearer /, '') ?? '')
-    if (matches(sent, token)) return
-    if (!reviewToken || !matches(sent, reviewToken)) throw new Refusal(401, 'Missing or wrong token')
-    if (!REVIEW_ROUTES.has(path)) throw new Refusal(403, 'The reviewer token does not open this route')
+  const sentToken = (request: IncomingMessage) => Buffer.from(request.headers.authorization?.replace(/^Bearer /, '') ?? '')
+  /** The reviewer a request's token belongs to. Every token is compared, so how long it takes says nothing of which. */
+  const reviewerOf = (request: IncomingMessage): string | undefined => {
+    const sent = sentToken(request)
+    return reviewers.filter((each) => matches(sent, each.token))[0]?.name
   }
 
-  const reviewing = (request: IncomingMessage) => !matches(Buffer.from(request.headers.authorization?.replace(/^Bearer /, '') ?? ''), token)
+  /** Refuses the request unless it carries the service token, or a reviewer's on a route reviewers may use. */
+  const authorize = (request: IncomingMessage, path: string) => {
+    if (matches(sentToken(request), token)) return
+    if (reviewerOf(request) === undefined) throw new Refusal(401, 'Missing or wrong token')
+    if (!REVIEW_ROUTES.has(path)) throw new Refusal(403, 'A reviewer\'s token does not open this route')
+  }
 
   /** A list of pairs from one of your systems, and who it is from. Only a service may speak for a system. */
   const listed = (request: IncomingMessage, body: any, withdrawals: boolean): [Told[], Why] => {
-    if (reviewing(request)) throw new Refusal(403, 'The reviewer token does not open the list form of this route')
+    if (reviewerOf(request) !== undefined) throw new Refusal(403, 'A reviewer\'s token does not open the list form of this route')
     if (!Array.isArray(body.pairs) || body.pairs.length > 1000) throw new Refusal(400, '`pairs` must be a list of at most 1000')
     if (typeof body.source !== 'string' || !NAME.test(body.source)) throw new Refusal(400, 'A list needs its `source`: the name of the system it is from')
     for (const each of body.pairs) {
@@ -177,9 +188,11 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     return [body.pairs.map(({ a, b, separated, reason }: any) => ({ a, b, ...(withdrawals && separated !== undefined && { separated }), ...(typeof reason === 'string' && reason && { reason: reason.slice(0, 1000) }) })), why({ ...body, by: `system:${body.source}` })]
   }
 
-  /** A reviewer signs with their own name, never as a system. */
-  const signed = (request: IncomingMessage, body: any) => {
-    if (reviewing(request) && typeof body.by === 'string' && body.by.startsWith('system:')) throw new Refusal(400, 'A name that starts with "system:" belongs to a service')
+  /** Who one decision is by, why, and what they had seen. A reviewer's name is the one their token belongs to, whatever the body says. */
+  const signed = (request: IncomingMessage, body: any): Deciding => {
+    const name = reviewerOf(request)
+    if (name !== undefined && body.by !== undefined && body.by !== name) throw new Refusal(400, 'A decision is signed with the name its token belongs to')
+    return { ...why(body), ...(name !== undefined && { by: name }), ...(body.seen !== undefined && { seen: body.seen }) }
   }
 
   const ignoredAddresses = new Set<Identifier>()
@@ -623,13 +636,11 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return graph.touch(await json(request))
       case 'POST /ignore': {
         const body = await json(request)
-        signed(request, body)
-        return graph.ignore(body.identifier, body.ignored ?? true, why(body))
+        return graph.ignore(body.identifier, body.ignored ?? true, signed(request, body))
       }
       case 'POST /forget': {
         const body = await json(request)
-        signed(request, body)
-        return graph.forget(body.subject, why(body))
+        return graph.forget(body.subject, signed(request, body))
       }
       case 'POST /consent': {
         const body = await json(request)
@@ -638,9 +649,10 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       case 'POST /join': {
         const body = await json(request)
         if (body.pairs !== undefined) return graph.joinAll(...listed(request, body, false))
-        signed(request, body)
-        return graph.join(body.a, body.b, why(body))
+        return graph.join(body.a, body.b, signed(request, body))
       }
+      case 'GET /me':
+        return { reviewer: reviewerOf(request) ?? null }
       case 'GET /subject':
         return profile(subject)
       case 'GET /ops':
@@ -669,8 +681,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       case 'POST /separate': {
         const body = await json(request)
         if (body.pairs !== undefined) return graph.separateAll(...listed(request, body, true))
-        signed(request, body)
-        return graph.separate(body.a, body.b, body.separated ?? true, why(body))
+        return graph.separate(body.a, body.b, body.separated ?? true, signed(request, body))
       }
       case 'POST /transfer':
         return graph.transfer(await json(request))
@@ -872,6 +883,10 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       if (result === undefined) return void response.writeHead(204).end()
       response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result))
     } catch (error) {
+      if (error instanceof Outdated) {
+        const { seq, at, action, about, by, reason } = error.decision
+        return void response.writeHead(409, { 'content-type': 'application/json' }).end(JSON.stringify({ error: error.message, decision: { seq, at, action, about, by, reason } }))
+      }
       const refused = error instanceof Refusal || error instanceof TypeError || error instanceof SyntaxError
       const status = error instanceof Refusal ? error.status : refused ? 400 : 500
       const message = refused ? (error as Error).message : 'Internal error'
@@ -895,6 +910,27 @@ export function networks(list: readonly string[]): BlockList {
     found.addSubnet(address, bits, family === 6 ? 'ipv6' : 'ipv4')
   }
   return found
+}
+
+/** What is wrong with a list of reviewers, one line each. `service` is the service token, which none of them may hold. */
+export function reviewerProblems(reviewers: unknown, service: string): string[] {
+  if (reviewers === undefined) return []
+  if (!reviewers || typeof reviewers !== 'object' || Array.isArray(reviewers)) return ['reviewers must be an object of names, such as {"dana":"a-long-random-string"}']
+  const wrong: string[] = []
+  const taken = new Set([service])
+  for (const [name, given] of Object.entries(reviewers as Record<string, unknown>)) {
+    if (!name.trim() || name !== name.trim() || name.length > 100 || UNSTORABLE.test(name)) wrong.push(`"${name}" is not a name: use 1 to 100 characters with no space around them`)
+    // "people" and "system" are what the record is filtered by, and a name that starts with "system:" is a system's.
+    if (name.startsWith('system:') || name === 'system' || name === 'people') wrong.push(`"${name}" cannot be a reviewer's name`)
+    const tokens: unknown[] = [given].flat()
+    if (tokens.length === 0) wrong.push(`"${name}" needs a token`)
+    for (const token of tokens) {
+      if (typeof token !== 'string' || !token || token !== token.trim()) wrong.push(`"${name}" needs each token as text with no space around it`)
+      else if (taken.has(token)) wrong.push(`"${name}" has a token that is already the service's or another reviewer's`)
+      else taken.add(token)
+    }
+  }
+  return wrong
 }
 
 /** Who is deciding and why, from a request body, for the record of decisions. */

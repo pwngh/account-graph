@@ -183,6 +183,15 @@ export interface Why {
   reason?: string
 }
 
+/** Who is deciding and why, and what they had seen when they did. */
+export interface Deciding extends Why {
+  /**
+   * The newest decision on the record when they looked. One made since that names
+   * the same subject or identifier refuses theirs with `Outdated`. Left out, nothing is checked.
+   */
+  seen?: number
+}
+
 /** One entry in the record of decisions people made about the graph. Entries are never changed. */
 export interface Decision extends Why {
   /** 1 for the first decision, then counting up with no gaps. */

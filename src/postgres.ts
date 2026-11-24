@@ -102,6 +102,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       await db.query(`with gone as (delete from ${t('call')} where subject = $1 returning id) delete from ${t('call_result')} where id in (select id from gone)`, [subject])
       await db.query(`update ${t('call')} set visitor = null where visitor = $1`, [subject])
       await db.query(`delete from ${t('subject')} where id = $1`, [subject])
+      await db.query(`delete from ${t('conversion')} where job->>'subject' = $1`, [subject])
       await db.query(`delete from ${t('apart')} where a = $1 or b = $1`, [subject])
       await db.query(`delete from ${t('flow')} where source = $1 or target = $1`, [subject])
       await db.query(`delete from ${t('transfer')} where source = $1 or target = $1`, [subject])
@@ -541,6 +542,11 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       return rows.map(toDecision)
     },
 
+    async newestNaming(names, after) {
+      const { rows } = await db.query(`select * from ${t('decision')} where seq > $1 and action <> 'prune' and about ?| $2::text[] order by seq desc limit 1`, [after, names])
+      return rows[0] && toDecision(rows[0])
+    },
+
     async decisionsAbout(pairs) {
       if (pairs.length === 0) return []
       const { rows } = await db.query(
@@ -634,9 +640,6 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       const { rows } = await pool.query(`select state, count(*)::int as n from ${t('conversion')} group by state`)
       for (const row of rows) out[row.state as JobState] = row.n
       return out
-    },
-    async remove(subject) {
-      await pool.query(`delete from ${t('conversion')} where job->>'subject' = $1`, [subject])
     },
   }
 

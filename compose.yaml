@@ -25,7 +25,8 @@ services:
     environment:
       DATABASE_URL: postgres://postgres:graph@postgres:5432/graph
       GRAPH_TOKEN: ${GRAPH_TOKEN:-change-me-service-token}
-      REVIEW_TOKEN: ${REVIEW_TOKEN:-change-me-review-token}
+      # The people who review, each with a token of their own.
+      REVIEW_TOKENS: ${REVIEW_TOKENS:-{"reviewer":"change-me-review-token"}}
       # What differs from the default policy, as JSON.
       POLICY: ${POLICY:-}
       # The sites whose pages may report visits. The example site answers on these two.

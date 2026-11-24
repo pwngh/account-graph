@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { after, describe, test } from 'node:test'
-import { brokenAt, callState, createGraph, defaultPolicy, dialed, email, fit, followUp, hashPhone, policyFrom, recordCall, recordCallResult } from '../src/index.ts'
+import { Outdated, brokenAt, callState, createGraph, defaultPolicy, dialed, email, fit, followUp, hashPhone, policyFrom, recordCall, recordCallResult } from '../src/index.ts'
 import type { Change, GraphOptions, Observation, Policy, Store } from '../src/index.ts'
 
 export interface Opened {
@@ -235,6 +235,34 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await graph.observe(chain('hardware', 'a', 'b', 'c', 'd', 'e'))
       assert.deepEqual(await members(graph, 'a'), ['a', 'b'])
       assert.deepEqual(await members(graph, 'e'), ['c', 'd', 'e'])
+    })
+
+    test('a decision made since someone looked refuses theirs about the same subject or identifier', async () => {
+      const { graph, store } = await fresh()
+      await graph.observe([1, 2, 3].map((n) => ({ subject: `account:${n}`, identifiers: ['email:e'], at: T0 })))
+      await graph.separate('account:1', 'account:2', true, { by: 'lee' })
+      const refused = (work: Promise<unknown>) => assert.rejects(work, (error) => error instanceof Outdated && error.decision.by === 'lee')
+      await refused(graph.join('account:2', 'account:3', { by: 'dana', seen: 0 }))
+      await refused(graph.separate('account:3', 'account:1', true, { seen: 0 }))
+      await graph.join('account:3', 'account:4', { seen: 0 })
+      await graph.join('account:2', 'account:3', { seen: 2 })
+      await graph.ignore('email:e', true, { by: 'lee', seen: 3 })
+      // Muting what another has muted since is refused too, though nothing would change. Undoing is not.
+      await refused(graph.ignore('email:e', true, { seen: 3 }))
+      await graph.ignore('email:e', false, { seen: 3 })
+      await graph.separate('account:1', 'account:2', false, { seen: 0 })
+      // A forget that is refused has deleted nothing, what was still to be sent included.
+      await graph.separate('account:1', 'account:3', true, { by: 'lee' })
+      await store.outbox.add({ transactionId: 't', target: 'google', subject: 'account:1', at: T0, action: 'x', keys: {}, state: 'pending', attempts: 0, due: T0 })
+      await refused(graph.forget('account:1', { seen: 0 }))
+      assert.deepEqual([(await store.outbox.get('t')).length, (await graph.history('account:1')).length], [1, 1])
+      await graph.forget('account:1', { seen: (await graph.decisions()).length })
+      assert.deepEqual([(await store.outbox.get('t')).length, (await graph.history('account:1')).length], [0, 0])
+      // A prune names a time, which is nobody's id.
+      await graph.prune(1)
+      await graph.forget('1', { seen: (await graph.decisions()).length - 1 })
+      await assert.rejects(graph.join('account:5', 'account:6', { seen: 0.5 }), TypeError)
+      assert.equal((await graph.audit()).sound, true)
     })
 
     test('a reviewer keeps two subjects apart, and can change their mind', async () => {
