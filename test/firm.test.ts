@@ -15,7 +15,7 @@ test('every scene of the demo runs, says what came of it within a second, and ca
   // Signed in, with the phone beside the screen.
   await until('the stage', async () => (await bar('running')) === 'false' && (await run(`typeof loadedAt === 'number'`).catch(() => false)))
   assert.equal(await run(`document.body.classList.contains('with-phone') && document.querySelector('.device').dataset.state`), 'ad')
-  const { scenes } = (await run(`fetch('/stage/scenes').then((answer) => answer.json())`)) as { scenes: { see: [string, string] }[] }
+  const { scenes } = (await run(`fetch('/stage/scenes').then((answer) => answer.json())`)) as { scenes: { see: [string, string]; spot?: string[] }[] }
   assert.equal(scenes.length, 10)
   const links = scenes.map(({ see }) => see[1])
   // Only the stage moves the story on.
@@ -62,11 +62,15 @@ test('every scene of the demo runs, says what came of it within a second, and ca
     // The stage opens what the scene changed, without a problem, and the phone goes once the call is over.
     assert.equal(await run(`document.getElementById('notice').textContent`), '')
     assert.equal(await run(`document.body.classList.contains('with-phone')`), i < 4)
+    assert.equal(await run(`document.getElementById('stage-light').classList.contains('on')`), Boolean(scenes[i]!.spot), `scene ${i + 1} lights its row`)
     const after = seen(await view(links[i]!))
     assert.ok(after && after !== before, `scene ${i + 1} shows on its view: ${JSON.stringify([before, after])}`)
   }
   // There is nothing after the last.
   assert.equal(await run(`document.querySelector('#stage .primary').disabled`), true)
+  // The show plays from the start only.
+  await run(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', bubbles: true }))`)
+  assert.match((await run(`document.querySelector('#stage .told').textContent`)) as string, /Restart the demo/)
   // The site shows a visitor from an ad a number of their own, in their language.
   await screen.run(`location.href = ${JSON.stringify(`${firm.site}/es?gclid=you&utm_id=30333`)}`)
   await until('a pool number', async () => ((await screen.run(`document.querySelector('.call')?.textContent ?? ''`).catch(() => '')) as string).includes('(555) 010-011'))

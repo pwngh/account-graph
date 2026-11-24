@@ -9,7 +9,7 @@
   const time = el('span', {})
   const how = el('span', { class: 'how' })
   const clock = el('span', { class: 'clock' })
-  const result = el('button', { type: 'button', class: 'result', on: { click: () => at === 0 && next() } }, el('small', {}, 'Anuncio · tessaly.example'), el('b', {}, 'Su familia es lo primero. Hable con nosotros hoy.'), el('span', {}, 'Divorcio, custodia y manutención. Atención en español.'))
+  const result = el('button', { type: 'button', class: 'result', on: { click: () => at === 0 && !playing && next() } }, el('small', {}, 'Anuncio · tessaly.example'), el('b', {}, 'Su familia es lo primero. Hable con nosotros hoy.'), el('span', {}, 'Divorcio, custodia y manutención. Atención en español.'))
   const site = el('iframe', { title: 'The sample firm on the caller’s phone', tabindex: '-1' })
   const device = el('div', { class: 'device', 'data-state': 'ad' }, el('div', { class: 'glass' },
     el('div', { class: 'bar' }, time, el('i', {})),
@@ -19,8 +19,8 @@
   const where = el('span', { class: 'where' })
   const title = el('b', {})
   const told = el('span', { class: 'told', role: 'status' })
-  const button = el('button', { type: 'button', class: 'primary', on: { click: () => next() } }, 'Next ', el('kbd', {}, 'Space'))
-  const bar = el('div', { id: 'stage', role: 'group', 'aria-label': 'Demo scenes' }, where, title, told, button, el('button', { type: 'button', on: { click: () => hide() } }, 'Hide ', el('kbd', {}, 'H')))
+  const button = el('button', { type: 'button', class: 'primary', on: { click: () => !playing && next() } }, 'Next ', el('kbd', {}, 'Space'))
+  const bar = el('div', { id: 'stage', role: 'group', 'aria-label': 'Demo scenes' }, where, title, told, button, el('button', { type: 'button', on: { click: () => play() } }, 'Play ', el('kbd', {}, 'P')), el('button', { type: 'button', on: { click: () => hide() } }, 'Hide ', el('kbd', {}, 'H')))
   document.body.append(el('aside', { id: 'stage-phone', 'aria-label': 'The caller’s phone' }, device), bar)
   site.src = STAGE.phone
 
@@ -36,23 +36,96 @@
     time.textContent = new Date().toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' })
   }
 
+  /** What a row says, found in the view: the row that says the first, or the one after it that says the next. */
+  function found([first, next]) {
+    const rows = [...document.querySelectorAll('#view :is(table.campaign-report tr, .timeline-entry, .board li, .queue-pair, .needs li, .inbox-call)')].filter((row) => row.checkVisibility())
+    const from = rows.findIndex((row) => row.textContent.includes(first))
+    return next === undefined || from < 0 ? rows[from] : rows.slice(from + 1).find((row) => row.textContent.includes(next))
+  }
+  const light = el('div', { id: 'stage-light', 'aria-hidden': 'true' })
+  document.body.append(light)
+  let fading
+  /** Lights a row for a moment, and dims the rest. */
+  async function spot(words) {
+    clearTimeout(fading)
+    light.classList.remove('on')
+    const row = words && found(words)
+    if (!row) return
+    row.scrollIntoView({ block: 'center', behavior: 'instant' })
+    const { left, top, width, height } = row.getBoundingClientRect()
+    Object.assign(light.style, { left: `${left + scrollX - 8}px`, top: `${top + scrollY - 4}px`, width: `${width + 16}px`, height: `${height + 8}px` })
+    light.classList.add('on')
+    fading = setTimeout(() => light.classList.remove('on'), 3200)
+  }
+
   let ticking
+  let shown = 0
   /** Puts the phone in a state. Calls count up, faster than they were, to how long they lasted. */
   function phone(state, seconds) {
     clearInterval(ticking)
     device.dataset.state = state
     how.textContent = { calling: 'Calling…', missed: 'No answer', back: 'Calling back', talking: 'Connected' }[state] ?? ''
-    const show = (n) => { clock.textContent = `${Math.floor(n / 60)}:${String(Math.floor(n % 60)).padStart(2, '0')}` }
+    const show = (n) => { shown = n; clock.textContent = `${Math.floor(n / 60)}:${String(Math.floor(n % 60)).padStart(2, '0')}` }
     if (seconds === undefined) clock.textContent = ''
     else {
       const began = performance.now()
-      show(0)
+      // A call that goes on counts on.
+      const from = state === 'missed' ? shown : 0
+      show(from)
       ticking = setInterval(() => {
         const part = Math.min(1, (performance.now() - began) / 1600)
-        show(seconds * part)
+        show(from + (seconds - from) * part)
         if (part === 1) clearInterval(ticking)
       }, 40)
     }
+  }
+
+  /** The ninety seconds of docs/demo.md: when each thing happens, in seconds. */
+  const CLIENTS = '#/channels/////30/client'
+  const SHOW = [
+    [1, () => next()], [5, () => next()], [9.5, () => next()],
+    [21, () => turn('#/accounts/visitor%3Av-4821')], [33, () => next()],
+    // The listing's call and the client at another office happen unseen, before their week is shown.
+    [41.5, () => next(true)], [42.5, () => next(true)], [43.5, () => next()], [54, () => next()],
+    [64, () => turn(CLIENTS, ['Busqueda: North'])], [70.5, () => turn('#/channels///outcome.office_served//30/client', ['Busqueda: North', 'river'])],
+    [77, () => turn('#/accounts/contact%3Aines-vega')],
+  ]
+  const turn = async (address, words) => {
+    await open(address)
+    await spot(words)
+  }
+  let playing
+  function stop() {
+    playing?.abort()
+    playing = undefined
+    document.body.classList.remove('playing')
+    bar.classList.remove('away')
+    draw()
+  }
+  /** Plays the whole show, once, from the start. A second press stops it. */
+  async function play() {
+    if (playing) return stop()
+    if (at > 0 || running) {
+      told.textContent = 'Restart the demo to play it from the start.'
+      return
+    }
+    const { signal } = (playing = new AbortController())
+    for (let n = 3; n > 0 && !signal.aborted; n--) {
+      told.textContent = `Starting in ${n}`
+      await wait(1000)
+    }
+    if (signal.aborted) return
+    told.textContent = ''
+    document.body.classList.add('playing')
+    bar.classList.add('away')
+    const began = performance.now()
+    for (const [second, go] of SHOW) {
+      while (!signal.aborted && performance.now() - began < second * 1000) await wait(50)
+      if (signal.aborted) return
+      await go()
+    }
+    while (!signal.aborted && performance.now() - began < 90_000) await wait(100)
+    if (!signal.aborted) stop()
   }
 
   const marks = () => new Set([...document.querySelectorAll('.graph .node')].map(({ node }) => node.id))
@@ -70,8 +143,8 @@
     for (const each of document.querySelectorAll('.graph .edge')) if (each.edge && !(before.has(each.edge.a) && before.has(each.edge.b))) for (const part of [each, each.edge.tag]) part?.classList.add('arrive')
   }
 
-  /** Runs the next scene and shows what it changed. */
-  async function next() {
+  /** Runs the next scene and shows what it changed, or only runs it. */
+  async function next(quiet = false) {
     if (running || at >= scenes.length) return
     running = true
     told.classList.remove('bad')
@@ -94,7 +167,10 @@
       if (state === 'talking') await wait(1100)
       if (state) phone(state, { calling: 22, missed: 95, talking: 410 }[state])
       document.body.classList.toggle('with-phone', Boolean(state))
-      await open(scene.stage ?? `#${scene.see[1].split('#')[1]}`, began)
+      if (!quiet) {
+        await open(scene.stage ?? `#${scene.see[1].split('#')[1]}`, began)
+        await spot(scene.spot)
+      }
     } catch (error) {
       told.textContent = `Scene failed: ${error.message}`
       told.classList.add('bad')
@@ -107,11 +183,13 @@
     if (event.metaKey || event.ctrlKey || event.altKey || event.target.closest('input, select, textarea, dialog')) return
     if (event.code === 'Space' && !event.target.closest('a, button')) {
       event.preventDefault()
-      next()
+      if (!playing) next()
     } else if (event.key === 'h') hide()
+    else if (event.key === 'p') play()
+    else if (event.key === 'Escape') stop()
   })
   // A press on the call button of the page in the phone is the second scene.
-  addEventListener('message', ({ origin, data }) => { if (origin === new URL(STAGE.phone).origin && data === 'call' && at === 1) next() })
+  addEventListener('message', ({ origin, data }) => { if (origin === new URL(STAGE.phone).origin && data === 'call' && at === 1 && !playing) next() })
 
   fetch('/stage/scenes').then((answer) => answer.json()).then((answer) => {
     ;({ scenes, next: at } = answer)

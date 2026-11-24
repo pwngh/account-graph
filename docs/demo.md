@@ -23,20 +23,25 @@ The site is live. Open it with `?gclid=you&utm_id=30333` and its number becomes 
 
 1. Open the stage. The caller's phone is at left, and the reviewer screen at right.
 2. Press Space to run each scene. The phone shows what the caller does, and the screen opens the view that changed.
-3. Press H to hide the bar.
+3. Press H to hide the bar, or P to play the whole show.
 
 The story runs from a Monday to a Thursday that have passed. Each scene moves the demo's clock on, and the screens served by the demo go by that clock.
 
 ## Ninety-second script
 
-| Time | View | What to explain |
+Press P on the stage. After a count of three the bar hides and the show plays by itself, in time with these lines. Press P or Esc to stop it. It plays once: restart the command to play it again, with `MEMORY=1` for a restart of a few seconds.
+
+| Time | On screen | What to say |
 | --- | --- | --- |
-| 0:00 | **Board** | Everyone who called or inquired is in one column, with callers awaiting a callback at left. Position comes from recorded events, without manual assignment. |
-| 0:15 | **Calls** | Scene 3 is a caller who hung up in the queue after the phone system picked up. Most trackers would count that call and pay the ad platform for it. Here it is a missed call, returned in scene 4. |
-| 0:30 | **Journey** | One person from the Spanish ad to payment: visit, tap, missed call, callback, inquiry, and a value restated from 400 to 1,250. Each line gives the evidence for the person. |
-| 0:50 | **Channels**, by office served | Cost and outcomes per campaign. The ad named North and River served the client. One week of the Online campaign shows no data in place of a cost. |
-| 1:05 | **Matches** | A parent and child share a phone and stay related until someone decides. Two sides of one matter share a phone and email, and are separated permanently. |
-| 1:20 | **Health** | Fourteen hours pass without a call. The feed is stale, which usually means a broken feed, and an alert is sent. |
+| 0:00 | The caller's phone: an ad, the firm's site, a call, no answer. The caller on the **Board** | When someone clicks a law firm's ad and calls, and nobody picks up, that call often gets cut off from the ad that paid for it. |
+| 0:21 | **Accounts**: the call joined to the visit | This is a sample firm with made-up data. The call is tied to the ad visit at 92%, and it shows why. |
+| 0:33 | The call back, and the contact joining the graph | Staff called back, and the missed call is marked returned. |
+| 0:43 | **Journey**, Monday to Thursday | They became a client. The value went from 400 to 1,250, and the update went to a sample ad platform. |
+| 0:54 | **Accounts**: the other side of the matter, kept apart | The other side shared their phone and email, so the case system separated the two, and the decision is on the record. |
+| 1:04 | **Channels**: cost per client, then by office served | This is what each campaign cost per client, and which office served those clients. |
+| 1:17 | **Accounts**: one person, whole | The close. |
+
+Costs per client depend on the day the demo runs, so do not read them out.
 
 ## Scenes
 
