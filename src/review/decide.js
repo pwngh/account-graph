@@ -13,13 +13,15 @@ function side(profile) {
   const count = (list) => Object.entries(list.reduce((out, each) => ({ ...out, [each]: (out[each] ?? 0) + 1 }), {})).sort(([, x], [, y]) => y - x).map(([name, n]) => `${name} (${amount(n)})`).join(', ')
   const own = [...new Set(history.map((sighting) => sighting.identifier))].map((identifier) => identifier.slice(0, identifier.indexOf(':')))
   const part = (name, ...told) => [el('dt', {}, name), el('dd', {}, ...told)]
-  return el('section', { 'aria-label': subject }, el('h3', {}, open(subject)),
+  return el('section', { 'aria-label': subject }, el('div', { class: 'section-head' }, el('h3', {}, caller(subject)),
+    el('a', { class: 'link', href: `#/journey/${encodeURIComponent(subject)}` }, 'Journey')),
     el('dl', {}, ...part('Cluster', profile.cluster && profile.cluster.members.length > 1 ? `one of ${amount(profile.cluster.members.length)}${profile.cluster.oversized ? ', larger than the review size' : ''}` : 'on its own'),
-      ...part('Seen', history.length === 0 ? '(not recorded)' : `${when(history.at(-1).at)} to ${when(history[0].at)}, newest ${amount(history.length)} sightings`),
+      ...part('Seen', ...(history.length === 0 ? [unrecorded()] : [
+        reviewDisplay.time(history.at(-1).at), ' to ', reviewDisplay.time(history[0].at), el('span', { class: 'reason' }, `Newest ${amount(history.length)} sightings`),
+      ])),
       ...part('Doing', count(history.map((sighting) => sighting.event ?? '(not recorded)')) || '(not recorded)'),
       ...part('Seen with', count(own) || '(not recorded)'),
-      ...part('Kept apart', profile.separated.length === 0 ? 'from nobody' : `from ${amount(profile.separated.length)}`)),
-    el('a', { class: 'link', href: `#/journey/${encodeURIComponent(subject)}` }, 'Journey'))
+      ...part('Kept apart', profile.separated.length === 0 ? 'From nobody' : `From ${amount(profile.separated.length)}`)))
 }
 
 const choices = {
@@ -45,32 +47,41 @@ view('decide', 'Decide', async (box) => {
   const kept = picked ?? (facing() && pairName(facing()))
   const pair = queue.find((each) => pairName(each) === kept) ?? queue[0]
   const passed = found.pairs.length - queue.length
-  box.append(el('section', {}, el('h3', {}, 'Decide'),
-    el('p', { class: 'muted' }, `Pairs that are related and not joined, strongest first: ${amount(found.total)} now, among the ${amount(found.seen)} subjects of the newest 10,000 sightings. Pairs of subjects not seen lately are not here.`),
-    passed > 0 ? el('p', {}, `${amount(passed)} skipped until this screen is closed. `, el('button', { class: 'link', on: { click: () => { skipped.clear(); load() } } }, 'Show them again')) : ''))
+  const reset = () => {
+    skipped.clear()
+    load()
+  }
+  box.append(el('section', {}, reviewDisplay.heading('Decide',
+    passed > 0 ? el('button', { on: { click: reset } }, 'Show them again') : ''),
+  tiles(['Related, not joined', amount(found.total), 'Strongest first'], ['Subjects checked', amount(found.seen), 'From the newest 10,000 sightings'],
+    passed > 0 && ['Skipped', amount(passed), 'Until this screen is closed']),
+  notes('Only subjects in the newest 10,000 sightings are checked.')))
 
   if (pair) {
     const [left, right] = await Promise.all([pair.a, pair.b].map((subject) => api('GET', `/subject?subject=${encodeURIComponent(subject)}`)))
     const button = (kind, key, text, name) => el('button', { ...(kind && { class: kind }), title: `Key ${key.toUpperCase()}`, 'aria-keyshortcuts': key, on: { click: () => choices[name](pair) } }, `${text} (${key.toUpperCase()})`)
-    const here = el('section', { class: 'pair', 'aria-label': 'This pair' }, el('div', { class: 'row' },
-      el('span', { class: `chip ${pair.level}` }, pair.level === 'same' ? 'strong, kept in two clusters by a cut' : 'related'), el('b', {}, percent(pair.score)),
-      button('primary', 'j', 'Join', 'join'), button('danger', 'k', 'Keep apart', 'apart'), button('', 's', 'Skip', 'skip'),
-      el('button', { title: 'Key U', 'aria-keyshortcuts': 'u', ...(decided.length === 0 && { disabled: '' }), on: { click: () => undo(decided[0]) } }, 'Undo last (U)')),
-    el('div', { class: 'why' }, ...reasons(pair.reasons)),
-    el('div', { class: 'sides' }, side(left), side(right)))
+    const actions = el('div', { class: 'row' }, button('primary', 'j', 'Join', 'join'), button('danger', 'k', 'Keep apart', 'apart'), button('', 's', 'Skip', 'skip'),
+      el('button', { title: 'Key U', 'aria-keyshortcuts': 'u', ...(decided.length === 0 && { disabled: '' }), on: { click: () => undo(decided[0]) } }, 'Undo last (U)'))
+    const here = el('section', { class: 'pair', 'aria-label': 'This pair' }, reviewDisplay.section('This pair', actions),
+      el('div', { class: 'row' }, reviewDisplay.chip(pair.level === 'same' ? 'Strong, kept in two clusters by a cut' : 'Related', pair.level),
+        el('b', {}, reviewDisplay.compare(percent(pair.score), pair.score))),
+      el('div', { class: 'why' }, ...reasons(pair.reasons)),
+      el('div', { class: 'sides' }, side(left), side(right)))
     here.pair = pair
     box.append(here)
-  } else box.append(el('section', {}, el('p', {}, found.total === 0 ? 'Nothing to decide. No pair of these subjects is related and not joined.' : 'Every pair listed has been skipped.')))
+  } else box.append(el('section', {}, el('p', { class: 'muted' }, found.total === 0 ? 'No unjoined ties among the subjects checked.' : 'Every pair in this list was skipped.')))
 
-  if (decided.length > 0) box.append(el('section', {}, el('h2', {}, 'Decided here, newest first'), el('ul', {}, ...decided.map((entry) => el('li', {}, entry.what === 'join' ? 'Joined ' : 'Kept apart ', open(entry.a), ' and ', open(entry.b), ' ',
+  const lists = el('div', { class: 'panel-grid' })
+  if (decided.length > 0) lists.append(el('section', {}, el('h2', {}, 'Decided here, newest first'), el('ul', {}, ...decided.map((entry) => el('li', {}, entry.what === 'join' ? 'Joined ' : 'Kept apart ', caller(entry.a), ' and ', caller(entry.b), ' ',
     el('button', { class: 'link', 'data-key': `undo-${entry.what}-${pairName(entry)}`, on: { click: () => undo(entry) } }, 'undo'))))))
   const rest = queue.filter((each) => each !== pair)
   if (rest.length > 0) {
-    const table = el('table', {}, el('tr', {}, th('Subject'), th('Subject'), th('Score', 'num'), th('By'), th('')), ...rest.slice(0, 20).map((each) => el('tr', {}, td('who', open(each.a)), td('who', open(each.b)), td('num', percent(each.score)),
+    const table = el('table', {}, el('tr', {}, th('First subject'), th('Second subject'), th('Score', 'num'), th('Evidence'), th('')), ...rest.slice(0, 20).map((each) => el('tr', {}, td('who', caller(each.a)), td('who', caller(each.b)), td('num score', reviewDisplay.compare(percent(each.score), each.score)),
       td('', [...new Set(each.reasons.filter((reason) => reason.counted !== false).map((reason) => reason.identifier.split(':')[0]))].join(', ')),
       td('', el('button', { class: 'link', 'data-key': pairName(each), on: { click: async () => { picked = pairName(each); await load(); picked = undefined } } }, 'look')))))
-    box.append(el('section', {}, el('h2', {}, `Next${rest.length > 20 ? ', first 20' : ''}`), wide('Next', table)))
+    lists.append(el('section', {}, el('h2', {}, `Next${rest.length > 20 ? ', first 20' : ''}`), wide('Next', table)))
   }
+  if (lists.childElementCount > 0) box.append(lists)
 })
 
 addEventListener('keydown', (event) => {
