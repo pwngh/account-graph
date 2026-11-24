@@ -183,6 +183,20 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   await pause(400)
   assert.deepEqual([...asked, await run('location.href')].filter((each) => /555|example\.com/.test(decodeURIComponent(each))), [])
 
+  // A table is saved as it is shown, a name that starts like a formula as text.
+  const today = new Date().toISOString().slice(0, 10)
+  await graph.spend({ day: today, source: 'google', campaign: '=1+1', amount: 1234.5, clicks: 3 })
+  await run(`(() => { window.taken = []; URL.createObjectURL = (blob) => (taken.push(blob), 'blob:none'); HTMLAnchorElement.prototype.click = function () { taken.push(this.download) }; location.hash = '#/channels' })()`)
+  await until('the report', async () => (await text('#view')).includes('=1+1'))
+  await run(`[...document.querySelectorAll('button')].find((b) => b.textContent === 'Today').click()`)
+  await until('today alone', async () => (await run('location.hash')) === `#/channels/${today}/${today}` && (await text('#view')).includes('=1+1'))
+  await until('the button', () => run(`[...document.querySelectorAll('button')].some((b) => b.textContent === 'Today' && b.ariaPressed === 'true')`))
+  await run(`[...document.querySelectorAll('button')].find((b) => b.textContent === 'Save as CSV').click()`)
+  assert.equal(await run('taken[1]'), `channels-${today}-${today}.csv`)
+  const csv = (await run('taken[0].text()')) as string
+  assert.match(csv, /"google","'=1\+1",/)
+  assert.ok(!/"[=+@]/.test(csv), csv)
+
   await enter('service')
   await until('the service note', async () => (await text('#name')).includes('carry no name'))
 })

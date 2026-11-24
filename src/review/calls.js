@@ -60,7 +60,7 @@ view('calls', 'Calls', async (box, first, last) => {
       ['Waiting', share(total.waiting, total.calls), 'A result is expected and has not come yet.'], ['Unknown', share(total.unknown, total.calls), 'Nothing says whether a person answered.'],
       ['Returned', lost > 0 ? `${amount(total.returned)} of ${amount(lost)}` : '0', `Missed or voicemail, rung back and reached.${summary.returnedWithin === null ? '' : ` Half of them within ${lasted(summary.returnedWithin)}.`}`],
       ['Tried again', lost > 0 ? `${amount(total.triedAgain)} of ${amount(lost)}` : '0', 'Missed or voicemail, and the caller rang again and got through.']].map(([name, count, meaning]) => el('tr', {}, td('', name), td('num', count), td('muted', meaning))))
-  box.append(el('section', {}, el('h2', {}, 'How they went'), wide('How calls went', states)))
+  box.append(el('section', {}, el('h2', {}, 'How they went'), wide('How calls went', states), saved(`calls-${summary.from}-${summary.to}`, states)))
 
   const pick = el('select', { 'aria-label': 'Which calls', on: { change: () => { measure = pick.value; grid.replaceChildren(hours(summary)) } } }, ...MEASURES.map(([key, text]) => el('option', { value: key, ...(key === measure && { selected: '' }) }, text)))
   const grid = el('div', { class: 'wide', tabindex: 0, role: 'region', 'aria-label': 'Calls by hour and weekday' }, hours(summary))

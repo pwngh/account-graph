@@ -90,6 +90,7 @@
 - `report({ per })`, `GET /report?per=` and **Cost per** on the Channels view count one step in the cost per outcome. The view groups its columns, shows the report's own currency, and tells none, not recorded and does not apply apart.
 - `.env.example` names what compose needs; `docs/operations.md` covers backups, HTTPS and a name under the site.
 - The reviewer screen's picture says how many of those around a subject it draws.
+- The Channels and Calls views have buttons for common periods, and save their tables as CSV.
 
 ### Changed
 
