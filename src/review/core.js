@@ -244,7 +244,7 @@ function period(name, first, last) {
   const days = (range) => `from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`
   return {
     form,
-    query: first && last ? days({ from: first, to: last }) : '',
+    query: [first && `from=${encodeURIComponent(first)}`, last && `to=${encodeURIComponent(last)}`].filter(Boolean).join('&'),
     resolved: (range) => {
       from.value = range.from
       to.value = range.to
