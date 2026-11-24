@@ -45,7 +45,7 @@ function told(entry) {
       tags(outcome.tags, words),
       ...(sent.length > 0 ? sent.map((job) => more(el('span', { class: job.state === 'failed' ? 'apart' : '' }, `${SENT[job.state]} ${job.state === 'held' ? 'for ' : ''}${job.target}`), job.note ? `: ${words(job.note)}` : '')) : [more('not sent to any ad platform')])]
   }
-  if (entry.kind === 'value') return [`${entry.stage}: from ${worthOf(entry.from.value, entry.from.currency)} to ${worthOf(entry.to.value, entry.to.currency)}`, el('span', { class: 'meta' }, ' · written down then')]
+  if (entry.kind === 'value') return [`${entry.stage}: from ${worthOf(entry.from.value, entry.from.currency)} to ${worthOf(entry.to.value, entry.to.currency)}`, el('span', { class: 'meta' }, entry.to.kind ? ` · ${entry.to.value > entry.from.value ? 'taken back: ' : ''}${entry.to.kind === 'refund' ? 'refunded' : 'written off'} · written down then` : ' · written down then')]
   if (entry.kind === 'consent') return [`Measuring ads ${entry.answer.adUserData ? 'granted' : 'denied'}, personalizing ${entry.answer.adPersonalization ? 'granted' : 'denied'}`, more(entry.answer.source ?? 'where is not recorded')]
   const { decision } = entry
   return [`${ACTIONS[decision.action] ?? decision.action} ${decision.about.join(' · ')}`, more('by ', author(decision.by), decision.reason ? `: ${decision.reason}` : '')]

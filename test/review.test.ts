@@ -221,6 +221,15 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
     await until(said!, async () => (await text('#view')).includes(said!))
   }
 
+  // A refund is named where the value changed, and has a column of its own.
+  await graph.observe({ subject: 'lead:refund', identifiers: ['device:refund'], at: rang })
+  await graph.outcome({ transactionId: 'refund-1', subject: 'lead:refund', at: rang, stage: 'enrolled', value: 200, currency: 'USD' })
+  await graph.restate('refund-1', 150, 'USD', 'refund')
+  await run(`location.hash = '#/journey/lead%3Arefund'`)
+  await until('the refund', async () => (await text('#view')).includes('from 200 USD to 150 USD · refunded'))
+  await run(`location.hash = '#/channels'`)
+  await until('its column', () => run(`[...document.querySelectorAll('th')].some((th) => th.textContent === 'Refunded') && ![...document.querySelectorAll('th')].some((th) => th.textContent === 'Written off')`))
+
   await enter('service')
   await until('the service note', async () => (await text('#name')).includes('carry no name'))
 })
