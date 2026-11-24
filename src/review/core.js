@@ -232,7 +232,10 @@ function signedIn(answer) {
   $('name').textContent = me === undefined ? '' : me === null ? 'Service token' : me
 }
 
+/** The load that was last given an answer made before the newest write. */
+let dated = 0
 async function api(method, path, body) {
+  const asked = loading
   const token = $('token').value
   const response = await fetch(path, {
     method,
@@ -240,6 +243,7 @@ async function api(method, path, body) {
     ...(body && { body: JSON.stringify(body) }),
   })
   if (response.status === 204) return undefined
+  if (response.headers.get('age')) dated = asked
   const answer = await response.json()
   // One refused after someone else has signed in says nothing of them.
   if (response.status === 401 && $('token').value === token) signedIn(undefined)
@@ -533,7 +537,9 @@ async function load(tag) {
     }
     await views.get(name).show(box, ...parts)
     if (turn !== loading || (quiet && interrupting())) return false
-    if (seen) beat = seen
+    // An answer from before the newest write is read again on the next look.
+    if (dated === turn) beat = undefined
+    else if (seen) beat = seen
     const held = $('view').contains(document.activeElement) ? which(document.activeElement) : undefined
     const scrolled = quiet ? [...$('view').querySelectorAll('.wide, .scroll')].map((each) => [each.scrollLeft, each.scrollTop]) : []
     const unfolded = quiet ? [...$('view').querySelectorAll('details[open]')].map(fold) : []

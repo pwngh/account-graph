@@ -107,6 +107,19 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   })
   await run(`load(beat)`)
   assert.deepEqual([await run(`JSON.stringify([...drawn.spots])`), (await marks()).includes('account:40'), (await text('.graph .card')).includes('account:3')], [places, true, true])
+  // An answer the server made before its newest write is read again on the next look.
+  assert.deepEqual(await run(`(async () => {
+    const real = fetch
+    globalThis.fetch = async (path, ...rest) => {
+      const answer = await real(path, ...rest)
+      return path === '/pulse' ? answer : new Response(await answer.text(), { status: answer.status, headers: { age: '1' } })
+    }
+    await load()
+    const dated = beat
+    globalThis.fetch = real
+    await load()
+    return [dated ?? null, typeof beat]
+  })()`), [null, 'string'])
   // Nothing on it is too near anything else: no disc, name or line.
   const marked = `[...document.querySelectorAll('.graph .node')].map((mark) => mark.node)`
   assert.deepEqual(await run(`(() => { const nodes = ${marked}; const edges = [...document.querySelectorAll('.graph .edge')].map((mark) => mark.edge); const taken = nodes.map((node) => ({ node, boxes: shapes(node) })); return [nodes.length > 3, edges.length > 2, [...crowding(nodes, [])].length, edges.every((edge) => freeOf(edge, course(edge), taken))] })()`), [true, true, 0, true])
@@ -247,7 +260,7 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   await until('it to open', () => run(`opening === 0`))
   assert.equal(await run(`document.getElementById('subject').value`), 'typed meanwhile')
   // An answer that comes after something else was opened is too late, and opens nothing.
-  await run(`(() => { const real = window.fetch; window.fetch = async (...all) => { if (all[0] !== '/find') return real(...all); window.fetch = real; await new Promise((resolve) => (window.answer = resolve)); const response = await real(...all); const body = await response.json(); return { ok: true, status: 200, json: async () => { setTimeout(() => (window.answered = true), 0); return body } } }; const s = document.getElementById('subject'); s.value = 'person:2'; document.getElementById('find').requestSubmit(); location.hash = '#/accounts/person%3A1' })()`)
+  await run(`(() => { const real = window.fetch; window.fetch = async (...all) => { if (all[0] !== '/find') return real(...all); window.fetch = real; await new Promise((resolve) => (window.answer = resolve)); const response = await real(...all); const body = await response.json(); return { ok: true, status: 200, headers: response.headers, json: async () => { setTimeout(() => (window.answered = true), 0); return body } } }; const s = document.getElementById('subject'); s.value = 'person:2'; document.getElementById('find').requestSubmit(); location.hash = '#/accounts/person%3A1' })()`)
   await until('what was opened', async () => (await text('#detail h3')) === 'person:1' && (await run(`document.getElementById('subject').value`)) === 'person:1')
   await run(`window.answer()`)
   // Set in a task after the one that handles the answer.
