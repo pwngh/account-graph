@@ -1,7 +1,7 @@
 import type { Graph } from './graph.ts'
 import { hashPhone, normalizePhone, phoneOfType } from './identifiers.ts'
 import { checkTags } from './tags.ts'
-import type { CallResult, FollowUp, Identifier, KeptCall, NotLead, Outcome, Subject } from './types.ts'
+import type { CallResult, CallTime, FollowUp, Identifier, KeptCall, NotLead, Outcome, Subject } from './types.ts'
 
 /** One phone call to a number of yours, or from one, as your telephone provider reports it. */
 export interface Call {
@@ -255,7 +255,7 @@ async function placed(graph: Graph, call: Call, theirs: string, result: Omit<Cal
 }
 
 /** Whether a return reported for a call counts: the call was to you, nobody answered it, and it began before it is said to have been returned. */
-export const stands = (call: KeptCall): boolean => call.direction === 'inbound' && call.result?.answered === false && call.result.returned !== undefined && call.result.returned > call.at
+export const stands = (call: CallTime): boolean => call.direction === 'inbound' && call.result?.answered === false && call.result.returned !== undefined && call.result.returned > call.at
 
 /**
  * What became of a call no one answered, from every call to and from its
@@ -265,7 +265,7 @@ export const stands = (call: KeptCall): boolean => call.direction === 'inbound' 
  * a return reported for any missed call of theirs, for the misses that began
  * before they are said to have been reached.
  */
-export function followUp(miss: KeptCall, calls: readonly KeptCall[]): FollowUp {
+export function followUp(miss: CallTime, calls: readonly CallTime[]): FollowUp {
   const since = calls.filter((call) => call.subject === miss.subject && call.id !== miss.id && call.at > miss.at).sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1))
   const told = calls.filter((call) => call.subject === miss.subject && stands(call) && call.result!.returned! > miss.at).sort((x, y) => x.result!.returned! - y.result!.returned! || (x.id < y.id ? -1 : 1))[0]
   // A hidden number cannot be rung back, and whoever it was can still have been reached.

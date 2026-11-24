@@ -1,7 +1,7 @@
 import { followUp } from './calls.ts'
 import { longAgo } from './hours.ts'
 import type { Hours } from './hours.ts'
-import type { Counted, KeptCall, Subject } from './types.ts'
+import type { CallTime, Counted, KeptCall, Subject } from './types.ts'
 
 /** A step as the board needs it: its name, and how long a person may stand at it before they have waited too long. */
 export interface BoardStep {
@@ -14,10 +14,10 @@ export interface BoardStep {
 export interface BoardPerson {
   outcomes: readonly Counted[]
   /** Their calls to and from you. */
-  calls: readonly KeptCall[]
+  calls: readonly CallTime[]
 }
 
-export interface BoardPlace {
+export interface BoardPlace<Call = KeptCall> {
   /** The subject the place rests on: whose step it is, or who called. */
   subject: Subject
   /** Since when they have been here: when they first reached the step, or their oldest missed call began. */
@@ -28,7 +28,7 @@ export interface BoardPlace {
   /** The newest outcome of that step, whose value is what it is worth now. */
   outcome?: Counted
   /** Their newest call. */
-  call?: KeptCall
+  call?: Call
 }
 
 export interface BoardColumn<Row = BoardPlace> {
@@ -55,10 +55,10 @@ export interface BoardColumn<Row = BoardPlace> {
 export function board(
   people: readonly BoardPerson[],
   options: { steps: readonly BoardStep[]; at: number; today: number; returnWait?: number; hours?: Hours },
-): { columns: BoardColumn[]; unplaced: number } {
+): { columns: BoardColumn<BoardPlace<CallTime>>[]; unplaced: number } {
   const { steps, at, today, returnWait, hours } = options
   const rank = new Map(steps.map((step, i) => [step.name, i]))
-  const column = (step: string | null, wait: number | undefined, last: boolean): BoardColumn => ({ step, wait: wait ?? null, people: 0, fresh: 0, late: wait === undefined ? null : 0, done: last ? null : 0, rows: [] })
+  const column = (step: string | null, wait: number | undefined, last: boolean): BoardColumn<BoardPlace<CallTime>> => ({ step, wait: wait ?? null, people: 0, fresh: 0, late: wait === undefined ? null : 0, done: last ? null : 0, rows: [] })
   const missed = column(null, returnWait, false)
   const columns = steps.map(({ name, wait }, i) => column(name, wait, i === steps.length - 1))
   // Waited longer than the limit: since this or before. Counted in the time you were open, where that is known.

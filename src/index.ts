@@ -72,6 +72,7 @@ export type {
   Link,
   Loss,
   Moved,
+  CallTime,
   ChangePage,
   NumberedChange,
   NotLead,
