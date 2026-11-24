@@ -393,7 +393,7 @@ Platforms add to a day for weeks. Set `COST_DAYS` to the length of the platform'
 | Credit | The newest strong visit gets all of it. Earlier visits are in `/attribute` only. |
 | Currency | Amounts are summed as given. `currencies` lists every currency seen; more than one means the sums mix them. |
 | Days | A day runs midnight to midnight in `REPORT_TIME_ZONE`, or the `tz` parameter. Use the ad account's time zone so the days match the costs. |
-| Work | The report is computed on request. It reads every outcome in the range and follows each one's links. |
+| Work | The report is computed on request. It reads every outcome and missed call in the range, and follows their links a thousand people at a time. |
 | Range | Without `from` and `to`, the last thirty days. |
 | Platforms read automatically | Google Ads and Meta. Costs from Microsoft, TikTok and others go through `/costs`. |
 | Verification | The tracking parameters are each platform's documented names, untested against a live ad account. |
