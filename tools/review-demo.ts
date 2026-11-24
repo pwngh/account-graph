@@ -159,6 +159,7 @@ for (const [hours, value] of [[48, 200], [240, 350], [400, 420.5]] as const) {
   else await graph.restate('story-client', value)
 }
 writing = told + 420 * HOUR
+await graph.restate('story-client', 320.5, 'USD', 'refund')
 await graph.separate(ana, 'contact:former-spouse', true, { by: 'dana', reason: 'sides of one matter' })
 writing = undefined
 

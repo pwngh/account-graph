@@ -137,8 +137,9 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
     box.append(el('section', {}, el('h2', {}, 'From arrival to each step'), wide('From arrival to each step', times), notes(`Days from the newest arrival to the outcome, over outcomes of ${report.from} to ${report.to} that have one in the year before. An arrival outside the window is counted here and credited with nothing.`)))
   }
   // What outcomes were first worth and are worth now. A step value is a guess until the real amount is known.
-  const valued = (change) => [td('num', amount(change.outcomes)), td('num', change.outcomes === change.firstUnknown ? unknown() : money(change.first), change.firstUnknown > 0 && change.firstUnknown < change.outcomes ? el('span', { class: 'reason' }, `of ${amount(change.outcomes - change.firstUnknown)}`) : ''), td('num', money(change.now)), td('num', tally(change.zeroed)), td('num', tally(change.firstUnknown))]
-  const heads = () => [th('Outcomes', 'num'), th('First recorded', 'num'), th('Now', 'num'), th('Restated to zero', 'num'), th('First value not recorded', 'num')]
+  const losses = [['refunded', 'Refunded'], ['writtenOff', 'Written off']].filter(([key]) => [report.total.worth, ...report.months].some((each) => each[key] !== 0))
+  const valued = (change) => [td('num', amount(change.outcomes)), td('num', change.outcomes === change.firstUnknown ? unknown() : money(change.first), change.firstUnknown > 0 && change.firstUnknown < change.outcomes ? el('span', { class: 'reason' }, `of ${amount(change.outcomes - change.firstUnknown)}`) : ''), td('num', money(change.now)), ...losses.map(([key]) => td('num', change[key] === 0 ? tally(0) : money(change[key]))), td('num', tally(change.zeroed)), td('num', tally(change.firstUnknown))]
+  const heads = () => [th('Outcomes', 'num'), th('First recorded', 'num'), th('Now', 'num'), ...losses.map(([, text]) => th(text, 'num')), th('Restated to zero', 'num'), th('First value not recorded', 'num')]
   if (report.total.worth.outcomes > 0) {
     const named = (row) => (row.source === '(none)' ? 'no arrival credited' : `${row.source}${row.campaign || row.campaignId ? `, ${row.campaign || row.campaignId}` : ''}`)
     const byCampaign = el('table', {}, el('tr', {}, th('Campaign'), ...heads()), ...report.rows.filter((row) => row.worth.outcomes > 0).map((row) => el('tr', {}, td('who', named(row)), ...valued(row.worth))), el('tr', { class: 'sum' }, td('', 'All'), ...valued(report.total.worth)))
@@ -146,7 +147,7 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
     box.append(el('section', {}, el('h2', {}, 'Value: first recorded and now'), el('div', { class: 'panel-grid value-grid' },
       el('section', {}, el('h3', {}, 'By campaign'), wide('Value by campaign', byCampaign)),
       el('section', {}, el('h3', {}, 'By month first recorded'), wide('Value by month of first record', byMonth))),
-    notes(`Outcomes from ${reviewDisplay.day(report.from)} to ${reviewDisplay.day(report.to)}. Now includes all outcomes; first recorded includes only known first values. A step's initial value can be restated when the amount collected is known.`)))
+    notes(`Outcomes from ${reviewDisplay.day(report.from)} to ${reviewDisplay.day(report.to)}. Now includes all outcomes; first recorded includes only known first values. ${losses.length > 0 ? 'It is net of what was refunded and written off. ' : ''}A step's initial value can be restated when the amount collected is known.`)))
   }
   await whatFollowed(box, report, (chosen, days) => address({ step: chosen, within: days }), step, within)
 })
