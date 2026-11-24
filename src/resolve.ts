@@ -1,4 +1,4 @@
-import { evidence, usable, weigh } from './policy.ts'
+import { UNNAMED, evidence, usable, weigh } from './policy.ts'
 import type { Policy } from './policy.ts'
 import type { Edge, Identifier, IdentifierState, Labels, Pair, Reason, Subject } from './types.ts'
 
@@ -100,7 +100,9 @@ type Adjacency = Map<Subject, Map<Subject, number>>
  *    between them is removed.
  * 3. A single link below `policy.bridge` may add one subject to a group, but
  *    may not be the only thing joining two groups of two or more. The weakest
- *    such link is removed, then the next, until none is left.
+ *    such link is removed, then the next, until none is left. A group that
+ *    names nobody then goes back to the one named group it was cut from, and
+ *    stays apart where it was cut from two.
  *
  * Pure, and the result does not depend on the order of its inputs.
  */
@@ -166,9 +168,48 @@ function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subj
   for (const [a, b] of apart) for (const [x, y] of minimumCut(adjacency, a, b)) cut(x, y)
 
   if (policy.bridge > policy.same) {
-    for (let weak = weakestBridge(adjacency, policy.bridge); weak; weak = weakestBridge(adjacency, policy.bridge)) cut(weak[0], weak[1])
+    const removed: [Subject, Subject][] = []
+    for (let weak = weakestBridge(adjacency, policy.bridge); weak; weak = weakestBridge(adjacency, policy.bridge)) {
+      cut(weak[0], weak[1])
+      removed.push(weak)
+    }
+    return regroup(pieces(adjacency), removed, policy)
   }
   return pieces(adjacency)
+}
+
+/** Puts pieces that name nobody back on the one named piece the removed links lead to, whether at once or through others like them. */
+function regroup(cut: Subject[][], removed: readonly [Subject, Subject][], policy: Policy): Subject[][] {
+  if (removed.length === 0) return cut
+  const unnamed = new Set(policy.unnamed ?? UNNAMED)
+  const named = cut.map((piece) => piece.some((subject) => !unnamed.has(subject.slice(0, Math.max(0, subject.indexOf(':'))))))
+  const at = new Map(cut.flatMap((piece, i) => piece.map((subject) => [subject, i] as const)))
+  const beside: number[][] = cut.map(() => [])
+  for (const [a, b] of removed) {
+    beside[at.get(a)!]!.push(at.get(b)!)
+    beside[at.get(b)!]!.push(at.get(a)!)
+  }
+  const out = cut.map((piece) => [...piece])
+  const seen = new Set<number>()
+  for (const start of cut.keys()) {
+    if (named[start] || seen.has(start)) continue
+    const group = [start]
+    const homes = new Set<number>()
+    seen.add(start)
+    for (let i = 0; i < group.length; i++) {
+      for (const next of beside[group[i]!]!) {
+        if (named[next]) homes.add(next)
+        else if (!seen.has(next)) {
+          seen.add(next)
+          group.push(next)
+        }
+      }
+    }
+    const [home] = homes
+    if (homes.size !== 1) continue
+    for (const each of group) out[home!]!.push(...out[each]!.splice(0))
+  }
+  return out.filter((piece) => piece.length > 0)
 }
 
 function reach(adjacency: Adjacency, start: Subject): Set<Subject> {

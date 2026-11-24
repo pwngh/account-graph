@@ -180,6 +180,44 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await graph.cluster('account:2'))!.id, 'account:1')
     })
 
+    test('a weak link joins a group that names nobody, and never two that each name someone', async () => {
+      const { graph } = await fresh()
+      const see = (subject: string, ...identifiers: string[]) => graph.observe({ subject, identifiers, at: T0 })
+      const members = async (subject: string) => (await graph.cluster(subject))!.members
+      // An ad click on one browser and the call from it, then a contact who opens the link they were sent on another.
+      await see('visitor:a', 'device:a', 'dial:1')
+      await see('caller:1', 'dial:1', 'phone:1')
+      await see('contact:1', 'phone:1', 'link:contact:1')
+      await see('visitor:b', 'device:b', 'link:contact:1')
+      assert.deepEqual(await members('contact:1'), ['caller:1', 'contact:1', 'visitor:a', 'visitor:b'])
+      // A second contact reached by as weak a link could as well be whose call it was, so the caller is neither's.
+      await see('contact:2', 'device:c')
+      await see('visitor:c', 'device:c', 'ga:1')
+      await see('visitor:a', 'ga:1')
+      assert.deepEqual(await members('contact:2'), ['contact:2', 'visitor:c'])
+      assert.deepEqual(await members('contact:1'), ['contact:1', 'visitor:b'])
+      assert.deepEqual(await members('caller:1'), ['caller:1', 'visitor:a'])
+      // Kept apart, nothing brings two back together.
+      await graph.separate('contact:2', 'visitor:a')
+      assert.deepEqual(await members('contact:1'), ['caller:1', 'contact:1', 'visitor:a', 'visitor:b'])
+      await graph.separate('contact:1', 'visitor:a')
+      for (const other of ['contact:1', 'contact:2']) assert.equal((await members(other)).includes('visitor:a'), false)
+      assert.deepEqual(await graph.verify(), [])
+    })
+
+    test('a group that names nobody goes back through another like it, whatever the order', async () => {
+      const seen = [
+        ['visitor:1', 'device:1', 'ga:a'], ['visitor:2', 'device:1'],
+        ['caller:1', 'ga:a', 'fingerprint:x'], ['caller:2', 'fingerprint:x', 'phone:p'],
+        ['contact:1', 'phone:p', 'email:e'], ['contact:2', 'email:e'],
+      ] as const
+      for (const order of [seen, [...seen].reverse()]) {
+        const { graph } = await fresh()
+        for (const [subject, ...identifiers] of order) await graph.observe({ subject, identifiers, at: T0 })
+        assert.deepEqual((await graph.cluster('contact:2'))!.members, ['caller:1', 'caller:2', 'contact:1', 'contact:2', 'visitor:1', 'visitor:2'])
+      }
+    })
+
     test('forgetting the subject that bridges a cluster splits it and erases the subject', async () => {
       const { graph } = await fresh()
       await graph.observe([
