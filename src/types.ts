@@ -326,13 +326,13 @@ export interface OutcomeValue {
 /** What outcomes were worth when they were first recorded, and what they are worth now. */
 export interface ValueChange {
   outcomes: number
-  /** Of outcomes whose first value is known. `firstUnknown` counts the others. */
+  /** Of outcomes whose first value is known. `firstUnknown` counts the others, which are in none of this sum. */
   first: number
-  /** What the same outcomes are worth now. */
-  now: number
-  /** How many were worth something at first and are worth nothing now. */
-  zeroed: number
   firstUnknown: number
+  /** What all of them are worth now. */
+  now: number
+  /** How many were worth something once and are worth nothing now. */
+  zeroed: number
 }
 
 /** A phone call as it is kept, with its result once one is known. */

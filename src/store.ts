@@ -91,10 +91,10 @@ export interface Tx {
   outcomeOf(transactionId: string): Promise<Counted | undefined>
   /** Adds a value to the history of an outcome. */
   addValue(transactionId: string, subject: Subject, value: OutcomeValue): Promise<void>
-  /** Every value of an outcome, oldest first. */
-  valuesOf(transactionId: string): Promise<OutcomeValue[]>
-  /** The first value of each given outcome. */
-  firstValues(transactionIds: readonly string[]): Promise<Map<string, OutcomeValue>>
+  /** Every value an outcome of a subject has had, oldest first. An id used again for someone else has a history of its own. */
+  valuesOf(transactionId: string, subject: Subject): Promise<OutcomeValue[]>
+  /** The first value of each given outcome, by its id, and the most it was ever worth. */
+  firstValues(outcomes: readonly Counted[]): Promise<Map<string, OutcomeValue & { most: number }>>
   /** Takes an outcome out of the report. Its values stay in its history. */
   removeOutcome(transactionId: string): Promise<void>
   /** Keeps a call, replacing one with the same id. Its result is kept apart, and may arrive first. */

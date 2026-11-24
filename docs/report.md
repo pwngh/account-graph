@@ -207,14 +207,14 @@ curl -X POST https://graph.example.org/restate -H "authorization: Bearer $GRAPH_
   -d '{"transactionId":"client-42","value":420.50}'
 ```
 
-Every value an outcome has had is kept, and `GET /outcome?id=client-42` lists them. The report shows three figures for each campaign (`worth`) and for each month outcomes were first recorded in (`months`):
+Every value an outcome has had is kept, and `GET /outcome?id=client-42` lists them. The report shows these for each campaign (`worth`) and for each month outcomes were first recorded in (`months`):
 
 | Figure | Says |
 | --- | --- |
 | `first` | What the outcomes were worth when first recorded |
-| `now` | What the same outcomes are worth now |
-| `zeroed` | How many were worth something and are now worth nothing |
-| `firstUnknown` | How many were recorded before values were kept. They are in neither sum |
+| `firstUnknown` | How many were recorded before values were kept. They are not in `first` |
+| `now` | What all of them are worth now |
+| `zeroed` | How many were worth something once and are now worth nothing |
 
 Restating also tells the platforms that can be told.
 

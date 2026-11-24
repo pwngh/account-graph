@@ -148,8 +148,8 @@ type Line = Omit<ReportRow, 'stages' | 'breakdown' | 'people' | Worked> & Tally 
 export interface Credited {
   outcome: Counted
   touch: Touch | undefined
-  /** Its first value, or undefined when that is not known. */
-  first?: OutcomeValue | undefined
+  /** Its first value, with no time when it may not be the first, and the most it was ever worth. */
+  first?: (OutcomeValue & { most: number }) | undefined
   /** Who it is: the cluster of its subject. Defaults to the subject. */
   person?: string
   /** Milliseconds from the newest strong arrival in the year before it, inside the window or not. */
@@ -179,14 +179,11 @@ const unchanged = (): ValueChange => ({ outcomes: 0, first: 0, now: 0, zeroed: 0
 /** Adds what an outcome was first worth, and is worth now, to a sum of them. */
 function revalued(into: ValueChange, { outcome, first }: Credited): void {
   into.outcomes += 1
-  // A value carried over from before there was a history may not be the first.
-  if (!first || first.at === 0) {
-    into.firstUnknown += 1
-    return
-  }
-  into.first += first.value
   into.now += outcome.value
-  if (first.value > 0 && outcome.value === 0) into.zeroed += 1
+  if (outcome.value === 0 && first && first.most > 0) into.zeroed += 1
+  // A value carried over from before there was a history may not be the first.
+  if (first && first.at > 0) into.first += first.value
+  else into.firstUnknown += 1
 }
 
 const roundedChange = (change: ValueChange): ValueChange => ({ ...change, first: round(change.first), now: round(change.now) })
@@ -354,7 +351,7 @@ export function fold(
   for (const each of credited) {
     const { outcome, touch } = each
     for (const into of [everything, ...tallies(missing(touch), { at: outcome.at, touch, tags: outcome.tags })]) count(into, each)
-    if (outcome.currency) currencies.add(outcome.currency)
+    for (const currency of [outcome.currency, each.first?.currency]) if (currency) currencies.add(currency)
     const found = missing(touch)
     const month = each.first && each.first.at > 0 ? dayIn(each.first.at, timeZone).slice(0, 7) : NOT_RECORDED
     if (!months.has(month)) months.set(month, unchanged())

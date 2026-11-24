@@ -783,6 +783,20 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await graph.outcome({ transactionId: 's4', subject: 'lead:1', at: day('2026-03-02'), stage: 'client', value: 200, currency: 'USD' })
       assert.equal((await read('s4')).length, 1)
       // Pruning leaves values alone; forgetting the person deletes theirs, also of an outcome no longer in the report.
+      // The same id used again for someone else starts a history of its own, and each is forgotten with its subject.
+      await graph.withdraw('s3')
+      await graph.outcome({ transactionId: 's3', subject: 'lead:9', at: clock.now, stage: 'client', value: 7, currency: 'USD' })
+      assert.deepEqual(await read('s3'), [[7, 'USD', '2026-03-20']])
+      await graph.forget('lead:9')
+      assert.deepEqual(await read('s3'), [])
+      await graph.outcome({ transactionId: 's3', subject: 'lead:2', at: clock.now, stage: 'client', value: 100, currency: 'USD' })
+      // Recorded at nothing, raised, and back at nothing: restated to zero, whatever it was at first.
+      await graph.outcome({ transactionId: 's5', subject: 'lead:2', at: day('2026-03-20'), stage: 'client', value: 0, currency: 'USD' })
+      await graph.outcome({ transactionId: 's6', subject: 'lead:2', at: day('2026-03-20'), stage: 'client', value: 0, currency: 'USD' })
+      await graph.restate('s5', 90)
+      await graph.restate('s5', 0)
+      assert.equal((await graph.report({ from: '2026-03-20', to: '2026-03-20' })).total.worth.zeroed, 1)
+      assert.deepEqual((await graph.report({ from: '2026-02-01', to: '2026-03-31' })).currencies, ['CAD', 'USD'])
       await graph.withdraw('s2')
       await graph.prune(clock.now + DAY)
       assert.equal((await read('s1')).length, 3)

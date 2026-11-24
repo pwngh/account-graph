@@ -351,15 +351,19 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       await db.query(`insert into ${t('outcome_value')} (transaction_id, subject, value, currency, at) values ($1, $2, $3, $4, $5)`, [transactionId, subject, value, currency, at])
     },
 
-    async valuesOf(transactionId) {
-      const { rows } = await db.query(`select value, currency, at from ${t('outcome_value')} where transaction_id = $1 order by id`, [transactionId])
+    async valuesOf(transactionId, subject) {
+      const { rows } = await db.query(`select value, currency, at from ${t('outcome_value')} where transaction_id = $1 and subject = $2 order by id`, [transactionId, subject])
       return rows.map(toValue)
     },
 
-    async firstValues(transactionIds) {
-      if (transactionIds.length === 0) return new Map()
-      const { rows } = await db.query(`select distinct on (transaction_id) * from ${t('outcome_value')} where transaction_id = any($1::text[]) order by transaction_id, id`, [transactionIds])
-      return new Map(rows.map((row) => [row.transaction_id as string, toValue(row)]))
+    async firstValues(given) {
+      if (given.length === 0) return new Map()
+      const { rows } = await db.query(
+        `select distinct on (v.transaction_id) v.*, max(v.value) over (partition by v.transaction_id) as most
+         from unnest($1::text[], $2::text[]) as o (id, subject) join ${t('outcome_value')} v on v.transaction_id = o.id and v.subject = o.subject order by v.transaction_id, v.id`,
+        [given.map((each) => each.transactionId), given.map((each) => each.subject)],
+      )
+      return new Map(rows.map((row) => [row.transaction_id as string, { ...toValue(row), most: row.most as number }]))
     },
 
     async removeOutcome(transactionId) {

@@ -23,7 +23,7 @@ export function createMemoryStore(): Store {
   const consents = new Map<Subject, ConsentAnswer[]>()
   const decisions: Decision[] = []
   const outcomes = new Map<string, Counted>()
-  const values = new Map<string, { subject: Subject; values: OutcomeValue[] }>()
+  const values = new Map<Subject, Map<string, OutcomeValue[]>>()
   const calls = new Map<string, Omit<KeptCall, 'result'>>()
   const results = new Map<string, CallResult>()
   const costs = new Map<string, Required<Cost>>()
@@ -96,7 +96,7 @@ export function createMemoryStore(): Store {
       sightings.delete(subject)
       touches.delete(subject)
       for (const [id, outcome] of outcomes) if (outcome.subject === subject) outcomes.delete(id)
-      for (const [id, kept] of values) if (kept.subject === subject) values.delete(id)
+      values.delete(subject)
       for (const [id, call] of calls) {
         if (call.subject === subject) {
           calls.delete(id)
@@ -327,17 +327,22 @@ export function createMemoryStore(): Store {
     },
 
     async addValue(transactionId, subject, value) {
-      const kept = values.get(transactionId)
-      if (kept) kept.values.push({ ...value })
-      else values.set(transactionId, { subject, values: [{ ...value }] })
+      let own = values.get(subject)
+      if (!own) values.set(subject, (own = new Map()))
+      own.set(transactionId, [...(own.get(transactionId) ?? []), { ...value }])
     },
 
-    async valuesOf(transactionId) {
-      return (values.get(transactionId)?.values ?? []).map((value) => ({ ...value }))
+    async valuesOf(transactionId, subject) {
+      return (values.get(subject)?.get(transactionId) ?? []).map((value) => ({ ...value }))
     },
 
-    async firstValues(transactionIds) {
-      return new Map(transactionIds.flatMap((id) => (values.has(id) ? [[id, { ...values.get(id)!.values[0]! }]] : [])))
+    async firstValues(given) {
+      return new Map(
+        given.flatMap(({ transactionId, subject }) => {
+          const [first, ...rest] = values.get(subject)?.get(transactionId) ?? []
+          return first ? [[transactionId, { ...first, most: Math.max(first.value, ...rest.map((each) => each.value)) }]] : []
+        }),
+      )
     },
 
     async removeOutcome(transactionId) {

@@ -106,7 +106,7 @@ export interface Graph {
   restate(transactionId: string, value: number, currency?: string): Promise<boolean>
   /** Takes a recorded outcome out of the report: it turned out not to have happened. Resolves to false for an unknown id. */
   withdraw(transactionId: string): Promise<boolean>
-  /** Every value an outcome has had, oldest first. */
+  /** Every value a recorded outcome has had, oldest first. */
   values(transactionId: string): Promise<OutcomeValue[]>
   /** An outcome as it was recorded, or undefined when it was not. */
   outcomeOf(transactionId: string): Promise<Counted | undefined>
@@ -488,7 +488,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
   /** Adds an outcome's value to its history, unless it is the one it already has. */
   async function revalue(tx: Tx, { transactionId, subject, value, currency }: Counted): Promise<void> {
-    const last = (await tx.valuesOf(transactionId)).at(-1)
+    const last = (await tx.valuesOf(transactionId, subject)).at(-1)
     if (last?.value !== value || last.currency !== currency) await tx.addValue(transactionId, subject, { value, currency, at: now() })
   }
 
@@ -632,7 +632,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     values(transactionId) {
-      return store.read((tx) => tx.valuesOf(transactionId))
+      return store.read(async (tx) => {
+        const outcome = await tx.outcomeOf(transactionId)
+        return outcome ? tx.valuesOf(transactionId, outcome.subject) : []
+      })
     },
 
     outcomeOf(transactionId) {
@@ -737,7 +740,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         }
         const outcomes = await tx.outcomesBetween(start, end)
         const labels = await tx.labelsOf(unique(outcomes.map((outcome) => outcome.subject)))
-        const first = await tx.firstValues(outcomes.map((outcome) => outcome.transactionId))
+        const first = await tx.firstValues(outcomes)
         const credited: Credited[] = []
         for (const outcome of outcomes) credited.push({ outcome, first: first.get(outcome.transactionId), person: labels.get(outcome.subject)?.cluster ?? outcome.subject, ...(await creditOf(outcome.subject, outcome.at)) })
         // How long steps take is read from the last half year and not from the days asked about: the newest days hold
