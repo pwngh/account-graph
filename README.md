@@ -1,7 +1,7 @@
 # account-graph
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p30-accounts.png" width="100%" alt="The Accounts view: a graph of one person's linked IDs, with a related account and two kept apart">
+  <img src="https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p31-accounts.png" width="100%" alt="The Accounts view: a graph of one person's linked IDs, with a related account and two kept apart">
   <br>
   <sub>One person's IDs in the Accounts view. All screenshots show sample data.</sub>
 </p>
@@ -36,11 +36,13 @@ Here is the same story, record by record:
 
 | When | What happened | What account-graph does |
 | --- | --- | --- |
-| Monday, 09:00 | Someone arrives from a search ad | Starts a visitor and keeps the ad click |
-| 09:04 | They tap your number, and the call is missed | Links the call to the visitor at 92%, and lists the caller as awaiting a callback |
-| 14:00 | Your team calls back and reaches them | Marks the missed call returned |
-| Wednesday | They sign up in the same browser (the same device id), with the mobile number they called from | Links the contact to the visitor at 98% and to the caller at 90% |
-| Thursday | They become a client, worth $1,250 | Credits $1,250 to the campaign, three days after the click |
+| Mon 09:00 | They arrive from a search ad | Starts a visitor and keeps the ad click |
+| Mon 09:04 | They call, and nobody answers | Links the call at 92%, awaiting callback |
+| Mon 14:00 | Your team calls back | Marks the missed call returned |
+| Wednesday | They sign up in that browser | Links the contact at 98% and 90% |
+| Thursday | They pay $1,250 | Credits $1,250 to the campaign |
+
+The call is linked by the tap on your number. The contact is linked to the visitor at 98% by the device, and to the caller at 90% by the mobile number they called from.
 
 It runs as a server beside your site, phone system and backend. Reviewers work in a built-in screen that shows the evidence behind every match, missed calls awaiting a callback, and the return on each campaign.
 
@@ -99,9 +101,9 @@ Four of its seven views. Accounts is the picture at the top, and the others are 
 
 | Board | Journey |
 | --- | --- |
-| ![Board: missed calls and people by step](https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p30-board.png) | ![Journey: one person's timeline](https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p30-journey.png) |
+| ![Board: missed calls and people by step](https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p31-board.png) | ![Journey: one person's timeline](https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p31-journey.png) |
 | **Channels** | **Health** |
-| ![Channels: spend, outcomes and ROAS by campaign](https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p30-channels.png) | ![Health: feeds, conversions and matching rules](https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p30-health.png) |
+| ![Channels: spend, outcomes and ROAS by campaign](https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p31-channels.png) | ![Health: feeds, conversions and matching rules](https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p31-health.png) |
 
 ## How it works
 
@@ -145,27 +147,31 @@ The last two could be one person or one household. With only this evidence, they
 
 | Term | Definition |
 | --- | --- |
-| Subject | Anything with an identity, such as `account:42` or `visitor:9f3c`. The reviewer screen calls it an ID. |
-| Identifier | Something a subject was seen with, written `kind:value`, such as `device:9f3c`, `email:…` or `ip:203.0.113.9` |
-| Sighting | A record of a subject with an identifier at a time. All other data is derived from sightings. |
-| Link | Two subjects that share identifiers, with a score from 0 to 1 and the evidence for it |
-| Cluster | The subjects treated as one person |
-| Visit (`touch`) | An arrival from an ad click or a campaign |
-| Outcome | An event you count, such as an inquiry, a signup or a sale |
-| Conversion | An outcome sent to an ad platform |
-| Decision | A reviewer action: join, separate, or ignore an identifier |
+| Subject | A person, account or device that has an ID in one of your systems |
+| Identifier | A value that helps recognize a subject, such as an email or device ID |
+| Sighting | An observation of a subject with an identifier at a point in time |
+| Link | Two subjects that share identifiers, with a match score and evidence |
+| Cluster | The linked subjects that are resolved to one person |
+| Visit | A marketing touchpoint: an arrival from an ad click or a campaign |
+| Outcome | A business event that is counted, such as an inquiry or a sale |
+| Conversion | An outcome reported to an ad platform |
+| Decision | A recorded choice to join, separate or ignore, kept in the audit log |
+
+A subject is written `type:id`, such as `account:42`, and an identifier `kind:value`, such as `device:9f3c`. A match score is from 0 to 1. The reviewer screen calls a subject an ID, and the API calls a visit a `touch`. Links, clusters and scores are computed from sightings.
 
 ## Features
 
 | Area | Capability |
 | --- | --- |
-| Identity | Scored links with the evidence for each, clusters that can be split, and reviewer decisions with an audit log |
-| Calls | Call results, missed calls and callbacks, tap-to-call matching, and optional tracking numbers |
-| Attribution | Spend, outcomes, cost per outcome and ROAS by campaign, with breakdowns by office, language, hour or weekday |
-| Conversions | An outbox for Google, Meta, Microsoft and TikTok with batching, retries and restatements |
+| Identity | Scored links with their evidence, clusters that can be split, and an audit log |
+| Calls | Call results, callbacks, tap-to-call matching, and optional tracking numbers |
+| Attribution | Spend, cost per outcome and ROAS by campaign, with five breakdowns |
+| Conversions | An outbox for Google, Meta, Microsoft and TikTok, with retries |
 | Reviewer screen | Accounts, Journey, Board, Matches, Calls, Channels and Health |
-| Privacy | Hashed emails, phones and addresses, consent history, deletion and pruning |
-| Operations | Feed monitoring, webhook alerts, opening hours, PostgreSQL or in-memory storage, no runtime dependencies except `pg` for PostgreSQL |
+| Privacy | Hashed emails, phones and addresses, consent history and deletion |
+| Operations | Feed monitoring, webhook alerts, opening hours and PostgreSQL storage |
+
+Outcomes break down by the office advertised, the office that served, language, hour or weekday. Conversions are batched, and a value can be restated at Google. Storage can also be in memory. The only runtime dependency is `pg`, for PostgreSQL.
 
 ## Installation
 
