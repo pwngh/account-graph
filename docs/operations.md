@@ -150,6 +150,8 @@ graph.example.org {
 }
 ```
 
+> **Nobody should reach the server except through the proxy.** Otherwise they go round HTTPS, and with `TRUST_PROXY` they may say they come from any address. With compose, `GRAPH_PORT=127.0.0.1:8080` publishes it on the machine itself and nowhere else.
+
 > **Give the server a name under the site it serves.** Point `graph.example.org` at it with an `A` or `CNAME` record and load `collect.js` from there. The cookie the server sets is then the site's own.
 
 Set `COOKIE=true` to have the server keep the device id in a cookie it sets itself. Safari deletes a cookie set by script after seven days; one set by the server lasts. It only works when the server answers on the site's own domain, or on a subdomain with `COOKIE=example.org`.

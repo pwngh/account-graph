@@ -172,6 +172,14 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   await until('the choice', async () => (await text('#notice')).includes('person:1, person:2'))
   await look('nobody@example.com')
   await until('nobody', async () => (await text('#notice')).includes('Nobody'))
+  // What is the start of nobody's id, or of several, is not put in the address either.
+  for (const [what, said] of [['555 01', 'Nobody'], ['person:', 'person:1, person:2']] as const) {
+    await look(what)
+    await until(what, async () => (await text('#notice')).includes(said))
+  }
+  assert.ok(!(await run('location.href')).includes('person'))
+  await look('person:2')
+  await until('the exact one', async () => (await text('#detail h3')) === 'person:2')
   await pause(400)
   assert.deepEqual([...asked, await run('location.href')].filter((each) => /555|example\.com/.test(decodeURIComponent(each))), [])
 

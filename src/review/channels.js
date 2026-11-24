@@ -47,7 +47,7 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
     if (report.currencies.length === 1) coin = new Intl.NumberFormat(undefined, { style: 'currency', currency: report.currencies[0] })
   } catch {}
   const cash = (n) => (coin ? coin.format(n) : money(n))
-  const none = () => el('span', { class: 'muted', title: 'Does not apply' }, '—')
+  const none = () => el('span', { class: 'muted' }, '—')
   // Nothing happened, which is known. Not the same as not recorded, nor as not applying.
   const tally = (n) => (n > 0 ? amount(n) : el('span', { class: 'muted' }, '0'))
   const stages = report.steps.filter((step) => report.total.stages[step])
@@ -81,10 +81,10 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
   const breakdown = el('select', { on: { change: () => go(address({ by: breakdown.value })) } }, el('option', { value: '' }, 'Nothing'),
     ...[...new Set([...report.dimensions, ...(by ? [by] : [])])].map((each) => el('option', { value: each, ...(each === by && { selected: '' }) }, dimensionName(each))))
   const choose = el('select', { on: { change: () => go(address({ per: choose.value })) } }, el('option', { value: '' }, 'every outcome'),
-    ...[...new Set([...stages, ...(per ? [per] : [])])].map((stage) => el('option', { value: stage, ...(stage === per && { selected: '' }) }, stage)))
+    ...[...new Set([...report.steps, ...(per ? [per] : [])])].map((stage) => el('option', { value: stage, ...(stage === per && { selected: '' }) }, stage)))
   pick.append(el('label', {}, 'Break down by', breakdown), el('label', {}, 'Cost per', choose))
   section.append(el('p', { class: 'muted' }, `${report.from} to ${report.to}, days in ${report.timeZone}.${report.currencies.length === 1 ? ` Money in ${report.currencies[0]}.` : ''}${by.startsWith('touch.') ? ' Broken down by what the credited arrival said.' : by.startsWith('outcome.') ? ' Broken down by what is known of each outcome.' : ''}`),
-    el('details', {}, el('summary', { class: 'muted' }, 'How these are worked out'), el('p', { class: 'muted' }, `An outcome counts on the day it happened, under the arrival that earned it. What an outcome cost, and the return, set a campaign's cost against its own outcomes on the days its cost is known; with fewer than half of the ${amount(report.days)} days known they are withheld.${per ? ` Only "${per}" is counted in the cost; the return sets all value against it.` : ''}${by ? ' Costs, clicks and arrivals belong to the campaign and are not split.' : ''} 0 is known to be none, — does not apply.`)))
+    el('details', {}, el('summary', { class: 'muted' }, 'How these are worked out'), el('p', { class: 'muted' }, `An outcome counts on the day it happened, under the arrival that earned it. What an outcome cost, and the return, set a campaign's cost against its own outcomes on the days its cost is known; with fewer than half of the ${amount(report.days)} days known they are withheld.${per ? ` Only "${per}" is counted in the cost; the return sets all value against it.` : ''}${by ? ' Costs, clicks and arrivals belong to the campaign and are not split.' : ''} 0 is known to be none. — is nothing to say: no cost, or nothing credited that is worth anything.`)))
   if (report.filling) section.append(el('p', { class: 'banner' }, el('b', {}, 'Still filling. '), `95 in 100 outcomes of the slowest step come within ${amount(report.filling.days)} days of the arrival, so arrivals after ${report.filling.after} have not had their time. Their cost is here already and some of their outcomes are not.`))
   section.append(report.rows.length > 0 ? wide('Channels', table) : el('p', { class: 'muted' }, 'Nothing was recorded in these days.'))
   if (report.currencies.length > 1) section.append(el('p', { class: 'apart' }, `These sums mix currencies: ${report.currencies.join(', ')}.`))

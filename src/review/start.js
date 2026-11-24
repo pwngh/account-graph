@@ -23,13 +23,15 @@ $('find').addEventListener('submit', async (event) => {
   try {
     const { by, subjects } = await find(text)
     if ($('token').value !== token || $('subject').value.trim() !== text) return
-    if (by === 'subject') return void go(subjectHash(subjects.length === 1 ? subjects[0] : text))
-    if (subjects.length === 1) return void go(subjectHash(subjects[0]))
+    // Only what the server answered with is ever put in the address.
+    const whole = subjects.length === 1 ? subjects[0] : by === 'subject' && subjects.find((each) => each === text)
+    if (whole) return void go(subjectHash(whole))
     suggest(subjects)
-    if (subjects.length === 0) return void notice(`Nobody has been seen with that ${by === 'email' ? 'email' : 'phone number'}.`)
+    const what = by === 'email' ? 'that email' : by === 'phone' ? 'that phone number' : 'an id that begins like that'
+    if (subjects.length === 0) return void notice(`Nobody has been seen with ${what}.`)
     $('subject').value = ''
     $('subject').focus()
-    notice(`${subjects.length === 20 ? 'At least 20' : subjects.length} subjects have that ${by === 'email' ? 'email' : 'phone number'}. Pick one from the list: ${subjects.join(', ')}`)
+    notice(`${subjects.length === 20 ? 'At least 20' : subjects.length} subjects have ${what}. Pick one from the list: ${subjects.join(', ')}`)
   } catch (error) {
     notice(error.message, true)
   }
