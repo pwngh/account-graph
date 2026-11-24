@@ -316,12 +316,12 @@ export function createMemoryStore(): Store {
     },
 
     async setOutcome(outcome) {
-      outcomes.set(outcome.transactionId, { ...outcome })
+      outcomes.set(outcome.transactionId, structuredClone(outcome))
     },
 
     async outcomeOf(transactionId) {
       const found = outcomes.get(transactionId)
-      return found && { ...found }
+      return found && structuredClone(found)
     },
 
     async removeOutcome(transactionId) {
@@ -377,7 +377,7 @@ export function createMemoryStore(): Store {
       return [...outcomes.values()]
         .filter((outcome) => outcome.at >= from && outcome.at < to)
         .sort((x, y) => x.at - y.at || (x.transactionId < y.transactionId ? -1 : 1))
-        .map((outcome) => ({ ...outcome }))
+        .map((outcome) => structuredClone(outcome))
     },
 
     async addCosts(rows) {

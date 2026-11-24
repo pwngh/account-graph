@@ -29,7 +29,7 @@ const openRow = (at) => (call) => el('tr', {},
   td('num', lasted(at - call.at)), td('', when(call.at)), td('', call.state === 'voicemail' ? 'voicemail' : 'missed'),
   td('who', call.source ? `${call.source}${call.campaign || call.campaignId ? `, ${call.campaign || call.campaignId}` : ''}` : el('span', { class: 'muted' }, 'no arrival credited')),
   td('num', call.result?.waited === undefined ? el('span', { class: 'muted' }, '(not recorded)') : `${amount(Math.round(call.result.waited))} s`),
-  td('num', call.attempts), td('', caller(call.subject)))
+  td('num', call.attempts), td('who', call.tags ? Object.entries(call.tags).map(([name, value]) => `${name.replaceAll('_', ' ')} ${value}`).join(', ') : el('span', { class: 'muted' }, '(not recorded)')), td('', caller(call.subject)))
 
 // Calls to you: what is still open, how they went, and how many could be placed.
 view('calls', 'Calls', async (box, first, last) => {
@@ -41,7 +41,7 @@ view('calls', 'Calls', async (box, first, last) => {
   const { total, coverage } = summary
   top.append(el('p', { class: 'muted' }, `${summary.from} to ${summary.to}, days in ${summary.timeZone}. ${amount(total.calls)} calls.${summary.expected ? ' A call counts once a result says a person answered.' : ' No results are expected, so a call with none is counted by its length.'}`))
 
-  const table = el('table', {}, el('tr', {}, th('Age', 'num'), th('Began'), th('How'), th('Credited to'), th('Waited', 'num'), th('Tries', 'num'), th('Caller')), ...open.calls.map(openRow(open.at)))
+  const table = el('table', {}, el('tr', {}, th('Age', 'num'), th('Began'), th('How'), th('Credited to'), th('Waited', 'num'), th('Tries', 'num'), th('Tags'), th('Caller')), ...open.calls.map(openRow(open.at)))
   box.append(el('section', {}, el('h2', {}, 'Missed and not returned, oldest first'),
     open.calls.length > 0 ? wide('Missed and not returned', table) : el('p', {}, total.missed + total.voicemail > 0 ? 'None. Every caller who could be rung back has been reached since.' : 'None. No call in these days is known to have been missed.'),
     open.calls.length > 0 ? paged(table, open.next, 'Show more', async (next) => {

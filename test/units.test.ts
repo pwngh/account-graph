@@ -353,6 +353,13 @@ test('quiet hours are off until set, and a call back is due after a day', () => 
   assert.deepEqual([{ gclid: 'G' }, { campaignId: '1' }, { medium: 'CPC' }, { medium: 'paid_social' }, { source: 'mailer', medium: 'call' }, { referrer: 'https://partner.example' }, { fbclid: 'F' }, { fbclid: 'F', campaignId: '9' }].map(touch), [true, true, true, true, false, false, false, true])
 })
 
+test('a tracking number may say what it stands for', () => {
+  const env = { DATABASE_URL: 'x', GRAPH_TOKEN: 'y' }
+  const numbers = { '+15550100001': { source: 'google', tags: { office_advertised: 'north', language: 'es' } } }
+  assert.deepEqual(configFrom({ ...env, CALL_NUMBERS: JSON.stringify(numbers) }).callNumbers, numbers)
+  assert.throws(() => configFrom({ ...env, CALL_NUMBERS: '{"+15550100001":{"source":"x","tags":{"Office":"n"}}}' }), /CALL_NUMBERS: "\+15550100001" has a tag named "Office"/)
+})
+
 test('a day begins at local midnight, across a clock change', () => {
   assert.equal(dayStart('2026-03-01'), Date.parse('2026-03-01T00:00:00Z'))
   assert.equal(dayStart('2026-03-01', 'America/New_York'), Date.parse('2026-03-01T05:00:00Z'))
@@ -407,6 +414,10 @@ test('the report is the same whatever order its rows arrive in', () => {
     { outcome: outcome(2, '__proto__', 1), touch: touches[9] },
     { outcome: outcome(3, 'constructor', 2), touch: undefined },
   ]
+  // Broken down, the parts do not depend on the order either.
+  const missed = touches.map((each, i) => ({ at: i, touch: each, ...(i % 2 && { tags: { office: `o${i % 3}` } }) }))
+  const parts = (flip: boolean) => fold('2026-03-01', '2026-03-02', costs, touches, flip ? [...credited].reverse() : credited, flip ? [...missed].reverse() : missed, 'outcome.office').total.breakdown
+  assert.deepEqual(parts(true), parts(false))
   const expected = fold('2026-03-01', '2026-03-02', costs, touches, credited)
   assert.deepEqual(expected.rows.map((row) => [row.source, row.campaignId, row.campaign, row.cost, row.visits, Object.keys(row.stages)]), [
     ['meta', '701', 'Retarget', 50, 1, []],

@@ -333,11 +333,11 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       return rows.map((row) => ({ ...row.detail, subject: row.subject, at: Number(row.at) }) as Touch)
     },
 
-    async setOutcome({ transactionId, subject, at, stage, value, currency }) {
+    async setOutcome({ transactionId, subject, at, stage, value, currency, tags }) {
       await db.query(
-        `insert into ${t('outcome')} (transaction_id, subject, at, stage, value, currency) values ($1, $2, $3, $4, $5, $6)
-         on conflict (transaction_id) do update set subject = excluded.subject, at = excluded.at, stage = excluded.stage, value = excluded.value, currency = excluded.currency`,
-        [transactionId, subject, at, stage, value, currency],
+        `insert into ${t('outcome')} (transaction_id, subject, at, stage, value, currency, tags) values ($1, $2, $3, $4, $5, $6, $7)
+         on conflict (transaction_id) do update set subject = excluded.subject, at = excluded.at, stage = excluded.stage, value = excluded.value, currency = excluded.currency, tags = excluded.tags`,
+        [transactionId, subject, at, stage, value, currency, tags ?? null],
       )
     },
 
@@ -350,12 +350,12 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       await db.query(`delete from ${t('outcome')} where transaction_id = $1`, [transactionId])
     },
 
-    async setCall({ id, direction, subject, at, to, duration, flags, visitor, recorded }) {
+    async setCall({ id, direction, subject, at, to, duration, flags, visitor, tags, recorded }) {
       await db.query(
-        `insert into ${t('call')} (id, subject, at, dialed, duration, flags, visitor, recorded_at, direction) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `insert into ${t('call')} (id, subject, at, dialed, duration, flags, visitor, recorded_at, direction, tags) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          on conflict (id) do update set subject = excluded.subject, at = excluded.at, dialed = excluded.dialed, duration = excluded.duration,
-           flags = excluded.flags, visitor = excluded.visitor, recorded_at = excluded.recorded_at, direction = excluded.direction`,
-        [id, subject, at, to, duration ?? null, flags, visitor ?? null, recorded, direction],
+           flags = excluded.flags, visitor = excluded.visitor, recorded_at = excluded.recorded_at, direction = excluded.direction, tags = excluded.tags`,
+        [id, subject, at, to, duration ?? null, flags, visitor ?? null, recorded, direction, tags ?? null],
       )
     },
 
@@ -701,7 +701,7 @@ function toSighting(row: any): Sighting {
 }
 
 function toCounted(row: any): Counted {
-  return { transactionId: row.transaction_id, subject: row.subject, at: Number(row.at), stage: row.stage, value: row.value, currency: row.currency }
+  return { transactionId: row.transaction_id, subject: row.subject, at: Number(row.at), stage: row.stage, value: row.value, currency: row.currency, ...(row.tags !== null && { tags: row.tags }) }
 }
 
 function toResult(row: any): CallResult {
@@ -718,6 +718,7 @@ function toCall(row: any): KeptCall {
     ...(row.duration !== null && { duration: row.duration }),
     flags: row.flags,
     ...(row.visitor !== null && { visitor: row.visitor }),
+    ...(row.tags !== null && { tags: row.tags }),
     recorded: Number(row.recorded_at),
     ...(row.result_at !== null && { result: toResult(row) }),
   }
@@ -918,6 +919,12 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
             );
             create index if not exists alert_undelivered on ${schema}.alert (at) where delivered_at is null;
             create index if not exists alert_subject on ${schema}.alert (subject);`,
+    },
+    {
+      id: 12,
+      name: 'tags on outcomes and calls',
+      sql: `alter table ${schema}.outcome add column if not exists tags jsonb;
+            alter table ${schema}.call add column if not exists tags jsonb;`,
     },
   ]
 }

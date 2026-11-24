@@ -1,4 +1,5 @@
-import type { Cost, Counted, Report, ReportRow, Touch } from './types.ts'
+import { NOT_RECORDED, touchTag, touchTags } from './tags.ts'
+import type { Breakdown, Cost, Counted, Report, ReportRow, Touch } from './types.ts'
 
 /** The platform each click id belongs to. A click id says where the visitor came from more surely than a tag does. */
 const CLICK_IDS = [
@@ -83,6 +84,34 @@ export function dayIn(at: number, timeZone = 'UTC'): string {
   }
 }
 
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+/** The hour and the day of the week it is at an instant in a time zone: `09`, `Tue`. */
+export function hourIn(at: number, timeZone = 'UTC'): { hour: string; weekday: string } {
+  const local = new Date(at + ahead(at, timeZone))
+  return { hour: String(local.getUTCHours()).padStart(2, '0'), weekday: WEEKDAYS[local.getUTCDay()]! }
+}
+
+/** Something to be broken down: when it happened, what it was credited to, and what is known of it. */
+interface Told {
+  at: number
+  touch: Touch | undefined
+  tags?: Record<string, string> | undefined
+}
+
+/**
+ * Reads one dimension of an outcome or a call. `touch.name` is what its
+ * arrival said, `outcome.name` what is known of the outcome itself, and the
+ * two are never mixed: where an office was advertised is not where the
+ * person was served. `hour` and `weekday` are when it happened.
+ */
+export function dimension(by: string, timeZone?: string): (told: Told) => string {
+  if (by === 'hour' || by === 'weekday') return ({ at }) => hourIn(at, timeZone)[by]
+  const [, side, name] = /^(touch|outcome)\.([\w.-]{1,64})$/.exec(by) ?? []
+  if (!side || !name) throw new TypeError(`"${by}" is not a dimension; use touch.<name>, outcome.<name>, hour or weekday`)
+  if (side === 'touch') return ({ touch }) => touchTag(touch, name) ?? NOT_RECORDED
+  return ({ tags }) => (tags && Object.hasOwn(tags, name) ? tags[name]! : NOT_RECORDED)
+}
+
 /** The day after a day written `YYYY-MM-DD`. */
 export function nextDay(day: string): string {
   return new Date(dayStart(day) + 86_400_000).toISOString().slice(0, 10)
@@ -90,7 +119,27 @@ export function nextDay(day: string): string {
 
 const round = (amount: number) => Math.round(amount * 1e6) / 1e6
 
-type Line = Omit<ReportRow, 'stages'> & { stages: Map<string, { count: number; value: number }>; named: string }
+type Tally = { stages: Map<string, { count: number; value: number }>; outcomes: number; value: number; missed: number }
+type Line = Omit<ReportRow, 'stages' | 'breakdown'> & { stages: Map<string, { count: number; value: number }>; named: string; parts: Map<string, Tally> }
+
+/** Counts one outcome among others. */
+function count(into: Tally, outcome: Counted): void {
+  const stage = into.stages.get(outcome.stage) ?? { count: 0, value: 0 }
+  into.stages.set(outcome.stage, stage)
+  stage.count += 1
+  stage.value += outcome.value
+  into.outcomes += 1
+  into.value += outcome.value
+}
+
+/** Hours and days of the week in their own order, other values by name, and what was not recorded last. */
+const rank = (value: string) => (value === NOT_RECORDED ? '\uffff' : WEEKDAYS.includes(value) ? `${(WEEKDAYS.indexOf(value) + 6) % 7}` : value)
+
+function plain(parts: Map<string, Tally>): Breakdown {
+  if (!parts.has(NOT_RECORDED)) parts.set(NOT_RECORDED, { stages: new Map(), outcomes: 0, value: 0, missed: 0 })
+  const rounded = ([name, part]: [string, Tally]) => ({ name, ...part, value: round(part.value), stages: Object.fromEntries([...part.stages].map(([step, stage]) => [step, { count: stage.count, value: round(stage.value) }])) })
+  return [...parts].sort(([x], [y]) => (rank(x) < rank(y) ? -1 : 1)).map(rounded)
+}
 
 /**
  * Folds costs, arrivals and credited outcomes into one line per campaign.
@@ -104,8 +153,11 @@ export function fold(
   costs: readonly Required<Cost>[],
   touches: readonly Touch[],
   credited: readonly { outcome: Counted; touch: Touch | undefined }[],
-  /** The credited touch of each missed call, or undefined for one nothing can be credited with. */
-  missed: readonly (Touch | undefined)[] = [],
+  /** Each missed call, with the touch it is credited to, or undefined for one nothing can be credited with. */
+  missed: readonly Told[] = [],
+  /** The dimension to break each line down by, and the time zone its hours and days are in. */
+  by?: string,
+  timeZone?: string,
 ): Report {
   const lines = new Map<string, Line>()
   const currencies = new Set<string>()
@@ -114,7 +166,7 @@ export function fold(
   const line = (source: string, campaignId: string, campaign: string): Line => {
     const key = keyOf(source, campaignId, campaign)
     let found = lines.get(key)
-    if (!found) lines.set(key, (found = { source, campaignId, campaign: campaignId ? '' : campaign, named: '', cost: 0, clicks: 0, impressions: 0, visits: 0, missed: 0, stages: new Map(), outcomes: 0, value: 0 }))
+    if (!found) lines.set(key, (found = { source, campaignId, campaign: campaignId ? '' : campaign, named: '', cost: 0, clicks: 0, impressions: 0, visits: 0, missed: 0, stages: new Map(), outcomes: 0, value: 0, parts: new Map() }))
     // A campaign known only by name keeps one spelling of it, the first in order.
     if (!campaignId && campaign < found.campaign) found.campaign = campaign
     return found
@@ -138,7 +190,7 @@ export function fold(
   const costed = new Set(lines.keys())
 
   // Then every touch that names an id no cost has, so a touch that carries the id as its name can find it.
-  const all = [...touches, ...credited.flatMap(({ touch }) => (touch ? [touch] : [])), ...missed.flatMap((touch) => (touch ? [touch] : []))]
+  const all = [...touches, ...credited.flatMap(({ touch }) => (touch ? [touch] : [])), ...missed.flatMap(({ touch }) => (touch ? [touch] : []))]
   // A touch finds a cost by name when it has no id. One with an id no cost knows only finds a cost that has no id either:
   // a different id under the same name is a different campaign.
   const named = (touch: Touch, source: string) => {
@@ -161,15 +213,23 @@ export function fold(
   }
 
   for (const touch of touches) lineOf(touch).visits += 1
-  for (const touch of missed) (touch ? lineOf(touch) : line('(none)', '', '')).missed += 1
+  const valueOf = by === undefined ? undefined : dimension(by, timeZone)
+  const whole = new Map<string, Tally>()
+  // Where an outcome or a missed call is counted: its line, and under its value there and in the total.
+  const tallies = (found: Line, told: Told): Tally[] => {
+    if (!valueOf) return [found]
+    const value = valueOf(told)
+    const part = (parts: Map<string, Tally>) => {
+      const tally = parts.get(value) ?? { stages: new Map(), outcomes: 0, value: 0, missed: 0 }
+      parts.set(value, tally)
+      return tally
+    }
+    return [found, part(found.parts), part(whole)]
+  }
+  const missing = (touch: Touch | undefined) => (touch ? lineOf(touch) : line('(none)', '', ''))
+  for (const call of missed) for (const tally of tallies(missing(call.touch), call)) tally.missed += 1
   for (const { outcome, touch } of credited) {
-    const found = touch ? lineOf(touch) : line('(none)', '', '')
-    const stage = found.stages.get(outcome.stage) ?? { count: 0, value: 0 }
-    found.stages.set(outcome.stage, stage)
-    stage.count += 1
-    stage.value += outcome.value
-    found.outcomes += 1
-    found.value += outcome.value
+    for (const tally of tallies(missing(touch), { at: outcome.at, touch, tags: outcome.tags })) count(tally, outcome)
     if (outcome.currency) currencies.add(outcome.currency)
   }
 
@@ -178,7 +238,7 @@ export function fold(
   const order = (found: Line) => `${found.source}\u0000${found.campaignId}\u0000${found.campaign}`
   const sorted = [...lines.values()].sort((x, y) => y.cost - x.cost || y.value - x.value || y.visits - x.visits || (order(x) < order(y) ? -1 : 1))
   // A step is named by whoever recorded the outcome, so the names are kept in maps until the very end.
-  const rows = sorted.map(({ named: _, stages, ...found }): ReportRow => {
+  const rows = sorted.map(({ named: _, stages, parts, ...found }): ReportRow => {
     for (const [name, stage] of stages) {
       stage.value = round(stage.value)
       const sum = sums.get(name) ?? { count: 0, value: 0 }
@@ -195,7 +255,16 @@ export function fold(
     total.visits += found.visits
     total.missed += found.missed
     total.outcomes += found.outcomes
-    return { ...found, stages: Object.fromEntries(stages) }
+    return { ...found, stages: Object.fromEntries(stages), ...(valueOf && { breakdown: plain(parts) }) }
   })
-  return { from, to, rows, total: { ...total, stages: Object.fromEntries(sums) }, currencies: [...currencies].sort() }
+  const said = new Set([...all.flatMap(touchTags).map((name) => `touch.${name}`), ...[...credited.map(({ outcome }) => outcome.tags), ...missed.map(({ tags }) => tags)].flatMap((tags) => Object.keys(tags ?? {})).map((name) => `outcome.${name}`)])
+  return {
+    from,
+    to,
+    rows,
+    total: { ...total, stages: Object.fromEntries(sums), ...(valueOf && { breakdown: plain(whole) }) },
+    ...(by !== undefined && { by }),
+    dimensions: ['hour', 'weekday', ...[...said].sort()],
+    currencies: [...currencies].sort(),
+  }
 }

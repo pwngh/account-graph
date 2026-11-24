@@ -9,7 +9,7 @@ export { MetaError, MicrosoftError, TikTokError, googleAds, meta, metaEvent, mic
 export { createBatcher } from './batch.ts'
 export { fit, measure } from './calibrate.ts'
 export { brokenAt, seal } from './audit.ts'
-export { dayStart, fold, sourceOf } from './report.ts'
+export { dayStart, dimension, fold, sourceOf } from './report.ts'
 export { callState, dialed, followUp, recordCall, recordCallResult } from './calls.ts'
 export { knownLink, readToken, signToken, staffLink } from './sign.ts'
 export { ladderProblems, withStage } from './ladder.ts'
@@ -33,6 +33,7 @@ export type { Fitted, Labeled, Measured } from './calibrate.ts'
 export type {
   Attribution,
   AttributedTouch,
+  Breakdown,
   CallResult,
   Change,
   Cluster,

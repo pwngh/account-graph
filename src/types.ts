@@ -300,6 +300,8 @@ export interface Outcome {
   email?: string
   phone?: string
   consent?: Consent
+  /** Facts to break the report down by: at most 8, each a short code. */
+  tags?: Record<string, string>
 }
 
 /** The part of an outcome the graph keeps for the report. */
@@ -310,6 +312,7 @@ export interface Counted {
   stage: string
   value: number
   currency: string
+  tags?: Record<string, string>
 }
 
 /** A phone call as it is kept, with its result once one is known. */
@@ -328,6 +331,8 @@ export interface KeptCall {
   flags: string[]
   /** The visitor whose tap led to it. */
   visitor?: Subject
+  /** Facts about it, carried on to its outcome. */
+  tags?: Record<string, string>
   /** When it was written down. */
   recorded: number
   result?: CallResult
@@ -402,7 +407,12 @@ export interface ReportRow {
   /** Outcomes credited to this row, all steps together. */
   outcomes: number
   value: number
+  /** The same outcomes by the dimension asked for. Costs are not split: a campaign is charged whole. */
+  breakdown?: Breakdown
 }
+
+/** Outcomes and missed calls by the value of one dimension, each named by that value, in order. `(not recorded)` is always the last. */
+export type Breakdown = { name: string; stages: Record<string, { count: number; value: number }>; outcomes: number; value: number; missed: number }[]
 
 export interface Report {
   from: string
@@ -410,6 +420,10 @@ export interface Report {
   /** Highest cost first, then highest value. */
   rows: ReportRow[]
   total: Omit<ReportRow, 'source' | 'campaignId' | 'campaign'>
+  /** The dimension the rows are broken down by, when one was asked for. */
+  by?: string
+  /** The dimensions something in these days was recorded under, for choosing one. */
+  dimensions: string[]
   /** Every currency the costs and outcomes named. More than one means the sums mix currencies. */
   currencies: string[]
 }
