@@ -648,8 +648,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const calls = await tx.callsBetween(start, end)
         const missed = calls.filter((call) => call.direction === 'inbound' && call.result?.answered === false)
         // A call filed under its number's channel left a touch of its own, on the caller, at the moment it began.
-        const own = new Set((await tx.touchesBetween(start, end)).filter((touch) => touch.landing?.startsWith('tel:')).map((touch) => `${touch.at} ${touch.subject}`))
-        const filed = new Set(calls.filter((call) => own.has(`${call.at} ${call.subject}`)).map((call) => call.id))
+        const own = new Set((await tx.touchesBetween(start, end)).filter((touch) => touch.landing?.startsWith('tel:')).map((touch) => `${touch.at} ${touch.landing} ${touch.subject}`))
+        const filed = new Set(calls.filter((call) => own.has(`${call.at} tel:${call.to} ${call.subject}`)).map((call) => call.id))
         return summarizeCalls(calls, await tx.callsOf(unique(missed.map((call) => call.subject))), filed, at, timeZone, options)
       })
     },

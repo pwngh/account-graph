@@ -873,6 +873,7 @@ test('a call whose result is awaited is held, and nothing is sent until a person
     assert.deepEqual([list.timeZone, list.calls.map((each: any) => [each.id, each.state, each.attempts]), list.next], ['America/New_York', [['CA9', 'missed', 0]], null])
     const whole = (await (await read(`/calls/summary?${days}`)).json()) as any
     assert.deepEqual([whole.expected, whole.total.calls, whole.total.missed, whole.total.returned], [true, 3, 2, 1])
+    assert.equal('to' in list.calls[0], false)
     for (const bad of ['/calls?after=x', '/calls?from=2026-13-01', '/calls/summary?tz=Mars']) assert.equal((await read(bad)).status, 400, bad)
     // A result that comes first waits for its call.
     assert.deepEqual((await post('/call/result', { id: 'CA3', answered: true })).body, { state: 'waiting', counted: false })

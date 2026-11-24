@@ -15,7 +15,7 @@ import type { LineTypeLookup } from './integrations/twilio.ts'
 import type { IpLookup } from './integrations/maxmind.ts'
 import type { JobState, Outbox } from './outbox.ts'
 import { withStage } from './ladder.ts'
-import { sourceOf } from './report.ts'
+import { dayIn, sourceOf } from './report.ts'
 import type { Ladder } from './ladder.ts'
 import { defaultPolicy, plainPolicy } from './policy.ts'
 import { reviewPage } from './review.ts'
@@ -530,10 +530,10 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
 
   /** The days a request asks about: the last thirty unless it says, in the time zone it names or the server's own. */
   const period = (url: URL) => {
-    const today = new Date(now()).toISOString().slice(0, 10)
-    const to = url.searchParams.get('to') || today
-    const from = url.searchParams.get('from') || new Date(Date.parse(`${to}T00:00:00Z`) - 29 * 86_400_000 || now()).toISOString().slice(0, 10)
-    return { from, to, timeZone: url.searchParams.get('tz') || options.timeZone || 'UTC' }
+    const timeZone = url.searchParams.get('tz') || options.timeZone || 'UTC'
+    const to = url.searchParams.get('to') || dayIn(now(), timeZone)
+    const from = url.searchParams.get('from') || new Date((Date.parse(`${to}T00:00:00Z`) || now()) - 29 * 86_400_000).toISOString().slice(0, 10)
+    return { from, to, timeZone }
   }
 
   async function route(request: IncomingMessage, response: ServerResponse): Promise<unknown> {
@@ -739,7 +739,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return {
           ...days,
           at: now(),
-          calls: page.map(({ call, followUp, touch }) => ({ ...call, state: callState(call, now(), options.calls), attempts: followUp.attempts, ...(touch && { source: sourceOf(touch), campaign: touch.campaign ?? null, campaignId: touch.campaignId ?? null }) })),
+          // Your own number is of no use here, and nobody else's is kept.
+          calls: page.map(({ call: { to: ours, ...call }, followUp, touch }) => ({ ...call, state: callState({ ...call, to: ours }, now(), options.calls), attempts: followUp.attempts, ...(touch && { source: sourceOf(touch), campaign: touch.campaign ?? null, campaignId: touch.campaignId ?? null }) })),
           next: open.length > limit && last ? `${last.call.at} ${last.call.id}` : null,
         }
       }

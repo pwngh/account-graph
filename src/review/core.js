@@ -99,10 +99,11 @@ const open = (subject) => el('a', { class: 'link', href: subjectHash(subject) },
 /**
  * The views, in the order of the menu. Each has a `title` and
  * `show(box, ...parts)`, which fills the box from what the address names
- * after the view. What it throws is shown as a problem.
+ * after the view. What it throws is shown as a problem. A view whose answer
+ * depends on the time of day says with `every` how often to read it again.
  */
 const views = new Map()
-const view = (name, title, show) => views.set(name, { title, show })
+const view = (name, title, show, { every } = {}) => views.set(name, { title, show, every })
 
 /** The view an address names, with the parts that follow it. Addresses from before views had names still work. */
 function place() {
@@ -166,7 +167,8 @@ async function load(tag) {
       notice('')
       if (name === 'accounts' && parts[0]) $('subject').value = parts[0]
     }
-    loadedAt = Date.now()
+    if (!quiet) browsing = false
+    loadedAt = readAt = Date.now()
     fresh()
     return true
   } catch (error) {
@@ -188,6 +190,9 @@ async function load(tag) {
 const EVERY = 10_000
 let beat
 let loadedAt
+let readAt = 0
+/** Further pages are on screen, which a refresh would take away. */
+let browsing = false
 /** The tag of what the server holds now, or undefined when it is the one already seen. */
 async function pulse() {
   const response = await fetch('/pulse', { cache: 'no-store', headers: { authorization: `Bearer ${$('token').value}`, ...(beat && { 'if-none-match': beat }) } })
@@ -198,11 +203,11 @@ async function pulse() {
 }
 function fresh(problem) {
   const at = loadedAt ? `Current as of ${new Date(loadedAt).toLocaleTimeString()}.` : ''
-  $('fresh').textContent = problem ? `Not refreshed: ${problem} ${at}` : document.hidden ? `${at} Paused while this tab is hidden.` : busy() ? `${at} Waiting while a field here has the cursor.` : at && `${at} Looks for changes every ${EVERY / 1000} seconds.`
+  $('fresh').textContent = problem ? `Not refreshed: ${problem} ${at}` : document.hidden ? `${at} Paused while this tab is hidden.` : busy() ? `${at} Waiting while a field here has the cursor.` : browsing ? `${at} Not refreshed while further pages are shown. Reload to start again.` : at && `${at} Looks for changes every ${EVERY / 1000} seconds.`
 }
 /** Typing or answering a question is not interrupted: the next look finds the change again. */
 const busy = () => $('ask').open || ($('view').contains(document.activeElement) && document.activeElement.matches('input:not([readonly]), select, textarea'))
-const interrupting = () => document.hidden || busy()
+const interrupting = () => document.hidden || busy() || browsing
 let looking = false
 async function look() {
   if (interrupting() || looking || pending || !$('token').value || !loadedAt) return fresh()
@@ -213,6 +218,8 @@ async function look() {
     // Opened something else meanwhile, or began to type: the tag is not taken, so the next look finds the change again.
     if (turn !== loading || pending || interrupting()) fresh()
     else if (tag) await load(tag)
+    // Nothing was written, but ages and deadlines have moved on.
+    else if (Date.now() - readAt >= (views.get(place().name).every ?? Infinity)) await load(beat)
     else {
       loadedAt = Date.now()
       fresh()
@@ -224,15 +231,26 @@ async function look() {
   }
 }
 
-const iso = (date) => date.toISOString().slice(0, 10)
-/** The days an address names, the last thirty when it names none, and a form that goes to others. */
+/**
+ * The days an address names, and a form that goes to others. When it names
+ * none the server picks the last thirty in its own time zone, and `resolved`
+ * puts those in the form.
+ */
 function period(name, first, last) {
-  const range = { from: first || iso(new Date(Date.now() - 29 * 86400000)), to: last || iso(new Date()) }
-  const from = el('input', { type: 'date', value: range.from, required: '' })
-  const to = el('input', { type: 'date', value: range.to, required: '' })
+  const from = el('input', { type: 'date', value: first ?? '', required: '' })
+  const to = el('input', { type: 'date', value: last ?? '', required: '' })
   const form = el('form', { class: 'row', on: { submit: (event) => { event.preventDefault(); go(`#/${name}/${from.value}/${to.value}`) } } },
     el('label', {}, 'From', from), el('label', {}, 'To', to), el('button', { class: 'primary' }, 'Show'))
-  return { range, form, query: `from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}` }
+  const days = (range) => `from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`
+  return {
+    form,
+    query: first && last ? days({ from: first, to: last }) : '',
+    resolved: (range) => {
+      from.value = range.from
+      to.value = range.to
+      return days(range)
+    },
+  }
 }
 /** A length of time in words: the two largest units that matter. */
 function lasted(ms) {
@@ -258,6 +276,7 @@ function paged(table, next, more, fetchPage) {
       const page = await fetchPage(next)
       if (turn !== loading) return
       table.append(...page.rows)
+      browsing = true
       next = page.next
       button.hidden = next === null
     } catch (error) {

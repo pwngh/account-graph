@@ -1,5 +1,5 @@
 const MEASURES = [
-  ['calls', 'All calls'], ['answered', 'Answered by a person'], ['missed', 'Missed'], ['voicemail', 'Voicemail'], ['noResult', 'Unknown or waiting'], ['returned', 'Returned by you'],
+  ['calls', 'All calls'], ['answered', 'Answered by a person'], ['missed', 'Missed'], ['voicemail', 'Voicemail'], ['unknown', 'Unknown'], ['waiting', 'Waiting for a result'], ['returned', 'Returned by you'],
 ]
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 // Which count the table of hours shows, kept while the screen is open.
@@ -7,7 +7,7 @@ let measure = 'missed'
 
 /** Hours across, weekdays down, with the number in every cell. The shade only repeats the number, so nothing rests on it. */
 function hours(summary) {
-  const value = (cell) => (measure === 'noResult' ? cell.waiting + cell.unknown : cell[measure])
+  const value = (cell) => cell[measure]
   const at = new Map(summary.cells.map((cell) => [`${cell.weekday} ${cell.hour}`, cell]))
   const most = Math.max(1, ...summary.cells.map(value))
   const name = MEASURES.find(([key]) => key === measure)[1]
@@ -33,10 +33,11 @@ const openRow = (at) => (call) => el('tr', {},
 
 // Calls to you: what is still open, how they went, and how many could be placed.
 view('calls', 'Calls', async (box, first, last) => {
-  const { form, query } = period('calls', first, last)
+  const { form, query: asked, resolved } = period('calls', first, last)
   const top = el('section', {}, el('h3', {}, 'Calls'), el('p', { class: 'muted' }, 'Calls to you. Callers are kept as hashes of their numbers, so this screen shows a subject and never a phone number. Find the number in your phone system by the time of the call.'), form)
   box.append(top)
-  const [open, summary] = await Promise.all([api('GET', `/calls?${query}`), api('GET', `/calls/summary?${query}`)])
+  const [open, summary] = await Promise.all([api('GET', `/calls?${asked}`), api('GET', `/calls/summary?${asked}`)])
+  const query = resolved(summary)
   const { total, coverage } = summary
   top.append(el('p', { class: 'muted' }, `${summary.from} to ${summary.to}, days in ${summary.timeZone}. ${amount(total.calls)} calls.${summary.expected ? ' A call counts once a result says a person answered.' : ' No results are expected, so a call with none is counted by its length.'}`))
 
@@ -69,4 +70,4 @@ view('calls', 'Calls', async (box, first, last) => {
     ...[['Tied to a visitor', coverage.visitor, 'One visitor tapped the number just before, so the call follows their own arrival.'], ['Filed under a channel only', coverage.channel, 'The number rung says which campaign it is published on, and nothing more is known.'],
       ['Neither', coverage.neither, 'The number is not listed and nobody tapped it.'], ['No result', coverage.noResult, 'Counted in the lines above too. Waiting or unknown.']].map(([name, count, meaning]) => el('tr', {}, td('', name), td('num', share(count, total.calls)), td('muted', meaning))))
   box.append(el('section', {}, el('h2', {}, 'Coverage'), wide('Coverage', placed)))
-})
+}, { every: 60_000 })

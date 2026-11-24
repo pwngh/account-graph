@@ -1,9 +1,10 @@
 // What each campaign cost and brought in.
 view('channels', 'Channels', async (box, first, last) => {
-  const { form: pick, query } = period('channels', first, last)
+  const { form: pick, query, resolved } = period('channels', first, last)
   const section = el('section', {}, el('h3', {}, 'Channels'), el('p', { class: 'muted' }, 'What each campaign cost and what it brought in. An outcome counts on the day it happened, under the arrival that earned it.'), pick)
   box.append(section)
   const report = await api('GET', `/report?${query}`)
+  resolved(report)
   const stages = report.steps.filter((step) => report.total.stages[step])
   const per = (cost, count) => (count > 0 && cost > 0 ? money(cost / count) : '')
   const back = (value, cost) => (cost > 0 && value > 0 ? `${(value / cost).toFixed(1)}×` : '')

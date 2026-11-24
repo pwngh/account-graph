@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
 import { components, conversionEvent, createAlerter, createGraph, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, ingestRequest, ip, knownLink, ladderProblems, measure, normalizeEmail, normalizePhone, phoneOfType, policyFrom, policyHash, policyProblems, readToken, scorePairs, signToken, sourceOf, withStage } from '../src/index.ts'
 import { summarizeCalls } from '../src/callreport.ts'
+import { dayIn } from '../src/report.ts'
 import { weigh } from '../src/policy.ts'
 import type { Edge, IdentifierState, KeptCall, Reason } from '../src/index.ts'
 import { configFrom } from '../src/serve.ts'
@@ -334,6 +335,10 @@ test('calls are counted by hour and weekday where they happened, and by what bec
   // An hour that happens twice when clocks go back is one hour of the day; nothing is lost.
   const fall = [0, 1].map((n) => call(`h${n}`, { at: Date.parse('2026-11-01T05:30:00Z') + n * 3_600_000 }))
   assert.deepEqual(summarizeCalls(fall, [], new Set(), at, 'America/New_York').cells.map((cell) => [cell.weekday, cell.hour, cell.calls]), [[7, 1, 2]])
+  // How long a call lasted says nothing about who answered it, so one with no result has none, expected or not.
+  assert.equal(summarizeCalls([call('long', { duration: 600 }), call('waited', { result: { waited: 5, recorded: at } })], [], new Set(), at).coverage.noResult, 2)
+  // Already tomorrow in Tokyo.
+  assert.deepEqual([dayIn(Date.parse('2026-03-02T16:00:00Z'), 'Asia/Tokyo'), dayIn(Date.parse('2026-03-02T16:00:00Z'))], ['2026-03-03', '2026-03-02'])
   assert.deepEqual(summarizeCalls([], [], new Set(), at), { total: { calls: 0, answered: 0, missed: 0, voicemail: 0, waiting: 0, unknown: 0, returned: 0, triedAgain: 0, hidden: 0 }, cells: [], coverage: { visitor: 0, channel: 0, neither: 0, noResult: 0 }, returnedWithin: null })
 })
 
