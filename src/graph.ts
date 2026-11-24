@@ -395,6 +395,8 @@ export interface Board {
   unplaced: number
 }
 
+/** The order of entries at the same moment. A type added to the journey has a place here or does not compile. */
+const KIND_ORDER: Record<Entry['kind'], number> = { visit: 0, call: 1, consent: 2, decision: 3, sighting: 4, outcome: 5, value: 6 }
 /** The most subjects of one person a journey reads. */
 const MOST = 60
 const MIXED = 'mixed'
@@ -402,7 +404,7 @@ const MIXED = 'mixed'
 function range(from: string, to: string, timeZone?: string): [number, number] {
   const start = dayStart(from, timeZone)
   const end = dayStart(nextDay(to), timeZone)
-  if (end <= start) throw new TypeError('A report needs `from` on or before `to`')
+  if (end <= start) throw new TypeError('A report requires `from` on or before `to`')
   return [start, end]
 }
 
@@ -645,7 +647,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
   async function current(tx: Tx, about: readonly string[], why: Deciding | undefined): Promise<void> {
     const seen = why?.seen
     if (seen === undefined) return
-    if (!Number.isSafeInteger(seen) || seen < 0) throw new TypeError('`seen` must be the number of a decision')
+    if (!Number.isSafeInteger(seen) || seen < 0) throw new TypeError('`seen` must be a decision number')
     const newer = await tx.newestNaming(about, seen)
     if (newer) throw new Outdated(newer)
   }
@@ -713,7 +715,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
   }
 
   const tell = (pairs: readonly Told[], verb: string, why: Why | undefined) => {
-    if (!Array.isArray(pairs)) throw new TypeError(`${verb} needs a list of pairs`)
+    if (!Array.isArray(pairs)) throw new TypeError(`${verb} requires a list of pairs`)
     return pairs.map((told) => ({ pair: pairOf(told?.a, told?.b, verb), separated: told.separated ?? true, why: { ...why, ...(told.reason && { reason: String(told.reason) }) } }))
   }
 
@@ -725,11 +727,11 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
   /** Refuses text the database cannot keep, before anything is written. */
   const keepable = (...texts: (string | undefined)[]) => {
-    for (const text of texts) if (text !== undefined && UNSTORABLE.test(text)) throw new TypeError('Text may not hold a NUL or half of a character')
+    for (const text of texts) if (text !== undefined && UNSTORABLE.test(text)) throw new TypeError('Text contains unsupported characters')
   }
 
   const pairOf = (a: Subject, b: Subject, verb: string): [Subject, Subject] => {
-    if (typeof a !== 'string' || typeof b !== 'string' || !a || !b || a === b) throw new TypeError(`${verb} needs two different subjects`)
+    if (typeof a !== 'string' || typeof b !== 'string' || !a || !b || a === b) throw new TypeError(`${verb} requires two different subjects`)
     keepable(a, b)
     return a < b ? [a, b] : [b, a]
   }
@@ -780,12 +782,12 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       const sightings: Sighting[] = []
       const recorded = now()
       for (const { subject, identifiers, at, event } of observations) {
-        if (typeof subject !== 'string' || !subject) throw new TypeError('An observation needs a subject')
-        if (!Number.isSafeInteger(at)) throw new TypeError(`Observation of "${subject}" needs a time in whole epoch milliseconds`)
-        if (event !== undefined && typeof event !== 'string') throw new TypeError(`Observation of "${subject}" needs its event as text`)
-        if (UNSTORABLE.test(subject) || (event !== undefined && UNSTORABLE.test(event))) throw new TypeError('An observation holds text that cannot be kept')
+        if (typeof subject !== 'string' || !subject) throw new TypeError('An observation requires a subject')
+        if (!Number.isSafeInteger(at)) throw new TypeError(`Observation of "${subject}" requires "at", an integer in epoch milliseconds`)
+        if (event !== undefined && typeof event !== 'string') throw new TypeError(`Observation of "${subject}" requires its event as a string`)
+        if (UNSTORABLE.test(subject) || (event !== undefined && UNSTORABLE.test(event))) throw new TypeError('An observation contains unsupported characters')
         for (const identifier of new Set(identifiers)) {
-          if (UNSTORABLE.test(identifier)) throw new TypeError('An observation holds text that cannot be kept')
+          if (UNSTORABLE.test(identifier)) throw new TypeError('An observation contains unsupported characters')
           ruleFor(policy, identifier)
           sightings.push(event === undefined ? { subject, identifier, at, recorded } : { subject, identifier, at, event, recorded })
         }
@@ -847,12 +849,12 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
     async outcome(outcome) {
       const { transactionId, subject, at } = outcome
-      if (!transactionId || !subject) throw new TypeError('An outcome needs a transactionId and a subject')
-      if (typeof transactionId !== 'string' || typeof subject !== 'string') throw new TypeError('An outcome needs a transactionId and a subject, each as text')
-      if (!Number.isSafeInteger(at)) throw new TypeError(`Outcome "${transactionId}" needs a time in whole epoch milliseconds`)
+      if (!transactionId || !subject) throw new TypeError('An outcome requires a transactionId and a subject')
+      if (typeof transactionId !== 'string' || typeof subject !== 'string') throw new TypeError('An outcome requires a transactionId and a subject, as strings')
+      if (!Number.isSafeInteger(at)) throw new TypeError(`Outcome "${transactionId}" requires "at", an integer in epoch milliseconds`)
       const value = outcome.value ?? 0
       if (typeof value !== 'number' || !Number.isFinite(value)) throw new TypeError(`Outcome "${transactionId}" has a value that is not a number`)
-      for (const text of [outcome.stage, outcome.currency]) if (text !== undefined && typeof text !== 'string') throw new TypeError(`Outcome "${transactionId}" needs its stage and currency as text`)
+      for (const text of [outcome.stage, outcome.currency]) if (text !== undefined && typeof text !== 'string') throw new TypeError(`Outcome "${transactionId}" requires its stage and currency as strings`)
       keepable(transactionId, subject, outcome.stage, outcome.currency)
       const tags = checkTags(outcome.tags, `Outcome "${transactionId}"`)
       const counted: Counted = { transactionId, subject, at, stage: outcome.stage || 'outcome', value, currency: outcome.currency ?? '', ...(tags && { tags }) }
@@ -866,14 +868,14 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
     async restate(transactionId, value, currency, kind) {
       if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) throw new TypeError('A restated value must be zero or more')
-      if (currency !== undefined && typeof currency !== 'string') throw new TypeError('A restated currency must be text')
-      if (kind !== undefined && kind !== 'refund' && kind !== 'write_off') throw new TypeError('A value changes for a `refund` or a `write_off`, or for neither')
+      if (currency !== undefined && typeof currency !== 'string') throw new TypeError('A restated currency must be a string')
+      if (kind !== undefined && kind !== 'refund' && kind !== 'write_off') throw new TypeError('`kind` must be `refund` or `write_off`')
       keepable(transactionId, currency)
       return store.write(async (tx) => {
         const found = await tx.outcomeOf(transactionId)
         if (!found) return false
         if (kind !== undefined) {
-          if (currency && currency !== found.currency) throw new TypeError('A refund or a write-off is in the currency the outcome is in')
+          if (currency && currency !== found.currency) throw new TypeError('A refund or write-off must use the currency of the outcome')
           // One said by mistake is taken back by saying it the other way, and no more than was said.
           let said = 0
           // As much as the sums below can be off by, which grows with what they are made of.
@@ -887,7 +889,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
               off += Number.EPSILON * Math.max(before, each.value, Math.abs(said))
             })
           }
-          if (value > found.value && (said <= 0 || value - found.value > said + off)) throw new TypeError(`Outcome "${transactionId}" has not had that much ${kind === 'refund' ? 'refunded' : 'written off'}`)
+          if (value > found.value && (said <= 0 || value - found.value > said + off)) throw new TypeError(`Outcome "${transactionId}" cannot reverse more than was ${kind === 'refund' ? 'refunded' : 'written off'}`)
         }
         const restated = { ...found, value, ...(currency && { currency }) }
         await tx.setOutcome(restated)
@@ -944,8 +946,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     async markNotLead(id, kind) {
-      if (typeof id !== 'string' || !id) throw new TypeError('Say which outcome was no lead, by its transaction id')
-      if (kind !== undefined && kind !== 'spam' && kind !== 'other') throw new TypeError('What was no lead is `spam` or `other`')
+      if (typeof id !== 'string' || !id) throw new TypeError('`transactionId` is required')
+      if (kind !== undefined && kind !== 'spam' && kind !== 'other') throw new TypeError('`kind` must be `spam` or `other`')
       await store.write((tx) => tx.setNotLead(id, kind && { kind, at: now() }))
     },
 
@@ -977,9 +979,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     async lease(subject, { numbers, minutes, at = now(), arrivedSince }) {
-      if (typeof subject !== 'string' || !subject) throw new TypeError('A lease needs a subject')
-      if (!Number.isSafeInteger(at)) throw new TypeError('A lease needs a time in whole epoch milliseconds')
-      if (!(Number.isFinite(minutes) && minutes > 0)) throw new TypeError('A lease needs its length in minutes, above zero')
+      if (typeof subject !== 'string' || !subject) throw new TypeError('A lease requires a subject')
+      if (!Number.isSafeInteger(at)) throw new TypeError('A lease requires `at`, an integer in epoch milliseconds')
+      if (!(Number.isFinite(minutes) && minutes > 0)) throw new TypeError('A lease requires its length in minutes, above zero')
       const until = at + Math.ceil(minutes * 60_000)
       return store.write(async (tx) => {
         // Asked here, where nobody can forget the visitor or write down an opt-out in between.
@@ -1042,7 +1044,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     async board({ steps, days = 90, timeZone, at = now(), returnHours = 0, limit = 50, hours }) {
-      if (!Number.isSafeInteger(days) || days < 1 || days > 365) throw new TypeError('`days` must be a whole number from 1 to 365')
+      if (!Number.isSafeInteger(days) || days < 1 || days > 365) throw new TypeError('`days` must be an integer from 1 to 365')
       const day = dayIn(at, timeZone)
       const today = dayStart(day, timeZone)
       const from = dayStart(new Date(Date.parse(day) - (days - 1) * DAY).toISOString().slice(0, 10), timeZone)
@@ -1074,8 +1076,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
     async followed({ from, to, timeZone, at = now(), ...options }) {
       const [start, end] = range(from, to, timeZone)
-      if (typeof options.step !== 'string' || !options.step) throw new TypeError('Say which step to look for')
-      if (!Number.isSafeInteger(options.days) || options.days < 1 || options.days > 365) throw new TypeError('`days` must be a whole number from 1 to 365')
+      if (typeof options.step !== 'string' || !options.step) throw new TypeError('`step` is required')
+      if (!Number.isSafeInteger(options.days) || options.days < 1 || options.days > 365) throw new TypeError('`days` must be an integer from 1 to 365')
       return store.read(async (tx) => {
         const inPeriod = await leadsOf(tx, (await tx.callsBetween(start, end)).filter((call) => call.direction === 'inbound'), callId)
         // A person is a cluster: whoever rings from two numbers is counted once, and what they did under an account is theirs.
@@ -1104,18 +1106,18 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       const costs = Array.isArray(input) ? (input as readonly Cost[]) : [input as Cost]
       const rows = costs.map((cost): CostRow => {
         dayStart(cost?.day)
-        if (typeof cost.source !== 'string' || !cost.source.trim()) throw new TypeError('A cost needs a source, such as "google"')
-        if (typeof cost.amount !== 'number' || !Number.isFinite(cost.amount) || cost.amount < 0) throw new TypeError(`The cost of ${cost.day} needs an amount of zero or more`)
+        if (typeof cost.source !== 'string' || !cost.source.trim()) throw new TypeError('A cost requires a source, such as "google"')
+        if (typeof cost.amount !== 'number' || !Number.isFinite(cost.amount) || cost.amount < 0) throw new TypeError(`The cost of ${cost.day} requires an amount of zero or more`)
         for (const count of [cost.clicks, cost.impressions]) {
-          if (count !== undefined && (!Number.isSafeInteger(count) || count < 0)) throw new TypeError(`The cost of ${cost.day} has a count that is not a whole number`)
+          if (count !== undefined && (!Number.isSafeInteger(count) || count < 0)) throw new TypeError(`The cost of ${cost.day} has a count that is not an integer`)
         }
         for (const claim of [cost.conversions, cost.conversionValue]) {
           if (claim !== undefined && (typeof claim !== 'number' || !Number.isFinite(claim))) throw new TypeError(`The cost of ${cost.day} has conversions that are not a number`)
         }
-        if (cost.conversions !== undefined && cost.conversions < 0) throw new TypeError(`The cost of ${cost.day} needs conversions of zero or more`)
+        if (cost.conversions !== undefined && cost.conversions < 0) throw new TypeError(`The cost of ${cost.day} requires conversions of zero or more`)
         if (cost.conversionValue !== undefined && cost.conversions === undefined) throw new TypeError(`The cost of ${cost.day} has a conversion value and no conversions`)
         const named = [cost.campaignId, cost.campaign, cost.currency].map((text) => {
-          if (typeof text === 'object' && text !== null) throw new TypeError(`The cost of ${cost.day} needs its campaign and currency as text`)
+          if (typeof text === 'object' && text !== null) throw new TypeError(`The cost of ${cost.day} requires its campaign and currency as strings`)
           return String(text ?? '')
         })
         keepable(cost.source, ...named)
@@ -1183,7 +1185,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     async ignore(identifier, ignored = true, why) {
-      if (typeof ignored !== 'boolean') throw new TypeError('ignore needs true or false')
+      if (typeof ignored !== 'boolean') throw new TypeError('ignore requires true or false')
       keepable(identifier)
       const { cap } = ruleFor(policy, identifier)
       return changing(async (tx) => {
@@ -1287,9 +1289,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       const { action } = decision
       if (action === 'join' || action === 'separate') pairOf(decision.a, decision.b, action)
       else if (action === 'ignore') keepable(decision.identifier)
-      else throw new TypeError('foresee needs an action: join, separate or ignore')
+      else throw new TypeError('foresee requires an action: join, separate or ignore')
       const flag = action === 'separate' ? decision.separated : action === 'ignore' ? decision.ignored : undefined
-      if (flag !== undefined && typeof flag !== 'boolean') throw new TypeError(`foresee ${action} needs true or false`)
+      if (flag !== undefined && typeof flag !== 'boolean') throw new TypeError(`foresee ${action} requires true or false`)
       return store.read(async (tx) => {
         let about: Subject[]
         if (action === 'ignore') {
@@ -1383,16 +1385,16 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     async consent(subject, consent, given = {}) {
-      if (typeof subject !== 'string' || !subject) throw new TypeError('Consent needs a subject')
+      if (typeof subject !== 'string' || !subject) throw new TypeError('Consent requires a subject')
       if (typeof consent?.adUserData !== 'boolean' || typeof consent.adPersonalization !== 'boolean') {
-        throw new TypeError('Consent needs adUserData and adPersonalization, each true or false')
+        throw new TypeError('Consent requires adUserData and adPersonalization, each true or false')
       }
       const recorded = now()
       const { at = recorded, source } = given
-      if (!Number.isSafeInteger(at) || at < 0) throw new TypeError('An answer needs its time in whole epoch milliseconds')
+      if (!Number.isSafeInteger(at) || at < 0) throw new TypeError('Consent requires `at`, an integer in epoch milliseconds')
       // An answer dated ahead would stand over every real one until that day came.
-      if (at > recorded + DAY) throw new TypeError('An answer cannot be dated in the future')
-      if (source !== undefined && (typeof source !== 'string' || source.length > 200)) throw new TypeError('The source of an answer must be text of at most 200 characters')
+      if (at > recorded + DAY) throw new TypeError('Consent cannot be dated in the future')
+      if (source !== undefined && (typeof source !== 'string' || source.length > 200)) throw new TypeError('Consent `source` must be a string of at most 200 characters')
       keepable(subject, source)
       await store.write((tx) => tx.addConsent(subject, { at, adUserData: consent.adUserData, adPersonalization: consent.adPersonalization, ...(source && { source }), recorded }))
     },
@@ -1407,12 +1409,12 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
     async transfer(flow) {
       const { id, from, to, amount, at, asset = '' } = flow
-      if (typeof id !== 'string' || !id.trim() || id.length > 200) throw new TypeError('A flow needs an id of its own, as text of at most 200 characters')
-      if (typeof from !== 'string' || typeof to !== 'string' || !from || !to || from === to) throw new TypeError('A flow needs two different subjects')
-      if (!Number.isSafeInteger(amount) || amount <= 0) throw new TypeError('A flow needs a whole, positive amount in the smallest unit')
-      if (!Number.isSafeInteger(at)) throw new TypeError('A flow needs a time in whole epoch milliseconds')
-      if (typeof asset !== 'string') throw new TypeError('A flow needs its asset as text')
-      if ([id, from, to, asset].some((text) => UNSTORABLE.test(text))) throw new TypeError('A flow holds text that cannot be kept')
+      if (typeof id !== 'string' || !id.trim() || id.length > 200) throw new TypeError('A flow requires an id of its own, as a string of at most 200 characters')
+      if (typeof from !== 'string' || typeof to !== 'string' || !from || !to || from === to) throw new TypeError('A flow requires two different subjects')
+      if (!Number.isSafeInteger(amount) || amount <= 0) throw new TypeError('A flow requires `amount`, a positive integer in the smallest unit')
+      if (!Number.isSafeInteger(at)) throw new TypeError('A flow requires `at`, an integer in epoch milliseconds')
+      if (typeof asset !== 'string') throw new TypeError('A flow requires its asset as a string')
+      if ([id, from, to, asset].some((text) => UNSTORABLE.test(text))) throw new TypeError('A flow contains unsupported characters')
       return store.write(async (tx) => {
         const before = await tx.flowOf(id)
         if (before && !(before.from === from && before.to === to && before.amount === amount && before.at === at && before.asset === asset)) {
@@ -1481,7 +1483,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     async forget(subject, why, gone) {
-      if (typeof subject !== 'string') throw new TypeError('forget needs a subject')
+      if (typeof subject !== 'string') throw new TypeError('forget requires a subject')
       keepable(subject)
       let jobs: Job[] = []
       const changes = await changing(async (tx) => {
@@ -1504,7 +1506,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     async journey(subject, { before = Number.MAX_SAFE_INTEGER, limit = 200 } = {}) {
-      if (!(Number.isInteger(limit) && limit > 0)) throw new TypeError('limit must be a whole number above zero')
+      if (!(Number.isInteger(limit) && limit > 0)) throw new TypeError('limit must be a positive integer')
       return store.read(async (tx) => {
         const own = (await tx.labelsOf([subject])).get(subject)
         const members = own ? (await tx.clusterOf(own.cluster)).sort() : [subject]
@@ -1530,7 +1532,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         }
 
         const entries: Entry[] = []
-        for (const touch of await tx.touchesOf(people, 0, before - 1)) entries.push({ at: touch.at, subject: touch.subject, kind: 'arrival', touch })
+        for (const touch of await tx.touchesOf(people, 0, before - 1)) entries.push({ at: touch.at, subject: touch.subject, kind: 'visit', touch })
         const calls = await tx.callsOf(people)
         const outcomes = await tx.outcomesOf(people)
         const not = await tx.notLeads([...calls.map(callId), ...outcomes.map(outcomeId)])
@@ -1539,11 +1541,11 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         for (const each of people) {
           // One moment is many sightings, one for each identifier. What a call or a reviewer's join left is told by the call and the decision.
           const rang = new Set(calls.filter((call) => call.subject === each || call.visitor === each).map((call) => call.at))
-          const moments = new Map<string, Entry & { kind: 'seen' }>()
+          const moments = new Map<string, Entry & { kind: 'sighting' }>()
           for (const { at, event = '', identifier } of await tx.history(each)) {
             if (at >= before || (event === 'call' && rang.has(at)) || (event === 'review' && identifier.startsWith('review:join-'))) continue
             const key = `${at} ${event}`
-            const moment = moments.get(key) ?? { at, subject: each, kind: 'seen', event, identifiers: [] }
+            const moment = moments.get(key) ?? { at, subject: each, kind: 'sighting', event, identifiers: [] }
             moments.set(key, moment)
             moment.identifiers.push(identifier)
           }
@@ -1552,7 +1554,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         }
         for (const outcome of outcomes) {
           const [first, ...later] = await tx.valuesOf(outcome.transactionId, outcome.subject)
-          entries.push({ at: outcome.at, subject: outcome.subject, kind: 'step', outcome, first: first ?? null, ...spurned(outcomeId(outcome)) })
+          entries.push({ at: outcome.at, subject: outcome.subject, kind: 'outcome', outcome, first: first ?? null, ...spurned(outcomeId(outcome)) })
           let from = first
           for (const to of later) {
             entries.push({ at: to.at, subject: outcome.subject, kind: 'value', transactionId: outcome.transactionId, stage: outcome.stage, from: from!, to })
@@ -1562,14 +1564,14 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const named = new Set(people)
         for (const decision of await tx.decisionsNaming(people)) entries.push({ at: decision.at, subject: decision.about.find((each) => named.has(each))!, kind: 'decision', decision })
 
-        const found = entries.filter((entry) => entry.at < before).sort((x, y) => x.at - y.at || (x.kind < y.kind ? -1 : x.kind > y.kind ? 1 : x.subject < y.subject ? -1 : 1))
+        const found = entries.filter((entry) => entry.at < before).sort((x, y) => x.at - y.at || (KIND_ORDER[x.kind] - KIND_ORDER[y.kind] || (x.subject < y.subject ? -1 : 1)))
         // A page never ends inside a moment, so the next one can begin before it.
         let cut = Math.max(0, found.length - limit)
         while (cut > 0 && found[cut - 1]!.at === found[cut]!.at) cut -= 1
         const page = found.slice(cut)
         return {
           subject,
-          ties: Object.fromEntries(unique(page.map((entry) => entry.subject)).map((each) => [each, tie(each)])),
+          subjects: Object.fromEntries(unique(page.map((entry) => entry.subject)).map((each) => [each, tie(each)])),
           entries: page,
           next: cut > 0 ? page[0]!.at : null,
           more: everyone.length - people.length,
@@ -1595,7 +1597,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     async prune(before, why) {
-      if (!Number.isSafeInteger(before)) throw new TypeError('prune needs a time in whole epoch milliseconds')
+      if (!Number.isSafeInteger(before)) throw new TypeError('prune requires `before`, an integer in epoch milliseconds')
       return store.write(async (tx) => {
         await decide(tx, 'prune', [String(before)], why)
         return (await tx.pruneSightings(before)) + (await tx.pruneConsent(before)) + (await tx.pruneCallResults(before)) + (await tx.pruneLeases(before)) + (await tx.pruneNotLeads(before))

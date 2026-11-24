@@ -40,7 +40,7 @@ export type {
   Breakdown,
   CallResult,
   Change,
-  Claimed,
+  Reported,
   Cluster,
   Consent,
   ConsentAnswer,

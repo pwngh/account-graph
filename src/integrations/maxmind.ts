@@ -78,7 +78,7 @@ export function createMaxMindLookup(options: MaxMindOptions): IpLookup {
     else {
       const body = (await response.json().catch(() => ({}))) as { code?: string; error?: string }
       const unknown = body.code === 'IP_ADDRESS_NOT_FOUND' || body.code === 'IP_ADDRESS_RESERVED'
-      if (!unknown) throw new Error(`MaxMind refused the lookup with ${response.status} ${body.code ?? ''}: ${body.error ?? ''}`)
+      if (!unknown) throw new Error(`MaxMind rejected the lookup with ${response.status} ${body.code ?? ''}: ${body.error ?? ''}`)
     }
 
     if (cache.size >= limit) cache.delete(cache.keys().next().value!)

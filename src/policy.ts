@@ -114,7 +114,7 @@ export function policyProblems(given: unknown): string[] {
   const number = (value: unknown, least: number, most: number) => typeof value === 'number' && value >= least && value <= most
   for (const name of Object.keys(given)) if (name !== 'kinds' && name !== 'review' && !(LEVELS as readonly string[]).includes(name)) wrong.push(`"${name}" is not a setting`)
   for (const name of LEVELS) if (given[name] !== undefined && !number(given[name], 0, 1)) wrong.push(`"${name}" must be a number from 0 to 1`)
-  if (given.review !== undefined && !(Number.isSafeInteger(given.review) && given.review > 0)) wrong.push('"review" must be a whole number above 0')
+  if (given.review !== undefined && !(Number.isSafeInteger(given.review) && given.review > 0)) wrong.push('"review" must be a positive integer')
   if (given.kinds !== undefined && !plain(given.kinds)) wrong.push('"kinds" must be an object of rules')
   else {
     for (const [kind, rule] of Object.entries(given.kinds ?? {})) {
@@ -125,13 +125,13 @@ export function policyProblems(given: unknown): string[] {
         continue
       }
       for (const name of Object.keys(rule)) if (![...FIELDS, ...OPTIONAL].includes(name as never)) wrong.push(`kind "${kind}" has "${name}", which is not part of a rule`)
-      if (!base) for (const name of FIELDS) if (rule[name] === undefined) wrong.push(`kind "${kind}" is new, so it needs its ${name}`)
-      if (rule.weight !== undefined && !number(rule.weight, 0, 1)) wrong.push(`kind "${kind}" needs a weight from 0 to 1`)
-      if (rule.dilution !== undefined && !number(rule.dilution, 0, Number.MAX_VALUE)) wrong.push(`kind "${kind}" needs a dilution of zero or more`)
-      if (rule.cap !== undefined && !(Number.isSafeInteger(rule.cap) && rule.cap >= 0)) wrong.push(`kind "${kind}" needs a cap of zero or more, in whole subjects`)
-      if (rule.halfLife !== undefined && rule.halfLife !== 'none' && !(number(rule.halfLife, 0, Number.MAX_VALUE) && rule.halfLife > 0)) wrong.push(`kind "${kind}" needs a halfLife in milliseconds, or "none"`)
-      if (rule.group !== undefined && !(typeof rule.group === 'string' && rule.group)) wrong.push(`kind "${kind}" needs its group as text`)
-      if (rule.corroborates !== undefined && rule.corroborates !== true) wrong.push(`kind "${kind}" needs its corroborates as true, or left out`)
+      if (!base) for (const name of FIELDS) if (rule[name] === undefined) wrong.push(`kind "${kind}" is new, so it requires its ${name}`)
+      if (rule.weight !== undefined && !number(rule.weight, 0, 1)) wrong.push(`kind "${kind}" requires a weight from 0 to 1`)
+      if (rule.dilution !== undefined && !number(rule.dilution, 0, Number.MAX_VALUE)) wrong.push(`kind "${kind}" requires a dilution of zero or more`)
+      if (rule.cap !== undefined && !(Number.isSafeInteger(rule.cap) && rule.cap >= 0)) wrong.push(`kind "${kind}" requires a cap of zero or more, in whole subjects`)
+      if (rule.halfLife !== undefined && rule.halfLife !== 'none' && !(number(rule.halfLife, 0, Number.MAX_VALUE) && rule.halfLife > 0)) wrong.push(`kind "${kind}" requires a halfLife in milliseconds, or "none"`)
+      if (rule.group !== undefined && !(typeof rule.group === 'string' && rule.group)) wrong.push(`kind "${kind}" requires its group as a string`)
+      if (rule.corroborates !== undefined && rule.corroborates !== true) wrong.push(`kind "${kind}" requires its corroborates as true, or left out`)
       if (NOTES.has(kind) && rule.weight) wrong.push(`kind "${kind}" is a note and links nothing, so its weight must stay 0`)
     }
   }
@@ -177,12 +177,12 @@ export function policyHash(policy: Policy): string {
 export function ruleFor(policy: Policy, identifier: Identifier): Rule {
   const colon = identifier.indexOf(':')
   if (colon <= 0 || colon === identifier.length - 1) {
-    throw new TypeError(`Identifier "${identifier}" must be written "kind:value"`)
+    throw new TypeError(`Identifier "${identifier}" must have the form "kind:value"`)
   }
   const kind = identifier.slice(0, colon)
   // Own rules only: every object has things like a constructor, and none of them is a rule.
   const rule = Object.hasOwn(policy.kinds, kind) ? policy.kinds[kind] : undefined
-  if (!rule) throw new TypeError(`Identifier "${identifier}" has a kind the policy does not name`)
+  if (!rule) throw new TypeError(`Identifier "${identifier}" has a kind that is missing from the policy`)
   return rule
 }
 

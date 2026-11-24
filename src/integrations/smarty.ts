@@ -54,7 +54,7 @@ export function createAddressVerifier(options: SmartyOptions): AddressVerifier {
   const fetcher = options.fetch ?? fetch
   const authorization = `Basic ${Buffer.from(`${options.authId}:${options.authToken}`).toString('base64')}`
   return async (address) => {
-    if (typeof address?.street !== 'string' || !address.street.trim()) throw new TypeError('An address needs a street')
+    if (typeof address?.street !== 'string' || !address.street.trim()) throw new TypeError('An address requires a street')
     const url = new URL('https://us-street.api.smarty.com/street-address')
     for (const name of ['street', 'street2', 'secondary', 'city', 'state', 'zipcode'] as const) {
       const value = address[name]
@@ -62,7 +62,7 @@ export function createAddressVerifier(options: SmartyOptions): AddressVerifier {
     }
     url.searchParams.set('candidates', '1')
     const response = await fetcher(url.href, { headers: { authorization, accept: 'application/json' }, signal: AbortSignal.timeout(10_000) })
-    if (!response.ok) throw new Error(`Smarty refused the address check with ${response.status}: ${(await response.text()).slice(0, 200)}`)
+    if (!response.ok) throw new Error(`Smarty rejected the address check with ${response.status}: ${(await response.text()).slice(0, 200)}`)
     const answer = (await response.json()) as unknown
     const found = Array.isArray(answer) ? answer[0] : undefined
     if (!found?.delivery_point_barcode) return undefined

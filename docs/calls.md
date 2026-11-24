@@ -195,7 +195,7 @@ curl "https://graph.example.org/call?id=CA2" -H "authorization: Bearer $REVIEWER
 | --- | --- |
 | `open` | The caller has not been reached since. `attempts` counts the calls you placed without a known answer. |
 | `returned` | You called and the same number answered. `delay` is the time from the missed call, in milliseconds. |
-| `tried again` | The caller called again and got through |
+| `called again` | The caller called again and got through |
 | `hidden` | The caller hid their number, so a callback is not possible |
 
 For an outbound call, `from` is your number and `to` is theirs, kept as its hash. Outbound calls are excluded from outcomes, and record no identifier about the person called.
@@ -212,10 +212,10 @@ curl -X POST https://graph.example.org/call/returned -H "authorization: Bearer $
 ```
 
 ```json
-{ "followUp": { "state": "returned", "by": "CA1", "delay": 7200000, "told": true, "attempts": 1 } }
+{ "followUp": { "state": "returned", "by": "CA1", "delay": 7200000, "reported": true, "attempts": 1 } }
 ```
 
-`told` marks a return known only from such a report. The call summary counts these separately.
+`reported` marks a return known only from such a report. The call summary counts these separately.
 
 | Rule | Behavior |
 | --- | --- |

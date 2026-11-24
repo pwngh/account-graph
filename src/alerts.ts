@@ -39,7 +39,7 @@ export function createAlerter(options: AlertOptions): Alerter {
         body: JSON.stringify({ text: text.slice(0, 3000) }),
         signal: AbortSignal.timeout(10_000),
       })
-      if (!response.ok) throw new Error(`The alert webhook answered ${response.status}`)
+      if (!response.ok) throw new Error(`The alert webhook returned ${response.status}`)
       return true
     } catch (error) {
       // Nobody heard this one, so the next of its kind must not be held back.

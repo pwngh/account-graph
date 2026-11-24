@@ -12,7 +12,7 @@ function browserModule(name: string): string {
   if (existsSync(built)) return readFileSync(built, 'utf8')
   const source = readFileSync(fileURLToPath(new URL(`./${name}.ts`, import.meta.url)), 'utf8')
   const strip = (nodeModule as { stripTypeScriptTypes?: (code: string) => string }).stripTypeScriptTypes
-  if (!strip) throw new Error('Serving the collector from a checkout needs Node 22.13 or later; run `npm run build` instead')
+  if (!strip) throw new Error('Serving the collector from a checkout requires Node 22.13 or later; run `npm run build` instead')
   return strip(source)
 }
 

@@ -24,7 +24,7 @@ export interface FollowedGroup {
   /** Rows of fewer than `least` people are not here. */
   rows: FollowedRow[]
   /** How many people were in rows too thin to show. */
-  thin: number
+  suppressed: number
 }
 
 /**
@@ -39,7 +39,7 @@ export interface Followed {
   least: number
   groups: FollowedGroup[]
   /** People left out, and why, apart for the two questions: someone may count for one and not for the other. */
-  leftOut: {
+  excluded: {
     /** Of the groups by what their first call was like. */
     first: { already: number; running: number }
     /** Of the group by whether a miss was returned. `through`: they got through on their own before the landmark, so whether they were rung back says nothing. */
@@ -63,7 +63,7 @@ const MINUTE = 60
 /** Talk time in bands, in seconds, so one long call does not stand for the rest. */
 const BANDS: readonly [number, string][] = [[MINUTE, 'under 1 minute'], [5 * MINUTE, '1 to 5 minutes'], [15 * MINUTE, '5 to 15 minutes'], [Infinity, '15 minutes or more']]
 const ORDER = [...BANDS.map(([, name]) => name), 'answered', 'missed', 'voicemail', 'returned within a day', 'not returned within a day']
-const NOT_RECORDED = '(not recorded)'
+const NOT_SET = '(not set)'
 
 /** How long someone talked: the call without the wait. Undefined when either was not reported, because neither says it alone. */
 const talk = (call: KeptCall) => (call.duration === undefined || call.result?.waited === undefined ? undefined : Math.max(0, call.duration - call.result.waited))
@@ -85,7 +85,7 @@ const connected = (call: KeptCall) => call.at + (call.result?.waited ?? 0) * 100
  */
 export function followed(callers: readonly Caller[], { step, days, at, least = 20 }: FollowedOptions): Followed {
   const counts = new Map<FollowedGroup['by'], Map<string, { people: number; reached: number }>>()
-  const leftOut = { first: { already: 0, running: 0 }, returned: { already: 0, running: 0, through: 0 } }
+  const excluded = { first: { already: 0, running: 0 }, returned: { already: 0, running: 0, through: 0 } }
   const add = (by: FollowedGroup['by'], name: string, reached: boolean) => {
     const rows = counts.get(by) ?? new Map()
     counts.set(by, rows)
@@ -104,15 +104,15 @@ export function followed(callers: readonly Caller[], { step, days, at, least = 2
     const [first] = calls
     if (!first) continue
     const result = outcome(caller, first.at + (first.duration ?? 0) * 1000)
-    if (typeof result === 'string') leftOut.first[result] += 1
+    if (typeof result === 'string') excluded.first[result] += 1
     else {
-      const answer = first.result?.answered === undefined ? NOT_RECORDED : first.result.answered ? 'answered' : first.result.voicemail ? 'voicemail' : 'missed'
+      const answer = first.result?.answered === undefined ? NOT_SET : first.result.answered ? 'answered' : first.result.voicemail ? 'voicemail' : 'missed'
       add('answer', answer, result)
-      add('language', first.tags?.language ?? NOT_RECORDED, result)
+      add('language', first.tags?.language ?? NOT_SET, result)
       // Nobody talked on a call nobody answered, and how long a call with no result was talked on is not known.
       if (answer === 'answered') {
         const seconds = talk(first)
-        add('talk', seconds === undefined ? NOT_RECORDED : BANDS.find(([under]) => seconds < under)![1], result)
+        add('talk', seconds === undefined ? NOT_SET : BANDS.find(([under]) => seconds < under)![1], result)
       }
     }
 
@@ -122,23 +122,23 @@ export function followed(callers: readonly Caller[], { step, days, at, least = 2
     const since = caller.calls.filter((call) => call.at > miss.at && call.result?.answered && connected(call) <= start)
     const told = caller.calls.some((call) => stands(call) && call.result!.returned! > miss.at && call.result!.returned! <= start)
     if (since.some((call) => call.direction === 'inbound')) {
-      leftOut.returned.through += 1
+      excluded.returned.through += 1
       continue
     }
     const after = outcome(caller, start)
-    if (typeof after === 'string') leftOut.returned[after] += 1
+    if (typeof after === 'string') excluded.returned[after] += 1
     else add('returned', since.length > 0 || told ? 'returned within a day' : 'not returned within a day', after)
   }
 
-  const rank = (name: string) => (name === NOT_RECORDED ? '~' : ORDER.includes(name) ? String(ORDER.indexOf(name)).padStart(2, '0') : name)
+  const rank = (name: string) => (name === NOT_SET ? '~' : ORDER.includes(name) ? String(ORDER.indexOf(name)).padStart(2, '0') : name)
   const groups = (['answer', 'talk', 'language', 'returned'] as const).map((by): FollowedGroup => {
     const rows = [...(counts.get(by) ?? [])].sort(([x], [y]) => (rank(x) < rank(y) ? -1 : 1))
     const shown = rows.filter(([, { people }]) => people >= least)
     return {
       by,
       rows: shown.map(([name, { people, reached }]) => ({ name, people, reached, share: Math.round((reached / people) * 1e4) / 1e4 })),
-      thin: rows.reduce((sum, [, { people }]) => sum + people, 0) - shown.reduce((sum, [, { people }]) => sum + people, 0),
+      suppressed: rows.reduce((sum, [, { people }]) => sum + people, 0) - shown.reduce((sum, [, { people }]) => sum + people, 0),
     }
   })
-  return { step, days, least, groups, leftOut }
+  return { step, days, least, groups, excluded }
 }

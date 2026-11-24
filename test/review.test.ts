@@ -37,7 +37,7 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   const decisions = async () => (await graph.decisions()).map(({ action, about, by, reason }) => [action, about.join(' '), by, reason])
   await until('the page', () => run(`typeof load === 'function'`).catch(() => false))
   await enter('nobody-token')
-  await until('the refusal', async () => (await text('#notice')).includes('refused'))
+  await until('the refusal', async () => (await text('#notice')).includes('Invalid access token'))
   assert.equal(await shown('#token'), true)
 
   await enter('dana-token')
@@ -240,7 +240,7 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   assert.match(claims, /google\s+=1\+1\s+1\s+7\.5\s+0\s+No data/)
 
   // What had reached an ad platform of someone forgotten stays until it is put away, as it is kept nowhere.
-  await run(`sentOn([{ transactionId: 'gone-1', target: 'google', action: '333', at: ${rang}, state: 'untold', note: 'may not have arrived' }])`)
+  await run(`sentOn([{ transactionId: 'gone-1', target: 'google', action: '333', at: ${rang}, state: 'not_requested', note: 'may not have arrived' }])`)
   assert.match(await text('.sent-on'), /google333.*gone-1Not requestedmay not have arrived/)
   await press('Escape')
   await press('Escape')

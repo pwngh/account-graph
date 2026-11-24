@@ -58,14 +58,14 @@ Backups keep their data until you delete them. Run `forget` again after restorin
 `forget` deletes data here and leaves sent conversions at the platforms. Call `POST /forget` with `"ads": true` to list them:
 
 ```json
-{ "changes": [], "sent": [{ "transactionId": "client-42", "target": "google", "action": "333", "at": 1795460000000, "state": "untold" }] }
+{ "changes": [], "sent": [{ "transactionId": "client-42", "target": "google", "action": "333", "at": 1795460000000, "state": "not_requested" }] }
 ```
 
 | `state` | Meaning |
 | --- | --- |
-| `told` | The platform was asked to take it back and rejected nothing. |
-| `refused` | The platform rejected the request. `note` has the reason. |
-| `untold` | No request was made. Ask with the platform's own tools. The note `may not have arrived` means the job was picked up, and its delivery was never confirmed. |
+| `accepted` | The platform was asked to take it back and rejected nothing. |
+| `rejected` | The platform rejected the request. `note` has the reason. |
+| `not_requested` | No request was made. Ask with the platform's own tools. The note `may not have arrived` means the job was picked up, and its delivery was never confirmed. |
 
 > **Save the response.** The server keeps no copy of this list after the deletion.
 
@@ -103,6 +103,6 @@ Two answers are stored separately: measuring ads (`adUserData`) and personalizin
 
 - This page makes no claim about any law.
 - Platform documentation does not state that a retraction deletes the data matched to reach a conversion.
-- A request marked `told` is unconfirmed beyond the platform's response.
+- A request marked `reported` is unconfirmed beyond the platform's response.
 - Consent covers advertising. Message consent, opt-outs, quiet hours and contact frequency belong to the system that calls or sends.
 - A no to advertising still records visits, calls and steps for your own report. Use `forget` to delete them.

@@ -44,7 +44,7 @@ function gathered(profile) {
   }
   for (const each of all) {
     // A strong tie that a cut left out of the cluster is drawn like a related one: tied, not joined.
-    for (const tie of each.ties) edge(tie.a, tie.b, { score: tie.score, kind: tie.level === 'same' && cluster.has(tie.a) && cluster.get(tie.a) === cluster.get(tie.b) ? 'joined' : 'related' })
+    for (const tie of each.edges) edge(tie.a, tie.b, { score: tie.score, kind: tie.level === 'same' && cluster.has(tie.a) && cluster.get(tie.a) === cluster.get(tie.b) ? 'joined' : 'related' })
     for (const link of each.links) edge(each.subject, link.subject, { reasons: link.reasons.filter((reason) => reason.counted !== false) })
   }
   // A decision stands over any tie.

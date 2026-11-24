@@ -243,7 +243,7 @@ async function api(method, path, body) {
   const answer = await response.json()
   // One refused after someone else has signed in says nothing of them.
   if (response.status === 401 && $('token').value === token) signedIn(undefined)
-  if (!response.ok) throw Object.assign(new Error(response.status === 401 ? 'The access token was refused.' : answer.error ?? `Request failed with ${response.status}`), { status: response.status, answer })
+  if (!response.ok) throw Object.assign(new Error(response.status === 401 ? 'Invalid access token' : answer.error ?? `Request failed with ${response.status}`), { status: response.status, answer })
   return answer
 }
 
@@ -583,7 +583,7 @@ async function pulse() {
   if (response.status === 304) return undefined
   if (response.status === 401) {
     if ($('token').value === token) signedIn(undefined)
-    throw new Error('The access token was refused.')
+    throw new Error('Invalid access token')
   }
   if (!response.ok) throw new Error(`Request failed with ${response.status}`)
   return response.headers.get('etag')

@@ -481,7 +481,7 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
         keeps('lost', async () => { throw new Error('timed out') }),
       ]
       const options = { targets, now: () => clock.now, random: () => 1 }
-      const telling = createOutbox(graph, next.store.outbox, { ...options, tellForgotten: true })
+      const telling = createOutbox(graph, next.store.outbox, { ...options, retractOnForget: true })
       const quiet = createOutbox(graph, next.store.outbox, options)
       const enroll = async (n: number) => {
         await graph.observe({ subject: `visitor:v${n}`, identifiers: [`device:v${n}`], at: T0 })
@@ -500,9 +500,9 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       const told = await telling.forget('contact:1', { by: 'dana' })
       assert.ok(told.changes.length > 0)
       assert.deepEqual(told.sent, [
-        { transactionId: 'enroll-1', target: 'keeps', action: 'a', at, state: 'untold' },
-        { transactionId: 'enroll-1', target: 'lost', action: 'b', at, state: 'untold', note: 'may not have arrived' },
-        { transactionId: 'enroll-1', target: 'microsoft', action: 'Enrolled', at, state: 'told' },
+        { transactionId: 'enroll-1', target: 'keeps', action: 'a', at, state: 'not_requested' },
+        { transactionId: 'enroll-1', target: 'lost', action: 'b', at, state: 'not_requested', note: 'may not have arrived' },
+        { transactionId: 'enroll-1', target: 'microsoft', action: 'Enrolled', at, state: 'accepted' },
       ])
       // Only what had arrived there, and nothing about what had not.
       assert.equal(retractions().length, 1)
@@ -518,10 +518,10 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
 
       // A refusal, of one or of all, does not stop a person from being forgotten, and says nothing of what was sent.
       answer = () => new Response(JSON.stringify({ PartialErrors: [{ Index: 0, ErrorCode: 'OfflineConversionAdjustmentNotFound', Message: sha256('pat2@example.org') }] }))
-      assert.deepEqual((await telling.forget('contact:2')).sent.find((each) => each.target === 'microsoft'), { transactionId: 'enroll-2', target: 'microsoft', action: 'Enrolled', at, state: 'refused', note: 'OfflineConversionAdjustmentNotFound' })
+      assert.deepEqual((await telling.forget('contact:2')).sent.find((each) => each.target === 'microsoft'), { transactionId: 'enroll-2', target: 'microsoft', action: 'Enrolled', at, state: 'rejected', note: 'OfflineConversionAdjustmentNotFound' })
       answer = () => new Response(`no such ${sha256('pat3@example.org')} and MSCLK-3`, { status: 500 })
       const refused = (await telling.forget('contact:3')).sent.find((each) => each.target === 'microsoft')!
-      assert.equal(refused.state, 'refused')
+      assert.equal(refused.state, 'rejected')
       assert.match(refused.note!, /500: no such \(left out\) and \(left out\)$/)
       assert.deepEqual([await telling.get('enroll-2'), await telling.get('enroll-3')], [[], []])
 
@@ -530,7 +530,7 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       await graph.separate('contact:4', 'contact:6')
       await assert.rejects(telling.forget('contact:4', { seen: 0 }))
       assert.equal((await telling.get('enroll-4')).length, 3)
-      assert.deepEqual((await quiet.forget('contact:5')).sent.map((each) => [each.target, each.state]), [['keeps', 'untold'], ['lost', 'untold'], ['microsoft', 'untold']])
+      assert.deepEqual((await quiet.forget('contact:5')).sent.map((each) => [each.target, each.state]), [['keeps', 'not_requested'], ['lost', 'not_requested'], ['microsoft', 'not_requested']])
       assert.equal(retractions().length, before)
       // Asked for with one deletion, it is asked for that one.
       answer = () => new Response('{}')
@@ -538,14 +538,14 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       await enroll(8)
       await quiet.run()
       assert.deepEqual([quiet.retraction, telling.retraction.always], [{ targets: ['microsoft'], always: false }, true])
-      assert.equal((await quiet.forget('contact:7', {}, { retract: true })).sent.find((each) => each.target === 'microsoft')!.state, 'told')
-      assert.equal((await quiet.forget('contact:8')).sent.find((each) => each.target === 'microsoft')!.state, 'untold')
+      assert.equal((await quiet.forget('contact:7', {}, { retract: true })).sent.find((each) => each.target === 'microsoft')!.state, 'accepted')
+      assert.equal((await quiet.forget('contact:8')).sent.find((each) => each.target === 'microsoft')!.state, 'not_requested')
       assert.equal(retractions().length, before + 1)
 
       // Forgotten twice in one moment, it is told once. A target's own words are kept clear of what it was given.
-      const own = createOutbox(graph, next.store.outbox, { ...options, tellForgotten: true, targets: [{ ...keeps('keeps', async () => ({})), forget: async (jobs) => jobs.map((job) => `unknown ${job.keys.k}`) }] })
+      const own = createOutbox(graph, next.store.outbox, { ...options, retractOnForget: true, targets: [{ ...keeps('keeps', async () => ({})), forget: async (jobs) => jobs.map((job) => `unknown ${job.keys.k}`) }] })
       const both = (await Promise.all([own.forget('contact:4'), own.forget('contact:4')])).map((each) => each.sent)
-      assert.deepEqual(both.find((each) => each.length > 0)!.map((each) => [each.target, each.state, each.note]), [['keeps', 'refused', 'unknown (left out)'], ['lost', 'untold', 'may not have arrived'], ['microsoft', 'untold', undefined]])
+      assert.deepEqual(both.find((each) => each.length > 0)!.map((each) => [each.target, each.state, each.note]), [['keeps', 'rejected', 'unknown (left out)'], ['lost', 'not_requested', 'may not have arrived'], ['microsoft', 'not_requested', undefined]])
       assert.equal(both.filter((each) => each.length > 0).length, 1)
     })
 

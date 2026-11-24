@@ -136,7 +136,7 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
         body: JSON.stringify({ text: text.slice(0, 3000) }),
         signal: AbortSignal.timeout(10_000),
       })
-      if (!response.ok) throw new Error(`The alert webhook answered ${response.status}`)
+      if (!response.ok) throw new Error(`The alert webhook returned ${response.status}`)
       return undefined
     } catch (error) {
       onError(error)
@@ -202,7 +202,7 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
         await store.watch(feed, at)
         if ((last ?? watched ?? at) > silentSince(feed, at, hours)) continue
         // Named after the last record, so one silence is said once and the next one again.
-        await ops.once(`quiet:${feed}:${last ?? 'never'}`, `account-graph: no ${feed} for ${hours} ${options.hours && DESKS.includes(feed) ? 'open ' : ''}${hours === 1 ? 'hour' : 'hours'}. ${last === undefined ? 'None has ever been recorded.' : `The last was written down ${when(last)} (${timeZone}).`}`)
+        await ops.once(`quiet:${feed}:${last ?? 'never'}`, `account-graph: no ${feed} for ${hours} ${options.hours && DESKS.includes(feed) ? 'open ' : ''}${hours === 1 ? 'hour' : 'hours'}. ${last === undefined ? 'No records exist.' : `Last record: ${when(last)} (${timeZone}).`}`)
       }
 
       const late = options.lateHours ?? 0
@@ -214,7 +214,7 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
         onError(error)
       }
       // Once a day while it lasts: a backlog that drains slowly has a new oldest job at every look.
-      if (due !== undefined && at - due >= late * HOUR) await ops.once(`late:${dayIn(at, timeZone)}`, `account-graph: conversions are waiting to be sent. The oldest should have gone ${when(due)} (${timeZone}).`)
+      if (due !== undefined && at - due >= late * HOUR) await ops.once(`late:${dayIn(at, timeZone)}`, `account-graph: conversions are overdue. The oldest was due ${when(due)} (${timeZone}).`)
 
       const hours = options.returnHours ?? 0
       if (hours > 0) {
@@ -233,8 +233,8 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
             const not = await graph.notLeads(all.map((each) => `call:${each.id}`))
             const calls = all.filter((each) => !not.has(`call:${each.id}`))
             const first = calls.find((each) => each.direction === 'inbound' && each.result?.answered === false && followUp(each, calls).state === 'open') ?? call
-            const tries = attempts === 0 ? 'Nobody has rung back.' : attempts === 1 ? 'Rung back once, not reached.' : `Rung back ${attempts} times, not reached.`
-            await ops.once(`unreturned:${call.subject}:${first.id}`, `account-graph: a caller from ${sourceOf(touch)}${touch.campaign || touch.campaignId ? `, ${touch.campaign || touch.campaignId}` : ''} has waited over ${hours} ${options.hours ? 'open ' : ''}${hours === 1 ? 'hour' : 'hours'} for a call back. Missed ${when(call.at)} (${timeZone}). ${tries} ${call.subject}`, call.subject)
+            const tries = attempts === 0 ? 'No callback attempts.' : attempts === 1 ? '1 callback attempt.' : `${attempts} callback attempts.`
+            await ops.once(`unreturned:${call.subject}:${first.id}`, `account-graph: a caller from ${sourceOf(touch)}${touch.campaign || touch.campaignId ? `, ${touch.campaign || touch.campaignId}` : ''} has waited over ${hours} ${options.hours ? 'open ' : ''}${hours === 1 ? 'hour' : 'hours'} for a callback. Missed ${when(call.at)} (${timeZone}). ${tries} ${call.subject}`, call.subject)
           }
           if (page.length < 50) break
           after = page.at(-1)!.call
@@ -272,7 +272,7 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
     },
 
     async test() {
-      const text = 'account-graph: this is a test alert. Nothing is wrong.'
+      const text = 'account-graph: test alert.'
       const error = await deliver(text)
       if (error === undefined) return { delivered: true }
       await store.addAlert({ key: `test:${now()}`, text, at: now(), error })

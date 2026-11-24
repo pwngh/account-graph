@@ -46,7 +46,7 @@ export function createGoogleTokens(account: ServiceAccount, options: TokenOption
     })
     const body = (await response.json()) as { access_token?: string; expires_in?: number; error?: string; error_description?: string }
     if (!response.ok || !body.access_token) {
-      throw new Error(`Google refused the token request with ${response.status} ${body.error ?? ''}: ${body.error_description ?? ''}`)
+      throw new Error(`Google rejected the token request with ${response.status} ${body.error ?? ''}: ${body.error_description ?? ''}`)
     }
     token = { value: body.access_token, until: now() + (body.expires_in ?? 3600) * 1000 - 60_000 }
     return token.value

@@ -21,14 +21,14 @@ const badge = (subject) => {
 const kept = (verdict) => (verdict?.apart ? [author(verdict.apart.by), el('span', { class: 'muted' }, ` · ${when(verdict.apart.at)}${verdict.apart.reason ? ` · ${verdict.apart.reason}` : ''}`),
   verdict.last.action === 'join' ? el('span', { class: 'reason' }, 'Later joined by ', author(verdict.last.by), `, ${when(verdict.last.at)}. The separation takes precedence.`) : ''] : [unrecorded()])
 
-const TOLD = { told: ['Retraction accepted', 'same'], refused: ['Retraction rejected', 'apart'], untold: ['Not requested', 'related'] }
+const TOLD = { accepted: ['Retraction accepted', 'same'], rejected: ['Retraction rejected', 'apart'], not_requested: ['Not requested', 'related'] }
 /** What had reached an ad platform of someone just forgotten. It is said once and kept nowhere, so only its button puts it away. */
 function sentOn(sent) {
   const table = el('table', {}, el('tr', {}, th('Platform'), th('Conversion'), th('Date'), th('Transaction'), th('Status')),
     ...sent.map((each) => el('tr', {}, td('', sourced(each.target)), td('', each.action), td('nowrap', reviewDisplay.time(each.at)), td('', each.transactionId),
       td('', reviewDisplay.chip(...TOLD[each.state]), each.note ? el('span', { class: 'reason' }, each.note) : ''))))
   const dialog = el('dialog', { class: 'sent-on', closedby: 'none', 'aria-label': 'Data held by ad platforms' }, el('h4', {}, 'Data held by ad platforms'),
-    el('p', { class: 'muted' }, sent.some(({ state }) => state !== 'told') ? 'This ID was deleted here. Contact these platforms directly about their data. This list is shown once, so save a copy.' : 'This ID was deleted. This list is shown once.'),
+    el('p', { class: 'muted' }, sent.some(({ state }) => state !== 'accepted') ? 'This ID was deleted here. Contact these platforms directly about their data. This list is shown once, so save a copy.' : 'This ID was deleted. This list is shown once.'),
     wide('Data held by ad platforms', table), el('div', { class: 'row' }, saved('sent-to-ad-platforms', table), el('button', { class: 'primary', on: { click: () => dialog.close() } }, 'Close')))
   // A browser closes a dialog on a second Escape whatever the first was answered, so the key itself is stopped.
   dialog.addEventListener('keydown', (event) => event.key === 'Escape' && event.preventDefault())
@@ -55,7 +55,7 @@ function profileOf(profile, more) {
     profile.consent[0] && [term('Ad consent', 'consent'), profile.consent[0].adUserData && profile.consent[0].adPersonalization ? 'Granted' : profile.consent[0].adUserData || profile.consent[0].adPersonalization ? 'Partial' : 'Denied', profile.consent[0].source ?? '']),
   profile.cluster.oversized ? el('p', { class: 'banner' }, el('b', {}, 'Large group. '), 'A widely shared identifier may be joining different people. Review the links below.') : ''))
 
-  if (profile.ties.length > 0 || profile.separated.length > 0) detail.push(el('section', {}, el('h2', {}, term('Graph', 'graph')), graphOf(profile, more),
+  if (profile.edges.length > 0 || profile.separated.length > 0) detail.push(el('section', {}, el('h2', {}, term('Graph', 'graph')), graphOf(profile, more),
     around(profile).length > ROOM ? el('p', { class: 'muted' }, `Showing ${ROOM} of ${amount(around(profile).length)}. All links are listed below.`) : ''))
 
   const members = new Set(profile.cluster.members)
