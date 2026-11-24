@@ -738,7 +738,12 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       // 95 in 100 sign-ups come within four days, so arrivals of the last four have not had theirs.
       assert.deepEqual(await filling('2026-03-12', '2026-03-30'), { after: '2026-03-27', days: 4 })
       assert.equal(await filling('2026-03-12', '2026-03-27'), undefined)
-      // Asked about a day with arrivals and no outcomes yet, it still says so: that is the day it is for.
+      // Asked about a day with an arrival and no outcomes yet, it still says so: that is the day it is for.
+      await graph.touch({ subject: 'visitor:late', at: NOW - DAY, gclid: 'L', campaignId: '222' })
+      assert.equal((await graph.report({ from: '2026-03-30', to: '2026-03-30' })).total.visits, 1)
+      assert.deepEqual(await filling('2026-03-30', '2026-03-30'), { after: '2026-03-27', days: 4 })
+      // Hundreds of a step that comes at once do not hide the slower one.
+      for (let n = 0; n < 250; n++) await graph.outcome({ transactionId: `tap${n}`, subject: 'visitor:late', at: NOW - DAY + 1000 + n, stage: 'tap' })
       assert.deepEqual(await filling('2026-03-30', '2026-03-30'), { after: '2026-03-27', days: 4 })
     })
 

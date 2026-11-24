@@ -447,6 +447,8 @@ test('how recent is too recent is worked out from the days as they are, not as t
   const quick = history.map((each) => ({ ...each, delay: 60_000 }))
   assert.deepEqual(fold('2026-03-01', '2026-03-10', [], [], [], { history: quick }).filling, { after: '2026-03-09', days: 1 })
   assert.equal(fold('2026-03-01', '2026-03-10', [], [], [], { history: history.slice(1) }).filling, undefined)
+  // What came too late to be credited is not waited for.
+  assert.deepEqual(fold('2026-03-01', '2026-03-10', [], [], [], { history: [...history, ...history.map((each) => ({ ...each, delay: 100 * 86_400_000, inside: false }))] }).filling, { after: '2026-03-05', days: 5 })
 })
 
 test('what an outcome cost uses the outcomes of that campaign, on the days whose cost is known', () => {

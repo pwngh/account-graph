@@ -210,10 +210,10 @@ export interface FoldOptions {
   history?: readonly Credited[]
 }
 
-/** How many whole days the slowest step takes, for 95 in 100. A handful of outcomes says nothing, so a step needs twenty. */
+/** How many whole days the slowest step takes, for 95 in 100 of those that can be credited. A handful of outcomes says nothing, so a step needs twenty. */
 function slowest(history: readonly Credited[]): number {
   const all = tally()
-  for (const each of history) count(all, each)
+  for (const each of history) if (each.inside ?? each.touch !== undefined) count(all, each)
   return Math.ceil(Math.max(0, ...[...all.stages.values()].map(({ days }) => (days.length >= 20 ? percentile(days.sort((x, y) => x - y), 0.95) : 0))))
 }
 

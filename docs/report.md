@@ -194,7 +194,7 @@ For each step the report says how long it takes: the days from the newest arriva
 | `median`, `p95` | Half came within this many days, and 95 in 100 within that many |
 | `inside` | The share that came inside the window, and so could be credited |
 
-Costs arrive the day they are spent, and outcomes days or weeks later. So the last part of a period is always short of outcomes. When the period reaches into those days, the report has `filling`, the Channels view says so, and `after` is the last day that has had its time. How long is read from the newest 500 outcomes of the last half year, whatever days were asked about: the slowest step with at least 20 timed outcomes decides. With fewer, nothing is said.
+Costs arrive the day they are spent, and outcomes days or weeks later. So the last part of a period is always short of outcomes. When the period reaches into those days, the report has `filling`, the Channels view says so, and `after` is the last day that has had its time. How long is read from the newest 200 outcomes of each step in the last half year, whatever days were asked about. The slowest step with at least 20 that could be credited decides. With fewer, nothing is said.
 
 ### What an outcome cost
 

@@ -724,12 +724,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const credited: Credited[] = []
         for (const outcome of outcomes) credited.push({ outcome, person: labels.get(outcome.subject)?.cluster ?? outcome.subject, ...(await creditOf(outcome.subject, outcome.at)) })
         // How long steps take is read from the last half year and not from the days asked about: the newest days hold
-        // few outcomes, which is what it has to say. The newest few hundred are enough to say it.
-        const recent = await tx.outcomesBetween(now() - 180 * DAY, now())
+        // few outcomes, which is what it has to say. Some of each step, so a common quick one does not hide a slow one.
         const history: Credited[] = []
-        for (const outcome of recent.slice(-500)) history.push({ outcome, ...(await creditOf(outcome.subject, outcome.at)) })
-        const missed: { at: number; touch: Touch | undefined; tags: Record<string, string> | undefined }[] = []
-        for (const call of await tx.callsBetween(start, end)) if (call.direction === 'inbound' && call.result?.answered === false) missed.push({ at: call.at, touch: (await creditOf(call.subject, call.at, window)).touch, tags: call.tags })
+        for (const outcome of await tx.newestOutcomes(now() - 180 * DAY, now(), 200)) history.push({ outcome, ...(await creditOf(outcome.subject, outcome.at, window)) })
         return fold(from, to, await tx.costsBetween(from, to), await tx.touchesBetween(start, end), credited, { missed, by, timeZone, through: dayIn(now(), timeZone), history })
       })
     },
