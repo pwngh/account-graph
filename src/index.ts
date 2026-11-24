@@ -10,7 +10,7 @@ export { createBatcher } from './batch.ts'
 export { fit, measure } from './calibrate.ts'
 export { brokenAt, seal } from './audit.ts'
 export { dayStart, fold, sourceOf } from './report.ts'
-export { callState, dialed, recordCall, recordCallResult } from './calls.ts'
+export { callState, dialed, followUp, recordCall, recordCallResult } from './calls.ts'
 export { knownLink, readToken, signToken, staffLink } from './sign.ts'
 export { ladderProblems, withStage } from './ladder.ts'
 export { createAlerter } from './alerts.ts'
@@ -43,6 +43,7 @@ export type {
   Edge,
   Flow,
   FlowEdge,
+  FollowUp,
   Identifier,
   IdentifierState,
   KeptCall,

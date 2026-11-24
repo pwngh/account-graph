@@ -1,7 +1,7 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { BlockList, isIP } from 'node:net'
-import { dialed, numberOrSelf, recordCall, recordCallResult } from './calls.ts'
+import { callState, dialed, followUp, numberOrSelf, recordCall, recordCallResult } from './calls.ts'
 import type { CallOptions } from './calls.ts'
 import type { Graph, PolicyState } from './graph.ts'
 import { email, hashPhone, identifier, ip, normalizePhone, phoneOfType } from './identifiers.ts'
@@ -121,7 +121,7 @@ const NAME = /^[\w.-]{1,64}$/
 /** What the reviewer token opens: what the reviewer screen reads, and the decisions a reviewer makes. */
 const REVIEW_ROUTES = new Set([
   'GET /subject', 'GET /clusters', 'GET /search', 'GET /recent', 'GET /links', 'GET /cluster', 'GET /history', 'GET /flows', 'GET /collusion', 'GET /rings',
-  'GET /decisions', 'GET /disputes', 'GET /consent', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
+  'GET /decisions', 'GET /disputes', 'GET /consent', 'GET /call', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
 ])
 
 /** A route that wrote its own answer. */
@@ -718,6 +718,12 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       }
       case 'POST /call':
         return recordCall(graph, await json(request), calling())
+      case 'GET /call': {
+        const call = await graph.keptCall(url.searchParams.get('id') ?? '')
+        if (!call) return null
+        const missed = call.direction === 'inbound' && call.result?.answered === false
+        return { ...call, state: callState(call, now(), options.calls), ...(missed && { followUp: followUp(call, await graph.callsOf([call.subject])) }) }
+      }
       case 'POST /call/result':
         return (await recordCallResult(graph, await json(request), calling())) ?? { state: 'waiting', counted: false }
       case 'POST /restate': {

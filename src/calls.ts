@@ -1,21 +1,25 @@
 import type { Graph } from './graph.ts'
 import { hashPhone, normalizePhone, phoneOfType } from './identifiers.ts'
-import type { CallResult, Identifier, KeptCall, Outcome, Subject } from './types.ts'
+import type { CallResult, FollowUp, Identifier, KeptCall, Outcome, Subject } from './types.ts'
 
-/** One phone call to a number of yours, as your telephone provider reports it. */
+/** One phone call to a number of yours, or from one, as your telephone provider reports it. */
 export interface Call {
   /** The provider's id for the call. Recording it twice records it once. */
   id: string
-  /** The caller's number. Leave it out, or pass whatever the provider sent, when the caller hid it. */
+  /** Who rang: the caller's number, or on an outbound call yours. Leave it out, or pass whatever the provider sent, when a caller hid it. */
   from?: string
-  /** The number that was rung. */
+  /** The number that was rung: yours, or on an outbound call theirs. */
   to: string
   /** When the call began, in epoch milliseconds. */
   at: number
   /** How long it lasted, in seconds. A call nobody answered lasted 0. */
   duration?: number
-  /** Who rang whom. Only calls to you are recorded; a call from you is refused. */
-  direction?: 'inbound'
+  /**
+   * `inbound`, which is the default, or `outbound` for a call you placed.
+   * An outbound call is never an outcome, and ties nobody to anything: it
+   * says whether a missed caller was rung back.
+   */
+  direction?: 'inbound' | 'outbound'
   /**
    * Whether a person spoke to the caller. Leave it out when that is not
    * known. A phone system that picks up has not answered, so it is never
@@ -135,11 +139,12 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   if (typeof call?.id !== 'string' || !/^[\w.-]{1,128}$/.test(call.id)) throw new TypeError('A call needs an id of letters, digits, dots, dashes or underscores')
   if (!Number.isSafeInteger(call.at)) throw new TypeError(`Call "${call.id}" needs a time in whole epoch milliseconds`)
   if (call.duration !== undefined && !(typeof call.duration === 'number' && Number.isFinite(call.duration) && call.duration >= 0)) throw new TypeError(`Call "${call.id}" needs its duration in seconds`)
-  if (call.direction !== undefined && call.direction !== 'inbound') throw new TypeError(`Call "${call.id}" is not a call to you`)
+  if (call.direction !== undefined && call.direction !== 'inbound' && call.direction !== 'outbound') throw new TypeError(`Call "${call.id}" needs its direction, inbound or outbound`)
   const result = resultIn(call, `Call "${call.id}"`)
   if (typeof call.to !== 'string') throw new TypeError(`Call "${call.id}" needs the number that was rung`)
   const to = normalizePhone(call.to, options.country)
   const { id, at } = call
+  if (call.direction === 'outbound') return placed(graph, call, to, result, options)
 
   let from: string | undefined
   try {
@@ -158,6 +163,7 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
     const kept = await graph.keptCall(id)
     return { subject: before.subject, flags: [], counted: settled?.counted ?? false, state: kept ? callState(kept, (options.now ?? Date.now)(), options) : 'unknown', duplicate: true }
   }
+  if ((await graph.keptCall(id))?.direction === 'outbound') throw new TypeError(`Call "${id}" was already recorded as a call you placed`)
   if (result) await graph.keepCallResult(id, result)
 
   const flags: CallFlag[] = []
@@ -203,7 +209,7 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   // What would be sent is held before the call is kept, while the number is at hand: a result that finds the call then finds that too.
   if (!short) await options.hold?.(outcomeOf({ id, subject, at }, options, known))
   // The call is kept before its result is looked for, and a result is kept before its call is, so whichever comes second settles it.
-  await graph.keepCall({ id, subject, at, to, flags, ...(call.duration !== undefined && { duration: call.duration }), ...(visitor && { visitor }) })
+  await graph.keepCall({ id, direction: 'inbound', subject, at, to, flags, ...(call.duration !== undefined && { duration: call.duration }), ...(visitor && { visitor }) })
   const counted = await settle(graph, id, options, known ?? '')
 
   // A visitor's own arrival says more than the number does, so the number's channel is only the fallback.
@@ -215,6 +221,38 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   await graph.observe({ subject, identifiers: [note], at, event: 'call' })
   const kept = await graph.keptCall(id)
   return { subject, flags, counted, state: callState(kept!, (options.now ?? Date.now)(), options), ...(visitor && { visitor }), duplicate: false }
+}
+
+/** Records a call you placed. Nothing is observed: that you rang someone says nothing about who they are. */
+async function placed(graph: Graph, call: Call, theirs: string, result: Omit<CallResult, 'recorded'> | undefined, options: CallOptions): Promise<RecordedCall> {
+  if (typeof call.from !== 'string') throw new TypeError(`Call "${call.id}" needs the number of yours it was placed from`)
+  const ours = normalizePhone(call.from, options.country)
+  const subject = `caller:${hashPhone(theirs)}`
+  const before = await graph.keptCall(call.id)
+  if (before && before.direction !== 'outbound') throw new TypeError(`Call "${call.id}" was already recorded as a call to you`)
+  if (result) await graph.keepCallResult(call.id, result)
+  if (!before) {
+    await graph.keepCall({ id: call.id, direction: 'outbound', subject, at: call.at, to: ours, flags: [], ...(call.duration !== undefined && { duration: call.duration }) })
+  }
+  const kept = (await graph.keptCall(call.id))!
+  return { subject: kept.subject, flags: [], counted: false, state: callState(kept, (options.now ?? Date.now)(), options), duplicate: before !== undefined }
+}
+
+/**
+ * What became of a call no one answered, from every call to and from its
+ * subject. Worked out from the calls themselves each time, so it does not
+ * depend on the order they were reported in. A call before the miss says
+ * nothing about it, and one later answer closes every miss before it.
+ */
+export function followUp(miss: KeptCall, calls: readonly KeptCall[]): FollowUp {
+  if (miss.subject === `call:${miss.id}`) return { state: 'hidden', attempts: 0 }
+  const since = calls.filter((call) => call.subject === miss.subject && call.id !== miss.id && call.at > miss.at).sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1))
+  let attempts = 0
+  for (const call of since) {
+    if (call.result?.answered) return { state: call.direction === 'outbound' ? 'returned' : 'tried again', by: call.id, delay: call.at - miss.at, attempts }
+    if (call.direction === 'outbound') attempts += 1
+  }
+  return { state: 'open', attempts }
 }
 
 /** The result a call or a report of one carries, checked. Undefined when it says nothing of how the call went. */
@@ -253,7 +291,8 @@ const outcomeOf = (call: { id: string; subject: Subject; at: number }, options: 
 async function settle(graph: Graph, id: string, options: CallOptions, phone?: string): Promise<boolean> {
   for (;;) {
     const call = await graph.keptCall(id)
-    if (!call) return false
+    // A call you placed is never an outcome.
+    if (!call || call.direction === 'outbound') return false
     const answered = call.result?.answered
     const counts = !tooShort(call, options) && (answered ?? options.results !== 'expected')
     const outcome = outcomeOf(call, options, phone)

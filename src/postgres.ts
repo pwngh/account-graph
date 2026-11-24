@@ -344,12 +344,12 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       await db.query(`delete from ${t('outcome')} where transaction_id = $1`, [transactionId])
     },
 
-    async setCall({ id, subject, at, to, duration, flags, visitor, recorded }) {
+    async setCall({ id, direction, subject, at, to, duration, flags, visitor, recorded }) {
       await db.query(
-        `insert into ${t('call')} (id, subject, at, dialed, duration, flags, visitor, recorded_at) values ($1, $2, $3, $4, $5, $6, $7, $8)
+        `insert into ${t('call')} (id, subject, at, dialed, duration, flags, visitor, recorded_at, direction) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          on conflict (id) do update set subject = excluded.subject, at = excluded.at, dialed = excluded.dialed, duration = excluded.duration,
-           flags = excluded.flags, visitor = excluded.visitor, recorded_at = excluded.recorded_at`,
-        [id, subject, at, to, duration ?? null, flags, visitor ?? null, recorded],
+           flags = excluded.flags, visitor = excluded.visitor, recorded_at = excluded.recorded_at, direction = excluded.direction`,
+        [id, subject, at, to, duration ?? null, flags, visitor ?? null, recorded, direction],
       )
     },
 
@@ -369,6 +369,12 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
     async callResultOf(id) {
       const { rows } = await db.query(`select answered, voicemail, waited, recorded_at as result_at from ${t('call_result')} where id = $1`, [id])
       return rows[0] && toResult(rows[0])
+    },
+
+    async callsOf(subjects) {
+      if (subjects.length === 0) return []
+      const { rows } = await db.query(`${callRows} where c.subject = any($1::text[]) order by c.at, c.id collate "C"`, [subjects])
+      return rows.map(toCall)
     },
 
     async callsBetween(from, to) {
@@ -617,6 +623,7 @@ function toResult(row: any): CallResult {
 function toCall(row: any): KeptCall {
   return {
     id: row.id,
+    direction: row.direction,
     subject: row.subject,
     at: Number(row.at),
     to: row.dialed,
@@ -784,6 +791,11 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
               waited float8,
               recorded_at bigint not null
             );`,
+    },
+    {
+      id: 10,
+      name: 'calls you place',
+      sql: `alter table ${schema}.call add column if not exists direction text not null default 'inbound';`,
     },
   ]
 }

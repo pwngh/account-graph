@@ -93,6 +93,8 @@ export interface Tx {
   callOf(id: string): Promise<KeptCall | undefined>
   /** A result, whether or not its call was kept. */
   callResultOf(id: string): Promise<CallResult | undefined>
+  /** Every call to or from the given subjects, oldest first. */
+  callsOf(subjects: readonly Subject[]): Promise<KeptCall[]>
   /** Calls with `from <= at < to`, oldest first. */
   callsBetween(from: number, to: number): Promise<KeptCall[]>
   /** Deletes results written down before a time whose call never came. Returns how many went. */

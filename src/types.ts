@@ -315,11 +315,13 @@ export interface Counted {
 /** A phone call as it is kept, with its result once one is known. */
 export interface KeptCall {
   id: string
-  /** Who called: `caller:` and a hash of their number, or `call:` and the call's id when they hid it. */
+  /** `inbound` someone rang you. `outbound` you rang them. */
+  direction: 'inbound' | 'outbound'
+  /** The other side: `caller:` and a hash of their number, or `call:` and the call's id when they hid it. */
   subject: Subject
   /** When it began, in epoch milliseconds. */
   at: number
-  /** The number of yours that was rung, in E.164 form. */
+  /** The number of yours it was on, in E.164 form. */
   to: string
   /** How long it lasted in seconds, from when the phone system picked up. Absent when the provider did not say. */
   duration?: number
@@ -340,6 +342,21 @@ export interface CallResult {
   waited?: number
   /** When it was written down. */
   recorded: number
+}
+
+/** What became of a call no one answered. */
+export interface FollowUp {
+  /**
+   * `open` nobody has spoken to the caller since. `returned` you rang back
+   * and they answered. `tried again` they rang again and got through.
+   * `hidden` they hid their number, so it cannot be returned.
+   */
+  state: 'open' | 'returned' | 'tried again' | 'hidden'
+  /** The call that closed it, and how long after the miss it began, in milliseconds. */
+  by?: string
+  delay?: number
+  /** How often you rang and nothing says they answered, before it was closed. */
+  attempts: number
 }
 
 /** What an ad platform charged for one campaign on one day. Writing the same day, source and campaign again replaces it. */

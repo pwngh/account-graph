@@ -102,6 +102,19 @@ if (!url) {
       assert.equal((await graph.outcomeOf('call:OLD'))!.value, 10)
       const { state } = await recordCall(graph, { id: 'NEW', from: '+15550100001', to: '+15550100002', at: 5, duration: 60, answered: true })
       assert.equal(state, 'answered')
+      assert.equal((await graph.keptCall('NEW'))!.direction, 'inbound')
+    } finally {
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
+
+  test('calls kept before you could report the ones you place are all calls to you', async () => {
+    const schema = `ag_test_${process.pid}_placed`
+    try {
+      const store = await madeBefore(schema, 10)
+      await pool.query(`insert into ${schema}.call (id, subject, at, dialed, flags, recorded_at) values ('OLD', 'caller:x', 5, '+15550100001', '{}', 5)`)
+      await store.migrate()
+      assert.equal((await createGraph(store).keptCall('OLD'))!.direction, 'inbound')
     } finally {
       await pool.query(`drop schema if exists ${schema} cascade`)
     }
