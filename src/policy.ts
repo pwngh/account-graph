@@ -21,6 +21,12 @@ export interface Rule {
    * pair's other kinds already reach `related` without it.
    */
   corroborates?: true
+  /**
+   * This kind says two subjects are two people who have to do with each
+   * other. A pair that shares one is related, and kept apart in one cluster as
+   * a reviewer's separation would keep it, unless a reviewer or a system joins the two.
+   */
+  relates?: true
 }
 
 /** A fact about somebody that links nothing: the date of birth. */
@@ -109,6 +115,8 @@ export const defaultPolicy: Policy = {
     dial: { weight: 0.92, dilution: 0, cap: 2, halfLife: Infinity },
     // A text that carried the code one visitor was given. Better than a tap's time, and still a prior: a text can be forwarded.
     text: { weight: 0.95, dilution: 0, cap: 2, halfLife: Infinity },
+    // Somebody who speaks for somebody else: a parent for a child, a wife for a husband. The credit for what brought the one is the other's, and they are two people.
+    behalf: { weight: 0.92, dilution: 0, cap: 2, halfLife: Infinity, relates: true },
     // A note, not evidence: where an address places a visit. It links nothing.
     place: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     // A note, not evidence: what is known of a person that cannot be two people's. It links nothing.
@@ -125,7 +133,7 @@ export const UNNAMED: readonly string[] = ['visitor', 'caller', 'call']
 const NOTES = new Set(['opened', 'place', 'dialed', ...FACTS])
 const LEVELS = ['same', 'related', 'bridge'] as const
 const FIELDS = ['weight', 'dilution', 'cap', 'halfLife'] as const
-const OPTIONAL = ['group', 'corroborates'] as const
+const OPTIONAL = ['group', 'corroborates', 'relates'] as const
 
 /** What is wrong with a policy read from a setting, one line each. The setting only needs what differs from the default. */
 export function policyProblems(given: unknown): string[] {
@@ -154,6 +162,8 @@ export function policyProblems(given: unknown): string[] {
       if (rule.halfLife !== undefined && rule.halfLife !== 'none' && !(number(rule.halfLife, 0, Number.MAX_VALUE) && rule.halfLife > 0)) wrong.push(`kind "${kind}" requires a halfLife in milliseconds, or "none"`)
       if (rule.group !== undefined && !(typeof rule.group === 'string' && rule.group)) wrong.push(`kind "${kind}" requires its group as a string`)
       if (rule.corroborates !== undefined && rule.corroborates !== true) wrong.push(`kind "${kind}" requires its corroborates as true, or left out`)
+      if (rule.relates !== undefined && rule.relates !== true) wrong.push(`kind "${kind}" requires its relates as true, or left out`)
+      if (rule.relates && rule.corroborates) wrong.push(`kind "${kind}" cannot both relate and corroborate`)
       if (NOTES.has(kind) && rule.weight) wrong.push(`kind "${kind}" is a note and links nothing, so its weight must stay 0`)
     }
   }
@@ -162,6 +172,7 @@ export function policyProblems(given: unknown): string[] {
   if (policy.related > policy.same) wrong.push('"related" must not be above "same"')
   const { review } = policy.kinds
   if (review!.corroborates) wrong.push('kind "review" is a reviewer\'s join, so it cannot only corroborate')
+  if (review!.relates) wrong.push('kind "review" is a reviewer\'s join, so it cannot only relate')
   if (review!.weight < Math.max(policy.same, policy.bridge) || review!.cap < 2) wrong.push('kind "review" is a reviewer\'s join, so it must join on its own: a weight of at least "same" and "bridge", a cap of at least 2')
   return wrong
 }
@@ -186,7 +197,7 @@ export function plainPolicy(policy: Policy) {
     ...(policy.apart?.length && { apart: FACTS.filter((fact) => policy.apart!.includes(fact)) }),
     review: policy.review,
     kinds: Object.fromEntries(
-      kinds.map(([kind, { weight, dilution, cap, halfLife, group, corroborates }]) => [kind, { weight, dilution, cap, halfLife: Number.isFinite(halfLife) ? halfLife : ('none' as const), ...(group !== undefined && { group }), ...(corroborates && { corroborates }) }]),
+      kinds.map(([kind, { weight, dilution, cap, halfLife, group, corroborates, relates }]) => [kind, { weight, dilution, cap, halfLife: Number.isFinite(halfLife) ? halfLife : ('none' as const), ...(group !== undefined && { group }), ...(corroborates && { corroborates }), ...(relates && { relates }) }]),
     ),
   }
 }
@@ -220,6 +231,16 @@ export function evidence(policy: Policy, a: Edge, b: Edge, fanout: number): Reas
   const gap = Math.max(0, Math.max(a.first, b.first) - Math.min(a.last, b.last))
   const thinned = rule.weight * (2 / Math.max(2, fanout)) ** rule.dilution
   return { identifier: a.identifier, evidence: thinned * 0.5 ** (gap / rule.halfLife), fanout, gap }
+}
+
+/** Whether a pair with these reasons is joined by them. */
+export function joins(policy: Policy, score: number, reasons: readonly Reason[]): boolean {
+  return score >= policy.same && !told(policy, reasons)
+}
+
+/** Whether these reasons say that two subjects are two people, and nobody has joined the two in spite of it. */
+export function told(policy: Policy, reasons: readonly Reason[]): boolean {
+  return reasons.some((reason) => ruleFor(policy, reason.identifier).relates) && !reasons.some((reason) => reason.identifier.startsWith('review:'))
 }
 
 /**

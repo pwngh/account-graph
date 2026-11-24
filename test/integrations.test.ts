@@ -1505,6 +1505,42 @@ test('a name sent to /identify confirms, where a secret and a policy for it are 
   assert.deepEqual((await identify({ subject: 'contact:8', email: 'w@example.org', dob: '1990-02-03' })).kinds, ['email'])
 })
 
+test('/identify keeps whoever speaks for a subject apart from them', async (t) => {
+  const graph = createGraph(createMemoryStore())
+  const lineType = async (number: string) => ({ type: number.endsWith('99') ? 'tollFree' : 'mobile' })
+  const server = createServer(createHandler(graph, { token: 'service', origins: [], lineType: lineType as any })).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  t.after(() => void server.close())
+  const identify = async (body: object) => {
+    const response = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/identify`, { method: 'POST', headers: { authorization: 'Bearer service' }, body: JSON.stringify(body) })
+    return { status: response.status, ...((await response.json()) as any) }
+  }
+  const [device, phone, mother] = ['9f3c1c1e-0000-4000-8000-000000000001', '+15550100181', `caller:${hashPhone('+15550100181')}`]
+  // The browser is known by another id, and holds this one.
+  await graph.observe({ subject: 'visitor:cookie', identifiers: [`device:${device}`, 'device:cookie'], at: T0 })
+  const speaker = { device, phone, email: 'mother@example.org' }
+  const first = await identify({ subject: 'contact:child', phone, email: 'mother@example.org', device, at: T0, speaker })
+  assert.deepEqual([first.status, first.identifiers.map((each: string) => each.split(':')[0]), first.notes], [200, ['behalf', 'behalf'], { phone: 'mobile', speaker: 'what is the speaker\'s is not used for who they speak for' }])
+  assert.deepEqual((await graph.cluster('contact:child'))!.members, ['contact:child'])
+  assert.deepEqual((await graph.links('contact:child')).map((link) => [link.subject, link.level]).sort(), [[mother, 'related'], ['visitor:cookie', 'related']])
+  // Said again it is the same mark, muted or not. What is the child's own is theirs.
+  const again = await identify({ subject: 'contact:child', email: 'child@example.org', at: T0, speaker })
+  assert.deepEqual(again.identifiers.filter((each: string) => each.startsWith('behalf:')), first.identifiers)
+  assert.deepEqual(again.identifiers.map((each: string) => each.split(':')[0]).sort(), ['behalf', 'behalf', 'email'])
+  for (const mark of first.identifiers) await graph.ignore(mark, true)
+  assert.deepEqual((await identify({ subject: 'contact:child', at: T0, speaker })).identifiers, first.identifiers)
+  // Her own record is hers.
+  await identify({ subject: 'contact:mother', phone, at: T0 })
+  assert.ok((await graph.cluster('contact:mother'))!.members.includes(mother))
+  assert.deepEqual((await graph.cluster('contact:child'))!.members, ['contact:child'])
+  assert.equal((await identify({ subject: mother, speaker })).status, 400)
+  for (const bad of ['mother', {}, { email: 'mother@example.org' }, { device: '?' }, { phone: 'x' }]) assert.equal((await identify({ subject: 'contact:other', speaker: bad })).status, 400, JSON.stringify(bad))
+  // A number that names nobody is not kept, and neither is what they say it is theirs.
+  const kept = await identify({ subject: 'contact:other', email: 'o@example.org', speaker: { phone: '+18005550199', email: 'o@example.org' } })
+  assert.deepEqual([kept.identifiers, kept.notes.speaker], [[], 'what is the speaker\'s is not used for who they speak for'])
+  assert.equal((await identify({ subject: 'contact:other', email: 'p@example.org', speaker: { phone: '+18005550199' } })).notes.speaker, 'tollFree: not used')
+})
+
 test('a visitor with an arrival is shown a number of their own, and nobody else is', async (t) => {
   let clock = T0
   const graph = createGraph(createMemoryStore(), undefined, { now: () => clock })

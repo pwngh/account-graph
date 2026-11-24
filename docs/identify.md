@@ -37,6 +37,7 @@ Call `/identify` on every sign-in, and on any page where the person is signed in
 | `address` | `address:` and a hash of the postal service's delivery point, so two spellings of one address match. | Smarty. Otherwise addresses are ignored. |
 | `name`, `dob` | `name:` and a keyed hash. See [Names](#names). | `IDENTIFIER_SECRET`, and a policy with a `name` kind. |
 | `identifiers` | Identifiers you already hold, as written: `payment:tok_…`, `passkey:…`. | - |
+| `speaker` | The [person who speaks for](#speaking-for-somebody-else) the subject: their `device`, `phone` and `email`. | - |
 | `at`, `event` | When it happened, and what the person was doing. Default: now. | - |
 
 The email, number, address, name and date of birth are stored only as hashes.
@@ -57,6 +58,26 @@ The email, number, address, name and date of birth are stored only as hashes.
 A check that is down keeps the sighting. The phone is stored as a plain `phone`, the address is omitted with a note that the service did not answer, and the rest is recorded.
 
 A number identified as VoIP also stops counting as a `phone` wherever it was stored before the check, by a phone call or by a sighting during an outage. Calls check the caller's number the same way, so a call and an account on one such number are related at 0.5.
+
+## Speaking for somebody else
+
+A mother calls about her son. Without being told, the server takes her number and her browser for his. Send what is hers as `speaker`, from a box on the form or a mark your staff make:
+
+```sh
+curl -X POST https://graph.example.org/identify -H "authorization: Bearer $GRAPH_TOKEN" -d '{
+  "subject": "contact:son",
+  "email": "son@example.org",
+  "speaker": { "device": "9f3c1c1e-…", "phone": "(555) 000-1111", "email": "mother@example.org" }
+}'
+```
+
+| What you send | What happens |
+| --- | --- |
+| `speaker.device`, `speaker.phone` | At least one is required. The browser and the caller are related to the subject at 0.92 and never joined to them. |
+| `speaker.email` | Written on the caller, or on the browser where there is no number. |
+| A fact both in `speaker` and beside it | Not used for the subject, with a note. |
+
+What brought the speaker's browser earns the credit for the subject. It is not passed on to anybody else they speak for, or back. The two are never offered for review as one person, and a number written on both later does not join them. A reviewer who joins them has the last word. To take it back, mute the `behalf:` mark of the browser and that of the caller: sent again, they stay muted. The subject is a record of yours, not a browser or a caller.
 
 ## Hosted forms
 

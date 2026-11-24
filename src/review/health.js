@@ -82,11 +82,11 @@ view('health', 'Health', async (box) => {
 
   // What one shared identifier of a kind does by itself, which is what its weight means.
   const kinds = Object.entries(policy.rules.kinds).sort(([x, a], [y, b]) => b.weight - a.weight || (x < y ? -1 : 1))
-  const bands = [['Meets join threshold', (w) => w >= same], ['Meets related threshold', (w) => w >= related && w < same], ['Below thresholds', (w) => w > 0 && w < related], ['Corroborating only']]
+  const bands = [['Meets join threshold', (w) => w >= same], ['Meets related threshold', (w) => w >= related && w < same], ['Below thresholds', (w) => w > 0 && w < related], ['Related only', undefined, 'relates'], ['Corroborating only', undefined, 'corroborates']]
   const scale = (weight) => meter(weight, [[related, 'related'], [same, 'same'], [bridge, 'bridge']])
   const rules = el('table', { class: 'rules' }, el('tr', {}, th('Identifier'), ...edge([th('Weight', 'num'), el('td', {})]), ...edge([th('Shared by 4', 'num'), th('Half-life', 'num'), th('Limit', 'num')]), th('Notes', 'edge')))
-  for (const [name, holds] of bands) {
-    const rows = kinds.filter(([, rule]) => (rule.corroborates ? !holds : holds?.(rule.weight)))
+  for (const [name, holds, only] of bands) {
+    const rows = kinds.filter(([, rule]) => (only ? rule[only] : !rule.corroborates && !rule.relates && holds(rule.weight)))
     if (rows.length === 0) continue
     rules.append(el('tbody', {}, el('tr', { class: 'day' }, el('th', { scope: 'rowgroup', colspan: 7 }, name)), ...rows.map(([kind, rule]) => el('tr', {}, td('', kind), ...edge([td('num', rule.weight.toFixed(2)), td('bar', scale(rule.weight))]),
       ...edge([td('num', rule.cap < 4 ? none() : rule.dilution === 0 ? rule.weight.toFixed(2) : (rule.weight * 0.5 ** rule.dilution).toFixed(2)), td('num', rule.halfLife === 'none' ? none() : lasting(rule.halfLife)), td('num', `${amount(rule.cap)} IDs`)]),

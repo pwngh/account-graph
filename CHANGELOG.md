@@ -85,6 +85,8 @@
 - Requests with invalid UTF-8, NUL characters or more than 32 levels of nesting return 400.
 - `examples/call-tracking.ts` takes a call tracking webhook, checks its signature and posts the call. `docs/pilot.md` is a trial that sends nothing to ad platforms.
 - `OPEN_HOURS` takes `us` and `us-tx` for holidays. Spanish words ask for no more texts, and none undoes it. `POST /call/ringing` says where in Texas a number is from.
+- `/identify` takes `speaker`, whoever speaks for the subject. Their browser and number are related to the subject and never joined to them, and what brought them earns the credit.
+- A matching rule takes `relates`, for a kind that says two subjects are two people. Clusters need a `rebuild`, because the default policy has the new kind `behalf`.
 - A `zip` tag with a Texas ZIP code adds `county`. `SERVER_RANGES_FILE` names the address ranges of data centers.
 - `npm run firm` starts a sample firm, and `npm run bench -- scale` measures large graphs.
 
