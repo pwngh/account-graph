@@ -1,73 +1,14 @@
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { test } from 'node:test'
 import { createGraph, createMemoryStore, email, phone } from '../src/index.ts'
 import { createHandler } from '../src/server.ts'
+import { browse, chrome, pause, until, without } from './chrome.ts'
 
-// The reviewer screen in a real browser, driven over Chrome's own debugging port.
-const chrome = [process.env.CHROME, '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'].find((path) => path && existsSync(path))
-
+// The reviewer screen in a real browser.
 const T0 = 1_700_000_000_000
-const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
-async function until<T>(what: string, look: () => Promise<T> | T, seconds = 10): Promise<NonNullable<T>> {
-  for (let i = 0; i < seconds * 20; i++) {
-    const found = await look()
-    if (found) return found
-    await pause(50)
-  }
-  throw new Error(`Waited ${seconds} seconds for ${what}`)
-}
-
-/** Opens an address in a browser of its own. `run` evaluates an expression in the page. */
-async function browse(address: string) {
-  const home = mkdtempSync(join(tmpdir(), 'ag-chrome-'))
-  const browser = spawn(chrome!, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${home}`, '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage', '--no-first-run', 'about:blank'], { stdio: 'ignore', detached: true })
-  const gone = new Promise<void>((resolve) => browser.once('close', () => resolve()))
-  const failed = new Promise<never>((_, reject) => browser.once('error', reject))
-  failed.catch(() => {})
-  const close = async () => {
-    // Chrome is several processes. The whole group goes, and what they leave behind is the system's to clear.
-    try {
-      process.kill(-browser.pid!, 'SIGKILL')
-      await gone
-      rmSync(home, { recursive: true, force: true, maxRetries: 5 })
-    } catch {}
-  }
-  try {
-    const at = join(home, 'DevToolsActivePort')
-    const port = await Promise.race([failed, until('Chrome to start', () => existsSync(at) && readFileSync(at, 'utf8').split('\n')[0], 60)])
-    const page = (await (await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(address)}`, { method: 'PUT' })).json()) as { webSocketDebuggerUrl: string }
-    const socket = new WebSocket(page.webSocketDebuggerUrl)
-    await new Promise((resolve, reject) => ((socket.onopen = resolve), (socket.onerror = reject)))
-    const waiting = new Map<number, (answer: any) => void>()
-    socket.onmessage = ({ data }) => {
-      const answer = JSON.parse(String(data))
-      waiting.get(answer.id)?.(answer)
-    }
-    let id = 0
-    socket.onclose = () => waiting.forEach((answer) => answer({ result: { exceptionDetails: { text: 'Chrome went away' } } }))
-    const send = (method: string, params: object) => new Promise<any>((resolve) => (waiting.set(++id, resolve), socket.send(JSON.stringify({ id, method, params }))))
-    const run = async (expression: string) => {
-      const { result } = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
-      if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text)
-      return result.result.value
-    }
-    const press = async (key: string) => {
-      for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key, code: key, windowsVirtualKeyCode: key === 'Escape' ? 27 : 13, ...(type === 'keyDown' && key === 'Enter' && { text: '\r' }) })
-    }
-    return { run, press, close }
-  } catch (error) {
-    await close()
-    throw error
-  }
-}
-
-test('the reviewer screen signs with the token, keeps what was typed, and refuses an outdated decision', { skip: !chrome && !process.env.CI ? 'set CHROME to a Chrome or Chromium to run it' : false, timeout: 180_000 }, async (t) => {
+test('the reviewer screen signs with the token, keeps what was typed, and refuses an outdated decision', { skip: without, timeout: 180_000 }, async (t) => {
   assert.ok(chrome, 'CI needs a browser')
   const graph = createGraph(createMemoryStore())
   await graph.observe([1, 2, 3].map((n) => ({ subject: `account:${n}`, identifiers: ['email:e'], at: T0 })))
