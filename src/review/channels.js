@@ -15,9 +15,9 @@ view('channels', 'Channels', async (box, first, last) => {
   const back = (value, cost) => (cost > 0 && value > 0 ? `${(value / cost).toFixed(1)}×` : '')
   const cells = (row) => [td('num', money(row.cost)), td('num', amount(row.clicks)), td('num', amount(row.visits)),
     ...stages.map((stage) => td('num', row.stages[stage]?.count ?? '')),
-    td('num', money(row.value)), td('num', per(row.cost, row.outcomes)), td('num', back(row.value, row.cost))]
+    ...(report.total.missed > 0 ? [td('num', row.missed || '')] : []), td('num', money(row.value)), td('num', per(row.cost, row.outcomes)), td('num', back(row.value, row.cost))]
   const table = el('table', {}, el('tr', {}, th('Source'), th('Campaign'), th('Cost', 'num'), th('Clicks billed', 'num'), th('Arrivals seen', 'num'),
-    ...stages.map((stage) => th(stage, 'num')), th('Value', 'num'), th('Cost per outcome', 'num'), th('Return', 'num')))
+    ...stages.map((stage) => th(stage, 'num')), ...(report.total.missed > 0 ? [th('Missed calls', 'num')] : []), th('Value', 'num'), th('Cost per outcome', 'num'), th('Return', 'num')))
   for (const row of report.rows) {
     table.append(el('tr', {}, td('', row.source === '(none)' ? el('span', { class: 'muted' }, 'no arrival credited') : row.source),
       td('who', row.campaign || row.campaignId || el('span', { class: 'muted' }, 'no campaign named'), row.campaign && row.campaignId ? el('span', { class: 'reason' }, row.campaignId) : ''), ...cells(row)))

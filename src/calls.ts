@@ -1,6 +1,6 @@
 import type { Graph } from './graph.ts'
 import { hashPhone, normalizePhone, phoneOfType } from './identifiers.ts'
-import type { Identifier, Outcome, Subject } from './types.ts'
+import type { CallResult, Identifier, KeptCall, Outcome, Subject } from './types.ts'
 
 /** One phone call to a number of yours, as your telephone provider reports it. */
 export interface Call {
@@ -14,6 +14,18 @@ export interface Call {
   at: number
   /** How long it lasted, in seconds. A call nobody answered lasted 0. */
   duration?: number
+  /** Who rang whom. Only calls to you are recorded; a call from you is refused. */
+  direction?: 'inbound'
+  /**
+   * Whether a person spoke to the caller. Leave it out when that is not
+   * known. A phone system that picks up has not answered, so it is never
+   * worked out from how long the call lasted.
+   */
+  answered?: boolean
+  /** The caller reached voicemail. */
+  voicemail?: boolean
+  /** How long the caller waited before someone answered or they gave up, in seconds. */
+  waited?: number
 }
 
 /** Where a tracking number is published, so a call to it can be filed under that campaign. */
@@ -46,8 +58,39 @@ export interface CallOptions {
   country?: string
   /** Says what kind of line the caller's number is, so a throwaway number counts for less and a switchboard for nothing. */
   lineType?: (number: string) => Promise<{ type: string } | undefined>
-    /** Records the outcome of a counted call. Defaults to `graph.outcome`; pass the outbox's `record` to send it too. */
+    /**
+   * `expected` when something reports how each call went to
+   * `recordCallResult`. A call is then counted and sent only once a result
+   * says a person answered. Without it, a call is counted as it is
+   * recorded, and a result that says otherwise takes it back.
+   */
+  results?: 'expected'
+  /** How long to wait for a result before a call reads as unknown, in milliseconds. Defaults to 30 minutes. A later result still settles it. */
+  resultWait?: number
+  /** Records the outcome of a counted call. Defaults to `graph.outcome`; pass the outbox's `record` to send it too. */
   convert?: (outcome: Outcome) => Promise<unknown>
+  /** Keeps the outcome of a call whose result is awaited. Defaults to nothing; pass the outbox's `hold`. */
+  hold?: (outcome: Outcome) => Promise<unknown>
+  /** Counts the outcome of a call that was held or taken back. Defaults to `graph.outcome`, which sends nothing; pass the outbox's `release` to send it too. */
+  release?: (outcome: Outcome) => Promise<unknown>
+  /** Takes back the outcome of a call that was not answered after all. Defaults to `graph.withdraw`; pass the outbox's `withdraw`. */
+  withdraw?: (transactionId: string) => Promise<unknown>
+  /** The clock, for tests. */
+  now?: () => number
+}
+
+/**
+ * How a call stands. `waiting` a result is expected and has not come;
+ * `unknown` nothing says whether a person answered. `unknown` is never counted
+ * where results are expected, and is counted by its length where they are not.
+ */
+export type CallState = 'answered' | 'missed' | 'voicemail' | 'waiting' | 'unknown'
+
+/** How a kept call stands at a time. */
+export function callState(call: KeptCall, at: number, options: Pick<CallOptions, 'results' | 'resultWait'> = {}): CallState {
+  if (call.result?.answered !== undefined) return call.result.answered ? 'answered' : call.result.voicemail ? 'voicemail' : 'missed'
+  const ends = call.at + (call.duration ?? 0) * 1000
+  return options.results === 'expected' && at < ends + (options.resultWait ?? 30 * 60_000) ? 'waiting' : 'unknown'
 }
 
 export interface RecordedCall {
@@ -56,6 +99,8 @@ export interface RecordedCall {
   flags: CallFlag[]
   /** Whether it was counted as an outcome. */
   counted: boolean
+  /** How it stands: answered, missed, gone to voicemail, waiting for its result, or not known. */
+  state: CallState
   /** The visitor who tapped the number just before, when there was exactly one. The two are now linked. */
   visitor?: Subject
   /** The call had been recorded before, and nothing was written. */
@@ -90,6 +135,8 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   if (typeof call?.id !== 'string' || !/^[\w.-]{1,128}$/.test(call.id)) throw new TypeError('A call needs an id of letters, digits, dots, dashes or underscores')
   if (!Number.isSafeInteger(call.at)) throw new TypeError(`Call "${call.id}" needs a time in whole epoch milliseconds`)
   if (call.duration !== undefined && !(typeof call.duration === 'number' && Number.isFinite(call.duration) && call.duration >= 0)) throw new TypeError(`Call "${call.id}" needs its duration in seconds`)
+  if (call.direction !== undefined && call.direction !== 'inbound') throw new TypeError(`Call "${call.id}" is not a call to you`)
+  const result = resultIn(call, `Call "${call.id}"`)
   if (typeof call.to !== 'string') throw new TypeError(`Call "${call.id}" needs the number that was rung`)
   const to = normalizePhone(call.to, options.country)
   const { id, at } = call
@@ -105,12 +152,18 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   // The note is written last, so a call that was cut off half-recorded is recorded again in full.
   const note = `dialed:call-${id}`
   const [before] = await graph.holders([note])
-  if (before) return { subject: before.subject, flags: [], counted: false, duplicate: true }
+  if (before) {
+    // Reported again with a result it did not have before, the call is settled by it.
+    const settled = result && (await tell(graph, id, result, options))
+    const kept = await graph.keptCall(id)
+    return { subject: before.subject, flags: [], counted: settled?.counted ?? false, state: kept ? callState(kept, (options.now ?? Date.now)(), options) : 'unknown', duplicate: true }
+  }
+  if (result) await graph.keepCallResult(id, result)
 
   const flags: CallFlag[] = []
   if (!from) flags.push('blocked')
   if (tollFree) flags.push('toll_free')
-  const short = (call.duration ?? Infinity) < (options.minimumSeconds ?? 30)
+  const short = tooShort(call, options)
   if (short) flags.push('short')
   if (from && (await graph.cluster(subject))) flags.push('repeat')
 
@@ -147,10 +200,11 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   }
 
   // The outcome comes before the touch: if recording it fails, the call is reported again and nothing has been written twice.
-  if (!short) {
-    const outcome: Outcome = { transactionId: `call:${id}`, subject, at, stage: options.stage ?? 'call', source: 'PHONE', ...(known && { phone: known }) }
-    await (options.convert ?? graph.outcome)(outcome)
-  }
+  // What would be sent is held before the call is kept, while the number is at hand: a result that finds the call then finds that too.
+  if (!short) await options.hold?.(outcomeOf({ id, subject, at }, options, known))
+  // The call is kept before its result is looked for, and a result is kept before its call is, so whichever comes second settles it.
+  await graph.keepCall({ id, subject, at, to, flags, ...(call.duration !== undefined && { duration: call.duration }), ...(visitor && { visitor }) })
+  const counted = await settle(graph, id, options, known ?? '')
 
   // A visitor's own arrival says more than the number does, so the number's channel is only the fallback.
   const channel = Object.entries(options.numbers ?? {}).find(([number]) => numberOrSelf(number, options.country) === to)?.[1]
@@ -159,7 +213,79 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
     await graph.touch({ subject, at, source, medium, ...(campaign && { campaign }), ...(campaignId && { campaignId }), landing: `tel:${to}` })
   }
   await graph.observe({ subject, identifiers: [note], at, event: 'call' })
-  return { subject, flags, counted: !short, ...(visitor && { visitor }), duplicate: false }
+  const kept = await graph.keptCall(id)
+  return { subject, flags, counted, state: callState(kept!, (options.now ?? Date.now)(), options), ...(visitor && { visitor }), duplicate: false }
+}
+
+/** The result a call or a report of one carries, checked. Undefined when it says nothing of how the call went. */
+function resultIn(given: { answered?: unknown; voicemail?: unknown; waited?: unknown }, what: string): Omit<CallResult, 'recorded'> | undefined {
+  const { answered, voicemail, waited } = given
+  for (const [name, value] of [['answered', answered], ['voicemail', voicemail]] as const) if (value !== undefined && typeof value !== 'boolean') throw new TypeError(`${what} needs ${name} as true or false`)
+  if (waited !== undefined && !(typeof waited === 'number' && Number.isFinite(waited) && waited >= 0)) throw new TypeError(`${what} needs its wait in seconds`)
+  if (answered === true && voicemail === true) throw new TypeError(`${what} cannot be answered by a person and go to voicemail`)
+  // Voicemail is not a person, so it says nobody answered.
+  const heard = voicemail === true ? false : (answered as boolean | undefined)
+  if (heard === undefined && voicemail === undefined && waited === undefined) return undefined
+  return { ...(heard !== undefined && { answered: heard }), ...(voicemail !== undefined && { voicemail: voicemail as boolean }), ...(waited !== undefined && { waited: waited as number }) }
+}
+
+/** Whether a call ended too soon to count. */
+function tooShort(call: { duration?: number }, options: CallOptions): boolean {
+  return (call.duration ?? Infinity) < (options.minimumSeconds ?? 30)
+}
+
+const outcomeOf = (call: { id: string; subject: Subject; at: number }, options: CallOptions, phone?: string): Outcome => ({
+  transactionId: `call:${call.id}`,
+  subject: call.subject,
+  at: call.at,
+  stage: options.stage ?? 'call',
+  source: 'PHONE',
+  ...(phone && { phone }),
+})
+
+/**
+ * Brings the outcome of a kept call in line with what is known about it: a
+ * call counts when it was long enough and either a person answered, or no
+ * result is expected and none says otherwise. Safe to run again, and from
+ * two places at once. `phone` is given only while the call is being
+ * recorded. Resolves to whether the call is counted.
+ */
+async function settle(graph: Graph, id: string, options: CallOptions, phone?: string): Promise<boolean> {
+  for (;;) {
+    const call = await graph.keptCall(id)
+    if (!call) return false
+    const answered = call.result?.answered
+    const counts = !tooShort(call, options) && (answered ?? options.results !== 'expected')
+    const outcome = outcomeOf(call, options, phone)
+    // Each of these does nothing where it is already done, so one that was cut off half way is finished by the next.
+    if (counts && options.release) await options.release(outcome)
+    // Without one, a result has no number to give, so it only counts the call.
+    else if (counts) await (phone !== undefined && options.convert ? options.convert : graph.outcome)(outcome)
+    else if (answered === false) await (options.withdraw ?? graph.withdraw)(outcome.transactionId)
+    // A result that came meanwhile is settled too.
+    if ((await graph.callResult(id))?.answered === answered) return counts
+  }
+}
+
+/** Keeps a result and settles its call by it. Resolves to undefined while the call itself has not been recorded. */
+async function tell(graph: Graph, id: string, result: Omit<CallResult, 'recorded'>, options: CallOptions): Promise<{ state: CallState; counted: boolean } | undefined> {
+  await graph.keepCallResult(id, result)
+  const counted = await settle(graph, id, options)
+  const kept = await graph.keptCall(id)
+  return kept && { state: callState(kept, (options.now ?? Date.now)(), options), counted }
+}
+
+/**
+ * Records how a call went, from whoever runs the phones. It may arrive
+ * before the call or after it, and as often as it likes: the last report
+ * stands. Resolves to how the call stands now, or undefined while the call
+ * itself has not been recorded.
+ */
+export async function recordCallResult(graph: Graph, report: { id: string; answered: boolean; voicemail?: boolean; waited?: number }, options: CallOptions = {}): Promise<{ state: CallState; counted: boolean } | undefined> {
+  if (typeof report?.id !== 'string' || !/^[\w.-]{1,128}$/.test(report.id)) throw new TypeError('A call result needs the id of its call')
+  const result = resultIn(report, `The result of call "${report.id}"`)
+  if (result?.answered === undefined) throw new TypeError(`The result of call "${report.id}" needs answered, true or false`)
+  return tell(graph, report.id, result, options)
 }
 
 /** A phone number in the form calls arrive in, or as written when it is not a phone number. */

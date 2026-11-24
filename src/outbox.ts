@@ -3,7 +3,8 @@ import type { Attribution, AttributedTouch, Consent, Outcome, Subject } from './
 
 export type { Outcome }
 
-export type JobState = 'pending' | 'sent' | 'skipped' | 'failed'
+/** `held` waits for whoever held it: it is not sent until it is released. */
+export type JobState = 'held' | 'pending' | 'sent' | 'skipped' | 'failed'
 
 /** An outcome on its way to one platform, and what became of it. */
 export interface Job {
@@ -24,6 +25,8 @@ export interface Job {
   attempts: number
   /** The earliest time a worker may pick it up, in epoch milliseconds. */
   due: number
+  /** Counts every claim and change of the stored job. The store keeps it. */
+  rev?: number
   /** Why it was skipped, failed, or is waiting to retry. */
   note?: string
   /** The click that was sent, and how strongly the graph tied it to the subject. */
@@ -33,6 +36,10 @@ export interface Job {
   requestId?: string
   /** Its value was changed after it was first recorded. */
   restated?: boolean
+  /** It reached its platform at least once, whatever has happened since. */
+  delivered?: boolean
+  /** Its outcome was taken back, and has not been given back since. */
+  withdrawn?: boolean
 }
 
 /** A job ready to send, with the touch and consent that go with it. */
@@ -72,7 +79,14 @@ export interface OutboxStore {
    * handed out again once the lease runs out. No job goes to two workers at once.
    */
   claim(now: number, lease: number, limit: number): Promise<Job[]>
-  save(job: Job): Promise<void>
+  /**
+   * Replaces `before` with `after` and counts its `rev` up, unless the
+   * stored job's `rev` is no longer that of `before`. Resolves to whether it
+   * did, so nothing written from an old reading undoes a newer change.
+   */
+  swap(before: Job, after: Job): Promise<boolean>
+  /** Which of the given jobs have not been claimed or changed since they were read. */
+  standing(jobs: readonly Job[]): Promise<Job[]>
   /** Every job of one transaction, one per target. */
   get(transactionId: string): Promise<Job[]>
   /** Jobs in one state, the most recently due first. */
@@ -125,6 +139,20 @@ export interface Outbox {
    * sends it again to every platform that can restate. Others keep what they have.
    */
   restate(transactionId: string, value: number, currency?: string): Promise<Job[]>
+  /**
+   * Keeps an outcome's jobs without sending them or counting the outcome,
+   * until `release` with the same id. The keys are hashed now, so what they
+   * were made from need not be kept.
+   */
+  hold(outcome: Outcome): Promise<Job[]>
+  /** Counts an outcome that was held or withdrawn, and sends its jobs. One that was neither is recorded. */
+  release(outcome: Outcome): Promise<Job[]>
+  /**
+   * Takes back an outcome that turned out not to have happened. It leaves
+   * the report, its unsent jobs are held, and where it was sent its value is
+   * restated to nothing on every platform that can restate. Others keep it.
+   */
+  withdraw(transactionId: string): Promise<Job[]>
   /** Sends every job that is due. Call it on a timer, from as many workers as you like. */
   run(): Promise<Pass>
   /** Calls `run` every `interval` milliseconds. Returns a function that stops it. */
@@ -160,16 +188,57 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
   /** Marks a job failed for good and remembers it for `onFailed`. */
   async function fail(job: Job, note: string, pass: Pass, failed: Job[]): Promise<void> {
     const dead: Job = { ...job, state: 'failed', note }
-    await store.save(dead)
+    if (!(await store.swap(job, dead))) return
     failed.push(dead)
     pass.failed += 1
   }
 
-  async function deliver(target: Target, action: string, items: readonly Item[], pass: Pass, failed: Job[]): Promise<void> {
+  /** Changes a stored job, starting again from what is stored whenever something else changed it first. */
+  async function change(job: Job, make: (current: Job) => Job | undefined): Promise<Job> {
+    for (;;) {
+      const current = (await store.get(job.transactionId)).find((each) => each.target === job.target)
+      // Forgotten meanwhile, or nothing to change.
+      const next = current && make(current)
+      if (!current || !next) return current ?? job
+      if (await store.swap(current, next)) return { ...next, rev: (current.rev ?? 0) + 1 }
+    }
+  }
+
+  /** Whether a job reached its platform. A job from before that was noted says so by its state, or by the request that carried it. */
+  const reached = (job: Job) => Boolean(job.delivered || job.state === 'sent' || job.requestId)
+
+  /** A job whose outcome was taken back: held if it never arrived, worth nothing where the platform can be told, and left where it cannot. */
+  function takenBack(job: Job): Job {
+    if (!reached(job)) return { ...job, withdrawn: true, state: 'held', attempts: 0, note: 'withdrawn' }
+    const gone: Job = { ...job, delivered: true, withdrawn: true }
+    if (!targets.get(job.target)?.restates) return { ...gone, state: 'sent', note: 'withdrawn, but this platform keeps it' }
+    return { ...gone, value: 0, restated: true, state: 'pending', attempts: 0, due: now(), note: 'withdrawn' }
+  }
+
+  /**
+   * A job that changed while `sent`, as it was before, was on its way. That
+   * one arrived, and possibly after a newer one did, so what the job says
+   * now is sent once more where the platform keeps the last value it hears.
+   */
+  function landed(sent: Job, current: Job, target: Target): Job | undefined {
+    // Already known to have arrived, with the value it has now: there is nothing to put right.
+    if (current.delivered && current.value === sent.value) return undefined
+    const arrived: Job = { ...current, delivered: true }
+    if (current.withdrawn) return takenBack(arrived)
+    if (!target.restates || current.value === sent.value) return arrived
+    return { ...arrived, restated: true, state: 'pending', attempts: 0, due: now() }
+  }
+
+  async function deliver(target: Target, action: string, claimed: readonly Item[], pass: Pass, failed: Job[]): Promise<void> {
+    // What was taken back or changed since it was claimed is left to the next pass.
+    const standing = new Set(await store.standing(claimed.map(({ job }) => job)))
+    const items = claimed.filter(({ job }) => standing.has(job))
+    if (items.length === 0) return
     try {
       const { requestId } = await target.deliver(action, items)
       for (const { job } of items) {
-        await store.save({ ...job, state: 'sent', ...(requestId && { requestId }) })
+        const sent: Job = { ...job, state: 'sent', delivered: true, ...(requestId && { requestId }) }
+        if (!(await store.swap(job, sent))) await change(job, (current) => landed(job, current, target))
         pass.sent += 1
       }
     } catch (error) {
@@ -177,10 +246,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
       if (target.retryable(error)) {
         for (const { job } of items) {
           if (job.attempts >= maxAttempts) await fail(job, note, pass, failed)
-          else {
-            await store.save({ ...job, due: now() + backoff(job.attempts), note })
-            pass.retried += 1
-          }
+          else if (await store.swap(job, { ...job, due: now() + backoff(job.attempts), note })) pass.retried += 1
         }
       } else if (items.length > 1) {
         // A platform rejects a whole request for one bad event. Send each alone to find it.
@@ -189,60 +255,99 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
     }
   }
 
+  /** The jobs of an outcome, one for each platform its action names. */
+  function prepare(outcome: Outcome, state: 'pending' | 'held'): Job[] {
+    const { transactionId, subject, at } = outcome
+    if (!transactionId || !subject) throw new TypeError('An outcome needs a transactionId and a subject')
+    if (!Number.isFinite(at)) throw new TypeError(`Outcome "${transactionId}" needs a time in epoch milliseconds`)
+    let actions = outcome.action
+    if (typeof actions === 'string') {
+      if (targets.size > 1) throw new TypeError(`Outcome "${transactionId}" must name its action per target, such as { google: '…' }`)
+      actions = { [options.targets[0]!.name]: actions }
+    }
+    const named = Object.entries(actions ?? {})
+    if (named.some(([, action]) => !action)) throw new TypeError(`Outcome "${transactionId}" names a target with no action`)
+    for (const [name] of named) if (!targets.has(name)) throw new TypeError(`Outcome "${transactionId}" names an unknown target "${name}"`)
+    return named.map(([name, action]) => ({
+      transactionId,
+      target: name,
+      subject,
+      at,
+      action,
+      ...(outcome.value !== undefined && { value: outcome.value }),
+      ...(outcome.currency && { currency: outcome.currency }),
+      ...(outcome.source && { source: outcome.source }),
+      keys: targets.get(name)!.keys(outcome),
+      ...(outcome.consent && { consent: outcome.consent }),
+      state,
+      attempts: 0,
+      due: now() + (options.delay ?? 0),
+    }))
+  }
+
+  async function add(outcome: Outcome, jobs: readonly Job[]): Promise<Job[]> {
+    const out: Job[] = []
+    for (const job of jobs) {
+      const stored = await store.add(job)
+      const same =
+        stored.subject === job.subject &&
+        stored.at === job.at &&
+        stored.action === job.action &&
+        (stored.restated || stored.value === job.value) &&
+        JSON.stringify(Object.entries(stored.keys).sort()) === JSON.stringify(Object.entries(job.keys).sort())
+      if (!same) throw new TypeError(`Outcome "${outcome.transactionId}" was already recorded with different details`)
+      out.push(stored)
+    }
+    return out
+  }
+
   const outbox: Outbox = {
     async record(outcome) {
-      const { transactionId, subject, at } = outcome
-      if (!transactionId || !subject) throw new TypeError('An outcome needs a transactionId and a subject')
-      if (!Number.isFinite(at)) throw new TypeError(`Outcome "${transactionId}" needs a time in epoch milliseconds`)
-      let actions = outcome.action
-      if (typeof actions === 'string') {
-        if (targets.size > 1) throw new TypeError(`Outcome "${transactionId}" must name its action per target, such as { google: '…' }`)
-        actions = { [options.targets[0]!.name]: actions }
-      }
-      const named = Object.entries(actions ?? {})
-      if (named.some(([, action]) => !action)) throw new TypeError(`Outcome "${transactionId}" names a target with no action`)
-      for (const [name] of named) if (!targets.has(name)) throw new TypeError(`Outcome "${transactionId}" names an unknown target "${name}"`)
-
+      const jobs = prepare(outcome, 'pending')
       // Counted first: it checks the rest of the outcome, and a job must never be queued for an outcome the report refused.
       await graph.outcome(outcome)
-      const jobs: Job[] = []
-      for (const [name, action] of named) {
-        const job: Job = {
-          transactionId,
-          target: name,
-          subject,
-          at,
-          action,
-          ...(outcome.value !== undefined && { value: outcome.value }),
-          ...(outcome.currency && { currency: outcome.currency }),
-          ...(outcome.source && { source: outcome.source }),
-          keys: targets.get(name)!.keys(outcome),
-          ...(outcome.consent && { consent: outcome.consent }),
-          state: 'pending',
-          attempts: 0,
-          due: now() + (options.delay ?? 0),
-        }
-        const stored = await store.add(job)
-        const same =
-          stored.subject === job.subject &&
-          stored.at === job.at &&
-          stored.action === job.action &&
-          (stored.restated || stored.value === job.value) &&
-          JSON.stringify(Object.entries(stored.keys).sort()) === JSON.stringify(Object.entries(job.keys).sort())
-        if (!same) throw new TypeError(`Outcome "${transactionId}" was already recorded with different details`)
-        jobs.push(stored)
-      }
-      return jobs
+      return add(outcome, jobs)
+    },
+
+    async hold(outcome) {
+      // One already held, or on its way, stands as it is; a platform left out when this was cut off is added.
+      return Promise.all(prepare(outcome, 'held').map((job) => store.add(job)))
+    },
+
+    async release(outcome) {
+      const before = await store.get(outcome.transactionId)
+      if (before.length === 0) return outbox.record(outcome)
+      await graph.outcome(outcome)
+      return Promise.all(
+        before.map((job) =>
+          change(job, (current) => {
+            if (current.state !== 'held' && !current.withdrawn) return undefined
+            const { withdrawn: _, note: __, ...rest } = current
+            if (!reached(current)) return { ...rest, state: 'pending', due: now() + (options.delay ?? 0) }
+            // It had arrived, and may have been restated to nothing since: give it its value again.
+            if (!targets.get(current.target)?.restates) return { ...rest, state: 'sent' }
+            return { ...rest, value: outcome.value ?? 0, state: 'pending', attempts: 0, due: now() }
+          }),
+        ),
+      )
+    },
+
+    async withdraw(transactionId) {
+      await graph.withdraw(transactionId)
+      return Promise.all((await store.get(transactionId)).map((job) => change(job, (current) => (current.withdrawn ? undefined : takenBack(current)))))
     },
 
     async restate(transactionId, value, currency) {
       await graph.restate(transactionId, value, currency)
       const changed: Job[] = []
       for (const job of await store.get(transactionId)) {
-        if (!targets.get(job.target)?.restates || job.state === 'skipped') continue
-        const next: Job = { ...job, value, ...(currency && { currency }), restated: true, state: 'pending', attempts: 0, due: now(), note: 'restated' }
-        await store.save(next)
-        changed.push(next)
+        if (!targets.get(job.target)?.restates) continue
+        let done = false
+        const next = await change(job, (current) => {
+          done = !(current.state === 'skipped' || current.state === 'held' || current.withdrawn)
+          return done ? { ...current, value, ...(currency && { currency }), restated: true, state: 'pending', attempts: 0, due: now(), note: 'restated' } : undefined
+        })
+        if (done) changed.push(next)
       }
       return changed
     },
@@ -254,8 +359,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
       const attributions = new Map<string, Attribution>()
       for (const job of await store.claim(now(), lease, options.batch ?? 500)) {
         const skip = async (note: string) => {
-          await store.save({ ...job, state: 'skipped', note })
-          pass.skipped += 1
+          if (await store.swap(job, { ...job, state: 'skipped', note })) pass.skipped += 1
         }
         const target = targets.get(job.target)
         if (!target) {
@@ -339,9 +443,8 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
       const again: Job[] = []
       for (const job of await store.get(transactionId)) {
         if (job.state !== 'failed' && job.state !== 'skipped') continue
-        const next: Job = { ...job, state: 'pending', attempts: 0, due: now(), note: 'retried' }
-        await store.save(next)
-        again.push(next)
+        const next = await change(job, (current) => (current.state === 'failed' || current.state === 'skipped' ? { ...current, state: 'pending', attempts: 0, due: now(), note: 'retried' } : undefined))
+        if (next.state === 'pending') again.push(next)
       }
       return again
     },
@@ -355,9 +458,13 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
 export function createMemoryOutbox(): OutboxStore {
   const jobs = new Map<string, Job>()
   const key = (job: { transactionId: string; target: string }) => `${job.transactionId}\u0000${job.target}`
+  const unchanged = (job: Job) => {
+    const stored = jobs.get(key(job))
+    return stored !== undefined && stored.rev === job.rev
+  }
   return {
     async add(job) {
-      if (!jobs.has(key(job))) jobs.set(key(job), structuredClone(job))
+      if (!jobs.has(key(job))) jobs.set(key(job), structuredClone({ ...job, rev: 0 }))
       return structuredClone(jobs.get(key(job))!)
     },
     async claim(now, lease, limit) {
@@ -365,11 +472,17 @@ export function createMemoryOutbox(): OutboxStore {
       return due.slice(0, limit).map((job) => {
         job.attempts += 1
         job.due = now + lease
+        job.rev! += 1
         return structuredClone(job)
       })
     },
-    async save(job) {
-      jobs.set(key(job), structuredClone(job))
+    async swap(before, after) {
+      if (!unchanged(before)) return false
+      jobs.set(key(after), structuredClone({ ...after, rev: before.rev! + 1 }))
+      return true
+    },
+    async standing(given) {
+      return given.filter(unchanged)
     },
     async get(transactionId) {
       return [...jobs.values()].filter((job) => job.transactionId === transactionId).map((job) => structuredClone(job))
@@ -379,7 +492,7 @@ export function createMemoryOutbox(): OutboxStore {
       return found.sort((x, y) => y.due - x.due || (x.transactionId < y.transactionId ? -1 : 1)).slice(0, limit).map((job) => structuredClone(job))
     },
     async counts() {
-      const out: Record<JobState, number> = { pending: 0, sent: 0, skipped: 0, failed: 0 }
+      const out: Record<JobState, number> = { held: 0, pending: 0, sent: 0, skipped: 0, failed: 0 }
       for (const job of jobs.values()) out[job.state] += 1
       return out
     },

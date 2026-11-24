@@ -98,10 +98,11 @@ The four `POST` routes answer with the subjects whose cluster moved. With the se
 | `POST /restate` | `{ transactionId, value, currency? }`. Changes an outcome's value, in the report and on the platforms that can restate. |
 | `POST /link` | `{ url, subject, days? }`. Answers `{ url }`: the address with a token naming the person it is for. See [links](links.md). |
 | `POST /staff-link` | `{ url, days? }`. Answers `{ url }`: the address that marks the browser that opens it as staff. |
-| `POST /call` | A phone call: `{ id, from?, to, at, duration? }`. Answers `{ subject, flags, counted, visitor?, duplicate }`. See [calls](calls.md). |
+| `POST /call` | A phone call: `{ id, from?, to, at, duration?, direction?, answered?, voicemail?, waited? }`. `direction` is `inbound`. Answers `{ subject, flags, counted, state, visitor?, duplicate }`. See [calls](calls.md). |
+| `POST /call/result` | How a call went: `{ id, answered, voicemail?, waited? }`, before or after the call. Answers `{ state, counted }`; `waiting` while the call itself has not come. |
 | `POST /costs` | A list of `{ day, source, amount, campaignId?, campaign?, currency?, clicks?, impressions? }`. A row for the same day, source and campaign replaces the one before. |
 | `GET /conversion?id=` | The jobs of one transaction, one per ad platform. |
-| `GET /conversions?state=` | Jobs in one state: `pending`, `sent`, `skipped`, or `failed`. |
+| `GET /conversions?state=` | Jobs in one state: `held`, `pending`, `sent`, `skipped`, or `failed`. `held` waits for a call's result. |
 | `POST /retry` | `{ transactionId }`. Puts its failed and skipped jobs back in line. |
 | `POST /prune` | `{ before, by?, reason? }`. Deletes sightings written down before a time, and answers about advertising that no longer stand. |
 | `GET /stats` | Counts since start, what the graph holds, and outbox jobs by state. |

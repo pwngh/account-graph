@@ -10,7 +10,7 @@ export { createBatcher } from './batch.ts'
 export { fit, measure } from './calibrate.ts'
 export { brokenAt, seal } from './audit.ts'
 export { dayStart, fold, sourceOf } from './report.ts'
-export { dialed, recordCall } from './calls.ts'
+export { callState, dialed, recordCall, recordCallResult } from './calls.ts'
 export { knownLink, readToken, signToken, staffLink } from './sign.ts'
 export { ladderProblems, withStage } from './ladder.ts'
 export { createAlerter } from './alerts.ts'
@@ -25,11 +25,12 @@ export type { Batcher } from './batch.ts'
 export type { KnownLinkOptions, StaffLinkOptions } from './sign.ts'
 export type { Ladder, Stage } from './ladder.ts'
 export type { AlertOptions, Alerter } from './alerts.ts'
-export type { Call, CallFlag, CallOptions, Channel, RecordedCall } from './calls.ts'
+export type { Call, CallFlag, CallOptions, CallState, Channel, RecordedCall } from './calls.ts'
 export type { Fitted, Labeled, Measured } from './calibrate.ts'
 export type {
   Attribution,
   AttributedTouch,
+  CallResult,
   Change,
   Cluster,
   Consent,
@@ -44,6 +45,7 @@ export type {
   FlowEdge,
   Identifier,
   IdentifierState,
+  KeptCall,
   Labels,
   Level,
   Link,

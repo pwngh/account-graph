@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
 import pg from 'pg'
-import { createGraph } from '../src/index.ts'
+import { createGraph, recordCall } from '../src/index.ts'
 import { createPostgresStore, upgrades } from '../src/postgres.ts'
 import { serve } from '../src/serve.ts'
 import { outboxSuite } from './outbox.suite.ts'
@@ -87,6 +87,21 @@ if (!url) {
       assert.deepEqual((await graph.consentOf(['visitor:2'])).get('visitor:2'), { adUserData: true, adPersonalization: true })
       await graph.consent('visitor:2', { adUserData: false, adPersonalization: false }, { at: 5 })
       assert.equal((await graph.consentOf(['visitor:2'])).get('visitor:2')!.adUserData, false)
+    } finally {
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
+
+  test('a database from before calls were kept takes calls, and what it counted stays counted', async () => {
+    const schema = `ag_test_${process.pid}_calls`
+    try {
+      const store = await madeBefore(schema, 9)
+      await pool.query(`insert into ${schema}.outcome values ('call:OLD', 'caller:x', 5, 'call', 10, 'USD')`)
+      await store.migrate()
+      const graph = createGraph(store)
+      assert.equal((await graph.outcomeOf('call:OLD'))!.value, 10)
+      const { state } = await recordCall(graph, { id: 'NEW', from: '+15550100001', to: '+15550100002', at: 5, duration: 60, answered: true })
+      assert.equal(state, 'answered')
     } finally {
       await pool.query(`drop schema if exists ${schema} cascade`)
     }

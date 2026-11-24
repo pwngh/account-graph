@@ -33,6 +33,8 @@ services:
       # What the example site needs to show page events, a call tied to a tap, and signed links.
       EVENTS: ${EVENTS:-brochure,phone_click}
       CALL_NUMBERS: ${CALL_NUMBERS:-{"+15551230001":{"source":"google","campaignId":"20222"}}}
+      CALL_RESULTS: ${CALL_RESULTS:-}
+      CALL_RESULT_WAIT: ${CALL_RESULT_WAIT:-30}
       LINK_SECRET: ${LINK_SECRET:-change-me-link-secret-change-me}
       # Every other setting in docs/operations.md, passed through when you set it. Unset, each is off.
       REPORT_TIME_ZONE: ${REPORT_TIME_ZONE:-}

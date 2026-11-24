@@ -114,6 +114,8 @@ export function configFrom(env: Env) {
     events: (env.EVENTS ?? '').split(',').map((name) => name.trim()).filter(Boolean),
     callNumbers: parsed('CALL_NUMBERS'),
     callMinimum: number('CALL_MIN_SECONDS', 30),
+    callResults: env.CALL_RESULTS || undefined,
+    callResultWait: number('CALL_RESULT_WAIT', 30),
     // One Twilio token serves two things, each switched on by its second variable: call reports and line lookups.
     twilio: env.TWILIO_AUTH_TOKEN && env.TWILIO_WEBHOOK_URL ? { authToken: env.TWILIO_AUTH_TOKEN, url: env.TWILIO_WEBHOOK_URL } : undefined,
     lineType: env.TWILIO_AUTH_TOKEN && env.TWILIO_ACCOUNT_SID ? { accountSid: env.TWILIO_ACCOUNT_SID, authToken: env.TWILIO_AUTH_TOKEN } : undefined,
@@ -179,6 +181,7 @@ export function configFrom(env: Env) {
     }
     if (typeof channel?.source !== 'string' || !channel.source) wrong.push(`CALL_NUMBERS: "${number}" needs a source, such as {"source":"google"}`)
   }
+  if (config.callResults !== undefined && config.callResults !== 'expected') wrong.push('CALL_RESULTS must be expected, or not set')
   const twilioNames = ['TWILIO_AUTH_TOKEN', 'TWILIO_WEBHOOK_URL', 'TWILIO_ACCOUNT_SID'].filter((name) => env[name])
   if (twilioNames.length > 0 && !config.twilio && !config.lineType) {
     wrong.push(env.TWILIO_AUTH_TOKEN ? 'TWILIO_WEBHOOK_URL or TWILIO_ACCOUNT_SID must be set along with TWILIO_AUTH_TOKEN' : `TWILIO_AUTH_TOKEN must be set along with ${twilioNames.join(', ')}`)
@@ -313,7 +316,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
     ...(config.stages && { stages: config.stages }),
     // A tap on a phone link is what ties a call to a visitor, so taking calls means taking that event.
     events: [...new Set([...config.events, ...(config.callNumbers || config.twilio ? ['phone_click'] : [])])],
-    calls: { minimumSeconds: config.callMinimum, ...(config.callNumbers && { numbers: config.callNumbers }), ...(config.twilio && { twilio: config.twilio }) },
+    calls: { minimumSeconds: config.callMinimum, resultWait: config.callResultWait * 60_000, ...(config.callResults === 'expected' && { results: 'expected' as const }), ...(config.callNumbers && { numbers: config.callNumbers }), ...(config.twilio && { twilio: config.twilio }) },
     ...(config.reviewToken && { reviewToken: config.reviewToken }),
     ...(config.cookie && { cookie: config.cookie }),
     ...(config.fingerprint && { fingerprint: createFingerprintVerifier(config.fingerprint) }),
@@ -332,7 +335,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
   log([on('reviewer token', config.reviewToken), on('server cookie', config.cookie), on('fingerprint', config.fingerprint), on('maxmind', config.maxmind), on('signed links', config.linkSecret), on('staff networks', config.staffNetworks.length > 0), on('alerts', config.alertWebhook), on('address checks', config.smarty), on('phone line checks', config.lineType)].join(', '))
   log(`outbox sends to ${targets.length > 0 ? targets.map((target) => target.name).join(', ') : 'nobody (no ad platform configured)'}`)
   if (config.stages) log(`steps: ${Object.entries(config.stages).map(([name, stage]) => `${name}${stage.value === undefined ? '' : ` ${stage.value}`}`).join(', ')}`)
-    log(`page events taken: ${options.events!.length > 0 ? options.events!.join(', ') : 'none (set EVENTS)'}; calls from twilio ${config.twilio ? 'on' : 'off'}`)
+    log(`page events taken: ${options.events!.length > 0 ? options.events!.join(', ') : 'none (set EVENTS)'}; calls from twilio ${config.twilio ? 'on' : 'off'}; call results ${config.callResults === 'expected' ? `expected within ${config.callResultWait} minutes` : 'not expected'}`)
   log(`costs are read from ${sources.length > 0 ? sources.map(([name]) => name).join(', ') : 'nobody (post them to /costs)'}`)
   const { hash, due } = await graph.policy()
   log(`policy ${hash.slice(0, 12)} ${config.policy ? 'from settings' : 'by default'}${due ? '; the stored clusters were not built with it, so a rebuild is due (POST /rebuild)' : ''}`)

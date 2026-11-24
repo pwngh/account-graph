@@ -68,9 +68,15 @@
 - Every advertising answer is kept (`consentHistory`, `GET /consent`); `POST /consent` takes `at` and `source`, and the newest by `at` stands.
 - `GET /audit` names the newest decision and its hash (`head`); `AUDIT_HEAD_HOURS` posts it to `ALERT_WEBHOOK`.
 - `STAFF_NETWORKS` (`HandlerOptions.staffNetworks`) and `POST /staff-link` (`staffLink`) drop visits and page events of your own staff; `GET /stats` counts them as `staff`.
+- `Call` takes `answered`, `voicemail` and `waited`; `POST /call/result` (`recordCallResult`) reports how a call went, before or after the call. A call that was not answered is missed and never an outcome.
+- `CALL_RESULTS=expected` (`CallOptions.results`) holds a call, uncounted and unsent, until its result says a person answered; after `CALL_RESULT_WAIT` minutes it reads as unknown.
+- `outbox.hold`, `release` and `withdraw` keep back, send and take back an outcome; a job can be `held`.
+- `ReportRow.missed` counts missed calls per campaign; calls are kept with their results (`keptCall`, `callResult`).
 
 ### Changed
 
+- Breaking: `OutboxStore` has `swap` and `standing` in place of `save`; a worker's pass no longer overwrites a change made since it claimed a job.
+- Twilio's `busy`, `no-answer`, `failed` and `canceled` calls are recorded as not answered.
 - `prune` also deletes advertising answers that no longer stand.
 - Breaking: `GET /decisions` answers `{ decisions, next, total }`, newest first, a page at a time (`decisionPage`).
 - A name that starts with `system:` is refused with the reviewer token.

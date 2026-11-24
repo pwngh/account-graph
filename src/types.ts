@@ -312,6 +312,36 @@ export interface Counted {
   currency: string
 }
 
+/** A phone call as it is kept, with its result once one is known. */
+export interface KeptCall {
+  id: string
+  /** Who called: `caller:` and a hash of their number, or `call:` and the call's id when they hid it. */
+  subject: Subject
+  /** When it began, in epoch milliseconds. */
+  at: number
+  /** The number of yours that was rung, in E.164 form. */
+  to: string
+  /** How long it lasted in seconds, from when the phone system picked up. Absent when the provider did not say. */
+  duration?: number
+  flags: string[]
+  /** The visitor whose tap led to it. */
+  visitor?: Subject
+  /** When it was written down. */
+  recorded: number
+  result?: CallResult
+}
+
+/** How a call went, as whoever runs the phones reports it. */
+export interface CallResult {
+  /** A person spoke to the caller. The phone system picking up is not an answer, and neither is voicemail. Absent when it is not known. */
+  answered?: boolean
+  voicemail?: boolean
+  /** How long the caller waited before someone answered or they gave up, in seconds. */
+  waited?: number
+  /** When it was written down. */
+  recorded: number
+}
+
 /** What an ad platform charged for one campaign on one day. Writing the same day, source and campaign again replaces it. */
 export interface Cost {
   /** The day, written `YYYY-MM-DD` in the ad account's time zone. */
@@ -340,6 +370,8 @@ export interface ReportRow {
   impressions: number
   /** Arrivals recorded in the period. */
   visits: number
+  /** Calls no one answered, by result, credited the way outcomes are. They are never outcomes. */
+  missed: number
   /** Outcomes credited to this row, per step. */
   stages: Record<string, { count: number; value: number }>
   /** Outcomes credited to this row, all steps together. */

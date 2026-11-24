@@ -1,7 +1,7 @@
 import { createMemoryOutbox } from './outbox.ts'
 import { standingFirst } from './store.ts'
 import type { Store, Tx } from './store.ts'
-import type { Consent, ConsentAnswer, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, Labels, Moved, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, Consent, ConsentAnswer, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Moved, Sighting, Subject, Touch } from './types.ts'
 
 /**
  * Keeps the graph in process memory. Writes run one at a time; a write that
@@ -22,10 +22,14 @@ export function createMemoryStore(): Store {
   const consents = new Map<Subject, ConsentAnswer[]>()
   const decisions: Decision[] = []
   const outcomes = new Map<string, Counted>()
+  const calls = new Map<string, Omit<KeptCall, 'result'>>()
+  const results = new Map<string, CallResult>()
   const costs = new Map<string, Required<Cost>>()
   const moves: Moved[] = []
   let writes = 0
   let built: string | undefined
+
+  const withResult = (call: Omit<KeptCall, 'result'>): KeptCall => structuredClone({ ...call, ...(results.has(call.id) && { result: results.get(call.id)! }) })
 
   const index = (groups: Map<Subject, Set<Subject>>, key: Subject, subject: Subject) => {
     const group = groups.get(key)
@@ -89,6 +93,12 @@ export function createMemoryStore(): Store {
       sightings.delete(subject)
       touches.delete(subject)
       for (const [id, outcome] of outcomes) if (outcome.subject === subject) outcomes.delete(id)
+      for (const [id, call] of calls) {
+        if (call.subject === subject) {
+          calls.delete(id)
+          results.delete(id)
+        } else if (call.visitor === subject) delete call.visitor
+      }
       assign(subject, undefined)
       for (const other of separated.get(subject) ?? []) unindex(separated, other, subject)
       separated.delete(subject)
@@ -305,6 +315,39 @@ export function createMemoryStore(): Store {
     async outcomeOf(transactionId) {
       const found = outcomes.get(transactionId)
       return found && { ...found }
+    },
+
+    async removeOutcome(transactionId) {
+      outcomes.delete(transactionId)
+    },
+
+    async setCall(call) {
+      calls.set(call.id, structuredClone(call))
+    },
+
+    async setCallResult(id, result) {
+      results.set(id, { ...result })
+    },
+
+    async callOf(id) {
+      const call = calls.get(id)
+      return call && withResult(call)
+    },
+
+    async callResultOf(id) {
+      const result = results.get(id)
+      return result && { ...result }
+    },
+
+    async callsBetween(from, to) {
+      const found = [...calls.values()].filter((call) => call.at >= from && call.at < to)
+      return found.sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1)).map(withResult)
+    },
+
+    async pruneCallResults(before) {
+      let gone = 0
+      for (const [id, result] of results) if (!calls.has(id) && result.recorded < before) gone += Number(results.delete(id))
+      return gone
     },
 
     async outcomesBetween(from, to) {

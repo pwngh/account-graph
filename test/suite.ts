@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { after, describe, test } from 'node:test'
-import { brokenAt, createGraph, defaultPolicy, dialed, email, fit, hashPhone, policyFrom, recordCall } from '../src/index.ts'
+import { brokenAt, callState, createGraph, defaultPolicy, dialed, email, fit, hashPhone, policyFrom, recordCall, recordCallResult } from '../src/index.ts'
 import type { Change, GraphOptions, Observation, Policy, Store } from '../src/index.ts'
 
 export interface Opened {
@@ -389,18 +389,18 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
         ['partner.example', '', ''],
       ])
       assert.deepEqual(line('google', '111'), {
-        source: 'google', campaignId: '111', campaign: 'Spring sale', cost: 60.3, clicks: 42, impressions: 1300, visits: 1,
+        source: 'google', campaignId: '111', campaign: 'Spring sale', cost: 60.3, clicks: 42, impressions: 1300, visits: 1, missed: 0,
         stages: { inquiry: { count: 1, value: 5 }, enrolled: { count: 1, value: 200 } }, outcomes: 2, value: 205,
       })
       // The Meta touch named its campaign only by name, in another case, and its source by an alias.
       assert.deepEqual(line('meta', '777'), {
-        source: 'meta', campaignId: '777', campaign: 'Retarget', cost: 15, clicks: 9, impressions: 0, visits: 1,
+        source: 'meta', campaignId: '777', campaign: 'Retarget', cost: 15, clicks: 9, impressions: 0, visits: 1, missed: 0,
         stages: { enrolled: { count: 1, value: 150.5 } }, outcomes: 1, value: 150.5,
       })
       assert.equal(line('google', '222')!.cost, 6)
       assert.deepEqual(line('(none)', '')!.stages, { enrolled: { count: 1, value: 200 } })
       assert.deepEqual(report.total, {
-        cost: 81.3, clicks: 51, impressions: 1300, visits: 3,
+        cost: 81.3, clicks: 51, impressions: 1300, visits: 3, missed: 0,
         stages: { inquiry: { count: 2, value: 10 }, enrolled: { count: 3, value: 550.5 } }, outcomes: 5, value: 560.5,
       })
       assert.deepEqual(report.currencies, ['USD'])
@@ -445,7 +445,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await graph.touch({ subject: 'visitor:a', at: T0, gclid: 'G-a', campaignId: '111' })
       await graph.observe({ subject: 'visitor:a', identifiers: ['device:a', dialed('+1 555 123 0001', T0 + MINUTE)], at: T0 + MINUTE, event: 'phone_click' })
       const tied = await recordCall(graph, { id: 'CA1', from: '555-867-5309', to: '+15551230001', at: T0 + MINUTE + 20_000, duration: 95 }, { numbers })
-      assert.deepEqual(tied, { subject: caller('+15558675309'), flags: [], counted: true, visitor: 'visitor:a', duplicate: false })
+      assert.deepEqual(tied, { subject: caller('+15558675309'), flags: [], counted: true, state: 'unknown', visitor: 'visitor:a', duplicate: false })
       assert.deepEqual(await members(graph, 'visitor:a'), [caller('+15558675309'), 'visitor:a'].sort())
       const credited = (await graph.attribute(tied.subject, { at: T0 + 2 * MINUTE })).credited!
       assert.deepEqual([credited.gclid, credited.subject], ['G-a', 'visitor:a'])
@@ -453,7 +453,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       // The provider reports the same call again: nothing is written twice.
       const sightings = (await graph.counts()).sightings
       assert.deepEqual(await recordCall(graph, { id: 'CA1', from: '555-867-5309', to: '+15551230001', at: T0 + MINUTE + 20_000, duration: 95 }, { numbers }), {
-        subject: tied.subject, flags: [], counted: false, duplicate: true,
+        subject: tied.subject, flags: [], counted: false, state: 'unknown', duplicate: true,
       })
       assert.equal((await graph.counts()).sightings, sightings)
 
@@ -534,6 +534,76 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       // One tracking number written wrong does not stop calls to the others.
       const mistyped = await recordCall(graph, { id: 'CA13', from: '+15550100013', to: '+15551230002', at: T0 + 11 * HOUR, duration: 60 }, { numbers: { 'not a number': { source: 'x' }, ...numbers } })
       assert.equal((await graph.attribute(mistyped.subject, { at: T0 + 11 * HOUR })).credited!.campaign, 'postcard')
+    })
+
+    test('a caller who waits in a queue and hangs up is not an answered call', async () => {
+      const clock = { now: T0 }
+      const { graph } = await fresh(undefined, { now: () => clock.now })
+      const options = { results: 'expected' as const, now: () => clock.now, numbers: { '+15550100001': { source: 'google', campaignId: '111' } } }
+      const call = (id: string, more: object = {}) => ({ id, from: '+15550100099', to: '+15550100001', at: T0, duration: 45, ...more })
+      const count = async () => (await graph.report({ from: '2023-11-14', to: '2023-11-14' })).total
+      // The phone system picked up, and the caller listened to music for 45 seconds. Nothing says a person spoke, so nothing is counted.
+      const waiting = await recordCall(graph, call('Q1'), options)
+      assert.deepEqual([waiting.state, waiting.counted], ['waiting', false])
+      assert.deepEqual((await count()).stages, {})
+      // Past the wait it reads as unknown, and is still not counted. A result settles it even then.
+      clock.now = T0 + 45_000 + 30 * 60_000
+      assert.equal(callState((await graph.keptCall('Q1'))!, clock.now - 1, options), 'waiting')
+      assert.equal(callState((await graph.keptCall('Q1'))!, clock.now, options), 'unknown')
+      assert.deepEqual(await recordCallResult(graph, { id: 'Q1', answered: false, waited: 45 }, options), { state: 'missed', counted: false })
+      const missed = await count()
+      assert.deepEqual([missed.stages, missed.missed], [{}, 1])
+      // It is filed under the number it rang, like any call: missed, credited, and never an outcome.
+      assert.deepEqual((await graph.report({ from: '2023-11-14', to: '2023-11-14' })).rows.map((row) => [row.source, row.campaignId, row.missed, row.outcomes]), [['google', '111', 1, 0]])
+
+      // A result may come before its call, and come again: it is taken once.
+      assert.equal(await recordCallResult(graph, { id: 'Q2', answered: true, waited: 8 }, options), undefined)
+      const answered = await recordCall(graph, call('Q2', { at: T0 + 1000, duration: 120 }), options)
+      assert.deepEqual([answered.state, answered.counted], ['answered', true])
+      for (let i = 0; i < 2; i++) assert.deepEqual(await recordCallResult(graph, { id: 'Q2', answered: true, waited: 8 }, options), { state: 'answered', counted: true })
+      assert.deepEqual((await count()).stages, { call: { count: 1, value: 0 } })
+      // How long the caller waited may be known when nothing says whether they were answered. It is kept, and it answers nothing.
+      const waited = await recordCall(graph, call('Q3', { at: T0 + 2000, waited: 20 }), options)
+      assert.deepEqual([waited.state, waited.counted, (await graph.callResult('Q3'))!.waited], ['waiting', false, 20])
+      assert.deepEqual(await recordCallResult(graph, { id: 'Q3', answered: false }, options), { state: 'missed', counted: false })
+      assert.equal((await graph.callResult('Q3'))!.waited, 20)
+      const mail = await recordCall(graph, call('Q4', { at: T0 + 3000, duration: 60, answered: false, voicemail: true }), options)
+      assert.deepEqual([mail.state, mail.counted], ['voicemail', false])
+      // A report of the call that carries a result settles it as well.
+      await recordCall(graph, call('Q5', { at: T0 + 4000 }), options)
+      const again = await recordCall(graph, call('Q5', { at: T0 + 4000, answered: true }), options)
+      assert.deepEqual([again.duplicate, again.state, again.counted], [true, 'answered', true])
+      assert.equal((await count()).stages.call!.count, 2)
+
+      // With no results expected, a call counts by its length as ever. A result that says otherwise takes it back, and may give it back.
+      const plain = await recordCall(graph, call('P1', { at: T0 + 5000 }), { now: () => clock.now })
+      assert.deepEqual([plain.state, plain.counted], ['unknown', true])
+      assert.deepEqual(await recordCallResult(graph, { id: 'P1', answered: false }, { now: () => clock.now }), { state: 'missed', counted: false })
+      assert.deepEqual([(await count()).stages.call!.count, (await count()).missed], [2, 4])
+      assert.equal((await recordCallResult(graph, { id: 'P1', answered: true }))!.counted, true)
+      assert.deepEqual([(await count()).stages.call!.count, (await count()).missed], [3, 3])
+
+      // A result and its call arriving at once, in both orders: however they cross, the call ends up counted once.
+      await Promise.all(Array.from({ length: 12 }, (_, i) => [() => recordCall(graph, call(`R${i}`, { at: T0 + 6000 + i, from: `+155501001${String(i).padStart(2, '0')}` }), options), () => recordCallResult(graph, { id: `R${i}`, answered: i % 2 === 0 }, options)]).flat().map((each) => each()))
+      for (let i = 0; i < 12; i++) assert.equal(Boolean(await graph.outcomeOf(`call:R${i}`)), i % 2 === 0, `R${i}`)
+
+      for (const bad of [{ id: 'X', answered: 'yes' }, { id: 'X' }, { id: 'bad id', answered: true }, { id: 'X', answered: true, voicemail: true }, { id: 'X', answered: false, waited: -1 }]) await assert.rejects(recordCallResult(graph, bad as never, options), TypeError)
+      await assert.rejects(recordCall(graph, call('X', { direction: 'outbound' }) as never, options), TypeError)
+      assert.equal(await graph.callResult('X'), undefined)
+
+      // Forgetting the caller deletes their calls and results. Forgetting a visitor leaves the call without them.
+      await graph.observe({ subject: 'visitor:t', identifiers: ['device:t', dialed('+15550100001', T0 + DAY)], at: T0 + DAY, event: 'phone_click' })
+      const tapped = await recordCall(graph, call('V1', { at: T0 + DAY + 5000, from: '+15550100050', answered: false }), options)
+      assert.equal((await graph.keptCall('V1'))!.visitor, 'visitor:t')
+      await graph.forget('visitor:t')
+      assert.equal('visitor' in (await graph.keptCall('V1'))!, false)
+      await graph.forget(tapped.subject)
+      assert.deepEqual([await graph.keptCall('V1'), await graph.callResult('V1')], [undefined, undefined])
+      // Pruning deletes results whose call never came, and keeps the rest.
+      await recordCallResult(graph, { id: 'never', answered: true }, options)
+      clock.now += DAY
+      await graph.prune(clock.now)
+      assert.deepEqual([await graph.callResult('never'), (await graph.callResult('Q1'))!.answered], [undefined, false])
     })
 
     test('the review queue pages, subjects are found by prefix, and recent changes are listed', async () => {
@@ -1113,7 +1183,13 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
         else if (roll < 0.97) {
           const a = pick(40)
           await graph.separate(`account:${a}`, `account:${(a + 1 + pick(39)) % 40}`, next() < 0.7)
-        } else if (roll < 0.985) {
+        } else if (roll < 0.98) {
+          // A call, its result, or both, in whatever order, with results expected.
+          const id = `F${pick(30)}`
+          const call = { id, from: `+1555010${String(pick(20)).padStart(4, '0')}`, to: '+15550100001', at: T0 + pick(200) * DAY, duration: pick(120) }
+          if (next() < 0.6) await recordCall(graph, call, { results: 'expected' })
+          if (next() < 0.6) await recordCallResult(graph, { id, answered: next() < 0.5, waited: pick(40) }, { results: 'expected' })
+        } else if (roll < 0.99) {
           // Pairs from a system, separations and withdrawals together, some of them named twice.
           const pairs = Array.from({ length: 1 + pick(6) }, () => {
             const a = pick(40)
@@ -1128,6 +1204,12 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
         assert.deepEqual(await graph.verify(), [], `seed ${seed}, step ${step}`)
       }
       assert.equal((await graph.audit()).sound, true)
+      // Every call counts exactly when a person answered it and it was long enough.
+      for (let n = 0; n < 30; n++) {
+        const call = await graph.keptCall(`F${n}`)
+        const counts = call?.result?.answered === true && call.duration! >= 30
+        assert.equal(Boolean(await graph.outcomeOf(`call:F${n}`)), counts, `F${n}`)
+      }
     })
   })
 }

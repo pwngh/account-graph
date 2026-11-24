@@ -1,6 +1,6 @@
 import type { Job, JobState, OutboxStore } from './outbox.ts'
 import type { Store, Tx } from './store.ts'
-import type { Consent, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, Labels, Moved, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, Consent, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Moved, Sighting, Subject, Touch } from './types.ts'
 
 /** The part of a `pg` client the store calls. */
 export interface Queryable {
@@ -33,6 +33,8 @@ const STANDING = 'at desc, recorded_at desc, ad_user_data, ad_personalization, i
 export function createPostgresStore(pool: Pool, schema = 'account_graph'): PostgresStore {
   if (!/^[a-z_][a-z0-9_]*$/.test(schema)) throw new TypeError(`Schema "${schema}" must be a plain lowercase name`)
   const t = (table: string) => `${schema}.${table}`
+
+  const callRows = `select c.*, r.answered, r.voicemail, r.waited, r.recorded_at as result_at from ${t('call')} c left join ${t('call_result')} r on r.id = c.id`
 
   const bind = (db: Queryable): Tx => ({
     async addSightings(rows) {
@@ -95,6 +97,8 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       await db.query(`delete from ${t('sighting')} where subject = $1`, [subject])
       await db.query(`delete from ${t('touch')} where subject = $1`, [subject])
       await db.query(`delete from ${t('outcome')} where subject = $1`, [subject])
+      await db.query(`with gone as (delete from ${t('call')} where subject = $1 returning id) delete from ${t('call_result')} where id in (select id from gone)`, [subject])
+      await db.query(`update ${t('call')} set visitor = null where visitor = $1`, [subject])
       await db.query(`delete from ${t('subject')} where id = $1`, [subject])
       await db.query(`delete from ${t('apart')} where a = $1 or b = $1`, [subject])
       await db.query(`delete from ${t('flow')} where source = $1 or target = $1`, [subject])
@@ -336,6 +340,50 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       return rows[0] && toCounted(rows[0])
     },
 
+    async removeOutcome(transactionId) {
+      await db.query(`delete from ${t('outcome')} where transaction_id = $1`, [transactionId])
+    },
+
+    async setCall({ id, subject, at, to, duration, flags, visitor, recorded }) {
+      await db.query(
+        `insert into ${t('call')} (id, subject, at, dialed, duration, flags, visitor, recorded_at) values ($1, $2, $3, $4, $5, $6, $7, $8)
+         on conflict (id) do update set subject = excluded.subject, at = excluded.at, dialed = excluded.dialed, duration = excluded.duration,
+           flags = excluded.flags, visitor = excluded.visitor, recorded_at = excluded.recorded_at`,
+        [id, subject, at, to, duration ?? null, flags, visitor ?? null, recorded],
+      )
+    },
+
+    async setCallResult(id, { answered, voicemail, waited, recorded }) {
+      await db.query(
+        `insert into ${t('call_result')} (id, answered, voicemail, waited, recorded_at) values ($1, $2, $3, $4, $5)
+         on conflict (id) do update set answered = excluded.answered, voicemail = excluded.voicemail, waited = excluded.waited, recorded_at = excluded.recorded_at`,
+        [id, answered ?? null, voicemail ?? null, waited ?? null, recorded],
+      )
+    },
+
+    async callOf(id) {
+      const { rows } = await db.query(`${callRows} where c.id = $1`, [id])
+      return rows[0] && toCall(rows[0])
+    },
+
+    async callResultOf(id) {
+      const { rows } = await db.query(`select answered, voicemail, waited, recorded_at as result_at from ${t('call_result')} where id = $1`, [id])
+      return rows[0] && toResult(rows[0])
+    },
+
+    async callsBetween(from, to) {
+      const { rows } = await db.query(`${callRows} where c.at >= $1 and c.at < $2 order by c.at, c.id collate "C"`, [from, to])
+      return rows.map(toCall)
+    },
+
+    async pruneCallResults(before) {
+      const { rows } = await db.query(
+        `with gone as (delete from ${t('call_result')} r where recorded_at < $1 and not exists (select 1 from ${t('call')} c where c.id = r.id) returning 1) select count(*)::int as n from gone`,
+        [before],
+      )
+      return rows[0].n as number
+    },
+
     async outcomesBetween(from, to) {
       const { rows } = await db.query(`select * from ${t('outcome')} where at >= $1 and at < $2 order by at, transaction_id collate "C"`, [from, to])
       return rows.map(toCounted)
@@ -460,7 +508,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
   }
 
   // Each outbox call is one statement, so it needs neither the write lock nor a transaction.
-  const toJob = (row: any): Job => ({ ...row.job, state: row.state, due: Number(row.due), attempts: row.attempts })
+  const toJob = (row: any): Job => ({ ...row.job, state: row.state, due: Number(row.due), attempts: row.attempts, rev: Number(row.rev) })
   const outbox: OutboxStore = {
     async add(job) {
       const { rows } = await pool.query(
@@ -471,11 +519,12 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
          select * from added union all select * from ${t('conversion')} where transaction_id = $1 and target = $2 limit 1`,
         [job.transactionId, job.target, job.state, job.due, job.attempts, job],
       )
-      return toJob(rows[0])
+      // Another call may have added it in the same moment, too late for the statement above to see. A new one sees it.
+      return toJob(rows[0] ?? (await pool.query(`select * from ${t('conversion')} where transaction_id = $1 and target = $2`, [job.transactionId, job.target])).rows[0])
     },
     async claim(now, lease, limit) {
       const { rows } = await pool.query(
-        `update ${t('conversion')} c set attempts = c.attempts + 1, due = $1::bigint + $2::bigint
+        `update ${t('conversion')} c set attempts = c.attempts + 1, due = $1::bigint + $2::bigint, rev = c.rev + 1
          where (c.transaction_id, c.target) in (
            select transaction_id, target from ${t('conversion')}
            where state = 'pending' and due <= $1 order by due limit $3 for update skip locked
@@ -485,11 +534,21 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       )
       return rows.map(toJob).sort((x, y) => (x.transactionId < y.transactionId ? -1 : x.transactionId > y.transactionId ? 1 : x.target < y.target ? -1 : 1))
     },
-    async save(job) {
-      await pool.query(
-        `update ${t('conversion')} set state = $3, due = $4, attempts = $5, job = $6 where transaction_id = $1 and target = $2`,
-        [job.transactionId, job.target, job.state, job.due, job.attempts, job],
+    async swap(before, after) {
+      const { rows } = await pool.query(
+        `update ${t('conversion')} set state = $3, due = $4, attempts = $5, job = $6, rev = rev + 1 where transaction_id = $1 and target = $2 and rev = $7 returning 1`,
+        [after.transactionId, after.target, after.state, after.due, after.attempts, after, before.rev],
       )
+      return rows.length > 0
+    },
+    async standing(jobs) {
+      const { rows } = await pool.query(
+        `select c.transaction_id, c.target from unnest($1::text[], $2::text[], $3::bigint[]) as j (id, target, rev)
+         join ${t('conversion')} c on c.transaction_id = j.id and c.target = j.target and c.rev = j.rev`,
+        [jobs.map((job) => job.transactionId), jobs.map((job) => job.target), jobs.map((job) => job.rev)],
+      )
+      const found = new Set(rows.map((row) => `${row.transaction_id}\u0000${row.target}`))
+      return jobs.filter((job) => found.has(`${job.transactionId}\u0000${job.target}`))
     },
     async get(transactionId) {
       const { rows } = await pool.query(`select * from ${t('conversion')} where transaction_id = $1 order by target`, [transactionId])
@@ -500,7 +559,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       return rows.map(toJob)
     },
     async counts() {
-      const out: Record<JobState, number> = { pending: 0, sent: 0, skipped: 0, failed: 0 }
+      const out: Record<JobState, number> = { held: 0, pending: 0, sent: 0, skipped: 0, failed: 0 }
       const { rows } = await pool.query(`select state, count(*)::int as n from ${t('conversion')} group by state`)
       for (const row of rows) out[row.state as JobState] = row.n
       return out
@@ -549,6 +608,24 @@ function toSighting(row: any): Sighting {
 
 function toCounted(row: any): Counted {
   return { transactionId: row.transaction_id, subject: row.subject, at: Number(row.at), stage: row.stage, value: row.value, currency: row.currency }
+}
+
+function toResult(row: any): CallResult {
+  return { ...(row.answered !== null && { answered: row.answered }), ...(row.voicemail !== null && { voicemail: row.voicemail }), ...(row.waited !== null && { waited: row.waited }), recorded: Number(row.result_at) }
+}
+
+function toCall(row: any): KeptCall {
+  return {
+    id: row.id,
+    subject: row.subject,
+    at: Number(row.at),
+    to: row.dialed,
+    ...(row.duration !== null && { duration: row.duration }),
+    flags: row.flags,
+    ...(row.visitor !== null && { visitor: row.visitor }),
+    recorded: Number(row.recorded_at),
+    ...(row.result_at !== null && { result: toResult(row) }),
+  }
 }
 
 function toDecision(row: any): Decision {
@@ -681,6 +758,32 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
             insert into ${schema}.consent_log (subject, at, ad_user_data, ad_personalization, source, recorded_at)
               select subject, 0, ad_user_data, ad_personalization, 'before history', (extract(epoch from now()) * 1000)::bigint from ${schema}.consent;
             drop table ${schema}.consent;`,
+    },
+    {
+      id: 9,
+      name: 'calls and their results',
+      // A result is kept apart from its call, because either may arrive first. Conversions count their changes, so an old pass undoes no newer one.
+      sql: `create table if not exists ${schema}.call (
+              id text primary key,
+              subject text not null,
+              at bigint not null,
+              dialed text not null,
+              duration float8,
+              flags text[] not null,
+              visitor text,
+              recorded_at bigint not null
+            );
+            create index if not exists call_at on ${schema}.call (at);
+            create index if not exists call_subject on ${schema}.call (subject);
+            create index if not exists call_visitor on ${schema}.call (visitor);
+            alter table ${schema}.conversion add column if not exists rev bigint not null default 0;
+            create table if not exists ${schema}.call_result (
+              id text primary key,
+              answered boolean,
+              voicemail boolean,
+              waited float8,
+              recorded_at bigint not null
+            );`,
     },
   ]
 }
