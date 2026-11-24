@@ -36,6 +36,29 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       return { graph, ops: make(), make, clock, posted, hook, errors, store: next.store }
     }
 
+    test('conversions that wait past their time are said once a day while it lasts', async () => {
+      const { make, clock, posted, store } = await fresh()
+      const ops = make({ outbox: store.outbox, lateHours: 6 })
+      const job = (transactionId: string, due: number, state: 'pending' | 'held' = 'pending') => store.outbox.add({ transactionId, target: 'google', subject: 'contact:1', at: T0, action: 'x', keys: {}, state, attempts: 0, due })
+      assert.equal(await store.outbox.oldestDue(), undefined)
+      await job('held', T0 - 100 * HOUR, 'held')
+      await job('later', T0 + 2 * HOUR)
+      await job('first', T0)
+      assert.equal(await store.outbox.oldestDue(), T0)
+      clock.now = T0 + 6 * HOUR - 1
+      await ops.check()
+      assert.deepEqual(posted, [])
+      clock.now += 1
+      for (let i = 0; i < 3; i++) await ops.check()
+      assert.deepEqual(posted, ['account-graph: conversions are waiting to be sent. The oldest should have gone Nov 14, 2023, 10:13 PM (UTC).'])
+      clock.now += 24 * HOUR
+      await ops.check()
+      assert.equal(posted.length, 2)
+      clock.now += 24 * HOUR
+      await make({ outbox: store.outbox }).check()
+      assert.equal(posted.length, 2)
+    })
+
     test('a feed that goes quiet is said once, and once more when it goes quiet again', async () => {
       const { graph, ops, make, clock, posted } = await fresh({ quiet: { touches: 6, costs: 48 }, timeZone: 'America/New_York' })
       const touch = () => graph.touch({ subject: 'visitor:1', at: clock.now, gclid: 'G' })

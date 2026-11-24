@@ -220,6 +220,7 @@ Set `ALERT_WEBHOOK` to a Slack incoming webhook, or anything that takes `{"text"
 | The outbox cannot run | Why, such as the database not answering. Nothing is being sent while this lasts. |
 | Campaign costs cannot be read | Which platform and why. The report's costs go stale until it is fixed. |
 | A feed has gone quiet | Which one, and when it was last heard from. Once for each silence. |
+| Conversions have waited `LATE_HOURS` past their time | When the oldest should have gone. Once a day while it lasts. |
 | A missed caller from a paid arrival has waited `RETURN_HOURS` | Where they came from, when, and how often they were rung back. Once for each wait, never repeated. |
 
 The first three kinds are sent at most once in ten minutes each. An alert that cannot be delivered is logged, kept, shown on the Health view, and tried again every five minutes until it arrives. It never stops the work it was reporting on. With no webhook set, what would have been said is kept and shown there.
@@ -285,6 +286,7 @@ On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes i
 | `AUDIT_HEAD_HOURS` | `0` | Post the newest decision's hash to `ALERT_WEBHOOK` at start and every so many hours, at least one. `0` is never. |
 | `STAFF_NETWORKS` | none | Addresses and ranges whose visits are dropped, separated by commas: `192.0.2.10,198.51.100.0/24`. |
 | `QUIET_TOUCHES_HOURS`, `QUIET_CALLS_HOURS`, `QUIET_RESULTS_HOURS`, `QUIET_COSTS_HOURS` | `0` | Hours of silence before a feed is said to be quiet. `0` is not watched. |
+| `LATE_HOURS` | `6` | Hours past its time before a conversion that waits to be sent is said to be late. `0` is never. |
 | `RETURN_HOURS` | `24` | Hours before a missed caller from a paid arrival is said to be waiting, and before the board says any missed caller has waited too long. `0` is never. |
 | `STAGES` | none | Your steps in order, as JSON, each with a `value`, `currency`, `action` and `wait`. See [the report](report.md#steps-and-what-each-is-worth). |
 | `LINK_SECRET` | none | Signs links that name a person, and the tokens that carry a visitor between your sites. At least 32 characters. |

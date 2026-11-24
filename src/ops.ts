@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { Alerter } from './alerts.ts'
 import { followUp } from './calls.ts'
 import type { Graph } from './graph.ts'
+import type { OutboxStore } from './outbox.ts'
 import { dayIn, paid, sourceOf } from './report.ts'
 
 /** What the graph is fed with. A feed's time is when its last record was written down. */
@@ -70,6 +71,9 @@ export interface OpsOptions {
   quiet?: Partial<Record<Feed, number>>
   /** After how many hours a missed caller from a paid arrival, not reached since, is said to be waiting. 0 is never. */
   returnHours?: number
+  /** Where what waits to be sent is kept, and after how many hours past its time it is said to be late. 0 is never. */
+  outbox?: Pick<OutboxStore, 'oldestDue'>
+  lateHours?: number
   /** The time zone times are written in. */
   timeZone?: string
   fetch?: typeof fetch
@@ -192,6 +196,11 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
         // Named after the last record, so one silence is said once and the next one again.
         await ops.once(`quiet:${feed}:${last ?? 'never'}`, `account-graph: no ${feed} for ${hours} ${hours === 1 ? 'hour' : 'hours'}. ${last === undefined ? 'None has ever been recorded.' : `The last was written down ${when(last)} (${timeZone}).`}`)
       }
+
+      const late = options.lateHours ?? 0
+      const due = late > 0 ? await options.outbox?.oldestDue() : undefined
+      // Once a day while it lasts: a backlog that drains slowly has a new oldest job at every look.
+      if (due !== undefined && at - due >= late * HOUR) await ops.once(`late:${dayIn(at, timeZone)}`, `account-graph: conversions are waiting to be sent. The oldest should have gone ${when(due)} (${timeZone}).`)
 
       const hours = options.returnHours ?? 0
       if (hours > 0) {

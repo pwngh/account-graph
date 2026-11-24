@@ -85,6 +85,7 @@
 - `board`, `GET /board` and the reviewer screen's Board view show people by the furthest step they reached, with missed calls nobody returned first.
 - A step in `STAGES` takes `wait`, the hours after which the board says a person has waited too long.
 - The Channels view has a Break down by selector; the Calls view shows tags.
+- `LATE_HOURS` (`OpsOptions.lateHours`) alerts once a day while conversions wait that long past their time; `OutboxStore.oldestDue` says since when.
 
 ### Changed
 

@@ -110,6 +110,7 @@ export function configFrom(env: Env) {
     auditHours: number('AUDIT_HEAD_HOURS', 0),
     quiet: { touches: number('QUIET_TOUCHES_HOURS', 0), calls: number('QUIET_CALLS_HOURS', 0), results: number('QUIET_RESULTS_HOURS', 0), costs: number('QUIET_COSTS_HOURS', 0) },
     returnHours: number('RETURN_HOURS', 24),
+    lateHours: number('LATE_HOURS', 6),
     stages: parsed('STAGES') as Ladder | undefined,
     policy: policy === undefined ? undefined : policyFrom(policy),
     staffNetworks: (env.STAFF_NETWORKS ?? '').split(',').map((each) => each.trim()).filter(Boolean),
@@ -257,6 +258,8 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
     ...(config.alertWebhook && { url: config.alertWebhook }),
     quiet: config.quiet,
     returnHours: config.returnHours,
+    outbox: store.outbox,
+    lateHours: config.lateHours,
     timeZone: config.timeZone,
     onError: (error) => log(`alert: ${String((error as Error)?.message ?? error)}`),
   })

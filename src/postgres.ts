@@ -635,6 +635,10 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       const { rows } = await pool.query(`select * from ${t('conversion')} where state = $1 order by due desc, transaction_id limit $2`, [state, limit])
       return rows.map(toJob)
     },
+    async oldestDue() {
+      const { rows } = await pool.query(`select min(due) as due from ${t('conversion')} where state = 'pending'`)
+      return rows[0].due === null ? undefined : Number(rows[0].due)
+    },
     async counts() {
       const out: Record<JobState, number> = { held: 0, pending: 0, sent: 0, skipped: 0, failed: 0 }
       const { rows } = await pool.query(`select state, count(*)::int as n from ${t('conversion')} group by state`)
