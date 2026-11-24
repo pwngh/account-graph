@@ -334,7 +334,28 @@ export function createMemoryStore(): Store {
     },
 
     async decisions() {
-      return decisions.map((decision) => ({ ...decision, about: [...decision.about] }))
+      return decisions.map(copied)
+    },
+
+    async decisionPage({ before = Infinity, limit, author }) {
+      const wanted = (decision: Decision) =>
+        decision.seq < before && (author === undefined || (author === 'people' ? !bySystem(decision) : author === 'system' ? bySystem(decision) : decision.by === author))
+      return decisions.filter(wanted).slice(-limit).reverse().map(copied)
+    },
+
+    async decisionsAbout(pairs) {
+      const wanted = new Set(pairs.map((pair) => pair.join('\u0000')))
+      return decisions.filter((decision) => ofPair(decision) && wanted.has(decision.about.join('\u0000'))).map(copied)
+    },
+
+    async pairsDecidedBySystems(times) {
+      const found = new Map<string, number>()
+      for (const decision of decisions) {
+        if (!ofPair(decision) || !bySystem(decision)) continue
+        const key = decision.about.join('\u0000')
+        found.set(key, (found.get(key) ?? 0) + 1)
+      }
+      return [...found].filter(([, count]) => count >= times).map(([key]) => key.split('\u0000') as [Subject, Subject])
     },
   }
 
@@ -347,6 +368,10 @@ export function createMemoryStore(): Store {
 
   return { write: (work) => queue((bound) => (writes += 1, work(bound))), read: queue, outbox: createMemoryOutbox() }
 }
+
+const copied = (decision: Decision): Decision => ({ ...decision, about: [...decision.about] })
+const bySystem = (decision: Decision) => decision.by?.startsWith('system:') ?? false
+const ofPair = (decision: Decision) => decision.action === 'join' || decision.action === 'separate' || decision.action === 'rejoin'
 
 function copy(edge: Edge): Edge {
   return { ...edge }

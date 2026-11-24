@@ -58,7 +58,7 @@ A token goes in the `authorization` header as `Bearer …`. There are two.
 
 | Route | What it does |
 | --- | --- |
-| `GET /subject?subject=` | Everything about one subject: cluster, ties, separations, flows, rings, newest sightings. |
+| `GET /subject?subject=` | Everything about one subject: cluster, ties, separations and who decided them, flows, rings, newest sightings. |
 | `GET /cluster?subject=` | The cluster a subject is in: `{ id, members, oversized }`, or `null`. |
 | `GET /links?subject=` | Every subject tied to this one, with score and reasons. |
 | `GET /history?subject=` | Every sighting of the subject, oldest first. |
@@ -70,7 +70,8 @@ A token goes in the `authorization` header as `Bearer …`. There are two.
 | `GET /flows?subject=` | Everyone the subject exchanged value with, and the identity tie to each. |
 | `GET /collusion?subject=` | The counterparties tied by identity, with three or more flows. |
 | `GET /rings?subject=` | Value that left the subject and came back through others. |
-| `GET /decisions` | The record of reviewer decisions, oldest first. |
+| `GET /decisions?limit=&before=&author=` | The record of decisions, newest first, 50 at a time: `{ decisions, next, total }`. Pass `next` as `before` for the page after. `author` is `people`, `system`, or one name. |
+| `GET /disputes` | Pairs whose reports from systems have switched between kept apart and joined (or withdrawn) three times or more. |
 | `GET /audit` | Whether that record is whole: `{ sound }`, with `brokenAt` when it is not. |
 | `GET /report?from=&to=&tz=` | What each campaign cost and brought in between two days, with `steps` naming the steps in your order and `timeZone` the zone its days are in. See [the report](report.md). |
 | `POST /separate` | `{ a, b, separated?, by?, reason? }`. Keeps two subjects apart, or with `separated: false` allows them again. |
@@ -78,13 +79,15 @@ A token goes in the `authorization` header as `Bearer …`. There are two.
 | `POST /ignore` | `{ identifier, ignored?, by?, reason? }`. Stops linking through one identifier, or resumes. |
 | `POST /forget` | `{ subject, by?, reason? }`. Deletes a subject and everything recorded about it. |
 
-The four `POST` routes answer with the subjects whose cluster moved.
+The four `POST` routes answer with the subjects whose cluster moved. With the service token, `/separate` and `/join` also take a list from one of your systems: see [decisions from your own systems](deciding.md#decisions-from-your-own-systems). A name that starts with `system:` is refused with the reviewer token.
 
 ## Service token only
 
 | Route | What it does |
 | --- | --- |
 | `POST /identify` | Who a subject is, from plain facts: `{ subject, device?, email?, phone?, ip?, address?, identifiers?, at?, event? }`. Answers `{ changes, identifiers, notes }`. See [identify](identify.md). |
+| `POST /separate`, list | `{ source, pairs: [{ a, b, separated?, reason? }], reason? }`, at most 1,000 pairs. One transaction, one decision each, by `system:<source>`. Answers `{ changes, recorded, already }`. |
+| `POST /join`, list | The same without `separated`: two records another system merged are one person here too. |
 | `POST /observe` | One observation, or a list: `{ subject, identifiers, at, event? }`. Answers with the cluster changes. |
 | `POST /touch` | A marketing touch: `{ subject, at, gclid?, source?, medium?, campaign?, campaignId?, … }`. |
 | `POST /consent` | `{ subject, consent: { adUserData, adPersonalization } }`. |
