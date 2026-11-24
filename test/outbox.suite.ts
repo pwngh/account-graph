@@ -619,6 +619,31 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       await slow.withdraw('enroll-3')
       await slow.run()
       assert.deepEqual(values(), [['enroll-3', 200], ['enroll-3', 0]])
+
+      // A nothing on its way while the value is given back and sent by another worker: whichever arrived last, the value is sent once more.
+      await slow.release(outcome(3))
+      await slow.run()
+      await slow.withdraw('enroll-3')
+      during = async () => {
+        during = undefined
+        await slow.release(outcome(3))
+        await outbox.run()
+      }
+      await slow.run()
+      await slow.run()
+      assert.deepEqual(values().at(-1), ['enroll-3', 200])
+      assert.deepEqual(values().filter(([id]) => id === 'enroll-3').map(([, value]) => value), [200, 0, 200, 200, 0, 200])
+
+      // Taken back and given back in the same moment, a job claimed again is not the one the first worker holds.
+      await enroll(graph, 4)
+      await slow.record(outcome(4))
+      const [first] = await store.outbox.claim(clock.now, 60_000, 10)
+      await slow.withdraw('enroll-4')
+      await slow.release(outcome(4))
+      const [second] = await store.outbox.claim(clock.now, 60_000, 10)
+      assert.deepEqual([first!.state, first!.attempts, first!.due], [second!.state, second!.attempts, second!.due])
+      assert.deepEqual(await store.outbox.standing([first!]), [])
+      assert.equal(await store.outbox.swap(first!, { ...first!, state: 'failed' }), false)
     })
 
     test('a platform that keeps what it was sent says so, and one taken back on its way is retracted', async () => {

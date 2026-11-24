@@ -97,7 +97,7 @@ export interface Graph {
   outcomeOf(transactionId: string): Promise<Counted | undefined>
   /** Keeps a call. `recordCall` does this. */
   keepCall(call: Omit<KeptCall, 'result' | 'recorded'>): Promise<void>
-  /** Keeps how a call went, which may be known before or after the call itself. */
+  /** Keeps how a call went, which may be known before or after the call itself. What a report leaves out stays as an earlier one said it. */
   keepCallResult(id: string, result: Omit<CallResult, 'recorded'>): Promise<void>
   /** A kept call with its result, or undefined for an id no call was kept for. */
   keptCall(id: string): Promise<KeptCall | undefined>
@@ -592,7 +592,11 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     async keepCallResult(id, result) {
-      await store.write((tx) => tx.setCallResult(id, { ...result, recorded: now() }))
+      await store.write(async (tx) => {
+        // What this report does not say stays as it was said before. A person who answered after all did not go to voicemail.
+        const { voicemail, ...before } = (await tx.callResultOf(id)) ?? {}
+        await tx.setCallResult(id, { ...before, ...(voicemail !== undefined && !result.answered && { voicemail }), ...result, recorded: now() })
+      })
     },
 
     keptCall(id) {

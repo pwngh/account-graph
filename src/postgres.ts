@@ -508,7 +508,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
   }
 
   // Each outbox call is one statement, so it needs neither the write lock nor a transaction.
-  const toJob = (row: any): Job => ({ ...row.job, state: row.state, due: Number(row.due), attempts: row.attempts })
+  const toJob = (row: any): Job => ({ ...row.job, state: row.state, due: Number(row.due), attempts: row.attempts, rev: Number(row.rev) })
   const outbox: OutboxStore = {
     async add(job) {
       const { rows } = await pool.query(
@@ -523,7 +523,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
     },
     async claim(now, lease, limit) {
       const { rows } = await pool.query(
-        `update ${t('conversion')} c set attempts = c.attempts + 1, due = $1::bigint + $2::bigint
+        `update ${t('conversion')} c set attempts = c.attempts + 1, due = $1::bigint + $2::bigint, rev = c.rev + 1
          where (c.transaction_id, c.target) in (
            select transaction_id, target from ${t('conversion')}
            where state = 'pending' and due <= $1 order by due limit $3 for update skip locked
@@ -535,17 +535,16 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
     },
     async swap(before, after) {
       const { rows } = await pool.query(
-        `update ${t('conversion')} set state = $3, due = $4, attempts = $5, job = $6
-         where transaction_id = $1 and target = $2 and state = $7 and due = $8 and attempts = $9 returning 1`,
-        [after.transactionId, after.target, after.state, after.due, after.attempts, after, before.state, before.due, before.attempts],
+        `update ${t('conversion')} set state = $3, due = $4, attempts = $5, job = $6, rev = rev + 1 where transaction_id = $1 and target = $2 and rev = $7 returning 1`,
+        [after.transactionId, after.target, after.state, after.due, after.attempts, after, before.rev],
       )
       return rows.length > 0
     },
     async standing(jobs) {
       const { rows } = await pool.query(
-        `select c.transaction_id, c.target from unnest($1::text[], $2::text[], $3::text[], $4::bigint[], $5::int[]) as j (id, target, state, due, attempts)
-         join ${t('conversion')} c on c.transaction_id = j.id and c.target = j.target and c.state = j.state and c.due = j.due and c.attempts = j.attempts`,
-        [jobs.map((job) => job.transactionId), jobs.map((job) => job.target), jobs.map((job) => job.state), jobs.map((job) => job.due), jobs.map((job) => job.attempts)],
+        `select c.transaction_id, c.target from unnest($1::text[], $2::text[], $3::bigint[]) as j (id, target, rev)
+         join ${t('conversion')} c on c.transaction_id = j.id and c.target = j.target and c.rev = j.rev`,
+        [jobs.map((job) => job.transactionId), jobs.map((job) => job.target), jobs.map((job) => job.rev)],
       )
       const found = new Set(rows.map((row) => `${row.transaction_id}\u0000${row.target}`))
       return jobs.filter((job) => found.has(`${job.transactionId}\u0000${job.target}`))
@@ -762,7 +761,7 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
     {
       id: 9,
       name: 'calls and their results',
-      // A result is kept apart from its call, because either may arrive first.
+      // A result is kept apart from its call, because either may arrive first. Conversions count their changes, so an old pass undoes no newer one.
       sql: `create table if not exists ${schema}.call (
               id text primary key,
               subject text not null,
@@ -776,6 +775,7 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
             create index if not exists call_at on ${schema}.call (at);
             create index if not exists call_subject on ${schema}.call (subject);
             create index if not exists call_visitor on ${schema}.call (visitor);
+            alter table ${schema}.conversion add column if not exists rev bigint not null default 0;
             create table if not exists ${schema}.call_result (
               id text primary key,
               answered boolean,

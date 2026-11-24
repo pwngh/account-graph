@@ -71,7 +71,7 @@ export interface CallOptions {
   convert?: (outcome: Outcome) => Promise<unknown>
   /** Keeps the outcome of a call whose result is awaited. Defaults to nothing; pass the outbox's `hold`. */
   hold?: (outcome: Outcome) => Promise<unknown>
-  /** Counts the outcome of a call that was held or taken back. Defaults to `graph.outcome`; pass the outbox's `release`. */
+  /** Counts the outcome of a call that was held or taken back. Defaults to `graph.outcome`, which sends nothing; pass the outbox's `release` to send it too. */
   release?: (outcome: Outcome) => Promise<unknown>
   /** Takes back the outcome of a call that was not answered after all. Defaults to `graph.withdraw`; pass the outbox's `withdraw`. */
   withdraw?: (transactionId: string) => Promise<unknown>
@@ -158,7 +158,7 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
     const kept = await graph.keptCall(id)
     return { subject: before.subject, flags: [], counted: settled?.counted ?? false, state: kept ? callState(kept, (options.now ?? Date.now)(), options) : 'unknown', duplicate: true }
   }
-  if (result) await keepResult(graph, id, result)
+  if (result) await graph.keepCallResult(id, result)
 
   const flags: CallFlag[] = []
   if (!from) flags.push('blocked')
@@ -229,14 +229,6 @@ function resultIn(given: { answered?: unknown; voicemail?: unknown; waited?: unk
   return { ...(heard !== undefined && { answered: heard }), ...(voicemail !== undefined && { voicemail: voicemail as boolean }), ...(waited !== undefined && { waited: waited as number }) }
 }
 
-/** Keeps a result. What it does not say stays as it was said before. */
-async function keepResult(graph: Graph, id: string, result: Omit<CallResult, 'recorded'>): Promise<void> {
-  const { recorded: _, ...before } = (await graph.callResult(id)) ?? { recorded: 0 }
-  // A person who answered after all did not go to voicemail.
-  if (result.answered) delete before.voicemail
-  await graph.keepCallResult(id, { ...before, ...result })
-}
-
 /** Whether a call ended too soon to count. */
 function tooShort(call: { duration?: number }, options: CallOptions): boolean {
   return (call.duration ?? Infinity) < (options.minimumSeconds ?? 30)
@@ -267,8 +259,8 @@ async function settle(graph: Graph, id: string, options: CallOptions, phone?: st
     const outcome = outcomeOf(call, options, phone)
     // Each of these does nothing where it is already done, so one that was cut off half way is finished by the next.
     if (counts && options.release) await options.release(outcome)
-    // Without one, a result has no number to give, so it counts a call only where nothing has.
-    else if (counts && (phone !== undefined || !(await graph.outcomeOf(outcome.transactionId)))) await (options.convert ?? graph.outcome)(outcome)
+    // Without one, a result has no number to give, so it only counts the call.
+    else if (counts) await (phone !== undefined && options.convert ? options.convert : graph.outcome)(outcome)
     else if (answered === false) await (options.withdraw ?? graph.withdraw)(outcome.transactionId)
     // A result that came meanwhile is settled too.
     if ((await graph.callResult(id))?.answered === answered) return counts
@@ -277,7 +269,7 @@ async function settle(graph: Graph, id: string, options: CallOptions, phone?: st
 
 /** Keeps a result and settles its call by it. Resolves to undefined while the call itself has not been recorded. */
 async function tell(graph: Graph, id: string, result: Omit<CallResult, 'recorded'>, options: CallOptions): Promise<{ state: CallState; counted: boolean } | undefined> {
-  await keepResult(graph, id, result)
+  await graph.keepCallResult(id, result)
   const counted = await settle(graph, id, options)
   const kept = await graph.keptCall(id)
   return kept && { state: callState(kept, (options.now ?? Date.now)(), options), counted }

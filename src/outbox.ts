@@ -25,6 +25,8 @@ export interface Job {
   attempts: number
   /** The earliest time a worker may pick it up, in epoch milliseconds. */
   due: number
+  /** Counts every claim and change of the stored job. The store keeps it. */
+  rev?: number
   /** Why it was skipped, failed, or is waiting to retry. */
   note?: string
   /** The click that was sent, and how strongly the graph tied it to the subject. */
@@ -78,12 +80,12 @@ export interface OutboxStore {
    */
   claim(now: number, lease: number, limit: number): Promise<Job[]>
   /**
-   * Replaces `before` with `after`, unless the stored job's state, attempts
-   * or due time are no longer those of `before`. Resolves to whether it did,
-   * so nothing written from an old reading undoes a newer change.
+   * Replaces `before` with `after` and counts its `rev` up, unless the
+   * stored job's `rev` is no longer that of `before`. Resolves to whether it
+   * did, so nothing written from an old reading undoes a newer change.
    */
   swap(before: Job, after: Job): Promise<boolean>
-  /** Which of the given jobs are stored as given, by the same three. */
+  /** Which of the given jobs have not been claimed or changed since they were read. */
   standing(jobs: readonly Job[]): Promise<Job[]>
   /** Every job of one transaction, one per target. */
   get(transactionId: string): Promise<Job[]>
@@ -198,7 +200,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
       // Forgotten meanwhile, or nothing to change.
       const next = current && make(current)
       if (!current || !next) return current ?? job
-      if (await store.swap(current, next)) return next
+      if (await store.swap(current, next)) return { ...next, rev: (current.rev ?? 0) + 1 }
     }
   }
 
@@ -213,6 +215,18 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
     return { ...gone, value: 0, restated: true, state: 'pending', attempts: 0, due: now(), note: 'withdrawn' }
   }
 
+  /**
+   * A job that changed while `sent`, as it was before, was on its way. That
+   * one arrived, and possibly after a newer one did, so what the job says
+   * now is sent once more where the platform keeps the last value it hears.
+   */
+  function landed(sent: Job, current: Job, target: Target): Job {
+    const arrived: Job = { ...current, delivered: true }
+    if (current.withdrawn) return takenBack(arrived)
+    if (!target.restates || current.value === sent.value) return arrived
+    return { ...arrived, restated: true, state: 'pending', attempts: 0, due: now() }
+  }
+
   async function deliver(target: Target, action: string, claimed: readonly Item[], pass: Pass, failed: Job[]): Promise<void> {
     // What was taken back or changed since it was claimed is left to the next pass.
     const standing = new Set(await store.standing(claimed.map(({ job }) => job)))
@@ -222,8 +236,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
       const { requestId } = await target.deliver(action, items)
       for (const { job } of items) {
         const sent: Job = { ...job, state: 'sent', delivered: true, ...(requestId && { requestId }) }
-        // Changed while it was on its way: it arrived all the same, so if it was taken back it has to be retracted.
-        if (!(await store.swap(job, sent))) await change(job, (current) => (current.withdrawn ? takenBack({ ...current, delivered: true }) : current.delivered ? undefined : { ...current, delivered: true }))
+        if (!(await store.swap(job, sent))) await change(job, (current) => landed(job, current, target))
         pass.sent += 1
       }
     } catch (error) {
@@ -295,10 +308,8 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
     },
 
     async hold(outcome) {
-      const jobs = prepare(outcome, 'held')
-      // Already held, or on its way: whoever came first stands.
-      const before = await store.get(outcome.transactionId)
-      return before.length > 0 ? before : add(outcome, jobs)
+      // One already held, or on its way, stands as it is; a platform left out when this was cut off is added.
+      return Promise.all(prepare(outcome, 'held').map((job) => store.add(job)))
     },
 
     async release(outcome) {
@@ -328,8 +339,13 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
       await graph.restate(transactionId, value, currency)
       const changed: Job[] = []
       for (const job of await store.get(transactionId)) {
-        if (!targets.get(job.target)?.restates || job.state === 'skipped' || job.state === 'held' || job.withdrawn) continue
-        changed.push(await change(job, (current) => ({ ...current, value, ...(currency && { currency }), restated: true, state: 'pending', attempts: 0, due: now(), note: 'restated' })))
+        if (!targets.get(job.target)?.restates) continue
+        let done = false
+        const next = await change(job, (current) => {
+          done = !(current.state === 'skipped' || current.state === 'held' || current.withdrawn)
+          return done ? { ...current, value, ...(currency && { currency }), restated: true, state: 'pending', attempts: 0, due: now(), note: 'restated' } : undefined
+        })
+        if (done) changed.push(next)
       }
       return changed
     },
@@ -442,11 +458,11 @@ export function createMemoryOutbox(): OutboxStore {
   const key = (job: { transactionId: string; target: string }) => `${job.transactionId}\u0000${job.target}`
   const unchanged = (job: Job) => {
     const stored = jobs.get(key(job))
-    return stored !== undefined && stored.state === job.state && stored.attempts === job.attempts && stored.due === job.due
+    return stored !== undefined && stored.rev === job.rev
   }
   return {
     async add(job) {
-      if (!jobs.has(key(job))) jobs.set(key(job), structuredClone(job))
+      if (!jobs.has(key(job))) jobs.set(key(job), structuredClone({ ...job, rev: 0 }))
       return structuredClone(jobs.get(key(job))!)
     },
     async claim(now, lease, limit) {
@@ -454,12 +470,13 @@ export function createMemoryOutbox(): OutboxStore {
       return due.slice(0, limit).map((job) => {
         job.attempts += 1
         job.due = now + lease
+        job.rev! += 1
         return structuredClone(job)
       })
     },
     async swap(before, after) {
       if (!unchanged(before)) return false
-      jobs.set(key(after), structuredClone(after))
+      jobs.set(key(after), structuredClone({ ...after, rev: before.rev! + 1 }))
       return true
     },
     async standing(given) {
