@@ -1199,6 +1199,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       if (action === 'join' || action === 'separate') pairOf(decision.a, decision.b, action)
       else if (action === 'ignore') keepable(decision.identifier)
       else throw new TypeError('foresee needs an action: join, separate or ignore')
+      const flag = action === 'separate' ? decision.separated : action === 'ignore' ? decision.ignored : undefined
+      if (flag !== undefined && typeof flag !== 'boolean') throw new TypeError(`foresee ${action} needs true or false`)
       return store.read(async (tx) => {
         let about: Subject[]
         if (action === 'ignore') {
@@ -1213,14 +1215,18 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const next = await compute(tx, subjects, decision)
         const was = (subject: Subject) => stored.get(subject)?.cluster ?? subject
         const moved = subjects.filter((subject) => was(subject) !== next.get(subject)!.cluster)
-        const shown = new Set([...about, ...moved])
+        const then = (subject: Subject) => next.get(subject)!.cluster
+        // Every cluster that one of them is in before or after, and what each of those was or becomes.
+        const named = [...about, ...moved]
+        const ids = new Set([...named.map(was), ...named.map(then)])
+        const shown = new Set(subjects.filter((subject) => ids.has(was(subject)) || ids.has(then(subject))))
         const sized = (clusterOf: (subject: Subject) => Subject) => {
           const held = new Set([...shown].map(clusterOf))
           const sizes = new Map<Subject, number>()
           for (const subject of subjects) if (held.has(clusterOf(subject))) sizes.set(clusterOf(subject), (sizes.get(clusterOf(subject)) ?? 0) + 1)
           return [...sizes].map(([id, size]) => ({ id, size })).sort((x, y) => y.size - x.size || (x.id < y.id ? -1 : 1))
         }
-        return { moved: moved.length, before: sized(was), after: sized((subject) => next.get(subject)!.cluster) }
+        return { moved: moved.length, before: sized(was), after: sized(then) }
       })
     },
 

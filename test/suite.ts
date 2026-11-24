@@ -564,7 +564,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await check({ action: 'ignore', identifier: 'email:b', ignored: false }, ['b:1', 'b:2'], () => graph.ignore('email:b', false), [[4, 1], [5]])
       assert.deepEqual(await graph.foresee({ action: 'ignore', identifier: 'email:nobody' }), { moved: 0, before: [], after: [] })
       assert.deepEqual(await graph.foresee({ action: 'join', a: 'c:1', b: 'never:seen' }), { moved: 1, before: [{ id: 'c:1', size: 1 }, { id: 'never:seen', size: 1 }], after: [{ id: 'c:1', size: 2 }] })
-      for (const bad of [{}, { action: 'forget' }, { action: 'join', a: 'a:1' }, { action: 'join', a: 'a:1', b: 'a:1' }, { action: 'ignore' }]) await assert.rejects(graph.foresee(bad as never), TypeError)
+      for (const bad of [{}, { action: 'forget' }, { action: 'join', a: 'a:1' }, { action: 'join', a: 'a:1', b: 'a:1' }, { action: 'ignore' }, { action: 'ignore', identifier: 'email:b', ignored: 'false' }, { action: 'separate', a: 'a:1', b: 'b:1', separated: 0 }]) await assert.rejects(graph.foresee(bad as never), TypeError)
     })
 
     test('a call from a number left out, or placed to one, records nothing, and one recorded before still settles', async () => {

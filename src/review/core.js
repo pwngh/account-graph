@@ -255,38 +255,41 @@ async function act(title, text, path, body, confirm, { otherKey, undo = false, d
 }
 
 /** People by how many subjects each has, in words. */
-const people = (clusters) => (clusters.length === 1 ? (clusters[0].size === 1 ? 'one subject on its own' : `one person of ${amount(clusters[0].size)} subjects`)
-  : `${amount(clusters.length)} people, of ${clusters.length > 6 ? `${clusters.slice(0, 6).map(({ size }) => amount(size)).join(', ')} and fewer` : `${clusters.slice(0, -1).map(({ size }) => amount(size)).join(', ')} and ${amount(clusters.at(-1).size)}`} subjects`)
-let foretelling = 0
-/** Says in the question what the decision would do, worked out by the server and not made. With a subject still to be named, once it is. */
+function people(clusters) {
+  if (clusters.length === 1) return clusters[0].size === 1 ? 'one subject on its own' : `one person of ${amount(clusters[0].size)} subjects`
+  const sizes = clusters.map(({ size }) => amount(size))
+  return `${amount(clusters.length)} people, of ${sizes.length > 6 ? `${sizes.slice(0, 6).join(', ')} and ${amount(sizes.length - 6)} more of fewer` : `${sizes.slice(0, -1).join(', ')} and ${sizes.at(-1)}`} subjects`
+}
+let foretelling
+/** Says in the question what the decision would do, worked out by the server and not made. With a subject still to be named, once it is. The question can be answered without it. */
 function foretell(path, body, otherKey) {
-  const turn = ++foretelling
+  foretelling?.abort()
+  const { signal } = (foretelling = new AbortController())
   const said = $('ask-effect')
   said.textContent = ''
   const action = { '/join': 'join', '/separate': 'separate', '/ignore': 'ignore' }[path]
-  $('ask-other').onchange = $('ask-other').onkeyup = null
   if (!action) return
+  let turn = 0
   const tell = async (other) => {
-    const asked = ++said.asked
+    const asked = ++turn
+    const say = (text) => !signal.aborted && asked === turn && (said.textContent = text)
+    say('Working out what this would do.')
     try {
       const { moved, before, after } = await api('POST', '/foresee', { action, ...body, ...(otherKey && { [otherKey]: other }) })
-      if (turn !== foretelling || asked !== said.asked) return
-      said.textContent = moved === 0 ? 'No cluster would change.' : `Now ${people(before)}. After this, ${people(after)}.`
-    } catch {
-      // The question can be answered without it.
-      if (turn === foretelling && asked === said.asked) said.textContent = ''
+      say(moved === 0 ? 'No cluster would change.' : `Now ${people(before)}. After this, ${people(after)}. ${amount(moved)} ${moved === 1 ? 'subject changes' : 'subjects change'} cluster.`)
+    } catch (error) {
+      say(`What this would do is not known: ${error.message}`)
     }
   }
-  said.asked = 0
   if (!otherKey) return void tell()
   let waiting
-  $('ask-other').onchange = () => tell($('ask-other').value.trim())
-  $('ask-other').onkeyup = () => {
+  $('ask-other').addEventListener('input', () => {
     clearTimeout(waiting)
+    turn += 1
     said.textContent = ''
-    said.asked += 1
-    waiting = setTimeout(() => $('ask-other').value.trim() && turn === foretelling && tell($('ask-other').value.trim()), 300)
-  }
+    const other = $('ask-other').value.trim()
+    if (other) waiting = setTimeout(() => !signal.aborted && tell(other), 300)
+  }, { signal })
 }
 
 /** Goes to an address. Going where the screen already is reads it again. */
