@@ -30,7 +30,7 @@ const openRow = (at) => (call) => el('tr', {},
   ...edge([td('', el('span', { class: `chip ${call.state === 'voicemail' ? '' : 'apart'}` }, call.state === 'voicemail' ? 'voicemail' : 'missed')),
     td('who', call.source ? `${call.source}${call.campaign || call.campaignId ? `, ${call.campaign || call.campaignId}` : ''}` : el('span', { class: 'muted' }, 'no arrival credited')),
     td('num', call.result?.waited === undefined ? unrecorded() : `${amount(Math.round(call.result.waited))} s`), td('num', tally(call.attempts))]),
-  ...edge([td('who', call.tags ? Object.entries(call.tags).map(([name, value]) => `${name.replaceAll('_', ' ')} ${value}`).join(', ') : unrecorded()), td('', caller(call.subject))]))
+  ...edge([td('who', call.tags ? Object.entries(call.tags).map(([name, value]) => `${name.replaceAll('_', ' ')} ${value}`).join(', ') : unrecorded()), td('', el('a', { class: 'link', href: `#/journey/${encodeURIComponent(call.subject)}`, title: call.subject }, `${call.subject.slice(0, 18)}…`))]))
 
 // Calls to you: what is still open, how they went, and how many could be placed.
 view('calls', 'Calls', async (box, first, last) => {
@@ -43,6 +43,11 @@ view('calls', 'Calls', async (box, first, last) => {
   top.append(el('p', { class: 'muted' }, `${summary.from} to ${summary.to}, days in ${summary.timeZone}. ${amount(total.calls)} ${total.calls === 1 ? 'call' : 'calls'} to you.`),
     notes('Callers are kept as hashes of their numbers, so this screen shows a subject and never a phone number. Find the number in your phone system by the time of the call.', summary.expected ? 'A call counts once a result says a person answered.' : 'No results are expected, so a call with none is counted by its length.'))
 
+  const lost = total.missed + total.voicemail
+  if (total.calls > 0) top.append(tiles(['Calls to you', amount(total.calls)], ['Answered', percent(total.answered / total.calls), `${amount(total.answered)} by a person`],
+    ['Missed or voicemail', amount(lost), percent(lost / total.calls)],
+    lost > 0 && ['Returned', percent(total.returned / lost), `${amount(total.returned)} of ${amount(lost)}${summary.returnedWithin === null ? '' : `, half within ${lasted(summary.returnedWithin)}`}`],
+    ['Still waiting for a call back', `${amount(open.calls.length)}${open.next === null ? '' : ' or more'}`, open.calls[0] ? `oldest ${lasted(open.at - open.calls[0].at)}` : '', open.calls.length > 0 ? 'apart' : 'same']))
   const table = el('table', {}, el('tr', {}, group('When', 2, true), group('What happened', 4), group('Who', 2)), el('tr', {}, th('Age', 'num'), th('Began'), ...edge([th('How'), th('Credited to'), th('Waited', 'num'), th('Tries', 'num')]), ...edge([th('Tags'), th('Caller')])), ...open.calls.map(openRow(open.at)))
   box.append(el('section', {}, el('h2', {}, 'Missed and not returned, oldest first'),
     open.calls.length > 0 ? wide('Missed and not returned', table) : el('p', {}, total.missed + total.voicemail > 0 ? 'None. Every caller who could be rung back has been reached since.' : 'None. No call in these days is known to have been missed.'),
@@ -56,20 +61,17 @@ view('calls', 'Calls', async (box, first, last) => {
     box.append(el('section', {}, el('p', { class: 'muted' }, 'No call was recorded in these days.')))
     return
   }
-  const lost = total.missed + total.voicemail
-  const states = el('table', {}, el('tr', {}, th('How it went'), th('Calls', 'num'), th('Share', 'num'), th(''), th('What it means')),
+  const states = el('table', {}, el('tr', {}, th('How it went'), th('Calls', 'num'), th('Share', 'num'), th('What it means')),
     ...[['Answered', total.answered, total.calls, 'A person spoke to the caller.'], ['Missed', total.missed, total.calls, 'Nobody did.'], ['Voicemail', total.voicemail, total.calls, 'The caller reached voicemail.'],
       ['Waiting', total.waiting, total.calls, 'A result is expected and has not come yet.'], ['Unknown', total.unknown, total.calls, 'Nothing says whether a person answered.'],
       ['Returned', total.returned, lost, `Of those missed or in voicemail, rung back and reached.${summary.returnedWithin === null ? '' : ` Half of them within ${lasted(summary.returnedWithin)}.`}`],
-      ['Tried again', total.triedAgain, lost, 'Of those missed or in voicemail, the caller rang again and got through.']].map(([name, count, whole, meaning], i) => el('tr', i === 5 ? { class: 'second' } : {}, td('', name), td('num', tally(count)), td('num', whole > 0 ? percent(count / whole) : none()), td('bar', meter(whole > 0 ? count / whole : 0)), td('muted', meaning))))
+      ['Tried again', total.triedAgain, lost, 'Of those missed or in voicemail, the caller rang again and got through.']].map(([name, count, whole, meaning], i) => el('tr', i === 5 ? { class: 'second' } : {}, td('', name), td('num', tally(count)), td('num share', whole > 0 ? percent(count / whole) : none(), meter(whole > 0 ? count / whole : 0)), td('muted', meaning))))
   box.append(el('section', {}, el('h2', {}, 'How they went'), wide('How calls went', states), saved(`calls-${summary.from}-${summary.to}`, states)))
 
   const pick = el('select', { 'aria-label': 'Which calls', on: { change: () => { measure = pick.value; grid.replaceChildren(hours(summary)) } } }, ...MEASURES.map(([key, text]) => el('option', { value: key, ...(key === measure && { selected: '' }) }, text)))
   const grid = el('div', { class: 'wide', tabindex: 0, role: 'region', 'aria-label': 'Calls by hour and weekday' }, hours(summary))
-  box.append(el('section', {}, el('h2', {}, 'By hour and weekday'), el('div', { class: 'row' }, pick), grid, el('p', { class: 'muted' }, 'Blank: no calls began then. The darker the cell, the larger its number.')))
+  box.append(el('section', {}, el('h2', {}, 'By hour and weekday'), el('div', { class: 'row' }, pick), grid, el('p', { class: 'muted' }, 'Blank: no calls. Darker: more.')))
 
-  const placed = el('table', {}, el('tr', {}, th('Where it came from'), th('Calls', 'num'), th('What it means')),
-    ...[['Tied to a visitor', coverage.visitor, 'One visitor tapped the number just before, so the call follows their own arrival.'], ['Filed under a channel only', coverage.channel, 'The number rung says which campaign it is published on, and nothing more is known.'],
-      ['Neither', coverage.neither, 'The number is not listed and nobody tapped it.'], ['No result', coverage.noResult, 'Counted in the lines above too. Waiting or unknown.']].map(([name, count, meaning]) => el('tr', {}, td('', name), td('num', share(count, total.calls)), td('muted', meaning))))
-  box.append(el('section', {}, el('h2', {}, 'Coverage'), wide('Coverage', placed)))
+  box.append(el('section', {}, el('h2', {}, 'How calls were placed'), parts('How calls were placed', [['Tied to a visitor', coverage.visitor, 'Followed a tap on the number, so the call has their arrival.'], ['Filed under a channel', coverage.channel, 'Only the number rung says where it came from.'], ['Neither', coverage.neither, 'The number is not listed and nobody tapped it.']]),
+    coverage.noResult > 0 ? el('p', { class: 'muted' }, `${amount(coverage.noResult)} of these have no result.`) : ''))
 }, { every: 60_000 })

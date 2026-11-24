@@ -34,7 +34,7 @@ const tally = (n) => (n > 0 ? amount(n) : el('span', { class: 'muted' }, '0'))
 const unrecorded = () => el('span', { class: 'muted' }, '(not recorded)')
 /** Columns that belong together: the first carries the line that sets them apart, and a heading spans them. */
 const edge = ([cell, ...rest]) => (cell.classList.add('edge'), [cell, ...rest])
-const group = (text, columns, first) => el('th', { scope: 'colgroup', colspan: columns, class: first ? 'group' : 'edge group' }, text)
+const group = (text, columns, first) => el('th', { scope: 'col', colspan: columns, class: first ? 'group' : 'edge group' }, text)
 /** A share drawn as a bar beside its number. The number says it; the bar only lets rows be compared. */
 const meter = (share) => {
   const bar = el('span', {})
@@ -43,6 +43,22 @@ const meter = (share) => {
 }
 /** Notes on how a view is worked out, there for whoever wants them and not in the way of the numbers. */
 const notes = (...texts) => el('details', {}, el('summary', { class: 'muted' }, 'How to read this'), ...texts.map((text) => el('p', { class: 'muted' }, text)))
+/** The few numbers a view is about, large, each with what it is of. `tone` marks one that needs someone, in words as well as color. */
+const tiles = (...list) => el('dl', { class: 'tiles' }, ...list.filter(Boolean).map(([label, value, note = '', tone = '']) =>
+  el('div', tone ? { class: tone } : {}, el('dt', {}, label), el('dd', {}, el('b', {}, value), note ? el('span', { class: 'reason' }, note) : ''))))
+/** Parts of a whole as one bar, and the same numbers as a list under it. A part of none keeps its place in the list. */
+function parts(label, list) {
+  const whole = list.reduce((sum, [, n]) => sum + n, 0)
+  const bar = el('div', { class: 'parts', 'aria-hidden': 'true' })
+  list.forEach(([, n], i) => {
+    if (n === 0) return
+    const part = el('span', { class: `part${i}` })
+    part.style.flexGrow = n
+    bar.append(part)
+  })
+  return el('div', {}, bar, el('ul', { class: 'legend', 'aria-label': label }, ...list.map(([name, n, note], i) => el('li', {}, el('span', { class: `key part${i}`, 'aria-hidden': 'true' }),
+    el('span', {}, name, note ? el('span', { class: 'reason' }, note) : ''), el('b', {}, tally(n)), el('span', { class: 'muted' }, whole > 0 ? percent(n / whole) : '—')))))
+}
 /** A table that scrolls inside its own box. The box takes the keyboard, so arrow keys can scroll it. */
 const wide = (label, table) => el('div', { class: 'wide', tabindex: 0, role: 'region', 'aria-label': label }, table)
 
@@ -247,8 +263,10 @@ async function load(tag) {
     if (seen) beat = seen
     const held = $('view').contains(document.activeElement) ? which(document.activeElement) : undefined
     const scrolled = quiet ? [...$('view').querySelectorAll('.wide')].map((each) => each.scrollLeft) : []
+    const unfolded = quiet ? [...$('view').querySelectorAll('details')].map((each) => each.open) : []
     $('view').replaceChildren(box)
     ;[...$('view').querySelectorAll('.wide')].forEach((each, i) => (each.scrollLeft = scrolled[i] ?? 0))
+    ;[...$('view').querySelectorAll('details')].forEach((each, i) => (each.open = unfolded[i] ?? false))
     if (held) [...$('view').querySelectorAll('a, button, input, select, [tabindex]')].find((node) => which(node) === held)?.focus({ preventScroll: true })
     if (!quiet) {
       notice('')

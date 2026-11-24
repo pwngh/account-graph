@@ -52,9 +52,13 @@ function profileOf(profile) {
   if (!profile.known) return [el('section', {}, el('h3', {}, profile.subject), el('p', { class: 'muted' }, 'Nothing has been recorded about this subject.'))]
   const size = profile.cluster.members.length
   detail.push(el('section', {}, el('h3', {}, profile.subject),
-    el('p', {}, size > 1 ? `In a cluster of ${size} that the graph treats as one person.` : 'On its own. The graph treats it as one person with one account.'),
+    tiles(['One person with', `${amount(size)} ${size === 1 ? 'subject' : 'subjects'}`, profile.cluster.oversized ? 'larger than the review size' : '', profile.cluster.oversized ? 'apart' : ''],
+      profile.links[0] && ['Strongest tie', percent(Math.max(...profile.links.map((link) => link.score))), `${amount(profile.links.length)} in all`],
+      profile.separated.length > 0 && ['Kept apart from', amount(profile.separated.length)],
+      profile.history[0] && ['Last seen', when(Math.max(...profile.history.map((each) => each.at)))],
+      profile.consent[0] && ['Advertising', profile.consent[0].adUserData && profile.consent[0].adPersonalization ? 'Granted' : profile.consent[0].adUserData || profile.consent[0].adPersonalization ? 'In part' : 'Denied', profile.consent[0].source ?? '']),
     profile.cluster.oversized ? el('p', { class: 'apart' }, 'This cluster is larger than the review size. A shared identifier may be joining strangers.') : '',
-    el('p', {}, el('a', { class: 'link', href: `#/journey/${encodeURIComponent(profile.subject)}` }, 'Their journey: everything recorded, in order')),
+    el('p', {}, el('a', { class: 'link', href: `#/journey/${encodeURIComponent(profile.subject)}` }, 'Journey')),
     el('div', { class: 'row' },
       el('button', { on: { click: () => act('Join as one person', `${profile.subject} and the subject you name will be treated as one person.`, '/join', { a: profile.subject }, 'Join', { otherKey: 'b' }) } }, 'Join with another…'),
       el('button', { class: 'danger', on: { click: () => act('Forget this subject', `Everything recorded about ${profile.subject} will be deleted. This cannot be undone.`, '/forget', { subject: profile.subject }, 'Delete') } }, 'Forget…'))))
@@ -105,7 +109,7 @@ function profileOf(profile) {
     const word = (granted) => el('span', { class: granted ? 'same' : 'apart' }, granted ? 'granted' : 'denied')
     for (const [i, answer] of profile.consent.entries()) consent.append(el('tr', {}, td('', answer.at > 0 ? when(answer.at) : '(not recorded)'), td('', word(answer.adUserData)), td('', word(answer.adPersonalization)), td('who', answer.source ?? '(not recorded)'), td('', when(answer.recorded)), td('', i === 0 ? el('span', { class: 'chip' }, 'stands') : '')))
     detail.push(el('section', {}, el('h2', {}, `Advertising consent, newest ${profile.consent.length}`), wide('Advertising consent', consent),
-      el('p', { class: 'muted' }, 'What was answered about advertising, and nothing else. It is not a record of consent to be called or written to.')))
+      el('p', { class: 'muted' }, 'Not consent to be called or written to.')))
   }
 
   const history = el('table', {}, el('tr', {}, th('When'), th('Doing'), th('Seen with')))
@@ -211,5 +215,5 @@ view('accounts', 'Accounts', async (box, subject) => {
     el('span', { class: 'muted' }, ` ${when(move.at)}`))) : [el('li', { class: 'muted' }, 'None yet.')]))))
   left.append(decisions)
 
-  detail.append(...(profile ? profileOf(profile) : [el('section', {}, el('p', { class: 'muted' }, 'Open a subject, or pick a cluster, to see who it is tied to and why.'))]))
+  detail.append(...(profile ? profileOf(profile) : [el('section', {}, el('p', { class: 'muted' }, 'Open a subject or pick a cluster.'))]))
 }, { subject: true })
