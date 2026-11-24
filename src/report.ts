@@ -42,18 +42,30 @@ export function sourceOf(touch: Touch): string {
   return '(other)'
 }
 
+/**
+ * Whether an arrival was paid for: it carries an ad click, names a campaign
+ * by its id, or says so in its medium. Meta's click id alone does not say
+ * so, because links nobody paid for carry it too.
+ */
+export function paid(touch: Touch): boolean {
+  return Boolean(touch.gclid || touch.gbraid || touch.wbraid || touch.msclkid || touch.ttclid || touch.campaignId) || /^(cpc|ppc|cpm|cpv|paid.*|display)$/i.test(touch.medium ?? '')
+}
+
+// Making one is slow and asking it is not, so each zone's is kept.
+const clocks = new Map<string, Intl.DateTimeFormat>()
+function clockOf(timeZone: string): Intl.DateTimeFormat {
+  let clock = clocks.get(timeZone)
+  if (!clock) {
+    clock = new Intl.DateTimeFormat('en-US', { timeZone, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' })
+    if (clocks.size >= 100) clocks.clear()
+    clocks.set(timeZone, clock)
+  }
+  return clock
+}
+
 /** How far a time zone is ahead of UTC at an instant, in milliseconds. */
 function ahead(at: number, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    hourCycle: 'h23',
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: 'numeric',
-    second: 'numeric',
-  }).formatToParts(at)
+  const parts = clockOf(timeZone).formatToParts(at)
   const part = (type: string) => Number(parts.find((each) => each.type === type)!.value)
   return Date.UTC(part('year'), part('month') - 1, part('day'), part('hour'), part('minute'), part('second')) - Math.floor(at / 1000) * 1000
 }
@@ -120,7 +132,8 @@ export function nextDay(day: string): string {
 const round = (amount: number) => Math.round(amount * 1e6) / 1e6
 
 type Tally = { stages: Map<string, { count: number; value: number }>; outcomes: number; value: number; missed: number }
-type Line = Omit<ReportRow, 'stages' | 'breakdown'> & { stages: Map<string, { count: number; value: number }>; named: string; parts: Map<string, Tally> }
+type Worked = 'costDays' | 'missingDays' | 'thin' | 'costPerOutcome' | 'returnOnCost'
+type Line = Omit<ReportRow, 'stages' | 'breakdown' | Worked> & { costed: Map<string, number>; bought: boolean; onDays: Map<string, { outcomes: number; value: number }>; stages: Map<string, { count: number; value: number }>; named: string; parts: Map<string, Tally> }
 
 /** Counts one outcome among others. */
 function count(into: Tally, outcome: Counted): void {
@@ -141,6 +154,41 @@ function plain(parts: Map<string, Tally>): Breakdown {
   return [...parts].sort(([x], [y]) => (rank(x) < rank(y) ? -1 : 1)).map(rounded)
 }
 
+export interface FoldOptions {
+  /** Each missed call, with the touch it is credited to, or undefined for one nothing can be credited with. */
+  missed?: readonly Told[]
+  /** The dimension to break each line down by. */
+  by?: string | undefined
+  /** The time zone days and hours are in. Defaults to UTC. */
+  timeZone?: string | undefined
+  /** The last day costs could have been recorded for. Defaults to `to`. */
+  through?: string
+}
+
+/** Below this share of days with cost data, what anything cost is not said. */
+const ENOUGH = 0.5
+
+/** What was spent on some outcomes, by days that have cost data on both sides. */
+type Spent = { cost: number; outcomes: number; value: number }
+
+const ratios = ({ cost, outcomes, value }: Spent) => ({
+  costPerOutcome: outcomes > 0 ? round(cost / outcomes) : null,
+  returnOnCost: cost > 0 && value > 0 ? round(value / cost) : null,
+})
+
+/**
+ * What a campaign's outcomes cost. Only the days that have cost data count,
+ * on both sides: an outcome on a day whose cost is not known would look
+ * free. A recorded zero is cost data, and so is a day that cost nothing.
+ */
+function worth(costDays: number, days: number, { campaign, campaignId, bought }: { campaign: string; campaignId: string; bought: boolean }, spent: Spent): Pick<ReportRow, Worked> {
+  // Money spent on no campaign in particular says nothing of what one campaign's outcomes cost. A campaign with
+  // paid arrivals has a cost somewhere; one without may be a newsletter, so with no cost data nothing is missing.
+  const named = Boolean(campaignId || campaign)
+  const thin = named && costDays < days * ENOUGH && (costDays > 0 || bought)
+  return { costDays, missingDays: Math.max(0, days - costDays), thin, ...(named && costDays > 0 && !thin ? ratios(spent) : { costPerOutcome: null, returnOnCost: null }) }
+}
+
 /**
  * Folds costs, arrivals and credited outcomes into one line per campaign.
  * A touch joins a cost by the campaign's id, or by its name when no cost
@@ -153,12 +201,11 @@ export function fold(
   costs: readonly Required<Cost>[],
   touches: readonly Touch[],
   credited: readonly { outcome: Counted; touch: Touch | undefined }[],
-  /** Each missed call, with the touch it is credited to, or undefined for one nothing can be credited with. */
-  missed: readonly Told[] = [],
-  /** The dimension to break each line down by, and the time zone its hours and days are in. */
-  by?: string,
-  timeZone?: string,
+  { missed = [], by, timeZone, through = to }: FoldOptions = {},
 ): Report {
+  // Days still to come have no cost yet, whatever rows there are for them.
+  const last = through < to ? through : to
+  const days = last < from ? 0 : Math.round((Date.parse(`${last}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1
   const lines = new Map<string, Line>()
   const currencies = new Set<string>()
   // A campaign with an id is one line whatever it is called; without one, its name is all there is.
@@ -166,7 +213,7 @@ export function fold(
   const line = (source: string, campaignId: string, campaign: string): Line => {
     const key = keyOf(source, campaignId, campaign)
     let found = lines.get(key)
-    if (!found) lines.set(key, (found = { source, campaignId, campaign: campaignId ? '' : campaign, named: '', cost: 0, clicks: 0, impressions: 0, visits: 0, missed: 0, stages: new Map(), outcomes: 0, value: 0, parts: new Map() }))
+    if (!found) lines.set(key, (found = { source, campaignId, campaign: campaignId ? '' : campaign, named: '', cost: 0, clicks: 0, impressions: 0, visits: 0, missed: 0, stages: new Map(), outcomes: 0, value: 0, parts: new Map(), costed: new Map(), bought: false, onDays: new Map() }))
     // A campaign known only by name keeps one spelling of it, the first in order.
     if (!campaignId && campaign < found.campaign) found.campaign = campaign
     return found
@@ -178,6 +225,7 @@ export function fold(
     found.cost += cost.amount
     found.clicks += cost.clicks
     found.impressions += cost.impressions
+    if (cost.day <= last) found.costed.set(cost.day, (found.costed.get(cost.day) ?? 0) + cost.amount)
     if (cost.currency) currencies.add(cost.currency)
     if (cost.campaignId && cost.campaign && cost.day >= found.named) [found.named, found.campaign] = [cost.day, cost.day === found.named && found.campaign > cost.campaign ? found.campaign : cost.campaign]
   }
@@ -213,6 +261,7 @@ export function fold(
   }
 
   for (const touch of touches) lineOf(touch).visits += 1
+  for (const touch of all) if (paid(touch)) lineOf(touch).bought = true
   const valueOf = by === undefined ? undefined : dimension(by, timeZone)
   const whole = new Map<string, Tally>()
   // Where an outcome or a missed call is counted: its line, and under its value there and in the total.
@@ -231,14 +280,23 @@ export function fold(
   for (const { outcome, touch } of credited) {
     for (const tally of tallies(missing(touch), { at: outcome.at, touch, tags: outcome.tags })) count(tally, outcome)
     if (outcome.currency) currencies.add(outcome.currency)
+    const found = missing(touch)
+    const day = dayIn(outcome.at, timeZone)
+    const on = found.onDays.get(day) ?? { outcomes: 0, value: 0 }
+    found.onDays.set(day, { outcomes: on.outcomes + 1, value: on.value + outcome.value })
   }
 
   const sums = new Map<string, { count: number; value: number }>()
   const total = { cost: 0, clicks: 0, impressions: 0, visits: 0, missed: 0, outcomes: 0, value: 0 }
+  // The total of what things cost: campaigns with enough cost data, and the outcomes credited to them. Never all spend over all outcomes.
+  const known: Spent = { cost: 0, outcomes: 0, value: 0 }
+  let counted = 0
+  const anyCost = new Set<string>()
+  let leftOut = 0
   const order = (found: Line) => `${found.source}\u0000${found.campaignId}\u0000${found.campaign}`
   const sorted = [...lines.values()].sort((x, y) => y.cost - x.cost || y.value - x.value || y.visits - x.visits || (order(x) < order(y) ? -1 : 1))
   // A step is named by whoever recorded the outcome, so the names are kept in maps until the very end.
-  const rows = sorted.map(({ named: _, stages, parts, ...found }): ReportRow => {
+  const rows = sorted.map(({ named: _, stages, parts, costed: costDays, onDays, bought, ...found }): ReportRow => {
     for (const [name, stage] of stages) {
       stage.value = round(stage.value)
       const sum = sums.get(name) ?? { count: 0, value: 0 }
@@ -255,14 +313,31 @@ export function fold(
     total.visits += found.visits
     total.missed += found.missed
     total.outcomes += found.outcomes
-    return { ...found, stages: Object.fromEntries(stages), ...(valueOf && { breakdown: plain(parts) }) }
+    const spent: Spent = { cost: 0, outcomes: 0, value: 0 }
+    for (const [day, cost] of costDays) {
+      anyCost.add(day)
+      spent.cost += cost
+      spent.outcomes += onDays.get(day)?.outcomes ?? 0
+      spent.value += onDays.get(day)?.value ?? 0
+    }
+    const worked = worth(costDays.size, days, { ...found, bought }, spent)
+    if (worked.thin) leftOut += 1
+    else if (costDays.size > 0 && (found.campaignId || found.campaign)) {
+      counted += 1
+      known.cost += spent.cost
+      known.outcomes += spent.outcomes
+      known.value += spent.value
+    }
+    return { ...found, ...worked, stages: Object.fromEntries(stages), ...(valueOf && { breakdown: plain(parts) }) }
   })
   const said = new Set([...all.flatMap(touchTags).map((name) => `touch.${name}`), ...[...credited.map(({ outcome }) => outcome.tags), ...missed.map(({ tags }) => tags)].flatMap((tags) => Object.keys(tags ?? {})).map((name) => `outcome.${name}`)])
   return {
     from,
     to,
     rows,
-    total: { ...total, stages: Object.fromEntries(sums), ...(valueOf && { breakdown: plain(whole) }) },
+    days,
+    leftOut,
+    total: { ...total, costDays: anyCost.size, missingDays: Math.max(0, days - anyCost.size), thin: counted === 0 && leftOut > 0, ...ratios(known), stages: Object.fromEntries(sums), ...(valueOf && { breakdown: plain(whole) }) },
     ...(by !== undefined && { by }),
     dimensions: ['hour', 'weekday', ...[...said].sort()],
     currencies: [...currencies].sort(),

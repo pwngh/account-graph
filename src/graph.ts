@@ -7,7 +7,7 @@ import { UNSTORABLE } from './identifiers.ts'
 import { createMemoryStore } from './memory.ts'
 import { defaultPolicy, plainPolicy, policyHash, ruleFor, usable } from './policy.ts'
 import type { Policy } from './policy.ts'
-import { dayStart, dimension, fold, nextDay } from './report.ts'
+import { dayIn, dayStart, dimension, fold, nextDay } from './report.ts'
 import { partition, scorePairs } from './resolve.ts'
 import { checkTags } from './tags.ts'
 import type { DecisionPage, Store, Tx } from './store.ts'
@@ -719,7 +719,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         for (const outcome of await tx.outcomesBetween(start, end)) credited.push({ outcome, touch: await creditOf(outcome.subject, outcome.at) })
         const missed: { at: number; touch: Touch | undefined; tags: Record<string, string> | undefined }[] = []
         for (const call of await tx.callsBetween(start, end)) if (call.direction === 'inbound' && call.result?.answered === false) missed.push({ at: call.at, touch: await creditOf(call.subject, call.at), tags: call.tags })
-        return fold(from, to, await tx.costsBetween(from, to), await tx.touchesBetween(start, end), credited, missed, by, timeZone)
+        return fold(from, to, await tx.costsBetween(from, to), await tx.touchesBetween(start, end), credited, { missed, by, timeZone, through: dayIn(now(), timeZone) })
       })
     },
 

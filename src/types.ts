@@ -407,6 +407,18 @@ export interface ReportRow {
   /** Outcomes credited to this row, all steps together. */
   outcomes: number
   value: number
+  /** How many days of the period, up to today, have cost data for this campaign, and how many have none. */
+  costDays: number
+  missingDays: number
+  /** Fewer than half of the days have cost data, which is too few to say what anything cost. Never so for spend on no campaign, nor for a campaign with no paid arrival and no cost at all. On the total, every campaign that would count is so. */
+  thin: boolean
+  /**
+   * The cost over the outcomes credited to this campaign on the days that
+   * have cost data. Null when there is no cost, no such outcome, or too few days.
+   */
+  costPerOutcome: number | null
+  /** The value of those outcomes over the same cost. Null for the same reasons, or when they are worth nothing. */
+  returnOnCost: number | null
   /** The same outcomes by the dimension asked for. Costs are not split: a campaign is charged whole. */
   breakdown?: Breakdown
 }
@@ -420,6 +432,10 @@ export interface Report {
   /** Highest cost first, then highest value. */
   rows: ReportRow[]
   total: Omit<ReportRow, 'source' | 'campaignId' | 'campaign'>
+  /** Over how many days of the period costs could have been recorded: those up to today. */
+  days: number
+  /** Campaigns with cost data on too few days, left out of the total's cost per outcome and return. */
+  leftOut: number
   /** The dimension the rows are broken down by, when one was asked for. */
   by?: string
   /** The dimensions something in these days was recorded under, for choosing one. */
