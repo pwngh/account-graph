@@ -106,16 +106,17 @@
       const row = performance.now() - began < 3200 ? found(words) : undefined
       light.classList.toggle('on', Boolean(row))
       if (!row) return performance.now() - began < 3200 ? undefined : clearInterval(lit)
-      // The campaign's name stays at left, and what it cost and brought in is at the far end.
-      if (row.closest('.campaign-report')) row.closest('.wide').scrollLeft = 1e6
       let rect = row.getBoundingClientRect()
       const floor = innerHeight - (bar.classList.contains('away') ? 16 : innerHeight - bar.getBoundingClientRect().top + 12)
       const side = $('view').getBoundingClientRect()
       const inner = row.closest('.scroll')?.getBoundingClientRect()
       if (rect.top < 12 || rect.bottom > floor || rect.left < side.left - 1 || rect.right > side.right + 1 && row.closest('.board') || (inner && (rect.top < inner.top || rect.bottom > inner.bottom + 1))) {
-        row.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' })
+        row.scrollIntoView({ block: 'center', inline: row.closest('.board') ? 'center' : 'nearest', behavior: 'instant' })
         rect = row.getBoundingClientRect()
       }
+      // The campaign's name stays at left, and what it cost and brought in is at the far end.
+      if (row.closest('.campaign-report')) row.closest('.wide').scrollLeft = 1e6
+      rect = row.getBoundingClientRect()
       // As much of it as can be seen: a wide table is panned within its own frame.
       const frame = (row.closest('.wide, .scroll') ?? $('view')).getBoundingClientRect()
       const [left, right] = [Math.max(rect.left, frame.left), Math.min(rect.right, frame.right)]
