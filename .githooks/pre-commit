@@ -1,0 +1,10 @@
+#!/bin/sh
+# Refuses a commit that stages something that looks like a key or a token. Off until you turn it on:
+#   git config core.hooksPath .githooks
+# It needs gitleaks on your path: https://github.com/gitleaks/gitleaks
+if ! command -v gitleaks >/dev/null; then
+  echo 'pre-commit: gitleaks is not installed, so nothing was checked and nothing was committed.' >&2
+  echo 'Install it, or turn this hook off: git config --unset core.hooksPath' >&2
+  exit 1
+fi
+exec gitleaks git --pre-commit --staged --redact --no-banner .
