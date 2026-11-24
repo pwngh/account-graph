@@ -87,6 +87,7 @@
 - The Channels view has a Break down by selector; the Calls view shows tags.
 - `LATE_HOURS` (`OpsOptions.lateHours`) alerts once a day while conversions wait that long past their time; `OutboxStore.oldestDue` says since when.
 - `POST /find` finds subjects by email address, phone number or the start of an id; the reviewer screen uses it, and no longer puts what is typed in an address.
+- `report({ per })`, `GET /report?per=` and **Cost per** on the Channels view count one step in the cost per outcome. The view groups its columns, shows the report's own currency, and tells none, not recorded and does not apply apart.
 
 ### Changed
 

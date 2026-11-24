@@ -83,7 +83,7 @@ A token goes in the `authorization` header as `Bearer …`. There are two.
 | `GET /calls?from=&to=&tz=&after=` | Missed calls nobody has returned, oldest first, 50 at a time: `{ from, to, timeZone, at, calls, next }`. Pass `next` as `after`. |
 | `GET /calls/summary?from=&to=&tz=` | Calls to you by how they went, by hour and weekday, and how many could be placed. |
 | `GET /audit` | Whether that record is whole: `{ sound, head }`, with `brokenAt` when it is not. `head` is the newest entry's `seq` and `hash`. |
-| `GET /report?from=&to=&tz=&by=` | What each campaign cost and brought in between two days, with `steps` naming the steps in your order and `timeZone` the zone its days are in. See [the report](report.md). |
+| `GET /report?from=&to=&tz=&by=&per=` | What each campaign cost and brought in between two days, with `steps` naming the steps in your order and `timeZone` the zone its days are in. See [the report](report.md). |
 | `POST /separate` | `{ a, b, separated?, by?, reason? }`. Keeps two subjects apart, or with `separated: false` allows them again. |
 | `POST /join` | `{ a, b, by?, reason? }`. Records that two subjects are one person. |
 | `POST /ignore` | `{ identifier, ignored?, by?, reason? }`. Stops linking through one identifier, or resumes. |

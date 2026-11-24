@@ -13,7 +13,7 @@ const GET: Record<string, Record<string, string>> = {
   '/subject': { subject: 'account:1' }, '/cluster': { subject: 'account:1' }, '/links': { subject: 'account:1' }, '/history': { subject: 'account:1' }, '/journey': { subject: 'account:1', before: '9' },
   '/flows': { subject: 'account:1' }, '/collusion': { subject: 'account:1' }, '/rings': { subject: 'account:1' }, '/consent': { subject: 'account:1' }, '/outcome': { id: 't1' }, '/call': { id: 'C1' },
   '/search': { q: 'a' }, '/clusters': { offset: '0' }, '/attribute': { subject: 'account:1', at: String(T0) }, '/decisions': { limit: '5', before: '9', author: 'people' },
-  '/report': { from: '2026-01-01', to: '2026-01-02', tz: 'UTC', by: 'hour' }, '/calls': { from: '2026-01-01', to: '2026-01-02', tz: 'UTC', after: '1 c' }, '/calls/summary': { from: '2026-01-01', to: '2026-01-02', tz: 'UTC' },
+  '/report': { from: '2026-01-01', to: '2026-01-02', tz: 'UTC', by: 'hour', per: 'call' }, '/calls': { from: '2026-01-01', to: '2026-01-02', tz: 'UTC', after: '1 c' }, '/calls/summary': { from: '2026-01-01', to: '2026-01-02', tz: 'UTC' },
   '/followed': { from: '2026-01-01', to: '2026-01-02', tz: 'UTC', step: 'call', days: '30' }, '/board': { days: '90' },
 }
 const POST: Record<string, object> = {

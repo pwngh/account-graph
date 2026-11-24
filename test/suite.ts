@@ -425,6 +425,24 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await graph.counts(), { subjects: 3, clusters: 2, identifiers: 3, edges: 4, sightings: 5, touches: 1, decisions: 1, outcomes: 1 })
     })
 
+    test('what one step cost counts that step alone, on the days the cost is known', async () => {
+      const { graph } = await fresh()
+      const at = Date.UTC(2026, 2, 2, 12)
+      await graph.spend([{ day: '2026-03-02', source: 'google', campaignId: '1', amount: 1872 }, { day: '2026-03-02', source: 'google', campaignId: '2', amount: 100 }])
+      for (let n = 0; n < 12; n++) {
+        await graph.touch({ subject: `visitor:${n}`, at: at - HOUR, gclid: `G${n}`, campaignId: '1' })
+        await graph.outcome({ transactionId: `o${n}`, subject: `visitor:${n}`, at, stage: n < 9 ? 'call' : 'enrolled', value: n < 9 ? 5 : 200 })
+      }
+      const of = async (per?: string) => {
+        const { rows, total, ...rest } = await graph.report({ from: '2026-03-02', to: '2026-03-02', ...(per && { per }) })
+        return [rest.per, rows.map((row) => [row.campaignId, row.costPerOutcome]), rows[0]!.returnOnCost, total.costPerOutcome]
+      }
+      const back = Math.round((645 / 1872) * 1e6) / 1e6
+      assert.deepEqual(await of(), [undefined, [['1', 156], ['2', null]], back, Math.round((1972 / 12) * 1e6) / 1e6])
+      assert.deepEqual(await of('enrolled'), ['enrolled', [['1', 624], ['2', null]], back, Math.round((1972 / 3) * 1e6) / 1e6])
+      assert.deepEqual(await of('never'), ['never', [['1', null], ['2', null]], back, null])
+    })
+
     test('the report sets what each campaign cost beside what it brought in', async () => {
       const { graph } = await fresh()
       const day = (n: number) => Date.parse('2026-03-01T12:00:00Z') + n * DAY

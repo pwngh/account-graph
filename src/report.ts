@@ -218,6 +218,8 @@ export interface FoldOptions {
   missed?: readonly Told[]
   /** The dimension to break each line down by. */
   by?: string | undefined
+  /** The one step to count in what an outcome cost. Every step is counted without it. */
+  per?: string | undefined
   /** The time zone days and hours are in. Defaults to UTC. */
   timeZone?: string | undefined
   /** The last day costs could have been recorded for. Defaults to `to`. */
@@ -269,7 +271,7 @@ export function fold(
   costs: readonly Required<Cost>[],
   touches: readonly Touch[],
   credited: readonly Credited[],
-  { missed = [], by, timeZone, through = to, history = credited }: FoldOptions = {},
+  { missed = [], by, per, timeZone, through = to, history = credited }: FoldOptions = {},
 ): Report {
   // Days still to come have no cost yet, whatever rows there are for them.
   const last = through < to ? through : to
@@ -358,7 +360,7 @@ export function fold(
     for (const change of [found.worth, worthAll, months.get(month)!]) revalued(change, each)
     const day = dayIn(outcome.at, timeZone)
     const on = found.onDays.get(day) ?? { outcomes: 0, value: 0 }
-    found.onDays.set(day, { outcomes: on.outcomes + 1, value: on.value + outcome.value })
+    found.onDays.set(day, { outcomes: on.outcomes + (per === undefined || outcome.stage === per ? 1 : 0), value: on.value + outcome.value })
   }
 
   const total = { cost: 0, clicks: 0, impressions: 0, visits: 0, missed: 0, outcomes: 0, value: 0 }
@@ -411,6 +413,7 @@ export function fold(
     months: [...months].sort(([x], [y]) => (rank(x) < rank(y) ? -1 : 1)).map(([month, change]) => ({ month, ...roundedChange(change) })),
     total: { ...total, costDays: anyCost.size, missingDays: Math.max(0, days - anyCost.size), thin: counted === 0 && leftOut > 0, ...ratios(known), people: everything.people.size, worth: roundedChange(worthAll), stages: steps, ...(valueOf && { breakdown: plain(whole) }) },
     ...(by !== undefined && { by }),
+    ...(per !== undefined && { per }),
     dimensions: ['hour', 'weekday', ...[...said].sort()],
     currencies: [...currencies].sort(),
   }
