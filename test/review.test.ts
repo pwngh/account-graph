@@ -23,6 +23,8 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   t.after(() => (server.closeAllConnections(), void server.close()))
   const served = await fetch(`${base}/review`)
   assert.match(served.headers.get('content-security-policy')!, /img-src data:; .*frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types 'none'$/)
+  // The token is asked for only once it is known that there is none, so a reload never shows the field for a moment.
+  assert.match(await served.text(), /<label id="token-label" hidden>[^]*<main id="view" tabindex="-1"><\/main>/)
   assert.deepEqual(['cross-origin-opener-policy', 'cross-origin-resource-policy', 'x-robots-tag'].map((name) => served.headers.get(name)), ['same-origin', 'same-origin', 'noindex, nofollow'])
   const { run, press, close } = await browse(`${base}/review#/accounts/account%3A1`)
   t.after(close)
