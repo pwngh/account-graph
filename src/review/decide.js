@@ -7,21 +7,31 @@ const facing = () => $('view').querySelector('section.pair')?.pair
 let picked
 const pairName = ({ a, b }) => `${a}\n${b}`
 
-/** One of the two, from what was last recorded about it. */
-function side(profile) {
-  const { subject, history } = profile
-  const count = (list) => Object.entries(list.reduce((out, each) => ({ ...out, [each]: (out[each] ?? 0) + 1 }), {})).sort(([, x], [, y]) => y - x).map(([name, n]) => `${name} (${amount(n)})`).join(', ')
-  const own = [...new Set(history.map((sighting) => sighting.identifier))].map((identifier) => identifier.slice(0, identifier.indexOf(':')))
-  const part = (name, ...told) => [el('dt', {}, name), el('dd', {}, ...told)]
-  return el('section', { 'aria-label': subject }, el('div', { class: 'section-head' }, el('h3', {}, open(subject)),
-    el('a', { class: 'link', href: `#/journey/${encodeURIComponent(subject)}` }, 'Journey')),
-    el('dl', {}, ...part('Cluster', profile.cluster && profile.cluster.members.length > 1 ? `one of ${amount(profile.cluster.members.length)}${profile.cluster.oversized ? ', larger than the review size' : ''}` : 'on its own'),
-      ...part('Seen', ...(history.length === 0 ? [unrecorded()] : [
-        reviewDisplay.time(history.at(-1).at), ' to ', reviewDisplay.time(history[0].at), el('span', { class: 'reason' }, `Newest ${amount(history.length)} sightings`),
-      ])),
-      ...part('Doing', count(history.map((sighting) => sighting.event ?? '(not recorded)')) || '(not recorded)'),
-      ...part('Seen with', count(own) || '(not recorded)'),
-      ...part('Kept apart', profile.separated.length === 0 ? 'From nobody' : `From ${amount(profile.separated.length)}`)))
+/** What is known of two subjects, line by line beside each other, with what they have alike brought forward. */
+function compared(left, right, pair) {
+  const kindsOf = ({ history }) => new Set(history.map((sighting) => sighting.identifier.slice(0, sighting.identifier.indexOf(':'))))
+  const doing = ({ history }) => new Set(history.map((sighting) => sighting.event).filter(Boolean))
+  const [kinds, others] = [kindsOf(left), kindsOf(right)]
+  const [did, done] = [doing(left), doing(right)]
+  const chips = (mine, theirs) => (mine.size === 0 ? [unrecorded()] : [...mine].sort((x, y) => theirs.has(y) - theirs.has(x)).map((each) => reviewDisplay.chip(each.replaceAll('_', ' '), theirs.has(each) ? 'alike' : 'muted')))
+  const cluster = ({ cluster }) => (cluster && cluster.members.length > 1 ? `one of ${amount(cluster.members.length)}${cluster.oversized ? ', larger than the review size' : ''}` : 'on its own')
+  const seen = ({ history }) => (history.length === 0 ? [unrecorded()] : [reviewDisplay.time(history.at(-1).at), ' to ', reviewDisplay.time(history[0].at), el('span', { class: 'reason' }, `Newest ${amount(history.length)} sightings`)])
+  const apart = ({ separated }) => (separated.length === 0 ? 'From nobody' : `From ${amount(separated.length)}`)
+  const who = ({ subject }) => el('div', { class: 'versus-who' }, el('b', {}, open(subject)), el('a', { class: 'link', href: `#/journey/${encodeURIComponent(subject)}` }, 'Journey'))
+  const row = (name, one, two) => el('div', { class: 'versus-row', role: 'row' }, el('div', { role: 'cell' }, ...one), el('div', { class: 'versus-name', role: 'rowheader' }, name), el('div', { role: 'cell' }, ...two))
+  const shared = [...new Set(pair.reasons.filter((reason) => reason.counted !== false).map((reason) => reason.identifier.split(':')[0]))]
+  return el('div', { class: 'versus', role: 'table', 'aria-label': 'The two, side by side' },
+    el('div', { class: 'versus-row head', role: 'row' }, el('div', { role: 'columnheader' }, who(left)), el('div', { class: 'versus-score', role: 'columnheader' }, dial(pair.score), el('span', { class: 'meta' }, shared.length > 0 ? `by ${shared.join(', ')}` : '')), el('div', { role: 'columnheader' }, who(right))),
+    row('Seen with', chips(kinds, others), chips(others, kinds)),
+    row('Doing', chips(did, done), chips(done, did)),
+    row('Seen', seen(left), seen(right)),
+    row('Cluster', [cluster(left)], [cluster(right)]),
+    row('Kept apart', [apart(left)], [apart(right)]))
+}
+/** A score as a ring around its number. */
+function dial(score) {
+  const round = 2 * Math.PI * 26
+  return svg('svg', { class: 'dial', viewBox: '0 0 64 64', role: 'img', 'aria-label': percent(score) }, svg('circle', { cx: 32, cy: 32, r: 26 }), svg('circle', { class: 'part', cx: 32, cy: 32, r: 26, 'stroke-dasharray': `${(round * score).toFixed(1)} ${round.toFixed(1)}` }), svg('text', { x: 32, y: 37, 'text-anchor': 'middle' }, percent(score)))
 }
 
 const choices = {
@@ -57,31 +67,34 @@ view('decide', 'Decide', async (box) => {
     passed > 0 && ['Skipped', amount(passed), 'Until this screen is closed']),
   notes('Only subjects in the newest 10,000 sightings are checked. Pairs of subjects not seen in those sightings are not listed.')))
 
+  const rail = el('div', { class: 'queue-rail scroll', tabindex: 0, role: 'region', 'aria-label': 'Next' })
+  const kindsIn = (each) => [...new Set(each.reasons.filter((reason) => reason.counted !== false).map((reason) => reason.identifier.split(':')[0]))].join(', ')
+  const card = (each) => el('button', { type: 'button', class: 'queue-pair', 'data-key': pairName(each), ...(each === pair && { 'aria-current': 'true' }), on: { click: async () => { picked = pairName(each); await load(); picked = undefined } } },
+    el('span', { class: 'queue-names' }, el('span', { title: each.a }, reviewDisplay.idText(each.a)), el('span', { title: each.b }, reviewDisplay.idText(each.b))), el('b', {}, percent(each.score)), el('span', { class: 'meta' }, kindsIn(each)), meter(each.score))
+  const strong = queue.filter((each) => each.level === 'same')
+  const weak = queue.filter((each) => each.level !== 'same')
+  for (const [name, list] of [['Strong, held apart by a cut', strong], ['Related', weak]]) if (list.length > 0) rail.append(el('p', { class: 'inbox-age' }, name, el('span', { class: 'count' }, amount(list.length))), ...list.slice(0, 40).map(card), list.length > 40 ? el('p', { class: 'meta queue-more' }, `${amount(list.length - 40)} more after these.`) : '')
+
   if (pair) {
     const [left, right] = await Promise.all([pair.a, pair.b].map((subject) => api('GET', `/subject?subject=${encodeURIComponent(subject)}`)))
-    const button = (kind, key, text, name) => el('button', { ...(kind && { class: kind }), title: `Key ${key.toUpperCase()}`, 'aria-keyshortcuts': key, on: { click: () => choices[name](pair) } }, `${text} (${key.toUpperCase()})`)
-    const actions = el('div', { class: 'row' }, button('primary', 'j', 'Join', 'join'), button('danger', 'k', 'Keep apart', 'apart'), button('', 's', 'Skip', 'skip'),
-      el('button', { title: 'Key U', 'aria-keyshortcuts': 'u', ...(decided.length === 0 && { disabled: '' }), on: { click: () => undo(decided[0]) } }, 'Undo last (U)'))
-    const here = el('section', { class: 'pair', 'aria-label': 'This pair' }, reviewDisplay.section('This pair', actions),
-      el('div', { class: 'row' }, reviewDisplay.chip(pair.level === 'same' ? 'Strong, kept in two clusters by a cut' : 'Related', pair.level),
-        el('b', {}, reviewDisplay.compare(percent(pair.score), pair.score))),
-      el('div', { class: 'why' }, ...reasons(pair.reasons)),
-      el('div', { class: 'sides' }, side(left), side(right)))
+    const button = (kind, key, text, name) => el('button', { class: `choice ${kind}`, title: `Key ${key.toUpperCase()}`, 'aria-keyshortcuts': key, on: { click: () => choices[name](pair) } }, text, el('kbd', {}, key.toUpperCase()))
+    const at = queue.indexOf(pair)
+    const here = el('section', { class: 'pair', 'aria-label': 'This pair' },
+      el('div', { class: 'pair-top' }, reviewDisplay.chip(pair.level === 'same' ? 'Strong, kept in two clusters by a cut' : 'Related', pair.level), el('span', { class: 'meta' }, `${amount(at + 1)} of ${amount(queue.length)} here`)),
+      compared(left, right, pair),
+      el('div', { class: 'pair-why' }, el('p', { class: 'inbox-age' }, 'What they share'), ...reasons(pair.reasons)),
+      el('p', { class: 'pair-effect', role: 'status' }),
+      el('div', { class: 'choices' }, button('primary', 'j', 'Join', 'join'), button('danger', 'k', 'Keep apart', 'apart'), button('', 's', 'Skip', 'skip'),
+        el('button', { class: 'choice quiet', title: 'Key U', 'aria-keyshortcuts': 'u', ...(decided.length === 0 && { disabled: '' }), on: { click: () => undo(decided[0]) } }, 'Undo last', el('kbd', {}, 'U'))))
     here.pair = pair
-    box.append(here)
+    const said = here.querySelector('.pair-effect')
+    // What joining would make of them, worked out and not done. The pair can be decided without it.
+    api('POST', '/foresee', { action: 'join', a: pair.a, b: pair.b }).then(({ moved, after }) => { said.textContent = moved === 0 ? 'Joining them would change no cluster.' : `Joined, they would be ${people(after)}.` }, () => {})
+    box.append(el('div', { class: 'deck' }, rail, here))
   } else box.append(el('section', {}, el('p', { class: 'muted' }, found.total === 0 ? 'No unjoined ties among the subjects checked.' : 'Every pair in this list was skipped.')))
 
-  const lists = el('div', { class: 'panel-grid' })
-  if (decided.length > 0) lists.append(el('section', {}, el('h2', {}, 'Decided here, newest first'), el('ul', {}, ...decided.map((entry) => el('li', {}, entry.what === 'join' ? 'Joined ' : 'Kept apart ', open(entry.a), ' and ', open(entry.b), ' ',
+  if (decided.length > 0) box.append(el('section', {}, el('h2', {}, 'Decided here, newest first'), el('ul', { class: 'decided' }, ...decided.map((entry) => el('li', {}, reviewDisplay.chip(entry.what === 'join' ? 'Joined' : 'Kept apart', entry.what === 'join' ? 'same' : 'apart'), open(entry.a), ' and ', open(entry.b), ' ',
     el('button', { class: 'link', 'data-key': `undo-${entry.what}-${pairName(entry)}`, on: { click: () => undo(entry) } }, 'undo'))))))
-  const rest = queue.filter((each) => each !== pair)
-  if (rest.length > 0) {
-    const table = el('table', {}, el('tr', {}, th('First subject'), th('Second subject'), th('Score', 'num'), th('Evidence'), th('Action')), ...rest.slice(0, 20).map((each) => el('tr', {}, td('who', open(each.a)), td('who', open(each.b)), td('num score', reviewDisplay.compare(percent(each.score), each.score)),
-      td('', [...new Set(each.reasons.filter((reason) => reason.counted !== false).map((reason) => reason.identifier.split(':')[0]))].join(', ')),
-      td('', el('button', { class: 'link', 'data-key': pairName(each), on: { click: async () => { picked = pairName(each); await load(); picked = undefined } } }, 'look')))))
-    lists.append(el('section', {}, el('h2', {}, `Next${rest.length > 20 ? ', first 20' : ''}`), wide('Next', table, true)))
-  }
-  if (lists.childElementCount > 0) box.append(lists)
 })
 
 addEventListener('keydown', (event) => {
