@@ -344,6 +344,17 @@ export function createMemoryStore(): Store {
       return [...calls.values()].filter((call) => wanted.has(call.subject)).sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1)).map(withResult)
     },
 
+    async openCalls(from, to, limit, after) {
+      const answered = new Map<Subject, number>()
+      for (const call of calls.values()) if (results.get(call.id)?.answered) answered.set(call.subject, Math.max(call.at, answered.get(call.subject) ?? -Infinity))
+      const open = [...calls.values()].filter((call) => {
+        if (call.direction !== 'inbound' || call.at < from || call.at >= to || results.get(call.id)?.answered !== false || call.subject === `call:${call.id}`) return false
+        if (after && !(call.at > after.at || (call.at === after.at && call.id > after.id))) return false
+        return (answered.get(call.subject) ?? -Infinity) <= call.at
+      })
+      return open.sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1)).slice(0, limit).map(withResult)
+    },
+
     async callsBetween(from, to) {
       const found = [...calls.values()].filter((call) => call.at >= from && call.at < to)
       return found.sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1)).map(withResult)

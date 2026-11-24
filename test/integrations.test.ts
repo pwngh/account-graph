@@ -865,6 +865,15 @@ test('a call whose result is awaited is held, and nothing is sent until a person
     await post('/call', { id: 'CB1', direction: 'outbound', from: '+15550100001', to: '+15550100021', at: T0 + 60_000, duration: 80, answered: true })
     assert.deepEqual((await asked()).followUp, { state: 'returned', by: 'CB1', delay: 60_000, attempts: 0 })
     assert.equal(await (await fetch(`${base}/call?id=none`, { headers: { authorization: 'Bearer review' } })).json(), null)
+    // The list of open misses and the summary, for a reviewer, with a period and a zone.
+    const read = async (path: string) => (await fetch(`${base}${path}`, { headers: { authorization: 'Bearer review' } }))
+    const days = 'from=2024-02-16&to=2024-02-16&tz=America/New_York'
+    await post('/call', { ...call('CA9'), from: '+15550100029', at: T0 + 1, answered: false })
+    const list = (await (await read(`/calls?${days}`)).json()) as any
+    assert.deepEqual([list.timeZone, list.calls.map((each: any) => [each.id, each.state, each.attempts]), list.next], ['America/New_York', [['CA9', 'missed', 0]], null])
+    const whole = (await (await read(`/calls/summary?${days}`)).json()) as any
+    assert.deepEqual([whole.expected, whole.total.calls, whole.total.missed, whole.total.returned], [true, 3, 2, 1])
+    for (const bad of ['/calls?after=x', '/calls?from=2026-13-01', '/calls/summary?tz=Mars']) assert.equal((await read(bad)).status, 400, bad)
     // A result that comes first waits for its call.
     assert.deepEqual((await post('/call/result', { id: 'CA3', answered: true })).body, { state: 'waiting', counted: false })
     assert.equal((await post('/call', call('CA3'))).body.state, 'answered')
@@ -877,7 +886,7 @@ test('a call whose result is awaited is held, and nothing is sent until a person
     const corrected = requests.at(-1)!.events[0] as any
     assert.deepEqual([corrected.transactionId, corrected.userData.userIdentifiers], ['call:CA4', [{ phoneNumber: hashPhone('+15550100021') }]])
     const held = (await (await fetch(`${base}/conversions?state=held`, { headers: { authorization: 'Bearer service' } })).json()) as any[]
-    assert.deepEqual(held.map((job) => job.transactionId), ['call:CA2'])
+    assert.deepEqual(held.map((job) => job.transactionId).sort(), ['call:CA2', 'call:CA9'])
   } finally {
     server.close()
   }

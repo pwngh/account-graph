@@ -140,6 +140,19 @@ A call before the miss says nothing about it. One later answer closes every earl
 
 A call you place is never an outcome and records nothing about who was rung. For an outbound call, `from` is your number and `to` is theirs. The number is kept as its hash.
 
+## The Calls view
+
+Open `/review#/calls`. It shows, over the days you pick and in the server's time zone:
+
+- **Missed and not returned**, oldest first: how long ago, when, what the call is credited to, how long the caller waited, and how often you have tried. Each links to the caller.
+- **How calls went**: answered, missed, voicemail, waiting, unknown, and how many of the missed were returned or tried again.
+- **By hour and weekday**: pick what to count. The number is in every cell.
+- **Coverage**: how many calls are tied to a visitor, filed under a channel only, or neither, and how many have no result.
+
+> **No phone numbers.** A caller is kept as a hash of their number, so the screen shows a subject. Find the number in your phone system by the time of the call. The view is read-only.
+
+A missed call stays in its own period: one from before the first day shown is not listed, however open it is.
+
 ### From Twilio
 
 Twilio can report each call itself. The server checks every request against Twilio's signature, so the route needs no token.

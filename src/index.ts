@@ -25,6 +25,7 @@ export type { Batcher } from './batch.ts'
 export type { KnownLinkOptions, StaffLinkOptions } from './sign.ts'
 export type { Ladder, Stage } from './ladder.ts'
 export type { AlertOptions, Alerter } from './alerts.ts'
+export type { CallCounts, CallSummary } from './callreport.ts'
 export type { Call, CallFlag, CallOptions, CallState, Channel, RecordedCall } from './calls.ts'
 export type { Fitted, Labeled, Measured } from './calibrate.ts'
 export type {
@@ -52,6 +53,7 @@ export type {
   Link,
   Moved,
   Observation,
+  OpenCall,
   Outcome,
   Pair,
   Reason,

@@ -223,3 +223,50 @@ async function look() {
     looking = false
   }
 }
+
+const iso = (date) => date.toISOString().slice(0, 10)
+/** The days an address names, the last thirty when it names none, and a form that goes to others. */
+function period(name, first, last) {
+  const range = { from: first || iso(new Date(Date.now() - 29 * 86400000)), to: last || iso(new Date()) }
+  const from = el('input', { type: 'date', value: range.from, required: '' })
+  const to = el('input', { type: 'date', value: range.to, required: '' })
+  const form = el('form', { class: 'row', on: { submit: (event) => { event.preventDefault(); go(`#/${name}/${from.value}/${to.value}`) } } },
+    el('label', {}, 'From', from), el('label', {}, 'To', to), el('button', { class: 'primary' }, 'Show'))
+  return { range, form, query: `from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}` }
+}
+/** A length of time in words: the two largest units that matter. */
+function lasted(ms) {
+  const minutes = Math.round(ms / 60000)
+  if (minutes < 1) return 'under a minute'
+  if (minutes < 60) return `${minutes} min`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 48) return `${hours} h${minutes % 60 ? ` ${minutes % 60} min` : ''}`
+  return `${Math.floor(hours / 24)} days${hours % 24 ? ` ${hours % 24} h` : ''}`
+}
+/** A count of a whole, with its share in words. */
+const share = (part, whole) => (whole > 0 ? `${amount(part)} (${percent(part / whole)})` : amount(part))
+/** A caller's id is long. Its start is enough to tell it from another, and the whole is in the title and the link. */
+const caller = (subject) => el('a', { class: 'link', href: subjectHash(subject), title: subject }, subject.length > 24 ? `${subject.slice(0, 18)}…` : subject)
+/** The same table of rows, a page at a time: `fetchPage(next)` answers `{ rows, next }`. */
+function paged(table, next, more, fetchPage) {
+  const button = el('button', { on: { click: async () => {
+    if (opening) return
+    const turn = ++loading
+    pending += 1
+    button.disabled = true
+    try {
+      const page = await fetchPage(next)
+      if (turn !== loading) return
+      table.append(...page.rows)
+      next = page.next
+      button.hidden = next === null
+    } catch (error) {
+      notice(error.message, true)
+    } finally {
+      pending -= 1
+      button.disabled = false
+    }
+  } } }, more)
+  button.hidden = next === null
+  return el('p', {}, button)
+}

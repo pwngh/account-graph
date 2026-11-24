@@ -4,7 +4,7 @@
  * Then open the printed address and enter the reviewer token `demo`.
  */
 import { createServer } from 'node:http'
-import { createGraph, createMemoryStore } from '../src/index.ts'
+import { createGraph, createMemoryStore, recordCall, recordCallResult } from '../src/index.ts'
 import { createHandler } from '../src/server.ts'
 
 const graph = createGraph(createMemoryStore())
@@ -69,6 +69,21 @@ for (const { visitors, enroll, daily, ...campaign } of campaigns) {
 await graph.observe({ subject: 'lead:walk-in', identifiers: ['email:walk-in'], at: Date.now() - 2 * 24 * HOUR })
 await graph.outcome({ transactionId: 'enrolled-walk-in', subject: 'lead:walk-in', at: Date.now() - 2 * 24 * HOUR, stage: 'enrolled', value: 200, currency: 'USD' })
 
+// Two weeks of calls, from a seeded generator so they are the same each time: most answered, some missed, some returned.
+let seed = 11
+const chance = () => (seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff) / 0x7fffffff
+const numbers = { '+15550100001': { source: 'google', campaignId: '20222' }, '+15550100002': { source: 'mailer', campaign: 'postcard' } }
+for (let i = 0; i < 120; i++) {
+  const from = `+1555010${String(100 + Math.floor(chance() * 60)).padStart(4, '0')}`
+  const at = Math.floor((Date.now() - 14 * 24 * HOUR + Math.floor(chance() * 14) * 24 * HOUR) / (24 * HOUR)) * 24 * HOUR + Math.floor((8 + chance() * 13) * HOUR) + 6 * HOUR
+  if (at > Date.now()) continue
+  const roll = chance()
+  const to = chance() < 0.7 ? '+15550100001' : chance() < 0.7 ? '+15550100002' : '+15550100003'
+  await recordCall(graph, { id: `call-${i}`, from: chance() < 0.04 ? '' : from, to, at, duration: 20 + Math.floor(chance() * 300) }, { numbers, results: 'expected' })
+  if (roll < 0.93) await recordCallResult(graph, { id: `call-${i}`, answered: roll < 0.68, waited: Math.floor(chance() * 90), ...(roll > 0.85 && { voicemail: true }) }, { results: 'expected' })
+  if (roll > 0.68 && chance() < 0.4) await recordCall(graph, { id: `back-${i}`, direction: 'outbound', from: to, to: from, at: at + Math.floor(chance() * 20 * HOUR), duration: 60, answered: chance() < 0.6 })
+}
+
 // The example site (examples/site.ts) can report to this server too.
 const handler = createHandler(graph, {
   token: 'service-demo',
@@ -78,7 +93,7 @@ const handler = createHandler(graph, {
   linkSecret: 'demo-link-secret-not-for-real-use',
   // The steps in order, with what each is worth. The Channels view lists them this way.
   stages: { phone_click: {}, brochure: { value: 2, currency: 'USD' }, inquiry: { value: 5, currency: 'USD' }, call: { value: 10, currency: 'USD' }, signup: { value: 25, currency: 'USD' }, enrolled: { value: 200, currency: 'USD' } },
-  calls: { numbers: { '+15551230001': { source: 'google', campaignId: '20222' } } },
+  calls: { numbers: { ...numbers, '+15551230001': { source: 'google', campaignId: '20222' } }, results: 'expected' },
 })
 const port = Number(process.env.PORT ?? 8788)
 createServer(handler).listen(port, 'localhost', () => console.log(`reviewer screen: http://localhost:${port}/review  (reviewer token: demo; press Channels for the report)`))

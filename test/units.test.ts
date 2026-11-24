@@ -4,8 +4,9 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
 import { components, conversionEvent, createAlerter, createGraph, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, ingestRequest, ip, knownLink, ladderProblems, measure, normalizeEmail, normalizePhone, phoneOfType, policyFrom, policyHash, policyProblems, readToken, scorePairs, signToken, sourceOf, withStage } from '../src/index.ts'
+import { summarizeCalls } from '../src/callreport.ts'
 import { weigh } from '../src/policy.ts'
-import type { Edge, IdentifierState, Reason } from '../src/index.ts'
+import type { Edge, IdentifierState, KeptCall, Reason } from '../src/index.ts'
 import { configFrom } from '../src/serve.ts'
 import { createHandler } from '../src/server.ts'
 
@@ -306,6 +307,34 @@ test('call results are off until set, and read in minutes', () => {
   assert.deepEqual([configFrom(env).callResults, configFrom(env).callResultWait], [undefined, 30])
   assert.deepEqual([configFrom({ ...env, CALL_RESULTS: 'expected', CALL_RESULT_WAIT: '10' }).callResults, configFrom({ ...env, CALL_RESULT_WAIT: '10' }).callResultWait], ['expected', 10])
   assert.throws(() => configFrom({ ...env, CALL_RESULTS: 'yes' }), /CALL_RESULTS must be expected/)
+})
+
+test('calls are counted by hour and weekday where they happened, and by what became of them', () => {
+  const at = Date.parse('2026-03-02T05:30:00Z')
+  const call = (id: string, more: Partial<KeptCall> = {}): KeptCall => ({ id, direction: 'inbound', subject: `caller:${id}`, at, to: '+15550100001', flags: [], recorded: at, ...more })
+  const went = (answered: boolean, voicemail = false) => ({ answered, ...(voicemail && { voicemail }), recorded: at })
+  const calls = [
+    call('a', { result: went(true), visitor: 'visitor:1' }),
+    call('b', { result: went(false) }),
+    call('c', { result: went(false, true) }),
+    call('d', { result: went(false) }),
+    call('e', { at: at + 3_600_000 }),
+    call('f', { at: at + 7_200_000, duration: 60 }),
+    call('g', { subject: 'call:g', result: went(false) }),
+    call('placed', { direction: 'outbound', result: went(true) }),
+  ]
+  const later = [...calls, call('r1', { subject: 'caller:b', direction: 'outbound', at: at + 60_000, result: went(true) }), call('r2', { subject: 'caller:c', at: at + 120_000, result: went(true) })]
+  const summary = summarizeCalls(calls, later, new Set(['b', 'c']), at + 7_200_000 + 60_000 + 30 * 60_000 - 1, 'America/New_York', { results: 'expected' })
+  assert.deepEqual(summary.total, { calls: 7, answered: 1, missed: 3, voicemail: 1, waiting: 1, unknown: 1, returned: 1, triedAgain: 1, hidden: 1 })
+  // Half past five in the morning in London is half past midnight on Monday in New York.
+  assert.deepEqual(summary.cells.map((cell) => [cell.weekday, cell.hour, cell.calls]), [[1, 0, 5], [1, 1, 1], [1, 2, 1]])
+  assert.deepEqual(summarizeCalls(calls, later, new Set(), at, 'UTC').cells.map((cell) => [cell.weekday, cell.hour, cell.calls]), [[1, 5, 5], [1, 6, 1], [1, 7, 1]])
+  assert.deepEqual(summary.coverage, { visitor: 1, channel: 2, neither: 4, noResult: 2 })
+  assert.equal(summary.returnedWithin, 60_000)
+  // An hour that happens twice when clocks go back is one hour of the day; nothing is lost.
+  const fall = [0, 1].map((n) => call(`h${n}`, { at: Date.parse('2026-11-01T05:30:00Z') + n * 3_600_000 }))
+  assert.deepEqual(summarizeCalls(fall, [], new Set(), at, 'America/New_York').cells.map((cell) => [cell.weekday, cell.hour, cell.calls]), [[7, 1, 2]])
+  assert.deepEqual(summarizeCalls([], [], new Set(), at), { total: { calls: 0, answered: 0, missed: 0, voicemail: 0, waiting: 0, unknown: 0, returned: 0, triedAgain: 0, hidden: 0 }, cells: [], coverage: { visitor: 0, channel: 0, neither: 0, noResult: 0 }, returnedWithin: null })
 })
 
 test('a day begins at local midnight, across a clock change', () => {

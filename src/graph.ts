@@ -1,5 +1,8 @@
 import { brokenAt, seal } from './audit.ts'
 import type { Labeled } from './calibrate.ts'
+import { summarizeCalls } from './callreport.ts'
+import type { CallSummary } from './callreport.ts'
+import { followUp } from './calls.ts'
 import { createMemoryStore } from './memory.ts'
 import { defaultPolicy, plainPolicy, policyHash, ruleFor, usable } from './policy.ts'
 import type { Policy } from './policy.ts'
@@ -27,6 +30,7 @@ import type {
   Link,
   Moved,
   Observation,
+  OpenCall,
   Outcome,
   Recorded,
   Report,
@@ -103,6 +107,13 @@ export interface Graph {
   keptCall(id: string): Promise<KeptCall | undefined>
   /** Every kept call to or from the given subjects, oldest first. */
   callsOf(subjects: readonly Subject[]): Promise<KeptCall[]>
+  /**
+   * Missed calls nobody has returned, oldest first, with what each is
+   * credited to. `from` and `to` are days; pass the last call of a page as `after` for the next.
+   */
+  openCalls(options: { from: string; to: string; timeZone?: string; limit?: number; after?: { at: number; id: string } }): Promise<OpenCall[]>
+  /** Calls to you over a range of days: how they went, by hour and weekday, and how many could be placed. */
+  callSummary(options: { from: string; to: string; timeZone?: string; at?: number; results?: 'expected'; resultWait?: number }): Promise<CallSummary>
   /** How a call went, whether or not the call itself was kept. */
   callResult(id: string): Promise<CallResult | undefined>
   /** Records what campaigns cost. A row for the same day, source and campaign replaces the one before. */
@@ -226,6 +237,14 @@ export interface PolicyState {
 
 const DAY = 86_400_000
 const MIXED = 'mixed'
+/** The moments a range of days begins and ends in a time zone. */
+function range(from: string, to: string, timeZone?: string): [number, number] {
+  const start = dayStart(from, timeZone)
+  const end = dayStart(nextDay(to), timeZone)
+  if (end <= start) throw new TypeError('A report needs `from` on or before `to`')
+  return [start, end]
+}
+
 const pairKey = (a: Subject, b: Subject) => (a < b ? `${a}\u0000${b}` : `${b}\u0000${a}`)
 
 export function createGraph(store: Store, policy: Policy = defaultPolicy, options: GraphOptions = {}): Graph {
@@ -609,6 +628,32 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return store.read((tx) => tx.callsOf(subjects))
     },
 
+    openCalls({ from, to, timeZone, limit = 50, after }) {
+      const [start, end] = range(from, to, timeZone)
+      return store.read(async (tx) => {
+        const open = await tx.openCalls(start, end, limit, after)
+        const later = await tx.callsOf(unique(open.map((call) => call.subject)))
+        const out: OpenCall[] = []
+        for (const call of open) {
+          const { credited } = await credit(call.subject, call.at, 90 * DAY, await reach(tx, call.subject, 2), tx)
+          out.push({ call, followUp: followUp(call, later), ...(credited && { touch: credited }) })
+        }
+        return out
+      })
+    },
+
+    callSummary({ from, to, timeZone, at = now(), ...options }) {
+      const [start, end] = range(from, to, timeZone)
+      return store.read(async (tx) => {
+        const calls = await tx.callsBetween(start, end)
+        const missed = calls.filter((call) => call.direction === 'inbound' && call.result?.answered === false)
+        // A call filed under its number's channel left a touch of its own, on the caller, at the moment it began.
+        const own = new Set((await tx.touchesBetween(start, end)).filter((touch) => touch.landing?.startsWith('tel:')).map((touch) => `${touch.at} ${touch.subject}`))
+        const filed = new Set(calls.filter((call) => own.has(`${call.at} ${call.subject}`)).map((call) => call.id))
+        return summarizeCalls(calls, await tx.callsOf(unique(missed.map((call) => call.subject))), filed, at, timeZone, options)
+      })
+    },
+
     callResult(id) {
       return store.read((tx) => tx.callResultOf(id))
     },
@@ -637,9 +682,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     async report({ from, to, timeZone, window = 90 * DAY, hops = 2 }) {
-      const start = dayStart(from, timeZone)
-      const end = dayStart(nextDay(to), timeZone)
-      if (end <= start) throw new TypeError('A report needs `from` on or before `to`')
+      const [start, end] = range(from, to, timeZone)
       return store.read(async (tx) => {
         // Who a subject can reach does not depend on when, so one subject's outcomes share one search.
         const reached = new Map<Subject, Reached>()

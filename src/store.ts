@@ -95,6 +95,11 @@ export interface Tx {
   callResultOf(id: string): Promise<CallResult | undefined>
   /** Every call to or from the given subjects, oldest first. */
   callsOf(subjects: readonly Subject[]): Promise<KeptCall[]>
+  /**
+   * Missed calls with `from <= at < to` that nobody has spoken to the caller
+   * since, oldest first. With `after`, only those past that call.
+   */
+  openCalls(from: number, to: number, limit: number, after?: { at: number; id: string }): Promise<KeptCall[]>
   /** Calls with `from <= at < to`, oldest first. */
   callsBetween(from: number, to: number): Promise<KeptCall[]>
   /** Deletes results written down before a time whose call never came. Returns how many went. */
