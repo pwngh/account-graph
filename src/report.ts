@@ -172,9 +172,12 @@ const ratios = ({ cost, outcomes, value }: Spent) => ({
  * on both sides: an outcome on a day whose cost is not known would look
  * free. A recorded zero is cost data, and so is a day that cost nothing.
  */
-function worth(costDays: number, days: number, campaign: boolean, spent: Spent): Pick<ReportRow, Worked> {
-  const thin = costDays > 0 && costDays < days * ENOUGH
-  return { costDays, missingDays: Math.max(0, days - costDays), thin, ...(campaign && costDays > 0 && !thin ? ratios(spent) : { costPerOutcome: null, returnOnCost: null }) }
+function worth(costDays: number, days: number, { campaign, campaignId }: { campaign: string; campaignId: string }, spent: Spent): Pick<ReportRow, Worked> {
+  // Money spent on no campaign in particular says nothing of what one campaign's outcomes cost. A campaign an ad platform
+  // numbered has a cost somewhere; one known only by a name may be a newsletter, so with no cost data nothing is missing.
+  const named = Boolean(campaignId || campaign)
+  const thin = named && costDays < days * ENOUGH && (costDays > 0 || campaignId !== '')
+  return { costDays, missingDays: Math.max(0, days - costDays), thin, ...(named && costDays > 0 && !thin ? ratios(spent) : { costPerOutcome: null, returnOnCost: null }) }
 }
 
 /**
@@ -307,11 +310,9 @@ export function fold(
       spent.outcomes += onDays.get(day)?.outcomes ?? 0
       spent.value += onDays.get(day)?.value ?? 0
     }
-    // Money spent on no campaign in particular says nothing of what one campaign's outcomes cost.
-    const campaign = Boolean(found.campaignId || found.campaign)
-    const worked = worth(costDays.size, days, campaign, spent)
-    if (campaign && worked.thin) leftOut += 1
-    else if (campaign && costDays.size > 0) {
+    const worked = worth(costDays.size, days, found, spent)
+    if (worked.thin) leftOut += 1
+    else if (costDays.size > 0 && (found.campaignId || found.campaign)) {
       counted += 1
       known.cost += spent.cost
       known.outcomes += spent.outcomes

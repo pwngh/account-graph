@@ -10,11 +10,11 @@ view('channels', 'Channels', async (box, first, last, by = '') => {
   resolved(report)
   const stages = report.steps.filter((step) => report.total.stages[step])
   const unknown = () => el('span', { class: 'muted' }, '(not recorded)')
-  const withheld = (row) => el('span', { class: 'muted', title: `Cost data for ${row.costDays} of ${report.days} days is too little to say.` }, 'withheld')
+  const withheld = (row) => el('span', { class: 'muted', title: row === report.total ? 'No campaign has cost data on enough days to say.' : `Cost data for ${row.costDays} of ${report.days} days is too little to say.` }, 'withheld')
   const per = (row) => (row.costPerOutcome !== null ? money(row.costPerOutcome) : row.thin ? withheld(row) : '')
   const back = (row) => (row.returnOnCost !== null ? `${row.returnOnCost.toFixed(1)}×` : row.thin ? withheld(row) : '')
   // A campaign nobody reported a cost for may have cost nothing or anything. Only a number somebody sent is shown as one.
-  const spent = (row) => (row.costDays === 0 ? [td('num', row.source === '(none)' ? '' : unknown()), td('num', row.source === '(none)' ? '' : unknown())]
+  const spent = (row) => (row.costDays === 0 && row.cost === 0 && row.clicks === 0 ? [td('num', row.source === '(none)' ? '' : unknown(), row.thin ? el('span', { class: 'reason' }, `${row.missingDays} of ${report.days} days missing`) : ''), td('num', row.source === '(none)' ? '' : unknown())]
     : [td('num', money(row.cost), row.missingDays > 0 ? el('span', { class: 'reason' }, `${row.missingDays} of ${report.days} days missing`) : ''), td('num', amount(row.clicks))])
   const cells = (row) => [...spent(row), td('num', amount(row.visits)),
     ...stages.map((stage) => td('num', row.stages[stage]?.count ?? '')),

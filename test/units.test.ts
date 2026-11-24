@@ -468,10 +468,14 @@ test('what an outcome cost uses the outcomes of that campaign, on the days whose
   // 30 over the two sales on those days, and not over all five.
   assert.deepEqual(row('gaps'), [6, 4, false, 15, 6.666667])
   assert.deepEqual(row('thin'), [4, 6, true, null, null])
-  assert.deepEqual(row('free'), [0, 10, false, null, null])
+  assert.deepEqual(row('free'), [0, 10, true, null, null])
   // The total covers the campaigns whose cost is known: 130 over six sales. Not the 337 spent over the twelve there were.
-  assert.deepEqual([report.total.costPerOutcome, report.total.returnOnCost, report.leftOut, report.days], [21.666667, 4.615385, 2, 10])
+  assert.deepEqual([report.total.costPerOutcome, report.total.returnOnCost, report.leftOut, report.days], [21.666667, 4.615385, 3, 10])
   assert.equal(report.total.cost, 337)
+  // A campaign known only by its name may be a newsletter, and spend on no campaign is nobody's: neither is withheld for want of days.
+  const unnumbered = fold('2026-03-01', '2026-03-10', [cost('2026-03-01', '', 5)], [{ subject: 's', at: 0, source: 'newsletter', campaign: 'march' }], [])
+  assert.deepEqual(unnumbered.rows.map((each) => [each.source, each.thin]), [['google', false], ['newsletter', false]])
+  assert.equal(unnumbered.leftOut, 0)
   // Days still to come are not missing.
   const early = fold('2026-03-01', '2026-03-31', costs, [], credited, { through: '2026-03-10' })
   assert.deepEqual([early.days, early.rows.find((each) => each.campaignId === 'full')!.missingDays], [10, 0])
