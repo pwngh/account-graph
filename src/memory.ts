@@ -1,3 +1,4 @@
+import { createMemoryOps } from './ops.ts'
 import { createMemoryOutbox } from './outbox.ts'
 import { standingFirst } from './store.ts'
 import type { Store, Tx } from './store.ts'
@@ -27,6 +28,7 @@ export function createMemoryStore(): Store {
   const costs = new Map<string, Required<Cost>>()
   const moves: Moved[] = []
   let writes = 0
+  const ops = createMemoryOps()
   let built: string | undefined
 
   const withResult = (call: Omit<KeptCall, 'result'>): KeptCall => structuredClone({ ...call, ...(results.has(call.id) && { result: results.get(call.id)! }) })
@@ -109,6 +111,7 @@ export function createMemoryStore(): Store {
       }
       flowsBy.delete(subject)
       consents.delete(subject)
+      ops.forget(subject)
       for (let i = moves.length - 1; i >= 0; i--) if (moves[i]!.subject === subject) moves.splice(i, 1)
     },
 
@@ -193,6 +196,10 @@ export function createMemoryStore(): Store {
 
     async recentChanges(limit) {
       return moves.slice(Math.max(0, moves.length - limit)).reverse().map((move) => ({ ...move }))
+    },
+
+    async fed(feed, at) {
+      ops.fed(feed, at)
     },
 
     async empty() {
@@ -443,7 +450,7 @@ export function createMemoryStore(): Store {
     return run
   }
 
-  return { write: (work) => queue((bound) => (writes += 1, work(bound))), read: queue, outbox: createMemoryOutbox() }
+  return { write: (work) => queue((bound) => (writes += 1, work(bound))), read: queue, outbox: createMemoryOutbox(), ops }
 }
 
 const copied = (decision: Decision): Decision => ({ ...decision, about: [...decision.about] })

@@ -72,11 +72,14 @@
 - `CALL_RESULTS=expected` (`CallOptions.results`) holds a call, uncounted and unsent, until its result says a person answered; after `CALL_RESULT_WAIT` minutes it reads as unknown.
 - `POST /call` takes calls you place (`direction: "outbound"`); `followUp` and `GET /call` say whether a missed call was returned, after how long, and how often it was tried.
 - The reviewer screen's Calls view lists missed calls not returned, how calls went by hour and weekday, and coverage (`GET /calls`, `GET /calls/summary`, `openCalls`, `callSummary`).
+- `createOps` notices quiet feeds (`QUIET_TOUCHES_HOURS` and its siblings) and missed callers from paid arrivals not rung back within `RETURN_HOURS`; each is alerted once. An alert that is not delivered is kept and tried again.
+- `GET /ops` and the Health view show feeds, jobs, undelivered alerts and the outbox; `POST /alerts/test` sends a test alert.
 - `outbox.hold`, `release` and `withdraw` keep back, send and take back an outcome; a job can be `held`.
 - `ReportRow.missed` counts missed calls per campaign; calls are kept with their results (`keptCall`, `callResult`).
 
 ### Changed
 
+- Breaking: `Store` has `ops`, an `OpsStore`.
 - Breaking: `OutboxStore` has `swap` and `standing` in place of `save`; a worker's pass no longer overwrites a change made since it claimed a job.
 - Twilio's `busy`, `no-answer`, `failed` and `canceled` calls are recorded as not answered.
 - `prune` also deletes advertising answers that no longer stand.

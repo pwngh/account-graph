@@ -1,3 +1,4 @@
+import type { Feed, KeptAlert, OpsStore } from './ops.ts'
 import type { Job, JobState, OutboxStore } from './outbox.ts'
 import type { Store, Tx } from './store.ts'
 import type { CallResult, Consent, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Moved, Sighting, Subject, Touch } from './types.ts'
@@ -103,6 +104,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       await db.query(`delete from ${t('apart')} where a = $1 or b = $1`, [subject])
       await db.query(`delete from ${t('flow')} where source = $1 or target = $1`, [subject])
       await db.query(`delete from ${t('consent_log')} where subject = $1`, [subject])
+      await db.query(`delete from ${t('alert')} where subject = $1`, [subject])
       await db.query(`delete from ${t('change')} where subject = $1`, [subject])
     },
 
@@ -203,6 +205,10 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
     async recentChanges(limit) {
       const { rows } = await db.query(`select * from ${t('change')} order by id desc limit $1`, [limit])
       return rows.map((row): Moved => ({ subject: row.subject, from: row.from_cluster ?? undefined, to: row.to_cluster ?? undefined, at: Number(row.at) }))
+    },
+
+    async fed(feed, at) {
+      await db.query(`insert into ${t('feed')} (name, last_at) values ($1, $2) on conflict (name) do update set last_at = greatest(${t('feed')}.last_at, excluded.last_at)`, [feed, at])
     },
 
     async empty() {
@@ -586,8 +592,79 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
     },
   }
 
+  const toAlert = (row: any): KeptAlert => ({ key: row.key, text: row.text, at: Number(row.at), ...(row.subject !== null && { subject: row.subject }), ...(row.error !== null && { error: row.error }) })
+  const ops: OpsStore = {
+    async feeds() {
+      const { rows } = await pool.query(`select * from ${t('feed')}`)
+      return new Map(rows.map((row) => [row.name as Feed, { ...(row.last_at !== null && { last: Number(row.last_at) }), ...(row.watched_at !== null && { watched: Number(row.watched_at) }) }]))
+    },
+    async watch(feed, at) {
+      await pool.query(`insert into ${t('feed')} as f (name, watched_at) values ($1, $2) on conflict (name) do update set watched_at = coalesce(f.watched_at, excluded.watched_at)`, [feed, at])
+    },
+    async jobStarted(run, name, at, forgotten) {
+      await pool.query(
+        `with gone as (delete from ${t('job_run')} where name = $2 and started_at < $4), begun as (insert into ${t('job_run')} (id, name, started_at) values ($1, $2, $3))
+         insert into ${t('job')} (name, started_at, run) values ($2, $3, $1) on conflict (name) do update set started_at = excluded.started_at, run = excluded.run, outcome = null`,
+        [run, name, at, forgotten],
+      )
+    },
+    async jobEnded(run, name, at, error) {
+      await pool.query(
+        `with ended as (delete from ${t('job_run')} where id = $1)
+         insert into ${t('job')} as j (name, started_at, run, succeeded_at, failed_at, error, outcome)
+           values ($2, $3, $1, case when $4::text is null then $3::bigint end, case when $4::text is not null then $3::bigint end, $4, case when $4::text is null then 'done' else 'failed' end)
+         on conflict (name) do update set succeeded_at = coalesce(excluded.succeeded_at, j.succeeded_at), failed_at = coalesce(excluded.failed_at, j.failed_at), error = coalesce(excluded.error, j.error),
+           outcome = case when j.run = $1 then excluded.outcome else j.outcome end`,
+        [run, name, at, error ?? null],
+      )
+    },
+    async jobs() {
+      const { rows } = await pool.query(`select j.*, array(select started_at from ${t('job_run')} r where r.name = j.name order by started_at desc) as open from ${t('job')} j order by name collate "C"`)
+      return rows.map((row) => ({
+        name: row.name,
+        started: Number(row.started_at),
+        ...(row.succeeded_at !== null && { succeeded: Number(row.succeeded_at) }),
+        ...(row.failed_at !== null && { failed: Number(row.failed_at) }),
+        ...(row.error !== null && { error: row.error }),
+        ...(row.outcome !== null && { outcome: row.outcome }),
+        open: row.open.map(Number),
+      }))
+    },
+    async addAlert({ key, text, at, subject, error }) {
+      const { rows } = await pool.query(`insert into ${t('alert')} (key, text, at, subject, error, tried_at) values ($1, $2, $3, $4, $5, $3) on conflict do nothing returning 1`, [key, text, at, subject ?? null, error ?? null])
+      return rows.length > 0
+    },
+    async keepAlert({ key, text, at, subject, error }) {
+      await pool.query(
+        `insert into ${t('alert')} as a (key, text, at, subject, error, tried_at) values ($1, $2, $3, $4, $5, $3)
+         on conflict (key) do update set at = excluded.at, error = excluded.error, tried_at = excluded.tried_at, delivered_at = null where a.delivered_at is not null`,
+        [key, text, at, subject ?? null, error ?? null],
+      )
+    },
+    async claimAlert(now, before) {
+      const { rows } = await pool.query(
+        `update ${t('alert')} set tried_at = $1::bigint where key = (
+           select key from ${t('alert')} where delivered_at is null and tried_at <= $2::bigint order by tried_at, at limit 1 for update skip locked
+         ) returning *`,
+        [now, before],
+      )
+      return rows[0] && toAlert(rows[0])
+    },
+    async alertDelivered(key, at) {
+      await pool.query(`update ${t('alert')} set delivered_at = $2 where key = $1`, [key, at])
+    },
+    async alertFailed(key, error) {
+      await pool.query(`update ${t('alert')} set error = $2 where key = $1`, [key, error])
+    },
+    async undelivered() {
+      const { rows } = await pool.query(`select * from ${t('alert')} where delivered_at is null order by at`)
+      return rows.map(toAlert)
+    },
+  }
+
   return {
     outbox,
+    ops,
     write: (work) => run('begin', true, work),
     read: (work) => run('begin isolation level repeatable read read only', false, work),
     async migrate() {
@@ -807,6 +884,40 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
       id: 10,
       name: 'calls you place',
       sql: `alter table ${schema}.call add column if not exists direction text not null default 'inbound';`,
+    },
+    {
+      id: 11,
+      name: 'feeds, jobs and alerts',
+      // When each feed last wrote something, taken once from what is stored. Costs carry no time, so theirs is not known yet.
+      sql: `create table if not exists ${schema}.feed (name text primary key, last_at bigint, watched_at bigint);
+            insert into ${schema}.feed (name, last_at)
+              select name, last_at from (values
+                ('touches', (select max(at) from ${schema}.touch)),
+                ('calls', (select max(recorded_at) from ${schema}.call)),
+                ('results', (select max(recorded_at) from ${schema}.call_result))
+              ) as seen (name, last_at) where last_at is not null on conflict do nothing;
+            create table if not exists ${schema}.job (
+              name text primary key,
+              started_at bigint not null,
+              succeeded_at bigint,
+              failed_at bigint,
+              error text,
+              run text,
+              outcome text
+            );
+            create table if not exists ${schema}.job_run (id text primary key, name text not null, started_at bigint not null);
+            create index if not exists job_run_name on ${schema}.job_run (name);
+            create table if not exists ${schema}.alert (
+              key text primary key,
+              text text not null,
+              at bigint not null,
+              subject text,
+              error text,
+              tried_at bigint not null,
+              delivered_at bigint
+            );
+            create index if not exists alert_undelivered on ${schema}.alert (at) where delivered_at is null;
+            create index if not exists alert_subject on ${schema}.alert (subject);`,
     },
   ]
 }

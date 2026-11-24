@@ -65,6 +65,7 @@ A token goes in the `authorization` header as `Bearer …`. There are two.
 | `GET /clusters?offset=` | The largest clusters, 50 at a time. |
 | `GET /search?q=` | Subjects whose id starts with the text. |
 | `GET /policy` | The running rules by kind, the hash the stored clusters were built with, whether a rebuild is `due`, and which kinds were `changed` from the default. |
+| `GET /ops` | How the server runs: `{ feeds, jobs, undelivered, alerts, outbox }`. |
 | `GET /pulse` | `{ version }`, with an `etag`. Ask again with `if-none-match` and it answers 304 until something is written. |
 | `GET /recent` | The newest cluster changes. |
 | `GET /flows?subject=` | Everyone the subject exchanged value with, and the identity tie to each. |
@@ -107,7 +108,8 @@ The four `POST` routes answer with the subjects whose cluster moved. With the se
 | `GET /conversion?id=` | The jobs of one transaction, one per ad platform. |
 | `GET /conversions?state=` | Jobs in one state: `held`, `pending`, `sent`, `skipped`, or `failed`. `held` waits for a call's result. |
 | `POST /retry` | `{ transactionId }`. Puts its failed and skipped jobs back in line. |
-| `POST /prune` | `{ before, by?, reason? }`. Deletes sightings written down before a time, and answers about advertising that no longer stand. |
+| `POST /alerts/test` | Posts a test alert. Answers `{ delivered, error? }`. |
+| `POST /prune` | `{ before, by?, reason? }`. Deletes sightings written down before a time, answers about advertising that no longer stand, and call results whose call never came. |
 | `GET /stats` | Counts since start, what the graph holds, and outbox jobs by state. |
 | `POST /rebuild` | `{ by?, reason? }`. Recomputes every cluster under the running policy, and answers with the subjects that moved. No other write runs meanwhile. |
 | `GET /verify` | `{ changes, policy }`: the subjects whose stored cluster differs from a full recompute, and whether the policy changed since they were stored. |

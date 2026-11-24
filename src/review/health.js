@@ -2,9 +2,42 @@
 const short = (hash) => (hash === null ? '(not recorded)' : hash === 'mixed' ? 'more than one policy' : hash.slice(0, 12))
 const lasting = (ms) => (ms === 'none' ? 'none' : ms >= 86400000 ? `${amount(Math.round(ms / 8640000) / 10)} days` : `${amount(Math.round(ms / 360000) / 10)} hours`)
 
+const NAMES = { touches: 'Arrivals', calls: 'Calls', results: 'Call results', costs: 'Campaign costs' }
+const JOB = { running: 'running', stuck: 'never finished', done: 'succeeded', failed: 'failed' }
+const ago = (at, now) => (at === null || at === undefined ? el('span', { class: 'muted' }, '(not recorded)') : el('span', { title: when(at) }, `${lasted(now - at)} ago`))
+
+/** Alerts that did not arrive, what feeds the graph, the jobs that run by themselves, and what waits to be sent. */
+function workings(ops) {
+  const out = []
+  if (ops.undelivered.length > 0) {
+    out.push(el('section', {}, el('h2', {}, 'Alerts not delivered'),
+      el('p', { class: 'banner', role: 'alert' }, el('b', {}, `${amount(ops.undelivered.length)} not delivered. `), ops.alerts ? 'Each is tried again every five minutes, and stays here until it arrives.' : 'No webhook is set, so nobody has been told. Set ALERT_WEBHOOK.'),
+      el('ul', {}, ...ops.undelivered.map((alert) => el('li', {}, alert.text, el('span', { class: 'reason' }, `${when(alert.at)}${alert.error ? `. ${alert.error}` : ''}`))))))
+  } else if (!ops.alerts) out.push(el('section', {}, el('h2', {}, 'Alerts'), el('p', {}, 'No webhook is set, so what goes wrong is shown here and nobody is told.')))
+
+  const feeds = el('table', {}, el('tr', {}, th('Feed'), th('Last written down'), th('Quiet after'), th('State')),
+    ...ops.feeds.map((feed) => el('tr', {}, td('', NAMES[feed.name]), td('', ago(feed.last, ops.at)), td('', feed.hours > 0 ? `${amount(feed.hours)} h` : 'not watched'),
+      td('', feed.quiet ? el('span', { class: 'chip apart' }, 'quiet') : feed.hours > 0 ? el('span', { class: 'chip same' }, 'heard from') : ''))))
+  out.push(el('section', {}, el('h2', {}, 'Feeds'), wide('Feeds', feeds)))
+
+  const jobs = el('table', {}, el('tr', {}, th('Job'), th('State'), th('Began'), th('Last success'), th('Last failure'), th('Why')),
+    ...ops.jobs.map((job) => el('tr', {}, td('', job.name), td('', el('span', { class: `chip ${job.state === 'done' ? 'same' : job.state === 'running' ? '' : 'apart'}` }, JOB[job.state])), td('', ago(job.started, ops.at)),
+      td('', ago(job.succeeded, ops.at)), td('', job.failed === undefined ? el('span', { class: 'muted' }, 'none') : ago(job.failed, ops.at)),
+      td('who', job.error && job.state === 'failed' ? job.error : '', ...job.open.slice(0, 3).map((began) => el('span', { class: 'reason' }, `A run that began ${when(began)} never finished.`))))))
+  out.push(el('section', {}, el('h2', {}, 'Jobs'), ops.jobs.length > 0 ? wide('Jobs', jobs) : el('p', {}, 'None has run yet.')))
+
+  const states = [['held', 'waiting for a call result'], ['pending', 'waiting to be sent'], ['sent', 'sent'], ['skipped', 'not sent, with a reason'], ['failed', 'refused for good']]
+  out.push(el('section', {}, el('h2', {}, 'Conversions to ad platforms, all time'), ops.outbox === null ? el('p', {}, 'No ad platform is set up, so nothing is sent.')
+    : wide('Conversions', el('table', {}, el('tr', {}, th('State'), th('Jobs', 'num'), th('What it means')), ...states.map(([state, meaning]) => el('tr', {}, td('', state), td('num', amount(ops.outbox[state])), td(state === 'failed' && ops.outbox.failed > 0 ? 'apart' : 'muted', meaning)))))))
+  return out
+}
+
 view('health', 'Health', async (box) => {
-  const [policy, disputes, audit] = await Promise.all([api('GET', '/policy'), api('GET', '/disputes'), api('GET', '/audit')])
+  // A server built as a library may not say how its own jobs run.
+  const running = api('GET', '/ops').catch((error) => (error.message === 'No such route' ? null : Promise.reject(error)))
+  const [policy, disputes, audit, ops] = await Promise.all([api('GET', '/policy'), api('GET', '/disputes'), api('GET', '/audit'), running])
   box.append(el('section', {}, el('h3', {}, 'Health'), el('p', { class: 'muted' }, 'What this server runs, as it stands now.')))
+  if (ops) box.append(...workings(ops))
 
   const rules = el('table', {}, el('tr', {}, th('Kind'), th('Weight', 'num'), th('Dilution', 'num'), th('Cap, subjects', 'num'), th('Half-life', 'num'), th('Group'), th('')))
   const kinds = Object.entries(policy.rules.kinds).sort(([x, a], [y, b]) => b.weight - a.weight || (x < y ? -1 : 1))
@@ -47,4 +80,4 @@ view('health', 'Health', async (box) => {
   for (const { a, b, last, reversals } of disputes) table.append(el('tr', {}, td('who', open(a)), td('who', open(b)), td('num', reversals), td('', `${last.action === 'separate' ? 'kept apart' : last.action === 'join' ? 'joined' : 'allowed to join'}, ${when(last.at)}`), td('', author(last.by))))
   box.append(el('section', {}, el('h2', {}, 'Pairs systems disagree about'), el('p', { class: 'muted' }, 'Two subjects that systems have reported as one person and as two by turns, three times or more. A separation holds over a join, so the pair may have stayed apart throughout. Find out which system is right, and stop the other from sending.'),
     disputes.length > 0 ? wide('Pairs systems disagree about', table) : el('p', {}, 'None.')))
-})
+}, { every: 30_000 })
