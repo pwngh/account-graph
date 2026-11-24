@@ -15,6 +15,14 @@ export interface Store {
   outbox: OutboxStore
 }
 
+export interface DecisionPage {
+  /** Only decisions with a smaller sequence number. */
+  before?: number
+  limit: number
+  /** `people` and `system` split on the author's name starting with `system:`. Anything else is one author's name. */
+  author?: string
+}
+
 export interface Tx {
   /** Logs sightings and folds them into edges. Returns how many new edges each identifier gained. */
   addSightings(sightings: readonly Sighting[]): Promise<Map<Identifier, number>>
@@ -89,4 +97,10 @@ export interface Tx {
   lastDecision(): Promise<Decision | undefined>
   /** Every decision, oldest first. */
   decisions(): Promise<Decision[]>
+  /** One page of decisions, newest first: those before a sequence number, by people, by systems, or by one author. */
+  decisionPage(page: DecisionPage): Promise<Decision[]>
+  /** Every decision that joined, separated or rejoined one of the given pairs, oldest first. Each pair is in order. */
+  decisionsAbout(pairs: readonly (readonly [Subject, Subject])[]): Promise<Decision[]>
+  /** The pairs that systems have decided about this many times or more, the most recently decided first. */
+  pairsDecidedBySystems(times: number, limit: number): Promise<[Subject, Subject][]>
 }

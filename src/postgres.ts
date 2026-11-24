@@ -397,6 +397,31 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       const { rows } = await db.query(`select * from ${t('decision')} order by seq`)
       return rows.map(toDecision)
     },
+
+    async decisionPage({ before, limit, author }) {
+      const which = author === undefined ? '' : author === 'people' ? `and (actor is null or not starts_with(actor, 'system:'))` : author === 'system' ? `and starts_with(actor, 'system:')` : 'and actor = $3'
+      const { rows } = await db.query(`select * from ${t('decision')} where ($1::bigint is null or seq < $1) ${which} order by seq desc limit $2`, [before ?? null, limit, ...(which.includes('$3') ? [author] : [])])
+      return rows.map(toDecision)
+    },
+
+    async decisionsAbout(pairs) {
+      if (pairs.length === 0) return []
+      const { rows } = await db.query(
+        `select d.* from unnest($1::text[], $2::text[]) as pair (a, b)
+         join ${t('decision')} d on d.about->>0 = pair.a and d.about->>1 = pair.b where d.action in ('join', 'separate', 'rejoin') order by d.seq`,
+        [pairs.map((pair) => pair[0]), pairs.map((pair) => pair[1])],
+      )
+      return rows.map(toDecision)
+    },
+
+    async pairsDecidedBySystems(times, limit) {
+      const { rows } = await db.query(
+        `select about->>0 as a, about->>1 as b from ${t('decision')} where starts_with(actor, 'system:') and action in ('join', 'separate', 'rejoin')
+         group by 1, 2 having count(*) >= $1 order by max(seq) desc limit $2`,
+        [times, limit],
+      )
+      return rows.map((row) => [row.a, row.b] as [Subject, Subject])
+    },
   })
 
   async function run<T>(begin: string, lock: boolean, work: (tx: Tx) => Promise<T>): Promise<T> {
@@ -612,6 +637,12 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
               one boolean primary key default true check (one),
               policy text not null
             );`,
+    },
+    {
+      id: 7,
+      name: 'decisions by pair',
+      // So what was last decided about two subjects is found without reading every decision.
+      sql: `create index if not exists decision_pair on ${schema}.decision ((about->>0), (about->>1)) where action in ('join', 'separate', 'rejoin');`,
     },
   ]
 }

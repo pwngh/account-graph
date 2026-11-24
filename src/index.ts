@@ -17,7 +17,7 @@ export { createAlerter } from './alerts.ts'
 
 export type { AttributeOptions, Graph, GraphOptions, PolicyState, ReportOptions } from './graph.ts'
 export type { Policy, Rule } from './policy.ts'
-export type { Store, Tx } from './store.ts'
+export type { DecisionPage, Store, Tx } from './store.ts'
 export type { Conversion, Destination, IngestRequest } from './conversions.ts'
 export type { Item, Job, JobState, Outbox, OutboxOptions, OutboxStore, Pass, Target } from './outbox.ts'
 export type { GoogleAdsOptions, MetaOptions, MicrosoftAdsOptions, TikTokOptions } from './targets.ts'
@@ -51,11 +51,14 @@ export type {
   Outcome,
   Pair,
   Reason,
+  Recorded,
   Report,
   ReportRow,
   Ring,
   Sighting,
   Subject,
+  Told,
   Touch,
+  Verdict,
   Why,
 } from './types.ts'

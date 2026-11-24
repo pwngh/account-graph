@@ -34,6 +34,12 @@ await graph.transfer({ from: 'account:ana-shop', to: 'account:ben', amount: 85_0
 await graph.transfer({ from: 'account:ben', to: 'account:ana', amount: 80_000, at: start + 72 * HOUR, asset: 'gold' })
 await graph.separate('account:cy', 'account:dee', true, { by: 'dana', reason: 'siblings, one family computer' })
 
+// Two systems that disagree about one pair, and a list of pairs kept apart by a case system.
+for (let turn = 0; turn < 2; turn++) {
+  await graph.separateAll([{ a: 'account:fay', b: 'account:gus', reason: 'sides of one matter' }, ...(turn ? [] : [{ a: 'account:eve', b: 'account:hal' }])], { by: 'system:cases', reason: 'intake check' })
+  await graph.joinAll([{ a: 'account:fay', b: 'account:gus' }], { by: 'system:crm', reason: 'records merged' })
+}
+
 // Marketing: three campaigns with a daily cost, the visitors each brought, and what those visitors went on to do.
 const day = (ago: number) => new Date(Date.now() - ago * 24 * HOUR).toISOString().slice(0, 10)
 const campaigns = [

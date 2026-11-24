@@ -594,6 +594,90 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.ok(fitted.kinds.canvas!.after < 0.5 && fitted.kinds.canvas!.after > 0.35, String(fitted.kinds.canvas!.after))
     })
 
+    test('a list of pairs from a system is decided in one write, once, and told apart from people', async () => {
+      const { graph, store } = await fresh()
+      let writes = 0
+      const counted = createGraph({ ...store, write: (work) => (writes++, store.write(work)) })
+      const shared = (subject: string, ...identifiers: string[]) => ({ subject, identifiers, at: T0 })
+      // Two people on opposite sides share a phone; one of them is on file twice, under one email.
+      await graph.observe([shared('contact:p', 'phone:h'), shared('contact:r', 'phone:h', 'email:r'), shared('contact:r2', 'email:r'), shared('contact:x', 'phone:z'), shared('contact:y', 'phone:z')])
+      assert.deepEqual(await members(graph, 'contact:p'), ['contact:p', 'contact:r', 'contact:r2'])
+      const list = [{ a: 'contact:r', b: 'contact:p', reason: 'sides of one matter' }, { a: 'contact:p', b: 'contact:r2' }, { a: 'contact:y', b: 'contact:x' }]
+      const first = await counted.separateAll(list, { by: 'system:cases', reason: 'intake check' })
+      assert.deepEqual([first.recorded, first.already, writes], [3, 0, 1])
+      assert.deepEqual(await members(graph, 'contact:p'), ['contact:p'])
+      assert.deepEqual(await members(graph, 'contact:r'), ['contact:r', 'contact:r2'])
+      assert.deepEqual(await members(graph, 'contact:x'), ['contact:x'])
+      assert.deepEqual((await graph.decisions()).map((d) => [d.action, d.about, d.by, d.reason]), [
+        ['separate', ['contact:p', 'contact:r'], 'system:cases', 'sides of one matter'],
+        ['separate', ['contact:p', 'contact:r2'], 'system:cases', 'intake check'],
+        ['separate', ['contact:x', 'contact:y'], 'system:cases', 'intake check'],
+      ])
+      // The whole list sent again decides nothing.
+      assert.deepEqual(await graph.separateAll(list, { by: 'system:cases' }), { changes: [], recorded: 0, already: 3 })
+      // A duplicate record of one side that turns up later still joins that side, and not the other.
+      await graph.observe(shared('contact:r3', 'phone:new', 'email:r'))
+      assert.deepEqual(await members(graph, 'contact:r3'), ['contact:r', 'contact:r2', 'contact:r3'])
+      // Withdrawn, they may join again. A withdrawal of what was never said is nothing.
+      const back = await graph.separateAll([{ a: 'contact:x', b: 'contact:y', separated: false }, { a: 'contact:x', b: 'contact:p', separated: false }], { by: 'system:cases' })
+      assert.deepEqual([back.recorded, back.already], [1, 1])
+      assert.deepEqual(await members(graph, 'contact:x'), ['contact:x', 'contact:y'])
+      // One bad pair and nothing of the list is written.
+      const before = (await graph.decisions()).length
+      await assert.rejects(graph.separateAll([{ a: 'contact:x', b: 'contact:p' }, { a: 'contact:x', b: 'contact:x' }]), TypeError)
+      assert.equal((await graph.decisions()).length, before)
+
+      // Two records merged elsewhere are joined here, and neither is forgotten.
+      const joined = await graph.joinAll([{ a: 'contact:m2', b: 'contact:m1' }, { a: 'contact:m2', b: 'contact:m3' }], { by: 'system:crm' })
+      assert.deepEqual([joined.recorded, joined.already], [2, 0])
+      assert.deepEqual(await members(graph, 'contact:m1'), ['contact:m1', 'contact:m2', 'contact:m3'])
+      assert.equal((await graph.joinAll([{ a: 'contact:m1', b: 'contact:m2' }], { by: 'system:crm' })).already, 1)
+      // Muting the join undoes it, so the same report is news again.
+      await graph.ignore((await graph.history('contact:m1'))[0]!.identifier)
+      assert.equal((await graph.joinAll([{ a: 'contact:m1', b: 'contact:m2' }], { by: 'system:crm' })).recorded, 1)
+      // So is a separation whose subject was forgotten and came back.
+      await graph.forget('contact:r')
+      await graph.observe(shared('contact:r', 'phone:h'))
+      assert.equal((await graph.separateAll([list[0]!], { by: 'system:cases' })).recorded, 1)
+      assert.deepEqual(await members(graph, 'contact:p'), ['contact:p'])
+
+      // Decisions come a page at a time, newest first, by people or by systems.
+      await graph.separate('contact:m1', 'contact:x', true, { by: 'dana' })
+      const page = await graph.decisionPage({ limit: 2 })
+      assert.deepEqual(page.map((d) => [d.action, d.by]), [['separate', 'dana'], ['separate', 'system:cases']])
+      assert.deepEqual((await graph.decisionPage({ limit: 1, before: page[1]!.seq })).map((d) => d.action), ['forget'])
+      assert.deepEqual((await graph.decisionPage({ limit: 9, author: 'people' })).map((d) => d.action), ['separate', 'forget', 'ignore'])
+      assert.ok((await graph.decisionPage({ limit: 99, author: 'system' })).every((d) => d.by!.startsWith('system:')))
+      assert.equal((await graph.decisionPage({ limit: 99, author: 'system:crm' })).length, 3)
+      // What systems said can be left out of the pairs the weights are fitted to.
+      const people = await graph.reviewed({ exclude: 'system:' })
+      assert.ok((await graph.reviewed()).length > people.length)
+      assert.deepEqual(await graph.verify(), [])
+      assert.deepEqual(await graph.audit(), { sound: true })
+    })
+
+    test('a pair that systems keep reversing is flagged', async () => {
+      const { graph } = await fresh()
+      const pair = [{ a: 'contact:1', b: 'contact:2' }]
+      const cases = () => graph.separateAll(pair, { by: 'system:cases' })
+      const crm = () => graph.joinAll(pair, { by: 'system:crm' })
+      await cases()
+      await crm()
+      await cases()
+      // Sent again unchanged, it is not another reversal, and neither is what a person decides.
+      await cases()
+      await graph.join('contact:1', 'contact:2', { by: 'dana' })
+      await cases()
+      assert.deepEqual(await graph.disputes(), [])
+      await crm()
+      const [found] = await graph.disputes()
+      assert.deepEqual([found!.a, found!.b, found!.reversals, found!.last.action, found!.last.by], ['contact:1', 'contact:2', 3, 'join', 'system:crm'])
+      // The join is the last word on the record, and the separation is still what holds.
+      assert.deepEqual([found!.apart!.by, await graph.separations('contact:1')], ['system:cases', ['contact:2']])
+      await cases()
+      assert.deepEqual((await graph.verdicts([['contact:2', 'contact:1'], ['contact:1', 'contact:3']])).map((each) => [each.a, each.b, each.last.action]), [['contact:1', 'contact:2', 'separate']])
+    })
+
     test('a cluster past the review size is flagged', async () => {
       const { graph } = await fresh({ ...defaultPolicy, review: 3 })
       for (const n of [1, 2, 3]) await graph.observe({ subject: `account:${n}`, identifiers: ['device:d'], at: T0 })
@@ -929,12 +1013,21 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
         else if (roll < 0.97) {
           const a = pick(40)
           await graph.separate(`account:${a}`, `account:${(a + 1 + pick(39)) % 40}`, next() < 0.7)
+        } else if (roll < 0.985) {
+          // Pairs from a system, separations and withdrawals together, some of them named twice.
+          const pairs = Array.from({ length: 1 + pick(6) }, () => {
+            const a = pick(40)
+            return { a: `account:${a}`, b: `account:${(a + 1 + pick(39)) % 40}`, separated: next() < 0.7 }
+          })
+          const told = next() < 0.8 ? await graph.separateAll(pairs, { by: 'system:a' }) : await graph.joinAll(pairs, { by: 'system:b' })
+          assert.equal(told.recorded + told.already, pairs.length)
         } else {
           const a = pick(40)
           await graph.transfer({ from: `account:${a}`, to: `account:${(a + 1 + pick(39)) % 40}`, amount: 1 + pick(1000), at: T0 })
         }
         assert.deepEqual(await graph.verify(), [], `seed ${seed}, step ${step}`)
       }
+      assert.deepEqual(await graph.audit(), { sound: true })
     })
   })
 }

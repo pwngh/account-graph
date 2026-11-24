@@ -319,11 +319,17 @@ test('the reviewer screen is a locked-down shell, and its data needs the token',
     ])
     const bad = await fetch(`${base}/join`, { method: 'POST', headers: auth, body: JSON.stringify({ a: 1, b: 2 }) })
     assert.equal(bad.status, 400)
-    const decisions = (await (await fetch(`${base}/decisions`, { headers: auth })).json()) as any[]
-    assert.deepEqual(decisions.map((d) => [d.action, d.about, d.by]), [
-      ['separate', ['account:1', 'account:9'], undefined],
+    const recorded = (await (await fetch(`${base}/decisions`, { headers: auth })).json()) as any
+    assert.deepEqual(recorded.decisions.map((d: any) => [d.action, d.about, d.by]), [
       ['join', ['account:3', 'account:9'], 'dana'],
+      ['separate', ['account:1', 'account:9'], undefined],
     ])
+    assert.deepEqual([recorded.total, recorded.next], [2, null])
+    const newest = (await (await fetch(`${base}/decisions?limit=1&author=people`, { headers: auth })).json()) as any
+    assert.deepEqual([newest.decisions.length, newest.next], [1, 2])
+    assert.equal(((await (await fetch(`${base}/decisions?limit=1&before=${newest.next}`, { headers: auth })).json()) as any).decisions[0].seq, 1)
+    const kept = (await (await fetch(`${base}/subject?subject=account:1`, { headers: auth })).json()) as any
+    assert.deepEqual(kept.verdicts.map((each: any) => [each.a, each.b, each.last.action, each.reversals]), [['account:1', 'account:9', 'separate', 0]])
     assert.deepEqual(await graph.separations('account:1'), ['account:9'])
     assert.deepEqual((await graph.cluster('account:9'))!.members, ['account:3', 'account:9'])
     assert.deepEqual((await graph.cluster('account:1'))!.members, ['account:1', 'account:2'])
@@ -344,12 +350,26 @@ test('the reviewer token opens the review routes and nothing a service writes th
   const call = (token: string, method: string, path: string, body?: object) =>
     fetch(`${base}${path}`, { method, headers: { authorization: `Bearer ${token}` }, ...(body && { body: JSON.stringify(body) }) }).then((r) => r.status)
   try {
-    for (const path of ['/subject?subject=account:1', '/clusters', '/clusters?offset=50', '/search?q=account', '/recent', '/links?subject=account:1', '/flows?subject=account:1', '/decisions', '/audit']) {
+    for (const path of ['/subject?subject=account:1', '/clusters', '/clusters?offset=50', '/search?q=account', '/recent', '/links?subject=account:1', '/flows?subject=account:1', '/decisions', '/decisions?author=system&limit=5', '/disputes', '/policy', '/pulse', '/audit']) {
       assert.equal(await call('reviewer', 'GET', path), 200, path)
     }
     assert.equal(await call('reviewer', 'POST', '/separate', { a: 'account:1', b: 'account:2', by: 'dana' }), 200)
     assert.equal(await call('reviewer', 'POST', '/join', { a: 'account:1', b: 'account:3' }), 200)
     assert.equal(await call('reviewer', 'POST', '/ignore', { identifier: 'email:e' }), 200)
+
+    // Only a service speaks for a system, and it says which.
+    const pairs = [{ a: 'account:1', b: 'account:7', reason: 'sides of one matter' }]
+    for (const path of ['/separate', '/join']) {
+      assert.equal(await call('reviewer', 'POST', path, { source: 'cases', pairs }), 403)
+      assert.equal(await call('reviewer', 'POST', path, { a: 'account:1', b: 'account:8', by: 'system:cases' }), 400)
+      assert.equal(await call('service', 'POST', path, { pairs }), 400)
+      assert.equal(await call('service', 'POST', path, { source: 'cases', pairs: Array(1001).fill(pairs[0]) }), 400)
+      assert.equal(await call('service', 'POST', path, { source: 'cases', pairs: [null] }), 400)
+    }
+    assert.equal(await call('service', 'POST', '/separate', { source: 'cases', pairs: [{ ...pairs[0], separated: 'no' }] }), 400)
+    assert.equal(await call('service', 'POST', '/separate', { source: 'cases', pairs }), 200)
+    assert.equal(await call('service', 'POST', '/join', { source: 'crm', pairs: [{ a: 'account:5', b: 'account:6' }] }), 200)
+    assert.deepEqual((await graph.decisionPage({ limit: 2 })).map((d) => [d.action, d.by, d.reason]), [['join', 'system:crm', undefined], ['separate', 'system:cases', 'sides of one matter']])
 
     const before = await graph.history('account:1')
     assert.equal(await call('reviewer', 'POST', '/observe', { subject: 'account:1', identifiers: ['email:x'], at: T0 }), 403)

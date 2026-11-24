@@ -26,7 +26,7 @@ function picture(profile) {
     const joined = tie.level === 'same' && members.has(tie.a) && members.has(tie.b)
     line(tie.a, tie.b, joined ? 'same' : 'related', 1 + 3 * tie.score, `${tie.a} and ${tie.b}: ${joined ? 'joined' : 'tied, not joined'}, ${percent(tie.score)}`)
   }
-  for (const other of profile.separated) line(profile.subject, other, 'apart', 2, `${profile.subject} and ${other}: kept apart by a reviewer`)
+  for (const [a, b] of [...profile.separated.map((other) => [profile.subject, other]), ...profile.apart]) line(a, b, 'apart', 2, `${a} and ${b}: kept apart`)
   for (const [subject, [x, y]] of spot) {
     const me = subject === profile.subject
     const node = svg('circle', { class: `node${me ? ' me' : members.has(subject) ? ' member' : ''}`, cx: x, cy: y, r: me ? 11 : 8, tabindex: 0, role: 'link', 'aria-label': subject }, svg('title', {}, subject))
@@ -36,6 +36,10 @@ function picture(profile) {
   }
   return drawing
 }
+
+/** Why two are kept apart, in the words of whoever decided it. */
+const kept = (verdict) => (verdict?.apart ? [el('span', { class: 'muted' }, 'Decided by '), author(verdict.apart.by), el('span', { class: 'muted' }, `, ${when(verdict.apart.at)}: ${verdict.apart.reason ?? '(no reason recorded)'}`),
+  verdict.last.action === 'join' ? el('span', { class: 'reason' }, 'A later decision joined them, which does not undo this one. By ', author(verdict.last.by), `, ${when(verdict.last.at)}`) : ''] : [el('span', { class: 'muted' }, '(no decision recorded)')])
 
 function profileOf(profile) {
   const detail = []
@@ -49,21 +53,25 @@ function profileOf(profile) {
       el('button', { class: 'danger', on: { click: () => act('Forget this subject', `Everything recorded about ${profile.subject} will be deleted. This cannot be undone.`, '/forget', { subject: profile.subject }, 'Delete') } }, 'Forget…'))))
 
   if (profile.ties.length > 0 || profile.separated.length > 0) detail.push(el('section', {}, el('h2', {}, 'Picture'), picture(profile),
-    el('p', { class: 'muted' }, 'Solid: joined. Dashed: tied, not joined. Dotted red: kept apart by a reviewer. Open a circle to see that subject.')))
+    el('p', { class: 'muted' }, 'Solid: joined. Dashed: tied, not joined. Dotted red: kept apart by a decision. Open a circle to see that subject.')))
 
   const members = new Set(profile.cluster.members)
+  // What was last decided about this subject and another, and whether systems keep reversing it.
+  const verdicts = new Map(profile.verdicts.map((verdict) => [`${verdict.a}\n${verdict.b}`, verdict]))
+  const verdict = (other) => verdicts.get(profile.subject < other ? `${profile.subject}\n${other}` : `${other}\n${profile.subject}`)
+  const contested = (other) => (verdict(other)?.reversals >= 3 ? el('span', { class: 'chip apart', title: 'Find out which system is right, and stop the other from sending.' }, `systems reversed this ${verdict(other).reversals} times`) : '')
   const links = el('table', {}, el('tr', {}, th('Subject'), th('Tie'), th('Score', 'num'), th('Why'), th('')))
   for (const link of profile.links) {
     const inCluster = members.has(link.subject)
     links.append(el('tr', {},
       td('who', open(link.subject)),
-      td('', el('span', { class: `chip ${link.level}` }, link.level === 'same' ? (inCluster ? 'same person' : 'strong, not joined') : 'related')),
+      td('', el('span', { class: `chip ${link.level}` }, link.level === 'same' ? (inCluster ? 'same person' : 'strong, not joined') : 'related'), ' ', contested(link.subject)),
       td('num', percent(link.score)),
       td('why', ...reasons(link.reasons)),
       td('', el('button', { on: { click: () => act('Keep these two apart', `${profile.subject} and ${link.subject} will never share a cluster, whatever they share later.`, '/separate', { a: profile.subject, b: link.subject }, 'Keep apart') } }, 'Keep apart'))))
   }
   for (const other of profile.separated) {
-    links.append(el('tr', {}, td('who', open(other)), td('', el('span', { class: 'chip apart' }, 'kept apart')), td(''), td('muted', 'A reviewer decided these are different people.'),
+    links.append(el('tr', {}, td('who', open(other)), td('', el('span', { class: 'chip apart' }, 'kept apart'), ' ', contested(other)), td(''), td('why', ...kept(verdict(other))),
       td('', el('button', { on: { click: () => act('Allow these two to join again', `${profile.subject} and ${other}`, '/separate', { a: profile.subject, b: other, separated: false }, 'Allow') } }, 'Allow again'))))
   }
   detail.push(el('section', {}, el('h2', {}, 'Ties'), profile.links.length + profile.separated.length > 0 ? wide('Ties', links) : el('p', { class: 'muted' }, 'No other subject shares enough with this one to be tied to it.')))
@@ -126,24 +134,58 @@ async function clusterList() {
   return [list, el('p', {}, more)]
 }
 
+/** Which decisions to list, and how many are on screen, so a refresh reads the same again. */
+const listing = { author: '', shown: 30 }
+const decisionPath = (limit, before) => `/decisions?limit=${limit}${listing.author ? `&author=${listing.author}` : ''}${before ? `&before=${before}` : ''}`
+async function decisionList(audit) {
+  const page = await api('GET', decisionPath(Math.min(500, listing.shown)))
+  const seen = new Set()
+  const entry = (d) => {
+    // Only the newest entry about an identifier can be undone, and only if it is the one that muted it.
+    const newest = !seen.has(d.about[0])
+    if (d.action === 'ignore' || d.action === 'restore') seen.add(d.about[0])
+    return el('li', {}, el('span', {}, `${ACTIONS[d.action] ?? d.action} `), ...(d.action === 'prune' ? [when(Number(d.about[0]))] : d.about).map((each) => el('span', { class: 'reason' }, each)),
+      author(d.by), el('span', { class: 'muted' }, `, ${when(d.at)}${d.reason ? `: ${d.reason}` : ''} `),
+      d.action === 'ignore' && newest ? el('button', { class: 'link', 'data-key': `decision-${d.seq}`, on: { click: () => act('Resume linking through this identifier', d.about[0], '/ignore', { identifier: d.about[0], ignored: false }, 'Resume') } }, 'undo') : '')
+  }
+  const list = el('ul', { id: 'decisions' }, ...(page.decisions.length > 0 ? page.decisions.map(entry) : [el('li', { class: 'muted' }, listing.author ? 'None by these.' : 'None yet.')]))
+  let next = page.next
+  const more = el('button', { on: { click: async () => {
+    if (opening) return
+    loading += 1
+    pending += 1
+    try {
+      const older = await api('GET', decisionPath(50, next))
+      list.append(...older.decisions.map(entry))
+      listing.shown = list.children.length
+      next = older.next
+      more.hidden = next === null
+    } catch (error) {
+      notice(error.message, true)
+    } finally {
+      pending -= 1
+    }
+  } } }, 'Show older')
+  more.hidden = next === null
+  const pick = el('select', { 'aria-label': 'Whose decisions', on: { change: () => { listing.author = pick.value; listing.shown = 30; load() } } },
+    ...[['', 'by anyone'], ['people', 'by people'], ['system', 'by systems']].map(([value, text]) => el('option', { value, ...(value === listing.author && { selected: '' }) }, text)))
+  return el('section', {}, el('h2', {}, 'Decisions, newest first'), el('div', { class: 'row' }, pick),
+    el('p', { id: 'seal', class: audit.sound ? 'muted' : 'apart' }, audit.sound ? `${amount(page.total)} recorded in all. The record is whole.` : `The record was altered at entry ${audit.brokenAt}.`),
+    list, el('p', {}, more))
+}
+
 view('accounts', 'Accounts', async (box, subject) => {
   const left = el('div')
   const detail = el('div', { id: 'detail' })
   box.append(el('div', { class: `split${subject ? ' opened' : ''}` }, left, detail))
-  const [queue, decisions, audit, recent, profile] = await Promise.all([clusterList(), api('GET', '/decisions'), api('GET', '/audit'), api('GET', '/recent'), subject ? api('GET', `/subject?subject=${encodeURIComponent(subject)}`) : undefined])
+  const [queue, audit, recent, profile] = await Promise.all([clusterList(), api('GET', '/audit'), api('GET', '/recent'), subject ? api('GET', `/subject?subject=${encodeURIComponent(subject)}`) : undefined])
+  const decisions = await decisionList(audit)
 
   left.append(el('section', {}, el('h2', {}, 'Largest clusters, now'), ...queue))
   left.append(el('section', {}, el('h2', {}, 'Recent changes, newest 30'), el('ul', { id: 'recent' }, ...(recent.length > 0 ? recent.slice(0, 30).map((move) => el('li', {}, open(move.subject),
     el('span', {}, move.to === undefined ? ' was removed ' : move.to === move.subject ? ' is on its own again ' : ' joined '), move.to !== undefined && move.to !== move.subject ? open(move.to) : '',
     el('span', { class: 'muted' }, ` ${when(move.at)}`))) : [el('li', { class: 'muted' }, 'None yet.')]))))
-  // An ignore can be undone unless a later decision already restored that identifier.
-  const restoredAt = new Map(decisions.filter((d) => d.action === 'restore').map((d) => [d.about[0], d.seq]))
-  left.append(el('section', {}, el('h2', {}, 'Decisions, newest 30'),
-    el('p', { id: 'seal', class: audit.sound ? 'muted' : 'apart' }, audit.sound ? `${decisions.length} recorded. The record is whole.` : `The record was altered at entry ${audit.brokenAt}.`),
-    el('ul', { id: 'decisions' }, ...decisions.slice(-30).reverse().map((d) => el('li', {},
-      el('span', {}, `${ACTIONS[d.action] ?? d.action} `), ...(d.action === 'prune' ? [when(Number(d.about[0]))] : d.about).map((each) => el('span', { class: 'reason' }, each)),
-      el('span', { class: 'muted' }, `${when(d.at)}${d.by ? `, ${d.by}` : ''}${d.reason ? `: ${d.reason}` : ''} `),
-      d.action === 'ignore' && !(restoredAt.get(d.about[0]) > d.seq) ? el('button', { class: 'link', 'data-key': `decision-${d.seq}`, on: { click: () => act('Resume linking through this identifier', d.about[0], '/ignore', { identifier: d.about[0], ignored: false }, 'Resume') } }, 'undo') : '')))))
+  left.append(decisions)
 
   detail.append(...(profile ? profileOf(profile) : [el('section', {}, el('p', { class: 'muted' }, 'Open a subject, or pick a cluster, to see who it is tied to and why.'))]))
 })

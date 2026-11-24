@@ -59,8 +59,15 @@
 - `GET /report` names the `timeZone` its days are in.
 - `POLICY` or `POLICY_FILE` lays your weights, caps and half-lives over the default policy (`policyFrom`, `policyProblems`); a problem stops the server at start.
 - `graph.policy()`, `GET /policy`, `GET /stats` and the reviewer screen's Health view say when the running policy is not the one the stored clusters were built with; `POST /rebuild` recomputes them.
+- `POST /separate` and `POST /join` take `{ source, pairs }` with the service token: one transaction, one decision each by `system:<source>` (`separateAll`, `joinAll`).
+- `GET /disputes` and the Health view list pairs that systems have reversed three times or more (`disputes`, `verdicts`).
+- `reviewed({ exclude: 'system:' })` leaves out what systems decided.
+- The reviewer screen labels system decisions, filters and pages the record, and draws every kept-apart pair among the subjects shown.
 
 ### Changed
+
+- Breaking: `GET /decisions` answers `{ decisions, next, total }`, newest first, a page at a time (`decisionPage`).
+- A name that starts with `system:` is refused with the reviewer token.
 
 - Breaking: in `defaultPolicy`, `phone` and `voip` thin as more subjects share them (dilution 1), and `phone`, `email` and `voip` link nothing past 10 subjects. Run `rebuild`, or keep the earlier rules with `POLICY`.
 - Breaking: `GET /verify` answers `{ changes, policy }`, not a list.

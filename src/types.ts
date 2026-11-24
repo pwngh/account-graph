@@ -175,6 +175,37 @@ export interface Decision extends Why {
   hash: string
 }
 
+/** Two subjects a backend says are different people, or with `separated: false` no longer says so; or that it has joined. */
+export interface Told {
+  a: Subject
+  b: Subject
+  /** For separations only. Defaults to true. */
+  separated?: boolean
+  /** Why, for this pair. Defaults to the reason given for the whole list. */
+  reason?: string
+}
+
+/** What came of a list of pairs. */
+export interface Recorded {
+  changes: Change[]
+  /** How many pairs were decided. */
+  recorded: number
+  /** How many already stood that way by the last decision about them, and were left alone. */
+  already: number
+}
+
+/** What the record says of two subjects. */
+export interface Verdict {
+  a: Subject
+  b: Subject
+  /** The last decision about the two. */
+  last: Decision
+  /** The last decision that kept them apart, if any ever did. A later join does not undo it. */
+  apart?: Decision
+  /** How many times systems have reversed one another, or themselves, about the two. */
+  reversals: number
+}
+
 /** A cluster change as it was written down: who moved, from where to where, and when. */
 export interface Moved extends Change {
   at: number

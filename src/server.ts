@@ -19,7 +19,7 @@ import { defaultPolicy, plainPolicy } from './policy.ts'
 import { reviewPage } from './review.ts'
 import { browserMark, knownLink, readToken, signToken } from './sign.ts'
 import { browserScripts, scriptHeaders } from './tag.ts'
-import type { Identifier, Level, Observation, Outcome, Subject, Touch } from './types.ts'
+import type { Identifier, Level, Observation, Outcome, Subject, Told, Touch, Why } from './types.ts'
 
 export interface HandlerOptions {
   /**
@@ -114,7 +114,7 @@ const NAME = /^[\w.-]{1,64}$/
 /** What the reviewer token opens: what the reviewer screen reads, and the decisions a reviewer makes. */
 const REVIEW_ROUTES = new Set([
   'GET /subject', 'GET /clusters', 'GET /search', 'GET /recent', 'GET /links', 'GET /cluster', 'GET /history', 'GET /flows', 'GET /collusion', 'GET /rings',
-  'GET /decisions', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
+  'GET /decisions', 'GET /disputes', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
 ])
 
 /** A route that wrote its own answer. */
@@ -148,6 +148,25 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     if (matches(sent, token)) return
     if (!reviewToken || !matches(sent, reviewToken)) throw new Refusal(401, 'Missing or wrong token')
     if (!REVIEW_ROUTES.has(path)) throw new Refusal(403, 'The reviewer token does not open this route')
+  }
+
+  const reviewing = (request: IncomingMessage) => !matches(Buffer.from(request.headers.authorization?.replace(/^Bearer /, '') ?? ''), token)
+
+  /** A list of pairs from one of your systems, and who it is from. Only a service may speak for a system. */
+  const listed = (request: IncomingMessage, body: any): [Told[], Why] => {
+    if (reviewing(request)) throw new Refusal(403, 'The reviewer token does not open the list form of this route')
+    if (!Array.isArray(body.pairs) || body.pairs.length > 1000) throw new Refusal(400, '`pairs` must be a list of at most 1000')
+    if (typeof body.source !== 'string' || !NAME.test(body.source)) throw new Refusal(400, 'A list needs its `source`: the name of the system it is from')
+    for (const each of body.pairs) {
+      if (!each || typeof each !== 'object') throw new Refusal(400, 'Each pair must be written { a, b }')
+      if (each.separated !== undefined && typeof each.separated !== 'boolean') throw new Refusal(400, '`separated` must be true or false')
+    }
+    return [body.pairs.map(({ a, b, separated, reason }: any) => ({ a, b, ...(separated !== undefined && { separated }), ...(typeof reason === 'string' && reason && { reason: reason.slice(0, 1000) }) })), why({ ...body, by: `system:${body.source}` })]
+  }
+
+  /** A reviewer signs with their own name, never as a system. */
+  const signed = (request: IncomingMessage, body: any) => {
+    if (reviewing(request) && typeof body.by === 'string' && body.by.startsWith('system:')) throw new Refusal(400, 'A name that starts with "system:" belongs to a service')
   }
 
   const ignoredAddresses = new Set<Identifier>()
@@ -453,13 +472,20 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     for (const member of placed.filter((other) => other !== subject).slice(0, 24)) {
       for (const link of await graph.links(member)) if (members.has(link.subject)) add(member, link.subject, link.score, link.level)
     }
+    const separated = await graph.separations(subject)
+    // What was decided about this subject and each one it is tied to or kept from, and which of the others shown are kept apart.
+    const shown = [...new Set([...separated, ...links.map((link) => link.subject), ...placed])].filter((other) => other !== subject).slice(0, 24)
+    const among: [Subject, Subject][] = []
+    for (const other of shown) for (const from of await graph.separations(other)) if (other < from && shown.includes(from)) among.push([other, from])
     return {
       subject,
       known: true,
       cluster,
       links,
       ties: [...ties.values()],
-      separated: await graph.separations(subject),
+      separated,
+      verdicts: await graph.verdicts([...[...new Set([...separated, ...links.map((link) => link.subject)])].map((other): [Subject, Subject] => [subject, other]), ...among]),
+      apart: among,
       flows: await graph.flows(subject),
       rings: await graph.rings(subject),
       history: (await graph.history(subject, 100)).reverse(),
@@ -542,10 +568,12 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return graph.touch(await json(request))
       case 'POST /ignore': {
         const body = await json(request)
+        signed(request, body)
         return graph.ignore(body.identifier, body.ignored ?? true, why(body))
       }
       case 'POST /forget': {
         const body = await json(request)
+        signed(request, body)
         return graph.forget(body.subject, why(body))
       }
       case 'POST /consent': {
@@ -554,6 +582,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       }
       case 'POST /join': {
         const body = await json(request)
+        if (body.pairs !== undefined) return graph.joinAll(...listed(request, body))
+        signed(request, body)
         return graph.join(body.a, body.b, why(body))
       }
       case 'GET /subject':
@@ -577,6 +607,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return graph.recent()
       case 'POST /separate': {
         const body = await json(request)
+        if (body.pairs !== undefined) return graph.separateAll(...listed(request, body))
+        signed(request, body)
         return graph.separate(body.a, body.b, body.separated ?? true, why(body))
       }
       case 'POST /transfer':
@@ -615,8 +647,17 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         const body = await json(request)
         return { pruned: await graph.prune(body.before, why(body)) }
       }
-      case 'GET /decisions':
-        return graph.decisions()
+      case 'GET /decisions': {
+        const limit = Math.min(500, Math.max(1, Math.floor(Number(url.searchParams.get('limit')) || 50)))
+        const before = Number(url.searchParams.get('before')) || undefined
+        const author = url.searchParams.get('author') || undefined
+        // One more than asked for says whether there is another page.
+        const found = await graph.decisionPage({ limit: limit + 1, ...(before !== undefined && { before }), ...(author !== undefined && { author }) })
+        const decisions = found.slice(0, limit)
+        return { decisions, next: found.length > limit ? decisions.at(-1)!.seq : null, total: (await graph.decisionPage({ limit: 1 }))[0]?.seq ?? 0 }
+      }
+      case 'GET /disputes':
+        return graph.disputes()
       case 'GET /audit':
         return graph.audit()
       case 'POST /convert':

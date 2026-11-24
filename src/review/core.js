@@ -91,6 +91,8 @@ async function act(title, text, path, body, confirm, otherKey) {
 
 /** Goes to an address. Going where the screen already is reads it again. */
 const go = (hash) => (location.hash === hash ? load() : (location.hash = hash))
+/** Who decided: a person's name as it is, a system marked as one. */
+const author = (by) => (by?.startsWith('system:') ? el('span', { class: 'chip', title: 'Sent by another system, not decided by a person here' }, `system ${by.slice(7)}`) : el('span', {}, by || '(no name recorded)'))
 const subjectHash = (subject) => `#/accounts/${encodeURIComponent(subject)}`
 const open = (subject) => el('a', { class: 'link', href: subjectHash(subject) }, subject)
 
@@ -155,7 +157,7 @@ async function load(tag) {
     await views.get(name).show(box, ...parts)
     if (turn !== loading || (quiet && interrupting())) return false
     if (seen) beat = seen
-    const held = quiet && $('view').contains(document.activeElement) ? which(document.activeElement) : undefined
+    const held = $('view').contains(document.activeElement) ? which(document.activeElement) : undefined
     const scrolled = quiet ? [...$('view').querySelectorAll('.wide')].map((each) => each.scrollLeft) : []
     $('view').replaceChildren(box)
     ;[...$('view').querySelectorAll('.wide')].forEach((each, i) => (each.scrollLeft = scrolled[i] ?? 0))
@@ -196,7 +198,7 @@ async function pulse() {
 }
 function fresh(problem) {
   const at = loadedAt ? `Current as of ${new Date(loadedAt).toLocaleTimeString()}.` : ''
-  $('fresh').textContent = problem ? `Not refreshed: ${problem} ${at}` : document.hidden ? `${at} Paused while this tab is hidden.` : busy() ? `${at} Waiting while you type.` : at && `${at} Looks for changes every ${EVERY / 1000} seconds.`
+  $('fresh').textContent = problem ? `Not refreshed: ${problem} ${at}` : document.hidden ? `${at} Paused while this tab is hidden.` : busy() ? `${at} Waiting while a field here has the cursor.` : at && `${at} Looks for changes every ${EVERY / 1000} seconds.`
 }
 /** Typing or answering a question is not interrupted: the next look finds the change again. */
 const busy = () => $('ask').open || ($('view').contains(document.activeElement) && document.activeElement.matches('input, select, textarea'))

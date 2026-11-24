@@ -5,7 +5,7 @@ import { defaultPolicy, plainPolicy, policyHash, ruleFor, usable } from './polic
 import type { Policy } from './policy.ts'
 import { dayStart, fold, nextDay } from './report.ts'
 import { partition, scorePairs } from './resolve.ts'
-import type { Store, Tx } from './store.ts'
+import type { DecisionPage, Store, Tx } from './store.ts'
 import type {
   Attribution,
   AttributedTouch,
@@ -25,11 +25,14 @@ import type {
   Moved,
   Observation,
   Outcome,
+  Recorded,
   Report,
   Ring,
   Sighting,
   Subject,
+  Told,
   Touch,
+  Verdict,
   Why,
 } from './types.ts'
 
@@ -101,6 +104,14 @@ export interface Graph {
    * whatever they share later.
    */
   separate(a: Subject, b: Subject, separated?: boolean, why?: Why): Promise<Change[]>
+  /**
+   * Records a list of separations, or withdrawals, in one transaction with
+   * one decision each. A pair whose last decision already says so is left
+   * alone, so a system can send its whole list again.
+   */
+  separateAll(pairs: readonly Told[], why?: Why): Promise<Recorded>
+  /** Records a list of joins the same way: two records another system merged are one person here too. */
+  joinAll(pairs: readonly Told[], why?: Why): Promise<Recorded>
   /** Records the advertising consent a subject gave. The outbox honours it. */
   consent(subject: Subject, consent: Consent): Promise<void>
   /** The latest consent of each given subject. A subject that never answered is absent. */
@@ -122,9 +133,10 @@ export interface Graph {
   /**
    * Every pair a reviewer joined or kept apart, with what the two share, in
    * the form `fit` takes. A pair that shares nothing is left out, since it
-   * says nothing about any identifier.
+   * says nothing about any identifier. `exclude` leaves out decisions by
+   * authors whose name starts with it: `system:` keeps only what people decided.
    */
-  reviewed(): Promise<Labeled[]>
+  reviewed(options?: { exclude?: string }): Promise<Labeled[]>
   /** Records value moving between two subjects, and says how the two are tied by identity. */
   transfer(flow: Flow): Promise<Counterparty>
   /** Everyone a subject has exchanged value with, largest volume first. */
@@ -144,6 +156,12 @@ export interface Graph {
   rebuild(why?: Why): Promise<Change[]>
   /** Every decision people made about the graph, oldest first: what was ignored, separated, forgotten, and by whom. */
   decisions(): Promise<Decision[]>
+  /** One page of decisions, newest first. */
+  decisionPage(page: DecisionPage): Promise<Decision[]>
+  /** What the record says of each given pair. A pair nothing was decided about is left out. */
+  verdicts(pairs: readonly (readonly [Subject, Subject])[]): Promise<Verdict[]>
+  /** Pairs that systems have reversed three times or more, the most recently decided first. Two systems that keep undoing each other show up here. */
+  disputes(limit?: number): Promise<Verdict[]>
   /** Checks that the record of decisions is whole and unaltered. `brokenAt` names the first entry that does not fit. */
   audit(): Promise<{ sound: boolean; brokenAt?: number }>
   /**
@@ -333,12 +351,74 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     return { subject, at, touches, credited, reason }
   }
 
-  /** Appends a decision to the record, sealed to the one before it. Returns its sequence number. */
-  async function decide(tx: Tx, action: Decision['action'], about: string[], why: Why | undefined): Promise<number> {
-    const last = await tx.lastDecision()
-    const entry = { seq: (last?.seq ?? 0) + 1, at: now(), action, about, ...(why?.by && { by: why.by }), ...(why?.reason && { reason: why.reason }) }
-    await tx.addDecision({ ...entry, hash: seal(last?.hash ?? '', entry) })
-    return entry.seq
+  /** Appends decisions to the record, each sealed to the one before it. Returns their sequence numbers. */
+  async function decideAll(tx: Tx, entries: readonly { action: Decision['action']; about: string[]; why?: Why | undefined }[]): Promise<number[]> {
+    let last = await tx.lastDecision()
+    const seqs: number[] = []
+    for (const { action, about, why } of entries) {
+      const entry = { seq: (last?.seq ?? 0) + 1, at: now(), action, about, ...(why?.by && { by: why.by }), ...(why?.reason && { reason: why.reason }) }
+      last = { ...entry, hash: seal(last?.hash ?? '', entry) }
+      await tx.addDecision(last)
+      seqs.push(entry.seq)
+    }
+    return seqs
+  }
+
+  const decide = async (tx: Tx, action: Decision['action'], about: string[], why: Why | undefined) => (await decideAll(tx, [{ action, about, why }]))[0]!
+
+  /** What the record says of each pair, from its decisions. */
+  async function verdictsOf(tx: Tx, pairs: readonly (readonly [Subject, Subject])[]): Promise<Map<string, Verdict>> {
+    const ordered = new Map(pairs.map(([a, b]) => [pairKey(a, b), a < b ? ([a, b] as const) : ([b, a] as const)]))
+    const out = new Map<string, Verdict>()
+    const said = new Map<string, boolean>()
+    for (const decision of await tx.decisionsAbout([...ordered.values()])) {
+      const [a, b] = decision.about as [Subject, Subject]
+      const key = pairKey(a, b)
+      const verdict: Verdict = out.get(key) ?? { a, b, last: decision, reversals: 0 }
+      out.set(key, verdict)
+      verdict.last = decision
+      if (decision.action === 'separate') verdict.apart = decision
+      if (!decision.by?.startsWith('system:')) continue
+      const apart = decision.action === 'separate'
+      if (said.has(key) && said.get(key) !== apart) verdict.reversals += 1
+      said.set(key, apart)
+    }
+    return out
+  }
+
+  /**
+   * The pairs of a list that do not already stand that way, in order. A
+   * pair stands when the last decision about it says so and it is still in
+   * force: forgetting a subject, or muting a join, leaves the record as it
+   * was and the decision without effect. A pair named twice is taken in the
+   * order it is named.
+   */
+  async function unsaid(tx: Tx, told: readonly { pair: [Subject, Subject]; action: 'separate' | 'rejoin' | 'join'; why: Why }[]) {
+    const last = new Map([...(await verdictsOf(tx, told.map((each) => each.pair)))].map(([key, verdict]) => [key, verdict.last.action]))
+    const subjects = unique(told.flatMap(({ pair }) => pair))
+    const apart = new Set((await tx.separatedOf(subjects)).map(([a, b]) => pairKey(a, b)))
+    const marks = (await tx.edgesOf(subjects)).filter((edge) => edge.identifier.startsWith('review:'))
+    const states = await tx.states(unique(marks.map((edge) => edge.identifier)))
+    const joined = new Map<Subject, Set<Identifier>>()
+    for (const { subject, identifier } of marks) if (!states.get(identifier)!.ignored) joined.set(subject, (joined.get(subject) ?? new Set()).add(identifier))
+    const inForce = new Map(told.map(({ pair, action }) => {
+      const key = pairKey(...pair)
+      const shared = [...(joined.get(pair[0]) ?? [])].some((identifier) => joined.get(pair[1])?.has(identifier))
+      return [key, action === 'separate' ? apart.has(key) : action === 'rejoin' ? !apart.has(key) : shared]
+    }))
+    return told.filter(({ pair, action }) => {
+      const key = pairKey(...pair)
+      const before = last.get(key)
+      const stands = inForce.get(key)
+      last.set(key, action)
+      inForce.set(key, true)
+      return !(stands && (before === action || (before === undefined && action === 'rejoin')))
+    })
+  }
+
+  const tell = (pairs: readonly Told[], verb: string, why: Why | undefined) => {
+    if (!Array.isArray(pairs)) throw new TypeError(`${verb} needs a list of pairs`)
+    return pairs.map((told) => ({ pair: pairOf(told?.a, told?.b, verb), separated: told.separated ?? true, why: { ...why, ...(told.reason && { reason: String(told.reason) }) } }))
   }
 
   const pairOf = (a: Subject, b: Subject, verb: string): [Subject, Subject] => {
@@ -543,6 +623,42 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return store.read((tx) => tx.version())
     },
 
+    async separateAll(pairs, why) {
+      const told = tell(pairs, 'separate', why).map((each) => ({ ...each, action: each.separated ? ('separate' as const) : ('rejoin' as const) }))
+      let recorded = 0
+      const changes = await changing(async (tx) => {
+        const next = await unsaid(tx, told)
+        recorded = next.length
+        if (recorded === 0) return []
+        await decideAll(tx, next.map(({ action, pair, why }) => ({ action, about: pair, why })))
+        await mark(tx)
+        for (const { pair, action } of next) await tx.setSeparated(...pair, action === 'separate')
+        return settle(tx, new Set(next.flatMap(({ pair }) => pair)))
+      })
+      return { changes, recorded, already: told.length - recorded }
+    },
+
+    async joinAll(pairs, why) {
+      ruleFor(policy, 'review:0')
+      const told = tell(pairs, 'join', why).map((each) => ({ ...each, action: 'join' as const }))
+      let recorded = 0
+      const changes = await changing(async (tx) => {
+        const next = await unsaid(tx, told)
+        recorded = next.length
+        if (recorded === 0) return []
+        const seqs = await decideAll(tx, next.map(({ action, pair, why }) => ({ action, about: pair, why })))
+        const at = now()
+        const sightings: Sighting[] = []
+        for (const [i, { pair }] of next.entries()) {
+          let identifier = `review:join-${seqs[i]}`
+          while ((await tx.states([identifier])).has(identifier)) identifier += '+'
+          sightings.push(...pair.map((subject) => ({ subject, identifier, at, event: 'review', recorded: at })))
+        }
+        return record(tx, sightings)
+      })
+      return { changes, recorded, already: told.length - recorded }
+    },
+
     counts() {
       return store.read((tx) => tx.counts())
     },
@@ -563,11 +679,12 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return store.read((tx) => tx.recentChanges(limit))
     },
 
-    reviewed() {
+    reviewed({ exclude } = {}) {
       return store.read(async (tx) => {
         // The last decision about a pair is the one that stands.
         const verdicts = new Map<string, { a: Subject; b: Subject; same: boolean } | undefined>()
-        for (const { action, about } of await tx.decisions()) {
+        for (const { action, about, by } of await tx.decisions()) {
+          if (exclude && by?.startsWith(exclude)) continue
           const [a, b] = about
           if (a === undefined || b === undefined) continue
           if (action === 'join') verdicts.set(pairKey(a, b), { a, b, same: true })
@@ -709,6 +826,22 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
     decisions() {
       return store.read((tx) => tx.decisions())
+    },
+
+    decisionPage(page) {
+      return store.read((tx) => tx.decisionPage(page))
+    },
+
+    verdicts(pairs) {
+      return store.read(async (tx) => [...(await verdictsOf(tx, pairs)).values()])
+    },
+
+    disputes(limit = 50) {
+      return store.read(async (tx) => {
+        // Three reversals take four decisions at least. Counting decisions first leaves few pairs to read in full.
+        const verdicts = [...(await verdictsOf(tx, await tx.pairsDecidedBySystems(4, limit * 4))).values()]
+        return verdicts.filter((verdict) => verdict.reversals >= 3).sort((x, y) => y.last.seq - x.last.seq).slice(0, limit)
+      })
     },
 
     async audit() {
