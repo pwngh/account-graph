@@ -875,7 +875,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
             const values = await tx.valuesOf(transactionId, found.subject)
             values.forEach((each, i) => (said += each.kind === kind && each.currency === found.currency ? values[i - 1]!.value - each.value : 0))
           }
-          if (value > found.value && (said <= 0 || value - found.value > said + 1e-6)) throw new TypeError(`Outcome "${transactionId}" has not had that much ${kind === 'refund' ? 'refunded' : 'written off'}`)
+          if (value > found.value && (said <= 0 || value - found.value > said + 1e-9)) throw new TypeError(`Outcome "${transactionId}" has not had that much ${kind === 'refund' ? 'refunded' : 'written off'}`)
         }
         const restated = { ...found, value, ...(currency && { currency }) }
         await tx.setOutcome(restated)
