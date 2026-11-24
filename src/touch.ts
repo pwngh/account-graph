@@ -4,7 +4,7 @@ import type { Touch } from './types.ts'
 /** The fields of a touch that hold one text each. */
 export const TOUCH_FIELDS = [
   'source', 'medium', 'campaign', 'campaignId', 'adGroupId', 'adId', 'term', 'content',
-  'gclid', 'gbraid', 'wbraid', 'fbclid', 'msclkid', 'ttclid', 'landing', 'referrer',
+  'gclid', 'gbraid', 'wbraid', 'fbclid', 'fbp', 'msclkid', 'ttclid', 'landing', 'referrer',
 ] as const
 const KNOWN = new Set<string>(['subject', 'at', 'custom', ...TOUCH_FIELDS])
 

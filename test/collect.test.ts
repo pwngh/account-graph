@@ -60,6 +60,23 @@ test('the collector reads click ids and tags from the URL, decoded', async () =>
   )
 })
 
+test('Meta\'s browser id goes along with an arrival and is never one by itself', async () => {
+  const page = browser('https://site.example/start?fbclid=F1', { _fbp: 'fb.1.1700000000000.1234567890' })
+  await collect({ endpoint: 'https://graph.example/collect' })
+  page.go('https://site.example/pricing')
+  await collect({ endpoint: 'https://graph.example/collect' })
+  page.go('https://site.example/start?fbclid=F2')
+  await collect({ endpoint: 'https://graph.example/collect', consent: { adUserData: false, adPersonalization: false } })
+  await settle()
+  assert.deepEqual(page.sent.map((visit) => visit.touch?.fbp), ['fb.1.1700000000000.1234567890', undefined, undefined])
+  assert.equal(page.sent[1].touch, undefined)
+  // A cookie that cannot be read loses nothing else.
+  const broken = browser('https://site.example/start?fbclid=F1', { _fbp: '%E0%A4%A' })
+  await collect({ endpoint: 'https://graph.example/collect' })
+  await settle()
+  assert.deepEqual([broken.sent[0].touch.fbclid, broken.sent[0].touch.fbp], ['F1', undefined])
+})
+
 test('a click kept in the Google tag cookie is reported once, and reading does not consume it', async () => {
   const page = browser('https://site.example/', { _gcl_aw: 'GCL.1700000000.COOKIE-CLICK' })
   assert.equal(read().touch?.gclid, 'COOKIE-CLICK')

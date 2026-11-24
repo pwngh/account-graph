@@ -144,7 +144,7 @@ await graph.consent('contact:1001', { adUserData: true, adPersonalization: true 
 
 ### Google tag and Google Ads
 
-`collect` reads the click id from the URL (`gclid`, `gbraid`, `wbraid`, and Meta's and Microsoft's), falls back to the Google tag's `_gcl_aw` cookie, and reads the Analytics client id from `_ga`. It keeps its own first-party device id in the `ag_device` cookie.
+`collect` reads the click id from the URL (`gclid`, `gbraid`, `wbraid`, and Meta's and Microsoft's), falls back to the Google tag's `_gcl_aw` cookie, and reads the Analytics client id from `_ga`. With an arrival it sends Meta's browser id from `_fbp`, when Meta's pixel has set one. It keeps its own first-party device id in the `ag_device` cookie.
 
 When someone enrolls, your server reads `ag_device` from the request and observes the new contact with it.
 
@@ -189,7 +189,7 @@ await outbox.record({
 let stop = outbox.start(30_000) // send what is due, every 30 seconds
 ```
 
-Google gets one click id per conversion: `gclid`, else `gbraid`, else `wbraid`. Meta gets `fbc`, built from the `fbclid` and the time of the click. Microsoft gets the `msclkid`, and TikTok the `ttclid`. Each gets the email and phone hashed the way it matches them, as a second key for when the click id was lost. The two hash a Gmail address and a phone number differently, so each platform's keys are stored separately.
+Google gets one click id per conversion: `gclid`, else `gbraid`, else `wbraid`. Meta gets `fbc`, built from the `fbclid` and the time of the click, and with it `fbp`, its own id for that browser, where the site runs Meta's pixel. Microsoft gets the `msclkid`, and TikTok the `ttclid`. Each gets the email and phone hashed the way it matches them, as a second key for when the click id was lost. The two hash a Gmail address and a phone number differently, so each platform's keys are stored separately.
 
 ## The outbox
 

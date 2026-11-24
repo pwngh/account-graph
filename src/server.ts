@@ -462,7 +462,9 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         ownSite = touch.referrer !== undefined && options.origins.includes(new URL(touch.referrer).origin)
       } catch {}
       if (ownSite) delete touch.referrer
-      const arrived = Object.keys(touch).some((field) => !['subject', 'at', 'landing'].includes(field))
+      // Somebody who said no before stays at no until they say otherwise, so Meta's id for their browser is not kept.
+      if (touch.fbp && (await graph.consentOf([subject])).get(subject)?.adUserData === false) delete touch.fbp
+      const arrived = Object.keys(touch).some((field) => !['subject', 'at', 'landing', 'fbp'].includes(field))
       if (arrived) await graph.touch(touch)
     }
   }

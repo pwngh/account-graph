@@ -58,7 +58,13 @@ const YEAR = 365 * 24 * 60 * 60
 
 function cookie(name: string): string | undefined {
   const found = document.cookie.split('; ').find((part) => part.startsWith(`${name}=`))
-  return found ? decodeURIComponent(found.slice(name.length + 1)) : undefined
+  if (!found) return undefined
+  // A cookie another script wrote may not be written the way this one reads. What it says is then not known.
+  try {
+    return decodeURIComponent(found.slice(name.length + 1))
+  } catch {
+    return undefined
+  }
 }
 
 function remembered(key: string): string | undefined {
@@ -114,6 +120,9 @@ export function read(params: readonly string[] = []): Collected {
   if (document.referrer && new URL(document.referrer).origin !== location.origin) touch.referrer = document.referrer
   const arrived = Object.keys(touch).length > 0
   if (arrived) touch.landing = url.origin + url.pathname
+  // Meta's id for this browser goes along with an arrival, and is never one by itself.
+  const fbp = arrived ? cookie('_fbp') : undefined
+  if (fbp) touch.fbp = fbp
 
   const staff = staffMark()
   const ga = cookie('_ga')?.split('.').slice(-2).join('.')

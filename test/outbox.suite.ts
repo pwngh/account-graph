@@ -352,6 +352,10 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       await graph.observe({ subject: 'visitor:v', identifiers: ['device:v'], at: T0 })
       await graph.touch({ subject: 'visitor:v', at: T0, gclid: 'G1' })
       await graph.touch({ subject: 'visitor:v', at: T0 + 1000, fbclid: 'FbClickId', landing: 'https://site.example/offer' })
+      // The pixel's cookie came after the click, with a later arrival of the same browser. Another browser's is not theirs.
+      await graph.touch({ subject: 'visitor:v', at: T0 + 2000, source: 'newsletter', fbp: 'fb.1.1700000002000.987654321' })
+      await graph.observe({ subject: 'visitor:w', identifiers: ['device:v'], at: T0 })
+      await graph.touch({ subject: 'visitor:w', at: T0 + 3000, source: 'newsletter', fbp: 'fb.1.1700000003000.555' })
       await graph.observe({ subject: 'contact:1', identifiers: ['device:v'], at: T0 + HOUR })
 
       await assert.rejects(outbox.record({ ...outcome(1) }), /per target/)
@@ -375,6 +379,7 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
               em: [sha256('pat.lee@gmail.com')],
               ph: [sha256('18005550100')],
               fbc: `fb.1.${T0 + 1000}.FbClickId`,
+              fbp: 'fb.1.1700000002000.987654321',
             },
             custom_data: { value: 200, currency: 'USD' },
           },
