@@ -289,6 +289,8 @@ test('the server reads its settings from the environment and names everything wr
   assert.equal(configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', COOKIE: 'true' }).cookie, true)
   assert.deepEqual(['true', 'false', '2', undefined].map((value) => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', TRUST_PROXY: value }).trustProxy), [1, 0, 2, 0])
     const calls = configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', EVENTS: 'inquiry, brochure', CALL_NUMBERS: '{"555-123-0001":{"source":"google"}}', TWILIO_AUTH_TOKEN: 't', TWILIO_WEBHOOK_URL: 'https://g.example/calls/twilio' })
+  assert.deepEqual([calls.callTapSeconds, configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', CALL_TAP_SECONDS: '60' }).callTapSeconds], [180, 60])
+  assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', CALL_TAP_SECONDS: '3601' }), /CALL_TAP_SECONDS/)
   assert.deepEqual([calls.events, calls.callNumbers, calls.callMinimum, calls.twilio], [['inquiry', 'brochure'], { '555-123-0001': { source: 'google' } }, 30, { authToken: 't', url: 'https://g.example/calls/twilio' }])
   assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', CALL_NUMBERS: '{"12":{}}', TWILIO_AUTH_TOKEN: 't', REPORT_TIME_ZONE: 'Mars/Olympus' }), (error: Error) =>
     ['"12" is not a phone number', '"12" requires a source', 'TWILIO_WEBHOOK_URL or TWILIO_ACCOUNT_SID must be set along with TWILIO_AUTH_TOKEN', 'REPORT_TIME_ZONE must be a time zone'].every((line) => error.message.includes(line)))

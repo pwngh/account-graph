@@ -35,6 +35,7 @@
 ### Calls
 
 - `recordCall`, `POST /call` and `POST /calls/twilio` record calls. A call is linked to the visitor who tapped the number (`dial` kind), or attributed to the channel of its number.
+- `CALL_TAP_SECONDS` sets how long before a call a tap on its number may be.
 - `POST /call/result` (`recordCallResult`) reports whether a call was answered. `CALL_RESULTS=expected` holds a call until its result arrives, up to `CALL_RESULT_WAIT` minutes.
 - `direction: "outbound"` records calls you place. `followUp` and `GET /call` report callbacks, and `POST /call/returned` (`recordReturn`) accepts returns reported by another system.
 - `POOL_NUMBERS`, `POST /number` and `collect.js?pool=1` assign tracking numbers to visitors (`lease` kind).

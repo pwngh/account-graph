@@ -355,6 +355,7 @@ A partially set group stops the server at startup, with a message naming the mis
 | `CALL_NUMBERS` | none | Tracking numbers and the channel of each, as JSON: `{"+15551230001":{"source":"google","campaignId":"20222"}}`. Each may carry `tags`. |
 | `CALL_EXCLUDE` | none | Staff and test phone numbers, separated by commas. Calls from or to them are not recorded. |
 | `CALL_MIN_SECONDS` | `30` | Shorter calls are recorded but not counted. |
+| `CALL_TAP_SECONDS` | `180` | How long before a call a tap on its number may be, at most 3600. See [busy numbers](calls.md#busy-numbers). |
 | `CALL_RESULTS` | none | `expected` holds each call until a system reports whether it was answered. See [calls](calls.md#call-results). |
 | `CALL_RESULT_WAIT` | `30` | Minutes before a call without a result becomes unknown. |
 | `POOL_NUMBERS` | none | Numbers shown to one visitor at a time, separated by commas. Off by default. |

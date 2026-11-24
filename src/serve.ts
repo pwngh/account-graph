@@ -124,6 +124,7 @@ export function configFrom(env: Env) {
     callNumbers: parsed('CALL_NUMBERS'),
     callExclude: (env.CALL_EXCLUDE ?? '').split(',').map((each) => each.trim()).filter(Boolean),
     callMinimum: number('CALL_MIN_SECONDS', 30),
+    callTapSeconds: number('CALL_TAP_SECONDS', 180),
     callResults: env.CALL_RESULTS || undefined,
     callResultWait: number('CALL_RESULT_WAIT', 30),
     poolNumbers: (env.POOL_NUMBERS ?? '').split(',').map((each) => each.trim()).filter(Boolean),
@@ -179,6 +180,7 @@ export function configFrom(env: Env) {
   } catch {
     wrong.push('REPORT_TIME_ZONE must be a time zone, such as America/New_York')
   }
+  if (config.callTapSeconds > 3600) wrong.push('CALL_TAP_SECONDS must be at most 3600')
   if (config.openHours !== undefined) for (const problem of hoursProblems(config.openHours)) wrong.push(`OPEN_HOURS: ${problem}`)
   for (const each of config.staffNetworks) {
     try {
@@ -372,7 +374,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
     ...(hours && { hours }),
     // A tap on a phone link is what ties a call to a visitor, so taking calls means taking that event.
     events: [...new Set([...config.events, ...(config.callNumbers || config.twilio || config.poolNumbers.length > 0 ? ['phone_click'] : [])])],
-    calls: { exclude: config.callExclude, minimumSeconds: config.callMinimum, resultWait: config.callResultWait * 60_000, ...(config.callResults === 'expected' && { results: 'expected' as const }), ...(config.callNumbers && { numbers: config.callNumbers }), ...(config.twilio && { twilio: config.twilio }) },
+    calls: { exclude: config.callExclude, minimumSeconds: config.callMinimum, clickWindow: config.callTapSeconds * 1000, resultWait: config.callResultWait * 60_000, ...(config.callResults === 'expected' && { results: 'expected' as const }), ...(config.callNumbers && { numbers: config.callNumbers }), ...(config.twilio && { twilio: config.twilio }) },
     ...(config.poolNumbers.length > 0 && { pool: { numbers: config.poolNumbers, minutes: config.poolMinutes, grace: config.poolGrace } }),
     ...(config.reviewers && { reviewers: config.reviewers }),
     ...(config.cookie && { cookie: config.cookie }),
