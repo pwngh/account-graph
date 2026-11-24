@@ -1439,6 +1439,11 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await graph.search('%'), [])
       assert.deepEqual(await graph.search('nobody'), [])
 
+      // An ad click id is found whole, in whichever field it came, and goes with whoever is forgotten.
+      for (const [subject, click] of [['team:b', { gclid: 'Click-1' }], ['team:a', { fbclid: 'Click-1', msclkid: 'ms-2' }], ['team:a', { fbclid: 'Click-1' }], ['team:c', { campaign: 'Click-1' }]] as const) await graph.touch({ subject, at: T0, ...click })
+      assert.deepEqual([await graph.clicked('Click-1'), await graph.clicked('Click-1', 1), await graph.clicked('ms-2')], [['team:a', 'team:b'], ['team:a'], ['team:a']])
+      assert.deepEqual([await graph.clicked('Click'), await graph.clicked('click-1'), await graph.clicked('%')], [[], [], []])
+
       const recent = await graph.recent()
       assert.deepEqual(recent.map((move) => [move.subject, move.from, move.to, move.at]), [
         ['duo:n', 'duo:n', 'duo:m', T0 + HOUR],

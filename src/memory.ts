@@ -2,6 +2,7 @@ import { createMemoryOps } from './ops.ts'
 import { createMemoryOutbox } from './outbox.ts'
 import { standingFirst } from './store.ts'
 import type { Store, Tx } from './store.ts'
+import { CLICK_IDS } from './touch.ts'
 import type { CallResult, Consent, ConsentAnswer, Cost, Counted, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Lease, Moved, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
 
 /**
@@ -324,6 +325,10 @@ export function createMemoryStore(): Store {
       return subjects.flatMap((subject) =>
         (touches.get(subject) ?? []).filter((touch) => touch.at >= from && touch.at <= to).map((touch) => structuredClone(touch)),
       )
+    },
+
+    async clicked(id, limit) {
+      return [...touches].filter(([, list]) => list.some((touch) => CLICK_IDS.some((name) => touch[name] === id))).map(([subject]) => subject).sort().slice(0, limit)
     },
 
     async touchesBetween(from, to) {

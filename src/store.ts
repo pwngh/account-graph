@@ -87,6 +87,8 @@ export interface Tx {
   addTouch(touch: Touch): Promise<void>
   /** Touches on the given subjects with `from <= at <= to`. */
   touchesOf(subjects: readonly Subject[], from: number, to: number): Promise<Touch[]>
+  /** The subjects with a touch that carries this ad click id, whole, in order. */
+  clicked(id: string, limit: number): Promise<Subject[]>
   /** Every touch with `from <= at < to`, whoever it belongs to. */
   touchesBetween(from: number, to: number): Promise<Touch[]>
   /** Records an outcome for the report, replacing one with the same id. */

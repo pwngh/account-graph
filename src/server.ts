@@ -566,7 +566,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
    * Who a text may mean: an email address or a phone number, hashed here and looked up whole, or how a subject's id begins.
    * Neither is kept, and neither is ever part of an address, which servers and browsers write down.
    */
-  async function find(given: unknown): Promise<{ by: 'email' | 'phone' | 'subject'; subjects: Subject[] }> {
+  async function find(given: unknown): Promise<{ by: 'email' | 'phone' | 'click' | 'subject'; subjects: Subject[] }> {
     if (typeof given !== 'string' || !given.trim() || given.length > 512) throw new Refusal(400, 'Body needs the text to find, at most 512 characters')
     const text = given.trim()
     const holding = async (identifiers: Identifier[]) => [...new Set((await graph.holders(identifiers)).map((edge) => edge.subject))].sort().slice(0, 20)
@@ -578,7 +578,10 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       } catch {}
       if (hash) return { by: 'phone', subjects: await holding([`phone:${hash}`, `voip:${hash}`]) }
     }
-    return { by: 'subject', subjects: await graph.search(text) }
+    const subjects = await graph.search(text)
+    // An ad click id is looked up whole, once no subject's id begins like it.
+    const clicked = subjects.length === 0 ? await graph.clicked(text) : []
+    return clicked.length > 0 ? { by: 'click', subjects: clicked } : { by: 'subject', subjects }
   }
 
   /** Everything the reviewer screen shows about one subject, in one answer. */

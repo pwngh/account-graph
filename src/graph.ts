@@ -211,6 +211,8 @@ export interface Graph {
   separations(subject: Subject): Promise<Subject[]>
   /** The clusters with two or more members, largest first: where a reviewer should look. `offset` skips that many. */
   clusters(limit?: number, offset?: number): Promise<{ id: Subject; size: number; oversized: boolean }[]>
+  /** Subjects with an arrival that carries this ad click id, whole, in order. */
+  clicked(id: string, limit?: number): Promise<Subject[]>
   /** Subjects whose id starts with the text, in order. */
   search(text: string, limit?: number): Promise<Subject[]>
   /** The newest cluster changes, newest first: who joined or left which cluster, and when. */
@@ -1141,6 +1143,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
     clusters(limit = 50, offset = 0) {
       return store.read(async (tx) => (await tx.largestClusters(limit, offset)).map((each) => ({ ...each, oversized: each.size > policy.review })))
+    },
+
+    clicked(id, limit = 20) {
+      return store.read((tx) => tx.clicked(id, limit))
     },
 
     search(text, limit = 20) {
