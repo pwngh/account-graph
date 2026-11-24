@@ -46,15 +46,15 @@ export interface BoardColumn<Row = BoardPlace> {
 
 /**
  * Puts each person in one column. Whoever has a missed call nobody returned is
- * in the first; everybody else is at the furthest step they ever reached, in
+ * in the first, unless it hid its number and so cannot be returned; everybody else is at the furthest step they ever reached, in
  * the order the steps are given. Pure, and does not depend on the order of
  * `people`. `unplaced` counts those with no open miss and no step you named.
  */
 export function board(
   people: readonly BoardPerson[],
-  options: { steps: readonly BoardStep[]; at: number; today: number; from: number; returnWait?: number },
+  options: { steps: readonly BoardStep[]; at: number; today: number; returnWait?: number },
 ): { columns: BoardColumn[]; unplaced: number } {
-  const { steps, at, today, from, returnWait } = options
+  const { steps, at, today, returnWait } = options
   const rank = new Map(steps.map((step, i) => [step.name, i]))
   const column = (step: string | null, wait: number | undefined, last: boolean): BoardColumn => ({ step, wait: wait ?? null, people: 0, fresh: 0, late: wait === undefined ? null : 0, done: last ? null : 0, rows: [] })
   const missed = column(null, returnWait, false)
@@ -79,9 +79,11 @@ export function board(
     const step = furthest < 0 ? null : steps[furthest]!.name
     const outcome = reached.filter((each) => each.stage === step).at(-1)
 
-    const misses = calls.filter((each) => each.direction === 'inbound' && each.at >= from && each.result?.answered === false).map((miss) => ({ miss, after: followUp(miss, calls) }))
+    // Whichever of their numbers a person is reached on, they are reached. A hidden number stays nobody's.
+    const own = calls.map((each) => (each.subject === `call:${each.id}` ? each : { ...each, subject: 'person' }))
+    const misses = own.flatMap((each, i) => (each.direction === 'inbound' && each.result?.answered === false ? [{ miss: calls[i]!, after: followUp(each, own) }] : []))
     const open = misses.filter(({ after }) => after.state === 'open').map(({ miss }) => miss)
-    if (open.length === 0 && misses.some(({ miss, after }) => after.delay !== undefined && miss.at + after.delay >= today)) missed.done! += 1
+    if (misses.some(({ miss, after }) => after.delay !== undefined && miss.at + after.delay >= today)) missed.done! += 1
 
     const here = open.length > 0 ? missed : furthest >= 0 ? columns[furthest]! : undefined
     if (!here) {

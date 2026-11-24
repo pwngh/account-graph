@@ -767,7 +767,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const theirs = unique([...found, ...everyone.keys()]).filter((subject) => people.has(person(subject)))
         for (const outcome of await tx.outcomesOf(theirs)) people.get(person(outcome.subject))!.outcomes.push(outcome)
         for (const call of await tx.callsOf(theirs)) people.get(person(call.subject))!.calls.push(call)
-        const { columns, unplaced } = board([...people.values()], { steps: steps.map(({ name, wait }) => ({ name, ...(wait && { wait: wait * HOUR }) })), at, today, from, ...(returnHours > 0 && { returnWait: returnHours * HOUR }) })
+        const { columns, unplaced } = board([...people.values()], { steps: steps.map(({ name, wait }) => ({ name, ...(wait && { wait: wait * HOUR }) })), at, today, ...(returnHours > 0 && { returnWait: returnHours * HOUR }) })
         // Only those shown are traced to an ad: it is the slow part.
         const shown: BoardColumn<BoardRow>[] = []
         for (const column of columns) {

@@ -165,7 +165,7 @@ The Board puts each person in one column. A person is everyone the graph treats 
 
 | Column | Who is in it |
 | --- | --- |
-| Missed, not returned | Whoever has a missed call or a voicemail that nobody returned, however far they got. |
+| Missed, not returned | Whoever has a missed call or a voicemail that nobody returned, however far they got. Being reached on any of their numbers returns it. A caller who hid their number cannot be rung back, so is not here. |
 | Each step in `STAGES`, in order | Everybody else, at the furthest step they ever reached. A later inquiry does not move a client back. |
 
 Each column counts its people and three things about today, in the time zone `REPORT_TIME_ZONE`:

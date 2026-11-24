@@ -951,6 +951,23 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       // No limit set: nobody waits too long. Fewer rows: the counts are still of everybody.
       const plain = await graph.board({ steps, at: T0, limit: 1 })
       assert.deepEqual(plain.columns.map((column) => [column.people, column.late, column.rows.length]), [[1, null, 1], [2, 1, 1], [3, null, 1]])
+      // Reached on one of two numbers, a person is reached. Missed again since, they are done today and waiting too.
+      await graph.observe([{ subject: 'd:1', identifiers: [`phone:${hashPhone('+15550100063')}`, `phone:${hashPhone('+15550100064')}`, 'email:d'], at: hours(95) }])
+      await recordCall(graph, { id: 'A4', from: '+15550100064', to: '+15550100001', at: hours(310), duration: 60, answered: true }, { results: 'expected' })
+      await miss('M4', '+15550100063', hours(300))
+      await recordCall(graph, { id: 'R4', direction: 'outbound', from: '+15550100001', to: '+15550100064', at: hours(6), duration: 60, answered: true })
+      const reached = (await graph.board({ steps, at: T0 })).columns[0]!
+      assert.deepEqual([reached.people, reached.done], [1, 2])
+      await miss('M5', '+15550100064', hours(5))
+      const again = (await graph.board({ steps, at: T0 })).columns[0]!
+      assert.deepEqual([again.people, again.done, again.fresh], [2, 2, 1])
+      // An older miss of somebody on the board still counts as open, before the period's first day.
+      await miss('M6', '+15550100065', hours(60))
+      await graph.observe([{ subject: 'e:1', identifiers: [`phone:${hashPhone('+15550100065')}`, 'email:e'], at: hours(60) }])
+      await step('e:1', 'inquiry', hours(1))
+      assert.equal((await graph.board({ steps, at: T0, days: 2 })).columns[0]!.rows.some((row) => row.subject === `caller:${hashPhone('+15550100065')}`), true)
+      await graph.forget('e:1')
+      for (const n of [3, 4, 5]) await graph.forget(`caller:${hashPhone(`+1555010006${n}`)}`)
       // A shorter period leaves out who did nothing in it.
       assert.deepEqual((await graph.board({ steps, at: T0, days: 1 })).columns.map((column) => column.rows.map((row) => row.subject)), [[], ['a:new'], ['a:again', 'a:up']])
       // A shifted zone moves today.
