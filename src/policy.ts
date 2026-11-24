@@ -44,9 +44,8 @@ export interface Policy {
 const DAY = 86_400_000
 
 /**
- * Default weights. The fingerprint, canvas, and ip rows are set from how
- * these identifiers behave in production, where the person behind each
- * sighting was known:
+ * Default weights. The fingerprint, canvas, and ip rows are set from these
+ * figures:
  *
  * - A verified vendor fingerprint belongs to one person about 98% of the
  *   time. The next sighting is the same person 98% of the time within 30
