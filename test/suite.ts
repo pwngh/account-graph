@@ -538,6 +538,35 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await assert.rejects(graph.report({ from: '2026-03-01', to: '2026-03-01', timeZone: 'Mars/Olympus' }), TypeError)
     })
 
+    test('what a decision would do is what it does, and foreseeing it writes nothing', async () => {
+      const { graph } = await fresh()
+      await graph.observe([1, 2, 3].map((n) => ({ subject: `a:${n}`, identifiers: ['device:a'], at: T0 })))
+      await graph.observe([1, 2].map((n) => ({ subject: `b:${n}`, identifiers: ['email:b'], at: T0 })))
+      await graph.observe({ subject: 'c:1', identifiers: ['device:c'], at: T0 })
+      const sizes = async (...subjects: string[]) => [...new Map(await Promise.all(subjects.map(async (subject) => { const cluster = (await graph.cluster(subject))!; return [cluster.id, cluster.members.length] as const })))].map(([, size]) => size).sort().reverse()
+      const seen = (list: { size: number }[]) => list.map(({ size }) => size)
+      const check = async (supposed: Parameters<typeof graph.foresee>[0], subjects: string[], act: () => Promise<readonly unknown[]>, expected: [number[], number[]]) => {
+        const before = await graph.version()
+        const { moved, before: was, after } = await graph.foresee(supposed)
+        assert.equal(await graph.version(), before)
+        assert.deepEqual([seen(was), seen(after)], expected)
+        assert.deepEqual(await sizes(...subjects), expected[0])
+        const changes = await act()
+        assert.deepEqual([changes.length > 0, await sizes(...subjects)], [moved > 0, expected[1]])
+        assert.equal(changes.length, moved)
+      }
+      await check({ action: 'join', a: 'a:1', b: 'b:1' }, ['a:1', 'b:1'], () => graph.join('a:1', 'b:1'), [[3, 2], [5]])
+      await check({ action: 'separate', a: 'a:1', b: 'b:1' }, ['a:1', 'b:1'], () => graph.separate('a:1', 'b:1'), [[5], [3, 2]])
+      // A separation holds over a join.
+      await check({ action: 'join', a: 'b:1', b: 'a:1' }, ['a:1', 'b:1'], () => graph.join('a:1', 'b:1'), [[3, 2], [3, 2]])
+      await check({ action: 'separate', a: 'b:1', b: 'a:1', separated: false }, ['a:1', 'b:1'], () => graph.separate('a:1', 'b:1', false), [[3, 2], [5]])
+      await check({ action: 'ignore', identifier: 'email:b' }, ['b:1', 'b:2'], () => graph.ignore('email:b'), [[5], [4, 1]])
+      await check({ action: 'ignore', identifier: 'email:b', ignored: false }, ['b:1', 'b:2'], () => graph.ignore('email:b', false), [[4, 1], [5]])
+      assert.deepEqual(await graph.foresee({ action: 'ignore', identifier: 'email:nobody' }), { moved: 0, before: [], after: [] })
+      assert.deepEqual(await graph.foresee({ action: 'join', a: 'c:1', b: 'never:seen' }), { moved: 1, before: [{ id: 'c:1', size: 1 }, { id: 'never:seen', size: 1 }], after: [{ id: 'c:1', size: 2 }] })
+      for (const bad of [{}, { action: 'forget' }, { action: 'join', a: 'a:1' }, { action: 'join', a: 'a:1', b: 'a:1' }, { action: 'ignore' }, { action: 'ignore', identifier: 'email:b', ignored: 'false' }, { action: 'separate', a: 'a:1', b: 'b:1', separated: 0 }]) await assert.rejects(graph.foresee(bad as never), TypeError)
+    })
+
     test('a call from a number left out, or placed to one, records nothing, and one recorded before still settles', async () => {
       const { graph } = await fresh()
       const options = { exclude: ['(555) 010-0021'], results: 'expected' as const }

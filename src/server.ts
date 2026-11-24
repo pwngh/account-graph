@@ -139,7 +139,7 @@ const NAME = /^[\w.-]{1,64}$/
 const REVIEW_ROUTES = new Set([
   'GET /me', 'GET /subject', 'GET /clusters', 'GET /search', 'GET /recent', 'GET /links', 'GET /cluster', 'GET /history', 'GET /journey', 'GET /board', 'GET /flows', 'GET /collusion', 'GET /rings',
   'GET /decisions', 'GET /disputes', 'GET /consent', 'GET /outcome', 'GET /followed', 'GET /call', 'GET /calls', 'GET /calls/summary', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'GET /ops', 'POST /find', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
-  'GET /undecided', 'GET /between', 'GET /conversions', 'POST /retry',
+  'GET /undecided', 'GET /between', 'GET /conversions', 'POST /retry', 'POST /foresee',
 ])
 
 /** Answers hold people's data, so nothing keeps a copy of one. */
@@ -763,6 +763,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return graph.search(url.searchParams.get('q') ?? '')
       case 'POST /find':
         return find((await json(request)).text)
+      case 'POST /foresee':
+        return graph.foresee(await json(request))
       case 'GET /recent':
         return graph.recent()
       case 'POST /separate': {
