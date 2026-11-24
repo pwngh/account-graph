@@ -174,7 +174,7 @@ Looked for on the same seeds, once the figures above were known. These were not 
 
 - **Where wrong pairs of records are from**, base, default: 156. In 70 one spoke for the other. Of the rest, 68 share an email only, 13 share a device only, and 5 anything else.
 - **Names.** Every link in the household arm that rests on a name is one person's: 0 of 141 wrong in base. A name or birth date that disagrees weighs nothing today.
-- **Taps.** Counted from the worlds and not from links: in busy, of 32,037 calls, in the three minutes before and half a minute after, 3,793 have taps by two browsers or more, 3,871 by one that the caller has used, and 3,438 by one that the caller has never used. Which of them the server tied is in the results.
+- **Taps.** Counted from the worlds and not from links: in busy, of 32,037 calls, in the three minutes before and half a minute after, 3,793 have taps by two browsers or more, 3,871 by one that the caller has used, and 3,438 by one that the caller has never used. The results give the `dial` links in all.
 
 ## Limitations
 
