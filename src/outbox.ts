@@ -179,11 +179,13 @@ export interface Outbox {
   giveBack(transactionId: string): Promise<Job[]>
   /**
    * Forgets a subject the way `graph.forget` does, and says which of its
-   * conversions had reached a platform. With `tellForgotten`, a platform that
+   * conversions had reached a platform. With `tellForgotten`, or `retract` for this one, a platform that
    * has a way is told after the subject is gone here, and not again. What was not
    * told is in the answer and kept nowhere.
    */
-  forget(subject: Subject, why?: Deciding): Promise<{ changes: Change[]; sent: Sent[] }>
+  forget(subject: Subject, why?: Deciding, how?: { retract?: boolean }): Promise<{ changes: Change[]; sent: Sent[] }>
+  /** The platforms that can be asked to retract a conversion, and whether every `forget` asks them. */
+  readonly retraction: { targets: string[]; always: boolean }
   /** Sends every job that is due. Call it on a timer, from as many workers as you like. */
   run(): Promise<Pass>
   /** Calls `run` every `interval` milliseconds. Returns a function that stops it. */
@@ -424,11 +426,12 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
       return changed
     },
 
-    async forget(subject, why) {
+    retraction: { targets: options.targets.filter((target) => target.forget).map((target) => target.name), always: options.tellForgotten ?? false },
+    async forget(subject, why, { retract = false } = {}) {
       let jobs: Job[] = []
       const changes = await graph.forget(subject, why, (gone) => void (jobs = gone))
       const sent = sentOf(jobs)
-      if (!options.tellForgotten) return { changes, sent }
+      if (!options.tellForgotten && !retract) return { changes, sent }
       for (const [name, target] of targets) {
         const theirs = jobs.filter((job) => job.target === name && reached(job))
         if (!target.forget) continue

@@ -21,14 +21,14 @@ const badge = (subject) => {
 const kept = (verdict) => (verdict?.apart ? [author(verdict.apart.by), el('span', { class: 'muted' }, ` · ${when(verdict.apart.at)}${verdict.apart.reason ? ` · ${verdict.apart.reason}` : ''}`),
   verdict.last.action === 'join' ? el('span', { class: 'reason' }, 'Later joined by ', author(verdict.last.by), `, ${when(verdict.last.at)}. The separation takes precedence.`) : ''] : [unrecorded()])
 
-const TOLD = { told: ['Deletion requested', 'same'], refused: ['Request rejected', 'apart'], untold: ['Not requested', 'related'] }
+const TOLD = { told: ['Retraction accepted', 'same'], refused: ['Retraction rejected', 'apart'], untold: ['Not requested', 'related'] }
 /** What had reached an ad platform of someone just forgotten. It is said once and kept nowhere, so only its button puts it away. */
 function sentOn(sent) {
   const table = el('table', {}, el('tr', {}, th('Platform'), th('Conversion'), th('Date'), th('Transaction'), th('Status')),
     ...sent.map((each) => el('tr', {}, td('', sourced(each.target)), td('', each.action), td('nowrap', reviewDisplay.time(each.at)), td('', each.transactionId),
       td('', reviewDisplay.chip(...TOLD[each.state]), each.note ? el('span', { class: 'reason' }, each.note) : ''))))
   const dialog = el('dialog', { class: 'sent-on', closedby: 'none', 'aria-label': 'Data held by ad platforms' }, el('h4', {}, 'Data held by ad platforms'),
-    el('p', { class: 'muted' }, sent.some(({ state }) => state !== 'told') ? 'This ID was deleted. Request deletion from these platforms directly. This list is shown once, so save a copy.' : 'This ID was deleted. This list is shown once.'),
+    el('p', { class: 'muted' }, sent.some(({ state }) => state !== 'told') ? 'This ID was deleted here. Contact these platforms directly about their data. This list is shown once, so save a copy.' : 'This ID was deleted. This list is shown once.'),
     wide('Data held by ad platforms', table), el('div', { class: 'row' }, saved('sent-to-ad-platforms', table), el('button', { class: 'primary', on: { click: () => dialog.close() } }, 'Close')))
   // A browser closes a dialog on a second Escape whatever the first was answered, so the key itself is stopped.
   dialog.addEventListener('keydown', (event) => event.key === 'Escape' && event.preventDefault())
@@ -47,7 +47,7 @@ function profileOf(profile, more) {
   detail.push(el('section', {}, el('div', { class: 'page-head' }, title, explain(), el('div', { class: 'row' },
     el('a', { class: 'button', href: `#/journey/${encodeURIComponent(profile.subject)}` }, 'Journey'),
     el('button', { on: { click: () => act('Join IDs', `${profile.subject} and the other ID will be treated as one person.`, '/join', { a: profile.subject }, 'Join', { otherKey: 'b' }) } }, 'Join with…'),
-    el('button', { class: 'danger', on: { click: () => act('Delete data', `All data recorded for ${profile.subject} will be permanently deleted.`, '/forget', { subject: profile.subject, ads: true }, 'Hold to delete', { hold: true, done: ({ sent }) => sent.length > 0 && sentOn(sent) }) } }, 'Delete…'))),
+    el('button', { class: 'danger', on: { click: () => act('Delete data', `All data recorded for ${profile.subject} will be permanently deleted.`, '/forget', { subject: profile.subject, ads: true }, 'Hold to delete', { hold: true, ...(retraction?.targets.length && !retraction.always && { option: { key: 'retract', text: `Ask ${retraction.targets.join(', ')} to retract conversions` } }), done: ({ sent }) => sent.length > 0 && sentOn(sent) }) } }, 'Delete…'))),
   tiles([term('Linked IDs', 'linkedIds'), amount(size), profile.cluster.oversized ? 'Above review limit' : '', profile.cluster.oversized ? 'apart' : ''],
     profile.links[0] && [term('Strongest link', 'strongest'), percent(Math.max(...profile.links.map((link) => link.score))), `${amount(profile.links.length)} ${profile.links.length === 1 ? 'link' : 'links'}`],
     profile.separated.length > 0 && [term('Separated', 'separated'), amount(profile.separated.length)],

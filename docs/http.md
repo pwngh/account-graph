@@ -83,7 +83,7 @@ An identifier is written `kind:value`. A kind missing from the policy gets 400. 
 | `POST /separate` | `{ a, b, separated?, by?, reason? }`. Separates two subjects. `separated: false` withdraws the separation. |
 | `POST /join` | `{ a, b, by?, reason?, mark? }`. Records that two subjects are one person. With `mark: true` the answer is `{ moved, mark }`, where `mark` is the identifier to `/ignore` to undo the join. |
 | `POST /ignore` | `{ identifier, ignored?, by?, reason? }`. Mutes one identifier, or with `ignored: false` restores it. |
-| `POST /forget` | `{ subject, by?, reason?, ads? }`. Deletes a subject and everything recorded about it. With `ads: true` the answer is `{ changes, sent }`, where `sent` lists [conversions that reached an ad platform](privacy.md#data-at-ad-platforms). |
+| `POST /forget` | `{ subject, by?, reason?, ads?, retract? }`. Deletes a subject and everything recorded about it. With `ads: true` the answer is `{ changes, sent }`, where `sent` lists [conversions that reached an ad platform](privacy.md#data-at-ad-platforms). |
 | `POST /foresee` | Previews a decision without making it: `{ action: "join", a, b }`, `{ action: "separate", a, b, separated? }` or `{ action: "ignore", identifier, ignored? }`. Answers `{ moved, before, after }`, with the affected clusters as `{ id, size }`. |
 | `GET /decisions?limit=&before=&author=` | The audit log, newest first, 50 at a time: `{ decisions, next, total }`. Pass `next` as `before` for the next page. `author` is `people`, `system`, or one name. |
 | `GET /disputes` | Pairs whose reports from systems switched between separated and joined (or withdrawn) three times or more. |
@@ -114,7 +114,7 @@ Send `by` only with the service token. A reviewer's decision carries the name of
 
 | Route | Description |
 | --- | --- |
-| `GET /me` | `{ reviewer }`: the token's owner, or `null` for the service token. |
+| `GET /me` | `{ reviewer, retraction }`: the token's owner, or `null` for the service token. `retraction` is `{ targets, always }`, the platforms that accept retractions and whether each deletion requests one. |
 | `GET /policy` | The running rules by kind, the hash the stored clusters were built with, whether a rebuild is `due`, and which kinds were `changed` from the default. |
 | `GET /ops` | Server operations: `{ feeds, jobs, undelivered, alerts, at, pool, outbox }`. |
 | `GET /pulse` | `{ version }`, with an `etag`. Send it as `if-none-match` to get 304 until the next write. |

@@ -127,6 +127,14 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   await press('Escape')
   await until('it to close', () => run(`!document.getElementById('ask').open`))
   await until('an ordinary button again', () => run(`!document.getElementById('ask-yes').classList.contains('hold')`))
+  // Asking a platform to retract is offered where one can be asked, left off, and sent only when chosen.
+  assert.equal(await run(`document.getElementById('ask-option-label').hidden`), true)
+  await run(`retraction = { targets: ['microsoft'], always: false }; load()`)
+  await until('the option', () => run(`(() => { if (opening > 0) return false; [...document.querySelectorAll('button')].find((b) => b.textContent === 'Delete…').click(); return document.getElementById('ask').open })()`))
+  assert.deepEqual([await shown('#ask-option-label'), await text('#ask-option-text'), await run(`document.getElementById('ask-option').checked`)], [true, 'Ask microsoft to retract conversions', false])
+  await press('Escape')
+  await until('it to close again', () => run(`!document.getElementById('ask').open`))
+  await run(`retraction = { targets: [], always: false }; load()`)
 
   // Escape decides nothing. Signing out forgets the token and what was on screen.
   await keepApart('account:3')

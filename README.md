@@ -225,7 +225,7 @@ The last column is the median of 300 sequential runs. Other tests used the datab
 
 **Privacy and operations**
 
-- `forget` leaves data at ad platforms. `POST /forget` can list it, and `FORGET_ADS` requests deletion from Microsoft, the one platform that documents a method. No live request has been made.
+- `forget` leaves data at ad platforms. `POST /forget` can list it, and `FORGET_ADS` or `retract` asks Microsoft, the one supported platform, to retract them. Microsoft does not state that a retraction deletes data. No live request has been made.
 - Consent records cover advertising, and exclude consent to be contacted.
 - Each page view that reports consent adds a history row. `prune` deletes superseded rows.
 - The `/collect` rate limit is per server process.
