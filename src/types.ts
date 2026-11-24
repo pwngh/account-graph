@@ -403,11 +403,11 @@ export interface OpenCall {
 export interface Tie {
   /** `self` it is the subject asked about. `cluster` the graph treats the two as one person. `linked` they are linked strongly enough to be credited, and a cut keeps them in two clusters. */
   how: 'self' | 'cluster' | 'linked'
-  /** Strength of the best chain of links between the two, or null when they are in one cluster with no chain short enough to score. */
+  /** Strength of the best chain of links: from the subject asked about inside its cluster, and from the nearest of the cluster to anybody else. Null when no chain is left. */
   score: number | null
-  /** The subjects that chain passes through, starting at the one asked about. */
+  /** The subjects that chain passes through, starting at the one it begins from. */
   via: Subject[]
-  /** The kinds of identifier the first link of a direct tie rests on, strongest first. */
+  /** The kinds of identifier the chain's last link rests on, strongest first. */
   kinds: string[]
 }
 

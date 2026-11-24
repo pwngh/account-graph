@@ -394,23 +394,24 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
   type Reached = Map<Subject, { confidence: number; via: Subject[] }>
 
-  /** Every subject within `hops` links of one, with the strength of the best chain to each. */
-  async function reach(tx: Tx, subject: Subject, hops: number): Promise<Reached> {
-    const reached: Reached = new Map([[subject, { confidence: 1, via: [] }]])
+  /** Every subject within `hops` links of any of those given, with the strength of the best chain to each. With `only`, through those subjects and to them. */
+  async function reach(tx: Tx, from: readonly Subject[], hops: number, only?: ReadonlySet<Subject>, last?: Map<Subject, Link>): Promise<Reached> {
+    const reached: Reached = new Map(from.map((subject) => [subject, { confidence: 1, via: [] }]))
     // Two subjects kept apart are two people, so nothing of the one is reached from the other, through a third subject either.
-    const apart = new Set((await tx.separatedOf([subject])).map(([a, b]) => (a === subject ? b : a)))
-    let frontier = [subject]
+    const apart = new Set((await tx.separatedOf(from)).flat().filter((subject) => !reached.has(subject)))
+    let frontier = [...from]
     for (let hop = 0; hop < hops && frontier.length > 0; hop++) {
       const links = await neighbors(tx, frontier)
       const improved = new Set<Subject>()
       for (const near of [...frontier].sort()) {
         const start = reached.get(near)!
         for (const link of links.get(near) ?? []) {
-          if (apart.has(link.subject)) continue
+          if (apart.has(link.subject) || (only && !only.has(link.subject))) continue
           const confidence = start.confidence * link.score
           const known = reached.get(link.subject)
           if (known && known.confidence >= confidence) continue
           reached.set(link.subject, { confidence, via: [...start.via, near] })
+          last?.set(link.subject, link)
           improved.add(link.subject)
         }
       }
@@ -608,7 +609,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     attribute(subject, { at, window = 90 * DAY, hops = 2 }) {
-      return store.read(async (tx) => credit(subject, at, window, await reach(tx, subject, hops), tx))
+      return store.read(async (tx) => credit(subject, at, window, await reach(tx, [subject], hops), tx))
     },
 
     async outcome(outcome) {
@@ -692,7 +693,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const later = await tx.callsOf(unique(open.map((call) => call.subject)))
         const out: OpenCall[] = []
         for (const call of open) {
-          const { credited } = await credit(call.subject, call.at, 90 * DAY, await reach(tx, call.subject, 2), tx)
+          const { credited } = await credit(call.subject, call.at, 90 * DAY, await reach(tx, [call.subject], 2), tx)
           out.push({ call, followUp: followUp(call, later), ...(credited && { touch: credited }) })
         }
         return out
@@ -776,7 +777,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         // Looked for over a year, so how many arrivals the window leaves out can be said. Only those inside it are credited.
         const creditOf = async (subject: Subject, at: number, back = Math.max(window, 365 * DAY)) => {
           let from = reached.get(subject)
-          if (!from) reached.set(subject, (from = await reach(tx, subject, hops)))
+          if (!from) reached.set(subject, (from = await reach(tx, [subject], hops)))
           const { credited: touch } = await credit(subject, at, back, from, tx)
           const inside = touch !== undefined && touch.at >= at - window
           return { touch: inside ? touch : undefined, delay: touch && at - touch.at, inside }
@@ -1041,26 +1042,29 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       })
     },
 
-    journey(subject, { before = Number.MAX_SAFE_INTEGER, limit = 200 } = {}) {
+    async journey(subject, { before = Number.MAX_SAFE_INTEGER, limit = 200 } = {}) {
+      if (!(Number.isInteger(limit) && limit > 0)) throw new TypeError('limit must be a whole number above zero')
       return store.read(async (tx) => {
         const own = (await tx.labelsOf([subject])).get(subject)
         const members = own ? (await tx.clusterOf(own.cluster)).sort() : [subject]
-        const reached = await reach(tx, subject, 2)
-        const direct = new Map(((await neighbors(tx, [subject])).get(subject) ?? []).map((link) => [link.subject, link]))
-        // The person: their cluster, and whoever is tied strongly enough that their arrivals would be credited.
+        // The person: their cluster, and whoever is tied to any of it strongly enough that their arrivals would be credited.
         // Nobody kept apart from any of them, though: a browser two people used is tied to both, and they are still two.
         const within = new Set(members)
-        const apart = new Set((await tx.separatedOf(members)).flat().filter((each) => !within.has(each)))
-        const strong = [...reached].filter(([each, { confidence, via }]) => confidence >= policy.same && ![each, ...via].some((step) => apart.has(step))).map(([each]) => each)
+        const links = new Map<Subject, Link>()
+        const reached = await reach(tx, members, 2, undefined, links)
+        const strong = [...reached].filter(([, { confidence }]) => confidence >= policy.same).map(([each]) => each)
         const everyone = unique([subject, ...members, ...strong.sort()])
         const people = everyone.slice(0, MOST)
+        // Inside the cluster a tie is the best chain from the subject asked about, however long.
+        const inside = new Map<Subject, Link>()
+        const chains = await reach(tx, [subject], members.length, within, inside)
         const tie = (each: Subject): Tie => {
-          const found = reached.get(each)
+          const [found, link] = within.has(each) ? [chains.get(each), inside.get(each)] : [reached.get(each), links.get(each)]
           return {
             how: each === subject ? 'self' : within.has(each) ? 'cluster' : 'linked',
             score: found?.confidence ?? null,
             via: found?.via ?? [],
-            kinds: unique((direct.get(each)?.reasons ?? []).filter((reason) => reason.counted !== false).map((reason) => reason.identifier.slice(0, reason.identifier.indexOf(':')))),
+            kinds: unique((link?.reasons ?? []).filter((reason) => reason.counted !== false).map((reason) => reason.identifier.slice(0, reason.identifier.indexOf(':')))),
           }
         }
 
@@ -1069,10 +1073,11 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const calls = await tx.callsOf(people)
         for (const call of calls) entries.push({ at: call.at, subject: call.subject, kind: 'call', call, ...(call.direction === 'inbound' && call.result?.answered === false && { followUp: followUp(call, calls) }) })
         for (const each of people) {
-          // One moment is many sightings, one for each identifier. What a call or a reviewer left is told by the call and the decision.
+          // One moment is many sightings, one for each identifier. What a call or a reviewer's join left is told by the call and the decision.
+          const rang = new Set(calls.filter((call) => call.subject === each || call.visitor === each).map((call) => call.at))
           const moments = new Map<string, Entry & { kind: 'seen' }>()
           for (const { at, event = '', identifier } of await tx.history(each)) {
-            if (event === 'call' || event === 'review' || at >= before) continue
+            if (at >= before || (event === 'call' && rang.has(at)) || (event === 'review' && identifier.startsWith('review:join-'))) continue
             const key = `${at} ${event}`
             const moment = moments.get(key) ?? { at, subject: each, kind: 'seen', event, identifiers: [] }
             moments.set(key, moment)

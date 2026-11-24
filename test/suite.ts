@@ -965,6 +965,37 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual((await graph.journey('contact:j')).entries.map((entry) => entry.kind), ['decision', 'decision'])
     })
 
+    test('a journey is the whole cluster\'s, whoever of it is asked about, and a path through somebody kept apart does not hide a direct one', async () => {
+      const { graph } = await fresh()
+      const see = (subject: string, ...identifiers: string[]) => graph.observe({ subject, identifiers, at: T0, event: 'visit' })
+      // A chain of four: each shares a device with the next, so the ends are three links apart.
+      await see('w:1', 'device:12')
+      await see('w:2', 'device:12', 'device:23')
+      await see('w:3', 'device:23', 'device:34')
+      await see('w:4', 'device:34')
+      const asked = await graph.journey('w:1')
+      assert.deepEqual(asked.entries.map((entry) => entry.subject), ['w:1', 'w:2', 'w:3', 'w:4'])
+      assert.deepEqual([asked.ties['w:4']!.how, asked.ties['w:4']!.via, asked.ties['w:4']!.kinds], ['cluster', ['w:1', 'w:2', 'w:3'], ['device']])
+      assert.ok(asked.ties['w:4']!.score! > 0.8)
+      // Four of one person, and y kept apart from one of them, with a cut between. x is tied to one of the four only, and z best through y.
+      for (const each of ['a:1', 'a:2', 'a:3', 'a:4']) await see(each, 'device:a', 'email:a')
+      await see('a:1', 'device:y', 'device:z')
+      await see('y', 'device:y', 'email:yz', 'device:yz')
+      await see('z', 'device:z', 'email:yz', 'device:yz')
+      await see('x', 'device:yz', 'device:x')
+      await see('a:4', 'device:x')
+      await graph.separate('a:2', 'y', true)
+      assert.notEqual((await graph.cluster('a:1'))!.id, (await graph.cluster('z'))!.id)
+      const people = async (subject: string) => Object.keys((await graph.journey(subject)).ties).sort()
+      for (const each of ['a:1', 'a:2', 'a:3', 'a:4']) assert.deepEqual(await people(each), ['a:1', 'a:2', 'a:3', 'a:4', 'x', 'z'])
+      assert.deepEqual((await graph.journey('a:3')).ties.x!.via, ['a:4'])
+      // A sighting called after a call or a review that no call or decision tells stays.
+      await graph.observe({ subject: 'w:1', identifiers: ['device:12'], at: T0 + 1, event: 'call' })
+      await graph.observe({ subject: 'w:1', identifiers: ['device:12'], at: T0 + 2, event: 'review' })
+      assert.deepEqual((await graph.journey('w:1')).entries.slice(-2).map((entry) => entry.kind === 'seen' && entry.event), ['call', 'review'])
+      await assert.rejects(graph.journey('w:1', { limit: 0 }), TypeError)
+    })
+
     test('the review queue pages, subjects are found by prefix, and recent changes are listed', async () => {
       const clock = { now: T0 }
       const { graph } = await fresh(undefined, { now: () => clock.now })
