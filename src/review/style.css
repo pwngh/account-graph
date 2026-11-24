@@ -392,7 +392,6 @@ dialog#ask { opacity: 0; transform: translateY(8px) scale(.985); transition: opa
   .part, .key, .meter .fill, .meter .track, .shape rect, .ranked li > i, .letter, .badge, .tile svg, .chip::before, .board-age::before, .dot, .glyph, .graph .stage > svg, [class^="heat"] { forced-color-adjust: none; }
   [aria-current], [aria-selected=true], [aria-pressed=true] { outline: 2px solid Highlight; outline-offset: -2px; } tr.behind { background: none; }
 }
-@media print { header, footer, .skip, .filter-bar, .choices, .graph .bar, .table-export { display: none; } body { display: block; background: none; } main { margin: 0; padding: 0; border: 0; } .scroll, .wide, .inbox-list, .inbox-story { max-height: none; overflow: visible; } section { break-inside: avoid-page; } }
 @media (prefers-reduced-motion: reduce) { *, ::before, ::after { transition: none !important; animation: none !important; } }
 
 /* The graph: marks take their color from what they mean, and the rest falls back when one is brought forward. */
@@ -460,3 +459,11 @@ dialog#ask { opacity: 0; transform: translateY(8px) scale(.985); transition: opa
 .graph.narrow:fullscreen.waiting .card { visibility: hidden; }
 .graph.narrow:fullscreen .card { top: auto; bottom: 8px; left: 8px; right: 8px; width: auto; max-height: 50%; }
 @media (prefers-reduced-motion: reduce) { .graph * { transition: none !important; animation: none !important; } }
+/* On paper: no controls, nothing cut off by a scroll area, and pages that fill up. */
+@media print {
+  header, footer, .skip, .filter-bar, .choices, .table-export, .tools, .least, .presets, .period, .segments, .info, .explain, main label, main select, main input, main .button, main .row > button, .card-value > button, .reason > .link, section > p > button, .graph .card { display: none !important; }
+  html { background: none; } body { display: block; background: none; } main { margin: 0; padding: 0; border: 0; background: none; } th, td { background-color: transparent !important; }
+  .scroll, .wide, .inbox-list, .inbox-story, .queue-rail { max-height: none !important; overflow: visible !important; mask: none !important; }
+  .board.wide, .inbox, .deck { display: block; } .board .scroll { columns: 3; column-gap: 8px; }
+  tr, li, .tile, .card, .board-card, .graph { break-inside: avoid; } h2, h3, thead { break-after: avoid; }
+}

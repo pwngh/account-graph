@@ -80,5 +80,6 @@
 - Channels compares campaigns, with breakdowns, sorting, filters and CSV export.
 - Health shows issues, feeds, jobs, conversions, matching rules and the audit log.
 - The graph is laid out to the shape of the screen. On a phone its height grows with the number of IDs.
+- A printed page leaves out the controls and shows lists in full.
 - An info icon beside a term shows its definition, and a guide is available on each view.
 - A command palette opens with Ctrl+K or ⌘K. Light, dark and forced-color modes are supported.
