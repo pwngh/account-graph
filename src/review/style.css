@@ -741,7 +741,7 @@ tr.folded { display: none !important; }
 .letter::before { content: attr(data-letter); }
 .what .letter { width: 16px; height: 16px; border-radius: 5px; font-size: 10px; }
 .what .sourced { display: inline; }
-.what .letter { margin: 0 5px 0 1px; vertical-align: -3px; }
+.what .letter { margin: 0 5px 0 1px; vertical-align: 1px; }
 .sort { position: relative; overflow-wrap: normal; word-break: keep-all; white-space: normal; display: inline-flex; align-items: center; height: auto; min-height: 0; padding: 2px 4px; margin: -2px -4px; border: 0; border-radius: 4px; background: none; color: inherit; font: inherit; }
 th.num .sort { text-align: right; }
 th.num .way { right: auto; left: 50%; top: -5px; margin: 0 0 0 -4px; }
