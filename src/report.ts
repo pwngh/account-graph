@@ -95,6 +95,8 @@ export function fold(
   costs: readonly Required<Cost>[],
   touches: readonly Touch[],
   credited: readonly { outcome: Counted; touch: Touch | undefined }[],
+  /** The credited touch of each missed call, or undefined for one nothing can be credited with. */
+  missed: readonly (Touch | undefined)[] = [],
 ): Report {
   const lines = new Map<string, Line>()
   const currencies = new Set<string>()
@@ -103,7 +105,7 @@ export function fold(
   const line = (source: string, campaignId: string, campaign: string): Line => {
     const key = keyOf(source, campaignId, campaign)
     let found = lines.get(key)
-    if (!found) lines.set(key, (found = { source, campaignId, campaign: campaignId ? '' : campaign, named: '', cost: 0, clicks: 0, impressions: 0, visits: 0, stages: new Map(), outcomes: 0, value: 0 }))
+    if (!found) lines.set(key, (found = { source, campaignId, campaign: campaignId ? '' : campaign, named: '', cost: 0, clicks: 0, impressions: 0, visits: 0, missed: 0, stages: new Map(), outcomes: 0, value: 0 }))
     // A campaign known only by name keeps one spelling of it, the first in order.
     if (!campaignId && campaign < found.campaign) found.campaign = campaign
     return found
@@ -127,7 +129,7 @@ export function fold(
   const costed = new Set(lines.keys())
 
   // Then every touch that names an id no cost has, so a touch that carries the id as its name can find it.
-  const all = [...touches, ...credited.flatMap(({ touch }) => (touch ? [touch] : []))]
+  const all = [...touches, ...credited.flatMap(({ touch }) => (touch ? [touch] : [])), ...missed.flatMap((touch) => (touch ? [touch] : []))]
   // A touch finds a cost by name when it has no id. One with an id no cost knows only finds a cost that has no id either:
   // a different id under the same name is a different campaign.
   const named = (touch: Touch, source: string) => {
@@ -150,6 +152,7 @@ export function fold(
   }
 
   for (const touch of touches) lineOf(touch).visits += 1
+  for (const touch of missed) (touch ? lineOf(touch) : line('(none)', '', '')).missed += 1
   for (const { outcome, touch } of credited) {
     const found = touch ? lineOf(touch) : line('(none)', '', '')
     const stage = found.stages.get(outcome.stage) ?? { count: 0, value: 0 }
@@ -162,7 +165,7 @@ export function fold(
   }
 
   const sums = new Map<string, { count: number; value: number }>()
-  const total = { cost: 0, clicks: 0, impressions: 0, visits: 0, outcomes: 0, value: 0 }
+  const total = { cost: 0, clicks: 0, impressions: 0, visits: 0, missed: 0, outcomes: 0, value: 0 }
   const order = (found: Line) => `${found.source}\u0000${found.campaignId}\u0000${found.campaign}`
   const sorted = [...lines.values()].sort((x, y) => y.cost - x.cost || y.value - x.value || y.visits - x.visits || (order(x) < order(y) ? -1 : 1))
   // A step is named by whoever recorded the outcome, so the names are kept in maps until the very end.
@@ -181,6 +184,7 @@ export function fold(
     total.clicks += found.clicks
     total.impressions += found.impressions
     total.visits += found.visits
+    total.missed += found.missed
     total.outcomes += found.outcomes
     return { ...found, stages: Object.fromEntries(stages) }
   })

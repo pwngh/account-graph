@@ -44,6 +44,8 @@ export function twilioCall(fields: Readonly<Record<string, string>>, now: number
     ...(fields.From && { from: fields.From }),
     at: (Number.isNaN(ended) ? now : ended) - duration * 1000,
     duration,
+    // Anything but "completed" never connected. "completed" only says the phone system picked up, so it answers nothing.
+    ...(fields.CallStatus !== 'completed' && { answered: false }),
   }
 }
 

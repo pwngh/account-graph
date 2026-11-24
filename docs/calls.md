@@ -21,7 +21,7 @@ curl -X POST https://graph.example.org/call -H "authorization: Bearer $GRAPH_TOK
 ```
 
 ```json
-{ "subject": "caller:96f2c503…", "flags": [], "counted": true, "visitor": "visitor:fb919054…", "duplicate": false }
+{ "subject": "caller:96f2c503…", "flags": [], "counted": true, "state": "unknown", "visitor": "visitor:fb919054…", "duplicate": false }
 ```
 
 `visitor` is the browser that tapped. The caller and that visitor are now one cluster, and the call is in [the report](report.md) under the visitor's campaign.
@@ -57,7 +57,7 @@ When a call is reported, the server does four things in order.
 1. **The caller becomes a subject carrying their phone number.** An account that later gives the same number is tied to the call, and the call to the account.
 2. **It looks for a tap.** If exactly one visitor tapped that number in the three minutes before the call began, the caller and the visitor are linked at 0.92, enough to join them. The call then follows the visitor's own arrival: their ad click, their campaign. One visitor is tied to one caller: a visitor already tied to a different caller is passed over, so a browser cannot collect call after call by tapping again. A visitor a reviewer has kept apart from the caller is passed over too.
 3. **Otherwise it uses the number.** The call is filed under the channel `CALL_NUMBERS` gives that number, with the medium `call`.
-4. **A call of 30 seconds or more is counted** as an outcome of the step `call`. A shorter one is recorded and not counted.
+4. **A call of 30 seconds or more is counted** as an outcome of the step `call`. A shorter one is recorded and not counted. Where [results are expected](#was-it-answered), only a call a person answered is counted.
 
 The answer carries flags for what was noticed:
 
@@ -69,7 +69,51 @@ The answer carries flags for what was noticed:
 | `repeat` | This number has called before. | None. It is there for you to act on. |
 | `ambiguous` | More than one visitor tapped the number just before. | Tied to none of them; filed under the number's channel. |
 
-Reporting the same call id again writes nothing and answers `"duplicate": true`.
+Reporting the same call id again writes nothing and answers `"duplicate": true`. If the second report carries a result, the result is taken.
+
+## Was it answered?
+
+A phone system that picks up has not answered anyone. A caller who waits thirty seconds in a queue and hangs up looks, to the provider, like a completed call. So `answered` is true, false, or not known, and it is never worked out from how long a call lasted.
+
+Whoever runs your phones knows. Have your backend say so, before or after the call itself is reported:
+
+```sh
+curl -X POST https://graph.example.org/call/result -H "authorization: Bearer $GRAPH_TOKEN" \
+  -d '{"id":"CA1","answered":true,"waited":12}'
+```
+
+```json
+{ "state": "answered", "counted": true }
+```
+
+| Field | Meaning |
+| --- | --- |
+| `answered` | A person spoke to the caller. Required. |
+| `voicemail` | The caller reached voicemail. Not together with `answered: true`. |
+| `waited` | Seconds before someone answered or the caller gave up. It does not count as talking, so it does not help a call reach the minimum length. |
+
+Report it again and the last report stands. A call with `answered: false` is **missed**: tied to its visitor and campaign like any call, listed under **Missed calls** in the report, and never an outcome.
+
+### Waiting for the result
+
+With `CALL_RESULTS=expected`, a call is held until its result arrives: not counted, and not sent to any ad platform. So nothing is sent that would have to be taken back.
+
+```text
+call reported ──▶ waiting ──▶ result: answered ──▶ counted, and sent
+                         ├──▶ result: not answered ──▶ missed or voicemail
+                         └──▶ no result in 30 minutes ──▶ unknown, still not counted
+                                                    (a later result settles it)
+```
+
+Without the setting, a call is counted by its length as it is reported. If a result then says nobody answered, the call leaves the report and reads as missed. Where it had already been sent, its value is restated to nothing on the platforms that can restate. The others keep it. Google can restate. Meta, Microsoft and TikTok cannot.
+
+| What was sent | What happens when the call turns out missed |
+| --- | --- |
+| Not yet | It is held and never sent. |
+| To a platform that can restate | Its value becomes 0 there. It may still be counted there as a conversion. |
+| To any other platform | It stays, and the job notes that it does. |
+
+Turn `CALL_RESULTS` on only when something posts results. Without one, every call reads as unknown and none is counted.
 
 ### From Twilio
 
@@ -85,9 +129,13 @@ TWILIO_WEBHOOK_URL=https://graph.example.org/calls/twilio   # exactly as entered
 
 The signature is made from that address, so the two must match to the character. A request that fails the check gets 403.
 
+This callback only reports: Twilio expects no instructions in its answer, and gets none. A status of `busy`, `no-answer`, `failed` or `canceled` is recorded as not answered. `completed` means Twilio connected the call, to a person, a menu or voicemail, so it answers nothing.
+
+> **Do not point an `action` address at this server.** The answer to `<Dial action>`, `<Record action>` and the like is what the call does next, so this server would take over the call. Let your own application handle those, and post the result to `/call/result` from there.
+
 ### From any other provider
 
-Post the same five facts to `/call` with the service token: the provider's id for the call, who called, the number rung, when it began in epoch milliseconds, and how many seconds it lasted.
+Post the same facts to `/call` with the service token: the provider's id for the call, who called, the number rung, when it began in epoch milliseconds, and how many seconds it lasted. Add `answered`, `voicemail` and `waited` if you know them already.
 
 ## Limits
 
@@ -99,4 +147,6 @@ Post the same five facts to `/call` with the service token: the provider's id fo
 | Taps only | A visitor who reads the number and dials it by hand leaves no tap. That call is filed under the number's channel. |
 | The tap window | Three minutes before the call began, with thirty seconds of allowance for clocks that disagree. `clickWindow` changes it in the library. |
 | Sending calls to ad platforms | A counted call is always in the report. It is sent to an ad platform when the `call` step in `STAGES` has an action; the caller's number goes along, hashed, as a match key. |
-| Not confirmed | The Twilio console's field names are as remembered, not read this month. The signature check was run against the example on Twilio's webhook security page and matches it. No real Twilio request has been received. |
+| Calls from before | A call recorded before calls were kept has no state, and a result for it finds no call. Its outcome stays counted. |
+| Retention | `forget` deletes a caller's calls and results. `prune` deletes results whose call never came, and keeps calls. |
+| Not confirmed | Twilio's statuses and what its callbacks expect were read from its documentation in November 2026. The console's field names were not. The signature check was run against the example on Twilio's webhook security page and matches it. No real Twilio request has been received. |

@@ -301,6 +301,13 @@ test('staff networks are read from a setting, and a range that is not one is nam
   for (const bad of ['office', '192.0.2.0/33', '192.0.2.0/24/1', '2001:db8::/129', '192.0.2.0/', '/24']) assert.throws(() => configFrom({ ...env, STAFF_NETWORKS: bad }), /STAFF_NETWORKS: .* is not an address or a range/, bad)
 })
 
+test('call results are off until set, and read in minutes', () => {
+  const env = { DATABASE_URL: 'x', GRAPH_TOKEN: 'y' }
+  assert.deepEqual([configFrom(env).callResults, configFrom(env).callResultWait], [undefined, 30])
+  assert.deepEqual([configFrom({ ...env, CALL_RESULTS: 'expected', CALL_RESULT_WAIT: '10' }).callResults, configFrom({ ...env, CALL_RESULT_WAIT: '10' }).callResultWait], ['expected', 10])
+  assert.throws(() => configFrom({ ...env, CALL_RESULTS: 'yes' }), /CALL_RESULTS must be expected/)
+})
+
 test('a day begins at local midnight, across a clock change', () => {
   assert.equal(dayStart('2026-03-01'), Date.parse('2026-03-01T00:00:00Z'))
   assert.equal(dayStart('2026-03-01', 'America/New_York'), Date.parse('2026-03-01T05:00:00Z'))
@@ -413,7 +420,7 @@ test('the server counts outcomes without an ad platform, takes costs, and report
 
     const report = (await (await fetch(`${base}/report?from=2026-03-01&to=2026-03-02`, { headers: { authorization: 'Bearer reviewer' } })).json()) as any
     assert.deepEqual(report.rows, [
-      { source: 'google', campaignId: '111', campaign: 'Spring', cost: 50, clicks: 10, impressions: 0, visits: 1, stages: { enrolled: { count: 1, value: 120 } }, outcomes: 1, value: 120 },
+      { source: 'google', campaignId: '111', campaign: 'Spring', cost: 50, clicks: 10, impressions: 0, visits: 1, missed: 0, stages: { enrolled: { count: 1, value: 120 } }, outcomes: 1, value: 120 },
     ])
     // With no days named, the report covers the thirty days up to today.
     const recent = (await (await fetch(`${base}/report`, { headers: { authorization: 'Bearer secret' } })).json()) as any

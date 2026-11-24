@@ -605,7 +605,7 @@ test('a Twilio request is checked against its signature and read as a call', () 
   const ended = { CallSid: 'CA9', From: '+15558675309', To: '+15551230001', CallStatus: 'completed', CallDuration: '95', Direction: 'inbound', Timestamp: 'Fri, 20 Aug 2010 01:13:42 +0000' }
   assert.deepEqual(twilioCall(ended, 0), { id: 'CA9', from: '+15558675309', to: '+15551230001', at: Date.parse('2010-08-20T01:13:42Z') - 95_000, duration: 95 })
   // Nobody answered: recorded as a call of no length. Still ringing, or placed by the account: not a call to record.
-  assert.deepEqual(twilioCall({ ...ended, CallStatus: 'no-answer', Timestamp: '' }, 5000), { id: 'CA9', from: '+15558675309', to: '+15551230001', at: 5000, duration: 0 })
+  assert.deepEqual(twilioCall({ ...ended, CallStatus: 'no-answer', Timestamp: '' }, 5000), { id: 'CA9', from: '+15558675309', to: '+15551230001', at: 5000, duration: 0, answered: false })
   assert.equal(twilioCall({ ...ended, CallStatus: 'ringing' }, 0), undefined)
   assert.equal(twilioCall({ ...ended, Direction: 'outbound-api' }, 0), undefined)
 })
@@ -824,6 +824,51 @@ test('behind a proxy the visitor is the address the proxy added, not one the sen
   assert.equal(await seen(2, '198.51.100.1, 203.0.113.9, 10.0.0.2'), 'ip:203.0.113.9')
   assert.equal(await seen(2, '203.0.113.9'), 'ip:203.0.113.9')
   assert.equal(await seen(false, '203.0.113.9'), 'ip:127.0.0.1')
+})
+
+test('a call whose result is awaited is held, and nothing is sent until a person answered', async () => {
+  const clock = { now: T0 }
+  const store = createMemoryStore()
+  const graph = createGraph(store, undefined, { now: () => clock.now })
+  const requests: IngestRequest[] = []
+  const outbox = createOutbox(graph, store.outbox, { targets: [googleAds({ customerId: '1234567890', send: async (request) => (requests.push(request), {}) })], now: () => clock.now })
+  const server = createServer(createHandler(graph, { token: 'service', reviewToken: 'review', origins: [], outbox, stages: { call: { value: 10, currency: 'USD', action: '111' } }, calls: { results: 'expected' }, now: () => clock.now })).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const post = async (path: string, body: object, token = 'service') => {
+    const response = await fetch(`${base}${path}`, { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify(body) })
+    return { status: response.status, body: (await response.json()) as any }
+  }
+  const call = (id: string) => ({ id, from: '+15550100021', to: '+15550100001', at: T0, duration: 90 })
+  try {
+    const first = await post('/call', call('CA1'))
+    assert.deepEqual([first.body.state, first.body.counted], ['waiting', false])
+    await outbox.run()
+    assert.deepEqual([requests.length, (await outbox.counts()).held], [0, 1])
+    assert.equal((await post('/call/result', { id: 'CA1', answered: true }, 'review')).status, 403)
+    assert.equal((await post('/call/result', { id: 'CA1' })).status, 400)
+    assert.deepEqual((await post('/call/result', { id: 'CA1', answered: true, waited: 12 })).body, { state: 'answered', counted: true })
+    await outbox.run()
+    // Sent once, worth its step, with the caller's number as a match key though the number itself was never kept.
+    const [event] = requests.flatMap((request) => request.events) as any[]
+    assert.deepEqual([requests.length, event.transactionId, event.conversionValue, event.userData.userIdentifiers], [1, 'call:CA1', 10, [{ phoneNumber: hashPhone('+15550100021') }]])
+    await post('/call/result', { id: 'CA1', answered: true, waited: 12 })
+    await outbox.run()
+    assert.equal(requests.length, 1)
+
+    // Answered by nobody: held for good, and never sent.
+    await post('/call', call('CA2'))
+    assert.deepEqual((await post('/call/result', { id: 'CA2', answered: false })).body, { state: 'missed', counted: false })
+    // A result that comes first waits for its call.
+    assert.deepEqual((await post('/call/result', { id: 'CA3', answered: true })).body, { state: 'waiting', counted: false })
+    assert.equal((await post('/call', call('CA3'))).body.state, 'answered')
+    await outbox.run()
+    assert.deepEqual(requests.flatMap((request) => request.events.map((each: any) => each.transactionId)), ['call:CA1', 'call:CA3'])
+    const held = (await (await fetch(`${base}/conversions?state=held`, { headers: { authorization: 'Bearer service' } })).json()) as any[]
+    assert.deepEqual(held.map((job) => job.transactionId), ['call:CA2'])
+  } finally {
+    server.close()
+  }
 })
 
 test('steps give page events, calls and outcomes their value and their ad platform action', async () => {

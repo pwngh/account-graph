@@ -3,7 +3,8 @@ import type { Attribution, AttributedTouch, Consent, Outcome, Subject } from './
 
 export type { Outcome }
 
-export type JobState = 'pending' | 'sent' | 'skipped' | 'failed'
+/** `held` waits for whoever held it: it is not sent until it is released. */
+export type JobState = 'held' | 'pending' | 'sent' | 'skipped' | 'failed'
 
 /** An outcome on its way to one platform, and what became of it. */
 export interface Job {
@@ -33,6 +34,8 @@ export interface Job {
   requestId?: string
   /** Its value was changed after it was first recorded. */
   restated?: boolean
+  /** Its outcome was taken back after it was sent. */
+  withdrawn?: boolean
 }
 
 /** A job ready to send, with the touch and consent that go with it. */
@@ -72,7 +75,8 @@ export interface OutboxStore {
    * handed out again once the lease runs out. No job goes to two workers at once.
    */
   claim(now: number, lease: number, limit: number): Promise<Job[]>
-  save(job: Job): Promise<void>
+  /** Replaces a job. Resolves to the state it was in before. */
+  save(job: Job): Promise<JobState | undefined>
   /** Every job of one transaction, one per target. */
   get(transactionId: string): Promise<Job[]>
   /** Jobs in one state, the most recently due first. */
@@ -125,6 +129,20 @@ export interface Outbox {
    * sends it again to every platform that can restate. Others keep what they have.
    */
   restate(transactionId: string, value: number, currency?: string): Promise<Job[]>
+  /**
+   * Keeps an outcome's jobs without sending them or counting the outcome,
+   * until `release` with the same id. The keys are hashed now, so what they
+   * were made from need not be kept.
+   */
+  hold(outcome: Outcome): Promise<Job[]>
+  /** Counts an outcome that was held or withdrawn, and sends its jobs. One that was neither is recorded. */
+  release(outcome: Outcome): Promise<Job[]>
+  /**
+   * Takes back an outcome that turned out not to have happened. It leaves
+   * the report, its unsent jobs are held, and where it was sent its value is
+   * restated to nothing on every platform that can restate. Others keep it.
+   */
+  withdraw(transactionId: string): Promise<Job[]>
   /** Sends every job that is due. Call it on a timer, from as many workers as you like. */
   run(): Promise<Pass>
   /** Calls `run` every `interval` milliseconds. Returns a function that stops it. */
@@ -169,7 +187,9 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
     try {
       const { requestId } = await target.deliver(action, items)
       for (const { job } of items) {
-        await store.save({ ...job, state: 'sent', ...(requestId && { requestId }) })
+        const sent: Job = { ...job, state: 'sent', ...(requestId && { requestId }) }
+        // Taken back while it was on its way: what arrived has to be retracted.
+        if ((await store.save(sent)) === 'held') await retract(sent)
         pass.sent += 1
       }
     } catch (error) {
@@ -189,57 +209,121 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
     }
   }
 
+  /** The jobs of an outcome, one for each platform its action names. */
+  function prepare(outcome: Outcome, state: 'pending' | 'held'): Job[] {
+    const { transactionId, subject, at } = outcome
+    if (!transactionId || !subject) throw new TypeError('An outcome needs a transactionId and a subject')
+    if (!Number.isFinite(at)) throw new TypeError(`Outcome "${transactionId}" needs a time in epoch milliseconds`)
+    let actions = outcome.action
+    if (typeof actions === 'string') {
+      if (targets.size > 1) throw new TypeError(`Outcome "${transactionId}" must name its action per target, such as { google: '…' }`)
+      actions = { [options.targets[0]!.name]: actions }
+    }
+    const named = Object.entries(actions ?? {})
+    if (named.some(([, action]) => !action)) throw new TypeError(`Outcome "${transactionId}" names a target with no action`)
+    for (const [name] of named) if (!targets.has(name)) throw new TypeError(`Outcome "${transactionId}" names an unknown target "${name}"`)
+    return named.map(([name, action]) => ({
+      transactionId,
+      target: name,
+      subject,
+      at,
+      action,
+      ...(outcome.value !== undefined && { value: outcome.value }),
+      ...(outcome.currency && { currency: outcome.currency }),
+      ...(outcome.source && { source: outcome.source }),
+      keys: targets.get(name)!.keys(outcome),
+      ...(outcome.consent && { consent: outcome.consent }),
+      state,
+      attempts: 0,
+      due: now() + (options.delay ?? 0),
+    }))
+  }
+
+  async function add(outcome: Outcome, jobs: readonly Job[]): Promise<Job[]> {
+    const out: Job[] = []
+    for (const job of jobs) {
+      const stored = await store.add(job)
+      const same =
+        stored.subject === job.subject &&
+        stored.at === job.at &&
+        stored.action === job.action &&
+        (stored.restated || stored.value === job.value) &&
+        JSON.stringify(Object.entries(stored.keys).sort()) === JSON.stringify(Object.entries(job.keys).sort())
+      if (!same) throw new TypeError(`Outcome "${outcome.transactionId}" was already recorded with different details`)
+      out.push(stored)
+    }
+    return out
+  }
+
+  /** What becomes of a sent job whose outcome was taken back: worth nothing where the platform can be told, and left where it cannot. */
+  async function retract(job: Job): Promise<Job> {
+    const next: Job = targets.get(job.target)?.restates
+      ? { ...job, value: 0, restated: true, withdrawn: true, state: 'pending', attempts: 0, due: now(), note: 'withdrawn' }
+      : { ...job, state: 'sent', note: 'withdrawn, but this platform keeps it' }
+    await store.save(next)
+    return next
+  }
+
   const outbox: Outbox = {
     async record(outcome) {
-      const { transactionId, subject, at } = outcome
-      if (!transactionId || !subject) throw new TypeError('An outcome needs a transactionId and a subject')
-      if (!Number.isFinite(at)) throw new TypeError(`Outcome "${transactionId}" needs a time in epoch milliseconds`)
-      let actions = outcome.action
-      if (typeof actions === 'string') {
-        if (targets.size > 1) throw new TypeError(`Outcome "${transactionId}" must name its action per target, such as { google: '…' }`)
-        actions = { [options.targets[0]!.name]: actions }
-      }
-      const named = Object.entries(actions ?? {})
-      if (named.some(([, action]) => !action)) throw new TypeError(`Outcome "${transactionId}" names a target with no action`)
-      for (const [name] of named) if (!targets.has(name)) throw new TypeError(`Outcome "${transactionId}" names an unknown target "${name}"`)
-
+      const jobs = prepare(outcome, 'pending')
       // Counted first: it checks the rest of the outcome, and a job must never be queued for an outcome the report refused.
       await graph.outcome(outcome)
-      const jobs: Job[] = []
-      for (const [name, action] of named) {
-        const job: Job = {
-          transactionId,
-          target: name,
-          subject,
-          at,
-          action,
-          ...(outcome.value !== undefined && { value: outcome.value }),
-          ...(outcome.currency && { currency: outcome.currency }),
-          ...(outcome.source && { source: outcome.source }),
-          keys: targets.get(name)!.keys(outcome),
-          ...(outcome.consent && { consent: outcome.consent }),
-          state: 'pending',
-          attempts: 0,
-          due: now() + (options.delay ?? 0),
+      return add(outcome, jobs)
+    },
+
+    async hold(outcome) {
+      const jobs = prepare(outcome, 'held')
+      // Already held, or on its way: whoever came first stands.
+      const before = await store.get(outcome.transactionId)
+      return before.length > 0 ? before : add(outcome, jobs)
+    },
+
+    async release(outcome) {
+      const before = await store.get(outcome.transactionId)
+      if (before.length === 0) return outbox.record(outcome)
+      await graph.outcome(outcome)
+      const out: Job[] = []
+      for (const job of before) {
+        let next = job
+        if (job.state === 'held') next = { ...job, state: 'pending', due: now() + (options.delay ?? 0) }
+        // It was sent, then taken back by restating it to nothing: give it its value again.
+        else if (job.withdrawn && outcome.value) next = { ...job, value: outcome.value, state: 'pending', attempts: 0, due: now() }
+        if (next !== job) {
+          const { withdrawn: _, note: __, ...rest } = next
+          await store.save((next = rest))
         }
-        const stored = await store.add(job)
-        const same =
-          stored.subject === job.subject &&
-          stored.at === job.at &&
-          stored.action === job.action &&
-          (stored.restated || stored.value === job.value) &&
-          JSON.stringify(Object.entries(stored.keys).sort()) === JSON.stringify(Object.entries(job.keys).sort())
-        if (!same) throw new TypeError(`Outcome "${transactionId}" was already recorded with different details`)
-        jobs.push(stored)
+        out.push(next)
       }
-      return jobs
+      return out
+    },
+
+    async withdraw(transactionId) {
+      await graph.withdraw(transactionId)
+      const out: Job[] = []
+      for (const job of await store.get(transactionId)) {
+        if (job.state === 'held' || job.state === 'skipped' || job.withdrawn) continue
+        if (job.state === 'sent') out.push(await retract(job))
+        else {
+          const held: Job = { ...job, state: 'held', attempts: 0, note: 'withdrawn' }
+          // A worker may have finished sending it since it was read.
+          const was = await store.save(held)
+          out.push(was === 'sent' ? await retract(job) : held)
+        }
+      }
+      return out
     },
 
     async restate(transactionId, value, currency) {
       await graph.restate(transactionId, value, currency)
       const changed: Job[] = []
       for (const job of await store.get(transactionId)) {
-        if (!targets.get(job.target)?.restates || job.state === 'skipped') continue
+        if (job.state === 'held') {
+          const held: Job = { ...job, value, ...(currency && { currency }), restated: true }
+          await store.save(held)
+          changed.push(held)
+        }
+        if (!targets.get(job.target)?.restates || job.state === 'skipped' || job.state === 'held') continue
         const next: Job = { ...job, value, ...(currency && { currency }), restated: true, state: 'pending', attempts: 0, due: now(), note: 'restated' }
         await store.save(next)
         changed.push(next)
@@ -369,7 +453,9 @@ export function createMemoryOutbox(): OutboxStore {
       })
     },
     async save(job) {
-      jobs.set(key(job), structuredClone(job))
+      const before = jobs.get(key(job))?.state
+      if (before !== undefined) jobs.set(key(job), structuredClone(job))
+      return before
     },
     async get(transactionId) {
       return [...jobs.values()].filter((job) => job.transactionId === transactionId).map((job) => structuredClone(job))
@@ -379,7 +465,7 @@ export function createMemoryOutbox(): OutboxStore {
       return found.sort((x, y) => y.due - x.due || (x.transactionId < y.transactionId ? -1 : 1)).slice(0, limit).map((job) => structuredClone(job))
     },
     async counts() {
-      const out: Record<JobState, number> = { pending: 0, sent: 0, skipped: 0, failed: 0 }
+      const out: Record<JobState, number> = { held: 0, pending: 0, sent: 0, skipped: 0, failed: 0 }
       for (const job of jobs.values()) out[job.state] += 1
       return out
     },

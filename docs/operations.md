@@ -15,7 +15,7 @@ listening on 0.0.0.0:8080
 collect accepts https://example.org
 reviewer token off, server cookie off, fingerprint off, maxmind off, signed links off, staff networks off, alerts off, address checks off, phone line checks off
 outbox sends to nobody (no ad platform configured)
-page events taken: none (set EVENTS); calls from twilio off
+page events taken: none (set EVENTS); calls from twilio off; call results not expected
 costs are read from nobody (post them to /costs)
 ```
 
@@ -240,6 +240,8 @@ On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes i
 | `EVENTS` | none | Names of page events to keep, separated by commas: `inquiry,phone_click`. |
 | `CALL_NUMBERS` | none | Your tracking numbers and the channel of each, as JSON: `{"+15551230001":{"source":"google","campaignId":"20222"}}`. |
 | `CALL_MIN_SECONDS` | `30` | A shorter call is recorded but not counted. |
+| `CALL_RESULTS` | none | `expected` to hold each call until something reports whether a person answered. See [calls](calls.md#was-it-answered). |
+| `CALL_RESULT_WAIT` | `30` | Minutes before a call with no result reads as unknown. |
 | `TWILIO_AUTH_TOKEN`, `TWILIO_WEBHOOK_URL` | none | Take Twilio's call reports at `/calls/twilio`. Set both. |
 | `TWILIO_ACCOUNT_SID` | none | With `TWILIO_AUTH_TOKEN`: ask Twilio what kind of line a phone posted to `/identify` is. |
 | `SMARTY_AUTH_ID`, `SMARTY_AUTH_TOKEN` | none | Check postal addresses posted to `/identify`. Set both. |

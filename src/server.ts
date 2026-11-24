@@ -1,7 +1,7 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { BlockList, isIP } from 'node:net'
-import { dialed, numberOrSelf, recordCall } from './calls.ts'
+import { dialed, numberOrSelf, recordCall, recordCallResult } from './calls.ts'
 import type { CallOptions } from './calls.ts'
 import type { Graph, PolicyState } from './graph.ts'
 import { email, hashPhone, identifier, ip, normalizePhone, phoneOfType } from './identifiers.ts'
@@ -13,7 +13,7 @@ import type { AddressVerifier } from './integrations/smarty.ts'
 import { fromTwilio, twilioCall } from './integrations/twilio.ts'
 import type { LineTypeLookup } from './integrations/twilio.ts'
 import type { IpLookup } from './integrations/maxmind.ts'
-import type { Outbox } from './outbox.ts'
+import type { JobState, Outbox } from './outbox.ts'
 import { withStage } from './ladder.ts'
 import type { Ladder } from './ladder.ts'
 import { defaultPolicy, plainPolicy } from './policy.ts'
@@ -238,6 +238,24 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     if (options.outbox && outcome.action) return options.outbox.record(outcome)
     await graph.outcome(outcome)
     return []
+  }
+
+  /** How calls are recorded: with the steps' values and, where an ad platform is set up, held and taken back through the outbox. */
+  const calling = (): CallOptions => {
+    const { outbox } = options
+    const staged = (outcome: Outcome) => withStage(options.stages, outcome)
+    const sends = (outcome: Outcome) => Boolean(outbox && staged(outcome).action)
+    return {
+      ...options.calls,
+      now,
+      convert,
+      ...(outbox && {
+        hold: async (outcome: Outcome) => (sends(outcome) ? outbox.hold(staged(outcome)) : []),
+        release: async (outcome: Outcome) => (sends(outcome) ? outbox.release(staged(outcome)) : convert(outcome)),
+        withdraw: (transactionId: string) => outbox.withdraw(transactionId),
+      }),
+      ...(lineOf && { lineType: lineOf }),
+    }
   }
 
   const events = new Set(options.events ?? [])
@@ -554,7 +572,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       const { authToken, url: address } = options.calls.twilio
       if (!fromTwilio(authToken, address, fields, String(request.headers['x-twilio-signature'] ?? ''))) throw new Refusal(403, 'The signature does not match')
       const call = twilioCall(fields, now())
-      if (call) await recordCall(graph, call, { ...options.calls, convert, ...(lineOf && { lineType: lineOf }) })
+      if (call) await recordCall(graph, call, calling())
       return undefined
     }
 
@@ -699,7 +717,9 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return { url: staffLink(String(body.url), { secret: options.linkSecret, now, ...(body.days !== undefined && { lasts: body.days * 86_400_000 }) }) }
       }
       case 'POST /call':
-        return recordCall(graph, await json(request), { ...options.calls, convert, ...(lineOf && { lineType: lineOf }) })
+        return recordCall(graph, await json(request), calling())
+      case 'POST /call/result':
+        return (await recordCallResult(graph, await json(request), calling())) ?? { state: 'waiting', counted: false }
       case 'POST /restate': {
         const body = await json(request)
         if (options.outbox) return options.outbox.restate(body.transactionId, body.value, body.currency)
@@ -727,8 +747,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       case 'GET /conversions': {
         if (!options.outbox) break
         const state = url.searchParams.get('state') ?? 'failed'
-        if (!['pending', 'sent', 'skipped', 'failed'].includes(state)) throw new Refusal(400, 'state must be pending, sent, skipped, or failed')
-        return options.outbox.list(state as 'pending' | 'sent' | 'skipped' | 'failed')
+        if (!['held', 'pending', 'sent', 'skipped', 'failed'].includes(state)) throw new Refusal(400, 'state must be held, pending, sent, skipped, or failed')
+        return options.outbox.list(state as JobState)
       }
       case 'POST /retry': {
         if (!options.outbox) break

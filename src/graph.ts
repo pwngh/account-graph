@@ -9,6 +9,7 @@ import type { DecisionPage, Store, Tx } from './store.ts'
 import type {
   Attribution,
   AttributedTouch,
+  CallResult,
   Change,
   Cluster,
   Consent,
@@ -21,6 +22,7 @@ import type {
   Edge,
   Flow,
   Identifier,
+  KeptCall,
   Labels,
   Link,
   Moved,
@@ -89,6 +91,18 @@ export interface Graph {
   outcome(outcome: Outcome): Promise<boolean>
   /** Changes the value of a recorded outcome: a refund, or what was actually paid. Resolves to false for an unknown id. */
   restate(transactionId: string, value: number, currency?: string): Promise<boolean>
+  /** Takes a recorded outcome out of the report: it turned out not to have happened. Resolves to false for an unknown id. */
+  withdraw(transactionId: string): Promise<boolean>
+  /** An outcome as it was recorded, or undefined when it was not. */
+  outcomeOf(transactionId: string): Promise<Counted | undefined>
+  /** Keeps a call. `recordCall` does this. */
+  keepCall(call: Omit<KeptCall, 'result' | 'recorded'>): Promise<void>
+  /** Keeps how a call went, which may be known before or after the call itself. */
+  keepCallResult(id: string, result: Omit<CallResult, 'recorded'>): Promise<void>
+  /** A kept call with its result, or undefined for an id no call was kept for. */
+  keptCall(id: string): Promise<KeptCall | undefined>
+  /** How a call went, whether or not the call itself was kept. */
+  callResult(id: string): Promise<CallResult | undefined>
   /** Records what campaigns cost. A row for the same day, source and campaign replaces the one before. */
   spend(costs: Cost | readonly Cost[]): Promise<void>
   /**
@@ -179,8 +193,9 @@ export interface Graph {
    */
   asOf(at: number): Promise<Graph>
   /**
-   * Deletes sightings written down before a time, and answers about
-   * advertising, to keep the logs from growing forever. Links and clusters do
+   * Deletes sightings written down before a time, with answers about
+   * advertising that no longer stand and call results whose call never
+   * came, to keep the logs from growing forever. Links and clusters do
    * not change, because edges keep what they folded, and each subject keeps
    * the answer that stands. `history`, `consentHistory` and `asOf` lose what
    * was deleted. Returns how many went.
@@ -560,6 +575,34 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       })
     },
 
+    async withdraw(transactionId) {
+      return store.write(async (tx) => {
+        if (!(await tx.outcomeOf(transactionId))) return false
+        await tx.removeOutcome(transactionId)
+        return true
+      })
+    },
+
+    outcomeOf(transactionId) {
+      return store.read((tx) => tx.outcomeOf(transactionId))
+    },
+
+    async keepCall(call) {
+      await store.write((tx) => tx.setCall({ ...call, recorded: now() }))
+    },
+
+    async keepCallResult(id, result) {
+      await store.write((tx) => tx.setCallResult(id, { ...result, recorded: now() }))
+    },
+
+    keptCall(id) {
+      return store.read((tx) => tx.callOf(id))
+    },
+
+    callResult(id) {
+      return store.read((tx) => tx.callResultOf(id))
+    },
+
     async spend(input) {
       const costs = Array.isArray(input) ? (input as readonly Cost[]) : [input as Cost]
       const rows = costs.map((cost): Required<Cost> => {
@@ -590,13 +633,16 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return store.read(async (tx) => {
         // Who a subject can reach does not depend on when, so one subject's outcomes share one search.
         const reached = new Map<Subject, Reached>()
-        const credited: { outcome: Counted; touch: Touch | undefined }[] = []
-        for (const outcome of await tx.outcomesBetween(start, end)) {
-          let from = reached.get(outcome.subject)
-          if (!from) reached.set(outcome.subject, (from = await reach(tx, outcome.subject, hops)))
-          credited.push({ outcome, touch: (await credit(outcome.subject, outcome.at, window, from, tx)).credited })
+        const creditOf = async (subject: Subject, at: number) => {
+          let from = reached.get(subject)
+          if (!from) reached.set(subject, (from = await reach(tx, subject, hops)))
+          return (await credit(subject, at, window, from, tx)).credited
         }
-        return fold(from, to, await tx.costsBetween(from, to), await tx.touchesBetween(start, end), credited)
+        const credited: { outcome: Counted; touch: Touch | undefined }[] = []
+        for (const outcome of await tx.outcomesBetween(start, end)) credited.push({ outcome, touch: await creditOf(outcome.subject, outcome.at) })
+        const missed: (Touch | undefined)[] = []
+        for (const call of await tx.callsBetween(start, end)) if (call.result?.answered === false) missed.push(await creditOf(call.subject, call.at))
+        return fold(from, to, await tx.costsBetween(from, to), await tx.touchesBetween(start, end), credited, missed)
       })
     },
 
@@ -852,7 +898,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       if (!Number.isFinite(before)) throw new TypeError('prune needs a time in epoch milliseconds')
       return store.write(async (tx) => {
         await decide(tx, 'prune', [String(before)], why)
-        return (await tx.pruneSightings(before)) + (await tx.pruneConsent(before))
+        return (await tx.pruneSightings(before)) + (await tx.pruneConsent(before)) + (await tx.pruneCallResults(before))
       })
     },
 

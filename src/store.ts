@@ -1,5 +1,5 @@
 import type { OutboxStore } from './outbox.ts'
-import type { Change, Consent, ConsentAnswer, Cost, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, Labels, Moved, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, Change, Consent, ConsentAnswer, Cost, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Moved, Sighting, Subject, Touch } from './types.ts'
 
 /**
  * Where the graph lives. Sightings and touches are the record; edges and
@@ -26,7 +26,7 @@ export interface DecisionPage {
 export interface Tx {
   /** Logs sightings and folds them into edges. Returns how many new edges each identifier gained. */
   addSightings(sightings: readonly Sighting[]): Promise<Map<Identifier, number>>
-  /** Deletes a subject with its sightings, edges, touches, outcomes, flows, consent, and reviewer decisions. */
+  /** Deletes a subject with its sightings, edges, touches, outcomes, calls, flows, consent, and reviewer decisions. */
   removeSubject(subject: Subject): Promise<void>
   edgesOf(subjects: readonly Subject[]): Promise<Edge[]>
   edgesOn(identifiers: readonly Identifier[]): Promise<Edge[]>
@@ -84,6 +84,19 @@ export interface Tx {
   /** Records an outcome for the report, replacing one with the same id. */
   setOutcome(outcome: Counted): Promise<void>
   outcomeOf(transactionId: string): Promise<Counted | undefined>
+  /** Takes an outcome out of the report. */
+  removeOutcome(transactionId: string): Promise<void>
+  /** Keeps a call, replacing one with the same id. Its result is kept apart, and may arrive first. */
+  setCall(call: Omit<KeptCall, 'result'>): Promise<void>
+  setCallResult(id: string, result: CallResult): Promise<void>
+  /** A call with its result, or undefined for an id no call was kept for. */
+  callOf(id: string): Promise<KeptCall | undefined>
+  /** A result, whether or not its call was kept. */
+  callResultOf(id: string): Promise<CallResult | undefined>
+  /** Calls with `from <= at < to`, oldest first. */
+  callsBetween(from: number, to: number): Promise<KeptCall[]>
+  /** Deletes results written down before a time whose call never came. Returns how many went. */
+  pruneCallResults(before: number): Promise<number>
   /** Outcomes with `from <= at < to`, oldest first. */
   outcomesBetween(from: number, to: number): Promise<Counted[]>
   /** Records what campaigns cost, replacing any row with the same day, source and campaign. */

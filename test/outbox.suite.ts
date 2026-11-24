@@ -236,7 +236,7 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
         clock.now += 3_600_000
       }
       assert.equal((await outbox.get('enroll-1'))[0]!.state, 'failed')
-      assert.deepEqual(await outbox.counts(), { pending: 0, sent: 0, skipped: 0, failed: 1 })
+      assert.deepEqual(await outbox.counts(), { held: 0, pending: 0, sent: 0, skipped: 0, failed: 1 })
       // The listener heard once, on the pass that gave up, and its own failure changed nothing.
       assert.deepEqual(heard, [['enroll-1 google failed: socket hang up']])
     })
@@ -296,7 +296,7 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       const ids = remote.ids()
       assert.equal(ids.length, 150)
       assert.equal(new Set(ids).size, 150)
-      assert.deepEqual(await outbox.counts(), { pending: 0, sent: 150, skipped: 0, failed: 0 })
+      assert.deepEqual(await outbox.counts(), { held: 0, pending: 0, sent: 150, skipped: 0, failed: 0 })
     })
 
     test('a restated value is sent again under the same id', async () => {
@@ -536,6 +536,79 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       clock.now += 60_000
       assert.deepEqual(await outbox.run(), { sent: 0, skipped: 0, failed: 1, retried: 0 })
       assert.match((await outbox.get('second'))[0]!.note!, /Invalid event/)
+    })
+
+    test('a held outcome is sent once released, and one taken back is retracted where the platform allows', async () => {
+      const { graph, outbox, remote } = await fresh()
+      await enroll(graph, 1)
+      const first = outcome(1)
+      const [held] = await outbox.hold(first)
+      assert.equal(held!.state, 'held')
+      assert.deepEqual(await outbox.run(), { sent: 0, skipped: 0, failed: 0, retried: 0 })
+      assert.equal(await graph.outcomeOf('enroll-1'), undefined)
+      // Released with nothing but its id and its value, it goes out with the keys that were hashed when it was held.
+      const { email: _, ...bare } = first
+      await outbox.release(bare)
+      assert.equal((await outbox.run()).sent, 1)
+      assert.deepEqual((await outbox.get('enroll-1'))[0]!.keys, held!.keys)
+      assert.ok(await graph.outcomeOf('enroll-1'))
+      // Releasing again, or holding what is on its way, does nothing.
+      await outbox.release(bare)
+      await outbox.hold(first)
+      assert.equal((await outbox.run()).sent, 0)
+
+      // Taken back after it was sent: out of the report, and restated to nothing where the platform can restate.
+      await outbox.withdraw('enroll-1')
+      assert.equal(await graph.outcomeOf('enroll-1'), undefined)
+      assert.equal((await outbox.run()).sent, 1)
+      assert.equal((remote.requests.at(-1)!.events[0] as any).conversionValue, 0)
+      await outbox.withdraw('enroll-1')
+      assert.equal((await outbox.run()).sent, 0)
+      // Given back: counted again, and its value again.
+      await outbox.release(bare)
+      assert.equal((await outbox.run()).sent, 1)
+      assert.equal((remote.requests.at(-1)!.events[0] as any).conversionValue, first.value)
+
+      // Taken back before it was sent: never sent.
+      await enroll(graph, 2)
+      await outbox.record(outcome(2))
+      await outbox.withdraw('enroll-2')
+      const requests = remote.requests.length
+      await outbox.run()
+      assert.deepEqual([remote.requests.length, (await outbox.get('enroll-2'))[0]!.state], [requests, 'held'])
+      assert.deepEqual(await outbox.counts(), { held: 1, pending: 0, sent: 1, skipped: 0, failed: 0 })
+    })
+
+    test('a platform that keeps what it was sent says so, and one taken back on its way is retracted', async () => {
+      let midway: (() => Promise<unknown>) | undefined
+      const values: unknown[] = []
+      const target = (name: string, restates: boolean) => ({
+        name, restates, batch: 10, keys: () => ({ email: 'hashed' }), click: () => undefined, retryable: () => false,
+        deliver: async (_action: string, items: readonly { job: { value?: number } }[]) => {
+          values.push([name, items[0]!.job.value])
+          await midway?.()
+          return {}
+        },
+      })
+      const { graph, outbox } = await fresh({ targets: [target('keeps', false), target('changes', true)] })
+      await enroll(graph, 1)
+      await outbox.record(outcome(1, { action: { keeps: 'a', changes: 'b' } }))
+      assert.equal((await outbox.run()).sent, 2)
+      await outbox.withdraw('enroll-1')
+      assert.deepEqual((await outbox.get('enroll-1')).sort((x, y) => (x.target < y.target ? -1 : 1)).map((job) => [job.target, job.state, job.note]), [['changes', 'pending', 'withdrawn'], ['keeps', 'sent', 'withdrawn, but this platform keeps it']])
+      await outbox.run()
+      assert.deepEqual(values.map(String).sort(), ['changes,0', 'changes,200', 'keeps,200'])
+
+      // The result comes while the request is on its way. What arrived is retracted by the next pass.
+      values.length = 0
+      await enroll(graph, 2)
+      await outbox.record(outcome(2, { action: { changes: 'b' } }))
+      midway = () => outbox.withdraw('enroll-2')
+      await outbox.run()
+      midway = undefined
+      assert.equal(await graph.outcomeOf('enroll-2'), undefined)
+      await outbox.run()
+      assert.deepEqual(values, [['changes', 200], ['changes', 0]])
     })
 
     test('forgetting a subject deletes its unsent conversions', async () => {
