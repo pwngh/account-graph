@@ -144,6 +144,8 @@ export function partition(
   separated: readonly (readonly [Subject, Subject])[],
   policy: Policy,
   known: ReadonlyMap<Subject, Known> = new Map(),
+  /** Hears each link a difference of facts took. */
+  onCut?: (a: Subject, b: Subject) => void,
 ): Map<Subject, Labels> {
   const component = components(subjects, pairs)
   const members = new Map<Subject, Subject[]>()
@@ -179,7 +181,7 @@ export function partition(
     const told = group.filter((subject) => known.get(subject)?.facts.size).sort()
     const differ: [Subject, Subject][] = []
     for (const [i, a] of told.entries()) for (const b of told.slice(i + 1)) if (conflict(policy, known.get(a), known.get(b))) differ.push([a, b])
-    for (const piece of split(group, links.get(id) ?? [], apart.get(id) ?? [], policy, differ, known)) {
+    for (const piece of split(group, links.get(id) ?? [], apart.get(id) ?? [], policy, differ, known, onCut)) {
       let cluster = piece[0]!
       for (const subject of piece) if (subject < cluster) cluster = subject
       for (const subject of piece) out.set(subject, { component: id, cluster })
@@ -188,7 +190,7 @@ export function partition(
   return out
 }
 
-function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subject][], policy: Policy, differ: [Subject, Subject][] = [], known: ReadonlyMap<Subject, Known> = new Map()): Subject[][] {
+function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subject][], policy: Policy, differ: [Subject, Subject][] = [], known: ReadonlyMap<Subject, Known> = new Map(), onCut?: (a: Subject, b: Subject) => void): Subject[][] {
   const adjacency: Adjacency = new Map(members.map((member) => [member, new Map()]))
   for (const { a, b, score } of links) {
     adjacency.get(a)!.set(b, score)
@@ -204,10 +206,14 @@ function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subj
   for (const [a, b] of apart) for (const [x, y] of minimumCut(adjacency, a, b)) cut(x, y)
   // Facts come after decisions, and cut no link a decision made: two held together by those alone stay together.
   const decided = (a: Subject, b: Subject) => [...(known.get(a)?.joins ?? [])].some((identifier) => known.get(b)?.joins.has(identifier))
-  for (const [a, b] of differ) cut(a, b)
+  const cutByFact = (a: Subject, b: Subject) => {
+    cut(a, b)
+    onCut?.(a, b)
+  }
+  for (const [a, b] of differ) cutByFact(a, b)
   for (const [a, b] of differ) {
     const found = minimumCut(adjacency, a, b, decided)
-    if (!found.some(([x, y]) => decided(x, y))) for (const [x, y] of found) cut(x, y)
+    if (!found.some(([x, y]) => decided(x, y))) for (const [x, y] of found) cutByFact(x, y)
   }
 
   if (policy.bridge > policy.same) {

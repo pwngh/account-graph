@@ -2617,6 +2617,19 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await graph.touch({ subject: 'contact:1', at: T0 + 2, gclid: 'one' })
       assert.notEqual(await credit('visitor:8'), 'one')
       assert.notEqual(await credit('account:9'), 'one')
+      // Nor along a link a fact took, where a later cut left nobody whose facts are known beside it.
+      const { graph: later } = await fresh(policyFrom({ apart: ['birth'] }))
+      await later.observe([
+        { subject: 'a:1', identifiers: ['carry:av', 'birth:1'], at: T0 },
+        { subject: 'visitor:v', identifiers: ['carry:av', 'carry:vb', 'device:v'], at: T0 },
+        { subject: 'b:1', identifiers: ['carry:vb', 'birth:2', 'device:b'], at: T0 },
+        { subject: 'account:v', identifiers: ['device:v'], at: T0 },
+        { subject: 'account:b', identifiers: ['device:b'], at: T0 },
+      ])
+      await later.touch({ subject: 'visitor:v', at: T0, gclid: 'v' })
+      assert.equal((await members(later, 'b:1')).includes('visitor:v'), false)
+      assert.equal((await later.attribute('a:1', { at: T0 + HOUR })).credited, undefined)
+      assert.deepEqual(await later.verify(), [])
       // Joined one and two, and two to three by an email six hold. One and three differ, and the join stands.
       const { graph: joined } = await fresh(policyFrom({ apart: ['birth'] }))
       await joined.observe([

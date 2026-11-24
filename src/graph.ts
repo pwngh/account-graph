@@ -498,7 +498,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
   }
 
   /** Components and clusters of the given subjects, from their edges and the reviewer's separations. */
-  async function compute(tx: Tx, subjects: readonly Subject[], supposing?: Supposed): Promise<Map<Subject, Labels>> {
+  async function compute(tx: Tx, subjects: readonly Subject[], supposing?: Supposed, onCut?: (a: Subject, b: Subject) => void): Promise<Map<Subject, Labels>> {
     let edges = await tx.edgesOf(subjects)
     const states = await tx.states(unique(edges.map((edge) => edge.identifier)))
     const among = new Set(subjects)
@@ -513,7 +513,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       separated = separated.filter(([a, b]) => !(a === supposing.a && b === supposing.b) && !(a === supposing.b && b === supposing.a))
       if (supposing.separated ?? true) separated.push([supposing.a, supposing.b])
     }
-    return partition(subjects, scorePairs(policy, edges, states), separated, policy, knownOf(policy, edges, (identifier) => states.get(identifier)?.ignored ?? false))
+    return partition(subjects, scorePairs(policy, edges, states), separated, policy, knownOf(policy, edges, (identifier) => states.get(identifier)?.ignored ?? false), onCut)
   }
 
   /**
@@ -677,7 +677,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     for (const [near, start] of frontier.sort().map((each) => [each, reached.get(each)!] as const)) {
       for (const link of links.get(near) ?? []) {
         if (link.conflict || apart.has(link.subject) || (only && !only.has(link.subject))) continue
-        if (borders.between(near, link.subject) || from.some((origin) => borders.between(origin, link.subject))) continue
+        if (borders.cut(near, link.subject) || borders.between(near, link.subject) || from.some((origin) => borders.between(origin, link.subject))) continue
         const confidence = start.confidence * link.score
         const known = reached.get(link.subject)
         if (known && known.confidence >= confidence) continue
@@ -689,13 +689,19 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     return [...improved]
   }
 
-  /** Where groups were cut because facts in them differ. A search crosses no such border, at any hop and from either side. */
+  /**
+   * The links facts took, and the groups facts keep apart. A search follows no such link, at any hop or from either side,
+   * though a later cut may have left a group on one side of it with nobody whose facts are known.
+   */
   function bordersOf(tx: Tx) {
     const labels = new Map<Subject, Labels>()
     const told = new Map<Subject, Known[]>()
     const read = new Set<Subject>()
     const decided = new Map<string, boolean>()
+    const taken = new Set<string>()
     return {
+      /** Whether facts took the link between two. */
+      cut: (a: Subject, b: Subject) => taken.has(pairKey(a, b)),
       async load(subjects: Iterable<Subject>): Promise<void> {
         if (!policy.apart?.length) return
         const unread = unique([...subjects].filter((subject) => !labels.has(subject)))
@@ -703,10 +709,16 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const ids = unique(unread.flatMap((subject) => labels.get(subject)?.component ?? [])).filter((id) => !read.has(id))
         for (let i = 0; i < ids.length; i += TOGETHER) {
           const members = await tx.membersOf(ids.slice(i, i + TOGETHER))
+          const some = new Map<Subject, Known[]>()
           for (const [subject, facts] of await known(tx, [...members.keys()])) {
-            const { cluster } = members.get(subject)!
-            if (facts.facts.size > 0) told.set(cluster, [...(told.get(cluster) ?? []), facts])
+            const { cluster, component } = members.get(subject)!
+            if (facts.facts.size === 0) continue
+            told.set(cluster, [...(told.get(cluster) ?? []), facts])
+            some.set(component, [...(some.get(component) ?? []), facts])
           }
+          // Worked out again only where somebody differs from somebody: what was cut is not stored.
+          const cutUp = new Set([...some].filter(([, facts]) => facts.some((one, i) => facts.slice(i + 1).some((other) => conflict(policy, one, other)))).map(([component]) => component))
+          if (cutUp.size > 0) await compute(tx, [...members].filter(([, own]) => cutUp.has(own.component)).map(([subject]) => subject), undefined, (a, b) => taken.add(pairKey(a, b)))
         }
         for (const id of ids) read.add(id)
       },
