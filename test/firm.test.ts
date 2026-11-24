@@ -17,7 +17,7 @@ test('every scene of the demo runs, says what came of it within a second, and ca
   await until('the stage', async () => (await bar('running')) === 'false' && (await run(`typeof loadedAt === 'number'`).catch(() => false)))
   assert.equal(await run(`document.body.classList.contains('with-phone') && document.querySelector('.device').dataset.state`), 'ad')
   const { scenes } = (await run(`fetch('/stage/scenes').then((answer) => answer.json())`)) as { scenes: { title: string; see: [string, string]; spot?: string[] }[] }
-  assert.equal(scenes.length, 19)
+  assert.equal(scenes.length, 20)
   const links = scenes.map(({ see }) => see[1])
   // Only the stage moves the story on.
   assert.equal((await fetch(`${firm.graph}/stage/run`, { method: 'POST' })).status, 403)
@@ -47,13 +47,14 @@ test('every scene of the demo runs, says what came of it within a second, and ca
     [/Missed call: returned\./, (text) => (/returned after/i.test(text) && /answered/i.test(text) ? 'returned' : '')],
     // Tied to a name, and not yet sure enough to credit the ad.
     [/tied to a name\. Ad credit: (7|8)\d%, below the 90%/, (text) => (text.includes('contact:ines-vega') && text.includes('phone 85%') ? 'by phone' : '')],
-    [/Not opened yet/, () => 'nothing yet'],
+    [/Link for form: not opened/, () => 'nothing yet'],
     [/whose browser this is\. Ad credit: 92%, to Busqueda: North/, (text) => (/link 92%/.test(text) ? 'by link' : '')],
     [/Step recorded: intake/, column('intake')],
     [/Step recorded: signed/, column('signed')],
     [/Step recorded: scheduled, director ortega/, column('scheduled')],
     [/Outbound call answered/, (text) => (text.includes('Duration 1,290 s') ? 'called' : '')],
-    [/Text recorded.*Not opened yet/, (text) => `${text.match(/\nText\nSent/g)?.length ?? 0} texts`],
+    [/Text recorded\. Link for payment: not opened/, (text) => (/Link sent · payment\s*Not opened/.test(text) ? 'not opened' : '')],
+    [/Link for payment: opened after 3 minutes\. Not paid yet/, (text) => (/Link sent · payment\s*Opened after 3 min/.test(text) ? 'opened' : '')],
     [/Payment recorded: 400 USD\. Advertised: north\. Served: river\. Attributed to Busqueda: North at 92%/, (text) => step('client', '400 USD')(text) && `${/office served: river/.test(text)} ${/director: ortega/.test(text)}`],
     [/Sent to the sample ad platform: 400 USD, for the first ad click/, (text) => (/client · 400 USD[^]{0,120}Sent to google/.test(text) ? 'sent' : '')],
     [/Initial value 400 USD, current value 1250 USD.*ad platform: 1250 USD/, (text) => (text.includes('from 400 USD to 1,250 USD') ? 'restated' : '')],
@@ -74,7 +75,7 @@ test('every scene of the demo runs, says what came of it within a second, and ca
     assert.ok(Number(await bar('ms')) < 1000, `scene ${i + 1} took ${await bar('ms')} ms`)
     // The stage opens what the scene changed, without a problem, and the phone goes once the call is over.
     assert.equal(await run(`document.getElementById('notice').textContent`), '')
-    assert.equal(await run(`document.body.classList.contains('with-phone')`), i < 13)
+    assert.equal(await run(`document.body.classList.contains('with-phone')`), i < 14)
     assert.equal(await run(`document.getElementById('stage-light').classList.contains('on')`), Boolean(scenes[i]!.spot), `scene ${i + 1} lights its row`)
     const after = seen(await view(links[i]!))
     // A link that was made and not opened changes nothing in the account.
