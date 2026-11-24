@@ -25,7 +25,9 @@ test('every scene of the demo runs, says what came of it within a second, and ca
     await screen.run(`location.href = ${JSON.stringify(href)}; location.reload()`)
     await until(href, () => screen.run(`!window.old && typeof loadedAt === 'number' && document.getElementById('view').childElementCount > 0`).catch(() => false))
     assert.equal(await screen.run(`document.getElementById('notice').textContent`), '')
-    return (await screen.run(`document.getElementById('view').innerText`)) as string
+    const text = (await screen.run(`document.getElementById('view').innerText`)) as string
+    // The table of campaigns, not the ranking over it.
+    return text.includes('\nAttribution') ? text.slice(text.indexOf('\nAttribution')) : text
   }
 
   const caller = `caller:${hashPhone('+15550100042')}`

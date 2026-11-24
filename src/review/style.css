@@ -755,6 +755,27 @@ th.num .way { right: auto; left: 50%; top: -5px; margin: 0 0 0 -4px; }
 .campaign-report thead tr:last-child > th:nth-child(2) { z-index: 2; background: var(--soft); }
 .campaign-report tr.sum td:nth-child(2) { background: var(--soft); }
 
+/* Bars behind rows. */
+.ranked-box { max-width: 1040px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: var(--s3); }
+.ranked-box .segments { flex-wrap: wrap; }
+.ranked { display: grid; gap: 4px; margin: var(--s3) 0 0; padding: 0; list-style: none; }
+.ranked li { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 64px minmax(84px, max-content); gap: var(--s3); align-items: center; min-height: 38px; padding: 0 var(--s3); border: 0; border-radius: 8px; overflow: hidden; isolation: isolate; }
+.ranked li > i { position: absolute; z-index: -1; inset: 0 auto 0 0; border-radius: 8px; background: color-mix(in srgb, var(--accent) 14%, transparent); transition: width .45s cubic-bezier(.22, 1, .36, 1), background .15s; }
+.ranked li:hover > i { background: color-mix(in srgb, var(--accent) 24%, transparent); }
+.ranked-name { display: flex; gap: var(--s3); align-items: center; min-width: 0; }
+.ranked-what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ranked-share { color: var(--muted); font-size: var(--small); text-align: right; }
+.ranked b { text-align: right; white-space: nowrap; }
+.ranked-foot { display: flex; gap: var(--s3); align-items: center; }
+.ranked-foot:not(:empty):has(> *) { margin-top: var(--s2); }
+tr.behind > td { background: linear-gradient(color-mix(in srgb, var(--accent) 12%, transparent) 0 0) no-repeat; background-size: 0 100%; }
+tr.behind > td:first-child { position: relative; }
+tr.behind { background: linear-gradient(color-mix(in srgb, var(--accent) 12%, transparent) 0 0) no-repeat left / var(--part) 100%; }
+tr.behind:is(:hover, :focus-within) > td { background: none !important; }
+tr.behind:hover { background-image: linear-gradient(color-mix(in srgb, var(--accent) 22%, transparent) 0 0); }
+@media (max-width: 560px) { .ranked li { grid-template-columns: minmax(0, 1fr) max-content; } .ranked-share { display: none; } .ranked-name { display: grid; gap: 2px; padding: 6px 0; } }
+@media (prefers-reduced-motion: reduce) { .ranked li > i { transition: none; } }
+
 /* A table of a few plain columns is read along its rows, so they do not stand far apart. */
 @media (min-width: 761px) { .wide:has(> table):not(:has(th[colspan])) { max-width: 1040px; } }
 
