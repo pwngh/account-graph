@@ -162,6 +162,68 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       assert.equal(clock.now, T0 + HOUR + 7 * DAY, 'on the last day, and not after it')
     })
 
+    test('a payment changes what the platform holds, once', async () => {
+      const { graph, outbox, remote } = await fresh()
+      await enroll(graph, 1)
+      await outbox.record(outcome(1))
+      await outbox.run()
+      const paid = await outbox.pay({ id: 'p1', transactionId: 'enroll-1', amount: 75 })
+      assert.deepEqual([paid.duplicate, paid.value, paid.jobs.length], [false, 75, 1])
+      await outbox.run()
+      assert.equal((await outbox.pay({ id: 'p1', transactionId: 'enroll-1', amount: 75 })).jobs.length, 0)
+      await outbox.run()
+      assert.deepEqual(remote.requests.flatMap((request) => request.events.map((event: any) => event.conversionValue)), [200, 75])
+    })
+
+    test('a payment before its conversion is sent changes what is sent, not when', async () => {
+      const { graph, outbox, remote, clock } = await fresh({ delay: HOUR })
+      await enroll(graph, 1)
+      await outbox.pay({ id: 'p0', transactionId: 'enroll-1', amount: 50 })
+      assert.deepEqual((await outbox.record(outcome(1))).map((job) => job.value), [50])
+      const due = (await outbox.get('enroll-1'))[0]!.due
+      await outbox.pay({ id: 'p1', transactionId: 'enroll-1', amount: 25 })
+      const [job] = await outbox.get('enroll-1')
+      assert.deepEqual([job!.value, job!.due, job!.state], [75, due, 'pending'])
+      assert.deepEqual((await outbox.record(outcome(1))).map((each) => each.value), [75], 'recorded again it is the same')
+      await outbox.run()
+      assert.equal(remote.requests.length, 0)
+      clock.now = due
+      await outbox.run()
+      assert.deepEqual(remote.requests.flatMap((request) => request.events.map((event: any) => event.conversionValue)), [75])
+    })
+
+    test('payments at once leave the platform at their sum', async () => {
+      const { graph, outbox, store, clock } = await fresh()
+      await enroll(graph, 1)
+      await outbox.record(outcome(1))
+      await outbox.run()
+      await Promise.all([1, 2, 3, 4, 5].map((n) => outbox.pay({ id: `p${n}`, transactionId: 'enroll-1', amount: 10 })))
+      assert.deepEqual((await outbox.get('enroll-1')).map((job) => job.value), [50])
+      // The first is cut off before it tells the platform, and the second is told meanwhile.
+      const late = createOutbox({ ...graph, pay: async (payment) => {
+        const paid = await graph.pay(payment)
+        await outbox.pay({ id: 'p7', transactionId: 'enroll-1', amount: 10 })
+        return paid
+      } }, store.outbox, { targets: [googleAds({ customerId: '123-456-7890', send: google().send })], now: () => clock.now })
+      await late.pay({ id: 'p6', transactionId: 'enroll-1', amount: 10 })
+      assert.deepEqual((await outbox.get('enroll-1')).map((job) => job.value), [70])
+      // One stored after another that found nothing to change is put right.
+      await enroll(graph, 2)
+      await outbox.record(outcome(2))
+      await outbox.run()
+      let first = true
+      const paused = createOutbox({ ...graph, outcomeOf: async (id) => {
+        const found = await graph.outcomeOf(id)
+        if (first) {
+          first = false
+          await outbox.pay({ id: 'q2', transactionId: 'enroll-2', amount: 100 })
+        }
+        return found
+      } }, store.outbox, { targets: [googleAds({ customerId: '123-456-7890', send: google().send })], now: () => clock.now })
+      await paused.pay({ id: 'q1', transactionId: 'enroll-2', amount: 100 })
+      assert.deepEqual((await outbox.get('enroll-2')).map((job) => job.value), [200])
+    })
+
     test('the same id with different details is refused', async () => {
       const { outbox } = await fresh()
       await outbox.record(outcome(1))

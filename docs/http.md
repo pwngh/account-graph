@@ -71,6 +71,7 @@ An identifier is written `kind:value`. A kind missing from the policy gets 400. 
 | `GET /journey?subject=&before=` | Everything recorded about the subject's person, oldest first, newest 200: `{ entries, subjects, next, more }`. Pass `next` as `before` for earlier entries. |
 | `GET /clusters?offset=` | The largest clusters, 50 at a time. |
 | `GET /search?q=` | Subjects whose id starts with the text. |
+| `POST /people` | `{ subjects }`, 1 to 100: each one's cluster, what brought them, and whether they asked for no texts. Answers `{ people }`. |
 | `POST /match` | Who somebody may be, before you save them: the same plain facts as [`/identify`](identify.md), without a `subject`. Answers `{ candidates: [{ subject, score, level, reasons, members }], notes }`, strongest first. Writes nothing. |
 | `POST /conflicts` | `{ subjects }`, 1 to 50: who of them is kept apart from another of them, or from anyone on record. Answers `{ conflicts: [{ a, b, how, rests }] }`. See [conflicts](deciding.md#asking-about-conflicts). Writes nothing. |
 | `POST /find` | `{ text }`: a full email or phone number, looked up by hash; the start of a subject's id; or, with no such id, a full ad click id. Answers `{ by, subjects }`, at most 20. The body keeps the text out of address logs. |
@@ -88,7 +89,7 @@ An identifier is written `kind:value`. A kind missing from the policy gets 400. 
 | `POST /separate` | `{ a, b, separated?, by?, reason? }`. Separates two subjects. `separated: false` withdraws the separation. |
 | `POST /join` | `{ a, b, by?, reason?, mark? }`. Records that two subjects are one person. With `mark: true` the answer is `{ moved, mark }`, where `mark` is the identifier to `/ignore` to undo the join. |
 | `POST /ignore` | `{ identifier, ignored?, by?, reason? }`. Mutes one identifier, or with `ignored: false` restores it. |
-| `POST /forget` | `{ subject, by?, reason?, ads?, retract? }`. Deletes a subject and everything recorded about it. With `ads: true` the answer is `{ changes, sent }`, where `sent` lists [conversions that reached an ad platform](privacy.md#data-at-ad-platforms). |
+| `POST /forget` | `{ subject, by?, reason?, ads?, retract? }`, or `subjects`, a list of 1 to 50 ids of one person, each deleted in turn. Deletes a subject and everything recorded about it. With `ads: true` the answer is `{ changes, sent }`, where `sent` lists [conversions that reached an ad platform](privacy.md#data-at-ad-platforms). |
 | `POST /foresee` | Previews a decision without making it: `{ action: "join", a, b }`, `{ action: "separate", a, b, separated? }` or `{ action: "ignore", identifier, ignored? }`. Answers `{ moved, before, after }`, with the affected clusters as `{ id, size }`. |
 | `GET /decisions?limit=&before=&author=` | The audit log, newest first, 50 at a time: `{ decisions, next, total }`. Pass `next` as `before` for the next page. `author` is `people`, `system`, or one name. |
 | `GET /disputes` | Pairs whose reports from systems switched between separated and joined (or withdrawn) three times or more. |
@@ -154,6 +155,7 @@ Send `by` only with the service token. A reviewer's decision carries the name of
 | `GET /attribute?subject=&at=` | The touches that led to a conversion by this subject, and the one credited. |
 | `POST /convert` | An outcome: `{ transactionId, subject, at, stage?, value?, currency?, action?, email?, phone?, tags? }`. Counted in the report and, with `action`, sent to the ad platforms. A `stage` listed in `STAGES` supplies a missing value, currency and action. |
 | `POST /restate` | `{ transactionId, value, currency?, kind? }`. Changes an outcome's value in the report and on platforms that support restating. Earlier values are kept. `kind` is `refund` or `write_off`, which the report [counts separately](report.md#value-changes). |
+| `POST /payment` | Money received for an outcome, or given back: `{ id, transactionId, amount, kind?, currency? }`, `kind` `payment` (the default) or `refund`. From the first one on, the outcome is worth what was paid less what was given back. May precede the outcome. Answers `{ duplicate, value?, jobs }`. See [payments](report.md#payments). |
 | `POST /not-lead` | Marks an outcome or a call as not a lead: `{ call }` or `{ transactionId }`, with `kind` `spam` or `other` (the default). `lead: true` undoes it. May precede the outcome or call. Answers `{ id, lead }`. |
 | `POST /costs` | A list of `{ day, source, amount, campaignId?, campaign?, currency?, clicks?, impressions?, conversions?, conversionValue? }`. A row replaces an earlier one with the same day, source and campaign. |
 | `GET /conversion?id=` | The jobs of one transaction, one per ad platform. |

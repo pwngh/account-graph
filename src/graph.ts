@@ -53,6 +53,8 @@ import type {
   Candidate,
   ChangePage,
   Conflict,
+  Payment,
+  Person,
   NotLead,
   Observation,
   OpenCall,
@@ -147,6 +149,14 @@ export interface Graph {
    * Resolves to false for an unknown id.
    */
   restate(transactionId: string, value: number, currency?: string, kind?: Loss): Promise<boolean>
+  /**
+   * Records money received for an outcome, or given back. From the first payment on, the outcome is worth what was paid
+   * less what was given back, and never below zero. It may come before its outcome. Recording an id again with the same
+   * details records it once, and with others is refused.
+   */
+  pay(payment: Payment): Promise<{ duplicate: boolean; value?: number }>
+  /** Several people at once, as a list shows them, in the order given. */
+  people(subjects: readonly Subject[], options?: { at?: number }): Promise<Person[]>
   /** Takes a recorded outcome out of the report: it turned out not to have happened. Resolves to false for an unknown id. */
   withdraw(transactionId: string): Promise<boolean>
   /** Every value a recorded outcome has had, oldest first. */
@@ -320,9 +330,10 @@ export interface Graph {
   rings(subject: Subject, length?: number): Promise<Ring[]>
   /**
    * Deletes a subject and everything recorded about it, unsent conversions
-   * included. `gone` hears what conversions were deleted, once they are.
+   * included, or several together: all of them or, if it is refused, none.
+   * `gone` hears what conversions were deleted, once they are.
    */
-  forget(subject: Subject, why?: Deciding, gone?: (jobs: Job[]) => void): Promise<Change[]>
+  forget(subject: Subject | readonly Subject[], why?: Deciding, gone?: (jobs: Job[]) => void): Promise<Change[]>
   /**
    * Everything recorded about the person a subject is: arrivals, what they
    * were seen doing, calls, steps and their values, consent and decisions,
@@ -848,6 +859,15 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     return pairs.map((told) => ({ pair: pairOf(told?.a, told?.b, verb), separated: told.separated ?? true, why: { ...why, ...(told.reason && { reason: String(told.reason) }) } }))
   }
 
+  /** An outcome as its payments have it: what they come to, to the hundred-thousandth, in their currency. */
+  function paidFor(outcome: Counted, payments: readonly Required<Payment>[]): Counted {
+    if (payments.length === 0) return outcome
+    const paid = payments.find((each) => each.currency)?.currency
+    if (paid && outcome.currency && outcome.currency !== paid) throw new TypeError(`Outcome "${outcome.transactionId}" must use the currency of its payments`)
+    const value = payments.reduce((sum, { kind, amount }) => sum + (kind === 'refund' ? -amount : amount), 0)
+    return { ...outcome, value: Math.max(0, Math.round(value * 1e5) / 1e5), currency: outcome.currency || paid || '' }
+  }
+
   /** Adds an outcome's value to its history, unless it is the one it already has. */
   async function revalue(tx: Tx, { transactionId, subject, value, currency }: Counted, kind?: Loss): Promise<void> {
     const last = (await tx.valuesOf(transactionId, subject)).at(-1)
@@ -1055,9 +1075,53 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         if (await tx.outcomeOf(transactionId)) return false
         // Whoever was forgotten while their text was being counted is not written down again.
         if (outcome.ofText !== undefined && (await tx.textOf(outcome.ofText))?.subject !== subject) throw new Gone()
-        await tx.setOutcome(counted)
-        await revalue(tx, counted)
+        // Paid for before it was recorded, it is worth what was paid.
+        const worth = paidFor(counted, await tx.paymentsOf(transactionId))
+        await tx.setOutcome(worth)
+        await revalue(tx, worth)
         return true
+      })
+    },
+
+    async pay({ id, transactionId, amount, kind = 'payment', currency = '' }) {
+      if (typeof id !== 'string' || !id || typeof transactionId !== 'string' || !transactionId) throw new TypeError('A payment requires an id and a transactionId, as strings')
+      if (!(typeof amount === 'number' && amount >= 1e-5 && amount <= 1e10)) throw new TypeError(`Payment "${id}" requires an amount above zero, of ten billion at most`)
+      if (kind !== 'payment' && kind !== 'refund') throw new TypeError(`Payment "${id}" must be a payment or a refund`)
+      if (typeof currency !== 'string') throw new TypeError(`Payment "${id}" requires its currency as a string`)
+      keepable(id, transactionId, currency)
+      return store.write(async (tx) => {
+        const before = await tx.paymentOf(id)
+        const outcome = await tx.outcomeOf(transactionId)
+        if (before && (before.transactionId !== transactionId || before.amount !== amount || before.kind !== kind || before.currency !== currency)) throw new TypeError(`Payment "${id}" was already recorded with different details`)
+        if (before) return { duplicate: true, ...(outcome && { value: outcome.value }) }
+        const payments = [...(await tx.paymentsOf(transactionId)), { id, transactionId, amount, kind, currency }]
+        if (new Set([outcome?.currency, ...payments.map((each) => each.currency)].filter(Boolean)).size > 1) throw new TypeError(`Payment "${id}" must use the currency of its outcome`)
+        await tx.addPayment(payments.at(-1)!)
+        if (!outcome) return { duplicate: false }
+        const worth = paidFor(outcome, payments)
+        if (worth.value !== outcome.value || worth.currency !== outcome.currency) {
+          await tx.setOutcome(worth)
+          // What was given back is counted from the refunds, which come in any order, and not from how the value moved.
+          await revalue(tx, worth)
+        }
+        return { duplicate: false, value: worth.value }
+      })
+    },
+
+    people(subjects, { at = now() } = {}) {
+      return store.read(async (tx) => {
+        const asked = unique(subjects)
+        const labels = await tx.labelsOf(asked)
+        const creditOf = await creditAll(tx, asked.map((subject) => ({ subject, at })), 90 * DAY, 2)
+        const out: Person[] = []
+        for (const subject of asked) {
+          const own = labels.get(subject)
+          const members = own ? (await tx.clusterOf(own.cluster)).sort() : [subject]
+          const said = (await tx.textsOf(members)).filter((text) => text.flags.includes('opt_out') || text.flags.includes('opt_in')).at(-1)
+          const { credited } = creditOf(subject, at)
+          out.push({ subject, members, ...(credited && { touch: credited }), optedOut: said?.flags.includes('opt_out') ?? false })
+        }
+        return out
       })
     },
 
@@ -1766,19 +1830,24 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     async forget(subject, why, gone) {
-      if (typeof subject !== 'string') throw new TypeError('forget requires a subject')
-      keepable(subject)
+      const subjects = typeof subject === 'string' ? [subject] : Array.isArray(subject) ? unique<Subject>(subject) : []
+      if (subjects.length === 0 || subjects.some((each) => typeof each !== 'string')) throw new TypeError('forget requires a subject')
+      keepable(...subjects)
       let jobs: Job[] = []
       const changes = await changing(async (tx) => {
-        await decide(tx, 'forget', [subject], why)
-        const edges = await tx.edgesOf([subject])
-        const component = (await tx.labelsOf([subject])).get(subject)?.component
-        const affected = new Set(component === undefined ? [] : (await tx.membersOf([component])).keys())
+        await current(tx, subjects, why)
+        jobs = []
+        for (const each of subjects) await decideAll(tx, [{ action: 'forget', about: [each], why }])
+        const edges = await tx.edgesOf(subjects)
+        const components = unique([...(await tx.labelsOf(subjects)).values()].flatMap(({ component }) => (component === undefined ? [] : [component])))
+        const affected = new Set((await tx.membersOf(components)).keys())
         await mark(tx)
-        jobs = await tx.removeSubject(subject)
-        affected.delete(subject)
+        for (const each of subjects) {
+          jobs.push(...(await tx.removeSubject(each)))
+          affected.delete(each)
+        }
         // Losing a subject can bring an identifier back under its cap, which links the rest again.
-        const identifiers = edges.map((edge) => edge.identifier)
+        const identifiers = unique(edges.map((edge) => edge.identifier))
         const states = await tx.states(identifiers)
         const open = identifiers.filter((identifier) => usable(policy, identifier, states.get(identifier)))
         for (const edge of await tx.edgesOn(open)) affected.add(edge.subject)

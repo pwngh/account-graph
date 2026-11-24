@@ -149,7 +149,7 @@ const NAME = /^[\w.-]{1,64}$/
 /** What a reviewer's token opens: what the reviewer screen reads, and the decisions a reviewer makes. */
 const REVIEW_ROUTES = new Set([
   'GET /me', 'GET /subject', 'GET /clusters', 'GET /search', 'GET /recent', 'GET /links', 'GET /cluster', 'GET /history', 'GET /journey', 'GET /board', 'GET /flows', 'GET /collusion', 'GET /rings',
-  'GET /decisions', 'GET /disputes', 'GET /consent', 'GET /outcome', 'GET /followed', 'GET /call', 'GET /calls', 'GET /calls/summary', 'POST /match', 'POST /conflicts', 'POST /call/ringing', 'GET /text', 'GET /texts', 'GET /texting', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'GET /ops', 'POST /find', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
+  'GET /decisions', 'GET /disputes', 'GET /consent', 'GET /outcome', 'GET /followed', 'GET /call', 'GET /calls', 'GET /calls/summary', 'POST /match', 'POST /people', 'POST /conflicts', 'POST /call/ringing', 'GET /text', 'GET /texts', 'GET /texting', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'GET /ops', 'POST /find', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
   'GET /undecided', 'GET /between', 'GET /conversions', 'POST /retry', 'POST /foresee',
 ])
 
@@ -876,7 +876,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         const { touch, ...rest } = await ringing(graph, { ...body, at: body.at ?? now() }, calling())
         return { ...rest, ...(touch && { source: sourceOf(touch), campaign: touch.campaign ?? null, campaignId: touch.campaignId ?? null, landing: touch.landing ?? null }) }
       }
-            case 'POST /touch':
+      case 'POST /touch':
         return graph.touch(await json(request))
       case 'POST /ignore': {
         const body = await json(request)
@@ -887,11 +887,15 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         for (const name of ['ads', 'retract']) if (body[name] !== undefined && typeof body[name] !== 'boolean') throw new Refusal(400, `\`${name}\` must be true or false`)
         // Before anything is deleted: what is sent to nobody must not look asked for.
         if (body.retract && !options.outbox?.retraction.targets.length) throw new Refusal(400, 'No configured ad platform accepts retractions')
+        // A person's ids are named one by one, so nobody is deleted for being in a cluster.
+        if (body.subjects !== undefined && (body.subject !== undefined || !Array.isArray(body.subjects) || body.subjects.length === 0 || body.subjects.length > 50 || !body.subjects.every((each: unknown) => typeof each === 'string' && each))) throw new Refusal(400, '`subjects` must be a list of 1 to 50 ids, without `subject`')
+        if (body.subjects === undefined && typeof body.subject !== 'string') throw new Refusal(400, 'forget requires a subject')
+        const whom: Subject | Subject[] = body.subjects ?? body.subject
         // With no platform set up now, what was sent when one was is still said.
         let jobs: Job[] = []
         const { changes, sent } = options.outbox
-          ? await options.outbox.forget(body.subject, signed(request, body), { retract: body.retract ?? false })
-          : { changes: await graph.forget(body.subject, signed(request, body), (gone) => void (jobs = gone)), sent: sentOf(jobs) }
+          ? await options.outbox.forget(whom, signed(request, body), { retract: body.retract ?? false })
+          : { changes: await graph.forget(whom, signed(request, body), (gone) => void (jobs = gone)), sent: sentOf(jobs) }
         return body.ads || body.retract ? { changes, sent } : changes
       }
       case 'POST /consent': {
@@ -1153,6 +1157,16 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         if (options.outbox) return options.outbox.restate(body.transactionId, body.value, body.currency, body.kind)
         await graph.restate(body.transactionId, body.value, body.currency, body.kind)
         return []
+      }
+      case 'POST /payment': {
+        const body = await json(request)
+        if (options.outbox) return options.outbox.pay(body)
+        return { ...(await graph.pay(body)), jobs: [] }
+      }
+      case 'POST /people': {
+        const { subjects } = await json(request)
+        if (!Array.isArray(subjects) || subjects.length === 0 || subjects.length > 100 || !subjects.every((each) => typeof each === 'string' && each)) throw new Refusal(400, '`subjects` must be a list of 1 to 100 ids')
+        return { people: (await graph.people(subjects)).map(({ touch, ...person }) => ({ ...person, ...(touch && { source: sourceOf(touch), campaign: touch.campaign ?? null, campaignId: touch.campaignId ?? null }) })) }
       }
       case 'POST /costs': {
         const body = await json(request)

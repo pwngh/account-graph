@@ -521,6 +521,31 @@ export interface Tie {
   kinds: string[]
 }
 
+/** Money received for an outcome, or given back. */
+export interface Payment {
+  /** Your id for it. Recording it twice records it once. */
+  id: string
+  /** The outcome it is for, which may be recorded later. */
+  transactionId: string
+  /** Above zero. */
+  amount: number
+  /** `payment`, which is the default, or `refund` for money given back. */
+  kind?: 'payment' | 'refund'
+  /** The outcome's currency when left out. */
+  currency?: string
+}
+
+/** One of several people, as a list shows them. */
+export interface Person {
+  subject: Subject
+  /** Everyone in its cluster, itself included. */
+  members: Subject[]
+  /** What brought them, where it can be credited at the time asked about. */
+  touch?: AttributedTouch
+  /** Whether anyone of the cluster last asked for no more texts. */
+  optedOut: boolean
+}
+
 /** Who somebody not yet recorded may be, by what is known of them. */
 export interface Candidate {
   subject: Subject

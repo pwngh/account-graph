@@ -3,7 +3,7 @@ import { createMemoryOutbox } from './outbox.ts'
 import { standingFirst } from './store.ts'
 import type { Store, Tx } from './store.ts'
 import { CLICK_IDS } from './touch.ts'
-import type { CallResult, Consent, ConsentAnswer, CostRow, Counted, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, NumberedChange, OutcomeValue, SentLink, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, Consent, ConsentAnswer, CostRow, Counted, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, NumberedChange, OutcomeValue, Payment, SentLink, Sighting, Subject, Touch } from './types.ts'
 
 /**
  * Keeps the graph in process memory. Writes run one at a time; a write that
@@ -30,6 +30,7 @@ export function createMemoryStore(): Store {
   const calls = new Map<string, Omit<KeptCall, 'result'>>()
   const texts = new Map<string, KeptText>()
   const sent = new Map<string, SentLink>()
+  const payments = new Map<string, Required<Payment>>()
   const results = new Map<string, CallResult>()
   const spurned = new Map<string, NotLead>()
   /** By number, the one that began first, first. */
@@ -109,6 +110,9 @@ export function createMemoryStore(): Store {
         outcomes.delete(id)
         spurned.delete(id)
       }
+      // Its outcomes, and those taken back, unless they are somebody else's since.
+      const own = values.get(subject)
+      for (const [id, { transactionId }] of payments) if (own?.has(transactionId) && !outcomes.has(transactionId)) payments.delete(id)
       values.delete(subject)
       for (const [id, call] of calls) {
         if (call.subject === subject) {
@@ -408,6 +412,11 @@ export function createMemoryStore(): Store {
             }
             before = each
           }
+          for (const { transactionId: of, kind, amount, currency } of payments.values()) {
+            if (of !== transactionId || kind !== 'refund') continue
+            lost.refund += amount
+            lostIn.push(currency)
+          }
           return [[transactionId, { ...first, most: rest.reduce((most, each) => Math.max(most, each.value), first.value), refunded: lost.refund, writtenOff: lost.write_off, lostIn }]]
         }),
       )
@@ -507,6 +516,19 @@ export function createMemoryStore(): Store {
     async missesBetween(from, to) {
       const found = [...calls.values()].filter((call) => call.direction === 'inbound' && call.at >= from && call.at < to && (results.get(call.id)?.answered === false || spurned.has(`call:${call.id}`)))
       return found.sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1)).map(withResult)
+    },
+
+    async addPayment(payment) {
+      payments.set(payment.id, { ...payment })
+    },
+
+    async paymentOf(id) {
+      const payment = payments.get(id)
+      return payment && { ...payment }
+    },
+
+    async paymentsOf(transactionId) {
+      return [...payments.values()].filter((payment) => payment.transactionId === transactionId).map((payment) => ({ ...payment }))
     },
 
     async setLink(link) {

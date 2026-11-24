@@ -2466,6 +2466,66 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual([await graph.linksSent('contact:2'), (await graph.linksSent('contact:3')).length], [[], 1])
     })
 
+    test('an outcome is worth what was paid for it less what was given back, whatever the order', async () => {
+      const worth = async (graph: Awaited<ReturnType<typeof fresh>>['graph']) => (await graph.outcomeOf('o'))?.value
+      const client = { transactionId: 'o', subject: 'contact:1', at: T0, stage: 'client', value: 1250, currency: 'USD' }
+      const all = [['p1', 300], ['p2', 300.1], ['r1', -50], ['p3', 0.2]] as const
+      const pay = (graph: Awaited<ReturnType<typeof fresh>>['graph'], [id, amount]: readonly [string, number]) => graph.pay({ id, transactionId: 'o', amount: Math.abs(amount), ...(amount < 0 && { kind: 'refund' as const }) })
+      for (const order of [all, [...all].reverse(), [all[2], all[0], all[3], all[1]]]) {
+        const { graph } = await fresh()
+        await graph.outcome(client)
+        for (const each of order) assert.equal((await pay(graph, each)).duplicate, false)
+        assert.equal(await worth(graph), 550.3)
+        assert.equal((await graph.report({ from: '2023-11-14', to: '2023-11-14' })).rows[0]!.valueChange.refunded, 50)
+        // Reported again it is the same payment, and with other details it is refused.
+        assert.deepEqual(await pay(graph, all[0]), { duplicate: true, value: 550.3 })
+        await assert.rejects(pay(graph, ['p1', 301]), /already recorded with different details/)
+        assert.equal(await worth(graph), 550.3)
+      }
+      // Paid for before it is recorded.
+      const { graph, store } = await fresh()
+      assert.deepEqual(await pay(graph, ['p1', 300]), { duplicate: false })
+      await graph.outcome(client)
+      assert.equal(await worth(graph), 300)
+      await pay(graph, ['r1', -500])
+      assert.equal(await worth(graph), 0)
+      const { rows } = await graph.report({ from: '2023-11-14', to: '2023-11-14' })
+      assert.equal(rows[0]!.valueChange.refunded, 500)
+      for (const bad of [{ id: '', transactionId: 'o', amount: 1 }, { id: 'x', transactionId: 'o', amount: 0 }, { id: 'x', transactionId: 'o', amount: NaN }, { id: 'x', transactionId: 'o', amount: 1e-6 }, { id: 'x', transactionId: 'o', amount: 1e300 }, { id: 'x', transactionId: 'o', amount: 1, kind: 'tip' }, { id: 'x', transactionId: 'o', amount: 1, currency: 'EUR' }]) await assert.rejects(graph.pay(bad as never), TypeError)
+      // One taken back keeps no payments when its person is forgotten.
+      await graph.withdraw('o')
+      await graph.forget('contact:1')
+      assert.deepEqual(await store.read((tx) => tx.paymentsOf('o')), [])
+      // One currency, whichever comes first.
+      await graph.pay({ id: 'e1', transactionId: 'e', amount: 5, currency: 'EUR' })
+      await assert.rejects(graph.outcome({ ...client, transactionId: 'e' }), /currency of its payments/)
+      await graph.outcome({ ...client, transactionId: 'e', currency: '' })
+      assert.deepEqual([(await graph.outcomeOf('e'))?.value, (await graph.outcomeOf('e'))?.currency], [5, 'EUR'])
+    })
+
+    test('several subjects are forgotten together, or none is', async () => {
+      const { graph } = await fresh()
+      await graph.observe(['contact:1', 'contact:2', 'contact:3'].map((subject) => ({ subject, identifiers: ['email:pat'], at: T0 })))
+      await graph.separate('contact:2', 'contact:3')
+      await graph.separate('contact:2', 'contact:3', false)
+      await assert.rejects(graph.forget(['contact:1', 'contact:2'], { seen: 0 }))
+      assert.equal((await graph.cluster('contact:1'))!.members.length, 3)
+      const before = (await graph.decisions()).length
+      await graph.forget(['contact:1', 'contact:2', 'contact:1'], { seen: before })
+      assert.deepEqual([await graph.cluster('contact:1'), await graph.cluster('contact:2'), (await graph.cluster('contact:3'))!.members], [undefined, undefined, ['contact:3']])
+      assert.equal((await graph.decisions()).length, before + 2)
+    })
+
+    test('several people are read at once, each with their group, what brought them, and whether they asked for no texts', async () => {
+      const { graph } = await fresh()
+      await graph.observe([{ subject: 'visitor:1', identifiers: ['device:1'], at: T0 }, { subject: 'contact:1', identifiers: ['device:1', `phone:${hashPhone('+15550100195')}`], at: T0 }])
+      await graph.touch({ subject: 'visitor:1', at: T0, gclid: 'G1' })
+      await recordText(graph, { id: 'S', from: '+15550100195', to: '+15550100101', at: T0, text: 'STOP' })
+      const found = await graph.people(['contact:1', 'contact:nobody', 'contact:1'], { at: T0 + HOUR })
+      assert.deepEqual(found.map(({ subject, members, optedOut }) => [subject, members.length, optedOut]), [['contact:1', 3, true], ['contact:nobody', 1, false]])
+      assert.deepEqual(found[0]!.touch, (await graph.attribute('contact:1', { at: T0 + HOUR })).credited)
+    })
+
     test('match says who somebody may be as if they had been seen, and writes nothing', async () => {
       const { graph } = await fresh()
       await graph.observe([
