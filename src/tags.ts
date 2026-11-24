@@ -32,8 +32,9 @@ const READ = new Map(Object.entries(WRITTEN).flatMap(([name, written]) => writte
 export function touchTag(touch: Touch | undefined, name: string): string | undefined {
   const custom = touch?.custom
   for (const written of Object.hasOwn(WRITTEN, name) ? WRITTEN[name]! : [name]) {
-    const value = custom && Object.hasOwn(custom, written) ? custom[written]!.trim() : ''
-    if (value) return value
+    // A touch may have been posted with anything here.
+    const value: unknown = custom && Object.hasOwn(custom, written) ? custom[written] : undefined
+    if (typeof value === 'string' && value.trim()) return value.trim()
   }
   return undefined
 }

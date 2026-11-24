@@ -755,6 +755,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await graph.report({ from: '2026-03-02', to: '2026-03-02', by: 'touch.office_advertised' })).rows.find((row) => row.source === 'x')!.breakdown![0]!.name, 'north')
       // An arrival that says it is not recorded is one that says nothing.
       await graph.touch({ subject: 'visitor:8', at: day, gclid: 'G8', custom: { office: ' (not recorded) ' } })
+      await graph.touch({ subject: 'visitor:8', at: day + 1, gclid: 'G8', custom: { office: null as unknown as string } })
       await graph.outcome({ transactionId: 'e8', subject: 'visitor:8', at: day + HOUR, stage: 'enrolled' })
       assert.equal((await graph.report({ from: '2026-03-02', to: '2026-03-03', by: 'touch.office_advertised' })).total.breakdown!.filter((part) => part.name.includes('not recorded')).length, 1)
       // A parameter that cannot be asked for is not offered.
