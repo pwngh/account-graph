@@ -48,7 +48,7 @@ test('every scene of the demo runs, says what came of it within a second, and ca
     // Tied to a name, and not yet sure enough to credit the ad.
     [/tied to a name\. Ad credit: (7|8)\d%, below the 90%/, (text) => (text.includes('contact:ines-vega') && text.includes('phone 85%') ? 'by phone' : '')],
     [/Not opened yet/, () => 'nothing yet'],
-    [/whose phone this is\. Ad credit: 92%, to Busqueda: North/, (text) => (/link 92%/.test(text) ? 'by link' : '')],
+    [/whose browser this is\. Ad credit: 92%, to Busqueda: North/, (text) => (/link 92%/.test(text) ? 'by link' : '')],
     [/Step recorded: intake/, column('intake')],
     [/Step recorded: signed/, column('signed')],
     [/Step recorded: scheduled, director ortega/, column('scheduled')],
