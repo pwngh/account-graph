@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { after, describe, test } from 'node:test'
 import { givenKeys, Outdated, brokenAt, callState, createGraph, createHours, defaultPolicy, dialed, email, fit, followUp, hashPhone, nameKeys, policyFrom, policyProblems, recordCall, recordCallResult, recordNotLead, recordReturn, recordText, ringing, replyTo, beginnings, textCode, codeNote, texted } from '../src/index.ts'
-import type { Change, GraphOptions, Observation, Policy, Store } from '../src/index.ts'
+import type { Change, Graph, GraphOptions, Observation, Policy, Store } from '../src/index.ts'
 
 export interface Opened {
   store: Store
@@ -689,6 +689,166 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual([(await recordCall(graph, { id: 'X4', ...call, answered: true }, options)).counted, (await graph.keptCall('X4'))!.subject], [true, left.subject])
     })
 
+    test('a tap that two callers could have made is neither\'s, and a tap is nearer to its call on a number others use', async () => {
+      const SECOND = 1000
+      const line = '+15551230001'
+      const click = (graph: Graph, who: string, at: number) => graph.observe({ subject: `visitor:${who}`, identifiers: [`device:${who}`, dialed(line, at)], at, event: 'phone_click' })
+      const call = (graph: Graph, id: string, from: string, at: number) => recordCall(graph, { id, from, to: line, at, duration: 60 })
+      const tied = async (graph: Graph, from: string) => (await graph.links(`caller:${hashPhone(from)}`)).map((link) => link.subject)
+      const [one, two, three] = ['+15550100161', '+15550100162', '+15550100163'] as const
+      // Whichever call is reported first, and however late the other.
+      for (const order of [[0, 1], [1, 0]]) {
+        const { graph } = await fresh()
+        await click(graph, 'a', T0)
+        const calls = [() => call(graph, 'ONE', one, T0 + 12 * SECOND), () => call(graph, 'TWO', two, T0 + 25 * SECOND)]
+        const first = await calls[order[0]!]!()
+        assert.equal(first.visitor, 'visitor:a')
+        const second = await calls[order[1]!]!()
+        assert.deepEqual([second.visitor, second.flags], [undefined, ['ambiguous']])
+        assert.deepEqual([await tied(graph, one), await tied(graph, two)], [[], []])
+        assert.deepEqual([(await graph.keptCall('ONE'))!.visitor, (await graph.keptCall('TWO'))!.visitor], [undefined, undefined])
+        // A third changes nothing, and nothing is left to rebuild.
+        await call(graph, 'THREE', three, T0 + 20 * SECOND)
+        assert.deepEqual([await tied(graph, one), await tied(graph, three)], [[], []])
+        assert.deepEqual(await graph.verify(), [])
+      }
+      // One too late to be tied by the tap is near enough to cast doubt on it, and one later still is not.
+      {
+        const { graph } = await fresh()
+        await click(graph, 'a', T0)
+        assert.equal((await call(graph, 'ONE', one, T0 + 12 * SECOND)).visitor, 'visitor:a')
+        await call(graph, 'LATER', two, T0 + 61 * SECOND)
+        assert.deepEqual(await tied(graph, one), ['visitor:a'])
+        await call(graph, 'TWO', three, T0 + 45 * SECOND)
+        assert.deepEqual(await tied(graph, one), [])
+      }
+      // The provider's clock may be behind ours: a call dated a few seconds before the tap counts too, whichever comes first.
+      for (const order of [[0, 1], [1, 0]]) {
+        const { graph } = await fresh()
+        await click(graph, 'a', T0)
+        const calls = [() => call(graph, 'ONE', one, T0 - 4 * SECOND), () => call(graph, 'TWO', two, T0 + 45 * SECOND)]
+        for (const each of order) await calls[each]!()
+        assert.deepEqual([await tied(graph, one), await tied(graph, two)], [[], []])
+      }
+      // Reported at once, neither is tied.
+      {
+        const { graph } = await fresh()
+        await click(graph, 'a', T0)
+        await Promise.all([call(graph, 'ONE', one, T0 + 12 * SECOND), call(graph, 'TWO', two, T0 + 25 * SECOND)])
+        assert.deepEqual([await tied(graph, one), await tied(graph, two), (await graph.keptCall('ONE'))!.flags, (await graph.keptCall('TWO'))!.flags], [[], [], ['ambiguous'], ['ambiguous']])
+        assert.deepEqual([(await graph.keptCall('ONE'))!.visitor, (await graph.keptCall('TWO'))!.visitor], [undefined, undefined])
+      }
+      // Ringing back rests on the same tap, so both calls fall with it.
+      {
+        const { graph } = await fresh()
+        await click(graph, 'a', T0)
+        await call(graph, 'ONE', one, T0 + 12 * SECOND)
+        assert.equal((await call(graph, 'AGAIN', one, T0 + 100 * SECOND)).visitor, 'visitor:a')
+        await call(graph, 'TWO', two, T0 + 25 * SECOND)
+        assert.deepEqual(await tied(graph, one), [])
+      }
+      // Tied by something else, their own tap stays theirs, whoever else calls. Left untied, a call is filed under its number.
+      for (const order of [[0, 1], [1, 0]]) {
+        const { graph } = await fresh()
+        await click(graph, 'a', T0)
+        await call(graph, 'BEFORE', one, T0 + 12 * SECOND)
+        await click(graph, 'a', T0 + DAY)
+        const calls = [() => call(graph, 'ONE', one, T0 + DAY + 12 * SECOND), () => call(graph, 'TWO', two, T0 + DAY + 25 * SECOND)]
+        for (const each of order) await calls[each]!()
+        assert.deepEqual([(await graph.keptCall('ONE'))!.visitor, (await graph.keptCall('TWO'))!.visitor], ['visitor:a', undefined])
+      }
+      {
+        const { graph } = await fresh()
+        const numbers = { [line]: { source: 'mailer' } }
+        await click(graph, 'a', T0)
+        await recordCall(graph, { id: 'ONE', from: one, to: line, at: T0 + 12 * SECOND, duration: 60 }, { numbers })
+        await recordCall(graph, { id: 'TWO', from: two, to: line, at: T0 + 25 * SECOND, duration: 60 }, { numbers })
+        assert.equal((await graph.attribute(`caller:${hashPhone(one)}`, { at: T0 + 30 * SECOND })).credited!.source, 'mailer')
+      }
+      // A tap more than twenty minutes ago does not make a line busy.
+      {
+        const { graph } = await fresh()
+        await click(graph, 'a', T0)
+        await click(graph, 'b', T0 + 21 * 60 * SECOND)
+        assert.equal((await call(graph, 'ONE', one, T0 + 23 * 60 * SECOND)).visitor, 'visitor:b')
+      }
+      // Tied by a later tap that nobody else could have made, the earlier one is theirs too, in whichever order.
+      for (const order of [[0, 1], [1, 0]]) {
+        const { graph } = await fresh()
+        await click(graph, 'a', T0)
+        await click(graph, 'a', T0 + 200 * SECOND)
+        const calls = [() => call(graph, 'ONE', one, T0 + 10 * SECOND), () => call(graph, 'AGAIN', one, T0 + 210 * SECOND), () => call(graph, 'TWO', two, T0 + 25 * SECOND)]
+        for (const each of [...order.map((n) => calls[n]!), calls[2]!]) await each()
+        assert.deepEqual([(await graph.keptCall('ONE'))!.visitor, (await graph.keptCall('AGAIN'))!.visitor, await tied(graph, two)], ['visitor:a', 'visitor:a', []])
+      }
+      for (const order of [[0, 1], [1, 0]]) {
+        const { graph } = await fresh()
+        await click(graph, 'x', T0)
+        await click(graph, 'y', T0 + 40 * SECOND)
+        const calls = [() => call(graph, 'ONE', one, T0 + 5 * SECOND), () => call(graph, 'TWO', two, T0 + 45 * SECOND)]
+        for (const each of order) await calls[each]!()
+        assert.deepEqual([await tied(graph, one), await tied(graph, two)], [[], ['visitor:y']])
+      }
+      // Two taps filed together are two taps.
+      {
+        const { graph } = await fresh()
+        await click(graph, 'a', T0)
+        await click(graph, 'a', T0 + 200 * SECOND)
+        await call(graph, 'ONE', one, T0 + 10 * SECOND)
+        await call(graph, 'TWO', two, T0 + 270 * SECOND)
+        assert.deepEqual([await tied(graph, one), await tied(graph, two)], [['visitor:a'], []])
+      }
+      // Whoever a reviewer keeps apart from a visitor is no rival for their tap, and a tie a reviewer restores stays.
+      {
+        const { graph } = await fresh()
+        await click(graph, 'a', T0)
+        await graph.separate('visitor:a', `caller:${hashPhone(two)}`)
+        await call(graph, 'ONE', one, T0 + 12 * SECOND)
+        await call(graph, 'TWO', two, T0 + 25 * SECOND)
+        assert.deepEqual(await tied(graph, one), ['visitor:a'])
+        await call(graph, 'THREE', three, T0 + 20 * SECOND)
+        assert.deepEqual(await tied(graph, one), [])
+        await graph.ignore('dial:ONE', false)
+        await call(graph, 'FOUR', '+15550100165', T0 + 22 * SECOND)
+        assert.deepEqual(await tied(graph, one), ['visitor:a'])
+      }
+      // Quiet, a tap two minutes before is theirs. With somebody else on the line in the last twenty minutes, thirty seconds is as far as it goes.
+      const { graph } = await fresh()
+      await click(graph, 'b', T0)
+      assert.equal((await call(graph, 'Q', one, T0 + 120 * SECOND)).visitor, 'visitor:b')
+      await click(graph, 'c', T0 + 600 * SECOND)
+      assert.equal((await call(graph, 'B', two, T0 + 720 * SECOND)).visitor, undefined)
+      await click(graph, 'd', T0 + 800 * SECOND)
+      assert.equal((await call(graph, 'N', three, T0 + 825 * SECOND)).visitor, 'visitor:d')
+      // Whose tap it is already is theirs, however busy it is.
+      await click(graph, 'b', T0 + 900 * SECOND)
+      assert.equal((await call(graph, 'Q2', one, T0 + 1000 * SECOND)).visitor, 'visitor:b')
+      // Twenty minutes on, it is quiet again.
+      await click(graph, 'e', T0 + 3 * HOUR)
+      assert.equal((await call(graph, 'E', '+15550100164', T0 + 3 * HOUR + 120 * SECOND)).visitor, 'visitor:e')
+    })
+
+    test('a caller who is one visitor\'s is another\'s only while that one is shown the number', async () => {
+      const { graph } = await fresh()
+      const pool = { numbers: ['+15550100171'], grace: 2 * HOUR }
+      const options = { pool }
+      const show = (who: string, at: number) => graph.lease(`visitor:${who}`, { numbers: pool.numbers, minutes: 15, at })
+      const ring = (id: string, from: string, at: number) => recordCall(graph, { id, from, to: pool.numbers[0]!, at, duration: 60 }, options)
+      for (const who of ['a', 'b', 'c']) await graph.observe({ subject: `visitor:${who}`, identifiers: [`device:${who}`], at: T0, event: 'visit' })
+      await show('a', T0)
+      assert.equal((await ring('P1', '+15550100172', T0 + 60_000)).visitor, 'visitor:a')
+      // Days later it is somebody else's, and their turn has just ended: a new caller is theirs, and the one who saved it is not.
+      await show('b', T0 + 3 * DAY)
+      assert.equal((await ring('P2', '+15550100172', T0 + 3 * DAY + HOUR)).visitor, undefined)
+      assert.equal((await ring('P3', '+15550100173', T0 + 3 * DAY + HOUR)).visitor, 'visitor:b')
+      // Nor is it theirs by a tap made while it was shown.
+      await graph.observe({ subject: 'visitor:b', identifiers: ['device:b', dialed(pool.numbers[0]!, T0 + 3 * DAY + 15 * 60_000 - 5000)], at: T0 + 3 * DAY + 15 * 60_000 - 5000, event: 'phone_click' })
+      assert.equal((await recordCall(graph, { id: 'P5', from: '+15550100172', to: pool.numbers[0]!, at: T0 + 3 * DAY + 15 * 60_000 + 5000, duration: 60 }, { pool: { ...pool, grace: 0 } })).visitor, undefined)
+      // While it is shown, it can be the same person in another browser.
+      await show('c', T0 + 6 * DAY)
+      assert.equal((await ring('P4', '+15550100172', T0 + 6 * DAY + 60_000)).visitor, 'visitor:c')
+    })
+
     test('a call is tied to the visitor who tapped the number, or filed under the number it rang', async () => {
       const { graph } = await fresh()
       const numbers = { '(555) 123-0001': { source: 'google', campaignId: '111' }, '+15551230002': { source: 'mailer', campaign: 'postcard' } }
@@ -712,8 +872,8 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       })
       assert.equal((await graph.counts()).sightings, sightings)
 
-      // One tap leads to one caller. A different number ringing a minute later is not that visitor; the same caller ringing back is.
-      const stranger = await recordCall(graph, { id: 'CA1b', from: '+15559990000', to: '+15551230001', at: T0 + 2 * MINUTE, duration: 60 }, { numbers })
+      // One tap leads to one caller. A different number ringing more than a minute later is not that visitor; the same caller ringing back is.
+      const stranger = await recordCall(graph, { id: 'CA1b', from: '+15559990000', to: '+15551230001', at: T0 + 2 * MINUTE + 5000, duration: 60 }, { numbers })
       assert.deepEqual([stranger.flags, stranger.visitor], [[], undefined])
       assert.equal((await graph.attribute(stranger.subject, { at: T0 + 3 * MINUTE })).credited!.landing, 'tel:+15551230001')
       const back = await recordCall(graph, { id: 'CA1c', from: '+15558675309', to: '+15551230001', at: T0 + 2 * MINUTE + 30_000, duration: 60 }, { numbers })

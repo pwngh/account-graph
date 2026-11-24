@@ -198,6 +198,13 @@ export interface Graph {
    * number, or one of the notes their taps left. Returns whether they are tied. `recordCall` does this.
    */
   tieCall(caller: Subject, visitor: Subject, identifier: Identifier, at: number, by: { pool: string; grace: number } | { notes: readonly Identifier[] }): Promise<boolean>
+  /**
+   * Unties a call from whoever tapped the number, or keeps it from being tied, because another caller could have made the
+   * same tap. Untied, it is filed under `line`, the channel of the number it rang.
+   */
+  doubtCall(id: string, line?: Omit<Touch, 'subject' | 'at'>): Promise<void>
+  /** Kept calls to a number with `from <= at < to`, oldest first. */
+  callsTo(number: string, from: number, to: number): Promise<KeptCall[]>
   /** Every kept call to or from the given subjects, oldest first. */
   callsOf(subjects: readonly Subject[]): Promise<KeptCall[]>
   /**
@@ -1293,8 +1300,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       await store.write(async (tx) => {
         // Only a visitor still tied by this call: one forgotten meanwhile is not written down again.
         const { visitor, ...rest } = call
-        const tied = visitor !== undefined && (await tx.edgesOn([`dial:${call.id}`, `lease:${call.id}`])).some((edge) => edge.subject === visitor)
-        await tx.setCall({ ...rest, ...(tied && { visitor }), recorded: now() })
+        // One doubted meanwhile is not tied either.
+        const doubted = (await tx.states([`dial:${call.id}`])).get(`dial:${call.id}`)?.ignored === true
+        const tied = visitor !== undefined && (await tx.edgesOn([...(doubted ? [] : [`dial:${call.id}`]), `lease:${call.id}`])).some((edge) => edge.subject === visitor)
+        await tx.setCall({ ...rest, ...(doubted && !call.flags.includes('pool') && { flags: [...new Set([...call.flags, 'ambiguous'])] }), ...(tied && { visitor }), recorded: now() })
         await tx.fed('calls', now())
       })
     },
@@ -1357,10 +1366,39 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const others = ((await neighbors(tx, [visitor])).get(visitor) ?? []).some((link) => link.subject !== caller && link.reasons.some((reason) => /^(dial|lease|text):/.test(reason.identifier)))
         // What matched the two is read again: whoever was forgotten meanwhile is not tied, even where they have been seen since.
         const matched = 'pool' in by ? (await holderOf(tx, by.pool, at, by.grace)) === visitor : (await tx.edgesOn(by.notes)).some((edge) => edge.subject === visitor)
-        tied = !apart && !others && matched
+        // Another call reported meanwhile may have cast doubt on it.
+        tied = !apart && !others && matched && !(await tx.states([identifier])).get(identifier)?.ignored
         return tied ? record(tx, [caller, visitor].map((subject) => ({ subject, identifier, at, event: 'call', recorded: now() }))) : []
       })
       return tied
+    },
+
+    async doubtCall(id, line) {
+      const identifier = `dial:${id}`
+      await changing(async (tx) => {
+        // What a person has looked at and restored stays.
+        if ((await tx.newestNaming([identifier], 0, ['ignore', 'restore']))?.action === 'restore') return []
+        const call = await tx.callOf(id)
+        // Shown the number, it is of no tap.
+        if (call?.flags.includes('pool')) return []
+        if (call && (call.visitor !== undefined || !call.flags.includes('ambiguous'))) {
+          const { visitor, ...rest } = call
+          await tx.setCall({ ...rest, flags: [...new Set([...call.flags, 'ambiguous'])] })
+          if (line && visitor !== undefined) await tx.addTouch({ ...line, subject: call.subject, at: call.at })
+        }
+        if ((await tx.states([identifier])).get(identifier)?.ignored) return []
+        const holders = (await tx.edgesOn([identifier])).map((edge) => edge.subject)
+        // Not tied yet, it is kept from being tied, and there is nothing to have decided.
+        if (holders.length > 0) await decide(tx, 'ignore', [identifier], { by: 'calls', reason: 'another caller could have made the tap it rests on', automatic: true })
+        await tx.setIgnored(identifier, true)
+        if (holders.length === 0) return []
+        await mark(tx)
+        return settle(tx, new Set(holders))
+      })
+    },
+
+    async callsTo(number, from, to) {
+      return (await store.read((tx) => tx.callsBetween(from, to))).filter((call) => call.to === number)
     },
 
     followable(subject, since) {
