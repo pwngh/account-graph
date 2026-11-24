@@ -246,6 +246,8 @@ async function act(title, text, path, body, confirm, { otherKey, undo = false, d
       throw new Error(`${by ?? 'Someone'} decided first, ${when(at)}: ${ACTIONS[action] ?? action} ${about.join(' and ')}${why ? `, "${why}"` : ''}.`)
     }
   })
+  // The question is closed, and nothing more is said in it.
+  foretelling.abort()
   if (!saved) return refused ? load() : undefined
   // These routes answer with the subjects whose cluster moved. None is a real outcome, so say so.
   done?.(saved.answer)
@@ -258,7 +260,7 @@ async function act(title, text, path, body, confirm, { otherKey, undo = false, d
 function people(clusters) {
   if (clusters.length === 1) return clusters[0].size === 1 ? 'one subject on its own' : `one person of ${amount(clusters[0].size)} subjects`
   const sizes = clusters.map(({ size }) => amount(size))
-  return `${amount(clusters.length)} people, of ${sizes.length > 6 ? `${sizes.slice(0, 6).join(', ')} and ${amount(sizes.length - 6)} more of fewer` : `${sizes.slice(0, -1).join(', ')} and ${sizes.at(-1)}`} subjects`
+  return `${amount(clusters.length)} people, of ${sizes.length > 6 ? `${sizes.slice(0, 6).join(', ')} and ${amount(sizes.length - 6)} more` : `${sizes.slice(0, -1).join(', ')} and ${sizes.at(-1)}`} subjects`
 }
 let foretelling
 /** Says in the question what the decision would do, worked out by the server and not made. With a subject still to be named, once it is. The question can be answered without it. */
@@ -272,11 +274,12 @@ function foretell(path, body, otherKey) {
   let turn = 0
   const tell = async (other) => {
     const asked = ++turn
-    const say = (text) => !signal.aborted && asked === turn && (said.textContent = text)
+    const say = (...told) => !signal.aborted && asked === turn && said.replaceChildren(...told)
     say('Working out what this would do.')
     try {
       const { moved, before, after } = await api('POST', '/foresee', { action, ...body, ...(otherKey && { [otherKey]: other }) })
-      say(moved === 0 ? 'No cluster would change.' : `Now ${people(before)}. After this, ${people(after)}. ${amount(moved)} ${moved === 1 ? 'subject changes' : 'subjects change'} cluster.`)
+      say(moved === 0 ? 'No cluster would change.' : `Now ${people(before)}. After this, ${people(after)}. ${amount(moved)} ${moved === 1 ? 'subject changes' : 'subjects change'} cluster.`,
+        el('details', {}, el('summary', { class: 'muted' }, 'Which clusters'), ...[['Now', before], ['After', after]].map(([name, list]) => el('span', { class: 'reason' }, el('b', {}, name), ` ${list.map(({ id, size }) => `${id} (${amount(size)})`).join(', ')}`))))
     } catch (error) {
       say(`What this would do is not known: ${error.message}`)
     }
@@ -286,8 +289,8 @@ function foretell(path, body, otherKey) {
   $('ask-other').addEventListener('input', () => {
     clearTimeout(waiting)
     turn += 1
-    said.textContent = ''
     const other = $('ask-other').value.trim()
+    said.textContent = other ? 'Working out what this would do.' : ''
     if (other) waiting = setTimeout(() => !signal.aborted && tell(other), 300)
   }, { signal })
 }
