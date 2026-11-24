@@ -15,7 +15,7 @@ import { fromTwilio, twilioCall } from './integrations/twilio.ts'
 import type { LineTypeLookup } from './integrations/twilio.ts'
 import type { IpLookup } from './integrations/maxmind.ts'
 import type { Ops } from './ops.ts'
-import type { JobState, Outbox } from './outbox.ts'
+import type { Job, JobState, Outbox } from './outbox.ts'
 import { withStage } from './ladder.ts'
 import { dayIn, dayStart, sourceOf } from './report.ts'
 import type { Ladder } from './ladder.ts'
@@ -139,11 +139,14 @@ const NAME = /^[\w.-]{1,64}$/
 const REVIEW_ROUTES = new Set([
   'GET /me', 'GET /subject', 'GET /clusters', 'GET /search', 'GET /recent', 'GET /links', 'GET /cluster', 'GET /history', 'GET /journey', 'GET /board', 'GET /flows', 'GET /collusion', 'GET /rings',
   'GET /decisions', 'GET /disputes', 'GET /consent', 'GET /outcome', 'GET /followed', 'GET /call', 'GET /calls', 'GET /calls/summary', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'GET /ops', 'POST /find', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
-  'GET /undecided', 'GET /between',
+  'GET /undecided', 'GET /between', 'GET /conversions', 'POST /retry',
 ])
 
 /** Answers hold people's data, so nothing keeps a copy of one. */
 const JSON_HEADERS = { 'content-type': 'application/json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }
+
+/** A job as a person is shown it: the hashed email and phone, and the click, are for its platform only. */
+const shownJob = ({ keys, click, ...job }: Job) => job
 
 /** A route that wrote its own answer. */
 const SENT = Symbol('sent')
@@ -952,11 +955,13 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         if (!options.outbox) break
         const state = url.searchParams.get('state') ?? 'failed'
         if (!['held', 'pending', 'sent', 'skipped', 'failed'].includes(state)) throw new Refusal(400, 'state must be held, pending, sent, skipped, or failed')
-        return options.outbox.list(state as JobState)
+        return (await options.outbox.list(state as JobState)).map(shownJob)
       }
       case 'POST /retry': {
         if (!options.outbox) break
-        return options.outbox.retry((await json(request)).transactionId)
+        const { transactionId } = await json(request)
+        if (typeof transactionId !== 'string') throw new Refusal(400, 'transactionId must be text')
+        return (await options.outbox.retry(transactionId)).map(shownJob)
       }
       case 'GET /conversion':
         if (!options.outbox) break

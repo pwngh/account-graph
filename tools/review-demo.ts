@@ -4,12 +4,13 @@
  * Then open the printed address and enter the reviewer token `demo`.
  */
 import { createServer } from 'node:http'
-import { createGraph, createMemoryStore, dialed, hashPhone, recordCall, recordCallResult } from '../src/index.ts'
+import { createGraph, createMemoryStore, createOps, createOutbox, dialed, hashPhone, recordCall, recordCallResult } from '../src/index.ts'
 import { createHandler } from '../src/server.ts'
 
 // What is recorded below is written down at the time it happened, so the months of first record are real ones.
 let writing: number | undefined
-const graph = createGraph(createMemoryStore(), undefined, { now: () => writing ?? Date.now() })
+const store = createMemoryStore()
+const graph = createGraph(store, undefined, { now: () => writing ?? Date.now() })
 const HOUR = 3_600_000
 const start = Date.now() - 20 * 24 * HOUR
 const login = (subject: string, identifiers: string[], hours = 0) => ({ subject, identifiers, at: start + hours * HOUR, event: 'login' })
@@ -154,9 +155,34 @@ writing = told + 420 * HOUR
 await graph.separate(ana, 'contact:former-spouse', true, { by: 'dana', reason: 'sides of one matter' })
 writing = undefined
 
+// An ad platform that takes some conversions and refuses the rest, to have something to send again.
+const ready = new Set<string>()
+const outbox = createOutbox(graph, store.outbox, {
+  targets: [{
+    name: 'made_up_ads', restates: false, batch: 1, retryable: () => false, keys: () => ({ email: 'hashed' }), click: () => undefined,
+    deliver: async (_action, [item]) => {
+      const { transactionId } = item!.job
+      if (Number(transactionId.slice(5)) % 3 === 0 && !ready.has(transactionId)) {
+        // The second time it is taken.
+        ready.add(transactionId)
+        throw new Error('This conversion action is not set up in the ad account')
+      }
+      return {}
+    },
+  }],
+})
+for (let n = 1; n <= 9; n++) {
+  await graph.consent(`lead:${n}`, { adUserData: true, adPersonalization: true }, { at: Date.now() - 12 * 24 * HOUR })
+  await outbox.record({ transactionId: `sent-${n}`, subject: `lead:${n}`, at: Date.now() - n * 24 * HOUR, stage: 'intake', action: { made_up_ads: 'intake' }, value: 150, currency: 'USD', email: `lead${n}@example.com` })
+}
+await outbox.run()
+outbox.start(2_000)
+
 // The example site (examples/site.ts) can report to this server too.
 const handler = createHandler(graph, {
   token: 'service-demo',
+  outbox,
+  ops: createOps(graph, store.ops),
   reviewers: { dana: 'demo' },
   origins: ['http://localhost:3000', 'http://127.0.0.1:3000'],
   events: ['brochure', 'phone_click'],

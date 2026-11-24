@@ -101,6 +101,8 @@ The four `POST` routes answer with the subjects whose cluster moved. With the se
 | Route | What it does |
 | --- | --- |
 | `GET /me` | `{ reviewer }`: whose token this is, or `null` for the service token. |
+| `GET /conversions?state=` | The 100 jobs in one state most recently due: `held`, `pending`, `sent`, `skipped`, or `failed`, without the click and the hashed email and phone. `held` waits for a call's result. |
+| `POST /retry` | `{ transactionId }`. Puts its failed and skipped jobs back in line. |
 
 ## Service token only
 
@@ -122,8 +124,6 @@ The four `POST` routes answer with the subjects whose cluster moved. With the se
 | `POST /call/result` | How a call went: `{ id, answered, voicemail?, waited? }`, before or after the call. Answers `{ state, counted }`; `waiting` while the call itself has not come. |
 | `POST /costs` | A list of `{ day, source, amount, campaignId?, campaign?, currency?, clicks?, impressions? }`. A row for the same day, source and campaign replaces the one before. |
 | `GET /conversion?id=` | The jobs of one transaction, one per ad platform. |
-| `GET /conversions?state=` | Jobs in one state: `held`, `pending`, `sent`, `skipped`, or `failed`. `held` waits for a call's result. |
-| `POST /retry` | `{ transactionId }`. Puts its failed and skipped jobs back in line. |
 | `POST /alerts/test` | Posts a test alert. Answers `{ delivered, error? }`. |
 | `POST /prune` | `{ before, by?, reason? }`. Deletes sightings written down before a time, answers about advertising that no longer stand, and call results whose call never came. |
 | `GET /stats` | Counts since start, what the graph holds, and outbox jobs by state. |

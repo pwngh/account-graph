@@ -1073,6 +1073,43 @@ test('a call whose result is awaited is held, and nothing is sent until a person
   }
 })
 
+test('a reviewer sees refused conversions without keys and puts them back in line', async () => {
+  const store = createMemoryStore()
+  const graph = createGraph(store)
+  const at = Date.now() - 60_000
+  let refuse = true
+  const outbox = createOutbox(graph, store.outbox, { targets: [{ name: 'ads', restates: false, batch: 10, keys: () => ({ email: 'hashed' }), click: (attribution) => attribution.credited, retryable: () => false, deliver: async () => {
+    if (refuse) throw new Error('the action was not found')
+    return {}
+  } }] })
+  const server = createServer(createHandler(graph, { token: 'service', reviewers: { dana: 'reviewer' }, outbox, origins: [] })).listen(0)
+  try {
+    const base = `http://localhost:${(server.address() as AddressInfo).port}`
+    const call = async (token: string, method: string, path: string, body?: unknown) => {
+      const response = await fetch(base + path, { method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, ...(body !== undefined && { body: JSON.stringify(body) }) })
+      return { status: response.status, body: (await response.json()) as any }
+    }
+    await graph.touch({ subject: 'a', at: at - 1000, gclid: 'click-1' })
+    await graph.consent('a', { adUserData: true, adPersonalization: true }, { at: at - 1000 })
+    await call('service', 'POST', '/convert', { transactionId: 't1', subject: 'a', at, stage: 'enrolled', action: { ads: '111' }, value: 5, currency: 'USD', email: 'a@example.com' })
+    await outbox.run()
+    assert.ok((await outbox.get('t1'))[0]!.keys.email)
+    const { body: failed } = await call('reviewer', 'GET', '/conversions?state=failed')
+    assert.deepEqual(failed.map((job: any) => [job.transactionId, job.state, 'keys' in job, 'click' in job]), [['t1', 'failed', false, false]])
+    assert.ok(!JSON.stringify(failed).includes('click-1'))
+    for (const bad of [{}, { transactionId: 5 }, { transactionId: ['t1'] }]) assert.equal((await call('reviewer', 'POST', '/retry', bad)).status, 400)
+    refuse = false
+    const put = await call('reviewer', 'POST', '/retry', { transactionId: 't1' })
+    assert.deepEqual([put.status, put.body.map((job: any) => [job.state, 'keys' in job])], [200, [['pending', false]]])
+    await outbox.run()
+    assert.deepEqual(await outbox.counts().then((counts) => [counts.sent, counts.failed]), [1, 0])
+    assert.deepEqual((await call('reviewer', 'POST', '/retry', { transactionId: 't1' })).body, [])
+    assert.equal((await call('reviewer', 'GET', '/conversion?id=t1')).status, 403)
+  } finally {
+    server.close()
+  }
+})
+
 test('steps give page events, calls and outcomes their value and their ad platform action', async () => {
   const store = createMemoryStore()
   const graph = createGraph(store)
