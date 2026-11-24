@@ -4,14 +4,14 @@
   /** What each state of the phone is, for who cannot read its Spanish. */
   const CAPTIONS = {
     ad: 'They search and see the ad', site: 'They open the firm’s site', calling: 'They call', missed: 'Nobody answers', back: 'Staff call back', talking: 'Staff call back', 'text-form': 'Staff text the intake form', form: 'They open it',
-    'form-sent': 'They have sent it', signed: 'They have signed', 'text-time': 'Their call is confirmed', director: 'The director calls', 'text-pay': 'Staff text the enroll-and-pay link', pay: 'They open it', paid: 'They have paid', 'text-sign': 'Staff text the documents', sign: 'They sign the documents',
+    'form-sent': 'They have sent it', 'text-time': 'Their call is confirmed', pay: 'They open it', ...STAGE.captions,
   }
   /** The firm's texts, in the order they come, each by the state of the phone that brings it. */
   const TEXTS = [
     ['text-form', 'Tessaly: gracias por hablar con nosotros, Inés. Complete sus datos aquí:', 'tessaly.example/datos'],
-    ['signed', 'Revise y firme sus documentos:', 'tessaly.example/firmar'],
+    ['signed', ...STAGE.texts.papers],
     ['text-time', 'Su llamada con M. Ortega es el miércoles a las 11:00.'],
-    ['text-pay', 'Inscríbase y pague aquí:', 'tessaly.example/inscripcion'],
+    ['text-pay', ...STAGE.texts.last],
   ]
   const wait = (ms) => new Promise((done) => setTimeout(done, ms))
   const handset = () => svg('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true' }, svg('path', { d: 'M3.4 1.5h2.3l1.2 3.1-1.6 1.2c.8 1.7 2.2 3.1 3.9 3.9l1.2-1.6 3.1 1.2v2.3c0 1-.8 1.8-1.8 1.7C6.5 12.9 3.1 9.5 1.7 3.3 1.6 2.3 2.4 1.5 3.4 1.5Z' }))
@@ -19,13 +19,13 @@
   const time = el('span', {})
   const how = el('span', { class: 'how' })
   const clock = el('span', { class: 'clock' })
-  const result = el('button', { type: 'button', class: 'result', on: { click: () => at === 0 && !playing && next() } }, el('small', {}, 'Anuncio · tessaly.example'), el('b', {}, 'Su familia es lo primero. Hable con nosotros hoy.'), el('span', {}, 'Divorcio, custodia y manutención. Atención en español.'))
+  const result = el('button', { type: 'button', class: 'result', on: { click: () => at === 0 && !playing && next() } }, el('small', {}, 'Anuncio · tessaly.example'), el('b', {}, STAGE.ad[0]), el('span', {}, STAGE.ad[1]))
   const site = el('iframe', { title: 'The sample firm on the caller’s phone', tabindex: '-1' })
   const thread = el('div', { class: 'thread' })
   const paper = el('div', { class: 'sheet' })
   const device = el('div', { class: 'device', 'data-state': 'ad' }, el('div', { class: 'screen' },
     el('div', { class: 'bar' }, time, el('i', {})),
-    el('div', { class: 'page ad' }, el('div', { class: 'ask' }, 'abogado de divorcio'), result, el('div', { class: 'blank' }, ...Array.from({ length: 9 }, () => el('i', {})))),
+    el('div', { class: 'page ad' }, el('div', { class: 'ask' }, STAGE.ask), result, el('div', { class: 'blank' }, ...Array.from({ length: 9 }, () => el('i', {})))),
     el('div', { class: 'page site' }, site),
     el('div', { class: 'page texts' }, el('div', { class: 'with' }, el('span', { class: 'face' }, 'T'), el('b', {}, 'Tessaly')), thread),
     el('div', { class: 'page paper' }, paper),
@@ -151,10 +151,10 @@
       fields[i].classList.remove('typing')
     }
   }
-  const sheet = (title, text, ...rest) => paper.replaceChildren(el('small', {}, 'Tessaly Derecho Familiar'), el('b', {}, title), el('p', {}, text), ...rest)
+  const sheet = (title, text, ...rest) => paper.replaceChildren(el('small', {}, STAGE.firm), el('b', {}, title), el('p', {}, text), ...rest)
   const go = (text) => el('span', { class: 'send' }, text)
   const done = (title, text) => paper.replaceChildren(el('div', { class: 'done' }, svg('svg', { viewBox: '0 0 24 24', 'aria-hidden': 'true' }, svg('path', { d: 'M6 12.5l4 4 8-9' })), el('b', {}, title), el('p', {}, text)))
-  const FORM = [['Dirección', 'Calle Ejemplo 12'], ['Correo', 'ines@example.org'], ['Hijos', 'Dos']]
+  const FORM = STAGE.form
   /** What they do on the phone before a scene's requests are made. */
   const DOES = {
     site: () => tapped(result),
@@ -179,7 +179,7 @@
       await wait(800)
       await tapped(bubble())
       const signature = svg('svg', { class: 'signature', viewBox: '0 0 200 60', 'aria-hidden': 'true' }, svg('path', { pathLength: 1, d: 'M12 42c10-30 18-30 16-8s8 14 14-4 12-8 10 4 10 8 16-2 12-6 10 4 12 6 20-2 M112 44c4-26 14-38 18-24s-10 34 2 30 14-26 20-24-4 20 8 18 12-12 24-14' }))
-      sheet('Acuerdo de representación', 'Revise el documento y firme abajo.', el('div', { class: 'lines' }, ...Array.from({ length: 6 }, () => el('i', {}))), signature, go('Firmar'))
+      sheet(STAGE.papers.title, STAGE.papers.text, el('div', { class: 'lines' }, ...Array.from({ length: 6 }, () => el('i', {}))), signature, go('Firmar'))
       phone('sign')
       await wait(300)
       signature.classList.add('drawn')
@@ -194,7 +194,7 @@
     },
     pay: async () => {
       await tapped(bubble())
-      sheet('Inscripción', 'Pago inicial de su caso.', field('Total', '$400.00'), field('Pago', 'Tarjeta de prueba'), go('Inscribirse y pagar'))
+      sheet(STAGE.last.title, STAGE.last.text, ...STAGE.last.fields.map(([name, value]) => field(name, value)), go(STAGE.last.button))
       phone('pay')
       await wait(500)
     },
@@ -202,7 +202,7 @@
       const button = paper.querySelector('.send')
       if (!button) return
       await tapped(button)
-      button.textContent = 'Procesando…'
+      button.textContent = STAGE.last.busy
       await wait(600)
     },
   }
@@ -294,7 +294,7 @@
   }
 
   /** The ninety seconds of docs/demo.md: when each thing happens, in seconds. */
-  const CLIENTS = '#/channels/////30/client'
+  const CLIENTS = `#/channels/////30/${STAGE.won}`
   const SHOW = [
     [1, () => next()], [4.5, () => next()], [8, () => next()], [15, () => next()], [20, () => next()], [28, () => next()],
     // The moment the story turns on is held.
@@ -378,8 +378,8 @@
       const state = shown.phone
       if (TEXTS.some(([when]) => when === state)) texts(state)
       if (state === 'form-sent') done('Datos enviados', 'Gracias, Inés.')
-      if (state === 'signed') done('Documentos firmados', 'Recibirá una copia.')
-      if (state === 'paid') done('Pago recibido', '$400.00 · Tarjeta de prueba')
+      if (state === 'signed') done(...STAGE.signed)
+      if (state === 'paid') done(...STAGE.last.done)
       if (state && !(shown.desk && state === 'talking')) phone(state, shown.seconds)
       if (shown.desk) await leaveDesk(shown.desk)
       document.body.classList.toggle('with-phone', Boolean(state))

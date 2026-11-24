@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { startFirm } from '../examples/firm.ts'
+import { PRACTICES } from '../examples/practice.ts'
 import { createMemoryStore, hashPhone } from '../src/index.ts'
 import { browse, chrome, until, without } from './chrome.ts'
 
 // The demo, scene by scene, in a real browser: what the stage says, and what the reviewer screen then shows.
-test('every scene of the demo runs, says what came of it within a second, and can be seen', { skip: without, timeout: 180_000 }, async (t) => {
+for (const practice of ['family', 'injury'] as const) test(`every scene of the ${practice} demo runs, says what came of it within a second, and can be seen`, { skip: without, timeout: 180_000 }, async (t) => {
   assert.ok(chrome, 'CI needs a browser')
   let restarts = 0
-  const firm = await startFirm(createMemoryStore(), { quick: true, restart: () => void (restarts += 1) })
+  const firm = await startFirm(createMemoryStore(), { quick: true, practice, restart: () => void (restarts += 1) })
   t.after(() => firm.close())
   const { run, press, close } = await browse(`${firm.graph}/stage`)
   t.after(close)
@@ -36,6 +37,9 @@ test('every scene of the demo runs, says what came of it within a second, and ca
     return text.includes('\nAttribution') ? text.slice(text.indexOf('\nAttribution')) : text
   }
 
+  const kind = PRACTICES[practice]
+  const last = kind.links.last
+  const first = kind.value.toLocaleString('en-US')
   const caller = `caller:${hashPhone('+15550100042')}`
   // What each scene says, and what the view it points to says then and did not before.
   const step = (name: string, value: string) => (text: string) => (text.includes(`${name} · ${value}`) ? name : '')
@@ -50,14 +54,14 @@ test('every scene of the demo runs, says what came of it within a second, and ca
     [/Link for form: not opened/, () => 'nothing yet'],
     [/whose browser this is\. Ad credit: 92%, to Busqueda: North/, (text) => (/link 92%/.test(text) ? 'by link' : '')],
     [/Step recorded: intake/, column('intake')],
-    [/Step recorded: signed/, column('signed')],
-    [/Step recorded: scheduled, director ortega/, column('scheduled')],
+    [new RegExp(`Step recorded: ${kind.papers}`), column(kind.papers)],
+    [new RegExp(`Step recorded: scheduled, ${kind.lead} ortega`), column('scheduled')],
     [/Outbound call answered/, (text) => (text.includes('Duration 1,290 s') ? 'called' : '')],
-    [/Text recorded\. Link for payment: not opened/, (text) => (/Link sent · payment\s*Not opened/.test(text) ? 'not opened' : '')],
-    [/Link for payment: opened after 3 minutes\. Not paid yet/, (text) => (/Link sent · payment\s*Opened after 3 min/.test(text) ? 'opened' : '')],
-    [/Payment recorded: 400 USD\. Advertised: north\. Served: river\. Attributed to Busqueda: North at 92%/, (text) => step('client', '400 USD')(text) && `${/office served: river/.test(text)} ${/director: ortega/.test(text)}`],
-    [/Sent to the sample ad platform: 400 USD, for the first ad click/, (text) => (/client · 400 USD[^]{0,120}Sent to google/.test(text) ? 'sent' : '')],
-    [/Initial value 400 USD, current value 1250 USD.*ad platform: 1250 USD/, (text) => (text.includes('from 400 USD to 1,250 USD') ? 'restated' : '')],
+    [new RegExp(`Text recorded\\. Link for ${last}: not opened`), (text) => (new RegExp(`Link sent · ${last}\\s*Not opened`).test(text) ? 'not opened' : '')],
+    [new RegExp(`Link for ${last}: opened after 3 minutes\\. ${kind.told.lastOpen}`), (text) => (new RegExp(`Link sent · ${last}\\s*Opened after 3 min`).test(text) ? 'opened' : '')],
+    [new RegExp(`${kind.told.won}: ${kind.value} USD\\. Advertised: north\\. Served: river\\. Attributed to Busqueda: North at 92%`), (text) => step(kind.won, `${first} USD`)(text) && `${/office served: river/.test(text)} ${text.includes(`${kind.lead}: ortega`)}`],
+    [new RegExp(`Sent to the sample ad platform: ${kind.value} USD, for the first ad click`), (text) => (new RegExp(`${kind.won} · ${first} USD[^]{0,120}Sent to google`).test(text) ? 'sent' : '')],
+    [new RegExp(`Initial value ${kind.value} USD, current value ${kind.later} USD.*ad platform: ${kind.later} USD`), (text) => (text.includes(`from ${first} USD to ${kind.later.toLocaleString('en-US')} USD`) ? 'restated' : '')],
     [/Before: joined.*Same cluster: no/, (text) => (text.includes('contact:tomas-vega') && /separated/i.test(text) ? 'separated' : '')],
     [/Attributed to Map listing, River/, (text) => row(text, 'Map listing, River')],
     [/Step recorded: inquiry\. Credited to Search: River at 9\d%, by the browser/, (text) => (text.includes('contact:rosa-marin') ? 'in inquiry' : '')],

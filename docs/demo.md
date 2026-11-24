@@ -15,6 +15,8 @@ npm run firm
 | Firm site, in English and Spanish | `http://localhost:8791/?gclid=you&utm_id=30111` and `/es` |
 | Two months of seeded history | Filled in a few seconds in memory, about a minute in PostgreSQL. |
 
+`npm run firm -- injury` shows an injury firm in place of a family firm. See [Injury firm](#injury-firm).
+
 Docker downloads the database image once. After that the demo runs offline without keys, and includes its own ad platform and alert receiver. Every name, number, amount and address is fictional.
 
 The site is live. Open it with `?gclid=you&utm_id=30333` and its number becomes one from the pool, held for you while the page is open. The form and the text link work too: send the form and the contact it makes is on the Board. What was written and the consent to texts are not recorded here: the firm's own system keeps both.
@@ -71,8 +73,32 @@ Costs per client depend on the day the demo runs, so do not read them out. Texts
 | 20 | A parent and child on one phone: related without joining | Matches |
 | 21 | A night without calls: a stale feed and a delivered alert | Health |
 
+## Injury firm
+
+`npm run firm -- injury` tells the same story for a firm paid from a recovery. A client signs and pays nothing then, so the conversion is the signed case, at the value the firm expects of it. Scene numbers, timing and views are the same.
+
+| Scene | Family firm | Injury firm |
+| --- | --- | --- |
+| 5 | The matter is a divorce | The matter is a car accident |
+| 9 | Documents signed, step `signed` | Medical records authorized, step `records` |
+| 10, 11 | A director is scheduled, and calls | An attorney is scheduled, and calls |
+| 12, 13 | A link to enroll and pay | A link to the representation agreement |
+| 14 | Paid, step `client`, 400 USD | Signed, step `signed`, 2,500 USD expected |
+| 16 | Restated from 400 to 1,250 | Restated from 2,500 to 6,000 |
+| 17 | The other side of the matter | The driver, a relative the claim is against |
+
+These lines of the script differ:
+
+| Time | What to say |
+| --- | --- |
+| 0:39 | The form and the records authorization land on the same person, with no second contact. |
+| 0:49 | Staff schedule an attorney, who calls. Same timeline, still tied to the ad. |
+| 1:00 | They sign the agreement, the signed case is recorded, and it goes to a sample ad platform for that first click. |
+| 1:14 | So this is what each campaign cost per signed case. |
+
 ## Limitations
 
+- **Scores.** A percentage on screen is a score from the sample policy's weights, not a measured accuracy. Do not present one as accuracy.
 - **Scale.** The demo has a few hundred people. See [Performance](performance.md) for measured speeds.
 - **Clock.** Scene 21 moves the clock forward fourteen hours. Run it last.
 - **Repeats.** Each scene runs once. Press R to start over.
