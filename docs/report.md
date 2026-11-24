@@ -180,7 +180,7 @@ Each column counts its people and three things about today, in the time zone `RE
 STAGES='{"inquiry":{"value":5,"wait":48},"client":{"value":200}}'
 ```
 
-Only people who reached a step or called in the period are read, 90 days unless you say. Rows show who has been there longest, at most 50 to a column; the counts are of everybody. The Board is read from what is recorded. It assigns nothing to anyone.
+Only people who reached a step or had a call, to you or from you, in the period are read, 90 days unless you say. Rows show who has been there longest, at most 50 to a column; the counts are of everybody. The Board is read from what is recorded. It assigns nothing to anyone.
 
 ## What followed a call
 

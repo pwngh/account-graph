@@ -135,7 +135,7 @@ export interface Graph {
   callSummary(options: { from: string; to: string; timeZone?: string; at?: number; results?: 'expected'; resultWait?: number }): Promise<CallSummary>
   /**
    * People by the furthest step they ever reached, with missed calls nobody returned first: whoever reached a step or
-   * called in the last `days` days, today included.
+   * had a call in the last `days` days, today included.
    */
   board(options: BoardOptions): Promise<Board>
   /** What followed calls in a range of days: who reached a step within some days of one. See `Followed` for what it does not say. */
@@ -757,9 +757,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       const from = dayStart(new Date(Date.parse(day) - (days - 1) * DAY).toISOString().slice(0, 10), timeZone)
       return store.read(async (tx) => {
         const outcomes = await tx.outcomesBetween(from, at + 1)
-        const open = await tx.openCalls(from, at + 1, 1e9)
-        const closing = (await tx.callsBetween(today, at + 1)).filter((call) => call.result?.answered)
-        const found = unique([...outcomes, ...open, ...closing].map((each) => each.subject))
+        const found = unique([...outcomes, ...(await tx.callsBetween(from, at + 1))].map((each) => each.subject))
         const labels = await tx.labelsOf(found)
         const everyone = await tx.membersOf(unique([...labels.values()].map((label) => label.component)))
         const person = (subject: Subject) => everyone.get(subject)?.cluster ?? subject

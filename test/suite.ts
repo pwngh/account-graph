@@ -967,6 +967,11 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await step('e:1', 'inquiry', hours(1))
       assert.equal((await graph.board({ steps, at: T0, days: 2 })).columns[0]!.rows.some((row) => row.subject === `caller:${hashPhone('+15550100065')}`), true)
       await graph.forget('e:1')
+      // A short call that counts for nothing is still having called.
+      await graph.observe([{ subject: 'f:1', identifiers: [`phone:${hashPhone('+15550100066')}`, 'email:f'], at: hours(2000) }])
+      await step('f:1', 'client', hours(2000))
+      await recordCall(graph, { id: 'S1', from: '+15550100066', to: '+15550100001', at: hours(30), duration: 9, answered: true }, { results: 'expected' })
+      assert.ok((await graph.board({ steps, at: T0, days: 3 })).columns[2]!.rows.some((row) => row.subject === 'f:1'))
       for (const n of [3, 4, 5]) await graph.forget(`caller:${hashPhone(`+1555010006${n}`)}`)
       // A shorter period leaves out who did nothing in it.
       assert.deepEqual((await graph.board({ steps, at: T0, days: 1 })).columns.map((column) => column.rows.map((row) => row.subject)), [[], ['a:new'], ['a:again', 'a:up']])
