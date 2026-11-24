@@ -1,0 +1,13 @@
+http://127.0.0.1:8080/search?q=a
+http://127.0.0.1:8080/subject?subject=account:1
+http://127.0.0.1:8080/cluster?subject=account:1
+http://127.0.0.1:8080/links?subject=account:1
+http://127.0.0.1:8080/history?subject=account:1
+http://127.0.0.1:8080/flows?subject=account:1
+http://127.0.0.1:8080/collusion?subject=account:1
+http://127.0.0.1:8080/rings?subject=account:1
+http://127.0.0.1:8080/consent?subject=account:1
+http://127.0.0.1:8080/attribute?subject=account:1&at=1
+http://127.0.0.1:8080/clusters?offset=0
+http://127.0.0.1:8080/decisions?limit=5&before=9&author=people
+http://127.0.0.1:8080/report?from=2026-01-01&to=2026-01-02&tz=UTC
