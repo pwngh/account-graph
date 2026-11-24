@@ -31,6 +31,8 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
+    env:
+      LOG: --full-history --diff-merges=first-parent HEAD
     steps:
       - uses: actions/checkout@v4
         with:
@@ -40,16 +42,21 @@ jobs:
           curl -sSfL -o /tmp/gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
           echo '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  /tmp/gitleaks.tar.gz' | sha256sum -c -
           tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
-      # A token made up here and now, so that a scan which can find nothing does not pass. 7 is what it was told to exit with.
+      # A token made up here and now, put in by a merge, so that a scan which can find nothing does not pass.
+      # The check asks for 7, so that no other failure is taken for a finding. A merge is read against its first parent: what was put in while merging is in neither branch.
       - name: find a planted token
         run: |
-          mkdir /tmp/planted
-          printf 'ghp_%s\n' "$(openssl rand -hex 18)" > /tmp/planted/token.txt
+          mkdir /tmp/planted && cd /tmp/planted && git init -q -b main
+          git config user.name ci && git config user.email ci@example.org
+          git commit -q --allow-empty -m one && git switch -q -c side && git commit -q --allow-empty -m two
+          git switch -q main && git merge -q --no-ff --no-commit side
+          printf 'ghp_%s\n' "$(openssl rand -hex 18)" > token.txt
+          git add token.txt && git commit -q -m merged
           code=0
-          /tmp/gitleaks dir --redact --no-banner --exit-code 7 /tmp/planted || code=$?
+          /tmp/gitleaks git --redact --no-banner --exit-code 7 --log-opts="$LOG" . || code=$?
           test $code = 7
       - name: scan
-        run: /tmp/gitleaks git --redact --no-banner --log-opts='--full-history HEAD' .
+        run: /tmp/gitleaks git --redact --no-banner --log-opts="$LOG" .
 
   # Runs beside the tests, against a server with nothing real in it. Fails on any finding of low severity or above.
   nuclei:
