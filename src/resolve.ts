@@ -1,4 +1,4 @@
-import { combine, evidence, sortReasons, usable } from './policy.ts'
+import { evidence, usable, weigh } from './policy.ts'
 import type { Policy } from './policy.ts'
 import type { Edge, Identifier, IdentifierState, Labels, Pair, Reason, Subject } from './types.ts'
 
@@ -43,9 +43,8 @@ export function scorePairs(
 
   const pairs: Pair[] = []
   for (const [a, row] of found) {
-    for (const [b, unsorted] of row) {
-      const reasons = sortReasons(unsorted)
-      const score = combine(reasons)
+    for (const [b, reasons] of row) {
+      const score = weigh(policy, reasons)
       if (score < policy.related) continue
       pairs.push({ a, b, score, level: score >= policy.same ? 'same' : 'related', reasons })
     }

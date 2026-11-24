@@ -10,6 +10,8 @@ evidence = weight × (2 / subjects sharing it) ^ dilution × 0.5 ^ (gap / halfLi
 
 `gap` is the time between the two subjects' sightings of it, and zero when they overlap. An identifier shared by more subjects than its `cap` gives no evidence. Evidence from several identifiers combines as `1 − Π(1 − evidence)`. At 0.9 the pair joins one cluster; at 0.5 it is reported as related.
 
+Evidence that comes together is not independent. Kinds the policy puts in one `group` count once: of the reasons in a group, the strongest adds to the score and the others are shown and do not. The default policy has no groups. [Presets](presets.md) has one that does.
+
 Scores depend only on stored data, never on the current time or on arrival order.
 
 | Kind | Weight | Cap | Half-life | What it is |
@@ -109,6 +111,7 @@ await graph.rebuild({ by: 'ops', reason: 'hardware ids are shared in internet ca
 
 | What you see | What to change |
 | --- | --- |
+| Members of a household joined, by a phone and an address together | Put the kinds a household shares in one `group`. |
 | Strangers joined, and the reason is always one kind | Lower that kind's `weight` below `same` (0.9), so it can relate but not join. |
 | One value joins many subjects: a shared mailbox, a kiosk | `ignore` that value. If it keeps happening for the kind, lower the kind's `cap`. |
 | Known duplicates are only "related" | Raise the `weight` of the kind they share, or record more identifiers at sign-in. |

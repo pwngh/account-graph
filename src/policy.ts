@@ -10,6 +10,12 @@ export interface Rule {
   cap: number
   /** Evidence halves for each half-life between the two subjects' sightings. */
   halfLife: number
+  /**
+   * Kinds that come together count once. Among the reasons of one group a
+   * pair has, only the strongest adds to its score: a household shares its
+   * phone, its address and its internet connection, and that is one fact.
+   */
+  group?: string
 }
 
 export interface Policy {
@@ -92,6 +98,7 @@ export const defaultPolicy: Policy = {
 const NOTES = new Set(['opened', 'place', 'dialed'])
 const LEVELS = ['same', 'related', 'bridge'] as const
 const FIELDS = ['weight', 'dilution', 'cap', 'halfLife'] as const
+const OPTIONAL = ['group'] as const
 
 /** What is wrong with a policy read from a setting, one line each. The setting only needs what differs from the default. */
 export function policyProblems(given: unknown): string[] {
@@ -111,12 +118,13 @@ export function policyProblems(given: unknown): string[] {
         wrong.push(`kind "${kind}" must be an object, such as {"weight":0.85}`)
         continue
       }
-      for (const name of Object.keys(rule)) if (!(FIELDS as readonly string[]).includes(name)) wrong.push(`kind "${kind}" has "${name}", which is not part of a rule`)
+      for (const name of Object.keys(rule)) if (![...FIELDS, ...OPTIONAL].includes(name as never)) wrong.push(`kind "${kind}" has "${name}", which is not part of a rule`)
       if (!base) for (const name of FIELDS) if (rule[name] === undefined) wrong.push(`kind "${kind}" is new, so it needs its ${name}`)
       if (rule.weight !== undefined && !number(rule.weight, 0, 1)) wrong.push(`kind "${kind}" needs a weight from 0 to 1`)
       if (rule.dilution !== undefined && !number(rule.dilution, 0, Number.MAX_VALUE)) wrong.push(`kind "${kind}" needs a dilution of zero or more`)
       if (rule.cap !== undefined && !(Number.isSafeInteger(rule.cap) && rule.cap >= 0)) wrong.push(`kind "${kind}" needs a cap of zero or more, in whole subjects`)
       if (rule.halfLife !== undefined && rule.halfLife !== 'none' && !(number(rule.halfLife, 0, Number.MAX_VALUE) && rule.halfLife > 0)) wrong.push(`kind "${kind}" needs a halfLife in milliseconds, or "none"`)
+      if (rule.group !== undefined && !(typeof rule.group === 'string' && rule.group)) wrong.push(`kind "${kind}" needs its group as text`)
       if (NOTES.has(kind) && rule.weight) wrong.push(`kind "${kind}" is a note and links nothing, so its weight must stay 0`)
     }
   }
@@ -147,7 +155,7 @@ export function plainPolicy(policy: Policy) {
     bridge: policy.bridge,
     review: policy.review,
     kinds: Object.fromEntries(
-      kinds.map(([kind, { weight, dilution, cap, halfLife }]) => [kind, { weight, dilution, cap, halfLife: Number.isFinite(halfLife) ? halfLife : ('none' as const) }]),
+      kinds.map(([kind, { weight, dilution, cap, halfLife, group }]) => [kind, { weight, dilution, cap, halfLife: Number.isFinite(halfLife) ? halfLife : ('none' as const), ...(group !== undefined && { group }) }]),
     ),
   }
 }
@@ -183,14 +191,27 @@ export function evidence(policy: Policy, a: Edge, b: Edge, fanout: number): Reas
   return { identifier: a.identifier, evidence: thinned * 0.5 ** (gap / rule.halfLife), fanout, gap }
 }
 
-/** Strongest reason first. The order is total, so the same reasons always combine to the same score. */
-export function sortReasons(reasons: Reason[]): Reason[] {
-  return reasons.sort((x, y) => y.evidence - x.evidence || (x.identifier < y.identifier ? -1 : 1))
-}
-
-/** Noisy-OR: the pair is one person unless every reason is a coincidence. */
-export function combine(sorted: readonly Reason[]): number {
+/**
+ * Sorts the reasons of a pair, strongest first, and scores it by noisy-OR:
+ * the pair is one person unless every reason that counts is a coincidence.
+ * Of the reasons in one group only the strongest counts, and the rest are
+ * marked. The order is total, so the same reasons always give the same score.
+ */
+export function weigh(policy: Policy, reasons: Reason[]): number {
+  reasons.sort((x, y) => y.evidence - x.evidence || (x.identifier < y.identifier ? -1 : 1))
+  const seen = new Set<string>()
   let coincidence = 1
-  for (const reason of sorted) coincidence *= 1 - reason.evidence
+  for (const reason of reasons) {
+    const { group } = ruleFor(policy, reason.identifier)
+    if (group !== undefined) {
+      reason.group = group
+      if (seen.has(group)) {
+        reason.counted = false
+        continue
+      }
+      seen.add(group)
+    }
+    coincidence *= 1 - reason.evidence
+  }
   return 1 - coincidence
 }

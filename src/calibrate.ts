@@ -60,7 +60,8 @@ const clamp = (p: number) => Math.min(1 - 1e-9, Math.max(1e-9, p))
  * to a stronger one is not credited with the stronger one's accuracy.
  *
  * Score the pairs with `policy` first, with `related: 0` so weak pairs are
- * kept. `prior` pulls each weight toward its current value; raise it when
+ * kept. Where the policy groups kinds, a pair teaches only the kind that
+ * counts for it. `prior` pulls each weight toward its current value; raise it when
  * there are few pairs.
  */
 export function fit(labeled: readonly Labeled[], policy: Policy, prior = 1): Fitted {
@@ -69,17 +70,25 @@ export function fit(labeled: readonly Labeled[], policy: Policy, prior = 1): Fit
     same,
     parts: reasons
       .filter((reason) => policy.kinds[kindOf(reason.identifier)] && policy.kinds[kindOf(reason.identifier)]!.weight > 0)
-      .map((reason) => ({ kind: kindOf(reason.identifier), multiplier: Math.min(1, reason.evidence / policy.kinds[kindOf(reason.identifier)]!.weight) })),
+      .map((reason) => ({ kind: kindOf(reason.identifier), group: policy.kinds[kindOf(reason.identifier)]!.group, multiplier: Math.min(1, reason.evidence / policy.kinds[kindOf(reason.identifier)]!.weight) })),
   }))
   const kinds = [...new Set(pairs.flatMap((pair) => pair.parts.map((part) => part.kind)))].sort()
   const logit = (w: number) => Math.log(clamp(w) / (1 - clamp(w)))
   const start = Object.fromEntries(kinds.map((kind) => [kind, logit(policy.kinds[kind]!.weight)]))
-  const theta = { ...start }
   const weight = (kind: string, from: Record<string, number>) => 1 / (1 + Math.exp(-from[kind]!))
 
-  const predict = (parts: { kind: string; multiplier: number }[], from: Record<string, number>) => {
+  type Part = { kind: string; group: string | undefined; multiplier: number }
+  /** The parts that count under the given weights: of each group, only the strongest. */
+  const counting = (parts: readonly Part[], from: Record<string, number>): readonly Part[] => {
+    if (parts.every((part) => part.group === undefined)) return parts
+    const best = new Map<string, Part>()
+    const strength = (part: Part) => weight(part.kind, from) * part.multiplier
+    for (const part of parts) if (part.group !== undefined && !(best.has(part.group) && strength(best.get(part.group)!) >= strength(part))) best.set(part.group, part)
+    return parts.filter((part) => part.group === undefined || best.get(part.group) === part)
+  }
+  const predict = (parts: readonly Part[], from: Record<string, number>) => {
     let coincidence = 1
-    for (const part of parts) coincidence *= 1 - weight(part.kind, from) * part.multiplier
+    for (const part of counting(parts, from)) coincidence *= 1 - weight(part.kind, from) * part.multiplier
     return 1 - coincidence
   }
   const loss = (from: Record<string, number>) => {
@@ -91,27 +100,39 @@ export function fit(labeled: readonly Labeled[], policy: Policy, prior = 1): Fit
     return pairs.length > 0 ? total / pairs.length : 0
   }
 
-  // Adam: plain descent crawls when a weight starts near 0 or 1, where the logistic is flat.
   const count = Math.max(1, pairs.length)
-  const mean = Object.fromEntries(kinds.map((kind) => [kind, 0]))
-  const spread = Object.fromEntries(kinds.map((kind) => [kind, 0]))
-  for (let step = 1; step <= 3000; step++) {
-    const gradient = Object.fromEntries(kinds.map((kind) => [kind, (2 * prior * (theta[kind]! - start[kind]!)) / count]))
-    for (const pair of pairs) {
-      const p = clamp(predict(pair.parts, theta))
-      const pull = (pair.same ? -1 / p : 1 / (1 - p)) / count
-      for (const part of pair.parts) {
-        const w = weight(part.kind, theta)
-        // d(score)/d(weight) for this reason, then through the logistic.
-        gradient[part.kind]! += pull * ((part.multiplier * (1 - p)) / clamp(1 - w * part.multiplier)) * w * (1 - w)
+  /** What is minimized: the loss, and how far the weights have gone from where they began. */
+  const cost = (from: Record<string, number>) => loss(from) + (prior / count) * kinds.reduce((sum, kind) => sum + (from[kind]! - start[kind]!) ** 2, 0)
+
+  // Adam: plain descent crawls when a weight starts near 0 or 1, where the logistic is flat.
+  const descend = (from: Record<string, number>) => {
+    const theta = { ...from }
+    const mean = Object.fromEntries(kinds.map((kind) => [kind, 0]))
+    const spread = Object.fromEntries(kinds.map((kind) => [kind, 0]))
+    for (let step = 1; step <= 3000; step++) {
+      const gradient = Object.fromEntries(kinds.map((kind) => [kind, (2 * prior * (theta[kind]! - start[kind]!)) / count]))
+      for (const pair of pairs) {
+        const p = clamp(predict(pair.parts, theta))
+        const pull = (pair.same ? -1 / p : 1 / (1 - p)) / count
+        for (const part of counting(pair.parts, theta)) {
+          const w = weight(part.kind, theta)
+          // d(score)/d(weight) for this reason, then through the logistic.
+          gradient[part.kind]! += pull * ((part.multiplier * (1 - p)) / clamp(1 - w * part.multiplier)) * w * (1 - w)
+        }
+      }
+      for (const kind of kinds) {
+        mean[kind] = 0.9 * mean[kind]! + 0.1 * gradient[kind]!
+        spread[kind] = 0.999 * spread[kind]! + 0.001 * gradient[kind]! ** 2
+        theta[kind]! -= (0.02 * (mean[kind]! / (1 - 0.9 ** step))) / (Math.sqrt(spread[kind]! / (1 - 0.999 ** step)) + 1e-9)
       }
     }
-    for (const kind of kinds) {
-      mean[kind] = 0.9 * mean[kind]! + 0.1 * gradient[kind]!
-      spread[kind] = 0.999 * spread[kind]! + 0.001 * gradient[kind]! ** 2
-      theta[kind]! -= (0.02 * (mean[kind]! / (1 - 0.9 ** step))) / (Math.sqrt(spread[kind]! / (1 - 0.999 ** step)) + 1e-9)
-    }
+    return theta
   }
+  // A kind that another of its group always outweighs is never moved by the pairs. So each grouped kind also gets a start
+  // in which it is the strong one, however much sharing thins it, and the best of the ends is kept.
+  const groupOf = (kind: string) => policy.kinds[kind]!.group
+  const starts = [start, ...kinds.filter((kind) => kinds.some((other) => other !== kind && groupOf(kind) !== undefined && groupOf(other) === groupOf(kind))).map((kind) => ({ ...start, ...Object.fromEntries(kinds.filter((other) => groupOf(other) === groupOf(kind)).map((other) => [other, logit(other === kind ? 0.9 : 0.01)])) }))]
+  const theta = starts.map(descend).reduce((best, next) => (cost(next) < cost(best) ? next : best))
 
   const fitted: Policy = { ...policy, kinds: { ...policy.kinds } }
   const report: Fitted['kinds'] = {}

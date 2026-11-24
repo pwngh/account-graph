@@ -63,6 +63,8 @@
 - `GET /disputes` and the Health view list pairs that systems have contradicted each other about three times or more (`disputes`, `verdicts`).
 - `reviewed({ exclude: 'system:' })` leaves out what systems decided.
 - The reviewer screen labels system decisions, filters and pages the record, and draws every kept-apart pair among the subjects shown.
+- `Rule.group` makes kinds that come together count once: of the reasons in a group, only the strongest adds to the score (`Reason.group`, `Reason.counted`). The default policy has none.
+- `examples/household.json` is a policy for contacts entered by staff; `docs/presets.md` explains it.
 
 ### Changed
 
