@@ -11,7 +11,7 @@
   const clock = el('span', { class: 'clock' })
   const result = el('button', { type: 'button', class: 'result', on: { click: () => at === 0 && !playing && next() } }, el('small', {}, 'Anuncio · tessaly.example'), el('b', {}, 'Su familia es lo primero. Hable con nosotros hoy.'), el('span', {}, 'Divorcio, custodia y manutención. Atención en español.'))
   const site = el('iframe', { title: 'The sample firm on the caller’s phone', tabindex: '-1' })
-  const device = el('div', { class: 'device', 'data-state': 'ad' }, el('div', { class: 'glass' },
+  const device = el('div', { class: 'device', 'data-state': 'ad' }, el('div', { class: 'screen' },
     el('div', { class: 'bar' }, time, el('i', {})),
     el('div', { class: 'page ad' }, el('div', { class: 'ask' }, 'abogado de divorcio'), result, el('div', { class: 'blank' }, ...Array.from({ length: 9 }, () => el('i', {})))),
     el('div', { class: 'page site' }, site),
@@ -19,19 +19,54 @@
   const where = el('span', { class: 'where' })
   const title = el('b', {})
   const told = el('span', { class: 'told', role: 'status' })
-  const button = el('button', { type: 'button', class: 'primary', on: { click: () => !playing && next() } }, 'Next ', el('kbd', {}, 'Space'))
-  const bar = el('div', { id: 'stage', role: 'group', 'aria-label': 'Demo scenes' }, where, title, told, button, el('button', { type: 'button', on: { click: () => play() } }, 'Play ', el('kbd', {}, 'P')), el('button', { type: 'button', on: { click: () => hide() } }, 'Hide ', el('kbd', {}, 'H')))
-  document.body.append(el('aside', { id: 'stage-phone', 'aria-label': 'The caller’s phone' }, device), bar)
+  /** A button of the bar. Pressed with the mouse it does not keep the focus, so Space goes on running scenes. */
+  const press = (name, key, go, kind = '') => el('button', { type: 'button', class: kind, on: { click: (event) => { if (event.detail > 0) event.currentTarget.blur(); go() } } }, name, ' ', el('kbd', {}, key))
+  const button = press('Next', 'Space', () => !playing && next(), 'primary')
+  const again = press('Restart', 'R', () => restart())
+  const bar = el('div', { id: 'stage', role: 'group', 'aria-label': 'Demo scenes' }, where, title, told, el('span', { class: 'keys' }, button, press('Play', 'P', () => play()), again, press('Hide', 'H', () => hide())))
+  document.body.append(el('aside', { id: 'stage-phone', 'aria-label': 'The caller’s phone' }, device, el('small', { 'aria-hidden': 'true' }, 'The caller’s phone')), bar)
   site.src = STAGE.phone
 
   let scenes = []
   let at = 0
   let running = false
+  let boot
   const hide = () => bar.classList.toggle('away')
+  /** Starts the demo over, and comes back once it has: the story is at its beginning. */
+  async function restart() {
+    if (running || starting) return
+    stop()
+    starting = true
+    told.classList.remove('bad')
+    told.textContent = 'Starting over…'
+    bar.classList.remove('away')
+    draw()
+    try {
+      const answer = await fetch('/stage/restart', { method: 'POST', headers: { 'x-stage': '1' } })
+      if (!answer.ok) throw new Error((await answer.json()).error)
+      for (;;) {
+        await wait(400)
+        const now = await fetch('/stage/scenes').then((answer) => answer.json()).catch(() => undefined)
+        if (now && now.boot !== boot) break
+      }
+      history.replaceState(null, '', location.pathname)
+      location.reload()
+    } catch (error) {
+      starting = false
+      told.textContent = `Not started over: ${error.message}`
+      told.classList.add('bad')
+      draw()
+    }
+  }
+  let starting = false
   const draw = () => {
-    where.textContent = at ? `${at} of ${scenes.length}` : `${scenes.length} scenes`
-    title.textContent = at ? scenes[at - 1].title : 'Ready'
-    button.disabled = running || at >= scenes.length
+    where.textContent = at ? `${at} of ${scenes.length}` : ''
+    title.textContent = at ? scenes[at - 1].title : `${scenes.length} scenes`
+    const over = at > 0 && at >= scenes.length
+    button.disabled = running || starting || over
+    button.hidden = over
+    again.classList.toggle('primary', over)
+    again.disabled = running || starting
     Object.assign(bar.dataset, { at, running })
     time.textContent = new Date().toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' })
   }
@@ -44,18 +79,30 @@
   }
   const light = el('div', { id: 'stage-light', 'aria-hidden': 'true' })
   document.body.append(light)
-  let fading
-  /** Lights a row for a moment, and dims the rest. */
-  async function spot(words) {
-    clearTimeout(fading)
+  let lit
+  /** Lights a row for a moment, and dims the rest. It stays on the row while the view still moves or is read again. */
+  function spot(words) {
+    clearInterval(lit)
     light.classList.remove('on')
-    const row = words && found(words)
-    if (!row) return
-    row.scrollIntoView({ block: 'center', behavior: 'instant' })
-    const { left, top, width, height } = row.getBoundingClientRect()
-    Object.assign(light.style, { left: `${left + scrollX - 8}px`, top: `${top + scrollY - 4}px`, width: `${width + 16}px`, height: `${height + 8}px` })
-    light.classList.add('on')
-    fading = setTimeout(() => light.classList.remove('on'), 3200)
+    if (!words) return
+    const began = performance.now()
+    const place = () => {
+      const row = performance.now() - began < 3200 ? found(words) : undefined
+      light.classList.toggle('on', Boolean(row))
+      if (!row) return performance.now() - began < 3200 ? undefined : clearInterval(lit)
+      let rect = row.getBoundingClientRect()
+      const floor = innerHeight - (bar.classList.contains('away') ? 16 : innerHeight - bar.getBoundingClientRect().top + 12)
+      if (rect.top < 12 || rect.bottom > floor) {
+        row.scrollIntoView({ block: 'center', behavior: 'instant' })
+        rect = row.getBoundingClientRect()
+      }
+      // As much of it as can be seen: a wide table is panned within its own frame.
+      const frame = (row.closest('.wide, .scroll') ?? $('view')).getBoundingClientRect()
+      const [left, right] = [Math.max(rect.left, frame.left), Math.min(rect.right, frame.right)]
+      Object.assign(light.style, { left: `${left + scrollX - 8}px`, top: `${rect.top + scrollY - 4}px`, width: `${right - left + 16}px`, height: `${rect.height + 8}px` })
+    }
+    place()
+    lit = setInterval(place, 120)
   }
 
   let ticking
@@ -92,7 +139,7 @@
   ]
   const turn = async (address, words) => {
     await open(address)
-    await spot(words)
+    spot(words)
   }
   let playing
   function stop() {
@@ -105,8 +152,8 @@
   /** Plays the whole show, once, from the start. A second press stops it. */
   async function play() {
     if (playing) return stop()
-    if (at > 0 || running) {
-      told.textContent = 'Restart the demo to play it from the start.'
+    if (at > 0 || running || starting) {
+      told.textContent = 'Press R to restart, then P to play.'
       return
     }
     const { signal } = (playing = new AbortController())
@@ -145,7 +192,7 @@
 
   /** Runs the next scene and shows what it changed, or only runs it. */
   async function next(quiet = false) {
-    if (running || at >= scenes.length) return
+    if (running || starting || at >= scenes.length) return
     running = true
     told.classList.remove('bad')
     draw()
@@ -169,7 +216,7 @@
       document.body.classList.toggle('with-phone', Boolean(state))
       if (!quiet) {
         await open(scene.stage ?? `#${scene.see[1].split('#')[1]}`, began)
-        await spot(scene.spot)
+        spot(scene.spot)
       }
     } catch (error) {
       told.textContent = `Scene failed: ${error.message}`
@@ -186,13 +233,14 @@
       if (!playing) next()
     } else if (event.key === 'h') hide()
     else if (event.key === 'p') play()
+    else if (event.key === 'r') restart()
     else if (event.key === 'Escape') stop()
   })
   // A press on the call button of the page in the phone is the second scene.
   addEventListener('message', ({ origin, data }) => { if (origin === new URL(STAGE.phone).origin && data === 'call' && at === 1 && !playing) next() })
 
   fetch('/stage/scenes').then((answer) => answer.json()).then((answer) => {
-    ;({ scenes, next: at } = answer)
+    ;({ scenes, next: at, boot } = answer)
     if (at < PHONE.length) {
       document.body.classList.add('with-phone')
       phone(PHONE[at])

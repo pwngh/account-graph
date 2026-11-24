@@ -7,7 +7,8 @@ import { browse, chrome, until, without } from './chrome.ts'
 // The demo, scene by scene, in a real browser: what the stage says, and what the reviewer screen then shows.
 test('every scene of the demo runs, says what came of it within a second, and can be seen', { skip: without, timeout: 180_000 }, async (t) => {
   assert.ok(chrome, 'CI needs a browser')
-  const firm = await startFirm(createMemoryStore(), { quick: true })
+  let restarts = 0
+  const firm = await startFirm(createMemoryStore(), { quick: true, restart: () => void (restarts += 1) })
   t.after(() => firm.close())
   const { run, press, close } = await browse(`${firm.graph}/stage`)
   t.after(close)
@@ -67,10 +68,15 @@ test('every scene of the demo runs, says what came of it within a second, and ca
     assert.ok(after && after !== before, `scene ${i + 1} shows on its view: ${JSON.stringify([before, after])}`)
   }
   // There is nothing after the last.
-  assert.equal(await run(`document.querySelector('#stage .primary').disabled`), true)
+  assert.equal(await run(`[...document.querySelectorAll('#stage button')].find((each) => each.textContent.startsWith('Next')).hidden`), true)
   // The show plays from the start only.
   await run(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', bubbles: true }))`)
-  assert.match((await run(`document.querySelector('#stage .told').textContent`)) as string, /Restart the demo/)
+  assert.match((await run(`document.querySelector('#stage .told').textContent`)) as string, /Press R to restart/)
+  // After the last scene the bar offers to start over. The stage waits for the next start, so nothing else is pressed.
+  assert.deepEqual(await run(`[document.querySelector('#stage .primary:not([hidden])').textContent, document.querySelectorAll('#stage .primary:not([hidden])').length]`), ['Restart R', 1])
+  assert.equal((await fetch(`${firm.graph}/stage/restart`, { method: 'POST' })).status, 403)
+  await run(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', bubbles: true }))`)
+  await until('the restart', () => restarts === 1)
   // The site shows a visitor from an ad a number of their own, in their language.
   await screen.run(`location.href = ${JSON.stringify(`${firm.site}/es?gclid=you&utm_id=30333`)}`)
   await until('a pool number', async () => ((await screen.run(`document.querySelector('.call')?.textContent ?? ''`).catch(() => '')) as string).includes('(555) 010-011'))

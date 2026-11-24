@@ -23,13 +23,15 @@ The site is live. Open it with `?gclid=you&utm_id=30333` and its number becomes 
 
 1. Open the stage. The caller's phone is at left, and the reviewer screen at right.
 2. Press Space to run each scene. The phone shows what the caller does, and the screen opens the view that changed.
-3. Press H to hide the bar, or P to play the whole show.
+3. Press P to play the whole show, R to start over, or H to hide the bar.
+
+The phone is shown in a window at least 1,121 pixels wide. A narrower one shows the reviewer screen and the bar.
 
 The story runs from a Monday to a Thursday that have passed. Each scene moves the demo's clock on, and the screens served by the demo go by that clock.
 
 ## Ninety-second script
 
-Press P on the stage. After a count of three the bar hides and the show plays by itself, in time with these lines. Press P or Esc to stop it. It plays once: restart the command to play it again, with `MEMORY=1` for a restart of a few seconds.
+Press P on the stage. After a count of three the bar hides and the show plays by itself, in time with these lines. Press P or Esc to stop it. It plays once: press R to start over, which takes a few seconds with `MEMORY=1` and about a minute with PostgreSQL.
 
 | Time | On screen | What to say |
 | --- | --- | --- |
@@ -62,5 +64,5 @@ Costs per client depend on the day the demo runs, so do not read them out.
 
 - **Scale.** The demo has a few hundred people. See [Performance](performance.md) for measured speeds.
 - **Clock.** Scene 10 moves the clock forward fourteen hours. Run it last.
-- **Repeats.** Each scene runs once. Restart the command to start over.
+- **Repeats.** Each scene runs once. Press R to start over.
 - **Firm systems.** Call answering, assignment and client messages belong to a firm's own systems. The demo only simulates their reports.
