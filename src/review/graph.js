@@ -13,7 +13,7 @@ function redrawn(subject) {
 /** The screen is not read again under a hand that is moving something or about to press twice, nor while the graph fills it. */
 const holding = () => performance.now() < drawn.still || document.fullscreenElement !== null || $('view').querySelector('.graph.held') !== null
 
-const KINDS = { joined: 'Joined', related: 'Tied only', apart: 'Kept apart' }
+const KINDS = { joined: 'Same person', related: 'Related', apart: 'Separated' }
 const PERSON = 'M0-6.2a3 3 0 1 1 0 6a3 3 0 1 1 0-6ZM-5.8 6.2C-5.4 2.6-3 1.4 0 1.4S5.4 2.6 5.8 6.2Z'
 const ICONS = {
   caller: 'M-3.4-6.5h6.8a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1h-6.8a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1ZM-1.2 4.2h2.4',
@@ -401,8 +401,8 @@ function graphOf(profile, more) {
   const dots = svg('g', {})
   const tags = svg('g', {})
   const camera = svg('g', {}, hulls, lines, dots, tags)
-  const paper = svg('svg', { role: 'group', 'aria-label': `Ties of ${me}` }, camera)
-  const card = el('div', { class: 'card', hidden: '', role: 'region', 'aria-label': 'Picked' })
+  const paper = svg('svg', { role: 'group', 'aria-label': `Links of ${me}` }, camera)
+  const card = el('div', { class: 'card', hidden: '', role: 'region', 'aria-label': 'Selection' })
   const legend = el('div', { class: 'keys', role: 'group', 'aria-label': 'Show' })
   const tools = el('div', { class: 'tools' })
   const stage = el('div', { class: 'stage' }, paper, card)
@@ -419,7 +419,7 @@ function graphOf(profile, more) {
   const near = (id) => new Set([id, ...edges.filter((each) => each.a === id || each.b === id).flatMap((each) => [each.a, each.b])])
   const shared = (edge) => `${edge.score === undefined ? '' : percent(edge.score)}${edge.reasons.length > 0 ? ` by ${edge.reasons.map((reason) => reason.identifier.split(':')[0]).join(' and ')}` : ''}`
   const together = (edge) => edge.from.cluster !== undefined && edge.from.cluster === edge.to.cluster
-  const said = (edge) => (edge.kind === 'apart' ? `kept apart by a decision${edge.score === undefined ? '' : `, which stands over a tie of ${shared(edge)}`}` : `${edge.kind === 'joined' ? 'joined' : together(edge) ? 'tied, joined through others' : 'tied, not joined'}, ${shared(edge)}`)
+  const said = (edge) => (edge.kind === 'apart' ? `separated${edge.score === undefined ? '' : `, linked at ${shared(edge)}`}` : `${edge.kind === 'joined' ? 'joined' : together(edge) ? 'joined through other IDs' : 'related'}, ${shared(edge)}`)
   const verdict = (a, b) => [profile, ...drawn.more.values()].flatMap((each) => each.verdicts).find((each) => each.a === a && each.b === b)
 
   /** The part of a line that is drawn: from clear of one disc, and of its name if the line leaves that way, to clear of the other. */
@@ -678,13 +678,13 @@ function graphOf(profile, more) {
       return button
     }))
     if (edges.some((edge) => edge.score !== undefined)) {
-      const least = el('input', { type: 'range', min: 0, max: 100, step: 5, value: drawn.least, 'aria-label': 'Weakest tie drawn, in percent', on: { input: () => {
+      const least = el('input', { type: 'range', min: 0, max: 100, step: 5, value: drawn.least, 'aria-label': 'Minimum score, in percent', on: { input: () => {
         drawn.least = Number(least.value)
-        shown.textContent = drawn.least > 0 ? `${drawn.least}% and over` : 'Any strength'
+        shown.textContent = drawn.least > 0 ? `Score ≥ ${drawn.least}%` : 'All scores'
         hide()
         light()
       } } })
-      const shown = el('span', {}, drawn.least > 0 ? `${drawn.least}% and over` : 'Any strength')
+      const shown = el('span', {}, drawn.least > 0 ? `Score ≥ ${drawn.least}%` : 'All scores')
       legend.append(el('label', { class: 'least' }, least, shown))
     }
     // Places of those no longer drawn are not kept: a long day opens many.
@@ -792,7 +792,7 @@ function graphOf(profile, more) {
   function onward() {
     const way = chain(drawn.chosen).reduce((on, edge) => [...on, edge.a === on.at(-1) ? edge.b : edge.a], [me])
     path.hidden = way.length < 3
-    path.replaceChildren(`Strongest drawn way from ${me}: `, el('b', {}, way.slice(1).join(', then ')))
+    path.replaceChildren(`Path from ${me}: `, el('b', {}, way.slice(1).join(' → ')))
   }
   /** The card: who is picked, how they stand to the subject, and what can be done. */
   function tell() {
@@ -806,17 +806,17 @@ function graphOf(profile, more) {
     card.replaceChildren(
       el('button', { class: 'shut', type: 'button', 'aria-label': 'Close', on: { click: shut } }, '×'),
       el('b', { class: 'title' }, node.id),
-      node.role === 'me' ? el('p', { class: 'muted' }, 'This subject') : el('p', {}, el('span', { class: `chip ${node.role === 'member' ? 'same' : node.role === 'far' ? '' : node.role}` }, node.role === 'member' ? 'same person' : node.role === 'apart' ? 'kept apart' : node.role === 'related' ? 'tied, not joined' : 'tied through another')),
+      node.role === 'me' ? el('p', { class: 'muted' }, 'Selected ID') : el('p', {}, el('span', { class: `chip ${node.role === 'member' ? 'same' : node.role === 'far' ? '' : node.role}` }, node.role === 'member' ? 'Same person' : node.role === 'apart' ? 'Separated' : node.role === 'related' ? 'Related' : 'Indirect')),
       tie && tie.kind !== 'apart' ? el('span', { class: 'reason' }, el('b', {}, me), ` ${said(tie)}`) : '',
-      ...(tie?.kind === 'apart' ? [el('p', {}, ...kept(verdict(tie.a, tie.b))), tie.score === undefined ? '' : el('p', { class: 'muted' }, `What ties it to ${me} otherwise, ${percent(tie.score)}`)] : []),
+      ...(tie?.kind === 'apart' ? [el('p', {}, ...kept(verdict(tie.a, tie.b))), tie.score === undefined ? '' : el('p', { class: 'muted' }, `Linked at ${percent(tie.score)}`)] : []),
       tie?.score === undefined ? '' : meter(tie.score),
-      ...(mine ? reasons(mine.reasons) : node.role === 'member' ? [el('span', { class: 'reason' }, 'No tie of its own to this subject. Joined through others.')] : []),
+      ...(mine ? reasons(mine.reasons) : node.role === 'member' ? [el('span', { class: 'reason' }, 'Joined through other IDs')] : []),
       ...edges.filter((edge) => edge.from === node || edge.to === node).filter((edge) => edge !== tie).map((edge) => el('span', { class: 'reason' }, el('b', {}, edge.from === node ? edge.b : edge.a), ` ${said(edge)}`, ...(edge.kind === 'apart' ? ['. ', ...kept(verdict(edge.a, edge.b))] : []))),
       path,
       el('div', { class: 'row' },
         node.id === me ? '' : el('button', { class: 'primary', type: 'button', on: { click: () => go(subjectHash(node.id)) } }, 'Open'),
-        node.id === me ? '' : el('button', { type: 'button', 'data-key': 'ties', on: { click: (event) => outward(node.id, event.currentTarget) } }, drawn.more.has(node.id) ? 'Hide its ties' : 'Show its ties'),
-        mine ? el('button', { type: 'button', on: { click: () => act('Keep these two apart', `${me} and ${node.id} will never share a cluster, whatever they share later.`, '/separate', { a: me, b: node.id }, 'Keep apart') } }, 'Keep apart') : ''))
+        node.id === me ? '' : el('button', { type: 'button', 'data-key': 'ties', on: { click: (event) => outward(node.id, event.currentTarget) } }, drawn.more.has(node.id) ? 'Hide links' : 'Show links'),
+        mine ? el('button', { type: 'button', on: { click: () => act('Separate IDs', `${me} and ${node.id} will be treated as different people.`, '/separate', { a: me, b: node.id }, 'Separate') } }, 'Separate') : ''))
   }
   /** Draws someone's own ties too, or takes them away again. */
   async function outward(id, button) {
@@ -937,14 +937,14 @@ function graphOf(profile, more) {
     zoom(Math.exp(-event.deltaY * (event.deltaMode === 1 ? 0.05 : 0.004)), x, y)
   }, { passive: false })
   const tool = (text, label, click) => el('button', { type: 'button', 'aria-label': label, title: label, on: { click } }, text)
-  tools.append(tool('+', 'Zoom in', () => zoom(1.25)), tool('−', 'Zoom out', () => zoom(0.8)), tool('Reset', 'Put everything back where it was and show all of it', () => {
+  tools.append(tool('+', 'Zoom in', () => zoom(1.25)), tool('−', 'Zoom out', () => zoom(0.8)), tool('Reset', 'Reset the layout', () => {
     drawn.pins.clear()
     drawn.spots.clear()
     drawn.camera = undefined
     drawn.whole = true
     draw()
   }))
-  if (document.fullscreenEnabled) tools.append(tool('Full screen', 'Fill the screen, or stop', () => (document.fullscreenElement ? document.exitFullscreen() : root.requestFullscreen())))
+  if (document.fullscreenEnabled) tools.append(tool('Full screen', 'Toggle full screen', () => (document.fullscreenElement ? document.exitFullscreen() : root.requestFullscreen())))
 
   // Nothing here changes what is on screen until the load that made it has taken the screen, so one that gives way leaves no trace.
   root.begin = () => {

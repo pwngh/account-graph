@@ -128,6 +128,7 @@
 - The reviewer screen shows what had reached an ad platform of someone it forgets, until it is put away.
 - The reviewer screen is kept out of search engines and apart from other windows, never turns text into markup, has an icon, and works with forced colors and on paper.
 - Each view of the reviewer screen has a short lesson, one picture that changes a step at a time, and its notes are in plain words.
+- The reviewer screen uses standard labels, with an icon beside a term for its definition and an illustrated guide for each view.
 - The reviewer screen has one scale of type and space, tables that fit what they hold, and rows that become cards on a phone. Times are told by how long ago, with the exact time in a title.
 - The graph keeps room around every disc, name and line: names move to a free side, lines bend around what is in their way, and nothing lies over the paper. The strongest way to whoever is picked is shown, and weak ties can be left out.
 - Accounts opens on the largest cluster's graph, and its long lists scroll in their own boxes.

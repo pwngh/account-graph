@@ -49,11 +49,11 @@ $('find').addEventListener('submit', async (event) => {
     const whole = subjects.length === 1 ? subjects[0] : by === 'subject' && subjects.find((each) => each === text)
     if (whole) return void go(subjectHash(whole))
     suggest(subjects)
-    const what = by === 'email' ? 'that email' : by === 'phone' ? 'that phone number' : by === 'click' ? 'that ad click' : 'an id that begins like that'
-    if (subjects.length === 0) return void notice(`Nobody has been seen with ${what}.`)
+    const what = by === 'email' ? 'that email' : by === 'phone' ? 'that phone number' : by === 'click' ? 'that ad click' : 'that ID'
+    if (subjects.length === 0) return void notice(`No results for ${what}.`)
     $('subject').value = ''
     $('subject').focus()
-    notice(`${subjects.length === 20 ? 'At least 20' : subjects.length} subjects have ${what}. Pick one from the list: ${subjects.join(', ')}`)
+    notice(`${subjects.length === 20 ? '20 or more' : subjects.length} results for ${what}: ${subjects.join(', ')}`)
   } catch (error) {
     if (current()) notice(error.message, true)
   }

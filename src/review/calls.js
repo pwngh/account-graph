@@ -1,5 +1,5 @@
 const MEASURES = [
-  ['calls', 'All calls'], ['answered', 'Answered by a person'], ['missed', 'Missed'], ['voicemail', 'Voicemail'], ['unknown', 'Unknown'], ['waiting', 'Waiting for a result'], ['returned', 'Returned by you'],
+  ['calls', 'All calls'], ['answered', 'Answered'], ['missed', 'Missed'], ['voicemail', 'Voicemail'], ['unknown', 'Unknown'], ['waiting', 'Waiting for result'], ['returned', 'Returned'],
 ]
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 // Which count the table of hours shows, kept while the screen is open.
@@ -11,7 +11,7 @@ function hours(summary) {
   const at = new Map(summary.cells.map((cell) => [`${cell.weekday} ${cell.hour}`, cell]))
   const most = Math.max(1, ...summary.cells.map(value))
   const name = MEASURES.find(([key]) => key === measure)[1]
-  const table = el('table', { class: 'hours' }, el('caption', {}, `${name} · Call start hour · ${summary.from} to ${summary.to} · ${summary.timeZone}`),
+  const table = el('table', { class: 'hours' }, el('caption', {}, `${name} · ${reviewDisplay.day(summary.from)} – ${reviewDisplay.day(summary.to)} · ${summary.timeZone}`),
     el('tr', {}, th(''), ...Array.from({ length: 24 }, (_, hour) => th(String(hour).padStart(2, '0'), 'num')), th('All', 'num')))
   WEEKDAYS.forEach((day, i) => {
     const cells = Array.from({ length: 24 }, (_, hour) => at.get(`${i + 1} ${hour}`))
@@ -27,7 +27,7 @@ function hours(summary) {
 
 /** Which missed call is open beside the list and which are listed, kept while the screen is open. */
 const inbox = { id: undefined, state: 'all' }
-const credited = (call) => (call.source ? `${call.source}${call.campaign || call.campaignId ? `, ${call.campaign ?? call.campaignId}` : ''}` : 'No arrival credited')
+const credited = (call) => (call.source ? `${call.source}${call.campaign || call.campaignId ? ` · ${call.campaign ?? call.campaignId}` : ''}` : 'Unattributed')
 /** Calls by how long they have waited, so the list reads as what is late and what is fresh. */
 const ages = (at) => [['Today', (call) => at - call.at < 86400000], ['This week', (call) => at - call.at < 7 * 86400000], ['Older', () => true]]
 
@@ -37,10 +37,10 @@ const ages = (at) => [['Today', (call) => at - call.at < 86400000], ['This week'
  */
 function missedCalls(open, at) {
   const calls = [...open]
-  const list = el('div', { class: 'inbox-list scroll', role: 'listbox', tabindex: 0, 'aria-label': 'Missed and not returned' })
+  const list = el('div', { class: 'inbox-list scroll', role: 'listbox', tabindex: 0, 'aria-label': 'Missed calls' })
   const story = el('div', { class: 'inbox-story' })
   const facts = el('div', { class: 'inbox-facts' })
-  const choose = el('div', { class: 'segments', role: 'group', 'aria-label': 'Which calls' })
+  const choose = el('div', { class: 'segments', role: 'group', 'aria-label': 'Result' })
   const root = el('div', { class: 'inbox' }, el('div', { class: 'inbox-side' }, choose, list), story, facts)
   let asked = 0
 
@@ -55,13 +55,13 @@ function missedCalls(open, at) {
     // The oldest waits longest, so it is first in its group and the oldest group is first.
     const parts = groups.map(([name, holds]) => [name, [...left].filter((call) => holds(call) && left.delete(call))]).reverse()
     list.replaceChildren(...parts.filter(([, each]) => each.length > 0).map(([name, each]) => el('div', { role: 'group', 'aria-label': name }, el('p', { class: 'inbox-age' }, name, el('span', { class: 'count' }, amount(each.length))), ...each.map(line))))
-    if (some.length === 0) list.replaceChildren(el('p', { class: 'muted inbox-age' }, 'None of these.'))
+    if (some.length === 0) list.replaceChildren(el('p', { class: 'muted inbox-age' }, 'None'))
     if (held) list.querySelector('[aria-selected=true]')?.focus({ preventScroll: true })
     tell()
   }
   const line = (call) => el('div', { class: 'inbox-call', role: 'option', tabindex: call.id === inbox.id ? 0 : -1, 'aria-selected': String(call.id === inbox.id), on: { click: () => pick(call) } },
     tile(call.state === 'voicemail' ? 'M4.6 10.4a2.4 2.4 0 1 0 0-4.8a2.4 2.4 0 0 0 0 4.8ZM11.4 10.4a2.4 2.4 0 1 0 0-4.8a2.4 2.4 0 0 0 0 4.8ZM4.6 10.4h6.8' : 'M4.5 4.5 8 8l4.2-4.2M4.5 4.5v3M4.5 4.5h3M3 12.5c3-2.4 7-2.4 10 0', call.state === 'voicemail' ? 'related' : 'apart'), el('span', { class: 'inbox-who' }, reviewDisplay.idText(call.subject)), el('span', { class: 'inbox-time' }, reviewDisplay.time(call.at, at)),
-    el('span', { class: 'inbox-from' }, `${call.state === 'voicemail' ? 'Voicemail' : 'Missed'} · ${credited(call)}`), call.attempts > 0 ? el('span', { class: 'chip' }, `${amount(call.attempts)} ${call.attempts === 1 ? 'try' : 'tries'}`) : '')
+    el('span', { class: 'inbox-from' }, `${call.state === 'voicemail' ? 'Voicemail' : 'Missed'} · ${credited(call)}`), call.attempts > 0 ? el('span', { class: 'chip' }, `${amount(call.attempts)} ${call.attempts === 1 ? 'attempt' : 'attempts'}`) : '')
   function pick(call) {
     inbox.id = call.id
     for (const each of list.querySelectorAll('.inbox-call')) { each.setAttribute('aria-selected', 'false'); each.tabIndex = -1 }
@@ -83,19 +83,18 @@ function missedCalls(open, at) {
     const turn = ++asked
     if (!call) return void (story.replaceChildren(), facts.replaceChildren())
     const copied = el('span', { class: 'meta', role: 'status' })
-    facts.replaceChildren(el('dl', {}, ...[['Rang', reviewDisplay.time(call.at)], ['Waited', call.result?.waited === undefined ? unrecorded() : `${amount(Math.round(call.result.waited))} s`],
-      ['Tried since', tally(call.attempts)], ['Credited to', call.source ? credited(call) : el('span', { class: 'muted' }, 'No arrival credited')],
-      ...(call.tags ? Object.entries(call.tags).map(([name, value]) => [name.replaceAll('_', ' '), String(value)]) : [['Tags', unrecorded()]])].flatMap(([name, value]) => [el('dt', {}, name), el('dd', {}, value)])),
-    el('p', { class: 'meta' }, 'The number is in your phone system, at this time.'),
+    facts.replaceChildren(el('dl', {}, ...[['Called', reviewDisplay.time(call.at)], ['Wait', call.result?.waited === undefined ? unrecorded() : `${amount(Math.round(call.result.waited))} s`],
+      ['Attempts', tally(call.attempts)], ['Source', call.source ? credited(call) : el('span', { class: 'muted' }, 'Unattributed')],
+      ...(call.tags ? Object.entries(call.tags).map(([name, value]) => [name.replaceAll('_', ' '), String(value)]) : [])].flatMap(([name, value]) => [el('dt', {}, name), el('dd', {}, value)])),
     el('div', { class: 'row' }, el('button', { type: 'button', on: { click: async () => {
       try {
         await navigator.clipboard.writeText(when(call.at))
-        copied.textContent = 'Copied.'
+        copied.textContent = 'Copied'
       } catch {
         copied.textContent = when(call.at)
       }
-    } } }, 'Copy the time'), copied))
-    const head = el('div', { class: 'inbox-head' }, el('div', {}, el('b', {}, reviewDisplay.id(call.subject)), el('p', { class: 'meta' }, call.state === 'voicemail' ? 'Left a voicemail ' : 'Rang and was missed ', reviewDisplay.time(call.at, at))),
+    } } }, 'Copy time'), copied))
+    const head = el('div', { class: 'inbox-head' }, el('div', {}, el('b', {}, term(reviewDisplay.id(call.subject), 'callerId')), el('p', { class: 'meta' }, call.state === 'voicemail' ? 'Voicemail · ' : 'Missed · ', reviewDisplay.time(call.at, at))),
       el('a', { class: 'button primary', href: `#/journey/${encodeURIComponent(call.subject)}` }, 'Open journey'), el('a', { class: 'button', href: subjectHash(call.subject) }, 'Account'))
     story.replaceChildren(head, el('div', { class: 'waiting-lines', 'aria-hidden': 'true' }, el('i'), el('i'), el('i')))
     try {
@@ -103,11 +102,11 @@ function missedCalls(open, at) {
       if (turn !== asked) return
       const entries = [...journey.entries].reverse()
       const subjects = Object.keys(journey.ties).length
-      story.replaceChildren(head, el('p', { class: 'inbox-age' }, 'Their story, newest first', el('span', { class: 'count' }, `${amount(entries.length)}${journey.next === null ? '' : ' or more'}`), subjects > 1 ? el('span', { class: 'meta' }, ` across ${amount(subjects)} subjects`) : ''),
+      story.replaceChildren(head, el('p', { class: 'inbox-age' }, 'History', el('span', { class: 'count' }, `${amount(entries.length)}${journey.next === null ? '' : '+'}`), subjects > 1 ? el('span', { class: 'meta' }, ` · ${amount(subjects)} IDs`) : ''),
         el('ol', { class: 'story', role: 'list' }, ...entries.slice(0, 14).map((entry) => el('li', { class: `${entry.kind}${entry.kind === 'call' && entry.call.id === call.id ? ' this' : ''}` }, glyph(entry.kind), el('div', { class: 'what' }, ...told(entry)), el('span', { class: 'meta' }, reviewDisplay.time(entry.at > 0 ? entry.at : null, at))))),
-        entries.length > 14 ? el('p', { class: 'meta' }, `${amount(entries.length - 14)} more in the journey.`) : '')
+        entries.length > 14 ? el('p', { class: 'meta' }, `${amount(entries.length - 14)} more in the journey`) : '')
     } catch (error) {
-      if (turn === asked) story.replaceChildren(head, el('p', { class: 'apart' }, `Their story could not be read: ${error.message}`))
+      if (turn === asked) story.replaceChildren(head, el('p', { class: 'apart' }, `History unavailable: ${error.message}`))
     }
   }
   // A page more of them, as a table would take it.
@@ -136,42 +135,39 @@ view('calls', 'Calls', async (box, first, last) => {
   const lostThen = then.missed + then.voicemail
   const part = (n, whole) => (whole > 0 ? n / whole : null)
   if (total.calls > 0) top.append(tiles(
-    ['Calls to you', amount(total.calls), '', '', { change: against(total.calls, then.calls, amount), bars: shape(byHour('calls'), 'Calls by the hour they began, midnight to midnight') }],
-    ['Answered', percent(total.answered / total.calls), `${amount(total.answered)} ${summary.expected ? 'by a person' : 'by result or by length'}`, '', { change: against(part(total.answered, total.calls), part(then.answered, then.calls), percent, 'up', true) }],
-    ['Missed or voicemail', amount(lost), `${percent(lost / total.calls)}${summary.closed ? `, ${amount(summary.closed.missed + summary.closed.voicemail)} while closed` : ''}`, '', { change: against(lost, lostThen, amount, 'down'), bars: shape(byHour('missed').map((n, hour) => n + byHour('voicemail')[hour]), 'Missed and voicemail by the hour they began, midnight to midnight') }],
-    lost > 0 && ['Returned', percent(total.returned / lost), `${amount(total.returned)} of ${amount(lost)}${summary.returnedWithin === null ? '' : `, half within ${lasted(summary.returnedWithin)}`}`],
-    ['Waiting for a callback', `${amount(open.calls.length)}${open.next === null ? '' : ' or more'}`, open.calls[0] ? el('span', {}, 'Oldest: ', reviewDisplay.time(open.calls[0].at, open.at)) : '', open.calls.length > 0 ? 'apart' : 'same']))
-  top.append(fine('We never keep phone numbers. A caller’s id is a scrambled form of the number, which cannot be turned back here. To ring someone, find the call by its time in your phone system.',
-    summary.expected ? 'A call counts as answered when your phone system says a person answered it.' : 'Your phone system does not say whether calls were answered. So a call that lasted long enough counts as answered.'))
+    [term('Inbound calls', 'inbound'), amount(total.calls), '', '', { change: against(total.calls, then.calls, amount), bars: shape(byHour('calls'), 'Calls by starting hour') }],
+    [term('Answered', summary.expected ? 'answered' : 'answeredLength'), percent(total.answered / total.calls), `${amount(total.answered)} of ${amount(total.calls)}`, '', { change: against(part(total.answered, total.calls), part(then.answered, then.calls), percent, 'up', true) }],
+    [term('Missed', 'missed'), amount(lost), `${percent(lost / total.calls)}${summary.closed ? ` · ${amount(summary.closed.missed + summary.closed.voicemail)} after hours` : ''}`, '', { change: against(lost, lostThen, amount, 'down'), bars: shape(byHour('missed').map((n, hour) => n + byHour('voicemail')[hour]), 'Missed calls by starting hour') }],
+    lost > 0 && [term('Returned', 'returned'), percent(total.returned / lost), `${amount(total.returned)} of ${amount(lost)}${summary.returnedWithin === null ? '' : ` · median ${lasted(summary.returnedWithin)}`}`],
+    [term('Awaiting callback', 'awaiting'), `${amount(open.calls.length)}${open.next === null ? '' : '+'}`, open.calls[0] ? el('span', {}, 'Oldest ', reviewDisplay.time(open.calls[0].at, open.at)) : '', open.calls.length > 0 ? 'apart' : 'same']))
   const queue = open.calls.length > 0 ? missedCalls(open.calls, open.at) : undefined
-  box.append(el('section', {}, el('h2', {}, 'Missed and not returned, oldest first'),
-    queue ?? el('p', { class: 'muted' }, total.calls === 0 ? 'No inbound calls recorded in this period.' : lost > 0 ? 'All callers who could be rung back have since been reached.' : 'No known missed calls in this period.'),
+  box.append(el('section', {}, el('h2', {}, 'Missed calls'),
+    queue ?? el('p', { class: 'muted' }, total.calls === 0 ? 'No inbound calls' : lost > 0 ? 'All missed callers have been reached.' : 'No missed calls'),
     queue ? paged(queue, open.next, 'Show more', async (next) => {
       const page = await api('GET', `/calls?${query}&after=${encodeURIComponent(next)}`)
       return { rows: page.calls, next: page.next }
     }) : '',
-    total.hidden > 0 ? el('p', { class: 'muted' }, `${amount(total.hidden)} more hid their number and cannot be rung back.`) : ''))
+    total.hidden > 0 ? el('p', { class: 'muted' }, `${amount(total.hidden)} more with a withheld number`) : ''))
 
   if (total.calls === 0) return
-  const states = el('table', {}, el('tr', {}, th('Result'), th('Calls', 'num'), th('Share', 'num'), th('Meaning')),
-    ...[['Answered', total.answered, total.calls, summary.expected ? 'A person answered.' : 'Answer by result or length.'],
-      ['Missed', total.missed, total.calls, 'No answer.'], ['Voicemail', total.voicemail, total.calls, 'Reached voicemail.'],
-      ['Waiting', total.waiting, total.calls, 'Result still expected.'], ['Unknown', total.unknown, total.calls, 'Answer not known.'],
-      ['Returned', total.returned, lost, `Reached after a miss or voicemail.${total.told > 0 ? ` ${amount(total.told)} of them only as your own system reported.` : ''}${summary.returnedWithin === null ? '' : ` Half within ${lasted(summary.returnedWithin)}.`}`],
-      ['Tried again', total.triedAgain, lost, 'Caller rang again and got through after a miss or voicemail.'],
-      ...(total.notLeads > 0 ? [['No lead', total.notLeads, 0, 'Spam, or otherwise nobody\'s inquiry. In no other count here.']] : [])].map(([name, count, whole, meaning], i) =>
+  const states = el('table', {}, el('tr', {}, th('Result'), th('Calls', 'num'), th('Share', 'num'), th('Detail')),
+    ...[['Answered', total.answered, total.calls, ''],
+      ['Missed', total.missed, total.calls, ''], ['Voicemail', total.voicemail, total.calls, ''],
+      ['Waiting', total.waiting, total.calls, 'Result not received yet'], ['Unknown', total.unknown, total.calls, 'Result unavailable'],
+      ['Returned', total.returned, lost, [summary.returnedWithin !== null && `Median ${lasted(summary.returnedWithin)}`, total.told > 0 && `${amount(total.told)} reported by another system`].filter(Boolean).join(' · ')],
+      ['Called again', total.triedAgain, lost, 'Caller got through later'],
+      ...(total.notLeads > 0 ? [['Not a lead', total.notLeads, 0, 'Excluded from other counts']] : [])].map(([name, count, whole, meaning], i) =>
       behind(el('tr', i === 5 ? { class: 'second' } : {}, td('', reviewDisplay.chip(name, reviewDisplay.callTone(name.toLowerCase()))), td('num', tally(count)),
         td('num share', whole > 0 ? percent(count / whole) : none()), td('muted', meaning)), whole > 0 ? count / whole : 0)))
-  const results = el('section', {}, reviewDisplay.section('Call results', saved(`calls-${summary.from}-${summary.to}`, states)), wide('How calls went', states),
-    notes('Returned and Tried again are out of the calls you missed, voicemail too. Every other share is out of all the calls that came in.'))
-  const placement = el('section', {}, el('h2', {}, 'How calls were placed'), parts('How calls were placed', [
-    ['Tied to a visitor', coverage.visitor, 'Used a number shown to them or followed a tap, so the call has their arrival.'],
-    ['Filed under a channel', coverage.channel, 'Attributed by the number dialed.'],
-    ['Neither', coverage.neither, 'Number not listed; no tap.'],
-  ]), coverage.noResult > 0 ? el('p', { class: 'meta' }, `${amount(coverage.noResult)} have no result.`) : '')
+  const results = el('section', {}, reviewDisplay.section(term('Call results', 'callResults'), saved(`calls-${summary.from}-${summary.to}`, states)), wide('Call results', states))
+  const placement = el('section', {}, el('h2', {}, term('Call attribution', 'attribution')), parts('Call attribution', [
+    ['Visitor', coverage.visitor],
+    ['Phone number', coverage.channel],
+    ['Unmatched', coverage.neither],
+  ]), coverage.noResult > 0 ? el('p', { class: 'meta' }, `${amount(coverage.noResult)} without a result`) : '')
   box.append(el('div', { class: 'panel-grid call-grid' }, results, placement))
 
-  const pick = el('select', { 'aria-label': 'Which calls', on: { change: () => { measure = pick.value; grid.replaceChildren(hours(summary)) } } }, ...MEASURES.map(([key, text]) => el('option', { value: key, ...(key === measure && { selected: '' }) }, text)))
-  const grid = el('div', { class: 'wide', tabindex: 0, role: 'region', 'aria-label': 'Calls by hour and weekday' }, hours(summary))
-  box.append(el('section', {}, reviewDisplay.section('By hour and weekday', pick), grid, el('p', { class: 'meta' }, 'Blank: no calls. 0: calls, but none of this result. Stronger shading: more calls of this kind.')))
+  const pick = el('select', { 'aria-label': 'Result', on: { change: () => { measure = pick.value; grid.replaceChildren(hours(summary)) } } }, ...MEASURES.map(([key, text]) => el('option', { value: key, ...(key === measure && { selected: '' }) }, text)))
+  const grid = el('div', { class: 'wide', tabindex: 0, role: 'region', 'aria-label': 'Calls by hour' }, hours(summary))
+  box.append(el('section', {}, reviewDisplay.section(term('Calls by hour', 'heat'), pick), grid))
 }, { every: 60_000 })

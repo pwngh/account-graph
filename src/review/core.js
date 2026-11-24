@@ -20,9 +20,9 @@ const svg = (tag, attrs = {}, ...children) => {
 const when = (at) => new Date(at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 const percent = (score) => `${Math.round(score * 100)}%`
 const days = (gap) => {
-  if (gap === 0) return 'seen together'
+  if (gap === 0) return 'same time'
   const count = Math.round(gap / 86400000)
-  return count < 1 ? 'seen within a day' : `seen ${count} ${count === 1 ? 'day' : 'days'} apart`
+  return count < 1 ? '<1 day apart' : `${count} ${count === 1 ? 'day' : 'days'} apart`
 }
 const amount = (n) => n.toLocaleString()
 const money = (n) => n.toLocaleString(undefined, { maximumFractionDigits: 2 })
@@ -32,7 +32,11 @@ const td = (kind, ...children) => el('td', kind ? { class: kind } : {}, ...child
 // Three things an empty cell may mean, told apart: known to be none, nothing to say, and not recorded.
 const none = () => el('span', { class: 'muted' }, '—')
 const tally = (n) => (n > 0 ? amount(n) : el('span', { class: 'muted' }, '0'))
-const unrecorded = () => el('span', { class: 'muted' }, '(not recorded)')
+const unrecorded = () => el('span', { class: 'muted' }, 'No data')
+/** The icon that shows a definition. `id` is its place in HELP, and `more` a sentence that depends on the data. */
+const info = (id, more) => el('button', { type: 'button', class: 'info', 'data-help': id, ...(more && { 'data-more': more }), 'aria-label': `About ${HELP[id][0]}`, 'aria-expanded': 'false' }, svg('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true', focusable: 'false' }, svg('path', { d: 'M8 14.2a6.2 6.2 0 1 0 0-12.4a6.2 6.2 0 0 0 0 12.4ZM8 7.4v3.4M8 5.1h.01' })))
+/** A term with its definition beside it. */
+const term = (text, id, more) => el('span', { class: 'term' }, text, info(id, more))
 
 /** The mark of a view, as the list of views has it. The words beside it say the same. */
 const viewMark = (name) => svg('svg', { class: 'mark-view', viewBox: '0 0 16 16', 'aria-hidden': 'true', focusable: 'false' }, svg('path', { d: VIEW_ICONS[name] }))
@@ -51,7 +55,7 @@ const reviewDisplay = {
     return el('time', { datetime: exact, title: `${when(at)} · ${exact}` }, words)
   },
   day: (value) => new Date(`${value}T00:00:00Z`).toLocaleDateString(undefined, { dateStyle: 'medium', timeZone: 'UTC' }),
-  range: ({ from, to, timeZone }) => el('p', { class: 'meta' }, `${reviewDisplay.day(from)} – ${reviewDisplay.day(to)} · Days in ${timeZone}`),
+  range: ({ from, to, timeZone }) => el('p', { class: 'meta' }, `${reviewDisplay.day(from)} – ${reviewDisplay.day(to)} · ${timeZone}`),
   heading: (title, ...controls) => el('div', { class: 'page-head' }, el('h2', { class: 'page-title' }, viewMark(place().name), title), explain(), ...controls),
   section: (title, ...controls) => el('div', { class: 'section-head' }, el('h2', {}, title), ...controls),
   chip: (text, tone = '') => el('span', { class: tone ? `chip ${tone}` : 'chip' }, text),
@@ -70,8 +74,6 @@ const meter = (share, marks = []) => {
     ...marks.map(([share, name]) => svg('line', { class: name, x1: at(share), x2: at(share), y1: 0, y2: 8, 'vector-effect': 'non-scaling-stroke' })))
   return el('span', { class: marks.length ? 'meter scale' : 'meter', 'aria-hidden': 'true' }, bar)
 }
-/** Notes on how a view is worked out, there for whoever wants them and not in the way of the numbers. */
-const notes = (...texts) => el('details', {}, el('summary', { class: 'muted' }, 'How to read this'), ...texts.map((text) => el('p', { class: 'muted' }, text)))
 /** The few numbers a view is about, large, each with what it is of. `tone` marks one that needs someone, in words as well as color. */
 const tiles = (...list) => el('dl', { class: 'tiles' }, ...list.filter(Boolean).map(([label, value, note = '', tone = '', more]) =>
   el('div', tone ? { class: tone } : {}, el('dt', {}, label), el('dd', {}, el('span', { class: 'tile-line' }, el('b', {}, value), more?.change ?? ''), note ? el('span', { class: 'reason' }, note) : '', more?.bars ?? ''))))
@@ -93,8 +95,8 @@ function changed(now, then, words, before, good, points = false) {
   const by = points ? now - then : then === 0 ? (now === 0 ? 0 : undefined) : (now - then) / Math.abs(then)
   const way = by === undefined || by > 0.0049 ? 'up' : by < -0.0049 ? 'down' : 'level'
   const tone = way === 'level' || good === undefined ? '' : (way === good ? 'same' : 'apart')
-  const told = by === undefined ? 'from none' : way === 'level' ? 'no change' : `${way === 'up' ? '+' : '−'}${Math.abs(by) >= 10 ? `${amount(Math.round(Math.abs(by)))}×` : points ? `${amount(Math.round(Math.abs(by) * 100))} points` : percent(Math.abs(by))}`
-  return el('span', { class: `change ${way} ${tone}`, title: `${words(then)} in the ${amount(before.count)} ${before.count === 1 ? 'day' : 'days'} before, ${reviewDisplay.day(before.from)} to ${reviewDisplay.day(before.to)}` }, told, el('span', { class: 'sr-only' }, ` against ${words(then)} before`))
+  const told = by === undefined ? 'new' : way === 'level' ? 'no change' : `${way === 'up' ? '+' : '−'}${Math.abs(by) >= 10 ? `${amount(Math.round(Math.abs(by)))}×` : points ? `${amount(Math.round(Math.abs(by) * 100))} pts` : percent(Math.abs(by))}`
+  return el('span', { class: `change ${way} ${tone}`, title: `Previous period: ${words(then)} (${reviewDisplay.day(before.from)} – ${reviewDisplay.day(before.to)})` }, told, el('span', { class: 'sr-only' }, `, previously ${words(then)}`))
 }
 /** A few numbers as bars, to see their shape. What they are is in the title. */
 function shape(values, title) {
@@ -136,7 +138,7 @@ function parts(label, list) {
     const held = legend.contains(document.activeElement) ? document.activeElement.dataset.key : undefined
     const kept = list.filter(([name]) => !partsOff.has(key(name)))
     const total = kept.reduce((sum, [, n]) => sum + n, 0)
-    whole.replaceChildren(el('b', {}, amount(total)), el('span', {}, kept.length < list.length ? ` of ${amount(list.reduce((sum, [, n]) => sum + n, 0))}` : ' in all'))
+    whole.replaceChildren(el('b', {}, amount(total)), el('span', {}, kept.length < list.length ? ` of ${amount(list.reduce((sum, [, n]) => sum + n, 0))}` : ' total'))
     bar.replaceChildren(...list.flatMap(([name, n], i) => {
       if (n === 0 || partsOff.has(key(name))) return []
       const part = lights(el('span', { class: `part part${i}`, 'data-part': i, title: `${name}: ${amount(n)}, ${percent(n / total)}` }, el('b', {}, percent(n / total))), i)
@@ -151,9 +153,9 @@ function parts(label, list) {
         if (!partsOff.delete(key(name))) partsOff.add(key(name))
         draw()
         light(i)
-      } } }, el('span', { class: `key part${i}`, 'aria-hidden': 'true' }), el('span', { class: 'legend-name' }, el('span', {}, name), note ? el('span', { class: 'reason' }, note) : ''), el('b', {}, tally(n)), el('span', { class: 'muted' }, off ? 'left out' : total > 0 ? percent(n / total) : '—'))), i)
+      } } }, el('span', { class: `key part${i}`, 'aria-hidden': 'true' }), el('span', { class: 'legend-name' }, el('span', {}, name), note ? el('span', { class: 'reason' }, note) : ''), el('b', {}, tally(n)), el('span', { class: 'muted' }, off ? 'hidden' : total > 0 ? percent(n / total) : '—'))), i)
     }))
-    told.textContent = kept.length < list.length ? `Shares are of the ${amount(total)} not left out.` : ''
+    told.textContent = kept.length < list.length ? 'Shares exclude hidden items.' : ''
     if (held) legend.querySelector(`[data-key="${CSS.escape(held)}"]`)?.focus({ preventScroll: true })
   }
   draw()
@@ -211,7 +213,7 @@ const wide = (label, table, cards = false) => {
 const scroll = (label, list) => el('div', { class: 'scroll', tabindex: 0, role: 'region', 'aria-label': label }, list)
 
 $('token').value = sessionStorage.getItem('token') ?? ''
-$('zone').textContent = `Browser time: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`
+$('zone').textContent = `Times in ${Intl.DateTimeFormat().resolvedOptions().timeZone}`
 
 function notice(text, bad = false) {
   $('notice').textContent = text
@@ -225,7 +227,7 @@ function signedIn(answer) {
   me = answer
   $('token-label').hidden = me !== undefined
   $('who').hidden = me === undefined
-  $('name').textContent = me === undefined ? '' : me === null ? 'Service token: decisions here carry no name' : `Deciding as ${me}`
+  $('name').textContent = me === undefined ? '' : me === null ? 'Service token' : me
 }
 
 async function api(method, path, body) {
@@ -295,7 +297,7 @@ function held(button) {
     if (event.detail === 0 && !document.activeElement?.matches('input')) {
       sure = true
       $('ask-problem').textContent = 'Press again to confirm.'
-    } else $('ask-problem').textContent = 'Hold the button down to confirm.'
+    } else $('ask-problem').textContent = 'Hold the button to confirm.'
   }, { signal })
   return () => {
     stop()
@@ -382,12 +384,12 @@ async function act(title, text, path, body, confirm, { otherKey, undo = false, d
       const { seq, by, at, action, about, reason: why } = error.answer.decision
       // Shown here, it has been seen.
       told.set(other, seq)
-      $('ask-yes').textContent = 'Decide anyway'
+      $('ask-yes').textContent = 'Continue'
       $('ask-other').oninput = () => {
         $('ask-yes').textContent = confirm
         $('ask-problem').textContent = ''
       }
-      throw new Error(`${by ?? 'Someone'} decided first, ${when(at)}: ${ACTIONS[action] ?? action} ${about.join(' and ')}${why ? `, "${why}"` : ''}.`)
+      throw new Error(`${by ?? 'Another reviewer'} made a decision at ${when(at)}: ${ACTIONS[action] ?? action} ${about.join(' and ')}${why ? `, "${why}"` : ''}.`)
     }
   }, hold)
   // The question is closed, and nothing more is said in it.
@@ -397,14 +399,14 @@ async function act(title, text, path, body, confirm, { otherKey, undo = false, d
   done?.(saved.answer)
   const answer = saved.answer?.moved ?? saved.answer?.changes ?? saved.answer
   // Reloading clears the notice, so speak after it. A failed reload has already said why.
-  if (await load()) notice(Array.isArray(answer) && answer.length === 0 ? `${title}: recorded. No cluster changed.` : `${title}: done.`)
+  if (await load()) notice(Array.isArray(answer) && answer.length === 0 ? `${title}: saved. No groups changed.` : `${title}: saved.`)
 }
 
 /** People by how many subjects each has, in words. */
 function people(clusters) {
-  if (clusters.length === 1) return clusters[0].size === 1 ? 'one subject on its own' : `one person of ${amount(clusters[0].size)} subjects`
+  if (clusters.length === 1) return clusters[0].size === 1 ? '1 person (1 ID)' : `1 person (${amount(clusters[0].size)} IDs)`
   const sizes = clusters.map(({ size }) => amount(size))
-  return `${amount(clusters.length)} people, of ${sizes.length > 6 ? `${sizes.slice(0, 6).join(', ')} and ${amount(sizes.length - 6)} more` : `${sizes.slice(0, -1).join(', ')} and ${sizes.at(-1)}`} subjects`
+  return `${amount(clusters.length)} people (${sizes.length > 6 ? `${sizes.slice(0, 6).join(', ')} and ${amount(sizes.length - 6)} more` : sizes.join(', ')} IDs)`
 }
 let foretelling
 /** Says in the question what the decision would do, worked out by the server and not made. With a subject still to be named, once it is. The question can be answered without it. */
@@ -419,13 +421,13 @@ function foretell(path, body, otherKey) {
   const tell = async (other) => {
     const asked = ++turn
     const say = (...told) => !signal.aborted && asked === turn && said.replaceChildren(...told)
-    say('Working out what this would do.')
+    say('Calculating…')
     try {
       const { moved, before, after } = await api('POST', '/foresee', { action, ...body, ...(otherKey && { [otherKey]: other }) })
-      say(moved === 0 ? 'No cluster would change.' : `Now ${people(before)}. After this, ${people(after)}. ${amount(moved)} ${moved === 1 ? 'subject changes' : 'subjects change'} cluster.`,
-        el('details', {}, el('summary', { class: 'muted' }, 'Which clusters'), ...[['Now', before], ['After', after]].map(([name, list]) => el('span', { class: 'reason' }, el('b', {}, name), ` ${list.map(({ id, size }) => `${id} (${amount(size)})`).join(', ')}`))))
+      say(moved === 0 ? 'No groups change.' : `Before: ${people(before)}. After: ${people(after)}.`,
+        el('details', {}, el('summary', { class: 'muted' }, 'Details'), ...[['Before', before], ['After', after]].map(([name, list]) => el('span', { class: 'reason' }, el('b', {}, name), ` ${list.map(({ id, size }) => `${id} (${amount(size)})`).join(', ')}`))))
     } catch (error) {
-      say(`What this would do is not known: ${error.message}`)
+      say(`Preview unavailable: ${error.message}`)
     }
   }
   if (!otherKey) return void tell()
@@ -434,7 +436,7 @@ function foretell(path, body, otherKey) {
     clearTimeout(waiting)
     turn += 1
     const other = $('ask-other').value.trim()
-    said.textContent = other ? 'Working out what this would do.' : ''
+    said.textContent = other ? 'Calculating…' : ''
     if (other) waiting = setTimeout(() => !signal.aborted && tell(other), 300)
   }, { signal })
 }
@@ -442,7 +444,7 @@ function foretell(path, body, otherKey) {
 /** Goes to an address. Going where the screen already is reads it again. */
 const go = (hash) => (location.hash === hash ? load() : (location.hash = hash))
 /** Who decided: a person's name as it is, a system marked as one. */
-const author = (by) => (by?.startsWith('system:') ? el('span', { class: 'chip', title: 'Sent by another system, not decided by a person here' }, `system ${by.slice(7)}`) : el('span', {}, by || '(no name recorded)'))
+const author = (by) => (by?.startsWith('system:') ? el('span', { class: 'chip', title: 'Sent by another system' }, `system ${by.slice(7)}`) : el('span', {}, by || 'Unknown'))
 const subjectHash = (subject) => `#/accounts/${encodeURIComponent(subject)}`
 const open = (subject) => el('a', { class: 'link', href: subjectHash(subject) }, subject)
 
@@ -504,7 +506,7 @@ async function load(tag) {
   }
   document.title = `${views.get(name).title} · Account review`
   if (!$('token').value) {
-    $('view').replaceChildren(el('p', { class: 'muted' }, 'Enter your access token.'))
+    $('view').replaceChildren(el('p', { class: 'muted' }, 'Sign in'))
     $('found').replaceChildren()
     signedIn(undefined)
     beat = loadedAt = undefined
@@ -581,8 +583,8 @@ async function pulse() {
   return response.headers.get('etag')
 }
 function fresh(problem) {
-  const at = loadedAt ? `Current as of ${new Date(loadedAt).toLocaleTimeString()}.` : ''
-  $('fresh').textContent = problem ? `Not refreshed: ${problem} ${at}` : document.hidden ? `${at} Paused while this tab is hidden.` : busy() ? `${at} Waiting while a field here has the cursor.` : browsing ? `${at} Not refreshed while further pages are shown. Reload to start again.` : at && `${at} Looks for changes every ${EVERY / 1000} seconds.`
+  const at = loadedAt ? `Updated ${new Date(loadedAt).toLocaleTimeString()}` : ''
+  $('fresh').textContent = problem ? `Refresh failed: ${problem}${at && ` · ${at}`}` : at && `${at}${document.hidden || busy() || browsing ? ' · Auto-refresh paused' : ''}`
 }
 /** Typing or answering a question is not interrupted: the next look finds the change again. */
 const busy = () => $('ask').open || palette.open || ($('view').contains(document.activeElement) && document.activeElement.matches('input:not([readonly]), select, textarea'))
@@ -621,7 +623,7 @@ function period(name, first, last, ...rest) {
   const form = el('form', { class: 'row period', on: { submit: (event) => {
     event.preventDefault()
     go(`#/${name}/${from.value}/${to.value}${rest.some(Boolean) ? `/${rest.map(encodeURIComponent).join('/')}` : ''}`)
-  } } }, el('label', {}, 'From', from), el('label', {}, 'To', to), el('button', { class: 'primary' }, 'Show'))
+  } } }, el('label', {}, 'From', from), el('label', {}, 'To', to), el('button', { class: 'primary' }, 'Apply'))
   const shortcuts = el('span', { class: 'row presets' })
   form.append(shortcuts)
   const days = (range) => `from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`
@@ -649,7 +651,7 @@ function period(name, first, last, ...rest) {
 /** A length of time in words: the two largest units that matter. */
 function lasted(ms) {
   const minutes = Math.round(ms / 60000)
-  if (minutes < 1) return 'under a minute'
+  if (minutes < 1) return '<1 min'
   if (minutes < 60) return `${minutes} min`
   const hours = Math.floor(minutes / 60)
   if (hours < 48) return `${hours} h${minutes % 60 ? ` ${minutes % 60} min` : ''}`
@@ -708,10 +710,10 @@ function ranked(label, rows, named, measures, most = 8) {
     list.replaceChildren(...(all ? known : known.slice(0, most)).map((row) => {
       const bar = el('i', { 'aria-hidden': 'true' })
       bar.style.width = `${(100 * value(row)) / top}%`
-      return el('li', {}, bar, el('span', { class: 'ranked-name' }, ...named(row)), el('span', { class: 'ranked-share' }, !shares ? '' : value(row) / whole < 0.005 ? 'under 1%' : percent(value(row) / whole)), el('b', {}, words(value(row))))
+      return el('li', {}, bar, el('span', { class: 'ranked-name' }, ...named(row)), el('span', { class: 'ranked-share' }, !shares ? '' : value(row) / whole < 0.005 ? '<1%' : percent(value(row) / whole)), el('b', {}, words(value(row))))
     }))
     if (known.length === 0) list.replaceChildren(el('li', { class: 'muted' }, 'None.'))
-    foot.replaceChildren(known.length > most ? el('button', { type: 'button', on: { click: () => { all = !all; draw() } } }, all ? 'Show fewer' : `Show all ${amount(known.length)}`) : '', unknown > 0 ? el('span', { class: 'meta' }, `${amount(unknown)} not recorded`) : '')
+    foot.replaceChildren(known.length > most ? el('button', { type: 'button', on: { click: () => { all = !all; draw() } } }, all ? 'Show fewer' : `Show all ${amount(known.length)}`) : '', unknown > 0 ? el('span', { class: 'meta' }, `${amount(unknown)} without data`) : '')
   }
   draw()
   return el('div', { class: 'ranked-box' }, tabs, list, foot)
@@ -752,8 +754,9 @@ function sortable(label, table, columns, rows) {
       else if (now.way === (head.classList.contains('num') ? 'descending' : 'ascending')) now.way = now.way === 'ascending' ? 'descending' : 'ascending'
       else sorted.delete(label)
       apply()
-    } } }, ...head.childNodes, el('i', { class: 'way', 'aria-hidden': 'true' }))
-    head.append(button)
+    } } }, ...[...head.childNodes].flatMap((node) => (node.classList?.contains('term') ? [node.firstChild] : [node])), el('i', { class: 'way', 'aria-hidden': 'true' }))
+    const about = head.querySelector('.info')
+    head.replaceChildren(button, ...(about ? [about] : []))
   }
   apply()
 }

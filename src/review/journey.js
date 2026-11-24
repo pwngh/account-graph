@@ -1,5 +1,5 @@
-const WHAT = { arrival: 'Arrived', seen: 'Seen', call: 'Call', step: 'Step', value: 'Value changed', consent: 'Consent', decision: 'Decision' }
-const SENT = { held: 'held until a call result comes', pending: 'waiting to be sent to', sent: 'sent to', skipped: 'not sent to', failed: 'refused by' }
+const WHAT = { arrival: 'Visit', seen: 'Sighting', call: 'Call', step: 'Outcome', value: 'Value change', consent: 'Consent', decision: 'Decision' }
+const SENT = { held: 'Held for a call result', pending: 'Queued for', sent: 'Sent to', skipped: 'Skipped for', failed: 'Rejected by' }
 const CLICKS = [['gclid', 'Google ad click'], ['gbraid', 'Google ad click'], ['wbraid', 'Google ad click'], ['fbclid', 'Meta click id'], ['msclkid', 'Microsoft ad click'], ['ttclid', 'TikTok ad click']]
 const worthOf = (value, currency) => `${money(value)}${currency ? ` ${currency}` : ''}`
 
@@ -15,52 +15,52 @@ function told(entry) {
   if (entry.kind === 'arrival') {
     const { touch } = entry
     const click = CLICKS.find(([field]) => touch[field])
-    return ['From ', sourced(entry.source), `${touch.campaign || touch.campaignId ? `, ${touch.campaign || touch.campaignId}` : ''}. `,
+    return [sourced(entry.source), `${touch.campaign || touch.campaignId ? ` · ${touch.campaign || touch.campaignId}` : ''} `,
       click || touch.medium ? reviewDisplay.chip(click ? click[1] : touch.medium, 'muted') : '',
-      facts(touch.landing && (touch.landing.startsWith('tel:') ? 'filed under the number that was rung' : `landed on ${touch.landing}`),
-        touch.term && `searched ${touch.term}`),
+      facts(touch.landing && (touch.landing.startsWith('tel:') ? 'By dialed number' : touch.landing),
+        touch.term && `“${touch.term}”`),
       tags(touch.custom)]
   }
   if (entry.kind === 'seen') {
     const kinds = new Map()
     for (const identifier of entry.identifiers) kinds.set(identifier.split(':')[0], (kinds.get(identifier.split(':')[0]) ?? 0) + 1)
-    return [entry.event ? entry.event.replaceAll('_', ' ') : 'seen', more(`with ${[...kinds].map(([kind, count]) => (count > 1 ? `${kind} (${count})` : kind)).join(', ')}`)]
+    return [entry.event ? entry.event.replaceAll('_', ' ') : 'seen', more(`${[...kinds].map(([kind, count]) => (count > 1 ? `${kind} (${count})` : kind)).join(', ')}`)]
   }
   if (entry.kind === 'call') {
     const { call, state, followUp } = entry
-    const how = { answered: 'answered by a person', missed: 'missed', voicemail: 'went to voicemail', waiting: 'waiting for a result', unknown: 'not known whether anyone answered' }[state] ?? 'not known whether anyone answered'
-    const after = followUp && { open: 'not returned yet', returned: `returned after ${lasted(followUp.delay)}${followUp.told ? ', as your own system reported' : ''}`, 'tried again': `rang again and got through after ${lasted(followUp.delay)}`, hidden: 'hid their number, so it cannot be returned' }[followUp.state]
+    const how = { answered: 'answered', missed: 'missed', voicemail: 'voicemail', waiting: 'waiting for result', unknown: 'unknown result' }[state] ?? 'unknown result'
+    const after = followUp && { open: 'Not returned', returned: `Returned after ${lasted(followUp.delay)}${followUp.told ? ' (reported)' : ''}`, 'tried again': `Called again after ${lasted(followUp.delay)}`, hidden: 'Number withheld' }[followUp.state]
     return [call.direction === 'outbound' ? 'Outbound ' : 'Inbound ', reviewDisplay.chip(how[0].toUpperCase() + how.slice(1), reviewDisplay.callTone(state)), notLead(entry.notLead),
-      facts(after && `${after}${followUp.attempts > 0 ? `, tried ${amount(followUp.attempts)} ${followUp.attempts === 1 ? 'time' : 'times'}` : ''}`,
-        call.duration === undefined ? 'length not recorded' : `${amount(Math.round(call.duration))} s`,
-        call.result?.waited === undefined ? '' : `waited ${amount(Math.round(call.result.waited))} s`,
-        call.visitor && (call.flags.includes('pool') ? 'on the number shown to them' : 'followed a tap')),
+      facts(after && `${after}${followUp.attempts > 0 ? ` · ${amount(followUp.attempts)} ${followUp.attempts === 1 ? 'attempt' : 'attempts'}` : ''}`,
+        call.duration === undefined ? '' : `Duration ${amount(Math.round(call.duration))} s`,
+        call.result?.waited === undefined ? '' : `Wait ${amount(Math.round(call.result.waited))} s`,
+        call.visitor && (call.flags.includes('pool') ? 'Tracking number' : 'Tap to call')),
       tags(call.tags, words)]
   }
   if (entry.kind === 'step') {
     const { outcome, first, sent } = entry
-    const began = first === null || first.at === 0 ? 'first value not recorded' : `first recorded at ${worthOf(first.value, first.currency)}`
-    return [el('b', {}, outcome.stage), `, worth ${worthOf(outcome.value, outcome.currency)} now`, notLead(entry.notLead),
-      first && first.at > 0 && first.value === outcome.value && first.currency === outcome.currency ? '' : el('span', { class: 'meta' }, ` · ${began}`),
+    const began = first === null || first.at === 0 ? '' : ` · initially ${worthOf(first.value, first.currency)}`
+    return [el('b', {}, outcome.stage), outcome.value === 0 ? '' : ` · ${worthOf(outcome.value, outcome.currency)}`, notLead(entry.notLead),
+      first && first.at > 0 && first.value === outcome.value && first.currency === outcome.currency ? '' : el('span', { class: 'meta' }, began),
       tags(outcome.tags, words),
-      ...(sent.length > 0 ? sent.map((job) => more(el('span', { class: job.state === 'failed' ? 'apart' : '' }, `${SENT[job.state]} ${job.state === 'held' ? 'for ' : ''}${job.target}`), job.note ? `: ${words(job.note)}` : '')) : [more('not sent to any ad platform')])]
+      ...(sent.length > 0 ? sent.map((job) => more(el('span', { class: job.state === 'failed' ? 'apart' : '' }, `${SENT[job.state]}${job.state === 'held' ? ' · ' : ' '}${job.target}`), job.note ? `: ${words(job.note)}` : '')) : [])]
   }
-  if (entry.kind === 'value') return [`${entry.stage}: from ${worthOf(entry.from.value, entry.from.currency)} to ${worthOf(entry.to.value, entry.to.currency)}`, el('span', { class: 'meta' }, entry.to.kind ? ` · ${entry.to.value > entry.from.value ? 'taken back: ' : ''}${entry.to.kind === 'refund' ? 'refunded' : 'written off'} · written down then` : ' · written down then')]
-  if (entry.kind === 'consent') return [`Measuring ads ${entry.answer.adUserData ? 'granted' : 'denied'}, personalizing ${entry.answer.adPersonalization ? 'granted' : 'denied'}`, more(entry.answer.source ?? 'where is not recorded')]
+  if (entry.kind === 'value') return [el('b', {}, entry.stage), ` · from ${worthOf(entry.from.value, entry.from.currency)} to ${worthOf(entry.to.value, entry.to.currency)}`, entry.to.kind ? el('span', { class: 'meta' }, ` · ${entry.to.kind === 'refund' ? 'Refund' : 'Write-off'}${entry.to.value > entry.from.value ? ' reversed' : ''}`) : '']
+  if (entry.kind === 'consent') return [`Ad measurement ${entry.answer.adUserData ? 'granted' : 'denied'} · personalization ${entry.answer.adPersonalization ? 'granted' : 'denied'}`, entry.answer.source ? more(entry.answer.source) : '']
   const { decision } = entry
-  return [`${ACTIONS[decision.action] ?? decision.action} ${decision.about.join(' · ')}`, more('by ', author(decision.by), decision.reason ? `: ${decision.reason}` : '')]
+  return [`${ACTIONS[decision.action] ?? decision.action} ${decision.about.join(' · ')}`, more(author(decision.by), decision.reason ? ` · ${decision.reason}` : '')]
 }
 
 /** Whose it is, and why that is this person. */
 function why(entry, ties, subject) {
   const tie = ties[entry.subject]
-  if (tie.how === 'self') return [el('span', { class: 'muted' }, 'this subject')]
+  if (tie.how === 'self') return [caller(entry.subject)]
   const steps = tie.via.filter((each) => each !== subject)
-  const chain = steps.length > 0 ? `, through ${steps.join(', then ')}` : ''
-  return [caller(entry.subject), el('span', { class: 'reason' }, `${tie.how === 'cluster' ? 'same person' : 'strong tie, in another cluster'}${tie.score === null ? ', no path scored' : `, ${percent(tie.score)}`}${tie.kinds.length > 0 ? ` by ${tie.kinds.join(' and ')}` : ''}${chain}`)]
+  const chain = steps.length > 0 ? ` via ${steps.join(' → ')}` : ''
+  return [caller(entry.subject), el('span', { class: 'reason' }, `${tie.how === 'cluster' ? 'Same person' : 'High confidence'}${tie.score === null ? '' : ` · ${percent(tie.score)}`}${tie.kinds.length > 0 ? ` · ${tie.kinds.join(', ')}` : ''}${chain}`)]
 }
 
-const dayOf = (at) => (at > 0 ? new Date(at).toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }) : 'Date not recorded')
+const dayOf = (at) => (at > 0 ? new Date(at).toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }) : 'No date')
 /** Keep the day's events together without making people pan to read a line. */
 function byDay(entries, draw) {
   const days = []
@@ -88,7 +88,7 @@ const timespan = (entries) => {
   const times = entries.map((entry) => entry.at).filter((at) => at > 0)
   if (times.length === 0) return []
   const [first, last] = [Math.min(...times), Math.max(...times)]
-  return [['First entry', reviewDisplay.time(first)], ['Last entry', reviewDisplay.time(last), last > first ? `${lasted(last - first)} after the first` : '']]
+  return [['First event', reviewDisplay.time(first)], ['Last event', reviewDisplay.time(last), last > first ? `${lasted(last - first)} later` : '']]
 }
 /** How the chart was left, so a refresh draws it the same. */
 const charted = { subject: undefined, zoom: 'All', at: undefined, left: undefined }
@@ -146,8 +146,8 @@ function chart(entries, shown, ties, subject, show) {
   const names = el('div', { class: 'names' }, el('div', { class: 'ruler' }), ...kinds.map((kind) => el('div', { class: 'name' }, glyph(kind), el('span', {}, WHAT[kind]), el('span', { class: 'count' }, amount(dated.filter((entry) => entry.kind === kind).length)))))
   const canvas = el('div', { class: 'canvas' })
   const track = el('div', { class: 'track', tabindex: 0, role: 'group', 'aria-label': 'Journey over time' }, canvas)
-  const card = el('div', { class: 'told', role: 'region', 'aria-label': 'What is picked', hidden: '' })
-  const zooming = el('div', { class: 'segments', role: 'group', 'aria-label': 'How much at once' })
+  const card = el('div', { class: 'told', role: 'region', 'aria-label': 'Selection', hidden: '' })
+  const zooming = el('div', { class: 'segments', role: 'group', 'aria-label': 'Zoom' })
   const root = el('div', { class: 'chart' }, el('div', { class: 'chart-head' }, zooming, el('span', { class: 'meta' }, `${reviewDisplay.time(first).textContent} – ${reviewDisplay.time(last).textContent}`)), el('div', { class: 'chart-body' }, names, track, card))
   const order = [...dated].sort((x, y) => x.at - y.at)
   const marks = new Map()
@@ -161,10 +161,10 @@ function chart(entries, shown, ties, subject, show) {
     if (!entry) return
     const i = order.indexOf(entry)
     const turn = (step, text, label) => el('button', { type: 'button', 'aria-label': label, 'data-key': label, ...((order[i + step] === undefined) && { disabled: '' }), on: { click: () => { pick(order[i + step]); reach(order[i + step]) } } }, text)
-    card.replaceChildren(el('div', { class: 'told-head' }, el('span', { class: `chip kind ${entry.kind}` }, glyph(entry.kind), WHAT[entry.kind]), el('span', { class: 'meta' }, `${amount(i + 1)} of ${amount(order.length)}`), turn(-1, '‹', 'The one before'), turn(1, '›', 'The one after'), el('button', { type: 'button', class: 'shut', 'aria-label': 'Close', on: { click: () => { pick(); marks.get(entry)?.focus({ preventScroll: true }) } } }, '×')),
+    card.replaceChildren(el('div', { class: 'told-head' }, el('span', { class: `chip kind ${entry.kind}` }, glyph(entry.kind), WHAT[entry.kind]), el('span', { class: 'meta' }, `${amount(i + 1)} of ${amount(order.length)}`), turn(-1, '‹', 'Previous'), turn(1, '›', 'Next'), el('button', { type: 'button', class: 'shut', 'aria-label': 'Close', on: { click: () => { pick(); marks.get(entry)?.focus({ preventScroll: true }) } } }, '×')),
       el('p', { class: 'told-when' }, el('b', {}, new Date(entry.at).toLocaleTimeString(undefined, { timeStyle: 'short' })), ` ${dayOf(entry.at)}`),
       el('div', { class: 'what' }, ...told(entry)), el('p', { class: 'told-on' }, ...why(entry, ties, subject)),
-      el('button', { type: 'button', on: { click: () => show(entry) } }, 'Show in the list'))
+      el('button', { type: 'button', on: { click: () => show(entry) } }, 'Show in timeline'))
     if (focus) marks.get(entry)?.focus({ preventScroll: true })
   }
   /** Scrolls a mark into view, without moving the page. */
@@ -282,7 +282,7 @@ function chart(entries, shown, ties, subject, show) {
   return root
 }
 /** Said to be nobody's inquiry, so it is in no count. */
-const notLead = (kind) => (kind ? reviewDisplay.chip(kind === 'spam' ? 'Spam, not counted' : 'No lead, not counted') : '')
+const notLead = (kind) => (kind ? reviewDisplay.chip(kind === 'spam' ? 'Spam' : 'Not a lead') : '')
 /** How long a thing lasted, when that is known. */
 const spanOf = (entry) => (entry.kind === 'call' && entry.call.duration > 0 ? entry.call.duration * 1000 : 0)
 // Kinds left out of the list, kept while the screen is open.
@@ -291,20 +291,20 @@ const leaving = new Set()
 // One person's timeline, across every subject that is them.
 view('journey', 'Journey', async (box, subject) => {
   if (!subject) {
-    box.append(el('section', {}, reviewDisplay.heading('Journey'), el('div', { class: 'opening' }, el('h4', {}, 'Whose journey?'), el('button', { class: 'primary', on: { click: () => palette.show() } }, 'Find someone'),
-      ...(opened.length > 0 ? [el('div', { class: 'row' }, el('span', { class: 'meta' }, 'Opened here'), ...opened.slice(0, 5).map((each) => el('a', { class: 'who-chip', href: `#/journey/${encodeURIComponent(each)}`, title: each }, badge(each), reviewDisplay.idText(each))))] : []))))
+    box.append(el('section', {}, reviewDisplay.heading('Journey'), el('div', { class: 'opening' }, el('h4', {}, 'Select an ID'), el('button', { class: 'primary', on: { click: () => palette.show() } }, 'Search'),
+      ...(opened.length > 0 ? [el('div', { class: 'row' }, el('span', { class: 'meta' }, 'Recent'), ...opened.slice(0, 5).map((each) => el('a', { class: 'who-chip', href: `#/journey/${encodeURIComponent(each)}`, title: each }, badge(each), reviewDisplay.idText(each))))] : []))))
     return
   }
   const journey = await api('GET', `/journey?subject=${encodeURIComponent(subject)}`)
   const top = el('section', {}, reviewDisplay.heading(reviewDisplay.id(subject, true), el('a', { class: 'button', href: subjectHash(subject) }, 'Account')))
   box.append(top)
   if (journey.entries.length === 0) {
-    top.append(el('p', { class: 'muted' }, 'No events recorded for this subject.'))
+    top.append(el('p', { class: 'muted' }, 'No events'))
     return
   }
   const subjects = Object.keys(journey.ties)
   const strip = el('div', {})
-  top.append(strip, journey.more > 0 ? el('p', { class: 'muted' }, `${amount(journey.more)} more subjects of theirs are not read.`) : '')
+  top.append(strip, journey.more > 0 ? el('p', { class: 'muted' }, `${amount(journey.more)} more IDs are not shown.`) : '')
   let entries = journey.entries
   let next = journey.next
   const ties = { ...journey.ties }
@@ -320,10 +320,10 @@ view('journey', 'Journey', async (box, subject) => {
   const draw = () => {
     lines.clear()
     const shown = entries.filter((entry) => !leaving.has(entry.kind))
-    strip.replaceChildren(tiles(['Entries loaded', amount(entries.length), next === null ? '' : 'Earlier entries available'], ['Subjects read', amount(subjects.length)], ...timespan(entries)), chart(entries, shown, ties, subject, find))
+    strip.replaceChildren(tiles(['Events', `${amount(entries.length)}${next === null ? '' : '+'}`], [term('IDs', 'journeyIds'), amount(subjects.length)], ...timespan(entries)), chart(entries, shown, ties, subject, find))
     timeline.replaceChildren(shown.length > 0
       ? el('ol', { class: 'journey', role: 'list' }, ...byDay(shown, row(ties, subject, lines)))
-      : el('p', { class: 'timeline-entry muted' }, 'Select an event type to show its entries.'))
+      : el('p', { class: 'timeline-entry muted' }, 'All event types are hidden.'))
   }
   const kinds = el('div', { class: 'row filters', role: 'group', 'aria-label': 'Show' })
   const boxes = () => kinds.replaceChildren(...Object.keys(WHAT).filter((kind) => entries.some((entry) => entry.kind === kind)).map((kind) => {
