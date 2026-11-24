@@ -1,5 +1,5 @@
 import type { OutboxStore } from './outbox.ts'
-import type { Change, Consent, Cost, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, Labels, Moved, Sighting, Subject, Touch } from './types.ts'
+import type { Change, Consent, ConsentAnswer, Cost, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, Labels, Moved, Sighting, Subject, Touch } from './types.ts'
 
 /**
  * Where the graph lives. Sightings and touches are the record; edges and
@@ -68,10 +68,14 @@ export interface Tx {
   addFlow(flow: Required<Flow>): Promise<void>
   /** Every folded flow into or out of the given subjects. */
   flowsOf(subjects: readonly Subject[]): Promise<FlowEdge[]>
-  /** Records the latest consent a subject gave. */
-  setConsent(subject: Subject, consent: Consent): Promise<void>
-  /** The latest consent of each given subject. A subject that never answered is absent. */
+  /** Adds one answer about advertising to a subject's history. */
+  addConsent(subject: Subject, answer: ConsentAnswer): Promise<void>
+  /** The standing answer of each given subject, the one `standingFirst` puts first. A subject that never answered is absent. */
   consentOf(subjects: readonly Subject[]): Promise<Map<Subject, Consent>>
+  /** Every answer of a subject, the standing one first. */
+  consentHistory(subject: Subject): Promise<ConsentAnswer[]>
+  /** Deletes answers written down before a time, except each subject's standing one. Returns how many went. */
+  pruneConsent(before: number): Promise<number>
   addTouch(touch: Touch): Promise<void>
   /** Touches on the given subjects with `from <= at <= to`. */
   touchesOf(subjects: readonly Subject[], from: number, to: number): Promise<Touch[]>
@@ -103,4 +107,13 @@ export interface Tx {
   decisionsAbout(pairs: readonly (readonly [Subject, Subject])[]): Promise<Decision[]>
   /** The pairs that systems have decided about this many times or more. */
   pairsDecidedBySystems(times: number): Promise<[Subject, Subject][]>
+}
+
+/**
+ * Puts the standing answer first: the newest by when it was given, then by
+ * when it was written down. Two that tie on both stand as the refusal, so
+ * the answer never depends on the order they arrived in.
+ */
+export function standingFirst(x: ConsentAnswer, y: ConsentAnswer): number {
+  return y.at - x.at || y.recorded - x.recorded || Number(x.adUserData) - Number(y.adUserData) || Number(x.adPersonalization) - Number(y.adPersonalization)
 }

@@ -3,7 +3,7 @@ const short = (hash) => (hash === null ? '(not recorded)' : hash === 'mixed' ? '
 const lasting = (ms) => (ms === 'none' ? 'none' : ms >= 86400000 ? `${amount(Math.round(ms / 8640000) / 10)} days` : `${amount(Math.round(ms / 360000) / 10)} hours`)
 
 view('health', 'Health', async (box) => {
-  const [policy, disputes] = await Promise.all([api('GET', '/policy'), api('GET', '/disputes')])
+  const [policy, disputes, audit] = await Promise.all([api('GET', '/policy'), api('GET', '/disputes'), api('GET', '/audit')])
   box.append(el('section', {}, el('h3', {}, 'Health'), el('p', { class: 'muted' }, 'What this server runs, as it stands now.')))
 
   const rules = el('table', {}, el('tr', {}, th('Kind'), th('Weight', 'num'), th('Dilution', 'num'), th('Cap, subjects', 'num'), th('Half-life', 'num'), th('Group'), th('')))
@@ -22,6 +22,26 @@ view('health', 'Health', async (box) => {
     el('p', { class: 'muted' }, `Joined at ${percent(same)}, related at ${percent(related)}, one link alone joins two groups at ${percent(bridge)}. Clusters over ${amount(review)} subjects are flagged.`),
     wide('Policy rules by kind', rules))
   box.append(section)
+
+  const record = el('section', {}, el('h2', {}, 'Record of decisions'))
+  if (!audit.sound) record.append(el('p', { class: 'banner', role: 'alert' }, el('b', {}, 'The record was altered. '), `Entry ${audit.brokenAt} does not fit the one before it.`))
+  if (audit.head) {
+    const hash = el('input', { readonly: '', value: audit.head.hash, size: 66, 'aria-label': 'Newest hash', on: { focus: () => hash.select() } })
+    const copied = el('span', { class: 'muted', role: 'status' })
+    const copy = el('button', { on: { click: async () => {
+      try {
+        await navigator.clipboard.writeText(`${audit.head.seq} ${audit.head.hash}`)
+        copied.textContent = 'Copied, with its number.'
+      } catch {
+        // A page without permission, or not served securely, cannot copy: leave it selected for the keyboard.
+        hash.focus()
+        copied.textContent = 'Selected. Press Ctrl or Cmd and C.'
+      }
+    } } }, 'Copy')
+    record.append(el('p', {}, `${audit.sound ? 'Whole, checked just now' : 'Not whole'}. Newest entry ${audit.head.seq}.`), el('div', { class: 'row' }, el('label', { class: 'grow' }, 'Newest hash', hash), copy, copied),
+      el('p', { class: 'muted' }, "Keep a copy somewhere the database's owners cannot write. Whoever can rewrite the whole record can make it whole again, but not with a hash you already hold."))
+  } else record.append(el('p', {}, 'No decision has been recorded.'))
+  box.append(record)
 
   const table = el('table', {}, el('tr', {}, th('One'), th('The other'), th('Contradictions, all time', 'num'), th('Last report'), th('By')))
   for (const { a, b, last, reversals } of disputes) table.append(el('tr', {}, td('who', open(a)), td('who', open(b)), td('num', reversals), td('', `${last.action === 'separate' ? 'kept apart' : last.action === 'join' ? 'joined' : 'allowed to join'}, ${when(last.at)}`), td('', author(last.by))))

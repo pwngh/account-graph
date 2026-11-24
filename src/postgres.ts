@@ -22,6 +22,9 @@ export interface PostgresStore extends Store {
   migrate(): Promise<string[]>
 }
 
+/** The order `standingFirst` gives, in SQL. False sorts first, and rows equal in everything that counts are told apart by id. */
+const STANDING = 'at desc, recorded_at desc, ad_user_data, ad_personalization, id'
+
 /**
  * Keeps the graph in PostgreSQL. Writes take one advisory lock, so they run
  * one at a time across every process; reads take a repeatable-read snapshot
@@ -95,7 +98,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       await db.query(`delete from ${t('subject')} where id = $1`, [subject])
       await db.query(`delete from ${t('apart')} where a = $1 or b = $1`, [subject])
       await db.query(`delete from ${t('flow')} where source = $1 or target = $1`, [subject])
-      await db.query(`delete from ${t('consent')} where subject = $1`, [subject])
+      await db.query(`delete from ${t('consent_log')} where subject = $1`, [subject])
       await db.query(`delete from ${t('change')} where subject = $1`, [subject])
     },
 
@@ -271,20 +274,35 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       )
     },
 
-    async setConsent(subject, consent) {
+    async addConsent(subject, { at, adUserData, adPersonalization, source, recorded }) {
       await db.query(
-        `insert into ${t('consent')} (subject, ad_user_data, ad_personalization) values ($1, $2, $3)
-         on conflict (subject) do update set ad_user_data = excluded.ad_user_data, ad_personalization = excluded.ad_personalization`,
-        [subject, consent.adUserData, consent.adPersonalization],
+        `insert into ${t('consent_log')} (subject, at, ad_user_data, ad_personalization, source, recorded_at) values ($1, $2, $3, $4, $5, $6)`,
+        [subject, at, adUserData, adPersonalization, source ?? null, recorded],
       )
     },
 
     async consentOf(subjects) {
       const out = new Map<Subject, Consent>()
       if (subjects.length === 0) return out
-      const { rows } = await db.query(`select * from ${t('consent')} where subject = any($1::text[])`, [subjects])
+      const { rows } = await db.query(`select distinct on (subject) * from ${t('consent_log')} where subject = any($1::text[]) order by subject, ${STANDING}`, [subjects])
       for (const row of rows) out.set(row.subject, { adUserData: row.ad_user_data, adPersonalization: row.ad_personalization })
       return out
+    },
+
+    async consentHistory(subject) {
+      const { rows } = await db.query(`select * from ${t('consent_log')} where subject = $1 order by ${STANDING}`, [subject])
+      return rows.map((row) => ({ at: Number(row.at), adUserData: row.ad_user_data, adPersonalization: row.ad_personalization, ...(row.source !== null && { source: row.source }), recorded: Number(row.recorded_at) }))
+    },
+
+    async pruneConsent(before) {
+      const { rows } = await db.query(
+        `with gone as (
+           delete from ${t('consent_log')} c where recorded_at < $1
+             and id not in (select distinct on (subject) id from ${t('consent_log')} order by subject, ${STANDING}) returning 1
+         ) select count(*)::int as n from gone`,
+        [before],
+      )
+      return rows[0].n as number
     },
 
     async addTouch({ subject, at, ...detail }) {
@@ -643,6 +661,25 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
       name: 'decisions by pair',
       // So what was last decided about two subjects is found without reading every decision.
       sql: `create index if not exists decision_pair on ${schema}.decision ((about->>0), (about->>1)) where action in ('join', 'separate', 'rejoin');`,
+    },
+    {
+      id: 8,
+      name: 'consent history',
+      // Every answer, where only the latest was kept. What was kept is carried over: when it was given is not known, so any
+      // dated answer stands over it. The old table goes, so nothing can go on writing where nothing reads.
+      sql: `create table if not exists ${schema}.consent_log (
+              id bigint generated always as identity primary key,
+              subject text not null,
+              at bigint not null,
+              ad_user_data boolean not null,
+              ad_personalization boolean not null,
+              source text,
+              recorded_at bigint not null
+            );
+            create index if not exists consent_log_subject on ${schema}.consent_log (subject, at);
+            insert into ${schema}.consent_log (subject, at, ad_user_data, ad_personalization, source, recorded_at)
+              select subject, 0, ad_user_data, ad_personalization, 'before history', (extract(epoch from now()) * 1000)::bigint from ${schema}.consent;
+            drop table ${schema}.consent;`,
     },
   ]
 }

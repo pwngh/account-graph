@@ -106,6 +106,7 @@ export function configFrom(env: Env) {
     changeWebhook: env.CHANGE_WEBHOOK,
     linkSecret: env.LINK_SECRET || undefined,
     alertWebhook: env.ALERT_WEBHOOK || undefined,
+    auditHours: number('AUDIT_HEAD_HOURS', 0),
     stages: parsed('STAGES') as Ladder | undefined,
     policy: policy === undefined ? undefined : policyFrom(policy),
     timeZone: env.REPORT_TIME_ZONE || 'UTC',
@@ -180,6 +181,7 @@ export function configFrom(env: Env) {
   }
     if (config.linkSecret !== undefined && config.linkSecret.length < 16) wrong.push('LINK_SECRET must be at least 16 characters')
   if (config.reviewToken && config.reviewToken === config.token) wrong.push('REVIEW_TOKEN must differ from GRAPH_TOKEN')
+  if (config.auditHours > 0 && !config.alertWebhook) wrong.push('ALERT_WEBHOOK must be set along with AUDIT_HEAD_HOURS')
   if (wrong.length > 0) throw new Error(`Cannot start:\n  ${wrong.join('\n  ')}`)
   return config
 }
@@ -275,6 +277,19 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
   const costTimer = sources.length > 0 ? setInterval(readCosts, Math.max(60_000, config.costInterval)) : undefined
   costTimer?.unref()
 
+  // The newest hash of the record of decisions, sent where the database's owners cannot write.
+  const sendHead = async () => {
+    try {
+      const { sound, brokenAt, head } = await graph.audit()
+      const state = sound ? 'The record is whole.' : `The record was altered at entry ${brokenAt}.`
+      if (alert && head) await alert('audit', `account-graph: decision ${head.seq} has hash ${head.hash}. ${state} Keep this line somewhere the database's owners cannot write.`)
+    } catch (error) {
+      log(`audit: ${String((error as Error)?.message ?? error)}`)
+    }
+  }
+  const auditTimer = alert && config.auditHours > 0 ? setInterval(sendHead, Math.min(2 ** 31 - 1, Math.max(60_000, config.auditHours * 3_600_000))) : undefined
+  auditTimer?.unref()
+
   // Visits that arrive together are written together.
   const batcher = createBatcher(graph)
   const queued: Graph = { ...graph, observe: (input) => (Array.isArray(input) ? graph.observe(input) : batcher.observe(input as Parameters<typeof batcher.observe>[0])) }
@@ -313,6 +328,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
   const { hash, due } = await graph.policy()
   log(`policy ${hash.slice(0, 12)} ${config.policy ? 'from settings' : 'by default'}${due ? '; the stored clusters were not built with it, so a rebuild is due (POST /rebuild)' : ''}`)
   if (sources.length > 0) readCosts()
+  if (auditTimer) void sendHead()
 
   return {
     port,
@@ -320,6 +336,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
     async close() {
       stopOutbox?.()
       clearInterval(costTimer)
+      clearInterval(auditTimer)
       await new Promise<void>((resolve) => server.close(() => resolve()))
       server.closeAllConnections?.()
       await batcher.drain()

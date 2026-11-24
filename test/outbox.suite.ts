@@ -130,6 +130,19 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       assert.equal(events['enroll-3'], undefined)
     })
 
+    test('the answer given last decides, not the one that arrived last', async () => {
+      const { graph, outbox, remote } = await fresh()
+      await enroll(graph, 1)
+      await graph.consent('contact:1', { adUserData: false, adPersonalization: false }, { at: T0 + 20, source: 'form' })
+      await graph.consent('contact:1', { adUserData: true, adPersonalization: true }, { at: T0 + 10, source: 'import' })
+      await outbox.record(outcome(1))
+      assert.equal((await outbox.run()).skipped, 1)
+      assert.deepEqual([(await outbox.get('enroll-1'))[0]!.note, remote.requests], ['consent_denied', []])
+      await graph.consent('contact:1', { adUserData: true, adPersonalization: true }, { at: T0 + 30, source: 'form' })
+      await outbox.retry('enroll-1')
+      assert.equal((await outbox.run()).sent, 1)
+    })
+
     test('a weakly tied click is left out and the email is sent alone', async () => {
       const { graph, outbox, remote } = await fresh()
       await graph.observe({ subject: 'visitor:w', identifiers: ['canvas:c', 'ip:198.51.100.8'], at: T0 })

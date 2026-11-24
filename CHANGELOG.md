@@ -65,9 +65,12 @@
 - The reviewer screen labels system decisions, filters and pages the record, and draws every kept-apart pair among the subjects shown.
 - `Rule.group` makes kinds that come together count once: of the reasons in a group, only the strongest adds to the score (`Reason.group`, `Reason.counted`). The default policy has none.
 - `examples/household.json` is a policy for contacts entered by staff; `docs/presets.md` explains it.
+- Every advertising answer is kept (`consentHistory`, `GET /consent`); `POST /consent` takes `at` and `source`, and the newest by `at` stands.
+- `GET /audit` names the newest decision and its hash (`head`); `AUDIT_HEAD_HOURS` posts it to `ALERT_WEBHOOK`.
 
 ### Changed
 
+- `prune` also deletes advertising answers that no longer stand.
 - Breaking: `GET /decisions` answers `{ decisions, next, total }`, newest first, a page at a time (`decisionPage`).
 - A name that starts with `system:` is refused with the reviewer token.
 

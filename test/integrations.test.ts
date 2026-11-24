@@ -241,6 +241,7 @@ test('the server keeps the device id in its own cookie and honours an opt-out', 
     assert.deepEqual((await graph.history('visitor:private-1')).map((s) => s.identifier.split(':')[0]).sort(), ['canvas', 'device', 'ip'])
     assert.equal((await graph.attribute('visitor:private-1', { at: T0 })).reason, 'no_touch')
     assert.deepEqual((await graph.consentOf(['visitor:private-1'])).get('visitor:private-1'), { adUserData: false, adPersonalization: false })
+    assert.ok((await graph.consentHistory('visitor:private-1')).every((answer) => answer.source === 'browser signal'))
 
     // A banner answer is stored as given.
     await visit({ device: 'agreed-1', consent: { adUserData: true, adPersonalization: false }, touch: { gclid: 'G-OK' } })
@@ -350,7 +351,7 @@ test('the reviewer token opens the review routes and nothing a service writes th
   const call = (token: string, method: string, path: string, body?: object) =>
     fetch(`${base}${path}`, { method, headers: { authorization: `Bearer ${token}` }, ...(body && { body: JSON.stringify(body) }) }).then((r) => r.status)
   try {
-    for (const path of ['/subject?subject=account:1', '/clusters', '/clusters?offset=50', '/search?q=account', '/recent', '/links?subject=account:1', '/flows?subject=account:1', '/decisions', '/decisions?author=system&limit=5', '/disputes', '/policy', '/pulse', '/audit']) {
+    for (const path of ['/subject?subject=account:1', '/clusters', '/clusters?offset=50', '/search?q=account', '/recent', '/links?subject=account:1', '/flows?subject=account:1', '/decisions', '/decisions?author=system&limit=5', '/disputes', '/consent?subject=account:1', '/policy', '/pulse', '/audit']) {
       assert.equal(await call('reviewer', 'GET', path), 200, path)
     }
     assert.equal(await call('reviewer', 'POST', '/separate', { a: 'account:1', b: 'account:2', by: 'dana' }), 200)
@@ -380,6 +381,9 @@ test('the reviewer token opens the review routes and nothing a service writes th
     assert.equal(await call('reviewer', 'GET', '/verify'), 403)
     assert.deepEqual(await graph.history('account:1'), before)
 
+    assert.equal(await call('service', 'POST', '/consent', { subject: 'account:1', consent: { adUserData: true, adPersonalization: true }, at: T0 - 5, source: 'import' }), 204)
+    assert.equal(await call('service', 'POST', '/consent', { subject: 'account:1', consent: { adUserData: true, adPersonalization: true }, at: 'noon' }), 400)
+    assert.deepEqual((await graph.consentHistory('account:1')).map((answer) => [answer.at, answer.source]), [[T0 - 5, 'import']])
     assert.equal(await call('service', 'POST', '/observe', { subject: 'account:1', identifiers: ['email:x'], at: T0 }), 200)
     assert.equal(await call('service', 'GET', '/clusters'), 200)
     assert.equal(await call('wrong', 'GET', '/clusters'), 401)

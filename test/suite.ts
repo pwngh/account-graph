@@ -660,7 +660,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const people = await graph.reviewed({ exclude: 'system:' })
       assert.ok((await graph.reviewed()).length > people.length)
       assert.deepEqual(await graph.verify(), [])
-      assert.deepEqual(await graph.audit(), { sound: true })
+      assert.equal((await graph.audit()).sound, true)
     })
 
     test('a pair that systems keep reversing is flagged', async () => {
@@ -811,7 +811,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
           { seq: 3, at: T0 + 21 * DAY, action: 'forget', about: ['nobody'], by: undefined, reason: undefined },
         ],
       )
-      assert.deepEqual(await graph.audit(), { sound: true })
+      assert.equal((await graph.audit()).sound, true)
       // Altering or dropping an entry breaks the seal from that point on.
       assert.equal(brokenAt(decisions.map((d) => (d.seq === 1 ? { ...d, reason: 'edited' } : d))), 1)
       assert.equal(brokenAt(decisions.filter((d) => d.seq !== 2)), 3)
@@ -836,6 +836,50 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       // On day 15 nobody knew about b, so a decision made then could not have rested on it.
       assert.deepEqual((await (await graph.asOf(T0 + 15 * DAY)).cluster('a'))!.members, ['a'])
       assert.deepEqual((await (await graph.asOf(T0 + 30 * DAY)).cluster('a'))!.members, ['a', 'b'])
+    })
+
+    test('every answer about advertising is kept, and the newest by when it was given stands', async () => {
+      const clock = { now: T0 + 10 * DAY }
+      const given = [
+        { at: T0 + DAY, adUserData: true, adPersonalization: true, source: 'banner' },
+        { at: T0 + 3 * DAY, adUserData: false, adPersonalization: false, source: 'browser signal' },
+        { at: T0 + 2 * DAY, adUserData: true, adPersonalization: false, source: 'form' },
+      ]
+      // Whatever order they arrive in, the same one stands and the history reads the same.
+      for (const order of [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]]) {
+        const { graph } = await fresh(undefined, { now: () => clock.now })
+        for (const n of order) await graph.consent('a', given[n]!, { at: given[n]!.at, source: given[n]!.source })
+        assert.deepEqual((await graph.consentOf(['a', 'b'])), new Map([['a', { adUserData: false, adPersonalization: false }]]))
+        assert.deepEqual((await graph.consentHistory('a')).map(({ recorded: _, ...answer }) => answer), [given[1], given[2], given[0]])
+      }
+      const { graph } = await fresh(undefined, { now: () => clock.now })
+      // Given at one moment, the one written down later stands; written down at one moment too, the refusal does.
+      await graph.consent('a', { adUserData: false, adPersonalization: false }, { at: T0 })
+      clock.now += 1
+      await graph.consent('a', { adUserData: true, adPersonalization: true }, { at: T0 })
+      assert.equal((await graph.consentOf(['a'])).get('a')!.adUserData, true)
+      await graph.consent('a', { adUserData: false, adPersonalization: true }, { at: T0 })
+      await graph.consent('a', { adUserData: true, adPersonalization: false }, { at: T0 })
+      assert.deepEqual((await graph.consentOf(['a'])).get('a'), { adUserData: false, adPersonalization: true })
+      // With no time given it is now. A time ahead would stand over every real answer, so it is refused.
+      await graph.consent('a', { adUserData: true, adPersonalization: true })
+      assert.deepEqual((await graph.consentHistory('a'))[0], { at: clock.now, adUserData: true, adPersonalization: true, recorded: clock.now })
+      for (const at of [clock.now + 2 * DAY, 0.5, -1, '1' as unknown as number]) await assert.rejects(graph.consent('a', { adUserData: true, adPersonalization: true }, { at }), TypeError)
+
+      // Pruning keeps the answer that stands, however old.
+      await graph.consent('old', { adUserData: false, adPersonalization: false }, { at: T0 })
+      clock.now += 30 * DAY
+      await graph.consent('a', { adUserData: false, adPersonalization: false })
+      assert.equal(await graph.prune(clock.now), 5)
+      assert.deepEqual([(await graph.consentHistory('a')).length, (await graph.consentHistory('old')).length], [1, 1])
+      assert.equal((await graph.consentOf(['old'])).get('old')!.adUserData, false)
+      // Forgetting deletes the history, and that deletion is on the record.
+      await graph.forget('a')
+      assert.deepEqual(await graph.consentHistory('a'), [])
+      assert.deepEqual((await graph.decisionPage({ limit: 1 })).map((d) => [d.action, d.about]), [['forget', ['a']]])
+      // The newest entry's hash is what to keep a copy of.
+      const audit = await graph.audit()
+      assert.deepEqual([audit.sound, audit.head], [true, { seq: 2, hash: (await graph.decisionPage({ limit: 1 }))[0]!.hash }])
     })
 
     test('pruning deletes old sightings and leaves links and clusters alone', async () => {
@@ -1083,7 +1127,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
         }
         assert.deepEqual(await graph.verify(), [], `seed ${seed}, step ${step}`)
       }
-      assert.deepEqual(await graph.audit(), { sound: true })
+      assert.equal((await graph.audit()).sound, true)
     })
   })
 }

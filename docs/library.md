@@ -139,7 +139,7 @@ A browser that sends the Global Privacy Control signal is still seen, because fr
 
 ```ts
 collect({ endpoint, consent: { adUserData: true, adPersonalization: false } }) // the banner's answer
-await graph.consent('contact:1001', { adUserData: true, adPersonalization: true }) // or from your server
+await graph.consent('contact:1001', { adUserData: true, adPersonalization: true }, { at, source: 'form' }) // or from your server
 ```
 
 ### Google tag and Google Ads
@@ -330,7 +330,7 @@ Pass `onChange` to `createGraph` to be told, after each write commits, which sub
 
 ### Keeping the log small
 
-Every observation adds rows to the sighting log. `prune` deletes the ones written down before a time. Links and clusters do not change, because each edge keeps its first and last sighting and its count; only `history` and `asOf` lose what was deleted. Pruning is itself recorded as a decision.
+Every observation adds rows to the sighting log. `prune` deletes the ones written down before a time. Links and clusters do not change, because each edge keeps its first and last sighting and its count; only `history`, `consentHistory` and `asOf` lose what was deleted. Answers about advertising go too, except the one that stands for each subject. Pruning is itself recorded as a decision.
 
 ```ts
 await graph.prune(Date.now() - 180 * 24 * 60 * 60 * 1000, { by: 'ops', reason: '180 day retention' })
