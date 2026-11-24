@@ -23,6 +23,7 @@ const find = (text) => api('POST', '/find', { text })
 const suggest = (subjects) => $('found').replaceChildren(...subjects.map((subject) => el('option', { value: subject })))
 $('find').addEventListener('submit', async (event) => {
   event.preventDefault()
+  edits += 1
   const text = $('subject').value.trim()
   const token = $('token').value
   if (!text || !token) return
@@ -46,6 +47,7 @@ $('find').addEventListener('submit', async (event) => {
 // Suggest subjects as the reviewer types, a moment after the last key.
 let typing
 $('subject').addEventListener('input', () => {
+  edits += 1
   clearTimeout(typing)
   typing = setTimeout(async () => {
     const text = $('subject').value.trim()

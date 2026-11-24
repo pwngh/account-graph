@@ -335,6 +335,8 @@ const fold = (node) => {
   return `${section?.querySelector('h2, h3')?.textContent}\n${[...(section?.querySelectorAll('details') ?? [])].indexOf(node)}`
 }
 
+/** Counts what the reviewer does in the Find box. */
+let edits = 0
 let loading = 0
 let pending = 0
 /** Loads under way that the reviewer asked for, as against a refresh. */
@@ -348,7 +350,7 @@ async function load(tag) {
   const turn = ++loading
   const quiet = tag !== undefined
   const { name, parts } = place()
-  const sought = $('subject').value
+  const sought = edits
   for (const link of $('views').children) {
     if (link.dataset.view === name) link.setAttribute('aria-current', 'page')
     else link.removeAttribute('aria-current')
@@ -388,7 +390,7 @@ async function load(tag) {
     if (!quiet) {
       notice('')
       // What was typed since is a search of the reviewer's, and stays.
-      if (views.get(name).subject && parts[0] && $('subject').value === sought) $('subject').value = parts[0]
+      if (views.get(name).subject && parts[0] && edits === sought) $('subject').value = parts[0]
     }
     if (!quiet) browsing = false
     loadedAt = readAt = Date.now()

@@ -157,9 +157,13 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   }
   assert.ok(!(await run('location.href')).includes('person'))
   // What is typed while something opens stays as typed.
-  await run(`(() => { load(); document.getElementById('subject').value = 'typed meanwhile' })()`)
+  await run(`(() => { load(); const s = document.getElementById('subject'); s.value = 'typed meanwhile'; s.dispatchEvent(new Event('input')) })()`)
   await until('it to open', () => run(`opening === 0`))
   assert.equal(await run(`document.getElementById('subject').value`), 'typed meanwhile')
+  // And a search made while something opens is answered, even for what the box held before.
+  await run(`load(); 0`)
+  await look('typed meanwhile')
+  await until('its answer', async () => (await text('#notice')).includes('Nobody'))
   await look('person:2')
   await until('the exact one', async () => (await text('#detail h3')) === 'person:2')
   await pause(400)
