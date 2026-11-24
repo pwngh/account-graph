@@ -201,6 +201,19 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       )
     },
 
+    async shared(subjects) {
+      // Of a few, looking each up is quickest. Of many, PostgreSQL may read both tables whole instead.
+      if (subjects.length < 2_000) {
+        const states = await this.states([...new Set((await this.edgesOf(subjects)).map((edge) => edge.identifier))])
+        return new Map([...states].filter(([, state]) => state.fanout > 1 && !state.ignored))
+      }
+      const { rows } = await db.query(
+        `select id, fanout from ${t('identifier')} where fanout > 1 and not ignored and id in (select identifier from ${t('edge')} where subject = any($1::text[]))`,
+        [subjects],
+      )
+      return new Map(rows.map((row) => [row.id, { fanout: row.fanout, ignored: false }]))
+    },
+
     async labelsOf(subjects) {
       if (subjects.length === 0) return new Map()
       const { rows } = await db.query(`select id, component, cluster from ${t('subject')} where id = any($1::text[])`, [subjects])

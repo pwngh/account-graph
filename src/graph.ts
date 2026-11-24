@@ -455,7 +455,7 @@ const KIND_ORDER: Record<Entry['kind'], number> = { visit: 0, call: 1, text: 1, 
 /** The most subjects of one person a journey reads. */
 const MOST = 60
 /** How many subjects one read of many takes at a time. */
-const TOGETHER = 1_000
+const TOGETHER = 50_000
 const MIXED = 'mixed'
 /** The moments a range of days begins and ends in a time zone. */
 function range(from: string, to: string, timeZone?: string): [number, number] {
@@ -576,10 +576,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
   /** Links of each given subject, scored from edges. A pair a reviewer separated is not a link. */
   async function neighbors(tx: Tx, subjects: readonly Subject[]): Promise<Map<Subject, Link[]>> {
-    const own = await tx.edgesOf(subjects)
-    const identifiers = unique(own.map((edge) => edge.identifier))
-    const states = await tx.states(identifiers)
-    const open = identifiers.filter((identifier) => usable(policy, identifier, states.get(identifier)))
+    const states = await tx.shared(subjects)
+    const open = [...states.keys()].filter((identifier) => usable(policy, identifier, states.get(identifier)))
     const apart = new Set((await tx.separatedOf(subjects)).map(([a, b]) => pairKey(a, b)))
     const from = new Set(subjects)
     const out = new Map<Subject, Link[]>()
@@ -676,9 +674,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       const links = new Map<Subject, Link[]>()
       for (let hop = 0; hop < hops && searches.some((search) => search.frontier.length > 0); hop++) {
         const unread = unique(searches.flatMap((search) => search.frontier)).filter((subject) => !links.has(subject))
-        if (unread.length > 0) {
-          const found = await neighbors(tx, unread)
-          for (const subject of unread) links.set(subject, found.get(subject) ?? [])
+        for (let j = 0; j < unread.length; j += TOGETHER) {
+          const some = unread.slice(j, j + TOGETHER)
+          const found = await neighbors(tx, some)
+          for (const subject of some) links.set(subject, found.get(subject) ?? [])
         }
         for (const search of searches) search.frontier = spread(search.reached, search.apart, search.frontier, links)
       }
