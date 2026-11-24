@@ -199,6 +199,8 @@ META_AD_ACCOUNT_ID=…
 META_ADS_TOKEN=…
 ```
 
+Both can also say how many conversions they count, with `GOOGLE_ADS_CONVERSIONS=true` and `META_ADS_CONVERSIONS=` the name Meta's reports give the action. [The report](report.md#what-a-platform-says-it-brought) sets that beside what is credited here. The fields are in [Google's metrics](https://developers.google.com/google-ads/api/fields/v26/metrics) and [Meta's action statistics](https://developers.facebook.com/docs/marketing-api/reference/ads-action-stats/).
+
 Not stated on the pages read: the developer token steps and header, which are from Google's developer token page as remembered, not read this month; whether `account_currency` comes back on every Meta row; and the address of the next page of Meta results, which this follows from `paging.next`.
 
 ## What has and has not been checked

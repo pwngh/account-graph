@@ -354,6 +354,39 @@ A cost per outcome is easy to get wrong in two ways: dividing all the money by a
 A day with no row is a missing day, even where the campaign was simply paused: a platform that sends no row does not say which. Post a row of zero for a day you know cost nothing.
 
 
+### What a platform says it brought
+
+Ad platforms count conversions by their own rules. To see their number beside what is credited here, send it with the cost:
+
+```sh
+curl -X POST https://graph.example.org/costs -H "authorization: Bearer $GRAPH_TOKEN" \
+  -d '[{"day":"2026-11-14","source":"microsoft","campaignId":"55","amount":300,"currency":"USD","conversions":7.5,"conversionValue":900}]'
+```
+
+A `conversionValue` needs `conversions` beside it. In a CSV the columns are called the same. For Google Ads and Meta the server reads them with the costs, when asked to:
+
+| Setting | Reads |
+| --- | --- |
+| `GOOGLE_ADS_CONVERSIONS=true` | `metrics.conversions` and its value: the actions you let Google count as conversions |
+| `META_ADS_CONVERSIONS=offsite_conversion.fb_pixel_lead` | How many of that one action Meta reports, and its value |
+
+Without them the server reads none. The report has `claimed` on campaigns with a number, and on the total:
+
+| Figure | Says |
+| --- | --- |
+| `days` | Days of the period, up to today, with a number from the platform |
+| `conversions`, `value` | What the platform says it brought on those days. `value` is null when some of them had none |
+| `credited`, `creditedValue` | What is credited here on the same days, of the step in `per`, or of every step |
+
+Read the two as two answers and not as one sum. They need not agree:
+
+- A platform may count on the day of the click and the report counts on the day of the outcome. Compare weeks and not single days.
+- Two platforms may both claim one client. Here it is credited to one campaign or to none.
+- A platform counts visitors it recognizes and fills in some it does not, so its number may be a fraction.
+- What it counts is what you set up there. Set `per` to the step that means the same.
+
+A platform goes on adding to a day for weeks. Set `COST_DAYS` to as long as its window, such as `30`, so the days are read again. A row sent again replaces all of the one before it, so post costs and conversions together.
+
 ## Limits
 
 | Limit | Detail |

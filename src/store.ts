@@ -1,6 +1,6 @@
 import type { Feed, OpsStore } from './ops.ts'
 import type { OutboxStore } from './outbox.ts'
-import type { CallResult, Change, Consent, ConsentAnswer, Cost, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Lease, Moved, NotLead, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, Change, Consent, ConsentAnswer, CostRow, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Lease, Moved, NotLead, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
 
 /**
  * Where the graph lives. Sightings and touches are the record; edges and
@@ -146,9 +146,9 @@ export interface Tx {
   /** The newest outcomes of each step with `from <= at < to`, at most `each` of one step. */
   newestOutcomes(from: number, to: number, each: number): Promise<Counted[]>
   /** Records what campaigns cost, replacing any row with the same day, source and campaign. */
-  addCosts(costs: readonly Required<Cost>[]): Promise<void>
+  addCosts(costs: readonly CostRow[]): Promise<void>
   /** Costs with `from <= day <= to`, days written `YYYY-MM-DD`. */
-  costsBetween(from: string, to: string): Promise<Required<Cost>[]>
+  costsBetween(from: string, to: string): Promise<CostRow[]>
   /** Sightings of a subject, oldest first. With `limit`, only the newest that many. */
   history(subject: Subject, limit?: number): Promise<Sighting[]>
   /** Every sighting written down at or before a time, for replaying what was known then. */

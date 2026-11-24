@@ -37,6 +37,8 @@ export interface GoogleCostOptions {
   accessToken: () => Promise<string>
   /** The manager account the credentials belong to, when they reach the account through one. */
   loginCustomerId?: string
+  /** Read the conversions Google counts for each campaign too, those its bidding uses. Off unless asked for. */
+  conversions?: boolean
   /** The Google Ads API version. Defaults to `v26`. */
   version?: string
   fetch?: typeof fetch
@@ -49,7 +51,9 @@ export function googleCosts(options: GoogleCostOptions): CostSource {
   return async (from, to) => {
     days(from, to)
     const query =
-      'SELECT campaign.id, campaign.name, segments.date, metrics.cost_micros, metrics.clicks, metrics.impressions, customer.currency_code ' +
+      'SELECT campaign.id, campaign.name, segments.date, metrics.cost_micros, metrics.clicks, metrics.impressions, ' +
+      (options.conversions ? 'metrics.conversions, metrics.conversions_value, ' : '') +
+      'customer.currency_code ' +
       `FROM campaign WHERE segments.date BETWEEN '${from}' AND '${to}' AND metrics.impressions > 0`
     const response = await fetcher(url, {
       method: 'POST',
@@ -90,6 +94,7 @@ export function googleCosts(options: GoogleCostOptions): CostSource {
           ...(row.customer?.currencyCode && { currency: row.customer.currencyCode }),
           clicks: Number(row.metrics?.clicks ?? 0),
           impressions: Number(row.metrics?.impressions ?? 0),
+          ...(options.conversions && { conversions: Number(row.metrics?.conversions ?? 0), conversionValue: Number(row.metrics?.conversionsValue ?? 0) }),
         })
       }
     }
@@ -102,9 +107,17 @@ export interface MetaCostOptions {
   adAccountId: string
   /** A token that may read the ad account's reports. */
   accessToken: string
+  /** Read how many of this action Meta counts for each campaign too, named as its reports name it, such as `offsite_conversion.fb_pixel_lead`. Off unless named. */
+  conversions?: string
   /** The Graph API version. Defaults to `v27.0`. */
   version?: string
   fetch?: typeof fetch
+}
+
+/** What Meta lists under one action. An action that did not happen, or has no value, is not listed. */
+const counted = (list: any, action: string): number | undefined => {
+  const found = (Array.isArray(list) ? list : []).find((each) => each?.action_type === action)?.value
+  return found === undefined || found === null ? undefined : Number(found)
 }
 
 /** Daily spend per campaign from Meta's Insights API. */
@@ -116,7 +129,7 @@ export function metaCosts(options: MetaCostOptions): CostSource {
     const first = new URL(`https://graph.facebook.com/${options.version ?? 'v27.0'}/act_${account}/insights`)
     first.search = new URLSearchParams({
       level: 'campaign',
-      fields: 'campaign_id,campaign_name,spend,clicks,impressions,account_currency',
+      fields: `campaign_id,campaign_name,spend,clicks,impressions,account_currency${options.conversions ? ',actions,action_values' : ''}`,
       time_range: JSON.stringify({ since: from, until: to }),
       time_increment: '1',
       limit: '500',
@@ -131,6 +144,7 @@ export function metaCosts(options: MetaCostOptions): CostSource {
         throw new CostError(`Meta refused the cost report with ${response.status}: ${body?.error?.message ?? 'no reason given'}`, response.status, body?.error?.fbtrace_id)
       }
       for (const row of body?.data ?? []) {
+        const value = options.conversions && counted(row.action_values, options.conversions)
         costs.push({
           day: row.date_start,
           source: 'meta',
@@ -140,6 +154,8 @@ export function metaCosts(options: MetaCostOptions): CostSource {
           ...(row.account_currency && { currency: row.account_currency }),
           clicks: Number(row.clicks ?? 0),
           impressions: Number(row.impressions ?? 0),
+          ...(options.conversions && { conversions: counted(row.actions, options.conversions) ?? 0 }),
+          ...(typeof value === 'number' && { conversionValue: value }),
         })
       }
       next = typeof body?.paging?.next === 'string' ? body.paging.next : undefined
@@ -151,7 +167,8 @@ export function metaCosts(options: MetaCostOptions): CostSource {
 /**
  * Reads a spreadsheet saved as CSV into costs, for a platform with no
  * importer here. The first line names the columns: `day`, `source`, `amount`,
- * and optionally `campaign_id`, `campaign`, `currency`, `clicks`, `impressions`.
+ * and optionally `campaign_id`, `campaign`, `currency`, `clicks`, `impressions`,
+ * `conversions`, `conversionValue`.
  */
 export function costsFromCsv(text: string): Cost[] {
   const lines = parseCsv(text).filter((cells) => cells.some((cell) => cell.trim()))
@@ -168,6 +185,8 @@ export function costsFromCsv(text: string): Cost[] {
     if (amount === undefined || !Number.isFinite(amount)) throw new TypeError(`Line ${i + 2} of the CSV has no amount`)
     const clicks = number(cells, 'clicks')
     const impressions = number(cells, 'impressions')
+    const conversions = number(cells, 'conversions')
+    const conversionValue = number(cells, 'conversionvalue')
     return {
       day: text('day'),
       source: text('source'),
@@ -177,6 +196,8 @@ export function costsFromCsv(text: string): Cost[] {
       ...(text('currency') && { currency: text('currency') }),
       ...(clicks !== undefined && { clicks }),
       ...(impressions !== undefined && { impressions }),
+      ...(conversions !== undefined && { conversions }),
+      ...(conversionValue !== undefined && { conversionValue }),
     }
   })
 }

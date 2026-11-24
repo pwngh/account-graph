@@ -360,6 +360,8 @@ On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes i
 | `REPORT_TIME_ZONE` | `UTC` | The time zone `/report` and the call routes read their days in, such as `America/New_York`. Use the ad account's. |
 | `GOOGLE_ADS_DEVELOPER_TOKEN` | none | Read campaign costs from Google Ads. Needs the two Google variables below. |
 | `META_AD_ACCOUNT_ID`, `META_ADS_TOKEN` | none | Read campaign costs from Meta. Set both. |
+| `GOOGLE_ADS_CONVERSIONS` | none | `true` reads the conversions Google counts for each campaign, with its costs. |
+| `META_ADS_CONVERSIONS` | none | The action to read from Meta with its costs, such as `offsite_conversion.fb_pixel_lead`. |
 | `COST_INTERVAL_MS`, `COST_DAYS` | six hours, `7` | How often to read costs, and how many days back each time. |
 | `FINGERPRINT_SECRET`, `FINGERPRINT_REGION` | none, `us` | Confirm Fingerprint events. |
 | `MAXMIND_ACCOUNT_ID`, `MAXMIND_LICENSE_KEY` | none | Classify addresses with MaxMind. Set both. |

@@ -11,6 +11,7 @@ import { promisify } from 'node:util'
 import { test } from 'node:test'
 import { createGraph, createMemoryStore, createOps, createOutbox, googleAds, hashPhone, knownLink, policyFrom, staffLink, email, phone, phoneOfType } from '../src/index.ts'
 import type { IngestRequest } from '../src/index.ts'
+import { configFrom } from '../src/serve.ts'
 import { CostError, costsFromCsv, googleCosts, metaCosts } from '../src/integrations/costs.ts'
 import { createFingerprintVerifier, trusted } from '../src/integrations/fingerprint.ts'
 import type { VerifiedFingerprint } from '../src/integrations/fingerprint.ts'
@@ -739,10 +740,39 @@ test('daily campaign spend is read from Meta, page after page', async () => {
   await assert.rejects(metaCosts({ adAccountId: '13', accessToken: 'bad', fetch: fetcher })('2026-03-01', '2026-03-02'), (error: CostError) => error.status === 400 && error.requestId === 'trace-1' && /Invalid OAuth/.test(error.message))
 })
 
+test('what a platform says it brought is read only when it is asked for', async () => {
+  const google = fake(() => ({ body: [{ results: [
+    { campaign: { id: '111', name: 'Spring' }, segments: { date: '2026-03-01' }, metrics: { costMicros: '1000000', clicks: '1', impressions: '9', conversions: 1.5, conversionsValue: 60.25 }, customer: { currencyCode: 'USD' } },
+    { campaign: { id: '222', name: 'Brand' }, segments: { date: '2026-03-01' }, metrics: { costMicros: '1000000', clicks: '1', impressions: '9' } },
+  ] }] }))
+  const account = { customerId: '1', developerToken: 'dev', accessToken: async () => 'token', fetch: google.fetcher }
+  assert.deepEqual((await googleCosts({ ...account, conversions: true })('2026-03-01', '2026-03-01')).map((row) => [row.conversions, row.conversionValue]), [[1.5, 60.25], [0, 0]])
+  assert.equal('conversions' in (await googleCosts(account)('2026-03-01', '2026-03-01'))[0]!, false)
+  assert.deepEqual(google.calls.map((call) => JSON.parse(String(call.init.body)).query.includes('metrics.conversions, metrics.conversions_value, customer.currency_code')), [true, false])
+
+  const row = { campaign_id: '777', campaign_name: 'Retarget', spend: '15', clicks: '9', impressions: '300', date_start: '2026-03-01' }
+  const meta = fake(() => ({ body: { data: [
+    { ...row, actions: [{ action_type: 'link_click', value: '9' }, { action_type: 'lead', value: '3' }], action_values: [{ action_type: 'lead', value: '15.5' }] },
+    { ...row, campaign_id: '778', actions: [{ action_type: 'link_click', value: '9' }] },
+    { ...row, campaign_id: '779' },
+    { ...row, campaign_id: '780', actions: [{ action_type: 'lead', value: '4' }], action_values: [{ action_type: 'other', value: '1' }] },
+    { ...row, campaign_id: '781', actions: [{ action_type: 'lead', value: '4' }], action_values: [{ action_type: 'lead', value: '0' }] },
+  ] } }))
+  const ads = { adAccountId: '12', accessToken: 'token', fetch: meta.fetcher }
+  assert.deepEqual((await metaCosts({ ...ads, conversions: 'lead' })('2026-03-01', '2026-03-01')).map((each) => [each.conversions, each.conversionValue]), [[3, 15.5], [0, undefined], [0, undefined], [4, undefined], [4, 0]])
+  assert.equal('conversions' in (await metaCosts(ads)('2026-03-01', '2026-03-01'))[0]!, false)
+  assert.deepEqual(meta.calls.map((call) => new URL(call.url).searchParams.get('fields')!.endsWith(',account_currency,actions,action_values')), [true, false])
+
+  const env = { DATABASE_URL: 'x', GRAPH_TOKEN: 'y', GOOGLE_ADS_DEVELOPER_TOKEN: 'd', GOOGLE_ADS_CUSTOMER_ID: '1', GOOGLE_SERVICE_ACCOUNT_FILE: 'f', META_AD_ACCOUNT_ID: '2', META_ADS_TOKEN: 't' }
+  assert.deepEqual([configFrom(env).googleCosts!.conversions, configFrom(env).metaCosts!.conversions], [false, undefined])
+  const asked = configFrom({ ...env, GOOGLE_ADS_CONVERSIONS: 'true', META_ADS_CONVERSIONS: 'lead' })
+  assert.deepEqual([asked.googleCosts!.conversions, asked.metaCosts!.conversions], [true, 'lead'])
+})
+
 test('a spreadsheet of costs is read from CSV', () => {
-  const csv = 'Day,Source,Campaign ID,Campaign,Amount,Currency,Clicks,Impressions\r\n2026-03-01,microsoft,55,"Spring, ""big"" sale","$1,250.50",USD,40,"2,000"\n\n2026-03-02,mailer,,,300,,,\n'
+  const csv = 'Day,Source,Campaign ID,Campaign,Amount,Currency,Clicks,Impressions,Conversions,Conversion value\r\n2026-03-01,microsoft,55,"Spring, ""big"" sale","$1,250.50",USD,40,"2,000",2.5,"$1,000"\n\n2026-03-02,mailer,,,300,,,,,\n'
   assert.deepEqual(costsFromCsv(csv), [
-    { day: '2026-03-01', source: 'microsoft', amount: 1250.5, campaignId: '55', campaign: 'Spring, "big" sale', currency: 'USD', clicks: 40, impressions: 2000 },
+    { day: '2026-03-01', source: 'microsoft', amount: 1250.5, campaignId: '55', campaign: 'Spring, "big" sale', currency: 'USD', clicks: 40, impressions: 2000, conversions: 2.5, conversionValue: 1000 },
     { day: '2026-03-02', source: 'mailer', amount: 300 },
   ])
   assert.throws(() => costsFromCsv('day,source\n2026-03-01,x'), /"amount" column/)

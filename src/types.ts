@@ -490,6 +490,30 @@ export interface Cost {
   currency?: string
   clicks?: number
   impressions?: number
+  /** How many conversions the platform says this spend brought, by its own rules. They need not be whole, and are never outcomes here. */
+  conversions?: number
+  /** What the platform says those are worth, in the currency of the amount. */
+  conversionValue?: number
+}
+
+/** A cost as it is kept. What the platform claims is there only where it was said. */
+export type CostRow = Required<Omit<Cost, 'conversions' | 'conversionValue'>> & Pick<Cost, 'conversions' | 'conversionValue'>
+
+/**
+ * What a platform says it brought, beside what is credited to it here, over
+ * the days it said so. The two need not agree: a platform counts by its own
+ * rules, often on the day of the click, and two may claim the same one.
+ */
+export interface Claimed {
+  /** Days of the period, up to today, with a number from the platform. */
+  days: number
+  conversions: number
+  /** Null when the platform gave no value for some of them. */
+  value: number | null
+  /** Outcomes credited here on those days, of the one step asked for with `per` or of all. */
+  credited: number
+  /** What those are worth now. */
+  creditedValue: number
 }
 
 /** Outcomes of one step. */
@@ -548,6 +572,8 @@ export interface ReportRow {
   costPerOutcome: number | null
   /** The value of those outcomes over the same cost. Null for the same reasons, or when they are worth nothing. */
   returnOnCost: number | null
+  /** What the platform says it brought. Absent where it said nothing. On the total, over the rows that have one. */
+  claimed?: Claimed
   /** The same outcomes by the dimension asked for. Costs are not split: a campaign is charged whole. */
   breakdown?: Breakdown
 }
