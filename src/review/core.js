@@ -71,19 +71,57 @@ const notes = (...texts) => el('details', {}, el('summary', { class: 'muted' }, 
 /** The few numbers a view is about, large, each with what it is of. `tone` marks one that needs someone, in words as well as color. */
 const tiles = (...list) => el('dl', { class: 'tiles' }, ...list.filter(Boolean).map(([label, value, note = '', tone = '']) =>
   el('div', tone ? { class: tone } : {}, el('dt', {}, label), el('dd', {}, el('b', {}, value), note ? el('span', { class: 'reason' }, note) : ''))))
-/** Parts of a whole as one bar, and the same numbers as a list under it. A part of none keeps its place in the list. */
+/** Parts left out of a bar, by the bar's label and the part's name, kept while the screen is open. */
+const partsOff = new Set()
+/**
+ * Parts of a whole as one bar, and the same numbers as a list under it.
+ * Resting on a part, in either, brings it forward. A part pressed is left
+ * out, and the rest are shares of what is left. A part of none keeps its
+ * place in the list.
+ */
 function parts(label, list) {
-  const whole = list.reduce((sum, [, n]) => sum + n, 0)
-  const drawing = svg('svg', { viewBox: '0 0 100 12', preserveAspectRatio: 'none', focusable: 'false' })
-  let soFar = 0
-  list.forEach(([, n], i) => {
-    if (n === 0) return
-    drawing.append(svg('rect', { class: `part${i}`, x: 100 * soFar / whole, y: 0, width: 100 * n / whole, height: 12 }))
-    soFar += n
-  })
-  const bar = el('div', { class: 'parts', 'aria-hidden': 'true' }, drawing)
-  return el('div', { class: 'part-summary' }, bar, el('ul', { class: 'legend', 'aria-label': label }, ...list.map(([name, n, note], i) => el('li', {}, el('span', { class: `key part${i}`, 'aria-hidden': 'true' }),
-    el('span', {}, name, note ? el('span', { class: 'reason' }, note) : ''), el('b', {}, tally(n)), el('span', { class: 'muted' }, whole > 0 ? percent(n / whole) : '—')))))
+  const bar = el('div', { class: 'parts', 'aria-hidden': 'true' })
+  const legend = el('ul', { class: 'legend', 'aria-label': label })
+  const told = el('p', { class: 'meta', role: 'status' })
+  const root = el('div', { class: 'split-bar' }, bar, legend, told)
+  const key = (name) => `${label}\n${name}`
+  const light = (i) => {
+    // One left out has nothing in the bar to bring forward.
+    root.classList.toggle('lit', i !== undefined && !partsOff.has(key(list[i][0])))
+    for (const node of root.querySelectorAll('[data-part]')) node.classList.toggle('on', node.dataset.part === String(i))
+  }
+  const lights = (node, i) => {
+    for (const [on, off] of [['pointerenter', 'pointerleave'], ['focusin', 'focusout']]) {
+      node.addEventListener(on, () => light(i))
+      node.addEventListener(off, () => light())
+    }
+    return node
+  }
+  const draw = () => {
+    const held = legend.contains(document.activeElement) ? document.activeElement.dataset.key : undefined
+    const kept = list.filter(([name]) => !partsOff.has(key(name)))
+    const whole = kept.reduce((sum, [, n]) => sum + n, 0)
+    bar.replaceChildren(...list.flatMap(([name, n], i) => {
+      if (n === 0 || partsOff.has(key(name))) return []
+      const part = lights(el('span', { class: `part part${i}`, 'data-part': i, title: `${name}: ${amount(n)}, ${percent(n / whole)}` }, el('b', {}, percent(n / whole))), i)
+      part.style.flexGrow = n
+      // Its number is inside when there is room for it, and only in the list when there is not.
+      part.classList.toggle('roomy', n / whole >= 0.09)
+      return [part]
+    }))
+    legend.replaceChildren(...list.map(([name, n, note], i) => {
+      const off = partsOff.has(key(name))
+      return lights(el('li', { 'data-part': i }, el('button', { type: 'button', 'data-key': `part ${label} ${name}`, 'aria-pressed': String(!off), on: { click: () => {
+        if (!partsOff.delete(key(name))) partsOff.add(key(name))
+        draw()
+        light(i)
+      } } }, el('span', { class: `key part${i}`, 'aria-hidden': 'true' }), el('span', { class: 'legend-name' }, el('span', {}, name), note ? el('span', { class: 'reason' }, note) : ''), el('b', {}, tally(n)), el('span', { class: 'muted' }, off ? 'left out' : whole > 0 ? percent(n / whole) : '—'))), i)
+    }))
+    told.textContent = kept.length < list.length ? `Shares are of the ${amount(whole)} not left out.` : ''
+    if (held) legend.querySelector(`[data-key="${CSS.escape(held)}"]`)?.focus({ preventScroll: true })
+  }
+  draw()
+  return root
 }
 /** A table that scrolls inside its own box. The box takes the keyboard, so arrow keys can scroll it. */
 const wide = (label, table, cards = false) => {
