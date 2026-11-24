@@ -68,13 +68,13 @@ function profileOf(profile, more) {
   for (const link of profile.links) {
     const inCluster = members.has(link.subject)
     kinds[link.level !== 'same' ? 'related' : inCluster ? 'same' : 'strong'].push([link.score, el('tr', {},
-      td('who', badge(link.subject), open(link.subject)),
+      td('who', badge(link.subject), reviewDisplay.subject(link.subject)),
       td('', el('span', { class: `chip ${link.level}` }, link.level === 'same' ? (inCluster ? 'Same person' : 'High confidence') : 'Related'), ' ', contested(link.subject)),
       ...edge([td('num score', reviewDisplay.compare(percent(link.score), link.score)), td('why', ...reasons(link.reasons))]),
       td('edge', el('button', { on: { click: () => act('Separate IDs', `${profile.subject} and ${link.subject} will be treated as different people.`, '/separate', { a: profile.subject, b: link.subject }, 'Separate') } }, 'Separate')))])
   }
   for (const other of profile.separated) {
-    kinds.apart.push([undefined, el('tr', {}, td('who', badge(other), open(other)), td('', el('span', { class: 'chip apart' }, 'Separated'), ' ', contested(other)), ...edge([td('num score', none()), td('why', ...kept(verdict(other)))]),
+    kinds.apart.push([undefined, el('tr', {}, td('who', badge(other), reviewDisplay.subject(other)), td('', el('span', { class: 'chip apart' }, 'Separated'), ' ', contested(other)), ...edge([td('num score', none()), td('why', ...kept(verdict(other)))]),
       td('edge', el('button', { on: { click: () => act('Remove separation', `${profile.subject} and ${other} can be joined again.`, '/separate', { a: profile.subject, b: other, separated: false }, 'Remove', { undo: true }) } }, 'Remove')))])
   }
   const between = (list) => {
