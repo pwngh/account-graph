@@ -1337,8 +1337,14 @@ export function namesOf(first: string): string[] {
   return [...found].sort()
 }
 
-/** The keys of the names a first name may stand for. They link nothing, and are made with a secret because names are few enough to guess. */
+/**
+ * The keys of the names a first name may stand for, and of the letters it begins with, where one is known. They link
+ * nothing, and are made with a secret because names are few enough to guess. There are 26 letters, so a letter's key hides little.
+ */
 export function givenKeys(secret: string, first: string): Identifier[] {
   if (typeof secret !== 'string' || secret.length < 32) throw new TypeError('A name key requires a secret of at least 32 characters')
-  return namesOf(first).map((name) => `given:${createHmac('sha256', secret).update(JSON.stringify(['given', name])).digest('hex')}`)
+  const key = (kind: string, value: string): Identifier => `${kind}:${createHmac('sha256', secret).update(JSON.stringify([kind, value])).digest('hex')}`
+  const names = namesOf(first)
+  if (names.length === 0) return []
+  return [...names.map((name) => key('given', name)), ...[...new Set(folded(first).split(/\s+/).map((word) => word[0]!))].sort().map((letter) => key('initial', letter))]
 }

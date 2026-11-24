@@ -120,17 +120,20 @@ export async function play(world: World, set: Switches, pool: number, { createGr
   const callerOf = new Map<string, string>()
   const dialed = new Map<string, string>()
   let exhausted = 0
+  const lastShown = new Map<string, string>()
   /** The number a page shows somebody: their own where there is one for them, and the firm's. The page asks again while it is in view. */
   const shown = async ({ device, address, agent }: { device: string; address: string; agent: string }) => {
     if (numbers.length === 0) return LINE
     const answer = await post('/number', { device }, page(address, agent))
     if (answer?.number === undefined) exhausted += 1
-    return (answer?.number as string | undefined) ?? LINE
+    const number = (answer?.number as string | undefined) ?? LINE
+    lastShown.set(device, number)
+    return number
   }
   // A call reported late was dialed when it was, on the number shown then.
   const steps = world.events.flatMap((event): { at: number; event: World['events'][number]; dial?: true }[] =>
     event.kind === 'call' && event.told !== undefined ? [{ at: event.at, event, dial: true }, { at: event.told, event }] : [{ at: event.at, event }])
-  const shownTo = async (event: Extract<World['events'][number], { kind: 'call' }>) => (event.page ? await shown(event.page) : (event.redial !== undefined && dialed.get(event.redial)) || LINE)
+  const shownTo = async (event: Extract<World['events'][number], { kind: 'call' }>) => (event.page ? await shown(event.page) : (event.redial !== undefined && dialed.get(event.redial)) || (event.wrote !== undefined && lastShown.get(event.wrote)) || LINE)
   try {
     for (const { at, event, dial } of steps.sort((x, y) => x.at - y.at)) {
       now = at

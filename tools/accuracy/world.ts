@@ -137,6 +137,8 @@ export interface Third {
   late: number
   /** Cold callers who dial a number somebody else was shown before. */
   oldNumber: number
+  /** First calls from a page, those dialed by hand from 10 to 110 minutes after it was last seen. */
+  lateDial: number
 }
 
 /** Records with a placeholder number, and those with an office's one email, put over a world that is made. */
@@ -149,8 +151,8 @@ export interface Dirt {
 export type Event =
   | { kind: 'visit'; at: number; device: string; address: string; ad?: string; agent: string }
   | { kind: 'tap'; at: number; device: string; address: string; agent: string }
-  /** `page` is the browser whose page the number was read from, and `redial` the call whose number is dialed again. With neither, it is the number in the phone book. */
-  | { kind: 'call'; at: number; id: string; from?: string; seconds: number; answered: boolean; people: readonly string[]; page?: { device: string; address: string; agent: string }; redial?: string; told?: number }
+  /** `page` is the browser whose page the number was read from, and `redial` the call whose number is dialed again, and `wrote` the browser whose page the number was written down from a while ago. With neither, it is the number in the phone book. */
+  | { kind: 'call'; at: number; id: string; from?: string; seconds: number; answered: boolean; people: readonly string[]; page?: { device: string; address: string; agent: string }; redial?: string; told?: number; wrote?: string }
   /** Staff say somebody speaks for the subject, who gave these. */
   | { kind: 'speaks'; at: number; subject: string; speaker: { device?: string; email?: string; phone?: string } }
   /** Staff say who a call is about. */
@@ -499,7 +501,9 @@ export function makeWorld(rates: Rates, { people: count, days, start, seed }: Si
   }
 
   /** A call, and what staff make of it. Those who call again do it later, with nothing to tap. */
-  function ring(person: Person, speaker: Person, at: number, page: ReturnType<typeof visit> | undefined, tapped: ReturnType<typeof visit> | undefined, recorded: boolean, old = false) {
+  function ring(person: Person, speaker: Person, calledAt: number, page: ReturnType<typeof visit> | undefined, tapped: ReturnType<typeof visit> | undefined, recorded: boolean, old = false) {
+    const later = third !== undefined && page !== undefined && r.chance(third.lateDial)
+    const at = later ? calledAt + (10 + r.under(101)) * MINUTE : calledAt
     const times = 1 + r.more(rates.again)
     let when = at
     const own: string[] = []
@@ -510,8 +514,8 @@ export function makeWorld(rates: Rates, { people: count, days, start, seed }: Si
       const line = third && i > 0 && r.chance(third.otherLine) ? (otherLines.get(speaker.id) ?? otherLines.set(speaker.id, number()).get(speaker.id)!) : undefined
       const from = line ?? (landline !== undefined && r.chance(rates.landlineUse) ? landline : phoneOf(speaker, when))
       const id = `c${seed}-${calls.size}`
-      let tap = i === 0 ? tapped : undefined
-      let shownOn = i === 0 ? page : undefined
+      let tap = i === 0 && !later ? tapped : undefined
+      let shownOn = i === 0 && !later ? page : undefined
       if (third && i > 0 && page && r.chance(third.otherBrowser)) {
         // On a browser of theirs not seen here before, and so on its page.
         const fresh = browser(AGENT.telephone, false)
@@ -536,7 +540,7 @@ export function makeWorld(rates: Rates, { people: count, days, start, seed }: Si
       const dialedAgain = passed ?? redial
       // Of a landline or a number passed on, it is whoever made this call.
       calls.set(id, { people: [speaker.id], facts: [...(hidden ? [] : [`phone ${from}`]), ...(tap ? [`tap ${id}`] : [])] })
-      events.push({ kind: 'call', at: when, id, ...(!hidden && { from }), seconds: answered ? 60 + r.under(600) : 12 + r.under(25), answered, people: [speaker.id], ...(shownOn && { page: shownOn }), ...(dialedAgain !== undefined && { redial: dialedAgain }), ...(third && r.chance(third.late) && { told: when + 5_000 + r.under(115_000) }) })
+      events.push({ kind: 'call', at: when, id, ...(!hidden && { from }), seconds: answered ? 60 + r.under(600) : 12 + r.under(25), answered, people: [speaker.id], ...(shownOn && { page: shownOn }), ...(dialedAgain !== undefined && { redial: dialedAgain }), ...(i === 0 && later && { wrote: page!.device }), ...(third && r.chance(third.late) && { told: when + 5_000 + r.under(115_000) }) })
       // Staff make a record from what they hear and see: the number calling, unless it is hidden, and an email where one is asked for.
       if (!answered) continue
       if (recorded) {

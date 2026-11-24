@@ -90,7 +90,7 @@ export function components(subjects: Iterable<Subject>, pairs: readonly Pair[]):
 
 /** What is known of somebody that cannot be two people's, and the joins a reviewer or a system made of them. */
 export interface Known {
-  facts: Map<Fact, Set<Identifier>>
+  facts: Map<Fact | 'initial', Set<Identifier>>
   joins: Set<Identifier>
 }
 
@@ -101,11 +101,11 @@ export function knownOf(policy: Policy, edges: readonly Edge[], undone: (identif
   for (const { subject, identifier } of edges) {
     const kind = identifier.slice(0, identifier.indexOf(':'))
     // Each fact is read for the other to be weighed against, whether or not it keeps anyone apart by itself.
-    if (!policy.apart.includes(kind as Fact) && kind !== 'birth' && kind !== 'given' && !(kind === 'review' && !undone(identifier))) continue
+    if (!policy.apart.includes(kind as Fact) && kind !== 'birth' && kind !== 'given' && kind !== 'initial' && !(kind === 'review' && !undone(identifier))) continue
     const known = out.get(subject) ?? { facts: new Map(), joins: new Set() }
     out.set(subject, known)
     if (kind === 'review') known.joins.add(identifier)
-    else known.facts.set(kind as Fact, (known.facts.get(kind as Fact) ?? new Set()).add(identifier))
+    else known.facts.set(kind as Fact | 'initial', (known.facts.get(kind as Fact | 'initial') ?? new Set()).add(identifier))
   }
   return out
 }
@@ -115,13 +115,13 @@ export function conflict(policy: Policy, a: Known | undefined, b: Known | undefi
   if (!a || !b || !policy.apart?.length) return undefined
   if ([...a.joins].some((identifier) => b.joins.has(identifier))) return undefined
   /** Whether they agree on a fact, or undefined where one of them has none. */
-  const agree = (fact: Fact) => {
+  const agree = (fact: Fact | 'initial') => {
     const [own, others] = [a.facts.get(fact), b.facts.get(fact)]
     return own && others && [...own].some((value) => others.has(value))
   }
   // A fact that agrees outranks one that differs: a date is mistyped, and a name is short for another that is not known.
   if (policy.apart.includes('birth') && agree('birth') === false && agree('given') !== true) return 'birth'
-  return policy.apart.includes('given') && agree('given') === false && agree('birth') !== true ? 'given' : undefined
+  return policy.apart.includes('given') && agree('given') === false && agree('birth') !== true && agree('initial') !== true ? 'given' : undefined
 }
 
 type Adjacency = Map<Subject, Map<Subject, number>>

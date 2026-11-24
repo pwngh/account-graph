@@ -2735,6 +2735,9 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       }
       for (const [a, b] of [['Mike', 'Michael'], ['Bob', 'Robert'], ['Bill', 'William'], ['Liz', 'Elizabeth'], ['José', 'Jose'], ['José', 'Joe'], ['María Guadalupe', 'María']] as const) assert.equal(await one(a, b), true, `${a} and ${b}`)
       for (const [a, b] of [['Carlos', 'Maria'], ['Robert', 'Mary'], ['Pepe', 'Ana']] as const) assert.equal(await one(a, b), false, `${a} and ${b}`)
+      // Two that begin with one letter say nothing, and do not agree either.
+      assert.equal(await one('Mark', 'Mary'), true)
+      assert.equal(await one('Mark', 'Mary', ['1', '2']), false)
       // A name nobody knows says nothing, and births that agree overrule a name.
       assert.equal(await one('Xyzzyq', 'Maria'), true)
       assert.equal(await one('Carlos', 'Maria', ['1', '1']), true)

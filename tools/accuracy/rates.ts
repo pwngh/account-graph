@@ -77,7 +77,7 @@ function third(at: 0 | 1 | 2): Third {
     shortGiven: of(0.15, 0.3, 0.45), englishGiven: of(0.1, 0.2, 0.35), compound: of(0.15, 0.25, 0.4), compoundHalved: of(0.3, 0.5, 0.7),
     swapped: of(0.005, 0.01, 0.02), speakersName: of(0.03, 0.06, 0.12), alike: of(0.005, 0.01, 0.02),
     staffTold: of(0.8, 0.6, 0.3), formTold: of(0.75, 0.5, 0.25), ownGiven: of(0.7, 0.5, 0.3), staffToldWrongly: of(0.01, 0.02, 0.03), formToldWrongly: of(0.005, 0.01, 0.02), toldLate: of(0.1, 0.2, 0.3),
-    formAgain: of(0.1, 0.15, 0.2), otherBrowser: of(0.05, 0.1, 0.2), otherLine: of(0.05, 0.1, 0.2), quick: of(0.85, 0.75, 0.6), middle: of(0.1, 0.15, 0.2), late: of(0.05, 0.1, 0.2), oldNumber: of(0.02, 0.04, 0.08),
+    formAgain: of(0.1, 0.15, 0.2), otherBrowser: of(0.05, 0.1, 0.2), otherLine: of(0.05, 0.1, 0.2), quick: of(0.85, 0.75, 0.6), middle: of(0.1, 0.15, 0.2), late: of(0.05, 0.1, 0.2), oldNumber: of(0.02, 0.04, 0.08), lateDial: of(0.05, 0.1, 0.2),
   }
 }
 
