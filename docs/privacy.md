@@ -53,11 +53,11 @@ Forgetting a person here deletes nothing at a platform their conversions were se
 | --- | --- |
 | `told` | The platform was asked to take it back, and refused nothing |
 | `refused` | It was asked and refused. `note` says why |
-| `untold` | It was not asked. It is for you to ask, with the platform's own tools. With the note `may not have arrived`, it was picked up and no answer came |
+| `untold` | It was not asked. It is for you to ask, with the platform's own tools. With the note `may not have arrived`, it was picked up to be sent, and that it arrived was never confirmed |
 
 **The answer is the only place this is said.** Nothing about a forgotten person is kept to say it again, so keep the answer until you have asked.
 
-With `FORGET_ADS=true`, a platform that documents a way is asked each time somebody is forgotten, whether or not `ads` was set. It is asked once, after the person is gone here, and a refusal does not bring them back. It is off by default, because it sends the platform the click id and the hashed email and phone it was sent before.
+With `FORGET_ADS=true`, a platform that documents a way is asked each time somebody is forgotten, whether or not `ads` was set. It is asked after the person is gone here. What is refused is not tried again, and does not bring them back. It is off by default, because it sends the platform the click id and the hashed email and phone it was sent before.
 
 | Platform | What its documents offer | Here |
 | --- | --- | --- |

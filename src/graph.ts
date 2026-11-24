@@ -278,8 +278,7 @@ export interface Graph {
   rings(subject: Subject, length?: number): Promise<Ring[]>
   /**
    * Deletes a subject and everything recorded about it, unsent conversions
-   * included. `gone` hears what conversions were deleted; a write that is
-   * tried again tells it again, and the last it hears is what was deleted.
+   * included. `gone` hears what conversions were deleted, once they are.
    */
   forget(subject: Subject, why?: Deciding, gone?: (jobs: Job[]) => void): Promise<Change[]>
   /**
@@ -1477,14 +1476,14 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     async forget(subject, why, gone) {
       if (typeof subject !== 'string') throw new TypeError('forget needs a subject')
       keepable(subject)
-      return changing(async (tx) => {
+      let jobs: Job[] = []
+      const changes = await changing(async (tx) => {
         await decide(tx, 'forget', [subject], why)
         const edges = await tx.edgesOf([subject])
         const component = (await tx.labelsOf([subject])).get(subject)?.component
         const affected = new Set(component === undefined ? [] : (await tx.membersOf([component])).keys())
         await mark(tx)
-        const jobs = await tx.removeSubject(subject)
-        gone?.(jobs)
+        jobs = await tx.removeSubject(subject)
         affected.delete(subject)
         // Losing a subject can bring an identifier back under its cap, which links the rest again.
         const identifiers = edges.map((edge) => edge.identifier)
@@ -1493,6 +1492,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         for (const edge of await tx.edgesOn(open)) affected.add(edge.subject)
         return settle(tx, affected)
       })
+      gone?.(jobs)
+      return changes
     },
 
     async journey(subject, { before = Number.MAX_SAFE_INTEGER, limit = 200 } = {}) {

@@ -485,7 +485,7 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       const quiet = createOutbox(graph, next.store.outbox, options)
       const enroll = async (n: number) => {
         await graph.observe({ subject: `visitor:v${n}`, identifiers: [`device:v${n}`], at: T0 })
-        await graph.touch({ subject: `visitor:v${n}`, at: T0, msclkid: `M${n}` })
+        await graph.touch({ subject: `visitor:v${n}`, at: T0, msclkid: `MSCLK-${n}` })
         await graph.observe({ subject: `contact:${n}`, identifiers: [`device:v${n}`], at: T0 + HOUR })
         await telling.record({ ...outcome(n), action: { microsoft: 'Enrolled', keeps: 'a', lost: 'b' }, email: `pat${n}@example.org` })
       }
@@ -509,7 +509,7 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       assert.equal(retractions()[0]!.url, 'https://campaign.api.bingads.microsoft.com/CampaignManagement/v13/OfflineConversionAdjustments/Apply')
       const [{ AdjustmentTime, ...adjustment }, ...others] = retractions()[0]!.body.OfflineConversionAdjustments
       assert.ok(Number.isFinite(Date.parse(AdjustmentTime)))
-      assert.deepEqual(adjustment, { AdjustmentType: 'Retract', ConversionName: 'Enrolled', ConversionTime: new Date(at).toISOString(), MicrosoftClickId: 'M1', HashedEmailAddress: sha256('pat1@example.org') })
+      assert.deepEqual(adjustment, { AdjustmentType: 'Retract', ConversionName: 'Enrolled', ConversionTime: new Date(at).toISOString(), MicrosoftClickId: 'MSCLK-1', HashedEmailAddress: sha256('pat1@example.org') })
       assert.deepEqual(others, [])
       // Gone here, and nothing of it is kept for later.
       assert.deepEqual([await telling.get('enroll-1'), await telling.get('waits')], [[], []])
@@ -519,10 +519,10 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       // A refusal, of one or of all, does not stop a person from being forgotten, and says nothing of what was sent.
       answer = () => new Response(JSON.stringify({ PartialErrors: [{ Index: 0, ErrorCode: 'OfflineConversionAdjustmentNotFound', Message: sha256('pat2@example.org') }] }))
       assert.deepEqual((await telling.forget('contact:2')).sent.find((each) => each.target === 'microsoft'), { transactionId: 'enroll-2', target: 'microsoft', action: 'Enrolled', at, state: 'refused', note: 'OfflineConversionAdjustmentNotFound' })
-      answer = () => new Response(`no such ${sha256('pat3@example.org')} with M3 clicks`, { status: 500 })
+      answer = () => new Response(`no such ${sha256('pat3@example.org')} and MSCLK-3`, { status: 500 })
       const refused = (await telling.forget('contact:3')).sent.find((each) => each.target === 'microsoft')!
       assert.equal(refused.state, 'refused')
-      assert.match(refused.note!, /500: no such \(left out\)/)
+      assert.match(refused.note!, /500: no such \(left out\) and \(left out\)$/)
       assert.deepEqual([await telling.get('enroll-2'), await telling.get('enroll-3')], [[], []])
 
       // A decision refused because somebody decided first tells nobody. Nor does anything, unless it was asked for.
