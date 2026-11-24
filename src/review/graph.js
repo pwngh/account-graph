@@ -183,8 +183,8 @@ function* crowding(nodes, edges) {
   }
 }
 /** Moves whatever is too near apart, a little at a time, until nothing is. What was put somewhere by hand gives way last. */
-function spread(nodes, edges, rounds) {
-  for (let round = 0; round < rounds; round++) {
+function spread(nodes, edges, rounds, until = Infinity) {
+  for (let round = 0; round < rounds && performance.now() < until; round++) {
     let moved = false
     for (const { push, node, others } of crowding(nodes, edges)) {
       moved = true
@@ -305,8 +305,8 @@ function settle(nodes, edges, tries = 40) {
   for (let i = 0; i < tries && performance.now() < until; i++) {
     sides(nodes, edges)
     outward(nodes, edges)
-    spread(nodes, edges, 24)
-    const still = [...crowding(nodes, [])].length === 0 || spread(nodes, [], 80)
+    spread(nodes, edges, 24, until)
+    const still = [...crowding(nodes, [])].length === 0 || spread(nodes, [], 80, until)
     if (still && route(nodes, edges) === 0) return true
     for (const edge of edges) edge.bend = 0
     for (const [n, node] of nodes.entries()) {
@@ -314,7 +314,7 @@ function settle(nodes, edges, tries = 40) {
       node.y = node.y * 1.06 + (n % 2)
     }
   }
-  spread(nodes, [], 200)
+  // Out of time or tries: the lines are put as well as they go from here, in one pass.
   route(nodes, edges)
   return false
 }
