@@ -99,6 +99,8 @@
 - `report({ per })`, `GET /report?per=` and **Cost per** on the Channels view count one step in the cost per outcome. The view groups its columns, shows the report's own currency, and tells none, not recorded and does not apply apart.
 - `.env.example` names what compose needs; `docs/operations.md` covers backups, HTTPS and a name under the site.
 - The reviewer screen's picture says how many of those around a subject it draws.
+- The reviewer screen has one scale of type and space, tables that fit what they hold, and rows that become cards on a phone. Times are told by how long ago, with the exact time in a title.
+- The graph keeps room around every disc, name and line: names move to a free side, lines bend around what is in their way, and nothing lies over the paper. The strongest way to whoever is picked is shown, and weak ties can be left out.
 - Accounts opens on the largest cluster's graph, and its long lists scroll in their own boxes.
 - The reviewer screen draws a subject's ties as a graph to move, zoom, filter and open out. A line says what is shared and how strongly, an outline takes in one person, and whoever is picked has a card with the reasons and what can be done.
 - Health lists the conversions an ad platform refused, with why, and a button to send each again. `GET /conversions` and `POST /retry` take a reviewer's token, and no longer answer with the click or the hashed email and phone; `GET /conversion` still does, for the service token.

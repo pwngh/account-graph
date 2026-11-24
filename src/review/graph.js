@@ -269,7 +269,7 @@ function route(nodes, edges) {
   let stuck = 0
   for (const edge of edges) {
     const long = Math.hypot(edge.to.x - edge.from.x, edge.to.y - edge.from.y)
-    const ways = [0, 0.1, -0.1, 0.18, -0.18, 0.26, -0.26, 0.36, -0.36, 0.48, -0.48, 0.62, -0.62, 0.8, -0.8, 1, -1].map((part) => part * Math.max(160, long))
+    const ways = [0, 0.1, -0.1, 0.18, -0.18, 0.26, -0.26, 0.36, -0.36, 0.48, -0.48, 0.62, -0.62].map((part) => part * Math.max(160, long))
     // Best is one that also keeps off the names at its own ends and leaves them apart from other lines. A line may have to do without.
     const clear = ways.filter((sides) => freeOf(edge, course(edge, sides), taken))
     const leaves = (sides) => {
@@ -281,8 +281,9 @@ function route(nodes, edges) {
       const [, name] = shapes(node)
       return course(edge, sides).every((p, i, all) => i === 0 || !crossing(all[i - 1], p, name, 3))
     }))
-    const alone = named.filter((sides) => leaves(sides).every(([node, angle]) => (left.get(node) ?? []).every((other) => Math.abs(Math.atan2(Math.sin(angle - other), Math.cos(angle - other))) > 0.16)))
-    const way = alone[0] ?? named[0] ?? clear[0]
+    const alone = (sides) => leaves(sides).every(([node, angle]) => (left.get(node) ?? []).every((other) => Math.abs(Math.atan2(Math.sin(angle - other), Math.cos(angle - other))) > 0.16))
+    const worse = (sides) => Math.abs(sides) / long + (named.includes(sides) ? 0 : 0.3) + (alone(sides) ? 0 : 0.2)
+    const way = clear.length > 0 ? clear.reduce((best, sides) => (worse(sides) < worse(best) ? sides : best)) : undefined
     for (const [node, angle] of leaves(way ?? 0)) left.set(node, [...(left.get(node) ?? []), angle])
     edge.bend = way ?? 0
     if (way === undefined) stuck += 1
@@ -320,7 +321,7 @@ function tangle(nodes, edges) {
     }
   })
   const reach = Math.max(...nodes.map((node) => Math.hypot(node.x, node.y)))
-  return cost + reach / 120 + edges.filter((edge) => edge.bend).length * 0.5 + outlines(nodes, edges).filter(({ clear }) => !clear).length * 3
+  return cost + reach / 120 + edges.reduce((sum, edge) => sum + Math.abs(edge.bend) / 40, 0) + outlines(nodes, edges).filter(({ clear }) => !clear).length * 3
 }
 
 /** The outline around points, in order. */
@@ -486,7 +487,7 @@ function graphOf(profile, more) {
   }
   /** The whole graph, in the middle of the room beside the card. */
   function fitted() {
-    const boxes = nodes.flatMap((node) => shapes(glide ? { ...node, ...node.end } : node))
+    const boxes = [...nodes.flatMap((node) => shapes(glide ? { ...node, ...node.end } : node)), ...edges.flatMap((edge) => (edge.bend ? course(glide ? { from: edge.from.end, to: edge.to.end, bend: edge.bend } : edge).map((p) => ({ ...p, w: 4, h: 4 })) : []))]
     const [left, right, top, bottom] = [Math.min(...boxes.map((box) => box.x - box.w)), Math.max(...boxes.map((box) => box.x + box.w)), Math.min(...boxes.map((box) => box.y - box.h)), Math.max(...boxes.map((box) => box.y + box.h))]
     // Room is left for the card when it lies over the paper. Nothing else does.
     const narrow = root.classList.contains('narrow')

@@ -557,6 +557,11 @@ dialog p:empty { display: none; }
   .board section, .board .idle { flex: none; }
   .board .scroll { max-height: min(44vh, 320px); }
 }
+/* Words for a screen reader alone are placed within what scrolls, or they would lengthen the page. */
+.scroll, .wide { position: relative; }
+/* A table of a few plain columns is read along its rows, so they do not stand far apart. */
+@media (min-width: 761px) { .wide:has(> table):not(:has(th[colspan])) { max-width: 1040px; } }
+
 /* The graph: marks take their color from what they mean, and the rest falls back when one is brought forward. */
 .graph { position: relative; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background-color: var(--panel); background-image: radial-gradient(var(--line) 1px, transparent 1px); background-size: 22px 22px; background-position: -1px -1px; }
 .graph:fullscreen .stage > svg { touch-action: none; }
