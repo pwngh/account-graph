@@ -165,6 +165,10 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   await until('it to open', () => run(`opening === 0`))
   await until('its answer', async () => (await text('#notice')).includes('Nobody'))
   assert.equal(await run(`document.getElementById('subject').value`), 'typed meanwhile')
+  // A view that fails after a search has answered tells its problem where it would have been.
+  await run(`(() => { const real = views.get('accounts').show; views.get('accounts').show = async (...all) => { views.get('accounts').show = real; await new Promise((resolve) => setTimeout(resolve, 700)); throw new Error('the view broke') }; notice(''); load(); document.getElementById('find').requestSubmit() })()`)
+  await until('the problem', async () => (await text('#view')).includes('the view broke'))
+  assert.match(await text('#notice'), /Nobody/)
   await look('person:2')
   await until('the exact one', async () => (await text('#detail h3')) === 'person:2')
   await pause(400)

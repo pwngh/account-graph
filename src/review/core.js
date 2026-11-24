@@ -402,7 +402,9 @@ async function load(tag) {
     if (quiet) fresh(error.message)
     else {
       $('view').replaceChildren(box)
-      notice(error.message, true)
+      // A search answered meanwhile has the notice, so the problem is told where the view would be.
+      if (edits === sought) notice(error.message, true)
+      else box.append(el('p', { class: 'apart', role: 'alert' }, `Problem: ${error.message}`))
     }
     return false
   } finally {
