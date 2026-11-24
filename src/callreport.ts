@@ -1,5 +1,6 @@
 import { callState, followUp } from './calls.ts'
 import type { CallOptions, CallState } from './calls.ts'
+import type { Hours } from './hours.ts'
 import type { KeptCall, Subject } from './types.ts'
 
 /** How many calls of each kind. `returned` counts the missed and voicemail calls whose caller you reached. */
@@ -16,6 +17,8 @@ export interface CallCounts extends Record<CallState, number> {
 
 export interface CallSummary {
   total: CallCounts
+  /** Of them, those that began while you were closed. Null when your hours are not known. */
+  closed: CallCounts | null
   /** Counts by the hour a call began and the day of the week, Monday 1 to Sunday 7, in the time zone asked for. Hours with no calls are left out. */
   cells: (CallCounts & { weekday: number; hour: number })[]
   /** How calls to you were placed: each call is in exactly one of the first three. */
@@ -47,12 +50,13 @@ export function summarizeCalls(
   filed: ReadonlySet<string>,
   at: number,
   timeZone = 'UTC',
-  options: Pick<CallOptions, 'results' | 'resultWait'> = {},
+  options: Pick<CallOptions, 'results' | 'resultWait'> & { hours?: Hours } = {},
 ): CallSummary {
   const bySubject = new Map<Subject, KeptCall[]>()
   for (const call of later) bySubject.set(call.subject, [...(bySubject.get(call.subject) ?? []), call])
   const clock = new Intl.DateTimeFormat('en-US', { timeZone, hourCycle: 'h23', weekday: 'short', hour: 'numeric' })
   const total = none()
+  const closed = options.hours ? none() : null
   const cells = new Map<string, CallCounts & { weekday: number; hour: number }>()
   const coverage = { visitor: 0, channel: 0, neither: 0, noResult: 0 }
   const delays: number[] = []
@@ -67,7 +71,7 @@ export function summarizeCalls(
     const state = callState(call, at, options)
     const became = state === 'missed' || state === 'voicemail' ? followUp(call, bySubject.get(call.subject) ?? []) : undefined
     if (became?.state === 'returned') delays.push(became.delay!)
-    for (const counts of [total, cell]) {
+    for (const counts of [total, cell, ...(closed && !options.hours!.isOpen(call.at) ? [closed] : [])]) {
       counts.calls += 1
       counts[state] += 1
       if (became?.state === 'returned') counts.returned += 1
@@ -83,6 +87,7 @@ export function summarizeCalls(
   delays.sort((x, y) => x - y)
   return {
     total,
+    closed,
     cells: [...cells.values()].sort((x, y) => x.weekday - y.weekday || x.hour - y.hour),
     coverage,
     returnedWithin: delays.length > 0 ? delays[Math.ceil(delays.length / 2) - 1]! : null,

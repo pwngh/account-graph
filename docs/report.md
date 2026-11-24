@@ -185,7 +185,7 @@ Each column counts its people and three things about today, in the time zone `RE
 | Count | Means |
 | --- | --- |
 | New today | They reached this step today, or their oldest missed call came today. |
-| Waiting | Longer at this step than its `wait`, in hours, or longer unreturned than `RETURN_HOURS`. With no limit set, none is counted. |
+| Waiting | Longer at this step than its `wait`, in hours, or longer unreturned than `RETURN_HOURS`, both counted in [hours you were open](operations.md#opening-hours) where those are set. With no limit set, none is counted. |
 | Went further today, returned or got through today | They left for a further step, or their call was returned or they rang again and got through. |
 
 ```sh

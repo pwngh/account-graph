@@ -22,6 +22,8 @@ import type { CostSource } from './integrations/costs.ts'
 import { createFingerprintVerifier } from './integrations/fingerprint.ts'
 import { createGoogleTokens } from './integrations/google-auth.ts'
 import { createMaxMindLookup } from './integrations/maxmind.ts'
+import { createHours, hoursProblems } from './hours.ts'
+import type { OpenHours } from './hours.ts'
 import { ladderProblems } from './ladder.ts'
 import type { Ladder } from './ladder.ts'
 import { defaultPolicy, policyFrom, policyProblems } from './policy.ts'
@@ -111,6 +113,7 @@ export function configFrom(env: Env) {
     auditHours: number('AUDIT_HEAD_HOURS', 0),
     quiet: { touches: number('QUIET_TOUCHES_HOURS', 0), calls: number('QUIET_CALLS_HOURS', 0), results: number('QUIET_RESULTS_HOURS', 0), costs: number('QUIET_COSTS_HOURS', 0) },
     returnHours: number('RETURN_HOURS', 24),
+    openHours: parsed('OPEN_HOURS') as OpenHours | undefined,
     lateHours: number('LATE_HOURS', 6),
     stages: parsed('STAGES') as Ladder | undefined,
     policy: policy === undefined ? undefined : policyFrom(policy),
@@ -175,6 +178,7 @@ export function configFrom(env: Env) {
   } catch {
     wrong.push('REPORT_TIME_ZONE must be a time zone, such as America/New_York')
   }
+  if (config.openHours !== undefined) for (const problem of hoursProblems(config.openHours)) wrong.push(`OPEN_HOURS: ${problem}`)
   for (const each of config.staffNetworks) {
     try {
       networks([each])
@@ -274,11 +278,13 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
     const { clientId, refreshToken, clientSecret, ...account } = config.microsoft
     targets.push(microsoftAds({ ...account, accessToken: createMicrosoftTokens({ clientId, refreshToken, ...(clientSecret && { clientSecret }) }) }))
   }
+  const hours = config.openHours && createHours(config.openHours, config.timeZone)
   // Tell someone when a conversion fails for good, when the outbox cannot run, or when costs cannot be read.
   const ops = createOps(graph, store.ops, {
     ...(config.alertWebhook && { url: config.alertWebhook }),
     quiet: config.quiet,
     returnHours: config.returnHours,
+    ...(hours && { hours }),
     outbox: store.outbox,
     lateHours: config.lateHours,
     timeZone: config.timeZone,
@@ -361,6 +367,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
     ...(config.identifierSecret && { identifierSecret: config.identifierSecret }),
     ...(config.stages && { stages: config.stages }),
     returnHours: config.returnHours,
+    ...(hours && { hours }),
     // A tap on a phone link is what ties a call to a visitor, so taking calls means taking that event.
     events: [...new Set([...config.events, ...(config.callNumbers || config.twilio || config.poolNumbers.length > 0 ? ['phone_click'] : [])])],
     calls: { exclude: config.callExclude, minimumSeconds: config.callMinimum, resultWait: config.callResultWait * 60_000, ...(config.callResults === 'expected' && { results: 'expected' as const }), ...(config.callNumbers && { numbers: config.callNumbers }), ...(config.twilio && { twilio: config.twilio }) },
@@ -381,7 +388,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
   const on = (name: string, enabled: unknown) => `${name} ${enabled ? 'on' : 'off'}`
   log(`listening on ${config.host}:${port}`)
   log(`collect accepts ${config.origins.length > 0 ? config.origins.join(', ') : 'no origins yet (set ORIGINS)'}`)
-  log([Object.keys(config.reviewers ?? {}).length > 0 ? `reviewers ${Object.keys(config.reviewers!).join(', ')}` : 'reviewers none', on('server cookie', config.cookie), on('fingerprint', config.fingerprint), on('maxmind', config.maxmind), on('signed links', config.linkSecret), on('staff networks', config.staffNetworks.length > 0), on('alerts', config.alertWebhook), on('address checks', config.smarty), on('phone line checks', config.lineType)].join(', '))
+  log([Object.keys(config.reviewers ?? {}).length > 0 ? `reviewers ${Object.keys(config.reviewers!).join(', ')}` : 'reviewers none', on('server cookie', config.cookie), on('fingerprint', config.fingerprint), on('maxmind', config.maxmind), on('signed links', config.linkSecret), on('staff networks', config.staffNetworks.length > 0), on('opening hours', hours), on('alerts', config.alertWebhook), on('address checks', config.smarty), on('phone line checks', config.lineType)].join(', '))
   log(`outbox sends to ${targets.length > 0 ? targets.map((target) => target.name).join(', ') : 'nobody (no ad platform configured)'}`)
   if (config.stages) log(`steps: ${Object.entries(config.stages).map(([name, stage]) => `${name}${stage.value === undefined ? '' : ` ${stage.value}`}`).join(', ')}`)
     log(`page events taken: ${options.events!.length > 0 ? options.events!.join(', ') : 'none (set EVENTS)'}; calls from twilio ${config.twilio ? 'on' : 'off'}; call results ${config.callResults === 'expected' ? `expected within ${config.callResultWait} minutes` : 'not expected'}; number pool ${config.poolNumbers.length > 0 ? `of ${config.poolNumbers.length}` : 'off'}`)

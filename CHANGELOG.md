@@ -88,6 +88,7 @@
 - `tools/labels.ts` reads a CSV of pairs marked same or different and prints precision and recall for each identifier kind.
 - `Rule.corroborates` marks a kind that confirms a link and never makes one. `nameKeys` and `name`, `dob` on `/identify` make a `name` kind for it, in `examples/household.json` only; `IDENTIFIER_SECRET` makes the keys.
 - `collect` sends Meta's browser id from the `_fbp` cookie with an arrival (`Touch.fbp`), and the Meta target sends it as `fbp` beside the click it belongs to.
+- `OPEN_HOURS` (`createHours`) counts waiting callers, waiting steps and silent calls in the hours you are open, holidays left out; `GET /calls/summary` has `closed`. Off until set.
 - `recordReturn` and `POST /call/returned` let your own system say a missed caller was reached; `FollowUp.told` and the call summary's `told` mark what rests on that. Database upgrade 17.
 - `POOL_NUMBERS`, `POST /number` and `collect.js?pool=1` show each visitor with an arrival a number of their own; `lease` ties a call to it to them. Database upgrade 15. Off until set.
 - `undecided`, `GET /undecided` and the reviewer screen's Decide view show pairs that are related and not joined, to join or keep apart.

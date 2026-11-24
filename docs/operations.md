@@ -281,6 +281,28 @@ The time is when a record was written down, not the time it carries. Pick hours 
 
 ### Callers waiting
 
+### Opening hours
+
+A night in which nothing rings is not a silence, and a caller missed on Friday evening has not waited a weekend for somebody to be there. Say when you are open:
+
+```sh
+OPEN_HOURS='{
+  "mon": ["09:00-12:00", "13:00-17:00"], "tue": ["09:00-17:00"], "wed": ["09:00-17:00"],
+  "thu": ["09:00-17:00"], "fri": ["09:00-17:00"],
+  "holidays": ["2026-12-25", "2027-01-01"]
+}'
+```
+
+| What is counted in hours you were open | What stays on the clock |
+| --- | --- |
+| `RETURN_HOURS`, for alerts and for the board | `LATE_HOURS`: conversions are sent at night too |
+| `QUIET_CALLS_HOURS` and `QUIET_RESULTS_HOURS` | `QUIET_TOUCHES_HOURS` and `QUIET_COSTS_HOURS`: visits and costs come at any hour |
+| The `wait` of a step, on the board | Everything in the report, and how long a return took |
+
+> **Set them together.** `RETURN_HOURS=24` is three working days of eight hours once `OPEN_HOURS` is set. `8` is one.
+
+A day left out is closed. A span such as `18:00-02:00` runs past midnight and belongs to the day it begins on, so a holiday on that day closes all of it. The hours are in `REPORT_TIME_ZONE`, or in `"timeZone"` beside the days. The call summary also says, under `closed`, how many calls began while you were closed and what became of them.
+
 A caller who arrived from an ad, was missed, and has not been reached is told about once after `RETURN_HOURS`. Ringing again does not repeat it; being reached and missed later is a new wait. An arrival counts as paid when it carries an ad click, names its campaign by id, or has a medium such as `cpc`. Meta's click id alone is not enough, because links nobody paid for carry it too.
 
 This needs [call results](calls.md#was-it-answered), because without one nothing says a call was missed. A miss more than two weeks overdue is left to the Calls view.
@@ -319,6 +341,7 @@ On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes i
 | `QUIET_TOUCHES_HOURS`, `QUIET_CALLS_HOURS`, `QUIET_RESULTS_HOURS`, `QUIET_COSTS_HOURS` | `0` | Hours of silence before a feed is said to be quiet. `0` is not watched. |
 | `LATE_HOURS` | `6` | Hours past its time before a conversion that waits to be sent is said to be late. `0` is never. |
 | `RETURN_HOURS` | `24` | Hours before a missed caller from a paid arrival is said to be waiting, and before the board says any missed caller has waited too long. `0` is never. |
+| `OPEN_HOURS` | none | When you are open, as JSON. See [opening hours](#opening-hours). |
 | `STAGES` | none | Your steps in order, as JSON, each with a `value`, `currency`, `action` and `wait`. See [the report](report.md#steps-and-what-each-is-worth). |
 | `LINK_SECRET` | none | Signs links that name a person, and the tokens that carry a visitor between your sites. At least 32 characters. |
 | `EVENTS` | none | Names of page events to keep, separated by commas: `inquiry,phone_click`. |

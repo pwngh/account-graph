@@ -3,6 +3,8 @@ import type { Alerter } from './alerts.ts'
 import { followUp } from './calls.ts'
 import type { Graph } from './graph.ts'
 import type { OutboxStore } from './outbox.ts'
+import { longAgo } from './hours.ts'
+import type { Hours } from './hours.ts'
 import { dayIn, paid, sourceOf } from './report.ts'
 
 /** What the graph is fed with. A feed's time is when its last record was written down. */
@@ -74,6 +76,8 @@ export interface OpsOptions {
   /** Where what waits to be sent is kept, and after how many hours past its time it is said to be late. 0 is never. */
   outbox?: Pick<OutboxStore, 'oldestDue'>
   lateHours?: number
+  /** When you are open. With it, silent calls and results and waiting callers are counted in hours you were open. */
+  hours?: Hours
   /** The time zone times are written in. */
   timeZone?: string
   fetch?: typeof fetch
@@ -113,7 +117,11 @@ const LOOKBACK = 14 * 24 * HOUR
 /** After how long a run that never ended is no longer shown. */
 const FORGOTTEN = 30 * 24 * HOUR
 
+/** The feeds that fall silent because you are closed. Visits come at night too, and costs when the platform sends them. */
+const DESKS: readonly Feed[] = ['calls', 'results']
+
 export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {}): Ops {
+  const silentSince = (feed: Feed, at: number, hours: number) => longAgo(DESKS.includes(feed) ? options.hours : undefined, at, hours * HOUR)
   const now = options.now ?? Date.now
   const timeZone = options.timeZone ?? 'UTC'
   const when = (at: number) => new Intl.DateTimeFormat('en-US', { timeZone, dateStyle: 'medium', timeStyle: 'short' }).format(at)
@@ -192,9 +200,9 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
         const { last, watched } = feeds.get(feed) ?? {}
         if (!(hours > 0)) continue
         await store.watch(feed, at)
-        if (at - (last ?? watched ?? at) < hours * HOUR) continue
+        if ((last ?? watched ?? at) > silentSince(feed, at, hours)) continue
         // Named after the last record, so one silence is said once and the next one again.
-        await ops.once(`quiet:${feed}:${last ?? 'never'}`, `account-graph: no ${feed} for ${hours} ${hours === 1 ? 'hour' : 'hours'}. ${last === undefined ? 'None has ever been recorded.' : `The last was written down ${when(last)} (${timeZone}).`}`)
+        await ops.once(`quiet:${feed}:${last ?? 'never'}`, `account-graph: no ${feed} for ${hours} ${options.hours && DESKS.includes(feed) ? 'open ' : ''}${hours === 1 ? 'hour' : 'hours'}. ${last === undefined ? 'None has ever been recorded.' : `The last was written down ${when(last)} (${timeZone}).`}`)
       }
 
       const late = options.lateHours ?? 0
@@ -210,18 +218,19 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
 
       const hours = options.returnHours ?? 0
       if (hours > 0) {
+        const due = longAgo(options.hours, at, hours * HOUR)
         const seen = new Set<string>()
         let after: { at: number; id: string } | undefined
         for (;;) {
-          const page = await graph.openCalls({ from: dayIn(at - hours * HOUR - LOOKBACK), to: dayIn(at), ...(after && { after }) })
+          const page = await graph.openCalls({ from: dayIn(Math.max(0, due - LOOKBACK)), to: dayIn(at), ...(after && { after }) })
           for (const { call, followUp: { attempts }, touch } of page) {
-            if (call.at > at - hours * HOUR || call.at < at - hours * HOUR - LOOKBACK || seen.has(call.subject) || !touch || !paid(touch)) continue
+            if (call.at > due || call.at < due - LOOKBACK || seen.has(call.subject) || !touch || !paid(touch)) continue
             seen.add(call.subject)
             // Named after the first miss nobody has answered for, however old, so ringing again is not a new alert.
             const calls = await graph.callsOf([call.subject])
             const first = calls.find((each) => each.direction === 'inbound' && each.result?.answered === false && followUp(each, calls).state === 'open') ?? call
             const tries = attempts === 0 ? 'Nobody has rung back.' : attempts === 1 ? 'Rung back once, not reached.' : `Rung back ${attempts} times, not reached.`
-            await ops.once(`unreturned:${call.subject}:${first.id}`, `account-graph: a caller from ${sourceOf(touch)}${touch.campaign || touch.campaignId ? `, ${touch.campaign || touch.campaignId}` : ''} has waited over ${hours} ${hours === 1 ? 'hour' : 'hours'} for a call back. Missed ${when(call.at)} (${timeZone}). ${tries} ${call.subject}`, call.subject)
+            await ops.once(`unreturned:${call.subject}:${first.id}`, `account-graph: a caller from ${sourceOf(touch)}${touch.campaign || touch.campaignId ? `, ${touch.campaign || touch.campaignId}` : ''} has waited over ${hours} ${options.hours ? 'open ' : ''}${hours === 1 ? 'hour' : 'hours'} for a call back. Missed ${when(call.at)} (${timeZone}). ${tries} ${call.subject}`, call.subject)
           }
           if (page.length < 50) break
           after = page.at(-1)!.call
@@ -246,7 +255,7 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
         feeds: FEEDS.map((name) => {
           const hours = options.quiet?.[name] ?? 0
           const { last, watched } = feeds.get(name) ?? {}
-          return { name, last: last ?? null, hours, quiet: hours > 0 && at - (last ?? watched ?? at) >= hours * HOUR }
+          return { name, last: last ?? null, hours, quiet: hours > 0 && (last ?? watched ?? at) <= silentSince(name, at, hours) }
         }),
         jobs: (await store.jobs()).map((job) => {
           const state = job.outcome ?? (at - job.started >= STUCK ? 'stuck' : 'running')

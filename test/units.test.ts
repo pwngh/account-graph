@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
-import { components, conversionEvent, createAlerter, createGraph, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, ingestRequest, ip, knownLink, ladderProblems, measure, meta, metaEvent, nameKeys, normalizeEmail, normalizePhone, phoneOfType, policyFrom, policyHash, policyProblems, readToken, scorePairs, signToken, sourceOf, withStage } from '../src/index.ts'
+import { components, conversionEvent, createAlerter, createGraph, createHours, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, hoursProblems, ingestRequest, ip, knownLink, ladderProblems, measure, meta, metaEvent, nameKeys, normalizeEmail, normalizePhone, phoneOfType, policyFrom, policyHash, policyProblems, readToken, scorePairs, signToken, sourceOf, withStage } from '../src/index.ts'
 import { summarizeCalls } from '../src/callreport.ts'
 import { followed } from '../src/followed.ts'
 import type { Caller, Followed } from '../src/followed.ts'
@@ -416,7 +416,7 @@ test('calls are counted by hour and weekday where they happened, and by what bec
   assert.equal(summarizeCalls([call('long', { duration: 600 }), call('waited', { result: { waited: 5, recorded: at } })], [], new Set(), at).coverage.noResult, 2)
   // Already tomorrow in Tokyo.
   assert.deepEqual([dayIn(Date.parse('2026-03-02T16:00:00Z'), 'Asia/Tokyo'), dayIn(Date.parse('2026-03-02T16:00:00Z'))], ['2026-03-03', '2026-03-02'])
-  assert.deepEqual(summarizeCalls([], [], new Set(), at), { total: { calls: 0, answered: 0, missed: 0, voicemail: 0, waiting: 0, unknown: 0, returned: 0, told: 0, triedAgain: 0, hidden: 0 }, cells: [], coverage: { visitor: 0, channel: 0, neither: 0, noResult: 0 }, returnedWithin: null })
+  assert.deepEqual(summarizeCalls([], [], new Set(), at), { total: { calls: 0, answered: 0, missed: 0, voicemail: 0, waiting: 0, unknown: 0, returned: 0, told: 0, triedAgain: 0, hidden: 0 }, closed: null, cells: [], coverage: { visitor: 0, channel: 0, neither: 0, noResult: 0 }, returnedWithin: null })
 })
 
 test('quiet hours are off until set, and a call back is due after a day', () => {
@@ -861,4 +861,56 @@ test('Meta gets its browser id only as Meta writes it, and only beside its click
   assert.deepEqual((metaEvent('Lead', { job: { transactionId: 't', subject: 'v', at, keys: {} }, touch: touch({ fbp }) } as never, 'https://site.example/') as any).user_data, {})
   // No Meta click, no browser id: it is a key that goes along, and not one to send a conversion by.
   assert.equal(sent([touch({ source: 'newsletter', fbp })]), undefined)
+})
+
+test('opening hours count time while open, across nights, holidays, clock changes and midnight', () => {
+  const week = { mon: ['09:00-12:00', '13:00-17:00'], tue: ['09:00-17:00'], wed: ['09:00-17:00'], thu: ['09:00-17:00'], fri: ['18:00-02:00'], holidays: ['2026-01-07'] }
+  assert.deepEqual(hoursProblems(week), [])
+  const hours = createHours(week, 'America/New_York')
+  const at = (text: string) => Date.parse(`${text}:00-05:00`)
+  const HOUR = 3_600_000
+  // Monday 5 January to Sunday 11 January 2026.
+  for (const [text, open] of [['2026-01-05T08:59', false], ['2026-01-05T09:00', true], ['2026-01-05T11:59', true], ['2026-01-05T12:00', false], ['2026-01-05T13:00', true], ['2026-01-05T17:00', false], ['2026-01-07T10:00', false], ['2026-01-09T17:59', false], ['2026-01-09T23:30', true], ['2026-01-10T01:59', true], ['2026-01-10T02:00', false], ['2026-01-11T10:00', false]] as const) assert.equal(hours.isOpen(at(text)), open, text)
+  const before = (text: string, open: number) => new Date(hours.before(at(text), open * HOUR) - 5 * HOUR).toISOString().slice(0, 16)
+  // Through lunch, the night, the holiday on Wednesday, and the weekend.
+  assert.equal(before('2026-01-05T14:00', 2), '2026-01-05T11:00')
+  assert.equal(before('2026-01-06T10:00', 3), '2026-01-05T15:00')
+  assert.equal(before('2026-01-08T11:00', 4), '2026-01-06T15:00')
+  assert.equal(before('2026-01-12T09:30', 8.5), '2026-01-09T18:00')
+  assert.equal(before('2026-01-10T01:00', 7), '2026-01-09T18:00')
+  // Asked while closed, the time since the last closing is nothing. Asked for none, it is now.
+  assert.equal(before('2026-01-11T10:00', 1), '2026-01-10T01:00')
+  assert.equal(hours.before(at('2026-01-11T10:00'), 0), at('2026-01-11T10:00'))
+  // A span that runs into the next day's counts each moment once.
+  const round = createHours({ mon: ['18:00-10:00'], tue: ['09:00-17:00'] })
+  assert.equal(new Date(round.before(Date.parse('2026-01-06T12:00Z'), 5 * HOUR)).toISOString(), '2026-01-06T07:00:00.000Z')
+  // The clocks go forward on 8 March 2026: nine on that day is nine, and a night across it is an hour shorter.
+  const sunday = createHours({ sat: ['22:00-06:00'], sun: ['09:00-10:00'] }, 'America/New_York')
+  assert.deepEqual([sunday.isOpen(Date.parse('2026-03-08T13:00:00Z')), sunday.isOpen(Date.parse('2026-03-08T12:59:00Z')), sunday.isOpen(Date.parse('2026-03-08T14:00:00Z'))], [true, false, false])
+  assert.equal(new Date(sunday.before(Date.parse('2026-03-08T12:00:00Z'), 7 * HOUR)).toISOString(), '2026-03-08T03:00:00.000Z')
+  // Against counting minute by minute.
+  for (let i = 0; i < 40; i++) {
+    const now = at('2026-01-12T12:00') - i * 7_777_000
+    const open = (1 + (i % 23)) * 1_800_000
+    let left = open
+    let minute = now
+    while (left > 0) {
+      minute -= 1000
+      if (hours.isOpen(minute)) left -= 1000
+    }
+    assert.equal(hours.before(now, open), minute)
+  }
+  // Closed for good, nothing is long enough ago.
+  assert.equal(createHours({ mon: ['09:00-09:30'], holidays: [] }).before(Date.parse('2026-01-12T00:00Z'), 1e12), -Infinity)
+
+  for (const [given, problem] of [
+    [[], 'must be an object, such as {"mon":["09:00-17:00"]}'], [{}, 'names no time you are open'], [{ mon: [] }, 'names no time you are open'], [{ monday: ['09:00-17:00'] }, '"monday" is not a day of the week, "holidays" or "timeZone"'],
+    [{ mon: '09:00-17:00' }, '"mon" must be a list, such as ["09:00-17:00"]'], [{ mon: ['9-17'] }, '"mon" has "9-17", which is not written 09:00-17:00'], [{ mon: ['09:00-24:30'] }, '"mon" has "09:00-24:30", which is not written 09:00-17:00'],
+    [{ mon: ['09:00-09:00'] }, '"mon" has "09:00-09:00", which is not written 09:00-17:00'], [{ mon: ['09:00-12:00', '11:00-13:00'] }, '"mon" has spans that overlap'], [{ mon: ['09:00-17:00'], holidays: ['2026-02-30'] }, '"holidays" has "2026-02-30", which is not a day written YYYY-MM-DD'],
+    [{ mon: ['09:00-17:00'], timeZone: 'Mars' }, '"timeZone" must be a time zone, such as America/New_York'],
+  ] as const) assert.deepEqual(hoursProblems(given), [problem])
+  const env = { DATABASE_URL: 'x', GRAPH_TOKEN: 'y', ALERT_WEBHOOK: 'https://hooks.example/x' }
+  assert.equal(configFrom(env).openHours, undefined)
+  assert.deepEqual(configFrom({ ...env, OPEN_HOURS: '{"mon":["09:00-24:00"]}' }).openHours, { mon: ['09:00-24:00'] })
+  assert.throws(() => configFrom({ ...env, OPEN_HOURS: '{"mon":["9"]}' }), /OPEN_HOURS: "mon" has "9"/)
 })

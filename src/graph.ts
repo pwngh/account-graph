@@ -7,6 +7,7 @@ import type { CallSummary } from './callreport.ts'
 import { followUp } from './calls.ts'
 import { followed } from './followed.ts'
 import type { Followed } from './followed.ts'
+import type { Hours } from './hours.ts'
 import { UNSTORABLE } from './identifiers.ts'
 import { checkTouch } from './touch.ts'
 import { createMemoryStore } from './memory.ts'
@@ -169,7 +170,7 @@ export interface Graph {
    */
   openCalls(options: { from: string; to: string; timeZone?: string; limit?: number; after?: { at: number; id: string } }): Promise<OpenCall[]>
   /** Calls to you over a range of days: how they went, by hour and weekday, and how many could be placed. */
-  callSummary(options: { from: string; to: string; timeZone?: string; at?: number; results?: 'expected'; resultWait?: number }): Promise<CallSummary>
+  callSummary(options: { from: string; to: string; timeZone?: string; at?: number; results?: 'expected'; resultWait?: number; hours?: Hours }): Promise<CallSummary>
   /**
    * People by the furthest step they ever reached, with missed calls nobody returned first: whoever reached a step or
    * had a call in the last `days` days, today included.
@@ -352,6 +353,8 @@ export interface BoardOptions {
   at?: number
   /** How many hours a missed call may wait. Left out or 0, none has waited too long. */
   returnHours?: number
+  /** When you are open. With it, hours of waiting are those you were open. */
+  hours?: Hours
   /** The most rows of one column. Counts are of everybody. Defaults to 50. */
   limit?: number
 }
@@ -983,7 +986,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       })
     },
 
-    async board({ steps, days = 90, timeZone, at = now(), returnHours = 0, limit = 50 }) {
+    async board({ steps, days = 90, timeZone, at = now(), returnHours = 0, limit = 50, hours }) {
       if (!Number.isSafeInteger(days) || days < 1 || days > 365) throw new TypeError('`days` must be a whole number from 1 to 365')
       const day = dayIn(at, timeZone)
       const today = dayStart(day, timeZone)
@@ -998,7 +1001,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const theirs = unique([...found, ...everyone.keys()]).filter((subject) => people.has(person(subject)))
         for (const outcome of await tx.outcomesOf(theirs)) people.get(person(outcome.subject))!.outcomes.push(outcome)
         for (const call of await tx.callsOf(theirs)) people.get(person(call.subject))!.calls.push(call)
-        const { columns, unplaced } = board([...people.values()], { steps: steps.map(({ name, wait }) => ({ name, ...(wait && { wait: wait * HOUR }) })), at, today, ...(returnHours > 0 && { returnWait: returnHours * HOUR }) })
+        const { columns, unplaced } = board([...people.values()], { steps: steps.map(({ name, wait }) => ({ name, ...(wait && { wait: wait * HOUR }) })), at, today, ...(returnHours > 0 && { returnWait: returnHours * HOUR }), ...(hours && { hours }) })
         // Only those shown are traced to an ad: it is the slow part.
         const shown: BoardColumn<BoardRow>[] = []
         for (const column of columns) {

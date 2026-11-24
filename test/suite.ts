@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { after, describe, test } from 'node:test'
-import { Outdated, brokenAt, callState, createGraph, defaultPolicy, dialed, email, fit, followUp, hashPhone, nameKeys, policyFrom, recordCall, recordCallResult, recordReturn } from '../src/index.ts'
+import { Outdated, brokenAt, callState, createGraph, createHours, defaultPolicy, dialed, email, fit, followUp, hashPhone, nameKeys, policyFrom, recordCall, recordCallResult, recordReturn } from '../src/index.ts'
 import type { Change, GraphOptions, Observation, Policy, Store } from '../src/index.ts'
 
 export interface Opened {
@@ -1426,6 +1426,26 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       for (const days of [0, 1.5, 366]) await assert.rejects(graph.board({ steps, at: T0, days }), TypeError)
       await graph.forget('a:late')
       assert.deepEqual((await graph.board({ steps, at: T0 })).columns[1]!.rows.map((row) => row.subject), ['a:new'])
+    })
+
+    test('with opening hours, the board counts waiting while open, and the summary the calls that came while closed', async () => {
+      const { graph } = await fresh(undefined, { now: () => T0 })
+      // T0 is a Tuesday, 22:13:20 in UTC. Open 9 to 17 on weekdays.
+      const week = ['09:00-17:00']
+      const hours = createHours({ mon: week, tue: week, wed: week, thu: week, fri: week })
+      const at = (day: number, hour: number) => Date.UTC(2023, 10, day, hour)
+      const options = { results: 'expected' as const }
+      await recordCall(graph, { id: 'D1', from: '+15550100091', to: '+15550100001', at: at(10, 16), duration: 20, answered: false }, options)
+      await recordCall(graph, { id: 'D2', from: '+15550100092', to: '+15550100001', at: at(11, 12), duration: 20, answered: false }, options)
+      await recordCall(graph, { id: 'D3', from: '+15550100093', to: '+15550100001', at: at(14, 20), duration: 60, answered: true }, options)
+      await graph.outcome({ transactionId: 'i', subject: 'a', at: at(14, 12), stage: 'inquiry', value: 1, currency: 'USD' })
+      const late = async (more: object) => (await graph.board({ steps: [{ name: 'inquiry', wait: 5 }], at: T0, returnHours: 16.5, ...more })).columns.map((column) => [column.late, column.rows.filter((row) => row.late).map((row) => row.at)])
+      // By the clock all have waited. Open, the Friday miss has waited 17 hours and the Saturday one 16, and the inquiry of noon 5.
+      assert.deepEqual(await late({}), [[2, [at(10, 16), at(11, 12)]], [1, [at(14, 12)]]])
+      assert.deepEqual(await late({ hours }), [[1, [at(10, 16)]], [0, []]])
+      const summary = await graph.callSummary({ from: '2023-11-10', to: '2023-11-14', at: T0, ...options, hours })
+      assert.deepEqual([summary.total.calls, summary.closed!.calls, summary.closed!.missed, summary.closed!.answered], [3, 2, 1, 1])
+      assert.equal((await graph.callSummary({ from: '2023-11-10', to: '2023-11-14', at: T0, ...options })).closed, null)
     })
 
     test('a journey is everything about one person, in order, and why each subject is them', async () => {
