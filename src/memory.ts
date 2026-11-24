@@ -3,7 +3,7 @@ import { createMemoryOutbox } from './outbox.ts'
 import { standingFirst } from './store.ts'
 import type { Store, Tx } from './store.ts'
 import { CLICK_IDS } from './touch.ts'
-import type { CallResult, Consent, ConsentAnswer, Cost, Counted, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Lease, Moved, NotLead, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, Consent, ConsentAnswer, CostRow, Counted, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Lease, Moved, NotLead, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
 
 /**
  * Keeps the graph in process memory. Writes run one at a time; a write that
@@ -32,7 +32,7 @@ export function createMemoryStore(): Store {
   const spurned = new Map<string, NotLead>()
   /** By number, the one that began first, first. */
   const leases = new Map<string, Lease[]>()
-  const costs = new Map<string, Required<Cost>>()
+  const costs = new Map<string, CostRow>()
   const moves: Moved[] = []
   let writes = 0
   const ops = createMemoryOps()
@@ -521,7 +521,7 @@ export function createMemoryStore(): Store {
     },
 
     async costsBetween(from, to) {
-      const key = (cost: Required<Cost>) => [cost.day, cost.source, cost.campaignId].join('\u0000')
+      const key = (cost: CostRow) => [cost.day, cost.source, cost.campaignId].join('\u0000')
       return [...costs.values()].filter((cost) => cost.day >= from && cost.day <= to).sort((x, y) => (key(x) < key(y) ? -1 : 1)).map((cost) => ({ ...cost }))
     },
 

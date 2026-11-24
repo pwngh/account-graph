@@ -129,6 +129,22 @@ if (!url) {
     }
   })
 
+  test('a database from before platforms were asked what they brought keeps its costs, and takes it', async () => {
+    const schema = `ag_test_${process.pid}_claimed`
+    try {
+      const store = await madeBefore(schema, 20)
+      await pool.query(`insert into ${schema}.cost (day, source, campaign_id, campaign, amount, currency, clicks, impressions) values ('1970-01-01', 'google', '111', 'Spring', 5, 'USD', 1, 2)`)
+      assert.deepEqual((await store.migrate()).slice(0, 1), ['what platforms say they brought'])
+      const graph = createGraph(store)
+      const [row] = (await graph.report({ from: '1970-01-01', to: '1970-01-02' })).rows
+      assert.deepEqual([row!.cost, row!.claimed], [5, undefined])
+      await graph.spend({ day: '1970-01-02', source: 'google', campaignId: '111', amount: 5, conversions: 3, conversionValue: 30 })
+      assert.deepEqual((await graph.report({ from: '1970-01-01', to: '1970-01-02' })).rows[0]!.claimed, { days: 1, conversions: 3, value: 30, credited: 0, creditedValue: 0 })
+    } finally {
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
+
   test('a database from before a change of value had a reason keeps its values, and takes reasons', async () => {
     const schema = `ag_test_${process.pid}_loss`
     try {

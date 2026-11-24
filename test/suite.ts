@@ -996,6 +996,41 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual([await read('s1'), await read('s2'), (await read('s3')).length], [[], [], 1])
     })
 
+    test('what a platform says it brought stands beside what is credited to it', async () => {
+      const { graph } = await fresh(undefined, { now: () => Date.parse('2026-03-04T12:00:00Z') })
+      const at = (day: string) => Date.parse(`${day}T10:00:00Z`)
+      await graph.touch({ subject: 'lead:1', at: at('2026-03-01'), gclid: 'G', campaignId: '111' })
+      await graph.touch({ subject: 'lead:2', at: at('2026-03-01'), fbclid: 'F', campaignId: '777' })
+      for (const [n, day, stage] of [[1, '2026-03-01', 'inquiry'], [2, '2026-03-02', 'client'], [3, '2026-03-03', 'client']] as const) await graph.outcome({ transactionId: `t${n}`, subject: 'lead:1', at: at(day), stage, value: 100, currency: 'USD' })
+      await graph.outcome({ transactionId: 't4', subject: 'lead:2', at: at('2026-03-01'), stage: 'client', value: 50, currency: 'USD' })
+      const read = async (options: object = {}) => (await graph.report({ from: '2026-03-01', to: '2026-03-09', ...options }))
+      const of = (report: Awaited<ReturnType<typeof read>>, id: string) => report.rows.find((row) => row.campaignId === id)!.claimed
+      await graph.spend({ day: '2026-03-01', source: 'google', campaignId: '111', amount: 10, currency: 'USD' })
+      const before = await read()
+      assert.deepEqual([of(before, '111'), before.total.claimed], [undefined, undefined])
+      // The third of March is a day the platform said nothing about, so what was credited then is not set beside it.
+      await graph.spend([
+        { day: '2026-03-01', source: 'google', campaignId: '111', amount: 10, currency: 'USD', conversions: 2.5, conversionValue: 250.1 },
+        { day: '2026-03-02', source: 'google', campaignId: '111', amount: 10, currency: 'USD', conversions: 0 },
+        { day: '2026-03-03', source: 'google', campaignId: '111', amount: 10, currency: 'USD' },
+        { day: '2026-03-01', source: 'meta', campaignId: '777', amount: 5, currency: 'USD', conversions: 1 },
+        { day: '2026-03-08', source: 'meta', campaignId: '777', amount: 5, currency: 'USD', conversions: 70 },
+      ])
+      const after = await read()
+      assert.deepEqual(of(after, '111'), { days: 2, conversions: 2.5, value: 250.1, credited: 2, creditedValue: 200 })
+      assert.deepEqual(of(after, '777'), { days: 1, conversions: 1, value: null, credited: 1, creditedValue: 50 })
+      assert.deepEqual(after.total.claimed, { days: 2, conversions: 3.5, value: null, credited: 3, creditedValue: 250 })
+      assert.equal(after.total.outcomes, 4)
+      const clients = await read({ per: 'client' })
+      assert.deepEqual([of(clients, '111')!.credited, of(clients, '111')!.creditedValue, clients.total.claimed!.credited], [1, 100, 2])
+      // A row sent again replaces all of the one before, and one that says nothing of conversions takes them out.
+      await graph.spend({ day: '2026-03-01', source: 'meta', campaignId: '777', amount: 5, conversions: 1, conversionValue: 0 })
+      assert.equal(of(await read(), '777')!.value, 0)
+      await graph.spend({ day: '2026-03-01', source: 'meta', campaignId: '777', amount: 5 })
+      assert.equal(of(await read(), '777'), undefined)
+      for (const bad of [{ conversions: -1 }, { conversions: Number.NaN }, { conversions: '2' }, { conversionValue: 5 }, { conversions: 1, conversionValue: -5 }]) await assert.rejects(graph.spend({ day: '2026-03-01', source: 'google', amount: 1, ...bad } as never), TypeError)
+    })
+
     test('what was refunded and written off is counted apart from what was corrected', async () => {
       const clock = { now: Date.parse('2026-03-02T12:00:00Z') }
       const { graph } = await fresh(undefined, { now: () => clock.now })

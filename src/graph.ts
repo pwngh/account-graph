@@ -27,6 +27,7 @@ import type {
   Consent,
   ConsentAnswer,
   Cost,
+  CostRow,
   Counted,
   Counterparty,
   Counts,
@@ -1090,13 +1091,17 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
     async spend(input) {
       const costs = Array.isArray(input) ? (input as readonly Cost[]) : [input as Cost]
-      const rows = costs.map((cost): Required<Cost> => {
+      const rows = costs.map((cost): CostRow => {
         dayStart(cost?.day)
         if (typeof cost.source !== 'string' || !cost.source.trim()) throw new TypeError('A cost needs a source, such as "google"')
         if (typeof cost.amount !== 'number' || !Number.isFinite(cost.amount) || cost.amount < 0) throw new TypeError(`The cost of ${cost.day} needs an amount of zero or more`)
         for (const count of [cost.clicks, cost.impressions]) {
           if (count !== undefined && (!Number.isSafeInteger(count) || count < 0)) throw new TypeError(`The cost of ${cost.day} has a count that is not a whole number`)
         }
+        for (const claim of [cost.conversions, cost.conversionValue]) {
+          if (claim !== undefined && (typeof claim !== 'number' || !Number.isFinite(claim) || claim < 0)) throw new TypeError(`The cost of ${cost.day} has conversions that are not zero or more`)
+        }
+        if (cost.conversionValue !== undefined && cost.conversions === undefined) throw new TypeError(`The cost of ${cost.day} has a conversion value and no conversions`)
         const named = [cost.campaignId, cost.campaign, cost.currency].map((text) => {
           if (typeof text === 'object' && text !== null) throw new TypeError(`The cost of ${cost.day} needs its campaign and currency as text`)
           return String(text ?? '')
@@ -1111,6 +1116,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
           currency: String(cost.currency ?? ''),
           clicks: cost.clicks ?? 0,
           impressions: cost.impressions ?? 0,
+          ...(cost.conversions !== undefined && { conversions: cost.conversions }),
+          ...(cost.conversionValue !== undefined && { conversionValue: cost.conversionValue }),
         }
       })
       if (rows.length > 0) {

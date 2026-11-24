@@ -34,7 +34,7 @@ const POST: Record<string, object> = {
   '/link': { url: 'https://e.example/', subject: 'account:1', days: 1 }, '/staff-link': { url: 'https://e.example/', days: 1 },
   '/call': { id: 'C1', from: '+15551230001', to: '+15551230002', at: T0, duration: 60, direction: 'inbound', answered: true, waited: 1, tags: { language: 'es' } },
   '/call/result': { id: 'C1', answered: true, voicemail: false, waited: 1 },
-  '/costs': [{ day: '2026-01-01', source: 'google', amount: 1, campaignId: '1', campaign: 'c', currency: 'USD', clicks: 1, impressions: 1 }],
+  '/costs': [{ day: '2026-01-01', source: 'google', amount: 1, campaignId: '1', campaign: 'c', currency: 'USD', clicks: 1, impressions: 1, conversions: 1, conversionValue: 1 }],
 }
 /** What a browser sends, from a site the server takes visits from. */
 const VISIT: Record<string, object> = {

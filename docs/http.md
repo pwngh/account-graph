@@ -125,7 +125,7 @@ The four `POST` routes answer with the subjects whose cluster moved. With the se
 | `POST /not-lead` | That an outcome or a call was no lead: `{ call }` or `{ transactionId }`, with `kind` `spam` or `other` (the default). `lead: true` takes it back. May come before what it is about. Answers `{ id, lead }`. Service token. |
 | `POST /call/returned` | That somebody reached a caller some way your phone system does not report: `{ id, at?, returned? }`, before or after the call. `returned: false` takes it back. Answers `{ followUp }`, null while the call has not come or was not missed. Service token. |
 | `POST /call/result` | How a call went: `{ id, answered, voicemail?, waited? }`, before or after the call. Answers `{ state, counted }`; `waiting` while the call itself has not come. |
-| `POST /costs` | A list of `{ day, source, amount, campaignId?, campaign?, currency?, clicks?, impressions? }`. A row for the same day, source and campaign replaces the one before. |
+| `POST /costs` | A list of `{ day, source, amount, campaignId?, campaign?, currency?, clicks?, impressions?, conversions?, conversionValue? }`. A row for the same day, source and campaign replaces the one before. |
 | `GET /conversion?id=` | The jobs of one transaction, one per ad platform. |
 | `POST /alerts/test` | Posts a test alert. Answers `{ delivered, error? }`. |
 | `POST /prune` | `{ before, by?, reason? }`. Deletes sightings written down before a time, answers about advertising that no longer stand, and call results whose call never came. |

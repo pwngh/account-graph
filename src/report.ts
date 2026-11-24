@@ -1,5 +1,5 @@
 import { DIMENSION, NOT_RECORDED, touchTag, touchTags } from './tags.ts'
-import type { Breakdown, Cost, Counted, OutcomeValue, Report, ReportRow, StageCount, Touch, ValueChange } from './types.ts'
+import type { Breakdown, Claimed, CostRow, Counted, OutcomeValue, Report, ReportRow, StageCount, Touch, ValueChange } from './types.ts'
 
 /** The platform each click id belongs to. A click id says where the visitor came from more surely than a tag does. */
 const CLICK_IDS = [
@@ -142,7 +142,7 @@ interface Step {
 type Tally = { stages: Map<string, Step>; outcomes: number; value: number; people: Set<string>; missed: number; notLeads: number }
 const tally = (): Tally => ({ stages: new Map(), outcomes: 0, value: 0, people: new Set(), missed: 0, notLeads: 0 })
 type Worked = 'costDays' | 'missingDays' | 'thin' | 'costPerOutcome' | 'returnOnCost'
-type Line = Omit<ReportRow, 'stages' | 'breakdown' | 'people' | Worked> & Tally & { costed: Map<string, number>; bought: boolean; onDays: Map<string, { outcomes: number; value: number }>; named: string; parts: Map<string, Tally> }
+type Line = Omit<ReportRow, 'stages' | 'breakdown' | 'people' | Worked> & Tally & { costed: Map<string, number>; claims: Map<string, { conversions: number; value: number | null }>; bought: boolean; onDays: Map<string, { outcomes: number; value: number; asked: number }>; named: string; parts: Map<string, Tally> }
 
 /** An outcome, what it is credited to, whose it is, and how long after their arrival it came. */
 export interface Credited {
@@ -189,6 +189,8 @@ function revalued(into: ValueChange, { outcome, first }: Credited): void {
 }
 
 const roundedChange = (change: ValueChange): ValueChange => ({ ...change, first: round(change.first), now: round(change.now), refunded: round(change.refunded), writtenOff: round(change.writtenOff) })
+
+const roundedClaim = (claim: Claimed): Claimed => ({ ...claim, conversions: round(claim.conversions), value: claim.value === null ? null : round(claim.value), creditedValue: round(claim.creditedValue) })
 
 /** The smallest value that at least this share of sorted values do not exceed. */
 const percentile = (sorted: readonly number[], share: number) => sorted[Math.max(0, Math.ceil(sorted.length * share) - 1)]!
@@ -272,7 +274,7 @@ function worth(costDays: number, days: number, { campaign, campaignId, bought }:
 export function fold(
   from: string,
   to: string,
-  costs: readonly Required<Cost>[],
+  costs: readonly CostRow[],
   touches: readonly Touch[],
   credited: readonly Credited[],
   { missed = [], notLeads = [], by, per, timeZone, through = to, history = credited }: FoldOptions = {},
@@ -287,7 +289,7 @@ export function fold(
   const line = (source: string, campaignId: string, campaign: string): Line => {
     const key = keyOf(source, campaignId, campaign)
     let found = lines.get(key)
-    if (!found) lines.set(key, (found = { source, campaignId, campaign: campaignId ? '' : campaign, named: '', cost: 0, clicks: 0, impressions: 0, visits: 0, ...tally(), worth: unchanged(), parts: new Map(), costed: new Map(), bought: false, onDays: new Map() }))
+    if (!found) lines.set(key, (found = { source, campaignId, campaign: campaignId ? '' : campaign, named: '', cost: 0, clicks: 0, impressions: 0, visits: 0, ...tally(), worth: unchanged(), parts: new Map(), costed: new Map(), claims: new Map(), bought: false, onDays: new Map() }))
     // A campaign known only by name keeps one spelling of it, the first in order.
     if (!campaignId && campaign < found.campaign) found.campaign = campaign
     return found
@@ -300,6 +302,11 @@ export function fold(
     found.clicks += cost.clicks
     found.impressions += cost.impressions
     if (cost.day <= last) found.costed.set(cost.day, (found.costed.get(cost.day) ?? 0) + cost.amount)
+    if (cost.day <= last && cost.conversions !== undefined) {
+      const said = found.claims.get(cost.day) ?? { conversions: 0, value: 0 }
+      const value = cost.conversionValue ?? (cost.conversions === 0 ? 0 : null)
+      found.claims.set(cost.day, { conversions: said.conversions + cost.conversions, value: said.value === null || value === null ? null : said.value + value })
+    }
     if (cost.currency) currencies.add(cost.currency)
     if (cost.campaignId && cost.campaign && cost.day >= found.named) [found.named, found.campaign] = [cost.day, cost.day === found.named && found.campaign > cost.campaign ? found.campaign : cost.campaign]
   }
@@ -364,8 +371,9 @@ export function fold(
     if (!months.has(month)) months.set(month, unchanged())
     for (const change of [found.worth, worthAll, months.get(month)!]) revalued(change, each)
     const day = dayIn(outcome.at, timeZone)
-    const on = found.onDays.get(day) ?? { outcomes: 0, value: 0 }
-    found.onDays.set(day, { outcomes: on.outcomes + (per === undefined || outcome.stage === per ? 1 : 0), value: on.value + outcome.value })
+    const on = found.onDays.get(day) ?? { outcomes: 0, value: 0, asked: 0 }
+    const asked = per === undefined || outcome.stage === per
+    found.onDays.set(day, { outcomes: on.outcomes + (asked ? 1 : 0), value: on.value + outcome.value, asked: on.asked + (asked ? outcome.value : 0) })
   }
 
   const total = { cost: 0, clicks: 0, impressions: 0, visits: 0, missed: 0, notLeads: 0, outcomes: 0, value: 0 }
@@ -373,11 +381,13 @@ export function fold(
   const known: Spent = { cost: 0, outcomes: 0, value: 0 }
   let counted = 0
   const anyCost = new Set<string>()
+  const anyClaim = new Set<string>()
+  const claimedAll: Claimed = { days: 0, conversions: 0, value: 0, credited: 0, creditedValue: 0 }
   let leftOut = 0
   const order = (found: Line) => `${found.source}\u0000${found.campaignId}\u0000${found.campaign}`
   const sorted = [...lines.values()].sort((x, y) => y.cost - x.cost || y.value - x.value || y.visits - x.visits || (order(x) < order(y) ? -1 : 1))
   // A step is named by whoever recorded the outcome, so the names are kept in maps until the very end.
-  const rows = sorted.map(({ named: _, stages, parts, costed: costDays, onDays, bought, people, ...found }): ReportRow => {
+  const rows = sorted.map(({ named: _, stages, parts, costed: costDays, claims, onDays, bought, people, ...found }): ReportRow => {
     found.cost = round(found.cost)
     found.value = round(found.value)
     total.cost = round(total.cost + found.cost)
@@ -395,6 +405,16 @@ export function fold(
       spent.outcomes += onDays.get(day)?.outcomes ?? 0
       spent.value += onDays.get(day)?.value ?? 0
     }
+    const claimed: Claimed = { days: claims.size, conversions: 0, value: 0, credited: 0, creditedValue: 0 }
+    for (const [day, said] of claims) {
+      anyClaim.add(day)
+      for (const into of [claimed, claimedAll]) {
+        into.conversions += said.conversions
+        into.value = into.value === null || said.value === null ? null : into.value + said.value
+        into.credited += onDays.get(day)?.outcomes ?? 0
+        into.creditedValue += onDays.get(day)?.asked ?? 0
+      }
+    }
     const worked = worth(costDays.size, days, { ...found, bought }, spent)
     if (worked.thin) leftOut += 1
     else if (costDays.size > 0 && (found.campaignId || found.campaign)) {
@@ -403,7 +423,7 @@ export function fold(
       known.outcomes += spent.outcomes
       known.value += spent.value
     }
-    return { ...found, ...worked, people: people.size, worth: roundedChange(found.worth), stages: plainSteps(stages), ...(valueOf && { breakdown: plain(parts) }) }
+    return { ...found, ...worked, people: people.size, worth: roundedChange(found.worth), stages: plainSteps(stages), ...(claims.size > 0 && { claimed: roundedClaim(claimed) }), ...(valueOf && { breakdown: plain(parts) }) }
   })
   const said = new Set([...all.flatMap(touchTags).map((name) => `touch.${name}`), ...[...credited.map(({ outcome }) => outcome.tags), ...[...missed, ...notLeads].map(({ tags }) => tags)].flatMap((tags) => Object.keys(tags ?? {})).map((name) => `outcome.${name}`)])
   const steps = plainSteps(everything.stages)
@@ -417,7 +437,7 @@ export function fold(
     days,
     leftOut,
     months: [...months].sort(([x], [y]) => (rank(x) < rank(y) ? -1 : 1)).map(([month, change]) => ({ month, ...roundedChange(change) })),
-    total: { ...total, costDays: anyCost.size, missingDays: Math.max(0, days - anyCost.size), thin: counted === 0 && leftOut > 0, ...ratios(known), people: everything.people.size, worth: roundedChange(worthAll), stages: steps, ...(valueOf && { breakdown: plain(whole) }) },
+    total: { ...total, costDays: anyCost.size, missingDays: Math.max(0, days - anyCost.size), thin: counted === 0 && leftOut > 0, ...ratios(known), people: everything.people.size, worth: roundedChange(worthAll), stages: steps, ...(anyClaim.size > 0 && { claimed: roundedClaim({ ...claimedAll, days: anyClaim.size }) }), ...(valueOf && { breakdown: plain(whole) }) },
     ...(by !== undefined && { by }),
     ...(per !== undefined && { per }),
     dimensions: ['hour', 'weekday', ...[...said].sort()],

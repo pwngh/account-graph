@@ -556,10 +556,11 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       const last = [...new Map(costs.map((cost) => [[cost.day, cost.source, cost.campaignId].join('\u0000'), cost])).values()]
       if (last.length === 0) return
       await db.query(
-        `insert into ${t('cost')} (day, source, campaign_id, campaign, amount, currency, clicks, impressions)
-         select * from unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::float8[], $6::text[], $7::bigint[], $8::bigint[])
+        `insert into ${t('cost')} (day, source, campaign_id, campaign, amount, currency, clicks, impressions, conversions, claimed_value)
+         select * from unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::float8[], $6::text[], $7::bigint[], $8::bigint[], $9::float8[], $10::float8[])
          on conflict (day, source, campaign_id) do update set
-           campaign = excluded.campaign, amount = excluded.amount, currency = excluded.currency, clicks = excluded.clicks, impressions = excluded.impressions`,
+           campaign = excluded.campaign, amount = excluded.amount, currency = excluded.currency, clicks = excluded.clicks, impressions = excluded.impressions,
+           conversions = excluded.conversions, claimed_value = excluded.claimed_value`,
         [
           last.map((c) => c.day),
           last.map((c) => c.source),
@@ -569,6 +570,8 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
           last.map((c) => c.currency),
           last.map((c) => c.clicks),
           last.map((c) => c.impressions),
+          last.map((c) => c.conversions ?? null),
+          last.map((c) => c.conversionValue ?? null),
         ],
       )
     },
@@ -584,6 +587,8 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
         currency: row.currency,
         clicks: Number(row.clicks),
         impressions: Number(row.impressions),
+        ...(row.conversions !== null && { conversions: row.conversions as number }),
+        ...(row.claimed_value !== null && { conversionValue: row.claimed_value as number }),
       }))
     },
 
@@ -1161,6 +1166,11 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
       id: 19,
       name: 'why values changed',
       sql: `alter table ${schema}.outcome_value add column if not exists kind text;`,
+    },
+    {
+      id: 20,
+      name: 'what platforms say they brought',
+      sql: `alter table ${schema}.cost add column if not exists conversions float8, add column if not exists claimed_value float8;`,
     },
   ]
 }
