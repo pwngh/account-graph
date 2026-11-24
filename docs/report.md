@@ -117,6 +117,48 @@ The report's columns follow the order of `STAGES`. A step whose action names a p
 
 > **A step that a page can report is a step a page can fake.** If a step is also listed in `EVENTS`, a browser can create it: once a day per browser, at the step's value. [Page events](calls.md#page-events) says how to choose which steps to allow.
 
+## Breaking it down
+
+Ask for a dimension and every line is split by it: which office was advertised, which one served the person, in what language, at what hour.
+
+```sh
+curl -H "authorization: Bearer $REVIEW_TOKEN" \
+  "https://graph.example.org/report?from=2026-11-01&to=2026-11-14&by=outcome.office_served"
+```
+
+```json
+{ "by": "outcome.office_served", "total": { "outcomes": 9, "breakdown": [
+  { "name": "north", "outcomes": 5, "value": 1000, "missed": 0, "stages": { "enrolled": { "count": 5, "value": 1000 } } },
+  { "name": "river", "outcomes": 3, "value": 600, "missed": 0, "stages": { "enrolled": { "count": 3, "value": 600 } } },
+  { "name": "(not recorded)", "outcomes": 1, "value": 200, "missed": 0, "stages": { "enrolled": { "count": 1, "value": 200 } } } ] } }
+```
+
+| `by` | Splits by | Where it comes from |
+| --- | --- | --- |
+| `touch.<name>` | What the credited arrival said | A parameter of your own on the landing address (`collect.js?params=office,lang`), or the `tags` of the number that was rung |
+| `outcome.<name>` | What is known of the outcome itself | `tags` on `POST /convert`, or on the `POST /call` it came from |
+| `hour`, `weekday` | When it happened, in the report's time zone | Worked out |
+
+The answer names the `dimensions` something in those days was recorded under. On the Channels view they are in **Break down by**.
+
+> **Costs stay on the campaign.** A campaign that served several offices was charged once. Splitting its cost by where people were served would be a guess, so cost, clicks and arrivals are never split.
+
+Outcomes with nothing recorded are always on a line of their own, `(not recorded)`. They are never folded into another value and never left out, so the parts add up to the line.
+
+### The codes
+
+Use these names, so reports read the same from month to month. Values are short codes you choose and keep: `north`, not `North Office (main)`.
+
+| Name | On | Says |
+| --- | --- | --- |
+| `office_advertised` | arrivals and numbers | The office the ad or the listing was for. `office` in an address is read as this. |
+| `office_served` | outcomes | The office that served the person. |
+| `language` | arrivals, numbers, calls, outcomes | `en`, `es`. `lang` in an address is read as this. |
+
+The advertised office and the serving office are two facts, and often differ. Neither is ever filled in from the other.
+
+An outcome or a call carries at most 8 tags, each name of lowercase letters and underscores up to 32 characters, each value up to 64.
+
 ## How an outcome finds its campaign
 
 The report asks the graph the same question `/attribute` answers. Starting from the account, it follows links to the visitors that are the same person, and takes the newest arrival within 90 days that is tied at 0.9 or better.

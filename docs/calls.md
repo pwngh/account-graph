@@ -140,6 +140,18 @@ A call before the miss says nothing about it. One later answer closes every earl
 
 A call you place is never an outcome and records nothing about who was rung. For an outbound call, `from` is your number and `to` is theirs. The number is kept as its hash.
 
+## What a call was about
+
+A call can carry facts, such as the language chosen at the prompt, and a tracking number can say what it stands for.
+
+```sh
+CALL_NUMBERS='{"+15550100001":{"source":"listing","tags":{"office_advertised":"north","language":"es"}}}'
+curl -X POST https://graph.example.org/call -H "authorization: Bearer $GRAPH_TOKEN" \
+  -d '{"id":"CA1","from":"+15550100041","to":"+15550100001","at":1795460000000,"duration":140,"tags":{"language":"es"}}'
+```
+
+A call's tags go on to its outcome. A number's tags go on the arrival a call to it is filed under, so a call that follows a visitor's own tap takes the visitor's instead. [The report](report.md#breaking-it-down) breaks down by either.
+
 ## The Calls view
 
 Open `/review#/calls`. It shows, over the days you pick and in the server's time zone:

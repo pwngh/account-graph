@@ -76,6 +76,8 @@
 - `GET /ops` and the Health view show feeds, jobs, undelivered alerts and the outbox; `POST /alerts/test` sends a test alert.
 - `outbox.hold`, `release` and `withdraw` keep back, send and take back an outcome; a job can be `held`.
 - `ReportRow.missed` counts missed calls per campaign; calls are kept with their results (`keptCall`, `callResult`).
+- `Outcome.tags`, `Call.tags` and `Channel.tags` carry facts; `report({ by })` and `GET /report?by=` break each line down by `touch.<name>`, `outcome.<name>`, `hour` or `weekday`, with `(not recorded)` always a line of its own.
+- The Channels view has a Break down by selector; the Calls view shows tags.
 
 ### Changed
 
