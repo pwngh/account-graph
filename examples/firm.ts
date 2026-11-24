@@ -464,7 +464,7 @@ if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).
       }
       // The database was made for this demo alone, so starting over empties it.
       fresh = async () => {
-        await pool.query('drop schema public cascade; create schema public')
+        await pool.query('drop schema if exists account_graph cascade')
         const postgres = createPostgresStore(pool)
         await postgres.migrate()
         return postgres
