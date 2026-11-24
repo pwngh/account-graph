@@ -78,7 +78,7 @@ Mark a sender as no lead with `POST /not-lead` and `"transactionId": "text:SM1"`
 
 ## Asking for no more texts
 
-`GET /texting?subject=contact:7` answers `{ "optedOut": true, "at": 1795460000000 }` when the last such word from anyone in the subject's cluster was STOP, STOPALL, UNSUBSCRIBE, CANCEL, END, QUIT, REVOKE or OPTOUT, and `optedOut` is `false` after START or UNSTOP. It is `null` when nobody has said either.
+`GET /texting?subject=contact:7` answers `{ "optedOut": true, "at": 1795460000000 }` when the last such word from anyone in the subject's cluster was STOP, STOPALL, UNSUBSCRIBE, CANCEL, END, QUIT, REVOKE or OPTOUT, or in Spanish ALTO, PARE, PARAR, DETENER, CANCELAR, BAJA, SALIR, TERMINAR or FIN, and `optedOut` is `false` after START or UNSTOP. The word counts only as the whole text. No fluent speaker has read the Spanish words, so have one read them before you rely on them. It is `null` when nobody has said either.
 
 It is kept apart from [consent](privacy.md), which is about advertising. Your own system sends the texts, so it must check its own list as well.
 

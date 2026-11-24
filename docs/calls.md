@@ -82,6 +82,7 @@ Reporting a call id again answers `"duplicate": true`. A result in the second re
 
 | Field | Meaning |
 | --- | --- |
+| `area` | Where in Texas the number was first given out, where it was. People keep a number when they move |
 | `known` | The number has called or texted before |
 | `people` | Who they may be, strongest first: their ties when they are on record, or whoever has the number. Several share a number. |
 | `visitor` | The one visitor who was shown the number or tapped it just before |

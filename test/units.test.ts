@@ -889,6 +889,12 @@ test('Meta gets its browser id only as Meta writes it, and only beside its click
 
 test('opening hours count time while open, across nights, holidays, clock changes and midnight', () => {
   const week = { mon: ['09:00-12:00', '13:00-17:00'], tue: ['09:00-17:00'], wed: ['09:00-17:00'], thu: ['09:00-17:00'], fri: ['18:00-02:00'], holidays: ['2026-01-07'] }
+  // Holidays by name fall on the day they are kept, in years past too.
+  const named = createHours({ ...week, fri: ['09:00-17:00'], holidays: ['us', '2026-12-31'] }, 'America/Chicago')
+  const noon = (day: string) => Date.parse(`${day}T18:00:00Z`)
+  assert.deepEqual(hoursProblems({ ...week, holidays: ['us-tx', '2026-12-31'] }), [])
+  assert.match(hoursProblems({ ...week, holidays: ['uk'] })[0]!, /"us" or "us-tx"/)
+  assert.deepEqual(['2026-11-25', '2026-11-26', '2026-11-27', '2026-12-31', '2027-07-05', '2020-11-26'].map((day) => named.isOpen(noon(day))), [true, false, true, false, false, false])
   assert.deepEqual(hoursProblems(week), [])
   const hours = createHours(week, 'America/New_York')
   const at = (text: string) => Date.parse(`${text}:00-05:00`)
@@ -942,7 +948,7 @@ test('opening hours count time while open, across nights, holidays, clock change
   for (const [given, problem] of [
     [[], 'must be an object, such as {"mon":["09:00-17:00"]}'], [{}, 'names no time you are open'], [{ mon: [] }, 'names no time you are open'], [{ monday: ['09:00-17:00'] }, '"monday" is not a day of the week, "holidays" or "timeZone"'],
     [{ mon: '09:00-17:00' }, '"mon" must be a list, such as ["09:00-17:00"]'], [{ mon: ['9-17'] }, '"mon" has "9-17", which is not written 09:00-17:00'], [{ mon: ['09:00-24:30'] }, '"mon" has "09:00-24:30", which is not written 09:00-17:00'],
-    [{ mon: ['09:00-09:00'] }, '"mon" has "09:00-09:00", which is not written 09:00-17:00'], [{ mon: ['09:00-12:00', '11:00-13:00'] }, '"mon" has spans that overlap'], [{ mon: ['09:00-17:00'], holidays: ['2026-02-30'] }, '"holidays" has "2026-02-30", which is not a day written YYYY-MM-DD'],
+    [{ mon: ['09:00-09:00'] }, '"mon" has "09:00-09:00", which is not written 09:00-17:00'], [{ mon: ['09:00-12:00', '11:00-13:00'] }, '"mon" has spans that overlap'], [{ mon: ['09:00-17:00'], holidays: ['2026-02-30'] }, '"holidays" has "2026-02-30", which is not a day written YYYY-MM-DD, "us" or "us-tx"'],
     [{ mon: ['09:00-17:00'], holidays: '2026-12-25' }, '"holidays" must be a list, such as ["2026-12-25"]'],
     [{ mon: ['09:00-17:00'], timeZone: 'Mars' }, '"timeZone" must be a time zone, such as America/New_York'],
   ] as const) assert.deepEqual(hoursProblems(given), [problem])

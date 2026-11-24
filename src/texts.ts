@@ -5,6 +5,7 @@ import type { Graph } from './graph.ts'
 import { hashPhone, normalizePhone, phoneOfType } from './identifiers.ts'
 import { checkTags } from './tags.ts'
 import type { Identifier, KeptCall, KeptText, Outcome, Subject, TextReply } from './types.ts'
+import { spanishStop } from './lookups.ts'
 
 /** One text message to a number of yours, or from one, as your provider reports it. */
 export interface Text {
@@ -97,7 +98,7 @@ export function codeIn(text: string): string | undefined {
 /** What a text that is one word says about being texted, by the words carriers act on. */
 function wish(text: string): 'opt_out' | 'opt_in' | undefined {
   const word = text.trim().replace(/[.!]+$/, '').toUpperCase()
-  return OUT.has(word) ? 'opt_out' : IN.has(word) ? 'opt_in' : undefined
+  return OUT.has(word) ? 'opt_out' : IN.has(word) ? 'opt_in' : spanishStop(text) ? 'opt_out' : undefined
 }
 
 /**

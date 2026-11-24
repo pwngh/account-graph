@@ -1,3 +1,4 @@
+import { HOLIDAYS_SINCE, holidays as holidaysOf } from './lookups.ts'
 import { ahead, dayIn, dayStart, nextDay } from './report.ts'
 
 /**
@@ -14,7 +15,7 @@ export interface OpenHours {
   fri?: readonly string[]
   sat?: readonly string[]
   sun?: readonly string[]
-  /** Days written `YYYY-MM-DD`. */
+  /** Days written `YYYY-MM-DD`. `us` stands for the federal holidays of every year from 1986, and `us-tx` for those and the days Texas adds. */
   holidays?: readonly string[]
   /** The zone they are kept in. Defaults to the server's. */
   timeZone?: string
@@ -30,6 +31,7 @@ export interface Hours {
 const WEEK = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const
 const SPAN = /^([01]\d|2[0-3]):([0-5]\d)-([01]\d|2[0-4]):([0-5]\d)$/
 const MINUTE = 60_000
+const NAMED = new Set(['us', 'us-tx'])
 const DAY = 1440
 
 /** A span in minutes of its day, or undefined when it is not one. One past midnight ends after 1440. */
@@ -59,10 +61,11 @@ export function hoursProblems(given: unknown): string[] {
     } else if (name === 'holidays' && !Array.isArray(value)) wrong.push('"holidays" must be a list, such as ["2026-12-25"]')
     else if (name === 'holidays') {
       for (const day of value) {
+        if (NAMED.has(day)) continue
         try {
           dayStart(day)
         } catch {
-          wrong.push(`"holidays" has "${day}", which is not a day written YYYY-MM-DD`)
+          wrong.push(`"holidays" has "${day}", which is not a day written YYYY-MM-DD, "us" or "us-tx"`)
         }
       }
     } else if (!(WEEK as readonly string[]).includes(name)) wrong.push(`"${name}" is not a day of the week, "holidays" or "timeZone"`)
@@ -82,10 +85,20 @@ export function hoursProblems(given: unknown): string[] {
 /** Reads opening hours. Check them with `hoursProblems` first. */
 export function createHours(given: OpenHours, timeZone = 'UTC'): Hours {
   const zone = given.timeZone ?? timeZone
-  const closed = new Set(given.holidays)
+  const listed = new Set(given.holidays)
+  const texas = listed.has('us-tx')
+  const years = new Map<string, ReadonlySet<string>>()
+  function closed(day: string): boolean {
+    if (listed.has(day)) return true
+    if (!texas && !listed.has('us')) return false
+    const year = day.slice(0, 4)
+    let known = years.get(year)
+    if (!known) years.set(year, (known = new Set(Number(year) >= HOLIDAYS_SINCE ? holidaysOf(Number(year), { texas }) : [])))
+    return known.has(day)
+  }
   const days = new Map<string, readonly (readonly [number, number])[]>()
   const dayBefore = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10)
-  const spansOf = (day: string) => (closed.has(day) ? [] : (given[WEEK[new Date(`${day}T00:00:00Z`).getUTCDay()]!] ?? []).map((text) => span(text)!))
+  const spansOf = (day: string) => (closed(day) ? [] : (given[WEEK[new Date(`${day}T00:00:00Z`).getUTCDay()]!] ?? []).map((text) => span(text)!))
 
   /** When you are open on a day, as instants, the last first and none touching another. */
   function openOn(day: string): readonly (readonly [number, number])[] {
