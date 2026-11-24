@@ -417,7 +417,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
     async pairsDecidedBySystems(times) {
       const { rows } = await db.query(
         `select about->>0 as a, about->>1 as b from ${t('decision')} where starts_with(actor, 'system:') and action in ('join', 'separate', 'rejoin')
-         group by 1, 2 having count(*) >= $1 order by max(seq) desc`,
+         group by 1, 2 having count(*) >= $1`,
         [times],
       )
       return rows.map((row) => [row.a, row.b] as [Subject, Subject])

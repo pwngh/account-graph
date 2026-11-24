@@ -23,8 +23,8 @@ view('health', 'Health', async (box) => {
     wide('Policy rules by kind', rules))
   box.append(section)
 
-  const table = el('table', {}, el('tr', {}, th('One'), th('The other'), th('Reversed, all time', 'num'), th('Last said'), th('By')))
+  const table = el('table', {}, el('tr', {}, th('One'), th('The other'), th('Contradictions, all time', 'num'), th('Last report'), th('By')))
   for (const { a, b, last, reversals } of disputes) table.append(el('tr', {}, td('who', open(a)), td('who', open(b)), td('num', reversals), td('', `${last.action === 'separate' ? 'kept apart' : last.action === 'join' ? 'joined' : 'allowed to join'}, ${when(last.at)}`), td('', author(last.by))))
-  box.append(el('section', {}, el('h2', {}, 'Pairs systems keep reversing'), el('p', { class: 'muted' }, 'Two subjects that systems have joined and kept apart by turns, three times or more. Find out which system is right, and stop the other from sending.'),
-    disputes.length > 0 ? wide('Pairs systems keep reversing', table) : el('p', {}, 'None.')))
+  box.append(el('section', {}, el('h2', {}, 'Pairs systems disagree about'), el('p', { class: 'muted' }, 'Two subjects that systems have reported as one person and as two by turns, three times or more. A separation holds over a join, so the pair may have stayed apart throughout. Find out which system is right, and stop the other from sending.'),
+    disputes.length > 0 ? wide('Pairs systems disagree about', table) : el('p', {}, 'None.')))
 })

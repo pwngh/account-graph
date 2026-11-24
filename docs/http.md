@@ -71,7 +71,7 @@ A token goes in the `authorization` header as `Bearer …`. There are two.
 | `GET /collusion?subject=` | The counterparties tied by identity, with three or more flows. |
 | `GET /rings?subject=` | Value that left the subject and came back through others. |
 | `GET /decisions?limit=&before=&author=` | The record of decisions, newest first, 50 at a time: `{ decisions, next, total }`. Pass `next` as `before` for the page after. `author` is `people`, `system`, or one name. |
-| `GET /disputes` | Pairs that systems have joined and kept apart by turns, three reversals or more. |
+| `GET /disputes` | Pairs that systems have reported as one person and as two by turns, three times or more. |
 | `GET /audit` | Whether that record is whole: `{ sound }`, with `brokenAt` when it is not. |
 | `GET /report?from=&to=&tz=` | What each campaign cost and brought in between two days, with `steps` naming the steps in your order and `timeZone` the zone its days are in. See [the report](report.md). |
 | `POST /separate` | `{ a, b, separated?, by?, reason? }`. Keeps two subjects apart, or with `separated: false` allows them again. |

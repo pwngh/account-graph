@@ -349,14 +349,13 @@ export function createMemoryStore(): Store {
     },
 
     async pairsDecidedBySystems(times) {
-      const found = new Map<string, { pair: [Subject, Subject]; count: number; seq: number }>()
+      const found = new Map<string, number>()
       for (const decision of decisions) {
         if (!ofPair(decision) || !bySystem(decision)) continue
         const key = decision.about.join('\u0000')
-        const row = found.get(key) ?? { pair: decision.about as [Subject, Subject], count: 0, seq: 0 }
-        found.set(key, { ...row, count: row.count + 1, seq: decision.seq })
+        found.set(key, (found.get(key) ?? 0) + 1)
       }
-      return [...found.values()].filter((row) => row.count >= times).sort((x, y) => y.seq - x.seq).map((row) => [...row.pair] as [Subject, Subject])
+      return [...found].filter(([, count]) => count >= times).map(([key]) => key.split('\u0000') as [Subject, Subject])
     },
   }
 

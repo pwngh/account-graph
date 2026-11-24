@@ -63,7 +63,7 @@ Send it when your own conflict check runs, at intake, and not in a batch later. 
 
 > **This is not a conflict check.** It keeps two subjects you already know about apart in the graph. It finds nobody, and it decides nothing about whom you may serve.
 
-A list is written in one transaction, with one decision for each pair by `system:cases`. A pair that already stands that way is left alone, so a system can send its whole list again. Give a reason that names the kind of matter, never the matter itself: the reason is kept in the record for good, after the subjects are forgotten too.
+A list is written in one transaction, with one decision for each pair by `system:cases`. A pair whose last report says the same and still holds is left alone, so a system can send its whole list again. Give a reason that names the kind of matter, never the matter itself: the reason is kept in the record for good, after the subjects are forgotten too.
 
 When another system merges two records, report it to `/join` the same way. It is a join and can be undone. Do not `forget` the record that was merged away, which deletes what it knew.
 

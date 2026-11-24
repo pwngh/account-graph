@@ -59,7 +59,7 @@ function profileOf(profile) {
   // What was last decided about this subject and another, and whether systems keep reversing it.
   const verdicts = new Map(profile.verdicts.map((verdict) => [`${verdict.a}\n${verdict.b}`, verdict]))
   const verdict = (other) => verdicts.get(profile.subject < other ? `${profile.subject}\n${other}` : `${other}\n${profile.subject}`)
-  const contested = (other) => (verdict(other)?.reversals >= 3 ? el('span', { class: 'chip apart', title: 'Find out which system is right, and stop the other from sending.' }, `systems reversed this ${verdict(other).reversals} times`) : '')
+  const contested = (other) => (verdict(other)?.reversals >= 3 ? el('span', { class: 'chip apart', title: 'Find out which system is right, and stop the other from sending.' }, `systems disagree, ${verdict(other).reversals} times`) : '')
   const links = el('table', {}, el('tr', {}, th('Subject'), th('Tie'), th('Score', 'num'), th('Why'), th('')))
   for (const link of profile.links) {
     const inCluster = members.has(link.subject)
@@ -154,13 +154,13 @@ async function decisionList(audit) {
   let next = page.next
   const more = el('button', { on: { click: async () => {
     if (opening) return
-    loading += 1
+    const turn = ++loading
     pending += 1
     more.disabled = true
     try {
       const older = await api('GET', decisionPath(50, next))
-      // Another list took this one's place meanwhile.
-      if (!list.isConnected) return
+      // Another list was asked for meanwhile.
+      if (turn !== loading) return
       list.append(...older.decisions.map(entry))
       listing.shown = list.children.length
       next = older.next
