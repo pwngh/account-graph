@@ -8,6 +8,10 @@ const T0 = 1_700_000_000_000
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
 
+const until = async (ready: () => unknown) => {
+  while (!ready()) await new Promise((resolve) => setTimeout(resolve, 2))
+}
+
 /** Every store must pass this too. */
 export function opsSuite(name: string, open: () => Promise<Opened>) {
   describe(`${name}: ops`, () => {
@@ -218,9 +222,9 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       assert.equal(await ops.run('costs', async () => 7), 7)
       clock.now += 1000
       await assert.rejects(ops.run('costs', () => Promise.reject(new Error('refused with 401'))), /401/)
-      let finish!: () => void
+      let finish: () => void = undefined!
       const hanging = ops.run('outbox', () => new Promise<void>((resolve) => (finish = resolve)))
-      await new Promise((resolve) => setTimeout(resolve, 20))
+      await until(() => finish)
       const read = async () => Object.fromEntries((await ops.state()).jobs.map((job) => [job.name, job]))
       let jobs = await read()
       assert.deepEqual(jobs.costs, { name: 'costs', started: T0 + 1000, succeeded: T0, failed: T0 + 1000, error: 'refused with 401', outcome: 'failed', open: [], state: 'failed' })
@@ -232,9 +236,9 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       clock.now += 15 * 60_000
       assert.deepEqual([(await read()).outbox!.state, (await read()).outbox!.open], ['done', [T0 + 1000]])
       // An older run ending does not make a newer one that hangs look finished.
-      let finishNewer!: () => void
+      let finishNewer: () => void = undefined!
       const newer = make().run('outbox', () => new Promise<void>((resolve) => (finishNewer = resolve)))
-      await new Promise((resolve) => setTimeout(resolve, 20))
+      await until(() => finishNewer)
       const began = clock.now
       clock.now += 1
       finish()
@@ -245,9 +249,9 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       finishNewer()
       await newer
       // The newer run succeeds, then an older one fails: the state is still the newer one's, and the failure is on record.
-      let failOlder!: (error: Error) => void
+      let failOlder: (error: Error) => void = undefined!
       const older = ops.run('outbox', () => new Promise<void>((_, reject) => (failOlder = reject)))
-      await new Promise((resolve) => setTimeout(resolve, 20))
+      await until(() => failOlder)
       clock.now += 1
       await make().run('outbox', async () => undefined)
       clock.now += 1
