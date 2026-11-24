@@ -6,11 +6,11 @@ function person(row, column, at) {
   const campaign = row.campaign || row.campaignId
   const arrival = row.source ? `${row.source}${campaign ? `, ${campaign}` : ''}` : 'No arrival credited'
   const call = row.call
-  const worth = row.value != null && (row.value !== 0 || row.currency) ? el('b', {}, `${money(row.value)}${row.currency ? ` ${row.currency}` : ''}`) : ''
+  const worth = row.value != null ? el('b', {}, `${money(row.value)}${row.currency ? ` ${row.currency}` : ''}`) : ''
   return el('li', {},
     el('div', { class: 'top' }, reviewDisplay.subject(row.subject, `#/journey/${encodeURIComponent(row.subject)}`),
       el('span', { class: row.late ? 'board-age apart' : 'board-age muted' }, reviewDisplay.time(row.at, at),
-        row.late ? el('span', { class: 'sr-only' }, ' · Over limit') : '')),
+        row.late ? ', too long' : '')),
     el('div', { class: 'board-meta reason' }, arrival, ' · ', row.language ?? 'Language (not recorded)', worth ? ' · ' : '', worth),
     el('div', { class: 'board-chips' },
       column.step === null ? reviewDisplay.chip(row.step ?? 'No step yet', 'muted') : '',

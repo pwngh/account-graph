@@ -23,7 +23,7 @@ async function whatFollowed(box, report, address, step, within) {
   }
   const answer = await api('GET', `/followed?from=${report.from}&to=${report.to}&step=${encodeURIComponent(step)}&days=${days}`)
   const panels = el('div', { class: 'panel-grid' })
-  section.append(el('p', { class: 'meta' }, `Callers who reached "${answer.step}" within ${amount(answer.days)} days`), reviewDisplay.range(answer), panels)
+  section.append(el('p', { class: 'meta' }, `People whose call was in these days, and how many reached "${answer.step}" within ${amount(answer.days)} days`), reviewDisplay.range(answer), panels)
   for (const group of answer.groups) {
     const rows = group.rows.map((row) => el('tr', {}, td('', row.name), td('num', amount(row.people)), td('num', amount(row.reached)),
       td('num share', reviewDisplay.compare(percent(row.share), row.share))))

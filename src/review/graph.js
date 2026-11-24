@@ -5,10 +5,10 @@ const MOST = 90
 const around = (profile) => [...new Set([...profile.separated, ...profile.links.map((link) => link.subject), ...(profile.cluster?.members ?? [])])].filter((each) => each !== profile.subject)
 
 /** What was done to the graph on screen, so a refresh draws it as it was left: where each stands, what was moved, opened out, picked and hidden. */
-const drawn = { subject: undefined, spots: new Map(), pins: new Set(), more: new Map(), off: new Set(), camera: undefined, chosen: undefined, left: false, still: 0, least: 0 }
+const drawn = { subject: undefined, spots: new Map(), pins: new Set(), more: new Map(), off: new Set(), camera: undefined, chosen: undefined, left: false, still: 0, least: 0, whole: false }
 function redrawn(subject) {
   if (drawn.subject === subject) return
-  Object.assign(drawn, { subject, pins: new Set(), more: new Map(), camera: undefined, chosen: undefined })
+  Object.assign(drawn, { subject, pins: new Set(), more: new Map(), camera: undefined, chosen: undefined, whole: false })
 }
 /** The screen is not read again under a hand that is moving something or about to press twice, nor while the graph fills it. */
 const holding = () => performance.now() < drawn.still || document.fullscreenElement !== null || $('view').querySelector('.graph.held') !== null
@@ -111,6 +111,7 @@ const widths = new Map()
 function widthOf(text, font) {
   const key = `${font}\n${text}`
   if (!widths.has(key)) {
+    if (widths.size > 2000) widths.clear()
     ruler ??= document.createElement('canvas').getContext('2d')
     ruler.font = `${font} ${getComputedStyle(document.body).fontFamily}`
     widths.set(key, Math.ceil(ruler.measureText(text).width))
@@ -297,7 +298,7 @@ function route(nodes, edges) {
   return stuck
 }
 /** Gives everything its room: names to their best side, then apart, lines around what is in their way, and wider only when that is not enough. */
-function settle(nodes, edges, tries = 16) {
+function settle(nodes, edges, tries = 40) {
   for (const edge of edges) edge.bend = 0
   for (let i = 0; i < tries; i++) {
     sides(nodes, edges)
@@ -501,7 +502,7 @@ function graphOf(profile, more) {
     const [w, h] = [size.w - over.right, size.h - over.bottom]
     const whole = Math.max(0.1, Math.min(1.25, w / (right - left + 56), h / (bottom - top + 48)))
     // Never so small that names cannot be read: the subject in the middle, and the rest by panning.
-    const k = Math.max(0.55, whole)
+    const k = drawn.whole ? whole : Math.max(0.55, whole)
     const [cx, cy] = k === whole ? [(left + right) / 2, (top + bottom) / 2] : [byId.get(me).x, byId.get(me).y]
     return { k, x: w / 2 + (card.classList.contains('left') ? over.right : 0) - k * cx, y: h / 2 - k * cy }
   }
@@ -596,11 +597,11 @@ function graphOf(profile, more) {
         const cost = tangle(nodes, edges) + (roomy ? 0 : 1000)
         if (!best || cost < best.cost) best = { cost, spots: nodes.map(({ x, y, side }) => ({ x, y, side })), bends: edges.map((edge) => edge.bend) }
         // A phone gets fewer tries, not a longer wait.
-        if (best.cost < 1000 && performance.now() - began > 250) break
+        if (performance.now() - began > (best.cost < 1000 ? 250 : 1500)) break
       }
       nodes.forEach((node, i) => Object.assign(node, best.spots[i], { held: false }))
       edges.forEach((edge, i) => (edge.bend = best.bends[i]))
-    } else if (!crowding(nodes, edges).next().done || route(nodes, edges) > 0) settle(nodes, edges)
+    } else if (!crowding(nodes, []).next().done || route(nodes, edges) > 0) settle(nodes, edges)
     const roomy = edges.length <= 9
     lines.replaceChildren(...edges.map((edge) => {
       const width = edge.kind === 'apart' ? 1.5 : 1 + 2 * (edge.score ?? 0)
@@ -609,6 +610,7 @@ function graphOf(profile, more) {
       Object.assign(edge, { wide: widthOf(words, '400 12px') + 14, along: 0.5 })
       edge.tag = svg('g', { class: `tag ${edge.kind}${roomy ? ' worded' : ''}` }, svg('rect', { x: -edge.wide / 2, y: -10, width: edge.wide, height: 20, rx: 10 }), svg('text', { 'text-anchor': 'middle', y: 4 }, words))
       edge.mark = svg('g', { class: `edge ${edge.kind}${roomy ? ' worded' : ''}` }, ...edge.lines, svg('title', {}, `${edge.a} and ${edge.b}: ${said(edge)}`))
+      edge.mark.edge = edge
       edge.mark.addEventListener('pointerenter', () => !running && light(new Set([edge.a, edge.b]), edge))
       edge.mark.addEventListener('pointerleave', () => light())
       return edge.mark
@@ -625,7 +627,10 @@ function graphOf(profile, more) {
       node.mark.node = node
       node.mark.addEventListener('pointerenter', () => !running && light(near(node.id)))
       node.mark.addEventListener('pointerleave', () => light())
-      node.mark.addEventListener('focus', () => light(near(node.id)))
+      node.mark.addEventListener('focus', () => {
+        light(near(node.id))
+        reveal(node)
+      })
       node.mark.addEventListener('blur', () => light())
       node.mark.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' || event.key === ' ') {
@@ -639,10 +644,11 @@ function graphOf(profile, more) {
       return node.mark
     }))
     legend.replaceChildren(...Object.entries(KINDS).filter(([kind]) => edges.some((edge) => edge.kind === kind)).map(([kind, text]) => {
-      const button = el('button', { type: 'button', class: kind, 'aria-pressed': String(!drawn.off.has(kind)), on: { click: () => {
+      const button = el('button', { type: 'button', class: kind, 'data-key': kind, 'aria-pressed': String(!drawn.off.has(kind)), on: { click: () => {
         if (!drawn.off.delete(kind)) drawn.off.add(kind)
         button.setAttribute('aria-pressed', String(!drawn.off.has(kind)))
         hide()
+        light()
       } } }, svg('svg', { viewBox: '0 0 22 8', 'aria-hidden': 'true' }, svg('line', { x1: 1, x2: 21, y1: 4, y2: 4 })), text, el('span', { class: 'muted' }, amount(edges.filter((edge) => edge.kind === kind).length)))
       return button
     }))
@@ -688,6 +694,16 @@ function graphOf(profile, more) {
     }
     return best.get(id)?.by ?? []
   }
+  /** Brings one that has the focus onto the paper, if it is off it. */
+  function reveal(node) {
+    if (!drawn.camera || glide) return
+    const { x, y, k } = drawn.camera
+    const off = (at, size) => Math.max(0, 60 - at) - Math.max(0, at - (size - 60))
+    const [dx, dy] = [off(node.x * k + x, size.w), off(node.y * k + y, size.h)]
+    if (dx === 0 && dy === 0) return
+    drawn.camera = { x: x + dx, y: y + dy, k, held: true }
+    place()
+  }
   function hide() {
     for (const edge of edges) for (const mark of [edge.mark, edge.tag]) mark.classList.toggle('off', hidden(edge))
     for (const node of nodes) node.mark.classList.toggle('alone', node.id !== me && !edges.some((edge) => (edge.a === node.id || edge.b === node.id) && !hidden(edge)))
@@ -700,6 +716,7 @@ function graphOf(profile, more) {
     for (const node of nodes) node.mark.classList.toggle('lit', lit?.has(node.id) ?? false)
     for (const edge of edges) for (const mark of [edge.mark, edge.tag]) mark.classList.toggle('lit', only ? edge === only : lit !== undefined && (edge.a === about || edge.b === about))
     const path = drawn.chosen === undefined || some ? [] : chain(drawn.chosen)
+    if (drawn.chosen !== undefined) onward()
     let at = me
     for (const edge of edges) edge.mark.classList.remove('path', 'back')
     for (const edge of path) {
@@ -738,6 +755,13 @@ function graphOf(profile, more) {
     was?.focus({ preventScroll: true })
   }
   card.addEventListener('keydown', (event) => event.key === 'Escape' && shut())
+  const path = el('span', { class: 'reason' })
+  /** The strongest way there by the ties now drawn, when it is by way of others. */
+  function onward() {
+    const way = chain(drawn.chosen).reduce((on, edge) => [...on, edge.a === on.at(-1) ? edge.b : edge.a], [me])
+    path.hidden = way.length < 3
+    path.replaceChildren(`Strongest drawn way from ${me}: `, el('b', {}, way.slice(1).join(', then ')))
+  }
   /** The card: who is picked, how they stand to the subject, and what can be done. */
   function tell() {
     light()
@@ -756,7 +780,7 @@ function graphOf(profile, more) {
       tie?.score === undefined ? '' : meter(tie.score),
       ...(mine ? reasons(mine.reasons) : node.role === 'member' ? [el('span', { class: 'reason' }, 'No tie of its own to this subject. Joined through others.')] : []),
       ...edges.filter((edge) => edge.from === node || edge.to === node).filter((edge) => edge !== tie).map((edge) => el('span', { class: 'reason' }, el('b', {}, edge.from === node ? edge.b : edge.a), ` ${said(edge)}`, ...(edge.kind === 'apart' ? ['. ', ...kept(verdict(edge.a, edge.b))] : []))),
-      ...(chain(node.id).length > 1 ? [el('span', { class: 'reason' }, `Strongest way from ${me}: `, el('b', {}, [...chain(node.id).reduce((on, edge) => [...on, edge.a === on.at(-1) ? edge.b : edge.a], [me])].slice(1).join(', then ')))] : []),
+      path,
       el('div', { class: 'row' },
         node.id === me ? '' : el('button', { class: 'primary', type: 'button', on: { click: () => go(subjectHash(node.id)) } }, 'Open'),
         node.id === me ? '' : el('button', { type: 'button', 'data-key': 'ties', on: { click: (event) => outward(node.id, event.currentTarget) } }, drawn.more.has(node.id) ? 'Hide its ties' : 'Show its ties'),
@@ -784,10 +808,10 @@ function graphOf(profile, more) {
     }
     // Whatever had the focus is made anew, and has it again. One that was turned off meanwhile had lost it to nobody.
     const at = document.activeElement
-    const name = (control) => control.dataset.key ?? control.textContent
-    const kept = card.contains(at) ? name(at) : held && at === document.body && drawn.chosen === id ? 'ties' : undefined
+    const name = (control) => control.node?.id ?? control.dataset.key ?? control.getAttribute('aria-label') ?? control.textContent
+    const kept = root.contains(at) ? name(at) : held && at === document.body && drawn.chosen === id ? 'ties' : undefined
     draw()
-    if (kept !== undefined) [...card.querySelectorAll('button')].find((control) => name(control) === kept)?.focus({ preventScroll: true })
+    if (kept !== undefined) [...root.querySelectorAll('button, input, .node')].find((control) => name(control) === kept)?.focus({ preventScroll: true })
   }
 
   // Moving: one pointer moves a subject or the paper, two zoom.
@@ -867,6 +891,9 @@ function graphOf(profile, more) {
     if (calm && loose) {
       rest()
       place()
+    } else if (loose && !running) {
+      heat = Math.max(heat, 0.021)
+      run()
     }
     if (down.size === 0) root.classList.remove('held')
   })
@@ -882,6 +909,7 @@ function graphOf(profile, more) {
     drawn.pins.clear()
     drawn.spots.clear()
     drawn.camera = undefined
+    drawn.whole = true
     draw()
   }))
   if (document.fullscreenEnabled) tools.append(tool('Full screen', 'Fill the screen, or stop', () => (document.fullscreenElement ? document.exitFullscreen() : root.requestFullscreen())))
@@ -903,6 +931,8 @@ function graphOf(profile, more) {
     }
     measure()
     draw(same)
+    // Places of those no longer drawn are not kept: a long day opens many.
+    for (const id of drawn.spots.keys()) if (!byId.has(id)) drawn.spots.delete(id)
     new ResizeObserver(measure).observe(paper)
   }
   return root
