@@ -60,6 +60,7 @@
 - An ad click or a campaign visit in the window is credited before a call or text filed under its number.
 - A visit in the same cluster is credited, however weak the chain of links to it (`AttributedTouch.joined`). The outbox sends its click unless `confidence` is set.
 - A report, open calls and the board read the links of fifty thousand people at a time.
+- `tools/accuracy` measures who is joined, rightly and wrongly, over made-up people. `docs/accuracy.md` has the figures of one run.
 - `pay` and `POST /payment` take payments and refunds, and work out what an outcome is worth.
 - `people` and `POST /people` read several people at once. `POST /forget` takes a list of `subjects`.
 - `report` and `GET /report` return spend, outcomes, people, `costPerOutcome`, `returnOnCost`, delays, value changes and platform-reported conversions. `by` adds a breakdown, and `per` selects the step for cost.

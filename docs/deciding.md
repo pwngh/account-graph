@@ -189,6 +189,8 @@ A setting applies to every subject. Fix a single pair with a reviewer decision: 
 
 ### Checked pairs from a file
 
+What the default policy does on made-up people is in [Accuracy](accuracy.md).
+
 `tools/labels.ts` reads a CSV of checked pairs and asks a running server what each pair shares. It prints precision and recall per kind, the counts behind them, and the weights `fit` would give. It is read-only, so a reviewer's token is enough.
 
 ```sh
