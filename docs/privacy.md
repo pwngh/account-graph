@@ -73,9 +73,13 @@ With `FORGET_ADS=true`, each deletion also asks every platform with a documented
 
 The setting is off by default, because it sends the platform the click id and the hashed email and phone again.
 
+To ask for one deletion only, send `"retract": true` with `POST /forget`, or select the option in the Delete dialog. The response includes `sent`. The request is rejected with 400, before anything is deleted, when no configured platform accepts retractions.
+
+A retraction removes the conversion from the platform's reports. Microsoft does not state that it deletes the data.
+
 | Platform | Documented method | Support |
 | --- | --- | --- |
-| Microsoft Advertising | [A retraction](https://learn.microsoft.com/en-us/advertising/campaign-management-service/offlineconversionadjustment), up to 90 days after the conversion | Asked, with `FORGET_ADS` |
+| Microsoft Advertising | [A retraction](https://learn.microsoft.com/en-us/advertising/campaign-management-service/offlineconversionadjustment), up to 90 days after the conversion | Asked, with `FORGET_ADS` or `retract` |
 | Google Ads | [Removing users](https://developers.google.com/data-manager/api/reference/rest/v1/users/remove), for accounts on a list Google keeps. [A retraction](https://developers.google.com/google-ads/api/docs/conversions/upload-adjustments) in the Google Ads API removes a conversion from reports, without a stated deletion | Not asked |
 | Meta | Removing people from audiences. The pages on sending events name no way to delete one | Not asked |
 | TikTok | Unknown, because its documentation could not be read | Not asked |

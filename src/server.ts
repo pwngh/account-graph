@@ -729,13 +729,15 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       }
       case 'POST /forget': {
         const body = await json(request)
-        if (body.ads !== undefined && typeof body.ads !== 'boolean') throw new Refusal(400, '`ads` must be true or false')
+        for (const name of ['ads', 'retract']) if (body[name] !== undefined && typeof body[name] !== 'boolean') throw new Refusal(400, `\`${name}\` must be true or false`)
+        // Before anything is deleted: what is sent to nobody must not look asked for.
+        if (body.retract && !options.outbox?.retraction.targets.length) throw new Refusal(400, 'No configured ad platform accepts retractions')
         // With no platform set up now, what was sent when one was is still said.
         let jobs: Job[] = []
         const { changes, sent } = options.outbox
-          ? await options.outbox.forget(body.subject, signed(request, body))
+          ? await options.outbox.forget(body.subject, signed(request, body), { retract: body.retract ?? false })
           : { changes: await graph.forget(body.subject, signed(request, body), (gone) => void (jobs = gone)), sent: sentOf(jobs) }
-        return body.ads ? { changes, sent } : changes
+        return body.ads || body.retract ? { changes, sent } : changes
       }
       case 'POST /consent': {
         const body = await json(request)
@@ -750,7 +752,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return { moved, mark }
       }
       case 'GET /me':
-        return { reviewer: reviewerOf(request) ?? null }
+        return { reviewer: reviewerOf(request) ?? null, retraction: options.outbox?.retraction ?? { targets: [], always: false } }
       case 'GET /subject':
         return profile(subject)
       case 'GET /ops':

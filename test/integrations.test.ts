@@ -388,8 +388,8 @@ test('a decision is signed with the name its token belongs to, and one made on a
   }
   const last = async () => (await graph.decisionPage({ limit: 1 }))[0]!
   try {
-    assert.deepEqual((await call('dana-new', '/me')).answer, { reviewer: 'dana' })
-    assert.deepEqual((await call('service', '/me')).answer, { reviewer: null })
+    assert.deepEqual((await call('dana-new', '/me')).answer, { reviewer: 'dana', retraction: { targets: [], always: false } })
+    assert.deepEqual((await call('service', '/me')).answer.reviewer, null)
     for (const path of ['/me', '/nowhere']) {
       const { headers } = await fetch(base + path, { headers: { authorization: 'Bearer service' } })
       assert.deepEqual([headers.get('cache-control'), headers.get('x-content-type-options')], ['no-store', 'nosniff'])
@@ -1222,6 +1222,9 @@ test('steps give page events, calls and outcomes their value and their ad platfo
     // Forgetting says what had reached a platform where it is asked to, and is refused when it is asked in words.
     const caller = (await outbox.get('call:CA1'))[0]!.subject
     assert.equal((await post('/forget', { subject: caller, ads: 'yes' })).status, 400)
+    assert.equal((await outbox.get('call:CA1')).length, 1)
+    // Nor is a retraction, in words, or where no platform takes one, before anything is deleted.
+    for (const retract of ['yes', 1, true]) assert.equal((await post('/forget', { subject: caller, retract })).status, 400)
     assert.equal((await outbox.get('call:CA1')).length, 1)
     const forgotten = (await (await post('/forget', { subject: caller, ads: true })).json()) as any
     assert.deepEqual(forgotten.sent, [{ transactionId: 'call:CA1', target: 'google', action: '222', at, state: 'untold' }])

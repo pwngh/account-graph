@@ -222,6 +222,8 @@ function notice(text, bad = false) {
 
 /** Whose token this is: a reviewer's name, null for the service token, undefined until the server has said. */
 let me
+/** The ad platforms that can be asked to retract a conversion, and whether each deletion asks them. */
+let retraction
 /** Shows who decides, in place of the token. The name is the server's answer, never something typed here. */
 function signedIn(answer) {
   me = answer
@@ -311,7 +313,7 @@ function held(button) {
  * until `save` has succeeded or the reviewer cancels. Resolves to what `save`
  * answered, or to undefined when cancelled.
  */
-function ask(title, text, confirm, wantsOther, save, hold = false) {
+function ask(title, text, confirm, wantsOther, save, hold = false, option = undefined) {
   const ease = hold ? held($('ask-yes')) : () => {}
   $('ask-title').textContent = title
   $('ask-text').textContent = text
@@ -320,6 +322,9 @@ function ask(title, text, confirm, wantsOther, save, hold = false) {
   $('ask-other').value = ''
   $('ask-other').required = wantsOther
   $('ask-other-label').hidden = !wantsOther
+  $('ask-option').checked = false
+  $('ask-option-label').hidden = !option
+  $('ask-option-text').textContent = option ?? ''
   $('ask-problem').textContent = ''
   $('ask-other').oninput = null
   const dialog = $('ask')
@@ -327,7 +332,7 @@ function ask(title, text, confirm, wantsOther, save, hold = false) {
   let saving = false
   const working = (now) => {
     saving = now
-    for (const id of ['ask-yes', 'ask-no', 'ask-reason', 'ask-other']) $(id).disabled = now
+    for (const id of ['ask-yes', 'ask-no', 'ask-reason', 'ask-other', 'ask-option']) $(id).disabled = now
   }
   const submit = async (event) => {
     if (event.submitter?.value === 'no') return
@@ -336,7 +341,7 @@ function ask(title, text, confirm, wantsOther, save, hold = false) {
     $('ask-problem').textContent = ''
     working(true)
     try {
-      saved = { answer: await save({ reason: $('ask-reason').value.trim(), other: $('ask-other').value.trim() }) }
+      saved = { answer: await save({ reason: $('ask-reason').value.trim(), other: $('ask-other').value.trim(), chosen: option !== undefined && $('ask-option').checked }) }
     } catch (error) {
       $('ask-problem').textContent = `Not saved: ${error.message}`
     }
@@ -368,16 +373,16 @@ function ask(title, text, confirm, wantsOther, save, hold = false) {
  * answered again, knowing it. An undo is not refused: it is about a decision already made.
  * `done` is told the answer, before the reload.
  */
-async function act(title, text, path, body, confirm, { otherKey, undo = false, done, hold = false } = {}) {
+async function act(title, text, path, body, confirm, { otherKey, undo = false, done, hold = false, option } = {}) {
   foretell(path, body, otherKey)
   const shown = undo ? undefined : $('view').firstElementChild?.dataset.seen
   // The newer decisions this question has shown, by the other subject it named at the time: one seen says nothing of another.
   const told = new Map()
   let refused = false
-  const saved = await ask(title, text, confirm, Boolean(otherKey), async ({ reason, other }) => {
+  const saved = await ask(title, text, confirm, Boolean(otherKey), async ({ reason, other, chosen }) => {
     const seen = told.get(other) ?? shown
     try {
-      return await api('POST', path, { ...body, ...(otherKey && { [otherKey]: other }), ...(seen !== undefined && { seen: Number(seen) }), ...(reason && { reason }) })
+      return await api('POST', path, { ...body, ...(chosen && { [option.key]: true }), ...(otherKey && { [otherKey]: other }), ...(seen !== undefined && { seen: Number(seen) }), ...(reason && { reason }) })
     } catch (error) {
       if (error.status !== 409) throw error
       refused = true
@@ -391,7 +396,7 @@ async function act(title, text, path, body, confirm, { otherKey, undo = false, d
       }
       throw new Error(`${by ?? 'Another reviewer'} made a decision at ${when(at)}: ${ACTIONS[action] ?? action} ${about.join(' and ')}${why ? `, "${why}"` : ''}.`)
     }
-  }, hold)
+  }, hold, option?.text)
   // The question is closed, and nothing more is said in it.
   foretelling.abort()
   if (!saved) return refused ? load() : undefined
@@ -521,8 +526,9 @@ async function load(tag) {
     // Read the tag before the view: a change that lands while the view loads is then noticed on the next look.
     const seen = tag ?? (await pulse())
     if (me === undefined) {
-      const { reviewer } = await api('GET', '/me')
+      const { reviewer, retraction: asked } = await api('GET', '/me')
       if (turn !== loading) return false
+      retraction = asked
       signedIn(reviewer)
     }
     await views.get(name).show(box, ...parts)

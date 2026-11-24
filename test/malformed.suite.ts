@@ -23,7 +23,7 @@ const POST: Record<string, object> = {
   '/ignore': { identifier: 'device:d9', ignored: true, by: 'me', reason: 'r', seen: 99 },
   '/join': { a: 'account:1', b: 'account:2', by: 'me', reason: 'r', seen: 99 },
   '/separate': { a: 'account:1', b: 'account:3', separated: true, by: 'me', reason: 'r', seen: 99 },
-  '/forget': { subject: 'account:gone', by: 'me', reason: 'r', seen: 99, ads: true },
+  '/forget': { subject: 'account:gone', by: 'me', reason: 'r', seen: 99, ads: true, retract: false },
   '/consent': { subject: 'account:1', consent: { adUserData: true, adPersonalization: true }, at: T0, source: 's' },
   '/transfer': { id: 'f1', from: 'account:1', to: 'account:2', amount: 1, at: T0, asset: 'usd' },
   '/find': { text: 'a' },

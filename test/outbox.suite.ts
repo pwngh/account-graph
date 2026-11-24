@@ -532,6 +532,15 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       assert.equal((await telling.get('enroll-4')).length, 3)
       assert.deepEqual((await quiet.forget('contact:5')).sent.map((each) => [each.target, each.state]), [['keeps', 'untold'], ['lost', 'untold'], ['microsoft', 'untold']])
       assert.equal(retractions().length, before)
+      // Asked for with one deletion, it is asked for that one.
+      answer = () => new Response('{}')
+      await enroll(7)
+      await enroll(8)
+      await quiet.run()
+      assert.deepEqual([quiet.retraction, telling.retraction.always], [{ targets: ['microsoft'], always: false }, true])
+      assert.equal((await quiet.forget('contact:7', {}, { retract: true })).sent.find((each) => each.target === 'microsoft')!.state, 'told')
+      assert.equal((await quiet.forget('contact:8')).sent.find((each) => each.target === 'microsoft')!.state, 'untold')
+      assert.equal(retractions().length, before + 1)
 
       // Forgotten twice in one moment, it is told once. A target's own words are kept clear of what it was given.
       const own = createOutbox(graph, next.store.outbox, { ...options, tellForgotten: true, targets: [{ ...keeps('keeps', async () => ({})), forget: async (jobs) => jobs.map((job) => `unknown ${job.keys.k}`) }] })
