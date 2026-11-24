@@ -124,6 +124,8 @@ export interface OutboxOptions {
   confidence?: number
   /** How far back a click may be. Defaults to 90 days. */
   window?: number
+  /** How long after it happened an outcome with no click, email or phone waits for one, in milliseconds. Defaults to seven days. */
+  patience?: number
   /** How long to hold a new outcome before sending, so late evidence can arrive. Defaults to none. */
   delay?: number
   /** How long a worker has to finish a job before another may take it. Defaults to one minute. */
@@ -516,9 +518,15 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
           if (known.length === subjects.length) consent = { adUserData: true, adPersonalization: known.every((each) => each.adPersonalization) }
         }
         if (!touch && Object.keys(job.keys).length === 0) {
-          await skip('no_match_key')
+          // Whose it is can come out later: they open a link, or call again. Looked at less and less often, it is given up on in the end.
+          const age = now() - job.at
+          const until = Math.ceil(job.at + (options.patience ?? 7 * DAY))
+          if (now() >= until) await skip('no_match_key')
+          else if (await store.swap(job, { ...job, attempts: job.attempts - 1, due: Math.min(until, now() + Math.max(10 * 60_000, Math.ceil(age / 4))), note: 'no_match_key' })) pass.retried += 1
           continue
         }
+        // It waited for this, and waits no more.
+        if (job.note === 'no_match_key') delete job.note
         const key = `${job.target}\u0000${job.action}`
         const group = groups.get(key) ?? { target, action: job.action, items: [] }
         groups.set(key, group)
