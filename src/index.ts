@@ -59,6 +59,7 @@ export type {
   Observation,
   OpenCall,
   Outcome,
+  OutcomeValue,
   Pair,
   Reason,
   Recorded,
@@ -70,6 +71,7 @@ export type {
   Subject,
   Told,
   Touch,
+  ValueChange,
   Verdict,
   Why,
 } from './types.ts'

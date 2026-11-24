@@ -2,7 +2,7 @@ import { createMemoryOps } from './ops.ts'
 import { createMemoryOutbox } from './outbox.ts'
 import { standingFirst } from './store.ts'
 import type { Store, Tx } from './store.ts'
-import type { CallResult, Consent, ConsentAnswer, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Moved, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, Consent, ConsentAnswer, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Moved, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
 
 /**
  * Keeps the graph in process memory. Writes run one at a time; a write that
@@ -23,6 +23,7 @@ export function createMemoryStore(): Store {
   const consents = new Map<Subject, ConsentAnswer[]>()
   const decisions: Decision[] = []
   const outcomes = new Map<string, Counted>()
+  const values = new Map<string, { subject: Subject; values: OutcomeValue[] }>()
   const calls = new Map<string, Omit<KeptCall, 'result'>>()
   const results = new Map<string, CallResult>()
   const costs = new Map<string, Required<Cost>>()
@@ -95,6 +96,7 @@ export function createMemoryStore(): Store {
       sightings.delete(subject)
       touches.delete(subject)
       for (const [id, outcome] of outcomes) if (outcome.subject === subject) outcomes.delete(id)
+      for (const [id, kept] of values) if (kept.subject === subject) values.delete(id)
       for (const [id, call] of calls) {
         if (call.subject === subject) {
           calls.delete(id)
@@ -322,6 +324,20 @@ export function createMemoryStore(): Store {
     async outcomeOf(transactionId) {
       const found = outcomes.get(transactionId)
       return found && structuredClone(found)
+    },
+
+    async addValue(transactionId, subject, value) {
+      const kept = values.get(transactionId)
+      if (kept) kept.values.push({ ...value })
+      else values.set(transactionId, { subject, values: [{ ...value }] })
+    },
+
+    async valuesOf(transactionId) {
+      return (values.get(transactionId)?.values ?? []).map((value) => ({ ...value }))
+    },
+
+    async firstValues(transactionIds) {
+      return new Map(transactionIds.flatMap((id) => (values.has(id) ? [[id, { ...values.get(id)!.values[0]! }]] : [])))
     },
 
     async removeOutcome(transactionId) {

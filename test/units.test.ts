@@ -546,8 +546,12 @@ test('the server counts outcomes without an ad platform, takes costs, and report
 
     const report = (await (await fetch(`${base}/report?from=2026-03-01&to=2026-03-02`, { headers: { authorization: 'Bearer reviewer' } })).json()) as any
     assert.deepEqual(report.rows, [
-      { source: 'google', campaignId: '111', campaign: 'Spring', cost: 50, clicks: 10, impressions: 0, visits: 1, missed: 0, stages: { enrolled: { count: 1, value: 120, people: 1, delay: { count: 1, median: 0, p95: 0, inside: 1 } } }, outcomes: 1, value: 120, people: 1, costDays: 1, missingDays: 1, thin: false, costPerOutcome: 50, returnOnCost: 2.4 },
+      { source: 'google', campaignId: '111', campaign: 'Spring', cost: 50, clicks: 10, impressions: 0, visits: 1, missed: 0, stages: { enrolled: { count: 1, value: 120, people: 1, delay: { count: 1, median: 0, p95: 0, inside: 1 } } }, outcomes: 1, value: 120, people: 1, worth: { outcomes: 1, first: 200, now: 120, zeroed: 0, firstUnknown: 0 }, costDays: 1, missingDays: 1, thin: false, costPerOutcome: 50, returnOnCost: 2.4 },
     ])
+    // One outcome with every value it has had, for a reviewer.
+    const asked = (await (await fetch(`${base}/outcome?id=enr-9`, { headers: { authorization: 'Bearer reviewer' } })).json()) as any
+    assert.deepEqual([asked.value, asked.values.map((each: any) => each.value)], [120, [200, 120]])
+    assert.equal(await (await fetch(`${base}/outcome?id=nobody`, { headers: { authorization: 'Bearer reviewer' } })).json(), null)
     // With no days named, the report covers the thirty days up to today.
     const recent = (await (await fetch(`${base}/report`, { headers: { authorization: 'Bearer secret' } })).json()) as any
     assert.deepEqual([recent.from, recent.to, recent.total.cost], ['2026-02-01', '2026-03-02', 50])

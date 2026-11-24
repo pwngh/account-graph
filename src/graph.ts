@@ -35,6 +35,7 @@ import type {
   Observation,
   OpenCall,
   Outcome,
+  OutcomeValue,
   Recorded,
   Report,
   Ring,
@@ -105,6 +106,8 @@ export interface Graph {
   restate(transactionId: string, value: number, currency?: string): Promise<boolean>
   /** Takes a recorded outcome out of the report: it turned out not to have happened. Resolves to false for an unknown id. */
   withdraw(transactionId: string): Promise<boolean>
+  /** Every value an outcome has had, oldest first. */
+  values(transactionId: string): Promise<OutcomeValue[]>
   /** An outcome as it was recorded, or undefined when it was not. */
   outcomeOf(transactionId: string): Promise<Counted | undefined>
   /** Keeps a call. `recordCall` does this. */
@@ -483,6 +486,12 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     return pairs.map((told) => ({ pair: pairOf(told?.a, told?.b, verb), separated: told.separated ?? true, why: { ...why, ...(told.reason && { reason: String(told.reason) }) } }))
   }
 
+  /** Adds an outcome's value to its history, unless it is the one it already has. */
+  async function revalue(tx: Tx, { transactionId, subject, value, currency }: Counted): Promise<void> {
+    const last = (await tx.valuesOf(transactionId)).at(-1)
+    if (last?.value !== value || last.currency !== currency) await tx.addValue(transactionId, subject, { value, currency, at: now() })
+  }
+
   const pairOf = (a: Subject, b: Subject, verb: string): [Subject, Subject] => {
     if (typeof a !== 'string' || typeof b !== 'string' || !a || !b || a === b) throw new TypeError(`${verb} needs two different subjects`)
     return a < b ? [a, b] : [b, a]
@@ -596,6 +605,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return store.write(async (tx) => {
         if (await tx.outcomeOf(transactionId)) return false
         await tx.setOutcome(counted)
+        await revalue(tx, counted)
         return true
       })
     },
@@ -606,7 +616,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return store.write(async (tx) => {
         const found = await tx.outcomeOf(transactionId)
         if (!found) return false
-        await tx.setOutcome({ ...found, value, ...(currency && { currency }) })
+        const restated = { ...found, value, ...(currency && { currency }) }
+        await tx.setOutcome(restated)
+        await revalue(tx, restated)
         return true
       })
     },
@@ -617,6 +629,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         await tx.removeOutcome(transactionId)
         return true
       })
+    },
+
+    values(transactionId) {
+      return store.read((tx) => tx.valuesOf(transactionId))
     },
 
     outcomeOf(transactionId) {
@@ -721,8 +737,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         }
         const outcomes = await tx.outcomesBetween(start, end)
         const labels = await tx.labelsOf(unique(outcomes.map((outcome) => outcome.subject)))
+        const first = await tx.firstValues(outcomes.map((outcome) => outcome.transactionId))
         const credited: Credited[] = []
-        for (const outcome of outcomes) credited.push({ outcome, person: labels.get(outcome.subject)?.cluster ?? outcome.subject, ...(await creditOf(outcome.subject, outcome.at)) })
+        for (const outcome of outcomes) credited.push({ outcome, first: first.get(outcome.transactionId), person: labels.get(outcome.subject)?.cluster ?? outcome.subject, ...(await creditOf(outcome.subject, outcome.at)) })
         // How long steps take is read from the last half year and not from the days asked about: the newest days hold
         // few outcomes, which is what it has to say. Some of each step, so a common quick one does not hide a slow one.
         const history: Credited[] = []

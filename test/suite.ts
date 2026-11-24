@@ -411,14 +411,14 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       ])
       assert.deepEqual(line('google', '111'), {
         source: 'google', campaignId: '111', campaign: 'Spring sale', cost: 60.3, clicks: 42, impressions: 1300, visits: 1, missed: 0,
-        stages: { inquiry: { count: 1, value: 5, people: 1, delay: { count: 1, median: 0.1, p95: 0.1, inside: 1 } }, enrolled: { count: 1, value: 200, people: 1, delay: { count: 1, median: 2, p95: 2, inside: 1 } } }, outcomes: 2, value: 205, people: 1,
+        stages: { inquiry: { count: 1, value: 5, people: 1, delay: { count: 1, median: 0.1, p95: 0.1, inside: 1 } }, enrolled: { count: 1, value: 200, people: 1, delay: { count: 1, median: 2, p95: 2, inside: 1 } } }, outcomes: 2, value: 205, people: 1, worth: { outcomes: 2, first: 205, now: 205, zeroed: 0, firstUnknown: 0 },
         // Cost data for two of three days. The enrollment on the third is not set against their cost.
         costDays: 2, missingDays: 1, thin: false, costPerOutcome: 60.3, returnOnCost: 0.082919,
       })
       // The Meta touch named its campaign only by name, in another case, and its source by an alias.
       assert.deepEqual(line('meta', '777'), {
         source: 'meta', campaignId: '777', campaign: 'Retarget', cost: 15, clicks: 9, impressions: 0, visits: 1, missed: 0,
-        stages: { enrolled: { count: 1, value: 150.5, people: 1, delay: { count: 1, median: 1, p95: 1, inside: 1 } } }, outcomes: 1, value: 150.5, people: 1,
+        stages: { enrolled: { count: 1, value: 150.5, people: 1, delay: { count: 1, median: 1, p95: 1, inside: 1 } } }, outcomes: 1, value: 150.5, people: 1, worth: { outcomes: 1, first: 200, now: 150.5, zeroed: 0, firstUnknown: 0 },
         // One day of three is too few to say what anything cost.
         costDays: 1, missingDays: 2, thin: true, costPerOutcome: null, returnOnCost: null,
       })
@@ -426,7 +426,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(counts(line('(none)', '')!.stages), { enrolled: { count: 1, value: 200 } })
       assert.deepEqual(report.total, {
         cost: 81.3, clicks: 51, impressions: 1300, visits: 3, missed: 0,
-        stages: { inquiry: { count: 2, value: 10, people: 2, delay: { count: 2, median: 0.1, p95: 0.1, inside: 1 } }, enrolled: { count: 3, value: 550.5, people: 3, delay: { count: 2, median: 1.5, p95: 2, inside: 1 } } }, outcomes: 5, value: 560.5, people: 4,
+        stages: { inquiry: { count: 2, value: 10, people: 2, delay: { count: 2, median: 0.1, p95: 0.1, inside: 1 } }, enrolled: { count: 3, value: 550.5, people: 3, delay: { count: 2, median: 1.5, p95: 2, inside: 1 } } }, outcomes: 5, value: 560.5, people: 4, worth: { outcomes: 5, first: 610, now: 560.5, zeroed: 0, firstUnknown: 0 },
         // Of the campaigns with enough cost data alone: never all spend over all outcomes.
         costDays: 2, missingDays: 1, thin: false, costPerOutcome: 60.3, returnOnCost: 0.082919,
       })
@@ -745,6 +745,49 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       // Hundreds of a step that comes at once do not hide the slower one.
       for (let n = 0; n < 520; n++) await graph.outcome({ transactionId: `tap${n}`, subject: 'visitor:late', at: NOW - DAY + 1000 + n, stage: 'tap' })
       assert.deepEqual(await filling('2026-03-30', '2026-03-30'), { after: '2026-03-27', days: 4 })
+    })
+
+    test('every value an outcome has had is kept, and the report says what it was first and what it is now', async () => {
+      const clock = { now: Date.parse('2026-02-27T12:00:00Z') }
+      const { graph } = await fresh(undefined, { now: () => clock.now })
+      const day = (text: string) => Date.parse(`${text}T12:00:00Z`)
+      await graph.touch({ subject: 'lead:1', at: day('2026-02-26'), gclid: 'G', campaignId: '111' })
+      const sale = (n: number, subject: string, value: number) => graph.outcome({ transactionId: `s${n}`, subject, at: clock.now, stage: 'client', value, currency: 'USD' })
+      const read = async (id: string) => (await graph.values(id)).map((each) => [each.value, each.currency, new Date(each.at).toISOString().slice(0, 10)])
+      await sale(1, 'lead:1', 200)
+      await sale(2, 'lead:1', 200)
+      await sale(3, 'lead:2', 100)
+      clock.now = day('2026-03-02')
+      await sale(4, 'lead:1', 200)
+      // The collected amount comes in later, in parts; one paid nothing, one paid what was expected.
+      await graph.restate('s1', 350)
+      await graph.restate('s2', 0)
+      clock.now = day('2026-03-20')
+      await graph.restate('s1', 420.5, 'CAD')
+      await graph.restate('s4', 200)
+      assert.deepEqual(await read('s1'), [[200, 'USD', '2026-02-27'], [350, 'USD', '2026-03-02'], [420.5, 'CAD', '2026-03-20']])
+      assert.deepEqual(await read('s4'), [[200, 'USD', '2026-03-02']])
+      assert.deepEqual(await graph.values('nobody'), [])
+      const report = await graph.report({ from: '2026-02-01', to: '2026-03-31' })
+      const line = report.rows.find((row) => row.campaignId === '111')!
+      assert.deepEqual(line.worth, { outcomes: 3, first: 600, now: 620.5, zeroed: 1, firstUnknown: 0 })
+      assert.equal(line.value, line.worth.now)
+      assert.deepEqual(report.total.worth, { outcomes: 4, first: 700, now: 720.5, zeroed: 1, firstUnknown: 0 })
+      assert.deepEqual(report.months, [
+        { month: '2026-02', outcomes: 3, first: 500, now: 520.5, zeroed: 1, firstUnknown: 0 },
+        { month: '2026-03', outcomes: 1, first: 200, now: 200, zeroed: 0, firstUnknown: 0 },
+      ])
+      // Taken out of the report and back, it goes on from the value it had.
+      await graph.withdraw('s4')
+      assert.equal((await graph.report({ from: '2026-02-01', to: '2026-03-31' })).total.worth.outcomes, 3)
+      await graph.outcome({ transactionId: 's4', subject: 'lead:1', at: day('2026-03-02'), stage: 'client', value: 200, currency: 'USD' })
+      assert.equal((await read('s4')).length, 1)
+      // Pruning leaves values alone; forgetting the person deletes theirs, also of an outcome no longer in the report.
+      await graph.withdraw('s2')
+      await graph.prune(clock.now + DAY)
+      assert.equal((await read('s1')).length, 3)
+      await graph.forget('lead:1')
+      assert.deepEqual([await read('s1'), await read('s2'), (await read('s3')).length], [[], [], 1])
     })
 
     test('the report is broken down by what an arrival said, what is known of an outcome, and when it happened', async () => {

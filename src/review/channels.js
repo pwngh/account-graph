@@ -51,4 +51,14 @@ view('channels', 'Channels', async (box, first, last, by = '') => {
     }
     box.append(el('section', {}, el('h2', {}, 'From arrival to each step'), el('p', { class: 'muted' }, `Days from the newest arrival to the outcome, over outcomes of ${report.from} to ${report.to} that have one in the year before. An arrival outside the window is counted here and credited with nothing.`), wide('From arrival to each step', times)))
   }
+  // What outcomes were first worth and are worth now. A step value is a guess until the real amount is known.
+  const valued = (change) => [td('num', amount(change.outcomes)), td('num', change.outcomes === change.firstUnknown ? unknown() : money(change.first)), td('num', change.outcomes === change.firstUnknown ? unknown() : money(change.now)),
+    td('num', change.outcomes === change.firstUnknown ? '' : `${change.now >= change.first ? '+' : '−'}${money(Math.abs(change.now - change.first))}`), td('num', change.zeroed || ''), td('num', change.firstUnknown || '')]
+  const heads = () => [th('Outcomes', 'num'), th('First recorded', 'num'), th('Now', 'num'), th('Change', 'num'), th('Restated to zero', 'num'), th('First value not recorded', 'num')]
+  if (report.total.worth.first > 0 || report.total.worth.now > 0 || report.total.worth.firstUnknown > 0) {
+    const named = (row) => (row.source === '(none)' ? 'no arrival credited' : `${row.source}${row.campaign || row.campaignId ? `, ${row.campaign || row.campaignId}` : ''}`)
+    const byCampaign = el('table', {}, el('tr', {}, th('Campaign'), ...heads()), ...report.rows.filter((row) => row.worth.outcomes > 0).map((row) => el('tr', {}, td('who', named(row)), ...valued(row.worth))), el('tr', { class: 'sum' }, td('', 'All'), ...valued(report.total.worth)))
+    const byMonth = el('table', {}, el('tr', {}, th('Month first recorded'), ...heads()), ...report.months.map((each) => el('tr', {}, td('', each.month), ...valued(each))))
+    box.append(el('section', {}, el('h2', {}, 'Value: first recorded, and now'), el('p', { class: 'muted' }, `Outcomes of ${report.from} to ${report.to}. First recorded and Now are the same outcomes, those whose first value is known. A value first recorded is often a step's, and is restated once what was collected is known.`), wide('Value by campaign', byCampaign), el('p', {}), wide('Value by month of first record', byMonth)))
+  }
 })

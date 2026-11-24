@@ -1,6 +1,6 @@
 import type { Feed, OpsStore } from './ops.ts'
 import type { OutboxStore } from './outbox.ts'
-import type { CallResult, Change, Consent, ConsentAnswer, Cost, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Moved, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, Change, Consent, ConsentAnswer, Cost, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Moved, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
 
 /**
  * Where the graph lives. Sightings and touches are the record; edges and
@@ -89,7 +89,13 @@ export interface Tx {
   /** Records an outcome for the report, replacing one with the same id. */
   setOutcome(outcome: Counted): Promise<void>
   outcomeOf(transactionId: string): Promise<Counted | undefined>
-  /** Takes an outcome out of the report. */
+  /** Adds a value to the history of an outcome. */
+  addValue(transactionId: string, subject: Subject, value: OutcomeValue): Promise<void>
+  /** Every value of an outcome, oldest first. */
+  valuesOf(transactionId: string): Promise<OutcomeValue[]>
+  /** The first value of each given outcome. */
+  firstValues(transactionIds: readonly string[]): Promise<Map<string, OutcomeValue>>
+  /** Takes an outcome out of the report. Its values stay in its history. */
   removeOutcome(transactionId: string): Promise<void>
   /** Keeps a call, replacing one with the same id. Its result is kept apart, and may arrive first. */
   setCall(call: Omit<KeptCall, 'result'>): Promise<void>

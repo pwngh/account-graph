@@ -1,7 +1,7 @@
 import type { Feed, KeptAlert, OpsStore } from './ops.ts'
 import type { Job, JobState, OutboxStore } from './outbox.ts'
 import type { Store, Tx } from './store.ts'
-import type { CallResult, Consent, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Moved, Sighting, Subject, Touch } from './types.ts'
+import type { CallResult, Consent, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, Labels, Moved, OutcomeValue, Sighting, Subject, Touch } from './types.ts'
 
 /** The part of a `pg` client the store calls. */
 export interface Queryable {
@@ -98,6 +98,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       await db.query(`delete from ${t('sighting')} where subject = $1`, [subject])
       await db.query(`delete from ${t('touch')} where subject = $1`, [subject])
       await db.query(`delete from ${t('outcome')} where subject = $1`, [subject])
+      await db.query(`delete from ${t('outcome_value')} where subject = $1`, [subject])
       await db.query(`with gone as (delete from ${t('call')} where subject = $1 returning id) delete from ${t('call_result')} where id in (select id from gone)`, [subject])
       await db.query(`update ${t('call')} set visitor = null where visitor = $1`, [subject])
       await db.query(`delete from ${t('subject')} where id = $1`, [subject])
@@ -344,6 +345,21 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
     async outcomeOf(transactionId) {
       const { rows } = await db.query(`select * from ${t('outcome')} where transaction_id = $1`, [transactionId])
       return rows[0] && toCounted(rows[0])
+    },
+
+    async addValue(transactionId, subject, { value, currency, at }) {
+      await db.query(`insert into ${t('outcome_value')} (transaction_id, subject, value, currency, at) values ($1, $2, $3, $4, $5)`, [transactionId, subject, value, currency, at])
+    },
+
+    async valuesOf(transactionId) {
+      const { rows } = await db.query(`select value, currency, at from ${t('outcome_value')} where transaction_id = $1 order by id`, [transactionId])
+      return rows.map(toValue)
+    },
+
+    async firstValues(transactionIds) {
+      if (transactionIds.length === 0) return new Map()
+      const { rows } = await db.query(`select distinct on (transaction_id) * from ${t('outcome_value')} where transaction_id = any($1::text[]) order by transaction_id, id`, [transactionIds])
+      return new Map(rows.map((row) => [row.transaction_id as string, toValue(row)]))
     },
 
     async removeOutcome(transactionId) {
@@ -712,6 +728,10 @@ function toCounted(row: any): Counted {
   return { transactionId: row.transaction_id, subject: row.subject, at: Number(row.at), stage: row.stage, value: row.value, currency: row.currency, ...(row.tags !== null && { tags: row.tags }) }
 }
 
+function toValue(row: any): OutcomeValue {
+  return { value: row.value, currency: row.currency, at: Number(row.at) }
+}
+
 function toResult(row: any): CallResult {
   return { ...(row.answered !== null && { answered: row.answered }), ...(row.voicemail !== null && { voicemail: row.voicemail }), ...(row.waited !== null && { waited: row.waited }), recorded: Number(row.result_at) }
 }
@@ -933,6 +953,23 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
       name: 'tags on outcomes and calls',
       sql: `alter table ${schema}.outcome add column if not exists tags jsonb;
             alter table ${schema}.call add column if not exists tags jsonb;`,
+    },
+    {
+      id: 14,
+      name: 'values of outcomes over time',
+      // Every value an outcome has had. What an outcome is worth today starts its history, with no time: it may have been restated before.
+      sql: `create table if not exists ${schema}.outcome_value (
+              id bigint generated always as identity primary key,
+              transaction_id text not null,
+              subject text not null,
+              value float8 not null,
+              currency text not null,
+              at bigint not null
+            );
+            create index if not exists outcome_value_transaction on ${schema}.outcome_value (transaction_id, id);
+            create index if not exists outcome_value_subject on ${schema}.outcome_value (subject);
+            insert into ${schema}.outcome_value (transaction_id, subject, value, currency, at)
+              select transaction_id, subject, value, currency, 0 from ${schema}.outcome;`,
     },
   ]
 }
