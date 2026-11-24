@@ -1065,6 +1065,31 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await graph.restate('s1', 299.9, undefined, 'write_off')
       await graph.restate('s2', 200, undefined, 'refund')
       assert.deepEqual(await worth(), { outcomes: 3, first: 600, now: 649.9, refunded: 50.1, writtenOff: 0, zeroed: 0, firstUnknown: 0 })
+      // However large, all of it can be taken back, and no more.
+      await graph.outcome({ transactionId: 'large', subject: 'lead:2', at: clock.now - 90 * DAY, stage: 'client', value: 100_000_000, currency: 'USD' })
+      await graph.restate('large', 99_999_999.9, undefined, 'refund')
+      await graph.restate('large', 1)
+      await assert.rejects(graph.restate('large', 1.1001, undefined, 'refund'), /not had that much refunded/)
+      assert.equal(await graph.restate('large', 1.1, undefined, 'refund'), true)
+      await assert.rejects(graph.restate('large', 1.2, undefined, 'refund'), /not had that much refunded/)
+      await graph.withdraw('large')
+      // What it was corrected from has no part in how much may be taken back.
+      await graph.outcome({ transactionId: 'typo', subject: 'lead:2', at: clock.now - 90 * DAY, stage: 'client', value: 1e16, currency: 'USD' })
+      await graph.restate('typo', 10)
+      await graph.restate('typo', 9, undefined, 'refund')
+      await assert.rejects(graph.restate('typo', 11, undefined, 'refund'), /not had that much refunded/)
+      assert.equal(await graph.restate('typo', 10, undefined, 'refund'), true)
+      await graph.withdraw('typo')
+      // Many small ones after a large one round down as they are added, and still come back in full.
+      await graph.outcome({ transactionId: 'many', subject: 'lead:2', at: clock.now - 90 * DAY, stage: 'client', value: 1e8, currency: 'USD' })
+      await graph.restate('many', 0, undefined, 'refund')
+      for (let n = 0; n < 20; n++) {
+        await graph.restate('many', 0.02)
+        await graph.restate('many', 0, undefined, 'refund')
+      }
+      await assert.rejects(graph.restate('many', 100_000_000.41, undefined, 'refund'), /not had that much refunded/)
+      assert.equal(await graph.restate('many', 100_000_000.4, undefined, 'refund'), true)
+      await graph.withdraw('many')
       // In another currency now, what was lost in the one before stays in the sum, and the report says which it adds up.
       // It cannot be taken back in the new one.
       await graph.restate('s1', 250, 'CAD')
