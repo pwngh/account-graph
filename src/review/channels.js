@@ -9,11 +9,16 @@ view('channels', 'Channels', async (box, first, last, by = '') => {
   const report = await api('GET', `/report?${query}${by ? `&by=${encodeURIComponent(by)}` : ''}`)
   resolved(report)
   const stages = report.steps.filter((step) => report.total.stages[step])
-  const per = (cost, count) => (count > 0 && cost > 0 ? money(cost / count) : '')
-  const back = (value, cost) => (cost > 0 && value > 0 ? `${(value / cost).toFixed(1)}×` : '')
-  const cells = (row) => [td('num', money(row.cost)), td('num', amount(row.clicks)), td('num', amount(row.visits)),
+  const unknown = () => el('span', { class: 'muted' }, '(not recorded)')
+  const withheld = (row) => el('span', { class: 'muted', title: `Cost data for ${row.costDays} of ${report.days} days is too little to say.` }, 'withheld')
+  const per = (row) => (row.costPerOutcome !== null ? money(row.costPerOutcome) : row.thin ? withheld(row) : '')
+  const back = (row) => (row.returnOnCost !== null ? `${row.returnOnCost.toFixed(1)}×` : row.thin ? withheld(row) : '')
+  // A campaign nobody reported a cost for may have cost nothing or anything. Only a number somebody sent is shown as one.
+  const spent = (row) => (row.costDays === 0 ? [td('num', row.source === '(none)' ? '' : unknown()), td('num', row.source === '(none)' ? '' : unknown())]
+    : [td('num', money(row.cost), row.missingDays > 0 ? el('span', { class: 'reason' }, `${row.missingDays} of ${report.days} days missing`) : ''), td('num', amount(row.clicks))])
+  const cells = (row) => [...spent(row), td('num', amount(row.visits)),
     ...stages.map((stage) => td('num', row.stages[stage]?.count ?? '')),
-    ...(report.total.missed > 0 ? [td('num', row.missed || '')] : []), td('num', money(row.value)), td('num', per(row.cost, row.outcomes)), td('num', back(row.value, row.cost))]
+    ...(report.total.missed > 0 ? [td('num', row.missed || '')] : []), td('num', money(row.value)), td('num', per(row)), td('num', back(row))]
   // A campaign is charged whole, so its cost, clicks and arrivals stay on its own line and are not split.
   const split = (row) => (row.breakdown ?? []).filter((part) => part.outcomes + part.missed > 0 || part.name === '(not recorded)').map((part) => el('tr', { class: 'part' }, td(''), td('who', part.name), td(''), td(''), td(''),
     ...stages.map((stage) => td('num', part.stages[stage]?.count ?? '')), ...(report.total.missed > 0 ? [td('num', part.missed || '')] : []), td('num', money(part.value)), td(''), td('')))
@@ -31,6 +36,7 @@ view('channels', 'Channels', async (box, first, last, by = '') => {
     ...[...new Set([...report.dimensions, ...(by ? [by] : [])])].map((each) => el('option', { value: each, ...(each === by && { selected: '' }) }, dimensionName(each))))
   pick.append(el('label', {}, 'Break down by', breakdown))
   section.append(el('p', { class: 'muted' }, `${report.from} to ${report.to}, days in ${report.timeZone}.${report.currencies.length === 1 ? ` Money in ${report.currencies[0]}.` : ''}${by.startsWith('touch.') ? ' Broken down by what the credited arrival said.' : by.startsWith('outcome.') ? ' Broken down by what is known of each outcome.' : ''}${by ? ' Costs, clicks and arrivals belong to the campaign and are not split.' : ''}`))
+  section.append(el('p', { class: 'muted' }, `Cost per outcome and return set a campaign's cost against its own outcomes, on the days its cost is known. With fewer than half of the ${amount(report.days)} days known they are withheld.${report.leftOut > 0 ? ` The total leaves out ${amount(report.leftOut)} ${report.leftOut === 1 ? 'campaign' : 'campaigns'} for that reason.` : ''}`))
   section.append(report.rows.length > 0 ? wide('Channels', table) : el('p', { class: 'muted' }, 'Nothing was recorded in these days.'))
   if (report.currencies.length > 1) section.append(el('p', { class: 'apart' }, `These sums mix currencies: ${report.currencies.join(', ')}.`))
 })

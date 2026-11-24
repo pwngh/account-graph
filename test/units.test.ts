@@ -416,7 +416,7 @@ test('the report is the same whatever order its rows arrive in', () => {
   ]
   // Broken down, the parts do not depend on the order either.
   const missed = touches.map((each, i) => ({ at: i, touch: each, ...(i % 2 && { tags: { office: `o${i % 3}` } }) }))
-  const parts = (flip: boolean) => fold('2026-03-01', '2026-03-02', costs, touches, flip ? [...credited].reverse() : credited, flip ? [...missed].reverse() : missed, 'outcome.office').total.breakdown
+  const parts = (flip: boolean) => fold('2026-03-01', '2026-03-02', costs, touches, flip ? [...credited].reverse() : credited, { missed: flip ? [...missed].reverse() : missed, by: 'outcome.office' }).total.breakdown
   assert.deepEqual(parts(true), parts(false))
   const expected = fold('2026-03-01', '2026-03-02', costs, touches, credited)
   assert.deepEqual(expected.rows.map((row) => [row.source, row.campaignId, row.campaign, row.cost, row.visits, Object.keys(row.stages)]), [
@@ -439,6 +439,46 @@ test('the report is the same whatever order its rows arrive in', () => {
     assert.deepEqual(fold('2026-03-01', '2026-03-02', turn(costs, by % costs.length), turn(touches, by), turn(credited, by % credited.length)), expected)
     assert.deepEqual(fold('2026-03-01', '2026-03-02', turn(costs, by % costs.length).reverse(), turn(touches, by).reverse(), credited), expected)
   }
+})
+
+test('what an outcome cost uses the outcomes of that campaign, on the days whose cost is known', () => {
+  const cost = (day: string, campaignId: string, amount: number) => ({ day, source: 'google', campaignId, campaign: '', amount, currency: 'USD', clicks: 0, impressions: 0 })
+  const days = (count: number) => Array.from({ length: count }, (_, i) => `2026-03-${String(i + 1).padStart(2, '0')}`)
+  const touch = (campaignId: string) => ({ subject: 's', at: 0, gclid: 'G', campaignId })
+  let n = 0
+  const sale = (day: string, campaignId: string | undefined, value = 100) => ({ outcome: { transactionId: `t${n++}`, subject: 's', at: Date.parse(`${day}T12:00:00Z`), stage: 'sale', value, currency: 'USD' }, touch: campaignId ? touch(campaignId) : undefined })
+  const credited = [
+    // Full: ten days of cost at 10, four sales, one of them with nothing to say what it cost if it fell outside.
+    ...['2026-03-02', '2026-03-05', '2026-03-05', '2026-03-09'].map((day) => sale(day, 'full')),
+    // Gaps: six days of cost, two sales inside them and three on days with none.
+    ...['2026-03-01', '2026-03-06', '2026-03-08', '2026-03-09', '2026-03-10'].map((day) => sale(day, 'gaps')),
+    // Thin: four of ten days.
+    sale('2026-03-01', 'thin'),
+    // No cost at all, and nobody credited.
+    sale('2026-03-01', 'free'),
+    sale('2026-03-01', undefined, 5000),
+  ]
+  const costs = [...days(10).map((day) => cost(day, 'full', 10)), ...days(6).map((day) => cost(day, 'gaps', 5)), ...days(4).map((day) => cost(day, 'thin', 50)), cost('2026-03-01', 'idle', 7)]
+  const report = fold('2026-03-01', '2026-03-10', costs, [], credited)
+  const row = (id: string) => {
+    const { costDays, missingDays, thin, costPerOutcome, returnOnCost } = report.rows.find((each) => each.campaignId === id)!
+    return [costDays, missingDays, thin, costPerOutcome, returnOnCost]
+  }
+  assert.deepEqual(row('full'), [10, 0, false, 25, 4])
+  // 30 over the two sales on those days, and not over all five.
+  assert.deepEqual(row('gaps'), [6, 4, false, 15, 6.666667])
+  assert.deepEqual(row('thin'), [4, 6, true, null, null])
+  assert.deepEqual(row('free'), [0, 10, false, null, null])
+  // The total covers the campaigns whose cost is known: 130 over six sales. Not the 337 spent over the twelve there were.
+  assert.deepEqual([report.total.costPerOutcome, report.total.returnOnCost, report.leftOut, report.days], [21.666667, 4.615385, 2, 10])
+  assert.equal(report.total.cost, 337)
+  // Days still to come are not missing.
+  const early = fold('2026-03-01', '2026-03-31', costs, [], credited, { through: '2026-03-10' })
+  assert.deepEqual([early.days, early.rows.find((each) => each.campaignId === 'full')!.missingDays], [10, 0])
+  assert.equal(fold('2026-04-01', '2026-04-05', [], [], [], { through: '2026-03-10' }).days, 0)
+  // A day belongs to the time zone: at noon in London it is already the next day in Kiritimati.
+  const shifted = fold('2026-03-01', '2026-03-10', [cost('2026-03-03', 'full', 10)], [], [sale('2026-03-02', 'full')], { timeZone: 'Pacific/Kiritimati', through: '2026-03-01' })
+  assert.equal(shifted.rows[0]!.costPerOutcome, 10)
 })
 
 test('a touch is filed under the platform of its click id, then its tag, then the site that referred it', () => {
@@ -476,7 +516,7 @@ test('the server counts outcomes without an ad platform, takes costs, and report
 
     const report = (await (await fetch(`${base}/report?from=2026-03-01&to=2026-03-02`, { headers: { authorization: 'Bearer reviewer' } })).json()) as any
     assert.deepEqual(report.rows, [
-      { source: 'google', campaignId: '111', campaign: 'Spring', cost: 50, clicks: 10, impressions: 0, visits: 1, missed: 0, stages: { enrolled: { count: 1, value: 120 } }, outcomes: 1, value: 120 },
+      { source: 'google', campaignId: '111', campaign: 'Spring', cost: 50, clicks: 10, impressions: 0, visits: 1, missed: 0, stages: { enrolled: { count: 1, value: 120 } }, outcomes: 1, value: 120, costDays: 1, missingDays: 1, thin: false, costPerOutcome: 50, returnOnCost: 2.4 },
     ])
     // With no days named, the report covers the thirty days up to today.
     const recent = (await (await fetch(`${base}/report`, { headers: { authorization: 'Bearer secret' } })).json()) as any

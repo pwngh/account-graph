@@ -54,7 +54,8 @@ const campaigns = [
 ]
 let lead = 0
 for (const { visitors, enroll, daily, ...campaign } of campaigns) {
-  for (let ago = 13; ago >= 0; ago--) await graph.spend({ ...campaign, day: day(ago), amount: daily, currency: 'USD', clicks: Math.round(daily / 2.6), impressions: Math.round(daily * 21) })
+  // The retargeting campaign's costs stopped arriving after ten days, and the brand campaign's skip a few.
+  for (let ago = 29; ago >= 0; ago--) if (!(campaign.source === 'meta' && ago < 20) && !(campaign.campaignId === '20222' && ago % 5 === 1)) await graph.spend({ ...campaign, day: day(ago), amount: daily, currency: 'USD', clicks: Math.round(daily / 2.6), impressions: Math.round(daily * 21) })
   for (let i = 0; i < visitors; i++) {
     const n = ++lead
     const at = Date.now() - (13 - (n % 13)) * 24 * HOUR

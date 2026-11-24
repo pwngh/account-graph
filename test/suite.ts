@@ -409,17 +409,23 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(line('google', '111'), {
         source: 'google', campaignId: '111', campaign: 'Spring sale', cost: 60.3, clicks: 42, impressions: 1300, visits: 1, missed: 0,
         stages: { inquiry: { count: 1, value: 5 }, enrolled: { count: 1, value: 200 } }, outcomes: 2, value: 205,
+        // Cost data for two of three days. The enrollment on the third is not set against their cost.
+        costDays: 2, missingDays: 1, thin: false, costPerOutcome: 60.3, returnOnCost: 0.082919,
       })
       // The Meta touch named its campaign only by name, in another case, and its source by an alias.
       assert.deepEqual(line('meta', '777'), {
         source: 'meta', campaignId: '777', campaign: 'Retarget', cost: 15, clicks: 9, impressions: 0, visits: 1, missed: 0,
         stages: { enrolled: { count: 1, value: 150.5 } }, outcomes: 1, value: 150.5,
+        // One day of three is too few to say what anything cost.
+        costDays: 1, missingDays: 2, thin: true, costPerOutcome: null, returnOnCost: null,
       })
       assert.equal(line('google', '222')!.cost, 6)
       assert.deepEqual(line('(none)', '')!.stages, { enrolled: { count: 1, value: 200 } })
       assert.deepEqual(report.total, {
         cost: 81.3, clicks: 51, impressions: 1300, visits: 3, missed: 0,
         stages: { inquiry: { count: 2, value: 10 }, enrolled: { count: 3, value: 550.5 } }, outcomes: 5, value: 560.5,
+        // Of the campaigns with enough cost data alone: never all spend over all outcomes.
+        costDays: 2, missingDays: 1, thin: false, costPerOutcome: 60.3, returnOnCost: 0.082919,
       })
       assert.deepEqual(report.currencies, ['USD'])
 
