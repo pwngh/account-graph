@@ -81,14 +81,16 @@ function signedIn(answer) {
 }
 
 async function api(method, path, body) {
+  const token = $('token').value
   const response = await fetch(path, {
     method,
-    headers: { authorization: `Bearer ${$('token').value}`, ...(body && { 'content-type': 'application/json' }) },
+    headers: { authorization: `Bearer ${token}`, ...(body && { 'content-type': 'application/json' }) },
     ...(body && { body: JSON.stringify(body) }),
   })
   if (response.status === 204) return undefined
   const answer = await response.json()
-  if (response.status === 401) signedIn(undefined)
+  // One refused after someone else has signed in says nothing of them.
+  if (response.status === 401 && $('token').value === token) signedIn(undefined)
   if (!response.ok) throw Object.assign(new Error(response.status === 401 ? 'The access token was refused.' : answer.error ?? `Request failed with ${response.status}`), { status: response.status, answer })
   return answer
 }
@@ -270,6 +272,7 @@ async function load(tag) {
     const scrolled = quiet ? [...$('view').querySelectorAll('.wide')].map((each) => each.scrollLeft) : []
     const unfolded = quiet ? [...$('view').querySelectorAll('details[open]')].map(fold) : []
     $('view').replaceChildren(box)
+    for (const each of box.querySelectorAll('.graph')) each.begin()
     ;[...$('view').querySelectorAll('.wide')].forEach((each, i) => (each.scrollLeft = scrolled[i] ?? 0))
     for (const each of $('view').querySelectorAll('details')) each.open = unfolded.includes(fold(each))
     if (held) [...$('view').querySelectorAll('a, button, input, select, [tabindex]')].find((node) => which(node) === held)?.focus({ preventScroll: true })
@@ -305,10 +308,11 @@ let readAt = 0
 let browsing = false
 /** The tag of what the server holds now, or undefined when it is the one already seen. */
 async function pulse() {
-  const response = await fetch('/pulse', { cache: 'no-store', headers: { authorization: `Bearer ${$('token').value}`, ...(beat && { 'if-none-match': beat }) } })
+  const token = $('token').value
+  const response = await fetch('/pulse', { cache: 'no-store', headers: { authorization: `Bearer ${token}`, ...(beat && { 'if-none-match': beat }) } })
   if (response.status === 304) return undefined
   if (response.status === 401) {
-    signedIn(undefined)
+    if ($('token').value === token) signedIn(undefined)
     throw new Error('The access token was refused.')
   }
   if (!response.ok) throw new Error(`Request failed with ${response.status}`)
@@ -320,7 +324,7 @@ function fresh(problem) {
 }
 /** Typing or answering a question is not interrupted: the next look finds the change again. */
 const busy = () => $('ask').open || ($('view').contains(document.activeElement) && document.activeElement.matches('input:not([readonly]), select, textarea'))
-const interrupting = () => document.hidden || busy() || browsing
+const interrupting = () => document.hidden || busy() || browsing || holding()
 let looking = false
 async function look() {
   if (interrupting() || looking || pending || !$('token').value || !loadedAt) return fresh()
