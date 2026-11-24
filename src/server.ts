@@ -550,13 +550,47 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
    */
   async function identify(body: any) {
     if (typeof body?.subject !== 'string' || !body.subject) throw new Refusal(400, 'Body requires a subject')
-    const { identifiers, notes, at } = await factsIn(body, true)
-    const changes = await graph.observe({ subject: body.subject, identifiers, at, ...(typeof body.event === 'string' && body.event && { event: body.event }) })
+    const { identifiers: all, notes, at } = await factsIn(body, true)
+    const speaker = body.speaker === undefined ? undefined : await speakerIn(body)
+    if (speaker?.note) notes.speaker = speaker.note
+    // What is the speaker's says who the speaker is, so it is not written on whoever they speak for.
+    const theirs = new Set(speaker?.theirs.flatMap((each) => [each, each.replace(/^phone:/, 'voip:'), each.replace(/^voip:/, 'phone:')]))
+    const identifiers = all.filter((each) => !theirs.has(each))
+    if (identifiers.length < all.length) notes.speaker = 'what is the speaker\'s is not used for who they speak for'
+    const event = typeof body.event === 'string' && body.event ? (body.event as string) : undefined
+    const who = { subject: body.subject as Subject, identifiers }
+    if (speaker && speaker.subjects.length > 0) {
+      const { marks, changes } = await graph.speak(who, speaker.subjects, at, event)
+      return { changes, identifiers: [...identifiers, ...marks], notes }
+    }
+    const changes = identifiers.length > 0 ? await graph.observe({ ...who, at, ...(event && { event }) }) : []
     return { changes, identifiers, notes }
   }
 
+  /** Somebody who speaks for the subject: what is theirs, and the browser and the caller it is to be written on. */
+  async function speakerIn(body: any): Promise<{ theirs: Identifier[]; subjects: { subject: Subject; identifiers: Identifier[] }[]; note?: string }> {
+    const { device, phone, email: address } = typeof body.speaker === 'object' && body.speaker !== null ? body.speaker : {}
+    if (/^(visitor|caller|call):/.test(body.subject)) throw new Refusal(400, 'A speaker speaks for a record of yours, not for a browser or a caller')
+    if (device === undefined && !(typeof phone === 'string' && phone)) throw new Refusal(400, 'A speaker requires a device or a phone')
+    const { identifiers: theirs, notes } = await factsIn({ device, phone }, true, true)
+    const ofDevice = theirs.find((each) => each.startsWith('device:'))
+    const ofPhone = theirs.find((each) => /^(phone|voip):/.test(each))
+    const subjects: { subject: Subject; identifiers: Identifier[] }[] = []
+    if (ofDevice) {
+      // The browser may be known under another id, and hold this one.
+      const known = (await graph.holders([ofDevice])).map((edge) => edge.subject).filter((each) => each.startsWith('visitor:')).sort()
+      subjects.push({ subject: known[0] ?? `visitor:${device}`, identifiers: [ofDevice] })
+    }
+    if (ofPhone) subjects.push({ subject: `caller:${hashPhone(phone, options.calls?.country)}`, identifiers: [ofPhone] })
+    if (typeof address === 'string' && address) {
+      theirs.push(email(address))
+      subjects.at(-1)?.identifiers.push(email(address))
+    }
+    return { theirs, subjects, ...(subjects.length === 0 && { note: notes.phone ?? 'not used' }) }
+  }
+
   /** The identifiers in plain facts about somebody, normalized, checked and hashed, and what came of the checks. Only where they are to be saved is the line of a number looked up, because that can mute it. */
-  async function factsIn(body: any, saving: boolean) {
+  async function factsIn(body: any, saving: boolean, none = body.speaker !== undefined) {
     const identifiers: Identifier[] = (Array.isArray(body.identifiers) ? body.identifiers : []).map(String)
     const notes: Record<string, string> = {}
     let zip: string | undefined
@@ -614,7 +648,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     const apart = options.identifierSecret && (typeof body.dob === 'string' || typeof body.name?.first === 'string') ? ((await graph.policy()).rules.apart ?? []) : []
     const born = apart.length > 0 && typeof body.dob === 'string' ? birthKey(options.identifierSecret!, body.dob) : undefined
     const facts = [...(born ? [born] : []), ...(apart.includes('given') && typeof body.name?.first === 'string' ? givenKeys(options.identifierSecret!, body.name.first) : [])]
-    if (identifiers.length === 0 && !(saving && facts.length > 0)) throw new Refusal(400, 'At least one identifying field is required')
+    if (identifiers.length === 0 && !(saving && (facts.length > 0 || none))) throw new Refusal(400, 'At least one identifying field is required')
     identifiers.push(...facts)
     return { identifiers, notes, at: (body.at ?? now()) as number }
   }

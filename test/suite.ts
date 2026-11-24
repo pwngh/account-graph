@@ -3091,6 +3091,77 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await assert.rejects((await fresh()).graph.observe({ subject: 'a', identifiers: both, at: T0 }), /kind that is missing from the policy/)
     })
 
+    test('whoever speaks for somebody else is credited with them and is not them', async () => {
+      const { graph } = await fresh()
+      const mark = 'behalf:one'
+      await graph.observe([
+        { subject: 'visitor:a', identifiers: ['device:a'], at: T0 },
+        { subject: 'caller:1', identifiers: ['phone:1', 'dial:x'], at: T0 + 1000 },
+        { subject: 'visitor:a', identifiers: ['dial:x'], at: T0 + 1000 },
+        { subject: 'contact:child', identifiers: ['email:child', mark], at: T0 + 2000 },
+        { subject: 'caller:1', identifiers: [mark], at: T0 + 2000 },
+      ])
+      await graph.touch({ subject: 'visitor:a', at: T0, source: 'google', gclid: 'click-one' })
+      // Their caller is tied to the browser, so what brought that browser brought the child.
+      const { credited } = await graph.attribute('contact:child', { at: T0 + DAY })
+      assert.deepEqual([credited!.gclid, credited!.joined, credited!.speaker], ['click-one', false, true])
+      assert.deepEqual([(await graph.cluster('contact:child'))!.members, (await graph.cluster('caller:1'))!.members], [['contact:child'], ['caller:1', 'visitor:a']])
+      // Nobody has to decide about the two, and a number written on both later joins them no more than before.
+      assert.equal((await graph.undecided()).pairs.filter((pair) => pair.reasons.some((reason) => reason.identifier === mark)).length, 0)
+      await graph.observe({ subject: 'contact:child', identifiers: ['phone:1'], at: T0 + 3000 })
+      const [link] = (await graph.links('contact:child')).filter((each) => each.subject === 'caller:1')
+      assert.deepEqual([link!.level, link!.score > 0.98], ['related', true])
+      assert.deepEqual((await graph.cluster('contact:child'))!.members, ['contact:child'])
+      // A second child of hers is no part of the first one's credit.
+      await graph.observe([
+        { subject: 'contact:other', identifiers: ['email:other', 'behalf:two'], at: T0 + 4000 },
+        { subject: 'caller:1', identifiers: ['behalf:two'], at: T0 + 4000 },
+      ])
+      assert.equal((await graph.cluster('contact:other'))!.members.length, 1)
+      await graph.touch({ subject: 'contact:other', at: T0 + 5000, source: 'bing', msclkid: 'click-two' })
+      assert.equal((await graph.attribute('contact:child', { at: T0 + DAY })).credited!.gclid, 'click-one')
+      assert.equal((await graph.attribute('caller:1', { at: T0 + DAY })).credited!.gclid, 'click-one')
+      assert.deepEqual((await graph.journey('contact:child')).entries.filter((entry) => entry.subject === 'visitor:a'), [])
+      assert.deepEqual(await graph.verify(), [])
+      // What a third record shares with both does not make one of them.
+      await graph.observe(['contact:child', 'caller:1', 'contact:third'].map((subject) => ({ subject, identifiers: ['email:shared'], at: T0 + 6000 })))
+      await graph.touch({ subject: 'contact:child', at: T0 + 7000, source: 'bing', msclkid: 'click-child' })
+      assert.equal((await graph.cluster('contact:child'))!.members.includes('caller:1'), false)
+      assert.equal((await graph.attribute('caller:1', { at: T0 + DAY })).touches.some((touch) => touch.msclkid === 'click-child'), false)
+      assert.deepEqual(await graph.verify(), [])
+      // A reviewer who joins the two has the last word.
+      await graph.join('contact:child', 'caller:1')
+      assert.ok((await graph.cluster('contact:child'))!.members.includes('caller:1'))
+      assert.deepEqual(await graph.verify(), [])
+    })
+
+    test('a mark says who speaks for whom, however often it is said', async () => {
+      const { graph } = await fresh()
+      const caller = { subject: 'caller:1', identifiers: ['phone:1'] }
+      const browser = { subject: 'visitor:a', identifiers: ['device:a'] }
+      const child = { subject: 'contact:child', identifiers: [] }
+      const [one, two] = await Promise.all([graph.speak(child, [caller], T0), graph.speak(child, [caller], T0)])
+      assert.deepEqual(one.marks, two.marks)
+      const both = await graph.speak(child, [browser, caller], T0 + 1)
+      assert.deepEqual([both.marks[1], (await graph.speak(child, [browser], T0 + 2)).marks], [one.marks[0], [both.marks[0]]])
+      // Somebody else, and somebody else's child.
+      const father = await graph.speak(child, [{ subject: 'caller:2', identifiers: ['phone:2'] }], T0)
+      const other = await graph.speak({ ...child, subject: 'contact:other' }, [caller], T0)
+      assert.equal(new Set([...both.marks, ...father.marks, ...other.marks]).size, 4)
+      assert.deepEqual((await graph.links('caller:2')).map((link) => link.subject), ['contact:child'])
+      for (const mark of both.marks) await graph.ignore(mark, true)
+      assert.deepEqual((await graph.links('contact:child')).map((link) => link.subject), ['caller:2'])
+      assert.deepEqual(await graph.verify(), [])
+      await assert.rejects(graph.speak({ subject: 'caller:9', identifiers: [] }, [browser], T0), TypeError)
+      // What is told at once is never one person for a moment.
+      const told = await graph.speak({ subject: 'contact:new', identifiers: ['email:new', 'phone:5'] }, [{ subject: 'caller:5', identifiers: ['phone:5'] }], T0)
+      assert.deepEqual(told.changes.filter((change) => change.from !== undefined), [])
+      // Said, so it is shown, however high the policy's levels are.
+      const strict = (await fresh({ ...defaultPolicy, related: 0.95, same: 0.96 })).graph
+      await strict.speak(child, [caller], T0)
+      assert.deepEqual((await strict.links('contact:child')).map((link) => [link.subject, link.level]), [['caller:1', 'related']])
+    })
+
     test('overlapping writes leave clusters sound', async () => {
       const { graph } = await fresh()
       await Promise.all(
@@ -3111,7 +3182,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const next = random(seed)
       const pick = (count: number) => Math.floor(next() * count)
       const identifier = () =>
-        [`email:${pick(14)}`, `device:${pick(14)}`, `hardware:${pick(10)}`, `fingerprint:${pick(8)}`, `canvas:${pick(8)}`, `ip:${pick(5)}`][pick(6)]!
+        [`email:${pick(14)}`, `device:${pick(14)}`, `hardware:${pick(10)}`, `fingerprint:${pick(8)}`, `canvas:${pick(8)}`, `ip:${pick(5)}`, `behalf:${pick(60)}`][pick(7)]!
       const observation = (): Observation => ({
         subject: `account:${pick(40)}`,
         identifiers: Array.from({ length: 1 + pick(3) }, identifier),
@@ -3163,13 +3234,13 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
         const counts = call?.direction === 'inbound' && call.result?.answered === true && call.duration! >= 30
         assert.equal(Boolean(await graph.outcomeOf(`call:F${n}`)), counts, `F${n}`)
       }
-      // What is undecided is exactly what is linked, in two clusters, and not joined by a mark.
+      // What is undecided is exactly what is linked, in two clusters, not joined by a mark, and not said to be two.
       const linked = new Map<string, boolean>()
       for (let n = 0; n < 40; n++) {
         for (const link of await graph.links(`account:${n}`)) {
           const pair = [`account:${n}`, link.subject].sort()
           if ((await graph.cluster(pair[0]!))!.id === (await graph.cluster(pair[1]!))!.id) continue
-          linked.set(pair.join(' '), link.reasons.some((reason) => reason.identifier.startsWith('review:join-')))
+          linked.set(pair.join(' '), link.reasons.some((reason) => /^(review:join-|behalf:)/.test(reason.identifier)))
         }
       }
       const undecided = (await graph.undecided({ limit: 10_000 })).pairs.filter((pair) => pair.a.startsWith('account:') || pair.b.startsWith('account:'))

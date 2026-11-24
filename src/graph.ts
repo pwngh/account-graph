@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { brokenAt, seal } from './audit.ts'
 import { board } from './board.ts'
 import type { BoardColumn, BoardPlace } from './board.ts'
@@ -13,7 +14,7 @@ import { UNSTORABLE } from './identifiers.ts'
 import { CLICK_IDS, checkTouch } from './touch.ts'
 import { createMemoryStore } from './memory.ts'
 import type { Job } from './outbox.ts'
-import { defaultPolicy, evidence, plainPolicy, policyHash, ruleFor, usable, weigh } from './policy.ts'
+import { defaultPolicy, evidence, UNNAMED, joins, plainPolicy, policyHash, ruleFor, told, usable, weigh } from './policy.ts'
 import type { Policy } from './policy.ts'
 import { dayIn, dayStart, dimension, fold, nextDay } from './report.ts'
 import type { Credited } from './report.ts'
@@ -199,6 +200,11 @@ export interface Graph {
   tieCall(caller: Subject, visitor: Subject, identifier: Identifier, at: number, by: { pool: string; grace: number } | { notes: readonly Identifier[] }): Promise<boolean>
   /** Every kept call to or from the given subjects, oldest first. */
   callsOf(subjects: readonly Subject[]): Promise<KeptCall[]>
+  /**
+   * Records a subject and who speaks for it: their browser, the number they call from, or both. Each is related to the
+   * subject by a mark of its own, and not joined to it. Said again, it is the mark there is.
+   */
+  speak(who: { subject: Subject; identifiers: readonly Identifier[] }, by: readonly { subject: Subject; identifiers: readonly Identifier[] }[], at: number, event?: string): Promise<{ marks: Identifier[]; changes: Change[] }>
   /** Keeps a link made for one person. `POST /link` does this. */
   keepLink(link: { id: string; subject: Subject; purpose?: string; at: number; expires: number }): Promise<void>
   /** Notes that a link made for a subject was opened. Resolves to false when no such link is kept. */
@@ -513,7 +519,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       separated = separated.filter(([a, b]) => !(a === supposing.a && b === supposing.b) && !(a === supposing.b && b === supposing.a))
       if (supposing.separated ?? true) separated.push([supposing.a, supposing.b])
     }
-    return partition(subjects, scorePairs(policy, edges, states), separated, policy, knownOf(policy, edges, (identifier) => states.get(identifier)?.ignored ?? false), onCut)
+    const pairs = scorePairs(policy, edges, states)
+    for (const { a, b, reasons } of pairs) if (told(policy, reasons)) separated.push([a, b])
+    return partition(subjects, pairs, separated, policy, knownOf(policy, edges, (identifier) => states.get(identifier)?.ignored ?? false), onCut)
   }
 
   /**
@@ -547,13 +555,16 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
    */
   async function recompute(tx: Tx): Promise<Map<Subject, Labels>> {
     const caps = Object.fromEntries(Object.entries(policy.kinds).map(([kind, rule]) => [kind, rule.cap]))
-    const alone = Object.entries(policy.kinds).filter(([, rule]) => policy.same <= 0 || (!rule.corroborates && rule.weight >= policy.same - 1e-9)).map(([kind]) => kind)
+    const alone = Object.entries(policy.kinds).filter(([, rule]) => policy.same <= 0 || rule.relates || (!rule.corroborates && rule.weight >= policy.same - 1e-9)).map(([kind]) => kind)
     const pairs: Pair[] = []
     const joined = new Set<Subject>()
+    const two: [Subject, Subject][] = []
     for await (const batch of tx.sharing(caps, alone)) {
       for (const shared of batch) {
-        const score = weigh(policy, shared.map(({ a, b, fanout }) => evidence(policy, a, b, fanout)))
-        if (score < policy.same) continue
+        const reasons = shared.map(({ a, b, fanout }) => evidence(policy, a, b, fanout))
+        const score = weigh(policy, reasons)
+        if (told(policy, reasons)) two.push([shared[0]!.a.subject, shared[0]!.b.subject])
+        if (!joins(policy, score, reasons)) continue
         const [a, b] = [shared[0]!.a.subject, shared[0]!.b.subject]
         pairs.push({ a, b, score, level: 'same', reasons: [] })
         joined.add(a).add(b)
@@ -561,7 +572,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     }
     const subjects = [...joined]
     const separated = (await tx.separatedOf(subjects)).filter(([a, b]) => joined.has(a) && joined.has(b))
-    return partition(subjects, pairs, separated, policy, await known(tx, subjects))
+    return partition(subjects, pairs, [...separated, ...two.filter(([a, b]) => joined.has(a) && joined.has(b))], policy, await known(tx, subjects))
   }
 
   /** What is known of these subjects that cannot be two people's. Nothing is read where the policy keeps nobody apart by it. */
@@ -653,10 +664,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
   const now = options.now ?? Date.now
 
-  type Reached = Map<Subject, { confidence: number; via: Subject[]; joined?: true }>
+  type Reached = Map<Subject, { confidence: number; via: Subject[]; joined?: true; speaks?: true; earns?: true }>
 
   /** Every subject within `hops` links of any of those given, with the strength of the best chain to each. With `only`, through those subjects and to them. */
-  async function reach(tx: Tx, from: readonly Subject[], hops: number, only?: ReadonlySet<Subject>, last?: Map<Subject, Link>): Promise<Reached> {
+  async function reach(tx: Tx, from: readonly Subject[], hops: number, only?: ReadonlySet<Subject>, last?: Map<Subject, Link>, crediting = false): Promise<Reached> {
     const reached: Reached = new Map(from.map((subject) => [subject, { confidence: 1, via: [] }]))
     // Two subjects kept apart are two people, so nothing of the one is reached from the other, through a third subject either.
     const apart = new Set((await tx.separatedOf(from)).flat().filter((subject) => !reached.has(subject)))
@@ -665,23 +676,33 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     for (let hop = 0; hop < hops && frontier.length > 0; hop++) {
       const links = await neighbors(tx, frontier)
       await borders.load([...from, ...frontier, ...[...links.values()].flat().map((link) => link.subject)])
-      frontier = spread(reached, apart, frontier, links, borders, from, only, last)
+      frontier = spread(reached, apart, frontier, links, borders, from, only, last, crediting)
     }
     return reached
   }
 
+  /** Whether one of the two speaks for the other. */
+  const speaks = (link: Link) => told(policy, link.reasons)
+  const unnamed = new Set(policy.unnamed ?? UNNAMED)
+  const names = (subject: Subject) => !unnamed.has(subject.slice(0, Math.max(0, subject.indexOf(':'))))
+
   /** One hop of a search: goes over the links of the frontier, and returns the subjects it found a better chain to. */
-  function spread(reached: Reached, apart: ReadonlySet<Subject>, frontier: Subject[], links: ReadonlyMap<Subject, Link[]>, borders: ReturnType<typeof bordersOf>, from: readonly Subject[], only?: ReadonlySet<Subject>, last?: Map<Subject, Link>): Subject[] {
+  function spread(reached: Reached, apart: Set<Subject>, frontier: Subject[], links: ReadonlyMap<Subject, Link[]>, borders: ReturnType<typeof bordersOf>, from: readonly Subject[], only?: ReadonlySet<Subject>, last?: Map<Subject, Link>, crediting = false): Subject[] {
     const improved = new Set<Subject>()
+    // Where one speaks for another they are two people, and the one is reached from the other by that alone.
+    for (const near of frontier) if (reached.get(near)!.via.length === 0) for (const link of links.get(near) ?? []) if (speaks(link)) apart.add(link.subject)
     // As the hop began: a chain made better during it is followed in the next one, or it would be a link longer.
     for (const [near, start] of frontier.sort().map((each) => [each, reached.get(each)!] as const)) {
       for (const link of links.get(near) ?? []) {
-        if (link.conflict || apart.has(link.subject) || (only && !only.has(link.subject))) continue
+        const said = speaks(link)
+        if (link.conflict || (apart.has(link.subject) && !said) || (only && !only.has(link.subject))) continue
         if (borders.cut(near, link.subject) || borders.between(near, link.subject) || from.some((origin) => borders.between(origin, link.subject))) continue
+        // Credit goes from whoever speaks to whoever they speak for, and not on: what brought one of their children did not bring another.
+        if (said ? !crediting || start.speaks || !names(near) || names(link.subject) : start.speaks && link.level !== 'same') continue
         const confidence = start.confidence * link.score
         const known = reached.get(link.subject)
         if (known && known.confidence >= confidence) continue
-        reached.set(link.subject, { confidence, via: [...start.via, near] })
+        reached.set(link.subject, { confidence, via: [...start.via, near], ...((said || start.speaks) && { speaks: true as const }) })
         last?.set(link.subject, link)
         improved.add(link.subject)
       }
@@ -754,7 +775,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
           for (const subject of some) links.set(subject, found.get(subject) ?? [])
           await borders.load([...found.values()].flat().map((link) => link.subject))
         }
-        for (const search of searches) search.frontier = spread(search.reached, search.apart, search.frontier, links, borders, [search.subject])
+        for (const search of searches) search.frontier = spread(search.reached, search.apart, search.frontier, links, borders, [search.subject], undefined, undefined, true)
       }
       for (const { subject, reached } of searches) out.set(subject, reached)
     }
@@ -763,7 +784,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
   /**
    * Marks whoever a search found in the searcher's own cluster. A chain of links multiplies, so two that each join can come
-   * to less than one that joins, and the cluster has already been decided.
+   * to less than one that joins, and the cluster has already been decided. Whoever speaks for the searcher is one person too,
+   * and what brought any of that person's browsers brought the searcher.
    */
   async function asOne(tx: Tx, searches: Map<Subject, Reached>): Promise<Map<Subject, Reached>> {
     const everyone = unique([...searches.values()].flatMap((reached) => [...reached.keys()]))
@@ -772,7 +794,12 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     for (const [subject, reached] of searches) {
       const own = clusters.get(subject)
       if (own === undefined) continue
-      for (const [each, found] of reached) if (clusters.get(each) === own) found.joined = true
+      const homes = new Set([own])
+      for (const [each, found] of reached) if (found.speaks && clusters.get(found.via.at(-1)!) === own) homes.add(clusters.get(each)!)
+      for (const [each, found] of reached) {
+        if (clusters.get(each) === own) found.joined = true
+        else if (found.speaks && homes.has(clusters.get(each)!)) found.earns = true
+      }
     }
     return searches
   }
@@ -811,7 +838,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
    * Of touches newest first, the one that earns the credit: the newest that is the person's. Where that is a phone line, an
    * ad click or a campaign that brought them before it comes first, because the line is only where they called.
    */
-  const own = (touches: readonly AttributedTouch[]) => touches.filter((touch) => touch.confidence >= policy.same || (touch.joined && !byLine(touch)))
+  const own = (touches: readonly AttributedTouch[]) => touches.filter((touch) => touch.confidence >= policy.same || ((touch.joined || touch.speaker) && !byLine(touch)))
   const earning = (touches: readonly AttributedTouch[]): AttributedTouch | undefined => {
     const theirs = own(touches)
     return (theirs[0] && byLine(theirs[0]) && theirs.find(campaigned)) || theirs[0]
@@ -819,7 +846,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
   function credited(subject: Subject, at: number, reached: Reached, found: readonly Touch[]): Attribution {
     const touches: AttributedTouch[] = found
-      .map((touch) => ({ ...touch, joined: false, ...reached.get(touch.subject)! }))
+      .map((touch) => {
+        const { confidence, via, joined = false, earns } = reached.get(touch.subject)!
+        return { ...touch, confidence, via, joined, ...(earns && { speaker: true as const }) }
+      })
       .sort((x, y) => y.at - x.at || y.confidence - x.confidence || (x.subject < y.subject ? -1 : 1))
     const best = earning(touches)
     const reason = best ? 'credited' : touches.length > 0 ? 'low_confidence' : 'no_touch'
@@ -1140,7 +1170,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     attribute(subject, { at, window = 90 * DAY, hops = 2 }) {
-      return store.read(async (tx) => credit(subject, at, window, (await asOne(tx, new Map([[subject, await reach(tx, [subject], hops)]]))).get(subject)!, tx))
+      return store.read(async (tx) => credit(subject, at, window, (await asOne(tx, new Map([[subject, await reach(tx, [subject], hops, undefined, undefined, true)]]))).get(subject)!, tx))
     },
 
     async outcome(outcome) {
@@ -1299,6 +1329,23 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
     keptCall(id) {
       return store.read((tx) => tx.callOf(id))
+    },
+
+    async speak(who, by, at, event = 'speaker') {
+      ruleFor(policy, 'behalf:0')
+      if (!names(who.subject) || by.some((each) => names(each.subject))) throw new TypeError('A browser or a caller speaks for a record of yours')
+      const marks: Identifier[] = []
+      // One transaction, with what is known of each: no moment has them as one.
+      const changes = await changing(async (tx) => {
+        marks.length = 0
+        const edges = (await tx.edgesOf([who.subject, ...by.map((each) => each.subject)])).filter((edge) => edge.identifier.startsWith('behalf:'))
+        const own = edges.filter((edge) => edge.subject === who.subject).map((edge) => edge.identifier).sort()
+        // Said again, it is the mark there is, muted or not. It names nobody, so a forgotten id leaves no trace.
+        for (const each of by) marks.push(own.find((mark) => edges.some((edge) => edge.subject === each.subject && edge.identifier === mark)) ?? `behalf:${randomUUID()}`)
+        const recorded = now()
+        return record(tx, [{ ...who, identifiers: [...who.identifiers, ...marks] }, ...by.map((each, i) => ({ ...each, identifiers: [...each.identifiers, marks[i]!] }))].flatMap((each) => each.identifiers.map((identifier) => ({ subject: each.subject, identifier, at, event, recorded }))))
+      })
+      return { marks, changes }
     },
 
     async tieCall(caller, visitor, identifier, at, by) {
@@ -1767,10 +1814,11 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return store.read(async (tx) => {
         const lately = await tx.latelySeen(sightings)
         const pairs = new Map<string, Pair>()
-        // A pair kept apart is not a link, and one a reviewer's mark joins has been decided, even where a cut keeps it in two clusters.
+        // A pair kept apart is not a link, and one a reviewer's mark joins has been decided, even where a cut keeps it in two clusters. Of two
+        // where one speaks for the other, it has been said that they are two.
         for (const [subject, links] of await neighbors(tx, lately)) {
           for (const link of links) {
-            if (link.reasons.some((reason) => reason.identifier.startsWith('review:join-'))) continue
+            if (link.reasons.some((reason) => reason.identifier.startsWith('review:join-')) || speaks(link)) continue
             const [a, b] = subject < link.subject ? [subject, link.subject] : [link.subject, subject]
             pairs.set(pairKey(a, b), { a, b, score: link.score, level: link.level, reasons: link.reasons, ...(link.conflict && { conflict: link.conflict }) })
           }

@@ -16,6 +16,7 @@ evidence = weight × (2 / subjects sharing it) ^ dilution × 0.5 ^ (gap / halfLi
 | `cap` | The most subjects an identifier can have and still give evidence. |
 | `group` | Kinds that count once. The strongest reason adds to the score, and the others are shown. |
 | `corroborates` | A kind that counts where the pair's other kinds already reach `related`. It creates no link by itself. |
+| `relates` | A kind that says two subjects are two people. The pair is related, and kept apart as a separated pair is, whatever it shares, unless a reviewer or a system joins it. |
 
 A muted identifier gives no evidence.
 
@@ -40,6 +41,7 @@ The default policy has no groups or corroborating kinds. [Presets](presets.md) h
 | `link` | 0.92 | 5 | none | A link sent to one person, opened in this browser. Thins as more people's links are opened there |
 | `dial` | 0.92 | 2 | none | A phone call or a text that began just after exactly one visitor tapped its number |
 | `text` | 0.95 | 2 | none | A text that carried the code one visitor was given |
+| `behalf` | 0.92 | 2 | none | Somebody who [speaks for](identify.md#speaking-for-somebody-else) somebody else. It relates and never joins |
 | `lease` | 0.90 | 2 | none | A phone call to a number shown to one visitor. An unmeasured prior |
 | `phone` | 0.90 | 10 | none | A mobile or landline. Joins two subjects, relates three, and gives no link among four or more |
 | `ga` | 0.90 | 10 | none | Google Analytics client id |

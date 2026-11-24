@@ -138,7 +138,7 @@ Send `by` only with the service token. A reviewer's decision carries the name of
 
 | Route | Description |
 | --- | --- |
-| `POST /identify` | Identifies a subject from plain facts: `{ subject, device?, email?, phone?, ip?, address?, name?, dob?, identifiers?, at?, event? }`. Answers `{ changes, identifiers, notes }`. See [identify](identify.md). |
+| `POST /identify` | Identifies a subject from plain facts: `{ subject, device?, email?, phone?, ip?, address?, name?, dob?, identifiers?, speaker?, at?, event? }`. Answers `{ changes, identifiers, notes }`. See [identify](identify.md). |
 | `POST /observe` | One observation, or a list: `{ subject, identifiers, at, event? }`. Answers with the cluster changes. |
 | `POST /separate`, list | `{ source, pairs: [{ a, b, separated?, reason? }], reason? }`, at most 1,000 pairs. One transaction, one decision each, by `system:<source>`. Answers `{ changes, recorded, already }`. |
 | `POST /join`, list | The same without `separated`, for records another system merged. |

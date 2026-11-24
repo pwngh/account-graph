@@ -302,6 +302,8 @@ export interface AttributedTouch extends Touch {
   confidence: number
   /** The two are one cluster, so a visit can be credited however weak the chain between them. A call's own line cannot. */
   joined: boolean
+  /** It is of somebody who speaks for the converting subject: another person, whose arrival brought them. */
+  speaker?: true
   /** The subjects that chain passes through, starting at the converting subject. */
   via: Subject[]
 }

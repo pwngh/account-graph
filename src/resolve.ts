@@ -1,4 +1,4 @@
-import { UNNAMED, evidence, usable, weigh } from './policy.ts'
+import { UNNAMED, evidence, joins, told, usable, weigh } from './policy.ts'
 import type { Fact, Policy } from './policy.ts'
 import type { Edge, Identifier, IdentifierState, Labels, Pair, Reason, Subject } from './types.ts'
 
@@ -47,8 +47,9 @@ export function scorePairs(
   for (const [a, row] of found) {
     for (const [b, reasons] of row) {
       const score = weigh(policy, reasons)
-      if (score < least) continue
-      pairs.push({ a, b, score, level: score >= policy.same ? 'same' : 'related', reasons })
+      // That one speaks for the other is said, whatever it comes to.
+      if (score < least && !told(policy, reasons)) continue
+      pairs.push({ a, b, score, level: joins(policy, score, reasons) ? 'same' : 'related', reasons })
     }
   }
   return pairs.sort((x, y) => (x.a === y.a ? (x.b < y.b ? -1 : 1) : x.a < y.a ? -1 : 1))
