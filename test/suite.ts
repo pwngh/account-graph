@@ -984,6 +984,93 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       for (const bad of [{ step: '' }, { days: 0 }, { days: 1.5 }, { days: 400 }, { from: '2023-12-01' }]) await assert.rejects(graph.followed({ from: '2023-11-14', to: '2023-11-20', step: 'client', days: 30, ...bad }), TypeError)
     })
 
+    test('undecided lists pairs related and not joined, and a join taken back by its mark is a label no more', async () => {
+      const clock = { now: T0 }
+      const { graph } = await fresh(undefined, { now: () => clock.now })
+      const see = (subject: string, ...identifiers: string[]) => graph.observe({ subject, identifiers, at: T0, event: 'login' })
+      await see('a:1', 'canvas:c1', 'ip:192.0.2.1')
+      await see('a:2', 'canvas:c1', 'ip:192.0.2.1')
+      await see('b:1', 'canvas:c2', 'voip:v')
+      await see('b:2', 'canvas:c2', 'voip:v')
+      clock.now += 1000
+      await see('j:1', 'email:j')
+      await see('j:2', 'email:j')
+      await see('lone', 'email:lone')
+      const names = async (options?: object) => (await graph.undecided(options)).pairs.map((pair) => `${pair.a} ${pair.b}`)
+      // Joined pairs and those that share too little are not here.
+      const found = await graph.undecided()
+      assert.deepEqual(found.pairs.map((pair) => [pair.a, pair.b, pair.level]), [['b:1', 'b:2', 'related'], ['a:1', 'a:2', 'related']])
+      assert.ok(found.pairs[0]!.score > found.pairs[1]!.score && found.pairs[1]!.reasons.length === 2)
+      assert.deepEqual([found.total, found.seen], [2, 7])
+      assert.deepEqual(await names({ limit: 1 }), ['b:1 b:2'])
+      // Only subjects something was last recorded about are looked at.
+      assert.deepEqual(await names({ sightings: 3 }), [])
+
+      clock.now += 1000
+      await see('b:1', 'canvas:c2')
+      assert.deepEqual(await names({ sightings: 1 }), ['b:1 b:2'])
+      // A cut inside one batch falls by subject, whatever the order they were given in.
+      clock.now += 1000
+      await graph.observe(['b:2', 'a:2', 'a:1'].map((subject) => ({ subject, identifiers: ['canvas:c1'], at: T0 })))
+      assert.deepEqual(await names({ sightings: 2 }), ['a:1 a:2'])
+      await graph.forget('b:2')
+      await see('b:2', 'canvas:c2', 'voip:v')
+
+      // Kept apart, a pair is decided. Allowed again, it is back.
+      await graph.separate('b:1', 'b:2', true, { by: 'dana' })
+      assert.deepEqual(await names(), ['a:1 a:2'])
+      assert.deepEqual((await graph.reviewed()).map((pair) => pair.same), [false])
+      await graph.separate('b:1', 'b:2', false, { by: 'dana' })
+      assert.deepEqual(await names(), ['b:1 b:2', 'a:1 a:2'])
+
+      // Joined, it is decided, and a label. Its mark no longer linking, it is neither.
+      await graph.join('a:1', 'a:2', { by: 'dana' })
+      const mark = async () => (await graph.links('a:1'))[0]!.reasons.map((reason) => reason.identifier).find((identifier) => identifier.startsWith('review:'))!
+      assert.deepEqual(await names(), ['b:1 b:2'])
+      assert.deepEqual((await graph.reviewed()).map((pair) => pair.same), [true])
+      const first = await mark()
+      await graph.ignore(first, true, { by: 'dana', reason: 'undo' })
+      assert.deepEqual(await names(), ['b:1 b:2', 'a:1 a:2'])
+      assert.deepEqual(await graph.reviewed(), [])
+      assert.notEqual((await graph.cluster('a:1'))!.id, (await graph.cluster('a:2'))!.id)
+      // Linking through it once more joins them again, and undoing an older join leaves a later one alone.
+      await graph.ignore(first, false, { by: 'dana' })
+      assert.deepEqual((await graph.reviewed()).map((pair) => pair.same), [true])
+      await graph.join('a:1', 'a:2', { by: 'dana' })
+      await graph.ignore(first, true, { by: 'dana' })
+      assert.deepEqual((await graph.reviewed()).map((pair) => pair.same), [true])
+      assert.deepEqual(await names(), ['b:1 b:2'])
+      // A join made in bulk where a mark stands makes no other: muting that one takes it back too.
+      await see('k:1', 'canvas:k')
+      await see('k:2', 'canvas:k')
+      await graph.join('k:1', 'k:2')
+      const held = (await graph.links('k:1'))[0]!.reasons.find((reason) => reason.identifier.startsWith('review:'))!.identifier
+      await graph.separate('k:1', 'k:2')
+      await graph.separate('k:1', 'k:2', false)
+      await graph.joinAll([{ a: 'k:1', b: 'k:2' }], { by: 'system:crm' })
+      assert.equal((await graph.reviewed()).length, 2)
+      await graph.ignore(held)
+      assert.equal((await graph.reviewed()).length, 1)
+      for (const each of ['k:1', 'k:2']) await graph.forget(each)
+      // Where a system's decisions are left out, its mark does not keep a reviewer's join that was taken back.
+      await see('s:1', 'canvas:s')
+      await see('s:2', 'canvas:s')
+      await graph.join('s:1', 's:2', { by: 'dana' })
+      const danas = (await graph.links('s:1'))[0]!.reasons.find((reason) => reason.identifier.startsWith('review:'))!.identifier
+      const before = (await graph.reviewed({ exclude: 'system:' })).length
+      await graph.ignore(danas)
+      await graph.joinAll([{ a: 's:1', b: 's:2' }], { by: 'system:crm' })
+      assert.equal((await graph.reviewed({ exclude: 'system:' })).length, before - 1)
+      assert.equal((await graph.reviewed()).length, before)
+      for (const each of ['s:1', 's:2']) await graph.forget(each)
+      // Joined but held apart by a separation through a third: it was decided, so it is not asked about again.
+      await graph.separate('a:1', 'b:1', true, { by: 'dana' })
+      await graph.join('a:2', 'b:1', { by: 'dana' })
+      assert.deepEqual(await names(), ['b:1 b:2'])
+      await graph.forget('b:2')
+      assert.deepEqual(await names(), [])
+    })
+
     test('the board has each person once, at the furthest step they reached, with missed calls first', async () => {
       const { graph } = await fresh(undefined, { now: () => T0 })
       const steps = [{ name: 'inquiry', wait: 24 }, { name: 'client' }]
@@ -1794,6 +1881,17 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
         const counts = call?.direction === 'inbound' && call.result?.answered === true && call.duration! >= 30
         assert.equal(Boolean(await graph.outcomeOf(`call:F${n}`)), counts, `F${n}`)
       }
+      // What is undecided is exactly what is linked, in two clusters, and not joined by a mark.
+      const linked = new Map<string, boolean>()
+      for (let n = 0; n < 40; n++) {
+        for (const link of await graph.links(`account:${n}`)) {
+          const pair = [`account:${n}`, link.subject].sort()
+          if ((await graph.cluster(pair[0]!))!.id === (await graph.cluster(pair[1]!))!.id) continue
+          linked.set(pair.join(' '), link.reasons.some((reason) => reason.identifier.startsWith('review:join-')))
+        }
+      }
+      const undecided = (await graph.undecided({ limit: 10_000 })).pairs.filter((pair) => pair.a.startsWith('account:') || pair.b.startsWith('account:'))
+      assert.deepEqual(undecided.map((pair) => `${pair.a} ${pair.b}`).sort(), [...linked].filter(([, joined]) => !joined).map(([pair]) => pair).sort())
       // The board has each person in one place, and everybody with a call to return in the first column.
       const board = await graph.board({ steps: [{ name: 'call' }], at: T0 + 201 * DAY, days: 365 })
       const placed: string[] = []

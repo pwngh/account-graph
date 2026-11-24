@@ -82,6 +82,8 @@
 - Every value an outcome has had is kept (`values`, `GET /outcome`); the report shows what outcomes were first worth and are worth now, by campaign (`ReportRow.worth`) and by month of first record (`Report.months`).
 - `followed` and `GET /followed` count who reached a step within some days of a call, by talk time, answer, language and whether a miss was returned, from a landmark a day after the miss; rows of fewer than 20 people are left out.
 - `journey`, `GET /journey` and the reviewer screen's Journey view show everything recorded about one person in order, with why each subject is them.
+- `undecided`, `GET /undecided` and the reviewer screen's Decide view show pairs that are related and not joined, to join or keep apart.
+- `join` tells `marked` the mark it leaves, and `POST /join` with `mark: true` answers with it, so a join can be taken back.
 - `board`, `GET /board` and the reviewer screen's Board view show people by the furthest step they reached, with missed calls nobody returned first.
 - A step in `STAGES` takes `wait`, the hours after which the board says a person has waited too long.
 - The Channels view has a Break down by selector; the Calls view shows tags.
@@ -127,3 +129,4 @@
 - `/collect` records no touch for an arrival whose fields are all empty.
 - `fill` clears `ag_landing` in a form it filled before the visitor opted out of advertising.
 - A chain of links behind a credited arrival is never longer than `hops`, whatever its subjects are called.
+- `reviewed` leaves out a join that was taken back by no longer linking through its mark.

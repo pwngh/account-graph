@@ -121,8 +121,9 @@ function ask(title, text, confirm, wantsOther, save) {
  * A decision says which was the newest when the view was read, so one made on
  * an outdated view is refused. The question then shows the newer one and can be
  * answered again, knowing it. An undo is not refused: it is about a decision already made.
+ * `done` is told the answer, before the reload.
  */
-async function act(title, text, path, body, confirm, { otherKey, undo = false } = {}) {
+async function act(title, text, path, body, confirm, { otherKey, undo = false, done } = {}) {
   const shown = undo ? undefined : $('view').firstElementChild?.dataset.seen
   // The newer decisions this question has shown, by the other subject it named at the time: one seen says nothing of another.
   const told = new Map()
@@ -147,7 +148,8 @@ async function act(title, text, path, body, confirm, { otherKey, undo = false } 
   })
   if (!saved) return refused ? load() : undefined
   // These routes answer with the subjects whose cluster moved. None is a real outcome, so say so.
-  const { answer } = saved
+  done?.(saved.answer)
+  const answer = saved.answer?.moved ?? saved.answer
   // Reloading clears the notice, so speak after it. A failed reload has already said why.
   if (await load()) notice(Array.isArray(answer) && answer.length === 0 ? `${title}: recorded. No cluster changed.` : `${title}: done.`)
 }

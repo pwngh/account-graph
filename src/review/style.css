@@ -114,3 +114,8 @@ dialog p { overflow-wrap: anywhere; }
 .counts .apart { font-weight: 600; }
 .board .top { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 8px; }
 .board .top > :last-child { white-space: nowrap; }
+.sides { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0 24px; margin-top: 8px; }
+.sides section, .sides section:first-child { border-top: 1px solid var(--line); padding: 8px 0; }
+dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0 12px; margin: 0 0 4px; }
+dt { color: var(--muted); }
+dd { margin: 0; overflow-wrap: anywhere; }

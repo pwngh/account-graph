@@ -500,6 +500,11 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph'): Postg
       return rows.reverse().map(toSighting)
     },
 
+    async latelySeen(sightings) {
+      const { rows } = await db.query(`select distinct subject from (select subject from ${t('sighting')} order by recorded_at desc, subject collate "C" limit $1) newest`, [sightings])
+      return rows.map((row) => row.subject)
+    },
+
     async sightingsUntil(recorded) {
       const { rows } = await db.query(
         `select subject, identifier, at, event, recorded_at from ${t('sighting')} where recorded_at <= $1 order by id`,

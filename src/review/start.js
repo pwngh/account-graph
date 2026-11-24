@@ -5,6 +5,9 @@ const enter = (token) => {
   sessionStorage.setItem('token', token)
   beat = undefined
   signedIn(undefined)
+  // What one reviewer skipped or decided here is not the next one's to undo.
+  skipped.clear()
+  decided.length = 0
   load()
 }
 $('token').addEventListener('change', () => enter($('token').value))
