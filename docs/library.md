@@ -13,6 +13,12 @@ DATABASE_URL=postgres://localhost/yourdb npm test
 npm run build   # writes dist/, which the package's entry points use
 ```
 
+CI looks for keys and tokens in every commit. With [gitleaks](https://github.com/gitleaks/gitleaks) installed, the same is asked before a commit is made:
+
+```sh
+git config core.hooksPath .githooks
+```
+
 ## Usage
 
 ```ts

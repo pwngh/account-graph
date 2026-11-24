@@ -25,6 +25,32 @@ jobs:
       - run: npm run build
       - run: docker build -t account-graph .
 
+  # Looks for keys and tokens in every commit this one is built on. What it finds is not printed: the log is public.
+  gitleaks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: install gitleaks
+        run: |
+          curl -sSfL -o /tmp/gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  /tmp/gitleaks.tar.gz' | sha256sum -c -
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+      # A token made up here and now, so that a scan which can find nothing does not pass. 7 is what it was told to exit with.
+      - name: find a planted token
+        run: |
+          mkdir /tmp/planted
+          printf 'ghp_%s\n' "$(openssl rand -hex 18)" > /tmp/planted/token.txt
+          code=0
+          /tmp/gitleaks dir --redact --no-banner --exit-code 7 /tmp/planted || code=$?
+          test $code = 7
+      - name: scan
+        run: /tmp/gitleaks git --redact --no-banner --log-opts='--full-history HEAD' .
+
   # Runs beside the tests, against a server with nothing real in it. Fails on any finding of low severity or above.
   nuclei:
     runs-on: ubuntu-latest
