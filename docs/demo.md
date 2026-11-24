@@ -53,7 +53,7 @@ The site is live. Open it with `?gclid=you&utm_id=30333` and its number becomes 
 
 ## Limitations
 
-- **Scale.** The demo has a few hundred people. See the [README](../README.md) for measured speeds.
+- **Scale.** The demo has a few hundred people. See [Performance](performance.md) for measured speeds.
 - **Clock.** Scene 10 moves the demo server's clock forward fourteen hours. The browser's clock stays put, so ages there and times here differ afterward. Run it last.
 - **Repeats.** Each scene runs once. Restart the command to start over.
 - **Firm systems.** Call answering, assignment and client messages belong to a firm's own systems. The demo only simulates their reports.

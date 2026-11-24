@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 452" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" role="img"><title>Three records of one person, linked, credited to an ad</title><rect x="1" y="1" width="998" height="450" rx="16" fill="#ffffff" stroke="#d5d9de"/><text x="24" y="48" font-size="18" fill="#1a1d21" font-weight="650" text-anchor="start">What each system records</text>
+<text x="24" y="71" font-size="14" fill="#59626c" font-weight="400" text-anchor="start">Three records, no shared ID</text>
+<text x="388" y="48" font-size="18" fill="#1a1d21" font-weight="650" text-anchor="start">What account-graph sees</text>
+<text x="388" y="71" font-size="14" fill="#59626c" font-weight="400" text-anchor="start">One person, and the evidence</text>
+<text x="732" y="48" font-size="18" fill="#1a1d21" font-weight="650" text-anchor="start">What you can act on</text>
+<text x="732" y="71" font-size="14" fill="#59626c" font-weight="400" text-anchor="start">Each traced to its records</text>
+<rect x="24" y="100" width="254" height="96" rx="12" fill="#f6f7f8" stroke="#d5d9de"/>
+<g transform="translate(54 148.0) scale(1.15)" fill="none" stroke="#2f6fe0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle r="9"/><path d="M-9 0H9M0-9C6-4 6 4 0 9C-6 4-6-4 0-9"/></g>
+<text x="84" y="133" font-size="16" fill="#1a1d21" font-weight="600" text-anchor="start">Your site</text>
+<text x="84" y="156" font-size="14" fill="#59626c" font-weight="400" text-anchor="start">A visit from an ad</text>
+<text x="84" y="180" font-size="13" fill="#2f6fe0" font-weight="400" text-anchor="start">visitor:9f3c</text>
+<rect x="24" y="212" width="254" height="96" rx="12" fill="#f6f7f8" stroke="#d5d9de"/>
+<g transform="translate(54 260.0) scale(1.15)" fill="none" stroke="#c8363b" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M-6-9h4l2 5-3 2a10 10 0 0 0 5 5l2-3 5 2v4a2 2 0 0 1-2 2A15 15 0 0 1-8-7a2 2 0 0 1 2-2z"/></g>
+<text x="84" y="245" font-size="16" fill="#1a1d21" font-weight="600" text-anchor="start">Your phone system</text>
+<text x="84" y="268" font-size="14" fill="#59626c" font-weight="400" text-anchor="start">A missed call</text>
+<text x="84" y="292" font-size="13" fill="#c8363b" font-weight="400" text-anchor="start">caller:82fe…</text>
+<rect x="24" y="324" width="254" height="96" rx="12" fill="#f6f7f8" stroke="#d5d9de"/>
+<g transform="translate(54 372.0) scale(1.15)" fill="none" stroke="#93600a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cy="-4" r="4.5"/><path d="M-9 9a9 8 0 0 1 18 0"/></g>
+<text x="84" y="357" font-size="16" fill="#1a1d21" font-weight="600" text-anchor="start">Your backend</text>
+<text x="84" y="380" font-size="14" fill="#59626c" font-weight="400" text-anchor="start">A new contact</text>
+<text x="84" y="404" font-size="13" fill="#93600a" font-weight="400" text-anchor="start">contact:7</text>
+<path d="M518 108L668 372Q672 400 644 400H392Q364 400 368 372Z" fill="#e6f5ed" stroke="#e6f5ed" stroke-width="22" stroke-linejoin="round"/>
+<path d="M278 148C313 148 445 160 480 160" fill="none" stroke="#59626c" stroke-width="1.6" stroke-dasharray="3 5"/>
+<path d="M278 260C313 260 375 305 410 305" fill="none" stroke="#59626c" stroke-width="1.6" stroke-dasharray="3 5"/>
+<path d="M278 372C330 432 590 446 602 384" fill="none" stroke="#59626c" stroke-width="1.6" stroke-dasharray="3 5"/>
+<path d="M518 160L434 324" stroke="#157f4f" stroke-width="3"/>
+<path d="M518 160L602 324" stroke="#157f4f" stroke-width="3"/>
+<path d="M434 324L602 324" stroke="#157f4f" stroke-width="3"/>
+<rect x="404.1" y="227" width="107.8" height="40" rx="9" fill="#ffffff" stroke="#d5d9de"/>
+<text x="458" y="244" font-size="15" fill="#157f4f" font-weight="700" text-anchor="middle">92%</text>
+<text x="458" y="260" font-size="12" fill="#59626c" font-weight="400" text-anchor="middle">tap, then call</text>
+<rect x="532.8" y="227" width="94.4" height="40" rx="9" fill="#ffffff" stroke="#d5d9de"/>
+<text x="580" y="244" font-size="15" fill="#157f4f" font-weight="700" text-anchor="middle">98%</text>
+<text x="580" y="260" font-size="12" fill="#59626c" font-weight="400" text-anchor="middle">same browser</text>
+<rect x="477.5" y="305" width="81.0" height="40" rx="9" fill="#ffffff" stroke="#d5d9de"/>
+<text x="518" y="322" font-size="15" fill="#157f4f" font-weight="700" text-anchor="middle">90%</text>
+<text x="518" y="338" font-size="12" fill="#59626c" font-weight="400" text-anchor="middle">same phone</text>
+<circle cx="518" cy="160" r="27" fill="#ffffff" stroke="#157f4f" stroke-width="3"/>
+<g transform="translate(518 160) scale(1.1)" fill="none" stroke="#157f4f" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle r="9"/><path d="M-9 0H9M0-9C6-4 6 4 0 9C-6 4-6-4 0-9"/></g>
+<text x="518" y="122" font-size="14" fill="#1a1d21" font-weight="600" text-anchor="middle">visit</text>
+<circle cx="434" cy="324" r="27" fill="#ffffff" stroke="#157f4f" stroke-width="3"/>
+<g transform="translate(434 324) scale(1.1)" fill="none" stroke="#157f4f" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M-6-9h4l2 5-3 2a10 10 0 0 0 5 5l2-3 5 2v4a2 2 0 0 1-2 2A15 15 0 0 1-8-7a2 2 0 0 1 2-2z"/></g>
+<text x="434" y="376" font-size="14" fill="#1a1d21" font-weight="600" text-anchor="middle">call</text>
+<circle cx="602" cy="324" r="27" fill="#ffffff" stroke="#157f4f" stroke-width="3"/>
+<g transform="translate(602 324) scale(1.1)" fill="none" stroke="#157f4f" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cy="-4" r="4.5"/><path d="M-9 9a9 8 0 0 1 18 0"/></g>
+<text x="602" y="376" font-size="14" fill="#1a1d21" font-weight="600" text-anchor="middle">contact</text>
+<rect x="732" y="100" width="244" height="96" rx="12" fill="#f6f7f8" stroke="#d5d9de"/>
+<g transform="translate(762 148) scale(1.15)" fill="none" stroke="#157f4f" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M-8 8V2M-2 8V-3M4 8V-1M10 8V-8"/></g>
+<text x="792" y="133" font-size="15" fill="#1a1d21" font-weight="600" text-anchor="start">Which ad worked</text>
+<text x="792" y="156" font-size="14" fill="#59626c" font-weight="400" text-anchor="start">Search: North</text>
+<text x="792" y="178" font-size="14" fill="#59626c" font-weight="400" text-anchor="start">1 client, $1,250</text>
+<path d="M690 254C712 254 708 148 728 148" fill="none" stroke="#59626c" stroke-width="1.6" stroke-dasharray="3 5"/>
+<rect x="732" y="212" width="244" height="96" rx="12" fill="#f6f7f8" stroke="#d5d9de"/>
+<g transform="translate(762 260) scale(1.15)" fill="none" stroke="#157f4f" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M-8 0l5 5L9-6"/></g>
+<text x="792" y="245" font-size="15" fill="#1a1d21" font-weight="600" text-anchor="start">Who was called back</text>
+<text x="792" y="268" font-size="14" fill="#59626c" font-weight="400" text-anchor="start">Missed call returned</text>
+<text x="792" y="290" font-size="14" fill="#59626c" font-weight="400" text-anchor="start">the same day</text>
+<path d="M690 254C712 254 708 260 728 260" fill="none" stroke="#59626c" stroke-width="1.6" stroke-dasharray="3 5"/>
+<rect x="732" y="324" width="244" height="96" rx="12" fill="#f6f7f8" stroke="#d5d9de"/>
+<g transform="translate(762 372) scale(1.15)" fill="none" stroke="#157f4f" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M-8-6H9M-8 0H9M-8 6H3"/></g>
+<text x="792" y="357" font-size="15" fill="#1a1d21" font-weight="600" text-anchor="start">Why they match</text>
+<text x="792" y="380" font-size="14" fill="#59626c" font-weight="400" text-anchor="start">Every link shows</text>
+<text x="792" y="402" font-size="14" fill="#59626c" font-weight="400" text-anchor="start">its evidence</text>
+<path d="M690 254C712 254 708 372 728 372" fill="none" stroke="#59626c" stroke-width="1.6" stroke-dasharray="3 5"/></svg>

@@ -1,16 +1,73 @@
 # account-graph
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p30-accounts.png" width="100%" alt="The Accounts view: a graph of one person's linked IDs, with a related account and two kept apart">
+  <br>
+  <sub>One person's IDs in the Accounts view. All screenshots show sample data.</sub>
+</p>
+
+<p align="center">
+  <b>See which ads bring in customers, which callers still need a call back, and why each record belongs to one person.</b>
+</p>
+
+<p align="center">
+  <a href="#what-it-does">What it does</a> ·
+  <a href="#why-it-matters">Why it matters</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#documentation">Documentation</a> ·
+  <a href="#limitations">Limitations</a>
+</p>
+
+## What it does
+
 account-graph links the visits, calls, accounts and records that belong to one person, and attributes outcomes to the ads that produced them.
+
+Someone clicks your ad, taps your phone number, and signs up two days later. Your site, phone system and backend each record a part of that. account-graph puts the parts together and shows why they match.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/one-person-dark.svg">
+    <img src="docs/images/one-person-light.svg" width="100%" alt="A site visit, a missed call and a new contact become one person. The links score 92% for a tap then a call, 98% for the same browser and 90% for the same phone. The client's $1,250 is credited to the ad campaign Search: North.">
+  </picture>
+</p>
+
+Here is the same story, record by record:
+
+| When | What happened | What account-graph does |
+| --- | --- | --- |
+| Monday, 09:00 | Someone arrives from a search ad | Starts a visitor and keeps the ad click |
+| 09:04 | They tap your number, and the call is missed | Links the call to the visitor at 92%, and lists the caller as awaiting a callback |
+| 14:00 | Your team calls back and reaches them | Marks the missed call returned |
+| Wednesday | They sign up in the same browser (the same device id), with the mobile number they called from | Links the contact to the visitor at 98% and to the caller at 90% |
+| Thursday | They become a client, worth $1,250 | Credits $1,250 to the campaign, three days after the click |
 
 It runs as a server beside your site, phone system and backend. Reviewers work in a built-in screen that shows the evidence behind every match, missed calls awaiting a callback, and the return on each campaign.
 
-| Board | Journey |
-| --- | --- |
-| ![Board: missed calls and people by step](https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p30-board.png) | ![Journey: one person's timeline](https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p30-journey.png) |
-| **Channels** | **Health** |
-| ![Channels: spend, outcomes and ROAS by campaign](https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p30-channels.png) | ![Health: feeds, conversions and matching rules](https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p30-health.png) |
+## Why it matters
 
-Screenshots show sample data.
+A click, a phone call and a sale often land in different systems, under different IDs. Counted apart, they cannot answer simple questions.
+
+| The question | On its own | With account-graph |
+| --- | --- | --- |
+| **Which ads bring customers?** | An ad account counts clicks. The sale may come days later, by phone. | Each campaign's cost sits beside the outcomes and value credited to it. |
+| **Who is waiting for us?** | A call log lists calls. One person can be in it many times. | A missed call you can return waits until the caller is reached, or the call is marked as not a lead. A linked caller shows the ad they came from. |
+| **Are these the same person?** | A shared phone or address can mean a person, a family or an office. | Each link has a score and its reasons. Reviewers join or separate people, and an audit log keeps each decision. |
+| **What do we tell the ad platforms?** | Often only the click. A call or a later sale happens elsewhere. | Outcomes you give a conversion action go to the platforms you set up: Google, Meta, Microsoft and TikTok. At Google, a value can be corrected later. |
+
+> [!NOTE]
+> The server sends data to the ad platforms and webhooks you configure. It places no calls, assigns no work and sends no messages to customers.
+
+## Who it is for
+
+| If you | You get | Start with |
+| --- | --- | --- |
+| Run the business | One view of what advertising costs and what it returns | [Demo](docs/demo.md) |
+| Buy the ads | Cost per outcome and ROAS by campaign, with outcomes split by office, language, hour or weekday | [Campaign report](docs/report.md) |
+| Answer the phones | A board of missed calls and people by step | [Events and calls](docs/calls.md) |
+| Review matches | The evidence for each link, and joins and separations you can undo | [Matching](docs/deciding.md) |
+| Build and run it | A server, an HTTP API and a Node library, with PostgreSQL or in-memory storage | [Operations](docs/operations.md), [HTTP API](docs/http.md) |
+| Look after privacy | What is stored, what is sent, and how to delete it | [Privacy](docs/privacy.md) |
 
 ## Quick start
 
@@ -23,21 +80,32 @@ npm ci && npm run firm
 
 This starts a sample law firm with two months of data: the server, a bilingual site, and a presenter page with ten scenes. Press Ctrl-C to stop it and delete its data. See [Demo](docs/demo.md) for a 90-second script.
 
-## Features
+### Example site
 
-| Area | Capability |
+```sh
+docker compose up --build        # the server on :8080, and its database
+node examples/site.ts            # in a second terminal: an example site on :3000
+```
+
+1. Open <http://localhost:3000/?gclid=demo-click&utm_id=20111> and sign up with any email address.
+2. The page shows the attributed ad click and its confidence, 98%.
+3. Open <http://localhost:8080/review>, sign in with the token `change-me-review-token`, and open the account. **Channels** shows the signup under its campaign.
+
+To use another port, run `GRAPH_PORT=8090 docker compose up --build` and `GRAPH_URL=http://localhost:8090 node examples/site.ts`.
+
+## Reviewer screen
+
+Four of its seven views. Accounts is the picture at the top, and the others are Matches and Calls.
+
+| Board | Journey |
 | --- | --- |
-| Identity | Scored links with the evidence for each, clusters that can be split, and reviewer decisions with an audit log |
-| Calls | Call results, missed calls and callbacks, tap-to-call matching, and optional tracking numbers |
-| Attribution | Spend, outcomes, cost per outcome and ROAS by campaign, with breakdowns by office, language, hour or weekday |
-| Conversions | An outbox for Google, Meta, Microsoft and TikTok with batching, retries and restatements |
-| Reviewer screen | Accounts, Journey, Board, Matches, Calls, Channels and Health |
-| Privacy | Hashed emails, phones and addresses, consent history, deletion and pruning |
-| Operations | Feed monitoring, webhook alerts, opening hours, PostgreSQL or in-memory storage, no runtime dependencies except `pg` for PostgreSQL |
-
-The server sends data to the ad platforms and webhooks you configure. It places no calls, assigns no work and sends no messages to customers.
+| ![Board: missed calls and people by step](https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p30-board.png) | ![Journey: one person's timeline](https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p30-journey.png) |
+| **Channels** | **Health** |
+| ![Channels: spend, outcomes and ROAS by campaign](https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p30-channels.png) | ![Health: feeds, conversions and matching rules](https://raw.githubusercontent.com/pwngh/account-graph/screenshots/p30-health.png) |
 
 ## How it works
+
+Three sources report to one server. It links what they report, shows it to reviewers, and sends the outcomes you choose to the ad platforms you set up.
 
 ```mermaid
 flowchart LR
@@ -55,6 +123,49 @@ flowchart LR
 4. The outbox sends conversions to the configured ad platforms.
 
 Your backend names the account at sign-in. The browser reports only its own device id.
+
+### How a match is scored
+
+A shared device id is strong evidence, and a shared IP address is weak. Clues add up, and each counts for less when more people share it.
+
+Each shared identifier contributes evidence: the weight of its kind, reduced by how many subjects share it and by the time between sightings. Evidence combines as `1 − Π(1 − evidence)`.
+
+By default, pairs at 0.9 can join and pairs at 0.5 are related. Clustering rules can hold a strong pair apart: a separation, or a single weak link between two groups. See [Matching](docs/deciding.md).
+
+| Two records share | Evidence | Score | Result |
+| --- | --- | --- | --- |
+| A browser, by its device id | 0.98 | 0.98 | Can join |
+| A mobile or landline number | 0.90 | 0.90 | Can join |
+| A postal address and an IP address | 0.60, 0.30 | 0.72 | Related |
+| An address, an IP address and a browser hash | 0.60, 0.30, 0.50 | 0.86 | Related |
+
+The last two could be one person or one household. With only this evidence, they are related and do not join on their own. These rows use the default weights, with two records per identifier and no time between sightings.
+
+### Terms
+
+| Term | Definition |
+| --- | --- |
+| Subject | Anything with an identity, such as `account:42` or `visitor:9f3c`. The reviewer screen calls it an ID. |
+| Identifier | Something a subject was seen with, written `kind:value`, such as `device:9f3c`, `email:…` or `ip:203.0.113.9` |
+| Sighting | A record of a subject with an identifier at a time. All other data is derived from sightings. |
+| Link | Two subjects that share identifiers, with a score from 0 to 1 and the evidence for it |
+| Cluster | The subjects treated as one person |
+| Visit (`touch`) | An arrival from an ad click or a campaign |
+| Outcome | An event you count, such as an inquiry, a signup or a sale |
+| Conversion | An outcome sent to an ad platform |
+| Decision | A reviewer action: join, separate, or ignore an identifier |
+
+## Features
+
+| Area | Capability |
+| --- | --- |
+| Identity | Scored links with the evidence for each, clusters that can be split, and reviewer decisions with an audit log |
+| Calls | Call results, missed calls and callbacks, tap-to-call matching, and optional tracking numbers |
+| Attribution | Spend, outcomes, cost per outcome and ROAS by campaign, with breakdowns by office, language, hour or weekday |
+| Conversions | An outbox for Google, Meta, Microsoft and TikTok with batching, retries and restatements |
+| Reviewer screen | Accounts, Journey, Board, Matches, Calls, Channels and Health |
+| Privacy | Hashed emails, phones and addresses, consent history, deletion and pruning |
+| Operations | Feed monitoring, webhook alerts, opening hours, PostgreSQL or in-memory storage, no runtime dependencies except `pg` for PostgreSQL |
 
 ## Installation
 
@@ -83,19 +194,6 @@ curl -X POST https://graph.example.org/identify \
 
 The server normalizes and hashes the email, phone and postal address. `device` is the `ag_device` cookie set by the script. The response lists the subjects whose cluster changed.
 
-### Example site
-
-```sh
-docker compose up --build        # the server on :8080, and its database
-node examples/site.ts            # in a second terminal: an example site on :3000
-```
-
-1. Open <http://localhost:3000/?gclid=demo-click&utm_id=20111> and sign up with any email address.
-2. The page shows the attributed ad click and its confidence, 98%.
-3. Open <http://localhost:8080/review>, sign in with the token `change-me-review-token`, and open the account. **Channels** shows the signup under its campaign.
-
-To use another port, run `GRAPH_PORT=8090 docker compose up --build` and `GRAPH_URL=http://localhost:8090 node examples/site.ts`.
-
 ## Documentation
 
 **Run**
@@ -117,46 +215,8 @@ To use another port, run `GRAPH_PORT=8090 docker compose up --build` and `GRAPH_
 - [Matching](docs/deciding.md): scores, weights, clusters and policy
 - [Presets](docs/presets.md): a policy for contacts entered by staff
 - [Library](docs/library.md): using the graph from Node
+- [Performance](docs/performance.md): measured speeds and sizes
 - [Changelog](CHANGELOG.md)
-
-## Concepts
-
-| Term | Definition |
-| --- | --- |
-| Subject | Anything with an identity, such as `account:42` or `visitor:9f3c`. The reviewer screen calls it an ID. |
-| Identifier | Something a subject was seen with, written `kind:value`, such as `device:9f3c`, `email:…` or `ip:203.0.113.9` |
-| Sighting | A record of a subject with an identifier at a time. All other data is derived from sightings. |
-| Link | Two subjects that share identifiers, with a score from 0 to 1 and the evidence for it |
-| Cluster | The subjects treated as one person |
-| Visit (`touch`) | An arrival from an ad click or a campaign |
-| Outcome | An event you count, such as an inquiry, a signup or a sale |
-| Conversion | An outcome sent to an ad platform |
-| Decision | A reviewer action: join, separate, or ignore an identifier |
-
-Each shared identifier contributes evidence: the weight of its kind, reduced by how many subjects share it and by the time between sightings. Evidence combines as `1 − Π(1 − evidence)`. By default, pairs at 0.9 can join and pairs at 0.5 are related. Clustering rules can hold a strong pair apart: a separation, or a single weak link between two groups. See [Matching](docs/deciding.md).
-
-## Performance
-
-Measured on an Apple M1 Max with Node 22 and synthetic data. PostgreSQL 16 ran in Docker on the same machine with two processors and default settings, including `fsync`. Run `DATABASE_URL=postgres://… npm run bench` to measure your own hardware, or omit the variable to measure the memory store.
-
-20,000 accounts:
-
-| Store | One at a time | In batches of 100 | Through the write queue | `links()` |
-| --- | --- | --- | --- | --- |
-| Memory | 28,700 observations/s | 13,800/s | 16,900/s | 0.02 ms |
-| PostgreSQL | 183 observations/s | 1,900/s | 3,600/s | 2.7 ms |
-
-PostgreSQL writes are serialized by an advisory lock. The write queue combines concurrent writes into one transaction.
-
-Large graphs, five edges per account, with `DATABASE_URL=postgres://… npm run bench -- scale 1000000 5000000 10000000`. Cells show time and peak memory:
-
-| Edges | On disk | `rebuild` | `verify` | `asOf` | Observation, `links()` |
-| --- | --- | --- | --- | --- | --- |
-| 1 million | 420 MB | 7 s, 159 MB | 6 s, 150 MB | 20 s, 1.4 GB | 6.6 ms, 2.3 ms |
-| 5 million | 2.1 GB | 45 s, 198 MB | 40 s, 206 MB | 156 s, 3.8 GB | 8.1 ms, 2.9 ms |
-| 10 million | 4.3 GB | 94 s, 291 MB | 85 s, 402 MB | out of memory | 10.7 ms, 3.7 ms |
-
-The last column is the median of 300 sequential runs. Other tests used the database during the two larger runs, so those times are upper estimates.
 
 ## Tools
 
