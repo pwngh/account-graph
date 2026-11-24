@@ -527,7 +527,7 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       const counting: Store = { ...store, write: (work) => (writes++, store.write(work)) }
       const batcher = createBatcher(createGraph(counting), 50)
       const results = await Promise.allSettled([
-        ...Array.from({ length: 200 }, (_, i) => batcher.observe({ subject: `account:${i % 40}`, identifiers: [`email:${i % 9}`], at: T0 + i })),
+        ...Array.from({ length: 200 }, (_, i) => batcher.observe({ subject: `account:${i % 40}`, identifiers: [`email:${(i % 40) % 9}`], at: T0 + i })),
         batcher.observe({ subject: 'account:bad', identifiers: ['shoe:9'], at: T0 }),
       ])
       await batcher.drain()

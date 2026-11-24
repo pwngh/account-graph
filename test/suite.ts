@@ -121,6 +121,27 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await graph.verify(), [])
     })
 
+    test('a phone joins two subjects and only relates three, and a value held by a crowd links nobody', async () => {
+      const { graph } = await fresh()
+      const share = (kind: string, count: number) => Promise.all(Array.from({ length: count }, (_, i) => graph.observe({ subject: `${kind}:${String(i).padStart(2, '0')}`, identifiers: [`${kind}:shared`], at: T0 })))
+      await share('phone', 2)
+      assert.equal((await graph.cluster('phone:00'))!.members.length, 2)
+      await graph.observe({ subject: 'phone:02', identifiers: ['phone:shared'], at: T0 })
+      const [link] = await graph.links('phone:00')
+      assert.deepEqual([link!.level, Math.round(link!.score * 1e9) / 1e9], ['related', 0.6])
+      assert.deepEqual((await graph.cluster('phone:00'))!.members, ['phone:00'])
+      // An email still joins as many as ten, and the eleventh makes it nobody's.
+      await share('email', 10)
+      assert.equal((await graph.cluster('email:00'))!.members.length, 10)
+      await graph.observe({ subject: 'email:10', identifiers: ['email:shared'], at: T0 })
+      assert.deepEqual(await graph.links('email:00'), [])
+      await share('voip', 2)
+      assert.equal((await graph.links('voip:00'))[0]!.level, 'related')
+      await graph.observe({ subject: 'voip:02', identifiers: ['voip:shared'], at: T0 })
+      assert.deepEqual(await graph.links('voip:00'), [])
+      assert.deepEqual(await graph.verify(), [])
+    })
+
     test('ignoring an identifier splits a cluster and restoring it rejoins', async () => {
       const { graph } = await fresh()
       const shared = email('Front.Desk@example.com')
