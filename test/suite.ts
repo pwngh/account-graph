@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { after, describe, test } from 'node:test'
-import { brokenAt, createGraph, defaultPolicy, dialed, email, fit, hashPhone, recordCall } from '../src/index.ts'
+import { brokenAt, createGraph, defaultPolicy, dialed, email, fit, hashPhone, policyFrom, recordCall } from '../src/index.ts'
 import type { Change, GraphOptions, Observation, Policy, Store } from '../src/index.ts'
 
 export interface Opened {
@@ -999,6 +1000,38 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await graph.attribute('contact:r', { at: T0 + HOUR })).reason, 'no_touch')
     })
 
+    test('a household shares its phone, address and connection, and that is one fact', async () => {
+      const household = policyFrom(JSON.parse(readFileSync(new URL('../examples/household.json', import.meta.url), 'utf8')))
+      const cases: [string[], number, string, number, string][] = [
+        [['phone:1'], 0.9, 'same', 0.85, 'related'],
+        [['phone:1', 'address:1'], 0.96, 'same', 0.85, 'related'],
+        [['phone:1', 'email:1'], 0.999, 'same', 0.9985, 'same'],
+        [['ip:198.51.100.7', 'address:1'], 0.72, 'related', 0.6, 'related'],
+      ]
+      for (const [identifiers, score, level, inside, insideLevel] of cases) {
+        for (const [policy, expected, reached] of [[undefined, score, level], [household, inside, insideLevel]] as const) {
+          const { graph } = await fresh(policy)
+          await graph.observe(['a', 'b'].map((subject) => ({ subject, identifiers, at: T0 })))
+          const [link] = await graph.links('a')
+          assert.ok(Math.abs(link!.score - expected) < 1e-9, `${identifiers} ${link!.score}`)
+          assert.equal(link!.level, reached)
+          // Every reason is there for a reviewer to see, whether or not it counted.
+          assert.equal(link!.reasons.length, identifiers.length)
+          assert.equal((await graph.cluster('a'))!.members.length, reached === 'same' ? 2 : 1)
+        }
+      }
+      const { graph } = await fresh(household)
+      await graph.observe(['a', 'b'].map((subject) => ({ subject, identifiers: ['phone:1', 'address:1'], at: T0 })))
+      assert.deepEqual((await graph.links('a'))[0]!.reasons.map((reason) => [reason.identifier, reason.group, reason.counted]), [['phone:1', 'household', undefined], ['address:1', 'household', false]])
+      // With the strongest muted, the next one counts.
+      await graph.ignore('phone:1')
+      assert.deepEqual((await graph.links('a')).map((link) => [link.score, link.level, link.reasons[0]!.counted]), [[0.6, 'related', undefined]])
+      // A number seen on two people four years apart has faded to a quarter.
+      const old = await fresh(household)
+      await old.graph.observe([{ subject: 'a', identifiers: ['phone:1', 'ip:198.51.100.7'], at: T0 }, { subject: 'b', identifiers: ['phone:1'], at: T0 + 4 * 365 * DAY }])
+      assert.deepEqual(await old.graph.links('a'), [])
+    })
+
     test('overlapping writes leave clusters sound', async () => {
       const { graph } = await fresh()
       await Promise.all(
@@ -1009,13 +1042,13 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await graph.verify(), [])
     })
 
-    test(`stored clusters match a full recompute after each of ${fuzzSteps} random operations`, async () => {
+    for (const grouped of [false, true]) test(`stored clusters match a full recompute after each of ${fuzzSteps} random operations${grouped ? ', with kinds in groups' : ''}`, async () => {
       // Low caps, so identifiers cross them in both directions often.
       const policy: Policy = {
         ...defaultPolicy,
-        kinds: Object.fromEntries(Object.entries(defaultPolicy.kinds).map(([kind, rule]) => [kind, { ...rule, cap: kind === 'ip' ? 6 : 3 }])),
+        kinds: Object.fromEntries(Object.entries(defaultPolicy.kinds).map(([kind, rule]) => [kind, { ...rule, cap: kind === 'ip' ? 6 : 3, ...(grouped && ['email', 'device', 'hardware'].includes(kind) && { group: 'one' }), ...(grouped && ['canvas', 'fingerprint'].includes(kind) && { group: 'two' }) }])),
       }
-      const seed = 20261123
+      const seed = 20261123 + Number(grouped)
       const next = random(seed)
       const pick = (count: number) => Math.floor(next() * count)
       const identifier = () =>

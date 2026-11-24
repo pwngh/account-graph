@@ -122,7 +122,7 @@ The server runs the default weights, caps and half-lives until you name somethin
 POLICY='{"kinds":{"phone":{"weight":0.85,"halfLife":63072000000}}}' npm start
 ```
 
-A longer one goes in a file named by `POLICY_FILE`. [How it decides](deciding.md) says what each part of a rule does. A new kind needs all four parts, and a half-life that never ends is written `"none"`.
+A longer one goes in a file named by `POLICY_FILE`. [How it decides](deciding.md) says what each part of a rule does. A new kind needs its weight, dilution, cap and half-life, and a half-life that never ends is written `"none"`. [Presets](presets.md) has a policy for contacts entered by staff.
 
 > **A changed policy needs a rebuild.** Scores follow the new policy at once. Stored clusters stay as they were, and new writes mix the two, until someone posts to `/rebuild` with the service token.
 

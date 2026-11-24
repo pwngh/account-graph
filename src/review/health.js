@@ -6,10 +6,10 @@ view('health', 'Health', async (box) => {
   const [policy, disputes] = await Promise.all([api('GET', '/policy'), api('GET', '/disputes')])
   box.append(el('section', {}, el('h3', {}, 'Health'), el('p', { class: 'muted' }, 'What this server runs, as it stands now.')))
 
-  const rules = el('table', {}, el('tr', {}, th('Kind'), th('Weight', 'num'), th('Dilution', 'num'), th('Cap, subjects', 'num'), th('Half-life', 'num'), th('')))
+  const rules = el('table', {}, el('tr', {}, th('Kind'), th('Weight', 'num'), th('Dilution', 'num'), th('Cap, subjects', 'num'), th('Half-life', 'num'), th('Group'), th('')))
   const kinds = Object.entries(policy.rules.kinds).sort(([x, a], [y, b]) => b.weight - a.weight || (x < y ? -1 : 1))
   for (const [kind, rule] of kinds) {
-    rules.append(el('tr', {}, td('', kind), td('num', rule.weight.toFixed(2)), td('num', rule.dilution), td('num', amount(rule.cap)), td('num', lasting(rule.halfLife)),
+    rules.append(el('tr', {}, td('', kind), td('num', rule.weight.toFixed(2)), td('num', rule.dilution), td('num', amount(rule.cap)), td('num', lasting(rule.halfLife)), td('', rule.group ?? ''),
       td('', policy.changed.includes(kind) ? el('span', { class: 'chip' }, 'changed from the default') : rule.weight === 0 ? el('span', { class: 'muted' }, 'a note, links nothing') : '')))
   }
   const { same, related, bridge, review } = policy.rules

@@ -49,6 +49,10 @@ export interface Reason {
   fanout: number
   /** Milliseconds between the two subjects' sightings; 0 when they overlap. */
   gap: number
+  /** The group its kind is in, when the policy puts it in one. */
+  group?: string
+  /** False when a stronger reason of the same group counted in its place. */
+  counted?: false
 }
 
 export type Level = 'same' | 'related'

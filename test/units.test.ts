@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
 import { components, conversionEvent, createAlerter, createGraph, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, ingestRequest, ip, knownLink, ladderProblems, measure, normalizeEmail, normalizePhone, phoneOfType, policyFrom, policyHash, policyProblems, readToken, scorePairs, signToken, sourceOf, withStage } from '../src/index.ts'
-import type { Edge, IdentifierState } from '../src/index.ts'
+import { weigh } from '../src/policy.ts'
+import type { Edge, IdentifierState, Reason } from '../src/index.ts'
 import { configFrom } from '../src/serve.ts'
 import { createHandler } from '../src/server.ts'
 
@@ -40,6 +42,45 @@ test('scoring ignores the order of its input', () => {
   assert.deepEqual(backward, forward)
   assert.deepEqual(forward.map((pair) => `${pair.a}-${pair.b}:${pair.level}`), ['a-b:same', 'a-d:same', 'b-c:related'])
   assert.deepEqual([...components(['a', 'b', 'c', 'd'], forward)], [['a', 'a'], ['b', 'a'], ['c', 'c'], ['d', 'a']])
+})
+
+test('with no groups a score is what it always was, and with groups only the strongest of each counts', () => {
+  let seed = 42
+  const next = () => ((seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff) / 0x7fffffff)
+  const kinds = Object.keys(defaultPolicy.kinds)
+  const grouped = { ...defaultPolicy, kinds: Object.fromEntries(Object.entries(defaultPolicy.kinds).map(([kind, rule], i) => [kind, { ...rule, ...(i % 3 > 0 && { group: `g${i % 3}` }) }])) }
+  for (let round = 0; round < 500; round++) {
+    const reasons = Array.from({ length: 1 + Math.floor(next() * 6) }, (_, i): Reason => ({ identifier: `${kinds[Math.floor(next() * kinds.length)]}:${i}`, evidence: next(), fanout: 2, gap: 0 }))
+    const plain = reasons.map((reason) => ({ ...reason }))
+    // The order they arrive in does not matter, so shuffle.
+    assert.equal(weigh(defaultPolicy, plain.reverse()), 1 - [...reasons].sort((x, y) => y.evidence - x.evidence).reduce((rest, reason) => rest * (1 - reason.evidence), 1))
+    assert.ok(plain.every((reason) => !('group' in reason) && !('counted' in reason)))
+
+    const inGroups = reasons.map((reason) => ({ ...reason }))
+    const best = new Map<string, number>()
+    for (const { identifier, evidence } of reasons) {
+      const group = grouped.kinds[identifier.split(':')[0]!]!.group ?? identifier
+      best.set(group, Math.max(best.get(group) ?? 0, evidence))
+    }
+    assert.ok(Math.abs(weigh(grouped, inGroups) - (1 - [...best.values()].reduce((rest, evidence) => rest * (1 - evidence), 1))) < 1e-12)
+    assert.equal(inGroups.filter((reason) => reason.counted !== false).length, best.size)
+  }
+})
+
+test('the household preset is a sound policy, and fit learns only from the kind that counted', () => {
+  const given = JSON.parse(readFileSync(new URL('../examples/household.json', import.meta.url), 'utf8'))
+  assert.deepEqual(policyProblems(given), [])
+  // The page that explains it shows the same thing.
+  const shown = /```json\n([\s\S]*?)```/.exec(readFileSync(new URL('../docs/presets.md', import.meta.url), 'utf8'))![1]!
+  assert.deepEqual(JSON.parse(shown), given)
+  assert.deepEqual(policyProblems({ kinds: { phone: { group: '' }, review: { group: 'x' } } }), ['kind "phone" needs its group as text', 'kind "review" is a decision, so it cannot be in a group'])
+
+  const policy = policyFrom(given)
+  // Every pair shares a phone and an address. The address never counts, so nothing about it can be learned from them.
+  const labeled = Array.from({ length: 40 }, (_, i) => ({ same: i < 10, reasons: [{ identifier: 'phone:p', evidence: 0.85, fanout: 2, gap: 0 }, { identifier: 'address:a', evidence: 0.6, fanout: 2, gap: 0 }] }))
+  const fitted = fit(labeled, policy, 0.01)
+  assert.ok(Math.abs(fitted.kinds.phone!.after - 0.25) < 0.15, String(fitted.kinds.phone!.after))
+  assert.ok(fitted.loss.after < fitted.loss.before)
 })
 
 test('a conversion sends one click id and hashed match keys', () => {

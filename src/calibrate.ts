@@ -60,7 +60,8 @@ const clamp = (p: number) => Math.min(1 - 1e-9, Math.max(1e-9, p))
  * to a stronger one is not credited with the stronger one's accuracy.
  *
  * Score the pairs with `policy` first, with `related: 0` so weak pairs are
- * kept. `prior` pulls each weight toward its current value; raise it when
+ * kept. Where the policy groups kinds, a pair teaches only the kind that
+ * counts for it. `prior` pulls each weight toward its current value; raise it when
  * there are few pairs.
  */
 export function fit(labeled: readonly Labeled[], policy: Policy, prior = 1): Fitted {
@@ -69,7 +70,7 @@ export function fit(labeled: readonly Labeled[], policy: Policy, prior = 1): Fit
     same,
     parts: reasons
       .filter((reason) => policy.kinds[kindOf(reason.identifier)] && policy.kinds[kindOf(reason.identifier)]!.weight > 0)
-      .map((reason) => ({ kind: kindOf(reason.identifier), multiplier: Math.min(1, reason.evidence / policy.kinds[kindOf(reason.identifier)]!.weight) })),
+      .map((reason) => ({ kind: kindOf(reason.identifier), group: policy.kinds[kindOf(reason.identifier)]!.group, multiplier: Math.min(1, reason.evidence / policy.kinds[kindOf(reason.identifier)]!.weight) })),
   }))
   const kinds = [...new Set(pairs.flatMap((pair) => pair.parts.map((part) => part.kind)))].sort()
   const logit = (w: number) => Math.log(clamp(w) / (1 - clamp(w)))
@@ -77,9 +78,18 @@ export function fit(labeled: readonly Labeled[], policy: Policy, prior = 1): Fit
   const theta = { ...start }
   const weight = (kind: string, from: Record<string, number>) => 1 / (1 + Math.exp(-from[kind]!))
 
-  const predict = (parts: { kind: string; multiplier: number }[], from: Record<string, number>) => {
+  type Part = { kind: string; group: string | undefined; multiplier: number }
+  /** The parts that count under the given weights: of each group, only the strongest. */
+  const counting = (parts: readonly Part[], from: Record<string, number>): readonly Part[] => {
+    if (parts.every((part) => part.group === undefined)) return parts
+    const best = new Map<string, Part>()
+    const strength = (part: Part) => weight(part.kind, from) * part.multiplier
+    for (const part of parts) if (part.group !== undefined && !(best.has(part.group) && strength(best.get(part.group)!) >= strength(part))) best.set(part.group, part)
+    return parts.filter((part) => part.group === undefined || best.get(part.group) === part)
+  }
+  const predict = (parts: readonly Part[], from: Record<string, number>) => {
     let coincidence = 1
-    for (const part of parts) coincidence *= 1 - weight(part.kind, from) * part.multiplier
+    for (const part of counting(parts, from)) coincidence *= 1 - weight(part.kind, from) * part.multiplier
     return 1 - coincidence
   }
   const loss = (from: Record<string, number>) => {
@@ -100,7 +110,7 @@ export function fit(labeled: readonly Labeled[], policy: Policy, prior = 1): Fit
     for (const pair of pairs) {
       const p = clamp(predict(pair.parts, theta))
       const pull = (pair.same ? -1 / p : 1 / (1 - p)) / count
-      for (const part of pair.parts) {
+      for (const part of counting(pair.parts, theta)) {
         const w = weight(part.kind, theta)
         // d(score)/d(weight) for this reason, then through the logistic.
         gradient[part.kind]! += pull * ((part.multiplier * (1 - p)) / clamp(1 - w * part.multiplier)) * w * (1 - w)

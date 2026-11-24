@@ -1,9 +1,12 @@
+/** The reasons of a tie. A group is headed by the one that counted, and the rest of it is set in below, marked as not counted. */
 function reasons(list) {
-  return list.map((reason) => {
+  const line = (reason) => {
     const [kind] = reason.identifier.split(':')
-    return el('span', { class: 'reason' }, el('b', {}, kind), ` ${percent(reason.evidence)}, shared by ${reason.fanout}, ${days(reason.gap)} `,
-      el('button', { class: 'link', title: reason.identifier, on: { click: () => act('Stop linking through this identifier', reason.identifier, '/ignore', { identifier: reason.identifier }, 'Stop linking') } }, 'stop linking'))
-  })
+    return el('span', { class: `reason${reason.counted === false ? ' uncounted' : ''}` }, el('b', {}, kind), ` ${percent(reason.evidence)}, shared by ${reason.fanout}, ${days(reason.gap)} `,
+      reason.group === undefined ? '' : reason.counted === false ? `· not counted, ${reason.group} counts once ` : list.some((other) => other.group === reason.group && other.counted === false) ? `· counts for ${reason.group} ` : '',
+      el('button', { class: 'link', title: reason.identifier, 'data-key': reason.identifier, on: { click: () => act('Stop linking through this identifier', reason.identifier, '/ignore', { identifier: reason.identifier }, 'Stop linking') } }, 'stop linking'))
+  }
+  return list.filter((reason) => reason.counted !== false).flatMap((reason) => [line(reason), ...list.filter((other) => reason.group !== undefined && other.group === reason.group && other.counted === false).map(line)])
 }
 
 /** The subject in the middle, the subjects tied to it around it, and the ties between them. */
