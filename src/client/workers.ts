@@ -81,8 +81,10 @@ export function createWorkers(engine: Engine, ops: Ops, options: LocalOptions, l
     const sink = `job ${job.name}`
     const turn = await store.write((tx) => tx.claimDelivery(sink, now(), job.lease))
     if (!turn) return
+    // From when it began, and a little early, or the next look would always be too soon.
+    const began = now()
     await run(job)
-    await store.write((tx) => tx.setDelivery({ ...turn, due: now() + job.every }))
+    await store.write((tx) => tx.setDelivery({ ...turn, due: began + job.every - 1000 }))
   }
   return {
     start() {

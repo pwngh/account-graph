@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import type { AccountGraph, CallOptions, LocalOptions } from '../contract/api.ts'
-import { FAULT_CODES, fault, malformed } from '../contract/fault.ts'
+import { FAULT_CODES, fault } from '../contract/fault.ts'
 import { plain } from '../contract/json.ts'
 import { checked } from '../contract/validate.ts'
 import type { CallName } from '../contract/validate.ts'
@@ -49,7 +49,7 @@ export function localProblems(options: LocalOptions): string[] {
     if (given.schema !== undefined && !/^[a-z_][a-z0-9_]*$/.test(String(given.schema))) wrong.push('`schema` must be a plain lowercase name')
   }
   for (const name of ['identifierSecret', 'linkSecret'] as const) if (options[name] !== undefined && options[name].length < 32) wrong.push(`\`${name}\` must be at least 32 characters`)
-  if (options.timeoutMs !== undefined && !(options.timeoutMs > 0)) wrong.push('`timeoutMs` must be a positive number')
+  if (options.timeoutMs !== undefined && !(Number.isInteger(options.timeoutMs) && options.timeoutMs >= 1 && options.timeoutMs <= 1_000_000_000)) wrong.push('`timeoutMs` must be an integer from 1 to 1,000,000,000')
   if (options.timeZone !== undefined) {
     try {
       new Intl.DateTimeFormat('en-US', { timeZone: options.timeZone })
@@ -99,10 +99,12 @@ export function localGraph(options: LocalOptions, keeping: Keeping = {}): Accoun
   async function openStore(): Promise<Store> {
     if (options.databaseUrl === undefined) return createMemoryStore()
     const { default: pg } = await import('pg')
-    const made = new pg.Pool({ connectionString: options.databaseUrl, connectionTimeoutMillis: timeout })
+    const made = new pg.Pool({ connectionString: options.databaseUrl, connectionTimeoutMillis: timeout, keepAlive: true, query_timeout: 2 * timeout })
     pool = made
     const store: PostgresStore = createPostgresStore(made as unknown as Pool, options.schema, { lockTimeout: timeout })
-    const applied = await store.migrate()
+    // An upgrade takes as long as it takes.
+    const patient = new pg.Pool({ connectionString: options.databaseUrl, connectionTimeoutMillis: timeout, max: 1 })
+    const applied = await createPostgresStore(patient as unknown as Pool, options.schema).migrate().finally(() => patient.end())
     log(applied.length > 0 ? `database upgraded: ${applied.join(', ')}` : 'database is up to date')
     return store
   }
@@ -154,20 +156,33 @@ export function localGraph(options: LocalOptions, keeping: Keeping = {}): Accoun
       },
       ...(targets.length > 0 && { delivery: { targets, retractOnForget: options.ads?.retractOnForget ?? false, ...(options.ads?.delayMs !== undefined && { delay: options.ads.delayMs }), onFailed: (jobs) => tell(jobs) } }),
     })
-    const emit = (event: NewEvent) => store.write((tx) => tx.emit([event]))
+    const emit = (event: NewEvent) => store.write(async (tx) => {
+      // Looked up in the write that says it: somebody deleted since it was found out is not named again.
+      if (event.type === 'callback.overdue' && (await tx.callOf(event.data.call))?.subject !== event.data.subject) return 'gone' as const
+      return tx.emit([event])
+    })
     const { quietHours, lateHours } = options.monitor ?? {}
     const ops = createOps(engine.graph, store.ops, {
       ...(options.alerts && { url: options.alerts.url }), ...(quietHours && { quiet: quietHours }), returnHours: options.phones?.returnHours ?? 24, ...(hours && { hours }),
       outbox: store.outbox, lateHours: lateHours ?? 6, timeZone: options.timeZone ?? 'UTC', now, emit, ...(options.fetch && { fetch: options.fetch }), onError: (error) => log(`alert: ${String((error as Error)?.message ?? error)}`),
     })
     tell = (jobs) => {
-      void store.write((tx) => tx.emit(jobs.map((job) => ({ type: 'conversion.failed' as const, at: now(), subject: job.subject, data: { conversion: job.transactionId, platform: job.target, note: job.note ?? '' } })))).catch((error) => log(String(error)))
+      void store.write(async (tx) => {
+        const there = await Promise.all(jobs.map(async (job) => (await tx.outbox.get(job.transactionId)).some((each) => each.target === job.target)))
+        const left = jobs.filter((_, i) => there[i])
+        await tx.emit(left.map((job) => ({ type: 'conversion.failed' as const, at: now(), subject: job.subject, data: { conversion: job.transactionId, platform: job.target, note: job.note ?? '' } })))
+      }).catch((error) => log(String(error)))
       void ops.alert('conversions', failedText(jobs))
     }
     const six = createSix(engine, { receipts, returnHours: options.phones?.returnHours ?? 24, ...(options.linkSecret && { linkSecret: options.linkSecret }), ...(hours && { hours }), ...(options.timeZone && { timeZone: options.timeZone }) })
     workers = createWorkers(engine, ops, options, log)
+    // From here on, and not from the first time it is posted to.
+    if (options.webhook) await store.write(async (tx) => {
+      const turn = await tx.claimDelivery('webhook', now(), 0)
+      if (turn) await tx.setDelivery(turn)
+    })
     if (options.workers ?? false) workers.start()
-    return { options, engine, six, ops, hours, call, pass: () => workers!.pass() }
+    return { options, engine, six, ops, hours, call: (name, request, asked) => gate.run(() => call(name, request, asked)), pass: () => workers!.pass() }
   }
 
   let opening: Promise<Internals> | undefined
@@ -224,7 +239,7 @@ export function localGraph(options: LocalOptions, keeping: Keeping = {}): Accoun
   }
   let closing: Promise<void> | undefined
   keep(graph, () => {
-    if (gate.ended) throw malformed('This instance is closed')
+    if (gate.ended) return Promise.reject(fault(FAULT_CODES.GRAPH.CLOSED, 'This instance is closed'))
     return opened()
   })
   return graph

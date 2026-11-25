@@ -31,13 +31,14 @@ export function createWebhook(store: Store, options: WebhookOptions) {
       const turn = await store.write((tx) => tx.claimDelivery('webhook', now(), LEASE))
       if (!turn) return delivered
       const { events, head } = await store.read(async (tx) => ({ events: await tx.eventsAfter(turn.seq, MOST + 1), head: await tx.eventHead() }))
-      const page = events.slice(0, MOST)
+      // One at a time once it was refused, so that one it will not have holds up only itself.
+      const page = events.slice(0, turn.attempts > 0 ? 1 : MOST)
       const last = page.at(-1)
       if (!last) {
         await store.write((tx) => tx.setDelivery({ ...turn, seq: turn.seq }))
         return delivered
       }
-      const body = JSON.stringify({ schemaVersion: 1, cursor: cursorOf(head, last.seq), more: events.length > MOST, events: page })
+      const body = JSON.stringify({ schemaVersion: 1, cursor: cursorOf(head, last.seq), more: events.length > page.length, events: page })
       let reason: string | undefined
       try {
         const response = await fetcher(options.url, { method: 'POST', headers: { 'content-type': 'application/json', [SIGNATURE]: await signWebhook(options.secret, now(), body) }, body, redirect: 'error', signal: AbortSignal.timeout(10_000) })
@@ -48,7 +49,7 @@ export function createWebhook(store: Store, options: WebhookOptions) {
       if (reason === undefined) {
         delivered += page.length
         await store.write((tx) => tx.setDelivery({ sink: 'webhook', seq: last.seq, due: 0, attempts: 0 }))
-        if (events.length <= MOST) return delivered
+        if (events.length <= page.length) return delivered
         continue
       }
       const since = turn.since ?? now()

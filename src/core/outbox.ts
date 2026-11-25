@@ -1,4 +1,5 @@
 import { malformed, refused } from '../contract/fault.ts'
+import { keepableText } from './identifiers.ts'
 import type { Graph } from './graph.ts'
 import type { Attribution, AttributedTouch, Change, Consent, Counted, Deciding, Loss, Outcome, Payment, Subject } from '../contract/types.ts'
 
@@ -229,7 +230,8 @@ export function sentOf(jobs: readonly Job[]): Sent[] {
 
 /** What went wrong, without what was sent. A platform may answer with it, and whoever reads the note has no need of a hashed email or phone, this one's or another's in the same request. */
 const noted = (error: unknown, keys: readonly string[]) =>
-  [...keys].filter((key) => key.length > 3).sort((a, b) => b.length - a.length).reduce((text, key) => text.replaceAll(new RegExp(key.replace(/[^\w]/g, '\\$&'), 'gi'), '(left out)'), String((error as Error)?.message ?? error)).slice(0, 500)
+  [...keys].filter((key) => key.length > 3).sort((a, b) => b.length - a.length).reduce((text, key) => text.replaceAll(new RegExp(key.replace(/[^\w]/g, '\\$&'), 'gi'), '(left out)'), String((error as Error)?.message ?? error))
+const noteOf = (error: unknown, keys: readonly string[]) => keepableText(noted(error, keys), 500)
 
 /**
  * Sends recorded outcomes to ad platforms at least once. Each platform keeps
@@ -319,7 +321,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
         pass.sent += 1
       }
     } catch (error) {
-      const note = noted(error, items.flatMap(({ job }) => Object.values(job.keys)))
+      const note = noteOf(error, items.flatMap(({ job }) => Object.values(job.keys)))
       if (target.retryable(error)) {
         for (const { job } of items) {
           if (job.attempts >= maxAttempts) await fail(job, note, pass, failed)
@@ -502,7 +504,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
             const found = sent.find((each) => each.transactionId === job.transactionId && each.target === name)!
             const refusal = refusals[j]
             if (refusal === undefined) found.state = 'accepted'
-            else [found.state, found.note] = ['rejected', noted(refusal, keys)]
+            else [found.state, found.note] = ['rejected', noteOf(refusal, keys)]
           })
         }
       }

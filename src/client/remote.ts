@@ -17,7 +17,8 @@ export function remoteGraph(options: RemoteOptions): AccountGraph {
   } catch {
     throw fault(FAULT_CODES.CONFIG.INVALID, '`url` must be an http or https address')
   }
-  if (typeof options.token !== 'string' || !options.token) throw fault(FAULT_CODES.CONFIG.INVALID, '`token` is required')
+  if (typeof options.token !== 'string' || !/^[\x21-\x7e]+$/.test(options.token)) throw fault(FAULT_CODES.CONFIG.INVALID, '`token` is required, in plain characters')
+  if (options.timeoutMs !== undefined && !(Number.isInteger(options.timeoutMs) && options.timeoutMs >= 1 && options.timeoutMs <= 1_000_000_000)) throw fault(FAULT_CODES.CONFIG.INVALID, '`timeoutMs` must be an integer from 1 to 1,000,000,000')
   const fetcher = options.fetch ?? fetch
   const ending = new AbortController()
   const gate = createGate()
@@ -33,7 +34,7 @@ export function remoteGraph(options: RemoteOptions): AccountGraph {
     try {
       response = await fetcher(new URL(`v1/${name}`, root), {
         method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${options.token}`, ...(correlationId !== undefined && { 'x-request-id': correlationId }) },
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${options.token}`, ...(correlationId !== undefined && /^[\x21-\x7e]{1,200}$/.test(correlationId) && { 'x-request-id': correlationId }) },
         body,
         redirect: 'manual',
         signal: AbortSignal.any([timeout, ending.signal, ...(signal ? [signal] : [])]),

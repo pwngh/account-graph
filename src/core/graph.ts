@@ -1201,9 +1201,11 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const payments = await tx.paymentsOf(transactionId)
         // Taken back and counted again, it is worth what was said of it meanwhile too.
         const said = payments.length === 0 ? worthOf(await tx.saidOf('worth', transactionId)) : undefined
-        const worth = said ? { ...counted, value: said.value, currency: said.currency } : paidFor(counted, payments)
+        const worth = said ? { ...counted, value: said.value, currency: said.currency || counted.currency } : paidFor(counted, payments)
         await tx.setOutcome(worth)
-        await revalue(tx, worth)
+        // What it was said to be worth comes first, whether or not it was paid for already.
+        if (payments.length > 0) await revalue(tx, counted)
+        await revalue(tx, worth, undefined, payments.length > 0 ? 'payment' : undefined)
         return true
       })
     },
@@ -1292,13 +1294,15 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const before = await tx.saidOf('worth', transactionId)
         if (change.kind === 'reverse' && !before.some((each) => each.key === change.restatement && (each.data.kind === 'refund' || each.data.kind === 'write_off'))) throw refused(`No refund or write-off "${change.restatement}" of conversion "${transactionId}" is recorded`, { reason: 'UNKNOWN_REFERENCE', restatement: change.restatement })
         if (before.length === 0) await tx.addSaid({ topic: 'worth', about: transactionId, key: '', at: found.at, data: { kind: 'base', value: found.value, currency: found.currency } })
+        // The first currency that is named is the conversion's, whoever names it. Another is refused from then on.
+        const named = 'currency' in change && !found.currency ? change.currency : undefined
         const data = change.kind === 'correct' ? { kind: change.kind, value: change.value, ...(change.currency && { currency: change.currency }) } : change.kind === 'reverse' ? { kind: change.kind, restatement: change.restatement } : { kind: change.kind, amount: change.amount }
         await tx.addSaid({ topic: 'worth', about: transactionId, key, at, data })
         const worth = worthOf(await tx.saidOf('worth', transactionId))!
-        const restated = { ...found, value: worth.value, currency: worth.currency }
+        const restated = { ...found, value: worth.value, currency: found.currency || named || worth.currency }
         await tx.setOutcome(restated)
         await revalue(tx, restated, undefined, change.kind)
-        return { value: worth.value, currency: worth.currency, stands: change.kind !== 'correct' || worth.stands === key }
+        return { value: worth.value, currency: restated.currency, stands: change.kind !== 'correct' || worth.stands === key }
       })
     },
 
@@ -1322,7 +1326,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const before = await tx.callResultOf(call)
         if ((await tx.saidOf('result', call)).length === 0 && before?.answered !== undefined) {
           const { answered, voicemail, waited, recorded } = before
-          await tx.addSaid({ topic: 'result', about: call, key: '', at: (await tx.callOf(call))?.at ?? recorded, data: { answered, ...(voicemail !== undefined && { voicemail }), ...(waited !== undefined && { waited }) } })
+          await tx.addSaid({ topic: 'result', about: call, key: '', at: recorded, data: { answered, ...(voicemail !== undefined && { voicemail }), ...(waited !== undefined && { waited }) } })
         }
         await tx.addSaid({ topic: 'result', about: call, key, at, data: result })
         const stands = newest(await tx.saidOf('result', call))!
@@ -2065,6 +2069,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       const changes = await changing(async (tx) => {
         await current(tx, subjects, why)
         jobs = []
+        const keys = (await tx.keysOf(subjects)).map(({ key }) => key).filter((key) => key.length > 3)
         for (const each of subjects) await decideAll(tx, [{ action: 'forget', about: [each], why }])
         const edges = await tx.edgesOf(subjects)
         const components = unique([...(await tx.labelsOf(subjects)).values()].flatMap(({ component }) => (component === undefined ? [] : [component])))
@@ -2079,7 +2084,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const states = await tx.states(identifiers)
         const open = identifiers.filter((identifier) => usable(policy, identifier, states.get(identifier)))
         for (const edge of await tx.edgesOn(open)) affected.add(edge.subject)
-        return settle(tx, affected)
+        const moved = await settle(tx, affected)
+        // Last: what moved is said of the groups they were in, and those may have had their names.
+        await tx.unname(subjects, keys)
+        return moved
       })
       gone?.(jobs)
       return changes

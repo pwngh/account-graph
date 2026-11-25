@@ -91,10 +91,11 @@ export function eventsSuite(name: string, open: () => Promise<Opened>) {
       now += 30_000
       status = 200
       await late(2)
-      assert.deepEqual((await Promise.all([one.run(), two.run()])).sort(), [0, 2])
+      // After a refusal, one at a time.
+      assert.equal((await Promise.all([one.run(), two.run()])).reduce((sum, each) => sum + each, 0), 2)
       const { headers, body } = bodies.at(-1)!
       assert.equal(await verifyWebhook({ headers, body }, { secret: 's', now, maxAgeMs: 1000 }), true)
-      assert.deepEqual(parseWebhook({ headers, body }).map((event) => event.type === 'delivery.late' && event.data.oldestDue), [1, 2])
+      assert.deepEqual(bodies.slice(1).flatMap((each) => parseWebhook(each)).map((event) => event.type === 'delivery.late' && event.data.oldestDue), [1, 2])
       // Refused for a day, it is passed over and said.
       status = 400
       await late(3)

@@ -366,7 +366,7 @@ export async function serve(env: Env, log: (line: string) => void = console.log)
 export async function command(env: Env, args: readonly string[], log: (line: string) => void = console.log): Promise<void> {
   const [name, ...rest] = args
   const { graph: options } = configFrom(env)
-  const graph = localGraph({ ...options, workers: false }, { adopt: name === 'rebuild' })
+  const graph = localGraph({ ...options, workers: false, timeoutMs: 24 * 3_600_000 }, { adopt: name === 'rebuild' })
   const show = (value: unknown) => log(JSON.stringify(value, null, 2))
   const usage = (text: string): never => {
     throw new Error(`Usage: account-graph ${text}`)

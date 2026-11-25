@@ -2,7 +2,7 @@ import { createHash, createHmac } from 'node:crypto'
 import type { DecideRequest, ForgetRequest, RecordEntry } from '../contract/api.ts'
 import { FAULT_CODES, fault } from '../contract/fault.ts'
 import { canonical } from '../contract/json.ts'
-import { numberOrSelf } from './calls.ts'
+import { callerNumber, numberOrSelf } from './calls.ts'
 import { normalizeEmail } from './identifiers.ts'
 
 /** What is written of a key that was used. Neither the key nor what came with it is in here: each is a hash only the secret can make. */
@@ -42,7 +42,10 @@ const pair = ({ a, b }: any) => (a < b ? { a, b } : { a: b, b: a })
 export function compared(entry: RecordEntry | ({ type: 'decide' } & DecideRequest) | ({ type: 'forget' } & ForgetRequest), country = '1'): Record<string, unknown> {
   const phone = phoneOf(country)
   const { type, key: _, ...fields } = entry as any
-  if (type === 'call') return { direction: fields.direction, to: phone(fields.to), ...(fields.from && { from: phone(fields.from) }) }
+  if (type === 'call') {
+    const from = fields.direction === 'outbound' ? fields.from && phone(fields.from) : callerNumber(fields.from, country)
+    return { direction: fields.direction, to: phone(fields.to), ...(from && { from }) }
+  }
   if (type === 'text') return { direction: fields.direction, from: phone(fields.from), to: phone(fields.to) }
   if (type === 'cost') return { at: fields.at, rows: sorted(fields.rows.map((row: any) => ({ ...row, currency: row.currency.toUpperCase() }))) }
   if (type === 'decide') return { at: fields.at, by: fields.by, action: fields.action, ...(fields.pairs ? { pairs: sorted(fields.pairs.map(pair)) } : { fact: facts(fields.fact, phone) }) }

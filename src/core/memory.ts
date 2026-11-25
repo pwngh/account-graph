@@ -703,6 +703,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
 
     async pruneCallResults(before) {
       let gone = 0
+      for (const list of said.values()) for (const { topic, about, at } of [...list]) if ((topic === 'result' || topic === 'return') && at < before && !calls.has(about)) unsay(about, topic)
       for (const [id, result] of results) if (!calls.has(id) && result.recorded < before) {
         gone += Number(results.delete(id))
         unsay(id, 'result', 'return')
@@ -766,6 +767,16 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
         const found = receipts.get(`${type}\u0000${mac}`)
         if (found) found.sent = structuredClone(given)
       }
+    },
+
+    async unname(subjects, keys) {
+      const gone = new Set(subjects)
+      for (const event of events) {
+        if (event.type !== 'cluster.changed') continue
+        const { subject, from, to } = event.data
+        Object.assign(event, { data: { subject, from: from !== null && gone.has(from) ? null : from, to: to !== null && gone.has(to) ? null : to } })
+      }
+      ops.unname(keys)
     },
 
     async keysOf(subjects) {

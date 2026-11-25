@@ -18,10 +18,13 @@ export interface Queryable {
 
 /** The part of a `pg` Pool the store calls. */
 export interface Pool extends Queryable {
-  connect(): Promise<Queryable & { release(): void }>
+  connect(): Promise<Queryable & { release(destroy?: boolean): void }>
   on?(event: 'error', heard: (error: unknown) => void): unknown
   on?(event: 'connect', heard: (client: { on?(event: 'error', heard: (error: unknown) => void): unknown }) => void): unknown
 }
+
+/** Whether an error says that the connection is of no more use, and not that the database refused something. */
+const silent = (error: unknown): boolean => error instanceof Error && !('severity' in error) && /^(Query read timeout|Connection terminated|Client has encountered a connection error)/.test(error.message)
 
 const watched = new WeakSet<Pool>()
 /**
@@ -772,7 +775,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     async pruneCallResults(before) {
       const { rows } = await db.query(
         `with gone as (delete from ${t('call_result')} r where recorded_at < $1 and not exists (select 1 from ${t('call')} c where c.id = r.id) returning id),
-           unsaid as (delete from ${t('said')} where topic in ('result', 'return') and about in (select id from gone)) select count(*)::int as n from gone`,
+           unsaid as (delete from ${t('said')} s where topic in ('result', 'return') and (about in (select id from gone) or (at < $1 and not exists (select from ${t('call')} c where c.id = s.about)))) select count(*)::int as n from gone`,
         [before],
       )
       return rows[0].n as number
@@ -842,6 +845,15 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
 
     async setReceiptSent(type, macs, sent) {
       await db.query(`update ${t('receipt')} set sent = $3 where type = $1 and key_mac = any($2::text[])`, [type, macs, JSON.stringify(sent)])
+    },
+
+    async unname(subjects, keys) {
+      await db.query(
+        `update ${t('event')} set data = data || jsonb_build_object('from', case when data->>'from' = any($1::text[]) then null else data->'from' end, 'to', case when data->>'to' = any($1::text[]) then null else data->'to' end)
+         where type = 'cluster.changed' and (data->>'from' = any($1::text[]) or data->>'to' = any($1::text[]))`,
+        [subjects],
+      )
+      if (keys.length > 0) await db.query(`delete from ${t('alert')} where delivered_at is null and exists (select from unnest($1::text[]) as k (key) where position(k.key in text) > 0)`, [keys])
     },
 
     async keysOf(subjects) {
@@ -1006,6 +1018,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
 
   async function run<T>(begin: string, lock: boolean, work: (tx: Tx) => Promise<T>): Promise<T> {
     const client = await pool.connect()
+    let lost = false
     try {
       await client.query(begin)
       if (lock && lockTimeout > 0) await client.query(`set local lock_timeout = ${Math.ceil(lockTimeout)}`)
@@ -1021,10 +1034,12 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       }
       return result
     } catch (error) {
-      await client.query('rollback').catch(() => undefined)
+      // A statement nobody answered leaves a connection that answers nothing. It is given up, and not asked to roll back.
+      lost = silent(error)
+      if (!lost) await client.query('rollback').catch((again) => void (lost = silent(again)))
       throw error
     } finally {
-      client.release()
+      client.release(lost)
     }
   }
 
@@ -1665,6 +1680,13 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
       name: 'joins taken back',
       sql: `drop index if exists ${schema}.decision_pair;
             create index if not exists decision_pair on ${schema}.decision ((about->>0), (about->>1)) where action in ('join', 'unjoin', 'separate', 'rejoin');`,
+    },
+    {
+      id: 28,
+      name: 'events that name a cluster',
+      // So that whoever is forgotten is found in what is said of others.
+      sql: `create index if not exists event_from on ${schema}.event ((data->>'from')) where type = 'cluster.changed';
+            create index if not exists event_to on ${schema}.event ((data->>'to')) where type = 'cluster.changed';`,
     },
   ]
 }

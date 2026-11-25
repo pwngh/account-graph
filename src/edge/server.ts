@@ -459,7 +459,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
       const touch: Touch = { subject, at }
       for (const field of TOUCH_FIELDS) {
         const value = body.touch[field]
-        if (typeof value === 'string' && value && value.length <= 2048) touch[field] = value
+        if (typeof value === 'string' && value && Buffer.byteLength(value) <= 2048) touch[field] = value
       }
       // Parameters of the site's own: a few short ones, so a page cannot fill the table.
       const custom = Object.entries(body.touch.custom && typeof body.touch.custom === 'object' ? body.touch.custom : {})

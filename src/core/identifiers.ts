@@ -5,6 +5,9 @@ import type { Identifier } from '../contract/types.ts'
 /** What no text may hold: a NUL, or half of a character. PostgreSQL refuses the first, and keeps every one of the second as the same replacement character, so two subjects would become one. */
 export const UNSTORABLE = /[\0\p{Surrogate}]/u
 
+/** Text somebody else made, with what cannot be kept left out, and no longer than that: a cut can leave half of a character. */
+export const keepableText = (text: string, most: number): string => text.slice(0, most).replace(/[\0\p{Surrogate}]/gu, '')
+
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex')
 
 /**

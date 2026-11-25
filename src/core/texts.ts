@@ -1,4 +1,4 @@
-import { malformed } from '../contract/fault.ts'
+import { malformed, refused } from '../contract/fault.ts'
 import { randomInt } from 'node:crypto'
 import type { CallOptions } from './calls.ts'
 import { numberOrSelf } from './calls.ts'
@@ -127,7 +127,7 @@ export async function recordText(graph: Graph, text: Text, options: TextOptions 
   if (theirs === undefined || (options.exclude ?? []).some((each) => numberOrSelf(each, options.country) === theirs)) return { subject: `text:${id}`, flags: ['left_out'], counted: false, duplicate: false }
   const subject = `caller:${hashPhone(theirs)}`
   const before = await graph.keptText(id)
-  if (before && before.direction !== (outbound ? 'outbound' : 'inbound')) throw malformed(`Text "${id}" is already recorded as ${before.direction}`)
+  if (before && before.direction !== (outbound ? 'outbound' : 'inbound')) throw refused(`Text "${id}" is already recorded as ${before.direction}`, { reason: 'KEY_REUSED', fields: ['direction'] })
   if (before || outbound) {
     if (!before) await graph.keepText({ id, direction: 'outbound', subject, at, to: ours, flags: [], ...(tags && { tags }) })
     // Settled again, in case the report before was cut off after it was kept.

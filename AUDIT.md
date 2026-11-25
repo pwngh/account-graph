@@ -1423,3 +1423,19 @@ Built on `feat/six-calls`, from `main` at `34d21bd`. Where this section and sect
 - `record` and the crash of a process were tested by failing every statement, not by killing processes.
 - The old functions behind `graph.restate`, `recordNotLead`, `asOf` and the like are still in `core/`. Nothing the package shows calls them. The tests do, through `test/harness.ts`.
 - In memory, an entry copies the store before it writes, to undo it. That is for tests and demos, and slow with much in it.
+
+### 7.4 Reviewed after it was built
+
+Two readers who had not seen the reasoning went over it, one while writing the documentation and one attacking it. Between them they found thirty defects, each reproduced or read in the source. All are fixed, and `test/review.findings.test.ts` and `test/contract.test.ts` hold what can be held. Every one of the 29 tests of the second reader's findings failed on the code before the fixes.
+
+| What was worst | Now |
+| --- | --- |
+| One error text of a platform, cut in the middle of a character, stopped every delivery | What others write is cut and cleaned before it is kept |
+| One silent connection stopped every write of the process, and `close()` never came back | Statements have a limit, and a connection that says nothing is given up |
+| A list whose checks hang was never recorded | Checks have a third of the time there is, all together |
+| A call sent again undid a newer report of it | Reports of every call are kept by when they were said, and then by what they say |
+| `forget` left the person in events of others and in undelivered alerts | Both are cleared in the same write |
+| The edge went on after `close()` | It is behind the same gate |
+| A Twilio webhook was refused for good while the database was away | 503, with `retry-after` |
+
+Not reached by either: the reviewer screen's own routes in depth, the request bodies of the providers, and `board`, `followed` and `report` beyond what the calls need.

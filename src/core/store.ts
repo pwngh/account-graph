@@ -211,6 +211,8 @@ export interface Tx {
   receiptOf(type: string, macs: readonly string[]): Promise<Receipt | undefined>
   addReceipt(receipt: Receipt, subjects: readonly Subject[]): Promise<void>
   setReceiptSent(type: string, macs: readonly string[], sent: unknown): Promise<void>
+  /** Takes subjects out of what is said of others, and drops undelivered alerts that name any of these keys. */
+  unname(subjects: readonly Subject[], keys: readonly string[]): Promise<void>
   /** The keys of what is recorded of subjects: conversions, calls, texts, payments, transfers and links. */
   keysOf(subjects: readonly Subject[]): Promise<{ type: string; key: string }[]>
   /**

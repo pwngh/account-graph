@@ -8,6 +8,10 @@ const bad = (path: string, what: string) => malformed(`${path} ${what}`, { path 
 const string = (least = 1, most = 512, what?: RegExp): Check => (value, path) => {
   if (typeof value !== 'string' || value.length < least || value.length > most || (what && !what.test(value))) throw bad(path, what ? 'is malformed' : `must be a string of ${least} to ${most} characters`)
 }
+/** An index takes so many bytes and no more, whatever the characters. */
+const bytes = (most: number): Check => (value, path) => {
+  if (new TextEncoder().encode(value as string).length > most) throw bad(path, `must be at most ${most} bytes`)
+}
 const number = (least: number, most: number, what = `a number from ${least} to ${most}`): Check => (value, path) => {
   if (typeof value !== 'number' || !(value >= least && value <= most)) throw bad(path, `must be ${what}`)
 }
@@ -69,9 +73,19 @@ const conversionKey: Check = (value, path) => {
 }
 const subject: Check = (value, path) => {
   string(1, 512)(value, path)
+  bytes(512)(value, path)
   if (value !== (value as string).trim()) throw bad(path, 'must have no space around it')
 }
 const text = string(1, 2048)
+/** Some of what is looked up whole. */
+const click: Check = (value, path) => {
+  text(value, path)
+  bytes(2048)(value, path)
+}
+const own: Check = (value, path) => {
+  string(3, 1024, /^[^:]+:\s*\S/s)(value, path)
+  bytes(1024)(value, path)
+}
 const short = string(1, 200)
 const name = string(1, 64, /^[\w.-]+$/)
 const currency = string(3, 3, /^[A-Za-z]{3}$/)
@@ -95,7 +109,7 @@ const facts: Check = both(
     'email?': string(3, 512), 'phone?': phone, 'device?': device, 'ip?': string(2, 64),
     'address?': shape({ street: text, 'street2?': text, 'secondary?': short, 'city?': short, 'state?': short, 'zipcode?': short }),
     'name?': shape({ first: short, last: short }), 'dob?': day,
-    'identifiers?': list(string(3, 1024, /^[^:]+:.+$/s), 1, 100),
+    'identifiers?': list(own, 1, 100),
   }),
   (value, path) => {
     if (Object.keys(value as object).length === 0) throw bad(path, 'requires at least one fact')
@@ -111,7 +125,7 @@ const ENTRIES: Record<string, Check> = {
   profile: entry({ subject, facts, 'event?': short }),
   arrival: entry({
     subject, 'source?': text, 'medium?': text, 'campaign?': text, 'campaignId?': text, 'adGroupId?': text, 'adId?': text, 'term?': text, 'content?': text, 'landing?': text, 'referrer?': text,
-    'clicks?': shape({ 'gclid?': text, 'gbraid?': text, 'wbraid?': text, 'fbclid?': text, 'fbp?': text, 'msclkid?': text, 'ttclid?': text }), 'custom?': map(string(1, 256), 10),
+    'clicks?': shape({ 'gclid?': click, 'gbraid?': click, 'wbraid?': click, 'fbclid?': click, 'fbp?': click, 'msclkid?': click, 'ttclid?': click }), 'custom?': map(string(1, 256), 10),
   }),
   cost: entry({ rows: list(shape({ day, source: short, amount: money, currency, 'campaignId?': short, 'campaign?': text, 'clicks?': integer(0, 1e12), 'impressions?': integer(0, 1e12), 'conversions?': number(0, 1e12), 'conversionValue?': number(-1e15, 1e15) }), 1, 5000) }),
   conversion: entry({ subject, stage: short, 'value?': money, 'currency?': currency, 'actions?': map(short, 20), 'channel?': oneOf('WEB', 'APP', 'IN_STORE', 'PHONE', 'MESSAGE', 'OTHER'), 'email?': string(3, 512), 'phone?': phone, 'consent?': consent, 'tags?': tags }, conversionKey),
@@ -147,7 +161,7 @@ const REQUEST = {
     const fact: Check = (value, path) => {
       object(value, path)
       if (Object.keys(value).length !== 1) throw bad(path, 'requires one fact')
-      shape({ 'email?': string(3, 512), 'phone?': phone, 'ip?': string(2, 64), 'identifier?': string(3, 1024, /^[^:]+:.+$/s) })(value, path)
+      shape({ 'email?': string(3, 512), 'phone?': phone, 'ip?': string(2, 64), 'identifier?': own })(value, path)
     }
     const muting = shape({ ...deciding, fact })
     return { merge: pairs, unmerge: pairs, split: pairs, unsplit: pairs, mute: muting, unmute: muting }

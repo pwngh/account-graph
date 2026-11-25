@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { NewEvent } from './events.ts'
 import { followUp } from './calls.ts'
+import { keepableText } from './identifiers.ts'
 import type { Graph } from './graph.ts'
 import type { OutboxStore } from './outbox.ts'
 import { longAgo } from './hours.ts'
@@ -127,7 +128,7 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
   const now = options.now ?? Date.now
   const timeZone = options.timeZone ?? 'UTC'
   const when = (at: number) => new Intl.DateTimeFormat('en-US', { timeZone, dateStyle: 'medium', timeStyle: 'short' }).format(at)
-  const problem = (error: unknown) => String((error as Error)?.message ?? error).slice(0, 500)
+  const problem = (error: unknown) => keepableText(String((error as Error)?.message ?? error), 500)
   /** Posts a message. Resolves to why it could not be, or undefined when it was. */
   async function deliver(text: string): Promise<string | undefined> {
     if (!options.url) return 'No webhook is set. Set ALERT_WEBHOOK.'
@@ -174,9 +175,9 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
     },
 
     async alert(about, text, event) {
-      if (event) await options.emit?.(event).catch(onError)
       const at = now()
       if (at - (sent.get(about) ?? -Infinity) < 10 * 60_000) return false
+      if (event) await options.emit?.(event).catch(onError)
       if (sent.size >= 1000) sent.clear()
       sent.set(about, at)
       const error = await deliver(text)
@@ -192,7 +193,8 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
     },
 
     async once(key, text, subject, event) {
-      if (event) await options.emit?.({ ...event, once: key, ...(subject && { subject }) } as NewEvent).catch(onError)
+      // Whoever was deleted since is spoken of no more.
+      if (event && options.emit && (await options.emit({ ...event, once: key, ...(subject && { subject }) } as NewEvent).catch(onError)) === 'gone') return
       if (await store.addAlert({ key, text, at: now(), ...(subject && { subject }) })) await post({ key, text })
     },
 
@@ -287,7 +289,7 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
 }
 
 /** Where a memory store keeps what runs by itself. `fed` is how its writes say what they fed, and `forget` how it loses a subject. */
-export function createMemoryOps(): OpsStore & { fed(feed: Feed, at: number): void; forget(subject: string): void; kept: Record<'feeds' | 'jobs' | 'runs' | 'alerts', Map<string, unknown>> } {
+export function createMemoryOps(): OpsStore & { fed(feed: Feed, at: number): void; forget(subject: string): void; unname(keys: readonly string[]): void; kept: Record<'feeds' | 'jobs' | 'runs' | 'alerts', Map<string, unknown>> } {
   const feeds = new Map<Feed, FeedNote>()
   const jobs = new Map<string, Omit<JobRun, 'open'> & { run?: string }>()
   const runs = new Map<string, { name: string; at: number }>()
@@ -297,6 +299,9 @@ export function createMemoryOps(): OpsStore & { fed(feed: Feed, at: number): voi
   return {
     kept: { feeds, jobs, runs, alerts },
     fed: (feed, at) => void feeds.set(feed, { ...feeds.get(feed), last: Math.max(at, feeds.get(feed)?.last ?? 0) }),
+    unname(keys) {
+      for (const [key, alert] of alerts) if (alert.delivered === undefined && keys.some((each) => alert.text.includes(each))) alerts.delete(key)
+    },
     forget(subject) {
       for (const [key, alert] of alerts) if (alert.subject === subject) alerts.delete(key)
     },

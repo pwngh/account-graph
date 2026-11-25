@@ -14,6 +14,7 @@ import { cursorOf, seqOf } from './events.ts'
 import { Outdated } from './graph.ts'
 import type { Hours } from './hours.ts'
 import { email, hashPhone, identifier, ip, normalizeEmail, normalizePhone } from './identifiers.ts'
+import { newest } from './said.ts'
 import { sentOf } from './outbox.ts'
 import type { Job } from './outbox.ts'
 import type { PostalAddress, VerifiedAddress } from './ports.ts'
@@ -104,6 +105,7 @@ export function createSix(engine: Engine, options: SixOptions) {
       case 'cost':
         for (const [i, row] of entry.rows.entries()) {
           within(`rows[${i}].day`, () => dayStart(row.day))
+          if (!row.source.trim()) throw malformed(`${path}.rows[${i}].source is empty`, { path: `${path}.rows[${i}].source` })
           if (row.conversionValue !== undefined && row.conversions === undefined) throw malformed(`${path}.rows[${i}].conversionValue requires conversions`, { path: `${path}.rows[${i}].conversionValue` })
         }
         break
@@ -142,10 +144,10 @@ export function createSix(engine: Engine, options: SixOptions) {
   const linkOf = (entry: Extract<RecordEntry, { type: 'link' }>) => knownLink(entry.url, entry.subject, { secret: options.linkSecret!, id: entry.key, now: () => entry.at, lasts: Math.floor(entry.expires / 1000) * 1000 - entry.at })
 
   /** The line of a number and the address, asked before anything is locked. */
-  async function check(entry: RecordEntry): Promise<Checked> {
+  async function check(entry: RecordEntry, left: number): Promise<Checked> {
     const bounded = async <T>(work: Promise<T>): Promise<{ value?: T; failed: boolean }> => {
       let timer: NodeJS.Timeout | undefined
-      const late = new Promise<{ failed: boolean }>((resolve) => void (timer = setTimeout(() => resolve({ failed: true }), CHECK)))
+      const late = new Promise<{ failed: boolean }>((resolve) => void (timer = setTimeout(() => resolve({ failed: true }), Math.min(CHECK, left))))
       const done = work.then((value) => ({ value, failed: false }), (error) => {
         console.error(`check: ${String((error as Error)?.message ?? error)}`)
         return { failed: true }
@@ -168,13 +170,16 @@ export function createSix(engine: Engine, options: SixOptions) {
     return { line: 'value' in line ? line.value : undefined, lineFailed: line.failed, address: 'value' in address ? address.value : undefined, addressFailed: address.failed }
   }
 
-  async function checks(entries: readonly RecordEntry[]): Promise<Checked[]> {
+  /** Checks take a third of the time there is, all together. What was not checked by then is recorded unchecked. */
+  async function checks(entries: readonly RecordEntry[], budget: number): Promise<Checked[]> {
     const out: Checked[] = []
+    const began = performance.now()
     let next = 0
     await Promise.all(Array.from({ length: Math.min(TOGETHER, entries.length) }, async () => {
       while (next < entries.length) {
         const i = next++
-        out[i] = await check(entries[i]!)
+        const left = budget - (performance.now() - began)
+        out[i] = left > 0 ? await check(entries[i]!, left) : { line: undefined, lineFailed: true, address: undefined, addressFailed: true }
       }
     }))
     return out
@@ -262,8 +267,10 @@ export function createSix(engine: Engine, options: SixOptions) {
       case 'call': {
         const { type: _, key, result, ...rest } = entry
         const call: Call = { id: key, ...rest, ...result }
-        const recorded = await recordCall(graph, call, { ...service.calling(), said: { key: `call ${entry.at}`, at: entry.at } })
-        return { value: { subject: recorded.subject, state: recorded.state, counted: recorded.counted, flags: recorded.flags, ...(recorded.visitor && { visitor: recorded.visitor }) }, subjects: [recorded.subject], existed: recorded.duplicate }
+        const recorded = await recordCall(graph, call, { ...service.calling(), said: { key: `call ${entry.at} ${canonical(result ?? null)}`, at: entry.at } })
+        // Of two reports at one time, the same one stands whichever came first.
+        const stands = !result || newest(await inside.tx.saidOf('result', key))?.key === `call ${entry.at} ${canonical(result)}`
+        return { value: { subject: recorded.subject, state: recorded.state, counted: recorded.counted, flags: recorded.flags, ...(recorded.visitor && { visitor: recorded.visitor }) }, subjects: [recorded.subject], existed: recorded.duplicate, stands }
       }
       case 'call_update': {
         const { change } = entry
@@ -274,9 +281,9 @@ export function createSix(engine: Engine, options: SixOptions) {
             stands = (await graph.sayResult({ call: entry.call, key: entry.key, at: entry.at, result: { answered: result.answered, ...(result.voicemail !== undefined && { voicemail: result.voicemail }), ...(result.waited !== undefined && { waited: result.waited }) } })).stands
             await settleCall(graph, entry.call, service.calling())
           } else {
-            const call = await graph.keptCall(entry.call)
-            if (call?.direction === 'outbound') throw malformed(`Call "${entry.call}" is outbound and cannot be returned`)
-            stands = (await graph.sayReturn({ call: entry.call, key: entry.key, at: entry.at, ...(change.kind === 'returned' && { reachedAt: change.reachedAt }) })).stands
+            // Said of a call you placed it is kept, and means nothing, as it would had it come first.
+            const outbound = (await graph.keptCall(entry.call))?.direction === 'outbound'
+            stands = (await graph.sayReturn({ call: entry.call, key: entry.key, at: entry.at, ...(change.kind === 'returned' && { reachedAt: change.reachedAt }) })).stands && !outbound
           }
         }
         const kept = await graph.keptCall(entry.call)
@@ -340,7 +347,7 @@ export function createSix(engine: Engine, options: SixOptions) {
 
   async function record({ entries }: RecordRequest, asked: Asked = {}): Promise<RecordResponse> {
     entries.forEach((entry, i) => preflight(entry, `request.entries[${i}]`))
-    const checked = await checks(entries)
+    const checked = await checks(entries, asked.until === undefined ? TOGETHER * CHECK : (asked.until - now()) / 3)
     const results: RecordResult[] = []
     for (const [i, entry] of entries.entries()) {
       asked.signal?.throwIfAborted()

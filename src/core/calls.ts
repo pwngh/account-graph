@@ -1,5 +1,5 @@
 import type { CallState } from '../contract/types.ts'
-import { malformed } from '../contract/fault.ts'
+import { malformed, refused } from '../contract/fault.ts'
 import type { Graph } from './graph.ts'
 import { hashPhone, normalizePhone, phoneOfType } from './identifiers.ts'
 import { texasArea } from './lookups.ts'
@@ -180,7 +180,7 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
     return { subject: before.subject, flags: [], counted: settled?.counted ?? false, state: kept ? callState(kept, (options.now ?? Date.now)(), options) : 'unknown', duplicate: true }
   }
   const saved = await graph.keptCall(id)
-  if (saved?.direction === 'outbound') throw malformed(`Call "${id}" is already recorded as outbound`)
+  if (saved?.direction === 'outbound') throw refused(`Call "${id}" is already recorded as outbound`, { reason: 'KEY_REUSED', fields: ['direction'] })
   if (!saved && from !== undefined && leftOut(from, options)) return { subject, flags: ['left_out'], counted: false, state: 'unknown', duplicate: false }
   if (result) await keepResult(graph, id, result, options)
 
@@ -302,9 +302,9 @@ async function placed(graph: Graph, call: Call, theirs: string, result: Omit<Cal
   const ours = normalizePhone(call.from, options.country)
   const subject = `caller:${hashPhone(theirs)}`
   const before = await graph.keptCall(call.id)
-  if (before && before.direction !== 'outbound') throw malformed(`Call "${call.id}" is already recorded as inbound`)
+  if (before && before.direction !== 'outbound') throw refused(`Call "${call.id}" is already recorded as inbound`, { reason: 'KEY_REUSED', fields: ['direction'] })
   if (!before && leftOut(theirs, options)) return { subject, flags: ['left_out'], counted: false, state: 'unknown', duplicate: false }
-  if (result) await graph.keepCallResult(call.id, result)
+  if (result) await keepResult(graph, call.id, result, options)
   if (!before) {
     await graph.keepCall({ id: call.id, direction: 'outbound', subject, at: call.at, to: ours, flags: [], ...(call.duration !== undefined && { duration: call.duration }), ...(tags && { tags }) })
   }
@@ -485,6 +485,13 @@ export const settleCall = (graph: Graph, id: string, options: CallOptions = {}):
 
 /** Whether a number is one of those left out. */
 const leftOut = (number: string, options: CallOptions) => (options.exclude ?? []).some((each) => numberOrSelf(each, options.country) === number)
+
+/** The number a call came from, or undefined where it was hidden, however a provider says so. */
+export function callerNumber(from: string | undefined, country?: string): string | undefined {
+  if (from === undefined) return undefined
+  const number = numberOrSelf(from, country)
+  return /^\+\d+$/.test(number) && !HIDDEN.has(number) ? number : undefined
+}
 
 /** A phone number in the form calls arrive in, or as written when it is not a phone number. */
 export function numberOrSelf(number: string, country?: string): string {

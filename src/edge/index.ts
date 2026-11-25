@@ -7,6 +7,7 @@ import type { AccountGraph, ForgetValue, RecordEntry, RecordResponse } from '../
 import { createBatcher } from '../core/batch.ts'
 import { Outdated } from '../core/graph.ts'
 import type { Graph } from '../core/graph.ts'
+import { keepableText } from '../core/identifiers.ts'
 import { createRangeLookup } from '../core/lookups.ts'
 import type { IpLookup } from '../core/ports.ts'
 import { createFingerprintVerifier } from '../providers/fingerprint.ts'
@@ -68,7 +69,7 @@ export function createEdge(graph: AccountGraph, options: EdgeOptions): Edge {
   if (!open) throw fault(FAULT_CODES.CONFIG.UNSUPPORTED, 'The edge requires a local instance')
   const wrong = problems(options)
   if (wrong.length > 0) throw fault(FAULT_CODES.CONFIG.INVALID, wrong.join('\n'), { detail: { problems: wrong } })
-  let made: { handler: ReturnType<typeof createHandler>; drain(): Promise<void> } | undefined
+  let made: Promise<{ handler: ReturnType<typeof createHandler>; drain(): Promise<void> }> | undefined
 
   function make(internals: Internals) {
     const { engine, ops, hours, options: local } = internals
@@ -88,8 +89,8 @@ export function createEdge(graph: AccountGraph, options: EdgeOptions): Edge {
       outbox: engine.outbox,
       ops,
       called: ({ id, at, from, to, duration, direction = 'inbound', answered, voicemail, waited, tags }) =>
-        reported({ type: 'call', key: id, at, direction, to, ...(from && { from }), ...(duration !== undefined && { duration }), ...(answered !== undefined && { result: { answered, ...(voicemail !== undefined && { voicemail }), ...(waited !== undefined && { waited }) } }), ...(tags && { tags }) }),
-      texted: ({ id, at, from, to, direction = 'inbound', text, code, tags }) => reported({ type: 'text', key: id, at, direction, from, to, ...(text !== undefined && { text: text.slice(0, 20_000) }), ...(code && { code }), ...(tags && { tags }) }),
+        reported({ type: 'call', key: id, at, direction, to, ...(from && from.length <= 64 && { from }), ...(duration !== undefined && { duration }), ...(answered !== undefined && { result: { answered, ...(voicemail !== undefined && { voicemail }), ...(waited !== undefined && { waited }) } }), ...(tags && { tags }) }),
+      texted: ({ id, at, from, to, direction = 'inbound', text, code, tags }) => reported({ type: 'text', key: id, at, direction, from, to, ...(text !== undefined && { text: keepableText(text, 20_000) }), ...(code && { code }), ...(tags && { tags }) }),
       async forget(subjects, { by, reason, seen }, retract) {
         const answer = (await internals.call('forget', { key: `review ${randomUUID()}`, at: now(), by: by ?? 'service', ...(reason && { reason }), ...(seen !== undefined && { seen }), subjects, platforms: retract ? 'retract' : 'report' })) as { ok: true; value: ForgetValue } | { ok: false; reason: string; decision?: number }
         if (!answer.ok) {
@@ -143,14 +144,16 @@ export function createEdge(graph: AccountGraph, options: EdgeOptions): Edge {
   }
 
   const edge = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+    let ready: Awaited<NonNullable<typeof made>>
     try {
-      made ??= make(await open())
+      ready = await (made ??= open().then(make))
     } catch (error) {
+      made = undefined
       // The database is away, or this process may not write to it. Asked again, it is tried again.
       console.error(isFault(error) ? `${error.code}: ${error.message}` : error)
       return void response.writeHead(503, { 'content-type': 'application/json', 'cache-control': 'no-store', 'retry-after': '5' }).end(JSON.stringify(isFault(error) ? { fault: { code: error.code, message: error.message, retryable: error.retryable, detail: error.detail } } : { fault: { code: FAULT_CODES.GRAPH.UNAVAILABLE, message: 'The database is not available', retryable: true, detail: {} } }))
     }
-    await made.handler(request, response)
+    await ready.handler(request, response)
   }
-  return Object.assign(edge, { drain: async () => made?.drain() })
+  return Object.assign(edge, { drain: async () => (await made?.catch(() => undefined))?.drain() })
 }
