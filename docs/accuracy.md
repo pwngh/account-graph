@@ -307,7 +307,7 @@ Somebody who speaks for another is told of by a field on `/identify`, and the ar
 | `new` | The named code, the default policy with `apart: ["birth", "given"]`, and the field for who speaks |
 | `today pool`, `new pool` | The same, with a pool of numbers |
 
-The code of the development seeds is `199cddf` on `feat/round3`. The code of the held seeds is named here before they are opened. The held names and the table:
+The code of the development seeds is `199cddf` on `feat/round3` for the first look, and each look's is in its row. The code of the held seeds is `ed6ae73`, and it is the one of round 7. The held names and the table:
 
 | File | SHA-256 |
 | --- | --- |
@@ -341,6 +341,14 @@ After round 6 the code and the tool changed, and their figures are not comparabl
 - The cost, each change by itself over `fd06a75` on 20270341-60, in totals and not pair by pair (base3 kept of 1,404 and people mixed; high3 of 2,302): before 1,374 and 71, and 2,193 and 164; the speaker's details 1,363 and 71, and 2,155 and 164; `named` confirming 1,359 and 69, and 2,155 and 162; the exception out 1,369 and 65, and 2,177 and 156; all three 1,358 and 65 (96.72%), and 2,140 and 154 (92.96%). dirty3 went from 97.82% to 96.65%. Those rows are bad under their marks, and no rule was added to win them back.
 
 **The intake arm.** `new intake` is `new` with what staff may do at intake: ask who is calling, ask whether it is for somebody else, and make one of a person's records. Its rates are assumed, set before it was run, and in `tools/accuracy/rates.ts`. A caller who says they speak for another is put down to a record of their own; one who does not, to the record under the name they give. It is printed beside the rest, on its own seeds of chance and its own counts. It is judged by no mark and saves none. Staff find records by the name given and what is written on them, so a misspelled record is missed; merges are rare here because a duplicate is most often made after the call.
+
+One full run of the development seeds 20270361-80 was made at `ed6ae73`, round 7. A run on the same seeds at `b77c391` was begun and stopped before it printed a figure, and is not counted. `ed6ae73` is the commit of the held seeds, and nothing was chosen on round 7.
+
+| Round | Seeds | Code | What it showed |
+| --- | --- | --- | --- |
+| 7 | 20270361-80 | `ed6ae73` | base3: mixed 0.77%, joined pairs right 97.96% (bad under 98), `email + phone` links wrong 8 of 132 (6.06%, bad), record pairs kept 96.27% (bad), ties kept 95.94%, pool taps wrong 3.36%. high3: mixed 1.45%, record pairs kept 92.66% (bad). dirty3: mixed 1.28%, kept 96.06% (bad). busy3: pool taps wrong 3.64%, ties kept 95.67%. Old settings: base mixed 2.12%, right 95.27% and `email + phone` 22.97% wrong, all bad; high mixed 3.49%, bad |
+
+With intake, printed and not judged, base3 mixes more: 1.66% against 0.77%, and joined pairs right go from 97.96% to 96.32%. Staff are told the truth in seven of ten answers, and a wrong answer is believed.
 
 The fillers of dirty3 were then half ones no table has. `gaps3` and `busygaps3` are printed with no mark, though they were added after a look; `new pool` in base3 prints what it mixes and has no mark for it, as before.
 
