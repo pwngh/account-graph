@@ -148,7 +148,7 @@ Open `/review` and enter a token. Each view has its own address, so you can link
 | `/review#/channels/2026-11-01/2026-11-30` | Channels | The same for the given days. A breakdown, a step and a number of days may follow. |
 | `/review#/health` | Health | Undelivered alerts, feeds, jobs, conversions, the newest audit hash, and the running policy by kind. A banner appears when a rebuild is due. |
 
-A ring with three lines opens a detail card. It holds what is behind the number or row it stands beside: the counts, when and how something is known, the arithmetic, how to read it, and links. A card is made when it is opened, from what the page holds and the routes a reviewer already has, and is made again when the page is read again. What is not known is left out. Escape, Close or a press outside it closes it.
+A ring with three lines opens a detail card. It holds what is behind the number or row it stands beside: the counts, when and how something is known, the arithmetic, how to read it, and links. A card is made when it is opened, from what the page holds and the routes a reviewer already has, and is made again when the page is read again. What it fetched is kept for up to a minute, and dropped when the screen sees new writes or makes one. While the screen is paused, as below, a card can be as old as the view under it. What is not known is left out. Escape, Close or a press outside it closes it.
 
 | View | Cards |
 | --- | --- |
