@@ -180,6 +180,19 @@ test('names fold to one key, and placeholders to none', () => {
   assert.throws(() => nameKeys(secret, 'Ana', 5 as never, {}), TypeError)
 })
 
+test('missing name labels catch no given name or short form in either field', async () => {
+  const { readFileSync } = await import('node:fs')
+  const { nameParts } = await import('../src/core/identifiers.ts')
+  const source = readFileSync(new URL('../src/core/names.ts', import.meta.url), 'utf8')
+  const forms = /const FORMS = `([\s\S]+?)`/.exec(source)![1]!.trim().split(/[\n:,]+/).filter(Boolean)
+  assert.ok(new Set(forms).size > 1500)
+  for (const name of new Set(forms)) for (const [first, last] of [[name, 'Lima'], ['Ana', name]] as const) assert.ok(nameParts(first, last), first + ' ' + last)
+  for (const missing of ['Desconocido', 'Desconocida', 'Sin Nombre', 'No Proporcionado', 'No proporcionada', 'Inconnu', 'Inconnue', 'Inconnu(e)']) {
+    assert.equal(nameParts(missing, 'Lima'), undefined, missing)
+    assert.equal(nameParts('Ana', missing), undefined, missing)
+  }
+})
+
 test('records that have to be confirmed need the facts that confirm them, and are part of a policy', () => {
   assert.deepEqual(policyProblems({ apart: ['birth'], records: 'confirmed' }), [])
   assert.deepEqual(policyProblems({ records: 'confirmed' }), ['"records" requires "apart", such as ["birth", "given"], because it goes by those facts'])

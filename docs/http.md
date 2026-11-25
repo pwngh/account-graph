@@ -454,6 +454,6 @@ Browsers post to `/collect` without a token. The [script tag](operations.md#scri
 | `GET /fingerprint.js` | Fingerprint helpers, loaded by the script on request |
 | `GET /review` | The [reviewer screen](operations.md#reviewer-screen). Its data requires a token. |
 | `/review/api/*` | The routes the screen calls, with a service or reviewer token. They serve the screen and are not part of the six calls. |
-| `GET /health` | `{"ok":true}` once the database answers |
+| `GET /health` | `{"ok":true}` once the database answers. While stored groups are due a rebuild, `warning` gives the command. |
 
 A Twilio request with a missing or wrong signature gets 403. A call or text that is already known, or whose person was deleted, gets the usual answer, so Twilio does not send it again.

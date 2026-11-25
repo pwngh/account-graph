@@ -25,7 +25,7 @@ import type { Ops } from '../core/ops.ts'
 import type { Job, JobState, Outbox } from '../core/outbox.ts'
 import { dayIn, dayStart, sourceOf } from '../core/report.ts'
 import type { Ladder } from '../core/ladder.ts'
-import { defaultPolicy, plainPolicy } from '../core/policy.ts'
+import { defaultPolicy, plainPolicy, REBUILD_NOTICE } from '../core/policy.ts'
 import { reviewPage } from './review.ts'
 import { browserMark, readToken, signToken } from '../core/sign.ts'
 import { browserScripts, scriptHeaders } from './tag.ts'
@@ -702,9 +702,8 @@ export function createHandler(core: Core, options: HandlerOptions) {
     }
 
     if (path === 'GET /health') {
-      // Reads one row, so it answers only when the database does.
-      await graph.separations('health')
-      return { ok: true }
+      const { due } = await graph.policy()
+      return { ok: true, ...(due && { warning: REBUILD_NOTICE }) }
     }
 
     if (path === 'GET /collect.js' || path === 'GET /fingerprint.js') {
@@ -817,7 +816,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
       case 'GET /policy': {
         const { builtWith, ...state } = await graph.policy()
         const standard = plainPolicy(defaultPolicy)
-        return { ...state, builtWith: builtWith ?? null, changed: Object.keys(state.rules.kinds).filter((kind) => JSON.stringify(state.rules.kinds[kind]) !== JSON.stringify(standard.kinds[kind])) }
+        return { ...state, ...(state.due && { warning: REBUILD_NOTICE }), builtWith: builtWith ?? null, changed: Object.keys(state.rules.kinds).filter((kind) => JSON.stringify(state.rules.kinds[kind]) !== JSON.stringify(standard.kinds[kind])) }
       }
       case 'GET /decisions': {
         const limit = Math.min(500, Math.max(1, Math.floor(Number(url.searchParams.get('limit')) || 50)))

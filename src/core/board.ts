@@ -68,12 +68,24 @@ export function board(
   for (const person of people) {
     const outcomes = person.outcomes.filter((outcome) => outcome.at <= at)
     const calls = person.calls.filter((call) => call.at <= at).sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1))
-    const call = calls.at(-1)
+    // Whichever of their numbers a person is reached on, they are reached. A hidden number stays nobody's.
+    const owners = new Set(calls.filter(each => each.party).map(each => each.subject))
+    const own = calls.map(each => each.subject === `call:${each.id}` || owners.has(each.subject) ? each : { ...each, subject: 'person' })
+    const misses = own.flatMap((each, i) => (each.direction === 'inbound' && each.result?.answered === false ? [{ miss: calls[i]!, after: followUp(each, own) }] : []))
+    const open = misses.filter(({ after }) => after.state === 'open').map(({ miss }) => miss)
+    if (misses.some(({ miss, after }) => after.delay !== undefined && miss.at + after.delay >= today)) missed.done! += 1
+
     // The steps in the order they were reached. Going back to an earlier one leaves nothing.
     const reached = outcomes.filter((outcome) => rank.has(outcome.stage)).sort((x, y) => x.at - y.at || rank.get(x.stage)! - rank.get(y.stage)! || (x.transactionId < y.transactionId ? -1 : 1))
+    // A duplicate's step can count towards the same person. Its row cannot inherit another record's call, value or start time.
+    const highest = reached.reduce<Counted | undefined>((best, next) => !best || rank.get(next.stage)! >= rank.get(best.stage)! ? next : best, undefined)
+    const subject = open[0]?.subject ?? highest?.subject
+    const foreign = new Set(calls.filter(each => each.party && each.subject !== subject).map(each => `call:${each.id}`))
+    const visible = foreign.size ? reached.filter(each => !foreign.has(each.transactionId)) : reached
+    const call = calls.findLast(each => !each.party || each.subject === subject)
     let furthest = -1
     let since = 0
-    for (const outcome of reached) {
+    for (const outcome of visible) {
       const to = rank.get(outcome.stage)!
       if (to <= furthest) continue
       if (furthest >= 0 && outcome.at >= today) columns[furthest]!.done! += 1
@@ -81,13 +93,7 @@ export function board(
       since = outcome.at
     }
     const step = furthest < 0 ? null : steps[furthest]!.name
-    const outcome = reached.filter((each) => each.stage === step).at(-1)
-
-    // Whichever of their numbers a person is reached on, they are reached. A hidden number stays nobody's.
-    const own = calls.map((each) => (each.subject === `call:${each.id}` ? each : { ...each, subject: 'person' }))
-    const misses = own.flatMap((each, i) => (each.direction === 'inbound' && each.result?.answered === false ? [{ miss: calls[i]!, after: followUp(each, own) }] : []))
-    const open = misses.filter(({ after }) => after.state === 'open').map(({ miss }) => miss)
-    if (misses.some(({ miss, after }) => after.delay !== undefined && miss.at + after.delay >= today)) missed.done! += 1
+    const outcome = visible.filter((each) => each.stage === step).at(-1)
 
     const here = open.length > 0 ? missed : furthest >= 0 ? columns[furthest]! : undefined
     if (!here) {

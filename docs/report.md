@@ -17,6 +17,8 @@ google   Search: brand         164.50     70         5        5         3     62
 
 The **Channels** view at `/review` shows the same table. Run `npm run review` to see it with sample data.
 
+A call with a stated owner counts once with that record’s staff-merged duplicates while the join stands. Only a chain of joins between records qualifies. A shared phone or browser does not. Two different stated owners keep separate rows. Each row shows call details and call-derived values or times only for its own record.
+
 ## Data sources
 
 ```text

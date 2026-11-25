@@ -156,7 +156,7 @@ For a longer policy, set `POLICY_FILE` to the path of a JSON file. [Matching](ma
 
 Without `POLICY` and `POLICY_FILE`, the server takes the policy the database keeps. Removing the variable does not bring the default back. Set `POLICY='{}'` and rebuild for that.
 
-A database from before the policy was kept takes the one that is set, where its clusters were built with it, and the default where none is set. The start log, `account-graph verify` and the Health view say when a rebuild is due.
+A database from before the policy was kept takes the one that is set, where its clusters were built with it, and the default where none is set. Startup, `GET /health` and the reviewer Health view say “Groups are due a rebuild. Run account-graph rebuild.” The service keeps answering. A successful rebuild clears the warning.
 
 Startup fails with one line per problem when a setting is invalid. It also fails when the policy omits the kind of a stored identifier.
 

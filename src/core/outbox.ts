@@ -219,6 +219,9 @@ export interface Outbox {
 const DAY = 86_400_000
 
 const reached = (job: Job) => Boolean(job.delivered || job.state === 'sent' || job.requestId)
+// The target already knows the transaction id. An adjustment gives it no newly named subject.
+const forTarget = (job: Job): Job => job.note === 'call_party' ? { ...job, subject: job.transactionId } : job
+const privateNote = (job: Job, note: string) => job.note === 'call_party' ? job.note : note
 
 /** Which of these jobs had reached their platform, or may have, in order. None is told of here. */
 export function sentOf(jobs: readonly Job[]): Sent[] {
@@ -254,7 +257,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
 
   /** Marks a job failed for good and remembers it for `onFailed`. */
   async function fail(job: Job, note: string, pass: Pass, failed: Job[]): Promise<void> {
-    const dead: Job = { ...job, state: 'failed', note }
+    const dead: Job = { ...job, state: 'failed', note: privateNote(job, note) }
     if (!(await store.swap(job, dead))) return
     failed.push({ ...dead, rev: job.rev! + 1 })
     pass.failed += 1
@@ -266,19 +269,32 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
       const current = (await store.get(job.transactionId)).find((each) => each.target === job.target)
       // Forgotten meanwhile, or nothing to change.
       if (!current) return job
-      // A send may finish after a correction. Only a platform that can retract it needs its original match details.
       let next: Job | undefined
-      if (current.note === 'call_party') {
-        if (!sent || current.delivered) return current
-        const match = targets.get(sent.target)?.forget ? { keys: sent.keys, ...(sent.click && { click: sent.click }) } : {}
-        next = { ...current, ...match, delivered: true, state: 'sent' }
+      if (current.note === 'call_party' && !reached(current)) {
+        if (!sent) return current
+        // An acknowledgment can arrive after a refund, a withdrawal or a correction of its owner.
+        const target = targets.get(sent.target)
+        const match = target?.restates || target?.forget ? { keys: sent.keys, ...(sent.click && { click: sent.click }), ...(sent.consent && { consent: sent.consent }) } : {}
+        const { value, currency, ...original } = current
+        next = { ...original, ...match, ...(sent.value !== undefined && { value: sent.value }), ...(sent.currency && { currency: sent.currency }), delivered: true, state: 'sent' }
       } else next = await make(current)
       if (!next) return current
-      if (await store.swap(current, next)) return { ...next, rev: (current.rev ?? 0) + 1 }
+      // Keep the original match private through retries and further changes of value.
+      if (current.note === 'call_party') next = { ...next, note: 'call_party' }
+      if (!await store.swap(current, next)) continue
+      const stored = { ...next, rev: (current.rev ?? 0) + 1 }
+      if (sent && current.note === 'call_party' && !reached(current) && targets.get(sent.target)?.restates) {
+        // The acknowledgment is visible first, so a later refund updates this same revision and wins a race with reconciliation.
+        return change(stored, async held => {
+          const outcome = await graph.outcomeOf(held.transactionId)
+          if (!outcome || (await graph.notLeads([held.transactionId])).size) return held.withdrawn ? undefined : takenBack(held)
+          const worth = worthNow(held, outcome)
+          return worth === held || held.withdrawn ? undefined : { ...worth, state: 'pending', attempts: 0, due: now() }
+        })
+      }
+      return stored
     }
   }
-
-  /** Whether a job reached its platform. A job from before that was noted says so by its state, or by the request that carried it. */
 
   /** A job whose outcome was taken back: held if it never arrived, worth nothing where the platform can be told, and left where it cannot. */
   function takenBack(job: Job): Job {
@@ -334,7 +350,8 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
         const kept = new Set(current)
         items = claimed.filter(({ job }) => kept.has(job))
         if (!items.length) return
-        request = (async () => target.deliver(action, items))()
+        const sending = items.map(item => ({ ...item, job: forTarget(item.job) }))
+        request = (async () => target.deliver(action, sending))()
         // It can already be rejected while PostgreSQL is releasing the read locks.
         void request.catch(() => {})
       })
@@ -345,8 +362,8 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
     if (!request) return
     try {
       const { requestId } = await request
-      for (const { job } of items) {
-        const sent: Job = { ...job, state: 'sent', delivered: true, ...(requestId && { requestId }) }
+      for (const { job, consent } of items) {
+        const sent: Job = { ...job, ...(job.transactionId.startsWith('call:') && target.restates && consent && { consent }), state: 'sent', delivered: true, ...(requestId && { requestId }) }
         if (!(await store.swap(job, sent))) await change(job, (current) => landed(job, current, target), sent)
         pass.sent += 1
       }
@@ -355,7 +372,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
       if (target.retryable(error)) {
         for (const { job } of items) {
           if (job.attempts >= maxAttempts) await fail(job, note, pass, failed)
-          else if (await store.swap(job, { ...job, due: now() + backoff(job.attempts), note })) pass.retried += 1
+          else if (await store.swap(job, { ...job, due: now() + backoff(job.attempts), note: privateNote(job, note) })) pass.retried += 1
         }
       } else if (items.length > 1) {
         // A platform rejects a whole request for one bad event. Send each alone to find it.
@@ -378,7 +395,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
         continue
       }
       const skip = async (note: string) => {
-        if (await store.swap(job, { ...job, state: 'skipped', note })) pass.skipped += 1
+        if (await store.swap(job, { ...job, state: 'skipped', note: privateNote(job, note) })) pass.skipped += 1
       }
       const target = targets.get(job.target)
       if (!target) {
@@ -391,6 +408,17 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
       }
       if (target.maxAge !== undefined && now() - job.at > target.maxAge) {
         await skip('too_old')
+        continue
+      }
+      const key = `${job.target}\u0000${job.action}`
+      const group = groups.get(key) ?? { target, action: job.action, items: [] }
+      groups.set(key, group)
+      if (job.note === 'call_party') {
+        if (reached(job) && target.restates && (job.click || Object.keys(job.keys).length)) {
+          // Only replay the match already sent. A click seen on the new record cannot identify the original conversion.
+          const touch = job.click && { ...job.click, subject: job.transactionId, at: job.at, confidence: job.confidence ?? 1, joined: false, via: [] }
+          group.items.push({ job, touch, consent: job.consent })
+        } else await skip('call_party')
         continue
       }
       const asked = `${job.subject}\u0000${job.at}`
@@ -428,9 +456,6 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
       }
       // It waited for this, and waits no more.
       if (job.note === 'no_match_key') delete job.note
-      const key = `${job.target}\u0000${job.action}`
-      const group = groups.get(key) ?? { target, action: job.action, items: [] }
-      groups.set(key, group)
       group.items.push({ job: { ...job, ...(touch && { confidence: touch.confidence }) }, touch, consent })
     }
     for (const { target, action, items } of groups.values()) {
@@ -602,7 +627,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
           const keys = some.flatMap((job) => [...Object.values(job.keys), ...Object.values(job.click ?? {})])
           let refusals: (string | undefined)[]
           try {
-            refusals = await target.forget(some)
+            refusals = await target.forget(some.map(forTarget))
           } catch (error) {
             refusals = some.map(() => String((error as Error)?.message ?? error))
           }

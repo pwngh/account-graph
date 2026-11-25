@@ -95,6 +95,29 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       assert.deepEqual((await ops.state()).feeds.map((feed) => feed.last), [clock.now, clock.now, clock.now, clock.now])
     })
 
+    test('correcting another call on the same line preserves an independent pending callback and its event', async () => {
+      const { graph, clock, posted, hook, store, make } = await fresh()
+      const ops = make({ returnHours: 1, emit: event => store.write(tx => tx.emit([event])) })
+      const from = '+12025550136', to = '+12025550137'
+      const { subject } = await recordCall(graph, { id: 'earlier', at: T0, from, to, answered: true })
+      await graph.touch({ subject, at: T0 + 1, source: 'google', gclid: 'independent', campaignId: 'kept' })
+      await recordCall(graph, { id: 'later', at: T0 + 2, from, to, answered: false })
+      const events = async () => (await store.read(tx => tx.eventsAfter(0, 100))).filter(event => event.type === 'callback.overdue')
+      clock.now += 2 * HOUR
+      hook.status = 503
+      await ops.check()
+      const before = await store.ops.undelivered(), feed = await events()
+      assert.equal(before.length, 1)
+      assert.deepEqual(feed.map(event => event.data.call), ['later'])
+      await graph.sayParty({ call: 'earlier', at: clock.now, key: 'changed', party: { role: 'self', subject: 'contact:other', by: 'desk' } })
+      assert.deepEqual(await store.ops.undelivered(), before)
+      assert.deepEqual(await events(), feed)
+      hook.status = 200
+      clock.now += HOUR
+      await ops.check()
+      assert.deepEqual(posted, [before[0]!.text])
+    })
+
     test('a statement about the caller removes a pending callback alert that names the line', async () => {
       const { graph, ops, clock, posted, hook, store } = await fresh({ returnHours: 1 })
       const to = '+12025550116'

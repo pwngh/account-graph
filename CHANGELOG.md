@@ -47,6 +47,16 @@
 
 ### People
 
+- `name` distinguishes Greek iota subscript and diaeresis while continuing to fold stress marks.
+
+- `match` preserves a name disagreement when a newly recognized placeholder and a different named record have the same birthday.
+
+- `GET /health`, the reviewer Health view and startup give the rebuild command when stored groups are due a rebuild.
+
+- `name` keeps distinguishing script marks in exact names and recognizes their canonically equivalent spellings.
+
+- `name` recognizes Spanish and French missing-name labels. Matching birthdays cannot confirm two records whose names are placeholders.
+
 - `match` counts the proposed record against the cap on names and other facts before confirming a match.
 
 - `name` keeps alphabetic vowel signs in exact names with a date of birth or a verified zip code. A rebuild retires earlier exact name matches until the profiles are sent again.
@@ -82,6 +92,10 @@
 
 ### Calls and texts
 
+- `callback.overdue` has a regression test for a pending notice and event independent of a corrected call on the same line.
+
+- `call` recognizes an older call on a line that was later excluded.
+
 - `lookup` `caller` shows both records as possible when staff join a line to two records they keep apart.
 
 - `record` `call` and `text`, and the Twilio webhooks, record calls and texts without their content. Two reports of one call are one call.
@@ -97,6 +111,10 @@
 - `OPEN_HOURS` limits waiting times and stale-feed checks to open hours, with `us` and `us-tx` holidays.
 
 ### Attribution and reporting
+
+- `call_update` allows adjustments to a previously sent conversion using the original platform match.
+
+- `report` counts a stated owner with explicitly joined duplicate records and keeps its call details on its own row.
 
 - `record` `conversion`, `payment` and `restatement` count outcomes. A refund or a write-off is an amount, and `reverse` takes one back.
 - What an outcome is worth does not depend on the order things arrive in.

@@ -1075,10 +1075,38 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
   /** A text with the flag that says it began a conversation, which is worked out and not kept. */
   const withFirst = (text: KeptText, own: readonly KeptText[]): KeptText => (beginnings(own).has(text.id) ? { ...text, flags: ['first', ...text.flags] } : text)
   const callId = (call: KeptCall) => `call:${call.id}`
-  // A call claimed for a record may share a line, or even a guessed cluster, with a call for another record.
-  const personWithCalls = (calls: readonly Pick<KeptCall, 'subject' | 'party'>[], cluster: (subject: Subject) => Subject) => {
-    const exact = new Set(calls.filter((call) => call.party).map((call) => call.subject))
-    return (subject: Subject) => exact.has(subject) ? `subject:${subject}` : `cluster:${cluster(subject)}`
+  // Reports may count a record's staff-merged duplicates together. A guessed link, a shared line or two different stated owners cannot vouch for that.
+  async function personWithCalls(tx: Tx, calls: readonly Pick<KeptCall, 'subject' | 'party'>[], cluster: (subject: Subject) => Subject) {
+    const exact = new Set(calls.filter(call => call.party).map(call => call.subject))
+    const owners = new Map([...exact].map(subject => [subject, subject]))
+    const named = [...exact].filter(names)
+    if (named.length) {
+      const labels = await tx.labelsOf(named)
+      const groups = new Set([...labels.values()].map(label => label.cluster))
+      const members = await tx.membersOf(unique([...labels.values()].map(label => label.component)))
+      const records = [...members].filter(([subject, label]) => names(subject) && groups.has(label.cluster)).map(([subject]) => subject)
+      const marks = (await tx.edgesOf(records)).filter(edge => edge.identifier.startsWith('review:join-'))
+      const states = await tx.states(unique(marks.map(edge => edge.identifier)))
+      const first = new Map<Identifier, Subject>()
+      const pairs: { a: Subject; b: Subject; level: 'same' }[] = []
+      for (const { subject, identifier } of marks) {
+        if (!usable(policy, identifier, states.get(identifier))) continue
+        const a = first.get(identifier)
+        if (a && members.get(a)!.cluster === members.get(subject)!.cluster) pairs.push({ a, b: subject, level: 'same' })
+        else first.set(identifier, subject)
+      }
+      const joined = components(records, pairs)
+      const claimed = new Map<Subject, Set<Subject>>()
+      for (const subject of named) {
+        const group = joined.get(subject) ?? subject
+        claimed.set(group, (claimed.get(group) ?? new Set()).add(subject))
+      }
+      for (const [subject, group] of joined) {
+        const records = claimed.get(group)
+        if (records?.size === 1) owners.set(subject, [...records][0]!)
+      }
+    }
+    return (subject: Subject) => owners.has(subject) ? `subject:${owners.get(subject)}` : `cluster:${cluster(subject)}`
   }
 
   const followable = async (tx: Tx, subject: Subject, since: number, at: number) => (await tx.touchesOf([subject], since, at)).length > 0 && (await tx.consentOf([subject])).get(subject)?.adUserData !== false
@@ -1987,7 +2015,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         const theirs = unique([...found, ...everyone.keys()]).filter((subject) => groups.has(cluster(subject)))
         const times = await tx.callTimes(theirs)
         const parties = new Map(times.filter((call) => call.party).map((call) => [`call:${call.id}`, call.party]))
-        const person = personWithCalls(times, cluster)
+        const person = await personWithCalls(tx, times, cluster)
         const people = new Map(found.map((subject) => [person(subject), { outcomes: [] as Counted[], calls: [] as CallTime[] }]))
         for (const outcome of await leadsOf(tx, await tx.outcomesOf(theirs), outcomeId)) people.get(person(outcome.subject))?.outcomes.push(outcome)
         for (const call of times) people.get(person(call.subject))?.calls.push(call)
@@ -2024,7 +2052,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         const everyone = await tx.membersOf(unique([...labels.values()].map((label) => label.component)))
         const subjects = unique([...inPeriod.map((call) => call.subject), ...everyone.keys()])
         const all = await leadsOf(tx, await tx.callsOf(subjects), callId)
-        const person = personWithCalls(all, (subject) => everyone.get(subject)?.cluster ?? clusterOf(subject))
+        const person = await personWithCalls(tx, all, (subject) => everyone.get(subject)?.cluster ?? clusterOf(subject))
         const group = <T extends { subject: Subject }>(list: readonly T[]) => {
           const out = new Map<Subject, T[]>()
           for (const each of list) out.set(person(each.subject), [...(out.get(person(each.subject)) ?? []), each])
@@ -2114,7 +2142,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
           const inside = touch !== undefined && touch.at >= at - window
           return { touch: inside ? touch : undefined, delay: touch && at - touch.at, inside }
         }
-        const person = personWithCalls([...calls, ...uncounted], (subject) => labels.get(subject)?.cluster ?? subject)
+        const person = await personWithCalls(tx, [...calls, ...uncounted], (subject) => labels.get(subject)?.cluster ?? subject)
         const credited: Credited[] = outcomes.map((outcome) => ({ outcome, first: first.get(outcome.transactionId), person: person(outcome.subject), ...creditOf(outcome) }))
         const history: Credited[] = newest.map((outcome) => ({ outcome, ...creditOf(outcome, ofNewest) }))
         // What was no lead is counted apart, where it would have been credited.

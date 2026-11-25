@@ -1,6 +1,6 @@
 import { malformed, refused } from '../contract/fault.ts'
 import { createHash } from 'node:crypto'
-import { foldedNameKey } from './identifiers.ts'
+import { checkedNameKey, foldedNameKey } from './identifiers.ts'
 import type { Edge, Identifier, IdentifierState, Reason } from '../contract/types.ts'
 
 export interface Rule {
@@ -244,7 +244,9 @@ export function plainPolicy(policy: Policy) {
 }
 
 /** Raised when the code decides differently under one policy, so that what was stored before is known to be due a rebuild. */
-const RULES = 6
+const RULES = 7
+
+export const REBUILD_NOTICE = 'Groups are due a rebuild. Run account-graph rebuild.'
 
 /** The same for two policies exactly when they score and cluster alike. What only flags, `review`, and what only credits, `credit`, are not part of it. */
 export function policyHash(policy: Policy): string {
@@ -295,7 +297,7 @@ export function checkedReasons(reasons: Reason[], missing?: () => void): Reason[
   const checked = new Set<Identifier>()
   for (const { identifier } of reasons) {
     const base = foldedNameKey(identifier)
-    if (base && base !== identifier) checked.add(base)
+    if (base && checkedNameKey(identifier)) checked.add(base)
   }
   return reasons.filter(({ identifier }) => {
     const base = foldedNameKey(identifier)

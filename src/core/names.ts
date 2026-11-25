@@ -1335,7 +1335,7 @@ function spelling(text: string): string {
 function checkedKeys(secret: string, fields: string[], extra: string[] = [], usable = true): Identifier[] {
   const mac = (parts: string[]) => createHmac('sha256', secret).update(JSON.stringify(parts)).digest('hex')
   const base = `${fields[0]}:${mac(fields)}`
-  return usable ? [`${base}~${extra.some(Boolean) ? mac([...fields, ...extra]) : '1'}`, base] : [base]
+  return usable ? [`${base}~2${extra.some(Boolean) ? '.' + mac([...fields, ...extra]) : ''}`, base] : [base]
 }
 
 /** By every name and short form, the full names it may stand for. */

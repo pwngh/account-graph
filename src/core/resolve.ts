@@ -1,6 +1,6 @@
 import { UNNAMED, checkedReasons, evidence, joins, told, usable, weigh } from './policy.ts'
 import type { Fact, Policy } from './policy.ts'
-import { foldedNameKey } from './identifiers.ts'
+import { checkedNameKey, foldedNameKey } from './identifiers.ts'
 import type { Edge, Identifier, IdentifierState, Labels, Pair, Reason, Subject } from '../contract/types.ts'
 
 /**
@@ -103,6 +103,8 @@ export interface Known {
   things: Set<Identifier>
   /** The earlier spelling can still rule a match out while a profile awaits a new report. */
   earlier?: Known
+  missingName?: true
+  unconfirmedBirths?: Set<Identifier>
   changed?: true
 }
 
@@ -118,6 +120,7 @@ const OWN = new Set(['name', 'passkey', 'person'])
 export function knownOf(policy: Policy, edges: readonly Edge[], undone: (identifier: Identifier) => boolean, joins = false): Map<Subject, Known> {
   const out = new Map<Subject, Known>()
   if (!policy.apart?.length && !joins) return out
+  const attested = new Map<Subject, Set<Identifier>>()
   const confirming = policy.records === 'confirmed'
   const remember = (known: Known, kind: string, identifier: Identifier, thing: boolean) => {
     if (kind === 'review') known.joins.add(identifier)
@@ -132,21 +135,38 @@ export function knownOf(policy: Policy, edges: readonly Edge[], undone: (identif
     // A join that was undone is none, and a fact that was muted is none.
     const base = foldedNameKey(identifier)
     if (undone(identifier) || (base && base !== identifier && undone(base))) continue
+    if (kind === 'birth' && identifier.endsWith('~1')) {
+      const dates = attested.get(subject) ?? new Set()
+      attested.set(subject, dates.add(identifier.slice(0, -2)))
+      continue
+    }
     const known: Known = out.get(subject) ?? { facts: new Map(), joins: new Set(), things: new Set() }
     out.set(subject, known)
+    if (kind === 'birth' && identifier.endsWith('~missing')) {
+      // The former name could rule out a different named record even though it can no longer confirm anybody.
+      known.missingName = true
+      continue
+    }
     // Keep a second reading only for names written both ways. Either reading can keep people apart.
     if (base && !known.earlier) known.earlier = { facts: new Map([...known.facts].map(([kind, ids]) => [kind, new Set(ids)])), joins: known.joins, things: new Set(known.things) }
-    if (base !== identifier) remember(known, kind, identifier, thing)
+    if (!base || checkedNameKey(identifier)) remember(known, kind, identifier, thing)
     if (known.earlier && (!base || base === identifier)) remember(known.earlier, kind, identifier, thing)
   }
-  for (const known of out.values()) if (changedSpelling(known)) known.changed = true
+  for (const [subject, known] of out) {
+    const unconfirmed = confirming && [...known.facts.get('birth') ?? []].filter(id => /^birth:[0-9a-f]{64}$/.test(id) && !attested.get(subject)?.has(id))
+    if (unconfirmed && unconfirmed.length) {
+      known.earlier ??= { facts: known.facts, joins: known.joins, things: known.things }
+      known.unconfirmedBirths = new Set(unconfirmed)
+      known.changed = true
+    } else if (changedSpelling(known)) known.changed = true
+  }
   return out
 }
 
 /** Whether comparing the full spelling can change a fact. Ordinary checked names have exactly the same facts under both readings. */
 function changedSpelling(known: Known): boolean {
   if (!known.earlier) return false
-  const same = (before: Set<Identifier> | undefined, after: Set<Identifier> | undefined) => before?.size === after?.size && (!before || [...before].every((id) => after!.has(foldedNameKey(id) ? id + '~1' : id)))
+  const same = (before: Set<Identifier> | undefined, after: Set<Identifier> | undefined) => before?.size === after?.size && (!before || [...before].every((id) => after!.has(foldedNameKey(id) ? id + '~2' : id)))
   return !same(known.earlier.things, known.things) || !same(known.earlier.facts.get('given'), known.facts.get('given')) || !same(known.earlier.facts.get('initial'), known.facts.get('initial'))
 }
 
@@ -225,7 +245,7 @@ function corroborated(a: Known | undefined, b: Known | undefined): boolean {
   if (!a || !b) return false
   if (joinedBy(a, b)) return true
   if (mismatched(a, b)) return false
-  const dates = meets(a.facts.get('birth'), b.facts.get('birth')) === true
+  const dates = [...a.facts.get('birth') ?? []].some(id => b.facts.get('birth')?.has(id) && !(a.unconfirmedBirths?.has(id) && b.unconfirmedBirths?.has(id)))
   const [ours, theirs] = [a.facts.get('given'), b.facts.get('given')]
   // Names that may be written for one another, and need not be: a Mary and a Marilyn, a Robert and a Bob. A date has to say
   // which. One name is itself, and half of a name of several words.
@@ -233,7 +253,7 @@ function corroborated(a: Known | undefined, b: Known | undefined): boolean {
   const loosely = ours !== undefined && theirs !== undefined && !(within(ours, theirs) && (within(theirs, ours) || b.facts.has('compound'))) && !(within(theirs, ours) && a.facts.has('compound'))
   if (loosely ? [...a.things].some((each) => b.things.has(each) && !NAMED.has(each.slice(0, each.indexOf(':')))) : meets(a.things, b.things) || meets(ours, theirs)) return true
   // A name no table has is no fact, and is still a name: two who gave names under which nothing is the same are twins as likely as one.
-  const names = (known: Known) => [...known.things].some((each) => NAMED.has(each.slice(0, each.indexOf(':'))) || each.startsWith('name:'))
+  const names = (known: Known) => known.missingName || [...known.things].some((each) => NAMED.has(each.slice(0, each.indexOf(':'))) || each.startsWith('name:'))
   return dates && (meets(ours, theirs) === true || !(names(a) && names(b)))
 }
 

@@ -115,6 +115,39 @@ if (!url) {
     return createPostgresStore(pool, schema)
   }
 
+  test('an upgrade whose session ends before commit rolls back and can run again', async () => {
+    const schema = `ag_test_${process.pid}_interrupted`
+    try {
+      const store = await madeBefore(schema, 29)
+      const interrupted = createPostgresStore({
+        query: pool.query.bind(pool),
+        async connect() {
+          const client = await pool.connect()
+          let closed = false
+          return {
+            async query(sql, values) {
+              const result = await client.query(sql, values)
+              if (sql.startsWith('insert into') && values?.[0] === 30) {
+                closed = true
+                client.release(true)
+                throw new Error('upgrade session ended')
+              }
+              return result
+            },
+            release() { if (!closed) client.release() },
+          }
+        },
+      }, schema)
+      await assert.rejects(interrupted.migrate(), /upgrade session ended/)
+      assert.equal((await pool.query(`select max(id) as id from ${schema}.upgrade`)).rows[0].id, 28)
+      assert.equal((await pool.query('select to_regclass($1) as name', [schema + '.said_party_subject'])).rows[0].name, null)
+      assert.ok((await store.migrate()).includes('staff confirmation of a call'))
+      assert.deepEqual(await store.migrate(), [])
+    } finally {
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
+
   test('calls recorded before staff could name a party keep their line and result after upgrading', async () => {
     const schema = `ag_test_${process.pid}_party`
     try {
@@ -435,7 +468,8 @@ if (!url) {
       const ask = (path: string, token: string) => fetch(`http://127.0.0.1:${running.port}${path}`, { headers: { authorization: `Bearer ${token}` } })
       let hash: string
       try {
-        assert.ok(lines.some((line) => /^policy [0-9a-f]{12} \(configured\); run account-graph rebuild/.test(line)), lines.join('\n'))
+        assert.ok(lines.some((line) => /^policy [0-9a-f]{12} \(configured\)$/.test(line)), lines.join('\n'))
+        assert.ok(lines.includes('Groups are due a rebuild. Run account-graph rebuild.'), lines.join('\n'))
         const policy = (await (await ask('/review/api/policy', 'review')).json()) as any
         hash = policy.hash
         assert.deepEqual([policy.builtWith, policy.due, policy.changed, policy.rules.kinds.badge], [null, true, ['badge', 'phone'], { weight: 0.5, dilution: 0, cap: 3, halfLife: 'none' }])

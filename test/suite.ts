@@ -765,6 +765,16 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       for (const bad of [{}, { action: 'forget' }, { action: 'join', a: 'a:1' }, { action: 'join', a: 'a:1', b: 'a:1' }, { action: 'ignore' }, { action: 'ignore', identifier: 'email:b', ignored: 'false' }, { action: 'separate', a: 'a:1', b: 'b:1', separated: 0 }]) await assert.rejects(graph.foresee(bad as never), TypeError)
     })
 
+    test('an excluded line still recognizes a call recorded before call details were kept', async () => {
+      const { graph } = await fresh()
+      const from = '+12025550130'
+      const subject = 'caller:' + hashPhone(from)
+      await graph.observe({ subject, identifiers: ['dialed:call-old'], at: T0, event: 'call' })
+      const old = await recordCall(graph, { id: 'old', from, to: '+12025550131', at: T0 }, { exclude: [from] })
+      assert.deepEqual([old.duplicate, old.flags, old.subject], [true, [], subject])
+      assert.equal(await graph.keptCall('old'), undefined)
+    })
+
     test('a call from a number left out, or placed to one, records nothing, and one recorded before still settles', async () => {
       const { graph } = await fresh()
       const options = { exclude: ['(555) 010-0021'], results: 'expected' as const }
@@ -2016,6 +2026,39 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const summary = await graph.callSummary({ from: '2023-11-10', to: '2023-11-14', at: T0, ...options, hours })
       assert.deepEqual([summary.total.calls, summary.closed!.calls, summary.closed!.missed, summary.closed!.answered], [3, 2, 1, 1])
       assert.equal((await graph.callSummary({ from: '2023-11-10', to: '2023-11-14', at: T0, ...options })).closed, null)
+    })
+
+    test('people counts include an explicitly merged duplicate of one stated owner', async () => {
+      const { graph } = await fresh(undefined, { now: () => T0 + DAY })
+      const a = 'contact:owner', b = 'contact:duplicate', other = 'contact:guess'
+      const days = { from: '2023-11-14', to: '2023-11-15' }
+      for (const subject of [b, other]) {
+        await graph.observe({ subject, identifiers: ['email:shared'], at: T0 })
+        if (subject === b) await graph.outcome({ subject, transactionId: subject, stage: 'sale', at: T0 + 120_000, value: 2, currency: 'USD' })
+      }
+      await graph.join(a, b, { by: 'desk' })
+      await recordCall(graph, { id: 'stated', from: '+12025550142', to: '+12025550143', at: T0, answered: true, duration: 60 })
+      await graph.sayParty({ call: 'stated', key: 'who', at: T0 + 1, party: { role: 'self', subject: a, by: 'desk' } })
+      const check = async (together: boolean) => {
+        const report = await graph.report(days)
+        assert.equal(report.total.people, together ? 1 : 2)
+        const board = await graph.board({ at: T0 + DAY, steps: [{ name: 'call' }, { name: 'sale' }] })
+        assert.deepEqual(board.columns.map(column => column.people), together ? [0, 0, 1] : [0, 1, 1])
+        for (const row of board.columns.flatMap(column => column.rows)) if (row.subject !== a) assert.equal(row.call?.id, undefined)
+        const followed = await graph.followed({ ...days, step: 'sale', days: 1, at: T0 + 3 * DAY, least: 1 })
+        assert.equal(followed.groups[0]!.rows.reduce((sum, row) => sum + row.reached, 0), together ? 1 : 0)
+        for (const subject of [b, other]) assert.ok(!JSON.stringify(await graph.journey(subject)).includes('"id":"stated"'))
+      }
+      await check(true)
+      await graph.separate(a, b)
+      await check(false)
+      await graph.separate(a, b, false)
+      await check(true)
+      await graph.outcome({ subject: other, transactionId: other, stage: 'sale', at: T0 + 120_000, value: 2, currency: 'USD' })
+      assert.equal((await graph.report(days)).total.people, 2)
+      await graph.outcome({ subject: b, transactionId: 'next-call-stage', stage: 'call', at: T0 + 300_000, value: 1, currency: 'USD' })
+      const only = (await graph.board({ steps: [{ name: 'call' }], at: T0 + DAY })).columns[1]!.rows[0]!
+      assert.deepEqual([only.subject, only.at, only.call?.id], [b, T0 + 300_000, undefined])
     })
 
     test('one call belongs to the exact record staff named in the journey, callbacks and credit', async () => {

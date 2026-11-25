@@ -193,9 +193,12 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
 
   const saved = await graph.keptCall(id)
   if (saved?.direction === 'outbound') throw refused(`Call "${id}" is already recorded as outbound`, { reason: 'KEY_REUSED', fields: ['direction'] })
-  if (!saved && from !== undefined && leftOut(from, options)) return { subject, flags: ['left_out'], counted: false, state: 'unknown', duplicate: false }
+  // Before call details were kept, the completed call left only this note.
+  const note = `dialed:call-${id}`
+  const [before] = saved?.party ? [] : await graph.holders([note])
+  if (!saved && !before && from !== undefined && leftOut(from, options)) return { subject, flags: ['left_out'], counted: false, state: 'unknown', duplicate: false }
   // An assertion may have arrived before the phone report. That call supplies no evidence about the line or a visitor.
-  if (saved?.party || (!saved && (await graph.partyHistory(id)).length > 0)) {
+  if (saved?.party || (!saved && !before && (await graph.partyHistory(id)).length > 0)) {
     if (result) await keepResult(graph, id, result, options)
     if (!saved) {
       const flags: CallFlag[] = [...(!from ? ['blocked' as const] : []), ...(tollFree ? ['toll_free' as const] : []), ...(tooShort(call, options) ? ['short' as const] : [])]
@@ -207,8 +210,6 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   }
 
   // The note is written last, so a call that was cut off half-recorded is recorded again in full.
-  const note = `dialed:call-${id}`
-  const [before] = await graph.holders([note])
   if (before) {
     // Reported again with a result it did not have before, the call is settled by it.
     const settled = result && (await tell(graph, id, result, options))
@@ -553,8 +554,10 @@ async function settle(graph: Graph, id: string, options: CallOptions, phone?: st
     // Said to be no lead, it is not sent or counted anew. What was counted stays on record, and counts nowhere.
     if (counts && (await graph.notLeads([outcome.transactionId])).size > 0) return false
     // Each of these does nothing where it is already done, so one that was cut off half way is finished by the next.
-    if (call.party && counts) await (options.count ?? graph.outcome)(outcome)
-    else if (call.party && answered === false) await graph.withdraw(outcome.transactionId)
+    if (call.party && counts) {
+      await (options.count ?? graph.outcome)(outcome)
+      await options.giveBack?.(outcome.transactionId)
+    }
     else if (counts && options.release) await options.release(outcome)
     // Without one, a result has no number to give, so it only counts the call.
     else if (counts) await (phone !== undefined && options.convert ? options.convert : graph.outcome)(outcome)

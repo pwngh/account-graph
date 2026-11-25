@@ -176,6 +176,26 @@ both('a list is not ended by what could have been seen at its beginning', async 
   assert.ok((await graph.decide({ key: 'd', at: AT, by: 'x', action: 'split', pairs: [{ a: 'é'.repeat(256), b: 'è'.repeat(256) }] })).ok)
 })
 
+both('health shows the rebuild command until the stored groups have been rebuilt', async (graph) => {
+  const { engine } = await internalsOf(graph)!()
+  await engine.graph.observe({ subject: 'contact:a', identifiers: ['email:sample'], at: AT })
+  await engine.store.write(tx => tx.setBuiltWith('earlier rules'))
+  const server = createServer(createEdge(graph, { token: 't' })).listen(0, '127.0.0.1')
+  await new Promise(resolve => server.once('listening', resolve))
+  const read = (path: string) => fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}${path}`, { headers: { authorization: 'Bearer t' } }).then(response => response.json())
+  try {
+    const warning = 'Groups are due a rebuild. Run account-graph rebuild.'
+    assert.deepEqual(await read('/health'), { ok: true, warning })
+    assert.equal((await read('/review/api/policy')).warning, warning)
+    await engine.graph.rebuild()
+    assert.deepEqual(await read('/health'), { ok: true })
+    assert.equal((await read('/review/api/policy')).warning, undefined)
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>(resolve => server.close(() => resolve()))
+  }
+})
+
 test('the edge is closed with its instance, and what it took is finished', async () => {
   const graph = accountGraph({ memory: true, now: () => NOW })
   const server = createServer(createEdge(graph, { token: 't' })).listen(0, '127.0.0.1')
@@ -331,6 +351,48 @@ for (const [label, first, other, last, otherLast, together] of [
   }
 }, { identifierSecret: SECRET, policy: namePolicy })
 
+for (const [first, last] of [['Unknown', 'Lima'], ['N/A', 'N/A'], ['Desconocida', 'Lima'], ['Sin', 'Nombre'], ['Lima', 'No proporcionado'], ['Inconnue', 'Lima']] as const) both(`a placeholder and one birthday cannot confirm two records, ${first} ${last}`, async (graph) => {
+  const { engine } = await internalsOf(graph)!()
+  const facts = { email: 'house@example.org', name: { first, last }, dob: '1980-06-07' }
+  for (const subject of ['contact:a', 'contact:b']) {
+    assert.ok((await one(graph, { type: 'profile', key: subject, subject, at: AT, facts })).ok)
+    assert.deepEqual(await engine.graph.verify(), [])
+  }
+  assert.deepEqual((await engine.graph.cluster('contact:a'))!.members, ['contact:a'])
+  assert.equal((await graph.lookup({ kind: 'match', facts, at: AT })).candidates.some((candidate) => candidate.level === 'same'), false)
+  await engine.graph.rebuild()
+  assert.deepEqual((await (await engine.graph.asOf(NOW)).cluster('contact:b'))!.members, ['contact:b'])
+}, { identifierSecret: SECRET, policy: namePolicy })
+
+both('recognizing an additional placeholder cannot confirm it as the other name on a shared birthday', async (graph) => {
+  const { engine } = await internalsOf(graph)!()
+  const facts = { email: 'family@example.org', dob: '1980-04-02' }
+  const first = { ...facts, name: { first: 'يوسف', last: 'Muñoz' } }
+  const second = { ...facts, name: { first: 'Inconnu', last: 'Κάππα' } }
+  assert.ok((await one(graph, { type: 'profile', key: 'one', at: AT, subject: 'contact:a', facts: first })).ok)
+  assert.equal((await graph.lookup({ kind: 'match', facts: second, at: AT })).candidates[0]?.level, 'related')
+  assert.ok((await one(graph, { type: 'profile', key: 'two', at: AT, subject: 'contact:b', facts: second })).ok)
+  await engine.graph.rebuild()
+  assert.deepEqual((await engine.graph.cluster('contact:a'))!.members, ['contact:a'])
+}, { identifierSecret: SECRET, policy: { ...namePolicy, customKinds: { name: { weight: 0.6, dilution: 1, cap: 5, halfLife: 'none', group: 'name', corroborates: true } } } })
+
+both('a rebuild retires shared birthdays and checked names whose source could have been a placeholder', async (graph) => {
+  const { engine } = await internalsOf(graph)!()
+  const { birthKeys } = await import('../src/core/identifiers.ts')
+  const date = birthKeys(SECRET, '1980-06-07')
+  const base = 'named:' + 'a'.repeat(64)
+  const subjects = ['contact:a', 'contact:b']
+  await engine.store.write(async (tx) => {
+    await tx.addSightings(subjects.flatMap((subject) => ['email:shared', base, base + '~1', ...date].map((identifier) => ({ subject, identifier, at: AT }))))
+    await tx.setLabels(new Map(subjects.map((subject) => [subject, { cluster: subjects[0]!, component: subjects[0]! }])))
+    await tx.setBuiltWith('old rules')
+  })
+  assert.ok((await engine.graph.policy()).due)
+  await engine.graph.rebuild()
+  assert.deepEqual((await engine.graph.cluster('contact:a'))!.members, ['contact:a'])
+  assert.deepEqual((await (await engine.graph.asOf(NOW)).cluster('contact:b'))!.members, ['contact:b'])
+}, { identifierSecret: SECRET, policy: namePolicy })
+
 both('a rebuild retires name evidence written before all distinguishing letters were kept', async (graph) => {
   const { engine } = await internalsOf(graph)!()
   const subjects = ['contact:one', 'contact:two']
@@ -458,6 +520,25 @@ for (const [preset, records] of [['household', false], ['intake', true]] as cons
   identifierSecret: SECRET,
   policy: { ...(records && { apart: ['birth', 'given'], records: 'confirmed' }), kinds: { phone: { weight: 0.85 } }, customKinds: { name: { weight: 0.6, dilution: 1, cap: 5, halfLife: 'none', group: 'name', corroborates: true } } },
 })
+
+both('an exact name and a shared mailbox keep distinguishing marks in their script', async (graph) => {
+  const { engine } = await internalsOf(graph)!()
+  const pairs = [
+    ['राम', 'रमा', 'शर्मा', false], ['क़मर', 'कमर', 'शर्मा', false], ['ก้อง', 'กอง', 'แก้ว', false],
+    ['ᾍδης', 'Ἅδης', 'Πέτρου', false], ['Αϊδα', 'Αιδα', 'Πέτρου', false], ['ᾍδης', 'Ἅ\u0345δης', 'Πέτρου', true],
+    ['ばら', 'はら', '中村', false], ['ばら', 'は\u3099ら', '中村', true], ['क़मर', 'क़मर', 'शर्मा', true],
+    ['يُوسُف', 'يوسف', 'حسن', true], ['מֹשֶׁה', 'משה', 'כהן', true], ['Αλέξης', 'Αλεξης', 'Πέτρου', true],
+  ] as const
+  for (const [n, [first, other, last, together]] of pairs.entries()) {
+    const subjects = [`contact:${n}-a`, `contact:${n}-b`]
+    for (const [j, subject] of subjects.entries()) {
+      const facts = { email: `home${n}@example.org`, dob: '1980-04-05', name: { first: j ? other : first, last } }
+      assert.ok((await one(graph, { type: 'profile', key: subject, subject, at: AT, facts })).ok)
+    }
+    assert.equal((await engine.graph.cluster(subjects[0]!))!.members.includes(subjects[1]!), together, first + ' / ' + other)
+  }
+  assert.deepEqual(await engine.graph.verify(), [])
+}, { identifierSecret: SECRET, policy: { ...namePolicy, customKinds: { name: { weight: 0.6, dilution: 1, cap: 5, halfLife: 'none', group: 'name', corroborates: true } } } })
 
 both('a rebuild retires an exact name whose old hash lost a vowel', async (graph) => {
   const { engine } = await internalsOf(graph)!()

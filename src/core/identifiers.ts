@@ -94,31 +94,49 @@ export function identifier(kind: string, value: string): Identifier {
 export const FOLDED: Record<string, string> = { ß: 'ss', æ: 'ae', œ: 'oe', ø: 'o', đ: 'd', ð: 'd', ł: 'l', þ: 'th', ı: 'i' }
 /** The original name hash counts everyone who held that spelling and carries its mutes. A suffix says exactly which spelling passed the newer check. */
 export const foldedNameKey = (id: Identifier): Identifier | undefined => /^(?:name|given|initial|named|ward|person|perhaps):[0-9a-f]{64}(?=$|~)/.exec(id)?.[0]
+/** Only a spelling checked against the current missing-name list may give positive evidence. Older hashes still cap the evidence. */
+export const checkedNameKey = (id: Identifier) => id.includes('~2.') || id.endsWith('~2')
+
 /** A fresh exact name has one spelling. Keep its older hash beside it for its fanout, mutes and comparison with old records. */
 export function nameEvidence(identifiers: readonly Identifier[]): Identifier[] {
   const out = new Set<Identifier>()
   for (const id of identifiers) {
+    if (/^birth:[0-9a-f]{64}(~placeholder|~missing)?$/.test(id)) {
+      const birth = id.split('~')[0]!
+      out.add(birth)
+      if (id === birth) out.add(birth + '~1')
+      else if (id.endsWith('~missing')) out.add(id)
+      continue
+    }
     const base = id.startsWith('name:') && foldedNameKey(id)
     if (base) out.add(base)
-    out.add(base === id ? id + '~1' : id)
+    out.add(base === id ? id + '~2' : id)
   }
   return [...out]
 }
 /** What is written where a name is not known. */
 const NOBODYS = new Set(['unknown', 'unk', 'none', 'null', 'undefined', 'na', 'n a', 'noname', 'no name', 'nobody', 'not given', 'not provided', 'not available', 'placeholder', 'test', 'tester', 'testing', 'dummy', 'firstname', 'first name', 'lastname', 'last name', 'caller', 'wireless caller', 'customer', 'client'])
+// Spanish intake labels from lookups.ts and the Spanish and French missing-name forms reported by reviewers.
+const MISSING = new Set(['desconocido', 'desconocida', 'sin nombre', 'no proporcionado', 'no proporcionada', 'no dio', 'no tiene', 'inconnu', 'inconnue', 'inconnu e'])
 const SAMPLES = new Set(['john doe', 'jane doe'])
 
-/** A name as it is compared: without case, accents or punctuation. */
-function normalizeName(name: string, vowels = false): string {
-  // A vowel sign such as ि is alphabetic. Accent folding must not turn किरण into करण.
-  const letters = name.normalize('NFKD').replace(/\p{M}/gu, (mark) => vowels && /\p{Alphabetic}/u.test(mark) && !/\p{Diacritic}/u.test(mark) ? mark : '').toLowerCase().replace(/[ßæœøđðłþı]/g, (letter) => FOLDED[letter]!)
+/** The old folded spelling still sets the cap. An exact spelling also keeps marks that change the letters of a name. */
+function normalizeName(name: string, exact = false): string {
+  const decomposed = name.normalize('NFKD')
+  const letters = (exact ? decomposed.replace(/(\p{L})(\p{M}+)/gu, (_, letter: string, marks: string) => {
+    // Greek writes an iota under some vowels, and diaeresis distinguishes two adjacent vowels from a diphthong.
+    if (/\p{Script=Greek}/u.test(letter)) return letter + marks.replace(/[^\u0345\u0308]/gu, '')
+    // Latin accents and optional Arabic and Hebrew points keep their established comparison.
+    if (/[\p{Script=Latin}\p{Script=Arabic}\p{Script=Hebrew}]/u.test(letter)) return letter + [...marks].filter(mark => /\p{Alphabetic}/u.test(mark) && !/\p{Diacritic}/u.test(mark)).join('')
+    return letter + marks
+  }) : decomposed.replace(/\p{M}/gu, '')).toLowerCase().replace(/[ßæœøđðłþı]/g, (letter) => FOLDED[letter]!)
   return letters.replace(/['’ʼ.]/g, '').replace(/[^\p{L}\p{M}]+/gu, ' ').trim()
 }
 
 /** The two parts of a name, or nothing for something written in place of a name. */
-export function nameParts(first: string, last: string): string[] | undefined {
+export function nameParts(first: string, last: string, previous = false): string[] | undefined {
   const name = [normalizeName(first), normalizeName(last)]
-  if (name.some((part) => NOBODYS.has(part)) || NOBODYS.has(name.join(' ')) || SAMPLES.has(name.join(' '))) return undefined
+  if ([...name, name.join(' ')].some((part) => NOBODYS.has(part) || (!previous && MISSING.has(part))) || SAMPLES.has(name.join(' '))) return undefined
   return name
 }
 
@@ -140,7 +158,7 @@ export function nameKeys(secret: string, first: string, last: string, known: { z
   const mac = (parts: string[]) => createHmac('sha256', secret).update(JSON.stringify(parts)).digest('hex')
   const key = (by: string, value: string): Identifier => {
     const base = 'name:' + mac([...name, by, value])
-    return whole.some((part, i) => part !== name[i]) ? base + '~' + mac([...whole, by, value]) : base
+    return whole.some((part, i) => part !== name[i]) ? base + '~2.' + mac([...whole, by, value]) : base
   }
   const keys: Identifier[] = []
   const zip = /^(\d{5})(-?\d{4})?$/.exec(known.zip5?.trim() ?? '')?.[1]

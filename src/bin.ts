@@ -26,7 +26,7 @@ import { normalizePhone } from './core/identifiers.ts'
 import { ladderProblems } from './core/ladder.ts'
 import type { Ladder } from './core/ladder.ts'
 import { createRangeLookup } from './core/lookups.ts'
-import { defaultPolicy, policyProblems } from './core/policy.ts'
+import { defaultPolicy, policyProblems, REBUILD_NOTICE } from './core/policy.ts'
 import { staffLink } from './core/sign.ts'
 import { checkTags } from './core/tags.ts'
 import { createEdge } from './edge/index.ts'
@@ -346,7 +346,8 @@ export async function serve(env: Env, log: (line: string) => void = console.log)
   if (stages) log(`steps: ${Object.entries(stages).map(([name, stage]) => `${name}${stage.value === undefined ? '' : ` ${stage.value}`}`).join(', ')}`)
   log(`page events: ${(edging.events ?? []).join(', ') || 'none (set EVENTS)'}; calls from twilio ${edging.twilio?.calls ? 'on' : 'off'}; texts from twilio ${edging.twilio?.texts ? 'on' : 'off'}; text codes ${edging.textCodes ? 'on' : 'off'}; number pool ${phones?.pool ? `of ${phones.pool.numbers.length}` : 'off'}`)
   log(`cost sources: ${Object.keys(costs ?? {}).join(', ') || 'none (record cost)'}`)
-  log(`policy ${hash.slice(0, 12)} ${options.policy ? '(configured)' : '(default)'}${due ? '; run account-graph rebuild' : ''}`)
+  log(`policy ${hash.slice(0, 12)} ${options.policy ? '(configured)' : '(default)'}`)
+  if (due) log(REBUILD_NOTICE)
 
   return {
     port,

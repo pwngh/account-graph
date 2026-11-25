@@ -27,7 +27,8 @@ export const creditSubject = (subject: Subject) => `subject:${subject}`
 export const withoutGuesses = (flags: string[]) => flags.filter(flag => flag !== 'code' && flag !== 'taken' && flag !== 'pool' && flag !== 'ambiguous' && flag !== 'repeat')
 
 export function stopCallJob(job: Job, owner: Subject): Job {
-  if (job.state === 'sent' || job.delivered || job.requestId) return { ...job, subject: owner, state: 'sent', note: 'call_party' }
+  if (job.note === 'call_party') return { ...job, subject: owner }
+  if (job.state === 'sent' || job.delivered || job.requestId) return { ...job, subject: owner, delivered: true, state: job.state === 'pending' && job.restated ? 'pending' : 'sent', note: 'call_party' }
   const { consent, click, confidence, ...rest } = job
   return { ...rest, keys: {}, subject: owner, state: 'skipped', note: 'call_party' }
 }

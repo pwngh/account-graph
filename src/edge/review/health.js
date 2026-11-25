@@ -63,7 +63,7 @@ view('health', 'Health', async (box) => {
   // What needs a person, first and by name. Everything under it is there to say why.
   const needs = [
     !audit.sound && ['Audit log altered.', `Verification failed at entry ${audit.brokenAt}.`],
-    policy.due && ['Rebuild required.', el('span', {}, 'Groups were built with ', policy.builtWith === null ? 'an unknown policy' : policy.builtWith === 'mixed' ? 'multiple policies' : short(policy.builtWith), '. Current policy: ', short(policy.hash), '. Run POST /rebuild with a service token.')],
+    policy.warning && [policy.warning, ''],
     ...quiet.map((feed) => [`${NAMES[feed.name]} feed is stale.`, feed.last === null ? 'No records.' : el('span', {}, 'Last record ', ago(feed.last, ops.at), '.')]),
     ...broken.map((job) => [`${job.name}: ${job.state === 'stuck' ? 'stuck' : 'failed'}.`, job.error ?? '']),
     states?.failed > 0 && [`${amount(states.failed)} rejected ${states.failed === 1 ? 'conversion' : 'conversions'}`, ''],

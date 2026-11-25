@@ -54,7 +54,7 @@ After a recorded call has a party statement, a later phone report or a competing
 
 The call, its outcome and value history belong to the exact record staff named, even when another record shares its cluster. Its callback is closed by a return for the same record. Reports use that record's own arrival for credit. An unassigned call earns no person's ad credit. A statement removes earlier guesses for that call, including a tap, code or leased number. The next call on the line needs its own confirmation. A call without a statement follows the usual rules.
 
-A party statement stops further ad deliveries for this call. A representative's number and consent belong to the representative. Each batch and each single-job retry checks the current job as it starts the request. If a correction or deletion changes the graph while a worker is finding credit, the worker checks credit and consent again for the affected batch before sending. A request already in flight can still reach the platform.
+A party statement stops new ad conversions for this call. A platform that already received the conversion can still receive a corrected value, a refund or a withdrawal where it supports these. Those adjustments use only the matching details sent for the original conversion. A representative's number and consent belong to the representative. Each batch and each single-job retry checks the current job as it starts the request. If a correction or deletion changes the graph while a worker is finding credit, the worker checks credit and consent again for the affected batch before sending. A request already in flight can still reach the platform.
 
 ## Page events
 
@@ -272,6 +272,10 @@ A number is held by one visitor at a time, across all servers. One network gets 
 The page's own number also stays for staff, declared bots, visitors who opted out of advertising, and those without a visit in the last 90 days.
 
 > **Size the pool.** Count the visitors with an ad click who come within `POOL_MINUTES` and `POOL_GRACE_MINUTES` together, at your busiest hours. That is enough for each number to rest for its grace, because whoever had it may still dial it. With fewer, a call to a number that did not rest needs a tap to be anyone's, and the exhausted count says how often there was none to show. Report calls to them as for any other number.
+
+Correcting an earlier call leaves a later callback alert and its event in place when the later miss, callback attempts and paid visit are independent.
+
+A retry of a call recorded before call details were kept still answers `duplicate` if its line was later excluded.
 
 ## Call results
 
