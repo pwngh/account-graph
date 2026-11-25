@@ -30,6 +30,7 @@ import { defaultPolicy, policyProblems, REBUILD_NOTICE } from './core/policy.ts'
 import { RECEIPT_RETENTION } from './core/receipts.ts'
 import { staffLink } from './core/sign.ts'
 import { checkTags } from './core/tags.ts'
+import { validPageRules } from './edge/collect.ts'
 import { createEdge } from './edge/index.ts'
 import type { EdgeOptions } from './edge/index.ts'
 import { networks, reviewerProblems } from './edge/server.ts'
@@ -167,6 +168,8 @@ export function readEnvironment(env: Env) {
     lateHours: number('LATE_HOURS', 6),
     stages: parsed('STAGES') as Ladder | undefined,
     policy,
+    ...(env.ALLOW_PAGES !== undefined && { allowPages: env.ALLOW_PAGES.split(',').map(each => each.trim()).filter(Boolean) }),
+    ...(env.REFUSE_PAGES !== undefined && { refusePages: env.REFUSE_PAGES.split(',').map(each => each.trim()).filter(Boolean) }),
     staffNetworks: (env.STAFF_NETWORKS ?? '').split(',').map((each) => each.trim()).filter(Boolean),
     timeZone: env.REPORT_TIME_ZONE || 'UTC',
     events: (env.EVENTS ?? '').split(',').map((name) => name.trim()).filter(Boolean),
@@ -237,6 +240,7 @@ export function readEnvironment(env: Env) {
   if (config.receiptSecrets.some((each) => each.length < 32)) wrong.push('RECEIPT_SECRETS must each be at least 32 characters')
   if (config.callTapSeconds > 3600) wrong.push('CALL_TAP_SECONDS must be at most 3600')
   if (config.openHours !== undefined) for (const problem of hoursProblems(config.openHours)) wrong.push(`OPEN_HOURS: ${problem}`)
+  if (!validPageRules(config)) wrong.push('ALLOW_PAGES and REFUSE_PAGES require literal paths or subtrees ending in /*')
   for (const each of config.staffNetworks) {
     try {
       networks([each])
@@ -337,6 +341,8 @@ export function configFrom(env: Env): { graph: LocalOptions; edge: EdgeOptions; 
   } satisfies LocalOptions
   const twilio = config.twilio ?? config.twilioTexts
   const edge: EdgeOptions = {
+    ...(config.allowPages && { allowPages: config.allowPages }),
+    ...(config.refusePages && { refusePages: config.refusePages }),
     token: config.token, origins: config.origins, limit: config.limit, trustProxy: config.trustProxy, staffNetworks: config.staffNetworks, events: config.events, textCodes: config.textCodes,
     ...(config.reviewers && { reviewers: config.reviewers }),
     ...(config.serviceTokens && { serviceTokens: config.serviceTokens }),

@@ -1,3 +1,5 @@
+import { validPageRules } from './collect.ts'
+import type { PageRules } from './collect.ts'
 import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { internalsOf } from '../client/internals.ts'
@@ -21,7 +23,7 @@ import { serviceTokenProblems } from './tokens.ts'
 import type { ServiceToken } from './tokens.ts'
 export type { ServiceToken } from './tokens.ts'
 
-export interface EdgeOptions {
+export interface EdgeOptions extends PageRules {
   /** The bearer token your own services send. It opens the six calls. */
   token: string
   reviewers?: Reviewers
@@ -48,6 +50,7 @@ export type Edge = ((request: IncomingMessage, response: ServerResponse) => Prom
 
 function problems(options: EdgeOptions): string[] {
   const wrong: string[] = []
+  if (!validPageRules(options ?? {})) wrong.push('Page lists require literal paths or subtrees ending in /*')
   if (typeof options?.token !== 'string' || !options.token.trim()) wrong.push('`token` is required')
   else wrong.push(...reviewerProblems(options.reviewers, options.token))
   wrong.push(...serviceTokenProblems(options?.serviceTokens, options?.reviewers, options?.token))
@@ -124,6 +127,8 @@ export function createEdge(graph: AccountGraph, options: EdgeOptions): Edge {
     const { twilio } = options
     const { pool, calls } = engine.options
     const handler: HandlerOptions = {
+      ...(options.allowPages && { allowPages: options.allowPages }),
+      ...(options.refusePages && { refusePages: options.refusePages }),
       token: options.token,
       ...(options.serviceTokens && { serviceTokens: options.serviceTokens }),
       origins: (options.origins ?? []).map((origin) => origin.replace(/\/$/, '')),

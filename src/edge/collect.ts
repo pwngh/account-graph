@@ -4,13 +4,27 @@
  * fingerprints, and the ad click, campaign and ad that brought the visitor.
  */
 
-export interface CollectOptions {
+export interface PageRules {
+  /** Literal paths, or subtrees ending in /*. With an allow list, a page must match one of its entries. */
+  allowPages?: readonly string[]
+  /** A refusal wins over an allowance. */
+  refusePages?: readonly string[]
+}
+
+interface PageOptions extends PageRules {
+  /** Wait for an affirmative banner answer before making an identifier or collecting anything. */
+  requireConsent?: boolean
+  consent?: { adUserData: boolean; adPersonalization: boolean }
+  signal?: AbortSignal
+}
+
+export interface CollectOptions extends PageOptions {
   /** The full URL of the `/collect` route. */
   endpoint: string
   /** The event id from `fingerprintEvent`. The server confirms it with Fingerprint. */
-  fingerprintEvent?: string | Promise<string | undefined>
+  fingerprintEvent?: string | Promise<string | undefined> | ((active: () => boolean) => Promise<string | undefined>)
   /** A hash computed in the browser, such as the one from `openFingerprint`. Nothing confirms it. */
-  canvas?: string | Promise<string | undefined>
+  canvas?: string | Promise<string | undefined> | ((active: () => boolean) => Promise<string | undefined>)
   /** What the visitor answered in your consent banner. Leave it out if they have not answered. */
   consent?: { adUserData: boolean; adPersonalization: boolean }
   /** Names of your own address parameters to keep with the arrival, such as `mailing` or `placement`. */
@@ -56,6 +70,65 @@ const TAGS = [
 ] as const
 const YEAR = 365 * 24 * 60 * 60
 
+export const hasPageRules = (rules: PageRules) => rules.allowPages !== undefined || rules.refusePages !== undefined
+
+// Compare paths as a site that folds case and Unicode might. Refuse ambiguous spellings instead of guessing how a second decoder or router treats them.
+function pathName(raw: string): string | undefined {
+  if (!raw.startsWith('/') || /[%]2f|[%]5c/i.test(raw)) return undefined
+  try {
+    const path = decodeURIComponent(raw).normalize('NFKC').toLowerCase()
+    if (/[%?#;\\\x00-\x1f\x7f]/.test(path) || path.includes('//') || path.split('/').some(part => part === '.' || part === '..')) return undefined
+    return path.replace(/\/$/, '') || '/'
+  } catch {
+    return undefined
+  }
+}
+
+export function validPageRules(rules: PageRules): boolean {
+  return [rules.allowPages, rules.refusePages].every(list => list === undefined || Array.isArray(list) && list.every(pattern => {
+    if (typeof pattern !== 'string') return false
+    const base = pattern.endsWith('/*') ? pattern.slice(0, -1) : pattern
+    return !base.includes('*') && pathName(base) !== undefined
+  }))
+}
+
+/** The part of a permitted address that may leave the page. A relative path stays relative. */
+export function pageAddress(raw: unknown, rules: PageRules): string | undefined {
+  if (typeof raw !== 'string') return undefined
+  const bare = raw.split(/[?#]/, 1)[0]!
+  const relative = bare.startsWith('/')
+  if (/[\\\x00-\x20\x7f]/.test(bare) || bare.startsWith('//') || !relative && !/^https?:\/\/[^/]+/i.test(bare)) return undefined
+  const rawPath = relative ? bare : bare.replace(/^https?:\/\/[^/]+/i, '') || '/'
+  const path = pathName(rawPath)
+  if (!path) return undefined
+  const below = (page: string, base: string, subtree: boolean) => page === base || subtree && (base === '/' || page.startsWith(base + '/'))
+  if (!validPageRules(rules)) return undefined
+  try {
+    const url = new URL(bare, 'https://example.org')
+    if (url.username || url.password) return undefined
+    // A refusal covers aliases on sites that fold paths. An allowance must also be safe on sites that distinguish every spelling.
+    if (rules.refusePages?.some(pattern => {
+      const subtree = pattern.endsWith('/*')
+      return below(path, pathName(subtree ? pattern.slice(0, -1) : pattern)!, subtree)
+    })) return undefined
+    if (rules.allowPages && !rules.allowPages.some(pattern => {
+      const subtree = pattern.endsWith('/*')
+      const literal = subtree ? pattern.slice(0, -2) || '/' : pattern
+      return below(url.pathname, new URL(literal, 'https://example.org').pathname, subtree)
+    })) return undefined
+    return (relative ? '' : url.origin) + url.pathname
+  } catch {
+    return undefined
+  }
+}
+
+const bannerAnswer = () => (globalThis as { accountGraphConsent?: PageOptions['consent'] }).accountGraphConsent
+const ready = (options: PageOptions) => !options.signal?.aborted && (!options.requireConsent || (bannerAnswer() ?? options.consent)?.adUserData === true) &&
+  (!hasPageRules(options) || Boolean(pageAddress(location.href, options)) && (!document.referrer || Boolean(pageAddress(document.referrer, options))))
+
+const pageOf = (options: PageOptions) => hasPageRules(options) ? { url: pageAddress(location.href, options) } : {}
+const guardedFetch = (options: PageOptions): RequestInit => hasPageRules(options) ? { referrerPolicy: 'no-referrer' } : {}
+
 function cookie(name: string): string | undefined {
   const found = document.cookie.split('; ').find((part) => part.startsWith(`${name}=`))
   if (!found) return undefined
@@ -82,7 +155,10 @@ function remember(key: string, value: string): void {
 }
 
 /** The id this browser keeps for this site. Set as a cookie too, so your server can read it at sign-up. */
-export function deviceId(): string {
+export function deviceId(): string
+export function deviceId(options: PageOptions): string | undefined
+export function deviceId(options: PageOptions = {}): string | undefined {
+  if (!ready(options)) return undefined
   let id = cookie('ag_device')
   try {
     id ??= localStorage.getItem('ag_device') ?? undefined
@@ -96,7 +172,10 @@ export function deviceId(): string {
 }
 
 /** Reads what this page view can tell the graph. Sends nothing. */
-export function read(params: readonly string[] = []): Collected {
+export function read(params?: readonly string[]): Collected
+export function read(params: readonly string[] | undefined, options: PageOptions): Collected | undefined
+export function read(params: readonly string[] = [], options: PageOptions = {}): Collected | undefined {
+  if (!ready(options)) return undefined
   const url = new URL(location.href)
   const touch: Arrival = {}
   for (const name of CLICK_IDS) {
@@ -117,7 +196,7 @@ export function read(params: readonly string[] = []): Collected {
   // `collect` remembers what it sent, so a click kept in the cookie is reported once, not on every page.
   const stored = cookie('_gcl_aw')?.split('.')[2]
   if (!touch.gclid && stored && stored !== remembered('ag_click')) touch.gclid = stored
-  if (document.referrer && new URL(document.referrer).origin !== location.origin) touch.referrer = document.referrer
+  if (document.referrer && new URL(document.referrer).origin !== location.origin) touch.referrer = hasPageRules(options) ? pageAddress(document.referrer, options) : document.referrer
   const arrived = Object.keys(touch).length > 0
   if (arrived) touch.landing = url.origin + url.pathname
   // Meta's id for this browser goes along with an arrival, and is never one by itself.
@@ -164,22 +243,48 @@ function tidy(): void {
 
 /** Reads the visit and sends it. Call once per page load, after the Google tag if you use one. */
 export async function collect(options: CollectOptions): Promise<void> {
-  const [fingerprintEvent, canvas] = await Promise.all(
-    [options.fingerprintEvent, options.canvas].map((value) => Promise.resolve(value).catch(() => undefined)),
-  )
-  const visit = read(options.params)
+  if (!ready(options)) return
+  const began = location.href
+  // A bundled site can supply a function so even starting the vendor is behind the page and consent checks.
+  const guarded = hasPageRules(options) || options.requireConsent
+  const active = () => !guarded || ready(options) && location.href === began
+  // A vendor running on the page can read both addresses before the collector strips their query and fragment.
+  const canIdentify = () => active() && (!hasPageRules(options) || !/[?#]/.test(location.href) && !/[?#]/.test(document.referrer))
+  const resolve = async (value: CollectOptions['canvas']) => {
+    try {
+      if (!canIdentify()) {
+        // A caller may already have started a promise. Ignore its answer even if the vendor fails.
+        if (typeof value !== 'function') void Promise.resolve(value).catch(() => undefined)
+        return undefined
+      }
+      const answer = await (typeof value === 'function' ? value(canIdentify) : value)
+      return canIdentify() ? answer : undefined
+    } catch {
+      return undefined
+    }
+  }
+  const [fingerprintEvent, canvas] = await Promise.all([resolve(options.fingerprintEvent), resolve(options.canvas)])
+  if (!active()) return
+  const visit = read(options.params, options)
+  if (!visit) return
   // A visitor who opted out of advertising is still seen, but nothing about ads leaves the page.
   if ((navigator as { globalPrivacyControl?: boolean }).globalPrivacyControl === true) visit.gpc = true
-  if (options.consent) visit.consent = options.consent
+  const consent = options.requireConsent ? bannerAnswer() ?? options.consent : options.consent
+  if (consent) visit.consent = consent
   if (visit.gpc || visit.consent?.adUserData === false) {
     delete visit.touch
     delete visit.ga
   }
   if (typeof visit.touch?.gclid === 'string') remember('ag_click', visit.touch.gclid)
   tidy()
+  if (!ready(options)) return
   // The first page of this browser session, for forms to carry along.
   try {
-    if (!sessionStorage.getItem('ag_landing')) sessionStorage.setItem('ag_landing', location.href)
+    const kept = sessionStorage.getItem('ag_landing')
+    if (hasPageRules(options)) {
+      const clean = pageAddress(kept, options) ?? visit.url
+      if (clean !== kept) sessionStorage.setItem('ag_landing', clean)
+    } else if (!kept) sessionStorage.setItem('ag_landing', location.href)
   } catch {}
   const body = JSON.stringify({
     ...visit,
@@ -187,12 +292,12 @@ export async function collect(options: CollectOptions): Promise<void> {
     ...(canvas && { canvas }),
   })
   // text/plain keeps the request "simple", so the browser sends it without a preflight.
-  await post(options.endpoint, body)
+  await post(options, body)
 }
 
-async function post(endpoint: string, body: string): Promise<void> {
-  if (navigator.sendBeacon?.(endpoint, new Blob([body], { type: 'text/plain' }))) return
-  await fetch(endpoint, { method: 'POST', body, keepalive: true, headers: { 'content-type': 'text/plain' } })
+async function post(options: CollectOptions, body: string): Promise<void> {
+  if (!hasPageRules(options) && navigator.sendBeacon?.(options.endpoint, new Blob([body], { type: 'text/plain' }))) return
+  await fetch(options.endpoint, { ...guardedFetch(options), method: 'POST', body, keepalive: true, headers: { 'content-type': 'text/plain' } })
 }
 
 export interface EventDetail {
@@ -207,10 +312,11 @@ export interface EventDetail {
  * the phone number. The server keeps only the names it was told to accept.
  */
 export async function event(options: CollectOptions, name: string, detail: EventDetail = {}): Promise<void> {
+  if (!ready(options)) return
   const page = new URL(location.href)
   const staff = staffMark()
   // The page can replace its banner answer after the tag has loaded.
-  const banner = (globalThis as { accountGraphConsent?: CollectOptions['consent'] }).accountGraphConsent
+  const banner = bannerAnswer()
   const refusal = banner?.adUserData === false ? banner : options.consent?.adUserData === false ? options.consent : undefined
   const body = JSON.stringify({
     kind: 'event',
@@ -223,7 +329,7 @@ export async function event(options: CollectOptions, name: string, detail: Event
     ...(detail.number && { number: detail.number }),
     ...(staff && { staff }),
   })
-  await post(options.endpoint, body)
+  await post(options, body)
 }
 
 /**
@@ -233,6 +339,7 @@ export async function event(options: CollectOptions, name: string, detail: Event
  * `data-ag-id` gives the occurrence an id. Returns a function that stops listening.
  */
 export function watch(options: CollectOptions): () => void {
+  if (!ready(options)) return () => {}
   const report = (name: string | null, detail: EventDetail) => {
     if (name) void event(options, name, detail).catch(() => undefined)
   }
@@ -241,6 +348,7 @@ export function watch(options: CollectOptions): () => void {
     return id ? { id } : {}
   }
   const clicked = (happened: Event) => {
+    if (!ready(options)) return
     const target = happened.target as Element | null
     const phone = target?.closest?.('a[href^="tel:"]')
     if (phone) {
@@ -264,6 +372,7 @@ export function watch(options: CollectOptions): () => void {
     if (marked && marked.tagName !== 'FORM') report(marked.getAttribute('data-ag-event'), idOf(marked))
   }
   const submitted = (happened: Event) => {
+    if (!ready(options)) return
     const form = (happened.target as Element | null)?.closest?.('form[data-ag-event]')
     if (form) report(form.getAttribute('data-ag-event'), idOf(form))
   }
@@ -283,6 +392,7 @@ export function watch(options: CollectOptions): () => void {
  * hands it to its own script tag. Returns a function that stops.
  */
 export function carry(options: CollectOptions): () => void {
+  if (!ready(options)) return () => {}
   // Written the way a link's host reads back: trimmed, lowercase, and a name in another script in its ASCII form.
   const domains = new Set(
     (options.domains ?? []).flatMap((host) => {
@@ -293,17 +403,19 @@ export function carry(options: CollectOptions): () => void {
       }
     }),
   )
+  const decorated = new Map<HTMLAnchorElement, { written: string; marked: string }>()
   let token: { value: string; at: number } | undefined
   let asking = false
   const ask = async () => {
-    if (asking) return
+    if (!ready(options) || asking) return
     asking = true
     try {
       const response = await fetch(options.endpoint, {
         method: 'POST',
-        body: JSON.stringify({ kind: 'carry', device: deviceId() }),
+        body: JSON.stringify({ kind: 'carry', ...pageOf(options), device: deviceId() }),
         headers: { 'content-type': 'text/plain' },
         credentials: 'include',
+        ...guardedFetch(options),
       })
       if (response.ok) token = { value: (await response.json()).token, at: Date.now() }
     } catch {
@@ -314,6 +426,7 @@ export function carry(options: CollectOptions): () => void {
   // A link's menu can copy its address, and a copied address must not carry a token. The menu opens by the right
   // button, by a long press, or by a key held with a click, so the token is taken off again whenever a menu opens.
   const menu = (happened: Event) => {
+    if (!ready(options)) return
     const link = (happened.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null | undefined
     if (!link) return
     try {
@@ -321,9 +434,11 @@ export function carry(options: CollectOptions): () => void {
       if (!url.searchParams.has('ag_from')) return
       url.searchParams.delete('ag_from')
       link.href = url.href
+      decorated.delete(link)
     } catch {}
   }
   const followed = (happened: Event) => {
+    if (!ready(options)) return
     if ((happened as MouseEvent).button === 2) return
     const link = (happened.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null | undefined
     if (!link) return
@@ -333,11 +448,14 @@ export function carry(options: CollectOptions): () => void {
     } catch {
       return
     }
+    if (hasPageRules(options) && !pageAddress(url.href, options)) return
     if (!domains.has(url.hostname.toLowerCase()) || url.hostname === location.hostname) return
     // A token lasts an hour. Past half of that, ask for the next one; it will be there for the next link.
     if (!token || Date.now() - token.at > 30 * 60_000) void ask()
     if (!token || Date.now() - token.at > 55 * 60_000) return
+    const written = decorated.get(link)?.written ?? link.href
     url.searchParams.set('ag_from', token.value)
+    if (hasPageRules(options) || options.requireConsent) decorated.set(link, { written, marked: url.href })
     link.href = url.href
   }
   if (domains.size === 0) return () => {}
@@ -352,6 +470,8 @@ export function carry(options: CollectOptions): () => void {
   document.addEventListener('visibilitychange', returned)
   return () => {
     for (const name of ['pointerdown', 'click']) document.removeEventListener(name, followed, true)
+    for (const [link, { written, marked }] of decorated) if (link.href === marked) link.href = written
+    decorated.clear()
     document.removeEventListener('contextmenu', menu, true)
     document.removeEventListener('visibilitychange', returned)
   }
@@ -373,8 +493,9 @@ const aboutOther = (form: HTMLFormElement): boolean =>
  * whoever copies `ag_device` must not write it on them.
  */
 export function fields(consent?: CollectOptions['consent']): { ag_device: string; ag_landing?: string }
-export function fields(consent: CollectOptions['consent'], form: HTMLFormElement | undefined): { ag_device?: string; ag_speaker_device?: string; ag_landing?: string }
-export function fields(consent?: CollectOptions['consent'], form?: HTMLFormElement): { ag_device?: string; ag_speaker_device?: string; ag_landing?: string } {
+export function fields(consent: CollectOptions['consent'], form: HTMLFormElement | undefined, options?: PageOptions): { ag_device?: string; ag_speaker_device?: string; ag_landing?: string }
+export function fields(consent?: CollectOptions['consent'], form?: HTMLFormElement, options: PageOptions = {}): { ag_device?: string; ag_speaker_device?: string; ag_landing?: string } {
+  if (!ready(options)) return {}
   const device = form && aboutOther(form) ? { ag_speaker_device: deviceId() } : { ag_device: deviceId() }
   const optedOut = (navigator as { globalPrivacyControl?: boolean }).globalPrivacyControl === true || consent?.adUserData === false
   if (optedOut) return device
@@ -382,6 +503,10 @@ export function fields(consent?: CollectOptions['consent'], form?: HTMLFormEleme
   try {
     landing = sessionStorage.getItem('ag_landing')
   } catch {}
+  if (hasPageRules(options)) {
+    const safe = pageAddress(landing ?? location.href, options)
+    return safe ? { ...device, ag_landing: safe } : device
+  }
   return { ...device, ag_landing: landing ?? location.href }
 }
 
@@ -393,20 +518,31 @@ export function fields(consent?: CollectOptions['consent'], form?: HTMLFormEleme
  * that post to a system the cookie does not reach, such as a hosted form or
  * a CRM. Returns a function that stops.
  */
-export function fill(options: { all?: boolean; consent?: CollectOptions['consent'] } = {}): () => void {
+export function fill(options: PageOptions & { all?: boolean } = {}): () => void {
+  if (!ready(options)) return () => {}
   const off = new WeakSet<HTMLInputElement>()
+  const restore = new Map<HTMLInputElement, () => void>()
+  const keepFields = hasPageRules(options) || options.requireConsent
+  const before = (input: HTMLInputElement) => {
+    if (!keepFields || restore.has(input)) return
+    const { disabled, value } = input
+    restore.set(input, () => Object.assign(input, { value, disabled }))
+  }
   const submitted = (happened: Event) => {
+    if (!ready(options)) return
     const form = (happened.target as Element | null)?.closest?.('form')
     if (!form) return
     const posts = (form.getAttribute('method') ?? 'get').toLowerCase() === 'post'
     if (!(form.hasAttribute('data-ag-fields') || (options.all && posts))) return
-    const filled = fields(options.consent, form)
+    const filled = fields(options.requireConsent ? bannerAnswer() ?? options.consent : options.consent, form, options)
     // A form filled before the visitor opted out gives up the landing page it was holding.
     const held = form.querySelector('input[name="ag_landing"]') as HTMLInputElement | null
+    if (held) before(held)
     if (held && filled.ag_landing === undefined) held.value = ''
     // Nor does it send the device by the name it had before the answer changed. Disabled, a field is not sent at all, and one the page wrote is still there.
     for (const each of controls(form)) {
       if (each.name !== 'ag_device' && each.name !== 'ag_speaker_device') continue
+      before(each)
       if (each.name in filled) {
         if (off.delete(each)) each.disabled = false
       } else if (!each.disabled) {
@@ -422,12 +558,18 @@ export function fill(options: { all?: boolean; consent?: CollectOptions['consent
         input.type = 'hidden'
         input.name = name
         form.append(input)
-      }
+        const added = input
+        if (keepFields) restore.set(input, () => added.remove())
+      } else before(input)
       input.value = value
     }
   }
   document.addEventListener('submit', submitted, true)
-  return () => document.removeEventListener('submit', submitted, true)
+  return () => {
+    document.removeEventListener('submit', submitted, true)
+    for (const undo of restore.values()) undo()
+    restore.clear()
+  }
 }
 
 /** A text link with this visitor's code at the end of what it fills in. */
@@ -445,22 +587,31 @@ export function withCode(href: string, code: string): string {
  * when the page has either. Returns a function that stops.
  */
 export function texts(options: CollectOptions): () => void {
+  if (!ready(options)) return () => {}
+  const labels = new Map<Element, string | null>()
+  const markedLinks = new Map<Element, () => void>()
+  const guarded = hasPageRules(options) || options.requireConsent
   let code: string | undefined
   let asked = false
   const show = () => {
-    for (const marked of Array.from(document.querySelectorAll('[data-ag-code]'))) if (code && marked.textContent !== code) marked.textContent = code
+    if (!ready(options)) return
+    for (const marked of Array.from(document.querySelectorAll('[data-ag-code]'))) if (code && marked.textContent !== code) {
+      if (guarded && !labels.has(marked)) labels.set(marked, marked.textContent)
+      marked.textContent = code
+    }
   }
   const ask = async () => {
-    if (asked || !document.querySelector('a[href^="sms:"], [data-ag-code]')) return
+    if (!ready(options) || asked || !document.querySelector('a[href^="sms:"], [data-ag-code]')) return
     asked = true
     const gpc = (navigator as { globalPrivacyControl?: boolean }).globalPrivacyControl === true
     const staff = staffMark()
     try {
       const response = await fetch(options.endpoint, {
         method: 'POST',
-        body: JSON.stringify({ kind: 'text_code', device: deviceId(), ...(gpc && { gpc }), ...(options.consent && { consent: options.consent }), ...(staff && { staff }) }),
+        body: JSON.stringify({ kind: 'text_code', ...pageOf(options), device: deviceId(), ...(gpc && { gpc }), ...(options.consent && { consent: options.consent }), ...(staff && { staff }) }),
         headers: { 'content-type': 'text/plain' },
         credentials: 'include',
+        ...guardedFetch(options),
       })
       if (response.status === 200) {
         code = (await response.json()).code
@@ -474,6 +625,7 @@ export function texts(options: CollectOptions): () => void {
     }
   }
   const followed = (happened: Event) => {
+    if (!ready(options)) return
     const link = (happened.target as Element | null)?.closest?.('a[href^="sms:"]')
     if (!link) return
     if (!code) return void ask()
@@ -482,9 +634,15 @@ export function texts(options: CollectOptions): () => void {
     if (marked === written) return
     link.setAttribute('href', marked)
     // The page is put back as it was once the link has been followed.
-    setTimeout(() => link.getAttribute('href') === marked && link.setAttribute('href', written), 0)
+    const undo = () => {
+      if (link.getAttribute('href') === marked) link.setAttribute('href', written)
+      markedLinks.delete(link)
+    }
+    if (guarded) markedLinks.set(link, undo)
+    setTimeout(undo, 0)
   }
   const touched = () => {
+    if (!ready(options)) return
     // One that came to the page later.
     show()
     void ask()
@@ -495,6 +653,9 @@ export function texts(options: CollectOptions): () => void {
   return () => {
     document.removeEventListener('click', followed, true)
     document.removeEventListener('pointerdown', touched, true)
+    for (const undo of markedLinks.values()) undo()
+    for (const [label, original] of labels) if (label.textContent === code) label.textContent = original
+    labels.clear()
   }
 }
 
@@ -513,6 +674,7 @@ function written(number: string): string {
  * written with. Returns a function that stops and puts that back.
  */
 export function pool(options: CollectOptions): () => void {
+  if (!ready(options)) return () => {}
   const PHONE = /\+?\(?\d[\d\s().-]{6,}\d/
   let original: (() => void)[] = []
   let until = 0
@@ -553,7 +715,7 @@ export function pool(options: CollectOptions): () => void {
     if (!stopped) renewing = setTimeout(() => void ask(), ms)
   }
   const ask = async () => {
-    if (asking || stopped || document.visibilityState !== 'visible' || !document.querySelector('[data-ag-pool]')) return
+    if (!ready(options) || asking || stopped || document.visibilityState !== 'visible' || !document.querySelector('[data-ag-pool]')) return
     asking = true
     const gpc = (navigator as { globalPrivacyControl?: boolean }).globalPrivacyControl === true
     const staff = staffMark()
@@ -563,9 +725,10 @@ export function pool(options: CollectOptions): () => void {
     try {
       const response = await fetch(options.endpoint, {
         method: 'POST',
-        body: JSON.stringify({ kind: 'number', device: deviceId(), ...(gpc && { gpc }), ...(options.consent && { consent: options.consent }), ...(staff && { staff }) }),
+        body: JSON.stringify({ kind: 'number', ...pageOf(options), device: deviceId(), ...(gpc && { gpc }), ...(options.consent && { consent: options.consent }), ...(staff && { staff }) }),
         headers: { 'content-type': 'text/plain' },
         credentials: 'include',
+        ...guardedFetch(options),
       })
       if (response.status === 200) given = await response.json()
       // Nothing to give: what is shown stands until it runs out, and the next time of asking is soon enough.
@@ -573,7 +736,7 @@ export function pool(options: CollectOptions): () => void {
     } finally {
       asking = false
     }
-    if (stopped) return
+    if (stopped || !ready(options)) return
     const left = given ? began + given.lasts - Date.now() : 0
     if (given && left > 0) {
       show(given.number)
@@ -587,6 +750,7 @@ export function pool(options: CollectOptions): () => void {
   }
   // Hidden, a page neither renews nor counts on its timers: back in view, it looks at the clock first.
   const seen = () => {
+    if (!ready(options)) return
     if (document.visibilityState !== 'visible') return
     if (until && Date.now() >= until) restore()
     void ask()

@@ -273,6 +273,7 @@ async function stop() {
 | `token` | `GRAPH_TOKEN` | The service token |
 | `serviceTokens` | `SERVICE_TOKENS`, `SERVICE_TOKENS_FILE` | Named service credentials and the calls, entry types, actions or kinds each opens |
 | `reviewers` | `REVIEW_TOKENS` | Each reviewer's name, with a token or a list of tokens |
+| `allowPages`, `refusePages` | `ALLOW_PAGES`, `REFUSE_PAGES` | Optional page paths for the HTTP writer and the tag it serves. See [page rules](privacy.md#pages-a-site-may-record). |
 | `origins` | `ORIGINS` | Sites whose pages may post |
 | `trustProxy` | `TRUST_PROXY` | `true`, or how many proxies stand in front |
 | `cookie` | `COOKIE` | `true`, or `{ domain }`, to keep the device id in a cookie the server sets |

@@ -668,8 +668,9 @@ test('the script tag is served as plain JavaScript that runs itself', async () =
     // No TypeScript is left for a browser to choke on.
     assert.equal(/\binterface\b|: string|: Promise<| as const/.test(body), false)
     const helpers = await (await fetch(`${base}/fingerprint.js`)).text()
-    assert.match(helpers, /export async function fingerprintEvent\(options\s*\)/)
-    assert.match(helpers, /export async function openFingerprint\(\)/)
+    const vendor = await import('data:text/javascript;base64,' + Buffer.from(helpers).toString('base64'))
+    assert.equal(await vendor.fingerprintEvent({ apiKey: 'test' }, () => false), undefined)
+    assert.equal(await vendor.openFingerprint(() => false), undefined)
   } finally {
     server.close()
   }
