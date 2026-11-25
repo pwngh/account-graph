@@ -138,7 +138,8 @@ const pairs = [{ a: 'contact:7', b: 'contact:12' }]
 const { decisions } = await graph.lookup({ kind: 'person', subjects: ['contact:7', 'contact:12'], at })
 const merged = await graph.decide({ key: 'ticket-88', at, by: 'dana', seen: decisions, action: 'merge', pairs })
 if (!merged.ok && merged.reason === 'STALE') console.log(`${merged.by} decided about them since`)
-if (merged.ok && merged.value.notAsAsked.length > 0) console.log('a split holds them apart')
+if (merged.ok && merged.value.stands === false) console.log('the merge has been taken back')
+else if (merged.ok && merged.value.notAsAsked.length > 0) console.log('a split holds them apart')
 ```
 
 Take a merge back with `unmerge` of the pair:
@@ -146,6 +147,7 @@ Take a merge back with `unmerge` of the pair:
 ```ts
 const undone = await graph.decide({ key: 'ticket-89', at: 1795463600000, by: 'dana', action: 'unmerge', pairs: [{ a: 'contact:7', b: 'contact:12' }] })
 if (!undone.ok && undone.reason === 'NOT_JOINED') for (const { a, b, because } of undone.pairs) console.log(a, b, because)
+else if (undone.ok && undone.value.stands === false) console.log('the pair has been merged again')
 else if (undone.ok) for (const { a, b, because } of undone.value.notAsAsked) console.log(a, b, 'are still together', because)
 ```
 

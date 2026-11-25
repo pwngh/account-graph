@@ -186,7 +186,7 @@ export interface Graph {
   /** An older process could put the physical line and its matching evidence back after a staff confirmation. */
   repairCallReports(): Promise<void>
   /** Identifies one call independently of the line or the call result. */
-  sayParty(said: { call: string; key: string; at: number; party: CallParty & { by: string } }): Promise<{ stands: boolean }>
+  sayParty(said: { call: string, key: string, at: number, party: CallParty & { by: string }, seen?: string | null }): Promise<{ stands: boolean }>
   refreshParty(id: string): Promise<Change[]>
   partyHistory(id: string): Promise<(PartyStatement & { key: string })[]>
   partyRevision(): Promise<string | undefined>
@@ -1854,12 +1854,16 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       })
     },
 
-    async sayParty({ call, key, at, party }) {
+    async sayParty({ call, key, at, party, seen }) {
       keepable(key, call, party.by, ...(party.role === 'unknown' ? [] : [party.subject]))
       let stands = false
       await changing(async (tx) => {
         const deletion = 'subject' in party ? await tx.partyReturn(party.subject, call) : undefined
         if (deletion === 'forgotten') throw refused('The record named for this call was forgotten', { reason: 'FORGOTTEN' })
+        if (seen !== undefined) {
+          const current = newest(await tx.saidOf('party', call))
+          if (seen !== (current?.key ?? null)) throw refused('The party statement has changed', { reason: 'STALE', decision: current?.key ?? null, by: current?.data.by ?? null, at: current?.at ?? null })
+        }
         const added = await tx.addSaid({ topic: 'party', about: call, key, at, data: party })
         if (added && deletion !== undefined) await tx.confirmPartyReturn(call, key, deletion)
         stands = newest(await tx.saidOf('party', call))!.key === key

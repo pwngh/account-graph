@@ -27,11 +27,19 @@ export async function calls() {
   void graph.record({ entries: [{ type: 'conversion', key: 'k', subject: 's', stage: 'x' }] })
   // @ts-expect-error a refund is an amount
   void graph.record({ entries: [{ type: 'restatement', key: 'k', at: 1, of: { type: 'conversion', key: 'c' }, change: { kind: 'refund', value: 1 } }] })
+  const party = await graph.lookup({ kind: 'party', call: 'CA1' })
+  const seen = party?.key ?? null
+  // @ts-expect-error a party expectation belongs only to a party change
+  void graph.record({ entries: [{ type: 'call_update', key: 'r', at: 2, call: 'CA1', change: { kind: 'not_returned', seen } }] })
+  // @ts-expect-error a party expectation is a statement key or null
+  void graph.record({ entries: [{ type: 'call_update', key: 'n', at: 2, call: 'CA1', change: { kind: 'party', role: 'unknown', by: 'desk', seen: 0 } }] })
   const { results } = await graph.record({ entries: [
     { type: 'profile', key: 'signup-1001', at: 1, subject: 'contact:1001', facts: { email: 'a@b.co', device: 'd' } },
     { type: 'conversion', key: 'enroll-1001', at: 1, subject: 'contact:1001', stage: 'enrolled', value: 200, currency: 'USD' },
     { type: 'call_update', key: 'u', at: 2, call: 'CA1', change: { kind: 'returned', reachedAt: 1 } },
+    { type: 'call_update', key: 'p', at: 2, call: 'CA1', change: { kind: 'party', role: 'unknown', by: 'desk', seen } },
   ] })
+  for (const row of results) if (!row.ok && row.reason === 'STALE') row.decision?.toUpperCase()
   for (const r of results) { if (r.ok) { r.value.duplicate; if (r.type === 'conversion') r.value.deliveries.length } else if (r.reason === 'KEY_REUSED') r.fields.length; else if (r.reason === 'CURRENCY_MISMATCH') r.expected.length }
   const p = await graph.lookup({ kind: 'person', subjects: ['contact:1001'], at: 1 })
   const d = await graph.decide({ key: 'k', at: 1, by: 'dana', seen: p.decisions, action: 'unmerge', pairs: [{ a: 'a', b: 'b' }] })

@@ -619,10 +619,16 @@ export function createHandler(core: Core, options: HandlerOptions) {
       }
       if (!isService(request)) {
         const party = name === 'record' && Array.isArray(body?.entries) && body.entries.length > 0 && body.entries.every((entry: any) => entry?.type === 'call_update' && entry.change?.kind === 'party' && entry.change.by === reviewer)
-        const opens = party || name === 'report' || ((name === 'decide' || name === 'forget') && body?.by === reviewer) || (name === 'lookup' && (body?.kind === 'journey' || body?.kind === 'find'))
+        const opens = party || name === 'report' || ((name === 'decide' || name === 'forget') && body?.by === reviewer) || (name === 'lookup' && (body?.kind === 'journey' || body?.kind === 'find' || body?.kind === 'party'))
         if (!opens) throw fault(FAULT_CODES.AUTH.FORBIDDEN, name === 'decide' || name === 'forget' ? '`by` must match the owner of the token' : 'The token does not open this call')
       }
-      return answer(200, await core.v1(name as CallName, body, gone.signal))
+      const said = await core.v1(name as CallName, body, gone.signal)
+      // No journey says whom a call was not with, so a reviewer is not told it here.
+      if (!isService(request) && name === 'lookup' && body?.kind === 'party' && (said as any)?.role === 'excluded') {
+        const { subject: _, ...shown } = said as any
+        return answer(200, shown)
+      }
+      return answer(200, said)
     } catch (error) {
       if (error instanceof Refusal && error.status === 413) return answer(413, faultBody(fault(FAULT_CODES.INPUT.TOO_LARGE, error.message)))
       if (error instanceof Refusal && error.status >= 404) throw error

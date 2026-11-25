@@ -311,6 +311,8 @@ The `conflicts` [lookup](http.md#lookup) takes the people of a matter and answer
 
 `rests` is the split pair the answer rests on. Where the other side was not asked about, `b` is whoever on record they are kept apart from.
 
+When loading opposing parties, ask for both subject IDs and look for their exact pair with `how: "recorded"`. This works even if another system recorded the split. Replaying a particular `decide` key tells you whether that whole request still stands.
+
 > **An empty list says that none is known here.** It does not say that there is none, and it does not replace your own conflict check. If the server cannot be reached, say that it was not asked.
 
 ## Decisions from your own systems

@@ -50,6 +50,18 @@ Two people can use the same line. When staff know who an individual call concern
 
 The newest statement wins, by `at` and then by key in byte order. It can arrive before the call. Use a new key for a correction. Results and reported returns have their own order. The call lookup keeps the statements and who made each one. After a deletion, a new statement can name the returning record once it has a fresh observation, such as a profile, and the call is on file with a start time after the deletion. A staff merge alone cannot establish a return. For an earlier or missing call the statement receives `FORGOTTEN`. A refused new key can be retried after the call arrives.
 
+For a staff desk, read the statement when the editor opens and keep its key until the reviewer saves. This also works before the phone report arrives.
+
+```ts
+const shown = await graph.lookup({ kind: 'party', call: 'C17' })
+const { results } = await graph.record({ entries: [{
+  type: 'call_update', key: 'desk-018', call: 'C17', at: 1795460300000,
+  change: { kind: 'party', role: 'self', subject: 'record:17', by: 'intake', seen: shown?.key ?? null },
+}] })
+```
+
+If the entry returns `STALE`, show the current statement and let the reviewer decide whether to retry the edit. Its entry key is still available. Taking back an identification with `role: "unknown"` creates a statement, so the next editor sends that statement’s key. While its receipt is retained, a retry of an accepted entry answers `duplicate: true` and reports whether it still stands. Deletion takes precedence and can return `FORGOTTEN`.
+
 Forgetting a former party removes their statements. A call since confirmed for another record stays with that record, along with its outcome and value. Forgetting the original line of a recorded call still deletes it. If the phone report has yet to arrive, the current party statement determines whether the pending call stays.
 
 After a recorded call has a party statement, a later phone report or a competing tap leaves its details intact. Staff can still update its result, return or party. The call also loses the channel visit supplied by its tracking number. Visits from other calls at the same instant keep their sources.
