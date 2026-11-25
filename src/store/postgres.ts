@@ -1206,8 +1206,18 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     },
 
     async latelySeen(sightings) {
-      const { rows } = await db.query(`select distinct subject from (select subject from ${t('sighting')} order by recorded_at desc, subject collate "C" limit $1) newest`, [sightings])
-      return rows.map((row) => row.subject)
+      const { rows } = await db.query(
+        `with newest as materialized (select subject, recorded_at from ${t('sighting')} order by recorded_at desc, subject collate "C" limit $1)
+         select subject, min(recorded_at) as oldest, count(*) as n, (select count(*) > $2 from newest) as older
+         from (select * from newest order by recorded_at desc, subject collate "C" limit $2) taken group by subject`,
+        [Number.isFinite(sightings) ? sightings + 1 : null, Number.isFinite(sightings) ? sightings : null],
+      )
+      return { subjects: rows.map(row => row.subject as Subject), count: rows.reduce((sum, row) => sum + Number(row.n), 0), oldest: rows.length ? rows.reduce((at, row) => Math.min(at, Number(row.oldest)), Infinity) : null, older: Boolean(rows[0]?.older) }
+    },
+
+    async subjectPage(after, inclusive, limit) {
+      const { rows } = await db.query(`select id from ${t('subject')} where id collate "C" ${inclusive ? '>=' : '>'} $1 order by id collate "C" limit $2`, [after ?? '', limit])
+      return rows.map(row => row.id as Subject)
     },
 
     async *sightingsUntil(recorded) {

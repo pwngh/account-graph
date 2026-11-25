@@ -17,6 +17,7 @@ import { identifier, ip, UNSTORABLE } from '../core/identifiers.ts'
 import { trusted } from '../providers/fingerprint.ts'
 import type { FingerprintVerifier } from '../providers/fingerprint.ts'
 import { placeOf, shared } from '../providers/maxmind.ts'
+import { RECENT_SIGHTINGS } from '../core/undecided.ts'
 import { fromTwilio, twilioCall, twilioText } from '../providers/twilio.ts'
 import { asks, codeNote, textCode, texted } from '../core/texts.ts'
 import type { TextOptions } from '../core/texts.ts'
@@ -886,7 +887,10 @@ export function createHandler(core: Core, options: HandlerOptions) {
       case 'GET /undecided': {
         const limit = url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : 50
         if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new Refusal(400, '`limit` must be an integer from 1 to 500')
-        return graph.undecided({ limit })
+        const full = url.searchParams.get('full')
+        if (full !== null && full !== 'true' && full !== 'false') throw new Refusal(400, '`full` must be true or false')
+        const cursor = url.searchParams.get('cursor')
+        return graph.undecided({ limit, sightings: RECENT_SIGHTINGS, ...(full !== null && { full: full === 'true' }), ...(cursor !== null && { cursor }) })
       }
       case 'GET /board': {
         const steps = Object.entries(options.stages ?? {}).map(([name, { wait }]) => ({ name, ...(wait && { wait }) }))

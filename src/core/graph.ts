@@ -12,6 +12,9 @@ import type { CallSummary } from './callreport.ts'
 import { byCode, codeTie, firstOpen, followUp, isTie } from './calls.ts'
 import { Gone, asks, beginnings, replyTo } from './texts.ts'
 import { followed } from './followed.ts'
+import { undecided } from './undecided.ts'
+import type { Undecided, UndecidedOptions } from './undecided.ts'
+export type { Undecided } from './undecided.ts'
 import type { Followed } from './followed.ts'
 import type { Hours } from './hours.ts'
 import { UNSTORABLE, nameEvidence } from './identifiers.ts'
@@ -371,10 +374,10 @@ export interface Graph {
   /** What two subjects share, however weak, without any reviewer's mark, and how they stand. */
   between(a: Subject, b: Subject): Promise<Between>
   /**
-   * Pairs that are related and not joined, strongest first, for someone to decide. Only pairs with a subject of the newest
-   * sightings, 10,000 unless told otherwise: scoring every pair reads the whole graph.
+   * Pairs that are related and not joined, strongest first among subjects of the newest 10,000 sightings by default.
+   * A full sweep reads a page of subjects in id order. Pass the returned cursor to continue either queue.
    */
-  undecided(options?: { limit?: number; sightings?: number }): Promise<Undecided>
+  undecided(options?: UndecidedOptions): Promise<Undecided>
   /**
    * Every pair a reviewer joined or kept apart, with what the two share, in
    * the form `fit` takes. A pair that shares nothing is left out, since it
@@ -477,14 +480,6 @@ export interface Between {
   reasons: Reason[]
   /** What both hold that links nobody, because it is muted or over its cap. */
   idle: Identifier[]
-}
-
-/** Pairs the graph finds related and has not joined, strongest first. */
-export interface Undecided {
-  pairs: Pair[]
-  /** How many there are among the subjects looked at, and how many subjects those are. */
-  total: number
-  seen: number
 }
 
 export interface BoardOptions {
@@ -2684,9 +2679,8 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       return store.read((tx) => tx.recentChanges(limit))
     },
 
-    async undecided({ limit = 50, sightings = 10_000 } = {}) {
-      return store.read(async (tx) => {
-        const lately = await tx.latelySeen(sightings)
+    async undecided(options = {}) {
+      return store.read(tx => undecided(tx, options, async lately => {
         const pairs = new Map<string, Pair>()
         const two: [Subject, Subject][] = []
         const joined: [Subject, Subject][] = []
@@ -2729,10 +2723,8 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         const borders = bordersOf(tx)
         await borders.load(joined.flat(), undefined, joined.flat())
         for (const [a, b] of joined) if (borders.kept(a, b) || (!policy.records && !borders.between(a, b, 'birth'))) pairs.delete(pairKey(a, b))
-        const open = [...pairs.values()].filter(({ a, b }) => labels.get(a)!.cluster !== labels.get(b)!.cluster && !said.has(pairKey(labels.get(a)!.cluster, labels.get(b)!.cluster)))
-        open.sort((x, y) => y.score - x.score || (x.a === y.a ? (x.b < y.b ? -1 : 1) : x.a < y.a ? -1 : 1))
-        return { pairs: open.slice(0, limit), total: open.length, seen: lately.length }
-      })
+        return [...pairs.values()].filter(({ a, b }) => labels.get(a)!.cluster !== labels.get(b)!.cluster && !said.has(pairKey(labels.get(a)!.cluster, labels.get(b)!.cluster)))
+      }))
     },
 
     reviewed({ exclude } = {}) {

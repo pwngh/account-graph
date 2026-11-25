@@ -130,6 +130,7 @@
 
 ### Reviewer screen
 
+- `undecided` pages through ranked pairs from recent sightings and can sweep every subject, including those with pruned sightings.
 - `Accounts` flags groups where too many conflicting call histories leave some matches unresolved.
 - `Matches` checks the speaker marks of both clusters before offering a pair. An active staff merge broken by a separation remains visible in Links.
 - Accounts shows linked IDs as an interactive graph and as a table with evidence.
