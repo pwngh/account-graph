@@ -317,13 +317,17 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
 
     async setCreatedAt(subject, createdAt, at, key) {
       const before = created.get(subject)
-      if (before && later(before, { at, key }) > 0) return false
+      if (before) {
+        const order = later(before, { at, key })
+        if (order >= 0) return order === 0 && before.createdAt === createdAt
+      }
       created.set(subject, { createdAt, at, key })
       return true
     },
 
-    async createdAtStands(subject, key) {
-      return created.get(subject)?.key === key
+    async createdAtStands(subject, createdAt, at, key) {
+      const row = created.get(subject)
+      return row?.at === at && row.key === key && row.createdAt === createdAt
     },
 
     async subjectDates(subjects) {
@@ -524,7 +528,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
     async pruneReceipts(before) {
       let gone = 0
       for (const [id, receipt] of receipts) {
-        if (receipt.forgotten !== undefined || receipt.recorded >= before || (receipt.type === 'profile' && receipt.digest?.createdAt !== undefined)) continue
+        if (receipt.forgotten !== undefined || receipt.recorded >= before) continue
         receiptSubjects.delete(id)
         gone += Number(receipts.delete(id))
       }

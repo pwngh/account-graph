@@ -231,28 +231,45 @@ if (!url) {
     }
   })
 
-  test('upgrade 36 keeps creation dates through older writes and prune and clears them on older forgets', async () => {
+  test('two servers upgrade creation dates once, and an older server can still observe, prune and forget several subjects', async () => {
     const schema = `ag_test_${process.pid}_created`
     let app: ReturnType<typeof accountGraph> | undefined
     try {
       const store = await madeBefore(schema, 36)
       await store.write(tx => tx.addSightings([{ subject: 'record:a', identifier: 'email:first@example.org', at: 10, recorded: 90 }]))
-      assert.deepEqual(await store.migrate(), ['record creation dates'])
-      assert.deepEqual(await store.migrate(), [])
+      const other = createPostgresStore(pool, schema)
+      assert.deepEqual((await Promise.all([store.migrate(), other.migrate()])).flat(), ['record creation dates'])
       const entry = { key: 'signup', type: 'profile' as const, subject: 'record:a', at: 20, createdAt: 8, facts: { email: 'first@example.org' } }
-      const plain = { key: 'signup-b', type: 'profile' as const, subject: 'record:b', at: 20, facts: { email: 'later@example.org' } }
+      const second = { ...entry, key: 'signup-b', subject: 'record:b', createdAt: 9 }
+      const kept = { ...entry, key: 'signup-c', subject: 'record:c', createdAt: 12 }
+      const plain = { key: 'signup-d', type: 'profile' as const, subject: 'record:d', at: 20, facts: { email: 'later@example.org' } }
       app = accountGraph({ databaseUrl: url!, schema, workers: false, receiptSecrets: ['a'.repeat(32)] })
-      assert.ok((await app.record({ entries: [entry, plain] })).results.every(row => row.ok))
+      assert.ok((await app.record({ entries: [entry, second, kept, plain] })).results.every(row => row.ok))
+      assert.deepEqual(await store.migrate(), [])
+      assert.deepEqual(await other.migrate(), [])
       // The preceding version continued to write these same sightings, prune SQL and forget decisions.
       await store.write(tx => tx.addSightings([{ subject: 'record:a', identifier: 'email:first@example.org', at: 4, recorded: 100 }]))
       await pool.query(`delete from ${schema}.sighting; delete from ${schema}.receipt where forgotten_at is null and recorded_at < 8640000000000000`)
       assert.deepEqual((await store.read(tx => tx.subjectDates(['record:a']))).get('record:a'), { firstSeen: 4, createdAt: 8 })
       const retried = (await app.record({ entries: [entry, plain] })).results
-      assert.deepEqual(retried.map(row => row.ok && row.value.duplicate), [true, false])
-      await oldForgetDecision(store, 'record:b', 101)
-      assert.deepEqual((await store.read(tx => tx.subjectDates(['record:a']))).get('record:a'), { firstSeen: 4, createdAt: 8 })
-      await oldForgetDecision(store, 'record:a', 102)
-      assert.deepEqual((await store.read(tx => tx.subjectDates(['record:a']))).get('record:a'), { firstSeen: 4 })
+      assert.deepEqual(retried.map(row => row.ok && row.value.duplicate), [false, false])
+      // Insert the decisions together so only the row trigger can erase the two dates.
+      const batch = [
+        { action: 'forget' as const, about: [entry.subject] },
+        { action: 'separate' as const, about: [kept.subject, plain.subject] },
+        { action: 'forget' as const, about: [second.subject] },
+      ]
+      let previous = ''
+      const decisions = batch.map((row, i) => {
+        const decision = { ...row, seq: i + 1, at: 102 }
+        previous = seal(previous, decision)
+        return { ...decision, hash: previous }
+      })
+      await pool.query(`insert into ${schema}.decision (seq, at, action, about, hash)
+        select * from jsonb_to_recordset($1::jsonb) as batch(seq bigint, at bigint, action text, about jsonb, hash text)`, [JSON.stringify(decisions)])
+      assert.deepEqual(await store.read(tx => tx.subjectDates([entry.subject, second.subject, kept.subject])), new Map([
+        [entry.subject, { firstSeen: 4 }], [second.subject, { firstSeen: 20 }], [kept.subject, { firstSeen: 20, createdAt: 12 }],
+      ]))
     } finally {
       await app?.close()
       await pool.query(`drop schema if exists ${schema} cascade`)

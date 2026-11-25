@@ -293,13 +293,12 @@ RECEIPT_SECRETS=the-new-one…,the-old-one…
 
 | Receipt | Kept |
 | --- | --- |
-| Of an ordinary entry | A year at least. `account-graph prune` deletes those that are older than a year and than its day. |
-| Of a profile with `createdAt` | Until the subject is forgotten, when the key becomes a tombstone. This includes superseded dates. |
+| Of a key | A year at least. `account-graph prune` deletes those that are older than a year and than its day. |
 | Of a key whose person was deleted | For good, as a tombstone: a type, a keyed hash and times. A late retry then brings nobody back. |
 
 > **Keep an old secret while receipts made with it are kept.** A server without it does not start. Tombstones stay, so a secret under which anybody was deleted is kept for good.
 
-After its receipt is pruned, a key is new again. A conversion, call, text, payment or transfer that is still on record stays one. A profile without `createdAt`, an arrival or a consent answer is written a second time.
+After its receipt is pruned, a key is new again. A conversion, call, text, payment or transfer that is still on record stays one. A profile, an arrival or a consent answer is written a second time.
 
 ## Monitoring
 

@@ -6,7 +6,7 @@ import { hashPhone } from '../src/core/identifiers.ts'
 import { createEngine } from '../src/core/engine.ts'
 import { createSix } from '../src/core/six.ts'
 import { createGraph } from '../src/core/graph.ts'
-import { createReceipts } from '../src/core/receipts.ts'
+import { createReceipts, RECEIPT_RETENTION } from '../src/core/receipts.ts'
 import type { Graph } from '../src/core/graph.ts'
 import type { Store } from '../src/core/store.ts'
 import type { Opened } from './suite.ts'
@@ -34,11 +34,16 @@ async function inOrder(steps: readonly (() => Promise<unknown>)[]) {
 }
 
 export function saidSuite(name: string, open: () => Promise<Opened>) {
-  test(`${name}: an undated profile still matches its old receipt, and a dated one survives pruning until forget`, async () => {
+  test(`${name}: profile receipts expire while the newest creation date stands`, async () => {
     const { store, close } = await open()
     try {
-      const engine = createEngine(store, { now: () => AT + 100 })
+      let clock = AT + 3_600_000
+      const engine = createEngine(store, { now: () => clock })
       const six = createSix(engine, { receipts: createReceipts(['r'.repeat(40)]) })
+      const expire = () => {
+        clock += RECEIPT_RETENTION + 1
+        return store.write(tx => tx.pruneReceipts(clock - RECEIPT_RETENTION))
+      }
       const subject = 'contact:legacy'
       const plain = { type: 'profile', key: 'legacy', at: AT, subject, facts: { email: 'pat@example.org' } } as const
       // A receipt from 64802da, before profiles could carry a creation time.
@@ -57,18 +62,57 @@ export function saidSuite(name: string, open: () => Promise<Opened>) {
         await tx.setCreatedAt(subject, 7, AT + 1, 'interrupted')
         throw new Error('stopped before receipt')
       }), /stopped before receipt/)
-      const cutoff = AT + 400 * 86_400_000
-      await engine.graph.prune(cutoff)
-      await store.write(tx => tx.pruneReceipts(cutoff))
+      assert.equal(await expire(), 3)
+      await engine.graph.prune(clock)
       assert.deepEqual(await engine.graph.history(subject), [])
       assert.deepEqual((await engine.graph.subjectDates([subject])).get(subject), { firstSeen: old.at, createdAt: 8 })
-      assert.deepEqual((await six.record({ entries: [old, corrected] })).results.map(r => r.ok && [r.value.duplicate, r.value.stands]), [[true, false], [true, true]])
-      assert.ok((await six.forget({ key: 'erase', at: AT + 100, subjects: [subject], by: 'desk', platforms: 'report' })).ok)
-      await store.write(tx => tx.pruneReceipts(cutoff))
-      assert.deepEqual((await six.record({ entries: [old, corrected] })).results.map(r => !r.ok && r.reason), ['FORGOTTEN', 'FORGOTTEN'])
+      const [retried] = (await six.record({ entries: [old] })).results
+      assert.ok(retried?.ok && !retried.value.duplicate && !retried.value.stands)
+      assert.deepEqual((await engine.graph.subjectDates([subject])).get(subject), { firstSeen: old.at, createdAt: 8 })
+      const replacement = { ...corrected, createdAt: 6 }
+      const replay = (await six.record({ entries: [replacement, replacement, corrected, plain] })).results
+      assert.deepEqual(replay.slice(0, 2).map(r => r.ok && [r.value.duplicate, r.value.stands]), [[false, false], [true, false]])
+      assert.deepEqual(replay[2], { type: 'profile', key: corrected.key, ok: false, reason: 'KEY_REUSED', fields: ['createdAt'] })
+      assert.ok(replay[3]?.ok && !replay[3].value.duplicate)
+      assert.deepEqual((await engine.graph.subjectDates([subject])).get(subject), { firstSeen: old.at, createdAt: 8 })
+      assert.equal(await expire(), 3)
+      const identical = (await six.record({ entries: [corrected, corrected] })).results
+      assert.deepEqual(identical.map(r => r.ok && [r.value.duplicate, r.value.stands]), [[false, true], [true, true]])
+      assert.equal(await expire(), 1)
+      const earlier = { ...corrected, at: AT - 1 }
+      const revised = (await six.record({ entries: [earlier, earlier, old, plain] })).results
+      assert.deepEqual(revised.map(r => r.ok && [r.value.duplicate, r.value.stands]), [[false, false], [true, false], [false, false], [false, true]])
+      assert.deepEqual((await engine.graph.subjectDates([subject])).get(subject), { firstSeen: old.at, createdAt: 8 })
+      assert.ok((await six.forget({ key: 'erase', at: clock, subjects: [subject], by: 'desk', platforms: 'report' })).ok)
+      await expire()
+      assert.deepEqual((await six.record({ entries: [old, corrected, plain] })).results.map(r => !r.ok && r.reason), ['FORGOTTEN', 'FORGOTTEN', 'FORGOTTEN'])
       assert.deepEqual(await engine.graph.subjectDates([subject]), new Map())
       assert.ok((await six.record({ entries: [{ ...plain, key: 'new-record', at: AT + 1 }] })).results[0]?.ok)
       assert.deepEqual((await engine.graph.subjectDates([subject])).get(subject), { firstSeen: AT + 1 })
+    } finally {
+      await close()
+    }
+  })
+
+  test(`${name}: forgetting after receipt expiry treats a dated profile like any other profile`, async () => {
+    const { store, close } = await open()
+    try {
+      let clock = AT
+      const engine = createEngine(store, { now: () => clock })
+      const six = createSix(engine, { receipts: createReceipts(['r'.repeat(40)]) })
+      const subject = 'contact:date-only'
+      const plain = { type: 'profile', key: 'speaker', at: AT, subject, facts: {}, speaker: { email: 'desk@example.org' } } as const
+      const dated = { ...plain, key: 'dated', createdAt: AT - 10 }
+      assert.ok((await six.record({ entries: [plain, dated] })).results.every(row => row.ok))
+      clock += RECEIPT_RETENTION + 1
+      assert.equal(await store.write(tx => tx.pruneReceipts(clock - RECEIPT_RETENTION)), 2)
+      assert.deepEqual((await engine.graph.subjectDates([subject])).get(subject), { createdAt: dated.createdAt })
+      assert.ok((await six.forget({ key: 'erase', at: clock, by: 'desk', subjects: [subject], platforms: 'report' })).ok)
+      assert.deepEqual(await engine.graph.subjectDates([subject]), new Map())
+      // A receipt already pruned before deletion can no longer identify a retry.
+      const replay = (await six.record({ entries: [dated, plain] })).results
+      assert.deepEqual(replay.map(row => row.ok && [row.value.duplicate, row.value.stands]), [[false, true], [false, true]])
+      assert.deepEqual((await engine.graph.subjectDates([subject])).get(subject), { createdAt: dated.createdAt })
     } finally {
       await close()
     }

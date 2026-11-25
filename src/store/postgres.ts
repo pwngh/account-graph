@@ -292,12 +292,12 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       const { rows } = await db.query(
         `insert into ${t('profile_created')} as p (subject, created_at, at, key) values ($1, $2, $3, $4)
          on conflict (subject) do update set created_at = excluded.created_at, at = excluded.at, key = excluded.key
-         where (p.at, p.key) <= (excluded.at, excluded.key) returning 1`, [subject, createdAt, at, key])
-      return rows.length > 0
+         where (p.at, p.key) < (excluded.at, excluded.key) returning 1`, [subject, createdAt, at, key])
+      return rows.length > 0 || this.createdAtStands(subject, createdAt, at, key)
     },
 
-    async createdAtStands(subject, key) {
-      return (await db.query(`select from ${t('profile_created')} where subject = $1 and key = $2`, [subject, key])).rows.length > 0
+    async createdAtStands(subject, createdAt, at, key) {
+      return (await db.query(`select from ${t('profile_created')} where subject = $1 and created_at = $2 and at = $3 and key = $4`, [subject, createdAt, at, key])).rows.length > 0
     },
 
     async subjectDates(subjects) {
@@ -517,7 +517,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     },
 
     async pruneReceipts(before) {
-      return (await db.query(`with gone as (delete from ${t('receipt')} where forgotten_at is null and recorded_at < $1 and not (type = 'profile' and coalesce(digest ? 'createdAt', false)) returning 1) select count(*)::int as n from gone`, [before])).rows[0].n
+      return (await db.query(`with gone as (delete from ${t('receipt')} where forgotten_at is null and recorded_at < $1 returning 1) select count(*)::int as n from gone`, [before])).rows[0].n
     },
 
     async claimDelivery(sink, now, lease) {
@@ -2143,7 +2143,7 @@ export function upgrades(schema = 'account_graph'): Upgrade[] {
     {
       id: 36,
       name: 'record creation dates',
-      // Servers on the previous version also write forget decisions and prune receipts. Each dated key must survive to be forgotten.
+      // Servers on the previous version also write one forget decision per subject.
       sql: `create table ${schema}.profile_created (
               subject text primary key, created_at bigint not null, at bigint not null, key text collate "C" not null);
             create function ${schema}.forget_profile_created() returns trigger language plpgsql as $forget$
@@ -2152,13 +2152,7 @@ export function upgrades(schema = 'account_graph'): Upgrade[] {
               return new;
             end; $forget$;
             create trigger forget_profile_created after insert on ${schema}.decision for each row when (new.action = 'forget')
-              execute function ${schema}.forget_profile_created();
-            create function ${schema}.keep_dated_profile_receipt() returns trigger language plpgsql as $keep$
-            begin
-              return null;
-            end; $keep$;
-            create trigger keep_dated_profile_receipt before delete on ${schema}.receipt for each row when (old.type = 'profile' and old.digest ? 'createdAt')
-              execute function ${schema}.keep_dated_profile_receipt();`,
+              execute function ${schema}.forget_profile_created();`,
     },
   ]
 }

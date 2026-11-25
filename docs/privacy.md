@@ -59,11 +59,9 @@ Upgrade 30 records which call supplied a channel visit. Older visits only have t
 | Action | Deletes | Keeps |
 | --- | --- | --- |
 | `forget` one subject | Its standing creation date, sightings and links, identifiers with no other holder, visits, steps, their values and payments, not-a-lead marks, its calls and their results, its texts, the links made for it, conversions, consent, separations, transfers, alerts, and its events | See the list below |
-| `prune` before a time | Sightings, superseded consent answers, and call results without a call, all stored before it. Also links that stopped naming anyone and pool assignments that ended before it, and not-a-lead marks set before it without a recorded outcome or call. Events from before it, and receipts that are also older than a year | Links and clusters, because each link keeps its first and last sighting and its count. Visits, steps, calls, and the consent answer that applies |
+| `prune` before a time | Sightings, superseded consent answers, and call results without a call, all stored before it. Also links that stopped naming anyone and pool assignments that ended before it, and not-a-lead marks set before it without a recorded outcome or call. Events from before it, and receipts that are also older than a year | Links and clusters, because each link keeps its first and last sighting and its count. Visits, steps, calls, the standing creation date, and the consent answer that applies |
 | Restating a step | None | Every value it has had |
 | Correcting a call to unanswered | Its outcome, which leaves the report | The call, its result, and the history of its value |
-
-Pruning keeps the standing creation date and the receipts for profiles that supplied a date, including earlier corrections. When the subject is forgotten, those receipts become tombstones. Retrying a dated profile then returns `FORGOTTEN`.
 
 `forget` keeps:
 
@@ -72,7 +70,7 @@ Pruning keeps the standing creation date and the receipts for profiles that supp
 - Calls and texts of another subject that were linked to it, with the link removed.
 - The fact that a pool number was held at that time, without the holder.
 - Other subjects of the same person.
-- A tombstone of each key that was about it: a type, a keyed hash and times. The key is answered `FORGOTTEN` from then on, so a late retry brings nobody back. The same subject may be written again with new keys.
+- A tombstone of each key still known to be about the subject. It keeps the type, a keyed hash and times. The key is answered `FORGOTTEN` from then on. For a profile with or without `createdAt`, `forget` makes this tombstone if the receipt still exists. If the receipt had already been pruned, the key is new again and a retry can bring the subject back. The same subject may also be written again with new keys.
 
 On a database where an older version already accepted a party statement after its record was forgotten, the first server to open the upgraded database cleans up those statements before serving requests. It uses the configured receipt secrets to tombstone the keys, including keys whose receipts were pruned. Only the affected calls and statements are checked. A new profile or independent outcome entered under the same record ID stays. A new statement checked after the record returned keeps the sequence number of the deletion it passed. For an older statement, the repair needs a matching receipt recorded strictly after both the call report and a surviving post-deletion sighting of that record. During the first year after deletion, a receipt from that period is too young to have been pruned and recreated. After that, the receipt must predate any logged prune whose requested cutoff reached past the deletion. A retry can recreate a pruned receipt. Missing proof or a clock tie leaves the old statement unproved. After removing unproved statements and emptying their receipts, the newest surviving statement by signed time and key stands. Its named owner keeps the call, its conversion and its value history. If an unproved statement owned the call and no surviving statement assigns it to a record, the call is erased. An interrupted repair resumes on the next start.
 

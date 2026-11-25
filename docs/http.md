@@ -208,7 +208,7 @@ Emails and phones are compared as they are normalized, currencies in capitals, i
 
 > **Keep `at` with the key.** A retry that stamps a new `at` is refused with `KEY_REUSED` for most types.
 
-A key is remembered for a year, or longer until receipts are [pruned](operations.md#receipts). A profile key that came with a creation date stays until deletion. A key of somebody who was deleted is remembered for good, as a keyed hash.
+A key is remembered for a year, or longer until receipts are [pruned](operations.md#receipts). A key still known when somebody is deleted is remembered for good, as a keyed hash.
 
 A call or a conversion can come from two reporters, such as Twilio and your backend. Both name it by one id, so it is one record.
 
@@ -227,7 +227,7 @@ Entries may arrive late and in any order. Nothing is refused for being late.
 
 A conversion without payments is worth the newest `correct`, or else its first value, less every refund and write-off that was not reversed. It is never worth less than zero.
 
-To correct a creation date, send another profile with the corrected `createdAt`, a new key and a later `at`. Reusing the original key with a different date returns `KEY_REUSED`. On a dated profile, `stands` tells whether its date currently stands, including on a retry.
+To correct a creation date, send another profile with the corrected `createdAt`, a new key and a later `at`. Reusing the original key with a different date returns `KEY_REUSED` while the receipt is kept. After pruning, the entry is new again. If its `at` and key tie the standing statement, the existing date stays. On a dated profile, `stands` tells whether that exact statement stands, including on a retry.
 
 | Before what it is about | Result |
 | --- | --- |

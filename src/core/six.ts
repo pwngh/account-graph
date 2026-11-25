@@ -229,7 +229,7 @@ export function createSix(engine: Engine, options: SixOptions) {
           const kind = each.slice(0, each.indexOf(':'))
           if (RESERVED.has(kind)) throw Object.assign(malformed(`Kind "${kind}" is written by the graph itself`), { refusal: { reason: 'KIND_RESERVED', kind } })
         }
-        if (again) return { value: { changes: [], notes: {} }, subjects: [], stands: entry.createdAt === undefined || await inside.tx.createdAtStands(entry.subject, entry.key) }
+        if (again) return { value: { changes: [], notes: {} }, subjects: [], stands: entry.createdAt === undefined || await inside.tx.createdAtStands(entry.subject, entry.createdAt, entry.at, entry.key) }
         const found = await service.factsIn({ ...entry.facts, at: entry.at }, true, true)
         if (found.identifiers.length === 0 && !entry.speaker) throw Object.assign(malformed('No fact could be used'), { refusal: { reason: 'NO_FACT_USED', notes: found.notes } })
         const { notes, speakers } = await service.identify({ subject: entry.subject, ...entry.facts, at: entry.at, ...(entry.event && { event: entry.event }), ...(entry.speaker && { speaker: entry.speaker }) })

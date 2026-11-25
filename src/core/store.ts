@@ -76,7 +76,7 @@ export interface Tx {
   subjectDates(subjects: readonly Subject[]): Promise<Map<Subject, SubjectDates>>
   /** Keeps the newest creation statement by time and then key. */
   setCreatedAt(subject: Subject, createdAt: number, at: number, key: string): Promise<boolean>
-  createdAtStands(subject: Subject, key: string): Promise<boolean>
+  createdAtStands(subject: Subject, createdAt: number, at: number, key: string): Promise<boolean>
   edgesOf(subjects: readonly Subject[]): Promise<Edge[]>
   edgesOn(identifiers: readonly Identifier[]): Promise<Edge[]>
   /**

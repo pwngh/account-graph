@@ -242,11 +242,19 @@ test('the pool option applies when a call rings and when it is recorded', async 
   }
 })
 
-everywhere('two that come at once are one', async ({ graph }) => {
+everywhere('two that come at once are one', async ({ graph, local }) => {
   for (const entry of EVERY) {
     const results = await Promise.all([one(graph, entry), one(graph, entry), one(graph, entry)])
     assert.deepEqual(results.map((result) => result.ok && result.value.duplicate).sort(), [false, true, true], entry.type)
   }
+  const subject = 'contact:tied'
+  const profile = { type: 'profile' as const, subject, key: 'same-key', at: AT, facts: { email: 'tied@example.org' } }
+  const entries = [1, 2].map(createdAt => ({ ...profile, createdAt }))
+  const results = await Promise.all(entries.map(entry => one(graph, entry)))
+  assert.equal(results.filter(row => row.ok && !row.value.duplicate && row.value.stands).length, 1)
+  assert.deepEqual(results.find(row => !row.ok), { type: 'profile', key: profile.key, ok: false, reason: 'KEY_REUSED', fields: ['createdAt'] })
+  const { engine } = await internalsOf(local)!()
+  assert.equal((await engine.graph.subjectDates([subject])).get(subject)?.createdAt, entries[results.findIndex(row => row.ok)]!.createdAt)
   return (await graph.report({ kind: 'campaigns', window })).value.total.visits
 })
 
