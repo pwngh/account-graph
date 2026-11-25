@@ -289,7 +289,7 @@ All assumed unless it says otherwise, and set before anything was run.
 | The client's own number and email given beside, where the box is ticked | 70% | 50% | 30% |
 | A form filed again from one browser, with another email or number | 10% | 15% | 20% |
 | Calls again from another browser; from another line | 5%; 5% | 10%; 10% | 20%; 20% |
-| How long a tap is before its call: up to 30 s; up to 60; up to 180 | 85/10/5 | 75/15/10 | 60/20/20 |
+| How long a tap is before its call: up to 30 s; up to 60; up to 180. The steps are those `src/calls.ts` has, which is a reason to doubt the figures of taps. `gaps3` and `busygaps3` are base3 and busy3 with any gap from 3 to 300 seconds, and no step; they are printed and no mark | 85/10/5 | 75/15/10 | 60/20/20 |
 | Calls reported 5 to 120 seconds late | 5% | 10% | 20% |
 | Cold callers who dial a number somebody else was shown | 2% | 4% | 8% |
 | First calls from a page, dialed by hand 10 to 110 minutes after it was last seen. Added after the first look at the development seeds | 5% | 10% | 20% |

@@ -165,6 +165,8 @@ export function partition(
   onCut?: (a: Subject, b: Subject) => void,
   /** Pairs of whom it is said that they are two people, though nobody decided it. */
   two: readonly (readonly [Subject, Subject])[] = [],
+  /** When each of two kept apart was first seen. What is tied to both as strongly goes with whoever was first. */
+  since: ReadonlyMap<Subject, number> = new Map(),
 ): Map<Subject, Labels> {
   const component = components(subjects, pairs)
   const members = new Map<Subject, Subject[]>()
@@ -208,7 +210,7 @@ export function partition(
     for (const [i, a] of told.entries()) for (const b of told.slice(i + 1)) if (conflict(policy, known.get(a), known.get(b))) differ.push([a, b])
     differ.push(...(said.get(id) ?? []))
     differ.sort((x, y) => (x[0] === y[0] ? (x[1] < y[1] ? -1 : 1) : x[0] < y[0] ? -1 : 1))
-    for (const piece of split(group, links.get(id) ?? [], apart.get(id) ?? [], policy, differ, known, onCut)) {
+    for (const piece of split(group, links.get(id) ?? [], apart.get(id) ?? [], policy, differ, known, onCut, since)) {
       let cluster = piece[0]!
       for (const subject of piece) if (subject < cluster) cluster = subject
       for (const subject of piece) out.set(subject, { component: id, cluster })
@@ -217,7 +219,7 @@ export function partition(
   return out
 }
 
-function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subject][], policy: Policy, differ: readonly (readonly [Subject, Subject])[] = [], known: ReadonlyMap<Subject, Known> = new Map(), onCut?: (a: Subject, b: Subject) => void): Subject[][] {
+function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subject][], policy: Policy, differ: readonly (readonly [Subject, Subject])[] = [], known: ReadonlyMap<Subject, Known> = new Map(), onCut?: (a: Subject, b: Subject) => void, since: ReadonlyMap<Subject, number> = new Map()): Subject[][] {
   const adjacency: Adjacency = new Map(members.map((member) => [member, new Map()]))
   for (const { a, b, score } of links) {
     adjacency.get(a)!.set(b, score)
@@ -234,12 +236,14 @@ function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subj
     cut(a, b)
   }
   for (const [a, b] of apart) cutApart(a, b)
-  for (const [a, b] of apart) for (const [x, y] of minimumCut(adjacency, a, b)) cutApart(x, y)
+  // A cut that could be made in two places is made beside whoever came later, so a shared browser stays with the first.
+  const later = (a: Subject, b: Subject): [Subject, Subject] => ((since.get(a) ?? 0) < (since.get(b) ?? 0) ? [b, a] : [a, b])
+  for (const pair of apart) for (const [x, y] of minimumCut(adjacency, ...later(...pair))) cutApart(x, y)
   // Facts come after decisions, and cut no link a decision made: two held together by those alone stay together.
   const decided = (a: Subject, b: Subject) => [...(known.get(a)?.joins ?? [])].some((identifier) => known.get(b)?.joins.has(identifier))
   for (const [a, b] of differ) cutApart(a, b)
   for (const [a, b] of differ) {
-    const found = minimumCut(adjacency, a, b, decided)
+    const found = minimumCut(adjacency, ...later(a, b), decided)
     if (!found.some(([x, y]) => decided(x, y))) for (const [x, y] of found) cutApart(x, y)
   }
 

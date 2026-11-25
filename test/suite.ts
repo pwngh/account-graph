@@ -2947,6 +2947,22 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await of('contact:4'), ['contact:4', 'visitor:x'])
     })
 
+    test('a browser two people kept apart used stays with whoever was first, whatever they are called and whatever is told first', async () => {
+      for (const [first, second] of [['contact:a', 'contact:b'], ['contact:b', 'contact:a'], ['contact:10', 'contact:9']] as const) {
+        for (const late of [false, true]) {
+          const { graph } = await fresh(policyFrom({ apart: ['birth'] }))
+          const told: Observation[] = [
+            { subject: 'visitor:1', identifiers: ['device:d'], at: T0 },
+            { subject: first, identifiers: ['device:d', 'birth:1'], at: T0 + 1 },
+            { subject: second, identifiers: ['device:d', 'birth:2'], at: T0 + 20 * DAY },
+          ]
+          for (const each of late ? [...told].reverse() : told) await graph.observe(each)
+          assert.deepEqual(await members(graph, 'visitor:1'), [first, 'visitor:1'].sort())
+          assert.deepEqual(await graph.verify(), [])
+        }
+      }
+    })
+
     test('a fact that is muted keeps nobody apart, and one restored does again', async () => {
       const { graph } = await fresh(policyFrom({ apart: ['birth'] }))
       await graph.observe([{ subject: 'contact:1', identifiers: ['email:e', 'birth:1'], at: T0 }, { subject: 'contact:2', identifiers: ['email:e', 'birth:2'], at: T0 }])

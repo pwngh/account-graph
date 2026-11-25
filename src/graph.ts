@@ -529,7 +529,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     }
     const pairs = scorePairs(policy, edges, states)
     const two = pairs.filter(({ reasons }) => told(policy, reasons)).map(({ a, b }): [Subject, Subject] => [a, b])
-    return partition(subjects, pairs, separated, policy, knownOf(policy, edges, (identifier) => states.get(identifier)?.ignored ?? false, two.length > 0), onCut, two)
+    return partition(subjects, pairs, separated, policy, knownOf(policy, edges, (identifier) => states.get(identifier)?.ignored ?? false, two.length > 0), onCut, two, sinceOf(edges))
   }
 
   /**
@@ -581,7 +581,18 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     const subjects = [...joined]
     const separated = (await tx.separatedOf(subjects)).filter(([a, b]) => joined.has(a) && joined.has(b))
     const said = two.filter(([a, b]) => joined.has(a) && joined.has(b))
-    return partition(subjects, pairs, separated, policy, await known(tx, subjects, said.length > 0), undefined, said)
+    const facts = await known(tx, subjects, said.length > 0)
+    const kept = unique([...separated.flat(), ...said.flat(), ...[...facts].filter(([, own]) => own.facts.size > 0).map(([subject]) => subject)])
+    const since = new Map<Subject, number>()
+    for (let i = 0; i < kept.length; i += TOGETHER) for (const [subject, at] of sinceOf(await tx.edgesOf(kept.slice(i, i + TOGETHER)))) since.set(subject, at)
+    return partition(subjects, pairs, separated, policy, facts, undefined, said, since)
+  }
+
+  /** When each subject was first seen with anything but a decision about it. */
+  function sinceOf(edges: readonly Edge[]): Map<Subject, number> {
+    const out = new Map<Subject, number>()
+    for (const { subject, identifier, first } of edges) if (!identifier.startsWith('review:') && first < (out.get(subject) ?? Infinity)) out.set(subject, first)
+    return out
   }
 
   /** What is known of these subjects that cannot be two people's. Nothing is read where the policy keeps nobody apart by it. */

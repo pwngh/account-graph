@@ -106,6 +106,9 @@ export const SETTINGS: Record<string, Setting> = {
   high3: { rates: {} as Rates, people: 2_000, days: 120, pool: 10 },
   busy3: { rates: { ...base, third: third(1) }, people: 6_000, days: 5, pool: 40 },
   /** Base with placeholder numbers and shared office emails. */
+  /** Base and busy with taps any time from 3 to 300 seconds before their call. Printed, and judged by no mark. */
+  gaps3: { rates: { ...base, third: { ...third(1), anyGap: true } }, people: 2_000, days: 120, pool: 10 },
+  busygaps3: { rates: { ...base, third: { ...third(1), anyGap: true } }, people: 6_000, days: 5, pool: 40 },
   dirty3: { rates: { ...base, third: third(1) }, people: 2_000, days: 120, pool: 10, dirt: { placeholder: 0.03, office: 0.03 } },
 }
 SETTINGS.low3!.rates = { ...SETTINGS.low!.rates, third: third(0) }

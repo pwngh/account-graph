@@ -133,6 +133,8 @@ export interface Third {
   /** How long before its call a tap is: up to 30 seconds, up to 60, and the rest up to three minutes. */
   quick: number
   middle: number
+  /** In place of those, any gap from 3 seconds to 300, as likely to be ten times as long as half. A setting of its own, so that no step of the gaps is one of the product's. */
+  anyGap?: true
   /** Calls reported 5 to 120 seconds late, and out of order. */
   late: number
   /** Cold callers who dial a number somebody else was shown before. */
@@ -496,7 +498,7 @@ export function makeWorld(rates: Rates, { people: count, days, start, seed }: Si
     const delay = Math.ceil(r.next() * 10 * MINUTE)
     const tapped = visitor === speaker && r.chance(here.agent === AGENT.telephone ? rates.tapsTelephone : rates.tapsComputer)
     // A tap may be up to three minutes before its call, and comes after the visit.
-    const when = at + delay + (third && tapped ? 190_000 : 30_000)
+    const when = at + delay + (third && tapped ? (third.anyGap ? 310_000 : 190_000) : 30_000)
     ring(person, speaker, when, here, tapped ? here : undefined, !filled || r.chance(rates.duplicate))
   }
 
@@ -526,7 +528,7 @@ export function makeWorld(rates: Rates, { people: count, days, start, seed }: Si
       }
       if (tap) {
         const x = third ? r.next() : 0
-        const gap = !third ? 8_000 + r.under(20_000) : x < third.quick ? 5_000 + r.under(25_000) : x < third.quick + third.middle ? 30_000 + r.under(30_000) : 60_000 + r.under(120_000)
+        const gap = !third ? 8_000 + r.under(20_000) : third.anyGap ? Math.round(3_000 * 100 ** x) : x < third.quick ? 5_000 + r.under(25_000) : x < third.quick + third.middle ? 30_000 + r.under(30_000) : 60_000 + r.under(120_000)
         events.push({ kind: 'tap', at: when - gap, device: tap.device, address: tap.address, agent: tap.agent })
         note(`visitor:${tap.device}`, speaker.id, `tap ${id}`)
       }
