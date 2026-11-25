@@ -633,6 +633,64 @@ if (url) {
   })
 }
 
+for (const report of ['callbacks', 'pipeline', 'campaigns'] as const) everywhere(`a private call tie supplies only campaign credit to the ${report} report`, async ({ graph, local, base }) => {
+  const owner = 'record:owner'
+  const visitor = 'visitor:private'
+  const credit = { source: 'google', campaign: 'Example', campaignId: 'campaign-one' }
+  const arrived = AT - 2 * 86_400_000 + 4567
+  const landing = 'https://example.org/private-visit'
+  const { engine } = await internalsOf(local)!()
+  await engine.graph.observe({ subject: visitor, identifiers: [codeNote('K7Q2MX')], at: AT - 100 })
+  const entries: RecordEntry[] = [
+    { type: 'arrival', key: 'private-arrival', at: arrived, subject: visitor, ...credit, landing, clicks: { gclid: 'private-click' }, custom: { private_field: 'private-content', language: 'private-language' } },
+    { type: 'call', key: 'one', direction: 'inbound', from: '+12025550102', to: '+12025550109', duration: 70, at: AT, code: 'K7Q2MX', result: { answered: report === 'campaigns' } },
+    { type: 'call_update', key: 'party', at: AT + 1, call: 'one', change: { kind: 'party', role: 'representative', subject: owner, by: 'desk' } },
+  ]
+  assert.ok((await graph.record({ entries })).results.every(row => row.ok))
+  if (report === 'campaigns') {
+    const answer = (await graph.report({ kind: report, window, by: 'touch.private_field' })).value
+    const row = answer.rows.find(row => row.campaignId === credit.campaignId)!
+    assert.equal(row.outcomes, 1)
+    assert.equal(row.stages.call?.delay, undefined)
+    assert.deepEqual(row.breakdown?.map(part => [part.name, part.outcomes]), [['(not set)', 1]])
+    assert.doesNotMatch(JSON.stringify(answer), /private-content|private-language|private-visit|private-click/)
+    assert.ok(!answer.dimensions.includes('touch.private_field'))
+    return row.breakdown
+  }
+  const read = async () => report === 'callbacks' ? (await graph.report({ kind: report, window, at: NOW })).value.rows[0]! : (await graph.report({ kind: report, at: NOW, days: 3 })).value.columns[0]!.rows[0]!
+  const privateRow = await read()
+  assert.equal(privateRow.arrival, null)
+  assert.deepEqual('campaignCredit' in privateRow ? privateRow.campaignCredit : null, credit)
+  assert.doesNotMatch(JSON.stringify(privateRow), new RegExp([visitor, String(arrived), 'private-visit', 'private_field', 'private-content', 'private-language', 'private-click'].join('|')))
+  if (base && report === 'pipeline') {
+    const board = await fetch(base + '/review/api/board', { headers: { authorization: 'Bearer reviewer' } })
+    assert.equal(board.status, 200)
+    assert.doesNotMatch(await board.text(), /private-language|private-visit|private_field|private-content/)
+  }
+  await engine.graph.join(visitor, owner)
+  assert.equal((await read()).arrival?.landing, landing)
+  await engine.graph.separate(visitor, owner)
+  const direct = await one(graph, { type: 'arrival', key: 'own', at: AT - 1, subject: owner, source: 'own', landing: 'https://example.org/own' })
+  assert.ok(direct.ok)
+  assert.equal((await read()).arrival?.landing, 'https://example.org/own')
+  return credit
+})
+
+everywhere('private call campaign credit keeps the paid status of an earlier click', async ({ graph, local }) => {
+  const { engine } = await internalsOf(local)!()
+  const visitor = 'visitor:earlier'
+  await engine.graph.observe({ subject: visitor, identifiers: [codeNote('K7Q2MX')], at: AT - 50 })
+  const results = await graph.record({ entries: [
+    { type: 'arrival', key: 'earlier', at: AT - 2 * 86_400_000, subject: visitor, campaign: 'Example', clicks: { gclid: 'private-click' } },
+    { type: 'call', key: 'missed', direction: 'inbound', at: AT, from: '+12025550102', to: '+12025550109', code: 'K7Q2MX', result: { answered: false } },
+    { type: 'call_update', key: 'party', at: AT + 1, call: 'missed', change: { kind: 'party', role: 'self', subject: 'record:owner', by: 'desk' } },
+  ] })
+  assert.ok(results.results.every(row => row.ok))
+  const row = (await graph.report({ kind: 'campaigns', window })).value.rows.find(row => row.missed)!
+  assert.deepEqual([row.source, row.campaign, row.insufficientData], ['google', 'Example', true])
+  return row
+})
+
 everywhere('a keyed call party belongs to one record and survives out-of-order reports', async ({ graph }) => {
   const a = 'record:first'
   const b = 'record:second'
@@ -672,7 +730,7 @@ everywhere('a keyed call party belongs to one record and survives out-of-order r
   return (await checked())?.subject
 })
 
-everywhere('forgetting a party or the original line erases call statements, including pending ones', async ({ graph }) => {
+everywhere('forgetting a party or the original line erases call statements, including pending ones', async ({ graph, schema }) => {
   for (const side of ['pending', 'party', 'line', 'former'] as const) {
     const subject = 'record:' + side
     const call = { type: 'call', key: 'erase-' + side, at: AT, direction: 'inbound', to: '+12025550104', from: '+12025550105', duration: 60 } as const
@@ -687,6 +745,20 @@ everywhere('forgetting a party or the original line erases call statements, incl
     if (side === 'former') await graph.record({ entries: [{ ...assertion, key: 'now-someone-else', at: AT + 2, change: { ...assertion.change, subject: 'record:another' } }] })
     await graph.forget({ key: 'delete-' + side, by: 'desk', at: NOW, subjects: [whom], platforms: 'report' })
     const rows = (await graph.record({ entries: [call, assertion, { ...assertion, key: 'correction-' + side }] })).results
+    if (side === 'former') {
+      assert.ok(rows[0]?.ok && rows[0].type === 'call' && rows[0].value.duplicate && rows[0].value.subject === 'record:another')
+      assert.deepEqual(rows.slice(1).map(row => !row.ok && row.reason), ['FORGOTTEN', 'FORGOTTEN'])
+      const kept = await graph.lookup({ kind: 'record', type: 'call', key: call.key, at: NOW })
+      assert.ok(kept?.type === 'call')
+      assert.deepEqual(kept.partyHistory?.map(each => each.key), ['now-someone-else'])
+      if (schema) {
+        assert.deepEqual((await pool!.query(`select type from ${schema}.receipt_subject where subject = $1`, [whom])).rows, [])
+        assert.deepEqual((await pool!.query(`select data from ${schema}.said where topic = 'party' and data->>'subject' = $1`, [whom])).rows, [])
+        assert.deepEqual((await pool!.query(`select action from ${schema}.decision where about ? $1`, [whom])).rows, [{ action: 'forget' }])
+      }
+      assert.equal((await graph.lookup({ kind: 'record', type: 'conversion', key: 'call:' + call.key, at: NOW }))?.subject, 'record:another')
+      continue
+    }
     assert.deepEqual(rows.map((row) => !row.ok && row.reason), ['FORGOTTEN', 'FORGOTTEN', 'FORGOTTEN'])
     assert.equal(await graph.lookup({ kind: 'record', type: 'call', key: call.key, at: NOW }), null)
     assert.equal(await graph.lookup({ kind: 'record', type: 'conversion', key: 'call:' + call.key, at: NOW }), null)

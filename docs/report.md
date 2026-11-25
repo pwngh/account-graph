@@ -290,7 +290,7 @@ A visit's source is the platform of its click id, then its `utm_source`, then th
 
 Each step counts people as well as outcomes. A person is a cluster: two accounts of one person count once, and a renewal is a second outcome of the same person. The Channels view shows both numbers where they differ.
 
-`stages.<step>.delay` gives the days from the newest visit to the outcome.
+`stages.<step>.delay` gives the days from the newest visit to the outcome. A confirmed call can earn campaign credit from a visitor outside the named record's group. That call contributes no arrival time to delay statistics and appears under `(not set)` for visit tag breakdowns.
 
 | Field | Meaning |
 | --- | --- |

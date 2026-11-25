@@ -7,6 +7,14 @@ import { byKey } from './said.ts'
 import type { Job, OutboxStore } from './outbox.ts'
 import type { CallResult, CallTime, Change, Consent, ConsentAnswer, CostRow, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, NumberedChange, SentLink, OutcomeValue, Payment, Sighting, Subject, Touch } from '../contract/types.ts'
 
+export interface CallEvidence {
+  call: string
+  subject: Subject
+  identifier: Identifier
+  at: number
+  recorded: number
+}
+
 export type CallLineKind = 'phone' | 'voip' | 'none'
 
 /**
@@ -46,7 +54,17 @@ export interface Tx {
   /** Logs sightings and folds them into edges. Returns how many new edges each identifier gained. */
   addSightings(sightings: readonly Sighting[]): Promise<Map<Identifier, number>>
   /** Deletes a subject with its sightings, edges, touches, outcomes, calls, leases, flows, consent, alerts, conversions, and reviewer decisions. */
-  removeSubject(subject: Subject): Promise<Job[]>
+  removeSubject(subject: Subject, only?: 'parties'): Promise<Job[]>
+  /** A removed call sighting counts its holder and bounds which cuts can change, but gives no positive evidence. */
+  callEvidence(filter?: { subjects?: readonly Subject[]; identifiers?: readonly Identifier[]; calls?: readonly string[]; before?: number }): Promise<CallEvidence[]>
+  hasCallEvidence(): Promise<boolean>
+  /** Private original lines and route flags used only to decide whether two calls competed for a tap or a number. */
+  rivalCalls(number: string, first: number, last: number, line?: Subject): Promise<KeptCall[]>
+  reserveCall(rows: readonly CallEvidence[]): Promise<void>
+  /** Remembers which original code won when the public call already has a party. */
+  markPartyCode(id: string, visitor?: Subject): Promise<void>
+  /** The visitor previously tied by this call, kept privately for its credit. */
+  callVisitors(ids: readonly string[]): Promise<Map<string, Subject>>
   edgesOf(subjects: readonly Subject[]): Promise<Edge[]>
   edgesOn(identifiers: readonly Identifier[]): Promise<Edge[]>
   /**
@@ -231,12 +249,14 @@ export interface Tx {
   /** Takes subjects out of what is said of others, and drops undelivered alerts that name any of these keys. */
   unname(subjects: readonly Subject[], keys: readonly string[]): Promise<void>
   /** The keys of what is recorded of subjects: conversions, calls, texts, payments, transfers and links. */
-  keysOf(subjects: readonly Subject[]): Promise<{ type: string; key: string }[]>
+  keysOf(subjects: readonly Subject[], only?: 'parties'): Promise<{ type: string; key: string }[]>
+  /** Calls that mentioned an erased record but now belong to another record, including pending calls. */
+  retainedPartyCalls(subjects: readonly Subject[]): Promise<string[]>
   /**
    * Empties every receipt of the subjects, of the keys, and of what is about either, and leaves an empty one for a key
    * that has none. Read before the subjects are removed.
    */
-  forgetReceipts(subjects: readonly Subject[], keys: readonly { type: string; mac: string; secretId: string; all: readonly string[] }[], at: number): Promise<void>
+  forgetReceipts(subjects: readonly Subject[], keys: readonly { type: string; mac: string; secretId: string; all: readonly string[] }[], at: number, retainedCalls?: readonly string[], only?: 'parties'): Promise<void>
   /** Which secrets made the receipts that are kept. */
   receiptSecrets(): Promise<string[]>
   /** Something this database was set up with, which every process must share. */
@@ -258,6 +278,10 @@ export interface Tx {
   lastDecision(): Promise<Decision | undefined>
   /** The newest decision after a sequence number that names any of the given subjects or identifiers. A prune names none. */
   newestNaming(names: readonly string[], after: number, among?: readonly Decision['action'][]): Promise<Decision | undefined>
+  /** Older versions accepted party statements about a record that already had a signed deletion. */
+  forgottenParties(limit: number): Promise<Subject[]>
+  /** Whether a signed deletion named this subject. */
+  wasForgotten(subject: Subject): Promise<boolean>
   /** Every decision, oldest first. */
   decisions(): Promise<Decision[]>
   /** One page of decisions, newest first: those before a sequence number, by people, by systems, or by one author. */

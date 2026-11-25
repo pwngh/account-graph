@@ -36,6 +36,12 @@ evidence = weight × (2 / subjects sharing it) ^ dilution × 0.5 ^ (gap / halfLi
 
 A muted identifier gives no evidence.
 
+A statement about one call withdraws the line and browser evidence that came from that call. The original holders still count when scoring everybody else, including a proposed record. Two records that gave a shared number cannot become a stronger match because staff identified a call. Later calls still compete for the tap or number they dialed.
+
+A withdrawn tie can also change where a separation cuts a group. The graph keeps people together only where they can remain together with any combination of those call ties withdrawn. For one connected group with more than 64 possible readings, it keeps the strong links that no reading can cut. Where facts or decisions can cut that group, it keeps the staff joins it can establish across those readings. A zero-weight tap can still permit corroboration when the related threshold is zero, so it counts among the possible readings. Journeys and campaign credit respect those same cuts. Other groups are scored separately. Muting or restoring a line, or forgetting one of its holders, checks both possible line kinds. A mute preview lists affected groups and keeps private call holders out of the list.
+
+PostgreSQL upgrade 32 counts the original lines of older confirmed calls. Those calls did not keep the line type or visitor, so either phone kind can count the line. Rebuild the groups after upgrading.
+
 Evidence that counts combines as a noisy-OR, `1 − Π(1 − evidence)`. Each identifier is one way two subjects could be one person, correct as often as its evidence states. The pair is two people only if every piece is a coincidence. At 0.9 (`same`) the pair joins one cluster, and at 0.5 (`related`) it is reported as related.
 
 Scores depend only on stored data. The current time and the order of arrival leave them unchanged.
@@ -228,7 +234,7 @@ With `given` it keeps keyed notes of the names a first name may stand for, from 
 | --- | --- |
 | One of them has no date | Nothing is said. |
 | A merge, by a reviewer or from your own systems | Overrules it, whichever came first. Taking the merge back gives the fact back. The exception is a caller or a browser joined to two people of two dates of birth: it goes where the fewest such joins are left out, then with whoever was seen first, and the others are in Matches. Same changes nothing there: `split` the caller from the one it is not. |
-| Where it shows | The `match` lookup counts the proposed record when applying caps to evidence and confirming facts. It checks facts on the candidate itself, including a caller or browser, and on the records it stands for. The lookup, Accounts and Matches show a conflict as related with `conflict: "birth"` or `"given"`, however high the score. Credit does not cross it. |
+| Where it shows | The `match` lookup counts the proposed record when applying caps to evidence and confirming facts. It checks facts on the candidate itself, including a caller or browser, and on the records it stands for. Withdrawing a call tie cannot turn a possible match into a definite one. A browser’s former record can still rule out the proposed match. Its id and facts stay private. The lookup, Accounts and Matches show a conflict as related with `conflict: "birth"` or `"given"`, however high the score. Credit does not cross it. |
 | Where it does not | The `conflicts` lookup, kept-apart lists, disputes and the audit log. Nobody decided it. |
 | A corrected date | The record keeps both values, so it is kept apart from neither, until it is forgotten. |
 | Shared browsers and callers | They go with one of the two, as after a separation. |

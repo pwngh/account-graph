@@ -3,6 +3,10 @@ import { after, describe, test } from 'node:test'
 import { createGraph, createHours, createOps, codeNote, dialed, hashPhone, recordCall } from '../tools/internals.ts'
 import type { OpsOptions, Store } from '../tools/internals.ts'
 import type { Opened } from './suite.ts'
+import type { ReportValue } from '../src/contract/api.ts'
+import { createEngine } from '../src/core/engine.ts'
+import { createSix } from '../src/core/six.ts'
+import { createReceipts } from '../src/core/receipts.ts'
 
 const T0 = 1_700_000_000_000
 const HOUR = 3_600_000
@@ -240,6 +244,167 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       const fixed = await events()
       assert.deepEqual(fixed.map(({ data }) => [data.call, data.attempts]), [['independent', 0], ['shown', 0]])
       assert.ok(fixed[1]!.seq > before[1]!.seq)
+    })
+
+    for (const pending of [false, true]) for (const tie of ['tap', 'code', 'pool']) test(`a confirmed call keeps its own ${tie} campaign, with a statement ${pending ? 'before' : 'after'} the call`, async () => {
+      const { graph, store, clock } = await fresh()
+      const visitor = 'visitor:exact'
+      const owner = 'contact:confirmed'
+      const other = 'contact:other'
+      const to = '+12025550116'
+      const code = 'K7Q2MZ'
+      const days = { from: '2023-11-14', to: '2023-11-15' }
+      await graph.touch({ subject: visitor, at: T0 - 1000, gclid: 'exact-click', campaign: 'Example', campaignId: 'exact-campaign' })
+      if (tie === 'pool') await graph.lease(visitor, { numbers: [to], minutes: 15, at: T0 - 500 })
+      else await graph.observe({ subject: visitor, identifiers: [tie === 'code' ? codeNote(code) : dialed(to, T0 - 500)], at: T0 - 500 })
+      const identify = () => graph.sayParty({ call: 'confirmed', key: 'desk', at: T0 + 1, party: { role: 'self', subject: owner, by: 'desk' } })
+      if (pending) await identify()
+      const { visitor: found } = await recordCall(graph, { id: 'confirmed', from: '+12025550115', to, at: T0, answered: false, ...(tie === 'code' && { code }) }, tie === 'pool' ? { pool: { numbers: [to], grace: 0 } } : {})
+      assert.equal(found, pending ? undefined : visitor)
+      if (!pending) await identify()
+      const campaign = async () => (await graph.openCalls(days))[0]?.touch?.campaignId
+      assert.equal(await campaign(), 'exact-campaign')
+      assert.equal((await graph.report(days)).rows.find(row => row.missed)?.campaignId, 'exact-campaign')
+      assert.equal((await graph.board({ steps: [{ name: 'call' }], at: T0 + DAY })).columns[0]?.rows[0]?.touch?.campaignId, 'exact-campaign')
+      assert.equal((await graph.keptCall('confirmed'))?.visitor, undefined)
+      const hasVisit = async () => (await graph.journey(owner)).entries.some(entry => entry.kind === 'visit' && entry.subject === visitor)
+      assert.equal(await hasVisit(), false)
+      const ops = createOps(graph, store.ops, { returnHours: 1, now: () => clock.now, emit: event => store.write(tx => tx.emit([event])) })
+      const notices = async () => (await store.read(tx => tx.eventsAfter(0, 200))).filter(event => event.type === 'callback.overdue')
+      clock.now += 2 * HOUR
+      await ops.check()
+      assert.deepEqual((await notices()).map(({ data }) => [data.call, data.subject, data.campaignId]), [['confirmed', owner, 'exact-campaign']])
+      assert.match((await store.ops.undelivered())[0]!.text, /Example/)
+      const mark = tie === 'tap' ? 'dial:confirmed' : tie === 'code' ? 'text:call:confirmed' : 'lease:confirmed'
+      await graph.ignore(mark)
+      assert.equal(await campaign(), undefined)
+      assert.deepEqual([await notices(), await store.ops.undelivered()], [[], []])
+      await graph.ignore(mark, false)
+      await ops.check()
+      assert.equal((await notices()).length, 1)
+      await graph.join(other, visitor)
+      assert.equal(await campaign(), undefined)
+      assert.deepEqual([await notices(), await store.ops.undelivered()], [[], []])
+      await graph.separate(other, visitor)
+      assert.equal(await campaign(), 'exact-campaign')
+      await graph.separate(other, visitor, false)
+      assert.equal(await campaign(), undefined)
+      await graph.unjoinAll([{ a: other, b: visitor }])
+      await graph.join(owner, visitor)
+      assert.equal(await hasVisit(), true)
+      assert.equal(await campaign(), 'exact-campaign')
+      await graph.separate(owner, visitor)
+      assert.equal(await hasVisit(), false)
+      assert.equal(await campaign(), 'exact-campaign')
+      await graph.separate(owner, visitor, false)
+      assert.equal(await hasVisit(), true)
+      assert.equal((await graph.journey(other)).entries.some(row => row.kind === 'call'), false)
+      await graph.forget(visitor)
+      assert.equal(await campaign(), undefined)
+      assert.equal((await graph.keptCall('confirmed'))?.subject, owner)
+    })
+
+    function cachedCampaigns(store: Store, clock: { now: number }) {
+      const engine = createEngine(store, { now: () => clock.now })
+      const reader = createSix(engine, { receipts: createReceipts(['a-test-secret-with-32-characters']) })
+      const report = engine.graph.report
+      engine.graph.report = (...args) => {
+        clock.now += 500
+        return report(...args)
+      }
+      return async () => (await reader.report({ kind: 'campaigns', window: { from: '2023-11-14', to: '2023-11-15', timeZone: 'UTC' } })).value as ReportValue['campaigns']
+    }
+
+    for (const startsWithTap of [false, true]) test(`a late code supplies a confirmed call's campaign with ${startsWithTap ? 'an earlier tap' : 'no earlier visitor'}`, async () => {
+      const { graph, store, clock } = await fresh()
+      const visitor = 'visitor:code'
+      const owner = 'contact:owner'
+      const other = 'contact:elsewhere'
+      const code = 'K7Q2MZ'
+      const call = { id: 'late-code', from: '+12025550151', to: '+12025550150', at: T0, answered: false }
+      await graph.observe({ subject: visitor, identifiers: [codeNote(code)], at: T0 - 400 })
+      await graph.touch({ subject: visitor, at: T0 - 800, gclid: 'code-click', campaignId: 'code-campaign' })
+      if (startsWithTap) {
+        await graph.observe({ subject: 'visitor:tap', identifiers: [dialed(call.to, T0 - 500)], at: T0 - 500 })
+        await graph.touch({ subject: 'visitor:tap', at: T0 - 900, campaignId: 'tap-campaign' })
+      }
+      const first = await recordCall(graph, call)
+      assert.equal(first.visitor, startsWithTap ? 'visitor:tap' : undefined)
+      await graph.sayParty({ call: call.id, key: 'heard', at: T0 + 1, party: { role: 'representative', subject: owner, by: 'desk' } })
+      const campaigns = cachedCampaigns(store, clock)
+      const credited = async () => (await campaigns()).rows.find(row => row.missed > 0)?.campaignId
+      const previous = await credited()
+      assert.ok(startsWithTap ? previous === 'tap-campaign' : !previous)
+      assert.equal((await recordCall(graph, { ...call, code })).visitor, undefined)
+      assert.equal(await credited(), 'code-campaign')
+      assert.equal((await graph.openCalls({ from: '2023-11-14', to: '2023-11-15' }))[0]?.touch?.campaignId, 'code-campaign')
+      assert.equal((await graph.journey(owner)).entries.some(row => row.kind === 'visit'), false)
+      assert.equal((await graph.journey(visitor)).entries.some(row => row.kind === 'call'), false)
+      await graph.join(visitor, other)
+      assert.ok(!await credited())
+      assert.equal((await graph.journey(other)).entries.some(row => row.kind === 'call'), false)
+      await graph.separate(visitor, other)
+      assert.equal(await credited(), 'code-campaign')
+    })
+
+    test('a later code replaces a pending callback campaign even when the owner supplied the earlier arrival', async () => {
+      const { graph, store, clock } = await fresh()
+      const owner = 'contact:owner'
+      const visitor = 'visitor:coded'
+      const code = 'K7Q2MZ'
+      const call = { id: 'callback', from: '+12025550152', to: '+12025550153', at: T0, answered: false }
+      await graph.touch({ subject: owner, at: T0 - 2000, campaignId: 'earlier' })
+      await graph.touch({ subject: visitor, at: T0 - 1000, campaignId: 'coded' })
+      await graph.observe({ subject: visitor, identifiers: [codeNote(code)], at: T0 - 500 })
+      await recordCall(graph, call)
+      await graph.sayParty({ call: call.id, key: 'desk', at: T0 + 1, party: { role: 'self', subject: owner, by: 'desk' } })
+      clock.now += 2 * HOUR
+      const ops = createOps(graph, store.ops, { returnHours: 1, now: () => clock.now, emit: event => store.write(tx => tx.emit([event])) })
+      const notices = async () => (await store.read(tx => tx.eventsAfter(0, 200))).flatMap(event => event.type === 'callback.overdue' ? [event.data.campaignId] : [])
+      await ops.check()
+      assert.deepEqual(await notices(), ['earlier'])
+      await recordCall(graph, { ...call, code })
+      const check = async (campaign: string) => {
+        assert.deepEqual([await notices(), await store.ops.undelivered()], [[], []])
+        await ops.check()
+        assert.deepEqual(await notices(), [campaign])
+        assert.ok((await store.ops.undelivered())[0]!.text.includes(campaign))
+      }
+      await check('coded')
+      await graph.join('contact:another', visitor)
+      await check('earlier')
+      await graph.separate('contact:another', visitor)
+      await check('coded')
+    })
+
+    test('a cached report drops a confirmed call’s credit when another record gains its visitor', async () => {
+      const { graph, store, clock } = await fresh()
+      const visitor = 'visitor:charged'
+      const other = 'contact:other'
+      const to = '+12025550120'
+      await graph.touch({ subject: visitor, at: T0 - 2000, campaignId: 'credited' })
+      await graph.observe({ subject: visitor, identifiers: [dialed(to, T0 - 1000)], at: T0 - 1000 })
+      await recordCall(graph, { id: 'credited', from: '+12025550121', to, at: T0, answered: true })
+      await graph.sayParty({ call: 'credited', key: 'heard', at: T0 + 1, party: { role: 'self', subject: 'contact:owner', by: 'desk' } })
+      await graph.outcome({ transactionId: 'earlier', at: T0 - 2 * HOUR, subject: 'contact:owner', stage: 'call' })
+      const board = await graph.board({ steps: [{ name: 'call' }], at: T0 + DAY })
+      const row = board.columns[1]!.rows[0]!
+      assert.deepEqual([row.at, row.outcome?.transactionId, row.touch?.campaignId], [T0 - 2 * HOUR, 'call:credited', 'credited'])
+      const campaigns = cachedCampaigns(store, clock)
+      const asked = async () => (await campaigns()).rows.find(row => row.campaignId === 'credited')?.outcomes ?? 0
+      assert.equal(await asked(), 1)
+      await graph.doubtCall('credited', true)
+      assert.equal(await asked(), 0)
+      await graph.ignore('dial:credited', false)
+      assert.equal(await asked(), 1)
+      await graph.join(visitor, other)
+      assert.equal(await asked(), 0)
+      await graph.separate(visitor, other)
+      assert.equal(await asked(), 1)
+      await graph.ignore('dial:credited')
+      assert.equal(await asked(), 0)
+      await graph.ignore('dial:credited', false)
+      assert.equal(await asked(), 1)
     })
 
     test('a corrected call keeps a callback notice whose paid visit still earns it through another sighting', async () => {

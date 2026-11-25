@@ -66,8 +66,13 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
 
   const callRows = `select c.*, r.answered, r.voicemail, r.waited, r.returned_at, r.recorded_at as result_at from ${t('call')} c left join ${t('call_result')} r on r.id = c.id`
 
+  const namedPartyCalls = `select distinct about as id from ${t('said')} where topic = 'party' and data->>'subject' = any($1::text[])`
+  const retainedPartyCalls = `select n.id from (${namedPartyCalls}) n cross join lateral (
+    select data from ${t('said')} where topic = 'party' and about = n.id order by at desc, key collate "C" desc limit 1
+  ) winner where winner.data->>'role' in ('self', 'representative') and winner.data->>'subject' <> all($1::text[])
+    and not exists (select from ${t('call')} c where c.id = n.id and (c.line_subject = any($1::text[]) or c.subject = any($1::text[])))`
   const partyCalls = `select id from ${t('call')} where line_subject = any($1::text[]) or (party is not null and subject = any($1::text[]))
-    union select about as id from ${t('said')} where topic = 'party' and data->>'subject' = any($1::text[])`
+    union (${namedPartyCalls} except ${retainedPartyCalls})`
   const dropCallNotices = async (db: Queryable, ids: string[], subjects: Subject[], misses: string[] = [], evidence: readonly string[] = []) => {
     const sources = [...ids, ...evidence]
     const conversions = ids.map(id => `call:${id}`)
@@ -160,20 +165,23 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       return new Map(tally.map((row) => [row.identifier as Identifier, row.added as number]))
     },
 
-    async removeSubject(subject) {
+    async removeSubject(subject, only) {
       const ids = (await db.query(`${partyCalls} union select id from ${t('call')} where subject = any($1::text[])`, [[subject]])).rows.map(row => row.id as string)
       let callJobs: Job[] = []
       if (ids.length) {
         const refs = ids.map(id => `call:${id}`)
         const { rows } = await db.query(`delete from ${t('call')} where id = any($1::text[]) returning subject, line_subject, direction, party`, [ids])
         const owners = rows.flatMap(row => [row.subject, row.line_subject]).filter(Boolean)
-        await dropCallNotices(db, ids, [subject, ...owners], [], [creditSubject(subject), ...(rows.some(row => row.direction === 'inbound' && row.party) ? ['legacy:credit'] : [])])
+        await dropCallNotices(db, ids, [subject, ...owners], [], [...(only ? [] : [creditSubject(subject)]), ...(rows.some(row => row.direction === 'inbound' && row.party) ? ['legacy:credit'] : [])])
         await db.query(`delete from ${t('call_result')} where id = any($1::text[])`, [ids])
         await db.query(`delete from ${t('said')} where (topic in ('worth', 'lead') and about = any($1::text[])) or (topic in ('party', 'result', 'return') and about = any($2::text[]))`, [refs, ids])
         await db.query(`delete from ${t('not_lead')} where id = any($1::text[])`, [refs])
         for (const table of ['outcome', 'outcome_value', 'payment']) await db.query(`delete from ${t(table)} where transaction_id = any($1::text[])`, [refs])
         callJobs = (await db.query(`delete from ${t('conversion')} where transaction_id = any($1::text[]) returning *`, [refs])).rows.map(toJob)
       }
+      await db.query(`delete from ${t('said')} where topic = 'party' and data->>'subject' = $1`, [subject])
+      if (only === 'parties') return callJobs
+      await db.query(`delete from ${t('call_evidence')} where subject = $1`, [subject])
       if (!ids.length) await dropCallNotices(db, ids, [subject], [], [creditSubject(subject)])
       const { rows: left } = await db.query(
         `with gone as (delete from ${t('edge')} where subject = $1 returning identifier)
@@ -216,6 +224,43 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       return [...callJobs, ...jobs.map(toJob)]
     },
 
+    async hasCallEvidence() {
+      return (await db.query(`select from ${t('call_evidence')} limit 1`)).rows.length > 0
+    },
+
+    async rivalCalls(number, first, last, line) {
+      const { rows } = await db.query(`${callRows} where c.direction = 'inbound' and c.dialed = $1 and c.at >= $2 and c.at < $3
+        and ($4::text is null or coalesce(c.line_subject, c.subject) = $4)`, [number, first, last, line ?? null])
+      return rows.map(row => ({ ...toCall(row), subject: row.line_subject ?? row.subject, flags: row.flags, ...(row.visitor && { visitor: row.visitor }) }))
+    },
+
+    async callEvidence({ subjects, identifiers, calls, before } = {}) {
+      const filters: string[] = []
+      const values: unknown[] = []
+      for (const [column, ids] of [['subject', subjects], ['identifier', identifiers], ['call_id', calls]] as const) if (ids) filters.push(`${column} = any($${values.push(ids)}::text[])`)
+      if (before !== undefined) filters.push(`recorded_at <= $${values.push(before)}`)
+      const { rows } = await db.query(`select * from ${t('call_evidence')}${filters.length ? ' where ' + filters.join(' and ') : ''}`, values)
+      return rows.map(row => ({ call: row.call_id, subject: row.subject, identifier: row.identifier, at: Number(row.at), recorded: Number(row.recorded_at) }))
+    },
+
+    async reserveCall(rows) {
+      if (rows.length) await db.query(`insert into ${t('call_evidence')} (call_id, subject, identifier, at, recorded_at)
+        select * from unnest($1::text[], $2::text[], $3::text[], $4::bigint[], $5::bigint[]) on conflict do nothing`,
+        [rows.map(row => row.call), rows.map(row => row.subject), rows.map(row => row.identifier), rows.map(row => row.at), rows.map(row => row.recorded)])
+    },
+
+    async markPartyCode(id, visitor) {
+      await db.query(`update ${t('call')} set visitor = $3, flags = array_append(array_remove(array_remove(array_remove(flags,'ambiguous'),'pool'),'repeat'), $2::text) where id = $1 and party is not null`, [id, visitor ? 'code' : 'taken', visitor ?? null])
+    },
+
+    async callVisitors(ids) {
+      if (!ids.length) return new Map()
+      const { rows } = await db.query(`select c.id, c.visitor from ${t('call')} c where c.id = any($1::text[]) and c.party is not null and exists (
+        select from ${t('call_evidence')} e where e.call_id = c.id and e.subject = c.visitor and e.identifier in ('dial:' || c.id, 'lease:' || c.id, 'text:call:' || c.id)
+        and not exists (select from ${t('identifier')} i where i.id = e.identifier and i.ignored))`, [ids])
+      return new Map(rows.map(row => [row.id, row.visitor]))
+    },
+
     async edgesOf(subjects) {
       if (subjects.length === 0) return []
       const { rows } = await db.query(`select * from ${t('edge')} where subject = any($1::text[])`, [subjects])
@@ -230,14 +275,14 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
 
     async *sharing(caps, alone) {
       const kinds = Object.keys(caps)
-      const { rows: unnamed } = await db.query(`select id from ${t('identifier')} where fanout >= 2 and not ignored and split_part(id, ':', 1) <> all($1::text[]) limit 1`, [kinds])
+      const { rows: unnamed } = await db.query(`select id from ${t('match_identifier')} where fanout >= 2 and not ignored and split_part(id, ':', 1) <> all($1::text[]) limit 1`, [kinds])
       if (unnamed.length > 0) throw malformed(`Identifier "${unnamed[0].id}" has a kind that is missing from the policy`)
       const rows = cursor(
         db,
         page,
         `select x.subject as a, y.subject as b, array_agg(x.identifier) as identifiers, array_agg(i.fanout) as fanouts,
            array_agg(array[x.first_at, x.last_at, x.sightings, y.first_at, y.last_at, y.sightings]) as times
-         from ${t('identifier')} i
+         from ${t('match_identifier')} i
          join unnest($1::text[], $2::bigint[]) as rule (kind, cap) on rule.kind = split_part(i.id, ':', 1) and i.fanout <= rule.cap
          join ${t('edge')} x on x.identifier = i.id
          join ${t('edge')} y on y.identifier = i.id and y.subject > x.subject
@@ -274,7 +319,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       const out = new Map<Identifier, IdentifierState>()
       if (identifiers.length === 0) return out
       const { rows } = await db.query(
-        `select id, fanout, ignored from ${t('identifier')} where id = any($1::text[]) and (fanout > 0 or ignored)`,
+        `select id, fanout, ignored from ${t('match_identifier')} where id = any($1::text[]) and (fanout > 0 or ignored)`,
         [identifiers],
       )
       for (const row of rows) out.set(row.id, { fanout: row.fanout, ignored: row.ignored })
@@ -296,7 +341,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
         return new Map([...states].filter(([, state]) => state.fanout > 1 && !state.ignored))
       }
       const { rows } = await db.query(
-        `select id, fanout from ${t('identifier')} where fanout > 1 and not ignored and id in (select identifier from ${t('edge')} where subject = any($1::text[]))`,
+        `select id, fanout from ${t('match_identifier')} where fanout > 1 and not ignored and id in (select identifier from ${t('edge')} where subject = any($1::text[]))`,
         [subjects],
       )
       return new Map(rows.map((row) => [row.id, { fanout: row.fanout, ignored: false }]))
@@ -660,6 +705,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       const line = raw.line
       const first = !call.party && !arriving
       const { changes, affected } = first ? await callTraces(this, call, line, raw.line_kind ?? undefined) : { changes: [], affected: [] }
+      await this.reserveCall(changes.map(({ edge, recorded }) => ({ call: id, subject: edge.subject, identifier: edge.identifier, at: call.at, recorded })))
       for (const { edge, remove, next } of changes) {
         const { subject, identifier } = edge
         if (remove) await db.query(`delete from ${t('sighting')} where id in (select id from ${t('sighting')} where subject = $1 and identifier = $2 and at = $3 and event = 'call' order by id limit $4)`, [subject, identifier, call.at, remove])
@@ -674,7 +720,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
         await db.query(`delete from ${t('subject')} s where id = any($1::text[]) and not exists (select from ${t('edge')} e where e.subject = s.id)`, [changes.map(({ edge }) => edge.subject)])
       }
       if (first && !call.visitor && call.direction === 'inbound') await this.dropTouch(line, call.at, `tel:${call.to}`, id, true)
-      await db.query(`update ${t('call')} set line_subject = $2, line_kind = null, subject = $3, party = $4, visitor = null, flags = $5 where id = $1`, [id, line, owner, party, withoutGuesses(call.flags)])
+      await db.query(`update ${t('call')} set line_subject = $2, line_kind = null, subject = $3, party = $4 where id = $1`, [id, line, owner, party])
       const transactionId = `call:${id}`
       if (owner !== call.subject) {
         for (const table of ['outcome', 'outcome_value']) await db.query(`update ${t(table)} set subject = $2 where transaction_id = $1 and subject = $3`, [transactionId, owner, call.subject])
@@ -977,25 +1023,33 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       if (keys.length > 0) await db.query(`delete from ${t('alert')} where delivered_at is null and exists (select from unnest($1::text[]) as k (key) where position(k.key in text) > 0)`, [keys])
     },
 
-    async keysOf(subjects) {
+    async keysOf(subjects, only) {
       const { rows } = await db.query(
-        `with named as (${partyCalls}), theirs as (select transaction_id as id from ${t('outcome')} where subject = any($1::text[])
+        `with named as (${partyCalls}), theirs as (select transaction_id as id from ${t('outcome')} where not $2 and subject = any($1::text[])
            union select 'call:' || id from named
-           union select transaction_id from ${t('outcome_value')} v where subject = any($1::text[]) and not exists (select from ${t('outcome')} o where o.transaction_id = v.transaction_id))
+           union select transaction_id from ${t('outcome_value')} v where not $2 and subject = any($1::text[]) and not exists (select from ${t('outcome')} o where o.transaction_id = v.transaction_id))
          select 'conversion' as type, id as key from theirs
          union select 'call', id from ${t('call')} where subject = any($1::text[])
          union select 'call', id from named
-         union select 'call_update', key from ${t('said')} where topic = 'party' and about in (select id from named)
-         union all select 'text', id from ${t('message')} where subject = any($1::text[])
+         union select 'call_update', key from ${t('said')} where topic = 'party' and (about in (select id from named) or data->>'subject' = any($1::text[]))
+         union all select 'text', id from ${t('message')} where not $2 and subject = any($1::text[])
          union all select 'payment', id from ${t('payment')} where transaction_id in (select id from theirs)
-         union all select 'transfer', id from ${t('transfer')} where source = any($1::text[]) or target = any($1::text[])
-         union all select 'link', id from ${t('sent_link')} where subject = any($1::text[])`,
-        [subjects],
+         union all select 'transfer', id from ${t('transfer')} where not $2 and (source = any($1::text[]) or target = any($1::text[]))
+         union all select 'link', id from ${t('sent_link')} where not $2 and subject = any($1::text[])`,
+        [subjects, only === 'parties'],
       )
       return rows.map((row) => ({ type: row.type, key: row.key }))
     },
 
-    async forgetReceipts(subjects, keys, at) {
+    async retainedPartyCalls(subjects) {
+      return (await db.query(retainedPartyCalls, [subjects])).rows.map(row => row.id)
+    },
+
+    async forgetReceipts(subjects, keys, at, retainedCalls = [], only) {
+      if (retainedCalls.length) await db.query(
+        `delete from ${t('receipt_subject')} s using ${t('receipt')} r where s.subject = any($1::text[]) and s.type = r.type and s.key_mac = r.key_mac and
+          ((r.type = 'call' and r.key_mac = any($2::text[])) or (r.ref_type = 'call' and r.ref_mac = any($2::text[])))`, [subjects, retainedCalls],
+      )
       await db.query(
         `insert into ${t('receipt')} (type, key_mac, secret_id, digest, digest_version, at, recorded_at)
          select k.type, k.mac, k.secret_id, null, 0, $4, $4 from unnest($1::text[], $2::text[], $3::text[]) as k (type, mac, secret_id)
@@ -1012,7 +1066,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
              where exists (select from own where own.type = r.type and own.mac = r.key_mac) or exists (select from own where own.type = r.ref_type and own.mac = r.ref_mac)
              returning r.type, r.key_mac)
          delete from ${t('receipt_subject')} s using gone where s.type = gone.type and s.key_mac = gone.key_mac`,
-        [subjects, JSON.stringify(keys.flatMap(({ type, all }) => all.map((other) => ({ type, other })))), at],
+        [only ? [] : subjects, JSON.stringify(keys.flatMap(({ type, all }) => all.map((other) => ({ type, other })))), at],
       )
     },
 
@@ -1096,6 +1150,17 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       const which = author === undefined ? '' : author === 'people' ? `and (actor is null or not starts_with(actor, 'system:'))` : author === 'system' ? `and starts_with(actor, 'system:')` : 'and actor = $3'
       const { rows } = await db.query(`select * from ${t('decision')} where ($1::bigint is null or seq < $1) ${which} order by seq desc limit $2`, [before ?? null, limit, ...(which.includes('$3') ? [author] : [])])
       return rows.map(toDecision)
+    },
+
+    async forgottenParties(limit) {
+      const { rows } = await db.query(`select distinct s.data->>'subject' as subject from ${t('said')} s where s.topic = 'party' and exists (
+        select from ${t('decision')} d where d.action = 'forget' and d.about->>0 = s.data->>'subject') limit $1`, [limit])
+      return rows.map(row => row.subject)
+    },
+
+    async wasForgotten(subject) {
+      const { rows } = await db.query(`select 1 from ${t('decision')} where action = 'forget' and about->>0 = $1 limit 1`, [subject])
+      return rows.length > 0
     },
 
     async decisionsNaming(subjects) {
@@ -1383,9 +1448,9 @@ function toCall(row: any): KeptCall {
     at: Number(row.at),
     to: row.dialed,
     ...(row.duration !== null && { duration: row.duration }),
-    flags: row.flags,
+    flags: row.party ? withoutGuesses(row.flags) : row.flags,
     ...(row.party && { party: row.party }),
-    ...(row.visitor !== null && { visitor: row.visitor }),
+    ...(!row.party && row.visitor !== null && { visitor: row.visitor }),
     ...(row.tags !== null && { tags: row.tags }),
     recorded: Number(row.recorded_at),
     ...(row.result_at !== null && { result: toResult(row) }),
@@ -1881,6 +1946,36 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
               delete from ${schema}.event_once n where said_once in (select key from gone) or (starts_with(said_once, 'unreturned:') and subject in (select subject from stale) and not exists (select from ${schema}.alert a where a.key = n.said_once));
             create index if not exists callback_event_calls on ${schema}.event using gin (callback_calls) where type = 'callback.overdue';
             create index if not exists callback_alert_calls on ${schema}.alert using gin (callback_calls) where callback_calls is not null;`,
+    },
+    {
+      id: 32,
+      name: 'withdrawn call evidence in shared identifier counts',
+      // A confirmed call on an older database lost its line kind and visitor. Either phone kind may need to count that holder.
+      sql: `create table if not exists ${schema}.call_evidence (
+              call_id text not null references ${schema}.call (id) on delete cascade, subject text not null, identifier text not null,
+              at bigint not null, recorded_at bigint not null, primary key (call_id, subject, identifier));
+            create index if not exists call_evidence_subject on ${schema}.call_evidence (subject);
+            create index if not exists call_evidence_identifier on ${schema}.call_evidence (identifier);
+            insert into ${schema}.call_evidence select c.id, c.line_subject, k.kind || ':' || substr(c.line_subject, 8), c.at, c.recorded_at
+              from ${schema}.call c cross join (values ('phone'), ('voip')) k(kind)
+              where c.party is not null and c.direction = 'inbound' and starts_with(c.line_subject, 'caller:') and not ('toll_free' = any(c.flags))
+              on conflict do nothing;
+            create or replace view ${schema}.match_identifier as
+              select id, sum(fanout)::int as fanout, bool_or(ignored) as ignored from (
+                select id, fanout, ignored from ${schema}.identifier union all
+                select w.identifier, count(distinct w.subject)::int, false from ${schema}.call_evidence w
+                where not exists (select from ${schema}.edge e where e.subject = w.subject and e.identifier = w.identifier)
+                group by w.identifier
+              ) counts group by id;
+            update ${schema}.built set policy = 'mixed' where exists (select from ${schema}.call_evidence);`,
+    },
+    {
+      id: 33,
+      name: 'forgotten subjects in the audit log',
+      sql: `create index if not exists decision_forgotten on ${schema}.decision ((about->>0)) where action = 'forget';
+            insert into ${schema}.setting (name, value) select 'repairForgottenParties', 'due' where exists (
+              select from ${schema}.said s join ${schema}.decision d on d.action = 'forget' and d.about->>0 = s.data->>'subject' where s.topic = 'party')
+            on conflict do nothing;`,
     },
   ]
 }

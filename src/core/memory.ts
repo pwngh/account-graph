@@ -9,8 +9,8 @@ import type { GraphEvent } from '../contract/api.ts'
 import type { Delivery } from './events.ts'
 import type { Receipt } from './receipts.ts'
 import type { Said, SaidOf, Topic } from './said.ts'
-import { byKey } from './said.ts'
-import type { CallLineKind, Store, Tx } from './store.ts'
+import { byKey, newest } from './said.ts'
+import type { CallEvidence, CallLineKind, Store, Tx } from './store.ts'
 import { CLICK_IDS } from './touch.ts'
 import type { CallResult, Consent, ConsentAnswer, CostRow, Counted, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, NumberedChange, OutcomeValue, Payment, SentLink, Sighting, Subject, Touch } from '../contract/types.ts'
 
@@ -38,6 +38,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
   const outcomes = new Map<string, Counted>()
   const values = new Map<Subject, Map<string, OutcomeValue[]>>()
   const calls = new Map<string, Omit<KeptCall, 'result'>>()
+  const withheld = new Map<string, CallEvidence>()
   const callLines = new Map<string, Subject>()
   const lineKinds = new Map<string, CallLineKind>()
   const texts = new Map<string, KeptText>()
@@ -63,7 +64,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
   const ops = createMemoryOps()
   let built: string | undefined
 
-  const withResult = (call: Omit<KeptCall, 'result'>): KeptCall => structuredClone({ ...call, ...(results.has(call.id) && { result: results.get(call.id)! }) })
+  const withResult = ({ visitor, ...call }: Omit<KeptCall, 'result'>): KeptCall => structuredClone({ ...call, ...(call.party && { flags: withoutGuesses(call.flags) }), ...(!call.party && visitor && { visitor }), ...(results.has(call.id) && { result: results.get(call.id)! }) })
 
   const index = (groups: Map<Subject, Set<Subject>>, key: Subject, subject: Subject) => {
     const group = groups.get(key)
@@ -93,8 +94,14 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
   const partyCallsOf = (subjects: readonly Subject[]) => {
     const found = new Set<string>()
     for (const [id, line] of callLines) if (subjects.includes(line) || subjects.includes(calls.get(id)!.subject)) found.add(id)
-    for (const list of said.values()) for (const each of list) if (each.topic === 'party' && 'subject' in each.data && subjects.includes(each.data.subject)) found.add(each.about)
-    return found
+    const retained: string[] = []
+    for (const list of said.values()) {
+      if (!list.some(each => each.topic === 'party' && 'subject' in each.data && subjects.includes(each.data.subject))) continue
+      const last = newest(list)!
+      if (last.topic === 'party' && (last.data.role === 'self' || last.data.role === 'representative') && !subjects.includes(last.data.subject) && !found.has(last.about)) retained.push(last.about)
+      else found.add(last.about)
+    }
+    return { found, retained }
   }
   const dropCallNotices = (ids: ReadonlySet<string>, subjects: Subject[], misses = new Set<string>(), evidence: readonly string[] = []) => {
     const sources = new Set([...ids, ...evidence])
@@ -145,10 +152,14 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
       return added
     },
 
-    async removeSubject(subject) {
-      // The line, the current party and even an earlier party can all have data under this call's id.
-      const ids = partyCallsOf([subject])
+    async removeSubject(subject, only) {
+      const { found: ids, retained } = partyCallsOf([subject])
+      for (const call of retained) {
+        const key = `party\u0000${call}`
+        said.set(key, said.get(key)!.filter(each => each.topic === 'party' && !('subject' in each.data && each.data.subject === subject)))
+      }
       for (const call of calls.values()) if (call.subject === subject) ids.add(call.id)
+      for (const [key, row] of withheld) if (ids.has(row.call) || (!only && row.subject === subject)) withheld.delete(key)
       const gone = []
       const owners = new Set([subject])
       for (const id of ids) {
@@ -169,7 +180,8 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
         unsay(outcome)
         unsay(id, 'party', 'return', 'result')
       }
-      dropCallNotices(ids, [...owners], new Set(), [creditSubject(subject)])
+      if (ids.size || !only) dropCallNotices(ids, [...owners], new Set(), only ? [] : [creditSubject(subject)])
+      if (only === 'parties') return gone
       for (const identifier of bySubject.get(subject)?.keys() ?? []) {
         const holders = byIdentifier.get(identifier)!
         holders.delete(subject)
@@ -227,6 +239,46 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
       return [...gone, ...await outbox.remove(subject)]
     },
 
+    async hasCallEvidence() { return withheld.size > 0 },
+
+    async callEvidence(filter = {}) {
+      if (!withheld.size) return []
+      const subjects = new Set(filter.subjects)
+      const identifiers = new Set(filter.identifiers)
+      const ids = new Set(filter.calls)
+      return [...withheld.values()].filter(row => (!filter.subjects || subjects.has(row.subject)) && (!filter.identifiers || identifiers.has(row.identifier)) &&
+        (!filter.calls || ids.has(row.call)) && (filter.before === undefined || row.recorded <= filter.before)).map(row => ({ ...row }))
+    },
+
+    async reserveCall(rows) {
+      for (const row of rows) {
+        const key = [row.call, row.subject, row.identifier].join('\u0000')
+        if (!withheld.has(key)) withheld.set(key, { ...row })
+      }
+    },
+
+    async rivalCalls(number, first, last, line) {
+      return [...calls.values()].filter(call => call.direction === 'inbound' && call.to === number && call.at >= first && call.at < last && (!line || (callLines.get(call.id) ?? call.subject) === line))
+        .map(call => ({ ...withResult(call), subject: callLines.get(call.id) ?? call.subject, flags: [...call.flags], ...(call.visitor && { visitor: call.visitor }) }))
+    },
+
+    async markPartyCode(id, visitor) {
+      const call = calls.get(id)
+      if (!call?.party) return
+      call.flags = [...withoutGuesses(call.flags), visitor ? 'code' : 'taken']
+      if (visitor) call.visitor = visitor
+      else delete call.visitor
+    },
+
+    async callVisitors(ids) {
+      const found = new Map<string, Subject>()
+      for (const id of ids) {
+        const call = calls.get(id)
+        if (call?.party && call.visitor && [`dial:${id}`, `lease:${id}`, `text:call:${id}`].some(identifier => !ignored.has(identifier) && withheld.has([id, call.visitor, identifier].join('\u0000')))) found.set(id, call.visitor)
+      }
+      return found
+    },
+
     async edgesOf(subjects) {
       return subjects.flatMap((subject) => [...(bySubject.get(subject)?.values() ?? [])].map(copy))
     },
@@ -237,19 +289,21 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
 
     async *sharing(caps) {
       const pairs = new Map<string, { a: Edge; b: Edge; fanout: number }[]>()
+      const states = await this.states([...byIdentifier.keys()])
       for (const [identifier, holders] of byIdentifier) {
+        const fanout = states.get(identifier)!.fanout
         const kind = identifier.slice(0, identifier.indexOf(':'))
         if (ignored.has(identifier) || holders.size < 2) continue
         if (!Object.hasOwn(caps, kind)) throw malformed(`Identifier "${identifier}" has a kind that is missing from the policy`)
-        if (holders.size > caps[kind]!) continue
+        if (fanout > caps[kind]!) continue
         const edges = [...holders.values()]
         for (const [i, x] of edges.entries()) {
           for (const y of edges.slice(i + 1)) {
             const [a, b] = x.subject < y.subject ? [x, y] : [y, x]
             const key = `${a.subject}\u0000${b.subject}`
             const shared = pairs.get(key)
-            if (shared) shared.push({ a: copy(a), b: copy(b), fanout: holders.size })
-            else pairs.set(key, [{ a: copy(a), b: copy(b), fanout: holders.size }])
+            if (shared) shared.push({ a: copy(a), b: copy(b), fanout })
+            else pairs.set(key, [{ a: copy(a), b: copy(b), fanout }])
           }
         }
       }
@@ -262,8 +316,10 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
 
     async states(identifiers) {
       const out = new Map<Identifier, IdentifierState>()
+      const extra = new Map<Identifier, Set<Subject>>()
+      for (const row of await this.callEvidence({ identifiers })) if (!byIdentifier.get(row.identifier)?.has(row.subject)) index(extra, row.identifier, row.subject)
       for (const identifier of identifiers) {
-        const fanout = byIdentifier.get(identifier)?.size ?? 0
+        const fanout = (byIdentifier.get(identifier)?.size ?? 0) + (extra.get(identifier)?.size ?? 0)
         if (fanout > 0 || ignored.has(identifier)) out.set(identifier, { fanout, ignored: ignored.has(identifier) })
       }
       return out
@@ -621,6 +677,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
       const line = callLines.get(id) ?? call.subject
       const first = !call.party && !arriving
       const { changes, affected } = first ? await callTraces(this, call, line, lineKinds.get(id)) : { changes: [], affected: [] }
+      await this.reserveCall(changes.map(({ edge, recorded }) => ({ call: id, subject: edge.subject, identifier: edge.identifier, at: call.at, recorded })))
       for (const { edge, remove, next } of changes) {
         const { subject, identifier } = edge
         const seen = sightings.get(subject)
@@ -650,8 +707,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
       const misses = new Set(await affectedMisses(this, withResult(call), owner))
       lineKinds.delete(id)
       callLines.set(id, line)
-      Object.assign(call, { subject: owner, party, flags: withoutGuesses(call.flags) })
-      delete call.visitor
+      Object.assign(call, { subject: owner, party })
       const transactionId = `call:${id}`
       const outcome = outcomes.get(transactionId)
       if (outcome) outcome.subject = owner
@@ -924,30 +980,45 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
       ops.unname(keys)
     },
 
-    async keysOf(subjects) {
+    async keysOf(subjects, only) {
       const of = new Set(subjects)
-      const ids = partyCallsOf(subjects)
+      const { found: ids, retained } = partyCallsOf(subjects)
       const own = [...outcomes.values()].filter((each) => of.has(each.subject)).map((each) => each.transactionId)
-      const theirs = new Set([...own, ...[...ids].map(id => `call:${id}`), ...subjects.flatMap((each) => [...(values.get(each)?.keys() ?? [])].filter((id) => !outcomes.has(id)))])
+      const theirs = only ? new Set([...ids].map(id => `call:${id}`)) : new Set([...own, ...[...ids].map(id => `call:${id}`), ...subjects.flatMap((each) => [...(values.get(each)?.keys() ?? [])].filter((id) => !outcomes.has(id)))])
       return [
         ...[...theirs].map((key) => ({ type: 'conversion', key })),
         ...[...new Set([...ids, ...[...calls.values()].filter(each => of.has(each.subject)).map(call => call.id)])].map(key => ({ type: 'call', key })),
-        ...[...ids].flatMap(id => (said.get(`party\u0000${id}`) ?? []).map(({ key }) => ({ type: 'call_update', key }))),
-        ...[...texts.values()].filter((each) => of.has(each.subject)).map(({ id }) => ({ type: 'text', key: id })),
+        ...[...ids, ...retained].flatMap(id => (said.get(`party\u0000${id}`) ?? [])
+          .filter(each => ids.has(id) || (each.topic === 'party' && 'subject' in each.data && of.has(each.data.subject)))
+          .map(({ key }) => ({ type: 'call_update', key }))),
         ...[...payments.values()].filter((each) => theirs.has(each.transactionId)).map(({ id }) => ({ type: 'payment', key: id })),
-        ...[...flowIds.values()].filter((each) => of.has(each.from) || of.has(each.to)).map(({ id }) => ({ type: 'transfer', key: id })),
-        ...[...sent.values()].filter((each) => of.has(each.subject)).map(({ id }) => ({ type: 'link', key: id })),
+        ...(only ? [] : [...texts.values()].filter((each) => of.has(each.subject)).map(({ id }) => ({ type: 'text', key: id }))),
+        ...(only ? [] : [...flowIds.values()].filter((each) => of.has(each.from) || of.has(each.to)).map(({ id }) => ({ type: 'transfer', key: id }))),
+        ...(only ? [] : [...sent.values()].filter((each) => of.has(each.subject)).map(({ id }) => ({ type: 'link', key: id }))),
       ]
     },
 
-    async forgetReceipts(subjects, keys, at) {
+    async retainedPartyCalls(subjects) {
+      return partyCallsOf(subjects).retained
+    },
+
+    async forgetReceipts(subjects, keys, at, retainedCalls = [], only) {
+      const kept = new Set(retainedCalls)
+      // Older call and result receipts also named whichever record stood when the entry arrived.
+      if (kept.size) for (const [id, of] of receiptSubjects) {
+        const row = receipts.get(id)!
+        if ((row.type === 'call' && kept.has(row.mac)) || (row.ref?.type === 'call' && kept.has(row.ref.mac))) {
+          for (const subject of subjects) of.delete(subject)
+          if (!of.size) receiptSubjects.delete(id)
+        }
+      }
       const gone = new Set<string>()
       for (const { type, mac, secretId, all } of keys) {
         const id = all.map((each) => `${type}\u0000${each}`).find((each) => receipts.has(each)) ?? `${type}\u0000${mac}`
         if (!receipts.has(id)) receipts.set(id, { type, mac, secretId, digest: null, version: 0, at, recorded: at })
         gone.add(id)
       }
-      for (const [id, of] of receiptSubjects) if (subjects.some((each) => of.has(each))) gone.add(id)
+      if (!only) for (const [id, of] of receiptSubjects) if (subjects.some((each) => of.has(each))) gone.add(id)
       const about = new Set(keys.flatMap(({ type, all }) => all.map((each) => `${type}\u0000${each}`)))
       for (const [id, { ref }] of receipts) if (ref && (about.has(`${ref.type}\u0000${ref.mac}`) || gone.has(`${ref.type}\u0000${ref.mac}`))) gone.add(id)
       for (const id of gone) {
@@ -1029,6 +1100,20 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
       return decisions.filter(wanted).slice(-limit).reverse().map(copied)
     },
 
+    async forgottenParties(limit) {
+      const gone = new Set(decisions.filter(d => d.action === 'forget').map(d => d.about[0]))
+      const named = new Set<Subject>()
+      for (const list of said.values()) for (const each of list) {
+        if (each.topic === 'party' && 'subject' in each.data && gone.has(each.data.subject)) named.add(each.data.subject)
+        if (named.size >= limit) return [...named]
+      }
+      return [...named]
+    },
+
+    async wasForgotten(subject) {
+      return decisions.some(d => d.action === 'forget' && d.about[0] === subject)
+    },
+
     async decisionsNaming(subjects) {
       const wanted = new Set(subjects)
       return decisions.filter((decision) => decision.action !== 'ignore' && decision.action !== 'restore' && decision.action !== 'prune' && decision.about.some((each) => wanted.has(each))).map(copied)
@@ -1056,7 +1141,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
   }
 
   /** Every collection, copied together, so what two of them share stays shared. */
-  const collections = { bySubject, byIdentifier, ignored, labels, byComponent, byCluster, sightings, touches, separated, flows, flowsBy, flowIds, consents, decisions, outcomes, values, calls, callLines, lineKinds, texts, sent, payments, results, spurned, leases, costs, reads, said, receipts, receiptSubjects, settings, events, once, deliveries }
+  const collections = { bySubject, byIdentifier, ignored, labels, byComponent, byCluster, sightings, touches, separated, flows, flowsBy, flowIds, consents, decisions, outcomes, values, calls, withheld, callLines, lineKinds, texts, sent, payments, results, spurned, leases, costs, reads, said, receipts, receiptSubjects, settings, events, once, deliveries }
   const snapshot = () => structuredClone({ ...collections, lastEvent, epoch, writes, built, jobs: outbox.jobs, ops: ops.kept })
   const restore = (kept: ReturnType<typeof snapshot>) => {
     const refill = (now: any, then: any) => {

@@ -39,7 +39,11 @@ Data goes to these recipients only.
 
 A retry of a forgotten key is checked against its receipt before the graph asks a line or address provider about the entry.
 
-An identification made for a single call belongs to that call. The original line stays private. Forgetting the line or any record named by a party statement erases the call, its statements, its conversion and value changes. This includes a former or excluded party and a statement that arrived before the call. A tombstone covers the call and associated keys, so a late retry receives `FORGOTTEN`. A platform that had already received a conversion can still appear in the deletion report. The delivery shown alongside the confirmed record omits the original click ID, matching confidence and consent. The store keeps the original matching details for refunds, corrected values and retractions on platforms that accept them. This also applies when the platform acknowledges the original send after the correction. A new conversion remains stopped. A later deletion erases that row.
+An identification made for a single call belongs to that call. The original line stays private. Forgetting the original line or the record that currently owns the call erases the call, its statements, its conversion and value changes. When staff have since confirmed another record as the owner, that record keeps the call and its value history. Only statements naming the deleted record are removed, including their receipt field hashes. An unrelated alert stays even when its text happens to contain a removed statement's key. This also applies when the call has yet to arrive. When nobody else is confirmed as the owner, the call is erased. Every erased key has a tombstone, so a late retry receives `FORGOTTEN`.
+
+A visitor known only from a call's tap, code or pool number supplies its campaign to reports. The named record's callback and pipeline rows keep the visitor's arrival time, landing address, language and custom fields private.
+
+A platform that had already received a conversion can still appear in the deletion report. The delivery shown alongside the confirmed record omits the original click ID, matching confidence and consent. The store keeps the original matching details for refunds, corrected values and retractions on platforms that accept them. This also applies when the platform acknowledges the original send after the correction. A new conversion remains stopped. A later deletion erases that row.
 
 When staff identify a call, the graph erases earlier delivery failure events for that call and any stored failure notices that count it, including calls beyond the first ten shown. An older truncated batch without stored call IDs is discarded when a call is corrected or erased. Forgetting someone with no calls preserves that batch. A pending notice that also names other failures is discarded as a whole. The events for those other failures stay. A notice already delivered to a webhook may still be held by its recipient.
 
@@ -64,6 +68,10 @@ Upgrade 30 records which call supplied a channel visit. Older visits only have t
 - The fact that a pool number was held at that time, without the holder.
 - Other subjects of the same person.
 - A tombstone of each key that was about it: a type, a keyed hash and times. The key is answered `FORGOTTEN` from then on, so a late retry brings nobody back. The same subject may be written again with new keys.
+
+On a database where an older version already accepted a party statement after its record was forgotten, the first server to open the upgraded database cleans up those statements before serving requests. It uses the configured receipt secrets to tombstone the keys, including keys whose receipts were pruned. Only the affected calls and statements are checked. A new profile or independent outcome entered under the same record ID stays. An interrupted repair resumes on the next start.
+
+A party statement naming a forgotten record receives `FORGOTTEN` under any key. The graph checks the signed deletion decision before storing the statement or its receipt.
 
 Backups keep their data until you delete them. Run `forget` again after restoring one, with new keys.
 

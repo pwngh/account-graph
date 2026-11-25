@@ -304,6 +304,8 @@ export interface Touch {
 }
 
 export interface AttributedTouch extends Touch {
+  /** A privately tied visit supplies only source and campaign to a confirmed call's reports. */
+  campaignOnly?: true
   /** Strength of the best chain of links from the converting subject to the touch's subject. */
   confidence: number
   /** The two are one cluster, so a visit can be credited however weak the chain between them. A call's own line cannot. */

@@ -32,7 +32,7 @@ export function sourceName(source: string): string {
 }
 
 /** Where a touch came from: the platform of its click id, else its source tag, else the site that referred it. */
-export function sourceOf(touch: Touch): string {
+export function sourceOf(touch: Partial<Touch>): string {
   for (const [field, platform] of CLICK_IDS) if (touch[field]) return platform
   if (touch.source) return sourceName(touch.source)
   if (touch.referrer) {
@@ -48,7 +48,7 @@ export function sourceOf(touch: Touch): string {
  * by its id, or says so in its medium. Meta's click id alone does not say
  * so, because links nobody paid for carry it too.
  */
-export function paid(touch: Touch): boolean {
+export function paid(touch: Partial<Touch>): boolean {
   return Boolean(touch.gclid || touch.gbraid || touch.wbraid || touch.msclkid || touch.ttclid || touch.campaignId) || /^(cpc|ppc|cpm|cpv|paid.*|display)$/i.test(touch.medium ?? '')
 }
 
@@ -107,7 +107,9 @@ export function hourIn(at: number, timeZone = 'UTC'): { hour: string; weekday: s
 /** Something to be broken down: when it happened, what it was credited to, and what is known of it. */
 interface Told {
   at: number
-  touch: Touch | undefined
+  touch: Partial<Touch> | undefined
+  /** The campaign was paid for when only its source and campaign may be reported. */
+  paidCampaign?: true
   tags?: Record<string, string> | undefined
 }
 
@@ -148,7 +150,9 @@ type Line = Omit<ReportRow, 'stages' | 'breakdown' | 'people' | Worked> & Tally 
 /** An outcome, what it is credited to, whose it is, and how long after their arrival it came. */
 export interface Credited {
   outcome: Counted
-  touch: Touch | undefined
+  touch: Partial<Touch> | undefined
+  /** The campaign was paid for when only its source and campaign may be reported. */
+  paidCampaign?: true
   /** Its first value, with no time when it may not be the first, and the most it was ever worth. */
   first?: (OutcomeValue & { most: number; refunded?: number; writtenOff?: number; lostIn?: readonly string[] }) | undefined
   /** Who it is: the cluster of its subject. Defaults to the subject. */
@@ -160,7 +164,7 @@ export interface Credited {
 }
 
 /** Counts one outcome among others. With no timing given, a credited touch gives its own. */
-function count(into: Tally, { outcome, touch, person = outcome.subject, delay = touch && outcome.at - touch.at, inside = touch !== undefined }: Credited): void {
+function count(into: Tally, { outcome, touch, person = outcome.subject, delay = touch?.at === undefined ? undefined : outcome.at - touch.at, inside = touch !== undefined }: Credited): void {
   const step = into.stages.get(outcome.stage) ?? { count: 0, value: 0, people: new Set(), days: [], inside: 0 }
   into.stages.set(outcome.stage, step)
   step.count += 1
@@ -320,10 +324,11 @@ export function fold(
   const costed = new Set(lines.keys())
 
   // Then every touch that names an id no cost has, so a touch that carries the id as its name can find it.
-  const all = [...touches, ...credited.flatMap(({ touch }) => (touch ? [touch] : [])), ...[...missed, ...notLeads].flatMap(({ touch }) => (touch ? [touch] : []))]
+  const creditedTouches = [...credited, ...missed, ...notLeads].flatMap(each => each.touch ? [{ touch: each.touch, bought: each.paidCampaign || paid(each.touch) }] : [])
+  const all = [...touches, ...creditedTouches.map(each => each.touch)]
   // A touch finds a cost by name when it has no id. One with an id no cost knows only finds a cost that has no id either:
   // a different id under the same name is a different campaign.
-  const named = (touch: Touch, source: string) => {
+  const named = (touch: Partial<Touch>, source: string) => {
     const found = touch.campaign ? byName.get(`${source}\u0000${touch.campaign.toLowerCase()}`) : undefined
     return found && (!touch.campaignId || !found.campaignId) ? found : undefined
   }
@@ -331,7 +336,7 @@ export function fold(
     const source = sourceOf(touch)
     if (touch.campaignId && !costed.has(keyOf(source, touch.campaignId, '')) && !named(touch, source)) line(source, touch.campaignId, '')
   }
-  const lineOf = (touch: Touch): Line => {
+  const lineOf = (touch: Partial<Touch>): Line => {
     const source = sourceOf(touch)
     const name = touch.campaign ?? ''
     const byId = lines.get(keyOf(source, touch.campaignId || name, ''))
@@ -342,8 +347,12 @@ export function fold(
     return found
   }
 
-  for (const touch of touches) lineOf(touch).visits += 1
-  for (const touch of all) if (paid(touch)) lineOf(touch).bought = true
+  for (const touch of touches) {
+    const found = lineOf(touch)
+    found.visits += 1
+    if (paid(touch)) found.bought = true
+  }
+  for (const { touch, bought } of creditedTouches) if (bought) lineOf(touch).bought = true
   const valueOf = by === undefined ? undefined : dimension(by, timeZone)
   const whole = new Map<string, Tally>()
   // Where an outcome or a missed call is counted: its line, and under its value there and in the total.
@@ -357,7 +366,7 @@ export function fold(
     }
     return [found, part(found.parts), part(whole)]
   }
-  const missing = (touch: Touch | undefined) => (touch ? lineOf(touch) : line('(none)', '', ''))
+  const missing = (touch: Partial<Touch> | undefined) => (touch ? lineOf(touch) : line('(none)', '', ''))
   for (const call of missed) for (const into of tallies(missing(call.touch), call)) into.missed += 1
   for (const each of notLeads) for (const into of tallies(missing(each.touch), each)) into.notLeads += 1
   const everything = tally()

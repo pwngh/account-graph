@@ -356,6 +356,8 @@ POST /v1/report
 
 `window` is two days and a time zone. `callbacks` and `texts` answer `{ rows, next }`, 50 rows at a time. Pass `next` as `after`.
 
+When a confirmed call gets its campaign from a visitor outside the named record's group, its `callbacks` and `pipeline` rows have `arrival: null` and a `campaignCredit` object with `source`, `campaign` and `campaignId`. The campaign name and id can each be null.
+
 `asOf` is the moment the answer is of. `campaigns`, `pipeline`, `calls` and `after_calls` are worked out once for everybody who asks at the same time, and shared until something is written. While data is being written, an answer is shared for four times as long as it took, and a minute at most. A `decide` through the same process ends that at once. Forgetting a person or changing a call party invalidates report answers across processes. An `at` within a minute of now is answered from the shared answer.
 
 ## events

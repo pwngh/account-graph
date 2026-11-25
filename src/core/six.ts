@@ -12,6 +12,7 @@ import type { CallOptions, Call } from './calls.ts'
 import type { Engine, Inside, Parts } from './engine.ts'
 import { cursorOf, seqOf } from './events.ts'
 import { Outdated } from './graph.ts'
+import type { Tx } from './store.ts'
 import type { Hours } from './hours.ts'
 import { email, hashPhone, identifier, ip, normalizeEmail, normalizePhone } from './identifiers.ts'
 import { newest } from './said.ts'
@@ -54,6 +55,10 @@ const ofKey = (type: 'conversion' | 'call' | 'text', key: string) => (type === '
 function arrival(touch: AttributedTouch | undefined, subject: Subject): Arrival | null {
   if (!touch) return null
   return { at: touch.at, source: sourceOf(touch), campaign: touch.campaign ?? null, campaignId: touch.campaignId ?? null, landing: touch.landing ?? null, custom: touch.custom ?? {}, confidence: touch.confidence, how: touch.subject === subject ? 'self' : touch.joined ? 'cluster' : 'linked' }
+}
+function reportArrival(touch: AttributedTouch | undefined, subject: Subject) {
+  if (touch?.campaignOnly) return { arrival: null, campaignCredit: { source: sourceOf(touch), campaign: touch.campaign ?? null, campaignId: touch.campaignId ?? null } }
+  return { arrival: arrival(touch, subject) }
 }
 const match = ({ subject, members, score, level, reasons, conflict, unconfirmed }: Candidate): Match => ({ subject, members, score, level, kinds: kinds(reasons), ...(conflict && { conflict }), ...(unconfirmed && { unconfirmed }) })
 const tied = ({ reasons, ...rest }: Counterparty): Tied => ({ ...rest, kinds: kinds(reasons) })
@@ -291,7 +296,7 @@ export function createSix(engine: Engine, options: SixOptions) {
         // Of two reports at one time, the same one stands whichever came first.
         const stands = !result || newest(await inside.tx.saidOf('result', key))?.key === `call ${entry.at} ${canonical(result)}`
         const line = !again && await inside.tx.callLine(key)
-        return { value: { subject: recorded.subject, state: recorded.state, counted: recorded.counted, flags: recorded.flags, ...(recorded.visitor && { visitor: recorded.visitor }) }, subjects: line && line !== recorded.subject ? [recorded.subject, line] : [recorded.subject], existed: recorded.duplicate, stands }
+        return { value: { subject: recorded.subject, state: recorded.state, counted: recorded.counted, flags: recorded.flags, ...(recorded.visitor && { visitor: recorded.visitor }) }, subjects: [line || recorded.subject], existed: recorded.duplicate, stands }
       }
       case 'call_update': {
         const { change } = entry
@@ -314,7 +319,8 @@ export function createSix(engine: Engine, options: SixOptions) {
             counted: (await graph.outcomeOf(`call:${entry.call}`)) !== undefined,
             followUp: kept?.direction === 'inbound' && kept.result?.answered === false ? followUp(kept, await graph.callsOf([kept.subject])) : null,
           },
-          subjects: [...(kept ? [kept.subject] : []), ...(change.kind === 'party' && change.role !== 'unknown' ? [change.subject] : [])],
+          // The receipt already names the call. Its current owner may change before they ask to be forgotten.
+          subjects: change.kind === 'party' && change.role !== 'unknown' ? [change.subject] : [],
           stands,
         }
       }
@@ -451,6 +457,30 @@ export function createSix(engine: Engine, options: SixOptions) {
     }
   }
 
+  async function eraseReceipts(tx: Tx, subjects: readonly Subject[], only?: 'parties') {
+    const keys = (await tx.keysOf(subjects, only)).map(({ type, key }) => ({ type, ...receipts.mac(type, key) }))
+    const kept = (await tx.retainedPartyCalls(subjects)).flatMap(key => receipts.mac('call', key).all)
+    await tx.forgetReceipts(subjects, keys, now(), kept, only)
+  }
+
+  // Upgrade 33 can find an old statement, but only this process can make tombstones with every configured receipt secret.
+  async function repairForgottenParties() {
+    if (await store.read(tx => tx.settingOf('repairForgottenParties')) !== 'due') return
+    for (;;) {
+      const done = await engine.unit(async ({ graph, tx }) => {
+        if (await tx.settingOf('repairForgottenParties') !== 'due') return true
+        const subjects = await tx.forgottenParties(50)
+        if (subjects.length) {
+          await eraseReceipts(tx, subjects, 'parties')
+          await graph.forget(subjects, undefined, undefined, 'parties')
+        }
+        if (subjects.length < 50) await tx.setSetting('repairForgottenParties', 'done')
+        return subjects.length < 50
+      })
+      if (done) return
+    }
+  }
+
   async function forget(request: ForgetRequest): Promise<Decided<ForgetValue, ForgetRefusal>> {
     if (request.platforms === 'retract' && !outbox?.retraction.targets.length) throw fault(FAULT_CODES.CONFIG.UNSUPPORTED, 'No configured ad platform accepts retractions')
     const entry = { type: 'forget' as const, ...request }
@@ -466,8 +496,7 @@ export function createSix(engine: Engine, options: SixOptions) {
         const fields = before && receipts.differs(before, entry)
         if (fields && fields.length > 0) return no({ reason: 'KEY_REUSED' as const, fields })
         if (before) return ok({ duplicate: true, changes: [], sent: (before.sent ?? []) as ForgetValue['sent'] })
-        const keys = (await tx.keysOf(subjects)).map(({ type, key }) => ({ type, ...receipts.mac(type, key) }))
-        await tx.forgetReceipts(subjects, keys, now())
+        await eraseReceipts(tx, subjects)
         await graph.forget(subjects, why(request), (jobs) => void (gone = jobs))
         const sent = sentOf(gone).map(({ transactionId, target, action, at, state, note }) => ({ conversion: transactionId, platform: target, action, at, state: retract && outbox?.canRetract(target) && !note ? ('pending' as const) : state, ...(note !== undefined && { note }) }))
         await tx.addReceipt({ ...receipts.make(entry, now()), sent }, [])
@@ -633,7 +662,7 @@ export function createSix(engine: Engine, options: SixOptions) {
           at: board.at, day: board.day, from: board.from, unplaced: board.unplaced,
           columns: columns.map(({ rows, ...column }) => ({
             ...column,
-            rows: rows.map(({ subject, at, late, step, outcome, call, touch, language }) => ({ subject, at, late, step, value: outcome?.value ?? null, currency: outcome?.currency ?? null, language: language ?? null, call: call ? { state: callState(call, request.at, calls), direction: call.direction } : null, arrival: arrival(touch, subject) })),
+            rows: rows.map(({ subject, at, late, step, outcome, call, touch, language }) => ({ subject, at, late, step, value: outcome?.value ?? null, currency: outcome?.currency ?? null, language: language ?? null, call: call ? { state: callState(call, request.at, calls), direction: call.direction } : null, ...reportArrival(touch, subject) })),
           })),
         }
       }
@@ -641,7 +670,7 @@ export function createSix(engine: Engine, options: SixOptions) {
         return graph.callSummary({ ...days(request.window), at: request.at, ...(calls?.results && { results: calls.results }), ...(calls?.resultWait !== undefined && { resultWait: calls.resultWait }), ...(options.hours && { hours: options.hours }) })
       case 'callbacks': {
         const from = after(request.after)
-        return page(await graph.openCalls({ ...days(request.window), limit: 51, ...(from && { after: from }) }), ({ call }) => call, ({ call, followUp, touch }) => ({ call: call.id, subject: call.subject, at: call.at, state: callState(call, request.at, calls), attempts: followUp.attempts, arrival: arrival(touch, call.subject) }))
+        return page(await graph.openCalls({ ...days(request.window), limit: 51, ...(from && { after: from }) }), ({ call }) => call, ({ call, followUp, touch }) => ({ call: call.id, subject: call.subject, at: call.at, state: callState(call, request.at, calls), attempts: followUp.attempts, ...reportArrival(touch, call.subject) }))
       }
       case 'texts': {
         const from = after(request.after)
@@ -720,7 +749,7 @@ export function createSix(engine: Engine, options: SixOptions) {
     answers.clear()
   }
 
-  return { record, decide, forget, lookup, report, events, decided: heard }
+  return { record, decide, forget, lookup, report, events, decided: heard, repairForgottenParties }
 }
 
 export type Six = ReturnType<typeof createSix>

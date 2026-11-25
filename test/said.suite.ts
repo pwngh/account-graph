@@ -3,9 +3,12 @@ import { test } from 'node:test'
 import { isRefused } from '../src/contract/fault.ts'
 import { recordCall } from '../src/core/calls.ts'
 import { hashPhone } from '../src/core/identifiers.ts'
+import { createEngine } from '../src/core/engine.ts'
+import { createSix } from '../src/core/six.ts'
 import { createGraph } from '../src/core/graph.ts'
 import { createReceipts } from '../src/core/receipts.ts'
 import type { Graph } from '../src/core/graph.ts'
+import type { Store } from '../src/core/store.ts'
 import type { Opened } from './suite.ts'
 
 const AT = 1_790_000_000_000
@@ -31,6 +34,145 @@ async function inOrder(steps: readonly (() => Promise<unknown>)[]) {
 }
 
 export function saidSuite(name: string, open: () => Promise<Opened>) {
+  test(`${name}: forgetting a former party preserves the other record's call and its older receipts`, async () => {
+    const { store, close } = await open()
+    try {
+      const receipts = createReceipts(['a'.repeat(32)])
+      const rotated = createReceipts(['b'.repeat(32), 'a'.repeat(32)])
+      const engine = createEngine(store, { now: () => AT + 100 })
+      const six = createSix(engine, { receipts: rotated })
+      const a = 'record:former'
+      const b = 'record:owner'
+      const line = 'caller:line'
+      const id = 'corrected'
+      const reference = { type: 'call' as const, key: id }
+      const call = { ...reference, direction: 'inbound', from: '+12025550100', to: '+12025550101', at: AT, duration: 60 } as const
+      const report = { type: 'call_update', key: 'answer', at: AT, call: id, change: { kind: 'result', result: { answered: true } } } as const
+      const old = { type: 'call_update', key: 'weekend', at: AT, call: id, change: { kind: 'party', role: 'self', subject: a, by: 'desk' } } as const
+      // The call and result used to index their receipts under the record staff named at the time.
+      await store.write(async tx => {
+        await tx.setCall({ id, subject: line, direction: 'inbound', to: call.to, at: AT, duration: 60, recorded: AT, flags: [] })
+        await tx.addReceipt(receipts.make(call, AT), [a, line])
+        await tx.addReceipt(receipts.make(report, AT, reference), [a])
+      })
+      assert.ok((await six.record({ entries: [old] })).results[0]?.ok)
+      const pending = { ...old, key: 'first-pending', call: 'arrives-after' }
+      const correct = { ...old, key: 'z', change: { ...old.change, role: 'representative', subject: b } } as const
+      const last = { ...correct, call: pending.call, key: 'last-pending' }
+      await engine.graph.outcome({ transactionId: 'call:' + id, subject: a, at: AT, value: 50, currency: 'USD' })
+      await engine.graph.revise({ key: 'discount', at: AT + 3, transactionId: 'call:' + id, change: { kind: 'refund', amount: 10 } })
+      assert.ok((await six.record({ entries: [last, pending, correct] })).results.every(row => row.ok))
+      // The campaign name happens to be the erased statement's key. The new owner's notice still belongs to them.
+      const alert = { key: 'unreturned:record:owner:other', text: 'Return the call from the weekend campaign', subject: b, at: AT }
+      await store.write(tx => tx.addAlert(alert, false, ['other']))
+      await six.forget({ key: 'erase', subjects: [a], at: AT + 100, platforms: 'report', by: 'desk' })
+      assert.deepEqual((await store.ops.undelivered()).map(each => each.key), [alert.key])
+      assert.equal((await engine.graph.keptCall(id))?.subject, b)
+      assert.equal((await engine.graph.outcomeOf('call:' + id))?.value, 40)
+      assert.deepEqual((await engine.graph.values('call:' + id)).map(each => each.value), [50, 40])
+      assert.deepEqual((await engine.graph.partyHistory(id)).map(each => each.key), [correct.key])
+      assert.deepEqual((await engine.graph.partyHistory(pending.call)).map(each => each.key), [last.key])
+      for (const entry of [old, pending]) {
+        const tombstone = await store.read(tx => tx.receiptOf(entry.type, rotated.mac(entry.type, entry.key).all))
+        assert.deepEqual([tombstone?.digest, tombstone?.ref, tombstone?.forgotten], [null, undefined, AT + 100])
+      }
+      for (const entry of [correct, last, call, report]) {
+        const receipt = await store.read(tx => tx.receiptOf(entry.type, rotated.mac(entry.type, entry.key).all))
+        assert.ok(receipt?.digest && receipt.forgotten === undefined)
+      }
+      const [arrival] = (await six.record({ entries: [{ ...call, key: pending.call }] })).results
+      assert.ok(arrival?.ok && arrival.type === 'call' && arrival.value.subject === b)
+      const [retry] = (await six.record({ entries: [old] })).results
+      assert.deepEqual(retry, { type: old.type, key: old.key, ok: false, reason: 'FORGOTTEN' })
+      assert.deepEqual((await engine.graph.decisions()).map(d => [d.action, d.about]), [['forget', [a]]])
+      assert.deepEqual(await store.read(tx => tx.keysOf([a])), [])
+    } finally {
+      await close()
+    }
+  })
+
+  test(`${name}: upgrading erases old statements accepted after their record was forgotten`, async () => {
+    const { store, close } = await open()
+    try {
+      const receipts = createReceipts(['a'.repeat(32)])
+      const engine = createEngine(store, { now: () => AT + 30 })
+      const six = createSix(engine, { receipts })
+      const a = 'record:former'
+      const b = 'record:current'
+      await engine.graph.forget(a)
+      const profile = { type: 'profile', key: 'new-profile', subject: a, facts: { email: 'new@example.org' }, at: AT + 2 } as const
+      assert.ok((await six.record({ entries: [profile] })).results[0]?.ok)
+      const party = (call: string, subject: string, step: number) => ({ type: 'call_update', key: call + '-' + step, at: AT + step, call,
+        change: { kind: 'party', role: 'self', subject, by: 'desk' } } as const)
+      const old = [party('retained', a, 1), party('retained', b, 2), party('erased', a, 3), party('pending', a, 5)]
+      for (const id of ['retained', 'erased']) {
+        const call = { type: 'call', key: id, direction: 'inbound', at: AT, duration: 60, from: '+12025550101', to: '+12025550102' } as const
+        assert.ok((await six.record({ entries: [call] })).results[0]?.ok)
+      }
+      await store.write(async tx => {
+        for (const entry of old) {
+          const { kind, ...data } = entry.change
+          await tx.addSaid({ topic: 'party', about: entry.call, key: entry.key, at: entry.at, data })
+          await tx.applyCallParty(entry.call)
+          // One receipt had already been pruned when the server was upgraded.
+          if (entry.call !== 'pending') await tx.addReceipt(receipts.make(entry, AT, { type: 'call', key: entry.call }), [data.subject])
+        }
+        await tx.setSetting('repairForgottenParties', 'due')
+      })
+      const interrupted: Store = { ...store, write: (work, options) => store.write(tx => work(new Proxy(tx, { get(target, field) {
+        if (field === 'removeSubject') return async (subject: string) => {
+          await target.removeSubject(subject, 'parties')
+          throw new Error('server stopped')
+        }
+        return Reflect.get(target, field)
+      } })), options) }
+      await assert.rejects(createSix(createEngine(interrupted), { receipts }).repairForgottenParties(), /server stopped/)
+      assert.equal((await engine.graph.keptCall('erased'))?.subject, a)
+      assert.equal((await engine.graph.partyHistory('retained')).length, 2)
+      assert.equal(await store.read(tx => tx.settingOf('repairForgottenParties')), 'due')
+      await six.repairForgottenParties()
+      assert.equal(await engine.graph.keptCall('erased'), undefined)
+      assert.equal((await engine.graph.keptCall('retained'))?.subject, b)
+      assert.equal((await engine.graph.outcomeOf('call:retained'))?.subject, b)
+      assert.equal(await engine.graph.outcomeOf('call:erased'), undefined)
+      assert.deepEqual((await engine.graph.partyHistory('retained')).map(each => 'subject' in each && each.subject), [b])
+      assert.deepEqual(await engine.graph.partyHistory('pending'), [])
+      const rows = (await six.record({ entries: [...old, profile] })).results
+      assert.deepEqual(rows.map(row => row.ok ? row.value.duplicate : row.reason), ['FORGOTTEN', true, 'FORGOTTEN', 'FORGOTTEN', true])
+      assert.ok((await engine.graph.history(a)).some(row => row.identifier.startsWith('email:')))
+      assert.deepEqual((await engine.graph.decisions()).map(d => [d.action, d.about]), [['forget', [a]]])
+      assert.equal((await store.read(tx => tx.receiptOf('call_update', receipts.mac('call_update', old[0]!.key).all)))?.digest, null)
+      assert.equal(await store.read(tx => tx.settingOf('repairForgottenParties')), 'done')
+      assert.deepEqual(await engine.graph.verify(), [])
+    } finally {
+      await close()
+    }
+  })
+
+  test(`${name}: a new party statement cannot bring back a forgotten record`, async () => {
+    const { store, close } = await open()
+    try {
+      const receipts = createReceipts(['a'.repeat(32)])
+      const engine = createEngine(store, { now: () => AT })
+      const six = createSix(engine, { receipts })
+      const subject = 'record:erased'
+      const request = { key: 'erase-record', by: 'desk', at: AT, subjects: [subject], platforms: 'report' as const }
+      assert.ok((await six.forget(request)).ok)
+      for (const role of ['self', 'representative', 'excluded'] as const) {
+        const entry = { type: 'call_update', key: role, at: AT - 1, call: 'missing', change: { kind: 'party', role, by: 'desk', subject } } as const
+        const [row] = (await six.record({ entries: [entry] })).results
+        assert.deepEqual(row, { type: entry.type, key: entry.key, ok: false, reason: 'FORGOTTEN' })
+        assert.equal(await store.read(tx => tx.receiptOf(entry.type, receipts.mac(entry.type, entry.key).all)), undefined)
+      }
+      assert.deepEqual(await engine.graph.partyHistory('missing'), [])
+      // The existing signed deletion is sufficient even when there was never a profile or a call receipt.
+      assert.deepEqual((await engine.graph.decisions()).map(d => [d.action, d.about]), [['forget', [subject]]])
+      assert.deepEqual((await engine.graph.audit()).brokenAt, undefined)
+    } finally {
+      await close()
+    }
+  })
+
   test(`${name}: a raw report cannot replace a confirmed call`, async () => {
     const { store, close } = await open()
     try {

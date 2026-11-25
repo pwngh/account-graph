@@ -381,6 +381,9 @@ export interface Arrival {
   readonly confidence: number
   readonly how: Tie['how']
 }
+/** A visitor known only through a call can supply its campaign. Their arrival stays private. */
+export type CampaignCredit = Pick<Arrival, 'source' | 'campaign' | 'campaignId'>
+
 export type RecordView =
   | { readonly type: 'conversion'; readonly subject: string; readonly at: At; readonly stage: string; readonly values: readonly { readonly value: number; readonly currency: string; readonly at: At; readonly kind?: 'refund' | 'write_off' }[]; readonly notLead: 'spam' | 'other' | null; readonly deliveries: readonly Delivery[] }
   | { readonly type: 'call'; readonly subject: string; readonly party?: PartyStatement; readonly partyHistory?: readonly (PartyStatement & { readonly key: string })[]; readonly at: At; readonly direction: 'inbound' | 'outbound'; readonly state: CallState; readonly followUp: FollowUp | null; readonly notLead: 'spam' | 'other' | null }
@@ -406,7 +409,7 @@ export interface ReportValue {
   campaigns: Report & { readonly timeZone: string; readonly steps: readonly string[] }
   pipeline: { readonly at: At; readonly day: string; readonly from: string; readonly unplaced: number; readonly columns: readonly PipelineColumn[] }
   calls: CallSummary
-  callbacks: Page<{ readonly call: string; readonly subject: string; readonly at: At; readonly state: CallState; readonly attempts: number; readonly arrival: Arrival | null }>
+  callbacks: Page<{ readonly call: string; readonly subject: string; readonly at: At; readonly state: CallState; readonly attempts: number; readonly arrival: Arrival | null; readonly campaignCredit?: CampaignCredit }>
   texts: Page<{ readonly text: string; readonly subject: string; readonly at: At; readonly unanswered: number; readonly arrival: Arrival | null }>
   after_calls: Followed
   deliveries: { readonly deliveries: readonly Delivery[] }
@@ -431,6 +434,7 @@ export interface PipelineRow {
   readonly language: string | null
   readonly call: { readonly state: CallState; readonly direction: 'inbound' | 'outbound' } | null
   readonly arrival: Arrival | null
+  readonly campaignCredit?: CampaignCredit
 }
 export interface Page<T> {
   readonly rows: readonly T[]

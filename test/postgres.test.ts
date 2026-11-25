@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
 import pg from 'pg'
+import { accountGraph } from '../src/index.ts'
 import { createGraph, recordCall, recordReturn } from '../tools/internals.ts'
 import { createPostgresStore, upgrades } from '../src/store/postgres.ts'
 import { command, serve } from '../src/bin.ts'
@@ -148,6 +149,30 @@ if (!url) {
     }
   })
 
+  test('opening an older database clears a party written after deletion and tombstones its pruned key', async () => {
+    const schema = `ag_test_${process.pid}_late_party`
+    let app: ReturnType<typeof accountGraph> | undefined
+    try {
+      const store = await madeBefore(schema, 33)
+      const erased = 'record:erased'
+      await createGraph(store).forget(erased)
+      await store.write(async tx => {
+        await tx.setCall({ id: 'old-call', subject: 'caller:line', direction: 'inbound', at: 1, to: '+12025550102', recorded: 1, flags: [] })
+        await tx.addSaid({ topic: 'party', about: 'old-call', key: 'old-key', at: 2, data: { role: 'self', subject: erased, by: 'desk' } })
+        await tx.applyCallParty('old-call')
+      })
+      app = accountGraph({ databaseUrl: url!, schema, workers: false, receiptSecrets: ['a'.repeat(32)] })
+      assert.equal(await app.lookup({ kind: 'record', type: 'call', key: 'old-call', at: 3 }), null)
+      assert.deepEqual(await store.read(tx => tx.saidOf('party', 'old-call')), [])
+      assert.equal(await store.read(tx => tx.settingOf('repairForgottenParties')), 'done')
+      const { rows } = await pool.query(`select type, digest, forgotten_at is not null as erased from ${schema}.receipt where type in ('call', 'call_update') order by type`)
+      assert.deepEqual(rows, ['call', 'call_update'].map(type => ({ type, digest: null, erased: true })))
+    } finally {
+      await app?.close()
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
+
   test('calls recorded before staff could name a party keep their line and result after upgrading', async () => {
     const schema = `ag_test_${process.pid}_party`
     try {
@@ -178,6 +203,35 @@ if (!url) {
           ('caller:line', 2, '{"landing":"tel:+12025550101","source":"later"}')`)
       assert.ok((await store.migrate()).includes('source call of a channel visit'))
       await store.read(async tx => assert.deepEqual((await tx.touchesOf(['caller:line'], 1, 2)).map(touch => touch.source), ['later']))
+    } finally {
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
+
+  test('a rebuild after upgrading a corrected call counts its old line without linking it', async () => {
+    const schema = `ag_test_${process.pid}_withdrawn_call`
+    try {
+      const store = await madeBefore(schema, 32)
+      await pool.query(`insert into ${schema}.call (id, subject, line_subject, at, dialed, flags, recorded_at, party)
+        values ('old', 'call:old', 'caller:line', 1, '+12025550101', '{}', 1, '{"role":"unknown","by":"desk","at":2}');
+        insert into ${schema}.subject values ('contact:a','contact:a','contact:a'), ('contact:b','contact:a','contact:a');
+        insert into ${schema}.edge values ('contact:a','phone:line',1,1,1), ('contact:b','phone:line',1,1,1);
+        insert into ${schema}.identifier (id,fanout) values ('phone:line',2);
+        insert into ${schema}.built (policy) values ('old')`)
+      assert.ok((await store.migrate()).includes('withdrawn call evidence in shared identifier counts'))
+      assert.deepEqual(await store.migrate(), [])
+      const graph = createGraph(store)
+      assert.equal((await graph.policy()).due, true)
+      await graph.rebuild()
+      assert.deepEqual((await graph.cluster('contact:a'))?.members, ['contact:a'])
+      await store.read(async tx => {
+        assert.equal((await tx.states(['phone:line'])).get('phone:line')?.fanout, 3)
+        assert.deepEqual((await tx.edgesOn(['phone:line'])).map(edge => edge.subject).sort(), ['contact:a', 'contact:b'])
+        assert.deepEqual(await tx.callVisitors(['old']), new Map())
+      })
+      await graph.forget('caller:line')
+      assert.deepEqual((await graph.cluster('contact:a'))?.members, ['contact:a', 'contact:b'])
+      assert.deepEqual(await graph.verify(), [])
     } finally {
       await pool.query(`drop schema if exists ${schema} cascade`)
     }

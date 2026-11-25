@@ -35,6 +35,7 @@ export function stopCallJob(job: Job, owner: Subject): Job {
 
 export interface CallTrace {
   edge: Edge
+  recorded: number
   remove: number
   next?: Edge
 }
@@ -92,7 +93,8 @@ export async function callTraces(tx: Tx, call: KeptCall, line: Subject, lineKind
       first = Math.min(first, at)
       last = Math.max(last, at)
     }
-    changes.push({ edge, remove, ...(count && { next: { subject, identifier, first, last, count } }) })
+    const recorded = [...removed].reduce((first, row) => Math.min(first, row.recorded ?? row.at), old ? Math.min(call.at, call.recorded) : call.recorded)
+    changes.push({ edge, recorded, remove, ...(count && { next: { subject, identifier, first, last, count } }) })
   }
   const changed = new Set(changes.map(({ edge }) => edge.identifier))
   const holders = [...new Set(edges.filter(edge => changed.has(edge.identifier)).map(edge => edge.subject))]

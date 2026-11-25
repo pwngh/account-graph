@@ -4,7 +4,21 @@
 
 ### The six calls
 
+- `report` keeps an unlinked visitor's arrival details private when their campaign receives credit for a confirmed call.
+
+- `forget` preserves unrelated alerts whose text contains the key of an erased call statement.
+
+- `call_update` statements accepted by older servers after deletion are erased on startup with their receipt fields.
+
+- `forget` removes a former party's statements and their receipt field hashes while keeping a call since confirmed for another record.
+
+- `call_update` refuses a new party statement that names a forgotten record, even before a call arrives.
+
 - `callback.overdue` notices from before an erasure lose unsupported credit and attempts during PostgreSQL upgrade 31.
+
+- `journey` and campaign credit respect separations when many call ties have been withdrawn.
+
+- `call_update` preserves separations that depended on a zero-weight tap permitting other evidence to count.
 
 - `call_update` and `forget` make workers check credit again for other ad jobs prepared before the change.
 
@@ -26,12 +40,14 @@
 - `call` keeps its confirmed details when a late report or competing tap arrives.
 - `forget` can retract a conversion acknowledged after its call was corrected using the identifiers originally sent.
 - `forget` invalidates cached reports across workers and during the final check before a report returns.
+- `decide` and `forget` update affected groups when a call’s uncertain line type puts a phone identifier at its cap.
+- `lookup` keeps a proposed match from getting stronger when a staff statement withdraws the visitor’s call evidence.
 - `lookup` reads a caller’s history and a person’s arrivals from the same snapshot as their matches.
 - `lookup` reads a journey or record with its call history and delivery details in one transaction.
 - `journey`, callback reports and conversion credit follow the record staff named on a call.
 - `call_update` removes the channel visit from the identified call when several calls shared its line, number and time.
 - `call_update` removes the phone evidence recorded for that call after pruning.
-- `forget` erases a confirmed call when the line or any named party is forgotten.
+- `forget` erases a confirmed call when its original line or current owner is forgotten.
 
 - `accountGraph({ url, token })`, `accountGraph({ databaseUrl, workers, receiptSecrets })` and `accountGraph({ memory: true })` return one interface: `record`, `decide`, `forget`, `lookup`, `report`, `events` and `close`.
 - `POST /v1/<call>` takes the argument of the call and answers with its value, in process and over HTTP alike.
@@ -46,6 +62,8 @@
 - The package exports `.`, `./edge`, `./collect`, `./hardware` and `./testing`. Only `src/bin.ts` reads the environment.
 
 ### People
+
+- `call_update` keeps a withdrawn call’s holders in shared counts and prevents the loss of a call tie from joining other subjects.
 
 - `name` distinguishes Greek iota subscript and diaeresis while continuing to fold stress marks.
 
@@ -91,6 +109,8 @@
 - `record` `transfer` records value moving between subjects, and `lookup` `transfers` lists counterparties and rings.
 
 ### Calls and texts
+
+- `call_update` keeps campaign credit from a visitor tied to that particular call while the visitor belongs to no other named record. A valid code supplied later can identify the visitor on an older call.
 
 - `callback.overdue` has a regression test for a pending notice and event independent of a corrected call on the same line.
 
