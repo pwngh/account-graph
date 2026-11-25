@@ -54,7 +54,7 @@ const STANDING = `at desc, coalesce(key, '') collate "C" desc, recorded_at desc,
  * and never wait on a write. What reads the whole graph reads `page` rows of
  * an answer at a time.
  */
-export function createPostgresStore(pool: Pool, schema = 'account_graph', { page = 5_000 }: { page?: number } = {}): PostgresStore {
+export function createPostgresStore(pool: Pool, schema = 'account_graph', { page = 5_000, lockTimeout = 0 }: { page?: number; /** How long a write waits for the lock, in milliseconds. 0 waits for as long as it takes. */ lockTimeout?: number } = {}): PostgresStore {
   if (!/^[a-z_][a-z0-9_]*$/.test(schema)) throw malformed(`Schema "${schema}" must be a plain lowercase name`)
   if (!(Number.isSafeInteger(page) && page > 0)) throw malformed('`page` must be a positive integer')
   const t = (table: string) => `${schema}.${table}`
@@ -1006,10 +1006,17 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     const client = await pool.connect()
     try {
       await client.query(begin)
+      if (lock && lockTimeout > 0) await client.query(`set local lock_timeout = ${Math.ceil(lockTimeout)}`)
       if (lock) await client.query(`select pg_advisory_xact_lock(hashtext($1))`, [`account-graph:${schema}`])
       const result = await work(bind(client))
       // A write is counted as it commits, in the same trip to the database.
-      await client.query(lock ? `update ${t('pulse')} set writes = writes + 1; commit` : 'commit')
+      try {
+        await client.query(lock ? `update ${t('pulse')} set writes = writes + 1; commit` : 'commit')
+      } catch (error) {
+        // The answer to a commit was lost: it may have been made.
+        if (lock && error instanceof Error && !('severity' in error)) Object.assign(error, { committing: true })
+        throw error
+      }
       return result
     } catch (error) {
       await client.query('rollback').catch(() => undefined)

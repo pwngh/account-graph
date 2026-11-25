@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import type { Alerter } from './alerts.ts'
+import type { NewEvent } from './events.ts'
 import { followUp } from './calls.ts'
 import type { Graph } from './graph.ts'
 import type { OutboxStore } from './outbox.ts'
@@ -84,6 +84,8 @@ export interface OpsOptions {
   now?: () => number
   /** Hears about an alert that could not be delivered. Defaults to `console.error`. */
   onError?: (error: unknown) => void
+  /** Keeps what people are told of as an event too. */
+  emit?: (event: NewEvent) => Promise<unknown>
 }
 
 export interface OpsState {
@@ -100,9 +102,9 @@ export interface Ops {
   /** Runs a job and writes down when it began and how it ended. */
   run<T>(name: string, work: () => Promise<T>): Promise<T>
   /** Posts an alert, at most one about the same thing in ten minutes. One that cannot be delivered is kept and tried again. */
-  alert: Alerter
+  alert: (about: string, text: string, event?: NewEvent) => Promise<boolean>
   /** Posts an alert the first time its key is seen, and never again. */
-  once(key: string, text: string, subject?: string): Promise<void>
+  once(key: string, text: string, subject?: string, event?: NewEvent): Promise<void>
   /** Looks for quiet feeds and callers nobody has rung back, and tries again to deliver what was not. */
   check(): Promise<void>
   state(): Promise<OpsState>
@@ -171,7 +173,8 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
       return result
     },
 
-    async alert(about, text) {
+    async alert(about, text, event) {
+      if (event) await options.emit?.(event).catch(onError)
       const at = now()
       if (at - (sent.get(about) ?? -Infinity) < 10 * 60_000) return false
       if (sent.size >= 1000) sent.clear()
@@ -188,7 +191,8 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
       return error === undefined
     },
 
-    async once(key, text, subject) {
+    async once(key, text, subject, event) {
+      if (event) await options.emit?.({ ...event, once: key, ...(subject && { subject }) } as NewEvent).catch(onError)
       if (await store.addAlert({ key, text, at: now(), ...(subject && { subject }) })) await post({ key, text })
     },
 
@@ -202,7 +206,7 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
         await store.watch(feed, at)
         if ((last ?? watched ?? at) > silentSince(feed, at, hours)) continue
         // Named after the last record, so one silence is said once and the next one again.
-        await ops.once(`quiet:${feed}:${last ?? 'never'}`, `account-graph: no ${feed} for ${hours} ${options.hours && DESKS.includes(feed) ? 'open ' : ''}${hours === 1 ? 'hour' : 'hours'}. ${last === undefined ? 'No records exist.' : `Last record: ${when(last)} (${timeZone}).`}`)
+        await ops.once(`quiet:${feed}:${last ?? 'never'}`, `account-graph: no ${feed} for ${hours} ${options.hours && DESKS.includes(feed) ? 'open ' : ''}${hours === 1 ? 'hour' : 'hours'}. ${last === undefined ? 'No records exist.' : `Last record: ${when(last)} (${timeZone}).`}`, undefined, { type: 'feed.quiet', at, data: { feed, last: last ?? null, hours } })
       }
 
       const late = options.lateHours ?? 0
@@ -214,7 +218,7 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
         onError(error)
       }
       // Once a day while it lasts: a backlog that drains slowly has a new oldest job at every look.
-      if (due !== undefined && at - due >= late * HOUR) await ops.once(`late:${dayIn(at, timeZone)}`, `account-graph: conversions are overdue. The oldest was due ${when(due)} (${timeZone}).`)
+      if (due !== undefined && at - due >= late * HOUR) await ops.once(`late:${dayIn(at, timeZone)}`, `account-graph: conversions are overdue. The oldest was due ${when(due)} (${timeZone}).`, undefined, { type: 'delivery.late', at, data: { oldestDue: due } })
 
       const hours = options.returnHours ?? 0
       if (hours > 0) {
@@ -234,7 +238,7 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
             const calls = all.filter((each) => !not.has(`call:${each.id}`))
             const first = calls.find((each) => each.direction === 'inbound' && each.result?.answered === false && followUp(each, calls).state === 'open') ?? call
             const tries = attempts === 0 ? 'No callback attempts.' : attempts === 1 ? '1 callback attempt.' : `${attempts} callback attempts.`
-            await ops.once(`unreturned:${call.subject}:${first.id}`, `account-graph: a caller from ${sourceOf(touch)}${touch.campaign || touch.campaignId ? `, ${touch.campaign || touch.campaignId}` : ''} has waited over ${hours} ${options.hours ? 'open ' : ''}${hours === 1 ? 'hour' : 'hours'} for a callback. Missed ${when(call.at)} (${timeZone}). ${tries} ${call.subject}`, call.subject)
+            await ops.once(`unreturned:${call.subject}:${first.id}`, `account-graph: a caller from ${sourceOf(touch)}${touch.campaign || touch.campaignId ? `, ${touch.campaign || touch.campaignId}` : ''} has waited over ${hours} ${options.hours ? 'open ' : ''}${hours === 1 ? 'hour' : 'hours'} for a callback. Missed ${when(call.at)} (${timeZone}). ${tries} ${call.subject}`, call.subject, { type: 'callback.overdue', at, data: { call: call.id, subject: call.subject, missedAt: call.at, attempts, source: sourceOf(touch), campaign: touch.campaign ?? null, campaignId: touch.campaignId ?? null } })
           }
           if (page.length < 50) break
           after = page.at(-1)!.call
