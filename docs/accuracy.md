@@ -528,7 +528,32 @@ New in the code: [one full name and date of birth](matching.md#records-that-have
 | Of those with a chain of facts to their ad, credited, fewer than | 97% | 93% | 93% | 89% |
 | Pairs staff had to decide, of people with a record, more than | 5% | 5% | 7% | 11% |
 
-Seeds 20270701 to 20270708 are for development, and were looked at several times while the code was written: the marks were set after the last of those looks, at `8036815`, and near what it showed. A review after it changed how letters such as đ are kept, not looked at again. Held: 20270801 to 20270820, once, at the commit the output names.
+Seeds 20270701 to 20270708 are for development, and were looked at several times while the code was written: the marks were set after the last of those looks, at `8036815`, and near what it showed. A review after it changed how letters such as đ are kept, not looked at again. [All the last look printed](accuracy-fifth-dev.txt). Held: 20270801 to 20270820, once, at the commit the output names.
+
+### Results of the fifth run
+
+The held seeds, once, at `8595c1c` with Node v22.23.0. **One of the 36 marks came out bad:** staff5, `staffed decided`, pairs of one person joined, 1,262 of 1,492 (84.58%) against 85%. No mark was moved.
+
+| Setting, arm | Records with another's | Joined pairs that are two people | Pairs of one person, joined | Credit: wrong ad; with a chain, to it | Staff decided, and wrongly |
+| --- | --- | --- | --- | --- | --- |
+| self5, `default` | 3.39% | 11.02% | 89.05% | 1.77%; 98.00% | |
+| self5, `new` | 0.16% | 0.42% | 92.46% | 1.45%; 98.32% | |
+| self5, `records` | 0 of 9,747 | 0 of 1,786 | 76.98% | 1.44%; 97.90% | |
+| self5, `records decided` | **0 of 9,747** | 0 of 2,164 | **93.28%** | 1.46%; 98.42% | 356, 5 |
+| staff5, `default` | 2.17% | 12.18% | 64.75% | 1.76%; 87.98% | |
+| staff5, `new` | 0.11% | 0.41% | 80.63% | 1.63%; 89.49% | |
+| staff5, `staffed records` | 0 of 9,164 | 0 of 1,044 | 69.97% | 1.40%; 94.01% | |
+| staff5, `staffed decided` | **0 of 9,164** | 0 of 1,262 | **84.58%** | 1.41%; 94.25% | 212, 2 |
+| base3, `records decided` | 0.06% | 0.24% | 85.18% | 1.43%; 94.38% | 459, 8 |
+| base3, `staffed decided` | 0.06% | 0.25% | 83.88% | 1.44%; 96.41% | 438, 6 |
+| high3, `records decided` | 0.15% | 0.51% | 68.69% | 2.30%; 89.85% | 1,106, 29 |
+| high3, `staffed decided` | 0.18% | 0.67% | 64.88% | 2.33%; 90.05% | 1,024, 27 |
+
+**None is not never.** 0 of 9,747 people and 0 of 9,164 over twenty worlds each is consistent with up to about 3 in 10,000 of such people.
+
+**Most of what is gained is asking.** With a date on 95% of records, `new` alone mixes 0.16% and 0.11%. `records` takes that to none in these worlds, and leaves 23 to 30 pairs in a hundred to staff or undone.
+
+All that was printed is in [accuracy-fifth-held.txt](accuracy-fifth-held.txt).
 
 ## Limitations
 
