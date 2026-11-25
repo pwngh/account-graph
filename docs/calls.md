@@ -160,6 +160,8 @@ POST /v1/lookup
 | `arrival` | What brought them, where it can be credited already |
 | `waiting` | Their missed calls and texts nobody has returned |
 
+When staff join a line to two records they have kept apart, both are `related` possibilities while it rings. Each keeps its own evidence and score.
+
 ### Busy numbers
 
 A call is linked to a tap by time, so on a number that rings often, some calls follow a stranger's tap by chance. Four rules keep those few:

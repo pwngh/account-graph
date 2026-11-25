@@ -224,7 +224,7 @@ With `given` it keeps keyed notes of the names a first name may stand for, from 
 | --- | --- |
 | One of them has no date | Nothing is said. |
 | A merge, by a reviewer or from your own systems | Overrules it, whichever came first. Taking the merge back gives the fact back. The exception is a caller or a browser joined to two people of two dates of birth: it goes where the fewest such joins are left out, then with whoever was seen first, and the others are in Matches. Same changes nothing there: `split` the caller from the one it is not. |
-| Where it shows | In the `match` lookup, the Accounts view and Matches, as related with `conflict: "birth"` or `"given"`, however high the score. Credit does not cross it. |
+| Where it shows | The `match` lookup checks facts on the candidate itself, including a caller or browser, and on the records it stands for. The lookup, Accounts and Matches show a conflict as related with `conflict: "birth"` or `"given"`, however high the score. Credit does not cross it. |
 | Where it does not | The `conflicts` lookup, kept-apart lists, disputes and the audit log. Nobody decided it. |
 | A corrected date | The record keeps both values, so it is kept apart from neither, until it is forgotten. |
 | Shared browsers and callers | They go with one of the two, as after a separation. |
@@ -427,6 +427,6 @@ A pair labelled both ways is left out and counted.
 - **Many separations in one component.** Pairs are cut one after another, which can remove more in total than the best combined cut. The exact multicut or multiway cut is hard to compute.
 - **Three dates of birth on two lines.** Where staff joined two lines to people of three or more dates, more of those joins can be left out than need be, and which ones can depend on ids. One review met it in 3 of 15,000 random graphs.
 - **Score calibration.** Clusters come from the cuts above and carry no probability.
-- **Matches.** It covers subjects in the newest 10,000 sightings.
+- **Matches.** It covers subjects in the newest 10,000 sightings. A speaker mark on any member of either person’s cluster keeps the pair out of Matches, even when the mark is older.
 - **Staff labels.** Staff find pairs that already look alike. A kind they search by looks better than it is, and strangers who share it are hardly in the file.
 - **Deleted evidence.** A merged-away record whose evidence was deleted cannot be used as a checked pair. The tool counts these, which were often the surest pairs.

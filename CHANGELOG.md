@@ -24,6 +24,7 @@
 
 ### People
 
+- `lookup` `match` checks a caller’s own facts for conflicts with a proposed record.
 - `given` now has a documented example distinguishing a recognized nickname from an exact name key.
 - `apart` recognizes Catherine and Katherine, Kaitlyn and Caitlin, and Gerald and Jerry as forms of the same given names. Send the names again to add their new keys.
 
@@ -49,6 +50,8 @@
 - `record` `transfer` records value moving between subjects, and `lookup` `transfers` lists counterparties and rings.
 
 ### Calls and texts
+
+- `lookup` `caller` shows both records as possible when staff join a line to two records they keep apart.
 
 - `record` `call` and `text`, and the Twilio webhooks, record calls and texts without their content. Two reports of one call are one call.
 - `call_update` reports a result, or that a caller was reached. The newest `at` stands, whatever order they arrive in.
@@ -110,6 +113,7 @@
 - Accounts shows linked IDs as an interactive graph and as a table with evidence.
 - Journey shows one person's events on a timeline.
 - Board shows people by step, with overdue people marked.
+- `Matches` checks speaker marks across both clusters when it looks at recent sightings.
 - Matches compares pending pairs side by side, with a preview and undo.
 - Calls lists missed calls with their history, call results and calls by hour.
 - Channels compares campaigns, with breakdowns, sorting, filters and CSV export.

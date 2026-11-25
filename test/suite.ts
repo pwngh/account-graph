@@ -1773,6 +1773,24 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual([(await graph.between('a', 'b')).known, (await graph.between('a', 'b')).apart], [false, false])
     })
 
+    test('the review window respects an older speaker mark on a record alias', async () => {
+      let now = T0
+      const { graph } = await fresh(policyFrom({ apart: ['birth'], records: 'confirmed', kinds: { phone: { weight: 0.85 } } }), { now: () => now })
+      const represented = 'record:a'
+      const alias = 'record:other-id'
+      const caller = 'caller:line'
+      await graph.speak({ subject: represented, identifiers: ['email:a@example.org'] }, [{ subject: caller, identifiers: ['phone:home'] }], T0)
+      await graph.join(represented, alias, { by: 'desk' })
+      now++
+      await graph.observe({ subject: alias, identifiers: ['phone:home'], at: T0 + 1 })
+      const offered = async () => (await graph.undecided({ sightings: 1 })).pairs.some(({ a, b }) => a === caller && b === alias)
+      assert.equal((await graph.undecided()).pairs.some(({ a, b }) => a === caller && b === alias), false)
+      assert.equal(await offered(), false)
+      const [mark] = (await graph.history(represented)).filter(row => row.identifier.startsWith('behalf:'))
+      await graph.ignore(mark!.identifier)
+      assert.equal(await offered(), true)
+    })
+
     test('undecided lists pairs related and not joined, and a join taken back by its mark is a label no more', async () => {
       const clock = { now: T0 }
       const { graph } = await fresh(undefined, { now: () => clock.now })
@@ -2937,6 +2955,21 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal(await one('Xyzzyq', 'Maria', ['1', '2']), false)
     })
 
+    test('a match probe respects a caller’s own birth without letting the caller confirm a record', async () => {
+      const { graph } = await fresh(policyFrom({ apart: ['birth'], records: 'confirmed' }))
+      const email = 'email:desk@example.org'
+      await graph.observe({ subject: 'caller:line', identifiers: [email, 'birth:one'], at: T0 })
+      const probe = async (birth: string) => (await graph.match([email, birth], { at: T0 + 1 })).find(p => p.subject === 'caller:line')!
+      const older = await probe('birth:two')
+      assert.deepEqual([older.level, older.conflict, older.score], ['related', 'birth', 0.99])
+      await graph.join('record:a', 'caller:line', { by: 'desk' })
+      const agreeing = await probe('birth:one')
+      assert.deepEqual([agreeing.level, agreeing.conflict, agreeing.unconfirmed], ['related', undefined, true])
+      await graph.ignore('birth:one')
+      const muted = await probe('birth:two')
+      assert.deepEqual([muted.level, muted.conflict], ['related', undefined])
+    })
+
     test('one detail under one name is one person, whoever speaks for them', async () => {
       const policy = policyFrom({ apart: ['birth', 'given'] })
       const secret = 'a secret of more than thirty-two characters'
@@ -3661,6 +3694,23 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.ok(withMaybe.some(([a, b, how]) => a === 'contact:ana' && b === 'contact:maybe' && how === 'possible'))
       await graph.separate('contact:ana', 'contact:ben', false)
       assert.deepEqual(await found('contact:ana', 'contact:ben', 'contact:ana-2', 'contact:maybe'), [])
+    })
+
+    test('a ringing line with two separated staff claims shows both as possible', async () => {
+      const { graph } = await fresh(policyFrom({ kinds: { review: { weight: 0.97 } } }))
+      const from = '+12025550100'
+      const caller = `caller:${hashPhone(from)}`
+      const first = 'record:first'
+      const other = 'record:other'
+      await graph.join(caller, first, { by: 'desk' })
+      await graph.join(caller, other, { by: 'desk' })
+      await graph.observe([caller, first].map(subject => ({ subject, identifiers: ['email:one@example.org'], at: T0 })))
+      await graph.separate(first, other, true, { by: 'desk' })
+      const people = (await ringing(graph, { from, to: '+12025550101', at: T0 + 2 })).people
+      assert.deepEqual(people.map(({ subject, level }) => [subject, level]), [[first, 'related'], [other, 'related']])
+      assert.ok(people[0]!.score > people[1]!.score)
+      await graph.separate(first, other, false, { by: 'desk' })
+      assert.deepEqual((await ringing(graph, { from, to: '+12025550101', at: T0 + 2 })).people.map(p => p.level), ['same', 'same'])
     })
 
     test('while a phone rings, the caller, who they may be and what brought them are known, and nothing is written', async () => {

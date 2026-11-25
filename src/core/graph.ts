@@ -1260,7 +1260,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
           const members = (await tx.clusterOf(labels.get(subject)!.cluster)).sort()
           // A browser or a caller answers for the records it is one with, because they are shown with it.
           const theirs = names(subject) ? [facts.get(subject)] : [...(await known(tx, members.filter(names))).values()]
-          const between = theirs.map((each) => conflict(policy, own, each)).find((each) => each !== undefined)
+          // The caller's own facts can keep a probe apart. Only a record can confirm a claim on another record.
+          const between = conflict(policy, own, facts.get(subject)) ?? theirs.map((each) => conflict(policy, own, each)).find((each) => each !== undefined)
           // Asked about before they are on record, they are a record to be.
           const possibly = !between && (level === 'same' ? !theirs.some((each) => confirmed(own, each)) : reasons.some((reason) => /^(person|perhaps):/.test(reason.identifier))) && policy.records === 'confirmed' && members.some(names)
           out.push({ subject, score, level: between || possibly ? 'related' : level, reasons, ...(between && { conflict: between }), ...(possibly && { unconfirmed: true as const }), members })
@@ -2236,8 +2237,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         // where one speaks for the other, it has been said that they are two.
         for (const [subject, links] of await neighbors(tx, lately)) {
           for (const link of links) {
-            if (speaks(link)) two.push([subject, link.subject])
-            if (speaks(link)) continue
+            if (speaks(link)) {
+              two.push([subject, link.subject])
+              continue
+            }
             if (link.reasons.some((reason) => reason.identifier.startsWith('review:join-'))) {
               // Where births took a telephone or a browser from a record it was joined to, that is for somebody to look at.
               // So is one that is left out because the two it was joined to are not one person by anything.
@@ -2248,7 +2251,23 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
             pairs.set(pairKey(a, b), { a, b, score: link.score, level: link.level, reasons: link.reasons, ...(link.conflict && { conflict: link.conflict }), ...(link.unconfirmed && { unconfirmed: true as const }) })
           }
         }
-        const labels = await tx.labelsOf(unique([...[...pairs.values()].flatMap(({ a, b }) => [a, b]), ...two.flat()]))
+        const labels = await tx.aroundOf(unique([...[...pairs.values()].flatMap(({ a, b }) => [a, b]), ...two.flat()]))
+        // A recent alias can offer an old pair. The speaker mark may be on another member of either candidate's cluster.
+        const groups = new Set<Subject>()
+        for (const { a, b } of pairs.values()) {
+          const one = labels.get(a)!.cluster
+          const other = labels.get(b)!.cluster
+          if (one !== other) groups.add(one).add(other)
+        }
+        const recent = new Set(lately)
+        const extra = [...labels].filter(([subject, home]) => groups.has(home.cluster) && !recent.has(subject)).map(([subject]) => subject)
+        for (let i = 0; i < extra.length; i += TOGETHER) {
+          const edges = await tx.edgesOf(extra.slice(i, i + TOGETHER))
+          const marked = unique(edges.filter(edge => edge.identifier.startsWith('behalf:')).map(edge => edge.subject))
+          if (marked.length) for (const [a, links] of await neighbors(tx, marked)) for (const link of links) {
+            if (speaks(link) && labels.has(link.subject)) two.push([a, link.subject])
+          }
+        }
         const said = new Set(two.map(([a, b]) => pairKey(labels.get(a)!.cluster, labels.get(b)!.cluster)))
         const borders = bordersOf(tx)
         await borders.load(joined.flat(), undefined, joined.flat())
