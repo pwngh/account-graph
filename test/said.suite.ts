@@ -34,6 +34,84 @@ async function inOrder(steps: readonly (() => Promise<unknown>)[]) {
 }
 
 export function saidSuite(name: string, open: () => Promise<Opened>) {
+  test(`${name}: two desks that saw no party cannot both name one, even before the call arrives`, async () => {
+    const { store, close } = await open()
+    try {
+      const receipts = createReceipts(['a'.repeat(32)])
+      const engine = createEngine(store, { now: () => AT + 30 })
+      const six = createSix(engine, { receipts })
+      const call = { type: 'call', key: 'inquiry', at: AT, direction: 'inbound', from: '+12025550101', to: '+12025550102', duration: 60 } as const
+      const desks = ['east', 'west'].map((by, i) => ({
+        type: 'call_update', call: call.key, key: 'statement-' + by, at: AT + i + 1,
+        change: { kind: 'party', role: 'self', subject: 'record:' + by, by, seen: null },
+      } as const))
+      const results = await Promise.all(desks.map(async entry => (await six.record({ entries: [entry] })).results[0]!))
+      assert.equal(results.filter(row => row.ok).length, 1)
+      const winner = desks[results.findIndex(row => row.ok)]!
+      const lost = results.findIndex(row => !row.ok)
+      const refused = desks[lost]!
+      assert.deepEqual(results[lost], { type: refused.type, key: refused.key, ok: false, reason: 'STALE', decision: winner.key, by: winner.change.by, at: winner.at })
+      assert.equal(await store.read(tx => tx.receiptOf(refused.type, receipts.mac(refused.type, refused.key).all)), undefined)
+      assert.deepEqual((await engine.graph.partyHistory(call.key)).map(each => each.key), [winner.key])
+      const seen = await six.lookup({ kind: 'party', call: call.key })
+      assert.deepEqual(seen, { key: winner.key, at: winner.at, role: 'self', subject: winner.change.subject, by: winner.change.by })
+      assert.ok(seen && 'key' in seen)
+      const [arrival] = (await six.record({ entries: [call] })).results
+      assert.ok(arrival?.ok && arrival.type === 'call' && arrival.value.subject === winner.change.subject)
+      const correction = { ...refused, at: AT + 3, change: { ...refused.change, seen: seen.key } }
+      const [saved, retry, reread, reused] = (await six.record({ entries: [
+        correction, winner, { ...winner, change: { ...winner.change, seen: correction.key } },
+        { ...winner, change: { ...winner.change, by: 'another desk' } },
+      ] })).results
+      assert.ok(saved?.ok && saved.value.stands && !saved.value.duplicate)
+      assert.ok(retry?.ok && !retry.value.stands && retry.value.duplicate)
+      assert.deepEqual(reread, retry)
+      assert.deepEqual(reused, { type: winner.type, key: winner.key, ok: false, reason: 'KEY_REUSED', fields: ['change'] })
+      await six.forget({ key: 'erase-former', subjects: [winner.change.subject], by: 'desk', platforms: 'report', at: AT + 20 })
+      assert.deepEqual(await six.lookup({ kind: 'party', call: call.key }), {
+        key: correction.key, at: correction.at, role: 'self', subject: correction.change.subject, by: correction.change.by,
+      })
+      for (const entry of [winner, { ...winner, key: 'another-try' }]) {
+        assert.deepEqual((await six.record({ entries: [entry] })).results[0], { type: entry.type, key: entry.key, ok: false, reason: 'FORGOTTEN' })
+      }
+    } finally {
+      await close()
+    }
+  })
+
+  test(`${name}: each party change in a batch checks the standing key, even after an undo`, async () => {
+    const { store, close } = await open()
+    try {
+      const engine = createEngine(store, { now: () => AT + 30 })
+      const six = createSix(engine, { receipts: createReceipts(['a'.repeat(32)]) })
+      const call = 'inquiry'
+      const first = { type: 'call_update', call, key: 'first', at: AT, change: { kind: 'party', role: 'unknown', by: 'desk', seen: null } } as const
+      const missing = { ...first, change: { ...first.change, seen: 'missing-statement' } }
+      const named = { ...first, key: 'named', at: AT + 1, change: { kind: 'party', role: 'self', subject: 'record:pat', by: 'desk', seen: first.key } } as const
+      const undo = { ...first, key: 'undo', at: named.at, change: { ...first.change, seen: named.key } }
+      const old = { ...first, key: 'signed-earlier', at: AT - 1, change: { ...first.change, seen: undo.key } }
+      const late = { ...named, key: 'late', at: AT + 99 }
+      const [arrival] = (await six.record({ entries: [
+        { type: 'call', key: call, at: AT, direction: 'inbound', from: '+12025550101', to: '+12025550102', duration: 60 },
+      ] })).results
+      assert.ok(arrival?.ok)
+      assert.equal(await six.lookup({ kind: 'party', call }), null)
+      const rows = (await six.record({ entries: [missing, first, named, undo, old, late] })).results
+      assert.deepEqual(rows.map(row => row.ok ? row.value.stands : row.reason), ['STALE', true, true, true, false, 'STALE'])
+      assert.deepEqual(rows[0], { type: first.type, key: first.key, ok: false, reason: 'STALE', decision: null, by: null, at: null })
+      assert.deepEqual(rows[5], { type: late.type, key: late.key, ok: false, reason: 'STALE', decision: undo.key, by: undo.change.by, at: undo.at })
+      const before = await engine.graph.version()
+      assert.deepEqual((await six.record({ entries: [late] })).results[0], rows[5])
+      assert.equal(await engine.graph.version(), before)
+      const standing = { key: undo.key, at: undo.at, by: undo.change.by, role: undo.change.role }
+      assert.deepEqual(await six.lookup({ kind: 'party', call }), standing)
+      assert.equal((await engine.graph.keptCall(call))?.subject, 'call:' + call)
+      assert.deepEqual((await engine.graph.partyHistory(call)).map(each => each.key), [old.key, first.key, named.key, undo.key])
+    } finally {
+      await close()
+    }
+  })
+
   test(`${name}: forgetting a former party preserves the other record's call and its older receipts`, async () => {
     const { store, close } = await open()
     try {

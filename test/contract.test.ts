@@ -698,6 +698,10 @@ everywhere('a keyed call party belongs to one record and survives out-of-order r
   const named = { type: 'call_update', key: 'winner', at: AT + 20, call: call.key, change: { kind: 'party', role: 'representative', subject: b, by: 'desk' } } as const
   const older = { ...named, key: 'before', change: { ...named.change, role: 'self', subject: a } } as const
   const write = async (entry: RecordEntry) => (await graph.record({ entries: [entry] })).results[0]!
+  for (const change of [{ ...named.change, seen: 0 }, { ...named.change, seen: '' }, { ...named.change, seen: 'x'.repeat(201) }, { kind: 'not_returned', seen: null }]) {
+    const result = await codeOf(write({ ...named, change } as RecordEntry))
+    assert.deepEqual(result, { code: 'INPUT.MALFORMED', retryable: false })
+  }
   const saved = await write(named)
   assert.ok(saved.ok && saved.value.stands)
   const late = await write(older)
@@ -760,6 +764,7 @@ everywhere('forgetting a party or the original line erases call statements, incl
       continue
     }
     assert.deepEqual(rows.map((row) => !row.ok && row.reason), ['FORGOTTEN', 'FORGOTTEN', 'FORGOTTEN'])
+    assert.equal(await graph.lookup({ kind: 'party', call: call.key }), null)
     assert.equal(await graph.lookup({ kind: 'record', type: 'call', key: call.key, at: NOW }), null)
     assert.equal(await graph.lookup({ kind: 'record', type: 'conversion', key: 'call:' + call.key, at: NOW }), null)
   }
@@ -777,6 +782,34 @@ test('a reviewer can sign who a call concerned under their own name', async () =
     assert.equal(await write([{ ...party, by: 'other' }], 'reviewer'), 403)
     assert.equal(await write([party, { kind: 'not_returned' }], 'reviewer'), 403)
     for (const change of [{ ...party, role: 'unknown' }, { ...party, by: '  ' }, { ...party, role: 'maybe' }, { ...party, subject: 'caller:line' }, { ...party, subject: undefined }]) assert.equal(await write([change], 'service'), 400)
+  } finally {
+    await close()
+  }
+})
+
+test('a reviewer can read a pending party and see whose edit overtook theirs over HTTP', async () => {
+  const { base, close } = await http()
+  const post = async (name: string, body: object) => {
+    const response = await fetch(base + '/v1/' + name, {
+      method: 'POST', headers: { authorization: 'Bearer reviewer', 'content-type': 'application/json' }, body: JSON.stringify(body),
+    })
+    assert.equal(response.status, 200)
+    return response.json()
+  }
+  const call = 'C17'
+  const lookup = () => post('lookup', { kind: 'party', call })
+  const entry = { type: 'call_update', key: 'first', call, at: AT, change: { kind: 'party', role: 'self', subject: 'record:17', by: 'dana', seen: null } }
+  try {
+    assert.equal(await lookup(), null)
+    await post('record', { entries: [entry] })
+    const current = await lookup()
+    assert.deepEqual(current, { key: 'first', at: AT, role: 'self', subject: 'record:17', by: 'dana' })
+    const correction = { ...entry, key: 'correction', at: AT + 1, change: { kind: 'party', role: 'unknown', by: 'dana', seen: null } }
+    assert.deepEqual(await post('record', { entries: [correction] }), {
+      results: [{ type: 'call_update', key: 'correction', ok: false, reason: 'STALE', decision: current.key, by: 'dana', at: AT }],
+    })
+    await post('record', { entries: [{ ...correction, change: { ...correction.change, seen: current.key } }] })
+    assert.deepEqual(await lookup(), { key: 'correction', at: AT + 1, role: 'unknown', by: 'dana' })
   } finally {
     await close()
   }

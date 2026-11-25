@@ -123,7 +123,8 @@ const callResult: Check = both(shape({ answered: boolean, 'voicemail?': boolean,
 const recordedParty: Check = both(subject, (value, path) => {
   if (/^(visitor|caller|call):/.test(value as string)) throw bad(path, 'must name a record')
 })
-const signedParty = { kind: any, role: any, by: both(string(1, 100), (value, path) => {
+const seenParty: Check = (value, path) => { if (value !== null) key(value, path) }
+const signedParty = { kind: any, role: any, 'seen?': seenParty, by: both(string(1, 100), (value, path) => {
   if (!(value as string).trim()) throw bad(path, 'must name who said it')
 }) }
 const namedParty = shape({ ...signedParty, subject: recordedParty })
@@ -185,6 +186,7 @@ const REQUEST = {
     find: shape({ kind: any, text: string(1, 512) }),
     match: shape({ kind: any, facts, at }),
     caller: shape({ kind: any, 'from?': phone, to: phone, at }),
+    party: shape({ kind: any, call: providerId }),
     conflicts: shape({ kind: any, subjects: list(subject, 1, 50) }),
     record: shape({ kind: any, type: oneOf('conversion', 'call', 'text'), key, at }),
     transfers: shape({ kind: any, subject, 'tiedOnly?': boolean }),

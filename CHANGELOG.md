@@ -15,6 +15,8 @@
 
 ### The six calls
 
+- `call_update` accepts the party statement key staff saw, or `null` if there was none. A different standing statement returns `STALE` and leaves the entry key free to retry.
+- `lookup` returns the current party statement and its key for a call, even before the phone report arrives.
 - `call_update` records who one call concerned, who said so and when. A statement may arrive before the call and a later statement can correct it. See the [call roles](docs/calls.md#recording-who-was-on-one-call).
 - `lookup` reads a journey, person, caller or call record and its supporting details from one snapshot.
 - `forget` erases a call when its original line or current owner is deleted. A call since confirmed for another record keeps its conversion and value history, and the former party’s statements and receipt fields are erased.

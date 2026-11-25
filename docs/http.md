@@ -35,7 +35,7 @@ Send a token in the `authorization` header as `Bearer …`.
 | `record` | Every entry | Only call party statements signed with the owner’s name |
 | `events` | Yes | 403 |
 | `decide`, `forget` | Any `by` | `by` must be the owner of the token |
-| `lookup` | Every kind | `journey` and `find` |
+| `lookup` | Every kind | `journey`, `find` and `party` |
 | `report` | Every kind | Every kind |
 
 A missing or wrong token gets 401. A name that begins with `system:` is a system's. No reviewer can have one, so `"by": "system:cases"` needs the service token.
@@ -140,15 +140,17 @@ A refund and a write-off are amounts, and not what is left. `of.type` is `conver
 | `result` | `result: { answered, voicemail?, waited? }` | How the call went |
 | `returned` | `reachedAt` | Somebody reached the caller then |
 | `not_returned` | none | Nobody did |
-| `party` | `role`, `by`, `subject` for every role except `unknown` | Who was on this call |
+| `party` | `role`, `by`, optional `seen`, and `subject` for every role except `unknown` | Who was on this call |
 
 `role` is `self`, `representative`, `excluded` or `unknown`. The subject names one of your records. A reviewer can sign only their own name. A later party statement can name a different record or undo identification with `unknown`. Results, returns and parties each have their own newest statement, ordered by time and then key. On a retry, `stands` says whether that statement still stands. A return statement on an outbound call always answers `false`. A statement may precede the call for a record that has never been deleted. For a returning record, first record its new profile and the call. Its start time must be after the most recent deletion. Earlier or missing calls receive `FORGOTTEN`.
 
 ```json
-{"type":"call_update","key":"desk-14","at":1790000000000,"call":"incoming-4","change":{"kind":"party","role":"representative","subject":"record:17","by":"intake"}}
+{"type":"call_update","key":"desk-14","at":1790000000000,"call":"incoming-4","change":{"kind":"party","role":"representative","subject":"record:17","by":"intake","seen":null}}
 ```
 
-A call record lookup includes the current `party` and ordered `partyHistory` with the time, key and signer of each statement. A journey shows only the current statement on a visible call. Before the phone report arrives, the call lookup returns `null`.
+Read `{"kind":"party","call":"incoming-4"}` with `lookup` before editing. Pass the returned `key` as `change.seen`, or pass `null` if the lookup returned `null`. An `unknown` statement has its own key. Each entry checks its expectation when it is written, including in a batch. On `STALE`, read the current statement, review the correction and retry with the same entry key. Omitting `seen` keeps the usual time and key order without checking an expectation.
+
+A call record lookup includes the current `party` and ordered `partyHistory`. The last item has the standing statement and its key. A journey shows only the current statement on a visible call. Before the phone report arrives, the record lookup returns `null` and the party lookup can already return a statement.
 
 A `delivery` is `{ conversion, platform, state, note? }`. `state` is `held`, `pending`, `sent`, `skipped` or `failed`. `held` waits for a call's result. No answer holds a hashed email or phone.
 
@@ -159,6 +161,7 @@ A refusal is an answer, with status 200 and `"ok": false`. None is kept with the
 | `reason` | Meaning | With it |
 | --- | --- | --- |
 | `KEY_REUSED` | The key was used for something else | `fields`: the names of what differs |
+| `STALE` | The standing party statement differs from `change.seen` | `decision` is the current statement key, `by` its signer and `at` its time. All three are `null` when no statement stands. |
 | `UNKNOWN_REFERENCE` | What it is about is not recorded | `of` |
 | `KIND_NOT_IN_POLICY` | An identifier has a kind the policy lacks | `kind` |
 | `KIND_RESERVED` | An identifier has a kind the graph writes itself | `kind` |
@@ -195,6 +198,7 @@ The same key with other details answers `KEY_REUSED`. What is compared depends o
 | `call` | `direction`, `to`, and `from` where both reports name it | `at`, `duration`, `result`, `code`, `tags`. A second reporter often knows more: a `result`, or a `code` the call did not have, counts. |
 | `text` | `direction`, `from`, `to` | `at`, `text`, `code`, `tags`. Twilio sends no time. |
 | `cost` | `at` and the rows, in any order | |
+| `call_update` with `kind: "party"` | `at`, `call` and the signed statement | `change.seen` |
 | `decide` | `at`, `by`, `action`, and the pairs or the fact. Pairs may be in any order, and so may the two of a pair. | `reason`, the reason of a pair, `seen` |
 | `forget` | `at`, `by`, `platforms`, and the subjects in any order | `reason`, `seen` |
 | Every other entry | Every field | |
@@ -213,7 +217,7 @@ Entries may arrive late and in any order. Nothing is refused for being late.
 
 | What | Which stands |
 | --- | --- |
-| `correct`, `not_lead` and `lead`, call results, call returns, `consent` | The newest by `at`, then by `key`. One that arrives late is kept, changes nothing, and answers `stands: false`. |
+| `correct`, `not_lead` and `lead`, call results, call returns, call parties, `consent` | The newest by `at`, then by `key`. An accepted older statement is kept and answers `stands: false`. |
 | A cost row | The newest `at` for its day, source and campaign |
 | The `code` of a `call` | The first that names a visitor, by when the call was. See [a code read out](calls.md#a-code-read-out). |
 | `refund`, `write_off`, `reverse` | All of them, whatever order they arrive in |
@@ -320,6 +324,7 @@ POST /v1/lookup
 | `find` | `text` | `by`, `subjects`: a full email or phone, the start of a subject's id, or a full ad click id. At most 20. |
 | `match` | `facts`, `at` | `candidates`, `notes`: who somebody may be, before you save them |
 | `caller` | `from?`, `to`, `at` | Who is calling, [while the phone rings](calls.md#while-the-phone-rings) |
+| `party` | `call` | The standing party statement with its `role`, `subject` when named, `by`, `at` and `key`, or `null` |
 | `conflicts` | `subjects`, 1 to 50 | `conflicts`: who of them is [kept apart](matching.md#asking-about-conflicts) |
 | `record` | `type`, `key`, `at` | One conversion, call or text, or `null` |
 | `transfers` | `subject`, `tiedOnly?` | `counterparties`, `rings` |

@@ -619,7 +619,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
       }
       if (!isService(request)) {
         const party = name === 'record' && Array.isArray(body?.entries) && body.entries.length > 0 && body.entries.every((entry: any) => entry?.type === 'call_update' && entry.change?.kind === 'party' && entry.change.by === reviewer)
-        const opens = party || name === 'report' || ((name === 'decide' || name === 'forget') && body?.by === reviewer) || (name === 'lookup' && (body?.kind === 'journey' || body?.kind === 'find'))
+        const opens = party || name === 'report' || ((name === 'decide' || name === 'forget') && body?.by === reviewer) || (name === 'lookup' && (body?.kind === 'journey' || body?.kind === 'find' || body?.kind === 'party'))
         if (!opens) throw fault(FAULT_CODES.AUTH.FORBIDDEN, name === 'decide' || name === 'forget' ? '`by` must match the owner of the token' : 'The token does not open this call')
       }
       return answer(200, await core.v1(name as CallName, body, gone.signal))

@@ -50,6 +50,10 @@ export function compared(entry: RecordEntry | ({ type: 'decide' } & DecideReques
     const from = fields.direction === 'outbound' ? fields.from && phone(fields.from) : callerNumber(fields.from, country)
     return { direction: fields.direction, to: phone(fields.to), ...(from && { from }) }
   }
+  if (type === 'call_update' && fields.change.kind === 'party') {
+    const { seen, ...change } = fields.change
+    return { ...fields, change }
+  }
   if (type === 'text') return { direction: fields.direction, from: phone(fields.from), to: phone(fields.to) }
   if (type === 'cost') return { at: fields.at, rows: sorted(fields.rows.map((row: any) => ({ ...row, currency: row.currency.toUpperCase() }))) }
   if (type === 'decide') return { at: fields.at, by: fields.by, action: fields.action, ...(fields.pairs ? { pairs: sorted(fields.pairs.map(pair)) } : { fact: facts(fields.fact, phone) }) }

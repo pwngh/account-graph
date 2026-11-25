@@ -304,8 +304,8 @@ export function createSix(engine: Engine, options: SixOptions) {
         let stands: boolean
         if (again) stands = newest(await inside.tx.saidOf(topic, entry.call))?.key === entry.key
         else if (change.kind === 'party') {
-          const { kind: _, ...party } = change
-          stands = (await graph.sayParty({ call: entry.call, key: entry.key, at: entry.at, party })).stands
+          const { kind: _, seen, ...party } = change
+          stands = (await graph.sayParty({ call: entry.call, key: entry.key, at: entry.at, party, ...(seen !== undefined && { seen }) })).stands
         } else if (change.kind === 'result') {
           stands = (await graph.sayResult({ call: entry.call, key: entry.key, at: entry.at, result: change.result })).stands
           await settleCall(graph, entry.call, service.calling())
@@ -648,6 +648,8 @@ export function createSix(engine: Engine, options: SixOptions) {
         const { subject, area, known, people, visitor, touch, waiting } = await engine.read(({ graph }) => ringing(graph, { to: request.to, at: request.at, ...(request.from !== undefined && { from: request.from }) }, callOptions()))
         return { subject: subject ?? null, area: area ?? null, known, people: people.map(match), visitor: visitor ?? null, waiting, arrival: arrival(touch, subject ?? '') }
       }
+      case 'party':
+        return (await graph.partyHistory(request.call)).at(-1) ?? null
       case 'conflicts':
         return { conflicts: await graph.conflicts(request.subjects) }
       case 'record':
