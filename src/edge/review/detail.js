@@ -37,14 +37,28 @@ const goal = (text, met, short = '') => [`Target ${text}, set by you.`, met ? ' 
 
 /** What the screen's own routes answered within the last minute, so two cards that ask the same ask once. */
 const lately = new Map()
+/** How often it was let go before its time, because what it was read from has changed. */
+let lapses = 0
+function lapse() {
+  lately.clear()
+  lapses += 1
+}
 function recent(path) {
-  for (const [each, { at }] of lately) if (Date.now() - at >= 60_000) lately.delete(each)
-  const asked = lately.get(path) ?? { at: Date.now(), answer: api('GET', path) }
-  if (!lately.has(path)) {
-    lately.set(path, asked)
-    asked.answer.catch(() => lately.get(path) === asked && lately.delete(path))
-  }
+  const held = lately.get(path)
+  // A timer is late on a machine that slept, so the age is looked at as well.
+  if (held && Date.now() - held.at < 60_000) return held.answer
+  const asked = { at: Date.now(), answer: api('GET', path) }
+  const drop = () => lately.get(path) === asked && lately.delete(path)
+  lately.set(path, asked)
+  asked.answer.catch(drop)
+  setTimeout(drop, 60_000)
   return asked.answer
+}
+/** Puts away everything a card shows or holds: whoever signs in next is shown what they ask for themselves. */
+function forgetCards() {
+  cards.close()
+  lapse()
+  broughtTo = undefined
 }
 
 /** The icon that opens a card. `of` gives what the card is made from, when it is made, and `id` tells one from another of its kind. */
@@ -57,12 +71,14 @@ function detail(key, { label, id = '', of }) {
 
 /**
  * Fills a box with what a card says, and goes on to ask for the rest. Filled
- * again, what was fetched stays until it has been fetched anew.
+ * again, what was fetched stays until it has been fetched anew, or for half a
+ * second where it was read before something changed. Boxes that are one box
+ * share `turns`: an answer is drawn only while its turn is the newest.
  */
-function telling(box, settled = () => {}, most = 10) {
-  let turn = 0
+function telling(box, settled = () => {}, most = 10, turns = { now: 0 }) {
   let last
   let rest
+  let lapsed
   const draw = (now, waiting, failed, brief) => {
     const part = (name) => [...(now[name] ?? []), ...(rest?.[name] ?? [])]
     const held = box.contains(document.activeElement) ? which(document.activeElement) : undefined
@@ -83,18 +99,32 @@ function telling(box, settled = () => {}, most = 10) {
   /** Says what there is of some data. False when there is nothing to say it of. */
   function tell(key, of, short = false) {
     last = [key, of, short]
-    const asked = ++turn
+    const asked = ++turns.now
     const data = of()
     const now = data && DETAILS[key].now(data, short)
     if (!now) return false
     const more = short ? undefined : DETAILS[key].more?.(data)
+    const outdated = rest !== undefined && lapsed !== lapses
+    const began = lapses
     // What nobody has to wait for is said at once.
     draw(now, more !== undefined && rest === undefined, undefined, short)
+    const late = outdated && more !== undefined ? setTimeout(() => {
+      if (asked !== turns.now) return
+      rest = undefined
+      draw(now, true)
+    }, 500) : undefined
     more?.then((found) => {
-      if (asked !== turn) return
+      clearTimeout(late)
+      if (asked !== turns.now) return
       rest = found ?? {}
+      lapsed = began
       draw(now)
-    }, (error) => asked === turn && draw(now, false, error.message))
+    }, (error) => {
+      clearTimeout(late)
+      if (asked !== turns.now) return
+      rest = undefined
+      draw(now, false, error.message)
+    })
     return now
   }
   return tell
@@ -118,6 +148,8 @@ const cards = (() => {
   const worth = el('span', { class: 'detail-worth' })
   const shut = el('button', { type: 'button', class: 'detail-shut', 'aria-label': 'Close', on: { click: () => close(true) } }, '×')
   const body = el('div', { class: 'detail-body' })
+  /** Every card is drawn in this one, so each opening and each closing ends the turn of what was asked before. */
+  const turns = { now: 0 }
   const card = el('div', { id: 'card', popover: 'manual', role: 'dialog', 'aria-labelledby': 'card-title', tabindex: -1 }, el('div', { class: 'detail-head' }, title, worth, shut), body)
   const hintTitle = el('b', {})
   const hintWorth = el('span', { class: 'detail-worth' })
@@ -156,7 +188,7 @@ const cards = (() => {
   function open(button) {
     close()
     from = button
-    tell = telling(body, () => stand(card, from))
+    tell = telling(body, () => stand(card, from), 10, turns)
     if (!card.matches(':popover-open')) card.showPopover()
     if (!show()) return close()
     stand(card, from)
@@ -169,10 +201,12 @@ const cards = (() => {
     gone = undefined
     const button = from
     from = tell = undefined
+    turns.now += 1
     if (card.matches(':popover-open')) card.hidePopover()
     button?.setAttribute('aria-expanded', 'false')
     if (back && button?.isConnected) button.focus({ preventScroll: true })
-    body.replaceChildren()
+    for (const part of [title, worth, body]) part.replaceChildren()
+    hide()
   }
 
   /** The short card of a mark: shown while it is pointed at or has the keyboard. `unless` says when it would only repeat what is open. */
@@ -218,6 +252,7 @@ const cards = (() => {
     hinted?.removeAttribute('aria-describedby')
     hinted = undefined
     if (hint.matches(':popover-open')) hint.hidePopover()
+    for (const part of [hintTitle, hintWorth, hintBody]) part.replaceChildren()
   }
   hint.addEventListener('pointerenter', () => clearTimeout(timer))
   hint.addEventListener('pointerleave', leave)
@@ -257,7 +292,7 @@ const cards = (() => {
   }, true)
   // A question or the palette takes the whole screen.
   addEventListener('focusin', (event) => from && event.target.closest?.('dialog') && close())
-  addEventListener('hashchange', () => { close(); hide() })
+  addEventListener('hashchange', () => close())
   addEventListener('scroll', (event) => {
     if (!card.contains(event.target)) stand(card, from)
     // The focus brings a mark into view by scrolling, so the short card goes along with it.

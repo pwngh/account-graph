@@ -262,6 +262,10 @@ let limits = { returnHours: null, openHours: false }
 /** Shows who decides, in place of the token. The name is the server's answer, never something typed here. */
 function signedIn(answer) {
   me = answer
+  if (me === undefined) {
+    goals = {}
+    forgetCards()
+  }
   $('token-label').hidden = me !== undefined
   $('who').hidden = me === undefined
   $('name').textContent = me === undefined ? '' : me === null ? 'Service token' : me
@@ -277,8 +281,10 @@ async function api(method, path, body) {
     headers: { authorization: `Bearer ${token}`, ...(body && { 'content-type': 'application/json' }) },
     ...(body && { body: JSON.stringify(body) }),
   })
-  if (response.status === 204) return undefined
   if (response.headers.get('age')) dated = asked
+  // A decision, or a deletion, changes what was read before it. These two only read, and send what they look for in a body.
+  if (method !== 'GET' && path !== '/find' && path !== '/foresee') lapse()
+  if (response.status === 204) return undefined
   const answer = await response.json()
   // One refused after someone else has signed in says nothing of them.
   if (response.status === 401 && $('token').value === token) signedIn(undefined)
@@ -632,6 +638,8 @@ async function pulse() {
     throw new Error('Invalid access token')
   }
   if (!response.ok) throw new Error(`Request failed with ${response.status}`)
+  // Something was written since, so what the cards were told before is out of date.
+  lapse()
   return response.headers.get('etag')
 }
 function fresh(problem) {

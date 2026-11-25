@@ -14,14 +14,15 @@ const enter = (token) => {
   drawn.off.clear()
   narrowed.clear()
   opened.length = 0
-  cards.close()
-  lately.clear()
   inbox.id = charted.subject = undefined
   load()
 }
 $('token').addEventListener('change', () => enter($('token').value))
 $('leave').addEventListener('click', () => {
   enter('')
+  // What was looked for is the reviewer's, as what was asked and shown is.
+  for (const id of ['ask-title', 'ask-text', 'ask-effect', 'ask-problem']) $(id).replaceChildren()
+  for (const id of ['ask-other', 'ask-reason', 'subject']) $(id).value = ''
   $('token').focus()
 })
 // What is typed may be a phone number or an email, so it is sent in a body and never put in an address.

@@ -123,6 +123,8 @@ const palette = el('dialog', { id: 'palette', 'aria-label': 'Search' })
     clearTimeout(waiting)
     input.value = ''
     people = []
+    shown = []
+    list.replaceChildren()
   })
   palette.show = () => {
     if (palette.open || $('ask').open || !$('token').value) return
