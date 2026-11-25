@@ -99,7 +99,14 @@ export function createEdge(graph: AccountGraph, options: EdgeOptions): Edge {
         }
         return { changes: [...answer.value.changes], sent: answer.value.sent.map(({ conversion, platform, ...rest }) => ({ transactionId: conversion, target: platform, ...rest })) }
       },
-      v1: (name, request, signal) => internals.call(name, request, { signal }),
+      decided: () => internals.six.decided(),
+      async v1(name, request, signal) {
+        try {
+          return await internals.call(name, request, { signal })
+        } finally {
+          if (name === 'decide' || name === 'forget') served.forgetAnswers()
+        }
+      },
     }
     const maxmind = options.maxmind && createMaxMindLookup(options.maxmind)
     const ranges = options.serverRanges === undefined ? undefined : createRangeLookup(options.serverRanges)
@@ -131,7 +138,8 @@ export function createEdge(graph: AccountGraph, options: EdgeOptions): Edge {
       texts: { codes: options.textCodes ?? false, ...(twilio?.texts && { twilio: { authToken: twilio.authToken, url: twilio.texts } }) },
       now,
     }
-    return { handler: createHandler(core, handler), drain: () => batcher.drain() }
+    const served = createHandler(core, handler)
+    return { handler: served, drain: () => batcher.drain() }
   }
 
   const edge = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {

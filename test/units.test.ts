@@ -13,8 +13,8 @@ import type { Caller, Followed } from '../src/core/followed.ts'
 import { dayIn, paid } from '../src/core/report.ts'
 import { weigh } from '../src/core/policy.ts'
 import type { Edge, IdentifierState, KeptCall, Reason } from '../tools/internals.ts'
+import { signWebhook } from '../src/contract/webhook.ts'
 import { readEnvironment as configFrom } from '../src/bin.ts'
-import { bodySignature } from '../src/core/sign.ts'
 import { createHandler } from './harness.ts'
 import { counts } from './suite.ts'
 
@@ -282,7 +282,7 @@ test('fit recovers the true weights from checked pairs', () => {
   assert.deepEqual(fit([], defaultPolicy).policy, defaultPolicy)
 })
 
-test('the server reads its settings from the environment and names everything wrong at once', (t) => {
+test('the server reads its settings from the environment and names everything wrong at once', async (t) => {
   const config = configFrom({ DATABASE_URL: 'postgres://db', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'svc', ORIGINS: 'https://a.example/, https://b.example ', COOKIE: 'a.example', RATE_BURST: '5' })
   assert.deepEqual(config.origins, ['https://a.example', 'https://b.example'])
   assert.deepEqual([config.port, config.host, config.schema, config.receiptSecrets], [8080, '0.0.0.0', 'account_graph', ['r'.repeat(32)]])
@@ -295,7 +295,7 @@ test('the server reads its settings from the environment and names everything wr
     const calls = configFrom({ DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', EVENTS: 'inquiry, brochure', CALL_NUMBERS: '{"555-123-0001":{"source":"google"}}', TWILIO_AUTH_TOKEN: 't', TWILIO_WEBHOOK_URL: 'https://g.example/calls/twilio' })
   assert.throws(() => configFrom({ DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', CHANGE_SECRET: 's' }), /now WEBHOOK_URL and WEBHOOK_SECRET/)
   assert.equal(configFrom({ DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', WEBHOOK_SECRET: 's', WEBHOOK_URL: 'https://example.org/c' }).webhookSecret, 's')
-  assert.equal(bodySignature('s', 5, '{}'), `t=5,v1=${createHmac('sha256', 's').update('5.{}').digest('hex')}`)
+  assert.equal(await signWebhook('s', 5, '{}'), `t=5,v1=${createHmac('sha256', 's').update('5.{}').digest('hex')}`)
   const dir = mkdtempSync(join(tmpdir(), 'numbers-'))
   t.after(() => rmSync(dir, { recursive: true }))
   const listed = join(dir, 'numbers.json')

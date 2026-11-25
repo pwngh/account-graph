@@ -541,9 +541,11 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
            from unnest($1::text[], $2::text[]) as o (id, subject) join ${t('outcome_value')} v on v.transaction_id = o.id and v.subject = o.subject)
          select distinct on (transaction_id) *, max(value) over mine as most,
            coalesce(sum(lost) filter (where kind = 'refund') over mine, 0) + coalesce((select sum(amount) from ${t('payment')} p where p.transaction_id = theirs.transaction_id and p.kind = 'refund'), 0) + coalesce((select sum((x.data->>'amount')::float8) from ${t('said')} x where x.topic = 'worth' and x.about = theirs.transaction_id and x.data->>'kind' = 'refund'
-             and not exists (select from ${t('said')} y where y.topic = 'worth' and y.about = x.about and y.data->>'kind' = 'reverse' and y.data->>'restatement' = x.key)), 0) as refunded,
+             and not exists (select from ${t('said')} y where y.topic = 'worth' and y.about = x.about and y.data->>'kind' = 'reverse' and y.data->>'restatement' = x.key)
+             and not exists (select from ${t('payment')} p where p.transaction_id = x.about)), 0) as refunded,
            coalesce(sum(lost) filter (where kind = 'write_off') over mine, 0) + coalesce((select sum((x.data->>'amount')::float8) from ${t('said')} x where x.topic = 'worth' and x.about = theirs.transaction_id and x.data->>'kind' = 'write_off'
-             and not exists (select from ${t('said')} y where y.topic = 'worth' and y.about = x.about and y.data->>'kind' = 'reverse' and y.data->>'restatement' = x.key)), 0) as written_off,
+             and not exists (select from ${t('said')} y where y.topic = 'worth' and y.about = x.about and y.data->>'kind' = 'reverse' and y.data->>'restatement' = x.key)
+             and not exists (select from ${t('payment')} p where p.transaction_id = x.about)), 0) as written_off,
            array_agg(currency) filter (where kind is not null) over mine || array(select currency from ${t('payment')} p where p.transaction_id = theirs.transaction_id and p.kind = 'refund') as lost_in
          from theirs window mine as (partition by transaction_id) order by transaction_id, id`,
         [given.map((each) => each.transactionId), given.map((each) => each.subject)],

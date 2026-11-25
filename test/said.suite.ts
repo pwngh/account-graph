@@ -103,6 +103,16 @@ export function saidSuite(name: string, open: () => Promise<Opened>) {
     () => graph.consent(`a${n}`, { adUserData: false, adPersonalization: false }, { at: AT - 1, key: 'z' }),
   ], async (graph, n) => (await graph.consentOf([`a${n}`])).get(`a${n}`), { adUserData: true, adPersonalization: true })
 
+  sameInEveryOrder('what was lost beside payments', (graph, n) => [
+    outcome(graph, n),
+    () => graph.pay({ id: `lp${n}`, transactionId: `t${n}`, amount: 40 }),
+    () => graph.pay({ id: `lq${n}`, transactionId: `t${n}`, amount: 10, kind: 'refund' }),
+    revise(graph, n, 'r', 11, { kind: 'refund', amount: 5 }),
+  ], async (graph, n) => {
+    const { valueChange } = (await graph.report({ from: new Date(AT).toISOString().slice(0, 10), to: new Date(AT).toISOString().slice(0, 10) })).total
+    return [await worth(n)(graph), valueChange.refunded / n, valueChange.now / n]
+  }, [30, 10, 30])
+
   test(`${name}: what was lost is in the report as it was said, and goes with the subject`, async () => {
     const { store, close } = await open()
     const graph = createGraph(store, undefined, { now: () => AT + 1_000_000 })

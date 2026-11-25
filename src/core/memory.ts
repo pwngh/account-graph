@@ -502,7 +502,9 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
             lost.refund += amount
             lostIn.push(currency)
           }
-          for (const each of said.get(`worth\u0000${transactionId}`) ?? []) {
+          const paid = [...payments.values()].some((each) => each.transactionId === transactionId)
+          // Once there are payments it is worth what was paid, and what was said of it before is in no count.
+          for (const each of paid ? [] : (said.get(`worth\u0000${transactionId}`) ?? [])) {
             if (each.topic !== 'worth' || (each.data.kind !== 'refund' && each.data.kind !== 'write_off')) continue
             const { kind, amount } = each.data
             if ((said.get(`worth\u0000${transactionId}`) ?? []).some((other) => other.topic === 'worth' && other.data.kind === 'reverse' && other.data.restatement === each.key)) continue

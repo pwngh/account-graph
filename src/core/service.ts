@@ -94,7 +94,7 @@ export function createService(graph: Graph, options: ServiceOptions) {
   }
 
   /** The identifiers in plain facts about somebody, normalized, checked and hashed, and what came of the checks. Only where they are to be saved is the line of a number looked up, because that can mute it. */
-  async function factsIn(body: any, saving: boolean) {
+  async function factsIn(body: any, saving: boolean, none = false) {
     const identifiers: Identifier[] = (Array.isArray(body.identifiers) ? body.identifiers : []).map(String)
     const notes: Record<string, string> = {}
     let zip: string | undefined
@@ -150,7 +150,7 @@ export function createService(graph: Graph, options: ServiceOptions) {
     if (body.at !== undefined && !Number.isSafeInteger(body.at)) throw malformed('`at` must be an integer in epoch milliseconds')
     // Kept only under a policy that keeps people apart by it. It says who somebody is not, and not who they are, so by itself it finds nobody.
     const born = options.identifierSecret && typeof body.dob === 'string' && (await graph.policy()).rules.apart?.includes('birth') ? birthKey(options.identifierSecret, body.dob) : undefined
-    if (identifiers.length === 0 && !(saving && born)) throw malformed('At least one identifying field is required')
+    if (identifiers.length === 0 && !none && !(saving && born)) throw malformed('At least one identifying field is required')
     if (born) identifiers.push(born)
     return { identifiers, notes, at: (body.at ?? now()) as number }
   }

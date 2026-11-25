@@ -35,8 +35,8 @@
       "default": "./dist/edge/index.js"
     },
     "./collect": {
-      "types": "./dist/edge/collect.d.ts",
-      "default": "./dist/edge/collect.js"
+      "types": "./dist/edge/browser.d.ts",
+      "default": "./dist/edge/browser.js"
     },
     "./hardware": {
       "types": "./dist/edge/hardware.d.ts",

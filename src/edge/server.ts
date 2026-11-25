@@ -1,4 +1,4 @@
-import { FAULT_CODES, fault, isFault, malformed } from '../contract/fault.ts'
+import { FAULT_CODES, fault, malformed } from '../contract/fault.ts'
 import { CALLS } from '../contract/validate.ts'
 import type { CallName } from '../contract/validate.ts'
 import { STATUS, asFault, faultBody } from '../client/faults.ts'
@@ -44,6 +44,8 @@ export interface Core {
   called(call: Call): Promise<unknown>
   texted(text: Text): Promise<unknown>
   forget(subjects: readonly Subject[], why: Deciding, retract: boolean): Promise<{ changes: Change[]; sent: unknown[] }>
+  /** Hears of a decision made here, so answers kept elsewhere are worked out again. */
+  decided?(): void
   /** The six calls. Without it, `/v1` is not served. */
   v1?(name: CallName, request: unknown, signal: AbortSignal): Promise<unknown>
 }
@@ -111,19 +113,19 @@ export interface HandlerOptions {
    */
   events?: readonly string[]
   /**
-   * How phone calls posted to `/call` are recorded. With `twilio`, the
+   * How phone calls are read. With `twilio`, the
    * server also takes Twilio's status callbacks at `/calls/twilio`: `url` is
    * that route's public address exactly as entered in Twilio, which the
    * signature is checked against.
    */
   calls?: Pick<CallOptions, 'numbers' | 'country' | 'results' | 'resultWait'> & { twilio?: { authToken: string; url: string } }
   /**
-   * How text messages posted to `/text` are recorded. With `codes`, the script tag asks `/text-code` for the code it puts in
+   * How text messages are read. With `codes`, the script tag asks for the code it puts in
    * text links. With `twilio`, the server also takes Twilio's incoming messages at `/texts/twilio`.
    */
   texts?: TextOptions & { codes?: boolean; twilio?: { authToken: string; url: string } }
   /**
-   * The secret that signs links. With it, `/link` makes an address that
+   * The secret that signs links. With it, a `link` entry makes an address that
    * names the person it is sent to, a visit that arrives through one ties
    * the browser to that person, and `/carry` lets the script tag keep a
    * visitor the same visitor across your sites. Long and random.
@@ -133,7 +135,7 @@ export interface HandlerOptions {
    * Your steps, in order, with what each is worth and what it counts as on
    * each ad platform. An outcome that names a step takes from it whatever
    * the outcome leaves out, so a page event or a call needs only its name.
-   * `/report` lists the steps in this order.
+   * A report lists the steps in this order.
    */
   stages?: Ladder
   /**
@@ -142,11 +144,11 @@ export interface HandlerOptions {
    * as theirs when nobody has had the number since. Off by default.
    */
   pool?: { numbers: readonly string[]; minutes: number; grace: number }
-  /** How many hours a missed call may wait before `/board` says it has waited too long. Left out or 0, it never does. */
+  /** How many hours a missed call may wait before the board says it has waited too long. Left out or 0, it never does. */
   returnHours?: number
     /** When you are open. With it, the board counts waiting, and the call summary calls that came while you were closed. */
   hours?: Hours
-  /** The time zone `/report` reads its days in when the request names none. Use the ad account's. Defaults to UTC. */
+  /** The time zone the screen's reports read their days in when none is named. Use the ad account's. Defaults to UTC. */
   timeZone?: string
   /** The clock, for tests. */
   now?: () => number
@@ -726,6 +728,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
         deciding -= 1
         decided += 1
         answers.clear()
+        core.decided?.()
       }
     }
     switch (path) {
@@ -758,7 +761,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
         return profile(subject)
       case 'GET /ops':
         if (!core.ops) break
-        return { ...(await core.ops.state()), pool: pool.length > 0 ? { numbers: pool.length, held: await graph.leasesAt(pool, now()), since: tally.since, leased: tally.leased, exhausted: tally.exhausted, minutes: options.pool!.minutes } : null, outbox: core.outbox ? await core.outbox.counts() : null }
+        return { ...(await core.ops.state()), visits: tally, pool: pool.length > 0 ? { numbers: pool.length, held: await graph.leasesAt(pool, now()), since: tally.since, leased: tally.leased, exhausted: tally.exhausted, minutes: options.pool!.minutes } : null, outbox: core.outbox ? await core.outbox.counts() : null }
       case 'GET /pulse': {
         // One small row: a screen asks this often, and reads the rest only when the answer differs.
         const version = await graph.version()
@@ -930,14 +933,14 @@ export function createHandler(core: Core, options: HandlerOptions) {
         const { seq, at, action, about, by, reason } = error.decision
         return void response.writeHead(409, JSON_HEADERS).end(JSON.stringify({ error: error.message, decision: { seq, at, action, about, by, reason } }))
       }
-      const refused = error instanceof Refusal || isFault(error)
-      const status = error instanceof Refusal ? error.status : refused ? 400 : 500
-      const message = refused ? (error as Error).message : 'Internal error'
-      if (!refused) {
+      if (error instanceof Refusal) return void response.writeHead(error.status, JSON_HEADERS).end(JSON.stringify({ error: error.message }))
+      const known = asFault(error)
+      if (known.code === FAULT_CODES.GRAPH.INTERNAL) {
         tally.errors += 1
-        console.error(error)
+        console.error(known.cause ?? error)
       }
-      response.writeHead(status, JSON_HEADERS).end(JSON.stringify({ error: message }))
+      // What may pass is asked for again by whoever sent it: a provider sends a webhook again for a 503, and not for a 400.
+      response.writeHead(STATUS[known.code] ?? 500, { ...JSON_HEADERS, ...(known.retryable && { 'retry-after': '5' }) }).end(JSON.stringify({ error: known.message }))
     }
   }, { tally, /** What was worked out before a decision made elsewhere is worked out again. */ forgetAnswers: () => void ((decided += 1), answers.clear()) })
 }

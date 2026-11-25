@@ -36,7 +36,7 @@ const email = (value: string) => {
 }
 const sorted = <T>(list: readonly T[]) => [...list].map(canonical).sort()
 const facts = (value: any, phone: (value: string) => string) => ({ ...value, ...(value.email && { email: email(value.email) }), ...(value.phone && { phone: phone(value.phone) }), ...(value.identifiers && { identifiers: [...new Set(value.identifiers)].sort() }) })
-const pair = ({ a, b, reason }: any) => (a < b ? { a, b, reason } : { a: b, b: a, reason })
+const pair = ({ a, b }: any) => (a < b ? { a, b } : { a: b, b: a })
 
 /** The fields of an entry that make it the same one, each written one way. What a second reporter may know better, or a provider makes up on each try, is not among them. */
 export function compared(entry: RecordEntry | ({ type: 'decide' } & DecideRequest) | ({ type: 'forget' } & ForgetRequest), country = '1'): Record<string, unknown> {

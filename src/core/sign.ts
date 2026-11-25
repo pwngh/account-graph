@@ -11,11 +11,6 @@ function signature(secret: string, purpose: string, payload: string, expires: nu
   return createHmac('sha256', secret).update(`${purpose}\n${payload}\n${expires}`).digest().subarray(0, 16).toString('base64url')
 }
 
-/** What the change webhook sends to say a body came from this server: `t=<epoch ms>,v1=<HMAC-SHA256 of "<t>.<body>" in hex>`. */
-export function bodySignature(secret: string, at: number, body: string): string {
-  return `t=${at},v1=${createHmac('sha256', secret).update(`${at}.${body}`).digest('hex')}`
-}
-
 /**
  * A short token that carries `payload` until `expires` and cannot be forged
  * or altered without the secret. The payload is readable by anyone who holds

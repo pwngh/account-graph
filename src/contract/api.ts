@@ -228,6 +228,8 @@ export type RecordRefusal =
   | { readonly reason: 'UNKNOWN_REFERENCE'; readonly of: { readonly type: 'conversion' | 'call' | 'text' | 'restatement'; readonly key: string } }
   | { readonly reason: 'KIND_NOT_IN_POLICY'; readonly kind: string }
   | { readonly reason: 'KIND_RESERVED'; readonly kind: string }
+  /** None of the facts says who somebody is: `notes` says why of each. */
+  | { readonly reason: 'NO_FACT_USED'; readonly notes: Readonly<Record<string, string>> }
   | { readonly reason: 'CURRENCY_MISMATCH'; readonly expected: string }
   /** It has payments, so it is worth what was paid. */
   | { readonly reason: 'PAID' }

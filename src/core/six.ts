@@ -21,6 +21,7 @@ import type { Receipts } from './receipts.ts'
 import { dayIn, dayStart, sourceOf } from './report.ts'
 import { knownLink } from './sign.ts'
 import { asks, beginnings, recordText, replyTo } from './texts.ts'
+import { checkTags } from './tags.ts'
 import { checkTouch } from './touch.ts'
 
 /** Kinds of identifier the graph writes itself. One a caller wrote would join people with nobody having decided it. */
@@ -96,22 +97,38 @@ export function createSix(engine: Engine, options: SixOptions) {
         break
       case 'conversion':
         if (entry.email !== undefined) within('email', () => normalizeEmail(entry.email!))
-        if (entry.phone !== undefined) within('phone', () => normalizePhone(entry.phone!))
+        if (entry.phone !== undefined) within('phone', () => normalizePhone(entry.phone!, country))
+        within('tags', () => checkTags(entry.tags, 'The conversion'))
         for (const platform of Object.keys(entry.actions ?? {})) if (!engine.options.delivery?.targets.some((target) => target.name === platform)) throw malformed(`${path}.actions.${platform} is not a platform that is set up`, { path: `${path}.actions.${platform}` })
         break
       case 'cost':
-        for (const [i, row] of entry.rows.entries()) within(`rows[${i}].day`, () => dayStart(row.day))
+        for (const [i, row] of entry.rows.entries()) {
+          within(`rows[${i}].day`, () => dayStart(row.day))
+          if (row.conversionValue !== undefined && row.conversions === undefined) throw malformed(`${path}.rows[${i}].conversionValue requires conversions`, { path: `${path}.rows[${i}].conversionValue` })
+        }
+        break
+      case 'consent':
+        // Dated ahead, it would stand over every real answer until that day came.
+        if (entry.at > now() + 86_400_000) throw malformed(`${path}.at is more than a day ahead`, { path: `${path}.at` })
         break
       case 'call':
         within('to', () => normalizePhone(entry.to, country))
-        if (entry.direction === 'outbound' && entry.from !== undefined) within('from', () => normalizePhone(entry.from!, country))
+        within('tags', () => checkTags(entry.tags, 'The call'))
+        if (entry.direction === 'outbound') {
+          if (entry.from === undefined) throw malformed(`${path}.from is required of a call you placed`, { path: `${path}.from` })
+          within('from', () => normalizePhone(entry.from!, country))
+        }
         break
       case 'text':
+        within('tags', () => checkTags(entry.tags, 'The text'))
         within(entry.direction === 'outbound' ? 'from' : 'to', () => normalizePhone(entry.direction === 'outbound' ? entry.from : entry.to, country))
         break
       case 'link':
         if (!options.linkSecret) throw fault(FAULT_CODES.CONFIG.UNSUPPORTED, 'Links require `linkSecret`')
-        within('url', () => linkOf(entry))
+        within('url', () => {
+          // A browser hands the token back in the address, and no longer one is read.
+          if (new URL(linkOf(entry)).searchParams.get('ag')!.length > 1024) throw malformed('the key and the subject are too long together')
+        })
         break
       case 'transfer':
         if (entry.from === entry.to) throw malformed(`${path} requires two different subjects`, { path })
@@ -129,7 +146,10 @@ export function createSix(engine: Engine, options: SixOptions) {
     const bounded = async <T>(work: Promise<T>): Promise<{ value?: T; failed: boolean }> => {
       let timer: NodeJS.Timeout | undefined
       const late = new Promise<{ failed: boolean }>((resolve) => void (timer = setTimeout(() => resolve({ failed: true }), CHECK)))
-      const done = work.then((value) => ({ value, failed: false }), () => ({ failed: true }))
+      const done = work.then((value) => ({ value, failed: false }), (error) => {
+        console.error(`check: ${String((error as Error)?.message ?? error)}`)
+        return { failed: true }
+      })
       const result = await Promise.race([done, late])
       clearTimeout(timer)
       return result
@@ -181,6 +201,8 @@ export function createSix(engine: Engine, options: SixOptions) {
           if (RESERVED.has(kind)) throw Object.assign(malformed(`Kind "${kind}" is written by the graph itself`), { refusal: { reason: 'KIND_RESERVED', kind } })
         }
         if (again) return { value: { changes: [], notes: {} }, subjects: [] }
+        const found = await service.factsIn({ ...entry.facts, at: entry.at }, true, true)
+        if (found.identifiers.length === 0) throw Object.assign(malformed('No fact could be used'), { refusal: { reason: 'NO_FACT_USED', notes: found.notes } })
         const { notes } = await service.identify({ subject: entry.subject, ...entry.facts, at: entry.at, ...(entry.event && { event: entry.event }) })
         return { value: { changes: inside.changes, notes }, subjects: [entry.subject] }
       }
@@ -195,8 +217,8 @@ export function createSix(engine: Engine, options: SixOptions) {
       }
       case 'conversion': {
         const before = await graph.outcomeOf(entry.key)
-        const { type: _, key, actions, channel, currency, ...rest } = entry
-        const outcome = { ...rest, transactionId: key, ...(currency && { currency: currency.toUpperCase() }), ...(actions && { action: actions }), ...(channel && { source: channel }) }
+        const { type: _, key, actions, channel, currency, phone, ...rest } = entry
+        const outcome = { ...rest, ...(phone && { phone: normalizePhone(phone, country) }), transactionId: key, ...(currency && { currency: currency.toUpperCase() }), ...(actions && { action: actions }), ...(channel && { source: channel }) }
         if (before && !again && (before.subject !== entry.subject || before.at !== entry.at || before.stage !== entry.stage)) {
           const fields = [before.subject !== entry.subject && 'subject', before.at !== entry.at && 'at', before.stage !== entry.stage && 'stage'].filter((each) => typeof each === 'string')
           throw Object.assign(malformed(`Conversion "${key}" is another one`), { refusal: { reason: 'KEY_REUSED', fields } })
@@ -656,7 +678,13 @@ export function createSix(engine: Engine, options: SixOptions) {
     })
   }
 
-  return { record, decide, forget, lookup, report, events }
+  /** A decision was made by another way in: what was worked out before it is worked out again. */
+  const heard = () => {
+    decided += 1
+    answers.clear()
+  }
+
+  return { record, decide, forget, lookup, report, events, decided: heard }
 }
 
 export type Six = ReturnType<typeof createSix>

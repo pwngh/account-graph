@@ -189,6 +189,12 @@ everywhere('one refusal in a list undoes nothing, and a later entry sees an earl
   return [results, (await graph.lookup({ kind: 'person', subjects: ['contact:z', 'x'], at: NOW })).people]
 })
 
+everywhere('facts that say nothing of who somebody is are refused, and can be sent again', async ({ graph }) => {
+  const result = await one(graph, { type: 'profile', key: 'p', at: AT, subject: 'contact:1', facts: { address: { street: '1 Main St' } } })
+  assert.ok((await one(graph, { type: 'profile', key: 'p', at: AT, subject: 'contact:1', facts: { device: 'd' } })).ok)
+  return result
+})
+
 everywhere('decisions: stale, reused, not joined, and not as asked', async ({ graph }) => {
   await graph.record({ entries: ['a', 'b', 'c'].map((name, n) => ({ type: 'profile' as const, key: name, at: AT, subject: `contact:${name}`, facts: { identifiers: [`payment:${n}`] } })) })
   const decide = (key: string, action: DecideRequest['action'], pairs: [string, string][], more: object = {}) => graph.decide({ key, at: AT, by: 'dana', action, pairs: pairs.map(([a, b]) => ({ a: `contact:${a}`, b: `contact:${b}` })), ...more } as DecideRequest)
@@ -260,7 +266,8 @@ everywhere('the same faults', async ({ graph }) => {
     null, {}, { entries: [] }, { entries: [{}] }, { entries: [{ type: 'nope' }] }, { entries: [{ ...entry, value: NaN }] }, { entries: [{ ...entry, value: Infinity }] }, { entries: [{ ...entry, value: 5n }] }, { entries: [{ ...entry, at: new Date(AT) }] }, { entries: [{ ...entry, at: undefined }] },
     { entries: [{ ...entry, key: 'call:x' }] }, { entries: [{ ...entry, key: '' }] }, { entries: [{ ...entry, extra: 1 }] }, { entries: [{ ...entry, subject: 'a\0' }] }, { entries: [{ ...entry, subject: '\ud800' }] }, { entries: [{ ...entry, email: 'nope' }] }, { entries: [{ ...entry, phone: '12' }] }, { entries: [{ ...entry, actions: { nowhere: 'x' } }] },
     { entries: [{ ...EVERY[5]!, to: 'nobody' }] }, { entries: [{ ...EVERY[0]!, facts: {} }] }, { entries: [{ ...EVERY[0]!, facts: { ip: 'x' } }] }, { entries: [{ ...EVERY[2]!, rows: [{ day: '2026-02-31', source: 'a', amount: 1, currency: 'USD' }] }] }, { entries: Array(101).fill(entry) }, { entries: [{ ...EVERY[8]!, at: 8e15 }] }, { entries: [new Map()] }, { entries: [{ ...entry, tags: JSON.parse('{"__proto__":"x"}') }] },
-    { entries: [entry, { ...entry, key: 'z', email: 'nope' }] },
+    { entries: [entry, { ...entry, key: 'z', email: 'nope' }] }, { entries: [entry, { ...entry, key: 'z', tags: { Office: 'x' } }] }, { entries: [entry, (({ from: _, ...rest }: any) => ({ ...rest, key: 'o', direction: 'outbound' }))(EVERY[5])] }, { entries: [entry, { ...EVERY[8]!, at: NOW + 2 * 86_400_000 }] },
+    { entries: [entry, { ...EVERY[2]!, rows: [{ day: DAY, source: 'a', amount: 1, currency: 'USD', conversionValue: 2 }] }] }, { entries: [entry, { ...EVERY[9]!, key: 'a\nb' }] }, { entries: [entry, { ...EVERY[9]!, key: 'é'.repeat(200), subject: 'é'.repeat(250) }] },
   ]
   const out = []
   for (const request of bad) out.push(await codeOf(graph.record(request as never)))
@@ -403,6 +410,38 @@ test('a deletion asks platforms after it, and its answer is kept', async () => {
   assert.deepEqual(await asked('a'), [[false, [['a', 'rejected']]], [true, [['a', 'rejected']]]])
   cut = false
   assert.deepEqual(await asked('b'), [[false, [['b', 'accepted']]], [true, [['b', 'accepted']]]])
+})
+
+test('a provider is told to ask again while the database is away, and a decision anywhere is seen everywhere', async () => {
+  const { local, base, close } = await http()
+  const { twilioSignature } = await import('../src/providers/twilio.ts')
+  try {
+    const { engine } = await internalsOf(local)!()
+    const fields = { CallSid: 'CA1', CallStatus: 'completed', Direction: 'inbound', From: '+15558675309', To: '+15551230001', CallDuration: '61' }
+    const post = () => fetch(`${base}/calls/twilio`, { method: 'POST', body: new URLSearchParams(fields).toString(), headers: { 'x-twilio-signature': twilioSignature('t', 'https://g.example/calls/twilio', fields) } })
+    const write = engine.store.write
+    engine.store.write = () => Promise.reject(Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }))
+    const away = await post()
+    const review = await fetch(`${base}/review/api/join`, { method: 'POST', headers: { authorization: 'Bearer reviewer' }, body: '{"a":"contact:1","b":"contact:2"}' })
+    assert.deepEqual([away.status, away.headers.get('retry-after'), review.status], [503, '5', 503])
+    engine.store.write = write
+    assert.equal((await post()).status, 204)
+
+    const ask = async () => (await (await fetch(`${base}/review/api/report?from=${DAY}&to=${DAY}`, { headers: { authorization: 'Bearer reviewer' } })).json()) as any
+    let made = 0
+    const read = engine.graph.report
+    engine.graph.report = (...given) => ((made += 1), read(...given))
+    const six = async () => (await fetch(`${base}/v1/report`, { method: 'POST', headers: { authorization: 'Bearer service' }, body: JSON.stringify({ kind: 'campaigns', window }) })).json()
+    await six()
+    await six()
+    assert.equal(made, 1)
+    assert.equal((await fetch(`${base}/review/api/join`, { method: 'POST', headers: { authorization: 'Bearer reviewer' }, body: '{"a":"contact:1","b":"contact:2"}' })).status, 200)
+    await six()
+    assert.equal(made, 2)
+    await ask()
+  } finally {
+    await close()
+  }
 })
 
 test('answers of a report are shared until something is written', async () => {
