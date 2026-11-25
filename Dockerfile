@@ -18,4 +18,4 @@ COPY --from=build /app/dist ./dist
 USER node
 EXPOSE 8080
 HEALTHCHECK --interval=10s --timeout=3s --retries=6 CMD wget -qO- http://127.0.0.1:8080/health || exit 1
-CMD ["node", "dist/serve.js"]
+CMD ["node", "dist/edge/serve.js"]

@@ -3,12 +3,12 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { createGraph, createMemoryStore, ringing } from '../src/index.ts'
-import { configFrom } from '../src/serve.ts'
-import { recordText } from '../src/texts.ts'
-import { checkTags } from '../src/tags.ts'
-import { shared } from '../src/integrations/maxmind.ts'
-import { createRangeLookup, fakePhone, holidays, meantEmail, placeholderEmail, sharedMailbox, spanishPlaceholder, spanishStop, texasArea, texasCounty, throwawayEmail } from '../src/lookups.ts'
+import { createGraph, createMemoryStore, ringing } from '../tools/internals.ts'
+import { configFrom } from '../src/edge/serve.ts'
+import { recordText } from '../src/core/texts.ts'
+import { checkTags } from '../src/core/tags.ts'
+import { shared } from '../src/providers/maxmind.ts'
+import { createRangeLookup, fakePhone, holidays, meantEmail, placeholderEmail, sharedMailbox, spanishPlaceholder, spanishStop, texasArea, texasCounty, throwawayEmail } from '../src/core/lookups.ts'
 
 test('a number that is nobody\'s is told from one that could be', () => {
   const why = { '+15555555555': 'repeated', '+10000000000': 'repeated', '+11234567890': 'counted', '+10123456789': 'counted', '+17139110142': 'never_assigned', '+17130120142': 'never_assigned', '+11136120142': 'never_assigned', '+19116120142': 'never_assigned', '+17135550142': 'never_assigned', '+17135551212': 'never_assigned' }

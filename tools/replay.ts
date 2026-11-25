@@ -11,8 +11,8 @@
  */
 import { createReadStream } from 'node:fs'
 import { createInterface } from 'node:readline'
-import { createGraph, createMemoryStore, defaultPolicy, ip } from '../src/index.ts'
-import type { Observation, Touch } from '../src/index.ts'
+import { createGraph, createMemoryStore, defaultPolicy, ip } from './internals.ts'
+import type { Observation, Touch } from './internals.ts'
 
 const DAY = 86_400_000
 const policy = defaultPolicy

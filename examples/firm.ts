@@ -17,10 +17,10 @@ import { once } from 'node:events'
 import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { createGraph, createMemoryStore, createOps, createOutbox, googleAds, hashPhone, nameKeys, policyFrom, recordCall } from '../src/index.ts'
-import type { Store } from '../src/index.ts'
-import { reviewPage } from '../src/review.ts'
-import { createHandler } from '../src/server.ts'
+import { createGraph, createMemoryStore, createOps, createOutbox, googleAds, hashPhone, nameKeys, policyFrom, recordCall } from '../tools/internals.ts'
+import type { Store } from '../tools/internals.ts'
+import { reviewPage } from '../src/edge/review.ts'
+import { createHandler } from '../src/edge/server.ts'
 import { clockScript, landing } from './firm-page.ts'
 import { PRACTICES } from './practice.ts'
 import type { Practice } from './practice.ts'
@@ -619,7 +619,7 @@ if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).
     let fresh = async (): Promise<Store> => createMemoryStore()
     if (made) {
       const { default: pg } = await import('pg')
-      const { createPostgresStore } = await import('../src/postgres.ts')
+      const { createPostgresStore } = await import('../src/store/postgres.ts')
       const pool = new pg.Pool({ connectionString: made.address })
       pool.on('error', () => {})
       end = () => pool.end()

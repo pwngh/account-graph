@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
-import { createGraph, createMemoryStore, email, hashPhone, phone, recordCall, recordNotLead, recordReturn, recordText } from '../src/index.ts'
-import { createHandler } from '../src/server.ts'
+import { createGraph, createMemoryStore, email, hashPhone, phone, recordCall, recordNotLead, recordReturn, recordText } from '../tools/internals.ts'
+import { createHandler } from '../src/edge/server.ts'
 import { browse, chrome, pause, until, without } from './chrome.ts'
 
 // The reviewer screen in a real browser.

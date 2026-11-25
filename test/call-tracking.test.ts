@@ -8,8 +8,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { createForwarder, createTracker, signed, toCall } from '../examples/call-tracking.ts'
-import { createGraph, createMemoryStore, hashPhone } from '../src/index.ts'
-import { createHandler } from '../src/server.ts'
+import { createGraph, createMemoryStore, hashPhone } from '../tools/internals.ts'
+import { createHandler } from '../src/edge/server.ts'
 
 const KEY = 'a made-up key'
 const said = { id: 444, customer_phone_number: '+15550100142', tracking_phone_number: '+15550100101', start_time: '2026-11-24T09:04:00.000-06:00', duration: '95', answered: false, voicemail: false, direction: 'inbound' }

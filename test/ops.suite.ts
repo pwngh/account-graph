@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { after, describe, test } from 'node:test'
-import { createGraph, createHours, createOps, hashPhone, recordCall } from '../src/index.ts'
-import type { OpsOptions } from '../src/index.ts'
+import { createGraph, createHours, createOps, hashPhone, recordCall } from '../tools/internals.ts'
+import type { OpsOptions } from '../tools/internals.ts'
 import type { Opened } from './suite.ts'
 
 const T0 = 1_700_000_000_000

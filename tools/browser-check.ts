@@ -6,9 +6,9 @@ import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { readFileSync } from 'node:fs'
 import pg from 'pg'
-import { createGraph, createOutbox, email, googleAds } from '../src/index.ts'
-import { createPostgresStore } from '../src/postgres.ts'
-import { createHandler } from '../src/server.ts'
+import { createGraph, createOutbox, email, googleAds } from './internals.ts'
+import { createPostgresStore } from '../src/store/postgres.ts'
+import { createHandler } from '../src/edge/server.ts'
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
 const store = createPostgresStore(pool, 'ag_browser')

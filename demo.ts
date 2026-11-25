@@ -2,8 +2,8 @@
  * Two stories on made-up data: duplicate accounts on a game platform, and an
  * enrollment traced back to an ad click. Run with `node demo.ts`.
  */
-import { createGraph, createMemoryStore, createOutbox, email, googleAds, ip } from './src/index.ts'
-import type { Link } from './src/index.ts'
+import { createGraph, createMemoryStore, createOutbox, email, googleAds, ip } from './tools/internals.ts'
+import type { Link } from './tools/internals.ts'
 
 const store = createMemoryStore()
 const graph = createGraph(store)

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { startFirm } from '../examples/firm.ts'
 import { PRACTICES } from '../examples/practice.ts'
-import { createMemoryStore, hashPhone } from '../src/index.ts'
+import { createMemoryStore, hashPhone } from '../tools/internals.ts'
 import { browse, chrome, until, without } from './chrome.ts'
 
 // The demo, scene by scene, in a real browser: what the stage says, and what the reviewer screen then shows.

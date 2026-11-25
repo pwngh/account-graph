@@ -8,7 +8,7 @@
  * YYYY-MM-DD. Sending a file again replaces the rows it names.
  */
 import { readFileSync } from 'node:fs'
-import { costsFromCsv } from '../src/integrations/costs.ts'
+import { costsFromCsv } from '../src/providers/costs.ts'
 
 const [file] = process.argv.slice(2)
 const { GRAPH_URL, GRAPH_TOKEN } = process.env

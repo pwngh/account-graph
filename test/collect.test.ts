@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { carry, collect, event, fields, fill, pool, read, texts, watch, withCode } from '../src/collect.ts'
+import { carry, collect, event, fields, fill, pool, read, texts, watch, withCode } from '../src/edge/collect.ts'
 
 /** Just enough of a browser for the collector: a URL, cookies, storage, and a beacon. */
 function browser(href: string, cookies: Record<string, string> = {}, gpc = false) {

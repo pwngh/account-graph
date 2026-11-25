@@ -1,4 +1,4 @@
-import { createMemoryStore } from '../src/index.ts'
+import { createMemoryStore } from '../tools/internals.ts'
 import { malformedSuite } from './malformed.suite.ts'
 import { opsSuite } from './ops.suite.ts'
 import { outboxSuite } from './outbox.suite.ts'

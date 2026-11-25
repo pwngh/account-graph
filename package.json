@@ -12,7 +12,7 @@
     "node": ">=22.18"
   },
   "bin": {
-    "account-graph": "./dist/serve.js"
+    "account-graph": "./dist/edge/serve.js"
   },
   "files": [
     "dist",
@@ -60,7 +60,7 @@
     },
     "./serve": {
       "types": "./dist/serve.d.ts",
-      "default": "./dist/serve.js"
+      "default": "./dist/edge/serve.js"
     },
     "./microsoft-auth": {
       "types": "./dist/integrations/microsoft-auth.d.ts",
@@ -82,13 +82,13 @@
   "scripts": {
     "test": "node --test",
     "check": "tsc --noEmit",
-    "build": "tsc -p tsconfig.build.json && rm -rf dist/review && cp -R src/review dist/review",
+    "build": "tsc -p tsconfig.build.json && rm -rf dist/edge/review && cp -R src/edge/review dist/edge/review",
     "demo": "node demo.ts",
     "firm": "node examples/firm.ts",
     "bench": "node bench.ts",
     "prepublishOnly": "npm run check && npm test && npm run build",
     "review": "node tools/review-demo.ts",
-    "start": "node src/serve.ts",
+    "start": "node src/edge/serve.ts",
     "live-check": "node tools/live-check.ts",
     "costs": "node tools/costs.ts",
     "labels": "node tools/labels.ts"
