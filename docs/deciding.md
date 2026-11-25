@@ -107,7 +107,7 @@ With `given` it keeps keyed notes of the names a first name may stand for, from 
 | Point | Behavior |
 | --- | --- |
 | One of them has no date | Nothing is said. |
-| A reviewer's join, or a join from your own systems | Overrules it, whichever came first. Undoing the join gives the fact back. |
+| A reviewer's join, or a join from your own systems | Overrules it, whichever came first. Undoing the join gives the fact back. The exception is a caller or a browser joined to two people of two dates of birth: it goes with one of them, and the other join is in Matches. |
 | Where it shows | In `/links`, `/between`, `/match` and Matches, as related with `conflict: "birth"` or `"given"`, however high the score. Credit does not cross it. |
 | Where it does not | `/conflicts`, kept-apart lists, disputes and the audit log. Nobody decided it. |
 | A corrected date | The record keeps both values, so it is kept apart from neither, until it is forgotten. |
