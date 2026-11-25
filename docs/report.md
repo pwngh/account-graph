@@ -350,7 +350,7 @@ The `record` [lookup](http.md#lookup) of the conversion lists every value it has
 
 | Platform | When a value is restated |
 | --- | --- |
-| Google Ads | The value is sent again under the same id and overwrites the old one. Google cannot retract a conversion: at zero it still counts as one. |
+| Google Ads | The value is sent again under the same id and overwrites the old one. It is sent without the reason for it. Google cannot retract a conversion: at zero it still counts as one. |
 | Meta, Microsoft, TikTok | They keep the first value. Only the report changes. |
 
 ### Cost per outcome
@@ -408,4 +408,4 @@ Platforms add to a day for weeks, and the server reads the last seven days again
 | Days | A day runs midnight to midnight in the window's `timeZone`. The Channels view uses `REPORT_TIME_ZONE`. Use the ad account's time zone so the days match the costs. |
 | Work | The report is computed on request. It reads every outcome and missed call in the range, and follows their links fifty thousand people at a time. |
 | Platforms read automatically | Google Ads and Meta. Costs from Microsoft, TikTok and others are recorded as `cost`. |
-| Verification | The tracking parameters are each platform's documented names, untested against a live ad account. |
+| Verification | The tracking parameters are each platform's documented names, untested against a live ad account. Platform-reported conversions are shown as received, and no live ones have been read. |

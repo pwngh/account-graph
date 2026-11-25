@@ -268,8 +268,10 @@ A pair labelled both ways is left out and counted.
 ## Limitations
 
 - **Conflict checks.** account-graph runs none. A `split` acts on pairs you already know, and whom you may serve stays your decision.
+- **Splits from your own systems.** They are applied as received.
 - **Shared browsers.** A browser that both sides and a third person used can still be reached from each side.
 - **Many separations in one component.** Pairs are cut one after another, which can remove more in total than the best combined cut. The exact multicut or multiway cut is hard to compute.
 - **Score calibration.** Clusters come from the cuts above and carry no probability.
+- **Matches.** It covers subjects in the newest 10,000 sightings.
 - **Staff labels.** Staff find pairs that already look alike. A kind they search by looks better than it is, and strangers who share it are hardly in the file.
 - **Deleted evidence.** A merged-away record whose evidence was deleted cannot be used as a checked pair. The tool counts these, which were often the surest pairs.

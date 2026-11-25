@@ -301,6 +301,7 @@ curl -X POST https://graph.example.org/v1/record -H "authorization: Bearer $GRAP
 | Eligibility | Applies to a missed call, from after it began. An answered call that reached them sooner takes precedence. |
 | `not_returned` | Withdraws the report |
 | Order | The newest by `at`, then by `key`, stands. It may arrive before the call. |
+| Checks | None. A report is applied as received. |
 
 ## Call tags
 
@@ -347,6 +348,7 @@ Callers are stored as a hash of their number, so the view shows an ID. To find t
 | Channel numbers | Without a [pool](#number-pools), two visitors who tap a number within the tap window (three minutes by default, see [Busy numbers](#busy-numbers)) cannot be told apart, and a call dialed by hand is filed under the number's channel. |
 | Forged taps | A program can send taps. With `CALL_NUMBERS` set, the server keeps taps on tracking numbers only. It trusts three browsers per network in ten minutes, and links one caller per visitor. A forged tap can still make a call `ambiguous`. |
 | One caller per visitor | The rule is permanent. Each hidden call is its own caller, so a visitor linked to one is skipped for the next. |
+| Calls counted by length | Without [call results](#call-results), a call is counted by its length, which time in a queue can reach. |
 | Saved pool numbers | A call after the grace period is not linked to the visitor who saved the number, and one during another visitor's lease is linked to that visitor in error, unless the caller dialed that number before, when it was not that visitor's, or is tied to somebody already and the lease has ended, or the number was shown to that visitor within the grace and they did not tap it. More numbers mean longer rests and fewer errors. |
 | Copied pages | A saved or printed page keeps showing a pool number. |
 | Pool numbers | People behind one address, such as an office, share the three-browser limit. Carriers may label a number that many strangers are called back from. |

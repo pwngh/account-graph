@@ -103,11 +103,12 @@ Two answers are stored separately: measuring ads (`adUserData`) and personalizin
 | Outbox, on send | Skipped when the outcome says no to measuring ads, or when the last answer of the subject or the clicking browser was no. For an outcome that carries a yes, only a no given since counts. |
 | Personalization | A no does not stop the send. The answer is passed on when the outcome carries one, or when the subject and the clicking browser, if different, have both answered. Otherwise the platform gets no answer and applies the ad account's setting. |
 | Later answer | Replaces an earlier one. A dated answer always replaces one without a time. |
+| History | Each page view that reports consent adds a row. `account-graph prune` deletes superseded ones. |
 
 ## Limitations
 
 - This page makes no claim about any law.
 - Platform documentation does not state that a retraction deletes the data matched to reach a conversion.
-- A request marked `accepted` is unconfirmed beyond the platform's response.
+- A request marked `accepted` is unconfirmed beyond the platform's response. No live request has been made.
 - Consent covers advertising. Message consent, opt-outs, quiet hours and contact frequency belong to the system that calls or sends.
 - A no to advertising still records visits, calls and steps for your own report. Use `forget` to delete them.

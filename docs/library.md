@@ -417,7 +417,7 @@ const { counterparties, rings } = await graph.lookup({ kind: 'transfers', subjec
 
 `amount` is a whole number of the asset's smallest unit. `counterparties` has what was sent and received with each, the tie, and `imbalance`, which is 1 when value moved one way only. With `tiedOnly`, it keeps those tied by identity with three or more transfers.
 
-A ring is value that left a subject and returned through others: A paid B, B paid C, C paid A. Its `amount` is the least that moved on any step, and so the most that could have gone all the way round. `tied` counts the others in the subject's cluster. Rings of up to four subjects are found.
+A ring is value that left a subject and returned through others: A paid B, B paid C, C paid A. Its `amount` is the least that moved on any step, and so the most that could have gone all the way round. `tied` counts the others in the subject's cluster. Rings of up to four subjects are found. Flows and rings use running totals for each pair, without the order of transfers.
 
 ## Browser and desktop
 
@@ -453,5 +453,6 @@ const hardware = await hardwareId('my-game-client') // 'hardware:9c1f…'
 ## Limitations
 
 - **Hardware id.** The client reports it, so a modified client can send a false value.
+- **Windows.** The Windows hardware id is untested.
 - **Restatement.** Google has no way to retract a conversion. Meta, Microsoft and TikTok cannot restate one.
 - **Memory.** A memory graph is lost with its process, and so are its receipts. It copies all it holds before each entry, so it suits tests and small graphs.

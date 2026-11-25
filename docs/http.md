@@ -311,6 +311,8 @@ POST /v1/lookup
 
 `match`, `transfers`, `caller` and `journey` say why by `kinds`, such as `["phone", "device"]`. No identifier leaves the graph, because most are hashes of an email or a phone.
 
+A `find` by id matches the start of it and reads the subject table. A `journey` reads up to 60 subjects of one person, and keeps the state of a conversion without the time it was sent.
+
 `tiedOnly` keeps the counterparties tied by identity with three or more transfers.
 
 ## report

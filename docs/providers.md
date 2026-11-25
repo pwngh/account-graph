@@ -203,6 +203,7 @@ The setup steps come from each provider's pages, read in November 2026.
 
 - Each provider's endpoint has rejected an invalid key as this code expects. Live credentials are untested, including for the two cost readers.
 - Fingerprint: the pages read do not state the limits of the free plan.
+- Fingerprint: the two browser loaders are untested.
 - MaxMind: the pages read do not state where the portal shows the account ID.
 - Google Ads: the pages read do not state the service account's access level, whether a developer token is needed, or where to find the conversion action id and customer id.
 - Meta: the pages read do not state the source of the test event code.

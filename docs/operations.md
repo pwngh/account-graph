@@ -97,7 +97,7 @@ To pass the answer from a consent banner, set `window.accountGraphConsent = { ad
 
 The script stores the visitor's device id in a cookie named `ag_device`, marked `Secure`. The cookie requires HTTPS, except on `localhost`.
 
-Set `COOKIE=true` to have the server set the cookie instead. Safari deletes a cookie set by script after seven days; a cookie set by the server lasts. This works when the server answers on the site's own domain, or on a subdomain with `COOKIE=example.org`.
+Set `COOKIE=true` to have the server set the cookie instead. Safari deletes a cookie set by script after seven days; a cookie set by the server lasts. This works when the server answers on the site's own domain, or on a subdomain with `COOKIE=example.org`. The server-set cookie is untested in Safari.
 
 ### Multiple sites
 
@@ -269,7 +269,7 @@ The mark is signed with `LINK_SECRET`. The server records a visit with any other
 
 Each address may post a burst of 60 requests and 120 a minute to `/collect`. Beyond that the server answers 429 with a `retry-after` header.
 
-The limit protects the graph from a single sender, because a script can claim any origin. Set `RATE_LIMIT=off` only when a system in front already limits requests.
+The limit protects the graph from a single sender, because a script can claim any origin. Set `RATE_LIMIT=off` only when a system in front already limits requests. Each server process counts for itself.
 
 ## Upgrades
 
@@ -417,7 +417,7 @@ Set `ALERT_WEBHOOK` to a Slack incoming webhook, or any URL that accepts `{"text
 | Conversions are `LATE_HOURS` overdue | Due time of the oldest | Once a day while it lasts |
 | A missed caller from a paid visit has waited `RETURN_HOURS` | Campaign, time, and number of callback attempts | Once per wait |
 
-The server logs and stores an alert that fails to deliver, retries it every five minutes, and shows it on the Health view. The work it reports on continues. Without a webhook, alerts are stored and shown there.
+The server logs and stores an alert that fails to deliver, retries it every five minutes, and shows it on the Health view. The work it reports on continues. Without a webhook, alerts are stored and shown there. Delivery to a live alert webhook is untested.
 
 Send a test alert:
 
@@ -440,7 +440,7 @@ Set how many hours without a record raise an alert. All four settings are off by
 | Call results | `QUIET_RESULTS_HOURS` | Any result |
 | Campaign costs | `QUIET_COSTS_HOURS` | Any cost row |
 
-The check uses the time the server stored the record. Choose hours longer than your slowest night or weekend.
+The check uses the time the server stored the record. Choose hours longer than your slowest night or weekend. A stale feed is found by the absence of records. Records that are wrong are not found.
 
 ### Missed callers
 
@@ -472,7 +472,7 @@ OPEN_HOURS='{
 
 > **Set them together.** With `OPEN_HOURS` set, `RETURN_HOURS=24` is three working days of eight hours, and `8` is one.
 
-A day left out is closed. A span such as `18:00-02:00` runs past midnight and belongs to the day it starts on, so a holiday on that day closes all of it. Hours use `REPORT_TIME_ZONE`, or `"timeZone"` beside the days.
+A day left out is closed. A span such as `18:00-02:00` runs past midnight and belongs to the day it starts on, so a holiday on that day closes all of it. Hours use `REPORT_TIME_ZONE`, or `"timeZone"` beside the days. They are one weekly schedule and a list of closed days for the whole organization.
 
 The call summary reports the calls that began while you were closed, and their outcomes, under `closed`.
 
