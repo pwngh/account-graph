@@ -38,6 +38,7 @@ export function createMicrosoftTokens(options: MicrosoftTokenOptions): () => Pro
         scope: SCOPE,
         ...(options.clientSecret && { client_secret: options.clientSecret }),
       }),
+      signal: AbortSignal.timeout(10_000),
     })
     const body = (await response.json()) as { access_token?: string; refresh_token?: string; expires_in?: number; error?: string; error_description?: string }
     if (!response.ok || !body.access_token) {

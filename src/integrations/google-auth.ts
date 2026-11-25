@@ -43,6 +43,7 @@ export function createGoogleTokens(account: ServiceAccount, options: TokenOption
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }),
+      signal: AbortSignal.timeout(10_000),
     })
     const body = (await response.json()) as { access_token?: string; expires_in?: number; error?: string; error_description?: string }
     if (!response.ok || !body.access_token) {

@@ -46,6 +46,7 @@ export function createFingerprintVerifier(options: FingerprintOptions): Fingerpr
     if (!/^[\w.-]{1,128}$/.test(eventId)) return undefined
     const response = await fetcher(base + encodeURIComponent(eventId), {
       headers: { authorization: `Bearer ${options.secretKey}`, accept: 'application/json' },
+      signal: AbortSignal.timeout(10_000),
     })
     if (response.status === 404 || response.status === 400) return undefined
     if (!response.ok) throw new Error(`Fingerprint rejected the lookup with ${response.status}: ${await response.text()}`)

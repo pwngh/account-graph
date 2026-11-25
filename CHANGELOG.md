@@ -60,6 +60,7 @@
 - An ad click or a campaign visit in the window is credited before a call or text filed under its number.
 - A visit in the same cluster is credited, however weak the chain of links to it (`AttributedTouch.joined`). The outbox sends its click unless `confidence` is set.
 - A report, open calls and the board read the links of fifty thousand people at a time.
+- A change webhook is given up on after five seconds, and ad platforms and lookups after ten to thirty. Reads are answered while a long write lasts.
 - A journey shows no record, and no browser or caller, of a person in another group.
 - A policy's `apart` keeps two subjects apart whose dates of birth differ (`birthKey`, `Link.conflict`). Off by default.
 - `tools/accuracy` measures who is joined, rightly and wrongly, over made-up people. `docs/accuracy.md` has the figures of one run.

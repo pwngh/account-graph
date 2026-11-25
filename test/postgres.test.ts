@@ -299,6 +299,34 @@ if (!url) {
     }
   })
 
+  test('reads are answered while a long write lasts, however many writes wait for it', async () => {
+    const schema = `ag_test_${process.pid}_turns`
+    const few = new pg.Pool({ connectionString: url, max: 3 })
+    try {
+      const store = createPostgresStore(few, schema)
+      await store.migrate()
+      const graph = createGraph(store)
+      let done!: () => void
+      const held = new Promise<void>((resolve) => (done = resolve))
+      const order: string[] = []
+      const long = store.write(async () => void (await held, order.push('long')))
+      const waiting = Array.from({ length: 10 }, (_, i) => graph.observe({ subject: `account:${i}`, identifiers: ['email:e'], at: 1 + i }))
+      assert.equal(await Promise.race([graph.counts().then(() => 'answered'), new Promise((resolve) => setTimeout(resolve, 2_000, 'waited'))]), 'answered')
+      order.push('read')
+      done()
+      await Promise.all([long, ...waiting])
+      assert.deepEqual(order, ['read', 'long'])
+      assert.equal((await graph.cluster('account:0'))!.members.length, 10)
+      // One that fails holds up nobody.
+      await assert.rejects(store.write(async () => Promise.reject(new Error('refused'))), /refused/)
+      assert.equal((await graph.counts()).subjects, 10)
+      await graph.observe({ subject: 'account:10', identifiers: ['email:f'], at: 20 })
+    } finally {
+      await few.query(`drop schema if exists ${schema} cascade`)
+      await few.end()
+    }
+  })
+
   test('the server starts from the environment alone and serves a visit end to end', async () => {
     const schema = `ag_test_${process.pid}_serve`
     const lines: string[] = []

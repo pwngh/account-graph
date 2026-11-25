@@ -143,6 +143,7 @@ export function meta(options: MetaOptions): Target {
           data: items.map((item) => metaEvent(action, item, options.url)),
           ...(options.testEventCode && { test_event_code: options.testEventCode }),
         }),
+        signal: AbortSignal.timeout(30_000),
       })
       const body = await response.text()
       if (!response.ok) throw new MetaError(response.status, body)
@@ -187,7 +188,7 @@ export class MicrosoftError extends Error {
 export function microsoftAds(options: MicrosoftAdsOptions): Target {
   const fetcher = options.fetch ?? fetch
   const host = options.sandbox ? 'campaign.api.sandbox.bingads.microsoft.com' : 'campaign.api.bingads.microsoft.com'
-  const post = async (path: string, body: object, signal?: AbortSignal) =>
+  const post = async (path: string, body: object) =>
     fetcher(`https://${host}/CampaignManagement/v13/${path}/Apply`, {
       method: 'POST',
       headers: {
@@ -198,7 +199,7 @@ export function microsoftAds(options: MicrosoftAdsOptions): Target {
         'content-type': 'application/json',
       },
       body: JSON.stringify(body),
-      ...(signal && { signal }),
+      signal: AbortSignal.timeout(30_000),
     })
   return {
     name: 'microsoft',
@@ -223,7 +224,7 @@ export function microsoftAds(options: MicrosoftAdsOptions): Target {
           ...(job.keys.email && { HashedEmailAddress: job.keys.email }),
           ...(job.keys.phone && { HashedPhoneNumber: job.keys.phone }),
         })),
-      }, AbortSignal.timeout(30_000))
+      })
       const body = await response.text()
       if (!response.ok) throw new MicrosoftError(response.status, body)
       const refused = new Map<number, string>()
@@ -315,6 +316,7 @@ export function tiktok(options: TikTokOptions): Target {
         method: 'POST',
         headers: { 'Access-Token': token, 'content-type': 'application/json' },
         body: JSON.stringify({ event_source: 'web', event_source_id: options.pixelCode, data }),
+        signal: AbortSignal.timeout(30_000),
       })
       const body = await response.text()
       if (!response.ok) throw new TikTokError(response.status, body)
