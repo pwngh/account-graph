@@ -1,7 +1,7 @@
 {
   "name": "account-graph",
   "version": "0.1.0",
-  "description": "Link accounts by shared identifiers and attribute conversions",
+  "description": "Link accounts by shared identifiers and attribute conversions, in six calls",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -12,7 +12,7 @@
     "node": ">=22.18"
   },
   "bin": {
-    "account-graph": "./dist/serve.js"
+    "account-graph": "./dist/bin.js"
   },
   "files": [
     "dist",
@@ -22,74 +22,43 @@
     "LICENSE",
     "NOTICE"
   ],
+  "imports": {
+    "#src/*": "./src/*"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "node": "./dist/index.js",
+      "default": "./dist/remote.js"
     },
-    "./postgres": {
-      "types": "./dist/postgres.d.ts",
-      "default": "./dist/postgres.js"
-    },
-    "./server": {
-      "types": "./dist/server.d.ts",
-      "default": "./dist/server.js"
+    "./edge": {
+      "types": "./dist/edge/index.d.ts",
+      "default": "./dist/edge/index.js"
     },
     "./collect": {
-      "types": "./dist/collect.d.ts",
-      "default": "./dist/collect.js"
-    },
-    "./fingerprint": {
-      "types": "./dist/integrations/fingerprint.d.ts",
-      "default": "./dist/integrations/fingerprint.js"
-    },
-    "./fingerprint/browser": {
-      "types": "./dist/integrations/fingerprint-browser.d.ts",
-      "default": "./dist/integrations/fingerprint-browser.js"
+      "types": "./dist/edge/browser.d.ts",
+      "default": "./dist/edge/browser.js"
     },
     "./hardware": {
-      "types": "./dist/integrations/hardware.d.ts",
-      "default": "./dist/integrations/hardware.js"
+      "types": "./dist/edge/hardware.d.ts",
+      "default": "./dist/edge/hardware.js"
     },
-    "./maxmind": {
-      "types": "./dist/integrations/maxmind.d.ts",
-      "default": "./dist/integrations/maxmind.js"
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "default": "./dist/testing/index.js"
     },
-    "./google-auth": {
-      "types": "./dist/integrations/google-auth.d.ts",
-      "default": "./dist/integrations/google-auth.js"
-    },
-    "./serve": {
-      "types": "./dist/serve.d.ts",
-      "default": "./dist/serve.js"
-    },
-    "./microsoft-auth": {
-      "types": "./dist/integrations/microsoft-auth.d.ts",
-      "default": "./dist/integrations/microsoft-auth.js"
-    },
-    "./costs": {
-      "types": "./dist/integrations/costs.d.ts",
-      "default": "./dist/integrations/costs.js"
-    },
-    "./smarty": {
-      "types": "./dist/integrations/smarty.d.ts",
-      "default": "./dist/integrations/smarty.js"
-    },
-    "./twilio": {
-      "types": "./dist/integrations/twilio.d.ts",
-      "default": "./dist/integrations/twilio.js"
-    }
+    "./package.json": "./package.json"
   },
   "scripts": {
     "test": "node --test",
     "check": "tsc --noEmit",
-    "build": "tsc -p tsconfig.build.json && rm -rf dist/review && cp -R src/review dist/review",
+    "build": "tsc -p tsconfig.build.json && rm -rf dist/edge/review && cp -R src/edge/review dist/edge/review",
     "demo": "node demo.ts",
     "firm": "node examples/firm.ts",
     "bench": "node bench.ts",
     "prepublishOnly": "npm run check && npm test && npm run build",
     "review": "node tools/review-demo.ts",
-    "start": "node src/serve.ts",
+    "start": "node src/bin.ts",
     "live-check": "node tools/live-check.ts",
     "costs": "node tools/costs.ts",
     "labels": "node tools/labels.ts"

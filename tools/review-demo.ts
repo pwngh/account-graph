@@ -4,8 +4,8 @@
  * Then open the printed address and enter the reviewer token `demo`.
  */
 import { createServer } from 'node:http'
-import { createGraph, createHours, createMemoryStore, createOps, createOutbox, dialed, hashPhone, recordCall, recordCallResult, recordNotLead, recordReturn, recordText } from '../src/index.ts'
-import { createHandler } from '../src/server.ts'
+import { createGraph, createHours, createMemoryStore, createOps, createOutbox, dialed, hashPhone, recordCall, recordCallResult, recordNotLead, recordReturn, recordText } from './internals.ts'
+import { createHandler } from '../test/harness.ts'
 
 // What is recorded below is written down at the time it happened, so the months of first record are real ones.
 let writing: number | undefined

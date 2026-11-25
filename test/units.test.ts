@@ -6,16 +6,16 @@ import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { birthKeys, components, conversionEvent, createAlerter, createGraph, createHours, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, hoursProblems, ingestRequest, ip, knownLink, ladderProblems, measure, meta, metaEvent, nameKeys, normalizeEmail, normalizePhone, phoneOfType, codeIn, policyFrom, policyHash, policyProblems, readToken, scorePairs, signToken, sourceOf, textCode, withStage } from '../src/index.ts'
-import { summarizeCalls } from '../src/callreport.ts'
-import { followed } from '../src/followed.ts'
-import type { Caller, Followed } from '../src/followed.ts'
-import { dayIn, paid } from '../src/report.ts'
-import { weigh } from '../src/policy.ts'
-import type { Edge, IdentifierState, KeptCall, Reason } from '../src/index.ts'
-import { configFrom } from '../src/serve.ts'
-import { bodySignature } from '../src/sign.ts'
-import { createHandler } from '../src/server.ts'
+import { birthKeys, components, conversionEvent, createAlerter, createGraph, createHours, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, hoursProblems, ingestRequest, ip, knownLink, ladderProblems, measure, meta, metaEvent, nameKeys, normalizeEmail, normalizePhone, phoneOfType, codeIn, policyFrom, policyHash, policyProblems, readToken, scorePairs, signToken, sourceOf, textCode, withStage } from '../tools/internals.ts'
+import { summarizeCalls } from '../src/core/callreport.ts'
+import { followed } from '../src/core/followed.ts'
+import type { Caller, Followed } from '../src/core/followed.ts'
+import { dayIn, paid } from '../src/core/report.ts'
+import { weigh } from '../src/core/policy.ts'
+import type { Edge, IdentifierState, KeptCall, Reason } from '../tools/internals.ts'
+import { signWebhook } from '../src/contract/webhook.ts'
+import { readEnvironment as configFrom } from '../src/bin.ts'
+import { createHandler } from './harness.ts'
 import { counts } from './suite.ts'
 
 const T0 = 1_700_000_000_000
@@ -283,25 +283,25 @@ test('fit recovers the true weights from checked pairs', () => {
   assert.deepEqual(fit([], defaultPolicy).policy, defaultPolicy)
 })
 
-test('the server reads its settings from the environment and names everything wrong at once', (t) => {
-  const config = configFrom({ DATABASE_URL: 'postgres://db', GRAPH_TOKEN: 'svc', ORIGINS: 'https://a.example/, https://b.example ', COOKIE: 'a.example', RATE_BURST: '5' })
+test('the server reads its settings from the environment and names everything wrong at once', async (t) => {
+  const config = configFrom({ DATABASE_URL: 'postgres://db', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'svc', ORIGINS: 'https://a.example/, https://b.example ', COOKIE: 'a.example', RATE_BURST: '5' })
   assert.deepEqual(config.origins, ['https://a.example', 'https://b.example'])
-  assert.deepEqual([config.port, config.host, config.schema, config.outboxInterval], [8080, '0.0.0.0', 'account_graph', 30_000])
+  assert.deepEqual([config.port, config.host, config.schema, config.receiptSecrets], [8080, '0.0.0.0', 'account_graph', ['r'.repeat(32)]])
   assert.deepEqual(config.cookie, { domain: 'a.example' })
   assert.deepEqual(config.limit, { perMinute: 120, burst: 5 })
   assert.deepEqual([config.fingerprint, config.maxmind, config.google, config.meta, config.microsoft], [undefined, undefined, undefined, undefined, undefined])
-  assert.equal(configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', RATE_LIMIT: 'off', COOKIE: 'true' }).limit, false)
-  assert.equal(configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', COOKIE: 'true' }).cookie, true)
-  assert.deepEqual(['true', 'false', '2', undefined].map((value) => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', TRUST_PROXY: value }).trustProxy), [1, 0, 2, 0])
-    const calls = configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', EVENTS: 'inquiry, brochure', CALL_NUMBERS: '{"555-123-0001":{"source":"google"}}', TWILIO_AUTH_TOKEN: 't', TWILIO_WEBHOOK_URL: 'https://g.example/calls/twilio' })
-  assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', CHANGE_SECRET: 's' }), /CHANGE_SECRET requires CHANGE_WEBHOOK/)
-  assert.equal(configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', CHANGE_SECRET: 's', CHANGE_WEBHOOK: 'https://example.org/c' }).changeSecret, 's')
-  assert.equal(bodySignature('s', 5, '{}'), `t=5,v1=${createHmac('sha256', 's').update('5.{}').digest('hex')}`)
+  assert.equal(configFrom({ DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', RATE_LIMIT: 'off', COOKIE: 'true' }).limit, false)
+  assert.equal(configFrom({ DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', COOKIE: 'true' }).cookie, true)
+  assert.deepEqual(['true', 'false', '2', undefined].map((value) => configFrom({ DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', TRUST_PROXY: value }).trustProxy), [1, 0, 2, 0])
+    const calls = configFrom({ DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', EVENTS: 'inquiry, brochure', CALL_NUMBERS: '{"555-123-0001":{"source":"google"}}', TWILIO_AUTH_TOKEN: 't', TWILIO_WEBHOOK_URL: 'https://g.example/calls/twilio' })
+  assert.throws(() => configFrom({ DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', CHANGE_SECRET: 's' }), /now WEBHOOK_URL and WEBHOOK_SECRET/)
+  assert.equal(configFrom({ DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', WEBHOOK_SECRET: 's', WEBHOOK_URL: 'https://example.org/c' }).webhookSecret, 's')
+  assert.equal(await signWebhook('s', 5, '{}'), `t=5,v1=${createHmac('sha256', 's').update('5.{}').digest('hex')}`)
   const dir = mkdtempSync(join(tmpdir(), 'numbers-'))
   t.after(() => rmSync(dir, { recursive: true }))
   const listed = join(dir, 'numbers.json')
   writeFileSync(listed, '{"555-123-0002":{"source":"meta"}}')
-  const from = (more: object) => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', ...more })
+  const from = (more: object) => configFrom({ DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', ...more })
   assert.deepEqual([from({}).textCodes, from({ TEXT_CODES: 'true' }).textCodes, from({ TWILIO_AUTH_TOKEN: 't', TWILIO_TEXT_WEBHOOK_URL: 'https://g.example/t' }).twilioTexts], [false, true, { authToken: 't', url: 'https://g.example/t' }])
   assert.deepEqual(from({ CALL_NUMBERS_FILE: listed }).callNumbers, { '555-123-0002': { source: 'meta' } })
   assert.throws(() => from({ CALL_NUMBERS_FILE: listed, CALL_NUMBERS: '{}' }), /must not both be set/)
@@ -312,36 +312,36 @@ test('the server reads its settings from the environment and names everything wr
   }
   writeFileSync(listed, '{"x":{"source":"a"}}')
   assert.throws(() => from({ CALL_NUMBERS_FILE: listed }), /CALL_NUMBERS_FILE: "x" is not a phone number/)
-  assert.deepEqual([calls.callTapSeconds, configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', CALL_TAP_SECONDS: '60' }).callTapSeconds], [180, 60])
-  assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', CALL_TAP_SECONDS: '3601' }), /CALL_TAP_SECONDS/)
+  assert.deepEqual([calls.callTapSeconds, configFrom({ DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', CALL_TAP_SECONDS: '60' }).callTapSeconds], [180, 60])
+  assert.throws(() => configFrom({ DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', CALL_TAP_SECONDS: '3601' }), /CALL_TAP_SECONDS/)
   assert.deepEqual([calls.events, calls.callNumbers, calls.callMinimum, calls.twilio], [['inquiry', 'brochure'], { '555-123-0001': { source: 'google' } }, 30, { authToken: 't', url: 'https://g.example/calls/twilio' }])
-  assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', CALL_NUMBERS: '{"12":{}}', TWILIO_AUTH_TOKEN: 't', REPORT_TIME_ZONE: 'Mars/Olympus' }), (error: Error) =>
+  assert.throws(() => configFrom({ DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', CALL_NUMBERS: '{"12":{}}', TWILIO_AUTH_TOKEN: 't', REPORT_TIME_ZONE: 'Mars/Olympus' }), (error: Error) =>
     ['"12" is not a phone number', '"12" requires a source', 'TWILIO_WEBHOOK_URL, TWILIO_TEXT_WEBHOOK_URL or TWILIO_ACCOUNT_SID must be set along with TWILIO_AUTH_TOKEN', 'REPORT_TIME_ZONE must be a time zone'].every((line) => error.message.includes(line)))
-  assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', CALL_NUMBERS: '[1]' }), /CALL_NUMBERS must be a JSON object/)
+  assert.throws(() => configFrom({ DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', CALL_NUMBERS: '[1]' }), /CALL_NUMBERS must be a JSON object/)
 
   const full = configFrom({
-    DATABASE_URL: 'x', GRAPH_TOKEN: 'y', REVIEW_TOKENS: '{"dana":"z","lee":["new","old"]}', FINGERPRINT_SECRET: 'f', FINGERPRINT_REGION: 'eu',
+    DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', REVIEW_TOKENS: '{"dana":"z","lee":["new","old"]}', FINGERPRINT_SECRET: 'f', FINGERPRINT_REGION: 'eu',
     MAXMIND_ACCOUNT_ID: '1', MAXMIND_LICENSE_KEY: 'k', GOOGLE_ADS_CUSTOMER_ID: '123', GOOGLE_SERVICE_ACCOUNT_FILE: '/key.json',
     META_PIXEL_ID: 'p', META_ACCESS_TOKEN: 't', META_SITE_URL: 'https://a.example/',
   })
   assert.deepEqual(full.reviewers, { dana: 'z', lee: ['new', 'old'] })
   for (const [given, said] of [['[1]', 'must be a JSON object'], ['{"system:x":"a"}', 'cannot be a reviewer'], ['{"people":"a"}', 'cannot be a reviewer'], ['{" dana":"a"}', 'is not a name'], ['{"dana":""}', 'each token as a string'], ['{"dana":[]}', 'requires a token'], ['{"dana":"a","lee":"a"}', 'another reviewer']]) {
-    assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', REVIEW_TOKENS: given! }), (error: Error) => error.message.includes(said!), given)
+    assert.throws(() => configFrom({ DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', REVIEW_TOKENS: given! }), (error: Error) => error.message.includes(said!), given)
   }
-  const tried = { DATABASE_URL: 'x', GRAPH_TOKEN: 'change-me-service-token', REVIEW_TOKENS: '{"reviewer":"change-me-review-token"}', LINK_SECRET: 'change-me-link-secret-change-me-now' }
+  const tried = { DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'change-me-service-token', REVIEW_TOKENS: '{"reviewer":"change-me-review-token"}', LINK_SECRET: 'change-me-link-secret-change-me-now' }
   for (const ORIGINS of ['', 'http://localhost:3000,http://127.0.0.1:3000', 'http://app.localhost:3000', 'http://[::1]:3000']) configFrom({ ...tried, ORIGINS })
   for (const ORIGINS of ['https://example.org', 'https://site.test', 'http://localhost:3000,https://localhost.example.org']) {
     assert.throws(() => configFrom({ ...tried, ORIGINS }), (error: Error) => ['GRAPH_TOKEN', 'REVIEW_TOKENS', 'LINK_SECRET'].every((name) => error.message.includes(`${name} must be changed`)))
   }
-  configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', REVIEW_TOKENS: '{"change-me-later":"real"}', ORIGINS: 'https://example.org' })
-  assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', LINK_SECRET: 'x'.repeat(31) }), /at least 32/)
+  configFrom({ DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', REVIEW_TOKENS: '{"change-me-later":"real"}', ORIGINS: 'https://example.org' })
+  assert.throws(() => configFrom({ DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', LINK_SECRET: 'x'.repeat(31) }), /at least 32/)
   assert.deepEqual(full.fingerprint, { secretKey: 'f', region: 'eu' })
   assert.equal(full.maxmind!.service, 'insights')
   assert.equal(full.google!.keyFile, '/key.json')
   assert.equal(full.meta!.pixelId, 'p')
 
   assert.throws(
-    () => configFrom({ GRAPH_TOKEN: 'same', REVIEW_TOKENS: '{"dana":"same"}', PORT: 'eighty', MAXMIND_ACCOUNT_ID: '1', META_PIXEL_ID: 'p', FINGERPRINT_SECRET: 'f', FINGERPRINT_REGION: 'mars' }),
+    () => configFrom({ RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'same', REVIEW_TOKENS: '{"dana":"same"}', PORT: 'eighty', MAXMIND_ACCOUNT_ID: '1', META_PIXEL_ID: 'p', FINGERPRINT_SECRET: 'f', FINGERPRINT_REGION: 'mars' }),
     (error: Error) =>
       ['DATABASE_URL is required', 'PORT must be a number', 'MAXMIND_LICENSE_KEY must be set along with MAXMIND_ACCOUNT_ID', 'META_ACCESS_TOKEN, META_SITE_URL must be set along with META_PIXEL_ID', 'FINGERPRINT_REGION must be us, eu, or ap', 'REVIEW_TOKENS: "dana" has a token that is already the service\'s'].every((line) => error.message.includes(line)),
   )
@@ -389,9 +389,9 @@ test('a policy setting is laid over the default kind by kind, and everything wro
   assert.deepEqual(policyProblems({ same: 0.4 }), ['"related" must not be above "same"'])
   assert.equal(policyProblems({ kinds: { review: { weight: 0.95 } } }).length, 1)
 
-  const env = { DATABASE_URL: 'x', GRAPH_TOKEN: 'y' }
+  const env = { DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y' }
   assert.equal(configFrom(env).policy, undefined)
-  assert.equal(configFrom({ ...env, POLICY: '{"same":0.95}' }).policy!.same, 0.95)
+  assert.deepEqual(configFrom({ ...env, POLICY: '{"same":0.95}' }).policy, { same: 0.95 })
   assert.throws(() => configFrom({ ...env, POLICY: '{"same":9}' }), /POLICY: "same" must be a number from 0 to 1/)
   assert.throws(() => configFrom({ ...env, POLICY: 'nope' }), /POLICY must be JSON/)
   assert.throws(() => configFrom({ ...env, POLICY: '{}', POLICY_FILE: '/x' }), /must not both be set/)
@@ -399,14 +399,14 @@ test('a policy setting is laid over the default kind by kind, and everything wro
 })
 
 test('staff networks are read from a setting, and a range that is not one is named', () => {
-  const env = { DATABASE_URL: 'x', GRAPH_TOKEN: 'y' }
+  const env = { DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y' }
   assert.deepEqual(configFrom({ ...env, STAFF_NETWORKS: '192.0.2.10, 2001:db8::/32' }).staffNetworks, ['192.0.2.10', '2001:db8::/32'])
   assert.deepEqual(configFrom(env).staffNetworks, [])
   for (const bad of ['office', '192.0.2.0/33', '192.0.2.0/24/1', '2001:db8::/129', '192.0.2.0/', '/24']) assert.throws(() => configFrom({ ...env, STAFF_NETWORKS: bad }), /STAFF_NETWORKS: .* is not an address or a range/, bad)
 })
 
 test('call results are off until set, and read in minutes', () => {
-  const env = { DATABASE_URL: 'x', GRAPH_TOKEN: 'y' }
+  const env = { DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y' }
   assert.deepEqual([configFrom(env).callResults, configFrom(env).callResultWait], [undefined, 30])
   assert.deepEqual([configFrom({ ...env, CALL_RESULTS: 'expected', CALL_RESULT_WAIT: '10' }).callResults, configFrom({ ...env, CALL_RESULT_WAIT: '10' }).callResultWait], ['expected', 10])
   assert.throws(() => configFrom({ ...env, CALL_RESULTS: 'yes' }), /CALL_RESULTS must be expected/)
@@ -445,7 +445,7 @@ test('calls are counted by hour and weekday where they happened, and by what bec
 })
 
 test('quiet hours are off until set, and a call back is due after a day', () => {
-  const env = { DATABASE_URL: 'x', GRAPH_TOKEN: 'y' }
+  const env = { DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y' }
   assert.deepEqual([configFrom(env).quiet, configFrom(env).returnHours], [{ touches: 0, calls: 0, results: 0, costs: 0 }, 24])
   assert.deepEqual([configFrom({ ...env, QUIET_CALLS_HOURS: '6' }).quiet.calls, configFrom({ ...env, RETURN_HOURS: '0' }).returnHours], [6, 0])
   assert.throws(() => configFrom({ ...env, QUIET_COSTS_HOURS: 'often' }), /QUIET_COSTS_HOURS must be a number/)
@@ -455,7 +455,7 @@ test('quiet hours are off until set, and a call back is due after a day', () => 
 })
 
 test('a tracking number may say what it stands for', () => {
-  const env = { DATABASE_URL: 'x', GRAPH_TOKEN: 'y' }
+  const env = { DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y' }
   const numbers = { '+15550100001': { source: 'google', tags: { office_advertised: 'north', language: 'es' } } }
   assert.deepEqual(configFrom({ ...env, CALL_NUMBERS: JSON.stringify(numbers) }).callNumbers, numbers)
   assert.throws(() => configFrom({ ...env, CALL_NUMBERS: '{"+15550100001":{"source":"x","tags":{"Office":"n"}}}' }), /CALL_NUMBERS: "\+15550100001" has a tag named "Office"/)
@@ -794,8 +794,8 @@ test('a step fills in what an outcome leaves out, and nothing it states', () => 
   ])
   assert.deepEqual(ladderProblems({ g: { action: 5 }, h: { action: ['x'] }, i: { action: '' } }, ['google']).length, 3)
   assert.deepEqual(ladderProblems([1], []), ['must be an object of steps, such as {"inquiry":{"value":5}}'])
-  assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', STAGES: '{"inquiry":{"value":"5"}}' }), /STAGES: step "inquiry" requires a value of zero or more/)
-  assert.deepEqual(configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', STAGES: '{"inquiry":{"value":5}}', ALERT_WEBHOOK: 'https://hooks.example/x' }).stages, { inquiry: { value: 5 } })
+  assert.throws(() => configFrom({ DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', STAGES: '{"inquiry":{"value":"5"}}' }), /STAGES: step "inquiry" requires a value of zero or more/)
+  assert.deepEqual(configFrom({ DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', STAGES: '{"inquiry":{"value":5}}', ALERT_WEBHOOK: 'https://hooks.example/x' }).stages, { inquiry: { value: 5 } })
 })
 
 test('an alert is posted once per subject per quiet period, and a broken webhook breaks nothing', async () => {
@@ -842,23 +842,23 @@ test('a phone number counts by the kind of line it is', () => {
   assert.equal(defaultPolicy.kinds.voip!.weight < defaultPolicy.related + 0.01 && defaultPolicy.kinds.address!.weight < defaultPolicy.same, true)
 
   // Twilio serves call reports with a webhook address and line lookups with an account id; one token does for both.
-  const both = configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', TWILIO_AUTH_TOKEN: 't', TWILIO_ACCOUNT_SID: 'AC1', TWILIO_WEBHOOK_URL: 'https://g.example/calls/twilio', SMARTY_AUTH_ID: 'id', SMARTY_AUTH_TOKEN: 'tok' })
+  const both = configFrom({ DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', TWILIO_AUTH_TOKEN: 't', TWILIO_ACCOUNT_SID: 'AC1', TWILIO_WEBHOOK_URL: 'https://g.example/calls/twilio', SMARTY_AUTH_ID: 'id', SMARTY_AUTH_TOKEN: 'tok' })
   assert.deepEqual([both.twilio, both.lineType, both.smarty], [{ authToken: 't', url: 'https://g.example/calls/twilio' }, { accountSid: 'AC1', authToken: 't' }, { authId: 'id', authToken: 'tok' }])
-  const lookupOnly = configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', TWILIO_AUTH_TOKEN: 't', TWILIO_ACCOUNT_SID: 'AC1' })
+  const lookupOnly = configFrom({ DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', TWILIO_AUTH_TOKEN: 't', TWILIO_ACCOUNT_SID: 'AC1' })
   assert.deepEqual([lookupOnly.twilio, lookupOnly.lineType], [undefined, { accountSid: 'AC1', authToken: 't' }])
-  assert.throws(() => configFrom({ DATABASE_URL: 'x', GRAPH_TOKEN: 'y', TWILIO_ACCOUNT_SID: 'AC1', SMARTY_AUTH_ID: 'id' }), (error: Error) =>
+  assert.throws(() => configFrom({ DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', TWILIO_ACCOUNT_SID: 'AC1', SMARTY_AUTH_ID: 'id' }), (error: Error) =>
     ['TWILIO_AUTH_TOKEN must be set along with TWILIO_ACCOUNT_SID', 'SMARTY_AUTH_TOKEN must be set along with SMARTY_AUTH_ID'].every((line) => error.message.includes(line)))
 })
 
 test('IDENTIFIER_SECRET is checked', () => {
-  const env = { DATABASE_URL: 'x', GRAPH_TOKEN: 'y', ALERT_WEBHOOK: 'https://hooks.example/x' }
+  const env = { DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', ALERT_WEBHOOK: 'https://hooks.example/x' }
   assert.equal(configFrom(env).identifierSecret, undefined)
   assert.equal(configFrom({ ...env, IDENTIFIER_SECRET: 'x'.repeat(32) }).identifierSecret, 'x'.repeat(32))
   assert.throws(() => configFrom({ ...env, IDENTIFIER_SECRET: 'short' }), /IDENTIFIER_SECRET must be at least 32 characters/)
 })
 
 test('the number pool is off until numbers are given, and its settings are checked', () => {
-  const env = { DATABASE_URL: 'x', GRAPH_TOKEN: 'y', ALERT_WEBHOOK: 'https://hooks.example/x' }
+  const env = { DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', ALERT_WEBHOOK: 'https://hooks.example/x' }
   assert.deepEqual(configFrom(env).poolNumbers, [])
   const { poolNumbers, poolMinutes, poolGrace } = configFrom({ ...env, POOL_NUMBERS: '+15550100001, (555) 010-0002', POOL_MINUTES: '20', POOL_GRACE_MINUTES: '0' })
   assert.deepEqual([poolNumbers, poolMinutes, poolGrace], [['+15550100001', '(555) 010-0002'], 20, 0])
@@ -953,7 +953,7 @@ test('opening hours count time while open, across nights, holidays, clock change
     [{ mon: ['09:00-17:00'], holidays: '2026-12-25' }, '"holidays" must be a list, such as ["2026-12-25"]'],
     [{ mon: ['09:00-17:00'], timeZone: 'Mars' }, '"timeZone" must be a time zone, such as America/New_York'],
   ] as const) assert.deepEqual(hoursProblems(given), [problem])
-  const env = { DATABASE_URL: 'x', GRAPH_TOKEN: 'y', ALERT_WEBHOOK: 'https://hooks.example/x' }
+  const env = { DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', ALERT_WEBHOOK: 'https://hooks.example/x' }
   assert.equal(configFrom(env).openHours, undefined)
   assert.deepEqual(configFrom({ ...env, OPEN_HOURS: '{"mon":["09:00-24:00"]}' }).openHours, { mon: ['09:00-24:00'] })
   assert.throws(() => configFrom({ ...env, OPEN_HOURS: '{"mon":["9"]}' }), /OPEN_HOURS: "mon" has "9"/)

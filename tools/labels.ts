@@ -8,9 +8,9 @@
  * names your people, so keep it outside the repository. Only counts are printed.
  */
 import { readFileSync } from 'node:fs'
-import { fit } from '../src/index.ts'
-import type { Labeled, Policy } from '../src/index.ts'
-import { parseCsv } from '../src/integrations/costs.ts'
+import { fit } from './internals.ts'
+import type { Labeled, Policy } from './internals.ts'
+import { parseCsv } from '../src/providers/costs.ts'
 
 const [file] = process.argv.slice(2)
 const { GRAPH_URL, GRAPH_TOKEN } = process.env
@@ -19,7 +19,7 @@ if (!file || !GRAPH_URL || !GRAPH_TOKEN) {
   process.exit(2)
 }
 const read = async (path: string): Promise<any> => {
-  const response = await fetch(new URL(path, GRAPH_URL), { headers: { authorization: `Bearer ${GRAPH_TOKEN}` } })
+  const response = await fetch(new URL(`/review/api${path}`, GRAPH_URL), { headers: { authorization: `Bearer ${GRAPH_TOKEN}` } })
   if (!response.ok) throw new Error(`The server answered ${response.status}: ${await response.text()}`)
   return response.json()
 }

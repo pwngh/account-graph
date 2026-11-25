@@ -86,7 +86,7 @@ GOOGLE_SERVICE_ACCOUNT_FILE=/secrets/key.json
 GOOGLE_ADS_LOGIN_CUSTOMER_ID=…                 # only when the service account belongs to a manager account
 ```
 
-An outcome names the conversion action by its id: `action: { google: '987654321' }`.
+A conversion, or its step, names the conversion action by its id: `"actions": { "google": "987654321" }`, or `"action"` in [`STAGES`](report.md#steps).
 
 ## Meta
 
@@ -102,7 +102,7 @@ META_SITE_URL=https://example.org/       # sent as the page of an event when the
 META_TEST_EVENT_CODE=…                   # optional: routes events to Meta's test tool instead
 ```
 
-An outcome names a Meta event: `action: { meta: 'Lead' }`. Meta rejects an event more than seven days old.
+A conversion names a Meta event: `"actions": { "meta": "Lead" }`. Meta rejects an event more than seven days old.
 
 ## Microsoft Advertising
 
@@ -123,7 +123,7 @@ MICROSOFT_ACCOUNT_ID=…
 MICROSOFT_CLIENT_SECRET=…     # only for a web app registration
 ```
 
-An outcome names the goal: `action: { microsoft: 'Enrolled' }`. Wait two hours after creating a goal before sending to it, as Microsoft advises. Microsoft rejects a conversion more than 90 days old.
+A conversion names the goal: `"actions": { "microsoft": "Enrolled" }`. Wait two hours after creating a goal before sending to it, as Microsoft advises. Microsoft rejects a conversion more than 90 days old.
 
 ## TikTok
 
@@ -139,7 +139,7 @@ TIKTOK_ACCESS_TOKEN=…
 TIKTOK_SITE_URL=https://example.org/     # sent as the page of an event when the click's landing page is unknown
 ```
 
-An outcome names a TikTok event: `action: { tiktok: 'CompleteRegistration' }`. The script tag collects the `ttclid` from the landing page address.
+A conversion names a TikTok event: `"actions": { "tiktok": "CompleteRegistration" }`. The script tag collects the `ttclid` from the landing page address.
 
 ## Twilio
 
@@ -169,11 +169,11 @@ SMARTY_AUTH_ID=…
 SMARTY_AUTH_TOKEN=…
 ```
 
-The server sends the key in a header. Smarty answers 401 for a wrong key and 402 for an expired subscription. In both cases the server logs the error and omits the address from the sighting.
+The server sends the key in a header. Smarty answers 401 for a wrong key and 402 for an expired subscription. In both cases the address is omitted from the sighting, and its note says the service did not answer.
 
 ## Campaign costs
 
-The server reads campaign costs for [the report](report.md) from Google Ads and Meta. Send the costs of other platforms to `POST /costs`.
+The server reads campaign costs for [the report](report.md) from Google Ads and Meta. Record the costs of other platforms as [`cost` entries](report.md#costs).
 
 **Google Ads.** Costs come from the Google Ads API, version 26, which requires a developer token.
 

@@ -7,8 +7,10 @@
  * campaign_id, campaign, currency, clicks, impressions. A day is written
  * YYYY-MM-DD. Sending a file again replaces the rows it names.
  */
-import { readFileSync } from 'node:fs'
-import { costsFromCsv } from '../src/integrations/costs.ts'
+import { createHash } from 'node:crypto'
+import { readFileSync, statSync } from 'node:fs'
+import { accountGraph } from '../src/index.ts'
+import { costsFromCsv } from '../src/providers/costs.ts'
 
 const [file] = process.argv.slice(2)
 const { GRAPH_URL, GRAPH_TOKEN } = process.env
@@ -17,14 +19,14 @@ if (!file || !GRAPH_URL || !GRAPH_TOKEN) {
   process.exit(2)
 }
 const costs = costsFromCsv(readFileSync(file, 'utf8'))
-const response = await fetch(new URL('/costs', GRAPH_URL), {
-  method: 'POST',
-  headers: { authorization: `Bearer ${GRAPH_TOKEN}`, 'content-type': 'application/json' },
-  body: JSON.stringify(costs),
-})
-const answer = await response.text()
-if (!response.ok) {
-  console.error(`The server answered ${response.status}: ${answer}`)
+const graph = accountGraph({ url: GRAPH_URL, token: GRAPH_TOKEN })
+// The same file has the same key, so it is recorded once. One that changed has another, and the newest read stands.
+const at = Math.floor(statSync(file).mtimeMs)
+const key = `file ${createHash('sha256').update(JSON.stringify([at, costs])).digest('hex').slice(0, 32)}`
+const { results: [result] } = await graph.record({ entries: [{ type: 'cost', key, at, rows: costs.map((row) => ({ ...row, currency: row.currency || 'USD' })) }] })
+if (!result!.ok) {
+  console.error(`The server refused it: ${result!.reason}`)
   process.exit(1)
 }
-console.log(`Recorded ${costs.length} rows`)
+console.log(`Recorded ${costs.length} rows${result!.value.duplicate ? ', as before' : ''}`)
+await graph.close()

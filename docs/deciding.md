@@ -92,7 +92,7 @@ contact:1 { email, born 1980-02-03 } ──┐
 contact:2 { email, born 1984-07-01 } ──┘
 ```
 
-With `IDENTIFIER_SECRET` set, the server then keeps a keyed `birth` of each `dob` sent to [`/identify`](identify.md), as a note that links nothing. Two subjects that would be in one group, both have a `birth`, and share no value of it are kept apart, whatever path joins them.
+With `IDENTIFIER_SECRET` set, the server then keeps a keyed `birth` of each `dob` in a [`profile`](identify.md), as a note that links nothing. Two subjects that would be in one group, both have a `birth`, and share no value of it are kept apart, whatever path joins them.
 
 With `given` it keeps keyed notes of the names a first name may stand for, from the table in `src/names.ts`: `Bob` stands for `Robert`, and `Lupe` for `Guadalupe`.
 
@@ -107,9 +107,9 @@ With `given` it keeps keyed notes of the names a first name may stand for, from 
 | Point | Behavior |
 | --- | --- |
 | One of them has no date | Nothing is said. |
-| A reviewer's join, or a join from your own systems | Overrules it, whichever came first. Undoing the join gives the fact back. The exception is a caller or a browser joined to two people of two dates of birth: it goes where the fewest such joins are left out, then with whoever was seen first, and the others are in Matches. Same changes nothing there: separate the caller from the one it is not. |
-| Where it shows | In `/links`, `/between`, `/match` and Matches, as related with `conflict: "birth"` or `"given"`, however high the score. Credit does not cross it. |
-| Where it does not | `/conflicts`, kept-apart lists, disputes and the audit log. Nobody decided it. |
+| A merge, by a reviewer or from your own systems | Overrules it, whichever came first. Taking the merge back gives the fact back. The exception is a caller or a browser joined to two people of two dates of birth: it goes where the fewest such joins are left out, then with whoever was seen first, and the others are in Matches. Same changes nothing there: `split` the caller from the one it is not. |
+| Where it shows | In the `match` lookup, the Accounts view and Matches, as related with `conflict: "birth"` or `"given"`, however high the score. Credit does not cross it. |
+| Where it does not | The `conflicts` lookup, kept-apart lists, disputes and the audit log. Nobody decided it. |
 | A corrected date | The record keeps both values, so it is kept apart from neither, until it is forgotten. |
 | Shared browsers and callers | They go with one of the two, as after a separation. |
 | Turning it on, or a new version of it | Rebuild once. Dates and names sent before are not known, or not all that is now kept of them: send them again. |
@@ -118,71 +118,100 @@ It is off unless a policy lists it, and no preset does. On made-up people at the
 
 ## Model assumptions
 
-The result is a model score, uncalibrated as a probability. Correlated evidence makes it overconfident at any weights. Use [`fit`](library.md#fitting-the-weights) to compare it with pairs you have checked.
+The result is a model score, uncalibrated as a probability. Correlated evidence makes it overconfident at any weights. Use [checked pairs](#checked-pairs-from-a-file) to compare it with what you know.
 
 | Assumption | Where it fails |
 | --- | --- |
 | Coincidences are independent. | A household shares its phone, address and connection for one reason. Kinds in one `group` count once. Correlated kinds outside a group count twice. |
-| Evidence only adds. | Shared and differing facts cannot lower a score. Two different dates of birth have no effect. Record the difference with `separate`. |
+| Evidence only adds. | Shared and differing facts cannot lower a score. Two different dates of birth have no effect. Record the difference with `split`. |
 | One weight fits a kind. | A phone typed by staff is weaker than one a caller dialed from. Use [presets](presets.md). |
 | Evidence fades with the gap. | Sightings that overlap do not fade, however old. A kind without a half-life keeps full evidence. |
 
 ## Asking about conflicts
 
-`POST /conflicts` takes the people of a matter and answers which of them are kept apart, from each other or from anyone on record.
+The `conflicts` [lookup](http.md#lookup) takes the people of a matter and answers which of them are kept apart, from each other or from anyone on record.
 
 | `how` | Meaning |
 | --- | --- |
-| `recorded` | The two were separated |
+| `recorded` | The two were split |
 | `same` | One is the same person as somebody separated from the other, or from somebody the other is |
 | `possible` | One is only related to such a person. Somebody has to look. |
 
-`rests` is the separated pair the answer rests on. Where the other side was not asked about, `b` is whoever on record they are kept apart from.
+`rests` is the split pair the answer rests on. Where the other side was not asked about, `b` is whoever on record they are kept apart from.
 
 > **An empty list says that none is known here.** It does not say that there is none, and it does not replace your own conflict check. If the server cannot be reached, say that it was not asked.
 
 ## Decisions from your own systems
 
-Your systems hold facts the graph cannot infer. Report them with `/separate` and `/join`.
+Your systems hold facts the graph cannot infer. Report them with [`decide`](http.md#decide).
 
 | Fact | Owner | What to send |
 | --- | --- | --- |
-| Who is on the other side of a matter | Your case system. People who share a phone, a child or a case may be on one side or on two. | The pair, to `/separate`. |
-| Which contact a call was about | Staff, when they take the call. | The caller and contact, to `/join`, when they are one person. A parent calling about a child is a separate person. [Caller attribution](presets.md#caller-attribution) depends on it. |
+| Who is on the other side of a matter | Your case system. People who share a phone, a child or a case may be on one side or on two. | The pair, as a `split`. |
+| Which contact a call was about | Staff, when they take the call. | The caller and contact, as a `merge`, when they are one person. A parent calling about a child is a separate person. [Caller attribution](presets.md#caller-attribution) depends on it. |
 | Whether a person may be contacted | The system that sends messages. Consent here covers advertising only. | Message consent, opt-outs, quiet hours and contact frequency stay there. |
 
-### Separate
+| Action | Behavior |
+| --- | --- |
+| `split` | Holds whatever the two share later. Withdraw it with `unsplit`. It can be recorded before either account exists. |
+| `merge` | The strongest link. A split still wins: merging an account with one side of a split pair pulls it away from the other. Take it back with `unmerge`. |
+| `mute` | Stops linking through one email, phone, IP address or identifier. Give it back with `unmute`. |
+
+The reviewer screen calls a merge a join, and a split a separation.
+
+### Split
 
 Send a pair that is two people. The two stay in separate clusters while the decision stands.
 
-```sh
-curl -X POST https://graph.example.org/separate -H "authorization: Bearer $GRAPH_TOKEN" \
-  -d '{"source":"cases","pairs":[{"a":"contact:7","b":"contact:12","reason":"sides of one matter"}]}'
+```bash
+curl -X POST https://graph.example.org/v1/decide -H "authorization: Bearer $GRAPH_TOKEN" -d '{
+  "key": "matter-31", "at": 1795460000000, "by": "system:cases", "action": "split",
+  "pairs": [{ "a": "contact:7", "b": "contact:12", "reason": "sides of one matter" }] }'
 ```
 
 ```json
-{ "changes": [{ "subject": "contact:12", "from": "contact:7", "to": "contact:12" }], "recorded": 1, "already": 0 }
+{ "ok": true, "value": { "duplicate": false, "changes": [{ "subject": "contact:7", "from": "contact:12", "to": "contact:7" }], "recorded": 1, "already": 0, "notAsAsked": [] } }
 ```
 
 Send it at intake, when your conflict check runs, instead of in a later batch. Until it arrives, an outcome of one side can be credited to the other's ad click. Once it stands, neither is reached from the other, directly or through a third subject.
 
-A list is written in one transaction, with one decision per pair by `system:cases`. A pair whose last report agrees and still holds is left alone, so a system can send its whole list again.
+A list is written in one transaction, with one decision per pair. A pair whose last report agrees and still holds is left alone and counted under `already`, so a system can send its whole list again, with a new key. Sign a system's decisions `system:` and its name, so people's and systems' are told apart.
 
 > **Reasons are permanent.** A reason stays in the audit log after its subjects are deleted. Name the kind of matter and leave out the matter itself.
 
-### Join
+### Merge
 
-Report a record merge in another system to `/join`. A join can be undone. Calling `forget` on the merged-away record deletes what it knew.
+Report a record merge in another system as a `merge`. Calling `forget` on the merged-away record deletes what it knew.
+
+### Taking a merge back
+
+Send `unmerge` with the same pair. There is nothing to keep from the merge.
+
+```json
+{ "key": "undo-ticket-88", "at": 1795463600000, "by": "dana", "action": "unmerge", "pairs": [{ "a": "contact:7", "b": "contact:12" }] }
+```
+
+| Answer | Meaning |
+| --- | --- |
+| `"ok": true`, `notAsAsked` empty | The pair is apart |
+| `"ok": true`, the pair in `notAsAsked` with `evidence` | The merge is taken back, and what the two share still joins them |
+| `"ok": true`, the pair in `notAsAsked` with `other_merges` | The merge is taken back, and merges with others still join them |
+| `NOT_JOINED` with `apart` | Nobody merged the pair, and they are not together |
+| `NOT_JOINED` with `evidence` | Nobody merged the pair. What they share joins them. |
+| `NOT_JOINED` with `other_merges` | Nobody merged the pair. Merges with others join them. |
+
+`NOT_JOINED` for one pair refuses all of the list. To keep two apart whatever they share, use `split`.
+
+The audit log keeps the merge and its undoing.
 
 ### Conflicting reports
 
 | Case | Result |
 | --- | --- |
-| One person entered on both sides | Split, and stays split until the pair is withdrawn with `separated: false`. |
+| One person entered on both sides | Split, and stays split until the pair is withdrawn with `unsplit`. |
 | Two records of one person sent as a pair | The duplicate is blocked until the pair is withdrawn. |
-| Two systems that disagree | Each report that contradicts the last is recorded. A separation holds over a join. At three contradictions the pair is flagged on the reviewer screen and in `GET /disputes`. |
-
-System separations bias `fit`, because they were picked for what the two share. `reviewed({ exclude: 'system:' })` leaves them out.
+| A merge of a pair that is split | Recorded, and the pair is in `notAsAsked` with `split`. A split holds over a merge. |
+| Two systems that disagree | Each report that contradicts the last is recorded. At three contradictions the pair is flagged on the reviewer screen. |
 
 ## Measured weights
 
@@ -201,33 +230,27 @@ The defaults follow from these measurements:
 - **Shared values.** A handful of fingerprints, each shared by more than twenty people, can produce most same-fingerprint pairs. Under 2% of those pairs are one person, and caps exclude them.
 - **IP address.** One shared by exactly two people points at the same one about 42% of the time, and by three to five about 9%. Its evidence thins with the square of the number sharing it.
 
-The other rows are unmeasured priors, including 0.60 for postal `address`. `measure` and `fit` compute values from pairs you have confirmed by hand.
+The other rows are unmeasured priors, including 0.60 for postal `address`. [Checked pairs](#checked-pairs-from-a-file) give values of your own.
 
 ## Changing the policy
 
-Change a setting, then call `rebuild()` to recompute every cluster under the new policy. On the server, set the change in `POLICY` and post to `/rebuild`. See [the policy](operations.md#policy).
+Set the change in `POLICY`, then run `account-graph rebuild` to recompute every cluster under the new policy. See [the policy](operations.md#policy).
 
-```ts
-import { createGraph, defaultPolicy } from 'account-graph'
-
-let policy = { ...defaultPolicy, kinds: { ...defaultPolicy.kinds, hardware: { ...defaultPolicy.kinds.hardware, weight: 0.8 } } }
-let graph = createGraph(store, policy)
-await graph.rebuild({ by: 'ops', reason: 'hardware ids are shared in internet cafes' })
+```sh
+POLICY='{"kinds":{"hardware":{"weight":0.8}}}' account-graph rebuild
 ```
 
 | Symptom | Change |
 | --- | --- |
 | Household members joined by a phone and an address together | Put the kinds a household shares in one `group`. |
 | Strangers joined, always by one kind | Lower that kind's `weight` below `same` (0.9), so it relates without joining. |
-| One value joins many subjects, such as a shared mailbox or a kiosk | `ignore` that value. If it recurs for the kind, lower the kind's `cap`. |
+| One value joins many subjects, such as a shared mailbox or a kiosk | `mute` that value. If it recurs for the kind, lower the kind's `cap`. |
 | Known duplicates are only related | Raise the `weight` of the kind they share, or record more identifiers at sign-in. |
 | Subjects joined by sightings months apart | Shorten the kind's `halfLife`. |
 | Two groups joined through one account that touches both | Raise `bridge`. |
 | Too many or too few clusters flagged for review | Change `review`, the flagging size. |
 
-`fit(await graph.reviewed(), policy)` sets every weight from the pairs your reviewers joined or separated, and reports how far each moved.
-
-A setting applies to every subject. Fix a single pair with a reviewer decision: `separate`, `join` or `ignore`.
+A setting applies to every subject. Fix a single pair with a decision: `split`, `merge` or `mute`.
 
 ### Checked pairs from a file
 
@@ -244,9 +267,9 @@ A pair labelled both ways is left out and counted.
 
 ## Limitations
 
-- **Conflict checks.** account-graph runs none. `/separate` acts on pairs you already know, and whom you may serve stays your decision.
+- **Conflict checks.** account-graph runs none. A `split` acts on pairs you already know, and whom you may serve stays your decision.
 - **Shared browsers.** A browser that both sides and a third person used can still be reached from each side.
 - **Many separations in one component.** Pairs are cut one after another, which can remove more in total than the best combined cut. The exact multicut or multiway cut is hard to compute.
 - **Score calibration.** Clusters come from the cuts above and carry no probability.
 - **Staff labels.** Staff find pairs that already look alike. A kind they search by looks better than it is, and strangers who share it are hardly in the file.
-- **Deleted evidence.** A merged record whose evidence was deleted cannot be used as a checked pair. The tool counts these, which were often the surest pairs.
+- **Deleted evidence.** A merged-away record whose evidence was deleted cannot be used as a checked pair. The tool counts these, which were often the surest pairs.

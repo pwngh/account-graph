@@ -138,7 +138,7 @@ test('what staff do at intake adds to a world, names its people and is reported'
   for (const kind of ['join', 'merge', 'speaks'] as const) assert.ok(taken.events.some((event) => event.kind === kind && !kept.has(event)), kind)
   const peopleOf = new Map(taken.truths.map(({ subject, people }) => [subject, people]))
   for (const event of taken.events) if (event.kind === 'join' && event.intake) assert.ok(peopleOf.has(event.subject))
-  const { clusterOf } = await play(taken, { intake: true }, 10, await import('../src/index.ts').then(async (index) => ({ ...index, ...(await import('../src/server.ts')) })))
+  const { clusterOf } = await play(taken, { intake: true }, 10, await import('../tools/internals.ts').then(async (index) => ({ ...index, ...(await import('./harness.ts')) })))
   for (const { subject } of taken.truths) assert.ok(clusterOf.has(subject), subject)
 })
 

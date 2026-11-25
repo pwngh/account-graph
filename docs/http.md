@@ -1,197 +1,442 @@
 # HTTP API
 
-The server speaks JSON over plain HTTP. Your services authenticate with a token, and browsers call the routes that need none.
+Six calls over plain HTTP, in JSON. Your services authenticate with a token. Browsers and Twilio have routes of their own. Long answers on this page are shortened.
 
-```sh
-curl -X POST https://graph.example.org/observe \
+> **One rule.** `POST /v1/<call>` takes the call's argument as its body, and the 200 body is the call's answer. The [library](library.md) makes the same calls with the same shapes.
+
+```bash
+curl -X POST https://graph.example.org/v1/record \
   -H "authorization: Bearer $GRAPH_TOKEN" \
-  -d '{"subject":"account:42","identifiers":["device:9f3c"],"at":1795460000000,"event":"login"}'
+  -d '{"entries":[{"type":"profile","key":"login-9001","at":1795460000000,"subject":"account:42","event":"login","facts":{"device":"9f3c"}}]}'
 ```
 
 ```json
-[{ "subject": "account:42", "from": "account:42", "to": "account:17" }]
+{ "results": [{ "type": "profile", "key": "login-9001", "ok": true,
+    "value": { "duplicate": false, "stands": true, "changes": [{ "subject": "account:42", "from": "account:42", "to": "account:17" }], "notes": {} } }] }
 ```
 
-The response lists cluster changes. This login joined `account:42` to the cluster of `account:17`. An empty list means the clusters stayed the same.
+`changes` lists the subjects whose cluster changed. This login joined `account:42` to the cluster of `account:17`.
 
-## Authentication
+| Call | Does | Keyed |
+| --- | --- | --- |
+| [`record`](#record) | Writes what happened: 1 to 100 entries | Each entry |
+| [`decide`](#decide) | Merges, splits and mutes, and takes each back | Yes |
+| [`forget`](#forget) | Deletes 1 to 50 subjects | Yes |
+| [`lookup`](#lookup) | Reads about people and records | No |
+| [`report`](#report) | Reads figures and lists | No |
+| [`events`](#events) | Reads what happened since a cursor | No |
+
+## Tokens
 
 Send a token in the `authorization` header as `Bearer …`.
 
-| Token | Set in | Opens |
+| Call | Service token (`GRAPH_TOKEN`) | Reviewer token (`REVIEW_TOKENS`) |
 | --- | --- | --- |
-| Service | `GRAPH_TOKEN` | Every route. Use it from your own backend. |
-| Reviewer | `REVIEW_TOKENS` | The routes of the reviewer screen. Decisions are signed with the reviewer's name. |
+| `record`, `events` | Yes | 403 |
+| `decide`, `forget` | Any `by` | `by` must be the owner of the token |
+| `lookup` | Every kind | `journey` and `find` |
+| `report` | Every kind | Every kind |
 
-A wrong or missing token gets 401. A reviewer's token on a service-only route gets 403.
+A missing or wrong token gets 401. A name that begins with `system:` is a system's. No reviewer can have one, so `"by": "system:cases"` needs the service token.
 
-## Identifiers
+An `x-request-id` header of 1 to 200 printable characters comes back with the answer of a call.
 
-[`POST /identify`](identify.md) accepts a plain email, phone and address, then hashes and checks them. To write identifiers yourself, use `/observe`.
+## Requests
 
-An identifier is written `kind:value`. A kind missing from the policy gets 400. [Matching](deciding.md) lists the weight of each kind.
-
-| Kind | Value |
+| Rule | Detail |
 | --- | --- |
-| `device` | The `ag_device` cookie set by the script tag, read from the visitor's request. |
-| `email`, `phone` | A SHA-256 hash of the trimmed, lowercased email, or of the phone number in E.164 form. Hash the same way every time. `/identify` also removes dots and any `+suffix` from Gmail addresses before hashing. |
-| `hardware` | The hashed machine id reported by your desktop client. |
-| `passkey` | A passkey's credential id, after your server verified the sign-in. |
-| `payment` | A card or bank token from your payment provider, in place of the number. |
-| `ip` | The address your server received the request from. |
-| `fingerprint`, `canvas`, `ga` | Recorded by `/collect`, which confirms a fingerprint first. |
+| Method | `POST`. Any other gets 405. |
+| Size | 1 MB as JSON, 32 levels. A `record` has at most 100 entries. |
+| Fields | Exactly those listed. An unknown field is refused. |
+| `at` | When it happened, in epoch milliseconds, an integer. Every write requires it. The server never fills it in. |
+| `key` | Yours, 1 to 200 characters. Every write requires one. Unique within its `type` across the whole database, so two systems that write here must prefix their own. |
+| `subject` | Yours, 1 to 512 characters, with no space around it: `account:42`, `contact:7`. |
+| Text | A NUL or half of a character is refused. |
 
-## Routes without a token
+## record
 
-| Route | Description |
+Entries run one at a time, in order, one transaction each. A later entry sees what an earlier one wrote, and one refusal undoes nothing.
+
+```http
+POST /v1/record
+
+{ "entries": [
+  { "type": "conversion", "key": "enroll-1001", "at": 1795460000000, "subject": "account:42", "stage": "enrolled", "value": 200, "currency": "USD" },
+  { "type": "restatement", "key": "refund-7", "at": 1795463600000, "of": { "type": "conversion", "key": "enroll-1001" }, "change": { "kind": "refund", "amount": 80 } },
+  { "type": "restatement", "key": "refund-8", "at": 1795463600000, "of": { "type": "conversion", "key": "nope" }, "change": { "kind": "refund", "amount": 80 } }
+] }
+```
+
+```json
+{ "results": [
+  { "type": "conversion", "key": "enroll-1001", "ok": true, "value": { "duplicate": false, "stands": true, "value": 200, "currency": "USD", "deliveries": [{ "conversion": "enroll-1001", "platform": "google", "state": "pending" }] } },
+  { "type": "restatement", "key": "refund-7", "ok": true, "value": { "duplicate": false, "stands": true, "counts": true, "value": 120, "deliveries": [{ "conversion": "enroll-1001", "platform": "google", "state": "pending" }] } },
+  { "type": "restatement", "key": "refund-8", "ok": false, "reason": "UNKNOWN_REFERENCE", "of": { "type": "conversion", "key": "nope" } }
+] }
+```
+
+There is one result per entry, in order. Every accepted entry answers two fields beside its own:
+
+| Field | Meaning |
 | --- | --- |
-| `POST /collect` | Records one browser visit. Requires an origin in `ORIGINS`, and is rate limited per address. Answers 204. |
-| `POST /number` | Assigns the visitor a pool number: `{ device }`. Same origins and limit as `/collect`. Answers `{ number, until, lasts }`, or 204 when none is available to them. Requires `POOL_NUMBERS`. |
-| `POST /event` | Records a page event: `{ device, event, id?, number? }`. Same origins and limit as `/collect`. Accepts only names in `EVENTS`. Answers 204. |
-| `POST /text-code` | Answers `{ code }`, which the script tag adds to your text links, or 204 for a visitor who refused ad measurement. Same origins and limit as `/collect`. Requires `TEXT_CODES`. |
-| `POST /texts/twilio` | Receives Twilio's incoming texts and checks Twilio's signature. Requires Twilio settings. |
-| `POST /carry` | Answers `{ token }`, which the script tag adds to links to your other sites. Same origins and limit as `/collect`. Requires `LINK_SECRET`. |
-| `POST /calls/twilio` | Receives Twilio's status callback for a call and checks Twilio's signature. Requires Twilio settings. |
-| `GET /collect.js` | The script tag that posts to `/collect` and `/event`. |
-| `GET /fingerprint.js` | Fingerprint helpers, loaded by the script on request. |
-| `GET /review` | The reviewer screen. Its data requires a token. |
-| `GET /health` | `{"ok":true}` once the database answers. |
+| `duplicate` | The key was recorded before. The rest of the answer says how it stands now. |
+| `stands` | `false` when something newer already does. See [order](#order). |
 
-## Routes for reviewers and services
+### Entry types
 
-### Subjects and clusters
+Each entry has `type`, `key` and `at`. A field with `?` may be left out.
 
-| Route | Description |
+| Type | Fields | Answers |
+| --- | --- | --- |
+| `profile` | `subject`, `facts`, `event?`, `speaker?` | `changes`, `notes`. See [identify](identify.md). |
+| `arrival` | `subject`, `source?`, `medium?`, `campaign?`, `campaignId?`, `adGroupId?`, `adId?`, `term?`, `content?`, `landing?`, `referrer?`, `clicks?`, `custom?` | `subject` |
+| `cost` | `rows`, 1 to 5,000: `day`, `source`, `amount`, `currency`, `campaignId?`, `campaign?`, `clicks?`, `impressions?`, `conversions?`, `conversionValue?` | `written`, `older`: rows written, and rows a newer reading already had |
+| `conversion` | `subject`, `stage`, `value?`, `currency?`, `actions?`, `channel?`, `email?`, `phone?`, `consent?`, `tags?` | `value`, `currency`, `deliveries` |
+| `restatement` | `of: { type, key }`, `change` | `counts`, `value`, `deliveries` |
+| `payment` | `conversion`, `direction`, `amount`, `currency?` | `value`, `null` until there is a conversion, and `deliveries` |
+| `call` | `direction`, `from?`, `to`, `duration?`, `result?`, `tags?` | `subject`, `state`, `counted`, `flags`, `visitor?`. See [calls](calls.md). |
+| `call_update` | `call`, `change` | `state`, `counted`, `followUp` |
+| `text` | `direction`, `from`, `to`, `text?`, `code?`, `tags?` | `subject`, `flags`, `counted`, `visitor?`. See [texts](texts.md). |
+| `consent` | `subject`, `consent: { adUserData, adPersonalization }`, `source?` | The answer that applies |
+| `link` | `subject`, `url`, `expires`, `purpose?` | `url`. See [links](links.md). |
+| `transfer` | `from`, `to`, `amount`, `asset?` | `relation`, `score` |
+
+| Field | Values |
 | --- | --- |
-| `GET /subject?subject=` | One subject: cluster, links, separations and their authors, flows, rings, newest sightings. |
-| `GET /cluster?subject=` | The subject's cluster: `{ id, members, oversized }`, or `null`. |
-| `GET /links?subject=` | Every subject linked to this one, with score and reasons, and `conflict` where a [fact](deciding.md#facts-that-keep-people-apart) says they are two people. |
-| `GET /between?a=&b=` | What two subjects share at any strength, excluding reviewer marks: `{ known, joined, apart, score, reasons, idle }`. `idle` lists shared identifiers that are muted or over their cap. |
-| `GET /history?subject=` | Every sighting of the subject, oldest first. |
-| `GET /journey?subject=&before=` | Everything recorded about the subject's person, oldest first, newest 200: `{ entries, subjects, next, more }`. No entry is of a person in another group, or of a browser or caller in a group with one, however strong the tie. A decision that names two people is in the journey of each. Pass `next` as `before` for earlier entries. |
-| `GET /clusters?offset=` | The largest clusters, 50 at a time. |
-| `GET /search?q=` | Subjects whose id starts with the text. |
-| `POST /people` | `{ subjects }`, 1 to 100: each one's cluster, what brought them, and whether they asked for no texts. Answers `{ people }`. |
-| `POST /match` | Who somebody may be, before you save them: the same plain facts as [`/identify`](identify.md), without a `subject`. Answers `{ candidates: [{ subject, score, level, reasons, members }], notes }`, strongest first. Writes nothing. |
-| `POST /conflicts` | `{ subjects }`, 1 to 50: who of them is kept apart from another of them, or from anyone on record. Answers `{ conflicts: [{ a, b, how, rests }] }`. See [conflicts](deciding.md#asking-about-conflicts). Writes nothing. |
-| `POST /find` | `{ text }`: a full email or phone number, looked up by hash; the start of a subject's id; or, with no such id, a full ad click id. Answers `{ by, subjects }`, at most 20. The body keeps the text out of address logs. |
-| `GET /recent` | The newest cluster changes. |
-| `GET /changes?after=&limit=` | Every cluster change after a number, oldest first. Requires the service token. See [the change feed](operations.md#change-feed). |
-| `GET /undecided?limit=` | Pairs that are related and not joined, and joins that two dates of birth left out, strongest first: `{ pairs, total, seen }`. Covers the subjects of the newest 10,000 sightings, counted in `seen`. `limit` is at most 500. |
-| `GET /flows?subject=` | Subjects that exchanged value with this one, and the identity link to each. |
-| `GET /collusion?subject=` | Counterparties linked by identity, with three or more flows. |
-| `GET /rings?subject=` | Value that left the subject and came back through others. |
+| `facts` | At least one, unless there is a `speaker`: `email`, `phone`, `device`, `ip`, `address`, `name`, `dob`, `identifiers` |
+| `clicks` | `gclid`, `gbraid`, `wbraid`, `fbclid`, `fbp`, `msclkid`, `ttclid` |
+| `custom` | At most 10 names of your own, each with text up to 256 characters |
+| `actions` | What it counts as on each platform, `{ "google": "987654321" }`. Left out, the stage's own. |
+| `channel` | `WEB`, `APP`, `IN_STORE`, `PHONE`, `MESSAGE` or `OTHER` |
+| `tags` | At most 8. A name is lowercase letters and underscores, up to 32. A value is up to 64 characters. |
+| Payment `direction` | `received` or `refunded` |
+| Payment `amount` | From 0.00001 to 10,000,000,000 |
+| Call and text `direction` | `inbound` or `outbound`. An outbound call requires `from`. |
+| Call `result` | `{ answered, voicemail?, waited? }` |
+| Call and text `key` | The provider's id: 1 to 128 letters, digits, dots, dashes and underscores |
+| Conversion `key` | The transaction id. It cannot begin with `call:`, `text:` or `page:`, which the graph uses for its own outcomes. |
+| Transfer `amount` | A whole number of the asset's smallest unit, above zero |
 
-### Decisions
+`restatement` takes one `change`:
 
-| Route | Description |
+| `kind` | Fields | Meaning |
+| --- | --- | --- |
+| `correct` | `value`, `currency?` | What it is worth |
+| `refund` | `amount`, `currency?` | How much was given back |
+| `write_off` | `amount`, `currency?` | How much will not be paid |
+| `reverse` | `restatement` | Takes back one earlier refund or write-off, by its key |
+| `not_lead` | `why`: `spam` or `other` | It was nobody's inquiry |
+| `lead` | none | It is a lead after all |
+
+A refund and a write-off are amounts, and not what is left. `of.type` is `conversion`, `call` or `text`.
+
+`call_update` takes one `change`:
+
+| `kind` | Fields | Meaning |
+| --- | --- | --- |
+| `result` | `result: { answered, voicemail?, waited? }` | How the call went |
+| `returned` | `reachedAt` | Somebody reached the caller then |
+| `not_returned` | none | Nobody did |
+
+A `delivery` is `{ conversion, platform, state, note? }`. `state` is `held`, `pending`, `sent`, `skipped` or `failed`. `held` waits for a call's result. No answer holds a hashed email or phone.
+
+### Refusals
+
+A refusal is an answer, with status 200 and `"ok": false`. None is kept with the key, so put right what was wrong and send the same key again.
+
+| `reason` | Meaning | With it |
+| --- | --- | --- |
+| `KEY_REUSED` | The key was used for something else | `fields`: the names of what differs |
+| `UNKNOWN_REFERENCE` | What it is about is not recorded | `of` |
+| `KIND_NOT_IN_POLICY` | An identifier has a kind the policy lacks | `kind` |
+| `KIND_RESERVED` | An identifier has a kind the graph writes itself | `kind` |
+| `NO_FACT_USED` | No fact of a profile says who somebody is | `notes` |
+| `CURRENCY_MISMATCH` | It names another currency | `expected` |
+| `PAID` | The conversion has payments, so it is worth what was paid | |
+| `FORGOTTEN` | The key, or what it is about, belongs to somebody who was deleted | |
+| `NOT_ATTEMPTED` | The time ran out before its turn. Nothing was tried. | |
+
+The reserved kinds are `review`, `link`, `carry`, `opened`, `lease`, `dial`, `text`, `place`, `birth`, `dialed`, `behalf`, `named`, `ward`, `given`, `dated` and `initial`.
+
+### Batches
+
+| Step | What happens |
 | --- | --- |
-| `POST /separate` | `{ a, b, separated?, by?, reason? }`. Separates two subjects. `separated: false` withdraws the separation. |
-| `POST /join` | `{ a, b, by?, reason?, mark? }`. Records that two subjects are one person. With `mark: true` the answer is `{ moved, mark }`, where `mark` is the identifier to `/ignore` to undo the join. |
-| `POST /ignore` | `{ identifier, ignored?, by?, reason? }`. Mutes one identifier, or with `ignored: false` restores it. |
-| `POST /forget` | `{ subject, by?, reason?, ads?, retract? }`, or `subjects`, a list of 1 to 50 ids of one person, each deleted in turn. Deletes a subject and everything recorded about it. With `ads: true` the answer is `{ changes, sent }`, where `sent` lists [conversions that reached an ad platform](privacy.md#data-at-ad-platforms). |
-| `POST /foresee` | Previews a decision without making it: `{ action: "join", a, b }`, `{ action: "separate", a, b, separated? }` or `{ action: "ignore", identifier, ignored? }`. Answers `{ moved, before, after }`, with the affected clusters as `{ id, size }`. |
-| `GET /decisions?limit=&before=&author=` | The audit log, newest first, 50 at a time: `{ decisions, next, total }`. Pass `next` as `before` for the next page. `author` is `people`, `system`, or one name. |
-| `GET /disputes` | Pairs whose reports from systems switched between separated and joined (or withdrawn) three times or more. |
-| `GET /audit` | Verifies the audit log: `{ sound, head }`, with `brokenAt` when it was altered. `head` is the newest entry's `seq` and `hash`. |
+| 1 | The whole request is checked. A malformed entry refuses the request with a [fault](#faults), and nothing is written. |
+| 2 | Addresses and phone lines are checked with their services, at most 8 at once and 3 seconds each. One that fails is a note on its entry. |
+| 3 | Each entry is written with its receipt, deliveries and events, as one transaction. |
 
-`/separate`, `/join`, `/ignore` and `/forget` answer with the subjects whose cluster changed. With the service token, `/separate` and `/join` also accept a list from one of your systems. See [decisions from your own systems](deciding.md#decisions-from-your-own-systems).
+Entries not begun when nine tenths of the time are out answer `NOT_ATTEMPTED`. The time is 30 seconds. Send those again.
 
-The same four routes accept `seen`: the number of the newest decision at the time you looked, from `head.seq` of `GET /audit`. If a newer decision names the same subject or identifier, yours gets 409. Omitting `seen` skips the check, as do undos (`ignored: false`, `separated: false`) and lists from a system.
+Every entry is checked before the first is written. One that cannot be ends the request with a fault, and nothing is written.
 
-Send `by` only with the service token. A reviewer's decision carries the name of their token, and any other name is rejected.
+If a fault ends a `record` part way, send the whole list again. The entries that stand answer `duplicate: true`.
 
-### Outcomes, calls and reports
+Put a `profile` before its `conversion`. The other way round, a conversion can be sent in between, without the click.
 
-| Route | Description |
+### Idempotency
+
+Sending an entry again with its key writes nothing and answers `duplicate: true`. Nothing of the first answer is kept. The answer is read from the graph as it stands, so a `profile` sent again has no `changes`.
+
+The same key with other details answers `KEY_REUSED`. What is compared depends on the type:
+
+| Type | Compared | Not compared |
+| --- | --- | --- |
+| `call` | `direction`, `to`, and `from` where both reports name it | `at`, `duration`, `result`, `tags`. A second reporter often knows more. |
+| `text` | `direction`, `from`, `to` | `at`, `text`, `code`, `tags`. Twilio sends no time. |
+| `cost` | `at` and the rows, in any order | |
+| `decide` | `at`, `by`, `action`, and the pairs or the fact. Pairs may be in any order, and so may the two of a pair. | `reason`, the reason of a pair, `seen` |
+| `forget` | `at`, `by`, `platforms`, and the subjects in any order | `reason`, `seen` |
+| Every other entry | Every field | |
+
+Emails and phones are compared as they are normalized, currencies in capitals, identifiers in any order. `Pat.Lee@gmail.com` and `patlee@gmail.com` are one.
+
+> **Keep `at` with the key.** A retry that stamps a new `at` is refused with `KEY_REUSED` for most types.
+
+A key is remembered for a year, or longer until receipts are [pruned](operations.md#receipts). A key of somebody who was deleted is remembered for good, as a keyed hash.
+
+A call or a conversion can come from two reporters, such as Twilio and your backend. Both name it by one id, so it is one record.
+
+### Order
+
+Entries may arrive late and in any order. Nothing is refused for being late.
+
+| What | Which stands |
 | --- | --- |
-| `GET /consent?subject=` | Every answer the subject gave about advertising. The one that applies comes first. |
-| `GET /outcome?id=` | One outcome with every value it has had, or `null`. |
-| `GET /board?days=` | People by the furthest step they reached, unreturned missed calls first: `{ columns, unplaced }`, each column with `people`, `fresh`, `late`, `done` and its `rows`. See [the report](report.md#board). |
-| `GET /followed?from=&to=&tz=&step=&days=` | People who reached a step within some days of a call. See [the report](report.md#outcomes-after-a-call). |
-| `GET /call?id=` | One call with its state and, when missed, its follow-up, or `null`. |
-| `GET /sent?subject=` | The links made for the subject's person, with their purpose and openings. |
-| `POST /call/ringing` | `{ from?, to, at? }`, while the phone rings: `{ subject?, area?, known, people, visitor?, waiting, source?, campaign?, campaignId?, landing? }`. Writes nothing. Report the call when it ends. See [calls](calls.md#while-the-phone-rings). |
-| `GET /text?id=` | One text with what became of it, or `null`. |
-| `GET /texts?from=&to=&tz=&after=` | The oldest unanswered text of each sender, 50 at a time: `{ from, to, timeZone, at, texts, next }`. |
-| `GET /texting?subject=` | Whether the subject's person last asked for no more texts: `{ optedOut, at }`, or `null`. |
-| `GET /calls?from=&to=&tz=&after=` | Unreturned missed calls, oldest first, 50 at a time: `{ from, to, timeZone, at, calls, next }`. Pass `next` as `after`. |
-| `GET /calls/summary?from=&to=&tz=` | Inbound calls by result, hour and weekday, and how many were attributed. |
-| `GET /report?from=&to=&tz=&by=&per=` | The cost and results of each campaign between two days. `steps` names the steps in your order, and `timeZone` the zone of the days. See [the report](report.md). |
-| `GET /conversions?state=` | The 100 jobs in one state most recently due: `held`, `pending`, `sent`, `skipped`, or `failed`, without the hashed email and phone. `held` waits for a call's result. |
-| `POST /retry` | `{ transactionId, target? }`. Queues its failed and skipped jobs again, optionally for one platform. |
+| `correct`, `not_lead` and `lead`, call results, call returns, `consent` | The newest by `at`, then by `key`. One that arrives late is kept, changes nothing, and answers `stands: false`. |
+| A cost row | The newest `at` for its day, source and campaign |
+| `refund`, `write_off`, `reverse` | All of them, whatever order they arrive in |
+| `payment` | All of them. From the first on, the conversion is worth what was paid less what was refunded. |
 
-`/board`, `/report`, `/followed` and `/calls/summary` are worked out once for everybody who asks at the same time. While data is being written, an answer is shared for four times as long as it took, up to a minute, and has an `age` header when something has been written since. A decision or a deletion through the same server ends that at once.
+A conversion without payments is worth the newest `correct`, or else its first value, less every refund and write-off that was not reversed. It is never worth less than zero.
 
-### Status
-
-| Route | Description |
+| Before what it is about | Result |
 | --- | --- |
-| `GET /me` | `{ reviewer, retraction }`: the token's owner, or `null` for the service token. `retraction` is `{ targets, always }`, the platforms that accept retractions and whether each deletion requests one. |
-| `GET /policy` | The running rules by kind, the hash the stored clusters were built with, whether a rebuild is `due`, and which kinds were `changed` from the default. |
-| `GET /ops` | Server operations: `{ feeds, jobs, undelivered, alerts, at, pool, outbox }`. |
-| `GET /pulse` | `{ version }`, with an `etag`. Send it as `if-none-match` to get 304 until the next write. |
+| `payment`, `call_update`, `not_lead`, `lead` | Kept, and counts once the conversion, call or text arrives |
+| `correct`, `refund`, `write_off`, `reverse` | `UNKNOWN_REFERENCE`. Send the same key again later. |
 
-## Routes for services
+## decide
 
-### Identity and consent
+Merges, splits and mutes, with the author and the reason. [Matching](deciding.md#decisions-from-your-own-systems) says when to use which.
 
-| Route | Description |
+```http
+POST /v1/decide
+
+{ "key": "ticket-88", "at": 1795460000000, "by": "dana", "seen": 418, "action": "merge",
+  "pairs": [{ "a": "contact:7", "b": "contact:12", "reason": "one person, two intakes" }] }
+```
+
+```json
+{ "ok": true, "value": { "duplicate": false, "changes": [{ "subject": "contact:7", "from": "contact:7", "to": "contact:12" }], "recorded": 1, "already": 0, "notAsAsked": [] } }
+```
+
+| `action` | Takes | Effect |
+| --- | --- | --- |
+| `merge` | `pairs`, 1 to 1,000 | Each pair is one person |
+| `unmerge` | `pairs` | Takes back the merges of each pair |
+| `split` | `pairs` | Each pair is two people. Holds whatever they share later. |
+| `unsplit` | `pairs` | Takes back the splits |
+| `mute` | `fact` | Nothing links through it |
+| `unmute` | `fact` | It links again |
+
+`fact` names one of `{ "email" }`, `{ "phone" }`, `{ "ip" }` or `{ "identifier" }`. All of the pairs are written, or none. `by` is 1 to 100 characters, and a reason is at most 1,000.
+
+| Answer | Meaning |
 | --- | --- |
-| `POST /identify` | Identifies a subject from plain facts: `{ subject, device?, email?, phone?, ip?, address?, name?, dob?, identifiers?, speaker?, at?, event? }`. Answers `{ changes, identifiers, notes }`. See [identify](identify.md). |
-| `POST /observe` | One observation, or a list: `{ subject, identifiers, at, event? }`. Answers with the cluster changes. |
-| `POST /separate`, list | `{ source, pairs: [{ a, b, separated?, reason? }], reason? }`, at most 1,000 pairs. One transaction, one decision each, by `system:<source>`. Answers `{ changes, recorded, already }`. |
-| `POST /join`, list | The same without `separated`, for records another system merged. |
-| `POST /consent` | `{ subject, consent: { adUserData, adPersonalization }, at?, source? }`. Adds an answer about advertising; the newest by `at` applies. Rejects an `at` more than a day ahead and a `source` over 200 characters. |
-| `POST /link` | `{ url, subject, days?, purpose? }`. Answers `{ url, id }`: the address with a token naming its person. See [links](links.md). |
-| `POST /staff-link` | `{ url, days? }`. Answers `{ url }`: an address that marks the browser that opens it as [staff](operations.md#staff-traffic). |
-| `POST /transfer` | `{ id, from, to, amount, at, asset? }`. Records a transfer of value. Answers with the identity link between the two and whether it was a `duplicate`. Repeating it with the same details adds no record; the same `id` with other details gets 400. |
+| `recorded` | How many were decided |
+| `already` | How many already stood that way |
+| `notAsAsked` | Pairs that are not as asked afterwards: `{ a, b, because }` |
 
-### Attribution and outcomes
-
-| Route | Description |
+| `because` in `notAsAsked` | Meaning |
 | --- | --- |
-| `POST /touch` | A visit from an ad or campaign: `{ subject, at, gclid?, source?, medium?, campaign?, campaignId?, … }`. Each field is text. Unknown fields are rejected; put your own in `custom`. |
-| `GET /attribute?subject=&at=` | The touches that led to a conversion by this subject, and the one credited. |
-| `POST /convert` | An outcome: `{ transactionId, subject, at, stage?, value?, currency?, action?, email?, phone?, tags? }`. Counted in the report and, with `action`, sent to the ad platforms. A `stage` listed in `STAGES` supplies a missing value, currency and action. |
-| `POST /restate` | `{ transactionId, value, currency?, kind? }`. Changes an outcome's value in the report and on platforms that support restating. Earlier values are kept. `kind` is `refund` or `write_off`, which the report [counts separately](report.md#value-changes). |
-| `POST /payment` | Money received for an outcome, or given back: `{ id, transactionId, amount, kind?, currency? }`, `kind` `payment` (the default) or `refund`. From the first one on, the outcome is worth what was paid less what was given back. May precede the outcome. Answers `{ duplicate, value?, jobs }`. See [payments](report.md#payments). |
-| `POST /not-lead` | Marks an outcome or a call as not a lead: `{ call }` or `{ transactionId }`, with `kind` `spam` or `other` (the default). `lead: true` undoes it. May precede the outcome or call. Answers `{ id, lead }`. |
-| `POST /costs` | A list of `{ day, source, amount, campaignId?, campaign?, currency?, clicks?, impressions?, conversions?, conversionValue? }`. A row replaces an earlier one with the same day, source and campaign. |
-| `GET /conversion?id=` | The jobs of one transaction, one per ad platform. |
+| `split` | A split holds a merged pair apart |
+| `evidence` | What the two share still joins them after `unmerge`. Use `split` to keep them apart. |
+| `other_merges` | Other merges still join them after `unmerge` |
 
-### Calls
+| `reason` | Meaning | With it |
+| --- | --- | --- |
+| `STALE` | A decision newer than `seen` names one of them | `decision`, `by`, `at` |
+| `NOT_JOINED` | `unmerge` of a pair with no merge to take back. None of the pairs is unmerged. | `pairs`: `{ a, b, because }`, where `because` is `apart`, `evidence` or `other_merges` |
+| `KEY_REUSED`, `KIND_NOT_IN_POLICY`, `FORGOTTEN` | As for `record` | |
 
-| Route | Description |
+`seen` is the `decisions` number of the `person` lookup you decided by. Left out, nothing is checked. `unmute` is not checked.
+
+## forget
+
+Deletes subjects and everything recorded about them: all, or none. [Privacy](privacy.md#deletion) lists what goes and what stays.
+
+```http
+POST /v1/forget
+
+{ "key": "request-31", "at": 1795460000000, "by": "dana", "subjects": ["contact:42", "visitor:9f3c"], "platforms": "report" }
+```
+
+```json
+{ "ok": true, "value": { "duplicate": false, "changes": [], "sent": [{ "conversion": "client-42", "platform": "google", "action": "333", "at": 1795460000000, "state": "not_requested" }] } }
+```
+
+| `platforms` | Effect |
 | --- | --- |
-| `POST /text` | A text message: `{ id, from, to, at, text?, code?, direction?, tags? }`. What it says is read and not stored. Answers `{ subject, flags, counted, visitor?, duplicate }`. See [texts](texts.md). |
-| `POST /call` | A phone call: `{ id, from?, to, at, duration?, direction?, answered?, voicemail?, waited?, tags? }`. With `direction: "outbound"` you placed the call, and `from` is yours. Answers `{ subject, flags, counted, state, visitor?, duplicate }`. See [calls](calls.md). |
-| `POST /call/result` | A call's result: `{ id, answered, voicemail?, waited? }`, before or after the call. Answers `{ state, counted }`; `waiting` until the call arrives. |
-| `POST /call/returned` | Records that staff reached a caller outside your phone system: `{ id, at?, returned? }`, before or after the call. `returned: false` undoes it. Answers `{ followUp }`, null until the call arrives or if it was not missed. |
+| `report` | `sent` lists the conversions that reached an ad platform |
+| `retract` | Each platform that has a way is also asked to take them back. Without such a platform, the fault `CONFIG.UNSUPPORTED`, and nothing is deleted. |
 
-### Maintenance
+`sent` is kept with the key, so a lost answer can be asked for again. The refusals are `STALE` and `KEY_REUSED`.
 
-| Route | Description |
+## lookup
+
+Reads. Nothing is written.
+
+```http
+POST /v1/lookup
+
+{ "kind": "person", "subjects": ["account:42"], "at": 1795460000000 }
+```
+
+```json
+{ "decisions": 418, "people": [{ "subject": "account:42", "known": true, "members": ["account:42", "visitor:9f3c"], "oversized": false,
+    "arrival": { "at": 1795460000000, "source": "google", "campaign": null, "campaignId": "20111", "landing": null, "custom": {}, "confidence": 0.98, "how": "cluster" },
+    "possible": null, "consent": { "adUserData": true, "adPersonalization": false }, "textsOptedOut": false }] }
+```
+
+| `kind` | Asks | Answers |
+| --- | --- | --- |
+| `person` | `subjects`, 1 to 100, `at` | `decisions`, `people`: each one's cluster, the arrival that can be credited, the strongest one that cannot (`possible`), consent, and whether they asked for no texts |
+| `journey` | `subject`, `before?` | `subjects`, `entries`, `next`, `more`: everything recorded about the person, oldest first, the newest 200. Pass `next` as `before` for earlier ones. |
+| `find` | `text` | `by`, `subjects`: a full email or phone, the start of a subject's id, or a full ad click id. At most 20. |
+| `match` | `facts`, `at` | `candidates`, `notes`: who somebody may be, before you save them |
+| `caller` | `from?`, `to`, `at` | Who is calling, [while the phone rings](calls.md#while-the-phone-rings) |
+| `conflicts` | `subjects`, 1 to 50 | `conflicts`: who of them is [kept apart](deciding.md#asking-about-conflicts) |
+| `record` | `type`, `key`, `at` | One conversion, call or text, or `null` |
+| `transfers` | `subject`, `tiedOnly?` | `counterparties`, `rings` |
+
+`match`, `transfers`, `caller` and `journey` say why by `kinds`, such as `["phone", "device"]`. No identifier leaves the graph, because most are hashes of an email or a phone.
+
+`tiedOnly` keeps the counterparties tied by identity with three or more transfers.
+
+## report
+
+Reads figures. Each kind is described with [the report](report.md), [calls](calls.md) and [texts](texts.md).
+
+```http
+POST /v1/report
+
+{ "kind": "campaigns", "window": { "from": "2026-11-01", "to": "2026-11-14", "timeZone": "America/Chicago" }, "per": "enrolled" }
+```
+
+```json
+{ "asOf": 1795460000000, "value": { "from": "2026-11-01", "to": "2026-11-14", "timeZone": "America/Chicago", "steps": ["inquiry", "enrolled"], "rows": [], "total": { "cost": 0, "outcomes": 0, "value": 0 } } }
+```
+
+| `kind` | Asks | Answers |
+| --- | --- | --- |
+| `campaigns` | `window`, `by?`, `per?` | [Cost and results of each campaign](report.md) |
+| `pipeline` | `at`, `days` from 1 to 365 | [People by the furthest step](report.md#board) they reached |
+| `calls` | `window`, `at` | Inbound calls by result, hour and weekday |
+| `callbacks` | `window`, `at`, `after?` | Missed calls nobody has returned, oldest first |
+| `texts` | `window`, `at`, `after?` | The oldest unanswered text of each sender |
+| `after_calls` | `window`, `at`, `step`, `days` from 1 to 365 | [How many callers reached a step](report.md#outcomes-after-a-call) |
+| `deliveries` | `state` | The 100 deliveries in one state that were most recently due |
+
+`window` is two days and a time zone. `callbacks` and `texts` answer `{ rows, next }`, 50 rows at a time. Pass `next` as `after`.
+
+`asOf` is the moment the answer is of. `campaigns`, `pipeline`, `calls` and `after_calls` are worked out once for everybody who asks at the same time, and shared until something is written. While data is being written, an answer is shared for four times as long as it took, and a minute at most. A `decide` or `forget` through the same process ends that at once. An `at` within a minute of now is answered from the shared answer.
+
+## events
+
+Reads what happened, oldest first. [Operations](operations.md#events) covers following along and the webhook.
+
+```http
+POST /v1/events
+
+{ "after": "1fc21682.4180", "limit": 500 }
+```
+
+```json
+{ "ok": true, "value": { "schemaVersion": 1, "cursor": "1fc21682.4181", "more": false, "events": [
+  { "schemaVersion": 1, "seq": 4181, "type": "cluster.changed", "at": 1795460000000, "data": { "subject": "account:42", "from": "account:42", "to": "account:17" } }] } }
+```
+
+| Field | Meaning |
 | --- | --- |
-| `POST /alerts/test` | Posts a test alert. Answers `{ delivered, error? }`. |
-| `POST /prune` | `{ before, by?, reason? }`. Deletes sightings, superseded consent answers, and call results without a call, all stored before a time. [Privacy](privacy.md#deletion) has the full list. |
-| `GET /stats` | Counts since start, graph contents, and outbox jobs by state. |
-| `POST /rebuild` | `{ by?, reason? }`. Recomputes every cluster under the running policy and answers with the subjects that moved. Blocks other writes while it runs. |
-| `GET /verify` | `{ changes, policy }`: the subjects whose stored cluster differs from a full recompute, and whether the policy changed since they were stored. |
+| `after` | The `cursor` of the last page you acted on, or `null` to start with the oldest event that is kept |
+| `limit` | 1 to 1,000 |
+| `more` | Another page is there already |
 
-## Errors
+A cursor is opaque. It names the history of the database as well as a place in it. A cursor of another history, or older than what is kept, answers `{ "ok": false, "reason": "CURSOR_LOST" }`. Read everything again from `null`.
 
-Error responses have the form `{ "error": "…" }`.
+`seq` only grows. Some numbers are missing, because a deletion takes a person's events with it. A hole is not a loss.
+
+| Type | `data` |
+| --- | --- |
+| `cluster.changed` | `subject`, `from`, `to` |
+| `conversion.failed` | `conversion`, `platform`, `note` |
+| `delivery.paused` | `reason` |
+| `delivery.late` | `oldestDue` |
+| `costs.failed` | `source`, `reason` |
+| `feed.quiet` | `feed`, `last`, `hours` |
+| `callback.overdue` | `call`, `subject`, `missedAt`, `attempts`, `source`, `campaign`, `campaignId` |
+| `audit.head` | `seq`, `hash`, `sound`, `brokenAt` |
+
+## Faults
+
+A fault is any answer that is not 200. The library throws it as a `Fault` with the same code.
+
+```json
+{ "fault": { "code": "INPUT.MALFORMED", "message": "request.entries[0].at is required", "retryable": false, "detail": { "path": "request.entries[0].at" } } }
+```
+
+| Code | Status | Retryable | When |
+| --- | --- | --- | --- |
+| `INPUT.MALFORMED` | 400 | no | The body is not JSON, or a field is missing, unknown or malformed. `detail.path` names it where there is one. |
+| `INPUT.TOO_LARGE` | 413 | no | Over 1 MB, or over 100 entries |
+| `AUTH.REJECTED` | 401 | no | The token is missing or wrong |
+| `AUTH.FORBIDDEN` | 403 | no | The token does not open this call, or `by` is not its owner |
+| `CONFIG.UNSUPPORTED` | 422 | no | A `link` without `LINK_SECRET`, or `retract` where no platform can |
+| `CONFIG.MISMATCH` | 503 | no | The server's [settings differ](operations.md#settings-that-must-match) from the database's |
+| `CONFIG.INVALID` | 500 | no | Settings that cannot be. A server with these does not start. |
+| `GRAPH.UNAVAILABLE` | 503 | yes | The database is not available. Nothing was committed. |
+| `GRAPH.CLOSED` | 503 | no | The instance is closed |
+| `GRAPH.INTERNAL` | 500 | no | The server failed. Its log has the cause. |
+| `TRANSPORT.INDETERMINATE` | 504 | yes | The time ran out, or the connection was lost as a write was committed. It may have been written. Send it again with the same key. |
+| `TRANSPORT.ABORTED` | 499 | no | The caller went away. Effects are unknown until you look. |
+
+`retryable` says whether the same call, with the same key, may succeed. Tell a fault by its code, never by its message.
+
+Every other route answers an error as `{ "error": "…" }`. So do two answers under `/v1`: 404 for a call that does not exist, and 405 for a method other than `POST`.
+
+## Routes for browsers
+
+Browsers post to `/collect` without a token. The [script tag](operations.md#script-tag) does it for you. `kind` says what the page asks.
+
+| `kind` | Body | Answers |
+| --- | --- | --- |
+| `visit`, or left out | `device` and what the visit carried | 204. Records one visit. |
+| `event` | `device`, `event`, `id?`, `number?` | 204. Records a page event named in `EVENTS`. |
+| `carry` | `device` | `{ token }`, which the script adds to links to your other sites. Requires `LINK_SECRET`. |
+| `number` | `device` | `{ number, until, lasts }`, or 204 when none is available to the visitor. Requires `POOL_NUMBERS`. |
+| `text_code` | `device` | `{ code }`, or 204 for a visitor who refused ad measurement. Requires `TEXT_CODES`. |
 
 | Status | Condition |
 | --- | --- |
-| 400 | The body is not JSON, or a field is missing or malformed. |
-| 401, 403 | The token is wrong, or does not open the route. |
-| 403 on `/collect`, `/event` | The request's origin is not in `ORIGINS`. Applies to `/carry` and `/number` too. |
-| 403 on `/calls/twilio` | Twilio's signature is missing or wrong. |
-| 404 | No such route. Also `/conversion`, `/conversions` and `/retry` without an ad platform, and `/link` and `/staff-link` without `LINK_SECRET`. |
-| 405 | A method other than POST on `/collect`, `/event`, `/carry` or `/number`. |
-| 409 | A decision newer than `seen` names the same subject or identifier. The answer has that `decision`. |
-| 413 | The body is over 1 MB. |
-| 429 on `/collect`, `/event` | Too many requests from one address. `retry-after` gives the wait. Applies to `/carry` and `/number` too. |
-| 500 | The server failed. Its log has the cause. |
+| 400 | The body is malformed, names an unknown `kind`, or an event that `EVENTS` does not list |
+| 403 | The request's origin is not in `ORIGINS` |
+| 404 | The `kind` is not set up |
+| 405 | A method other than `POST` |
+| 413 | The body is over 1 MB |
+| 429 | Too many requests from one address. `retry-after` gives the wait. |
+
+> **Old paths.** `/event`, `/carry`, `/number` and `/text-code` were routes of their own. They still answer for one release, for pages that keep an old script.
+
+## Other routes
+
+| Route | Description |
+| --- | --- |
+| `POST /calls/twilio` | Receives Twilio's status callback for a call and checks Twilio's signature. Requires Twilio settings. |
+| `POST /texts/twilio` | Receives Twilio's incoming texts and checks Twilio's signature. Requires Twilio settings. |
+| `GET /collect.js` | The script tag |
+| `GET /fingerprint.js` | Fingerprint helpers, loaded by the script on request |
+| `GET /review` | The [reviewer screen](operations.md#reviewer-screen). Its data requires a token. |
+| `/review/api/*` | The routes the screen calls, with a service or reviewer token. They serve the screen and are not part of the six calls. |
+| `GET /health` | `{"ok":true}` once the database answers |
+
+A Twilio request with a missing or wrong signature gets 403. A call or text that is already known, or whose person was deleted, gets the usual answer, so Twilio does not send it again.

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { after, describe, test } from 'node:test'
-import { GoogleError, MetaError, createBatcher, createGraph, createOutbox, googleAds, hashEmail, meta, microsoftAds, tiktok, recordNotLead } from '../src/index.ts'
-import type { IngestRequest, OutboxOptions, Outcome, Store } from '../src/index.ts'
+import { GoogleError, MetaError, createBatcher, createGraph, createOutbox, googleAds, hashEmail, meta, microsoftAds, tiktok, recordNotLead } from '../tools/internals.ts'
+import type { IngestRequest, OutboxOptions, Outcome, Store } from '../tools/internals.ts'
 import type { Opened } from './suite.ts'
 
 const T0 = 1_700_000_000_000

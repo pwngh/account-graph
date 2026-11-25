@@ -8,7 +8,7 @@ A text from your site arrives with a code that says which visit it came from. Th
 ```
 
 ```text
-tap ──▶ I need a lawyer. Ref K7Q2MX ──▶ your number ──▶ POST /text ──▶ the visit, and its ad
+tap ──▶ I need a lawyer. Ref K7Q2MX ──▶ your number ──▶ record a text ──▶ the visit, and its ad
 ```
 
 Set `TEXT_CODES=true` on the server. The script asks for this browser's code and adds it to the message as the link is followed. Without an answer, the link works as you wrote it.
@@ -19,16 +19,16 @@ A browser keeps its code for a week and is then given another. A code names its 
 
 Report each text as it arrives or is sent.
 
-```sh
-curl -X POST https://graph.example.org/text -H "authorization: Bearer $GRAPH_TOKEN" \
-  -d '{"id":"SM1","from":"+15550100141","to":"+15550100101","at":1795460000000,"text":"I need a lawyer. Ref K7Q2MX"}'
+```bash
+curl -X POST https://graph.example.org/v1/record -H "authorization: Bearer $GRAPH_TOKEN" -d '{ "entries": [
+  { "type": "text", "key": "SM1", "at": 1795460000000, "direction": "inbound", "from": "+15550100141", "to": "+15550100101", "text": "I need a lawyer. Ref K7Q2MX" }] }'
 ```
 
 ```json
-{ "subject": "caller:96f2c503…", "flags": ["first", "code"], "counted": true, "visitor": "visitor:fb919054…", "duplicate": false }
+{ "results": [{ "type": "text", "key": "SM1", "ok": true, "value": { "duplicate": false, "stands": true, "subject": "caller:96f2c503…", "flags": ["first", "code"], "counted": true, "visitor": "visitor:fb919054…" } }] }
 ```
 
-`counted` says the text is an outcome of the step `text`. Reported again with the same id, a text is a `duplicate`: the first report stands, whatever the second says, except that a text cannot change its direction. Report a text again, with the same id, until it is answered with 200.
+`counted` says the text is an outcome of the step `text`. `key` is the provider's id. Reported again with the same key, a text is a `duplicate`: the first report stands, whatever the second says, except that another direction or number is `KEY_REUSED`. Report a text again, with the same key, until it is answered.
 
 1. **Sender.** The sender is the same subject as a caller from that number, so their calls, their texts and a contact with that number are tied.
 2. **Visitor.** The code links the text to the one visitor it was given to, at 0.95. Without a code, the one visitor who tapped your text link within the [tap window](calls.md#busy-numbers) is linked, at 0.92. Either joins the two.
@@ -52,37 +52,49 @@ curl -X POST https://graph.example.org/text -H "authorization: Bearer $GRAPH_TOK
 
 Twilio can report incoming texts directly. The server verifies Twilio's signature on each request.
 
-1. In the Twilio console, open the phone number and set **A message comes in** to `https://graph.example.org/texts/twilio`, method POST. If a system of yours answers there already, have it post each text to `/text`.
+1. In the Twilio console, open the phone number and set **A message comes in** to `https://graph.example.org/texts/twilio`, method POST. If a system of yours answers there already, have it record each text.
 2. Set `TWILIO_AUTH_TOKEN`, and `TWILIO_TEXT_WEBHOOK_URL` to that address exactly as entered.
-3. Post the texts you send to `/text` with `"direction": "outbound"`.
+3. Record the texts you send with `"direction": "outbound"`.
 
 The answer to Twilio is empty, so the sender gets no reply from the graph.
 
 ## Unanswered texts
 
-`GET /texts` lists the oldest unanswered text of each sender, oldest first.
+The `texts` [report](http.md#report) lists the oldest unanswered text of each sender, oldest first.
+
+```http
+POST /v1/report
+
+{ "kind": "texts", "window": { "from": "2026-11-01", "to": "2026-11-30", "timeZone": "America/Chicago" }, "at": 1795460000000 }
+```
 
 ```json
-{ "texts": [{ "id": "SM1", "direction": "inbound", "subject": "caller:96f2c503…", "at": 1795460000000, "flags": ["first", "code"], "unanswered": 2, "source": "google", "campaign": null, "campaignId": "30111" }], "next": null }
+{ "asOf": 1795460000000, "value": { "rows": [{ "text": "SM1", "subject": "caller:96f2c503…", "at": 1795460000000, "unanswered": 2, "arrival": { "at": 1795459900000, "source": "google", "campaign": null, "campaignId": "30111", "landing": "https://example.org/help", "custom": {}, "confidence": 0.95, "how": "cluster" } }], "next": null } }
 ```
 
 `unanswered` counts what they have sent since anyone replied. A text from you, or a call with them that someone answered, replies to every text before it, whatever order they are reported in.
 
-| State of a text | Meaning |
+The `record` lookup of a text, and the journey of its sender, say what became of it under `reply`:
+
+| `state` | Meaning |
 | --- | --- |
 | `open` | Nobody has replied |
 | `replied` | `by` is the text or call that did, `how` says which, and `delay` is the time it took, in milliseconds |
 | `stopped` | The sender asked for no more texts before anyone replied |
 
-Mark a sender as no lead with `POST /not-lead` and `"transactionId": "text:SM1"`. Their texts then wait for nobody.
+Mark a sender as no lead with a `restatement` of the text. Their texts then wait for nobody.
+
+```json
+{ "type": "restatement", "key": "spam-SM1", "at": 1795463600000, "of": { "type": "text", "key": "SM1" }, "change": { "kind": "not_lead", "why": "spam" } }
+```
 
 ## Asking for no more texts
 
-`GET /texting?subject=contact:7` answers `{ "optedOut": true, "at": 1795460000000 }` when the last such word from anyone in the subject's cluster was STOP, STOPALL, UNSUBSCRIBE, CANCEL, END, QUIT, REVOKE or OPTOUT, or in Spanish ALTO, PARE, PARAR, DETENER, CANCELAR, BAJA, SALIR, TERMINAR or FIN, and `optedOut` is `false` after START or UNSTOP. The word counts only as the whole text. No fluent speaker has read the Spanish words, so have one read them before you rely on them. It is `null` when nobody has said either.
+The `person` [lookup](http.md#lookup) answers `"textsOptedOut": true` when the last such word from anyone in the subject's cluster was STOP, STOPALL, UNSUBSCRIBE, CANCEL, END, QUIT, REVOKE or OPTOUT, or in Spanish ALTO, PARE, PARAR, DETENER, CANCELAR, BAJA, SALIR, TERMINAR or FIN, and `false` after START or UNSTOP, or when nobody has said either. The word counts only as the whole text. No fluent speaker has read the Spanish words, so have one read them before you rely on them.
 
 It is kept apart from [consent](privacy.md), which is about advertising. Your own system sends the texts, so it must check its own list as well.
 
-A form's consent to texts belongs there too: the wording shown, when, and by whom it was given. Nothing here stores it or decides who may be sent a text. Do not use `/consent` for it, because a no there stops advertising conversions.
+A form's consent to texts belongs there too: the wording shown, when, and by whom it was given. Nothing here stores it or decides who may be sent a text. Do not use a `consent` entry for it, because a no there stops advertising conversions.
 
 ## Limitations
 

@@ -13,23 +13,23 @@ CALL_NUMBERS='{"+15551230001":{"source":"google","campaignId":"20222"}}' \
 npm start
 ```
 
-Tap the number on the page, then report the call the way a phone provider would:
+Tap the number on the page, then record the call the way a phone provider would:
 
-```sh
-curl -X POST https://graph.example.org/call -H "authorization: Bearer $GRAPH_TOKEN" \
-  -d '{"id":"CA1","from":"+15558675309","to":"+15551230001","at":1795460000000,"duration":140}'
+```bash
+curl -X POST https://graph.example.org/v1/record -H "authorization: Bearer $GRAPH_TOKEN" -d '{ "entries": [
+  { "type": "call", "key": "CA1", "at": 1795460000000, "direction": "inbound", "from": "+15558675309", "to": "+15551230001", "duration": 140 }] }'
 ```
 
 ```json
-{ "subject": "caller:96f2c503…", "flags": [], "counted": true, "state": "unknown", "visitor": "visitor:fb919054…", "duplicate": false }
+{ "results": [{ "type": "call", "key": "CA1", "ok": true, "value": { "duplicate": false, "stands": true, "subject": "caller:96f2c503…", "state": "unknown", "counted": true, "flags": [], "visitor": "visitor:fb919054…" } }] }
 ```
 
 `visitor` is the browser that tapped. The caller and that visitor are now one cluster, and [the report](report.md) lists the call under the visitor's campaign.
 
 ```text
-visitor taps the number ──▶ POST /event ──▶ a note on the visitor: which number, when
-phone provider ──▶ POST /call ──▶ caller ──▶ linked to the one visitor who tapped just before
-                                        └──▶ otherwise filed under the number's own channel
+visitor taps the number ──▶ POST /collect, kind event ──▶ a note on the visitor: which number, when
+phone provider ──▶ record a call ──▶ caller ──▶ linked to the one visitor who tapped just before
+                                           └──▶ otherwise filed under the number's own channel
 ```
 
 ## Page events
@@ -45,9 +45,9 @@ A page reports events without the service token, in one of three ways.
 
 The server keeps the names listed in `EVENTS` and answers 400 to any other. Each event is an outcome of the step with its name. A step in `STAGES` adds its value and the ad platforms it names; see [Steps](report.md#steps).
 
-An event counts once a day per browser. To count each occurrence, such as each form submission, pass an id in `data-ag-id` or the `id` argument. The id is ignored for a step with a value or an action in `STAGES`.
+An event counts once a day per browser, as a conversion whose key begins with `page:`. To count each occurrence, such as each form submission, pass an id in `data-ag-id` or the `id` argument. The id is ignored for a step with a value or an action in `STAGES`.
 
-> **Page events can be forged.** Anyone can send one from a browser. A step in both `EVENTS` and `STAGES` lets a browser create a conversion of that value, once a day per browser, limited per address. Keep such steps small, such as an inquiry, and record sales from your backend with `POST /convert`.
+> **Page events can be forged.** Anyone can send one from a browser. A step in both `EVENTS` and `STAGES` lets a browser create a conversion of that value, once a day per browser, limited per address. Keep such steps small, such as an inquiry, and record sales from your backend as a `conversion`.
 
 ## Phone calls
 
@@ -60,7 +60,7 @@ The server processes a reported call in four steps.
 
 Each visitor is linked to one caller. Visitors already linked to another caller, or separated from this caller by a reviewer, are skipped.
 
-Reporting a call id again answers `"duplicate": true`. A result in the second report is applied; the rest is ignored.
+`key` is the provider's id. Recording it again answers `"duplicate": true`. A result in the second report counts by its `at`, as a [result](#call-results) reported by itself would; the rest is ignored. Another direction or number under the same key is `KEY_REUSED`.
 
 | Flag | Meaning | Effect |
 | --- | --- | --- |
@@ -74,19 +74,28 @@ Reporting a call id again answers `"duplicate": true`. A result in the second re
 
 ### While the phone rings
 
-`POST /call/ringing` says who is calling, for the screen of whoever picks up. Nothing is written, so report the call as usual when it ends.
+The `caller` [lookup](http.md#lookup) says who is calling, for the screen of whoever picks up. Nothing is written, so record the call as usual when it ends.
+
+```http
+POST /v1/lookup
+
+{ "kind": "caller", "from": "+15558675309", "to": "+15551230001", "at": 1795460000000 }
+```
 
 ```json
-{ "subject": "caller:96f2c503…", "known": true, "people": [{ "subject": "contact:7", "score": 0.9, "level": "same", "reasons": [], "members": ["caller:96f2c503…", "contact:7"] }], "visitor": "visitor:fb919054…", "waiting": { "calls": 1, "texts": 0 }, "source": "google", "campaign": "Search", "campaignId": "20222", "landing": "https://example.org/help" }
+{ "subject": "caller:96f2c503…", "area": null, "known": true, "people": [{ "subject": "contact:7", "members": ["caller:96f2c503…", "contact:7"], "score": 0.9, "level": "same", "kinds": ["phone"] }],
+  "visitor": "visitor:fb919054…", "waiting": { "calls": 1, "texts": 0 },
+  "arrival": { "at": 1795459900000, "source": "google", "campaign": "Search", "campaignId": "20222", "landing": "https://example.org/help", "custom": {}, "confidence": 0.92, "how": "cluster" } }
 ```
 
 | Field | Meaning |
 | --- | --- |
+| `subject` | The caller, as the call will be recorded. `null` when they hid their number. |
 | `area` | Where in Texas the number was first given out, where it was. People keep a number when they move |
 | `known` | The number has called or texted before |
-| `people` | Who they may be, strongest first: their ties when they are on record, or whoever has the number. Several share a number. |
+| `people` | Who they may be, strongest first: their ties when they are on record, or whoever has the number. Several share a number. `kinds` says why. |
 | `visitor` | The one visitor who was shown the number or tapped it just before |
-| `source`, `campaign`, `campaignId`, `landing` | What brought them, where it can be credited already |
+| `arrival` | What brought them, where it can be credited already |
 | `waiting` | Their missed calls and texts nobody has returned |
 
 ### Busy numbers
@@ -128,42 +137,43 @@ The signature covers that address, so the two must match to the character. A req
 | --- | --- |
 | `busy`, `no-answer`, `failed`, `canceled` | Not answered |
 | `completed` | Result unknown: the call may have reached a person, a menu or voicemail |
-| An outbound call | Skipped, because a forwarded call looks the same. Post outbound calls from your backend. |
+| An outbound call | Skipped, because a forwarded call looks the same. Record outbound calls from your backend. |
 
-> **Do not point an `action` address at this server.** The response to `<Dial action>`, `<Record action>` and similar tells Twilio what the call does next. Handle those in your own application, and post the result to `/call/result` from there. Status callbacks expect no instructions and get none.
+> **Do not point an `action` address at this server.** The response to `<Dial action>`, `<Record action>` and similar tells Twilio what the call does next. Handle those in your own application, and record the result as a `call_update` from there. Status callbacks expect no instructions and get none.
 
 ### Other providers
 
-Post each call to `/call` with the service token.
+Record each call from your backend.
 
 | Field | Meaning |
 | --- | --- |
-| `id` | The provider's id for the call |
-| `from`, `to` | Who called, and the number dialed |
+| `key` | The provider's id for the call |
+| `direction` | `inbound`, or `outbound` for a call you placed |
+| `from`, `to` | Who called, and the number dialed. Leave `from` out where the caller hid it. |
 | `at` | When the call began, in epoch milliseconds |
 | `duration` | How long it lasted, in seconds |
-| `answered`, `voicemail`, `waited` | The [result](#call-results), if already known |
+| `result` | The [result](#call-results), if already known: `{ answered, voicemail?, waited? }` |
 
 ### A call tracking service
 
-A service that swaps the numbers on your pages can stay. Keep its script, and have your backend post each of its finished calls to `/call`. Taps are matched only if the script changes the `tel:` address of the link as well as the text, and `phone_click` is in `EVENTS`.
+A service that swaps the numbers on your pages can stay. Keep its script, and have your backend record each of its finished calls. Taps are matched only if the script changes the `tel:` address of the link as well as the text, and `phone_click` is in `EVENTS`.
 
 ```text
-visitor taps the number it put there ──▶ /event: that number, when
-the service's webhook ──▶ your backend ──▶ POST /call { id, from, to, at, duration, … }
+visitor taps the number it put there ──▶ POST /collect, kind event: that number, when
+the service's webhook ──▶ your backend ──▶ record a call { key, from, to, at, duration, … }
 ```
 
 | Field | From the service |
 | --- | --- |
-| `id` | Its own id for the call, so a report sent twice counts once |
+| `key` | Its own id for the call, so a report sent twice counts once |
 | `from` | Inbound: the caller's number. Outbound: yours. |
 | `to` | Inbound: the number the visitor saw and dialed, not the one it was forwarded to, because a tap is matched on it. Outbound: the customer's number. |
 | `at` | Its start time as epoch milliseconds. Convert a time with a zone. |
 | `duration` | Seconds. Check its unit. |
-| `answered`, `voicemail` | `answered: true` only where a person, and not a menu or a machine, is known to have answered. `answered: false` for a known miss, with `voicemail: true` where it went there. Leave both out when unknown, and report the [result](#call-results) later. |
+| `result` | `answered: true` only where a person, and not a menu or a machine, is known to have answered. `answered: false` for a known miss, with `voicemail: true` where it went there. Leave `result` out when unknown, and report the [result](#call-results) later. |
 | `direction` | `outbound` for calls you placed |
 
-CallRail's API documents a call with `customer_phone_number`, `tracking_phone_number`, `start_time`, `duration`, `answered`, `voicemail` and `direction`. Check the body your account sends, and its signature, before relying on any field. [`examples/call-tracking.ts`](../examples/call-tracking.ts) takes its webhook, checks the signature and posts the call, and keeps calls while the server is away. No such service has been tried against a live account here.
+CallRail's API documents a call with `customer_phone_number`, `tracking_phone_number`, `start_time`, `duration`, `answered`, `voicemail` and `direction`. Check the body your account sends, and its signature, before relying on any field. [`examples/call-tracking.ts`](../examples/call-tracking.ts) takes its webhook, checks the signature and records the call, and keeps calls while the server is away. No such service has been tried against a live account here.
 
 > **List its numbers or none.** With `CALL_NUMBERS` set, a tap on a number that is neither in it nor in the pool leaves no note to match a call by. Add each number the service shows, or leave `CALL_NUMBERS` unset.
 
@@ -187,11 +197,11 @@ Mark the numbers to replace on your pages, and add `pool=1` to the script tag:
 | A visitor with a visit from an ad, a campaign or another site opens the page | They get the number they had last, or else the one that has rested longest, for `POOL_MINUTES` |
 | The page stays in view | The page renews the number every five minutes |
 | The page is hidden or closed | The lease expires, and the page shows its own number again |
-| Every number is taken | The page keeps its own number. `/stats` and the Health view count the request as exhausted. |
+| Every number is taken | The page keeps its own number. The Health view counts the request as exhausted. |
 | A call reaches a pool number | It is linked at 0.90 to the visitor holding the number when the call began. For `POOL_GRACE_MINUTES` after a lease ends, the last holder still gets the call unless someone has held the number since. Where somebody else held it less than `POOL_GRACE_MINUTES` before, either may be dialing it, so the call is the holder's only if they tapped the number just before. One caller per visitor still applies, as do separations. |
 | The number has no holder | A tap decides, as for any other number |
 
-A number is held by one visitor at a time, across all servers. One network gets numbers for three browsers in ten minutes. `forget` removes a visitor from their leases and keeps the record that the number was held; `prune` deletes leases that ended before its time.
+A number is held by one visitor at a time, across all servers. One network gets numbers for three browsers in ten minutes. `forget` removes a visitor from their leases and keeps the record that the number was held; `account-graph prune` deletes leases that ended before its day.
 
 The page's own number also stays for staff, declared bots, visitors who opted out of advertising, and those without a visit in the last 90 days.
 
@@ -201,22 +211,24 @@ The page's own number also stays for staff, declared bots, visitors who opted ou
 
 A result says whether a person spoke to the caller. It is true, false or unknown, independent of call length. Report it from your backend, before or after the call itself:
 
-```sh
-curl -X POST https://graph.example.org/call/result -H "authorization: Bearer $GRAPH_TOKEN" \
-  -d '{"id":"CA1","answered":true,"waited":12}'
+```bash
+curl -X POST https://graph.example.org/v1/record -H "authorization: Bearer $GRAPH_TOKEN" -d '{ "entries": [
+  { "type": "call_update", "key": "result-CA1", "at": 1795460200000, "call": "CA1", "change": { "kind": "result", "result": { "answered": true, "waited": 12 } } }] }'
 ```
 
 ```json
-{ "state": "answered", "counted": true }
+{ "results": [{ "type": "call_update", "key": "result-CA1", "ok": true, "value": { "duplicate": false, "stands": true, "state": "answered", "counted": true, "followUp": null } }] }
 ```
+
+`state` is `waiting` until the call itself is recorded.
 
 | Field | Meaning |
 | --- | --- |
 | `answered` | A person spoke to the caller. Required. |
-| `voicemail` | The caller reached voicemail. Rejected together with `answered: true`. |
+| `voicemail` | The caller reached voicemail. Refused together with `answered: true`. |
 | `waited` | Seconds before someone answered or the caller gave up |
 
-The last report stands. A call with `answered: false` is **missed**: linked and credited like any call, counted under **Missed calls** in the report, and excluded from outcomes.
+`at` is when the result was said. The newest by `at`, then by `key`, stands whole, whatever order they arrive in. A call with `answered: false` is **missed**: linked and credited like any call, counted under **Missed calls** in the report, and excluded from outcomes.
 
 ### Held calls
 
@@ -243,15 +255,17 @@ Without the setting, a call is counted by its length when it is reported. If a l
 
 Report the calls you place as well, and each missed call shows whether it was returned.
 
-```sh
-curl -X POST https://graph.example.org/call -H "authorization: Bearer $GRAPH_TOKEN" \
-  -d '{"id":"CB1","direction":"outbound","from":"+15550100001","to":"+15550100041","at":1795463600000,"duration":80,"answered":true}'
-curl "https://graph.example.org/call?id=CA2" -H "authorization: Bearer $REVIEWER_TOKEN"
+```bash
+curl -X POST https://graph.example.org/v1/record -H "authorization: Bearer $GRAPH_TOKEN" -d '{ "entries": [
+  { "type": "call", "key": "CB1", "at": 1795463600000, "direction": "outbound", "from": "+15550100001", "to": "+15550100041", "duration": 80, "result": { "answered": true } }] }'
+curl -X POST https://graph.example.org/v1/lookup -H "authorization: Bearer $GRAPH_TOKEN" -d '{ "kind": "record", "type": "call", "key": "CA2", "at": 1795463700000 }'
 ```
 
 ```json
-{ "id": "CA2", "state": "missed", "followUp": { "state": "returned", "by": "CB1", "delay": 3600000, "attempts": 0 } }
+{ "type": "call", "subject": "caller:5b1e…", "at": 1795460000000, "direction": "inbound", "state": "missed", "followUp": { "state": "returned", "by": "CB1", "delay": 3600000, "attempts": 0 }, "notLead": null }
 ```
+
+The `callbacks` [report](http.md#report) lists the missed calls nobody has returned, oldest first.
 
 | State of a missed call | Meaning |
 | --- | --- |
@@ -268,24 +282,25 @@ Calls after the missed one decide its state, whatever order they are reported in
 
 Report a caller reached another way, such as by text, in person or from an unreported line:
 
-```sh
-curl -X POST https://graph.example.org/call/returned -H "authorization: Bearer $GRAPH_TOKEN" \
-  -d '{"id":"CA1","at":1795467200000}'
+```bash
+curl -X POST https://graph.example.org/v1/record -H "authorization: Bearer $GRAPH_TOKEN" -d '{ "entries": [
+  { "type": "call_update", "key": "return-CA1", "at": 1795467300000, "call": "CA1", "change": { "kind": "returned", "reachedAt": 1795467200000 } }] }'
 ```
 
 ```json
-{ "followUp": { "state": "returned", "by": "CA1", "delay": 7200000, "reported": true, "attempts": 1 } }
+{ "results": [{ "type": "call_update", "key": "return-CA1", "ok": true, "value": { "duplicate": false, "stands": true, "state": "missed", "counted": false, "followUp": { "state": "returned", "by": "CA1", "delay": 7200000, "reported": true, "attempts": 1 } } }] }
 ```
 
 `reported` marks a return known only from such a report. The call summary counts these separately.
 
 | Rule | Behavior |
 | --- | --- |
-| `at` | When the caller was reached. Defaults to now. |
-| Scope | Closes every missed call of that caller that began before `at` |
+| `at` | When it was said |
+| `reachedAt` | When the caller was reached |
+| Scope | Closes every missed call of that caller that began before `reachedAt` |
 | Eligibility | Applies to a missed call, from after it began. An answered call that reached them sooner takes precedence. |
-| `returned: false` | Withdraws the report |
-| Order | The last report stands, and it may arrive before the call |
+| `not_returned` | Withdraws the report |
+| Order | The newest by `at`, then by `key`, stands. It may arrive before the call. |
 
 ## Call tags
 
@@ -293,8 +308,10 @@ Tags attach facts to a call, such as the language chosen at the prompt. A tracki
 
 ```sh
 CALL_NUMBERS='{"+15550100001":{"source":"listing","tags":{"office_advertised":"north","language":"es"}}}'
-curl -X POST https://graph.example.org/call -H "authorization: Bearer $GRAPH_TOKEN" \
-  -d '{"id":"CA1","from":"+15550100041","to":"+15550100001","at":1795460000000,"duration":140,"tags":{"language":"es"}}'
+```
+
+```json
+{ "type": "call", "key": "CA1", "at": 1795460000000, "direction": "inbound", "from": "+15550100041", "to": "+15550100001", "duration": 140, "tags": { "language": "es" } }
 ```
 
 A call's tags are copied to its outcome. A number's tags go on the visit recorded for a call filed under that number; a call linked to a visitor uses the visitor's own visit instead. The report [breaks down](report.md#breakdowns) by either.
@@ -333,9 +350,9 @@ Callers are stored as a hash of their number, so the view shows an ID. To find t
 | Saved pool numbers | A call after the grace period is not linked to the visitor who saved the number, and one during another visitor's lease is linked to that visitor in error, unless the caller dialed that number before, when it was not that visitor's, or is tied to somebody already and the lease has ended, or the number was shown to that visitor within the grace and they did not tap it. More numbers mean longer rests and fewer errors. |
 | Copied pages | A saved or printed page keeps showing a pool number. |
 | Pool numbers | People behind one address, such as an office, share the three-browser limit. Carriers may label a number that many strangers are called back from. |
-| Tap window | Thirty seconds are allowed for clock differences. `CALL_TAP_SECONDS`, or `clickWindow` in the library, changes the three minutes. See [Busy numbers](#busy-numbers). |
+| Tap window | Thirty seconds are allowed for clock differences. `CALL_TAP_SECONDS`, or `phones.tapSeconds` in the library, changes the three minutes. See [Busy numbers](#busy-numbers). |
 | Conversions | A counted call goes to an ad platform only when the `call` step in `STAGES` has an action. The caller's hashed number is sent as a match key. |
 | Returns by number | A caller reached on a different number leaves the missed call open, unless you [report the return](#reported-returns). |
 | Older calls | A call recorded before calls were stored has no state, and a result for it finds no call. Its outcome stays counted. |
-| Retention | `forget` deletes a caller's calls and results. `prune` deletes results whose call did not arrive, and keeps calls. |
+| Retention | `forget` deletes a caller's calls and results. `account-graph prune` deletes results whose call did not arrive, and keeps calls. |
 | Verification | Twilio's statuses and callback behavior were read from its documentation in November 2026; the console's field names were not. The signature check matches the example on Twilio's webhook security page. No real Twilio request has been received. |

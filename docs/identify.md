@@ -1,34 +1,35 @@
 # Identify
 
-`POST /identify` records what your backend knows about a person: sign-in, email, phone and postal address. Send the facts as they are. The server normalizes, checks and hashes them, then returns the cluster changes.
+A `profile` entry of [`record`](http.md#record) records what your backend knows about a person: sign-in, email, phone and postal address. Send the facts as they are. The server normalizes, checks and hashes them, then answers with the cluster changes.
 
-```sh
-curl -X POST https://graph.example.org/identify -H "authorization: Bearer $GRAPH_TOKEN" -d '{
-  "subject": "account:42",
-  "event": "signup",
-  "device": "9f3c1c1e-…",
-  "email": "Pat.Lee@gmail.com",
-  "phone": "(555) 000-1111",
-  "ip": "203.0.113.9",
-  "address": { "street": "1 Main Street #2", "city": "Springfield", "state": "IL" }
-}'
+```bash
+curl -X POST https://graph.example.org/v1/record -H "authorization: Bearer $GRAPH_TOKEN" -d '{ "entries": [{
+  "type": "profile", "key": "signup-42", "at": 1795460000000, "subject": "account:42", "event": "signup",
+  "facts": {
+    "device": "9f3c1c1e-0000-4000-8000-000000000001",
+    "email": "Pat.Lee@gmail.com",
+    "phone": "(555) 000-1111",
+    "ip": "203.0.113.9",
+    "address": { "street": "1 Main Street #2", "city": "Springfield", "state": "IL" }
+  } }] }'
 ```
 
 ```json
-{
+{ "results": [{ "type": "profile", "key": "signup-42", "ok": true, "value": {
+  "duplicate": false, "stands": true,
   "changes": [{ "subject": "account:42", "from": "account:42", "to": "account:17" }],
-  "identifiers": ["device:9f3c1c1e-…", "email:5e88…", "ip:203.0.113.9", "phone:1f0a…", "address:c41b…"],
-  "notes": { "phone": "mobile", "address": "confirmed" }
-}
+  "notes": { "phone": "mobile", "address": "confirmed" } } }] }
 ```
 
-`changes` shows that the sign-up joined `account:42` to the cluster of `account:17`. `notes` holds the results of the checks.
+`changes` shows that the sign-up joined `account:42` to the cluster of `account:17`. `notes` holds the results of the checks. The identifiers made from the facts stay in the graph.
 
-Call `/identify` on every sign-in, and on any page where the person is signed in, with the `device` cookie and the request's `ip`. Each call adds a sighting, so a second phone or new laptop is linked the day it is first used.
+Record a profile on every sign-in, and on any page where the person is signed in, with the `device` cookie and the request's `ip`. Each one adds a sighting, so a second phone or new laptop is linked the day it is first used. Give each a key of its own, such as your session's id.
+
+To ask who somebody may be without recording it, use the `match` [lookup](http.md#lookup) with the same facts.
 
 ## Fields
 
-| You send | The server keeps | Needs |
+| In `facts` | The server keeps | Needs |
 | --- | --- | --- |
 | `device` | `device:…`, the `ag_device` cookie the script tag set. | - |
 | `email` | `email:` and a hash. Gmail's dots and `+tags` are folded first. | - |
@@ -36,9 +37,17 @@ Call `/identify` on every sign-in, and on any page where the person is signed in
 | `phone` | `phone:` and a hash. With a line check, `voip:` for an internet calling app, and no identifier for a switchboard, premium line or pager. | Optional: Twilio, for the line check. |
 | `address` | `address:` and a hash of the postal service's delivery point, so two spellings of one address match. | Smarty. Otherwise addresses are ignored. |
 | `name`, `dob` | `name:` and a keyed hash. See [Names](#names). | `IDENTIFIER_SECRET`, and a policy with a `name` kind. |
-| `identifiers` | Identifiers you already hold, as written: `payment:tok_…`, `passkey:…`. | - |
-| `speaker` | The [person who speaks for](#speaking-for-somebody-else) the subject: their `device`, `phone` and `email`. | - |
-| `at`, `event` | When it happened, and what the person was doing. Default: now. | - |
+| `identifiers` | Identifiers you already hold, as written: `hardware:…`, `payment:tok_…`, `passkey:…`. At most 100. | A kind in the policy, and not one [the graph writes itself](http.md#refusals). |
+
+Beside `facts`, `at` is when it happened, `event` is what the person was doing, up to 200 characters, and `speaker` is the [person who speaks for](#speaking-for-somebody-else) the subject: their `device`, `phone` and `email`.
+
+| Kind of your own | Value |
+| --- | --- |
+| `hardware` | The hashed machine id reported by your desktop client |
+| `passkey` | A passkey's credential id, after your server verified the sign-in |
+| `payment` | A card or bank token from your payment provider, in place of the number |
+
+Facts that come to no identifier, such as an address without Smarty or a placeholder, are refused with `NO_FACT_USED` and the notes. With a `speaker`, `facts` may come to none, or be `{}`.
 
 The email, number, address, name and date of birth are stored only as hashes.
 
@@ -47,7 +56,7 @@ The email, number, address, name and date of birth are stored only as hashes.
 | Finding | `notes` value | Effect |
 | --- | --- | --- |
 | A mobile or landline | `"phone": "mobile"` | Kept as `phone`, 0.9. |
-| A number of one digit, or a count such as 1234567890 | `"phone": "a placeholder: not used"` | Dropped. A request with nothing else is accepted, and nothing is kept of it. |
+| A number of one digit, or a count such as 1234567890 | `"phone": "a placeholder: not used"` | Dropped. A profile with nothing else is refused with `NO_FACT_USED`. |
 | An email made up to fill a field, such as `none@`, or at `test.com` | `"email": "a placeholder: not used"` | Dropped. |
 | An office's email, such as `info@` or `office@`, at no public mail domain | `"email": "read by several: not used"` | Dropped, because several people are behind it. |
 | A number from an internet calling app | `"phone": "nonFixedVoip"` | Kept as `voip`, 0.5: related without joining. |
@@ -58,7 +67,7 @@ The email, number, address, name and date of birth are stored only as hashes.
 
 > **An address identifies a household.** Two accounts at one confirmed address are related at 0.6 and are not joined by it alone. A rented mail box, a vacant address, or a building with the apartment missing links no accounts.
 
-A check that is down keeps the sighting. The phone is stored as a plain `phone`, the address is omitted with a note that the service did not answer, and the rest is recorded.
+A check that is down, or takes more than three seconds, keeps the sighting. The phone is stored as a plain `phone`, the address is omitted with a note that the service did not answer, and the rest is recorded.
 
 A number identified as VoIP also stops counting as a `phone` wherever it was stored before the check, by a phone call or by a sighting during an outage. Calls check the caller's number the same way, so a call and an account on one such number are related at 0.5.
 
@@ -66,12 +75,10 @@ A number identified as VoIP also stops counting as a `phone` wherever it was sto
 
 A mother calls about her son. Without being told, the server takes her number and her browser for his. Send what is hers as `speaker`, from a box on the form or a mark your staff make:
 
-```sh
-curl -X POST https://graph.example.org/identify -H "authorization: Bearer $GRAPH_TOKEN" -d '{
-  "subject": "contact:son",
-  "email": "son@example.org",
-  "speaker": { "device": "9f3c1c1e-0000-4000-8000-000000000001", "phone": "(555) 000-1111", "email": "mother@example.org" }
-}'
+```json
+{ "type": "profile", "key": "intake-9", "at": 1795460000000, "subject": "contact:son",
+  "facts": { "email": "son@example.org" },
+  "speaker": { "device": "9f3c1c1e-0000-4000-8000-000000000001", "phone": "(555) 000-1111", "email": "mother@example.org" } }
 ```
 
 | What you send | What happens |
@@ -82,7 +89,7 @@ curl -X POST https://graph.example.org/identify -H "authorization: Bearer $GRAPH
 | A fact of the speaker's that is on the subject's record already | Left there, with a note. Nothing written before is undone: mute it, or forget the record. |
 | Neither device nor phone | The subject is recorded, with a note. |
 
-What brought the speaker's browser earns the credit for the subject. It is not passed on to anybody else they speak for, or back. The two are never offered for review as one person, and a number written on both later does not join them. A reviewer who joins them has the last word. To take it back, mute the `behalf:` mark of the browser and that of the caller: sent again, they stay muted. The subject is a record of yours, not a browser or a caller.
+What brought the speaker's browser earns the credit for the subject. It is not passed on to anybody else they speak for, or back. The two are never offered for review as one person, and a number written on both later does not join them. A reviewer who joins them has the last word. To take it back, mute the `behalf:` mark of the browser and that of the caller on the reviewer screen: sent again, they stay muted. The subject is a record of yours, not a browser or a caller.
 
 ## Hosted forms
 
@@ -94,12 +101,12 @@ A form that posts to your own backend arrives with the `ag_device` cookie. For a
 
 ```text
 visitor submits ──▶ script adds ag_device and ag_landing ──▶ the other system
-the other system ──▶ your backend, later ──▶ POST /identify { subject, device: ag_device }
+the other system ──▶ your backend, later ──▶ record a profile with facts.device: ag_device
 ```
 
 | Field | Holds |
 | --- | --- |
-| `ag_device` | The visitor's device id. Send it back as `device`. |
+| `ag_device` | The visitor's device id. Send it back as `facts.device`. |
 | `ag_landing` | The address this browser session began on, with its click id and campaign. |
 
 `collect.js?forms=all` fills every form that posts. A script that posts a form itself can read the same two values from `accountGraph.fields()`.
@@ -117,12 +124,15 @@ When your backend can read the `ag_device` cookie, prefer it to the field. With 
 
 A chat service hands over a lead with an email or a phone number, and often no device. Have your backend record the person, then the step:
 
-```sh
-curl -X POST https://graph.example.org/identify -H "authorization: Bearer $GRAPH_TOKEN" \
-  -d '{"subject":"contact:7","event":"chat","phone":"+15550100142","device":"9f3c1c1e-0000-4000-8000-000000000001"}'
-curl -X POST https://graph.example.org/convert -H "authorization: Bearer $GRAPH_TOKEN" \
-  -d '{"transactionId":"chat-7","subject":"contact:7","at":1795460000000,"stage":"chat"}'
+```bash
+curl -X POST https://graph.example.org/v1/record -H "authorization: Bearer $GRAPH_TOKEN" -d '{ "entries": [
+  { "type": "profile", "key": "chat-7", "at": 1795460000000, "subject": "contact:7", "event": "chat",
+    "facts": { "phone": "+15550100142", "device": "9f3c1c1e-0000-4000-8000-000000000001" } },
+  { "type": "conversion", "key": "chat-7", "at": 1795460000000, "subject": "contact:7", "stage": "chat" }
+] }'
 ```
+
+The profile comes first, so the conversion finds the click.
 
 | The chat box | What to send |
 | --- | --- |
@@ -135,7 +145,7 @@ What was said in the chat is not read or stored. Leave it in the chat service.
 
 | Filter | Behavior |
 | --- | --- |
-| Declared bots | A visit is dropped when its user agent names a crawler, link previewer or uptime check. `/stats` counts these under `bots`. |
+| Declared bots | A visit is dropped when its user agent names a crawler, link previewer or uptime check. |
 | Confirmed bots | With Fingerprint set up, a visit it flags as a bad bot is dropped. |
 | Shared addresses | With MaxMind set up, a VPN, data center or carrier address is recorded and links no subjects. |
 
@@ -146,7 +156,8 @@ With MaxMind, each visit also gets a location note, such as `place:US/FL/Miami`.
 A name confirms that two people who share a phone are one. It creates no link by itself.
 
 ```json
-{ "subject": "contact:7", "phone": "(555) 010-0007", "name": { "first": "José", "last": "Muñoz" }, "dob": "1990-02-03" }
+{ "type": "profile", "key": "intake-7", "at": 1795460000000, "subject": "contact:7",
+  "facts": { "phone": "(555) 010-0007", "name": { "first": "José", "last": "Muñoz" }, "dob": "1990-02-03" } }
 ```
 
 To use names, set `IDENTIFIER_SECRET` and a policy with a `name` kind that only corroborates, such as [the preset for contacts entered by staff](presets.md#contacts-entered-by-staff).
@@ -170,7 +181,7 @@ Each new number is one paid Twilio lookup. Answers are kept for thirty days.
 ## Limitations
 
 - **Addresses.** United States only, through Smarty's US Street API.
-- **Reassigned numbers.** A number identified as VoIP stays muted as a `phone`, even if a later check reports a mobile. Restore it with `POST /ignore` and `ignored: false`.
+- **Reassigned numbers.** A number identified as VoIP stays muted as a `phone`, even if a later check reports a mobile. Restore it with [`decide`](http.md#decide) `unmute` and the phone.
 - **Undeclared bots.** User agents identify only bots that name themselves. One that imitates a browser needs Fingerprint.
 - **Names.** A name confirms a link two accounts already have, under a policy that includes names. Nicknames, married names and spellings that differ beyond accents are different names.
 - **`IDENTIFIER_SECRET`.** Changing it makes new keys that match none of the old ones, and the old keys cannot be regenerated.

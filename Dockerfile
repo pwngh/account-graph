@@ -1,4 +1,4 @@
-# Builds the server. Run it with a PostgreSQL address and a token; see docs/operations.md.
+# Builds the server. Run it with a PostgreSQL address, a token and a receipt secret; see docs/operations.md.
 FROM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -18,4 +18,4 @@ COPY --from=build /app/dist ./dist
 USER node
 EXPOSE 8080
 HEALTHCHECK --interval=10s --timeout=3s --retries=6 CMD wget -qO- http://127.0.0.1:8080/health || exit 1
-CMD ["node", "dist/serve.js"]
+CMD ["node", "dist/bin.js"]

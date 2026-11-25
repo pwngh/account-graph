@@ -12,15 +12,19 @@
  * scenes. Ctrl-C stops and deletes all of it.
  */
 import { execFileSync } from 'node:child_process'
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash, generateKeyPairSync, randomUUID } from 'node:crypto'
 import { once } from 'node:events'
 import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { createGraph, createMemoryStore, createOps, createOutbox, googleAds, hashPhone, nameKeys, policyFrom, recordCall } from '../src/index.ts'
-import type { Store } from '../src/index.ts'
-import { reviewPage } from '../src/review.ts'
-import { createHandler } from '../src/server.ts'
+import { accountGraph } from '../src/index.ts'
+import type { CallValue, LocalOptions, RecordEntry, RecordValue } from '../src/index.ts'
+import { createEdge } from '../src/edge/index.ts'
+import { reviewPage } from '../src/edge/review.ts'
+import { runWorkers } from '../src/testing/index.ts'
+// The months before the story are written straight into the graph, as a program of this repository may. The story itself only uses what the package ships.
+import { internalsOf } from '../src/client/internals.ts'
+import { hashPhone, nameKeys, recordCall } from '../tools/internals.ts'
 import { clockScript, landing } from './firm-page.ts'
 import { PRACTICES } from './practice.ts'
 import type { Practice } from './practice.ts'
@@ -61,8 +65,13 @@ export interface Firm {
   close(): Promise<void>
 }
 
-/** Starts the firm over a store. With `quick`, it has a tenth of its history, for tests. `restart` is asked for from the stage, and starts over. */
-export async function startFirm(store: Store, { ports = [0, 0], quick = false, practice = 'family', say = () => {}, restart }: { ports?: [number, number]; quick?: boolean; practice?: keyof typeof PRACTICES; say?: (line: string) => void; restart?: () => void } = {}): Promise<Firm> {
+/** Where the firm keeps everything. Left out, in memory. */
+export interface Kept {
+  databaseUrl?: string
+}
+
+/** Starts the firm. With `quick`, it has a tenth of its history, for tests. `restart` is asked for from the stage, and starts over. */
+export async function startFirm({ databaseUrl }: Kept, { ports = [0, 0], quick = false, practice = 'family', say = () => {}, restart }: { ports?: [number, number]; quick?: boolean; practice?: keyof typeof PRACTICES; say?: (line: string) => void; restart?: () => void } = {}): Promise<Firm> {
   const kind = PRACTICES[practice]
   const STEPS = stepsOf(kind)
   // What is seeded is written down when it happened. The story takes a Monday to a Thursday that have passed, and each scene moves the clock on to when it happens.
@@ -73,8 +82,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, p
   const when = (days: number, hour: number, minute: number) => new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + days, hour, minute).getTime()
   let ahead = when(0, 8, 50) - Date.now()
   const clock = () => writing ?? Date.now() + ahead
-  const policy = policyFrom(JSON.parse(readFileSync(new URL('./household.json', import.meta.url), 'utf8')))
-  const graph = createGraph(store, policy, { now: clock })
+  const { name, ...builtIn } = JSON.parse(readFileSync(new URL('./household.json', import.meta.url), 'utf8')).kinds
   const alerts: string[] = []
   const sent: { id: string; value: number | undefined }[] = []
   const wasSent = (id: string) => sent.some((each) => each.id === id)
@@ -82,17 +90,28 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, p
   await once(site.listen(ports[1], '127.0.0.1'), 'listening')
   const siteAt = `http://localhost:${(site.address() as AddressInfo).port}`
 
-  // An ad platform that takes everything and is not there.
-  const outbox = createOutbox(graph, store.outbox, {
-    now: clock,
-    targets: [googleAds({ customerId: '000-000-0000', send: async (body) => (sent.push(...body.events.map((event: any) => ({ id: event.transactionId, value: event.conversionValue }))), { requestId: `made-up-${sent.length}` }) })],
-  })
-  const ops = createOps(graph, store.ops, { now: clock, url: `${siteAt}/hook`, quiet: { calls: 12 }, returnHours: 24, onError: () => {} })
+  // An ad platform that takes everything and is not there. The key is made here and opens nothing.
+  const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048, privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } })
+  const platform: typeof fetch = async (address, init) => {
+    const to = String(address)
+    if (to.startsWith(siteAt)) return fetch(address, init)
+    if (to.includes('oauth2')) return Response.json({ access_token: 'made-up', expires_in: 3600 })
+    const { events } = JSON.parse(String(init?.body)) as { events: { transactionId: string; conversionValue?: number }[] }
+    sent.push(...events.map((event) => ({ id: event.transactionId, value: event.conversionValue })))
+    return Response.json({ requestId: `made-up-${sent.length}` })
+  }
+  const settings = {
+    policy: { kinds: builtIn, ...(name && { customKinds: { name } }) } as NonNullable<LocalOptions['policy']>,
+    now: clock, fetch: platform, stages: STEPS, linkSecret: SECRET, identifierSecret: SECRET, workers: false, timeoutMs: 120_000,
+    phones: { numbers: LINES, resultsExpectedWithinMinutes: 30, returnHours: 24, pool: { numbers: ['+15550100111', '+15550100112'], minutes: 15, graceMinutes: 120 } },
+    ads: { google: { customerId: '000-000-0000', serviceAccount: { client_email: 'demo@example.org', private_key: privateKey } } },
+    alerts: { url: `${siteAt}/hook` }, monitor: { quietHours: { calls: 12 } },
+  }
+  const firm = accountGraph(databaseUrl ? { ...settings, databaseUrl, receiptSecrets: [SECRET] } : { ...settings, memory: true })
+  const { engine, ops } = await internalsOf(firm)!()
+  const { graph } = engine
   const calls = { numbers: LINES, results: 'expected' as const }
-  const handler = createHandler(graph, {
-    token: 'service-demo', reviewers: { dana: 'demo' }, origins: [siteAt], now: clock, outbox, ops, stages: STEPS, calls, returnHours: 24, limit: false,
-    events: ['phone_click', 'text_click'], linkSecret: SECRET, identifierSecret: SECRET, pool: { numbers: ['+15550100111', '+15550100112'], minutes: 15, grace: 120 },
-  })
+  const handler = createEdge(firm, { token: 'service-demo', reviewers: { dana: 'demo' }, origins: [siteAt], limit: false, events: ['phone_click', 'text_click'] })
   // The reviewer screen goes by the demo's clock: the page is served with it, and every answer carries it. The stage is the same page with the caller's phone and the scenes.
   const { html, headers } = reviewPage()
   const hash = (text: string) => `'sha256-${createHash('sha256').update(text).digest('base64')}'`
@@ -125,14 +144,28 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, p
     throw error
   })
   const graphAt = `http://localhost:${(server.address() as AddressInfo).port}`
-  const ask = async (method: string, path: string, body?: unknown, headers: Record<string, string> = { authorization: 'Bearer service-demo' }): Promise<any> => {
-    const response = await fetch(graphAt + path, { method, headers: { 'user-agent': 'Mozilla/5.0 (the demo)', ...headers }, ...(body !== undefined && { body: JSON.stringify(body) }) })
+  const asked = async (path: string, init: RequestInit): Promise<any> => {
+    const response = await fetch(graphAt + path, { ...init, headers: { 'user-agent': 'Mozilla/5.0 (the demo)', ...init.headers } })
     const told = response.status === 204 ? undefined : await response.json()
-    if (!response.ok) throw new Error(`${method} ${path}: ${(told as { error?: string })?.error}`)
+    if (!response.ok) throw new Error(`${path}: ${(told as { error?: string })?.error}`)
     return told
   }
-  const browser = (path: string, body: object) => ask('POST', path, body, { origin: siteAt })
+  /** What a page of the site sends. */
+  const browser = (body: object) => asked('/collect', { method: 'POST', body: JSON.stringify(body), headers: { origin: siteAt } })
+  /** What the reviewer screen reads. */
+  const screen = (path: string) => asked(`/review/api${path}`, { headers: { authorization: 'Bearer demo' } })
+  /** What the office, the phone system or the matters say, over HTTP, as their own programs would. */
+  const office = accountGraph({ url: graphAt, token: 'service-demo', timeoutMs: 120_000 })
+  let keys = 0
+  async function record<T extends RecordEntry['type']>(entry: Omit<Extract<RecordEntry, { type: T }>, 'key' | 'at'> & { key?: string; at?: number }): Promise<RecordValue[T]> {
+    const { results: [result] } = await office.record({ entries: [{ key: `demo-${boot}-${++keys}`, at: clock(), ...entry } as unknown as RecordEntry] })
+    if (!result!.ok) throw new Error(`${entry.type}: ${result!.reason}`)
+    return result!.value as unknown as RecordValue[T]
+  }
+  const personOf = async (subject: string) => (await office.lookup({ kind: 'person', subjects: [subject], at: clock() })).people[0]!
 
+  /** Which start this is, so the stage sees when another has begun. */
+  const boot = randomUUID()
   let seed = 20261124
   const chance = () => (seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff) / 0x7fffffff
   const pick = <T>(list: readonly T[]): T => list[Math.floor(chance() * list.length)]!
@@ -275,23 +308,24 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, p
   const visitor = `#/accounts/${encodeURIComponent('visitor:v-4821')}`
   /** The best credit of the contact's ad: how sure, and whose it is once it is sure enough. */
   async function credit() {
-    const { credited, touches } = await ask('GET', `/attribute?subject=${demo.contact}&at=${clock()}`)
-    return { share: Math.max(0, ...touches.map((touch: { confidence: number }) => touch.confidence)), campaign: (credited?.campaign ?? null) as string | null }
+    const { arrival, possible } = await personOf(demo.contact)
+    return { share: (arrival ?? possible)?.confidence ?? 0, campaign: arrival?.campaign ?? null }
   }
   /** A signed link for the contact, as staff would text it. */
-  const linkTo = async (page: string, purpose: string): Promise<string> => (await ask('POST', '/link', { url: `${siteAt}/es/${page}`, subject: demo.contact, purpose })).url
+  const linkTo = async (page: string, purpose: string): Promise<string> => (await record<'link'>({ type: 'link', key: randomUUID(), url: `${siteAt}/es/${page}`, subject: demo.contact, purpose, expires: clock() + 30 * DAY })).url
   /** What became of the newest link sent for a purpose, in words. */
   const became = async (purpose: string) => {
-    const { at: made, opened } = (await ask('GET', `/sent?subject=${demo.contact}`)).findLast((link: { purpose?: string }) => link.purpose === purpose)
-    return opened === undefined ? `Link for ${purpose}: not opened` : `Link for ${purpose}: opened after ${Math.round((opened - made) / 60_000)} minutes`
+    const { entries } = await office.lookup({ kind: 'journey', subject: demo.contact })
+    const { at: made, opened } = entries.flatMap((entry) => (entry.kind === 'link' && entry.purpose === purpose ? [entry] : [])).at(-1)!
+    return opened === null ? `Link for ${purpose}: not opened` : `Link for ${purpose}: opened after ${Math.round((opened - made) / 60_000)} minutes`
   }
   /** The contact opens the link in the browser they came with. The script tag reads the token and takes it out of the address. */
-  const opens = (url: string) => browser('/collect', { device: 'v-4821', url: url.split('?')[0], link: new URL(url).searchParams.get('ag') })
-  const steps = (stage: string, tags: object = {}) => ask('POST', '/convert', { transactionId: `demo-${stage}`, subject: demo.contact, at: clock(), stage, tags: { language: 'es', ...tags } })
+  const opens = (url: string) => browser({ device: 'v-4821', url: url.split('?')[0], link: new URL(url).searchParams.get('ag') })
+  const steps = (stage: string, tags: object = {}) => record<'conversion'>({ type: 'conversion', key: `demo-${stage}`, subject: demo.contact, stage, tags: { language: 'es', ...tags } as Record<string, string> })
   const links: Record<string, string> = {}
   const forms = new Map<string, number>()
   /** A text staff send the contact. Only its time and the two numbers are kept. */
-  const sends = (id: string) => ask('POST', '/text', { id, direction: 'outbound', from: demo.line, to: demo.phone, at: clock() })
+  const sends = (id: string) => record<'text'>({ type: 'text', key: id, direction: 'outbound', from: demo.line, to: demo.phone })
 
   /** The scenes, in order. Each does over HTTP what the site, the phone system or the office would, and says what came of it. */
   const scenes: { title: string; text: string; see: [string, string]; stage?: string; spot?: string[]; shown?: Shown; run(): Promise<Told> }[] = [
@@ -299,20 +333,20 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, p
       title: 'Ad visit', text: 'They search, tap the Spanish ad for the North office, and land on the site.', see: ['Channels', review('channels')], stage: `#/journey/${encodeURIComponent('visitor:v-4821')}`, spot: ['Busqueda: North'], shown: { phone: 'site' },
       async run() {
         await at(0, 9, 2)
-        await browser('/collect', { device: 'v-4821', url: `${siteAt}/es`, touch: { gclid: 'demo-click', source: 'google', medium: 'cpc', campaignId: '30333', campaign: 'Busqueda: North', landing: `${siteAt}/es`, custom: { office: 'north', lang: 'es' } } })
-        const { touches } = await ask('GET', `/attribute?subject=visitor:v-4821&at=${clock()}`)
-        return { lines: [`Visit recorded: ${touches[0].campaign}, office ${touches[0].custom.office}, language ${touches[0].custom.lang}.`] }
+        await browser({ device: 'v-4821', url: `${siteAt}/es`, touch: { gclid: 'demo-click', source: 'google', medium: 'cpc', campaignId: '30333', campaign: 'Busqueda: North', landing: `${siteAt}/es`, custom: { office: 'north', lang: 'es' } } })
+        const arrival = (await personOf('visitor:v-4821')).arrival!
+        return { lines: [`Visit recorded: ${arrival.campaign}, office ${arrival.custom.office}, language ${arrival.custom.lang}.`] }
       },
     },
     {
       title: 'Tap to call', text: 'They tap the phone number. While it rings the firm’s screen says which ad they came from. The call is held for a result.', see: ['Calls', review('calls')], stage: visitor, shown: { phone: 'calling', seconds: 22 },
       async run() {
         await at(0, 9, 4)
-        await browser('/event', { device: 'v-4821', event: 'phone_click', number: demo.line })
+        await browser({ kind: 'event', device: 'v-4821', event: 'phone_click', number: demo.line })
         // What whoever picks up would see, asked while it rings. It writes nothing.
-        const ringing = await ask('POST', '/call/ringing', { from: demo.phone, to: demo.line, at: clock() })
-        const card = { title: 'Incoming call', path: 'POST /call/ringing', fields: [['Caller', `${ringing.known ? 'Has called before' : 'New'}, (555) 010-0042`], ['Came from', `${ringing.source} · ${ringing.campaign}`], ['Page', new URL(ringing.landing).pathname], ['Waiting for a call back', ringing.waiting.calls === 0 ? 'No missed calls' : `${ringing.waiting.calls} missed`]] as [string, string][] }
-        const call = await ask('POST', '/call', { id: 'demo-1', from: demo.phone, to: demo.line, at: clock(), duration: 95, tags: { language: 'es' } })
+        const ringing = await office.lookup({ kind: 'caller', from: demo.phone, to: demo.line, at: clock() })
+        const card = { title: 'Incoming call', path: 'lookup caller', fields: [['Caller', `${ringing.known ? 'Has called before' : 'New'}, (555) 010-0042`], ['Came from', `${ringing.arrival!.source} · ${ringing.arrival!.campaign}`], ['Page', new URL(ringing.arrival!.landing!).pathname], ['Waiting for a call back', ringing.waiting.calls === 0 ? 'No missed calls' : `${ringing.waiting.calls} missed`]] as [string, string][] }
+        const call: CallValue = await record<'call'>({ type: 'call', key: 'demo-1', direction: 'inbound', from: demo.phone, to: demo.line, duration: 95, tags: { language: 'es' } })
         return { lines: [`Linked to ${call.visitor} by the tap. State: ${call.state}. Counted: ${call.counted ? 'yes' : 'no'}.`], card }
       },
     },
@@ -320,8 +354,8 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, p
       title: 'Missed call', text: 'The result reports no answer. The call is excluded from outcomes and conversions.', see: ['Board', review('board/90')], spot: [caller.slice(0, 16)], shown: { phone: 'missed', seconds: 95 },
       async run() {
         await at(0, 9, 6)
-        const { state, counted } = await ask('POST', '/call/result', { id: 'demo-1', answered: false, waited: 95 })
-        await outbox.run()
+        const { state, counted } = await record<'call_update'>({ type: 'call_update', call: 'demo-1', change: { kind: 'result', result: { answered: false, waited: 95 } } })
+        await runWorkers(firm)
         return { lines: [`State: ${state}. Counted: ${counted ? 'yes' : 'no'}. Sent to the ad platform: ${wasSent('call:demo-1') ? 'yes' : 'no'}.`, 'The caller is on the Board under Missed calls.'] }
       },
     },
@@ -329,9 +363,9 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, p
       title: 'Callback', text: 'Staff call back, and are answered.', see: ['Calls', review(`journey/${encodeURIComponent(caller)}`)], stage: `#/journey/${encodeURIComponent(caller)}`, spot: ['Outbound'], shown: { phone: 'talking', seconds: 410 },
       async run() {
         await at(0, 14, 0)
-        await ask('POST', '/call', { id: 'demo-2', direction: 'outbound', from: demo.line, to: demo.phone, at: clock(), duration: 410, answered: true })
-        const { followUp } = await ask('GET', '/call?id=demo-1')
-        return { lines: [`Missed call: ${followUp.state}.`] }
+        await record<'call'>({ type: 'call', key: 'demo-2', direction: 'outbound', from: demo.line, to: demo.phone, duration: 410, result: { answered: true } })
+        const missed = await office.lookup({ kind: 'record', type: 'call', key: 'demo-1', at: clock() })
+        return { lines: [`Missed call: ${missed?.type === 'call' && missed.followUp!.state}.`] }
       },
     },
     {
@@ -340,10 +374,10 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, p
         await at(0, 14, 6)
         // Asked before they are saved, so nobody is entered twice. It writes nothing.
         const facts = { phone: demo.phone, name: { first: 'Inés', last: 'Vega' }, dob: '1984-05-06' }
-        const { candidates }: { candidates: { subject: string; reasons: { identifier: string }[]; members: string[] }[] } = await ask('POST', '/match', facts)
+        const { candidates } = await office.lookup({ kind: 'match', facts, at: clock() })
         const [met] = candidates
-        const checked = `${candidates.some(({ subject }) => subject.startsWith('contact:')) ? 'Possible duplicate' : 'No duplicate on file'}${met ? ` · a ${met.subject.split(':')[0]}${met.members.some((member) => member.startsWith('visitor:')) ? ' and a site visit' : ''}, by ${met.reasons[0]!.identifier.split(':')[0]}` : ''}`
-        await ask('POST', '/identify', { subject: demo.contact, ...facts, event: 'inquiry' })
+        const checked = `${candidates.some(({ subject }) => subject.startsWith('contact:')) ? 'Possible duplicate' : 'No duplicate on file'}${met ? ` · a ${met.subject.split(':')[0]}${met.members.some((member) => member.startsWith('visitor:')) ? ' and a site visit' : ''}, by ${met.kinds[0]}` : ''}`
+        await record<'profile'>({ type: 'profile', subject: demo.contact, facts, event: 'inquiry' })
         await steps('inquiry')
         const sure = await credit()
         return { lines: [`The call and the visit are now tied to a name. Ad credit: ${Math.round(sure.share * 100)}%, below the 90% it takes.`], credit: sure, checked }
@@ -364,7 +398,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, p
         await at(0, 14, 12)
         await opens(links.form!)
         // The inquiry waited for an ad to be credited, and is sent now.
-        await outbox.run()
+        await runWorkers(firm)
         const sure = await credit()
         return { lines: [`We now know whose browser this is. Ad credit: ${Math.round(sure.share * 100)}%, to ${sure.campaign}.`], credit: sure }
       },
@@ -402,7 +436,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, p
       title: kind.scenes.lead[0], text: kind.scenes.lead[1], see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], stage: person('journey'), spot: ['scheduled', 'Outbound'], shown: { phone: 'director', seconds: 1290 },
       async run() {
         await at(2, 11, 0)
-        await ask('POST', '/call', { id: 'demo-4', direction: 'outbound', from: demo.line, to: demo.phone, at: clock(), duration: 1290, answered: true, tags: { language: 'es' } })
+        await record<'call'>({ type: 'call', key: 'demo-4', direction: 'outbound', from: demo.line, to: demo.phone, duration: 1290, result: { answered: true }, tags: { language: 'es' } })
         return { lines: ['Outbound call answered, on the same timeline.'] }
       },
     },
@@ -428,7 +462,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, p
       async run() {
         await at(2, 11, 29)
         await steps(kind.won, { office_served: 'river', [kind.lead]: 'ortega' })
-        const { credited } = await ask('GET', `/attribute?subject=${demo.contact}&at=${clock()}`)
+        const credited = (await personOf(demo.contact)).arrival!
         return { lines: [`${kind.told.won}: ${kind.value} USD. Advertised: ${credited.custom.office}. Served: river. Attributed to ${credited.campaign} at ${Math.round(credited.confidence * 100)}%.`] }
       },
     },
@@ -436,7 +470,7 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, p
       title: kind.scenes.sent[0], text: kind.scenes.sent[1], see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], stage: person('journey'), spot: [kind.won], shown: {},
       async run() {
         await at(2, 11, 40)
-        await outbox.run()
+        await runWorkers(firm)
         return { lines: [`Sent to the sample ad platform: ${wasSent(`demo-${kind.won}`) ? `${sent.findLast((each) => each.id === `demo-${kind.won}`)!.value} USD, for the first ad click` : 'no'}.`] }
       },
     },
@@ -444,23 +478,25 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, p
       title: kind.scenes.value[0], text: kind.scenes.value[1], see: ['Journey', review(`journey/${encodeURIComponent(demo.contact)}`)], stage: person('journey'), spot: [`from ${kind.value.toLocaleString('en-US')} USD to ${kind.later.toLocaleString('en-US')} USD`],
       async run() {
         await at(3, 16, 0)
-        await ask('POST', '/restate', { transactionId: `demo-${kind.won}`, value: kind.later })
-        await outbox.run()
-        const { values } = await ask('GET', `/outcome?id=demo-${kind.won}`)
-        return { lines: [`Initial value ${values[0].value} USD, current value ${values.at(-1).value} USD.`, `Sent to the ad platform: ${sent.filter((each) => each.id === `demo-${kind.won}`).at(-1)?.value} USD.`] }
+        await record<'restatement'>({ type: 'restatement', of: { type: 'conversion', key: `demo-${kind.won}` }, change: { kind: 'correct', value: kind.later } })
+        await runWorkers(firm)
+        const won = await office.lookup({ kind: 'record', type: 'conversion', key: `demo-${kind.won}`, at: clock() })
+        const values = won?.type === 'conversion' ? won.values : []
+        return { lines: [`Initial value ${values[0]!.value} USD, current value ${values.at(-1)!.value} USD.`, `Sent to the ad platform: ${sent.filter((each) => each.id === `demo-${kind.won}`).at(-1)?.value} USD.`] }
       },
     },
     {
       title: kind.scenes.apart[0], text: kind.scenes.apart[1], see: ['Accounts', review(`accounts/${encodeURIComponent(demo.contact)}`)], stage: person('accounts'),
       async run() {
         await at(3, 16, 30)
-        for (const subject of [demo.contact, demo.other]) await ask('POST', '/identify', { subject, phone: demo.phone, email: 'family@example.org', event: 'staff entry' })
-        const { joined } = await ask('GET', `/between?a=${demo.contact}&b=${demo.other}`)
-        await ask('POST', '/separate', { source: 'matters', pairs: [{ a: demo.contact, b: demo.other, reason: 'sides of one matter' }] })
-        const after = await ask('GET', `/between?a=${demo.contact}&b=${demo.other}`)
+        for (const subject of [demo.contact, demo.other]) await record<'profile'>({ type: 'profile', subject, facts: { phone: demo.phone, email: 'family@example.org' }, event: 'staff entry' })
+        const together = async () => (await personOf(demo.contact)).members.includes(demo.other)
+        const joined = await together()
+        await office.decide({ key: `matter-${boot}`, at: clock(), by: 'system:matters', action: 'split', pairs: [{ a: demo.contact, b: demo.other, reason: 'sides of one matter' }] })
+        const after = { joined: await together() }
         // What a firm's own conflict check could ask before it takes a matter. It writes nothing.
-        const { conflicts } = await ask('POST', '/conflicts', { subjects: [demo.contact, demo.other] })
-        const card = { title: 'Conflict check', path: 'POST /conflicts', fields: [['People asked about', 'Inés Vega, Tomás Vega'], ['Answer', conflicts[0]?.how === 'recorded' ? 'Kept apart, on record' : 'None known'], ['Rests on', conflicts[0] ? Object.values(conflicts[0].rests).join(', ') : 'Nothing on record']] as [string, string][] }
+        const { conflicts } = await office.lookup({ kind: 'conflicts', subjects: [demo.contact, demo.other] })
+        const card = { title: 'Conflict check', path: 'lookup conflicts', fields: [['People asked about', 'Inés Vega, Tomás Vega'], ['Answer', conflicts[0]?.how === 'recorded' ? 'Kept apart, on record' : 'None known'], ['Rests on', conflicts[0] ? Object.values(conflicts[0].rests).join(', ') : 'Nothing on record']] as [string, string][] }
         return { lines: [`Before: ${joined ? 'joined by a shared phone and email' : 'related'}. After: separated.`, `Same cluster: ${after.joined ? 'yes' : 'no'}.`], card }
       },
     },
@@ -468,19 +504,19 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, p
       title: 'Listing call', text: 'A call to a number published on a map listing is attributed to that listing.', see: ['Channels', review('channels')], spot: ['Map listing, River'],
       async run() {
         await at(3, 16, 40)
-        const call = await ask('POST', '/call', { id: 'demo-3', from: '+15550100043', to: '+15550100104', at: clock(), duration: 260, answered: true })
-        const { touches } = await ask('GET', `/attribute?subject=${call.subject}&at=${clock()}`)
-        return { lines: [`Attributed to ${touches[0].campaign}, advertised office ${touches[0].custom.office_advertised}. Counted: ${call.counted ? 'yes' : 'no'}.`] }
+        const call: CallValue = await record<'call'>({ type: 'call', key: 'demo-3', direction: 'inbound', from: '+15550100043', to: '+15550100104', duration: 260, result: { answered: true } })
+        const arrival = (await personOf(call.subject)).arrival!
+        return { lines: [`Attributed to ${arrival.campaign}, advertised office ${arrival.custom.office_advertised}. Counted: ${call.counted ? 'yes' : 'no'}.`] }
       },
     },
     {
       title: 'Web form', text: 'Somebody else comes from an ad, and sends the form on the site in place of calling.', see: ['Board', review('board/7')], spot: ['contact:rosa-marin'],
       async run() {
         await at(3, 16, 42)
-        await browser('/collect', { device: 'v-5107', url: `${siteAt}/`, touch: { gclid: 'demo-click-2', source: 'google', medium: 'cpc', campaignId: '30222', campaign: 'Search: River', landing: `${siteAt}/`, custom: { office: 'river', lang: 'en' } } })
+        await browser({ device: 'v-5107', url: `${siteAt}/`, touch: { gclid: 'demo-click-2', source: 'google', medium: 'cpc', campaignId: '30222', campaign: 'Search: River', landing: `${siteAt}/`, custom: { office: 'river', lang: 'en' } } })
         const { status } = await fetch(`${siteAt}/inquiry`, { method: 'POST', redirect: 'manual', body: new URLSearchParams({ first: 'Rosa', last: 'Marin', phone: '(555) 010-0046', texts: 'yes', lang: 'en', ag_device: 'v-5107' }) })
         if (status !== 303) throw new Error(`The form was answered ${status}`)
-        const { credited } = await ask('GET', `/attribute?subject=contact:rosa-marin&at=${clock()}`)
+        const credited = (await personOf('contact:rosa-marin')).arrival!
         return { lines: [`Step recorded: inquiry. Credited to ${credited.campaign} at ${Math.round(credited.confidence * 100)}%, by the browser.`] }
       },
     },
@@ -488,9 +524,9 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, p
       title: 'Shared phone', text: 'A parent and a child share a phone. The link is below the join threshold and waits for review.', see: ['Matches', review('decide')], spot: ['marta-lago'],
       async run() {
         await at(3, 16, 45)
-        await ask('POST', '/identify', { subject: 'contact:marta-lago', phone: '+15550100044', name: { first: 'Marta', last: 'Lago' }, dob: '1970-02-03', event: 'staff entry' })
-        await ask('POST', '/identify', { subject: 'contact:teo-lago', phone: '+15550100044', name: { first: 'Teo', last: 'Lago' }, dob: '2001-07-08', event: 'staff entry' })
-        const { joined, score } = await ask('GET', '/between?a=contact:marta-lago&b=contact:teo-lago')
+        await record<'profile'>({ type: 'profile', subject: 'contact:marta-lago', facts: { phone: '+15550100044', name: { first: 'Marta', last: 'Lago' }, dob: '1970-02-03' }, event: 'staff entry' })
+        await record<'profile'>({ type: 'profile', subject: 'contact:teo-lago', facts: { phone: '+15550100044', name: { first: 'Teo', last: 'Lago' }, dob: '2001-07-08' }, event: 'staff entry' })
+        const { joined, score } = await screen('/between?a=contact:marta-lago&b=contact:teo-lago')
         return { lines: [`Linked at ${Math.round(score * 100)}% by phone: ${joined ? 'joined' : 'related'}.`] }
       },
     },
@@ -505,8 +541,6 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, p
     },
   ]
 
-  /** Which start this is, so the stage sees when another has begun. */
-  const boot = randomUUID()
   /** Nothing is run until the sample data is in. */
   let ready = false
   let next = 0
@@ -558,8 +592,8 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, p
     const before = forms.get(slug) ?? 0
     forms.set(slug, before + 1)
     const subject = `contact:${slug}${before > 0 ? `-${before + 1}` : ''}`
-    await ask('POST', '/identify', { subject, ...(device && { device }), phone: word('phone'), name: { first, last }, event: 'inquiry' })
-    await ask('POST', '/convert', { transactionId: `form-${randomUUID()}`, subject, at: clock(), stage: 'inquiry', tags: { language: form.get('lang') === 'es' ? 'es' : 'en' } })
+    await record<'profile'>({ type: 'profile', subject, facts: { ...(device && { device }), phone: word('phone'), name: { first, last } }, event: 'inquiry' })
+    await record<'conversion'>({ type: 'conversion', key: `form-${randomUUID()}`, subject, stage: 'inquiry', tags: { language: form.get('lang') === 'es' ? 'es' : 'en' } })
     response.writeHead(303, { location: `${form.get('lang') === 'es' ? '/es' : '/'}?sent=1#write` }).end()
   }
 
@@ -575,6 +609,9 @@ export async function startFirm(store: Store, { ports = [0, 0], quick = false, p
         each.closeAllConnections()
         await new Promise((resolve) => each.close(resolve))
       }
+      await office.close()
+      await handler.drain()
+      await firm.close()
     },
   }
 }
@@ -616,10 +653,9 @@ if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).
   process.once('SIGTERM', () => void stop(0))
   try {
     made = process.env.MEMORY ? undefined : throwaway()
-    let fresh = async (): Promise<Store> => createMemoryStore()
+    let fresh = async (): Promise<Kept> => ({})
     if (made) {
       const { default: pg } = await import('pg')
-      const { createPostgresStore } = await import('../src/postgres.ts')
       const pool = new pg.Pool({ connectionString: made.address })
       pool.on('error', () => {})
       end = () => pool.end()
@@ -635,9 +671,7 @@ if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).
       // The database was made for this demo alone, so starting over empties it.
       fresh = async () => {
         await pool.query('drop schema if exists account_graph cascade')
-        const postgres = createPostgresStore(pool)
-        await postgres.migrate()
-        return postgres
+        return { databaseUrl: made!.address }
       }
     }
     console.log(made ? 'Loading sample data into PostgreSQL. This takes about a minute.' : 'Loading sample data into memory.')

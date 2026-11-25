@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { after, describe, test } from 'node:test'
-import { birthKeys, givenKeys, namedKeys, Outdated, brokenAt, callState, createGraph, createHours, defaultPolicy, dialed, email, fit, followUp, hashPhone, nameKeys, policyFrom, policyProblems, recordCall, recordCallResult, recordNotLead, recordReturn, recordText, ringing, replyTo, beginnings, textCode, codeNote, texted } from '../src/index.ts'
-import type { Change, Graph, GraphOptions, Observation, Policy, Store } from '../src/index.ts'
+import { birthKeys, givenKeys, namedKeys, Outdated, brokenAt, callState, createGraph, createHours, defaultPolicy, dialed, email, fit, followUp, hashPhone, nameKeys, policyFrom, policyProblems, recordCall, recordCallResult, recordNotLead, recordReturn, recordText, ringing, replyTo, beginnings, textCode, codeNote, texted } from '../tools/internals.ts'
+import type { Change, Graph, GraphOptions, Observation, Policy, Store } from '../tools/internals.ts'
 
 export interface Opened {
   store: Store

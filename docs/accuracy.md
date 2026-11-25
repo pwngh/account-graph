@@ -295,7 +295,7 @@ All assumed unless it says otherwise, and set before anything was run.
 | First calls from a page, dialed by hand 10 to 110 minutes after it was last seen. Added after the first look at the development seeds | 5% | 10% | 20% |
 | `dirty3`, base with placeholder numbers; shared office emails | | 3%; 3% of records | |
 
-Somebody who speaks for another is told of by a field on `/identify`, and the arms that ask send it. The others send what was given as the subject's, as before. What was given, and so a chain of facts, is the same for both. The client's own number and email are typed with the same errors, are sent by the asking arms only, and count in no chain. A told box or call cannot know whose browser it was, so the client's browser is sometimes sent as the speaker's. `ownGiven` is of boxes that were told in time, which is 40% of told boxes in base.
+Somebody who speaks for another is told of by a field on `/identify` (now `speaker` of a `profile`), and the arms that ask send it. The others send what was given as the subject's, as before. What was given, and so a chain of facts, is the same for both. The client's own number and email are typed with the same errors, are sent by the asking arms only, and count in no chain. A told box or call cannot know whose browser it was, so the client's browser is sometimes sent as the speaker's. `ownGiven` is of boxes that were told in time, which is 40% of told boxes in base.
 
 ### What is compared
 

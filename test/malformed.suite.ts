@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
-import { createBatcher, createGraph } from '../src/index.ts'
-import { createHandler } from '../src/server.ts'
+import { createBatcher, createGraph } from '../tools/internals.ts'
+import { createHandler } from './harness.ts'
 import type { Opened } from './suite.ts'
 
 const T0 = 1_700_000_000_000

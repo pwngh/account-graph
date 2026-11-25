@@ -9,19 +9,20 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { test } from 'node:test'
-import { createGraph, createMemoryStore, createOps, createOutbox, googleAds, hashPhone, knownLink, policyFrom, staffLink, email, phone, phoneOfType } from '../src/index.ts'
-import type { IngestRequest } from '../src/index.ts'
-import { configFrom } from '../src/serve.ts'
-import { CostError, costsFromCsv, googleCosts, metaCosts } from '../src/integrations/costs.ts'
-import { createFingerprintVerifier, trusted } from '../src/integrations/fingerprint.ts'
-import type { VerifiedFingerprint } from '../src/integrations/fingerprint.ts'
-import { createGoogleTokens } from '../src/integrations/google-auth.ts'
-import { createMicrosoftTokens } from '../src/integrations/microsoft-auth.ts'
-import { hardwareId, machineId } from '../src/integrations/hardware.ts'
-import { createDatabaseLookup, createMaxMindLookup, placeOf, shared } from '../src/integrations/maxmind.ts'
-import { addressIdentifier, createAddressVerifier } from '../src/integrations/smarty.ts'
-import { createLineTypeLookup, fromTwilio, twilioCall, twilioSignature } from '../src/integrations/twilio.ts'
-import { createHandler } from '../src/server.ts'
+import { createGraph, createMemoryStore, createOps, createOutbox, googleAds, hashPhone, knownLink, policyFrom, staffLink, email, phone, phoneOfType } from '../tools/internals.ts'
+import type { IngestRequest } from '../tools/internals.ts'
+import { readEnvironment as configFrom } from '../src/bin.ts'
+import { CostError, costsFromCsv, googleCosts, metaCosts } from '../src/providers/costs.ts'
+import { createFingerprintVerifier, trusted } from '../src/providers/fingerprint.ts'
+import type { VerifiedFingerprint } from '../src/providers/fingerprint.ts'
+import { createGoogleTokens } from '../src/providers/google-auth.ts'
+import { createMicrosoftTokens } from '../src/providers/microsoft-auth.ts'
+import { hardwareId } from '../src/edge/hardware.ts'
+import { machineId } from '../src/edge/machine.ts'
+import { createDatabaseLookup, createMaxMindLookup, placeOf, shared } from '../src/providers/maxmind.ts'
+import { addressIdentifier, createAddressVerifier } from '../src/providers/smarty.ts'
+import { createLineTypeLookup, fromTwilio, twilioCall, twilioSignature } from '../src/providers/twilio.ts'
+import { createHandler } from './harness.ts'
 import { counts } from './suite.ts'
 
 const T0 = 1_708_102_555_327
@@ -771,7 +772,7 @@ test('what a platform says it brought is read only when it is asked for', async 
   assert.equal('conversions' in (await metaCosts(ads)('2026-03-01', '2026-03-01'))[0]!, false)
   assert.deepEqual(meta.calls.map((call) => new URL(call.url).searchParams.get('fields')!.endsWith(',account_currency,actions,action_values')), [true, false])
 
-  const env = { DATABASE_URL: 'x', GRAPH_TOKEN: 'y', GOOGLE_ADS_DEVELOPER_TOKEN: 'd', GOOGLE_ADS_CUSTOMER_ID: '1', GOOGLE_SERVICE_ACCOUNT_FILE: 'f', META_AD_ACCOUNT_ID: '2', META_ADS_TOKEN: 't' }
+  const env = { DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', GOOGLE_ADS_DEVELOPER_TOKEN: 'd', GOOGLE_ADS_CUSTOMER_ID: '1', GOOGLE_SERVICE_ACCOUNT_FILE: 'f', META_AD_ACCOUNT_ID: '2', META_ADS_TOKEN: 't' }
   assert.deepEqual([configFrom(env).googleCosts!.conversions, configFrom(env).metaCosts!.conversions], [false, undefined])
   const asked = configFrom({ ...env, GOOGLE_ADS_CONVERSIONS: 'true', META_ADS_CONVERSIONS: 'lead' })
   assert.deepEqual([asked.googleCosts!.conversions, asked.metaCosts!.conversions], [true, 'lead'])
@@ -881,7 +882,7 @@ test('the server takes page events and phone calls, and ties a call to the visit
   const plain = createServer(createHandler(graph, { token: 'service', origins: [] })).listen(0, '127.0.0.1')
   await new Promise((resolve) => plain.once('listening', resolve))
   try {
-    assert.equal((await fetch(`http://127.0.0.1:${(plain.address() as AddressInfo).port}/calls/twilio`, { method: 'POST', body: 'CallSid=CA1' })).status, 401)
+    assert.equal((await fetch(`http://127.0.0.1:${(plain.address() as AddressInfo).port}/calls/twilio`, { method: 'POST', body: 'CallSid=CA1' })).status, 404)
   } finally {
     plain.close()
   }
@@ -1036,7 +1037,7 @@ test('a link sent to one person ties the browser that opens it, and a visitor is
   try {
     const address = `http://127.0.0.1:${(plain.address() as AddressInfo).port}`
     assert.equal((await fetch(`${address}/link`, { method: 'POST', headers: { authorization: 'Bearer service' }, body: '{}' })).status, 404)
-    assert.equal((await fetch(`${address}/carry`, { method: 'POST', headers: { origin: 'https://site.example' }, body: '{}' })).status, 401)
+    assert.equal((await fetch(`${address}/carry`, { method: 'POST', headers: { origin: 'https://site.example' }, body: '{}' })).status, 404)
   } finally {
     plain.close()
   }
@@ -1186,7 +1187,9 @@ test('a reviewer sees refused conversions without keys and puts them back in lin
     assert.deepEqual(failed.map((job: any) => `${job.transactionId} ${job.target} ${'keys' in job}`).sort(), ['t1 ads false', 't1 more false', 't2 ads false', 't2 more false'])
     assert.ok(failed.every((job: any) => job.note === 'action_111 was not found for (left out) and (left out)'))
     assert.deepEqual((await call('service', 'GET', '/conversions?state=failed')).body, failed)
-    assert.equal((await call('service', 'GET', '/conversion?id=t1')).body[0].keys.email, 'Key+of:a1@example.com')
+    // Kept for the platform, and shown to nobody.
+    assert.equal((await outbox.get('t1'))[0]!.keys.email, 'Key+of:a1@example.com')
+    assert.deepEqual((await call('service', 'GET', '/conversion?id=t1')).body.map((job: any) => `${job.target} ${'keys' in job}`).sort(), ['ads false', 'more false'])
     for (const bad of [{}, { transactionId: 5 }, { transactionId: ['t1'] }, { transactionId: 't1', target: 5 }]) assert.equal((await call('reviewer', 'POST', '/retry', bad)).status, 400)
     refuse = false
     // Only the platform named, and then the rest.
@@ -1197,6 +1200,54 @@ test('a reviewer sees refused conversions without keys and puts them back in lin
     assert.deepEqual(await outbox.counts().then((counts) => [counts.sent, counts.failed]), [2, 2])
     assert.deepEqual(await again('reviewer', { transactionId: 't1' }), [])
     assert.equal((await call('reviewer', 'GET', '/conversion?id=t1')).status, 403)
+  } finally {
+    server.close()
+  }
+})
+
+test('a page event cannot take the id of a conversion a backend has yet to record', async () => {
+  const graph = createGraph(createMemoryStore())
+  const server = createServer(createHandler(graph, { token: 'service', origins: ['https://s.example'], events: ['signup'] })).listen(0)
+  try {
+    const base = `http://localhost:${(server.address() as AddressInfo).port}`
+    const visit = await fetch(`${base}/event`, { method: 'POST', headers: { origin: 'https://s.example', 'content-type': 'text/plain' }, body: JSON.stringify({ device: '1001', event: 'signup', id: '1' }) })
+    assert.equal(visit.status, 204)
+    const convert = (transactionId: string) => fetch(`${base}/convert`, { method: 'POST', headers: { authorization: 'Bearer service' }, body: JSON.stringify({ transactionId, subject: 'account:1001', at: 1, stage: 'signup', value: 250 }) })
+    assert.equal((await convert('signup:1001:1')).status, 200)
+    assert.deepEqual([(await graph.outcomeOf('signup:1001:1'))!.value, (await graph.outcomeOf('page:signup:1001:1'))!.subject], [250, 'visitor:1001'])
+    for (const taken of ['page:signup:1001:1', 'call:CA1', 'text:SM1']) assert.equal((await convert(taken)).status, 400)
+  } finally {
+    server.close()
+  }
+})
+
+test('no route answers with the hashed email and phone of a conversion', async () => {
+  const store = createMemoryStore()
+  const graph = createGraph(store)
+  const at = Date.now() - 60_000
+  const target = { name: 'ads', restates: true, batch: 10, keys: () => ({ email: 'hashed-email', phone: 'hashed-phone' }), click: () => undefined, retryable: () => true, deliver: async () => ({}) }
+  const outbox = createOutbox(graph, store.outbox, { targets: [target] })
+  const server = createServer(createHandler(graph, { token: 'service', outbox, origins: [] })).listen(0)
+  try {
+    const base = `http://localhost:${(server.address() as AddressInfo).port}`
+    const call = async (method: string, path: string, body?: unknown) => {
+      const response = await fetch(base + path, { method, headers: { authorization: 'Bearer service' }, ...(body !== undefined && { body: JSON.stringify(body) }) })
+      return { status: response.status, text: await response.text() }
+    }
+    const answers = {
+      convert: await call('POST', '/convert', { transactionId: 't1', subject: 'a1', at, action: 'Lead', value: 5, currency: 'USD', email: 'a1@example.com', phone: '+15558675309' }),
+      payment: await call('POST', '/payment', { id: 'p1', transactionId: 't1', amount: 3 }),
+      restate: await call('POST', '/restate', { transactionId: 't1', value: 2 }),
+      conversion: await call('GET', '/conversion?id=t1'),
+      conversions: await call('GET', '/conversions?state=pending'),
+    }
+    for (const [name, { status, text }] of Object.entries(answers)) {
+      assert.equal(status, 200, name)
+      // The job is in the answer, so there was something to leave out.
+      assert.match(text, /"transactionId":"t1","target":"ads"/, name)
+      assert.doesNotMatch(text, /"keys"|hashed-/, name)
+    }
+    assert.deepEqual((await outbox.get('t1'))[0]!.keys, { email: 'hashed-email', phone: 'hashed-phone' })
   } finally {
     server.close()
   }
@@ -1225,11 +1276,11 @@ test('steps give page events, calls and outcomes their value and their ad platfo
     await post('/collect', { device: 'd-1', touch: { gclid: 'G1', campaignId: '111' } }, { origin: 'https://site.example' })
     // A page event needs only its name: the step says what it is worth and where it goes.
     assert.equal((await post('/event', { device: 'd-1', event: 'inquiry' }, { origin: 'https://site.example' })).status, 204)
-    assert.deepEqual((await outbox.get(`inquiry:d-1:2026-03-02`)).map((job) => [job.target, job.action, job.value, job.currency]), [['google', '111', 5, 'USD']])
+    assert.deepEqual((await outbox.get(`page:inquiry:d-1:2026-03-02`)).map((job) => [job.target, job.action, job.value, job.currency]), [['google', '111', 5, 'USD']])
     // A step worth something counts once a day per browser, whatever id the page gives and however often it reports.
     assert.equal((await post('/event', { device: 'd-1', event: 'inquiry' }, { origin: 'https://site.example' })).status, 204)
     for (const id of ['a', 'b', 'c']) assert.equal((await post('/event', { device: 'd-1', event: 'inquiry', id }, { origin: 'https://site.example' })).status, 204)
-    assert.deepEqual(await outbox.get('inquiry:d-1:a'), [])
+    assert.deepEqual(await outbox.get('page:inquiry:d-1:a'), [])
     assert.equal((await outbox.counts()).pending, 1)
 
     // A call takes its step the same way, with the caller's number as a match key.
@@ -1243,7 +1294,7 @@ test('steps give page events, calls and outcomes their value and their ad platfo
     assert.deepEqual(await (await post('/convert', { transactionId: 'client-1', subject: 'account:1', at, stage: 'client' })).json(), [])
     await post('/convert', { transactionId: 'client-2', subject: 'account:1', at, stage: 'client', value: 1250 })
     assert.deepEqual((await outbox.run()).sent, 2)
-    assert.deepEqual(sent.flatMap((request) => request.events.map((event) => [event.transactionId, event.conversionValue])).sort(), [['call:CA1', 10], ['inquiry:d-1:2026-03-02', 5]])
+    assert.deepEqual(sent.flatMap((request) => request.events.map((event) => [event.transactionId, event.conversionValue])).sort(), [['call:CA1', 10], ['page:inquiry:d-1:2026-03-02', 5]])
 
     // The report lists the steps in the order they were given, then any others by name.
     await post('/convert', { transactionId: 'other-1', subject: 'account:1', at, stage: 'brochure' })
@@ -1661,7 +1712,7 @@ test('a visitor with an arrival is shown a number of their own, and nobody else 
 
   // Off, there is no such route.
   const off = await listen({})
-  assert.equal((await fetch(`${off}/number`, { method: 'POST', body: '{"device":"a"}', headers: { origin: 'https://site.example' } })).status, 401)
+  assert.equal((await fetch(`${off}/number`, { method: 'POST', body: '{"device":"a"}', headers: { origin: 'https://site.example' } })).status, 404)
   assert.throws(() => createHandler(graph, { ...options, pool: { numbers: ['nonsense'], minutes: 15, grace: 0 } }), TypeError)
 })
 

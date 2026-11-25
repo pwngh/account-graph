@@ -21,12 +21,12 @@ your site, phones, forms ──▶ server ──▶ reviewer screen
 | Step | What to do | Done when |
 | --- | --- | --- |
 | 1. Server | Run it on a machine of yours, with HTTPS in front. Use [`examples/household.json`](presets.md#contacts-entered-by-staff) if staff enter contacts. [Operations](operations.md) | `/health` answers over HTTPS |
-| 2. Backup | Dump it, restore the dump into another database, and look at both. [Backups](operations.md#backups) | `/verify` lists no changes on the copy |
+| 2. Backup | Dump it, restore the dump into another database, and look at both. [Backups](operations.md#backups) | `account-graph verify` lists no changes on the copy |
 | 3. Site | Add the [script tag](operations.md#script-tag) to every page, with your consent banner's answer | Your own visit is in the screen, with its ad |
-| 4. Calls | Post each call, or take your provider's webhook. [Calls](calls.md), [`examples/call-tracking.ts`](../examples/call-tracking.ts) | A test call is tied to your own tap |
-| 5. Contacts | Post each new contact from your form or case system to [`/identify`](identify.md) | A test form is tied to your own visit |
-| 6. Clients | Post each signed client to [`/convert`](http.md), with the value you give it | The client is under a campaign |
-| 7. Apart | Post the pairs your conflict check keeps apart to [`/separate`](deciding.md) | They are shown separated |
+| 4. Calls | Record each call, or take your provider's webhook. [Calls](calls.md), [`examples/call-tracking.ts`](../examples/call-tracking.ts) | A test call is tied to your own tap |
+| 5. Contacts | Record each new contact from your form or case system as a [`profile`](identify.md) | A test form is tied to your own visit |
+| 6. Clients | Record each signed client as a [`conversion`](report.md#outcomes), with the value you give it | The client is under a campaign |
+| 7. Apart | Send the pairs your conflict check keeps apart as a [`split`](deciding.md#split) | They are shown separated |
 | 8. Two weeks | Review Matches and the missed calls every day. Change nothing else | You have a list of right and wrong matches |
 
 ## Deciding
@@ -39,7 +39,7 @@ your site, phones, forms ──▶ server ──▶ reviewer screen
 
 ## Stopping
 
-Remove the script tag, stop posting, and stop the server. `POST /forget` deletes one person. Dropping the database deletes everyone, and your dumps still hold them until you delete those too.
+Remove the script tag, stop recording, and stop the server. [`forget`](http.md#forget) deletes one person. Dropping the database deletes everyone, and your dumps still hold them until you delete those too.
 
 ## Limitations
 

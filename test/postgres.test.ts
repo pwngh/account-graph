@@ -1,13 +1,17 @@
 import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
 import pg from 'pg'
-import { createGraph, recordCall, recordReturn } from '../src/index.ts'
-import { createPostgresStore, upgrades } from '../src/postgres.ts'
-import { serve } from '../src/serve.ts'
+import { createGraph, recordCall, recordReturn } from '../tools/internals.ts'
+import { createPostgresStore, upgrades } from '../src/store/postgres.ts'
+import { command, serve } from '../src/bin.ts'
 import { malformedSuite } from './malformed.suite.ts'
 import { opsSuite } from './ops.suite.ts'
 import { outboxSuite } from './outbox.suite.ts'
+import { eventsSuite } from './events.suite.ts'
+import { unjoinSuite } from './unjoin.suite.ts'
+import { saidSuite } from './said.suite.ts'
 import { counts, suite } from './suite.ts'
+import { unitSuite } from './unit.suite.ts'
 
 const url = process.env.DATABASE_URL
 
@@ -270,30 +274,46 @@ if (!url) {
 
   test('a database from before the policy was recorded is due a rebuild, and a kind with no rule stops the server', async () => {
     const schema = `ag_test_${process.pid}_policy`
-    const env = { DATABASE_URL: url, GRAPH_SCHEMA: schema, GRAPH_TOKEN: 'service', REVIEW_TOKENS: '{"dana":"review"}', PORT: '0', HOST: '127.0.0.1' }
+    const env = { DATABASE_URL: url, RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_SCHEMA: schema, GRAPH_TOKEN: 'service', REVIEW_TOKENS: '{"dana":"review"}', PORT: '0', HOST: '127.0.0.1' }
     try {
       const old = await madeBefore(schema, 6)
       await pool.query(`insert into ${schema}.subject values ('account:1', 'account:1', 'account:1');
         insert into ${schema}.edge values ('account:1', 'badge:7', 1, 1, 1); insert into ${schema}.identifier values ('badge:7', 1)`)
       await old.migrate()
-      await assert.rejects(serve(env, () => {}), /identifiers of kind "badge" are stored, and the policy names no such kind/)
+      await assert.rejects(serve(env, () => {}), /Identifiers of kind "badge" are stored, and the policy names no such kind/)
       const lines: string[] = []
-      const running = await serve({ ...env, POLICY: '{"kinds":{"badge":{"weight":0.5,"dilution":0,"cap":3,"halfLife":"none"},"phone":{"weight":0.85}}}' }, (line) => lines.push(line))
+      const own = { ...env, POLICY: '{"kinds":{"badge":{"weight":0.5,"dilution":0,"cap":3,"halfLife":"none"},"phone":{"weight":0.85}}}' }
+      const running = await serve(own, (line) => lines.push(line))
+      const ask = (path: string, token: string) => fetch(`http://127.0.0.1:${running.port}${path}`, { headers: { authorization: `Bearer ${token}` } })
+      let hash: string
       try {
-        assert.ok(lines.some((line) => /^policy [0-9a-f]{12} \(configured\); rebuild required/.test(line)), lines.join('\n'))
-        const ask = (path: string, token: string, body?: object) => fetch(`http://127.0.0.1:${running.port}${path}`, { method: body ? 'POST' : 'GET', headers: { authorization: `Bearer ${token}` }, ...(body && { body: JSON.stringify(body) }) })
-        const policy = (await (await ask('/policy', 'review')).json()) as any
+        assert.ok(lines.some((line) => /^policy [0-9a-f]{12} \(configured\); run account-graph rebuild/.test(line)), lines.join('\n'))
+        const policy = (await (await ask('/review/api/policy', 'review')).json()) as any
+        hash = policy.hash
         assert.deepEqual([policy.builtWith, policy.due, policy.changed, policy.rules.kinds.badge], [null, true, ['badge', 'phone'], { weight: 0.5, dilution: 0, cap: 3, halfLife: 'none' }])
-        assert.equal((await ask('/rebuild', 'review', {})).status, 403)
-        assert.equal((await ask('/rebuild', 'service', { by: 'ops', reason: 'new weights' })).status, 200)
-        // Nothing in the body is needed.
-        assert.equal((await fetch(`http://127.0.0.1:${running.port}/rebuild`, { method: 'POST', headers: { authorization: 'Bearer service' } })).status, 200)
-        assert.match((await ask('/pulse', 'review')).headers.get('etag')!, /^"\d+-[0-9a-f]{12}-50"$/)
-        assert.deepEqual((await (await ask('/verify', 'service')).json()) as any, { changes: [], policy: { hash: policy.hash, builtWith: policy.hash, due: false } })
-        assert.equal(((await (await ask('/stats', 'service')).json()) as any).policy.due, false)
+        assert.match((await ask('/review/api/pulse', 'review')).headers.get('etag')!, /^"\d+-[0-9a-f]{12}-50"$/)
+        for (const gone of ['/rebuild', '/verify', '/stats', '/prune']) assert.equal((await ask(gone, 'service')).status, 404)
       } finally {
         await running.close()
       }
+      const said: string[] = []
+      await command(own, ['rebuild'], (line) => said.push(line))
+      await command(own, ['verify'], (line) => said.push(line))
+      assert.equal(said[0], '0 subjects moved')
+      assert.deepEqual(JSON.parse(said[1]!), { changes: [], policy: { hash, builtWith: hash, due: false } })
+      // Another process with another policy writes nothing.
+      await assert.rejects(serve({ ...own, POLICY: '{"kinds":{"badge":{"weight":0.6,"dilution":0,"cap":3,"halfLife":"none"}}}' }, () => {}), /The policy differs from the one this database was built with/)
+      // With none of its own, a process takes the database's.
+      const plain = await serve(env, () => {})
+      try {
+        assert.equal(((await (await fetch(`http://127.0.0.1:${plain.port}/review/api/policy`, { headers: { authorization: 'Bearer review' } })).json()) as any).hash, hash)
+      } finally {
+        await plain.close()
+      }
+      await assert.rejects(serve({ ...env, RECEIPT_SECRETS: 'q'.repeat(32) }, () => {}).then(async (other) => {
+        await other.close()
+        throw new Error('nothing was recorded, so nothing is missing')
+      }), /nothing is missing/)
     } finally {
       await pool.query(`drop schema if exists ${schema} cascade`)
     }
@@ -328,10 +348,37 @@ if (!url) {
     }
   })
 
+  test('a connection the database ends, at rest or in use, is an error and not the end of the process', async () => {
+    const own = new pg.Pool({ connectionString: url, max: 2 })
+    const schema = `ag_test_${process.pid}_ended`
+    const store = createPostgresStore(own, schema)
+    const pid = async () => (await own.query('select pg_backend_pid() as pid')).rows[0].pid
+    const end = async (which: number) => {
+      await pool.query('select pg_terminate_backend($1)', [which])
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    try {
+      await store.migrate()
+      const graph = createGraph(store)
+      await end(await pid())
+      await graph.observe({ subject: 'a', identifiers: ['email:x'], at: 1 })
+      // In use, and between two statements, so nothing is waiting for its answer.
+      await assert.rejects(store.write(async (tx) => {
+        const { rows } = await pool.query(`select pid from pg_stat_activity where state = 'idle in transaction' and query like '%pg_advisory_xact_lock%' and application_name = ''`)
+        for (const row of rows) await end(row.pid)
+        await tx.edgesOf(['a'])
+      }))
+      assert.equal((await graph.cluster('a'))!.id, 'a')
+    } finally {
+      await pool.query(`drop schema if exists ${schema} cascade`)
+      await own.end()
+    }
+  })
+
   test('the server starts from the environment alone and serves a visit end to end', async () => {
     const schema = `ag_test_${process.pid}_serve`
     const lines: string[] = []
-    const running = await serve({ DATABASE_URL: url, GRAPH_SCHEMA: schema, GRAPH_TOKEN: 'service', REVIEW_TOKENS: '{"dana":"review"}', ORIGINS: 'https://site.example', PORT: '0', HOST: '127.0.0.1' }, (line) => lines.push(line))
+    const running = await serve({ DATABASE_URL: url, RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_SCHEMA: schema, GRAPH_TOKEN: 'service', REVIEW_TOKENS: '{"dana":"review"}', ORIGINS: 'https://site.example', PORT: '0', HOST: '127.0.0.1' }, (line) => lines.push(line))
     const base = `http://127.0.0.1:${running.port}`
     try {
       assert.equal(lines[0], `database upgraded: ${upgrades().map((upgrade) => upgrade.name).join(', ')}`)
@@ -342,18 +389,23 @@ if (!url) {
 
       const visit = await fetch(`${base}/collect`, { method: 'POST', headers: { origin: 'https://site.example' }, body: JSON.stringify({ device: 'd-1', touch: { gclid: 'G1' } }) })
       assert.equal(visit.status, 204)
-      const signup = await fetch(`${base}/observe`, { method: 'POST', headers: { authorization: 'Bearer service' }, body: JSON.stringify({ subject: 'account:1', identifiers: ['device:d-1'], at: Date.now(), event: 'signup' }) })
-      assert.equal(signup.status, 200)
-      const attribution = (await (await fetch(`${base}/attribute?subject=account:1`, { headers: { authorization: 'Bearer service' } })).json()) as any
-      assert.equal(attribution.credited.gclid, 'G1')
-      assert.equal((await fetch(`${base}/clusters`, { headers: { authorization: 'Bearer review' } })).status, 200)
-      // No ad platform is configured, so an outcome is counted for the report and sent nowhere.
-      const convert = (body: object) => fetch(`${base}/convert`, { method: 'POST', headers: { authorization: 'Bearer service' }, body: JSON.stringify(body) })
-      assert.equal((await convert({})).status, 400)
-      assert.deepEqual(await (await convert({ transactionId: 'enr-1', subject: 'account:1', at: Date.now(), stage: 'enrolled', value: 200 })).json(), [])
+      const at = Date.now()
+      const call = async (name: string, body: object, token = 'service') => {
+        const response = await fetch(`${base}/v1/${name}`, { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify(body) })
+        return { status: response.status, body: (await response.json()) as any }
+      }
+      const { body: recorded } = await call('record', { entries: [
+        { type: 'profile', key: 'p1', at, subject: 'account:1', event: 'signup', facts: { device: 'd-1' } },
+        { type: 'conversion', key: 'enr-1', at, subject: 'account:1', stage: 'enrolled', value: 200, currency: 'USD' },
+      ] })
+      assert.deepEqual(recorded.results.map((each: any) => [each.key, each.ok]), [['p1', true], ['enr-1', true]])
+      const { body: found } = await call('lookup', { kind: 'person', subjects: ['account:1'], at })
+      assert.deepEqual([found.people[0].members, found.people[0].arrival.source], [['account:1', 'visitor:d-1'], 'google'])
+      assert.equal((await fetch(`${base}/review/api/clusters`, { headers: { authorization: 'Bearer review' } })).status, 200)
+      assert.deepEqual([(await call('record', {})).status, (await call('record', { entries: [] }, 'review')).status, (await call('record', { entries: [] }, 'nobody')).status, (await fetch(`${base}/observe`, { method: 'POST', headers: { authorization: 'Bearer service' } })).status], [400, 403, 401, 404])
       const today = new Date().toISOString().slice(0, 10)
-      const report = (await (await fetch(`${base}/report?from=${today}&to=${today}`, { headers: { authorization: 'Bearer review' } })).json()) as any
-      assert.deepEqual([report.rows[0].source, counts(report.rows[0].stages)], ['google', { enrolled: { count: 1, value: 200 } }])
+      const { body: report } = await call('report', { kind: 'campaigns', window: { from: today, to: today, timeZone: 'UTC' } }, 'review')
+      assert.deepEqual([report.value.rows[0].source, counts(report.value.rows[0].stages)], ['google', { enrolled: { count: 1, value: 200 } }])
     } finally {
       await running.close()
       await pool.query(`drop schema if exists ${schema} cascade`)
@@ -366,4 +418,15 @@ if (!url) {
   outboxSuite('postgres store', open)
   opsSuite('postgres store', open)
   malformedSuite('postgres store', open)
+  saidSuite('postgres store', open)
+  unjoinSuite('postgres store', open)
+  eventsSuite('postgres store', open)
+  unitSuite('postgres store', async () => {
+    const opened = await open()
+    const schema = `ag_test_${process.pid}_${count - 1}`
+    const tables = (await pool.query('select table_name as name from information_schema.tables where table_schema = $1 order by 1', [schema])).rows.map((row) => row.name)
+    // A number a rolled back write took is not given back, so generated ids are left out.
+    const dump = async () => Object.fromEntries(await Promise.all(tables.map(async (name) => [name, (await pool.query(`select to_jsonb(r) - 'id' as row from ${schema}.${name} r`)).rows.map((row) => JSON.stringify(row.row)).sort()])))
+    return { ...opened, dump }
+  })
 }

@@ -10,15 +10,15 @@
  */
 import { readFileSync } from 'node:fs'
 import { generateKeyPairSync } from 'node:crypto'
-import { ingest, ingestRequest, meta, microsoftAds, tiktok } from '../src/index.ts'
-import type { Job, Target } from '../src/index.ts'
-import { googleCosts, metaCosts } from '../src/integrations/costs.ts'
-import { createFingerprintVerifier } from '../src/integrations/fingerprint.ts'
-import { createGoogleTokens } from '../src/integrations/google-auth.ts'
-import { createMaxMindLookup } from '../src/integrations/maxmind.ts'
-import { createMicrosoftTokens } from '../src/integrations/microsoft-auth.ts'
-import { createAddressVerifier } from '../src/integrations/smarty.ts'
-import { createLineTypeLookup } from '../src/integrations/twilio.ts'
+import { ingest, ingestRequest, meta, microsoftAds, tiktok } from './internals.ts'
+import type { Job, Target } from './internals.ts'
+import { googleCosts, metaCosts } from '../src/providers/costs.ts'
+import { createFingerprintVerifier } from '../src/providers/fingerprint.ts'
+import { createGoogleTokens } from '../src/providers/google-auth.ts'
+import { createMaxMindLookup } from '../src/providers/maxmind.ts'
+import { createMicrosoftTokens } from '../src/providers/microsoft-auth.ts'
+import { createAddressVerifier } from '../src/providers/smarty.ts'
+import { createLineTypeLookup } from '../src/providers/twilio.ts'
 
 const env = process.env
 const short = (text: unknown) => String(text).replace(/\s+/g, ' ').slice(0, 240)

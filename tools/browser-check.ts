@@ -6,9 +6,9 @@ import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { readFileSync } from 'node:fs'
 import pg from 'pg'
-import { createGraph, createOutbox, email, googleAds } from '../src/index.ts'
-import { createPostgresStore } from '../src/postgres.ts'
-import { createHandler } from '../src/server.ts'
+import { createGraph, createOutbox, email, googleAds } from './internals.ts'
+import { createPostgresStore } from '../src/store/postgres.ts'
+import { createHandler } from '../test/harness.ts'
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
 const store = createPostgresStore(pool, 'ag_browser')
@@ -20,7 +20,7 @@ const outbox = createOutbox(graph, store.outbox, {
   targets: [googleAds({ customerId: '123-456-7890', send: async (request) => (sent.push(request), { requestId: 'local-1' }) })],
 })
 const handler = createHandler(graph, { token: 'local-token', origins: ['http://localhost:8787'], outbox, cookie: true })
-const collectJs = readFileSync(new URL('../dist/collect.js', import.meta.url), 'utf8')
+const collectJs = readFileSync(new URL('../dist/edge/collect.js', import.meta.url), 'utf8')
 const page = `<!doctype html><meta charset=utf-8><title>collector test</title><pre id=out>running</pre>
 <script type=module>
 import { collect, read } from '/collect.js'

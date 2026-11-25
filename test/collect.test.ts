@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { carry, collect, event, fields, fill, pool, read, texts, watch, withCode } from '../src/collect.ts'
+import { carry, collect, event, fields, fill, pool, read, texts, watch, withCode } from '../src/edge/collect.ts'
 
 /** Just enough of a browser for the collector: a URL, cookies, storage, and a beacon. */
 function browser(href: string, cookies: Record<string, string> = {}, gpc = false) {
@@ -177,14 +177,14 @@ test('page events are reported by name, from code and from marked elements', asy
   await settle()
 
   const device = page.jar.get('ag_device')
-  assert.deepEqual(new Set(posted), new Set(['https://graph.example/event']))
+  assert.deepEqual(new Set(posted), new Set(['https://graph.example/collect']))
   assert.deepEqual(page.sent, [
-    { device, event: 'inquiry', url: 'https://site.example/contact', id: 'form-7' },
-    { device, event: 'phone_click', url: 'https://site.example/contact', number: '+1-555-123-0001' },
-    { device, event: 'brochure', url: 'https://site.example/contact', id: 'b-1' },
-    { device, event: 'inquiry', url: 'https://site.example/contact' },
-    { device, event: 'phone_click', url: 'https://site.example/contact', number: '%' },
-    { device, event: 'footer', url: 'https://site.example/contact' },
+    { kind: 'event', device, event: 'inquiry', url: 'https://site.example/contact', id: 'form-7' },
+    { kind: 'event', device, event: 'phone_click', url: 'https://site.example/contact', number: '+1-555-123-0001' },
+    { kind: 'event', device, event: 'brochure', url: 'https://site.example/contact', id: 'b-1' },
+    { kind: 'event', device, event: 'inquiry', url: 'https://site.example/contact' },
+    { kind: 'event', device, event: 'phone_click', url: 'https://site.example/contact', number: '%' },
+    { kind: 'event', device, event: 'footer', url: 'https://site.example/contact' },
   ])
   stop()
   assert.equal(listeners.size, 0)
@@ -253,7 +253,7 @@ test('links to your other sites carry the visitor along, and no other link is to
   try {
     const stop = carry({ endpoint: 'https://graph.example/collect', domains: ['shop.example', ' Help.Example ', 'bücher.example', 'not a host'] })
     await settle()
-    assert.equal(asked[0]!.url, 'https://graph.example/carry')
+    assert.equal(asked[0]!.url, 'https://graph.example/collect')
     assert.equal(asked[0]!.init.credentials, 'include')
     assert.equal(follow('https://shop.example/cart?x=1#pay'), 'https://shop.example/cart?x=1&ag_from=token-1#pay')
     assert.equal(follow('https://help.example/'), 'https://help.example/?ag_from=token-1')
@@ -392,7 +392,7 @@ test('a marked element shows the visitor a number of their own while it is their
   const stop = pool({ endpoint: 'https://graph.example/collect' })
   // The visit may not have arrived yet, so a visitor who gets nothing asks again soon.
   await turn(1_000)
-  assert.deepEqual([asked.length, asked[0].url, asked[0].body], [1, 'https://graph.example/number', { device: page.jar.get('ag_device') }])
+  assert.deepEqual([asked.length, asked[0].url, asked[0].body], [1, 'https://graph.example/collect', { kind: 'number', device: page.jar.get('ag_device') }])
   assert.equal(link.href, 'tel:+15550100100')
   answer = { number: '+15550100001', until: 0, lasts: 900_000 }
   await turn(3_000)
@@ -477,7 +477,7 @@ test('the page asks for a code when it has a text link, and puts it in as the li
   follow()
   assert.equal(href, 'sms:+15550100101?body=Hi')
   await settle()
-  assert.deepEqual(asked, Array(3).fill('https://graph.example/text-code'))
+  assert.deepEqual(asked, Array(3).fill('https://graph.example/collect'))
   follow()
   assert.equal(href, 'sms:+15550100101?body=Hi%20Ref%20K7Q2MX')
   await settle()
