@@ -56,7 +56,8 @@ test('scoring ignores the order of its input', () => {
 test('with no groups a score is what it always was, and with groups only the strongest of each counts', () => {
   let seed = 42
   const next = () => ((seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff) / 0x7fffffff)
-  const kinds = Object.keys(defaultPolicy.kinds)
+  // One kind of the default only confirms, and is weighed by its own test.
+  const kinds = Object.keys(defaultPolicy.kinds).filter((kind) => !defaultPolicy.kinds[kind]!.corroborates)
   const grouped = { ...defaultPolicy, kinds: Object.fromEntries(Object.entries(defaultPolicy.kinds).map(([kind, rule], i) => [kind, { ...rule, ...(i % 3 > 0 && { group: `g${i % 3}` }) }])) }
   for (let round = 0; round < 500; round++) {
     const reasons = Array.from({ length: 1 + Math.floor(next() * 6) }, (_, i): Reason => ({ identifier: `${kinds[Math.floor(next() * kinds.length)]}:${i}`, evidence: next(), fanout: 2, gap: 0 }))

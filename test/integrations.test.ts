@@ -1538,7 +1538,15 @@ test('/identify keeps whoever speaks for a subject apart from them', async (t) =
   assert.ok((await graph.cluster('contact:mother'))!.members.includes(mother))
   assert.deepEqual((await graph.cluster('contact:child'))!.members, ['contact:child'])
   assert.equal((await identify({ subject: mother, speaker })).status, 400)
-  for (const bad of ['mother', {}, { email: 'mother@example.org' }, { device: '?' }, { phone: 'x' }]) assert.equal((await identify({ subject: 'contact:other', speaker: bad })).status, 400, JSON.stringify(bad))
+  for (const bad of [{ device: '?' }, { phone: 'x' }]) assert.equal((await identify({ subject: 'contact:other', speaker: bad })).status, 400, JSON.stringify(bad))
+  // One that names nobody loses nothing of the subject's.
+  for (const [n, none] of ['mother', null, {}, { email: 'mother@example.org' }, { phone: '' }].entries()) {
+    const answer = await identify({ subject: `contact:none${n}`, email: 'mine@example.org', speaker: none })
+    assert.deepEqual([answer.status, answer.identifiers.length, answer.notes.speaker], [200, 1, 'not used: a speaker requires a device or a phone'], JSON.stringify(none))
+  }
+  // Told late, what is on the record already is said and left.
+  await identify({ subject: 'contact:late', phone: '+15550100187', at: T0 })
+  assert.match((await identify({ subject: 'contact:late', at: T0, speaker: { phone: '+15550100187' } })).notes.speaker, /on this record already/)
   // A number that names nobody is not kept, and neither is what they say it is theirs.
   const kept = await identify({ subject: 'contact:other', email: 'o@example.org', speaker: { phone: '+18005550199', email: 'o@example.org' } })
   assert.deepEqual([kept.identifiers, kept.notes.speaker], [[], 'what is the speaker\'s is not used for who they speak for'])

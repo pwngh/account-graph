@@ -558,12 +558,12 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     const speaker = body.speaker === undefined ? undefined : await speakerIn(body)
     if (speaker?.note) notes.speaker = speaker.note
     // What is the speaker's says who the speaker is, so it is not written on whoever they speak for.
-    const contact = [...new Set([...all, ...(speaker?.used ?? [])])]
-    // The same detail under the same name is the same person, whoever the detail is.
-    const keys = await named(body, contact)
     const theirs = new Set(speaker?.theirs.flatMap((each) => [each, each.replace(/^phone:/, 'voip:'), each.replace(/^voip:/, 'phone:')]))
-    const identifiers = [...all.filter((each) => !theirs.has(each)), ...keys]
-    if (identifiers.length < all.length + keys.length) notes.speaker = 'what is the speaker\'s is not used for who they speak for'
+    const own = all.filter((each) => !theirs.has(each))
+    const identifiers = [...own, ...(await named(body, own)), ...(speaker && speaker.subjects.length > 0 ? await named(body, speaker.used, 'ward') : [])]
+    if (own.length < all.length) notes.speaker = 'what is the speaker\'s is not used for who they speak for'
+    // What was written before anybody said so stays written, and only a person can say whose it is.
+    if (theirs.size > 0 && (await graph.holders([...theirs])).some((edge) => edge.subject === body.subject)) notes.speaker = 'on this record already, from before: mute or forget it if it is the speaker\'s'
     const event = typeof body.event === 'string' && body.event ? (body.event as string) : undefined
     const who = { subject: body.subject as Subject, identifiers }
     if (speaker && speaker.subjects.length > 0) {
@@ -575,16 +575,17 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
   }
 
   /** The keys of these numbers and emails under the name in a body, where the policy uses names. */
-  async function named(body: any, contact: readonly Identifier[]): Promise<Identifier[]> {
+  async function named(body: any, contact: readonly Identifier[], kind: 'named' | 'ward' = 'named'): Promise<Identifier[]> {
     if (!options.identifierSecret || typeof body.name?.first !== 'string' || typeof body.name?.last !== 'string') return []
-    return (await graph.policy()).rules.apart?.includes('given') ? namedKeys(options.identifierSecret, contact, body.name.first, body.name.last) : []
+    return (await graph.policy()).rules.apart?.includes('given') ? namedKeys(options.identifierSecret, contact, body.name.first, body.name.last, kind) : []
   }
 
   /** Somebody who speaks for the subject: what is theirs, and the browser and the caller it is to be written on. */
   async function speakerIn(body: any): Promise<{ theirs: Identifier[]; subjects: { subject: Subject; identifiers: Identifier[] }[]; used: Identifier[]; note?: string }> {
     const { device, phone, email: address } = typeof body.speaker === 'object' && body.speaker !== null ? body.speaker : {}
     if (/^(visitor|caller|call):/.test(body.subject)) throw new Refusal(400, 'A speaker speaks for a record of yours, not for a browser or a caller')
-    if (device === undefined && !(typeof phone === 'string' && phone)) throw new Refusal(400, 'A speaker requires a device or a phone')
+    // Nobody is named by it, and what is told of the subject is kept.
+    if (device === undefined && !(typeof phone === 'string' && phone)) return { theirs: typeof address === 'string' && address ? [email(address)] : [], subjects: [], used: [], note: 'not used: a speaker requires a device or a phone' }
     const { identifiers: theirs, notes } = await factsIn({ device, phone }, true, true)
     const ofDevice = theirs.find((each) => each.startsWith('device:'))
     // A number that names nobody is the speaker's all the same, and nothing more is made of it.
@@ -938,7 +939,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       case 'POST /match': {
         const body = await json(request)
         const { identifiers, notes, at } = await factsIn(body, false)
-        return { candidates: await graph.match([...identifiers, ...(await named(body, identifiers))], { at }), notes }
+        return { candidates: await graph.match([...identifiers, ...(await named(body, identifiers)), ...(await named(body, identifiers, 'ward'))], { at }), notes }
       }
       case 'POST /conflicts': {
         const { subjects } = await json(request)

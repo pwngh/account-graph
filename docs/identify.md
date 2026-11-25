@@ -76,9 +76,11 @@ curl -X POST https://graph.example.org/identify -H "authorization: Bearer $GRAPH
 
 | What you send | What happens |
 | --- | --- |
-| `speaker.device`, `speaker.phone` | At least one is required. The browser and the caller are related to the subject at 0.92 and never joined to them. |
+| `speaker.device`, `speaker.phone` | At least one is needed. The browser and the caller are related to the subject at 0.92 and never joined to them. |
 | `speaker.email` | Written on the caller, or on the browser where there is no number. |
 | A fact both in `speaker` and beside it | Not used for the subject, with a note. |
+| A fact of the speaker's that is on the subject's record already | Left there, with a note. Nothing written before is undone: mute it, or forget the record. |
+| Neither device nor phone | The subject is recorded, with a note. |
 
 What brought the speaker's browser earns the credit for the subject. It is not passed on to anybody else they speak for, or back. The two are never offered for review as one person, and a number written on both later does not join them. A reviewer who joins them has the last word. To take it back, mute the `behalf:` mark of the browser and that of the caller: sent again, they stay muted. The subject is a record of yours, not a browser or a caller.
 

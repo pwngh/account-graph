@@ -92,11 +92,11 @@ export function components(subjects: Iterable<Subject>, pairs: readonly Pair[]):
 export interface Known {
   facts: Map<Fact | 'initial' | 'dated', Set<Identifier>>
   joins: Set<Identifier>
-  /** Their browsers and numbers, and what they gave under which name. */
+  /** What they gave under which name. */
   things: Set<Identifier>
 }
 
-const THINGS = new Set(['device', 'phone', 'voip', 'named'])
+const THINGS = new Set(['named', 'ward'])
 
 /** The facts of the subjects that have one, of the facts a policy keeps people apart by. An undone join is none. With `joins`, those are read whatever the policy. */
 export function knownOf(policy: Policy, edges: readonly Edge[], undone: (identifier: Identifier) => boolean, joins = false): Map<Subject, Known> {
@@ -112,8 +112,7 @@ export function knownOf(policy: Policy, edges: readonly Edge[], undone: (identif
     const known = out.get(subject) ?? { facts: new Map(), joins: new Set(), things: new Set() }
     out.set(subject, known)
     if (kind === 'review') known.joins.add(identifier)
-    // A number is one whatever kind of line it was found to be.
-    else if (thing) known.things.add(identifier.replace(/^voip:/, 'phone:'))
+    else if (thing) known.things.add(identifier)
     else known.facts.set(kind as Fact | 'initial' | 'dated', (known.facts.get(kind as Fact | 'initial' | 'dated') ?? new Set()).add(identifier))
   }
   return out
@@ -128,14 +127,11 @@ export function conflict(policy: Policy, a: Known | undefined, b: Known | undefi
     const [own, others] = [a.facts.get(fact), b.facts.get(fact)]
     return own && others && [...own].some((value) => others.has(value))
   }
-  const shared = [...a.things].filter((thing) => b.things.has(thing))
-  const browserAndNumber = shared.some((thing) => thing.startsWith('device:')) && shared.some((thing) => thing.startsWith('phone:'))
-  const named = agree('given') === true || shared.some((thing) => thing.startsWith('named:'))
+  const named = agree('given') === true || [...a.things].some((thing) => b.things.has(thing))
   // A name that agrees outranks two dates that one slip of the pen would make one. A father and a son of one name have two dates.
   if (policy.apart.includes('birth') && agree('birth') === false && !(named && agree('dated') === true)) return 'birth'
   if (!policy.apart.includes('given') || agree('given') !== false || agree('birth') === true || agree('initial') === true) return undefined
-  // Given again from one browser with one number, it is one person by another name.
-  return browserAndNumber ? undefined : 'given'
+  return 'given'
 }
 
 type Adjacency = Map<Subject, Map<Subject, number>>
