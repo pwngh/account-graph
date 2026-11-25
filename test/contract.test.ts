@@ -607,9 +607,15 @@ test('options that cannot be are refused at once, and each said', async () => {
   const remote = accountGraph({ url: 'https://g.example', token: 't' })
   assert.throws(() => createEdge(remote, { token: 't' }), (error) => hasCode(error, FAULT_CODES.CONFIG.UNSUPPORTED))
   await assert.rejects(runWorkers(remote), (error) => hasCode(error, FAULT_CODES.CONFIG.UNSUPPORTED))
-  const down = accountGraph({ databaseUrl: 'postgres://nobody@127.0.0.1:1/x', workers: false, receiptSecrets: [SECRET], timeoutMs: 2000 })
-  assert.deepEqual(await codeOf(down.lookup({ kind: 'find', text: 'x' })), { code: FAULT_CODES.GRAPH.UNAVAILABLE, retryable: true })
-  await down.close()
+  const unavailable = createServer().on('connection', socket => socket.destroy()).listen(0, '127.0.0.1')
+  await new Promise(resolve => unavailable.once('listening', resolve))
+  const down = accountGraph({ databaseUrl: `postgres://nobody@127.0.0.1:${(unavailable.address() as AddressInfo).port}/x`, workers: false, receiptSecrets: [SECRET], timeoutMs: 2000 })
+  try {
+    assert.deepEqual(await codeOf(down.lookup({ kind: 'find', text: 'x' })), { code: FAULT_CODES.GRAPH.UNAVAILABLE, retryable: true })
+  } finally {
+    await down.close()
+    unavailable.close()
+  }
 })
 
 test('a list that takes too long is done as far as it got, and the rest says it was not tried', async () => {
