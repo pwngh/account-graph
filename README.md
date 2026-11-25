@@ -110,7 +110,7 @@ Guides are in [docs/](docs/README.md): getting started, identifying people, call
 ## Limitations
 
 - No live provider account has been tried. Each endpoint tried refused an invalid key as expected. See [Providers](docs/providers.md).
-- A score is a weight and not a probability, and is unmeasured on real people. On made-up people, three runs missed five, four and eight of the marks set for them. See [Accuracy](docs/accuracy.md).
+- A score is a weight and not a probability, and is unmeasured on real people. On made-up people, four runs missed five, four, eight and three of the marks set for them. See [Accuracy](docs/accuracy.md).
 - The newest qualifying visit gets all of the credit.
 - `forget` leaves data at ad platforms. See [Privacy](docs/privacy.md).
 - It runs no conflict check, and it keeps no consent to be called or texted.

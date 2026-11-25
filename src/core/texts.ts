@@ -62,6 +62,8 @@ export interface RecordedText {
 }
 
 const DAY = 86_400_000
+/** How long a code names the visitor it was given to. */
+const LIFE = 30 * DAY
 /** How long a conversation may be silent before the next text begins another. */
 const QUIET = 30 * DAY
 const BUCKET = 5 * 60_000
@@ -94,6 +96,18 @@ export function texted(number: string, at: number, country?: string): Identifier
 export function codeIn(text: string): string | undefined {
   // The site writes it last, so a reference someone put in the message before it is not taken for it.
   return [...text.slice(0, 5_000).matchAll(WRITTEN)].at(-1)?.[1]?.toUpperCase()
+}
+
+/**
+ * The one visitor a code was given to, and the note that says so. A code that nobody was given by then, that is too old, or
+ * that more than one holds names nobody.
+ */
+export async function namedBy(graph: Graph, given: string | undefined, at: number, life = LIFE): Promise<{ visitor: Subject; note: Identifier } | undefined> {
+  const code = given?.trim().toUpperCase()
+  if (code === undefined || !CODE.test(code)) return undefined
+  const note = codeNote(code)
+  const [edge, ...others] = (await graph.holders([note])).filter((each) => each.first <= at + SLACK && each.last >= at - life)
+  return edge && others.length === 0 ? { visitor: edge.subject, note } : undefined
 }
 
 /** What a text that is one word says about being texted, by the words carriers act on. */
@@ -213,20 +227,13 @@ async function settle(graph: Graph, subject: Subject, options: TextOptions, now?
 
 /** Ties a text to the visitor its code was given to, or else to the one who tapped the number just before. */
 async function tie(graph: Graph, { id, at, subject, ours, text, flags }: { id: string; at: number; subject: Subject; ours: string; text: Text; flags: TextFlag[] }, options: TextOptions): Promise<Subject | undefined> {
-  const given = text.code?.trim().toUpperCase() ?? (text.text === undefined ? undefined : codeIn(text.text))
-  const code = given !== undefined && CODE.test(given) ? given : undefined
-  if (code) {
-    const note = codeNote(code)
-    const life = options.codeLife ?? 30 * DAY
-    const holders = (await graph.holders([note])).filter((edge) => edge.first <= at + SLACK && edge.last >= at - life)
-    const [edge] = holders
-    if (edge && holders.length === 1) {
-      // The code has said whose it is, so a tap of somebody else's is not looked for. A visitor already tied to another
-      // sender or caller is not tied to this one too: the two would become one person.
-      const tied = await graph.tieCall(subject, edge.subject, `text:${id}`, at, { notes: [note] })
-      flags.push(tied ? 'code' : 'taken')
-      return tied ? edge.subject : undefined
-    }
+  const named = await namedBy(graph, text.code ?? (text.text === undefined ? undefined : codeIn(text.text)), at, options.codeLife)
+  if (named) {
+    // The code has said whose it is, so a tap of somebody else's is not looked for. A visitor already tied to another
+    // sender or caller is not tied to this one too: the two would become one person.
+    const tied = await graph.tieCall(subject, named.visitor, `text:${id}`, at, { notes: [named.note] })
+    flags.push(tied ? 'code' : 'taken')
+    return tied ? named.visitor : undefined
   }
   const window = options.clickWindow ?? 3 * 60_000
   const notes: Identifier[] = []

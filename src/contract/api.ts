@@ -144,6 +144,8 @@ export interface CallEntry extends Keyed<'call'> {
   readonly to: string
   readonly duration?: number
   readonly result?: CallResult
+  /** The code the caller read out or entered, from the page they saw. Pages are given codes where the server has `textCodes` on. Never kept. */
+  readonly code?: string
   readonly tags?: Readonly<Record<string, string>>
 }
 
@@ -330,6 +332,8 @@ export interface Match {
   readonly level: Level
   readonly kinds: readonly string[]
   readonly conflict?: 'birth' | 'given'
+  /** What they share would join them, and nothing confirms that they are one person: see the policy's `records`. */
+  readonly unconfirmed?: true
 }
 export interface Tied {
   readonly subject: string
@@ -562,14 +566,17 @@ export interface RuleOptions {
   readonly halfLife: number | 'none'
   readonly group?: string
   readonly corroborates?: true
+  readonly relates?: true
 }
-export type BuiltInKind = 'review' | 'passkey' | 'email' | 'phone' | 'voip' | 'address' | 'payment' | 'device' | 'ga' | 'hardware' | 'fingerprint' | 'canvas' | 'ip' | 'link' | 'carry' | 'opened' | 'lease' | 'dial' | 'text' | 'place' | 'birth' | 'dialed'
+export type BuiltInKind = 'review' | 'passkey' | 'email' | 'phone' | 'voip' | 'address' | 'payment' | 'device' | 'ga' | 'hardware' | 'fingerprint' | 'canvas' | 'ip' | 'link' | 'carry' | 'opened' | 'lease' | 'dial' | 'text' | 'place' | 'birth' | 'dialed' | 'behalf' | 'named' | 'ward' | 'given' | 'initial' | 'dated' | 'compound'
 export interface PolicyOptions {
   readonly same?: number
   readonly related?: number
   readonly bridge?: number
   readonly review?: number
-  readonly apart?: readonly 'birth'[]
+  readonly apart?: readonly ('birth' | 'given')[]
+  /** Two records are one person only where somebody said so, or a name or a date of birth agrees. Requires `apart`. */
+  readonly records?: 'confirmed'
   /** Only what differs. A misspelled kind or field does not compile. */
   readonly kinds?: { readonly [K in BuiltInKind]?: Partial<RuleOptions> }
   /** Kinds of your own, said in full. */

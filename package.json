@@ -17,6 +17,7 @@
   "files": [
     "dist",
     "examples/household.json",
+    "examples/intake.json",
     "README.md",
     "CHANGELOG.md",
     "LICENSE",

@@ -404,6 +404,93 @@ All that was printed, in every setting and arm, is in [accuracy-third-held.txt](
 
 Known and not changed: a couple's shared email is put on the first two adults of every household with two; a short form is drawn before an English form, so the realised shares of names are printed and not the rates; a person's ad is reachable by the end of the world and not at an hour after a record; callers are what the server calls them, so a subject of two callers is one of two people; and a Student's t range is how far simulated worlds differ, not how far a firm is.
 
+## The fourth run
+
+Written before any of its held seeds was run. The three runs above stand as they are: no rate, mark or figure of theirs is changed.
+
+### What is asked
+
+The runs before judge one graph for two jobs. Whether two records are one person has to be right, because a wrong answer shows one client another's history. Which ad brought somebody may be wrong now and then. Here the two are judged by themselves, in the two flows a firm has:
+
+| Setting | Flow |
+| --- | --- |
+| `self4` | People fill in a form whose fields are checked as they are typed: 80% forms, 2% of emails and 1% of numbers mistyped, 3% for somebody else, and the box ticked for 80% of those |
+| `staff4` | People call and staff enter them: 80% calls, 8% for somebody else, and staff say so for 80%, because asking is required |
+| `base3`, `high3`, `base` | As they were. `high3` has every rate at its hard end at once, which no firm has. `base` has names no table knows |
+
+Every rate not named is base3's. All are assumed.
+
+| Arm | Policy |
+| --- | --- |
+| `default`, `new` | The default policy, and the third run's `new`. Printed and not judged |
+| `records` | `new` with [`"records": "confirmed"`](matching.md#records-that-have-to-be-confirmed). Judged everywhere but in `staff4` |
+| `staffed` | `examples/intake.json` without `records`, staff joining callers. Printed and not judged |
+| `staffed records` | `examples/intake.json`, staff joining callers. Judged everywhere but in `self4` |
+
+`tools/accuracy/fourth.ts` also prints, with no mark, what each rate does **by itself** at its hard end over base3, because `high` and `high3` cannot say which of them does it.
+
+### What would be bad in the fourth run
+
+Counts pooled over the worlds. One with nothing to count is bad.
+
+| In | Bad |
+| --- | --- |
+| Every setting | More than 0.25% of people with a record share a cluster with somebody else's; 0.5% in high3 |
+| Every setting | More than 2% of the pairs of records that are joined are two people |
+| Every setting | Fewer than 75% of the pairs of records that are one person are joined, or shown to somebody to decide; 65% in high3 |
+| Every setting | Fewer than 25% of the pairs shown are one person |
+| Every setting | More than 2.5% of credit goes to somebody else's ad or to somebody who came by none; 4% in high3 |
+| Every setting | Of records with a chain of facts to their ad, fewer than 90% are credited to it, or more than a point fewer than without `records`; 85% in high3 |
+
+Seeds 20270501 to 20270508 are for development, and 20270301-2 and 20270501-6 were looked at in a first form of the tool, while the rule was written. The marks were written after those looks and before the held seeds, 20270601 to 20270620, which are run once at the commit named here. The list of names is the third run's.
+
+Three looks at 20270501-08 were made, and reviews between them changed the code. A mark is judged in 48 places.
+
+| Look | Code | Marks that came out bad, of 48 | Changed after it |
+| --- | --- | --- | --- |
+| 1 | `dfb5ef5` | high3, `staffed records`, pairs joined or shown: 64.27% against 65% | A third record, a caller, or a half of a name could make one of two who differ. A record that could be two people's is nobody's |
+| 2 | `0778ce6` | The same, 64.33% | The same further: half names, records cut off before, names that only may be one, more than 300 records |
+| 3 | `c82edda` | The same, 64.54%, and staff4 credited of those with a chain, 89.84% against 90% | Second words of a name that no table has, not looked at again |
+
+No mark was moved, and no rate was changed. A run of the held seeds was begun at `f643cf3` and stopped when a review found the first of these. It had printed its first line and no figure, and is not counted. [All that look 3 printed](accuracy-fourth-dev.txt).
+
+The code of the held seeds is `b96207d`, with Node v22.23.0. It has one change that no look saw, the last of look 3's row.
+
+### Results of the fourth run
+
+The held seeds 20270601-20, once, at `b96207d`, in all five settings and arms. **Three of the 48 marks came out bad.**
+
+| Written as bad | Came out |
+| --- | --- |
+| staff4, `staffed records`: fewer than 90% credited of those with a chain | **Bad.** 4,684 of 5,228 (89.59%), and 90.47% without `records` |
+| high3, `records`: more than a point fewer credited than without `records` | **Bad.** 6,224 of 7,056 (88.21%) against 89.33%. The 85% held |
+| high3, `staffed records`: fewer than 65% of the pairs of one person joined or shown | **Bad.** 2,275 of 3,569 (63.74%) |
+| Every other mark | Held |
+
+| Setting, arm | Records with another's | Joined pairs of records that are two people | Pairs of one person: joined; joined or shown | Shown, and of them one person | Credit: to the wrong ad; with a chain, to it |
+| --- | --- | --- | --- | --- | --- |
+| self4, `default` | 3.80% | 12.37% | 89.00%; 89.00% | | 1.50%; 97.81% |
+| self4, `new` | 0.66% | 1.86% | 91.46%; 91.46% | | 1.05%; 98.12% |
+| self4, `records` | **0.02%** | 0.07% | 62.79%; 90.87% | 663, 92.76% | 1.05%; 97.66% |
+| staff4, `default` | 2.56% | 13.74% | 64.62%; 64.62% | | 1.78%; 88.56% |
+| staff4, `staffed` | 1.86% | 7.96% | 78.56%; 78.56% | | 1.62%; 90.47% |
+| staff4, `staffed records` | **0.07%** | 0.62% | 57.68%; 78.13% | 319, 89.66% | 1.46%; 89.59% |
+| base3, `new` | 0.62% | 2.39% | 84.92%; 84.92% | | 1.92%; 94.15% |
+| base3, `records` | **0.04%** | 0.18% | 58.24%; 84.04% | 532, 93.23% | 1.91%; 93.86% |
+| base3, `staffed records` | **0.02%** | 0.09% | 57.36%; 82.22% | 515, 92.82% | 1.85%; 93.58% |
+| high3, `new` | 1.46% | 4.72% | 69.04%; 69.04% | | 3.30%; 89.33% |
+| high3, `records` | **0.18%** | 1.05% | 39.73%; 67.81% | 1,126, 88.99% | 3.26%; 88.21% |
+| high3, `staffed records` | **0.18%** | 1.07% | 38.75%; 63.74% | 1,013, 88.06% | 3.19%; 87.09% |
+| base, `new` | 1.93% | 10.68% | 81.34%; 81.34% | | 1.42%; 94.38% |
+| base, `records` | **0.02%** | 0.15% | 66.80%; 81.34% | 241, 60.17% | 1.45%; 93.91% |
+| base, `staffed records` | **0.02%** | 0.15% | 66.70%; 78.13% | 209, 54.55% | 1.55%; 94.70% |
+
+**The price is joins that somebody has to make.** In self4 91.46% of the pairs of records that are one person are joined by themselves under `new`, and 62.79% under `records`. Most of the rest are shown: 663 pairs over 20 worlds of 2,000 people, of which nine in ten are one person. Until somebody joins them, that person's history is in two.
+
+Each safety the reviews added took some of these joins: on 20270501-08, base3 joined 76.24% at look 1 and 60.31% at look 3. The marks ask for joined or shown, so they do not see it.
+
+All that was printed is in [accuracy-fourth-held.txt](accuracy-fourth-held.txt). The worlds and the rules are by one author's hands, the marks were set after looks, and nobody here is real.
+
 ## Limitations
 
 - Most rates are assumed. Under `high`, every one is at its hard end at once.

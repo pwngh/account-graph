@@ -1,0 +1,11 @@
+{
+  "apart": ["birth", "given"],
+  "records": "confirmed",
+  "kinds": {
+    "phone": { "weight": 0.85, "dilution": 1, "cap": 10, "halfLife": 63072000000, "group": "household" },
+    "voip": { "group": "household" },
+    "address": { "group": "household" },
+    "ip": { "group": "household" },
+    "name": { "weight": 0.6, "dilution": 1, "cap": 5, "halfLife": "none", "group": "name", "corroborates": true }
+  }
+}

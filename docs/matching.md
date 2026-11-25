@@ -65,7 +65,7 @@ The default policy has no groups, and one corroborating kind, `named`. [Presets]
 | `carry` | 0.95 | 4 | none | A visitor who followed a link from another of your sites, proven by a token made for that browser. Thins when several browsers use one token |
 | `link` | 0.92 | 5 | none | A link sent to one person, opened in this browser. Thins as more people's links are opened there |
 | `dial` | 0.92 | 2 | none | A phone call or a text that began just after exactly one visitor tapped its number |
-| `text` | 0.95 | 2 | none | A text that carried the code one visitor was given |
+| `text` | 0.95 | 2 | none | A text that carried the code one visitor was given, or a call whose caller read it out |
 | `named` | 0.999 | 10 | none | One number or email given under one name. It corroborates. Written where a policy keeps people apart by `given` |
 | `ward` | 0.97 | 5 | none | Two who were spoken for by one number or email, under one name |
 | `behalf` | 0.92 | 2 | none | Somebody who [speaks for](identify.md#speaking-for-somebody-else) somebody else. It relates and never joins |
@@ -171,6 +171,23 @@ Keep a shared phone on each person, and record what you know about the two. Remo
 | They are two people and must stay distinct | `split` them. |
 | The number belongs to a front desk, a shelter or a school | `mute` that number. |
 
+### An intake desk
+
+Use `examples/intake.json` where mixing two people's records is worse than leaving one person with two, such as a law firm or a clinic. It is the preset above, and:
+
+```json
+{ "apart": ["birth", "given"], "records": "confirmed" }
+```
+
+Set `IDENTIFIER_SECRET`, and send the `name` and `dob` you have with each `profile`. Without them nothing confirms that two records are one person, and each stays by itself until somebody joins them.
+
+| Ask at intake | Send |
+| --- | --- |
+| Is this for yourself or for somebody else? Make it a required question. | Whoever calls or fills in the form as [`speaker`](identify.md#speaking-for-somebody-else) |
+| First and last name, and date of birth | `name` and `dob` |
+| Was this call about the person on screen? | A `merge` of the `caller:` and the contact, only where the caller is that person |
+| Who is on the other side? | A [`split`](#split) |
+
 ### Custom presets
 
 Write a policy the same way, rebuild, and start the server with it. A group is any name you choose, and kinds with the same group count once between them.
@@ -211,7 +228,35 @@ With `given` it keeps keyed notes of the names a first name may stand for, from 
 | Shared browsers and callers | They go with one of the two, as after a separation. |
 | Turning it on, or a new version of it | Rebuild once. Dates and names sent before are not known, or not all that is now kept of them: send them again. |
 
-It is off unless a policy lists it, and no preset does. [Accuracy](accuracy.md#the-second-run) says what it did on made-up people, where it was still far from its bar, and in [the third run](accuracy.md#results-of-the-third-run) eight of fifty marks came out bad.
+It is off unless a policy lists it, as [the preset for an intake desk](#an-intake-desk) does. [Accuracy](accuracy.md#the-second-run) says what it did on made-up people, where it was still far from its bar, and in [the third run](accuracy.md#results-of-the-third-run) eight of fifty marks came out bad.
+
+## Records that have to be confirmed
+
+What two records share, such as a mailbox, a number or a computer, may be a household's. With `"records": "confirmed"`, sharing it does not make them one person. The policy must also have `apart`, because it goes by those facts.
+
+| Two records | Are |
+| --- | --- |
+| Somebody merged | One person |
+| Agree on a date of birth, and differ in no name | One person, where what they share joins them |
+| Have one first name, or one has a part of the other's two words, and differ in no date | One person, where what they share joins them |
+| Have names that may stand for one another, such as Robert and Bob | One person with an agreeing date of birth, and unconfirmed without |
+| Differ in a date of birth or a first name, or have two words of which one is another, such as Maria Elena and Maria Guadalupe | Two |
+| Fit two others who differ, such as a Juan with no date beside a father and a son of that name | Unconfirmed with both |
+| Share a number or an email given under one name, a name with one zip code or date of birth, or a passkey | One person |
+| Share anything else, however strong | Two, shown as related with `unconfirmed: true`, and in Matches for somebody to decide |
+
+| Limit | Detail |
+| --- | --- |
+| Names no table has | A date of birth confirms two records with such names only where a number or an email is under one name. Twins who share only a device and have no detail of their own can be joined by their date, where the policy has no `name` kind. |
+| Two words | That a name has several words is noted from the day the rule is on. One sent before counts as one word: send it again. Two second words in no table that begin with one letter look alike. |
+| More than 300 records in one component | Nothing but a decision joins them. The 301st takes back what facts had joined there, so find what they all share and `mute` it. |
+| A father and a son | Of one name with no dates, they are one person by it, as two records of one man would be. |
+
+A record is a subject that names somebody, such as `contact:7` or `account:42`. A browser or a caller is none: it goes with the records it is tied to most strongly, and of two as strong, with whoever was seen first.
+
+> **Credit is another question.** An ad click on a browser two people share can be credited to both, whichever of them the browser goes with. It is not credited across a split, or between two whose dates of birth or names differ, because whoever is on the other side of a matter must not be shown there.
+
+It is off unless a policy sets it, and turning it on needs a [rebuild](operations.md#policy). [The fourth run](accuracy.md#the-fourth-run) has what it did on made-up people.
 
 ## Model assumptions
 
@@ -357,6 +402,7 @@ A pair labelled both ways is left out and counted.
 - **Splits from your own systems.** They are applied as received.
 - **Shared browsers.** A browser that both sides and a third person used can still be reached from each side.
 - **Many separations in one component.** Pairs are cut one after another, which can remove more in total than the best combined cut. The exact multicut or multiway cut is hard to compute.
+- **Three dates of birth on two lines.** Where staff joined two lines to people of three or more dates, more of those joins can be left out than need be, and which ones can depend on ids. One review met it in 3 of 15,000 random graphs.
 - **Score calibration.** Clusters come from the cuts above and carry no probability.
 - **Matches.** It covers subjects in the newest 10,000 sightings.
 - **Staff labels.** Staff find pairs that already look alike. A kind they search by looks better than it is, and strangers who share it are hardly in the file.

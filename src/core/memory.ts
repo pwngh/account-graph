@@ -448,6 +448,12 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
       else touches.set(touch.subject, [structuredClone(touch)])
     },
 
+    async dropTouch(subject, at, landing) {
+      const list = touches.get(subject) ?? []
+      const found = list.findIndex((touch) => touch.at === at && touch.landing === landing)
+      if (found >= 0) list.splice(found, 1)
+    },
+
     async touchesOf(subjects, from, to) {
       return subjects.flatMap((subject) =>
         (touches.get(subject) ?? []).filter((touch) => touch.at >= from && touch.at <= to).map((touch) => structuredClone(touch)),

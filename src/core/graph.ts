@@ -7,7 +7,7 @@ import type { BoardColumn, BoardPlace } from './board.ts'
 import type { Labeled } from './calibrate.ts'
 import { summarizeCalls } from './callreport.ts'
 import type { CallSummary } from './callreport.ts'
-import { followUp, isTie } from './calls.ts'
+import { byCode, codeTie, followUp, isTie } from './calls.ts'
 import { Gone, asks, beginnings, replyTo } from './texts.ts'
 import { followed } from './followed.ts'
 import type { Followed } from './followed.ts'
@@ -20,7 +20,7 @@ import { UNNAMED, defaultPolicy, evidence, joins, plainPolicy, policyHash, ruleF
 import type { Policy } from './policy.ts'
 import { dayIn, dayStart, dimension, fold, nextDay } from './report.ts'
 import type { Credited } from './report.ts'
-import { conflict, knownOf, partition, scorePairs } from './resolve.ts'
+import { confirmed, conflict, knownOf, partition, scorePairs } from './resolve.ts'
 import type { Known } from './resolve.ts'
 import { checkTags, touchTag } from './tags.ts'
 import type { DecisionPage, Store, Tx } from './store.ts'
@@ -218,6 +218,12 @@ export interface Graph {
    * or came of it, or makes the number busy. Untied, it is filed under `line`, the channel of the number it rang.
    */
   doubtCall(id: string, ambiguous: boolean, line?: Omit<Touch, 'subject' | 'at'>): Promise<void>
+  /**
+   * Gives a call that was recorded without it the visitor its code names, as `tieCall` would have: whoever it was tied to by a
+   * tap or a number shown to them is untied, and it is flagged `code`, or `taken` and filed under `line` where the two cannot
+   * be tied. Nothing where a code has said already, or a person has restored the tie it has.
+   */
+  nameCall(id: string, visitor: Subject, note: Identifier, line?: Omit<Touch, 'subject' | 'at'>): Promise<void>
   /** Kept calls to a number with `from <= at < to`, oldest first. */
   callsTo(number: string, from: number, to: number): Promise<KeptCall[]>
   /** Every kept call to or from the given subjects, oldest first. */
@@ -604,7 +610,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     const separated = (await tx.separatedOf(subjects)).filter(([a, b]) => joined.has(a) && joined.has(b))
     const said = two.filter(([a, b]) => joined.has(a) && joined.has(b))
     const facts = await known(tx, subjects, said.length > 0)
-    const kept = unique([...separated.flat(), ...said.flat(), ...[...facts].filter(([, own]) => own.facts.size > 0).map(([subject]) => subject)])
+    // Where records have to be confirmed, when each was first seen can say whose a browser is.
+    const kept = unique([...(policy.records ? subjects : []), ...separated.flat(), ...said.flat(), ...[...facts].filter(([, own]) => own.facts.size > 0).map(([subject]) => subject)])
     const since = new Map<Subject, number>()
     for (let i = 0; i < kept.length; i += TOGETHER) for (const [subject, at] of sinceOf(await tx.edgesOf(kept.slice(i, i + TOGETHER)))) since.set(subject, at)
     return partition(subjects, pairs, separated, policy, facts, undefined, said, since)
@@ -625,7 +632,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     const out = new Map<Subject, Known>()
     if (!policy.apart?.length && !joins) return out
     for (let i = 0; i < subjects.length; i += TOGETHER) {
-      const edges = (await tx.edgesOf(subjects.slice(i, i + TOGETHER))).filter(({ identifier }) => /^(birth|given|initial|dated|review|named|ward):/.test(identifier))
+      const edges = (await tx.edgesOf(subjects.slice(i, i + TOGETHER))).filter(({ identifier }) => /^(birth|given|initial|dated|compound|review|named|ward|name|passkey):/.test(identifier))
       const states = await tx.states(unique(edges.map((edge) => edge.identifier)))
       for (const [subject, facts] of knownOf(policy, edges, silent(states), joins)) out.set(subject, facts)
     }
@@ -645,6 +652,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     return out.sort((x, y) => (x.subject < y.subject ? -1 : 1))
   }
 
+  /** Whether two records are joined by what they share alone, where the policy asks for more. */
+  const unsure = (a: Subject, b: Subject, labels: ReadonlyMap<Subject, Labels>) =>
+    policy.records === 'confirmed' && names(a) && names(b) && labels.get(a)?.cluster !== labels.get(b)?.cluster
+
   /** Links of each given subject, scored from edges. A pair a reviewer separated is not a link. */
   async function neighbors(tx: Tx, subjects: readonly Subject[]): Promise<Map<Subject, Link[]>> {
     const states = await tx.shared(subjects)
@@ -660,13 +671,14 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     }
     const found = scorePairs(policy, await tx.edgesOn(open), states, from)
     const facts = await known(tx, unique(found.flatMap(({ a, b }) => [a, b])))
-    const homes = facts.size > 0 ? await tx.labelsOf([...facts.keys()]) : new Map<Subject, Labels>()
+    const homes = policy.records ? await tx.labelsOf(unique(found.flatMap(({ a, b }) => [a, b]))) : facts.size > 0 ? await tx.labelsOf([...facts.keys()]) : new Map<Subject, Labels>()
     for (const { a, b, score, level, reasons } of found) {
       if (apart.has(pairKey(a, b))) continue
       // In one group in spite of a fact, decisions hold them there, and the fact is overruled.
       const between = homes.get(a) && homes.get(a)!.cluster === homes.get(b)?.cluster ? undefined : conflict(policy, facts.get(a), facts.get(b))
       // However strong what they share is, they are two people, and are shown as related.
-      const link = { score, level: between ? ('related' as const) : level, reasons, ...(between && { conflict: between }) }
+      const possibly = !between && level === 'same' && unsure(a, b, homes)
+      const link = { score, level: between || possibly ? ('related' as const) : level, reasons, ...(between && { conflict: between }), ...(possibly && { unconfirmed: true as const }) }
       add(a, { subject: b, ...link })
       add(b, { subject: a, ...link })
     }
@@ -727,7 +739,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
   }
 
   /** Whether the policy keeps people apart by an identifier, which then counts however many hold it. */
-  const isFact = (identifier: Identifier) => Boolean(policy.apart?.length) && /^(birth|given|initial|dated):/.test(identifier)
+  const isFact = (identifier: Identifier) => Boolean(policy.apart?.length) && /^(birth|given|initial|dated|compound):/.test(identifier)
   /** Whether one of the two speaks for the other. */
   const speaks = (link: Link) => told(policy, link.reasons) && link.reasons.some(({ identifier }) => identifier.startsWith('behalf:'))
   const unnamed = new Set(policy.unnamed ?? UNNAMED)
@@ -976,6 +988,12 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
   const followable = async (tx: Tx, subject: Subject, since: number, at: number) => (await tx.touchesOf([subject], since, at)).length > 0 && (await tx.consentOf([subject])).get(subject)?.adUserData !== false
 
+  /** Whether a caller may be tied to a visitor: no reviewer keeps the two apart, and the visitor is no other caller's. */
+  const tieable = async (tx: Tx, caller: Subject, visitor: Subject, identifier: Identifier): Promise<boolean> =>
+    !(await tx.separatedOf([caller])).some((pair) => pair.includes(visitor)) &&
+    !((await neighbors(tx, [visitor])).get(visitor) ?? []).some((link) => link.subject !== caller && link.reasons.some((reason) => isTie(reason.identifier, visitor, link.subject))) &&
+    !(await tx.states([identifier])).get(identifier)?.ignored
+
   const holderOf = async (tx: Tx, number: string, at: number, grace: number): Promise<Subject | undefined> => {
     const [last] = await tx.newestLeases([number], at)
     return last && (at < last.until || (grace > 0 && at - last.until <= grace)) ? last.subject || undefined : undefined
@@ -1198,8 +1216,13 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const facts = await known(tx, some.map((pair) => pair.b))
         const own = knownOf(policy, given.map((identifier): Edge => ({ subject: nobody, identifier, first: at, last: at, count: 1 })), (identifier) => states.get(identifier)?.ignored ?? false).get(nobody)
         for (const { b: subject, score, level, reasons } of some) {
-          const between = conflict(policy, own, facts.get(subject))
-          out.push({ subject, score, level: between ? 'related' : level, reasons, ...(between && { conflict: between }), members: (await tx.clusterOf(labels.get(subject)!.cluster)).sort() })
+          const members = (await tx.clusterOf(labels.get(subject)!.cluster)).sort()
+          // A browser or a caller answers for the records it is one with, because they are shown with it.
+          const theirs = names(subject) ? [facts.get(subject)] : [...(await known(tx, members.filter(names))).values()]
+          const between = theirs.map((each) => conflict(policy, own, each)).find((each) => each !== undefined)
+          // Asked about before they are on record, they are a record to be.
+          const possibly = !between && level === 'same' && policy.records === 'confirmed' && members.some(names) && !theirs.some((each) => confirmed(own, each))
+          out.push({ subject, score, level: between || possibly ? 'related' : level, reasons, ...(between && { conflict: between }), ...(possibly && { unconfirmed: true as const }), members })
         }
         return out
       })
@@ -1493,9 +1516,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const { visitor, ...rest } = call
         // One doubted meanwhile is not tied either.
         const doubted = (await tx.states([`dial:${call.id}`])).get(`dial:${call.id}`)?.ignored === true
-        const tied = visitor !== undefined && (await tx.edgesOn([...(doubted ? [] : [`dial:${call.id}`]), `lease:${call.id}`])).some((edge) => edge.subject === visitor)
+        const tied = visitor !== undefined && (await tx.edgesOn([...(doubted ? [] : [`dial:${call.id}`]), `lease:${call.id}`, codeTie(call.id)])).some((edge) => edge.subject === visitor)
         // What was said of it meanwhile stays said.
-        const said = (await tx.callOf(call.id))?.flags.includes('ambiguous') && doubted && !call.flags.includes('pool')
+        const said = (await tx.callOf(call.id))?.flags.includes('ambiguous') && doubted && !call.flags.includes('pool') && !byCode(call)
         await tx.setCall({ ...rest, ...(said && { flags: [...new Set([...call.flags, 'ambiguous'])] }), ...(tied && { visitor }), recorded: now() })
         await tx.fed('calls', now())
       })
@@ -1563,12 +1586,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       let tied = false
       // One transaction: two calls reported at once cannot both find the visitor free.
       await changing(async (tx) => {
-        const apart = (await tx.separatedOf([caller])).some((pair) => pair.includes(visitor))
-        const others = ((await neighbors(tx, [visitor])).get(visitor) ?? []).some((link) => link.subject !== caller && link.reasons.some((reason) => isTie(reason.identifier, visitor, link.subject)))
         // What matched the two is read again: whoever was forgotten meanwhile is not tied, even where they have been seen since.
         const matched = 'pool' in by ? (await holderOf(tx, by.pool, at, by.grace)) === visitor : (await tx.edgesOn(by.notes)).some((edge) => edge.subject === visitor)
         // Another call reported meanwhile may have cast doubt on it.
-        tied = !apart && !others && matched && !(await tx.states([identifier])).get(identifier)?.ignored
+        tied = matched && (await tieable(tx, caller, visitor, identifier))
         return tied ? record(tx, [caller, visitor].map((subject) => ({ subject, identifier, at, event: 'call', recorded: now() }))) : []
       })
       return tied
@@ -1580,8 +1601,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         // What a person has looked at and restored stays.
         if ((await tx.newestNaming([identifier], 0, ['ignore', 'restore']))?.action === 'restore') return []
         const call = await tx.callOf(id)
-        // Shown the number, it is of no tap.
-        if (call?.flags.includes('pool')) return []
+        // Shown the number, or named by a code, it is of no tap.
+        if (call && (call.flags.includes('pool') || byCode(call))) return []
         if (call && (call.visitor !== undefined || (ambiguous && !call.flags.includes('ambiguous')))) {
           const { visitor, ...rest } = call
           await tx.setCall({ ...rest, flags: [...new Set([...call.flags, ...(ambiguous ? ['ambiguous'] : [])])] })
@@ -1595,6 +1616,36 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         if (holders.length === 0) return []
         await mark(tx)
         return settle(tx, new Set(holders))
+      })
+    },
+
+    async nameCall(id, visitor, note, line) {
+      const identifier = codeTie(id)
+      ruleFor(policy, identifier)
+      await changing(async (tx) => {
+        const call = await tx.callOf(id)
+        const guesses = [`dial:${id}`, `lease:${id}`]
+        if (!call || byCode(call) || (await tx.newestNaming(guesses, 0, ['ignore', 'restore']))?.action === 'restore') return []
+        // Forgotten since the code was looked up, whoever it named is named by nothing.
+        if (!(await tx.edgesOn([note])).some((edge) => edge.subject === visitor)) return []
+        // Left beside the code's, a tie by a tap would count twice what is known once.
+        const guessed = await tx.edgesOn(guesses)
+        const held = unique(guessed.map((edge) => edge.identifier))
+        const states = await tx.states(held)
+        for (const each of held) {
+          if (states.get(each)?.ignored) continue
+          await decide(tx, 'ignore', [each], { by: 'calls', reason: 'the caller gave the code of a visitor', automatic: true })
+          await tx.setIgnored(each, true)
+        }
+        await mark(tx)
+        const changes = await settle(tx, new Set(guessed.map((edge) => edge.subject)))
+        const tied = await tieable(tx, call.subject, visitor, identifier)
+        const { visitor: guess, ...rest } = call
+        await tx.setCall({ ...rest, flags: [...call.flags.filter((flag) => flag !== 'ambiguous' && flag !== 'pool'), tied ? 'code' : 'taken'], ...(tied && { visitor }) })
+        // As it would be had the code come first: filed under its number only where it is tied to nobody.
+        if (tied && line && guess === undefined) await tx.dropTouch(call.subject, call.at, line.landing!)
+        if (!tied && line && guess !== undefined) await tx.addTouch({ ...line, subject: call.subject, at: call.at })
+        return tied ? [...changes, ...(await record(tx, [call.subject, visitor].map((subject) => ({ subject, identifier, at: call.at, event: 'call', recorded: now() }))))] : changes
       })
     },
 
@@ -2103,18 +2154,19 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
             if (speaks(link)) continue
             if (link.reasons.some((reason) => reason.identifier.startsWith('review:join-'))) {
               // Where births took a telephone or a browser from a record it was joined to, that is for somebody to look at.
-              if (!policy.apart?.includes('birth') || (names(subject) && names(link.subject))) continue
+              // So is one that is left out because the two it was joined to are not one person by anything.
+              if (!(policy.records || policy.apart?.includes('birth')) || (names(subject) && names(link.subject))) continue
               joined.push([subject, link.subject])
             }
             const [a, b] = subject < link.subject ? [subject, link.subject] : [link.subject, subject]
-            pairs.set(pairKey(a, b), { a, b, score: link.score, level: link.level, reasons: link.reasons, ...(link.conflict && { conflict: link.conflict }) })
+            pairs.set(pairKey(a, b), { a, b, score: link.score, level: link.level, reasons: link.reasons, ...(link.conflict && { conflict: link.conflict }), ...(link.unconfirmed && { unconfirmed: true as const }) })
           }
         }
         const labels = await tx.labelsOf(unique([...[...pairs.values()].flatMap(({ a, b }) => [a, b]), ...two.flat()]))
         const said = new Set(two.map(([a, b]) => pairKey(labels.get(a)!.cluster, labels.get(b)!.cluster)))
         const borders = bordersOf(tx)
         await borders.load(joined.flat(), undefined, joined.flat())
-        for (const [a, b] of joined) if (borders.kept(a, b) || !borders.between(a, b, 'birth')) pairs.delete(pairKey(a, b))
+        for (const [a, b] of joined) if (borders.kept(a, b) || (!policy.records && !borders.between(a, b, 'birth'))) pairs.delete(pairKey(a, b))
         const open = [...pairs.values()].filter(({ a, b }) => labels.get(a)!.cluster !== labels.get(b)!.cluster && !said.has(pairKey(labels.get(a)!.cluster, labels.get(b)!.cluster)))
         open.sort((x, y) => y.score - x.score || (x.a === y.a ? (x.b < y.b ? -1 : 1) : x.a < y.a ? -1 : 1))
         return { pairs: open.slice(0, limit), total: open.length, seen: lately.length }

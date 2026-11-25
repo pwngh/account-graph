@@ -54,13 +54,13 @@ An event counts once a day per browser, as a conversion whose key begins with `p
 The server processes a reported call in four steps.
 
 1. **Caller.** The caller becomes a subject carrying their phone number. An account that later gives the same number is linked to the call.
-2. **Visitor.** If exactly one visitor tapped the number within the tap window (three minutes by default, thirty seconds on a [busy number](#busy-numbers)) before the call, and no other caller could have made the same tap, the two are linked at 0.92, which joins them. For a [pool](#number-pools) number, the visitor it was shown to takes precedence over a tap.
+2. **Visitor.** If exactly one visitor tapped the number within the tap window (three minutes by default, thirty seconds on a [busy number](#busy-numbers)) before the call, and no other caller could have made the same tap, the two are linked at 0.92, which joins them. For a [pool](#number-pools) number, the visitor it was shown to takes precedence over a tap. A [code](#a-code-read-out) the caller gave takes precedence over both.
 3. **Channel.** A call without a visitor is filed under the channel `CALL_NUMBERS` gives the number, with the medium `call`.
 4. **Outcome.** A call of 30 seconds or more counts as an outcome of the step `call`. Where [results are expected](#call-results), a person must also have answered.
 
 Each visitor is linked to one caller. Visitors already linked to another caller, or separated from this caller by a reviewer, are skipped.
 
-`key` is the provider's id. Recording it again answers `"duplicate": true`. A result in the second report counts by its `at`, as a [result](#call-results) reported by itself would; the rest is ignored. See [idempotency](http.md#idempotency).
+`key` is the provider's id. Recording it again answers `"duplicate": true`. A result in the second report counts by its `at`, as a [result](#call-results) reported by itself would. A [code](#a-code-read-out) the call did not have yet counts too. The rest is ignored. See [idempotency](http.md#idempotency).
 
 | Flag | Meaning | Effect |
 | --- | --- | --- |
@@ -69,8 +69,48 @@ Each visitor is linked to one caller. Visitors already linked to another caller,
 | `short` | The call ended before `CALL_MIN_SECONDS` | Recorded without being counted |
 | `repeat` | This number has called before | None |
 | `pool` | The number dialed was shown to one visitor | The call is linked to that visitor |
+| `code` | The caller's code names one visitor | The call is linked to that visitor |
+| `taken` | It names a visitor already linked to another caller or sender, or separated from this caller | The call is linked to no visitor, whoever tapped |
 | `left_out` | The other number is in `CALL_EXCLUDE`: your own people, or a test phone | The call is not recorded |
 | `ambiguous` | More than one visitor tapped the number just before, or another caller could have made the same tap | Filed under the number's channel |
+
+### A code read out
+
+A caller who sees a code on the page can read it to whoever answers. It says which visit the call came from, whatever number they dialed, for as long as the code is good.
+
+```html
+<p>Calling us? Your code is <b data-ag-code></b></p>
+<script type="module" src="https://graph.example.org/collect.js?text=1"></script>
+```
+
+Set `TEXT_CODES=true` on the server, or `textCodes` in the library. Without it no page is given a code, and a `code` you send names nobody. The code is the one [text links](#text-messages) carry. The script puts it in every element marked `data-ag-code`, and leaves them as you wrote them for a visitor who is given none. To hide the sentence then, use `p:has([data-ag-code]:empty) { display: none }`.
+
+```json
+{ "type": "call", "key": "CA1", "at": 1795460000000, "direction": "inbound", "from": "+15550100141", "to": "+15550100101", "duration": 140, "code": "K7Q2MX" }
+```
+
+| Rule | Detail |
+| --- | --- |
+| Who it names | The one visitor it was given to, for 30 days, in capital or small letters. The call is linked to them at 0.95. |
+| A tap or a pool number | Not used where a code names somebody, even if that visitor is `taken`. Such a call is no rival for another's tap. |
+| One caller per visitor | As for a tap and for a text |
+| A code that names nobody | Wrong, too old, or given to two. The call is recorded as if it had none, with neither flag. |
+| Hidden numbers | A code links them too. |
+| A call you placed | Its code is not used. |
+| Kept | The code is not stored with the call, and is in no answer. |
+
+Staff often type the code after the phone system has reported the call. Send the same `call` again with the `code`, and no `call_update`: the call then stands as if the first report had it. What it was linked to by a tap or a pool number is undone, and the caller's visit to the number's channel is taken back. Four things depend on when it arrives, because they were decided before it did:
+
+| Already decided | Stays |
+| --- | --- |
+| A conversion sent with the guessed visit | As sent |
+| A call of somebody else that this one's guess left `ambiguous` | Without a visitor: [a tie is never added late](#busy-numbers). |
+| The code's visitor was linked to another caller meanwhile | Theirs. This call is `taken`. |
+| A reviewer restored this call's tie | The reviewer's word. The code is not used. |
+
+The first code that names somebody stands. Codes are not kept, so a second one that differs cannot be compared with the first, and is ignored.
+
+> **Have staff type it, not a phone menu.** A code is six of 30 letters and digits, so a guess hits one of 10,000 codes in use about once in 70,000 tries. Six digits from a keypad would hit one in every hundred, and a menu can be dialed by a program. A menu that takes speech can send what it heard. Do not let callers try codes without limit there either.
 
 ### While the phone rings
 
@@ -160,6 +200,7 @@ Record each call from your backend, with these fields:
 | `duration` | How long it lasted, in seconds. Check its unit. |
 | `result` | `{ answered, voicemail?, waited? }`. `answered: true` only where a person, and not a menu or a machine, is known to have answered. `answered: false` for a known miss, with `voicemail: true` where it went there. Leave `result` out when unknown, and report the [result](#call-results) later. |
 | `direction` | `inbound`, or `outbound` for a call you placed |
+| `code` | The [code](#a-code-read-out) the caller read out, when they did |
 
 ### A call tracking service
 
@@ -435,6 +476,7 @@ Callers are stored as a hash of their number, so the view shows an ID. To find t
 | Conversions | A counted call goes to an ad platform only when the `call` step in `STAGES` has an action. The caller's hashed number is sent as a match key. |
 | Returns by number | A caller reached on a different number leaves the missed call open, unless you [report the return](#reported-returns). |
 | Older calls | A call recorded before calls were stored has no state, and a result for it finds no call. Its outcome stays counted. |
+| Codes read out | Whoever reads out a code is tied to the browser it was shown in, whoever's it is. Letters misheard are no code, or with bad luck somebody else's. |
 | Deleted codes | Someone who deletes the code from the message is tied by their tap, or not at all. |
 | Forwarded texts | Whoever sends a message with the code is tied to the browser it was given to. One visitor is tied to one sender. |
 | Computers | A code opened on one device and sent from another ties the two, which is usually right. |

@@ -88,32 +88,40 @@ export function components(subjects: Iterable<Subject>, pairs: readonly Pair[]):
   return out
 }
 
+/** The facts, and what is noted beside them to weigh them by. */
+type Note = Fact | 'initial' | 'dated' | 'compound'
+
 /** What is known of somebody that cannot be two people's, and the joins a reviewer or a system made of them. */
 export interface Known {
-  facts: Map<Fact | 'initial' | 'dated', Set<Identifier>>
+  facts: Map<Note, Set<Identifier>>
   joins: Set<Identifier>
   /** What they gave under which name. */
   things: Set<Identifier>
 }
 
 const THINGS = new Set(['named', 'ward'])
+/** Records of one component, past which nothing but a decision joins them where records have to be confirmed. */
+const CROWD = 300
+/** What one person has and no other: a name with a zip code or a date of birth, and a passkey. */
+const OWN = new Set(['name', 'passkey'])
 
 /** The facts of the subjects that have one, of the facts a policy keeps people apart by. An undone join is none. With `joins`, those are read whatever the policy. */
 export function knownOf(policy: Policy, edges: readonly Edge[], undone: (identifier: Identifier) => boolean, joins = false): Map<Subject, Known> {
   const out = new Map<Subject, Known>()
   if (!policy.apart?.length && !joins) return out
+  const confirming = policy.records === 'confirmed'
   for (const { subject, identifier } of edges) {
     const kind = identifier.slice(0, identifier.indexOf(':'))
     // Each fact is read for the other to be weighed against, whether or not it keeps anyone apart by itself.
-    const thing = THINGS.has(kind) && policy.apart?.includes('given') === true
-    if (!policy.apart?.includes(kind as Fact) && !thing && kind !== 'birth' && kind !== 'given' && kind !== 'initial' && kind !== 'dated' && kind !== 'review') continue
+    const thing = (THINGS.has(kind) && policy.apart?.includes('given') === true) || (confirming && OWN.has(kind))
+    if (!policy.apart?.includes(kind as Fact) && !thing && kind !== 'birth' && kind !== 'given' && kind !== 'initial' && kind !== 'dated' && kind !== 'compound' && kind !== 'review') continue
     // A join that was undone is none, and a fact that was muted is none.
     if (undone(identifier)) continue
     const known = out.get(subject) ?? { facts: new Map(), joins: new Set(), things: new Set() }
     out.set(subject, known)
     if (kind === 'review') known.joins.add(identifier)
     else if (thing) known.things.add(identifier)
-    else known.facts.set(kind as Fact | 'initial' | 'dated', (known.facts.get(kind as Fact | 'initial' | 'dated') ?? new Set()).add(identifier))
+    else known.facts.set(kind as Note, (known.facts.get(kind as Note) ?? new Set()).add(identifier))
   }
   return out
 }
@@ -134,6 +142,46 @@ export function conflict(policy: Policy, a: Known | undefined, b: Known | undefi
   return 'given'
 }
 
+/** Whether a decision joined two. */
+const joinedBy = (a: Known | undefined, b: Known | undefined) => Boolean(a && b && [...a.joins].some((each) => b.joins.has(each)))
+
+const meets = (one: ReadonlySet<Identifier> | undefined, other: ReadonlySet<Identifier> | undefined) => one && other && [...one].some((each) => other.has(each))
+
+/**
+ * Whether a fact of one is another than the other's. Two dates one slip of the pen apart are one date where a name agrees. A
+ * Maria Elena and a Maria Guadalupe have a name in common, and each has one the other has not, so they are two. A Bob has
+ * names a Robert has not, and they are ways to write one word.
+ */
+function disagree(a: Known | undefined, b: Known | undefined): boolean {
+  if (!a || !b) return false
+  const [ours, theirs] = [a.facts.get('given'), b.facts.get('given')]
+  const within = (one: ReadonlySet<Identifier>, other: ReadonlySet<Identifier>) => [...one].every((each) => other.has(each))
+  const several = a.facts.has('compound') && b.facts.has('compound')
+  // A second word no table has is known by its letter, so names that are one by the table have to have the same letters.
+  const [letters, others] = [a.facts.get('initial') ?? new Set<Identifier>(), b.facts.get('initial') ?? new Set<Identifier>()]
+  const given = ours && theirs && meets(ours, theirs) && (!several || (within(ours, theirs) && within(theirs, ours) ? within(letters, others) && within(others, letters) : (within(ours, theirs) && within(letters, others)) || (within(theirs, ours) && within(others, letters))))
+  if (given === false) return true
+  const named = given === true || [...a.things].some((each) => b.things.has(each))
+  return meets(a.facts.get('birth'), b.facts.get('birth')) === false && !(named && meets(a.facts.get('dated'), b.facts.get('dated')) === true)
+}
+
+/** Whether something says that two records are one person, other than what they share: a decision, or a name, a date or a thing of one person's that agrees where nothing differs. */
+export function confirmed(a: Known | undefined, b: Known | undefined): boolean {
+  if (!a || !b) return false
+  if (joinedBy(a, b)) return true
+  if (disagree(a, b)) return false
+  const dates = meets(a.facts.get('birth'), b.facts.get('birth')) === true
+  const [ours, theirs] = [a.facts.get('given'), b.facts.get('given')]
+  // Names that may be written for one another, and need not be: a Mary and a Marilyn, a Robert and a Bob. A date has to say
+  // which. One name is itself, and half of a name of several words.
+  const within = (one: ReadonlySet<Identifier>, other: ReadonlySet<Identifier>) => [...one].every((each) => other.has(each))
+  const loosely = ours !== undefined && theirs !== undefined && !(within(ours, theirs) && (within(theirs, ours) || b.facts.has('compound'))) && !(within(theirs, ours) && a.facts.has('compound'))
+  if (loosely ? [...a.things].some((each) => b.things.has(each) && !THINGS.has(each.slice(0, each.indexOf(':')))) : meets(a.things, b.things) || meets(ours, theirs)) return true
+  // A name no table has is no fact, and is still a name: two who gave names under which nothing is the same are twins as likely as one.
+  const names = (known: Known) => [...known.things].some((each) => THINGS.has(each.slice(0, each.indexOf(':'))) || each.startsWith('name:'))
+  return dates && (meets(ours, theirs) === true || !(names(a) && names(b)))
+}
+
 type Adjacency = Map<Subject, Map<Subject, number>>
 
 /**
@@ -151,6 +199,9 @@ type Adjacency = Map<Subject, Map<Subject, number>>
  *    such link is removed, then the next, until none is left. A group that
  *    names nobody then goes back to the one named group it was cut from, and
  *    stays apart where it was cut from two.
+ *
+ * Where the policy joins records only when that is confirmed, what is left is
+ * cut once more: see `refined`.
  *
  * Pure, and the result does not depend on the order of its inputs.
  */
@@ -209,13 +260,158 @@ export function partition(
     for (const [i, a] of told.entries()) for (const b of told.slice(i + 1)) if (conflict(policy, known.get(a), known.get(b))) differ.push([a, b])
     differ.push(...(said.get(id) ?? []))
     differ.sort((x, y) => (x[0] === y[0] ? (x[1] < y[1] ? -1 : 1) : x[0] < y[0] ? -1 : 1))
-    for (const piece of split(group, links.get(id) ?? [], apart.get(id) ?? [], policy, differ, known, onCut, since)) {
+    for (const piece of refined(split(group, links.get(id) ?? [], apart.get(id) ?? [], policy, differ, known, onCut, since), links.get(id) ?? [], policy, known, since)) {
       let cluster = piece[0]!
       for (const subject of piece) if (subject < cluster) cluster = subject
       for (const subject of piece) out.set(subject, { component: id, cluster })
     }
   }
   return out
+}
+
+/**
+ * Groups of which each is one person by something that says so. Two groups of records are one where they are tied, directly
+ * or through browsers and callers, some record of the one is confirmed to be some record of the other, and none differs from
+ * any in a fact. One that could be either of two who differ is neither's. A decision joins the two it names whatever differs. Each browser and caller then goes with the group it is
+ * tied to most strongly, by itself or through others that name nobody, and of two as strong, with the one first seen. No link
+ * is taken for it: what they share is as it was.
+ */
+function refined(pieces: Subject[][], links: readonly Pair[], policy: Policy, known: ReadonlyMap<Subject, Known>, since: ReadonlyMap<Subject, number>): Subject[][] {
+  if (policy.records !== 'confirmed') return pieces
+  const unnamed = new Set(policy.unnamed ?? UNNAMED)
+  const nobody = (subject: Subject) => unnamed.has(subject.slice(0, Math.max(0, subject.indexOf(':'))))
+  const at = (subject: Subject) => since.get(subject) ?? 0
+  const ties = new Map<Subject, [Subject, number][]>()
+  const tie = (from: Subject, to: Subject, score: number) => void (ties.get(from)?.push([to, score]) ?? ties.set(from, [[to, score]]))
+  for (const { a, b, score } of links) {
+    tie(a, b, score)
+    tie(b, a, score)
+  }
+  const everyone = pieces.flat().filter((subject) => !nobody(subject))
+  if (everyone.length < 2) return pieces
+  // So many come of something everybody shares, and what confirms them is then shared by chance: decisions alone join them.
+  const crowd = everyone.length > CROWD
+  // Who has anything in common that could confirm the two, in all of the component: whoever was cut off may be one's as well.
+  const holders = new Map<Identifier, Subject[]>()
+  const own = (subject: Subject) => {
+    const each = known.get(subject)
+    return each ? [...each.things, ...each.joins, ...(each.facts.get('birth') ?? []), ...(each.facts.get('given') ?? [])] : []
+  }
+  for (const subject of everyone) for (const identifier of own(subject)) void (holders.get(identifier)?.push(subject) ?? holders.set(identifier, [subject]))
+  const asked = new Map<Subject, Map<Subject, 'yes' | 'no' | 'neither'>>()
+  const between = (x: Subject, y: Subject) => {
+    if (!asked.has(x)) asked.set(x, new Map())
+    let found = asked.get(x)!.get(y)
+    if (!found) {
+      const [one, other] = [known.get(x), known.get(y)]
+      asked.get(x)!.set(y, (found = disagree(one, other) && !joinedBy(one, other) ? 'no' : confirmed(one, other) ? 'yes' : 'neither'))
+    }
+    return found
+  }
+  const some = (ours: readonly Subject[], theirs: readonly Subject[], what: 'yes' | 'no') => ours.some((x) => theirs.some((y) => between(x, y) === what))
+  return pieces.flatMap((piece) => {
+    const inside = new Set(piece)
+    const records = piece.filter((subject) => !nobody(subject)).sort((x, y) => at(x) - at(y) || (x < y ? -1 : 1))
+    if (records.length < 2) return [piece]
+    const groups = new Map<Subject, Subject[]>(records.map((record) => [record, [record]]))
+    const home = new Map<Subject, Subject>(records.map((record) => [record, record]))
+    // Who is tied to whom: directly, or by the same browsers and callers.
+    const near: [Subject, Subject][] = []
+    const among = new Set<Subject>()
+    for (const start of piece) {
+      if (!nobody(start) || among.has(start)) continue
+      const around = new Set<Subject>()
+      const todo = [start]
+      among.add(start)
+      for (let each = todo.pop(); each !== undefined; each = todo.pop()) {
+        for (const [next] of ties.get(each) ?? []) {
+          if (!inside.has(next) || among.has(next)) continue
+          if (!nobody(next)) around.add(next)
+          else {
+            among.add(next)
+            todo.push(next)
+          }
+        }
+      }
+      const held = records.filter((record) => around.has(record))
+      for (const [i, a] of held.entries()) for (const b of held.slice(i + 1)) near.push([a, b])
+    }
+    for (const a of records) for (const [b] of ties.get(a) ?? []) if (a < b && inside.has(b) && !nobody(b)) near.push([a, b])
+    const order = (x: Subject, y: Subject) => at(x) - at(y) || (x < y ? -1 : x > y ? 1 : 0)
+    for (const pair of near) pair.sort(order)
+    near.sort((x, y) => order(x[0], y[0]) || order(x[1], y[1]))
+    const unite = (a: Subject, b: Subject) => {
+      const [into, from] = [home.get(a)!, home.get(b)!]
+      for (const each of groups.get(from)!) home.set(each, into)
+      groups.get(into)!.push(...groups.get(from)!)
+      groups.delete(from)
+    }
+    // Decisions first, because they stand whatever differs.
+    for (const [a, b] of near) if (home.get(a) !== home.get(b) && joinedBy(known.get(a), known.get(b))) unite(a, b)
+    // Whether one may be somebody else's as well, who differs from the other.
+    const torn = (ours: readonly Subject[], theirs: readonly Subject[]) => {
+      const met = new Set([...ours, ...theirs])
+      for (const x of ours) for (const identifier of own(x)) for (const y of holders.get(identifier)!) {
+        if (met.has(y)) continue
+        met.add(y)
+        if (some(ours, [y], 'yes') && some(theirs, groups.get(home.get(y) ?? y) ?? [y], 'no')) return true
+      }
+      return false
+    }
+    for (let changed = !crowd; changed; ) {
+      changed = false
+      for (const [a, b] of near) {
+        if (home.get(a) === home.get(b)) continue
+        const [ours, theirs] = [groups.get(home.get(a)!)!, groups.get(home.get(b)!)!]
+        if (!some(ours, theirs, 'yes') || some(ours, theirs, 'no')) continue
+        if (torn(ours, theirs) || torn(theirs, ours)) continue
+        unite(a, b)
+        changed = true
+      }
+    }
+    if (groups.size < 2) return [piece]
+    const first = new Map([...groups].map(([id, own]) => [id, Math.min(...own.map(at))]))
+    type Way = { subject: Subject; score: number; id: Subject }
+    const better = (one: Way, other: Way) => one.score > other.score || (one.score === other.score && (first.get(one.id)! < first.get(other.id)! || (first.get(one.id)! === first.get(other.id)! && one.id < other.id)))
+    const best = new Map<Subject, Way>(records.map((subject) => [subject, { subject, score: 1, id: home.get(subject)! }]))
+    // The strongest way first. One that was reached is settled, because no way gets stronger by a link.
+    const heap: Way[] = []
+    const push = (way: Way) => {
+      let i = heap.push(way) - 1
+      for (let up = (i - 1) >> 1; i > 0 && better(heap[i]!, heap[up]!); i = up, up = (i - 1) >> 1) [heap[i], heap[up]] = [heap[up]!, heap[i]!]
+    }
+    const pop = (): Way | undefined => {
+      const top = heap[0]
+      const last = heap.pop()
+      if (heap.length === 0 || last === undefined) return top
+      heap[0] = last
+      for (let i = 0; ; ) {
+        let down = i
+        for (const child of [2 * i + 1, 2 * i + 2]) if (child < heap.length && better(heap[child]!, heap[down]!)) down = child
+        if (down === i) return top
+        ;[heap[i], heap[down]] = [heap[down]!, heap[i]!]
+        i = down
+      }
+    }
+    for (const way of best.values()) push(way)
+    for (let way = pop(); way; way = pop()) {
+      if (best.get(way.subject) !== way) continue
+      for (const [next, score] of ties.get(way.subject) ?? []) {
+        if (!inside.has(next) || !nobody(next)) continue
+        const found: Way = { subject: next, score: way.score * score, id: way.id }
+        const before = best.get(next)
+        if (before && !better(found, before)) continue
+        best.set(next, found)
+        push(found)
+      }
+    }
+    for (const subject of piece) if (nobody(subject)) {
+      const way = best.get(subject)
+      if (way) groups.get(way.id)!.push(subject)
+      else groups.set(subject, [subject])
+    }
+    return [...groups.values()].map((own) => own.sort())
+  })
 }
 
 function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subject][], policy: Policy, differ: readonly (readonly [Subject, Subject])[] = [], known: ReadonlyMap<Subject, Known> = new Map(), onCut?: (a: Subject, b: Subject) => void, since: ReadonlyMap<Subject, number> = new Map()): Subject[][] {
@@ -239,7 +435,14 @@ function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subj
   const later = (a: Subject, b: Subject): [Subject, Subject] => ((since.get(a) ?? 0) < (since.get(b) ?? 0) ? [b, a] : [a, b])
   for (const pair of apart) for (const [x, y] of minimumCut(adjacency, ...later(...pair))) cutApart(x, y)
   // Facts come after decisions, and cut no link a decision made: two held together by those alone stay together.
-  const decided = (a: Subject, b: Subject) => [...(known.get(a)?.joins ?? [])].some((identifier) => known.get(b)?.joins.has(identifier))
+  // Kept by pair, because the cuts ask of the same links over and over.
+  const answered = new Map<Subject, Map<Subject, boolean>>()
+  const decided = (a: Subject, b: Subject) => {
+    if (!answered.has(a)) answered.set(a, new Map())
+    let found = answered.get(a)!.get(b)
+    if (found === undefined) answered.get(a)!.set(b, (found = [...(known.get(a)?.joins ?? [])].some((identifier) => known.get(b)?.joins.has(identifier))))
+    return found
+  }
   // That a call was about one, and another call about the other, does not say the two are one: a telephone is many people's.
   // So two births part a telephone or a browser from one of them, and never two records somebody said are one.
   const unnamed = new Set(policy.unnamed ?? UNNAMED)
@@ -273,9 +476,14 @@ function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subj
     const seen = (each: Subject) => since.get(each) ?? 0
     // All the records of a birth are on one side, so what is left out is counted once for a person and not for each of their records.
     // A join of two records comes before that: whoever one ties to a birth of the other side is held to neither.
+    const joined = new Map<Subject, Set<Subject>>()
     const over = (from: Subject) => {
+      const before = joined.get(from)
+      if (before) return before
       const out = new Set([from])
       for (const each of out) for (const next of adjacency.get(each)!.keys()) if (decided(each, next) && !loose(each, next)) out.add(next)
+      // Whoever one is joined to this way is joined to the same.
+      for (const each of out) joined.set(each, out)
       return out
     }
     const [ours, theirs] = [[a, ...alike(a, b)], [b, ...alike(b, a)]]
@@ -283,7 +491,9 @@ function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subj
     const [as, bs] = [free(ours, theirs), free(theirs, ours)]
     const [first, last] = Math.min(...as.map(seen)) <= Math.min(...bs.map(seen)) ? [as, bs] : [bs, as]
     const pairs = [first, last].flatMap((side) => side.slice(1).map((each) => [side[0]!, each] as const))
-    const tied = (x: Subject, y: Subject) => pairs.some(([p, q]) => (p === x && q === y) || (p === y && q === x))
+    // Each of a side to the first of it.
+    const heads = new Map(pairs.map(([head, each]) => [each, head]))
+    const tied = (x: Subject, y: Subject) => heads.get(x) === y || heads.get(y) === x
     const held = (links: Adjacency) => {
       for (const [x, y] of pairs) {
         links.get(x)!.set(y, 1)

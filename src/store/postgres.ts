@@ -495,6 +495,10 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       await db.query(`insert into ${t('touch')} (subject, at, detail) values ($1, $2, $3)`, [subject, at, detail])
     },
 
+    async dropTouch(subject, at, landing) {
+      await db.query(`delete from ${t('touch')} where id = (select min(id) from ${t('touch')} where subject = $1 and at = $2 and detail->>'landing' = $3)`, [subject, at, landing])
+    },
+
     async touchesOf(subjects, from, to) {
       if (subjects.length === 0) return []
       const { rows } = await db.query(

@@ -94,7 +94,7 @@ Each entry has `type`, `key` and `at`. A field with `?` may be left out.
 | `conversion` | `subject`, `stage`, `value?`, `currency?`, `actions?`, `channel?`, `email?`, `phone?`, `consent?`, `tags?` | `value`, `currency`, `deliveries` |
 | `restatement` | `of: { type, key }`, `change` | `counts`, `value`, `deliveries` |
 | `payment` | `conversion`, `direction`, `amount`, `currency?` | `value`, `null` until there is a conversion, and `deliveries` |
-| `call` | `direction`, `from?`, `to`, `duration?`, `result?`, `tags?` | `subject`, `state`, `counted`, `flags`, `visitor?`. See [calls](calls.md). |
+| `call` | `direction`, `from?`, `to`, `duration?`, `result?`, `code?`, `tags?` | `subject`, `state`, `counted`, `flags`, `visitor?`. See [calls](calls.md). |
 | `call_update` | `call`, `change` | `state`, `counted`, `followUp` |
 | `text` | `direction`, `from`, `to`, `text?`, `code?`, `tags?` | `subject`, `flags`, `counted`, `visitor?`. See [texts](calls.md#text-messages). |
 | `consent` | `subject`, `consent: { adUserData, adPersonalization }`, `source?` | The answer that applies |
@@ -113,6 +113,7 @@ Each entry has `type`, `key` and `at`. A field with `?` may be left out.
 | Payment `amount` | From 0.00001 to 10,000,000,000 |
 | Call and text `direction` | `inbound` or `outbound`. An outbound call requires `from`. |
 | Call `result` | `{ answered, voicemail?, waited? }` |
+| Call and text `code` | 1 to 64 characters. One that names nobody is not refused. Pages are given codes where [`TEXT_CODES`](operations.md#environment-variables) is on. |
 | Call and text `key` | The provider's id: 1 to 128 letters, digits, dots, dashes and underscores |
 | Conversion `key` | The transaction id. It cannot begin with `call:`, `text:` or `page:`, which the graph uses for its own outcomes. |
 | Transfer `amount` | A whole number of the asset's smallest unit, above zero |
@@ -180,7 +181,7 @@ The same key with other details answers `KEY_REUSED`. What is compared depends o
 
 | Type | Compared | Not compared |
 | --- | --- | --- |
-| `call` | `direction`, `to`, and `from` where both reports name it | `at`, `duration`, `result`, `tags`. A second reporter often knows more. |
+| `call` | `direction`, `to`, and `from` where both reports name it | `at`, `duration`, `result`, `code`, `tags`. A second reporter often knows more: a `result`, or a `code` the call did not have, counts. |
 | `text` | `direction`, `from`, `to` | `at`, `text`, `code`, `tags`. Twilio sends no time. |
 | `cost` | `at` and the rows, in any order | |
 | `decide` | `at`, `by`, `action`, and the pairs or the fact. Pairs may be in any order, and so may the two of a pair. | `reason`, the reason of a pair, `seen` |
@@ -203,6 +204,7 @@ Entries may arrive late and in any order. Nothing is refused for being late.
 | --- | --- |
 | `correct`, `not_lead` and `lead`, call results, call returns, `consent` | The newest by `at`, then by `key`. One that arrives late is kept, changes nothing, and answers `stands: false`. |
 | A cost row | The newest `at` for its day, source and campaign |
+| The `code` of a `call` | The first that names a visitor, by when the call was. See [a code read out](calls.md#a-code-read-out). |
 | `refund`, `write_off`, `reverse` | All of them, whatever order they arrive in |
 | `payment` | All of them. From the first on, the conversion is worth what was paid less what was refunded. |
 
@@ -309,7 +311,7 @@ POST /v1/lookup
 | `record` | `type`, `key`, `at` | One conversion, call or text, or `null` |
 | `transfers` | `subject`, `tiedOnly?` | `counterparties`, `rings` |
 
-`match`, `transfers`, `caller` and `journey` say why by `kinds`, such as `["phone", "device"]`. No identifier leaves the graph, because most are hashes of an email or a phone.
+`match`, `transfers`, `caller` and `journey` say why by `kinds`, such as `["phone", "device"]`. No identifier leaves the graph, because most are hashes of an email or a phone. A candidate with `unconfirmed` shares what would join it, and [nothing confirms](matching.md#records-that-have-to-be-confirmed) that the two are one person.
 
 A `find` by id matches the start of it and reads the subject table. The person of a journey is the subject's cluster, plus any subject linked strongly enough that its visits would be credited. A subject split from any of them is left out. `subjects` gives the reason and score for each. A `journey` reads up to 60 subjects of one person, and keeps the state of a conversion without the time it was sent.
 

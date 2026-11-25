@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
 import { carry, collect, event, fields, fill, pool, read, texts, watch, withCode } from '../src/edge/collect.ts'
+import { browserScripts } from '../src/edge/tag.ts'
+import { browse, until, without } from './chrome.ts'
 
 /** Just enough of a browser for the collector: a URL, cookies, storage, and a beacon. */
 function browser(href: string, cookies: Record<string, string> = {}, gpc = false) {
@@ -359,6 +363,94 @@ test('a form carries the device id and the landing page to whatever receives it'
   assert.deepEqual(plain.inputs.map((input) => [input.name, input.value]), [['ag_device', device], ['ag_landing', '']])
 })
 
+test('a form about somebody else sends the device as the speaker\'s and never as theirs, in a real browser', { skip: without }, async (t) => {
+  const page = `<!doctype html><meta charset="utf-8"><iframe name="away"></iframe>
+    <form id="box" method="post" action="/in" target="away" data-ag-fields><input name="ag_device" value="as written"><input type="checkbox" name="other" data-ag-for-other></form>
+    <form id="radio" method="post" action="/in" target="away" data-ag-fields><input type="radio" name="who" value="me" data-ag-for-other checked><input type="radio" name="who" value="other" data-ag-for-other></form>
+    <form id="select" method="post" action="/in" target="away" data-ag-fields></form><select name="who" form="select" data-ag-for-other><option value="me"><option value="other"></select>
+    <form id="plain" method="post" action="/in" target="away" data-ag-fields><input type="checkbox" name="other" checked><input name="ag_speaker_device" value="its own"></form>
+    <script type="module" src="/collect.js"></script>`
+  const posted: URLSearchParams[] = []
+  const server = createServer(async (request, response) => {
+    const body = await new Response(request as unknown as ReadableStream).text()
+    if (request.url === '/in') posted.push(new URLSearchParams(body))
+    const script = request.url === '/collect.js'
+    response.writeHead(200, { 'content-type': script ? 'text/javascript' : 'text/html' }).end(script ? browserScripts().collect : request.url?.startsWith('/page') ? page : 'in')
+  }).listen(0, '127.0.0.1')
+  t.after(() => (server.closeAllConnections(), server.close()))
+  await new Promise((resolve) => server.once('listening', resolve))
+  const { run, close } = await browse(`http://127.0.0.1:${(server.address() as AddressInfo).port}/page?gclid=G1`)
+  t.after(close)
+  await until('the script', () => run(`Boolean(globalThis.accountGraph?.fields)`))
+  const device = await run(`localStorage.getItem('ag_device')`)
+  const landing = await run(`location.href`)
+  const submit = async (id: string, before = '') => {
+    await run(`{ const form = document.getElementById('${id}'); ${before}; form.requestSubmit() }`)
+    const body = await until(`${id} to be sent`, () => posted.pop())
+    return [body.getAll('ag_device'), body.getAll('ag_speaker_device'), body.getAll('ag_landing')]
+  }
+  const [mine, theirs] = [[[device], [], [landing]], [[], [device], [landing]]]
+  assert.deepEqual(await submit('box'), mine)
+  // Ticked, unticked and ticked again: one name each time, also where the page wrote the field itself.
+  assert.deepEqual(await submit('box', `form.elements.other.checked = true`), theirs)
+  assert.deepEqual(await submit('box'), theirs)
+  assert.equal(await run(`document.querySelector('#box [name=ag_device]').value`), '')
+  assert.deepEqual(await submit('box', `form.elements.other.checked = false`), mine)
+  assert.deepEqual(await submit('box', `form.elements.other.checked = true`), theirs)
+  for (const id of ['radio', 'select']) {
+    assert.deepEqual(await submit(id), mine, id)
+    assert.deepEqual(await submit(id, `form.elements.who.value = 'other'`), theirs, id)
+    assert.deepEqual(await submit(id, `form.elements.who.value = 'me'`), mine, id)
+  }
+  // Nothing says what an unmarked box means, and a form that is not about somebody else does not send a speaker.
+  assert.deepEqual(await submit('plain'), mine)
+  // A script that posts a form itself asks with the form.
+  assert.deepEqual(await run(`['box', 'radio'].map((id) => Object.keys(accountGraph.fields(document.getElementById(id))))`), [['ag_speaker_device', 'ag_landing'], ['ag_device', 'ag_landing']])
+  assert.deepEqual(await run(`Object.keys(accountGraph.fields())`), ['ag_device', 'ag_landing'])
+  // Opted out of advertising, the landing page goes from this form too, and the device is still the speaker's.
+  await run(`Object.defineProperty(navigator, 'globalPrivacyControl', { value: true })`)
+  assert.deepEqual(await submit('box'), [[], [device], ['']])
+})
+
+test('an element marked data-ag-code shows the code, and a page with no use for one asks for none, in a real browser', { skip: without }, async (t) => {
+  const page = (body: string) => `<!doctype html><meta charset="utf-8">${body}<script type="module" src="/collect.js?text=1"></script>`
+  const asked: any[] = []
+  const server = createServer(async (request, response) => {
+    const body = await new Response(request as unknown as ReadableStream).text()
+    if (request.url === '/collect') {
+      const sent = JSON.parse(body)
+      if (sent.kind !== 'text_code') return void response.writeHead(204).end()
+      asked.push(sent)
+      return void (sent.gpc ? response.writeHead(204).end() : response.writeHead(200, { 'content-type': 'application/json' }).end('{"code":"K7Q2MX"}'))
+    }
+    const script = request.url!.startsWith('/collect.js')
+    const words = `<p id="p">Your code is <b data-ag-code></b></p>${request.url === '/both' ? '<a href="sms:+15550100101?body=Hi">Text</a>' : ''}`
+    response.writeHead(200, { 'content-type': script ? 'text/javascript' : 'text/html' }).end(script ? browserScripts().collect : page(request.url === '/none' ? '' : words))
+  }).listen(0, '127.0.0.1')
+  t.after(() => (server.closeAllConnections(), server.close()))
+  await new Promise((resolve) => server.once('listening', resolve))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const { run, close } = await browse(`${base}/none`)
+  t.after(close)
+  await until('the script', () => run(`Boolean(globalThis.accountGraph)`))
+  assert.equal(asked.length, 0)
+  // An element that comes later is asked for when the page is touched, and one after that is filled from what is known.
+  for (const id of ['one', 'two']) {
+    await run(`document.body.insertAdjacentHTML('beforeend', '<i id="${id}" data-ag-code></i>'); document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))`)
+    await until(id, () => run(`document.getElementById('${id}').textContent === 'K7Q2MX'`))
+  }
+  assert.equal(asked.length, 1)
+  await run(`location.href = '/both'`)
+  await until('the code', () => run(`document.getElementById('p')?.textContent === 'Your code is K7Q2MX'`).catch(() => false))
+  // The text link is as it was.
+  assert.deepEqual(await run(`{
+    const link = document.querySelector('a'), seen = []
+    addEventListener('click', (event) => { seen.push(link.getAttribute('href')); event.preventDefault() })
+    link.click()
+    new Promise((done) => setTimeout(() => done([...seen, link.getAttribute('href')]), 50))
+  }`), ['sms:+15550100101?body=Hi%20Ref%20K7Q2MX', 'sms:+15550100101?body=Hi'])
+})
+
 test('a marked element shows the visitor a number of their own while it is theirs, and then its own again', async (t) => {
   const page = browser('https://site.example/')
   const realFetch = globalThis.fetch
@@ -456,6 +548,7 @@ test('the page asks for a code when it has a text link, and puts it in as the li
   const link = { getAttribute: () => href, setAttribute: (_: string, value: string) => void (href = value) }
   Object.assign(globalThis.document, {
     querySelector: () => (there ? link : null),
+    querySelectorAll: () => [],
     addEventListener: (name: string, listener: (event: any) => void) => listeners.set(name, listener),
     removeEventListener: (name: string) => listeners.delete(name),
   })

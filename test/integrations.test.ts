@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { test } from 'node:test'
-import { createGraph, createMemoryStore, createOps, createOutbox, googleAds, hashPhone, knownLink, policyFrom, staffLink, email, phone, phoneOfType } from '../tools/internals.ts'
+import { createGraph, createMemoryStore, createOps, createOutbox, googleAds, hashPhone, knownLink, policyFrom, staffLink, email, phone, phoneOfType, recordCall } from '../tools/internals.ts'
 import type { IngestRequest } from '../tools/internals.ts'
 import { readEnvironment as configFrom } from '../src/bin.ts'
 import { CostError, costsFromCsv, googleCosts, metaCosts } from '../src/providers/costs.ts'
@@ -1802,6 +1802,10 @@ test('texts are taken from the page, your own systems and Twilio, and what they 
     assert.deepEqual([answered.status, await answered.text()], [200, '<Response/>'])
     assert.equal((await twilio({ ...fields, MessageSid: 'SM2', SmsStatus: 'delivered' })).status, 200)
     assert.equal(await graph.keptText('SM2'), undefined)
+
+    // The same code read out on the phone is the same browser's, and nobody else's.
+    const spoken = async (id: string, from: string) => (await recordCall(graph, { id, from, to: '+15550100101', at, duration: 60, code })).flags
+    assert.deepEqual([await spoken('CA1', '+15550100141'), await spoken('CA2', '+15550100149')], [['repeat', 'code'], ['taken']])
 
     const post = async (body: object, token = 'service') => fetch(`${base}/text`, { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify(body) })
     assert.equal((await post({}, 'reviewer')).status, 403)

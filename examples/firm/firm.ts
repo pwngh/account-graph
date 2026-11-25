@@ -582,17 +582,24 @@ export async function startFirm({ databaseUrl }: Kept, { ports = [0, 0], quick =
     }
   }
 
-  /** The form on the site: a new contact, with the browser it was filled in on. What was written, and whether they may be texted, is kept by the firm's own system and not here. */
+  /**
+   * The form on the site: a new contact, with the browser it was filled in on. Where it is about somebody else, the contact is
+   * that person, and the browser and the number are those of whoever wrote. What was written, and whether they may be texted,
+   * is kept by the firm's own system and not here.
+   */
   async function inquired(request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse) {
     const form = new URLSearchParams((await new Response(request as unknown as ReadableStream).text()).slice(0, 4000))
     const word = (name: string) => (form.get(name) ?? '').trim().slice(0, 60)
-    const [first, last, device] = [word('first'), word('last'), word('ag_device')]
+    const other = word('about_other') === 'yes'
+    const [first, last] = other ? [word('their_first'), word('their_last')] : [word('first'), word('last')]
+    const device = word(other ? 'ag_speaker_device' : 'ag_device')
     const slug = `${first}-${last}`.normalize('NFKD').toLowerCase().replace(/[^a-z-]/g, '')
     if (!first || !last || word('phone').replace(/\D/g, '').length < 10) return void response.writeHead(400).end('A name and a phone number are needed')
     const before = forms.get(slug) ?? 0
     forms.set(slug, before + 1)
     const subject = `contact:${slug}${before > 0 ? `-${before + 1}` : ''}`
-    await record<'profile'>({ type: 'profile', subject, facts: { ...(device && { device }), phone: word('phone'), name: { first, last } }, event: 'inquiry' })
+    const wrote = { ...(device && { device }), phone: word('phone') }
+    await record<'profile'>({ type: 'profile', subject, facts: { ...(!other && wrote), name: { first, last } }, ...(other && { speaker: wrote }), event: 'inquiry' })
     await record<'conversion'>({ type: 'conversion', key: `form-${randomUUID()}`, subject, stage: 'inquiry', tags: { language: form.get('lang') === 'es' ? 'es' : 'en' } })
     response.writeHead(303, { location: `${form.get('lang') === 'es' ? '/es' : '/'}?sent=1#write` }).end()
   }

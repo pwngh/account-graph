@@ -66,6 +66,8 @@ export interface Pair {
   reasons: Reason[]
   /** The fact that says they are two people, as in `Link`. */
   conflict?: 'birth' | 'given'
+  /** What they share would join them, and nothing confirms that two records are one person. They are related then. */
+  unconfirmed?: true
 }
 
 /** A pair seen from one side. */
@@ -76,6 +78,8 @@ export interface Link {
   reasons: Reason[]
   /** The fact that says they are two people, under a policy that keeps people apart by it. They are related then, however high the score. */
   conflict?: 'birth' | 'given'
+  /** What they share would join them, and nothing confirms that two records are one person. They are related then. */
+  unconfirmed?: true
 }
 
 export interface Cluster {
@@ -411,7 +415,7 @@ export interface KeptCall {
   /** How long it lasted in seconds, from when the phone system picked up. Absent when the provider did not say. */
   duration?: number
   flags: string[]
-  /** The visitor whose tap led to it. */
+  /** The visitor whose it is: by a code, the number they were shown, or a tap. */
   visitor?: Subject
   /** Facts about it, carried on to its outcome. */
   tags?: Record<string, string>
@@ -564,6 +568,8 @@ export interface Candidate {
   reasons: Reason[]
   /** The fact that says they are two people, as in `Link`. */
   conflict?: 'birth' | 'given'
+  /** What they share would join them, and nothing confirms that two records are one person. They are related then. */
+  unconfirmed?: true
   /** Everyone in the subject's cluster, itself included. */
   members: Subject[]
 }
