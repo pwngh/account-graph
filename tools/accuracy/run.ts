@@ -77,6 +77,8 @@ export interface Outcome {
   ties: Map<string, string[]>
   /** Links that rest on a tap or a number shown, each once, and those between two people. */
   tapLinks: { links: number; wrong: number }
+  /** Pairs of records shown as possibly one person, those that are, and which. */
+  waiting: { pairs: number; right: number; found: Set<string> }
 }
 
 /** The code a world is reported to: this checkout's, or another's, by the same names. */
@@ -230,7 +232,16 @@ export async function play(world: World, set: Switches, pool: number, { createGr
     credit.reachable += 1
     if (given === ad) credit.reachableRight += 1
   }
-  return { truths, clusterOf, links, credit, creditedRight, exhausted, callerOf, ties, tapLinks }
+  // Records that are shown as possibly one, for somebody to look at: once for each two people or groups of them.
+  const waiting = { pairs: 0, right: 0, found: new Set<string>() }
+  for (const { a, b, unconfirmed } of (await graph.undecided({ limit: Infinity, sightings: Infinity })).pairs) {
+    if (!unconfirmed) continue
+    waiting.pairs += 1
+    if (!peopleOf.get(a)!.some((each) => peopleOf.get(b)!.includes(each))) continue
+    waiting.right += 1
+    waiting.found.add([a, b].sort().join('\n'))
+  }
+  return { truths, clusterOf, links, credit, creditedRight, exhausted, callerOf, ties, tapLinks, waiting }
 }
 
 /** Whoever shares a fact the rule looks at is one person, and so is whoever they share one with. */

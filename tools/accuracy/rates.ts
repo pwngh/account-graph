@@ -114,5 +114,9 @@ export const SETTINGS: Record<string, Setting> = {
   busygaps3: { rates: { ...base, third: { ...third(1), anyGap: true } }, people: 6_000, days: 5, pool: 40 },
   dirty3: { rates: { ...base, third: third(1) }, people: 2_000, days: 120, pool: 10, dirt: { placeholder: 0.03, office: 0.03 } },
 }
+/** The fourth run's flows, beside those above. All assumed, and set before its held seeds. People fill in a form whose fields are checked. */
+SETTINGS.self4 = { rates: { ...base, form: 0.8, call: 0.2, spokenFor: 0.03, ownEmailTypo: 0.02, ownPhoneTypo: 0.01, third: { ...third(1), formTold: 0.8 } }, people: 2_000, days: 120, pool: 10 }
+/** People call, staff enter them, and asking whether it is for somebody else is required. */
+SETTINGS.staff4 = { rates: { ...base, form: 0.2, call: 0.8, spokenFor: 0.08, third: { ...third(1), staffTold: 0.8 } }, people: 2_000, days: 120, pool: 10 }
 SETTINGS.low3!.rates = { ...SETTINGS.low!.rates, third: third(0) }
 SETTINGS.high3!.rates = { ...SETTINGS.high!.rates, third: third(2) }
