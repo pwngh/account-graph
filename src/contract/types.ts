@@ -739,3 +739,81 @@ export interface Report {
   /** Every currency the costs and outcomes named. More than one means the sums mix currencies. */
   currencies: string[]
 }
+
+/**
+ * How a call stands. `waiting` a result is expected and has not come;
+ * `unknown` nothing says whether a person answered. `unknown` is never counted
+ * where results are expected, and is counted by its length where they are not.
+ */
+export type CallState = 'answered' | 'missed' | 'voicemail' | 'waiting' | 'unknown'
+
+/** How many calls of each kind. `returned` counts the missed and voicemail calls whose caller you reached. */
+export interface CallCounts extends Record<CallState, number> {
+  calls: number
+  returned: number
+  /** Of those, how many a system of yours reported, and no call shows. */
+  reported: number
+  /** Missed and voicemail calls whose caller rang again and got through. */
+  calledAgain: number
+  /** Calls said to be no lead. They are in none of the counts above. */
+  notLeads: number
+  /** Missed and voicemail calls from a hidden number, which cannot be returned. */
+  hidden: number
+}
+
+export interface CallSummary {
+  total: CallCounts
+  /** Of them, those that began while you were closed. Null when your hours are not known. */
+  closed: CallCounts | null
+  /** Counts by the hour a call began and the day of the week, Monday 1 to Sunday 7, in the time zone asked for. Hours with no calls are left out. */
+  cells: (CallCounts & { weekday: number; hour: number })[]
+  /** How calls to you were placed: each call is in exactly one of the first three. */
+  coverage: {
+    /** Tied to the one visitor who tapped the number. */
+    visitor: number
+    /** Filed under the channel its number is published on, and nothing more. */
+    channel: number
+    /** Neither. */
+    neither: number
+    /** With no result, whatever the rest: waiting or unknown. */
+    noResult: number
+  }
+  /** Half of the returned calls were returned within this many milliseconds. Null when none was. */
+  returnedWithin: number | null
+}
+
+/** People with something in common about a call, and how many of them reached the step. */
+export interface FollowedRow {
+  name: string
+  people: number
+  reached: number
+  share: number
+}
+
+export interface FollowedGroup {
+  by: 'talk' | 'answer' | 'language' | 'returned'
+  /** Rows of fewer than `least` people are not here. */
+  rows: FollowedRow[]
+  /** How many people were in rows too thin to show. */
+  suppressed: number
+}
+
+/**
+ * What followed calls, not what they caused. People choose whether to call,
+ * how long to talk and whether to call again, and whoever rings them back
+ * chooses whom to ring, so a difference between two rows is not an effect.
+ */
+export interface Followed {
+  step: string
+  days: number
+  /** A row of fewer people than this is not shown: one person more or less would move it too far. */
+  least: number
+  groups: FollowedGroup[]
+  /** People left out, and why, apart for the two questions: someone may count for one and not for the other. */
+  excluded: {
+    /** Of the groups by what their first call was like. */
+    first: { already: number; running: number }
+    /** Of the group by whether a miss was returned. `through`: they got through on their own before the landmark, so whether they were rung back says nothing. */
+    returned: { already: number; running: number; through: number }
+  }
+}

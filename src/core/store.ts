@@ -1,4 +1,5 @@
 import type { Feed, OpsStore } from './ops.ts'
+import type { Receipt } from './receipts.ts'
 import type { Said, SaidOf, Topic } from './said.ts'
 import { byKey } from './said.ts'
 import type { Job, OutboxStore } from './outbox.ts'
@@ -190,6 +191,22 @@ export interface Tx {
   newestOutcomes(from: number, to: number, each: number): Promise<Counted[]>
   /** Records what campaigns cost, replacing any row with the same day, source and campaign. */
   addCosts(costs: readonly CostRow[], read?: { at: number; key: string }): Promise<number>
+  /** The receipt of a key, under any of the hashes it may have. */
+  receiptOf(type: string, macs: readonly string[]): Promise<Receipt | undefined>
+  addReceipt(receipt: Receipt, subjects: readonly Subject[]): Promise<void>
+  setReceiptSent(type: string, macs: readonly string[], sent: unknown): Promise<void>
+  /** The keys of what is recorded of subjects: conversions, calls, texts, payments, transfers and links. */
+  keysOf(subjects: readonly Subject[]): Promise<{ type: string; key: string }[]>
+  /**
+   * Empties every receipt of the subjects, of the keys, and of what is about either, and leaves an empty one for a key
+   * that has none. Read before the subjects are removed.
+   */
+  forgetReceipts(subjects: readonly Subject[], keys: readonly { type: string; mac: string; secretId: string; all: readonly string[] }[], at: number): Promise<void>
+  /** Which secrets made the receipts that are kept. */
+  receiptSecrets(): Promise<string[]>
+  /** Something this database was set up with, which every process must share. */
+  settingOf(name: string): Promise<string | undefined>
+  setSetting(name: string, value: string): Promise<void>
   /** Keeps one thing said. Resolves to false where that key of that topic and thing was there. */
   addSaid(said: Said): Promise<boolean>
   saidOf<T extends Topic>(topic: T, about: string): Promise<SaidOf<T>[]>

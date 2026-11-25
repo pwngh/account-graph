@@ -3,6 +3,7 @@ import { createMemoryOps } from './ops.ts'
 import { createMemoryOutbox } from './outbox.ts'
 import type { OutboxStore } from './outbox.ts'
 import { standingFirst } from './store.ts'
+import type { Receipt } from './receipts.ts'
 import type { Said, SaidOf, Topic } from './said.ts'
 import { byKey } from './said.ts'
 import type { Store, Tx } from './store.ts'
@@ -43,6 +44,9 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
   const costs = new Map<string, CostRow>()
   const reads = new Map<string, { at: number; key: string }>()
   const said = new Map<string, Said[]>()
+  const receipts = new Map<string, Receipt>()
+  const receiptSubjects = new Map<string, Set<Subject>>()
+  const settings = new Map<string, string>()
   const moves: NumberedChange[] = []
   let lastMove = 0
   let writes = 0
@@ -681,6 +685,70 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
       return written
     },
 
+    async receiptOf(type, macs) {
+      for (const mac of macs) {
+        const found = receipts.get(`${type}\u0000${mac}`)
+        if (found) return structuredClone(found)
+      }
+      return undefined
+    },
+
+    async addReceipt(receipt, subjects) {
+      const id = `${receipt.type}\u0000${receipt.mac}`
+      receipts.set(id, structuredClone(receipt))
+      receiptSubjects.set(id, new Set(subjects))
+    },
+
+    async setReceiptSent(type, macs, given) {
+      for (const mac of macs) {
+        const found = receipts.get(`${type}\u0000${mac}`)
+        if (found) found.sent = structuredClone(given)
+      }
+    },
+
+    async keysOf(subjects) {
+      const of = new Set(subjects)
+      const own = [...outcomes.values()].filter((each) => of.has(each.subject)).map((each) => each.transactionId)
+      const theirs = new Set([...own, ...subjects.flatMap((each) => [...(values.get(each)?.keys() ?? [])].filter((id) => !outcomes.has(id)))])
+      return [
+        ...[...theirs].map((key) => ({ type: 'conversion', key })),
+        ...[...calls.values()].filter((each) => of.has(each.subject)).map(({ id }) => ({ type: 'call', key: id })),
+        ...[...texts.values()].filter((each) => of.has(each.subject)).map(({ id }) => ({ type: 'text', key: id })),
+        ...[...payments.values()].filter((each) => theirs.has(each.transactionId)).map(({ id }) => ({ type: 'payment', key: id })),
+        ...[...flowIds.values()].filter((each) => of.has(each.from) || of.has(each.to)).map(({ id }) => ({ type: 'transfer', key: id })),
+        ...[...sent.values()].filter((each) => of.has(each.subject)).map(({ id }) => ({ type: 'link', key: id })),
+      ]
+    },
+
+    async forgetReceipts(subjects, keys, at) {
+      const gone = new Set<string>()
+      for (const { type, mac, secretId, all } of keys) {
+        const id = all.map((each) => `${type}\u0000${each}`).find((each) => receipts.has(each)) ?? `${type}\u0000${mac}`
+        if (!receipts.has(id)) receipts.set(id, { type, mac, secretId, digest: null, version: 0, at, recorded: at })
+        gone.add(id)
+      }
+      for (const [id, of] of receiptSubjects) if (subjects.some((each) => of.has(each))) gone.add(id)
+      const about = new Set(keys.flatMap(({ type, all }) => all.map((each) => `${type}\u0000${each}`)))
+      for (const [id, { ref }] of receipts) if (ref && (about.has(`${ref.type}\u0000${ref.mac}`) || gone.has(`${ref.type}\u0000${ref.mac}`))) gone.add(id)
+      for (const id of gone) {
+        const { ref: _, sent: __, ...kept } = receipts.get(id)!
+        receipts.set(id, { ...kept, digest: null, forgotten: at })
+        receiptSubjects.delete(id)
+      }
+    },
+
+    async receiptSecrets() {
+      return [...new Set([...receipts.values()].map((each) => each.secretId))]
+    },
+
+    async settingOf(name) {
+      return settings.get(name)
+    },
+
+    async setSetting(name, value) {
+      settings.set(name, value)
+    },
+
     async addSaid(each) {
       const key = `${each.topic}\u0000${each.about}`
       const list = said.get(key) ?? []
@@ -768,7 +836,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
   }
 
   /** Every collection, copied together, so what two of them share stays shared. */
-  const collections = { bySubject, byIdentifier, ignored, labels, byComponent, byCluster, sightings, touches, separated, flows, flowsBy, flowIds, consents, decisions, outcomes, values, calls, texts, sent, payments, results, spurned, leases, costs, reads, said, moves }
+  const collections = { bySubject, byIdentifier, ignored, labels, byComponent, byCluster, sightings, touches, separated, flows, flowsBy, flowIds, consents, decisions, outcomes, values, calls, texts, sent, payments, results, spurned, leases, costs, reads, said, receipts, receiptSubjects, settings, moves }
   const snapshot = () => structuredClone({ ...collections, lastMove, writes, built, jobs: outbox.jobs, ops: ops.kept })
   const restore = (kept: ReturnType<typeof snapshot>) => {
     const refill = (now: any, then: any) => {

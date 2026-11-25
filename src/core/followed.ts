@@ -1,3 +1,4 @@
+import type { Followed, FollowedGroup, FollowedRow } from '../contract/types.ts'
 import { stands } from './calls.ts'
 import type { KeptCall } from '../contract/types.ts'
 
@@ -9,42 +10,6 @@ export interface Caller {
   calls: readonly KeptCall[]
   /** When they reached the step, in epoch milliseconds. */
   reached: readonly number[]
-}
-
-/** People with something in common about a call, and how many of them reached the step. */
-export interface FollowedRow {
-  name: string
-  people: number
-  reached: number
-  share: number
-}
-
-export interface FollowedGroup {
-  by: 'talk' | 'answer' | 'language' | 'returned'
-  /** Rows of fewer than `least` people are not here. */
-  rows: FollowedRow[]
-  /** How many people were in rows too thin to show. */
-  suppressed: number
-}
-
-/**
- * What followed calls, not what they caused. People choose whether to call,
- * how long to talk and whether to call again, and whoever rings them back
- * chooses whom to ring, so a difference between two rows is not an effect.
- */
-export interface Followed {
-  step: string
-  days: number
-  /** A row of fewer people than this is not shown: one person more or less would move it too far. */
-  least: number
-  groups: FollowedGroup[]
-  /** People left out, and why, apart for the two questions: someone may count for one and not for the other. */
-  excluded: {
-    /** Of the groups by what their first call was like. */
-    first: { already: number; running: number }
-    /** Of the group by whether a miss was returned. `through`: they got through on their own before the landmark, so whether they were rung back says nothing. */
-    returned: { already: number; running: number; through: number }
-  }
 }
 
 export interface FollowedOptions {
@@ -142,3 +107,5 @@ export function followed(callers: readonly Caller[], { step, days, at, least = 2
   })
   return { step, days, least, groups, excluded }
 }
+
+export type { Followed, FollowedGroup, FollowedRow }

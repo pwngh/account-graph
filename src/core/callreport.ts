@@ -1,42 +1,8 @@
+import type { CallCounts, CallSummary } from '../contract/types.ts'
 import { callState, followUp } from './calls.ts'
 import type { CallOptions, CallState } from './calls.ts'
 import type { Hours } from './hours.ts'
 import type { KeptCall, Subject } from '../contract/types.ts'
-
-/** How many calls of each kind. `returned` counts the missed and voicemail calls whose caller you reached. */
-export interface CallCounts extends Record<CallState, number> {
-  calls: number
-  returned: number
-  /** Of those, how many a system of yours reported, and no call shows. */
-  reported: number
-  /** Missed and voicemail calls whose caller rang again and got through. */
-  calledAgain: number
-  /** Calls said to be no lead. They are in none of the counts above. */
-  notLeads: number
-  /** Missed and voicemail calls from a hidden number, which cannot be returned. */
-  hidden: number
-}
-
-export interface CallSummary {
-  total: CallCounts
-  /** Of them, those that began while you were closed. Null when your hours are not known. */
-  closed: CallCounts | null
-  /** Counts by the hour a call began and the day of the week, Monday 1 to Sunday 7, in the time zone asked for. Hours with no calls are left out. */
-  cells: (CallCounts & { weekday: number; hour: number })[]
-  /** How calls to you were placed: each call is in exactly one of the first three. */
-  coverage: {
-    /** Tied to the one visitor who tapped the number. */
-    visitor: number
-    /** Filed under the channel its number is published on, and nothing more. */
-    channel: number
-    /** Neither. */
-    neither: number
-    /** With no result, whatever the rest: waiting or unknown. */
-    noResult: number
-  }
-  /** Half of the returned calls were returned within this many milliseconds. Null when none was. */
-  returnedWithin: number | null
-}
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const none = (): CallCounts => ({ calls: 0, answered: 0, missed: 0, voicemail: 0, waiting: 0, unknown: 0, returned: 0, reported: 0, calledAgain: 0, notLeads: 0, hidden: 0 })
@@ -101,3 +67,5 @@ export function summarizeCalls(
     returnedWithin: delays.length > 0 ? delays[Math.ceil(delays.length / 2) - 1]! : null,
   }
 }
+
+export type { CallCounts, CallSummary }

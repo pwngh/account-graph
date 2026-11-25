@@ -1,3 +1,4 @@
+import type { CallState } from '../contract/types.ts'
 import { malformed } from '../contract/fault.ts'
 import type { Graph } from './graph.ts'
 import { hashPhone, normalizePhone, phoneOfType } from './identifiers.ts'
@@ -98,13 +99,6 @@ export interface CallOptions {
   /** The clock, for tests. */
   now?: () => number
 }
-
-/**
- * How a call stands. `waiting` a result is expected and has not come;
- * `unknown` nothing says whether a person answered. `unknown` is never counted
- * where results are expected, and is counted by its length where they are not.
- */
-export type CallState = 'answered' | 'missed' | 'voicemail' | 'waiting' | 'unknown'
 
 /** How a kept call stands at a time. */
 export function callState(call: KeptCall, at: number, options: Pick<CallOptions, 'results' | 'resultWait'> = {}): CallState {
@@ -484,3 +478,5 @@ export function numberOrSelf(number: string, country?: string): string {
     return number
   }
 }
+
+export type { CallState }

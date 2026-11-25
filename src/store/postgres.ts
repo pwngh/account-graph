@@ -1,6 +1,7 @@
 import { malformed } from '../contract/fault.ts'
 import type { Feed, KeptAlert, OpsStore } from '../core/ops.ts'
 import type { Job, JobState, OutboxStore } from '../core/outbox.ts'
+import type { Receipt } from '../core/receipts.ts'
 import type { SaidOf, Topic } from '../core/said.ts'
 import type { Store, Tx } from '../core/store.ts'
 import { CLICK_IDS } from '../core/touch.ts'
@@ -766,6 +767,71 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       return rows.length
     },
 
+    async receiptOf(type, macs) {
+      const { rows } = await db.query(`select * from ${t('receipt')} where type = $1 and key_mac = any($2::text[]) limit 1`, [type, macs])
+      return rows[0] && toReceipt(rows[0])
+    },
+
+    async addReceipt({ type, mac, secretId, digest, version, ref, sent, at, recorded, forgotten }, subjects) {
+      await db.query(
+        `insert into ${t('receipt')} (type, key_mac, secret_id, digest, digest_version, ref_type, ref_mac, sent, at, recorded_at, forgotten_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [type, mac, secretId, digest && JSON.stringify(digest), version, ref?.type ?? null, ref?.mac ?? null, sent === undefined ? null : JSON.stringify(sent), at, recorded, forgotten ?? null],
+      )
+      if (subjects.length > 0) await db.query(`insert into ${t('receipt_subject')} (type, key_mac, subject) select $1, $2, * from unnest($3::text[]) on conflict do nothing`, [type, mac, subjects])
+    },
+
+    async setReceiptSent(type, macs, sent) {
+      await db.query(`update ${t('receipt')} set sent = $3 where type = $1 and key_mac = any($2::text[])`, [type, macs, JSON.stringify(sent)])
+    },
+
+    async keysOf(subjects) {
+      const { rows } = await db.query(
+        `with theirs as (select transaction_id as id from ${t('outcome')} where subject = any($1::text[])
+           union select transaction_id from ${t('outcome_value')} v where subject = any($1::text[]) and not exists (select from ${t('outcome')} o where o.transaction_id = v.transaction_id))
+         select 'conversion' as type, id as key from theirs
+         union all select 'call', id from ${t('call')} where subject = any($1::text[])
+         union all select 'text', id from ${t('message')} where subject = any($1::text[])
+         union all select 'payment', id from ${t('payment')} where transaction_id in (select id from theirs)
+         union all select 'transfer', id from ${t('transfer')} where source = any($1::text[]) or target = any($1::text[])
+         union all select 'link', id from ${t('sent_link')} where subject = any($1::text[])`,
+        [subjects],
+      )
+      return rows.map((row) => ({ type: row.type, key: row.key }))
+    },
+
+    async forgetReceipts(subjects, keys, at) {
+      await db.query(
+        `insert into ${t('receipt')} (type, key_mac, secret_id, digest, digest_version, at, recorded_at)
+         select k.type, k.mac, k.secret_id, null, 0, $4, $4 from unnest($1::text[], $2::text[], $3::text[]) as k (type, mac, secret_id)
+         where not exists (select from jsonb_to_recordset($5::jsonb) as a (type text, mac text, other text) join ${t('receipt')} r on r.type = a.type and r.key_mac = a.other where a.type = k.type and a.mac = k.mac)
+         on conflict do nothing`,
+        [keys.map((each) => each.type), keys.map((each) => each.mac), keys.map((each) => each.secretId), at, JSON.stringify(keys.flatMap(({ type, mac, all }) => all.map((other) => ({ type, mac, other }))))],
+      )
+      await db.query(
+        `with own as (
+             select a.type, a.other as mac from jsonb_to_recordset($2::jsonb) as a (type text, other text)
+             union select type, key_mac from ${t('receipt_subject')} where subject = any($1::text[])),
+           gone as (
+             update ${t('receipt')} r set digest = null, sent = null, ref_type = null, ref_mac = null, forgotten_at = $3
+             where exists (select from own where own.type = r.type and own.mac = r.key_mac) or exists (select from own where own.type = r.ref_type and own.mac = r.ref_mac)
+             returning r.type, r.key_mac)
+         delete from ${t('receipt_subject')} s using gone where s.type = gone.type and s.key_mac = gone.key_mac`,
+        [subjects, JSON.stringify(keys.flatMap(({ type, all }) => all.map((other) => ({ type, other })))), at],
+      )
+    },
+
+    async receiptSecrets() {
+      return (await db.query(`select distinct secret_id from ${t('receipt')}`)).rows.map((row) => row.secret_id)
+    },
+
+    async settingOf(name) {
+      return (await db.query(`select value from ${t('setting')} where name = $1`, [name])).rows[0]?.value
+    },
+
+    async setSetting(name, value) {
+      await db.query(`insert into ${t('setting')} (name, value) values ($1, $2) on conflict (name) do update set value = excluded.value`, [name, value])
+    },
+
     async addSaid({ topic, about, key, at, data }) {
       const { rows } = await db.query(`insert into ${t('said')} (topic, about, key, at, data) values ($1, $2, $3, $4, $5) on conflict do nothing returning 1`, [topic, about, key, at, data])
       return rows.length > 0
@@ -1074,6 +1140,13 @@ function toSighting(row: any): Sighting {
 
 function toCounted(row: any): Counted {
   return { transactionId: row.transaction_id, subject: row.subject, at: Number(row.at), stage: row.stage, value: row.value, currency: row.currency, ...(row.tags !== null && { tags: row.tags }) }
+}
+
+function toReceipt(row: any): Receipt {
+  return {
+    type: row.type, mac: row.key_mac, secretId: row.secret_id, digest: row.digest, version: row.digest_version, at: Number(row.at), recorded: Number(row.recorded_at),
+    ...(row.ref_type !== null && { ref: { type: row.ref_type, mac: row.ref_mac } }), ...(row.sent !== null && { sent: row.sent }), ...(row.forgotten_at !== null && { forgotten: Number(row.forgotten_at) }),
+  }
 }
 
 function toValue(row: any): OutcomeValue {
@@ -1469,6 +1542,36 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
             alter table ${schema}.cost add column if not exists read_at bigint, add column if not exists read_key text;
             alter table ${schema}.consent_log add column if not exists key text;
             alter table ${schema}.outcome_value add column if not exists why text;`,
+    },
+    {
+      id: 25,
+      name: 'receipts of keys',
+      // Which keys were used, and for what, as hashes. A key whose subject was forgotten keeps its hash and nothing else.
+      sql: `create table if not exists ${schema}.receipt (
+              type text not null,
+              key_mac text not null,
+              secret_id text not null,
+              digest jsonb,
+              digest_version integer not null,
+              ref_type text,
+              ref_mac text,
+              sent jsonb,
+              at bigint not null,
+              recorded_at bigint not null,
+              forgotten_at bigint,
+              primary key (type, key_mac)
+            );
+            create index if not exists receipt_ref on ${schema}.receipt (ref_type, ref_mac) where ref_mac is not null;
+            create index if not exists receipt_recorded on ${schema}.receipt (recorded_at);
+            create table if not exists ${schema}.receipt_subject (
+              type text not null,
+              key_mac text not null,
+              subject text not null,
+              primary key (type, key_mac, subject),
+              foreign key (type, key_mac) references ${schema}.receipt on delete cascade
+            );
+            create index if not exists receipt_subject_subject on ${schema}.receipt_subject (subject);
+            create table if not exists ${schema}.setting (name text primary key, value text not null);`,
     },
   ]
 }
