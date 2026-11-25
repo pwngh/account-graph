@@ -23,9 +23,15 @@ export function normalizeEmail(email: string): string {
   return `${clean.slice(0, at).split('+')[0]!.replaceAll('.', '')}@${domain}`
 }
 
+/** The extension reaches a desk on the line. Its digits must never become part of another line's key. */
+export function withoutPhoneExtension(phone: string): string {
+  const extension = phone.search(/(?<=[\d)])[\s.,/;(-]*(?:ext(?:ension|n)?|x|#)[\s.:(=#-]*\d+(?![\p{L}\p{N}])/iu)
+  return extension < 0 ? phone : phone.slice(0, extension)
+}
+
 /** Normalizes a phone number to E.164. A 10-digit number takes `country`, which defaults to 1. */
 export function normalizePhone(phone: string, country = '1'): string {
-  const digits = phone.replace(/\D/g, '')
+  const digits = withoutPhoneExtension(phone).replace(/\D/g, '')
   if (phone.trim().startsWith('+') && digits.length >= 8 && digits.length <= 15) return `+${digits}`
   if (digits.length === 10) return `+${country}${digits}`
   if (digits.length === 11 && digits.startsWith(country)) return `+${digits}`

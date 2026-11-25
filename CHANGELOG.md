@@ -36,6 +36,7 @@
 
 ### People
 
+- `phone` keys exclude extension digits when recording a line or looking it up. Older keys made with extension digits need the [original records](docs/identify.md#fields) to correct them.
 - `split` cuts guessed links before staff merges and restores each merge it can keep while all separations hold.
 - `call_update` withdraws identity evidence for that call while its original holders still count toward shared identifiers. See the [matching rules](docs/matching.md).
 - `name` keeps letters and script marks that distinguish people and recognizes missing-name and newborn labels. Equal birthdays cannot confirm two placeholders. See [confirmed records](docs/matching.md#records-that-have-to-be-confirmed).

@@ -2,7 +2,7 @@ import { malformed } from '../contract/fault.ts'
 import type { Change, Identifier, Outcome, Subject } from '../contract/types.ts'
 import type { CallOptions } from './calls.ts'
 import type { Graph } from './graph.ts'
-import { birthKeys, email, hashPhone, identifier, ip, nameKeys, nameParts, normalizePhone, phoneOfType } from './identifiers.ts'
+import { birthKeys, email, hashPhone, identifier, ip, nameKeys, nameParts, normalizePhone, phoneOfType, withoutPhoneExtension } from './identifiers.ts'
 import { withStage } from './ladder.ts'
 import type { Ladder } from './ladder.ts'
 import { fakePhone, placeholderEmail, sharedMailbox } from './lookups.ts'
@@ -239,10 +239,11 @@ export function createService(graph: Graph, options: ServiceOptions) {
     const text = given.trim()
     const holding = async (identifiers: Identifier[]) => [...new Set((await graph.holders(identifiers)).map((edge) => edge.subject))].sort().slice(0, 20)
     if (/^[^\s:@]+@[^\s:@]+$/.test(text)) return { by: 'email', subjects: await holding([email(text)]) }
-    if (/^\+?[\d\s().-]+$/.test(text)) {
+    const number = withoutPhoneExtension(text)
+    if (/^\+?[\d\s().-]+$/.test(number)) {
       let hash: string | undefined
       try {
-        hash = hashPhone(text, options.calls?.country)
+        hash = hashPhone(number, options.calls?.country)
       } catch {}
       if (hash) return { by: 'phone', subjects: await holding([`phone:${hash}`, `voip:${hash}`]) }
     }
