@@ -125,8 +125,10 @@ export const defaultPolicy: Policy = {
     given: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     initial: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     dated: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
-    // One number or email given under one name. Written where names keep people apart.
-    named: { weight: 0.999, dilution: 0, cap: 10, halfLife: Infinity },
+    // One number or email given under one name. It confirms what the number or email says, and says nothing once that is muted or too many hold it.
+    named: { weight: 0.999, dilution: 0, cap: 10, halfLife: Infinity, corroborates: true },
+    // The same of two who were spoken for by one number or email, which is on neither's record.
+    ward: { weight: 0.97, dilution: 0, cap: 5, halfLife: Infinity },
     // A note, not evidence: the number a visitor tapped, or a call that was recorded. It links nothing.
     dialed: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
   },

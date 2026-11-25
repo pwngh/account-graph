@@ -914,6 +914,17 @@ test('a link sent to one person ties the browser that opens it, and a visitor is
     assert.deepEqual(await members('visitor:phone-2'), ['visitor:phone-2'])
     assert.deepEqual((await graph.links('contact:1')).map((link) => [link.subject, link.level, link.reasons[0]!.identifier]), [['visitor:phone-1', 'same', 'link:phone-1']])
 
+    // Opened by whoever speaks for them, in whichever browser of hers, it is not theirs.
+    await graph.observe([{ subject: 'visitor:hers', identifiers: ['device:hers', 'dial:hers'], at: T0 }, { subject: 'caller:hers', identifiers: ['phone:hers', 'dial:hers'], at: T0 }])
+    await graph.speak({ subject: 'contact:son', identifiers: ['email:son'] }, [{ subject: 'caller:hers', identifiers: ['phone:hers'] }], T0)
+    const his = new URL(((await (await service('/link', { url: 'https://site.example/offer', subject: 'contact:son' })).json()) as { url: string }).url).searchParams.get('ag')!
+    assert.equal((await page('/collect', { device: 'hers', known: his })).status, 204)
+    assert.deepEqual([await members('contact:son'), await members('visitor:hers')], [['contact:son'], ['caller:hers', 'visitor:hers']])
+    assert.ok((await graph.history('visitor:hers')).some((each) => each.identifier === 'opened:contact:son (not tied)'))
+    // In a browser of his own it is his.
+    assert.equal((await page('/collect', { device: 'his', known: his })).status, 204)
+    assert.deepEqual(await members('contact:son'), ['contact:son', 'visitor:his'])
+
     // A second person's link opened in the same browser. Both are there by a link alone, so neither wins: each thins, and the browser is joined to nobody.
     const linkFor = async (subject: string) => new URL(((await (await service('/link', { url: 'https://site.example/offer', subject })).json()) as { url: string }).url).searchParams.get('ag')!
     // The opening is noted on the link, whichever of its two names the token comes under.
@@ -1538,7 +1549,15 @@ test('/identify keeps whoever speaks for a subject apart from them', async (t) =
   assert.ok((await graph.cluster('contact:mother'))!.members.includes(mother))
   assert.deepEqual((await graph.cluster('contact:child'))!.members, ['contact:child'])
   assert.equal((await identify({ subject: mother, speaker })).status, 400)
-  for (const bad of ['mother', {}, { email: 'mother@example.org' }, { device: '?' }, { phone: 'x' }]) assert.equal((await identify({ subject: 'contact:other', speaker: bad })).status, 400, JSON.stringify(bad))
+  for (const bad of [{ device: '?' }, { phone: 'x' }]) assert.equal((await identify({ subject: 'contact:other', speaker: bad })).status, 400, JSON.stringify(bad))
+  // One that names nobody loses nothing of the subject's.
+  for (const [n, none] of ['mother', null, {}, { email: 'mother@example.org' }, { phone: '' }].entries()) {
+    const answer = await identify({ subject: `contact:none${n}`, email: 'mine@example.org', speaker: none })
+    assert.deepEqual([answer.status, answer.identifiers.length, answer.notes.speaker], [200, 1, 'not used: a speaker requires a device or a phone'], JSON.stringify(none))
+  }
+  // Told late, what is on the record already is said and left.
+  await identify({ subject: 'contact:late', phone: '+15550100187', at: T0 })
+  assert.match((await identify({ subject: 'contact:late', at: T0, speaker: { phone: '+15550100187' } })).notes.speaker, /on this record already/)
   // A number that names nobody is not kept, and neither is what they say it is theirs.
   const kept = await identify({ subject: 'contact:other', email: 'o@example.org', speaker: { phone: '+18005550199', email: 'o@example.org' } })
   assert.deepEqual([kept.identifiers, kept.notes.speaker], [[], 'what is the speaker\'s is not used for who they speak for'])

@@ -1355,9 +1355,10 @@ const PARTICLES = new Set(['de', 'del', 'la', 'las', 'los', 'el', 'da', 'dos', '
 /**
  * The keys of a number or an email under the name it was given with. Two records that share one were given it by one name.
  * They are made with a secret, as the rest are. A record may have one of two last names, so each word of it has a key. A
- * browser has none: a front desk's is everybody's.
+ * browser has none: a front desk's is everybody's. Of somebody who is spoken for, with the detail the speaker's, it is a
+ * `ward`: it joins them to whoever was spoken for by the same name and detail, and never to the speaker.
  */
-export function namedKeys(secret: string, contact: readonly Identifier[], first: string, last: string): Identifier[] {
+export function namedKeys(secret: string, contact: readonly Identifier[], first: string, last: string, kind: 'named' | 'ward' = 'named'): Identifier[] {
   if (typeof secret !== 'string' || secret.length < 32) throw new TypeError('A name key requires a secret of at least 32 characters')
   const known = namesOf(first)
   // An initial is no name.
@@ -1365,5 +1366,5 @@ export function namedKeys(secret: string, contact: readonly Identifier[], first:
   const lasts = [...new Set(folded(last).split(/\s+/).filter((word) => word.length > 1 && !PARTICLES.has(word)))]
   // A number is one whatever kind of line it was found to be.
   const details = new Set(contact.filter((each) => /^(phone|voip|email):/.test(each)).map((each) => each.replace(/^voip:/, 'phone:')))
-  return [...details].flatMap((detail) => lasts.flatMap((surname) => firsts.map((name): Identifier => `named:${createHmac('sha256', secret).update(JSON.stringify(['named', detail, name, surname])).digest('hex')}`)))
+  return [...details].flatMap((detail) => lasts.flatMap((surname) => firsts.map((name): Identifier => `${kind}:${createHmac('sha256', secret).update(JSON.stringify([kind, detail, name, surname])).digest('hex')}`)))
 }

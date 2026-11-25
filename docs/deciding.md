@@ -24,7 +24,7 @@ Evidence that counts combines as a noisy-OR, `1 − Π(1 − evidence)`. Each id
 
 Scores depend only on stored data. The current time and the order of arrival leave them unchanged.
 
-The default policy has no groups or corroborating kinds. [Presets](presets.md) has both: [the preset for contacts entered by staff](presets.md#contacts-entered-by-staff) defines a corroborating `name` kind.
+The default policy has no groups, and one corroborating kind, `named`. [Presets](presets.md) has both: [the preset for contacts entered by staff](presets.md#contacts-entered-by-staff) defines a corroborating `name` kind.
 
 ### Kinds
 
@@ -41,7 +41,8 @@ The default policy has no groups or corroborating kinds. [Presets](presets.md) h
 | `link` | 0.92 | 5 | none | A link sent to one person, opened in this browser. Thins as more people's links are opened there |
 | `dial` | 0.92 | 2 | none | A phone call or a text that began just after exactly one visitor tapped its number |
 | `text` | 0.95 | 2 | none | A text that carried the code one visitor was given |
-| `named` | 0.999 | 10 | none | One number or email given under one name. Written where a policy keeps people apart by `given` |
+| `named` | 0.999 | 10 | none | One number or email given under one name. It corroborates. Written where a policy keeps people apart by `given` |
+| `ward` | 0.97 | 5 | none | Two who were spoken for by one number or email, under one name |
 | `behalf` | 0.92 | 2 | none | Somebody who [speaks for](identify.md#speaking-for-somebody-else) somebody else. It relates and never joins |
 | `lease` | 0.90 | 2 | none | A phone call to a number shown to one visitor. An unmeasured prior |
 | `phone` | 0.90 | 10 | none | A mobile or landline. Joins two subjects, relates three, and gives no link among four or more |
@@ -98,9 +99,10 @@ With `given` it keeps keyed notes of the names a first name may stand for, from 
 | Two records | Come to |
 | --- | --- |
 | Dates that differ | Two people, unless the names agree and the dates have the year or the day and month in common. A father and a son of one name are two. |
-| First names that can stand for no one name | Two people, unless the dates agree, the names begin with one letter, or they share both a browser and a phone number. |
+| First names that can stand for no one name | Two people, unless the dates agree, or the names begin with one letter. A mother and a daughter who share a day of birth, and an Alex and an Alexandra, are then one where they share a number. |
 | A name the table does not have | Nothing is said. |
-| One number or email under one name | One person, at 0.999 (`named`), whoever [speaks for them](identify.md#speaking-for-somebody-else). The name is a full name it may stand for, with the last name. |
+| One number or email under one name | Confirmed, at 0.999 (`named`), for as long as the number or email is evidence. |
+| Two who were [spoken for](identify.md#speaking-for-somebody-else) by one number or email, under one name | One person, at 0.97 (`ward`), and never the speaker, whatever name is typed. |
 
 | Point | Behavior |
 | --- | --- |

@@ -2809,38 +2809,35 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const policy = policyFrom({ apart: ['birth', 'given'] })
       const secret = 'a secret of more than thirty-two characters'
       const contact = (n: string, first: string, last: string, details: string[], dob?: string) => ({ subject: `contact:${n}`, identifiers: [...details, ...givenKeys(secret, first), ...namedKeys(secret, details, first, last), ...(dob ? birthKeys(secret, dob) : [])], at: T0 })
-      // A son's record that nobody said was his mother's call, and one that somebody did. The mark takes the mother from both.
+      // Two records of a son whose mother called twice are one, and neither is hers, whatever name is typed.
       const { graph } = await fresh(policy)
-      await graph.observe([{ subject: 'caller:1', identifiers: ['phone:1'], at: T0 }, contact('a', 'Robert', 'Lima', ['phone:1'])])
-      assert.deepEqual(await members(graph, 'contact:a'), ['caller:1', 'contact:a'])
-      await graph.speak({ subject: 'contact:b', identifiers: [...givenKeys(secret, 'Bob'), ...namedKeys(secret, ['phone:1'], 'Bob', 'Lima')] }, [{ subject: 'caller:1', identifiers: ['phone:1'] }], T0)
-      assert.deepEqual(await members(graph, 'contact:a'), ['contact:a', 'contact:b'])
+      const ward = (n: string, first: string) => graph.speak({ subject: `contact:${n}`, identifiers: [...givenKeys(secret, first), ...namedKeys(secret, ['phone:1'], first, 'Lima', 'ward')] }, [{ subject: 'caller:1', identifiers: ['phone:1'] }], T0)
+      await graph.observe(contact('mother', 'Maria', 'Lima', ['phone:1']))
+      await ward('a', 'Robert')
+      await ward('b', 'Bob')
+      assert.deepEqual([await members(graph, 'contact:a'), await members(graph, 'contact:mother')], [['contact:a', 'contact:b'], ['caller:1', 'contact:mother']])
+      await ward('typed', 'Maria')
+      assert.equal((await members(graph, 'contact:typed')).length, 1)
       assert.deepEqual(await graph.verify(), [])
-      // A child whose name begins as hers is not her, and neither are two clients at one front desk.
-      const { graph: told } = await fresh(policy)
-      await told.observe([{ subject: 'caller:1', identifiers: ['phone:1'], at: T0 }, contact('mother', 'Maria', 'Lima', ['phone:1'])])
-      await told.speak({ subject: 'contact:child', identifiers: [...givenKeys(secret, 'Miguel'), ...namedKeys(secret, ['phone:1'], 'Miguel', 'Lima')] }, [{ subject: 'caller:1', identifiers: ['phone:1'] }], T0)
-      assert.deepEqual([await members(told, 'contact:mother'), await members(told, 'contact:child')], [['caller:1', 'contact:mother'], ['contact:child']])
-      assert.deepEqual(namedKeys(secret, ['device:desk'], 'Jose', 'Garcia'), [])
-      assert.deepEqual(namedKeys(secret, ['phone:1'], 'J.', 'Lima'), [])
-      assert.ok(!namedKeys(secret, ['phone:1'], 'Ana', 'de Silva').some((each) => namedKeys(secret, ['phone:1'], 'Ana', 'de Souza').includes(each)))
-      // Two dates are two people, whatever year they share, where the names are two.
-      const { graph: couple } = await fresh(policy)
-      await couple.observe([contact('a', 'Mark', 'Lima', ['phone:1', 'email:1'], '1980-03-04'), contact('b', 'Mary', 'Lima', ['phone:1', 'email:1'], '1980-11-20')])
-      assert.equal((await members(couple, 'contact:a')).length, 1)
       // His brother of another name is not him, and neither is a father of his name.
       await graph.speak({ subject: 'contact:c', identifiers: [...givenKeys(secret, 'Luis'), ...namedKeys(secret, ['phone:1'], 'Luis', 'Lima')] }, [{ subject: 'caller:1', identifiers: ['phone:1'] }], T0)
       assert.equal((await members(graph, 'contact:c')).length, 1)
       const { graph: home } = await fresh(policy)
       await home.observe([contact('a', 'Robert', 'Lima', ['phone:1'], '1990-02-03'), contact('b', 'Robert', 'Lima', ['phone:1'], '1961-08-09')])
       assert.equal((await members(home, 'contact:a')).length, 1)
-      // Given again from one browser with one number it is one person by another name. One of the two is a household's.
-      for (const [shared, together] of [[['device:d', 'phone:1'], true], [['device:d'], false], [['phone:1'], false]] as const) {
+      // Two known names that differ are two people, whatever they share.
+      for (const shared of [['device:d', 'phone:1'], ['device:d'], ['phone:1']]) {
         const { graph: again } = await fresh(policy)
-        await again.observe([contact('a', 'Carlos', 'Lima', [...shared]), contact('b', 'Maria', 'Lima', [...shared])])
-        assert.equal((await members(again, 'contact:a')).length === 2, together, shared.join())
-        assert.deepEqual(await again.verify(), [])
+        await again.observe([contact('a', 'Carlos', 'Lima', shared), contact('b', 'Maria', 'Lima', shared)])
+        assert.equal((await members(again, 'contact:a')).length, 1, shared.join())
       }
+      // It says nothing once its number is muted, and where too many hold it.
+      const { graph: muted } = await fresh(policy)
+      await muted.observe([contact('a', 'Maria', 'Garcia', ['phone:1']), contact('b', 'Maria', 'Garcia', ['phone:1'])])
+      assert.equal((await members(muted, 'contact:a')).length, 2)
+      await muted.ignore('phone:1')
+      assert.equal((await members(muted, 'contact:a')).length, 1)
+      assert.deepEqual(await muted.verify(), [])
     })
 
     test('a join overrules a fact, whichever is told first, and its undoing gives the fact back', async () => {
@@ -3201,6 +3198,13 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await recordText(graph, { id: 'RT', from: '+15550100190', to: ours, at: T0 + 90 * 60_000, text: 'hello?' })
       const again = await ringing(graph, call('+15550100190', 120))
       assert.deepEqual([again.known, again.subject, again.touch!.gclid, again.waiting, again.people.map((each) => each.subject)], [true, made.subject, 'G1', { calls: 1, texts: 1 }, ['visitor:1']])
+      // Two records of one number that a reviewer keeps apart are two people. The caller is at most one of them.
+      const line = `caller:${hashPhone('+15550100197')}`
+      await graph.observe([line, 'contact:wife', 'contact:husband'].map((subject) => ({ subject, identifiers: [`email:home`], at: T0 })))
+      await graph.separate('contact:wife', 'contact:husband')
+      const heard = await ringing(graph, call('+15550100197', 190))
+      assert.equal(heard.people.filter((each) => each.level === 'same').length, 1)
+      assert.equal(heard.people.length, 2)
       // A visitor who is another caller's is not shown for this one, nor one who is kept apart, nor a record that is.
       await graph.observe({ subject: 'visitor:1', identifiers: ['device:1', dialed(ours, T0 + 200 * 60_000)], at: T0 + 200 * 60_000, event: 'phone_click' })
       assert.equal((await ringing(graph, call('+15550100192', 201))).visitor, undefined)
