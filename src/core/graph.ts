@@ -22,7 +22,7 @@ import { UNNAMED, checkedReasons, defaultPolicy, earlierReasons, evidence, joins
 import type { Policy } from './policy.ts'
 import { dayIn, dayStart, dimension, fold, nextDay, paid, sourceOf } from './report.ts'
 import type { Credited } from './report.ts'
-import { commonClusters, confirmed, conflict, knownOf, partition, scorePairs } from './resolve.ts'
+import { commonClusters, components, confirmed, conflict, knownOf, partition, scorePairs } from './resolve.ts'
 import type { Known } from './resolve.ts'
 import { checkTags, touchTag } from './tags.ts'
 import type { CallLineKind, DecisionPage, Store, Tx } from './store.ts'
@@ -639,13 +639,20 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       }
     }
     const subjects = [...joined]
-    const separated = (await tx.separatedOf(subjects)).filter(([a, b]) => joined.has(a) && joined.has(b))
-    const said = two.filter(([a, b]) => joined.has(a) && joined.has(b))
-    const read = await known(tx, subjects, separated.length > 0 || said.length > 0)
+    const separations = await tx.separatedOf(subjects)
+    // Without fact cuts, only a component with both ends of a separation needs its staff joins read.
+    const groups = !policy.apart?.length && (separations.length || two.length) ? components(subjects, pairs) : undefined
+    const within = ([a, b]: [Subject, Subject]) => joined.has(a) && joined.has(b) && (!groups || groups.get(a) === groups.get(b))
+    const separated = separations.filter(within)
+    const said = two.filter(within)
+    const ends = [...separated.flat(), ...said.flat()]
+    const split = new Set(ends.map((subject) => groups?.get(subject)))
+    const need = groups ? subjects.filter((subject) => split.has(groups.get(subject))) : subjects
+    const read = await known(tx, need, ends.length > 0)
     if (changed && [...read.values()].some((own) => own.changed)) changed()
     const facts = previous ? previousFacts(read) : read
     // Where records have to be confirmed, when each was first seen can say whose a browser is.
-    const kept = unique([...(policy.records ? subjects : []), ...separated.flat(), ...said.flat(), ...[...facts].filter(([, own]) => own.facts.size || own.earlier?.facts.size).map(([subject]) => subject)])
+    const kept = unique([...(policy.records ? subjects : []), ...ends, ...[...facts].filter(([, own]) => own.facts.size || own.earlier?.facts.size).map(([subject]) => subject)])
     const since = new Map<Subject, number>()
     for (let i = 0; i < kept.length; i += TOGETHER) for (const [subject, at] of sinceOf(await tx.edgesOf(kept.slice(i, i + TOGETHER)))) since.set(subject, at)
     return partition(subjects, pairs, separated, policy, facts, undefined, said, since)

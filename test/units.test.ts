@@ -39,6 +39,26 @@ test('an IPv6 address keeps its /64 prefix and an IPv4 address stays whole', () 
   assert.equal(ip('203.0.113.9'), 'ip:203.0.113.9')
 })
 
+test('separations in one component share their link strengths', (t) => {
+  const subjects = Array.from({ length: 24 }, (_, i) => `record:${i}`)
+  const known = new Map<string, Known>(subjects.map((subject) => [subject, { facts: new Map(), joins: new Set(), things: new Set() }]))
+  const links: Pair[] = []
+  const apart: [string, string][] = []
+  for (const [i, a] of subjects.entries()) {
+    for (const step of [1, 2, 3]) {
+      const b = subjects[(i + step) % subjects.length]!
+      if (step === 1) for (const end of [a, b]) known.get(end)!.joins.add(`review:${i}`)
+      links.push({ a, b, score: 0.99, level: 'same', reasons: [] })
+    }
+    if (i < 8) apart.push([a, subjects[i + 12]!])
+  }
+  const log = t.mock.method(Math, 'log')
+  const labels = partition(subjects, links, apart, defaultPolicy, known)
+  for (const [a, b] of apart) assert.notEqual(labels.get(a)!.cluster, labels.get(b)!.cluster)
+  // Count strength calculations so the regression does not depend on how fast the machine is.
+  assert.ok(log.mock.callCount() <= links.length * 2, `${log.mock.callCount()} strengths for ${links.length} links`)
+})
+
 for (const [births, records] of [[2, 40], [100, 1]] as const) test(`birth cuts on a shared line skip pairs already apart (${births} by ${records})`, () => {
   let reads = 0
   const known = new class extends Map<string, Known> {
@@ -69,6 +89,23 @@ for (const [births, records] of [[2, 40], [100, 1]] as const) test(`birth cuts o
   assert.equal(labels.get(line)!.cluster, labels.get('record:0-0')!.cluster)
   // Count reads of facts instead of milliseconds: the machine running the suite does not set the limit.
   assert.ok(reads < known.size ** 2, `${reads} reads of ${known.size} subjects' facts`)
+})
+
+test('a restored staff join keeps the evidence between its two sides for later birth cuts', () => {
+  const known = new Map<string, Known>()
+  for (const subject of ['a', 'b', 'c', 'd', 'e', 'f']) {
+    const birth = ['e', 'f'].includes(subject) ? 'birth:two' : 'birth:one'
+    known.set(subject, { facts: new Map([['birth', new Set([birth])]]), joins: new Set(), things: new Set() })
+  }
+  const pair = (a: string, b: string, score: number, joined = false): Pair => {
+    if (joined) for (const subject of [a, b]) known.get(subject)!.joins.add(`review:${a}-${b}`)
+    return { a, b, score, level: 'same', reasons: [] }
+  }
+  const links = [pair('a', 'b', 0.98, true), pair('b', 'c', 0.9999, true), pair('c', 'd', 1, true), pair('a', 'e', 0.99), pair('b', 'f', 0.99), pair('e', 'f', 0.9)]
+  const cuts: string[] = []
+  const labels = partition(known.keys(), links, [['a', 'd'], ['b', 'd']], policyFrom({ apart: ['birth'] }), known, (a, b) => cuts.push([a, b].sort().join('-')))
+  assert.deepEqual([...labels.keys()].sort().map((subject) => labels.get(subject)!.cluster), ['a', 'a', 'c', 'c', 'e', 'e'])
+  assert.deepEqual(cuts.sort(), ['a-e', 'b-c', 'b-f'])
 })
 
 test('scoring ignores the order of its input', () => {

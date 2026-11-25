@@ -486,11 +486,16 @@ function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subj
   }
 
   apart.sort((x, y) => (x[0] === y[0] ? (x[1] < y[1] ? -1 : 1) : x[0] < y[0] ? -1 : 1))
-  const cutApart = (a: Subject, b: Subject) => {
-    if (adjacency.get(a)!.has(b)) onCut?.(a, b)
+  // A later separation can make an earlier cut unnecessary. Keep its original score until all decisions are honoured.
+  const removed: [Subject, Subject, number][] = []
+  const cutApart = (a: Subject, b: Subject, reconsider = false) => {
+    const score = adjacency.get(a)!.get(b)
+    if (score === undefined) return
+    if (reconsider && apart.length > 1) removed.push([a, b, score])
+    else onCut?.(a, b)
     cut(a, b)
   }
-  for (const [a, b] of apart) cutApart(a, b)
+  for (const [a, b] of apart) cutApart(a, b, true)
   // A cut that could be made in two places is made beside whoever came later, so a shared browser stays with the first.
   const later = (a: Subject, b: Subject): [Subject, Subject] => ((since.get(a) ?? 0) < (since.get(b) ?? 0) ? [b, a] : [a, b])
   // Kept by pair, because the cuts ask of the same links over and over.
@@ -501,16 +506,34 @@ function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subj
     if (found === undefined) answered.get(a)!.set(b, (found = [...(known.get(a)?.joins ?? [])].some((identifier) => known.get(b)?.joins.has(identifier))))
     return found
   }
-  let priority = 0
-  for (const pair of apart) {
-    const [source, target] = later(...pair)
-    let found = minimumCut(adjacency, source, target)
-    if (found.some(([x, y]) => decided(x, y))) {
-      // One more decision costs more than all the evidence in the component. Among cuts that lose as many, the old strengths decide.
-      if (!priority) priority = links.reduce((sum, link) => sum + strength(link.score), 1)
-      found = minimumCut(adjacency, source, target, (x, y, score) => decided(x, y) ? priority + strength(score) : 0)
+  if (apart.length) {
+    const network = cutNetwork(adjacency, members)
+    const weights = new Map<number, number>()
+    let priority = 1
+    for (const { score } of links) {
+      if (!weights.has(score)) weights.set(score, strength(score))
+      priority += weights.get(score)!
     }
-    for (const [x, y] of found) cutApart(x, y)
+    const ordinary = network.costs((_a, _b, score) => weights.get(score)!)
+    let reviewed: Float64Array | undefined
+    for (const pair of apart) {
+      const [source, target] = later(...pair)
+      let found = network.between(source, target, ordinary)
+      if (found.some(([x, y]) => decided(x, y))) {
+        // One more decision costs more than all the evidence. Both sets of costs follow the same cuts.
+        reviewed ??= network.costs((a, b, score) => weights.get(score)! + (decided(a, b) ? priority : 0))
+        found = network.between(source, target, reviewed)
+      }
+      for (const [a, b] of found) {
+        cutApart(a, b, true)
+        network.remove(a, b, ordinary)
+        if (reviewed) network.remove(a, b, reviewed)
+      }
+    }
+  }
+  if (removed.length) {
+    restoreJoins(adjacency, apart, removed, decided)
+    for (const [a, b] of removed) if (!adjacency.get(a)!.has(b)) onCut?.(a, b)
   }
   // Facts come after decisions, and cut no link a decision made: two held together by those alone stay together.
   // That a call was about one, and another call about the other, does not say the two are one: a telephone is many people's.
@@ -616,6 +639,30 @@ function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subj
   return pieces(adjacency)
 }
 
+/** Restores each staff join whose pieces can be put together without crossing a separation. */
+function restoreJoins(adjacency: Adjacency, apart: readonly [Subject, Subject][], removed: readonly [Subject, Subject, number][], decided: (a: Subject, b: Subject) => boolean): void {
+  const joins = removed.filter(([a, b]) => decided(a, b)).map(([a, b]) => a < b ? [a, b] as const : [b, a] as const)
+  if (!joins.length) return
+  joins.sort(([a, b], [x, y]) => a === x ? (b < y ? -1 : 1) : a < x ? -1 : 1)
+  const where = new Map<Subject, Subject[]>()
+  for (const piece of pieces(adjacency)) for (const subject of piece) where.set(subject, piece)
+  for (const [a, b] of joins) {
+    const one = where.get(a)!
+    const other = where.get(b)!
+    if (one === other || apart.some(([x, y]) => (where.get(x) === one && where.get(y) === other) || (where.get(x) === other && where.get(y) === one))) continue
+    const [keep, move] = one.length >= other.length ? [one, other] : [other, one]
+    for (const subject of move) {
+      where.set(subject, keep)
+      keep.push(subject)
+    }
+  }
+  // Facts and weak bridges must see all the evidence between the reunited pieces.
+  for (const [a, b, score] of removed) if (where.get(a) === where.get(b)) {
+    adjacency.get(a)!.set(b, score)
+    adjacency.get(b)!.set(a, score)
+  }
+}
+
 /** Puts pieces that name nobody back on the one named piece the removed links lead to, whether at once or through others like them. */
 function regroup(cut: Subject[][], removed: readonly [Subject, Subject][], policy: Policy): Subject[][] {
   if (removed.length === 0) return cut
@@ -689,43 +736,82 @@ const FIRM = 1e13
 function minimumCut(adjacency: Adjacency, source: Subject, target: Subject, firm: (a: Subject, b: Subject, score: number) => number = () => 0): [Subject, Subject][] {
   const piece = reach(adjacency, source)
   if (!piece.has(target)) return []
-  const residual = new Map<Subject, Map<Subject, number>>()
-  for (const node of piece) {
-    residual.set(node, new Map([...adjacency.get(node)!].map(([next, score]) => [next, firm(node, next, score) || strength(score)])))
-  }
+  const network = cutNetwork(adjacency, piece)
+  return network.between(source, target, network.costs((a, b, score) => firm(a, b, score) || strength(score)))
+}
 
-  for (;;) {
-    const from = new Map<Subject, Subject>()
-    const queue = [source]
-    for (let i = 0; i < queue.length && !from.has(target); i++) {
-      for (const [next, room] of residual.get(queue[i]!)!) {
-        if (room <= 0 || next === source || from.has(next)) continue
-        from.set(next, queue[i]!)
-        queue.push(next)
+/** Index the two directions of each link once. Keep the neighbours in their original order for tied paths and cut reports. */
+function cutNetwork(adjacency: Adjacency, members: Iterable<Subject>) {
+  const names = [...members]
+  const index = new Map(names.map((subject, i) => [subject, i]))
+  const first = [0]
+  let size = 0
+  const links = names.map((subject) => {
+    const numbered = new Map<Subject, number>()
+    for (const next of adjacency.get(subject)!.keys()) numbered.set(next, size++)
+    first.push(size)
+    return numbered
+  })
+  const from = new Int32Array(size)
+  const to = new Int32Array(size)
+  const reverse = new Int32Array(size)
+  for (const [i, node] of names.entries()) for (const [next, arc] of links[i]!) {
+    from[arc] = i
+    to[arc] = index.get(next)!
+    reverse[arc] = links[to[arc]!]!.get(node)!
+  }
+  const costs = (weight: (a: Subject, b: Subject, score: number) => number) => {
+    const out = new Float64Array(size)
+    for (const [i, a] of names.entries()) for (const [b, score] of adjacency.get(a)!) out[links[i]!.get(b)!] = weight(a, b, score)
+    return out
+  }
+  const remove = (a: Subject, b: Subject, cost: Float64Array) => {
+    const arc = links[index.get(a)!]!.get(b)!
+    cost[arc] = cost[reverse[arc]!] = 0
+  }
+  const residual = new Float64Array(size)
+  const queue = new Int32Array(names.length)
+  const parent = new Int32Array(names.length)
+  const between = (a: Subject, b: Subject, cost: Float64Array): [Subject, Subject][] => {
+    const source = index.get(a)!
+    const target = index.get(b)!
+    if (source === target) return []
+    residual.set(cost)
+    for (;;) {
+      parent.fill(-1)
+      parent[source] = -2
+      queue[0] = source
+      let length = 1
+      for (let i = 0; i < length && parent[target] === -1; i++) {
+        const node = queue[i]!
+        for (let arc = first[node]!; arc < first[node + 1]!; arc++) {
+          const next = to[arc]!
+          if (residual[arc]! <= 0 || parent[next] !== -1) continue
+          parent[next] = arc
+          queue[length++] = next
+        }
+      }
+      if (parent[target] === -1) {
+        // This last search reached exactly the source side of the cut, in reporting order.
+        const out: [Subject, Subject][] = []
+        for (let i = 0; i < length; i++) {
+          const node = queue[i]!
+          for (let arc = first[node]!; arc < first[node + 1]!; arc++) {
+            const next = to[arc]!
+            if (cost[arc]! > 0 && parent[next] === -1) out.push([names[node]!, names[next]!])
+          }
+        }
+        return out
+      }
+      let room = Infinity
+      for (let arc = parent[target]!; arc >= 0; arc = parent[from[arc]!]!) room = Math.min(room, residual[arc]!)
+      for (let arc = parent[target]!; arc >= 0; arc = parent[from[arc]!]!) {
+        residual[arc] = residual[arc]! - room
+        residual[reverse[arc]!] = residual[reverse[arc]!]! + room
       }
     }
-    if (!from.has(target)) break
-    let room = Infinity
-    for (let node = target; node !== source; node = from.get(node)!) room = Math.min(room, residual.get(from.get(node)!)!.get(node)!)
-    for (let node = target; node !== source; node = from.get(node)!) {
-      const before = from.get(node)!
-      residual.get(before)!.set(node, residual.get(before)!.get(node)! - room)
-      residual.get(node)!.set(before, residual.get(node)!.get(before)! + room)
-    }
   }
-
-  const near = new Set([source])
-  const queue = [source]
-  for (let i = 0; i < queue.length; i++) {
-    for (const [next, room] of residual.get(queue[i]!)!) {
-      if (room <= 0 || near.has(next)) continue
-      near.add(next)
-      queue.push(next)
-    }
-  }
-  const out: [Subject, Subject][] = []
-  for (const node of near) for (const next of adjacency.get(node)!.keys()) if (!near.has(next)) out.push([node, next])
-  return out
+  return { costs, remove, between }
 }
 
 /**

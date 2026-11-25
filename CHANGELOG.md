@@ -26,6 +26,7 @@
 
 ### People
 
+- `verify` and `rebuild` reread edges for staff joins only in components that may need a cut when the policy has no `apart` facts.
 - `lookup` `match` checks a caller’s own facts for conflicts with a proposed record.
 - `given` now has a documented example distinguishing a recognized nickname from an exact name key.
 - `apart` recognizes Catherine and Katherine, Kaitlyn and Caitlin, and Gerald and Jerry as forms of the same given names. Reporting these names again records their new keys.
@@ -37,6 +38,8 @@
 - A link below `policy.bridge` (default 0.97) cannot join two groups by itself. `Rule.group` counts grouped kinds once, and `Rule.corroborates` marks kinds that confirm a link.
 - `decide` merges, unmerges, splits, unsplits, mutes and unmutes. `seen` refuses a decision an unseen one has overtaken (`STALE`).
 - `split` cuts guessed links first and breaks a merge only when the separation requires it. Existing clusters need a rebuild after upgrading.
+- `split` reuses the indexed links and their strengths for successive staff separations in one component.
+- `split` restores a merge when later cuts allow both groups to come together and all staff separations still hold.
 - `unmerge` takes a pair. It is refused with `NOT_JOINED` where nobody merged the two, and `notAsAsked` names the pairs that still stand another way.
 - `forget` deletes up to 50 subjects and says which of their conversions had reached an ad platform. The answer is kept with its key.
 - `lookup` `match`, `find`, `caller` and `conflicts` write nothing. Answers name kinds of evidence and no identifier.

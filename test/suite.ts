@@ -427,6 +427,22 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       }
     })
 
+    test('a second separation leaves the staff joins that honour both decisions together', async () => {
+      for (const reversed of [false, true]) {
+        const { graph } = await fresh()
+        const reports = [
+          () => graph.join('a', 'b'), () => graph.join('b', 'c'), () => graph.join('c', 'd'),
+          () => graph.separate('b', 'd'), () => graph.separate('a', 'd'),
+        ]
+        for (const report of reversed ? reports.reverse() : reports) {
+          await report()
+          assert.deepEqual(await graph.verify(), [])
+        }
+        assert.deepEqual(await members(graph, 'a'), ['a', 'b'])
+        assert.deepEqual(await members(graph, 'd'), ['c', 'd'])
+      }
+    })
+
     test('a separation along a path made entirely by staff cuts one join', async () => {
       const { graph } = await fresh()
       await graph.join('a', 'b', { by: 'desk' })
@@ -500,6 +516,32 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       for (const id of ['a1', 'B1', '_x', 'a-1', 'a 1']) await graph.observe(chain('email', id, `${id}~`))
       assert.deepEqual((await graph.clusters()).map((cluster) => cluster.id), ['B1', '_x', 'a 1', 'a-1', 'a1'])
       assert.deepEqual((await graph.clusters(2)).map((cluster) => cluster.id), ['B1', '_x'])
+    })
+
+    test('verifying separations only rereads edges in components they split when no facts keep people apart', async () => {
+      const { graph, store } = await fresh()
+      await graph.observe(Array.from({ length: 50 }, (_, i) => chain('email', `account:${i}-a`, `account:${i}-b`)).flat())
+      await graph.join('account:0-b', 'account:extra')
+      const read = new Set<string>()
+      const counted = createGraph({
+        ...store,
+        read: (fn) => store.read((tx) => fn({
+          ...tx,
+          edgesOf: (subjects) => {
+            for (const subject of subjects) read.add(subject)
+            return tx.edgesOf(subjects)
+          },
+        })),
+      })
+      // Both records already belong to different components.
+      await graph.separate('account:1-a', 'account:2-b')
+      assert.deepEqual(await counted.verify(), [])
+      assert.deepEqual([...read], [])
+      // The join from b to extra must survive the cut between a and extra.
+      await graph.separate('account:0-a', 'account:extra')
+      assert.deepEqual(await members(graph, 'account:extra'), ['account:0-b', 'account:extra'])
+      assert.deepEqual(await counted.verify(), [])
+      assert.deepEqual([...read].filter((subject) => !['account:0-a', 'account:0-b', 'account:extra'].includes(subject)), [])
     })
 
     test('the version changes with every write and with nothing else', async () => {

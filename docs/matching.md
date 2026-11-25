@@ -87,7 +87,7 @@ Notes give no evidence and link nothing.
 Every subject reachable over `same` links forms a component. When checking a name changes a link, the component also includes the subjects reachable under the earlier spelling so a later report can update everyone affected. Three cuts, applied in order, divide a component into clusters.
 
 1. **Separated pairs.** The direct link of each separated pair is removed, and of each pair whose [facts differ](#facts-that-keep-people-apart).
-2. **Paths between separated pairs.** If a pair that staff separated is still connected through others, the graph cuts guessed links wherever that keeps every active merge. If a path consists entirely of merges, the separation stands and the cut breaks as few merged links as possible. Among cuts that break the same number, it takes the weakest set of links. [Facts that keep people apart](#facts-that-keep-people-apart) have their own rules for merges.
+2. **Paths between separated pairs.** If a pair that staff separated is still connected through others, the graph cuts guessed links wherever that keeps every active merge. If a path consists entirely of merges, the separation stands and the cut breaks as few merged links as possible. Among cuts that break the same number, it takes the weakest set of links. After all separations hold, the graph reconsiders the merges it cut, in order of the two subject IDs. It restores a merge if the two groups can come together while every separated pair stays apart. Guessed links inside the reunited group count again when applying the [rules for conflicting facts](#facts-that-keep-people-apart).
 3. **Weak bridges.** A link below 0.97 (`bridge`) cannot be the sole connection between two groups of two or more subjects. The weakest is cut first, until none remains. It may still add a single subject to a group. A group that names nobody, made only of browsers and phone numbers that called (`visitor:`, `caller:` and `call:`), then goes back to the named group it was cut from, if there is exactly one. With none or several, it stays apart.
 
 For example, a chain of four accounts, each sharing one machine with the next, becomes two pairs. If the outer two also share a phone, all four form one cluster, because the groups are then connected twice.
@@ -98,8 +98,10 @@ A cluster above 50 members (`review`) is flagged `oversized`. Clusters that larg
 
 | Cut | Method | Cost and behavior |
 | --- | --- | --- |
-| Separated pairs | All direct links between separated pairs are removed. Each pair still connected is processed in order of ID by a maximum flow using shortest paths (Edmonds–Karp). After preserving as many merges as possible, the cut minimizes total strength. Strength is `−log(1 − score)`, capped and rounded. If several cuts tie, the one nearest the subject with the later first sighting wins. Equal times favor the cut nearest the smaller ID. | Each flow is at worst `O(V·E²)` in the subjects and links of one component. |
+| Separated pairs | All direct links between separated pairs are removed. Each pair still connected is processed in order of ID by a maximum flow using shortest paths (Edmonds–Karp). After preserving as many merges as possible, the cut minimizes total strength. Strength is `−log(1 − score)`, capped and rounded. If several cuts tie, the one nearest the subject with the later first sighting wins. Equal times favor the cut nearest the smaller ID. | The flows for staff separations share one index of the component’s links and their strengths. Each flow takes at worst `O(V·E²)` time and `O(V+E)` space for `V` subjects and `E` links. |
 | Weak bridges | Links below `bridge` are removed as described above. | The rule is off when `bridge` is at or below `same`. |
+
+With no `apart` facts, a full verification or rebuild rereads edges for staff joins only in components containing both ends of a separation or a link that says two people are different.
 
 Once a cut separates two records, later comparisons of their birth dates can skip the search for a path. The remaining pairs are cut in the same order.
 
@@ -424,7 +426,7 @@ A pair labelled both ways is left out and counted.
 - **Conflict checks.** account-graph runs none. A `split` acts on pairs you already know, and whom you may serve stays your decision.
 - **Splits from your own systems.** They are applied as received.
 - **Shared browsers.** A browser that both sides and a third person used can still be reached from each side.
-- **Many separations in one component.** Pairs are cut one after another, which can remove more in total than the best combined cut. The exact multicut or multiway cut is hard to compute.
+- **Many separations in one component.** Each merge left out by the separations would reconnect a separated pair. A different choice of cuts could still keep more merges overall. The exact multicut or multiway cut is hard to compute.
 - **Three dates of birth on two lines.** Where staff joined two lines to people of three or more dates, more of those joins can be left out than need be, and which ones can depend on ids. One review met it in 3 of 15,000 random graphs.
 - **Score calibration.** Clusters come from the cuts above and carry no probability.
 - **Matches.** It covers subjects in the newest 10,000 sightings. A speaker mark on any member of either person’s cluster keeps the pair out of Matches, even when the mark is older.
