@@ -114,7 +114,7 @@ export async function startFirm({ databaseUrl }: Kept, { ports = [0, 0], quick =
     now: clock, fetch: platform, stages: STEPS, linkSecret: SECRET, identifierSecret: SECRET, workers: false, timeoutMs: 120_000,
     phones: { numbers: LINES, resultsExpectedWithinMinutes: 30, returnHours: 24, pool: { numbers: ['+15550100111', '+15550100112'], minutes: 15, graceMinutes: 120 } },
     ads: { google: { customerId: '000-000-0000', serviceAccount: { client_email: 'demo@example.org', private_key: privateKey } } },
-    alerts: { url: `${siteAt}/hook` }, monitor: { quietHours: { touches: 24, calls: 12, results: 24, costs: 48 } },
+    alerts: { url: `${siteAt}/hook` }, targets: { answered: 0.9, returned: 0.8, callbackHours: 4 }, monitor: { quietHours: { touches: 24, calls: 12, results: 24, costs: 48 } },
   }
   const firm = accountGraph(databaseUrl ? { ...settings, databaseUrl, receiptSecrets: [SECRET] } : { ...settings, memory: true })
   const { engine, ops } = await internalsOf(firm)!()
@@ -353,7 +353,7 @@ export async function startFirm({ databaseUrl }: Kept, { ports = [0, 0], quick =
   const sends = (id: string) => record<'text'>({ type: 'text', key: id, direction: 'outbound', from: demo.line, to: demo.phone })
 
   /** The scenes, in order. Each does over HTTP what the site, the phone system or the office would, and says what came of it. */
-  const scenes: { title: string; text: string; see: [string, string]; stage?: string; spot?: string[]; shown?: Shown; run(): Promise<Told> }[] = [
+  const scenes: { title: string; text: string; see: [string, string]; stage?: string; spot?: string[]; /** The detail card it opens, by its key. */ open?: string; shown?: Shown; run(): Promise<Told> }[] = [
     {
       title: 'Ad visit', text: 'They search, tap the Spanish ad for the North office, and land on the site.', see: ['Channels', review('channels')], stage: `#/journey/${encodeURIComponent('visitor:v-4821')}`, spot: [names.spanish], shown: { phone: 'site' },
       async run() {
@@ -402,7 +402,7 @@ export async function startFirm({ databaseUrl }: Kept, { ports = [0, 0], quick =
         const { candidates } = await office.lookup({ kind: 'match', facts, at: clock() })
         const [met] = candidates
         const checked = `${candidates.some(({ subject }) => subject.startsWith('contact:')) ? 'Possible duplicate' : 'No duplicate on file'}${met ? ` · a ${met.subject.split(':')[0]}${met.members.some((member) => member.startsWith('visitor:')) ? ' and a site visit' : ''}, by ${met.kinds[0]}` : ''}`
-        await record<'profile'>({ type: 'profile', subject: demo.contact, facts, event: 'inquiry' })
+        await record<'profile'>({ type: 'profile', subject: demo.contact, facts, createdAt: clock(), event: 'inquiry' })
         await steps('inquiry')
         const sure = await credit()
         return { lines: [`The call and the visit are now tied to a name. Ad credit: ${Math.round(sure.share * 100)}%, below the 90% it takes.`], credit: sure, checked }
@@ -526,6 +526,31 @@ export async function startFirm({ databaseUrl }: Kept, { ports = [0, 0], quick =
       },
     },
     {
+      title: 'Shared line', text: 'The other side calls from the family phone. Staff say who the call was with, and it is on that timeline.', see: ['Journey', review(`journey/${encodeURIComponent(demo.other)}`)], spot: ['Record holder confirmed'],
+      async run() {
+        await at(3, 16, 34)
+        await record<'call'>({ type: 'call', key: 'demo-5', direction: 'inbound', from: demo.phone, to: demo.line, duration: 180, result: { answered: true } })
+        const onTimeline = async () => (await office.lookup({ kind: 'journey', subject: demo.contact })).entries.some((entry) => entry.kind === 'call' && entry.call === 'demo-5')
+        const before = await onTimeline()
+        const shown = await office.lookup({ kind: 'party', call: 'demo-5' })
+        await record<'call_update'>({ type: 'call_update', key: 'demo-party-1', call: 'demo-5', change: { kind: 'party', role: 'self', subject: demo.other, by: 'dana', seen: shown?.key ?? null } })
+        const now = await office.lookup({ kind: 'record', type: 'call', key: 'demo-5', at: clock() })
+        return { lines: [`By the number, on Inés’s timeline: ${before ? 'yes' : 'no'}. Said by dana: ${now?.type === 'call' ? now.subject : 'nothing'}.`, `On Inés’s timeline now: ${(await onTimeline()) ? 'yes' : 'no'}.`] }
+      },
+    },
+    {
+      title: 'Two at one call', text: 'Somebody else at the firm has the same call open, and saves another answer. They are told of the first.', see: ['Journey', review(`journey/${encodeURIComponent(demo.other)}`)], spot: ['Record holder confirmed'],
+      async run() {
+        await at(3, 16, 36)
+        // Sent as their own program would: they saw a call nobody had said anything of.
+        const { results: [second] } = await office.record({ entries: [{ type: 'call_update', key: `demo-party-2-${boot}`, at: clock(), call: 'demo-5', change: { kind: 'party', role: 'self', subject: demo.contact, by: 'lee', seen: null } }] })
+        const stands = await office.lookup({ kind: 'party', call: 'demo-5' })
+        const refused = second && !second.ok && second.reason === 'STALE' ? `Refused: ${second.by} answered first` : 'Taken'
+        const card = { title: 'Who was on this call', path: 'record call_update', fields: [['Saved by', 'lee, Inés Vega'], ['Answer', refused], ['Stands', `${stands && 'subject' in stands ? 'Tomás Vega' : 'Nobody'}, by ${stands?.by}`]] as [string, string][] }
+        return { lines: [`${refused}. The call stays as dana left it.`], card }
+      },
+    },
+    {
       title: 'Listing call', text: 'A call to a number published on a map listing is attributed to that listing.', see: ['Channels', review('channels')], spot: [names.listing],
       async run() {
         await at(3, 16, 40)
@@ -553,6 +578,45 @@ export async function startFirm({ databaseUrl }: Kept, { ports = [0, 0], quick =
         await record<'profile'>({ type: 'profile', subject: 'contact:teo-lago', facts: { phone: '+15550100044', name: { first: 'Teo', last: 'Lago' }, dob: '2001-07-08' }, event: 'staff entry' })
         const { joined, score } = await screen('/between?a=contact:marta-lago&b=contact:teo-lago')
         return { lines: [`Linked at ${Math.round(score * 100)}% by phone: ${joined ? 'joined' : 'related'}.`] }
+      },
+    },
+    {
+      title: 'Join kept', text: 'The parent is on file twice. Staff join the two, then separate parent and child. The join holds.', see: ['Accounts', review('accounts/contact:marta-lago')],
+      async run() {
+        await at(3, 16, 47)
+        await record<'profile'>({ type: 'profile', subject: 'contact:marta-lago-2', facts: { phone: '+15550100044', name: { first: 'Marta', last: 'Lagos' } }, event: 'staff entry' })
+        await office.decide({ key: `join-${boot}`, at: clock(), by: 'dana', action: 'merge', pairs: [{ a: 'contact:marta-lago', b: 'contact:marta-lago-2', reason: 'one person, entered twice' }] })
+        for (const marta of ['contact:marta-lago', 'contact:marta-lago-2']) await office.decide({ key: `apart-${marta}-${boot}`, at: clock(), by: 'dana', action: 'split', pairs: [{ a: marta, b: 'contact:teo-lago', reason: 'parent and child' }] })
+        const [martas, family] = [await screen('/between?a=contact:marta-lago&b=contact:marta-lago-2'), await screen('/between?a=contact:marta-lago&b=contact:teo-lago')]
+        return { lines: [`Marta’s two contacts: ${martas.joined ? 'joined' : 'apart'}. Marta and Teo: ${family.joined ? 'joined' : 'separated'}.`] }
+      },
+    },
+    {
+      title: 'Newborns', text: 'Twins are entered on their first day, before they have names. A placeholder name and a birthday in common do not make them one.', see: ['Matches', review('decide')], spot: ['newborn-1'],
+      async run() {
+        await at(3, 16, 49)
+        const dob = new Date(clock() - DAY).toISOString().slice(0, 10)
+        for (const n of [1, 2]) await record<'profile'>({ type: 'profile', subject: `contact:newborn-${n}`, facts: { phone: '+15550100048', name: { first: 'Baby Girl', last: 'Ibarra' }, dob }, event: 'staff entry' })
+        const { joined, score } = await screen('/between?a=contact:newborn-1&b=contact:newborn-2')
+        return { lines: [`Linked at ${Math.round(score * 100)}%: ${joined ? 'joined' : 'related'}.`] }
+      },
+    },
+    {
+      title: 'Stop on a retry', text: 'A text is reported twice, the first time without its words. The second says STOP, and is not lost.', see: ['Journey', review(`journey/${encodeURIComponent(`caller:${hashPhone('+15550100046')}`)}`)], spot: ['Asked for no more texts'],
+      async run() {
+        await at(3, 16, 51)
+        const text = { type: 'text', key: 'demo-text-5', direction: 'inbound', from: '+15550100046', to: '+15550100102', at: clock() } as const
+        await record<'text'>(text)
+        const before = (await personOf('contact:rosa-marin')).textsOptedOut
+        const again = await record<'text'>({ ...text, text: 'STOP' })
+        const after = (await personOf('contact:rosa-marin')).textsOptedOut
+        return { lines: [`First: ${before ? 'no more texts' : 'may be texted'}. Again, with STOP: ${after ? 'no more texts' : 'may be texted'}.${again.optOutAdded ? ' The opt-out was added.' : ''}`] }
+      },
+    },
+    {
+      title: 'What is behind a number', text: 'The icon beside a number opens what it is made of, and how it stands to the target the firm set.', see: ['Calls', review('calls')], open: 'calls.answered',
+      async run() {
+        return { lines: ['Opened from the number. Nothing was recorded.'] }
       },
     },
     {

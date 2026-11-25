@@ -19,7 +19,7 @@ for (const practice of ['family', 'injury'] as const) test(`every scene of the $
   // The bar is idle before the scenes have arrived, and the phone is shown once they have.
   assert.equal(await until('the phone', () => run(`document.body.classList.contains('with-phone') && document.querySelector('.device').dataset.state`)), 'ad')
   const { scenes } = (await run(`fetch('/stage/scenes').then((answer) => answer.json())`)) as { scenes: { title: string; see: [string, string]; spot?: string[] }[] }
-  assert.equal(scenes.length, 21)
+  assert.equal(scenes.length, 27)
   const links = scenes.map(({ see }) => see[1])
   // Only the stage moves the story on.
   assert.equal((await fetch(`${firm.graph}/stage/run`, { method: 'POST' })).status, 403)
@@ -66,9 +66,15 @@ for (const practice of ['family', 'injury'] as const) test(`every scene of the $
     [new RegExp(`Sent to the sample ad platform: ${kind.value} USD, for the first ad click`), (text) => (new RegExp(`${kind.won} · ${first} USD[^]{0,120}Sent to google`).test(text) ? 'sent' : '')],
     [new RegExp(`Initial value ${kind.value} USD, current value ${kind.later} USD.*ad platform: ${kind.later} USD`), (text) => (text.includes(`from ${first} USD to ${kind.later.toLocaleString('en-US')} USD`) ? 'restated' : '')],
     [/Before: joined.*Same cluster: no/, (text) => (text.includes('contact:tomas-vega') && /separated/i.test(text) ? 'separated' : '')],
+    [/By the number, on Inés’s timeline: yes\. Said by dana: contact:tomas-vega\. On Inés’s timeline now: no\./, (text) => (/Duration 180 s · Record holder confirmed by dana/.test(text) ? 'his call' : '')],
+    [/Refused: dana answered first\. The call stays as dana left it\./, (text) => (/confirmed by (\w+)/.exec(text)?.[1] ?? '')],
     [new RegExp(`Attributed to ${said(names.listing)}`), (text) => row(text, names.listing)],
     [new RegExp(`Step recorded: inquiry\\. Credited to ${said(names.river)} at 9\\d%, by the browser`), (text) => (text.includes('contact:rosa-marin') ? 'in inquiry' : '')],
     [/Linked at 85% by phone: related/, (text) => (text.includes('contact:marta-lago') && text.includes('contact:teo-lago') ? 'a pair' : '')],
+    [/Marta’s two contacts: joined\. Marta and Teo: separated\./, (text) => (text.includes('contact:marta-lago-2') && /separated/i.test(text) ? 'joined and apart' : '')],
+    [/Linked at 85%: related/, (text) => (text.includes('contact:newborn-1') && text.includes('contact:newborn-2') ? 'a pair' : '')],
+    [/First: may be texted\. Again, with STOP: no more texts\. The opt-out was added\./, (text) => (text.includes('Asked for no more texts') ? 'stopped' : '')],
+    [/Opened from the number\. Nothing was recorded\./, () => 'nothing new'],
     [/no calls for 12 hours/, (text) => (text.includes('Calls feed is stale') ? 'quiet' : '')],
   ]
   function row(text: string, name: string, length = 120) {
@@ -88,14 +94,16 @@ for (const practice of ['family', 'injury'] as const) test(`every scene of the $
     assert.equal(await run(`document.body.classList.contains('with-phone')`), i < 14)
     assert.equal(await run(`document.getElementById('stage-light').classList.contains('on')`), Boolean(scenes[i]!.spot), `scene ${i + 1} lights its row`)
     // Until the last scene every feed is within its limit, however far the clock has moved.
-    if (i < 20) assert.deepEqual((await feeds()).filter(([, , quiet]) => quiet), [], `the feeds after scene ${i + 1}`)
+    if (i < scenes.length - 1) assert.deepEqual((await feeds()).filter(([, , quiet]) => quiet), [], `the feeds after scene ${i + 1}`)
     // While it rings, the firm's own screen says where the caller came from.
     if (i === 1) assert.match((await run(`document.getElementById('stage-desk').textContent`)) as string, new RegExp(`Incoming call.*New, \\(555\\) 010-0042.*google · ${said(names.spanish)}.*/es.*No missed calls`))
     if (scenes[i]!.title === 'Details entered') assert.match((await run(`document.getElementById('stage-desk').textContent`)) as string, /Contact saved.*No duplicate on file · a caller and a site visit, by phone POST \/match/)
     if (scenes[i]!.title === 'Separation') assert.match((await run(`document.getElementById('stage-desk').textContent`)) as string, /Conflict check.*Inés Vega, Tomás Vega.*Kept apart, on record/)
+    if (scenes[i]!.title === 'Two at one call') assert.match((await run(`document.getElementById('stage-desk').textContent`)) as string, /Who was on this call.*Refused: dana answered first.*Tomás Vega, by dana/)
+    if (scenes[i]!.title === 'What is behind a number') assert.match((await run(`document.getElementById('card').matches(':popover-open') ? document.getElementById('card').innerText : ''`)) as string, /Answered[^]*Target 90%, set by you/)
     const after = seen(await view(links[i]!))
     // A link that was made and not opened changes nothing in the account.
-    if (scenes[i]!.title === 'Form texted') assert.equal(after, before)
+    if (['Form texted', 'Two at one call', 'What is behind a number'].includes(scenes[i]!.title)) assert.equal(after, before)
     else assert.ok(after && after !== before, `scene ${i + 1} shows on its view: ${JSON.stringify([before, after])}`)
   }
   // The clock moved, and of the four feeds only the calls have been silent too long. Every visit is recorded at the firm's address.

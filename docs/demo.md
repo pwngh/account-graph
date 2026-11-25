@@ -41,7 +41,7 @@ The story runs from a Monday to a Thursday that have passed. Each scene moves th
 | 2 | A phone tap, what the firm's screen says while it rings, and a call held uncounted until its result | Accounts |
 | 3 | A caller who hung up in the queue: missed, uncounted, unsent | Board |
 | 4 | A call back that reaches the person | Journey |
-| 5 | Details entered by staff, checked for a duplicate first: the contact is tied to the call by phone at 85%, and the ad is not credited | Accounts |
+| 5 | Details entered by staff, checked for a duplicate first: the contact is tied to the call by phone at 85%, and the ad is not credited. Accounts shows when the firm's system created the contact | Accounts |
 | 6 | A signed link to the form, recorded with its purpose and texted to the contact | Accounts |
 | 7 | The link opened in the browser of the visit: tied at 92%, and the ad is credited | Accounts |
 | 8, 9 | A form sent and documents signed, on the same person | Board |
@@ -53,10 +53,16 @@ The story runs from a Monday to a Thursday that have passed. Each scene moves th
 | 15 | The conversion sent to the ad platform for the first ad click | Journey |
 | 16 | The client's value restated, from 400 to 1,250 | Journey |
 | 17 | The other side of the matter with the same family phone and email, separated by the case system, and the answer to a conflict check | Accounts |
-| 18 | A call to a map listing's number, without a page load, filed under that listing | Channels |
-| 19 | The form on the site in place of a call, credited by the browser | Board |
-| 20 | A parent and child on one phone: related without joining | Matches |
-| 21 | A night without calls: the calls feed is stale and an alert is delivered, while visits, results and costs are within their limits | Health |
+| 18 | The other side calls from the family phone. Staff say who the call was with, and it leaves the contact's timeline | Journey |
+| 19 | A second member of staff saves another answer for the same call, and is refused: the first answer stands | Journey |
+| 20 | A call to a map listing's number, without a page load, filed under that listing | Channels |
+| 21 | The form on the site in place of a call, credited by the browser | Board |
+| 22 | A parent and child on one phone: related without joining | Matches |
+| 23 | The parent entered twice: staff join the two, then separate parent and child, and the join holds | Accounts |
+| 24 | Twins entered as Baby Girl, with one birthday and one phone: related without joining | Matches |
+| 25 | A text reported without its words, then again with STOP: the opt-out is taken on the retry | Journey |
+| 26 | The detail card behind Answered, with the target the firm set | Calls |
+| 27 | A night without calls: the calls feed is stale and an alert is delivered, while visits, results and costs are within their limits | Health |
 
 ## Injury firm
 
@@ -76,6 +82,6 @@ The story runs from a Monday to a Thursday that have passed. Each scene moves th
 
 - **Scores.** A percentage on screen is a score from the sample policy's weights, not a measured accuracy.
 - **Scale.** The demo has a few hundred people. See [Performance](operations.md#performance) for measured speeds.
-- **Clock.** Each scene runs once. Scene 21 moves the clock forward fourteen hours, so run it last.
+- **Clock.** Each scene runs once. Scene 27 moves the clock forward fourteen hours, so run it last.
 - **Firm systems.** Call answering, scheduling, texts, forms, signing and card payment belong to a firm's own systems. The demo shows made-up screens for them, and makes the requests such systems would, with each text as a `text` entry. No live text, card payment or ad platform is used.
 - **Links.** The demo opens every link in the browser of the first visit. One opened in another browser is another visitor.
