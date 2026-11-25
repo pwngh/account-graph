@@ -233,18 +233,7 @@ An incoming text receives HTTP 200 with empty TwiML (`<Response/>`), so the grap
 
 ### PostgreSQL write counts
 
-The [call write test](../test/call-write.test.ts) counts SQL for a new 60-second inbound call with no previous sightings, taps, party statements, channel or provider lookups. The graph already has its default policy. A signed Twilio `completed` callback and a `record` entry each write the same call, outcome and two sightings on a fresh stubbed pool. At `671d5a1` the corresponding endpoint was `POST /call`. The final write counter update and commit travel in one trip.
-
-| Revision | Signed callback statements | Recorded call statements | Trips for either |
-| --- | ---: | ---: | ---: |
-| `671d5a1` | 71 | 71 | 67 |
-| `b575a0d` | 63 | 63 | 62 |
-| `64802da` | 60 | 60 | 59 |
-| With the unchanged call saved once | 51 | 51 | 50 |
-
-From `671d5a1` to `b575a0d`, one transaction per entry with savepoints saved 20 statements for locks, transaction boundaries and write counters. Receipts added three statements and past payments and value decisions added two. The tap checks added one nearby-call read, two dial-state reads, two reads of the call's previous flags, a second call write and a second feed write. Reading back the visitor for the channel added one more. The new tap search also saved one separation read.
-
-From `b575a0d` to `64802da`, the two observations saved eight reads of edges, identifier states, labels and separations. Three checks for a party statement, one check for past party revisions and one read of the original line for the receipt added five. Saving a fresh call again only when its route changes saves seven more statements on this input. Checking dial state only when it affects a visitor or an ambiguity saves one, and reading the visitor only when there is a channel saves another.
+The [call write test](../test/call-write.test.ts) counts SQL for a new 60-second inbound call with no previous sightings, taps, party statements, channel or provider lookups. A signed Twilio `completed` callback and a `record` entry each take 51 statements in 50 trips.
 
 ### Other providers
 
