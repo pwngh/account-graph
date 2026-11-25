@@ -1216,10 +1216,13 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const facts = await known(tx, some.map((pair) => pair.b))
         const own = knownOf(policy, given.map((identifier): Edge => ({ subject: nobody, identifier, first: at, last: at, count: 1 })), (identifier) => states.get(identifier)?.ignored ?? false).get(nobody)
         for (const { b: subject, score, level, reasons } of some) {
-          const between = conflict(policy, own, facts.get(subject))
+          const members = (await tx.clusterOf(labels.get(subject)!.cluster)).sort()
+          // A browser or a caller answers for the records it is one with, because they are shown with it.
+          const theirs = names(subject) ? [facts.get(subject)] : [...(await known(tx, members.filter(names))).values()]
+          const between = theirs.map((each) => conflict(policy, own, each)).find((each) => each !== undefined)
           // Asked about before they are on record, they are a record to be.
-          const possibly = !between && level === 'same' && policy.records === 'confirmed' && names(subject) && !confirmed(own, facts.get(subject))
-          out.push({ subject, score, level: between || possibly ? 'related' : level, reasons, ...(between && { conflict: between }), ...(possibly && { unconfirmed: true as const }), members: (await tx.clusterOf(labels.get(subject)!.cluster)).sort() })
+          const possibly = !between && level === 'same' && policy.records === 'confirmed' && members.some(names) && !theirs.some((each) => confirmed(own, each))
+          out.push({ subject, score, level: between || possibly ? 'related' : level, reasons, ...(between && { conflict: between }), ...(possibly && { unconfirmed: true as const }), members })
         }
         return out
       })
@@ -2151,7 +2154,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
             if (speaks(link)) continue
             if (link.reasons.some((reason) => reason.identifier.startsWith('review:join-'))) {
               // Where births took a telephone or a browser from a record it was joined to, that is for somebody to look at.
-              if (!policy.apart?.includes('birth') || (names(subject) && names(link.subject))) continue
+              // So is one that is left out because the two it was joined to are not one person by anything.
+              if (!(policy.records || policy.apart?.includes('birth')) || (names(subject) && names(link.subject))) continue
               joined.push([subject, link.subject])
             }
             const [a, b] = subject < link.subject ? [subject, link.subject] : [link.subject, subject]
@@ -2162,7 +2166,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const said = new Set(two.map(([a, b]) => pairKey(labels.get(a)!.cluster, labels.get(b)!.cluster)))
         const borders = bordersOf(tx)
         await borders.load(joined.flat(), undefined, joined.flat())
-        for (const [a, b] of joined) if (borders.kept(a, b) || !borders.between(a, b, 'birth')) pairs.delete(pairKey(a, b))
+        for (const [a, b] of joined) if (borders.kept(a, b) || (!policy.records && !borders.between(a, b, 'birth'))) pairs.delete(pairKey(a, b))
         const open = [...pairs.values()].filter(({ a, b }) => labels.get(a)!.cluster !== labels.get(b)!.cluster && !said.has(pairKey(labels.get(a)!.cluster, labels.get(b)!.cluster)))
         open.sort((x, y) => y.score - x.score || (x.a === y.a ? (x.b < y.b ? -1 : 1) : x.a < y.a ? -1 : 1))
         return { pairs: open.slice(0, limit), total: open.length, seen: lately.length }

@@ -137,18 +137,33 @@ export function conflict(policy: Policy, a: Known | undefined, b: Known | undefi
   return 'given'
 }
 
-/** Whether something says that two records are one person, other than what they share. */
+/** Whether a decision joined two. */
+const joinedBy = (a: Known | undefined, b: Known | undefined) => Boolean(a && b && [...a.joins].some((each) => b.joins.has(each)))
+
+/** Whether a fact of one is another than the other's. Two dates one slip of the pen apart are one date where a name agrees. */
+function disagree(a: Known | undefined, b: Known | undefined): boolean {
+  if (!a || !b) return false
+  const agree = (fact: Fact | 'dated') => {
+    const [own, others] = [a.facts.get(fact), b.facts.get(fact)]
+    return own && others && [...own].some((each) => others.has(each))
+  }
+  const named = agree('given') === true || [...a.things].some((each) => b.things.has(each))
+  return (agree('birth') === false && !(named && agree('dated') === true)) || agree('given') === false
+}
+
+/** Whether something says that two records are one person, other than what they share: a decision, or a name, a date or a thing of one person's that agrees where nothing differs. */
 export function confirmed(a: Known | undefined, b: Known | undefined): boolean {
   if (!a || !b) return false
-  const meet = (one: ReadonlySet<Identifier>, other: ReadonlySet<Identifier>) => [...one].some((each) => other.has(each))
-  if (meet(a.joins, b.joins) || meet(a.things, b.things)) return true
-  const agree = (fact: Fact) => {
-    const [own, others] = [a.facts.get(fact), b.facts.get(fact)]
-    return own && others && meet(own, others)
-  }
-  const [birth, given] = [agree('birth'), agree('given')]
-  // Twins and a couple have a date or a name in common and not the other.
-  return (birth === true && given !== false) || (given === true && birth !== false)
+  if (joinedBy(a, b)) return true
+  if (disagree(a, b)) return false
+  const meet = (one: ReadonlySet<Identifier> | undefined, other: ReadonlySet<Identifier> | undefined) => Boolean(one && other && [...one].some((each) => other.has(each)))
+  if (meet(a.facts.get('birth'), b.facts.get('birth'))) return true
+  // A Maria Elena and a Maria Guadalupe have a name in common, and each has one the other has not.
+  const [ours, theirs] = [a.facts.get('given'), b.facts.get('given')]
+  const within = (one: ReadonlySet<Identifier>, other: ReadonlySet<Identifier>) => [...one].every((each) => other.has(each))
+  const halves = ours !== undefined && theirs !== undefined && !within(ours, theirs) && !within(theirs, ours)
+  const things = halves ? [...a.things].filter((each) => !THINGS.has(each.slice(0, each.indexOf(':')))) : [...a.things]
+  return things.some((each) => b.things.has(each)) || (!halves && meet(ours, theirs))
 }
 
 type Adjacency = Map<Subject, Map<Subject, number>>
@@ -239,40 +254,107 @@ export function partition(
 }
 
 /**
- * Groups of which each is one person by something that says so. Records of a piece that nothing confirms to be one go into
- * groups of their own, and each browser and caller with the group it is tied to most strongly, by itself or through others
- * that name nobody. Of two as strong, with the one first seen. No link is taken for it: what they share is as it was.
+ * Groups of which each is one person by something that says so. Two groups of records are one where they are tied, directly
+ * or through browsers and callers, some record of the one is confirmed to be some record of the other, and none differs from
+ * any in a fact. A decision joins the two it names whatever differs. Each browser and caller then goes with the group it is
+ * tied to most strongly, by itself or through others that name nobody, and of two as strong, with the one first seen. No link
+ * is taken for it: what they share is as it was.
  */
 function refined(pieces: Subject[][], links: readonly Pair[], policy: Policy, known: ReadonlyMap<Subject, Known>, since: ReadonlyMap<Subject, number>): Subject[][] {
   if (policy.records !== 'confirmed') return pieces
   const unnamed = new Set(policy.unnamed ?? UNNAMED)
   const nobody = (subject: Subject) => unnamed.has(subject.slice(0, Math.max(0, subject.indexOf(':'))))
+  const at = (subject: Subject) => since.get(subject) ?? 0
   const ties = new Map<Subject, [Subject, number][]>()
-  for (const { a, b, score } of links) for (const [from, to] of [[a, b], [b, a]] as const) ties.set(from, [...(ties.get(from) ?? []), [to, score]])
+  const tie = (from: Subject, to: Subject, score: number) => void (ties.get(from)?.push([to, score]) ?? ties.set(from, [[to, score]]))
+  for (const { a, b, score } of links) {
+    tie(a, b, score)
+    tie(b, a, score)
+  }
   return pieces.flatMap((piece) => {
-    const records = piece.filter((subject) => !nobody(subject)).sort()
-    const group = new Map<Subject, Subject>(records.map((record) => [record, record]))
-    const of = (record: Subject): Subject => (group.get(record) === record ? record : of(group.get(record)!))
-    for (const [i, a] of records.entries()) for (const b of records.slice(i + 1)) if (of(a) !== of(b) && confirmed(known.get(a), known.get(b))) group.set(of(b), of(a))
-    const groups = new Map<Subject, Subject[]>()
-    for (const record of records) groups.set(of(record), [...(groups.get(of(record)) ?? []), record])
-    if (groups.size < 2) return [piece]
     const inside = new Set(piece)
-    const first = new Map([...groups].map(([id, own]) => [id, Math.min(...own.map((each) => since.get(each) ?? 0))]))
-    const best = new Map<Subject, { score: number; id: Subject }>(records.map((record) => [record, { score: 1, id: of(record) }]))
-    const better = (one: { score: number; id: Subject }, other: { score: number; id: Subject }) => one.score - other.score || first.get(other.id)! - first.get(one.id)! || (one.id < other.id ? 1 : one.id > other.id ? -1 : 0)
+    const records = piece.filter((subject) => !nobody(subject)).sort((x, y) => at(x) - at(y) || (x < y ? -1 : 1))
+    if (records.length < 2) return [piece]
+    const groups = new Map<Subject, Subject[]>(records.map((record) => [record, [record]]))
+    const home = new Map<Subject, Subject>(records.map((record) => [record, record]))
+    // Who is tied to whom: directly, or by the same browsers and callers.
+    const near: [Subject, Subject][] = []
+    const among = new Set<Subject>()
+    for (const start of piece) {
+      if (!nobody(start) || among.has(start)) continue
+      const around = new Set<Subject>()
+      const todo = [start]
+      among.add(start)
+      for (let each = todo.pop(); each !== undefined; each = todo.pop()) {
+        for (const [next] of ties.get(each) ?? []) {
+          if (!inside.has(next) || among.has(next)) continue
+          if (!nobody(next)) around.add(next)
+          else {
+            among.add(next)
+            todo.push(next)
+          }
+        }
+      }
+      const held = records.filter((record) => around.has(record))
+      for (const [i, a] of held.entries()) for (const b of held.slice(i + 1)) near.push([a, b])
+    }
+    for (const a of records) for (const [b] of ties.get(a) ?? []) if (a < b && inside.has(b) && !nobody(b)) near.push([a, b])
+    const order = (x: Subject, y: Subject) => at(x) - at(y) || (x < y ? -1 : x > y ? 1 : 0)
+    for (const pair of near) pair.sort(order)
+    near.sort((x, y) => order(x[0], y[0]) || order(x[1], y[1]))
+    const unite = (a: Subject, b: Subject) => {
+      const [into, from] = [home.get(a)!, home.get(b)!]
+      for (const each of groups.get(from)!) home.set(each, into)
+      groups.get(into)!.push(...groups.get(from)!)
+      groups.delete(from)
+    }
+    // Decisions first, because they stand whatever differs.
+    for (const [a, b] of near) if (home.get(a) !== home.get(b) && joinedBy(known.get(a), known.get(b))) unite(a, b)
+    for (let changed = true; changed; ) {
+      changed = false
+      for (const [a, b] of near) {
+        if (home.get(a) === home.get(b)) continue
+        const [ours, theirs] = [groups.get(home.get(a)!)!, groups.get(home.get(b)!)!]
+        if (!ours.some((x) => theirs.some((y) => confirmed(known.get(x), known.get(y))))) continue
+        if (ours.some((x) => theirs.some((y) => disagree(known.get(x), known.get(y)) && !joinedBy(known.get(x), known.get(y))))) continue
+        unite(a, b)
+        changed = true
+      }
+    }
+    if (groups.size < 2) return [piece]
+    const first = new Map([...groups].map(([id, own]) => [id, Math.min(...own.map(at))]))
+    type Way = { subject: Subject; score: number; id: Subject }
+    const better = (one: Way, other: Way) => one.score > other.score || (one.score === other.score && (first.get(one.id)! < first.get(other.id)! || (first.get(one.id)! === first.get(other.id)! && one.id < other.id)))
+    const best = new Map<Subject, Way>(records.map((subject) => [subject, { subject, score: 1, id: home.get(subject)! }]))
     // The strongest way first. One that was reached is settled, because no way gets stronger by a link.
-    const open = new Map(best)
-    while (open.size > 0) {
-      const [subject, way] = [...open].reduce((x, y) => (better(y[1], x[1]) > 0 || (better(y[1], x[1]) === 0 && y[0] < x[0]) ? y : x))
-      open.delete(subject)
-      for (const [next, score] of ties.get(subject) ?? []) {
+    const heap: Way[] = []
+    const push = (way: Way) => {
+      let i = heap.push(way) - 1
+      for (let up = (i - 1) >> 1; i > 0 && better(heap[i]!, heap[up]!); i = up, up = (i - 1) >> 1) [heap[i], heap[up]] = [heap[up]!, heap[i]!]
+    }
+    const pop = (): Way | undefined => {
+      const top = heap[0]
+      const last = heap.pop()
+      if (heap.length === 0 || last === undefined) return top
+      heap[0] = last
+      for (let i = 0; ; ) {
+        let down = i
+        for (const child of [2 * i + 1, 2 * i + 2]) if (child < heap.length && better(heap[child]!, heap[down]!)) down = child
+        if (down === i) return top
+        ;[heap[i], heap[down]] = [heap[down]!, heap[i]!]
+        i = down
+      }
+    }
+    for (const way of best.values()) push(way)
+    for (let way = pop(); way; way = pop()) {
+      if (best.get(way.subject) !== way) continue
+      for (const [next, score] of ties.get(way.subject) ?? []) {
         if (!inside.has(next) || !nobody(next)) continue
-        const found = { score: way.score * score, id: way.id }
+        const found: Way = { subject: next, score: way.score * score, id: way.id }
         const before = best.get(next)
-        if (before && better(found, before) <= 0) continue
+        if (before && !better(found, before)) continue
         best.set(next, found)
-        open.set(next, found)
+        push(found)
       }
     }
     for (const subject of piece) if (nobody(subject)) {

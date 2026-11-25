@@ -232,7 +232,7 @@ export async function play(world: World, set: Switches, pool: number, { createGr
     credit.reachable += 1
     if (given === ad) credit.reachableRight += 1
   }
-  // Records that are shown as possibly one, for somebody to look at: once for each two people or groups of them.
+  // Pairs of records that are shown as possibly one, for somebody to look at.
   const waiting = { pairs: 0, right: 0, found: new Set<string>() }
   for (const { a, b, unconfirmed } of (await graph.undecided({ limit: Infinity, sightings: Infinity })).pairs) {
     if (!unconfirmed) continue
