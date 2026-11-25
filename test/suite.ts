@@ -633,7 +633,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const { columns } = await counted.board({ steps: [{ name: 'signup' }], days: 7, at: day + HOUR })
       assert.ok(columns.some((column) => column.rows.length > 0))
       for (const { rows } of columns) for (const row of rows) assert.deepEqual(row.touch, await own(row.subject, row.at))
-      for (const key of ['shared', 'edgesOn', 'separatedOf', 'touchesOf']) assert.ok(reads.get(key)! <= 12, `${key} was read ${reads.get(key)} times`)
+      for (const key of ['shared', 'edgesOn', 'separatedOf', 'touchesOf']) assert.ok(reads.get(key)! <= (key === 'separatedOf' ? 24 : 12), `${key} was read ${reads.get(key)} times`)
     })
 
     test('what a decision would do is what it does, and foreseeing it writes nothing', async () => {
@@ -2000,7 +2000,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual((await graph.journey('contact:j')).entries.map((entry) => entry.kind), ['decision', 'decision'])
     })
 
-    test('a journey is the whole cluster\'s, whoever of it is asked about, and a path through somebody kept apart does not hide a direct one', async () => {
+    test('a journey is the whole cluster\'s, whoever of it is asked about, and none of what was cut off with somebody kept apart', async () => {
       const { graph } = await fresh()
       const see = (subject: string, ...identifiers: string[]) => graph.observe({ subject, identifiers, at: T0, event: 'visit' })
       // A chain of four: each shares a device with the next, so the ends are three links apart.
@@ -2022,8 +2022,11 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await graph.separate('a:2', 'visitor:y', true)
       assert.notEqual((await graph.cluster('a:1'))!.id, (await graph.cluster('visitor:z'))!.id)
       const people = async (subject: string) => Object.keys((await graph.journey(subject)).subjects).sort()
-      for (const each of ['a:1', 'a:2', 'a:3', 'a:4']) assert.deepEqual(await people(each), ['a:1', 'a:2', 'a:3', 'a:4', 'visitor:x', 'visitor:z'])
-      assert.deepEqual((await graph.journey('a:3')).subjects['visitor:x']!.via, ['a:4'])
+      // What was cut off with y is y's: x and z are tied to the four, and are on the other side of what a reviewer said.
+      for (const each of ['a:1', 'a:2', 'a:3', 'a:4']) assert.deepEqual(await people(each), ['a:1', 'a:2', 'a:3', 'a:4'])
+      await graph.separate('a:2', 'visitor:y', false)
+      assert.ok((await people('a:3')).includes('visitor:x'))
+      await graph.separate('a:2', 'visitor:y', true)
       // A sighting called after a call or a review that no call or decision tells stays.
       await graph.observe({ subject: 'w:1', identifiers: ['device:12'], at: T0 + 1, event: 'call' })
       await graph.observe({ subject: 'w:1', identifiers: ['device:12'], at: T0 + 2, event: 'review' })
@@ -2942,6 +2945,28 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await graph.links('contact:3')).find((link) => link.subject === 'visitor:x')!.level, 'same')
       assert.deepEqual(await of('contact:3'), ['contact:3', 'visitor:y'])
       assert.deepEqual(await of('contact:4'), ['contact:4', 'visitor:x'])
+    })
+
+    test('credit crosses no separation, through a browser that went with the other, and from either side', async () => {
+      const { graph } = await fresh()
+      await graph.observe([
+        { subject: 'contact:a', identifiers: ['device:x'], at: T0 },
+        { subject: 'contact:b', identifiers: ['email:e'], at: T0 },
+        { subject: 'visitor:x', identifiers: ['device:x', 'email:e'], at: T0 },
+        { subject: 'caller:a', identifiers: ['device:x2'], at: T0 },
+        { subject: 'contact:a', identifiers: ['device:x2'], at: T0 },
+      ])
+      await graph.touch({ subject: 'visitor:x', at: T0, gclid: 'x' })
+      const credit = async (subject: string) => (await graph.attribute(subject, { at: T0 + HOUR })).credited?.gclid
+      assert.deepEqual([await credit('contact:a'), await credit('caller:a'), await credit('contact:b')], ['x', 'x', 'x'])
+      await graph.separate('contact:a', 'contact:b', true, { by: 'dana' })
+      assert.equal((await graph.cluster('visitor:x'))!.id, (await graph.cluster('contact:b'))!.id)
+      assert.deepEqual([await credit('contact:a'), await credit('caller:a'), await credit('contact:b')], [undefined, undefined, 'x'])
+      await graph.touch({ subject: 'contact:a', at: T0 + 1, gclid: 'a' })
+      assert.notEqual(await credit('visitor:x'), 'a')
+      await graph.separate('contact:a', 'contact:b', false, { by: 'dana' })
+      assert.ok(await credit('contact:b'))
+      assert.deepEqual(await graph.verify(), [])
     })
 
     test('several subjects are forgotten together, or none is', async () => {

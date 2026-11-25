@@ -159,7 +159,7 @@ export function partition(
   separated: readonly (readonly [Subject, Subject])[],
   policy: Policy,
   known: ReadonlyMap<Subject, Known> = new Map(),
-  /** Hears each link a difference of facts took. */
+  /** Hears each link taken because two are kept apart, by a decision or by what is known of them. */
   onCut?: (a: Subject, b: Subject) => void,
   /** Pairs of whom it is said that they are two people, though nobody decided it. */
   two: readonly (readonly [Subject, Subject])[] = [],
@@ -227,18 +227,18 @@ function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subj
   }
 
   apart.sort((x, y) => (x[0] === y[0] ? (x[1] < y[1] ? -1 : 1) : x[0] < y[0] ? -1 : 1))
-  for (const [a, b] of apart) cut(a, b)
-  for (const [a, b] of apart) for (const [x, y] of minimumCut(adjacency, a, b)) cut(x, y)
-  // Facts come after decisions, and cut no link a decision made: two held together by those alone stay together.
-  const decided = (a: Subject, b: Subject) => [...(known.get(a)?.joins ?? [])].some((identifier) => known.get(b)?.joins.has(identifier))
-  const cutByFact = (a: Subject, b: Subject) => {
+  const cutApart = (a: Subject, b: Subject) => {
     if (adjacency.get(a)!.has(b)) onCut?.(a, b)
     cut(a, b)
   }
-  for (const [a, b] of differ) cutByFact(a, b)
+  for (const [a, b] of apart) cutApart(a, b)
+  for (const [a, b] of apart) for (const [x, y] of minimumCut(adjacency, a, b)) cutApart(x, y)
+  // Facts come after decisions, and cut no link a decision made: two held together by those alone stay together.
+  const decided = (a: Subject, b: Subject) => [...(known.get(a)?.joins ?? [])].some((identifier) => known.get(b)?.joins.has(identifier))
+  for (const [a, b] of differ) cutApart(a, b)
   for (const [a, b] of differ) {
     const found = minimumCut(adjacency, a, b, decided)
-    if (!found.some(([x, y]) => decided(x, y))) for (const [x, y] of found) cutByFact(x, y)
+    if (!found.some(([x, y]) => decided(x, y))) for (const [x, y] of found) cutApart(x, y)
   }
 
   if (policy.bridge > policy.same) {

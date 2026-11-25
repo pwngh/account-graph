@@ -722,7 +722,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
   }
 
   /**
-   * The links facts took, and the groups facts keep apart. A search follows no such link, at any hop or from either side,
+   * The links that separations and facts took, and the groups they keep apart. A search follows no such link, at any hop or from either side,
    * though a later cut may have left a group on one side of it with nobody whose facts are known.
    */
   function bordersOf(tx: Tx) {
@@ -731,14 +731,14 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     const read = new Set<Subject>()
     const decided = new Map<string, boolean>()
     const taken = new Set<string>()
-    /** The groups of two where one speaks for the other. Nothing is read for them until such a link is met. */
+    /** The groups of two a reviewer keeps apart, and of two where one speaks for the other. Nothing is read for them until such a link is met. */
     const spoken = new Set<string>()
     const marked = new Set<Subject>()
     let met = false
     return {
       /** Whether two are one subject or in one group. */
       one: (a: Subject, b: Subject) => a === b || (labels.has(a) && labels.get(a)!.cluster === labels.get(b)?.cluster),
-      /** Whether facts took the link between two, and they are not one by others. */
+      /** Whether a separation or a fact took the link between two, and they are not one by others. */
       cut: (a: Subject, b: Subject) => taken.has(pairKey(a, b)) && labels.get(a)?.cluster !== labels.get(b)?.cluster,
       async load(subjects: Iterable<Subject>, links: ReadonlyMap<Subject, Link[]> = new Map()): Promise<void> {
         const said = [...links].flatMap(([near, list]) => list.filter(speaks).map((link) => [near, link.subject] as const))
@@ -757,6 +757,11 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
           const marks = (await tx.edgesOf([...members.keys()])).filter((edge) => edge.identifier.startsWith('behalf:'))
           const states = await tx.states(unique(marks.map((edge) => edge.identifier)))
           for (const { a, b, reasons } of scorePairs(policy, marks, states, undefined, 0)) if (told(policy, reasons) && members.get(a)!.cluster !== members.get(b)!.cluster) spoken.add(pairKey(members.get(a)!.cluster, members.get(b)!.cluster))
+          // Two a reviewer keeps apart are two, and what was cut off with the one is not the other's.
+          const apart = (await tx.separatedOf([...members.keys()])).filter(([a, b]) => members.has(a) && members.has(b) && members.get(a)!.component === members.get(b)!.component)
+          for (const [a, b] of apart) if (members.get(a)!.cluster !== members.get(b)!.cluster) spoken.add(pairKey(members.get(a)!.cluster, members.get(b)!.cluster))
+          const split = new Set(apart.map(([a]) => members.get(a)!.component))
+          if (split.size > 0) await compute(tx, [...members].filter(([, own]) => split.has(own.component)).map(([subject]) => subject), undefined, (a, b) => taken.add(pairKey(a, b)))
         }
         if (!policy.apart?.length) return
         const ids = unique(unread.flatMap((subject) => labels.get(subject)?.component ?? [])).filter((id) => !read.has(id))
