@@ -2,15 +2,20 @@ import { malformed } from '../contract/fault.ts'
 import type { Change, Identifier, Outcome, Subject } from '../contract/types.ts'
 import type { CallOptions } from './calls.ts'
 import type { Graph } from './graph.ts'
-import { birthKey, email, hashPhone, identifier, ip, nameKeys, normalizePhone, phoneOfType } from './identifiers.ts'
+import { birthKeys, email, hashPhone, identifier, ip, nameKeys, normalizePhone, phoneOfType } from './identifiers.ts'
 import { withStage } from './ladder.ts'
 import type { Ladder } from './ladder.ts'
+import { fakePhone, placeholderEmail, sharedMailbox } from './lookups.ts'
+import { givenKeys, namedKeys } from './names.ts'
 import type { Job, Outbox } from './outbox.ts'
 import { addressIdentifier } from './ports.ts'
 import type { AddressVerifier, LineTypeLookup } from './ports.ts'
 import type { TextOptions } from './texts.ts'
 
 const ID = /^[\w.-]{1,128}$/
+const PLACEHOLDER = 'a placeholder: not used'
+/** Why an email is nobody's, or undefined where it may be somebody's. */
+const nobodysEmail = (text: string) => (placeholderEmail(text) ? PLACEHOLDER : sharedMailbox(text) ? 'read by several: not used' : undefined)
 
 export interface ServiceOptions {
   outbox?: Outbox
@@ -88,13 +93,67 @@ export function createService(graph: Graph, options: ServiceOptions) {
    */
   async function identify(body: any) {
     if (typeof body?.subject !== 'string' || !body.subject) throw malformed('Body requires a subject')
-    const { identifiers, notes, at } = await factsIn(body, true)
-    const changes = await graph.observe({ subject: body.subject, identifiers, at, ...(typeof body.event === 'string' && body.event && { event: body.event }) })
-    return { changes, identifiers, notes }
+    const { identifiers: all, notes, at } = await factsIn(body, true)
+    const speaker = body.speaker === undefined ? undefined : await speakerIn(body)
+    if (speaker?.note) notes.speaker = speaker.note
+    // What is the speaker's says who the speaker is, so it is not written on whoever they speak for.
+    const theirs = new Set(speaker?.theirs.flatMap((each) => [each, each.replace(/^phone:/, 'voip:'), each.replace(/^voip:/, 'phone:')]))
+    const own = all.filter((each) => !theirs.has(each))
+    const identifiers = [...own, ...(await named(body, own)), ...(speaker && speaker.subjects.length > 0 ? await named(body, speaker.used, 'ward') : [])]
+    if (own.length < all.length) notes.speaker = 'what is the speaker\'s is not used for who they speak for'
+    // What was written before anybody said so stays written, and only a person can say whose it is.
+    if (theirs.size > 0 && (await graph.holders([...theirs])).some((edge) => edge.subject === body.subject)) notes.speaker = 'on this record already, from before: mute or forget it if it is the speaker\'s'
+    const event = typeof body.event === 'string' && body.event ? (body.event as string) : undefined
+    const who = { subject: body.subject as Subject, identifiers }
+    if (speaker && speaker.subjects.length > 0) {
+      const said = await graph.speak(who, speaker.subjects, at, event)
+      return { changes: said.changes, identifiers: said.identifiers, notes, speakers: speaker.subjects.map((each) => each.subject) }
+    }
+    const changes = identifiers.length > 0 ? await graph.observe({ ...who, at, ...(event && { event }) }) : []
+    return { changes, identifiers, notes, speakers: [] as Subject[] }
+  }
+
+  /** The keys of these numbers and emails under the name in a body, where the policy uses names. */
+  async function named(body: any, contact: readonly Identifier[], kind: 'named' | 'ward' = 'named'): Promise<Identifier[]> {
+    if (!options.identifierSecret || typeof body.name?.first !== 'string' || typeof body.name?.last !== 'string') return []
+    return (await graph.policy()).rules.apart?.includes('given') ? namedKeys(options.identifierSecret, contact, body.name.first, body.name.last, kind) : []
+  }
+
+  /** Somebody who speaks for the subject: what is theirs, and the browser and the caller it is to be written on. */
+  async function speakerIn(body: any): Promise<{ theirs: Identifier[]; subjects: { subject: Subject; identifiers: Identifier[] }[]; used: Identifier[]; note?: string }> {
+    const { device, phone, email: address } = typeof body.speaker === 'object' && body.speaker !== null ? body.speaker : {}
+    if (/^(visitor|caller|call):/.test(body.subject)) throw malformed('A speaker speaks for a record of yours, not for a browser or a caller')
+    // Nobody is named by it, and what is told of the subject is kept.
+    if (device === undefined && !(typeof phone === 'string' && phone)) return { theirs: typeof address === 'string' && address ? [email(address)] : [], subjects: [], used: [], note: 'not used: a speaker requires a device or a phone' }
+    const { identifiers: theirs, notes } = await factsIn({ device, phone }, true, true)
+    const ofDevice = theirs.find((each) => each.startsWith('device:'))
+    // A number that names nobody is the speaker's all the same, and nothing more is made of it.
+    const used = [...theirs]
+    if (typeof phone === 'string' && phone) theirs.push(`phone:${hashPhone(phone, options.calls?.country)}`)
+    const ofPhone = !notes.phone?.endsWith(': not used') && theirs.find((each) => /^(phone|voip):/.test(each))
+    const subjects: { subject: Subject; identifiers: Identifier[] }[] = []
+    if (ofDevice) {
+      // Its own visitor, where there is one. Another that holds the id is taken only while the id is evidence and it is the one that may be it.
+      const exact: Subject = `visitor:${device}`
+      let who = exact
+      if (!(await graph.cluster(exact))) {
+        const apart = new Set(await graph.separations(body.subject))
+        const others = (await graph.match([ofDevice], { limit: 100 })).map((each) => each.subject).filter((each) => each.startsWith('visitor:') && !apart.has(each))
+        if (others.length === 1) who = others[0]!
+      }
+      subjects.push({ subject: who, identifiers: [ofDevice] })
+    }
+    if (ofPhone) subjects.push({ subject: `caller:${hashPhone(phone, options.calls?.country)}`, identifiers: [ofPhone] })
+    if (typeof address === 'string' && address && !nobodysEmail(address)) {
+      theirs.push(email(address))
+      used.push(email(address))
+      subjects.at(-1)?.identifiers.push(email(address))
+    }
+    return { theirs, subjects, used, ...(subjects.length === 0 && { note: notes.phone ?? 'not used' }) }
   }
 
   /** The identifiers in plain facts about somebody, normalized, checked and hashed, and what came of the checks. Only where they are to be saved is the line of a number looked up, because that can mute it. */
-  async function factsIn(body: any, saving: boolean, none = false) {
+  async function factsIn(body: any, saving: boolean, none = body.speaker !== undefined) {
     const identifiers: Identifier[] = (Array.isArray(body.identifiers) ? body.identifiers : []).map(String)
     const notes: Record<string, string> = {}
     let zip: string | undefined
@@ -102,13 +161,18 @@ export function createService(graph: Graph, options: ServiceOptions) {
       if (typeof body.device !== 'string' || !ID.test(body.device)) throw malformed('The device id is malformed')
       identifiers.push(identifier('device', body.device))
     }
-    if (typeof body.email === 'string' && body.email) identifiers.push(email(body.email))
+    // What a form was filled in with for want of anything, and what an office reads together, is nobody's.
+    const nobodys = typeof body.email === 'string' ? nobodysEmail(body.email) : undefined
+    if (nobodys) notes.email = nobodys
+    else if (typeof body.email === 'string' && body.email) identifiers.push(email(body.email))
     if (typeof body.ip === 'string' && body.ip) identifiers.push(ip(body.ip))
     if (typeof body.phone === 'string' && body.phone) {
       const number = normalizePhone(body.phone, options.calls?.country)
+      const made = fakePhone(number)
+      if (made === 'repeated' || made === 'counted') notes.phone = PLACEHOLDER
       // A lookup that is down must not lose the sighting: the number is kept as a plain phone.
-      const line = lineOf && saving ? ((await lineOf(number).catch((error) => void console.error(error))) ?? undefined) : undefined
-      const found = phoneOfType(number, line?.type)
+      const line = lineOf && saving && !notes.phone ? ((await lineOf(number).catch((error) => void console.error(error))) ?? undefined) : undefined
+      const found = notes.phone ? undefined : phoneOfType(number, line?.type)
       if (found) identifiers.push(found)
       // Unlooked at, it is whichever of the two kinds it was saved as.
       if (found && !saving) identifiers.push(identifier('voip', hashPhone(number)))
@@ -148,10 +212,12 @@ export function createService(graph: Graph, options: ServiceOptions) {
       }
     }
     if (body.at !== undefined && !Number.isSafeInteger(body.at)) throw malformed('`at` must be an integer in epoch milliseconds')
-    // Kept only under a policy that keeps people apart by it. It says who somebody is not, and not who they are, so by itself it finds nobody.
-    const born = options.identifierSecret && typeof body.dob === 'string' && (await graph.policy()).rules.apart?.includes('birth') ? birthKey(options.identifierSecret, body.dob) : undefined
-    if (identifiers.length === 0 && !none && !(saving && born)) throw malformed('At least one identifying field is required')
-    if (born) identifiers.push(born)
+    // Kept only under a policy that keeps people apart by them. They say who somebody is not, and not who they are, so by themselves they find nobody.
+    const apart = options.identifierSecret && (typeof body.dob === 'string' || typeof body.name?.first === 'string') ? ((await graph.policy()).rules.apart ?? []) : []
+    const born = apart.length > 0 && typeof body.dob === 'string' ? birthKeys(options.identifierSecret!, body.dob) : []
+    const facts = [...born, ...(apart.includes('given') && typeof body.name?.first === 'string' ? givenKeys(options.identifierSecret!, body.name.first) : [])]
+    if (identifiers.length === 0 && !(saving && (facts.length > 0 || none)) && notes.phone !== PLACEHOLDER && notes.email === undefined) throw malformed('At least one identifying field is required')
+    identifiers.push(...facts)
     return { identifiers, notes, at: (body.at ?? now()) as number }
   }
 
@@ -177,7 +243,7 @@ export function createService(graph: Graph, options: ServiceOptions) {
     return clicked.length > 0 ? { by: 'click', subjects: clicked } : { by: 'subject', subjects }
   }
 
-  return { pool, convert, calling, textOptions, identify, factsIn, find, lineOf }
+  return { pool, convert, calling, textOptions, identify, factsIn, named, find, lineOf }
 }
 
 export type Service = ReturnType<typeof createService>

@@ -53,6 +53,7 @@ export function compared(entry: RecordEntry | ({ type: 'decide' } & DecideReques
   return {
     ...fields,
     ...(fields.facts && { facts: facts(fields.facts, phone) }),
+    ...(fields.speaker && { speaker: facts(fields.speaker, phone) }),
     ...(fields.email && { email: email(fields.email) }),
     ...(type === 'conversion' && fields.phone && { phone: phone(fields.phone) }),
     ...(fields.currency && { currency: fields.currency.toUpperCase() }),

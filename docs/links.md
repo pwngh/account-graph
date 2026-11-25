@@ -38,6 +38,7 @@ The shared identifier scores 0.92, above the 0.9 that joins. Later ad clicks and
 | A person's link is opened in a first, second and third browser | Each is linked to them at 0.92, and joined |
 | It is opened in a fourth | Recorded without linking. More than a phone, a laptop and a tablet suggests a forwarded link. |
 | The browser already belongs to another person of the same kind, by a sign-in or a device cookie | Recorded without linking: `contact:alice`'s link on `contact:bob`'s phone does not join them |
+| It is opened in a browser of whoever [speaks for](identify.md#speaking-for-somebody-else) the person | Recorded without linking: a mother who opens her son's link is not her son |
 | Two people's links are opened in one browser that belongs to neither | Both are linked, and their scores drop to 0.61, so the browser is joined to neither |
 
 Each opening is a note on the visitor for reviewers: `opened:contact:42`, or `opened:contact:42 (not tied)`.

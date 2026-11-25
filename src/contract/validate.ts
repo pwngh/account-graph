@@ -104,17 +104,17 @@ const timeZone: Check = (value, path) => {
   }
 }
 const window = shape({ from: day, to: day, timeZone })
-const facts: Check = both(
-  shape({
+const known = shape({
     'email?': string(3, 512), 'phone?': phone, 'device?': device, 'ip?': string(2, 64),
     'address?': shape({ street: text, 'street2?': text, 'secondary?': short, 'city?': short, 'state?': short, 'zipcode?': short }),
     'name?': shape({ first: short, last: short }), 'dob?': day,
     'identifiers?': list(own, 1, 100),
-  }),
-  (value, path) => {
-    if (Object.keys(value as object).length === 0) throw bad(path, 'requires at least one fact')
-  },
-)
+})
+const some = (what: string): Check => (value, path) => {
+  if (Object.keys(value as object).length === 0) throw bad(path, `requires at least one ${what}`)
+}
+const facts: Check = both(known, some('fact'))
+const speaker: Check = both(shape({ 'device?': device, 'phone?': phone, 'email?': string(3, 512) }), some('fact'))
 const callResult: Check = both(shape({ answered: boolean, 'voicemail?': boolean, 'waited?': number(0, 1e7) }), (value, path) => {
   const { answered, voicemail } = value as { answered: boolean; voicemail?: boolean }
   if (answered && voicemail) throw bad(path, 'cannot be answered by a person and go to voicemail')
@@ -122,7 +122,10 @@ const callResult: Check = both(shape({ answered: boolean, 'voicemail?': boolean,
 
 const entry = (fields: Record<string, Check>, keyed: Check = key) => shape({ type: any, key: keyed, at, ...fields })
 const ENTRIES: Record<string, Check> = {
-  profile: entry({ subject, facts, 'event?': short }),
+  profile: both(entry({ subject, facts: known, 'event?': short, 'speaker?': speaker }), (value, path) => {
+    const { facts: given, speaker: by } = value as { facts: object; speaker?: object }
+    if (!by) some('fact')(given, `${path}.facts`)
+  }),
   arrival: entry({
     subject, 'source?': text, 'medium?': text, 'campaign?': text, 'campaignId?': text, 'adGroupId?': text, 'adId?': text, 'term?': text, 'content?': text, 'landing?': text, 'referrer?': text,
     'clicks?': shape({ 'gclid?': click, 'gbraid?': click, 'wbraid?': click, 'fbclid?': click, 'fbp?': click, 'msclkid?': click, 'ttclid?': click }), 'custom?': map(string(1, 256), 10),

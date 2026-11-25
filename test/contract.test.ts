@@ -285,6 +285,59 @@ everywhere('the same faults', async ({ graph }) => {
   return out
 })
 
+const MOTHER = { device: 'mother-1', phone: '+15550100187', email: 'mother@example.org' }
+
+everywhere('whoever speaks for a subject is not joined to them', async ({ graph }) => {
+  const told: RecordEntry = { type: 'profile', key: 'told', at: AT, subject: 'contact:son', facts: { email: 'son@example.org', phone: MOTHER.phone }, speaker: MOTHER }
+  const first = await one(graph, told)
+  assert.equal(first.ok, true, JSON.stringify(first))
+  assert.equal((await one(graph, { type: 'profile', key: 'hers', at: AT, subject: 'contact:mother', facts: { phone: MOTHER.phone, email: MOTHER.email } })).ok, true)
+  const { people } = await graph.lookup({ kind: 'person', subjects: ['contact:son', 'contact:mother'], at: NOW })
+  assert.equal(people[0]!.members.includes('contact:mother'), false)
+  assert.equal(people[1]!.members.includes('contact:son'), false)
+  // Nothing of the subject's own is needed, and the same told in another way of writing it is the same.
+  assert.equal((await one(graph, { type: 'profile', key: 'bare', at: AT, subject: 'contact:nephew', facts: {}, speaker: { phone: '(555) 010-0187' } })).ok, true)
+  const again = await one(graph, { ...told, speaker: { ...MOTHER, phone: '(555) 010-0187' } } as RecordEntry)
+  assert.equal(again.ok && again.value.duplicate, true, JSON.stringify(again))
+  const other = await one(graph, { ...told, speaker: { device: 'another' } } as RecordEntry)
+  assert.deepEqual([other.ok, !other.ok && other.reason === 'KEY_REUSED' && other.fields], [false, ['speaker']])
+  return { first, people }
+})
+
+everywhere('who spoke and was deleted is not brought back by a late retry', async ({ graph }) => {
+  const told: RecordEntry = { type: 'profile', key: 'told', at: AT, subject: 'contact:son', facts: { email: 'son@example.org' }, speaker: { device: 'mother-1' } }
+  await one(graph, told)
+  assert.equal((await graph.forget({ key: 'gone', at: AT + 1, by: 'dana', subjects: ['visitor:mother-1'], platforms: 'report' })).ok, true)
+  const late = await one(graph, told)
+  assert.deepEqual([late.ok, !late.ok && late.reason], [false, 'FORGOTTEN'])
+  assert.equal((await graph.lookup({ kind: 'person', subjects: ['visitor:mother-1'], at: NOW })).people[0]!.known, false)
+  return late
+})
+
+everywhere('what a speaker cannot be is refused, and kinds the graph writes are its own', async ({ graph }) => {
+  const of = (more: object) => codeOf(graph.record({ entries: [{ type: 'profile', key: 'x', at: AT, subject: 'contact:1', facts: {}, ...more } as RecordEntry] }))
+  for (const more of [{}, { speaker: {} }, { speaker: { name: 'x' } }, { speaker: { phone: 'x' } }, { subject: 'visitor:1', speaker: { device: 'd' } }]) assert.deepEqual(await of(more), { code: 'INPUT.MALFORMED', retryable: false }, JSON.stringify(more))
+  const kinds: unknown[] = []
+  for (const kind of ['behalf', 'named', 'ward', 'given', 'dated', 'initial']) {
+    const answer = await one(graph, { type: 'profile', key: `k-${kind}`, at: AT, subject: 'contact:1', facts: { identifiers: [`${kind}:x`] } })
+    kinds.push(answer.ok || answer.reason)
+  }
+  assert.deepEqual([...new Set(kinds)], ['KIND_RESERVED'])
+  const nobody = await one(graph, { type: 'profile', key: 'nobody', at: AT, subject: 'contact:1', facts: { phone: '555-555-5555' } })
+  assert.deepEqual([nobody.ok, !nobody.ok && nobody.reason], [false, 'NO_FACT_USED'])
+  return nobody
+})
+
+test('the line of whoever speaks is their own', async () => {
+  const fetcher = async (to: string | URL | Request) => Response.json({ line_type_intelligence: { type: decodeURIComponent(String(to)).includes('0187') ? 'tollFree' : 'mobile' } })
+  const graph = accountGraph({ memory: true, ...shared, checks: { lineType: { accountSid: 'AC', authToken: 'x' } }, fetch: fetcher as typeof fetch })
+  const answer = await one(graph, { type: 'profile', key: 'lines', at: AT, subject: 'contact:son', facts: { phone: '+15550100141' }, speaker: { phone: MOTHER.phone } })
+  assert.equal(answer.ok, true, JSON.stringify(answer))
+  assert.deepEqual(answer.ok && answer.type === 'profile' && answer.value.notes.phone, 'mobile')
+  assert.deepEqual(answer.ok && answer.type === 'profile' && answer.value.notes.speaker, 'tollFree: not used')
+  await graph.close()
+})
+
 test('a call from two reporters, one of them the provider, is one call', async () => {
   const { graph, local, base, close } = await http()
   const { twilioSignature } = await import('../src/providers/twilio.ts')
@@ -471,7 +524,7 @@ if (url) {
   test('processes that share a database share its settings, and one that does not is told', async () => {
     const schema = `ag_contract_${process.pid}_settings`
     const open = (more: object) => accountGraph({ databaseUrl: url, schema, workers: false, receiptSecrets: [SECRET], ...shared, ...more } as LocalOptions)
-    const entry = (key: string): RecordEntry => ({ type: 'profile', key, at: AT, subject: 'contact:1', facts: { email: 'a@example.com' } })
+    const entry = (key: string): RecordEntry => ({ type: 'profile', key, at: AT, subject: 'contact:1', facts: { email: 'a@example.org' } })
     const using = async (more: object, key: string) => {
       const graph = open(more)
       try {

@@ -19,7 +19,8 @@
     "examples/household.json",
     "README.md",
     "CHANGELOG.md",
-    "LICENSE"
+    "LICENSE",
+    "NOTICE"
   ],
   "imports": {
     "#src/*": "./src/*"

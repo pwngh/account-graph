@@ -95,28 +95,104 @@ export interface Rates {
   emailAsked: number
   /** Visits besides the first, on average. */
   visits: number
+  /** What the third run added. Without it a world is what it was, draw for draw. */
+  third?: Third
+}
+
+/** First names as a list has them, each with how common it is, the forms it is given in, and what it is called in English. */
+export interface Names {
+  english: readonly { name: string; share: number; shorts: readonly string[] }[]
+  spanish: readonly { name: string; share: number; shorts: readonly string[]; english: readonly string[] }[]
+  spanishShare: number
+}
+
+export interface Third {
+  /** Of people with a short form, records that have it; of people with a name in English besides, records that have that. */
+  shortGiven: number
+  englishGiven: number
+  /** Spanish names of two, and how often a record has one of the two only. */
+  compound: number
+  compoundHalved: number
+  /** Records with first and last name swapped, records of somebody spoken for with the speaker's name, and households where two have names a letter apart. */
+  swapped: number
+  speakersName: number
+  alike: number
+  /** Of records where one speaks for another and staff made them, those staff say so of; of forms, those where the box is ticked. Of the client's own number and email, given beside. */
+  staffTold: number
+  formTold: number
+  ownGiven: number
+  /** Of other records, those where staff say somebody speaks and nobody does, and forms where the box is ticked by mistake. Of what is told, told a day or three late. */
+  staffToldWrongly: number
+  formToldWrongly: number
+  toldLate: number
+  /** People who file a form again from the same browser with another email or number. */
+  formAgain: number
+  /** Of calls again, those tapped on a browser the caller has not used, and those from another line of theirs. */
+  otherBrowser: number
+  otherLine: number
+  /** How long before its call a tap is: up to 30 seconds, up to 60, and the rest up to three minutes. */
+  quick: number
+  middle: number
+  /** In place of those, any gap from 3 seconds to 300, as likely to be ten times as long as half. A setting of its own, so that no step of the gaps is one of the product's. */
+  anyGap?: true
+  /** Calls reported 5 to 120 seconds late, and out of order. */
+  late: number
+  /** Cold callers who dial a number somebody else was shown before. */
+  oldNumber: number
+  /** First calls from a page, those dialed by hand from 10 to 110 minutes after it was last seen. */
+  lateDial: number
+}
+
+/** Records with a placeholder number, and those with an office's one email, put over a world that is made. */
+export interface Dirt {
+  placeholder: number
+  office: number
+}
+
+/** What staff do at intake, each a share of the chances they have. */
+export interface Intake {
+  /** Of answered calls, those where the caller is asked who they are and whether they call for somebody else. */
+  asks: number
+  /** Of callers asked who do call for another, those who say so; of the rest, those put down as calling for another by mistake. */
+  says: number
+  saysWrongly: number
+  /** Of callers asked, those whose call is put down to a record found by the name given, where there is one; of them, to somebody else's. */
+  opened: number
+  openedWrong: number
+  /** Of answered callers asked with two records or more under one name, those whose records with a number or an email in common are made one before an appointment; of those, made one with somebody else's. */
+  merged: number
+  mergedWrong: number
 }
 
 /** One thing reported, at a time, and the subjects it is about. */
 export type Event =
   | { kind: 'visit'; at: number; device: string; address: string; ad?: string; agent: string }
   | { kind: 'tap'; at: number; device: string; address: string; agent: string }
-  /** `page` is the browser whose page the number was read from, and `redial` the call whose number is dialed again. With neither, it is the number in the phone book. */
-  | { kind: 'call'; at: number; id: string; from?: string; seconds: number; answered: boolean; people: readonly string[]; page?: { device: string; address: string; agent: string }; redial?: string }
+  /** `page` is the browser whose page the number was read from, and `redial` the call whose number is dialed again, and `wrote` the browser whose page the number was written down from a while ago. With neither, it is the number in the phone book. */
+  | { kind: 'call'; at: number; id: string; from?: string; seconds: number; answered: boolean; people: readonly string[]; page?: { device: string; address: string; agent: string }; redial?: string; told?: number; wrote?: string }
+  /** Staff say somebody speaks for the subject, who gave these. */
+  | { kind: 'speaks'; at: number; subject: string; speaker: { device?: string; email?: string; phone?: string } }
   /** Staff say who a call is about. */
-  | { kind: 'join'; at: number; call: string; subject: string }
-  | { kind: 'record'; at: number; subject: string; device?: string; email?: string; phone?: string; name: { first: string; last: string }; dob?: string }
+  | { kind: 'join'; at: number; call: string; subject: string; intake?: true }
+  /** Staff find that two records are one person's. */
+  | { kind: 'merge'; at: number; a: string; b: string }
+  /** What was given, whoever gave it. `speaker` is what of it is somebody else's, where that is told, and `own` what is the subject's besides. A firm that does not ask sends what was given as the subject's. */
+  | { kind: 'record'; at: number; subject: string; device?: string; email?: string; phone?: string; name: { first: string; last: string }; dob?: string; speaker?: { device?: string; email?: string; phone?: string }; own?: { email: string; phone: string } }
 
 export interface World {
   events: Event[]
   /** Everyone's subjects but callers, whose subject only the server can name. */
   truths: Truth[]
   /** By call id: who called, and what was told. */
-  calls: Map<string, { people: string[]; facts: string[] }>
+  calls: Map<string, { people: string[]; facts: string[]; about: string }>
   /** Who spoke for whom, as `speaker person`. */
   spoke: Set<string>
   /** By record: the ad its person came by, or undefined where they never visited, and when the record was made. */
   ads: Map<string, { ad: string | undefined; at: number }>
+  /** By person: what they are called. */
+  who: Map<string, { first: string; last: string }>
+  /** By record: the first name its person has, and the one that was written. */
+  written: Map<string, { name: string; written: string }>
 }
 
 const DAY = 86_400_000
@@ -141,7 +217,7 @@ interface Person {
   telephone: Browser
   computer?: Browser
   partners: string[]
-  name: { first: string; last: string; second?: string; short?: string; now?: string }
+  name: { first: string; last: string; second?: string; short?: string; now?: string; listed?: { shorts: readonly string[]; english: readonly string[]; middle?: string } }
   dob: string
   /** What brought them, once it has. */
   ad?: string
@@ -191,8 +267,10 @@ function mistyped(text: string, r: ReturnType<typeof randomly>, letters: string)
   return text.slice(0, at) + letter + text.slice(at + 1)
 }
 
-export function makeWorld(rates: Rates, { people: count, days, start, seed }: Size): World {
+export function makeWorld(rates: Rates, { people: count, days, start, seed }: Size, names?: Names): World {
   const r = randomly(seed)
+  const { third } = rates
+  if (third && !names) throw new TypeError('The third world requires a list of names')
   // Area code 555 is nobody's, so no number here can ring. Ten million of them, as thinly held as real ones are by a firm's people.
   const taken = new Set<string>()
   const drawn = (make: () => string) => {
@@ -221,7 +299,26 @@ export function makeWorld(rates: Rates, { people: count, days, start, seed }: Si
   const firsts = Array.from({ length: 300 }, () => initial() + letters(4))
   const lasts = Array.from({ length: 3_000 }, () => letters(7))
   const common = (list: readonly string[]) => list[Math.floor(list.length ** r.next()) - 1]!
+  const listed = third && names ? (() => {
+    const pick = <T extends { share: number }>(list: readonly T[]) => list[r.weighted(list.map((each) => each.share))]!
+    return (): { first: string; shorts: readonly string[]; english: readonly string[]; middle?: string } => {
+      if (!r.chance(names.spanishShare)) {
+        const { name, shorts } = pick(names.english)
+        return { first: name, shorts, english: [] }
+      }
+      const { name, shorts, english } = pick(names.spanish)
+      return { first: name, shorts, english, ...(r.chance(third.compound) && { middle: pick(names.spanish).name }) }
+    }
+  })() : undefined
   const named = (last: string): Person['name'] => {
+    if (listed) {
+      const { first, shorts, english, middle } = listed()
+      return {
+        first, last, listed: { shorts, english, ...(middle !== undefined && { middle }) },
+        ...(r.chance(rates.twoSurnames) && { second: common(lasts) }),
+        ...(r.chance(rates.surnameChanged) && { now: common(lasts) }),
+      }
+    }
     const first = common(firsts)
     return {
       first, last,
@@ -258,6 +355,7 @@ export function makeWorld(rates: Rates, { people: count, days, start, seed }: Si
     }
     if (own.length > 1 && r.chance(rates.twins)) own[1]!.dob = own[0]!.dob
     if (own.length > 1 && r.chance(rates.namesakes)) own[1]!.name = { ...own[0]!.name }
+    if (third && own.length > 1 && r.chance(third.alike)) own[1]!.name = { ...own[1]!.name, first: mistyped(own[0]!.name.first, r, ALPHABET) }
     for (const person of own) person.partners = own.filter((other) => other !== person).map((other) => other.id)
     people.push(...own)
   }
@@ -281,6 +379,8 @@ export function makeWorld(rates: Rates, { people: count, days, start, seed }: Si
     for (const fact of facts) if (fact !== undefined) known.facts.add(fact)
   }
   const calls: World['calls'] = new Map()
+  const otherLines = new Map<string, string>()
+  const shownCalls: { id: string; at: number }[] = []
   const phoneOf = (person: Person, at: number) => (person.later && at >= person.later.at ? person.later.number : person.mobile)
   const home = (person: Person) => `2001:db8:${(person.household + 1).toString(16)}::${(person.household % 250) + 2}`
 
@@ -298,14 +398,36 @@ export function makeWorld(rates: Rates, { people: count, days, start, seed }: Si
     return { device: used.device, address, agent: used.agent }
   }
 
+  const written: World['written'] = new Map()
+  const writeName = (subject: string, person: Person, name: Person['name'], staff: boolean) => {
+    const typed = typedName(name, staff)
+    written.set(subject, { name: person.name.first, written: typed.first })
+    return typed
+  }
   let records = 0
   /** Records as they are made, for staff to join a call to one there is by then. */
   const made: { subject: string; person: string; at: number }[] = []
-  const record = (person: Person, at: number, facts: { device?: string; email?: string; phone?: string }, staff: boolean) => {
+  const record = (person: Person, at: number, told: { device?: string; email?: string; phone?: string }, staff: boolean, speaker: Person = person) => {
     const subject = `contact:${records++}`
+    const facts = { ...told }
+    let speaks: { device?: string; email?: string; phone?: string } | undefined
+    let own: { email: string; phone: string } | undefined
+    let late = false
+    const name = third && speaker !== person && r.chance(third.speakersName) ? speaker.name : person.name
+    if (third) {
+      const spokenFor = speaker !== person
+      if (r.chance(spokenFor ? (staff ? third.staffTold : third.formTold) : staff ? third.staffToldWrongly : third.formToldWrongly)) {
+        // A desk knows the line that rang. A form knows all that its sender gave.
+        speaks = staff ? { ...(facts.phone !== undefined && { phone: facts.phone }) } : { ...facts }
+        late = r.chance(third.toldLate)
+        if (!staff && spokenFor && !late && r.chance(third.ownGiven)) own = { phone: typedPhone(phoneOf(person, at), rates.ownPhoneTypo), email: typedEmail(r.one(person.emails), rates.ownEmailTypo) }
+      }
+      if (speaks && Object.keys(speaks).length === 0) speaks = undefined
+      if (speaks && late) events.push({ kind: 'speaks', at: at + Math.ceil((1 + r.next() * 2) * DAY), subject, speaker: speaks })
+    }
     note(subject, person.id, facts.device && `device ${facts.device}`, facts.email && `email ${facts.email}`, facts.phone && `phone ${facts.phone}`)
     ads.set(subject, { ad: person.ad, at })
-    events.push({ kind: 'record', at, subject, ...facts, name: typedName(person.name, staff), ...(r.chance(rates.birthAsked) && { dob: typedBirth(person.dob, staff) }) })
+    events.push({ kind: 'record', at, subject, ...facts, ...(speaks && !late && { speaker: speaks }), ...(own && { own }), name: writeName(subject, person, name, staff), ...(r.chance(rates.birthAsked) && { dob: typedBirth(person.dob, staff) }) })
     made.push({ subject, person: person.id, at })
     return subject
   }
@@ -317,9 +439,16 @@ export function makeWorld(rates: Rates, { people: count, days, start, seed }: Si
   }
   const typedName = (name: Person['name'], staff: boolean) => {
     let first = name.short !== undefined && r.chance(rates.shortGiven) ? name.short : name.first
+    if (third && name.listed) {
+      const { shorts, english, middle } = name.listed
+      if (shorts.length > 0 && r.chance(third.shortGiven)) first = r.one(shorts)
+      else if (english.length > 0 && r.chance(third.englishGiven)) first = r.one(english)
+      else if (middle !== undefined) first = r.chance(third.compoundHalved) ? r.one([first, middle]) : `${first} ${middle}`
+    }
     const surname = name.now !== undefined && r.chance(0.5) ? name.now : name.last
     const last = name.second === undefined ? surname : r.chance(rates.oneLeftOut) ? r.one([surname, name.second]) : `${surname} ${name.second}`
     if (r.chance(rates.transliterated)) first = (r.chance(0.3) ? initial() : first[0]!) + letters(first.length - 1)
+    if (third && r.chance(third.swapped)) return { first: last, last: first }
     if (!r.chance(staff ? rates.staffNameTypo : rates.nameTypo)) return { first, last }
     return r.chance(0.5) ? { first: mistyped(first, r, ALPHABET), last } : { first, last: mistyped(last, r, ALPHABET) }
   }
@@ -367,27 +496,36 @@ export function makeWorld(rates: Rates, { people: count, days, start, seed }: Si
   }
   // People who only call. They are nobody's household here.
   const cold = Math.round(people.length * rates.cold)
+  const strangers: Person[] = []
   for (let i = 0; i < cold; i++) {
     const own = number()
-    const stranger: Person = { id: `q${i}`, household: -1, mobile: own, emails: [email()], partners: [], telephone: browser(AGENT.telephone, false), name: named(common(lasts)), dob: dayOf(1940 + r.under(65)) }
+    const stranger: Person = strangers[i] = { id: `q${i}`, household: -1, mobile: own, emails: [email()], partners: [], telephone: browser(AGENT.telephone, false), name: named(common(lasts)), dob: dayOf(1940 + r.under(65)) }
     const at = moment(r.under(days))
-    todo.push({ at, run: () => ring(stranger, stranger, at, undefined, undefined, r.chance(rates.coldRecorded)) })
+    todo.push({ at, run: () => ring(stranger, stranger, at, undefined, undefined, r.chance(rates.coldRecorded), third && r.chance(third.oldNumber)) })
   }
 
   function form(person: Person, speaker: Person, at: number, from: string) {
     const soon = at + Math.ceil(r.next() * 15 * MINUTE) + MINUTE
-    record(person, soon, { device: from, email: typedEmail(r.one(speaker.emails), rates.ownEmailTypo), phone: typedPhone(phoneOf(speaker, soon), rates.ownPhoneTypo) }, false)
+    record(person, soon, { device: from, email: typedEmail(r.one(speaker.emails), rates.ownEmailTypo), phone: typedPhone(phoneOf(speaker, soon), rates.ownPhoneTypo) }, false, speaker)
+    if (!third || !r.chance(third.formAgain)) return
+    // Filed again from the same browser, with an email or a number not given before.
+    const again = soon + Math.ceil((0.05 + r.next() * 3) * DAY)
+    record(person, again, r.chance(0.5) ? { device: from, email: email(), phone: phoneOf(speaker, again) } : { device: from, email: r.one(speaker.emails), phone: number() }, false, speaker)
   }
 
   /** A call from a visit. Whoever is on the page can tap the number, and nobody else can. */
   function call(person: Person, speaker: Person, visitor: Person, at: number, here: ReturnType<typeof visit>, filled: boolean) {
-    const when = at + Math.ceil(r.next() * 10 * MINUTE) + 30_000
+    const delay = Math.ceil(r.next() * 10 * MINUTE)
     const tapped = visitor === speaker && r.chance(here.agent === AGENT.telephone ? rates.tapsTelephone : rates.tapsComputer)
+    // A tap may be up to three minutes before its call, and comes after the visit.
+    const when = at + delay + (third && tapped ? (third.anyGap ? 310_000 : 190_000) : 30_000)
     ring(person, speaker, when, here, tapped ? here : undefined, !filled || r.chance(rates.duplicate))
   }
 
   /** A call, and what staff make of it. Those who call again do it later, with nothing to tap. */
-  function ring(person: Person, speaker: Person, at: number, page: ReturnType<typeof visit> | undefined, tapped: ReturnType<typeof visit> | undefined, recorded: boolean) {
+  function ring(person: Person, speaker: Person, calledAt: number, page: ReturnType<typeof visit> | undefined, tapped: ReturnType<typeof visit> | undefined, recorded: boolean, old = false) {
+    const later = third !== undefined && page !== undefined && r.chance(third.lateDial)
+    const at = later ? calledAt + (10 + r.under(101)) * MINUTE : calledAt
     const times = 1 + r.more(rates.again)
     let when = at
     const own: string[] = []
@@ -395,35 +533,144 @@ export function makeWorld(rates: Rates, { people: count, days, start, seed }: Si
       if (i > 0) when += Math.ceil((0.01 + r.next() * 8) * DAY)
       const landline = landlines[speaker.household]
       const hidden = r.chance(rates.hidden)
-      const from = landline !== undefined && r.chance(rates.landlineUse) ? landline : phoneOf(speaker, when)
+      const line = third && i > 0 && r.chance(third.otherLine) ? (otherLines.get(speaker.id) ?? otherLines.set(speaker.id, number()).get(speaker.id)!) : undefined
+      const from = line ?? (landline !== undefined && r.chance(rates.landlineUse) ? landline : phoneOf(speaker, when))
       const id = `c${seed}-${calls.size}`
-      const tap = i === 0 ? tapped : undefined
+      let tap = i === 0 && !later ? tapped : undefined
+      let shownOn = i === 0 && !later ? page : undefined
+      if (third && i > 0 && page && r.chance(third.otherBrowser)) {
+        // On a browser of theirs not seen here before, and so on its page.
+        const fresh = browser(AGENT.telephone, false)
+        note(`visitor:${fresh.device}`, speaker.id, `device ${fresh.device}`)
+        const address = speaker.household >= 0 ? home(speaker) : '198.51.100.9'
+        events.push({ kind: 'visit', at: when - 4 * MINUTE, device: fresh.device, address, agent: fresh.agent })
+        tap = shownOn = { device: fresh.device, address, agent: fresh.agent }
+      }
       if (tap) {
-        events.push({ kind: 'tap', at: when - 8_000 - r.under(20_000), device: tap.device, address: tap.address, agent: tap.agent })
+        const x = third ? r.next() : 0
+        const gap = !third ? 8_000 + r.under(20_000) : third.anyGap ? Math.round(3_000 * 100 ** x) : x < third.quick ? 5_000 + r.under(25_000) : x < third.quick + third.middle ? 30_000 + r.under(30_000) : 60_000 + r.under(120_000)
+        events.push({ kind: 'tap', at: when - gap, device: tap.device, address: tap.address, agent: tap.agent })
         note(`visitor:${tap.device}`, speaker.id, `tap ${id}`)
       }
       const answered = r.chance(rates.answered)
-      const redial = i > 0 && r.chance(rates.redialed) ? own[0] : undefined
+      const redial = i > 0 && !shownOn && r.chance(rates.redialed) ? own[0] : undefined
       own.push(id)
+      // Written down by somebody, and passed on.
+      const before = old && i === 0 ? shownCalls.filter((each) => each.at < when) : []
+      const passed = before.length > 0 ? r.one(before).id : undefined
+      if (shownOn) shownCalls.push({ id, at: when })
+      const dialedAgain = passed ?? redial
       // Of a landline or a number passed on, it is whoever made this call.
-      calls.set(id, { people: [speaker.id], facts: [...(hidden ? [] : [`phone ${from}`]), ...(tap ? [`tap ${id}`] : [])] })
-      events.push({ kind: 'call', at: when, id, ...(!hidden && { from }), seconds: answered ? 60 + r.under(600) : 12 + r.under(25), answered, people: [speaker.id], ...(i === 0 && page && { page }), ...(redial !== undefined && { redial }) })
+      calls.set(id, { people: [speaker.id], facts: [...(hidden ? [] : [`phone ${from}`]), ...(tap ? [`tap ${id}`] : [])], about: person.id })
+      events.push({ kind: 'call', at: when, id, ...(!hidden && { from }), seconds: answered ? 60 + r.under(600) : 12 + r.under(25), answered, people: [speaker.id], ...(shownOn && { page: shownOn }), ...(dialedAgain !== undefined && { redial: dialedAgain }), ...(i === 0 && later && { wrote: page!.device }), ...(third && r.chance(third.late) && { told: when + 5_000 + r.under(115_000) }) })
       // Staff make a record from what they hear and see: the number calling, unless it is hidden, and an email where one is asked for.
       if (!answered) continue
       if (recorded) {
         recorded = false
         const given = hidden ? phoneOf(speaker, when) : from
-        record(person, when + 5 * MINUTE, { phone: typedPhone(given, hidden ? rates.staffPhoneTypo : 0), ...(r.chance(rates.emailAsked) && { email: typedEmail(r.one(speaker.emails), rates.staffEmailTypo) }) }, true)
+        record(person, when + 5 * MINUTE, { phone: typedPhone(given, hidden ? rates.staffPhoneTypo : 0), ...(r.chance(rates.emailAsked) && { email: typedEmail(r.one(speaker.emails), rates.staffEmailTypo) }) }, true, speaker)
       }
       // Whoever answers opens the record the call is about, where there is one, and now and then somebody else's.
       const there = made.filter((each) => each.at <= when + 6 * MINUTE)
       const theirs = there.filter((each) => each.person === person.id)
-      if (theirs.length > 0 && r.chance(rates.staffJoins)) events.push({ kind: 'join', at: when + 6 * MINUTE, call: id, subject: (r.chance(rates.staffJoinsWrong) ? r.one(there) : theirs.at(-1)!).subject })
+      if (theirs.length > 0 && r.chance(rates.staffJoins)) events.push({ kind: 'join', at: when + 6 * MINUTE, call: id, subject: staffPick(there, theirs).subject })
     }
+  }
+
+  /** The record staff open: the person's, or now and then another's. Before the third run it was the last made, and a wrong one could be right. */
+  function staffPick(there: typeof made, theirs: typeof made) {
+    if (!third) return r.chance(rates.staffJoinsWrong) ? r.one(there) : theirs.at(-1)!
+    const others = there.filter((each) => each.person !== theirs[0]!.person)
+    return others.length > 0 && r.chance(rates.staffJoinsWrong) ? r.one(others) : theirs.reduce((last, each) => (each.at >= last.at ? each : last))
   }
 
   for (const { run } of todo.sort((x, y) => x.at - y.at)) run()
   const truths = [...factsOf].map(([subject, known]): Truth => ({ subject, people: [...known.people], facts: [...known.facts] }))
   // What was put off to its own time is reported then.
-  return { events: events.sort((x, y) => x.at - y.at), truths, calls, spoke, ads }
+  const reported = (event: Event) => (event.kind === 'call' && event.told) || event.at
+  return { events: events.sort((x, y) => reported(x) - reported(y)), truths, calls, spoke, ads, written, who: new Map([...people, ...strangers].map(({ id, name: { first, last } }) => [id, { first, last }])) }
+}
+
+/** A made world with placeholders and shared office emails over some of its records, from a seed of its own. Nothing else changes. */
+export function dirtied(world: World, dirt: Dirt, seed: number): World {
+  const r = randomly(seed ^ 0x5bd1e995)
+  const truths = new Map(world.truths.map((each) => [each.subject, { ...each, facts: [...each.facts] }]))
+  const swap = (subject: string, kind: 'phone' | 'email', from: string | undefined, to: string) => {
+    const truth = truths.get(subject)!
+    truth.facts = [...truth.facts.filter((fact) => from === undefined || fact !== `${kind} ${from}`), `${kind} ${to}`]
+  }
+  const events = world.events.map((event): Event => {
+    if (event.kind !== 'record') return event
+    let out = event
+    const put = (kind: 'phone' | 'email', to: string) => {
+      swap(out.subject, kind, out[kind], to)
+      out = { ...out, [kind]: to, ...(out.speaker?.[kind] !== undefined && { speaker: { ...out.speaker, [kind]: to } }) }
+    }
+    if (r.chance(dirt.placeholder)) put('phone', r.one(['+15555555555', '+11234567890', '+15551234567', '+15557654321']))
+    // Half of them no table has: a firm's own address at a public domain, and one made up by whoever typed it.
+    if (r.chance(dirt.office)) put('email', r.one(['info@office-a.example.org', 'office@office-b.example.org', 'firmagarcia@gmail.com', 'nomasemails@example.org']))
+    return out
+  })
+  return { ...world, events, truths: [...truths.values()] }
+}
+
+/**
+ * A made world where staff do three things at intake, from a seed of its own: they ask who is calling, ask whether it is for somebody else and
+ * make a record of who is, and make one of records that look like one person's. Nothing else changes. Who is who is used for what people
+ * answer, and for nothing staff do: they find records by the name they are told and what is written, and take the latest. A caller who says
+ * they call for another is put down to a record of their own; one who does not say so gives the name of whoever the call is about.
+ */
+export function asked(world: World, rates: Intake, seed: number): World {
+  const r = randomly(seed ^ 0x3c6ef372)
+  const truths = [...world.truths]
+  const events = [...world.events]
+  // What is written on a record is the subject's: what was said to be the speaker's is not, and what was given beside is.
+  type Filed = { subject: string; at: number; phone?: string; email?: string; name: { first: string; last: string } }
+  const onFile = world.events.flatMap((event): Filed[] => (event.kind === 'record' ? [{
+    subject: event.subject, at: event.at, name: event.name,
+    ...(event.phone !== undefined && event.speaker?.phone === undefined && { phone: event.phone }), ...(event.email !== undefined && event.speaker?.email === undefined && { email: event.email }), ...event.own,
+  }] : []))
+  const same = (a: { first: string; last: string }, b: { first: string; last: string }) => a.first === b.first && a.last === b.last
+  let made = 0
+  for (const event of world.events) {
+    if (event.kind !== 'call' || !event.answered || !r.chance(rates.asks)) continue
+    const at = event.at + 7 * MINUTE
+    const { people: [caller], about } = world.calls.get(event.id)!
+    const says = caller !== about && r.chance(rates.says)
+    const mistaken = caller === about && r.chance(rates.saysWrongly)
+    const find = (person: string) => onFile.filter((each) => each.at <= at && same(each.name, world.who.get(person)!)).sort((x, y) => x.at - y.at || (x.subject < y.subject ? -1 : 1))
+    // Of several under a name, the one the number is on is opened, and then the latest.
+    const open = (found: Filed[]) => found.filter((each) => event.from !== undefined && each.phone === event.from).at(-1) ?? found.at(-1)
+    if (says || mistaken) {
+      const client = open(find(about))
+      if (client && event.from !== undefined) events.push({ kind: 'speaks', at, subject: client.subject, speaker: { phone: event.from } })
+      // Whoever speaks is made a record, where they have none and show a number.
+      if (says && event.from !== undefined && find(caller!).length === 0) {
+        const record = { kind: 'record' as const, at, subject: `contact:i${made++}`, phone: event.from, name: world.who.get(caller!)! }
+        truths.push({ subject: record.subject, people: [caller!], facts: [`phone ${event.from}`] })
+        events.push(record)
+        onFile.push(record)
+      }
+    }
+    // Nobody is put down to a record on a call that was noted by mistake as somebody else's.
+    if (mistaken) continue
+    const name = says ? caller! : about
+    const there = find(name)
+    if (there.length > 0 && r.chance(rates.opened)) {
+      const others = onFile.filter((each) => each.at <= at && !there.includes(each))
+      const opened = others.length > 0 && r.chance(rates.openedWrong) ? r.one(others) : open(there)!
+      events.push({ kind: 'join', at: at + MINUTE, call: event.id, subject: opened.subject, intake: true })
+    }
+    // Before an appointment, records under one name with a number or an email in common are made one.
+    if (there.length < 2 || !r.chance(rates.merged)) continue
+    const first = there[0]!
+    for (const each of there.slice(1)) {
+      if ((each.phone === undefined || each.phone !== first.phone) && (each.email === undefined || each.email !== first.email)) continue
+      const others = onFile.filter((one) => one.at <= at && !there.includes(one))
+      const wrong = others.length > 0 && r.chance(rates.mergedWrong)
+      events.push({ kind: 'merge', at: at + 3 * DAY, a: wrong ? r.one(others).subject : first.subject, b: each.subject })
+    }
+  }
+  const reported = (event: Event) => (event.kind === 'call' && event.told) || event.at
+  return { ...world, events: events.sort((x, y) => reported(x) - reported(y)), truths }
 }

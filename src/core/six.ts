@@ -26,7 +26,7 @@ import { checkTags } from './tags.ts'
 import { checkTouch } from './touch.ts'
 
 /** Kinds of identifier the graph writes itself. One a caller wrote would join people with nobody having decided it. */
-const RESERVED = new Set(['review', 'link', 'carry', 'opened', 'lease', 'dial', 'text', 'place', 'birth', 'dialed'])
+const RESERVED = new Set(['behalf', 'named', 'ward', 'given', 'dated', 'initial', 'review', 'link', 'carry', 'opened', 'lease', 'dial', 'text', 'place', 'birth', 'dialed'])
 /** How many checks of addresses and lines are under way at once, and how long one may take. */
 const TOGETHER = 8
 const CHECK = 3_000
@@ -62,6 +62,8 @@ const tied = ({ reasons, ...rest }: Counterparty): Tied => ({ ...rest, kinds: ki
 interface Checked {
   line: { type: string; carrier: string | undefined } | undefined
   lineFailed: boolean
+  /** Of whoever speaks, where they have a number of their own. */
+  spoken?: { number: string; line: Checked['line']; failed: boolean }
   address: VerifiedAddress | undefined
   addressFailed: boolean
 }
@@ -91,6 +93,11 @@ export function createSix(engine: Engine, options: SixOptions) {
         if (from !== undefined) within('facts.ip', () => ip(from))
         if (postal !== undefined && !postal.street.trim()) throw malformed(`${path}.facts.address.street is empty`, { path: `${path}.facts.address.street` })
         if (entry.facts.device !== undefined) within('facts.device', () => identifier('device', entry.facts.device!))
+        const { speaker } = entry
+        if (speaker && /^(visitor|caller|call):/.test(entry.subject)) throw malformed(`${path}.speaker speaks for a record of yours, not for a browser or a caller`, { path: `${path}.speaker` })
+        if (speaker?.email !== undefined) within('speaker.email', () => normalizeEmail(speaker.email!))
+        if (speaker?.phone !== undefined) within('speaker.phone', () => normalizePhone(speaker.phone!, country))
+        if (speaker?.device !== undefined) within('speaker.device', () => identifier('device', speaker.device!))
         break
       }
       case 'arrival':
@@ -158,16 +165,19 @@ export function createSix(engine: Engine, options: SixOptions) {
     }
     const { address: verify, lineType } = engine.options
     let number: string | undefined
+    let spoken: string | undefined
     try {
+      if (entry.type === 'profile' && entry.speaker?.phone) spoken = normalizePhone(entry.speaker.phone, country)
       if (entry.type === 'profile' && entry.facts.phone) number = normalizePhone(entry.facts.phone, country)
       if ((entry.type === 'call' || entry.type === 'text') && entry.direction === 'inbound' && entry.from) number = normalizePhone(entry.from, country)
     } catch {}
     const postal = entry.type === 'profile' ? entry.facts.address : undefined
-    const [line, address] = await Promise.all([
+    const [line, theirs, address] = await Promise.all([
       lineType && number !== undefined ? bounded(lineType(number)) : { failed: false },
+      lineType && spoken !== undefined && spoken !== number ? bounded(lineType(spoken)) : { failed: false },
       verify && postal ? bounded(verify(postal as PostalAddress)) : { failed: false },
     ])
-    return { line: 'value' in line ? line.value : undefined, lineFailed: line.failed, address: 'value' in address ? address.value : undefined, addressFailed: address.failed }
+    return { line: 'value' in line ? line.value : undefined, lineFailed: line.failed, address: 'value' in address ? address.value : undefined, addressFailed: address.failed, ...(spoken !== undefined && spoken !== number && { spoken: { number: spoken, line: 'value' in theirs ? theirs.value : undefined, failed: theirs.failed } }) }
   }
 
   /** Checks take a third of the time there is, all together. What was not checked by then is recorded unchecked. */
@@ -207,9 +217,10 @@ export function createSix(engine: Engine, options: SixOptions) {
         }
         if (again) return { value: { changes: [], notes: {} }, subjects: [] }
         const found = await service.factsIn({ ...entry.facts, at: entry.at }, true, true)
-        if (found.identifiers.length === 0) throw Object.assign(malformed('No fact could be used'), { refusal: { reason: 'NO_FACT_USED', notes: found.notes } })
-        const { notes } = await service.identify({ subject: entry.subject, ...entry.facts, at: entry.at, ...(entry.event && { event: entry.event }) })
-        return { value: { changes: inside.changes, notes }, subjects: [entry.subject] }
+        if (found.identifiers.length === 0 && !entry.speaker) throw Object.assign(malformed('No fact could be used'), { refusal: { reason: 'NO_FACT_USED', notes: found.notes } })
+        const { notes, speakers } = await service.identify({ subject: entry.subject, ...entry.facts, at: entry.at, ...(entry.event && { event: entry.event }), ...(entry.speaker && { speaker: entry.speaker }) })
+        // Of whoever speaks too: once they are deleted, a late retry must not bring them back.
+        return { value: { changes: inside.changes, notes }, subjects: [entry.subject, ...speakers] }
       }
       case 'arrival':
         if (!again) await graph.touch(touchOf(entry))
@@ -323,7 +334,12 @@ export function createSix(engine: Engine, options: SixOptions) {
     const about = refOf(entry)
     const answer = (decided: Decided<object, RecordRefusal>) => ({ type, key, ...decided }) as unknown as RecordResult
     const lookups = {
-      ...(engine.options.lineType && { lineType: async () => { if (checked.lineFailed) throw new Error('The line check did not answer'); return checked.line } }),
+      ...(engine.options.lineType && { lineType: async (number: string) => {
+        // Whoever speaks has a number of their own.
+        const of = checked.spoken?.number === number ? checked.spoken : { line: checked.line, failed: checked.lineFailed }
+        if (of.failed) throw new Error('The line check did not answer')
+        return of.line
+      } }),
       ...(engine.options.address && { address: async () => { if (checked.addressFailed) throw new Error('The address check did not answer'); return checked.address } }),
     }
     try {
@@ -547,7 +563,8 @@ export function createSix(engine: Engine, options: SixOptions) {
         return service.find(request.text)
       case 'match': {
         const { identifiers, notes } = await service.factsIn({ ...request.facts, at: request.at }, false)
-        return { candidates: (await graph.match(identifiers, { at: request.at })).map(match), notes }
+        const named = async (kind?: 'ward') => service.named(request.facts, identifiers, kind)
+        return { candidates: (await graph.match([...identifiers, ...(await named()), ...(await named('ward'))], { at: request.at })).map(match), notes }
       }
       case 'caller': {
         try {

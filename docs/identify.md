@@ -39,7 +39,7 @@ To ask who somebody may be without recording it, use the `match` [lookup](http.m
 | `name`, `dob` | `name:` and a keyed hash. See [Names](#names). | `IDENTIFIER_SECRET`, and a policy with a `name` kind. |
 | `identifiers` | Identifiers you already hold, as written: `hardware:…`, `payment:tok_…`, `passkey:…`. At most 100. | A kind in the policy, and not one [the graph writes itself](http.md#refusals). |
 
-Beside `facts`, `at` is when it happened, and `event` is what the person was doing, up to 200 characters.
+Beside `facts`, `at` is when it happened, `event` is what the person was doing, up to 200 characters, and `speaker` is the [person who speaks for](#speaking-for-somebody-else) the subject: their `device`, `phone` and `email`.
 
 | Kind of your own | Value |
 | --- | --- |
@@ -47,7 +47,7 @@ Beside `facts`, `at` is when it happened, and `event` is what the person was doi
 | `passkey` | A passkey's credential id, after your server verified the sign-in |
 | `payment` | A card or bank token from your payment provider, in place of the number |
 
-`facts` must come to at least one identifier. Facts that come to none, such as an address without Smarty, are refused with `INPUT.MALFORMED`.
+Facts that come to no identifier, such as an address without Smarty or a placeholder, are refused with `NO_FACT_USED` and the notes. With a `speaker`, `facts` may come to none, or be `{}`.
 
 The email, number, address, name and date of birth are stored only as hashes.
 
@@ -56,6 +56,9 @@ The email, number, address, name and date of birth are stored only as hashes.
 | Finding | `notes` value | Effect |
 | --- | --- | --- |
 | A mobile or landline | `"phone": "mobile"` | Kept as `phone`, 0.9. |
+| A number of one digit, or a count such as 1234567890 | `"phone": "a placeholder: not used"` | Dropped. A profile with nothing else is refused with `NO_FACT_USED`. |
+| An email made up to fill a field, such as `none@`, or at `test.com` | `"email": "a placeholder: not used"` | Dropped. |
+| An office's email, such as `info@` or `office@`, at no public mail domain | `"email": "read by several: not used"` | Dropped, because several people are behind it. |
 | A number from an internet calling app | `"phone": "nonFixedVoip"` | Kept as `voip`, 0.5: related without joining. |
 | A toll-free or premium line | `"phone": "tollFree: not used"` | Dropped. |
 | An address confirmed to the door | `"address": "confirmed"` | Kept as `address`, 0.6. |
@@ -67,6 +70,26 @@ The email, number, address, name and date of birth are stored only as hashes.
 A check that is down, or takes more than three seconds, keeps the sighting. The phone is stored as a plain `phone`, the address is omitted with a note that the service did not answer, and the rest is recorded.
 
 A number identified as VoIP also stops counting as a `phone` wherever it was stored before the check, by a phone call or by a sighting during an outage. Calls check the caller's number the same way, so a call and an account on one such number are related at 0.5.
+
+## Speaking for somebody else
+
+A mother calls about her son. Without being told, the server takes her number and her browser for his. Send what is hers as `speaker`, from a box on the form or a mark your staff make:
+
+```json
+{ "type": "profile", "key": "intake-9", "at": 1795460000000, "subject": "contact:son",
+  "facts": { "email": "son@example.org" },
+  "speaker": { "device": "9f3c1c1e-0000-4000-8000-000000000001", "phone": "(555) 000-1111", "email": "mother@example.org" } }
+```
+
+| What you send | What happens |
+| --- | --- |
+| `speaker.device`, `speaker.phone` | At least one is needed. The browser and the caller are related to the subject at 0.92 and never joined to them. |
+| `speaker.email` | Written on the caller, or on the browser where there is no number. |
+| A fact both in `speaker` and beside it | Not used for the subject, with a note. |
+| A fact of the speaker's that is on the subject's record already | Left there, with a note. Nothing written before is undone: mute it, or forget the record. |
+| Neither device nor phone | The subject is recorded, with a note. |
+
+What brought the speaker's browser earns the credit for the subject. It is not passed on to anybody else they speak for, or back. The two are never offered for review as one person, and a number written on both later does not join them. A reviewer who joins them has the last word. To take it back, mute the `behalf:` mark of the browser and that of the caller on the reviewer screen: sent again, they stay muted. The subject is a record of yours, not a browser or a caller.
 
 ## Hosted forms
 

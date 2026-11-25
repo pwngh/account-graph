@@ -43,8 +43,18 @@ export type RecordEntry =
 
 export interface ProfileEntry extends Keyed<'profile'> {
   readonly subject: string
+  /** At least one, unless somebody speaks for them. */
   readonly facts: Facts
   readonly event?: string
+  /** Somebody else who told this, such as a parent: their own browser, number or email. What is theirs is not written on the subject, and neither is joined to the other. */
+  readonly speaker?: Speaker
+}
+
+/** Whoever speaks for a subject. One without a device or a phone is not used, and a note says so. */
+export interface Speaker {
+  readonly device?: string
+  readonly phone?: string
+  readonly email?: string
 }
 
 /** Plain facts. The graph normalizes, checks and hashes them. At least one. */
@@ -319,7 +329,7 @@ export interface Match {
   readonly score: number
   readonly level: Level
   readonly kinds: readonly string[]
-  readonly conflict?: 'birth'
+  readonly conflict?: 'birth' | 'given'
 }
 export interface Tied {
   readonly subject: string

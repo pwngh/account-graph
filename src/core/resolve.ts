@@ -1,4 +1,4 @@
-import { UNNAMED, evidence, usable, weigh } from './policy.ts'
+import { UNNAMED, evidence, joins, told, usable, weigh } from './policy.ts'
 import type { Fact, Policy } from './policy.ts'
 import type { Edge, Identifier, IdentifierState, Labels, Pair, Reason, Subject } from '../contract/types.ts'
 
@@ -47,8 +47,9 @@ export function scorePairs(
   for (const [a, row] of found) {
     for (const [b, reasons] of row) {
       const score = weigh(policy, reasons)
-      if (score < least) continue
-      pairs.push({ a, b, score, level: score >= policy.same ? 'same' : 'related', reasons })
+      // That one speaks for the other is said, whatever it comes to.
+      if (score < least && !told(policy, reasons)) continue
+      pairs.push({ a, b, score, level: joins(policy, score, reasons) ? 'same' : 'related', reasons })
     }
   }
   return pairs.sort((x, y) => (x.a === y.a ? (x.b < y.b ? -1 : 1) : x.a < y.a ? -1 : 1))
@@ -89,21 +90,30 @@ export function components(subjects: Iterable<Subject>, pairs: readonly Pair[]):
 
 /** What is known of somebody that cannot be two people's, and the joins a reviewer or a system made of them. */
 export interface Known {
-  facts: Map<Fact, Set<Identifier>>
+  facts: Map<Fact | 'initial' | 'dated', Set<Identifier>>
   joins: Set<Identifier>
+  /** What they gave under which name. */
+  things: Set<Identifier>
 }
 
-/** The facts of the subjects that have one, of the facts a policy keeps people apart by. An undone join is none. */
-export function knownOf(policy: Policy, edges: readonly Edge[], undone: (identifier: Identifier) => boolean): Map<Subject, Known> {
+const THINGS = new Set(['named', 'ward'])
+
+/** The facts of the subjects that have one, of the facts a policy keeps people apart by. An undone join is none. With `joins`, those are read whatever the policy. */
+export function knownOf(policy: Policy, edges: readonly Edge[], undone: (identifier: Identifier) => boolean, joins = false): Map<Subject, Known> {
   const out = new Map<Subject, Known>()
-  if (!policy.apart?.length) return out
+  if (!policy.apart?.length && !joins) return out
   for (const { subject, identifier } of edges) {
     const kind = identifier.slice(0, identifier.indexOf(':'))
-    if (!policy.apart.includes(kind as Fact) && !(kind === 'review' && !undone(identifier))) continue
-    const known = out.get(subject) ?? { facts: new Map(), joins: new Set() }
+    // Each fact is read for the other to be weighed against, whether or not it keeps anyone apart by itself.
+    const thing = THINGS.has(kind) && policy.apart?.includes('given') === true
+    if (!policy.apart?.includes(kind as Fact) && !thing && kind !== 'birth' && kind !== 'given' && kind !== 'initial' && kind !== 'dated' && kind !== 'review') continue
+    // A join that was undone is none, and a fact that was muted is none.
+    if (undone(identifier)) continue
+    const known = out.get(subject) ?? { facts: new Map(), joins: new Set(), things: new Set() }
     out.set(subject, known)
     if (kind === 'review') known.joins.add(identifier)
-    else known.facts.set(kind as Fact, (known.facts.get(kind as Fact) ?? new Set()).add(identifier))
+    else if (thing) known.things.add(identifier)
+    else known.facts.set(kind as Fact | 'initial' | 'dated', (known.facts.get(kind as Fact | 'initial' | 'dated') ?? new Set()).add(identifier))
   }
   return out
 }
@@ -112,10 +122,16 @@ export function knownOf(policy: Policy, edges: readonly Edge[], undone: (identif
 export function conflict(policy: Policy, a: Known | undefined, b: Known | undefined): Fact | undefined {
   if (!a || !b || !policy.apart?.length) return undefined
   if ([...a.joins].some((identifier) => b.joins.has(identifier))) return undefined
-  return policy.apart.find((fact) => {
+  /** Whether they agree on a fact, or undefined where one of them has none. */
+  const agree = (fact: Fact | 'initial' | 'dated') => {
     const [own, others] = [a.facts.get(fact), b.facts.get(fact)]
-    return own && others && ![...own].some((value) => others.has(value))
-  })
+    return own && others && [...own].some((value) => others.has(value))
+  }
+  const named = agree('given') === true || [...a.things].some((thing) => b.things.has(thing))
+  // A name that agrees outranks two dates that one slip of the pen would make one. A father and a son of one name have two dates.
+  if (policy.apart.includes('birth') && agree('birth') === false && !(named && agree('dated') === true)) return 'birth'
+  if (!policy.apart.includes('given') || agree('given') !== false || agree('birth') === true || agree('initial') === true) return undefined
+  return 'given'
 }
 
 type Adjacency = Map<Subject, Map<Subject, number>>
@@ -144,8 +160,12 @@ export function partition(
   separated: readonly (readonly [Subject, Subject])[],
   policy: Policy,
   known: ReadonlyMap<Subject, Known> = new Map(),
-  /** Hears each link a difference of facts took. */
+  /** Hears each link taken because two are kept apart, by a decision or by what is known of them. */
   onCut?: (a: Subject, b: Subject) => void,
+  /** Pairs of whom it is said that they are two people, though nobody decided it. */
+  two: readonly (readonly [Subject, Subject])[] = [],
+  /** When each of two kept apart was first seen. What is tied to both as strongly goes with whoever was first. */
+  since: ReadonlyMap<Subject, number> = new Map(),
 ): Map<Subject, Labels> {
   const component = components(subjects, pairs)
   const members = new Map<Subject, Subject[]>()
@@ -172,6 +192,12 @@ export function partition(
     else apart.set(id, [pair])
   }
 
+  const said = new Map<Subject, (readonly [Subject, Subject])[]>()
+  for (const pair of two) {
+    const id = component.get(pair[0])
+    if (id !== undefined && component.get(pair[1]) === id) said.set(id, [...(said.get(id) ?? []), pair])
+  }
+
   const out = new Map<Subject, Labels>()
   for (const [id, group] of members) {
     if (group.length === 1) {
@@ -179,9 +205,11 @@ export function partition(
       continue
     }
     const told = group.filter((subject) => known.get(subject)?.facts.size).sort()
-    const differ: [Subject, Subject][] = []
+    const differ: (readonly [Subject, Subject])[] = []
     for (const [i, a] of told.entries()) for (const b of told.slice(i + 1)) if (conflict(policy, known.get(a), known.get(b))) differ.push([a, b])
-    for (const piece of split(group, links.get(id) ?? [], apart.get(id) ?? [], policy, differ, known, onCut)) {
+    differ.push(...(said.get(id) ?? []))
+    differ.sort((x, y) => (x[0] === y[0] ? (x[1] < y[1] ? -1 : 1) : x[0] < y[0] ? -1 : 1))
+    for (const piece of split(group, links.get(id) ?? [], apart.get(id) ?? [], policy, differ, known, onCut, since)) {
       let cluster = piece[0]!
       for (const subject of piece) if (subject < cluster) cluster = subject
       for (const subject of piece) out.set(subject, { component: id, cluster })
@@ -190,7 +218,7 @@ export function partition(
   return out
 }
 
-function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subject][], policy: Policy, differ: [Subject, Subject][] = [], known: ReadonlyMap<Subject, Known> = new Map(), onCut?: (a: Subject, b: Subject) => void): Subject[][] {
+function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subject][], policy: Policy, differ: readonly (readonly [Subject, Subject])[] = [], known: ReadonlyMap<Subject, Known> = new Map(), onCut?: (a: Subject, b: Subject) => void, since: ReadonlyMap<Subject, number> = new Map()): Subject[][] {
   const adjacency: Adjacency = new Map(members.map((member) => [member, new Map()]))
   for (const { a, b, score } of links) {
     adjacency.get(a)!.set(b, score)
@@ -202,18 +230,76 @@ function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subj
   }
 
   apart.sort((x, y) => (x[0] === y[0] ? (x[1] < y[1] ? -1 : 1) : x[0] < y[0] ? -1 : 1))
-  for (const [a, b] of apart) cut(a, b)
-  for (const [a, b] of apart) for (const [x, y] of minimumCut(adjacency, a, b)) cut(x, y)
-  // Facts come after decisions, and cut no link a decision made: two held together by those alone stay together.
-  const decided = (a: Subject, b: Subject) => [...(known.get(a)?.joins ?? [])].some((identifier) => known.get(b)?.joins.has(identifier))
-  const cutByFact = (a: Subject, b: Subject) => {
+  const cutApart = (a: Subject, b: Subject) => {
     if (adjacency.get(a)!.has(b)) onCut?.(a, b)
     cut(a, b)
   }
-  for (const [a, b] of differ) cutByFact(a, b)
-  for (const [a, b] of differ) {
-    const found = minimumCut(adjacency, a, b, decided)
-    if (!found.some(([x, y]) => decided(x, y))) for (const [x, y] of found) cutByFact(x, y)
+  for (const [a, b] of apart) cutApart(a, b)
+  // A cut that could be made in two places is made beside whoever came later, so a shared browser stays with the first.
+  const later = (a: Subject, b: Subject): [Subject, Subject] => ((since.get(a) ?? 0) < (since.get(b) ?? 0) ? [b, a] : [a, b])
+  for (const pair of apart) for (const [x, y] of minimumCut(adjacency, ...later(...pair))) cutApart(x, y)
+  // Facts come after decisions, and cut no link a decision made: two held together by those alone stay together.
+  const decided = (a: Subject, b: Subject) => [...(known.get(a)?.joins ?? [])].some((identifier) => known.get(b)?.joins.has(identifier))
+  // That a call was about one, and another call about the other, does not say the two are one: a telephone is many people's.
+  // So two births part a telephone or a browser from one of them, and never two records somebody said are one.
+  const unnamed = new Set(policy.unnamed ?? UNNAMED)
+  const nobody = (subject: Subject) => unnamed.has(subject.slice(0, Math.max(0, subject.indexOf(':'))))
+  const loose = (a: Subject, b: Subject) => nobody(a) || nobody(b)
+  const firm = (a: Subject, b: Subject) => (decided(a, b) ? FIRM : 0)
+  for (const [a, b] of differ) cutApart(a, b)
+  const byBirth = ([a, b]: readonly [Subject, Subject]) => conflict(policy, known.get(a), known.get(b)) === 'birth'
+  // Where somebody joined a telephone or a browser, all the records of a birth are looked at together, before any is cut off by itself or by a name.
+  const inOrder = differ.some(byBirth) && joinedLoosely(members) ? [...differ.filter(byBirth), ...differ.filter((pair) => !byBirth(pair))] : differ
+  for (const [a, b] of inOrder) {
+    const births = byBirth([a, b]) && joinedLoosely(reach(adjacency, a))
+    const found = births ? leastUndone(a, b) : minimumCut(adjacency, ...later(a, b), firm)
+    if (births || !found.some(([x, y]) => decided(x, y))) for (const [x, y] of found) cutApart(x, y)
+  }
+
+  function joinedLoosely(among: Iterable<Subject>): boolean {
+    for (const x of among) for (const y of adjacency.get(x)!.keys()) if (loose(x, y) && decided(x, y)) return true
+    return false
+  }
+
+  /**
+   * The cut between two births that leaves out the fewest joins, and of as few, those of whoever was seen later. The joins are chosen by
+   * themselves, so nothing else shared chooses between them, and what else is shared is cut after. None where two records are joined across.
+   */
+  function leastUndone(a: Subject, b: Subject): [Subject, Subject][] {
+    const births = (subject: Subject) => known.get(subject)?.facts.get('birth') ?? new Set<Identifier>()
+    const piece = [...reach(adjacency, a)]
+    if (!piece.includes(b)) return []
+    const alike = (one: Subject, other: Subject) => piece.filter((each) => each !== one && conflict(policy, known.get(each), known.get(other)) === 'birth' && [...births(each)].some((birth) => births(one).has(birth)))
+    const seen = (each: Subject) => since.get(each) ?? 0
+    // All the records of a birth are on one side, so what is left out is counted once for a person and not for each of their records.
+    // A join of two records comes before that: whoever one ties to a birth of the other side is held to neither.
+    const over = (from: Subject) => {
+      const out = new Set([from])
+      for (const each of out) for (const next of adjacency.get(each)!.keys()) if (decided(each, next) && !loose(each, next)) out.add(next)
+      return out
+    }
+    const [ours, theirs] = [[a, ...alike(a, b)], [b, ...alike(b, a)]]
+    const free = (side: Subject[], other: Subject[]) => side.filter((each, i) => i === 0 || !other.some((one) => over(each).has(one)))
+    const [as, bs] = [free(ours, theirs), free(theirs, ours)]
+    const [first, last] = Math.min(...as.map(seen)) <= Math.min(...bs.map(seen)) ? [as, bs] : [bs, as]
+    const pairs = [first, last].flatMap((side) => side.slice(1).map((each) => [side[0]!, each] as const))
+    const tied = (x: Subject, y: Subject) => pairs.some(([p, q]) => (p === x && q === y) || (p === y && q === x))
+    const held = (links: Adjacency) => {
+      for (const [x, y] of pairs) {
+        links.get(x)!.set(y, 1)
+        links.get(y)!.set(x, 1)
+      }
+      return links
+    }
+    const joins = held(new Map(piece.map((subject) => [subject, new Map([...adjacency.get(subject)!].filter(([next]) => decided(subject, next)))])))
+    const left = minimumCut(joins, last[0]!, first[0]!, (x, y) => (tied(x, y) ? FIRM * 10 : loose(x, y) ? 1 : FIRM))
+    if (left.some(([x, y]) => !loose(x, y))) return []
+    const rest = held(new Map(piece.map((subject) => [subject, new Map(adjacency.get(subject)!)])))
+    for (const [x, y] of left) {
+      rest.get(x)!.delete(y)
+      rest.get(y)!.delete(x)
+    }
+    return [...left, ...minimumCut(rest, last[0]!, first[0]!, (x, y) => (tied(x, y) ? FIRM * 10 : decided(x, y) ? FIRM : 0))]
   }
 
   if (policy.bridge > policy.same) {
@@ -297,12 +383,12 @@ const FIRM = 1e13
  * by maximum flow. Of all cheapest cuts it returns the one nearest `source`,
  * which is unique, so the answer does not depend on search order.
  */
-function minimumCut(adjacency: Adjacency, source: Subject, target: Subject, firm: (a: Subject, b: Subject) => boolean = () => false): [Subject, Subject][] {
+function minimumCut(adjacency: Adjacency, source: Subject, target: Subject, firm: (a: Subject, b: Subject) => number = () => 0): [Subject, Subject][] {
   const piece = reach(adjacency, source)
   if (!piece.has(target)) return []
   const residual = new Map<Subject, Map<Subject, number>>()
   for (const node of piece) {
-    residual.set(node, new Map([...adjacency.get(node)!].map(([next, score]) => [next, firm(node, next) ? FIRM : strength(score)])))
+    residual.set(node, new Map([...adjacency.get(node)!].map(([next, score]) => [next, firm(node, next) || strength(score)])))
   }
 
   for (;;) {

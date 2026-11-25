@@ -51,7 +51,7 @@ class Refusal extends Error {
 export function createHandler(graph: Graph, options: HandlerOptions) {
   const now = options.now ?? Date.now
   const service = createService(graph, { ...options, now })
-  const { convert, calling, textOptions, identify, factsIn } = service
+  const { convert, calling, textOptions, identify, factsIn, named } = service
   const pool = service.pool
   const core: Core = {
     graph,
@@ -127,8 +127,9 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       case 'POST /identify':
         return identify(await json(request))
       case 'POST /match': {
-        const { identifiers, notes, at } = await factsIn(await json(request), false)
-        return { candidates: await graph.match(identifiers, { at }), notes }
+        const body = await json(request)
+        const { identifiers, notes, at } = await factsIn(body, false)
+        return { candidates: await graph.match([...identifiers, ...(await named(body, identifiers)), ...(await named(body, identifiers, 'ward'))], { at }), notes }
       }
       case 'POST /conflicts': {
         const { subjects } = await json(request)

@@ -20,7 +20,6 @@
 - `record` `profile` takes a device, email, phone, address, IP, name, date of birth and identifiers of your own, then normalizes, checks and hashes them.
 - Each link has a score and its evidence. A policy sets a weight, cap and half-life for each kind (`POLICY`, `POLICY_FILE`, `policy.kinds`, `policy.customKinds`).
 - A link below `policy.bridge` (default 0.97) cannot join two groups by itself. `Rule.group` counts grouped kinds once, and `Rule.corroborates` marks kinds that confirm a link.
-- `policy.apart` keeps two subjects apart whose dates of birth differ. Off by default.
 - `decide` merges, unmerges, splits, unsplits, mutes and unmutes. `seen` refuses a decision an unseen one has overtaken (`STALE`).
 - `unmerge` takes a pair. It is refused with `NOT_JOINED` where nobody merged the two, and `notAsAsked` names the pairs that still stand another way.
 - `forget` deletes up to 50 subjects and says which of their conversions had reached an ad platform. The answer is kept with its key.
@@ -44,7 +43,11 @@
 - `report` `campaigns` sets cost beside outcomes, people, value, `costPerOutcome` and `returnOnCost`, with breakdowns and platform-reported conversions.
 - `report` `pipeline` lists people by step. Answers of a report are shared for up to a minute, and `asOf` says of when they are.
 - `record` `cost` takes campaign costs. The newest read of a row stands. Google and Meta costs are read every six hours.
-- A visit in the same cluster is credited, however weak the chain of links to it. An ad click in the window is credited before the number called.
+- A visit in the same cluster is credited, however weak the chain of links to it.
+- Placeholder numbers and office mailboxes link nobody, under every policy. Where two are kept apart, what is tied to both as strongly goes with whoever was first seen. Rebuild after upgrading.
+- Under `apart: ["birth"]`, two dates of birth also part a caller or a browser that staff joined to both. Matches shows the join that was not followed.
+- `policy.apart` keeps two subjects apart whose dates of birth differ, or whose first names can stand for no one name (`given`). Under `given`, one number or email given under one name confirms a link. Off by default.
+- An ad click or a campaign visit in the window is credited before a call or text filed under its number.
 
 ### Conversions and consent
 
@@ -70,6 +73,10 @@
 - Crawlers, previewers, uptime checks and `STAFF_NETWORKS` are excluded. `/collect` is rate limited per address.
 - Requests with invalid UTF-8, NUL characters or more than 32 levels of nesting are refused.
 - `runWorkers` of `./testing` runs every worker once. `npm run firm` and `demo.ts` run in memory.
+- `record` `profile` takes `speaker`, whoever speaks for the subject. Their browser and number are related to the subject and never joined to them, and what brought them earns the credit.
+- A matching rule takes `relates`, for a kind that says two subjects are two people. Clusters need a `rebuild`, because the default policy has the new kind `behalf`.
+- A tap two callers could have made ties neither. On a number others are using, a tap has to be within thirty seconds of its call. A caller who is one visitor's takes another's pool number only while it is shown.
+- A call to a pool number that was somebody else's less than `POOL_GRACE_MINUTES` before is its holder's only with a tap. One by somebody who dialed it when it was another's is nobody's by it. A visitor who comes back gets the number they had.
 
 ### Reviewer screen
 

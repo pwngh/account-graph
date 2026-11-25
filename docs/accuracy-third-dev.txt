@@ -1,0 +1,1106 @@
+code ed6ae737d5bb811d9a62b39f2e8ef82cdf630a29, today b9bba69cc4bd09982e9c8b2929afc3e718232de9
+Node v22.23.0, names f5a69fbe139b8541f96a42dae40bf4d564d29d660f2aeb1add0eec776ec8ff2f, seeds 20270361 to 20270380
+
+## base3: 20 worlds of 2000 people over 120 days
+today: people whose record is with another's 234 of 9305 (2.51%), and without those one spoke for 126 of 9305 (1.35%); joined pairs right 18886 of 19822 (95.28%); links by a tap or a number shown wrong 21 of 2972 (0.71%); credited records to the wrong ad 117 of 6293 (1.86%)
+  over the worlds: people whose record is with another's 1.29% to 4.42%, its mean within 2.13% to 2.92%; joined pairs right 93.31% to 97.20%, its mean within 94.86% to 95.72%
+  of what today found, kept: pairs with a chain 29990 of 29990 (100.00%); pairs of records 1528 of 1528 (100.00%), of them written the same 805 of 805 (100.00%), in forms the table knows 434 of 434 (100.00%), and in forms it does not 289 of 289 (100.00%); records credited to their ad 6176 of 6176 (100.00%); calls tied to a browser of their caller's 2956 of 2956 (100.00%)
+  wrong pairs: one spoke for the other, and a record says so 273; nobody spoke for the other 355; one spoke for the other, and none says so 308; by kind visitor visitor 40, contact visitor 420, contact contact 162, caller visitor 64, caller contact 237, caller caller 10, call contact 1, call visitor 2
+    links by device: 6266, 241 between two people
+    links by phone: 5127, 138 between two people
+    links by dial: 2972, 21 between two people
+    links by email + phone: 495, 43 between two people
+    links by device + phone: 416, 7 between two people
+    links by device + email: 367, 4 between two people
+    links by email: 138, 69 between two people
+    links by device + email + phone: 6, 6 between two people
+new: people whose record is with another's 72 of 9305 (0.77%), and without those one spoke for 42 of 9305 (0.45%); joined pairs right 18820 of 19211 (97.96%); links by a tap or a number shown wrong 13 of 2853 (0.46%); credited records to the wrong ad 98 of 6316 (1.55%)
+  over the worlds: people whose record is with another's 0.00% to 2.25%, its mean within 0.52% to 1.04%; joined pairs right 96.69% to 98.90%, its mean within 97.68% to 98.25%
+  of what today found, kept: pairs with a chain 29330 of 29990 (97.80%); pairs of records 1471 of 1528 (96.27%), of them written the same 784 of 805 (97.39%), in forms the table knows 425 of 434 (97.93%), and in forms it does not 262 of 289 (90.66%); records credited to their ad 6104 of 6176 (98.83%); calls tied to a browser of their caller's 2836 of 2956 (95.94%)
+  wrong pairs: one spoke for the other, and none says so 248; nobody spoke for the other 139; one spoke for the other, and a record says so 4; by kind visitor visitor 14, contact visitor 183, contact contact 47, caller visitor 36, caller contact 103, caller caller 5, call contact 1, call visitor 2
+    links by device: 6069, 122 between two people
+    links by phone: 4877, 71 between two people
+    links by dial: 2853, 13 between two people
+    links by named + phone: 354, 1 between two people
+    links by email + named + phone: 326, 4 between two people
+    links by device + named + phone: 307, 0 between two people
+    links by device + email + named: 279, 0 between two people
+    links by email + phone: 132, 8 between two people
+    links by device + phone: 77, 1 between two people
+    links by device + email: 66, 2 between two people
+    links by email + named: 63, 3 between two people
+    links by email: 53, 25 between two people
+    links by ward: 6, 0 between two people
+    links by device + email + phone: 1, 1 between two people
+    links by named + phone + ward: 1, 0 between two people
+    links by email + named + phone + ward: 1, 0 between two people
+today pool: people whose record is with another's 234 of 9305 (2.51%), and without those one spoke for 126 of 9305 (1.35%); joined pairs right 21255 of 23695 (89.70%); links by a tap or a number shown wrong 592 of 5262 (11.25%); credited records to the wrong ad 175 of 7064 (2.48%)
+  over the worlds: people whose record is with another's 1.29% to 4.42%, its mean within 2.13% to 2.92%; joined pairs right 87.90% to 92.83%, its mean within 89.01% to 90.43%
+  of what today found, kept: pairs with a chain 29958 of 29990 (99.89%); pairs of records 1528 of 1528 (100.00%), of them written the same 805 of 805 (100.00%), in forms the table knows 434 of 434 (100.00%), and in forms it does not 289 of 289 (100.00%); records credited to their ad 6156 of 6176 (99.68%); calls tied to a browser of their caller's 2947 of 2956 (99.70%)
+  wrong pairs: one spoke for the other, and a record says so 301; nobody spoke for the other 1766; one spoke for the other, and none says so 373; by kind visitor visitor 499, contact visitor 847, contact contact 162, caller visitor 580, caller contact 304, caller caller 15, call contact 9, call visitor 24
+    links by device: 6266, 241 between two people
+    links by phone: 5127, 138 between two people
+    links by lease: 4386, 589 between two people
+    links by dial: 875, 3 between two people
+    links by email + phone: 495, 43 between two people
+    links by device + phone: 416, 7 between two people
+    links by device + email: 367, 4 between two people
+    links by email: 138, 69 between two people
+    links by device + email + phone: 6, 6 between two people
+    links by dial + lease: 1, 0 between two people
+new pool: people whose record is with another's 72 of 9305 (0.77%), and without those one spoke for 42 of 9305 (0.45%); joined pairs right 20935 of 21568 (97.07%); links by a tap or a number shown wrong 152 of 4529 (3.36%); credited records to the wrong ad 137 of 7027 (1.95%)
+  over the worlds: people whose record is with another's 0.00% to 2.25%, its mean within 0.52% to 1.04%; joined pairs right 95.48% to 98.51%, its mean within 96.71% to 97.41%
+  of what today found, kept: pairs with a chain 29525 of 29990 (98.45%); pairs of records 1471 of 1528 (96.27%), of them written the same 784 of 805 (97.39%), in forms the table knows 425 of 434 (97.93%), and in forms it does not 262 of 289 (90.66%); records credited to their ad 6144 of 6176 (99.48%); calls tied to a browser of their caller's 2930 of 2956 (99.12%)
+  wrong pairs: nobody spoke for the other 340; one spoke for the other, and none says so 289; one spoke for the other, and a record says so 4; by kind visitor visitor 29, contact visitor 226, contact contact 47, caller visitor 155, caller contact 141, caller caller 7, call contact 6, call visitor 22
+    links by device: 6069, 122 between two people
+    links by phone: 4877, 71 between two people
+    links by lease: 3262, 151 between two people
+    links by dial: 1263, 1 between two people
+    links by named + phone: 354, 1 between two people
+    links by email + named + phone: 326, 4 between two people
+    links by device + named + phone: 307, 0 between two people
+    links by device + email + named: 279, 0 between two people
+    links by email + phone: 132, 8 between two people
+    links by device + phone: 77, 1 between two people
+    links by device + email: 66, 2 between two people
+    links by email + named: 63, 3 between two people
+    links by email: 53, 25 between two people
+    links by ward: 6, 0 between two people
+    links by dial + lease: 4, 0 between two people
+    links by device + email + phone: 1, 1 between two people
+    links by named + phone + ward: 1, 0 between two people
+    links by email + named + phone + ward: 1, 0 between two people
+new intake: people whose record is with another's 156 of 9390 (1.66%), and without those one spoke for 98 of 9390 (1.04%); joined pairs right 20043 of 20808 (96.32%); links by a tap or a number shown wrong 13 of 2853 (0.46%); credited records to the wrong ad 97 of 6397 (1.52%)
+  over the worlds: people whose record is with another's 0.44% to 2.69%, its mean within 1.38% to 1.95%; joined pairs right 94.26% to 98.23%, its mean within 95.81% to 96.87%
+  of what today found, kept: pairs with a chain 29198 of 29990 (97.36%); pairs of records 1468 of 1528 (96.07%), of them written the same 783 of 805 (97.27%), in forms the table knows 423 of 434 (97.47%), and in forms it does not 262 of 289 (90.66%); records credited to their ad 6093 of 6176 (98.66%); calls tied to a browser of their caller's 2836 of 2956 (95.94%)
+  wrong pairs: one spoke for the other, and none says so 167; nobody spoke for the other 524; one spoke for the other, and a record says so 74; by kind visitor visitor 36, contact visitor 224, contact contact 99, caller visitor 112, caller contact 217, caller caller 55, call contact 11, call caller 5, call visitor 6
+    links by device: 6069, 122 between two people
+    links by phone: 3060, 25 between two people
+    links by dial: 2853, 13 between two people
+    links by phone + review: 2096, 11 between two people
+    links by named + phone: 345, 1 between two people
+    links by review: 325, 92 between two people
+    links by email + named + phone: 308, 4 between two people
+    links by device + named + phone: 299, 0 between two people
+    links by device + email + named: 273, 0 between two people
+    links by email + phone: 127, 6 between two people
+    links by device + phone: 77, 1 between two people
+    links by device + email: 66, 2 between two people
+    links by email + named: 61, 2 between two people
+    links by email: 54, 26 between two people
+    links by behalf + review: 51, 15 between two people
+    links by behalf + phone + review: 33, 5 between two people
+    links by named + phone + review: 20, 1 between two people
+    links by email + named + phone + review: 18, 0 between two people
+    links by device + named + phone + review: 8, 0 between two people
+    links by ward: 6, 0 between two people
+    links by device + email + named + review: 6, 0 between two people
+    links by email + phone + review: 4, 1 between two people
+    links by email + named + review: 2, 1 between two people
+    links by device + email + phone: 1, 1 between two people
+    links by named + phone + ward: 1, 0 between two people
+    links by email + named + phone + ward: 1, 0 between two people
+    links by behalf + email + phone + review: 1, 1 between two people
+names written as they are, in a form the table knows, and in one it does not: {"same":7458,"covered":2458,"not":1238}
+marks:
+  held: people whose record is with another's, at most 1%: 72 of 9305 (0.77%)
+  BAD: joined pairs right, at least 98%: 18820 of 19211 (97.96%)
+  held: links by device + email wrong, at most 5%: 2 of 66 (3.03%)
+  held: links by device wrong, at most 5%: 122 of 6069 (2.01%)
+  held: links by device + phone wrong, at most 5%: 1 of 77 (1.30%)
+  BAD: links by email + phone wrong, at most 5%: 8 of 132 (6.06%)
+  held: links by phone wrong, at most 5%: 71 of 4877 (1.46%)
+  held: links by dial wrong, at most 5%: 13 of 2853 (0.46%)
+  held: links by device + email + named wrong, at most 5%: 0 of 279 (0.00%)
+  held: links by device + named + phone wrong, at most 5%: 0 of 307 (0.00%)
+  held: links by email + named + phone wrong, at most 5%: 4 of 326 (1.23%)
+  held: links by named + phone wrong, at most 5%: 1 of 354 (0.28%)
+  held: credited records to the wrong ad, at most 2%: 98 of 6316 (1.55%)
+  held: links by a tap wrong, at most 5%: 13 of 2853 (0.46%)
+  held: with a pool, links by a tap or a number shown wrong, at most 5%: 152 of 4529 (3.36%)
+  held: kept of pairs with a chain, at least 90%: 29330 of 29990 (97.80%)
+  held: kept of calls tied, at least 90%: 2836 of 2956 (95.94%)
+  held: kept with a pool of calls tied, at least 90%: 2930 of 2956 (99.12%)
+  no mark: with a pool, people whose record is with another's 72 of 9305 (0.77%); joined pairs right 20935 of 21568 (97.07%)
+  BAD: kept of pairs of records, at least 98%: 1471 of 1528 (96.27%)
+  held: kept of records credited to their ad, at least 90%: 6104 of 6176 (98.83%)
+code ed6ae737d5bb811d9a62b39f2e8ef82cdf630a29, today b9bba69cc4bd09982e9c8b2929afc3e718232de9
+Node v22.23.0, names f5a69fbe139b8541f96a42dae40bf4d564d29d660f2aeb1add0eec776ec8ff2f, seeds 20270361 to 20270380
+
+## low3: 20 worlds of 2000 people over 120 days
+today: people whose record is with another's 104 of 8146 (1.28%), and without those one spoke for 74 of 8146 (0.91%); joined pairs right 17498 of 17916 (97.67%); links by a tap or a number shown wrong 5 of 3552 (0.14%); credited records to the wrong ad 55 of 6206 (0.89%)
+  over the worlds: people whose record is with another's 0.00% to 3.86%, its mean within 0.80% to 1.73%; joined pairs right 95.10% to 99.55%, its mean within 97.18% to 98.20%
+  of what today found, kept: pairs with a chain 22532 of 22532 (100.00%); pairs of records 843 of 843 (100.00%), of them written the same 621 of 621 (100.00%), in forms the table knows 147 of 147 (100.00%), and in forms it does not 75 of 75 (100.00%); records credited to their ad 6151 of 6151 (100.00%); calls tied to a browser of their caller's 3550 of 3550 (100.00%)
+  wrong pairs: one spoke for the other, and a record says so 149; one spoke for the other, and none says so 63; nobody spoke for the other 206; by kind visitor visitor 34, contact visitor 172, caller visitor 31, caller contact 109, contact contact 67, caller caller 5
+    links by device: 5691, 79 between two people
+    links by phone: 4603, 69 between two people
+    links by dial: 3552, 5 between two people
+    links by device + phone: 258, 0 between two people
+    links by device + email: 253, 2 between two people
+    links by email + phone: 223, 11 between two people
+    links by email: 52, 33 between two people
+    links by device + email + phone: 3, 3 between two people
+new: people whose record is with another's 12 of 8146 (0.15%), and without those one spoke for 10 of 8146 (0.12%); joined pairs right 17499 of 17577 (99.56%); links by a tap or a number shown wrong 4 of 3471 (0.12%); credited records to the wrong ad 47 of 6220 (0.76%)
+  over the worlds: people whose record is with another's 0.00% to 0.94%, its mean within 0.02% to 0.27%; joined pairs right 98.72% to 100.00%, its mean within 99.41% to 99.72%
+  of what today found, kept: pairs with a chain 22230 of 22532 (98.66%); pairs of records 830 of 843 (98.46%), of them written the same 614 of 621 (98.87%), in forms the table knows 144 of 147 (97.96%), and in forms it does not 72 of 75 (96.00%); records credited to their ad 6110 of 6151 (99.33%); calls tied to a browser of their caller's 3468 of 3550 (97.69%)
+  wrong pairs: nobody spoke for the other 29; one spoke for the other, and none says so 49; by kind visitor visitor 6, contact visitor 36, caller visitor 7, caller contact 20, contact contact 9
+    links by device: 5597, 24 between two people
+    links by phone: 4470, 18 between two people
+    links by dial: 3471, 4 between two people
+    links by device + named + phone: 228, 0 between two people
+    links by device + email + named: 228, 0 between two people
+    links by named + phone: 193, 0 between two people
+    links by email + named + phone: 181, 0 between two people
+    links by email + phone: 39, 1 between two people
+    links by device + phone: 25, 0 between two people
+    links by device + email: 19, 0 between two people
+    links by email + named: 19, 0 between two people
+    links by email: 6, 3 between two people
+    links by email + named + phone + ward: 1, 0 between two people
+    links by device + email + phone: 1, 1 between two people
+    links by ward: 1, 0 between two people
+today pool: people whose record is with another's 104 of 8146 (1.28%), and without those one spoke for 74 of 8146 (0.91%); joined pairs right 18813 of 19998 (94.07%); links by a tap or a number shown wrong 295 of 4928 (5.99%); credited records to the wrong ad 78 of 6720 (1.16%)
+  over the worlds: people whose record is with another's 0.00% to 3.86%, its mean within 0.80% to 1.73%; joined pairs right 91.56% to 96.21%, its mean within 93.45% to 94.77%
+  of what today found, kept: pairs with a chain 22517 of 22532 (99.93%); pairs of records 843 of 843 (100.00%), of them written the same 621 of 621 (100.00%), in forms the table knows 147 of 147 (100.00%), and in forms it does not 75 of 75 (100.00%); records credited to their ad 6134 of 6151 (99.72%); calls tied to a browser of their caller's 3543 of 3550 (99.80%)
+  wrong pairs: nobody spoke for the other 952; one spoke for the other, and a record says so 160; one spoke for the other, and none says so 73; by kind visitor visitor 271, contact visitor 415, caller visitor 292, caller contact 123, call visitor 6, call contact 1, contact contact 67, caller caller 10
+    links by device: 5691, 79 between two people
+    links by phone: 4603, 69 between two people
+    links by lease: 4232, 295 between two people
+    links by dial: 696, 0 between two people
+    links by device + phone: 258, 0 between two people
+    links by device + email: 253, 2 between two people
+    links by email + phone: 223, 11 between two people
+    links by email: 52, 33 between two people
+    links by device + email + phone: 3, 3 between two people
+new pool: people whose record is with another's 12 of 8146 (0.15%), and without those one spoke for 10 of 8146 (0.12%); joined pairs right 18652 of 18785 (99.29%); links by a tap or a number shown wrong 38 of 4452 (0.85%); credited records to the wrong ad 58 of 6654 (0.87%)
+  over the worlds: people whose record is with another's 0.00% to 0.94%, its mean within 0.02% to 0.27%; joined pairs right 98.62% to 99.89%, its mean within 99.16% to 99.43%
+  of what today found, kept: pairs with a chain 22349 of 22532 (99.19%); pairs of records 830 of 843 (98.46%), of them written the same 614 of 621 (98.87%), in forms the table knows 144 of 147 (97.96%), and in forms it does not 72 of 75 (96.00%); records credited to their ad 6141 of 6151 (99.84%); calls tied to a browser of their caller's 3538 of 3550 (99.66%)
+  wrong pairs: nobody spoke for the other 70; one spoke for the other, and none says so 63; by kind visitor visitor 10, contact visitor 44, caller visitor 39, caller contact 26, call visitor 4, contact contact 9, caller caller 1
+    links by device: 5597, 24 between two people
+    links by phone: 4470, 18 between two people
+    links by lease: 3109, 38 between two people
+    links by dial: 1342, 0 between two people
+    links by device + named + phone: 228, 0 between two people
+    links by device + email + named: 228, 0 between two people
+    links by named + phone: 193, 0 between two people
+    links by email + named + phone: 181, 0 between two people
+    links by email + phone: 39, 1 between two people
+    links by device + phone: 25, 0 between two people
+    links by device + email: 19, 0 between two people
+    links by email + named: 19, 0 between two people
+    links by email: 6, 3 between two people
+    links by dial + lease: 1, 0 between two people
+    links by email + named + phone + ward: 1, 0 between two people
+    links by device + email + phone: 1, 1 between two people
+    links by ward: 1, 0 between two people
+new intake: people whose record is with another's 58 of 8184 (0.71%), and without those one spoke for 48 of 8184 (0.59%); joined pairs right 17933 of 18288 (98.06%); links by a tap or a number shown wrong 4 of 3471 (0.12%); credited records to the wrong ad 47 of 6275 (0.75%)
+  over the worlds: people whose record is with another's 0.00% to 1.91%, its mean within 0.41% to 0.99%; joined pairs right 95.48% to 99.32%, its mean within 97.64% to 98.54%
+  of what today found, kept: pairs with a chain 22091 of 22532 (98.04%); pairs of records 826 of 843 (97.98%), of them written the same 610 of 621 (98.23%), in forms the table knows 144 of 147 (97.96%), and in forms it does not 72 of 75 (96.00%); records credited to their ad 6099 of 6151 (99.15%); calls tied to a browser of their caller's 3468 of 3550 (97.69%)
+  wrong pairs: nobody spoke for the other 305; one spoke for the other, and none says so 20; one spoke for the other, and a record says so 30; by kind visitor visitor 28, contact visitor 78, caller visitor 71, caller contact 98, call visitor 2, call contact 3, call caller 1, contact contact 39, caller caller 35
+    links by device: 5597, 24 between two people
+    links by dial: 3471, 4 between two people
+    links by phone: 2323, 2 between two people
+    links by phone + review: 2271, 3 between two people
+    links by device + email + named: 223, 0 between two people
+    links by device + named + phone: 222, 0 between two people
+    links by named + phone: 189, 0 between two people
+    links by email + named + phone: 171, 0 between two people
+    links by review: 154, 58 between two people
+    links by email + phone: 36, 2 between two people
+    links by behalf + review: 30, 13 between two people
+    links by device + phone: 25, 0 between two people
+    links by behalf + phone + review: 22, 2 between two people
+    links by device + email: 19, 0 between two people
+    links by email + named: 18, 0 between two people
+    links by email + named + phone + review: 10, 0 between two people
+    links by named + phone + review: 9, 0 between two people
+    links by email: 6, 3 between two people
+    links by device + named + phone + review: 6, 0 between two people
+    links by device + email + named + review: 5, 0 between two people
+    links by email + phone + review: 4, 0 between two people
+    links by behalf + email + phone + review: 1, 0 between two people
+    links by email + named + phone + ward: 1, 0 between two people
+    links by device + email + phone: 1, 1 between two people
+    links by ward: 1, 0 between two people
+    links by behalf + email + review: 1, 1 between two people
+    links by email + named + review: 1, 0 between two people
+names written as they are, in a form the table knows, and in one it does not: {"same":7532,"covered":1163,"not":439}
+marks:
+code ed6ae737d5bb811d9a62b39f2e8ef82cdf630a29, today b9bba69cc4bd09982e9c8b2929afc3e718232de9
+Node v22.23.0, names f5a69fbe139b8541f96a42dae40bf4d564d29d660f2aeb1add0eec776ec8ff2f, seeds 20270361 to 20270380
+
+## high3: 20 worlds of 2000 people over 120 days
+today: people whose record is with another's 500 of 11836 (4.22%), and without those one spoke for 285 of 11836 (2.41%); joined pairs right 22077 of 24058 (91.77%); links by a tap or a number shown wrong 91 of 3067 (2.97%); credited records to the wrong ad 239 of 6622 (3.61%)
+  over the worlds: people whose record is with another's 1.98% to 7.67%, its mean within 3.54% to 4.91%; joined pairs right 88.18% to 93.70%, its mean within 91.09% to 92.49%
+  of what today found, kept: pairs with a chain 45277 of 45277 (100.00%); pairs of records 2343 of 2343 (100.00%), of them written the same 864 of 864 (100.00%), in forms the table knows 705 of 705 (100.00%), and in forms it does not 774 of 774 (100.00%); records credited to their ad 6383 of 6383 (100.00%); calls tied to a browser of their caller's 2977 of 2977 (100.00%)
+  wrong pairs: one spoke for the other, and none says so 899; one spoke for the other, and a record says so 289; nobody spoke for the other 793; by kind visitor visitor 100, contact visitor 886, caller visitor 148, caller contact 417, contact contact 399, call visitor 8, call contact 11, caller caller 11, call caller 1
+    links by device: 7131, 514 between two people
+    links by phone: 6758, 261 between two people
+    links by dial: 3067, 91 between two people
+    links by email + phone: 678, 83 between two people
+    links by device + phone: 540, 8 between two people
+    links by device + email: 450, 3 between two people
+    links by email: 321, 172 between two people
+    links by device + email + phone: 14, 14 between two people
+new: people whose record is with another's 172 of 11836 (1.45%), and without those one spoke for 92 of 11836 (0.78%); joined pairs right 21600 of 22663 (95.31%); links by a tap or a number shown wrong 72 of 2802 (2.57%); credited records to the wrong ad 181 of 6581 (2.75%)
+  over the worlds: people whose record is with another's 0.34% to 2.84%, its mean within 1.14% to 1.77%; joined pairs right 93.68% to 97.05%, its mean within 94.92% to 95.72%
+  of what today found, kept: pairs with a chain 43729 of 45277 (96.58%); pairs of records 2171 of 2343 (92.66%), of them written the same 836 of 864 (96.76%), in forms the table knows 676 of 705 (95.89%), and in forms it does not 659 of 774 (85.14%); records credited to their ad 6224 of 6383 (97.51%); calls tied to a browser of their caller's 2722 of 2977 (91.43%)
+  wrong pairs: one spoke for the other, and none says so 714; nobody spoke for the other 338; one spoke for the other, and a record says so 11; by kind visitor visitor 46, contact visitor 520, caller visitor 96, caller contact 254, contact contact 121, call visitor 6, call contact 10, caller caller 8, call caller 2
+    links by device: 6811, 358 between two people
+    links by phone: 6350, 193 between two people
+    links by dial: 2802, 72 between two people
+    links by named + phone: 610, 3 between two people
+    links by email + named + phone: 333, 7 between two people
+    links by device + named + phone: 298, 0 between two people
+    links by email + phone: 276, 20 between two people
+    links by device + email + named: 260, 0 between two people
+    links by device + phone: 188, 1 between two people
+    links by device + email: 148, 1 between two people
+    links by email: 129, 61 between two people
+    links by email + named: 107, 11 between two people
+    links by device + email + phone: 5, 5 between two people
+    links by ward: 2, 0 between two people
+    links by device + email + named + phone: 1, 1 between two people
+today pool: people whose record is with another's 500 of 11836 (4.22%), and without those one spoke for 285 of 11836 (2.41%); joined pairs right 25971 of 30026 (86.50%); links by a tap or a number shown wrong 888 of 6307 (14.08%); credited records to the wrong ad 347 of 7620 (4.55%)
+  over the worlds: people whose record is with another's 1.98% to 7.67%, its mean within 3.54% to 4.91%; joined pairs right 81.64% to 89.05%, its mean within 85.69% to 87.42%
+  of what today found, kept: pairs with a chain 45227 of 45277 (99.89%); pairs of records 2343 of 2343 (100.00%), of them written the same 864 of 864 (100.00%), in forms the table knows 705 of 705 (100.00%), and in forms it does not 774 of 774 (100.00%); records credited to their ad 6362 of 6383 (99.67%); calls tied to a browser of their caller's 2970 of 2977 (99.76%)
+  wrong pairs: one spoke for the other, and none says so 1104; one spoke for the other, and a record says so 331; nobody spoke for the other 2620; by kind visitor visitor 624, contact visitor 1419, caller visitor 877, caller contact 587, contact contact 399, call visitor 80, call contact 41, caller caller 25, call caller 3
+    links by device: 7131, 514 between two people
+    links by phone: 6758, 261 between two people
+    links by lease: 4812, 867 between two people
+    links by dial: 1494, 21 between two people
+    links by email + phone: 678, 83 between two people
+    links by device + phone: 540, 8 between two people
+    links by device + email: 450, 3 between two people
+    links by email: 321, 172 between two people
+    links by device + email + phone: 14, 14 between two people
+    links by dial + lease: 1, 0 between two people
+new pool: people whose record is with another's 174 of 11836 (1.47%), and without those one spoke for 94 of 11836 (0.79%); joined pairs right 25302 of 27008 (93.68%); links by a tap or a number shown wrong 429 of 5452 (7.87%); credited records to the wrong ad 259 of 7531 (3.44%)
+  over the worlds: people whose record is with another's 0.34% to 2.84%, its mean within 1.16% to 1.78%; joined pairs right 91.54% to 95.06%, its mean within 93.27% to 94.11%
+  of what today found, kept: pairs with a chain 44143 of 45277 (97.50%); pairs of records 2170 of 2343 (92.62%), of them written the same 836 of 864 (96.76%), in forms the table knows 676 of 705 (95.89%), and in forms it does not 658 of 774 (85.01%); records credited to their ad 6271 of 6383 (98.25%); calls tied to a browser of their caller's 2892 of 2977 (97.14%)
+  wrong pairs: one spoke for the other, and none says so 883; nobody spoke for the other 812; one spoke for the other, and a record says so 11; by kind visitor visitor 68, contact visitor 641, caller visitor 390, caller contact 358, contact contact 122, call visitor 84, call contact 27, caller caller 13, call caller 3
+    links by device: 6811, 358 between two people
+    links by phone: 6350, 193 between two people
+    links by lease: 3776, 415 between two people
+    links by dial: 1674, 14 between two people
+    links by named + phone: 610, 3 between two people
+    links by email + named + phone: 333, 7 between two people
+    links by device + named + phone: 298, 0 between two people
+    links by email + phone: 276, 20 between two people
+    links by device + email + named: 260, 0 between two people
+    links by device + phone: 188, 1 between two people
+    links by device + email: 148, 1 between two people
+    links by email: 129, 61 between two people
+    links by email + named: 107, 11 between two people
+    links by device + email + phone: 5, 5 between two people
+    links by dial + lease: 2, 0 between two people
+    links by ward: 2, 0 between two people
+    links by device + email + named + phone: 1, 1 between two people
+new intake: people whose record is with another's 293 of 11997 (2.44%), and without those one spoke for 191 of 11997 (1.59%); joined pairs right 24362 of 26098 (93.35%); links by a tap or a number shown wrong 72 of 2802 (2.57%); credited records to the wrong ad 185 of 6634 (2.79%)
+  over the worlds: people whose record is with another's 0.67% to 4.06%, its mean within 2.09% to 2.79%; joined pairs right 88.96% to 96.00%, its mean within 92.63% to 94.10%
+  of what today found, kept: pairs with a chain 43638 of 45277 (96.38%); pairs of records 2165 of 2343 (92.40%), of them written the same 832 of 864 (96.30%), in forms the table knows 677 of 705 (96.03%), and in forms it does not 656 of 774 (84.75%); records credited to their ad 6201 of 6383 (97.15%); calls tied to a browser of their caller's 2722 of 2977 (91.43%)
+  wrong pairs: one spoke for the other, and none says so 541; nobody spoke for the other 1126; one spoke for the other, and a record says so 69; by kind visitor visitor 81, contact visitor 582, caller visitor 250, caller contact 431, contact contact 196, call visitor 22, call contact 39, call call 1, caller caller 115, call caller 19
+    links by device: 6811, 358 between two people
+    links by phone: 4807, 79 between two people
+    links by dial: 2802, 72 between two people
+    links by phone + review: 1891, 12 between two people
+    links by review: 806, 175 between two people
+    links by named + phone: 596, 6 between two people
+    links by email + named + phone: 314, 6 between two people
+    links by device + named + phone: 295, 0 between two people
+    links by email + phone: 273, 20 between two people
+    links by device + email + named: 254, 0 between two people
+    links by device + phone: 188, 1 between two people
+    links by device + email: 148, 1 between two people
+    links by email: 129, 61 between two people
+    links by email + named: 105, 11 between two people
+    links by behalf + phone + review: 52, 10 between two people
+    links by behalf + review: 45, 8 between two people
+    links by named + phone + review: 21, 0 between two people
+    links by email + named + phone + review: 19, 1 between two people
+    links by device + email + named + review: 6, 0 between two people
+    links by device + email + phone: 5, 5 between two people
+    links by device + named + phone + review: 3, 0 between two people
+    links by email + phone + review: 3, 0 between two people
+    links by email + named + review: 2, 0 between two people
+    links by behalf + email + phone + review: 2, 1 between two people
+    links by ward: 2, 0 between two people
+    links by device + email + named + phone: 1, 1 between two people
+names written as they are, in a form the table knows, and in one it does not: {"same":7591,"covered":4461,"not":3091}
+marks:
+  held: people whose record is with another's, at most 2.5%: 172 of 11836 (1.45%)
+  BAD: kept of pairs of records, at least 95%: 2171 of 2343 (92.66%)
+  held: kept of records credited to their ad, at least 90%: 6224 of 6383 (97.51%)
+code ed6ae737d5bb811d9a62b39f2e8ef82cdf630a29, today b9bba69cc4bd09982e9c8b2929afc3e718232de9
+Node v22.23.0, names f5a69fbe139b8541f96a42dae40bf4d564d29d660f2aeb1add0eec776ec8ff2f, seeds 20270361 to 20270380
+
+## busy3: 20 worlds of 6000 people over 5 days
+today: people whose record is with another's 396 of 21146 (1.87%), and without those one spoke for 248 of 21146 (1.17%); joined pairs right 37330 of 40988 (91.08%); links by a tap or a number shown wrong 1265 of 5949 (21.26%); credited records to the wrong ad 600 of 15027 (3.99%)
+  over the worlds: people whose record is with another's 0.57% to 2.98%, its mean within 1.56% to 2.17%; joined pairs right 89.49% to 93.29%, its mean within 90.50% to 91.68%
+  of what today found, kept: pairs with a chain 62780 of 62780 (100.00%); pairs of records 2942 of 2942 (100.00%), of them written the same 1589 of 1589 (100.00%), in forms the table knows 844 of 844 (100.00%), and in forms it does not 509 of 509 (100.00%); records credited to their ad 14427 of 14427 (100.00%); calls tied to a browser of their caller's 4686 of 4686 (100.00%)
+  wrong pairs: nobody spoke for the other 2675; one spoke for the other, and none says so 494; one spoke for the other, and a record says so 489; by kind contact visitor 1216, caller visitor 1150, caller contact 634, visitor visitor 200, contact contact 271, caller caller 119, call visitor 41, call contact 19, call caller 8
+    links by device: 12427, 446 between two people
+    links by phone: 12151, 286 between two people
+    links by dial: 5949, 1265 between two people
+    links by email + phone: 851, 39 between two people
+    links by device + phone: 798, 6 between two people
+    links by device + email: 773, 12 between two people
+    links by email: 216, 117 between two people
+    links by device + email + phone: 29, 29 between two people
+new: people whose record is with another's 80 of 21146 (0.38%), and without those one spoke for 54 of 21146 (0.26%); joined pairs right 35737 of 36688 (97.41%); links by a tap or a number shown wrong 209 of 3746 (5.58%); credited records to the wrong ad 224 of 14333 (1.56%)
+  over the worlds: people whose record is with another's 0.00% to 1.14%, its mean within 0.24% to 0.52%; joined pairs right 96.23% to 98.31%, its mean within 97.15% to 97.66%
+  of what today found, kept: pairs with a chain 59087 of 62780 (94.12%); pairs of records 2802 of 2942 (95.24%), of them written the same 1538 of 1589 (96.79%), in forms the table knows 817 of 844 (96.80%), and in forms it does not 447 of 509 (87.82%); records credited to their ad 13710 of 14427 (95.03%); calls tied to a browser of their caller's 3237 of 4686 (69.08%)
+  wrong pairs: nobody spoke for the other 538; one spoke for the other, and none says so 401; one spoke for the other, and a record says so 12; by kind contact visitor 365, caller visitor 232, caller contact 233, visitor visitor 43, contact contact 50, caller caller 17, call visitor 5, call contact 5, call caller 1
+    links by device: 11991, 216 between two people
+    links by phone: 11632, 144 between two people
+    links by dial: 3746, 209 between two people
+    links by named + phone: 725, 1 between two people
+    links by device + named + phone: 619, 0 between two people
+    links by email + named + phone: 593, 3 between two people
+    links by device + email + named: 579, 0 between two people
+    links by email + phone: 216, 4 between two people
+    links by device + email: 138, 1 between two people
+    links by device + phone: 128, 0 between two people
+    links by email + named: 92, 3 between two people
+    links by email: 67, 38 between two people
+    links by ward: 9, 0 between two people
+    links by device + email + phone: 4, 4 between two people
+today pool: people whose record is with another's 396 of 21146 (1.87%), and without those one spoke for 248 of 21146 (1.17%); joined pairs right 44103 of 49559 (88.99%); links by a tap or a number shown wrong 1748 of 11281 (15.50%); credited records to the wrong ad 700 of 17222 (4.06%)
+  over the worlds: people whose record is with another's 0.57% to 2.98%, its mean within 1.56% to 2.17%; joined pairs right 87.19% to 91.03%, its mean within 88.53% to 89.48%
+  of what today found, kept: pairs with a chain 62702 of 62780 (99.88%); pairs of records 2942 of 2942 (100.00%), of them written the same 1589 of 1589 (100.00%), in forms the table knows 844 of 844 (100.00%), and in forms it does not 509 of 509 (100.00%); records credited to their ad 14318 of 14427 (99.24%); calls tied to a browser of their caller's 4670 of 4686 (99.66%)
+  wrong pairs: nobody spoke for the other 4292; one spoke for the other, and none says so 613; one spoke for the other, and a record says so 551; by kind contact visitor 1895, caller visitor 1714, caller contact 584, visitor visitor 878, contact contact 271, caller caller 30, call visitor 66, call contact 17, call caller 1
+    links by device: 12427, 446 between two people
+    links by phone: 12151, 286 between two people
+    links by lease: 10339, 1626 between two people
+    links by dial: 942, 122 between two people
+    links by email + phone: 851, 39 between two people
+    links by device + phone: 798, 6 between two people
+    links by device + email: 773, 12 between two people
+    links by email: 216, 117 between two people
+    links by device + email + phone: 29, 29 between two people
+new pool: people whose record is with another's 78 of 21146 (0.37%), and without those one spoke for 54 of 21146 (0.26%); joined pairs right 39848 of 40807 (97.65%); links by a tap or a number shown wrong 243 of 6683 (3.64%); credited records to the wrong ad 215 of 15655 (1.37%)
+  over the worlds: people whose record is with another's 0.00% to 1.14%, its mean within 0.23% to 0.50%; joined pairs right 96.80% to 98.46%, its mean within 97.41% to 97.89%
+  of what today found, kept: pairs with a chain 61417 of 62780 (97.83%); pairs of records 2802 of 2942 (95.24%), of them written the same 1538 of 1589 (96.79%), in forms the table knows 817 of 844 (96.80%), and in forms it does not 447 of 509 (87.82%); records credited to their ad 14283 of 14427 (99.00%); calls tied to a browser of their caller's 4483 of 4686 (95.67%)
+  wrong pairs: one spoke for the other, and none says so 432; nobody spoke for the other 517; one spoke for the other, and a record says so 10; by kind contact visitor 354, caller visitor 257, caller contact 227, visitor visitor 31, contact contact 49, caller caller 13, call visitor 23, call contact 5
+    links by device: 11991, 216 between two people
+    links by phone: 11632, 144 between two people
+    links by dial: 5519, 39 between two people
+    links by lease: 1163, 204 between two people
+    links by named + phone: 725, 1 between two people
+    links by device + named + phone: 619, 0 between two people
+    links by email + named + phone: 593, 3 between two people
+    links by device + email + named: 579, 0 between two people
+    links by email + phone: 216, 4 between two people
+    links by device + email: 138, 1 between two people
+    links by device + phone: 128, 0 between two people
+    links by email + named: 92, 3 between two people
+    links by email: 67, 38 between two people
+    links by ward: 9, 0 between two people
+    links by device + email + phone: 4, 4 between two people
+    links by dial + lease: 1, 0 between two people
+new intake: people whose record is with another's 355 of 21320 (1.67%), and without those one spoke for 287 of 21320 (1.35%); joined pairs right 38186 of 40477 (94.34%); links by a tap or a number shown wrong 209 of 3746 (5.58%); credited records to the wrong ad 240 of 14436 (1.66%)
+  over the worlds: people whose record is with another's 0.54% to 3.03%, its mean within 1.38% to 1.94%; joined pairs right 91.32% to 96.45%, its mean within 93.81% to 94.90%
+  of what today found, kept: pairs with a chain 58964 of 62780 (93.92%); pairs of records 2790 of 2942 (94.83%), of them written the same 1533 of 1589 (96.48%), in forms the table knows 814 of 844 (96.45%), and in forms it does not 443 of 509 (87.03%); records credited to their ad 13683 of 14427 (94.84%); calls tied to a browser of their caller's 3237 of 4686 (69.08%)
+  wrong pairs: nobody spoke for the other 1874; one spoke for the other, and none says so 305; one spoke for the other, and a record says so 112; by kind contact visitor 508, caller visitor 494, caller contact 713, visitor visitor 81, contact contact 210, caller caller 233, call visitor 15, call contact 26, call caller 11
+    links by device: 11991, 216 between two people
+    links by phone: 7427, 56 between two people
+    links by phone + review: 4675, 19 between two people
+    links by dial: 3746, 209 between two people
+    links by review: 892, 373 between two people
+    links by named + phone: 713, 4 between two people
+    links by device + named + phone: 599, 0 between two people
+    links by device + email + named: 568, 0 between two people
+    links by email + named + phone: 568, 3 between two people
+    links by email + phone: 211, 3 between two people
+    links by device + email: 138, 1 between two people
+    links by device + phone: 128, 0 between two people
+    links by behalf + review: 94, 37 between two people
+    links by email + named: 92, 3 between two people
+    links by behalf + phone + review: 84, 11 between two people
+    links by email: 67, 38 between two people
+    links by email + named + phone + review: 25, 0 between two people
+    links by named + phone + review: 22, 1 between two people
+    links by device + named + phone + review: 20, 0 between two people
+    links by device + email + named + review: 11, 0 between two people
+    links by ward: 9, 0 between two people
+    links by behalf + email + phone + review: 7, 3 between two people
+    links by device + email + phone: 4, 4 between two people
+    links by email + phone + review: 4, 0 between two people
+names written as they are, in a form the table knows, and in one it does not: {"same":16358,"covered":5624,"not":2749}
+marks:
+  held: with a pool, links by a tap or a number shown wrong, at most 5%: 243 of 6683 (3.64%)
+  held: kept with a pool of calls tied, at least 90%: 4483 of 4686 (95.67%)
+  no mark: without a pool, links by a tap wrong 209 of 3746 (5.58%); kept of calls tied 3237 of 4686 (69.08%)
+code ed6ae737d5bb811d9a62b39f2e8ef82cdf630a29, today b9bba69cc4bd09982e9c8b2929afc3e718232de9
+Node v22.23.0, names f5a69fbe139b8541f96a42dae40bf4d564d29d660f2aeb1add0eec776ec8ff2f, seeds 20270361 to 20270380
+
+## dirty3: 20 worlds of 2000 people over 120 days
+today: people whose record is with another's 556 of 9305 (5.98%), and without those one spoke for 462 of 9305 (4.97%); joined pairs right 18661 of 23779 (78.48%); links by a tap or a number shown wrong 21 of 2972 (0.71%); credited records to the wrong ad 223 of 6341 (3.52%)
+  over the worlds: people whose record is with another's 4.29% to 9.66%, its mean within 5.43% to 6.57%; joined pairs right 64.38% to 87.85%, its mean within 76.10% to 82.06%
+  of what today found, kept: pairs with a chain 29703 of 29703 (100.00%); pairs of records 1498 of 1498 (100.00%), of them written the same 789 of 789 (100.00%), in forms the table knows 426 of 426 (100.00%), and in forms it does not 283 of 283 (100.00%); records credited to their ad 6118 of 6118 (100.00%); calls tied to a browser of their caller's 2956 of 2956 (100.00%)
+  wrong pairs: one spoke for the other, and a record says so 265; nobody spoke for the other 4552; one spoke for the other, and none says so 301; by kind visitor visitor 391, contact visitor 1648, contact contact 1261, caller visitor 521, caller contact 1089, caller caller 166, call contact 22, call caller 7, call visitor 13
+    links by device: 6304, 242 between two people
+    links by phone: 5021, 148 between two people
+    links by dial: 2972, 21 between two people
+    links by email: 867, 780 between two people
+    links by email + phone: 446, 37 between two people
+    links by device + phone: 395, 7 between two people
+    links by device + email: 350, 3 between two people
+    links by device + email + phone: 6, 6 between two people
+new: people whose record is with another's 119 of 9305 (1.28%), and without those one spoke for 89 of 9305 (0.96%); joined pairs right 18585 of 19200 (96.80%); links by a tap or a number shown wrong 13 of 2853 (0.46%); credited records to the wrong ad 104 of 6273 (1.66%)
+  over the worlds: people whose record is with another's 0.43% to 2.92%, its mean within 1.03% to 1.53%; joined pairs right 94.78% to 98.23%, its mean within 96.33% to 97.28%
+  of what today found, kept: pairs with a chain 29044 of 29703 (97.78%); pairs of records 1439 of 1498 (96.06%), of them written the same 766 of 789 (97.08%), in forms the table knows 417 of 426 (97.89%), and in forms it does not 256 of 283 (90.46%); records credited to their ad 6047 of 6118 (98.84%); calls tied to a browser of their caller's 2836 of 2956 (95.94%)
+  wrong pairs: nobody spoke for the other 359; one spoke for the other, and none says so 252; one spoke for the other, and a record says so 4; by kind visitor visitor 38, contact visitor 250, contact contact 91, caller visitor 67, caller contact 150, caller caller 16, call contact 1, call visitor 2
+    links by device: 6105, 123 between two people
+    links by phone: 4763, 72 between two people
+    links by dial: 2853, 13 between two people
+    links by named + phone: 349, 1 between two people
+    links by email + named + phone: 296, 4 between two people
+    links by device + named + phone: 290, 0 between two people
+    links by device + email + named: 264, 0 between two people
+    links by email: 145, 112 between two people
+    links by email + phone: 121, 8 between two people
+    links by email + named: 74, 3 between two people
+    links by device + phone: 74, 1 between two people
+    links by device + email: 65, 1 between two people
+    links by ward: 6, 0 between two people
+    links by device + email + phone: 1, 1 between two people
+    links by named + phone + ward: 1, 0 between two people
+    links by email + named + phone + ward: 1, 0 between two people
+today pool: people whose record is with another's 556 of 9305 (5.98%), and without those one spoke for 462 of 9305 (4.97%); joined pairs right 21022 of 28209 (74.52%); links by a tap or a number shown wrong 592 of 5262 (11.25%); credited records to the wrong ad 269 of 7074 (3.80%)
+  over the worlds: people whose record is with another's 4.29% to 9.66%, its mean within 5.43% to 6.57%; joined pairs right 59.31% to 83.03%, its mean within 72.34% to 77.76%
+  of what today found, kept: pairs with a chain 29663 of 29703 (99.87%); pairs of records 1498 of 1498 (100.00%), of them written the same 789 of 789 (100.00%), in forms the table knows 426 of 426 (100.00%), and in forms it does not 283 of 283 (100.00%); records credited to their ad 6097 of 6118 (99.66%); calls tied to a browser of their caller's 2947 of 2956 (99.70%)
+  wrong pairs: one spoke for the other, and a record says so 292; nobody spoke for the other 6528; one spoke for the other, and none says so 367; by kind visitor visitor 992, contact visitor 2312, contact contact 1261, caller visitor 1148, caller contact 1201, caller caller 188, call contact 34, call caller 9, call visitor 42
+    links by device: 6304, 242 between two people
+    links by phone: 5021, 148 between two people
+    links by lease: 4386, 589 between two people
+    links by dial: 875, 3 between two people
+    links by email: 867, 780 between two people
+    links by email + phone: 446, 37 between two people
+    links by device + phone: 395, 7 between two people
+    links by device + email: 350, 3 between two people
+    links by device + email + phone: 6, 6 between two people
+    links by dial + lease: 1, 0 between two people
+new pool: people whose record is with another's 119 of 9305 (1.28%), and without those one spoke for 89 of 9305 (0.96%); joined pairs right 20705 of 21558 (96.04%); links by a tap or a number shown wrong 152 of 4529 (3.36%); credited records to the wrong ad 143 of 6971 (2.05%)
+  over the worlds: people whose record is with another's 0.43% to 2.92%, its mean within 1.03% to 1.53%; joined pairs right 93.52% to 97.92%, its mean within 95.57% to 96.52%
+  of what today found, kept: pairs with a chain 29242 of 29703 (98.45%); pairs of records 1439 of 1498 (96.06%), of them written the same 766 of 789 (97.08%), in forms the table knows 417 of 426 (97.89%), and in forms it does not 256 of 283 (90.46%); records credited to their ad 6085 of 6118 (99.46%); calls tied to a browser of their caller's 2930 of 2956 (99.12%)
+  wrong pairs: nobody spoke for the other 558; one spoke for the other, and none says so 291; one spoke for the other, and a record says so 4; by kind visitor visitor 51, contact visitor 289, contact contact 91, caller visitor 186, caller contact 189, caller caller 19, call contact 6, call visitor 22
+    links by device: 6105, 123 between two people
+    links by phone: 4763, 72 between two people
+    links by lease: 3262, 151 between two people
+    links by dial: 1263, 1 between two people
+    links by named + phone: 349, 1 between two people
+    links by email + named + phone: 296, 4 between two people
+    links by device + named + phone: 290, 0 between two people
+    links by device + email + named: 264, 0 between two people
+    links by email: 145, 112 between two people
+    links by email + phone: 121, 8 between two people
+    links by email + named: 74, 3 between two people
+    links by device + phone: 74, 1 between two people
+    links by device + email: 65, 1 between two people
+    links by ward: 6, 0 between two people
+    links by dial + lease: 4, 0 between two people
+    links by device + email + phone: 1, 1 between two people
+    links by named + phone + ward: 1, 0 between two people
+    links by email + named + phone + ward: 1, 0 between two people
+new intake: people whose record is with another's 204 of 9390 (2.17%), and without those one spoke for 144 of 9390 (1.53%); joined pairs right 19887 of 20855 (95.36%); links by a tap or a number shown wrong 13 of 2853 (0.46%); credited records to the wrong ad 103 of 6364 (1.62%)
+  over the worlds: people whose record is with another's 0.88% to 2.94%, its mean within 1.94% to 2.40%; joined pairs right 93.93% to 97.70%, its mean within 94.81% to 95.97%
+  of what today found, kept: pairs with a chain 28931 of 29703 (97.40%); pairs of records 1436 of 1498 (95.86%), of them written the same 765 of 789 (96.96%), in forms the table knows 415 of 426 (97.42%), and in forms it does not 256 of 283 (90.46%); records credited to their ad 6036 of 6118 (98.66%); calls tied to a browser of their caller's 2836 of 2956 (95.94%)
+  wrong pairs: nobody spoke for the other 722; one spoke for the other, and none says so 172; one spoke for the other, and a record says so 74; by kind visitor visitor 59, contact visitor 290, contact contact 143, caller visitor 136, caller contact 255, caller caller 63, call contact 11, call caller 5, call visitor 6
+    links by device: 6105, 123 between two people
+    links by phone: 2985, 26 between two people
+    links by dial: 2853, 13 between two people
+    links by phone + review: 2040, 11 between two people
+    links by review: 386, 90 between two people
+    links by named + phone: 338, 1 between two people
+    links by device + named + phone: 281, 0 between two people
+    links by email + named + phone: 281, 4 between two people
+    links by device + email + named: 261, 0 between two people
+    links by email: 146, 113 between two people
+    links by email + phone: 117, 6 between two people
+    links by device + phone: 74, 1 between two people
+    links by email + named: 71, 2 between two people
+    links by device + email: 65, 1 between two people
+    links by behalf + review: 51, 15 between two people
+    links by behalf + phone + review: 34, 5 between two people
+    links by named + phone + review: 22, 1 between two people
+    links by email + named + phone + review: 15, 0 between two people
+    links by device + named + phone + review: 9, 0 between two people
+    links by ward: 6, 0 between two people
+    links by device + email + named + review: 3, 0 between two people
+    links by email + phone + review: 3, 1 between two people
+    links by email + named + review: 3, 1 between two people
+    links by device + email + phone: 1, 1 between two people
+    links by named + phone + ward: 1, 0 between two people
+    links by email + named + phone + ward: 1, 0 between two people
+    links by behalf + email + phone + review: 1, 1 between two people
+names written as they are, in a form the table knows, and in one it does not: {"same":7458,"covered":2458,"not":1238}
+marks:
+  held: people whose record is with another's, at most 1.5%: 119 of 9305 (1.28%)
+  held: credited records to the wrong ad, at most 2%: 104 of 6273 (1.66%)
+  BAD: kept of pairs of records, at least 98%: 1439 of 1498 (96.06%)
+  held: kept of records credited to their ad, at least 90%: 6047 of 6118 (98.84%)
+code ed6ae737d5bb811d9a62b39f2e8ef82cdf630a29, today b9bba69cc4bd09982e9c8b2929afc3e718232de9
+Node v22.23.0, names f5a69fbe139b8541f96a42dae40bf4d564d29d660f2aeb1add0eec776ec8ff2f, seeds 20270361 to 20270380
+
+## gaps3: 20 worlds of 2000 people over 120 days
+today: people whose record is with another's 242 of 9291 (2.60%), and without those one spoke for 134 of 9291 (1.44%); joined pairs right 18255 of 19222 (94.97%); links by a tap or a number shown wrong 33 of 2662 (1.24%); credited records to the wrong ad 112 of 6191 (1.81%)
+  over the worlds: people whose record is with another's 0.86% to 5.45%, its mean within 2.10% to 3.08%; joined pairs right 92.84% to 96.91%, its mean within 94.40% to 95.63%
+  of what today found, kept: pairs with a chain 29706 of 29706 (100.00%); pairs of records 1493 of 1493 (100.00%), of them written the same 814 of 814 (100.00%), in forms the table knows 430 of 430 (100.00%), and in forms it does not 249 of 249 (100.00%); records credited to their ad 6079 of 6079 (100.00%); calls tied to a browser of their caller's 2635 of 2635 (100.00%)
+  wrong pairs: one spoke for the other, and a record says so 282; nobody spoke for the other 405; one spoke for the other, and none says so 280; by kind visitor visitor 44, contact visitor 411, contact contact 171, caller visitor 82, caller contact 236, call visitor 3, call contact 5, call caller 2, caller caller 13
+    links by device: 6229, 243 between two people
+    links by phone: 5115, 133 between two people
+    links by dial: 2662, 33 between two people
+    links by email + phone: 488, 43 between two people
+    links by device + phone: 403, 6 between two people
+    links by device + email: 364, 3 between two people
+    links by email: 139, 76 between two people
+    links by device + email + phone: 7, 7 between two people
+new: people whose record is with another's 52 of 9291 (0.56%), and without those one spoke for 34 of 9291 (0.37%); joined pairs right 18026 of 18400 (97.97%); links by a tap or a number shown wrong 30 of 2505 (1.20%); credited records to the wrong ad 94 of 6188 (1.52%)
+  over the worlds: people whose record is with another's 0.00% to 1.70%, its mean within 0.29% to 0.82%; joined pairs right 96.52% to 99.66%, its mean within 97.60% to 98.37%
+  of what today found, kept: pairs with a chain 28944 of 29706 (97.43%); pairs of records 1436 of 1493 (96.18%), of them written the same 793 of 814 (97.42%), in forms the table knows 423 of 430 (98.37%), and in forms it does not 220 of 249 (88.35%); records credited to their ad 5988 of 6079 (98.50%); calls tied to a browser of their caller's 2473 of 2635 (93.85%)
+  wrong pairs: nobody spoke for the other 161; one spoke for the other, and none says so 204; one spoke for the other, and a record says so 9; by kind visitor visitor 18, contact visitor 167, contact contact 33, caller visitor 45, caller contact 98, call visitor 3, call contact 3, call caller 1, caller caller 6
+    links by device: 6021, 118 between two people
+    links by phone: 4871, 64 between two people
+    links by dial: 2505, 30 between two people
+    links by named + phone: 343, 1 between two people
+    links by email + named + phone: 329, 1 between two people
+    links by device + named + phone: 316, 0 between two people
+    links by device + email + named: 286, 0 between two people
+    links by email + phone: 116, 4 between two people
+    links by device + phone: 63, 0 between two people
+    links by email + named: 56, 0 between two people
+    links by device + email: 55, 1 between two people
+    links by email: 48, 28 between two people
+    links by ward: 3, 0 between two people
+today pool: people whose record is with another's 242 of 9291 (2.60%), and without those one spoke for 134 of 9291 (1.44%); joined pairs right 21018 of 23413 (89.77%); links by a tap or a number shown wrong 572 of 5179 (11.04%); credited records to the wrong ad 167 of 7080 (2.36%)
+  over the worlds: people whose record is with another's 0.86% to 5.45%, its mean within 2.10% to 3.08%; joined pairs right 87.44% to 93.27%, its mean within 89.08% to 90.61%
+  of what today found, kept: pairs with a chain 29684 of 29706 (99.93%); pairs of records 1493 of 1493 (100.00%), of them written the same 814 of 814 (100.00%), in forms the table knows 430 of 430 (100.00%), and in forms it does not 249 of 249 (100.00%); records credited to their ad 6064 of 6079 (99.75%); calls tied to a browser of their caller's 2629 of 2635 (99.77%)
+  wrong pairs: nobody spoke for the other 1741; one spoke for the other, and a record says so 311; one spoke for the other, and none says so 343; by kind visitor visitor 488, contact visitor 841, contact contact 171, caller visitor 566, caller contact 288, call visitor 18, call contact 10, call caller 2, caller caller 11
+    links by device: 6229, 243 between two people
+    links by phone: 5115, 133 between two people
+    links by lease: 4408, 564 between two people
+    links by dial: 771, 8 between two people
+    links by email + phone: 488, 43 between two people
+    links by device + phone: 403, 6 between two people
+    links by device + email: 364, 3 between two people
+    links by email: 139, 76 between two people
+    links by device + email + phone: 7, 7 between two people
+new pool: people whose record is with another's 50 of 9291 (0.54%), and without those one spoke for 34 of 9291 (0.37%); joined pairs right 20508 of 21020 (97.56%); links by a tap or a number shown wrong 129 of 4374 (2.95%); credited records to the wrong ad 120 of 6981 (1.72%)
+  over the worlds: people whose record is with another's 0.00% to 1.70%, its mean within 0.27% to 0.80%; joined pairs right 96.55% to 99.50%, its mean within 97.24% to 97.93%
+  of what today found, kept: pairs with a chain 29222 of 29706 (98.37%); pairs of records 1436 of 1493 (96.18%), of them written the same 793 of 814 (97.42%), in forms the table knows 423 of 430 (98.37%), and in forms it does not 220 of 249 (88.35%); records credited to their ad 6047 of 6079 (99.47%); calls tied to a browser of their caller's 2608 of 2635 (98.98%)
+  wrong pairs: nobody spoke for the other 258; one spoke for the other, and none says so 247; one spoke for the other, and a record says so 7; by kind visitor visitor 21, contact visitor 193, contact contact 32, caller visitor 130, caller contact 110, call visitor 14, call contact 7, call caller 1, caller caller 4
+    links by device: 6021, 118 between two people
+    links by phone: 4871, 64 between two people
+    links by lease: 3274, 123 between two people
+    links by dial: 1098, 6 between two people
+    links by named + phone: 343, 1 between two people
+    links by email + named + phone: 329, 1 between two people
+    links by device + named + phone: 316, 0 between two people
+    links by device + email + named: 286, 0 between two people
+    links by email + phone: 116, 4 between two people
+    links by device + phone: 63, 0 between two people
+    links by email + named: 56, 0 between two people
+    links by device + email: 55, 1 between two people
+    links by email: 48, 28 between two people
+    links by ward: 3, 0 between two people
+    links by dial + lease: 2, 0 between two people
+new intake: people whose record is with another's 118 of 9369 (1.26%), and without those one spoke for 98 of 9369 (1.05%); joined pairs right 19245 of 20031 (96.08%); links by a tap or a number shown wrong 30 of 2505 (1.20%); credited records to the wrong ad 98 of 6266 (1.56%)
+  over the worlds: people whose record is with another's 0.00% to 2.92%, its mean within 0.86% to 1.62%; joined pairs right 92.88% to 98.23%, its mean within 95.44% to 96.82%
+  of what today found, kept: pairs with a chain 28789 of 29706 (96.91%); pairs of records 1422 of 1493 (95.24%), of them written the same 788 of 814 (96.81%), in forms the table knows 414 of 430 (96.28%), and in forms it does not 220 of 249 (88.35%); records credited to their ad 5976 of 6079 (98.31%); calls tied to a browser of their caller's 2473 of 2635 (93.85%)
+  wrong pairs: nobody spoke for the other 596; one spoke for the other, and none says so 150; one spoke for the other, and a record says so 40; by kind visitor visitor 41, contact visitor 220, contact contact 78, caller visitor 132, caller contact 229, call visitor 8, call contact 12, call caller 4, caller caller 62
+    links by device: 6021, 118 between two people
+    links by phone: 3136, 25 between two people
+    links by dial: 2505, 30 between two people
+    links by phone + review: 2008, 7 between two people
+    links by review: 355, 107 between two people
+    links by named + phone: 343, 2 between two people
+    links by device + named + phone: 309, 0 between two people
+    links by email + named + phone: 305, 1 between two people
+    links by device + email + named: 279, 0 between two people
+    links by email + phone: 112, 4 between two people
+    links by device + phone: 63, 0 between two people
+    links by device + email: 55, 1 between two people
+    links by email + named: 55, 0 between two people
+    links by email: 48, 28 between two people
+    links by behalf + phone + review: 38, 2 between two people
+    links by behalf + review: 35, 10 between two people
+    links by email + named + phone + review: 24, 0 between two people
+    links by named + phone + review: 12, 0 between two people
+    links by device + named + phone + review: 7, 0 between two people
+    links by device + email + named + review: 7, 0 between two people
+    links by ward: 3, 0 between two people
+    links by email + phone + review: 3, 0 between two people
+    links by behalf + email + phone + review: 2, 1 between two people
+    links by email + named + review: 1, 0 between two people
+names written as they are, in a form the table knows, and in one it does not: {"same":7365,"covered":2457,"not":1272}
+marks:
+code ed6ae737d5bb811d9a62b39f2e8ef82cdf630a29, today b9bba69cc4bd09982e9c8b2929afc3e718232de9
+Node v22.23.0, names f5a69fbe139b8541f96a42dae40bf4d564d29d660f2aeb1add0eec776ec8ff2f, seeds 20270361 to 20270380
+
+## busygaps3: 20 worlds of 6000 people over 5 days
+today: people whose record is with another's 411 of 21186 (1.94%), and without those one spoke for 243 of 21186 (1.15%); joined pairs right 36095 of 40669 (88.75%); links by a tap or a number shown wrong 1676 of 5589 (29.99%); credited records to the wrong ad 766 of 14833 (5.16%)
+  over the worlds: people whose record is with another's 0.93% to 3.55%, its mean within 1.62% to 2.26%; joined pairs right 87.19% to 90.60%, its mean within 88.26% to 89.28%
+  of what today found, kept: pairs with a chain 61644 of 61644 (100.00%); pairs of records 2919 of 2919 (100.00%), of them written the same 1591 of 1591 (100.00%), in forms the table knows 820 of 820 (100.00%), and in forms it does not 508 of 508 (100.00%); records credited to their ad 14067 of 14067 (100.00%); calls tied to a browser of their caller's 3918 of 3918 (100.00%)
+  wrong pairs: nobody spoke for the other 3564; one spoke for the other, and none says so 504; one spoke for the other, and a record says so 506; by kind contact visitor 1438, caller visitor 1533, caller contact 762, visitor visitor 297, contact contact 306, caller caller 160, call contact 20, call visitor 48, call caller 10
+    links by device: 12383, 450 between two people
+    links by phone: 12123, 284 between two people
+    links by dial: 5589, 1676 between two people
+    links by email + phone: 913, 51 between two people
+    links by device + phone: 816, 12 between two people
+    links by device + email: 716, 9 between two people
+    links by email: 235, 134 between two people
+    links by device + email + phone: 29, 29 between two people
+new: people whose record is with another's 80 of 21186 (0.38%), and without those one spoke for 60 of 21186 (0.28%); joined pairs right 34131 of 35457 (96.26%); links by a tap or a number shown wrong 379 of 2792 (13.57%); credited records to the wrong ad 304 of 13981 (2.17%)
+  over the worlds: people whose record is with another's 0.00% to 0.76%, its mean within 0.25% to 0.50%; joined pairs right 94.38% to 97.30%, its mean within 95.94% to 96.58%
+  of what today found, kept: pairs with a chain 57526 of 61644 (93.32%); pairs of records 2799 of 2919 (95.89%), of them written the same 1541 of 1591 (96.86%), in forms the table knows 799 of 820 (97.44%), and in forms it does not 459 of 508 (90.35%); records credited to their ad 13277 of 14067 (94.38%); calls tied to a browser of their caller's 2197 of 3918 (56.07%)
+  wrong pairs: one spoke for the other, and none says so 382; nobody spoke for the other 937; one spoke for the other, and a record says so 7; by kind contact visitor 456, caller visitor 395, caller contact 295, visitor visitor 70, contact contact 50, caller caller 50, call contact 3, call visitor 7
+    links by device: 11970, 204 between two people
+    links by phone: 11645, 145 between two people
+    links by dial: 2792, 379 between two people
+    links by named + phone: 683, 0 between two people
+    links by email + named + phone: 649, 0 between two people
+    links by device + named + phone: 632, 1 between two people
+    links by device + email + named: 547, 1 between two people
+    links by email + phone: 221, 5 between two people
+    links by device + phone: 129, 2 between two people
+    links by device + email: 124, 0 between two people
+    links by email + named: 87, 2 between two people
+    links by email: 67, 40 between two people
+    links by ward: 7, 0 between two people
+    links by device + email + phone: 3, 3 between two people
+    links by named + phone + ward: 3, 0 between two people
+    links by email + named + phone + ward: 1, 0 between two people
+    links by email + named + ward: 1, 0 between two people
+today pool: people whose record is with another's 411 of 21186 (1.94%), and without those one spoke for 243 of 21186 (1.15%); joined pairs right 43920 of 49303 (89.08%); links by a tap or a number shown wrong 1718 of 11089 (15.49%); credited records to the wrong ad 760 of 17256 (4.40%)
+  over the worlds: people whose record is with another's 0.93% to 3.55%, its mean within 1.62% to 2.26%; joined pairs right 86.69% to 91.08%, its mean within 88.52% to 89.67%
+  of what today found, kept: pairs with a chain 61566 of 61644 (99.87%); pairs of records 2919 of 2919 (100.00%), of them written the same 1591 of 1591 (100.00%), in forms the table knows 820 of 820 (100.00%), and in forms it does not 508 of 508 (100.00%); records credited to their ad 13963 of 14067 (99.26%); calls tied to a browser of their caller's 3900 of 3918 (99.54%)
+  wrong pairs: nobody spoke for the other 4183; one spoke for the other, and none says so 624; one spoke for the other, and a record says so 576; by kind contact visitor 1887, caller visitor 1690, caller contact 578, visitor visitor 816, contact contact 306, caller caller 30, call contact 17, call visitor 59
+    links by device: 12383, 450 between two people
+    links by phone: 12123, 284 between two people
+    links by lease: 10210, 1593 between two people
+    links by email + phone: 913, 51 between two people
+    links by dial: 879, 125 between two people
+    links by device + phone: 816, 12 between two people
+    links by device + email: 716, 9 between two people
+    links by email: 235, 134 between two people
+    links by device + email + phone: 29, 29 between two people
+new pool: people whose record is with another's 80 of 21186 (0.38%), and without those one spoke for 60 of 21186 (0.28%); joined pairs right 38893 of 39844 (97.61%); links by a tap or a number shown wrong 237 of 5934 (3.99%); credited records to the wrong ad 218 of 15422 (1.41%)
+  over the worlds: people whose record is with another's 0.00% to 0.76%, its mean within 0.25% to 0.50%; joined pairs right 95.76% to 98.51%, its mean within 97.29% to 97.97%
+  of what today found, kept: pairs with a chain 60324 of 61644 (97.86%); pairs of records 2799 of 2919 (95.89%), of them written the same 1541 of 1591 (96.86%), in forms the table knows 799 of 820 (97.44%), and in forms it does not 459 of 508 (90.35%); records credited to their ad 13954 of 14067 (99.20%); calls tied to a browser of their caller's 3688 of 3918 (94.13%)
+  wrong pairs: one spoke for the other, and none says so 424; nobody spoke for the other 520; one spoke for the other, and a record says so 7; by kind contact visitor 358, caller visitor 255, caller contact 221, visitor visitor 33, contact contact 50, caller caller 12, call contact 3, call visitor 19
+    links by device: 11970, 204 between two people
+    links by phone: 11645, 145 between two people
+    links by dial: 4768, 48 between two people
+    links by lease: 1164, 189 between two people
+    links by named + phone: 683, 0 between two people
+    links by email + named + phone: 649, 0 between two people
+    links by device + named + phone: 632, 1 between two people
+    links by device + email + named: 547, 1 between two people
+    links by email + phone: 221, 5 between two people
+    links by device + phone: 129, 2 between two people
+    links by device + email: 124, 0 between two people
+    links by email + named: 87, 2 between two people
+    links by email: 67, 40 between two people
+    links by ward: 7, 0 between two people
+    links by device + email + phone: 3, 3 between two people
+    links by named + phone + ward: 3, 0 between two people
+    links by dial + lease: 2, 0 between two people
+    links by email + named + phone + ward: 1, 0 between two people
+    links by email + named + ward: 1, 0 between two people
+new intake: people whose record is with another's 340 of 21356 (1.59%), and without those one spoke for 286 of 21356 (1.34%); joined pairs right 36604 of 39380 (92.95%); links by a tap or a number shown wrong 379 of 2792 (13.57%); credited records to the wrong ad 320 of 14050 (2.28%)
+  over the worlds: people whose record is with another's 0.77% to 2.69%, its mean within 1.39% to 1.79%; joined pairs right 91.52% to 94.52%, its mean within 92.54% to 93.38%
+  of what today found, kept: pairs with a chain 57451 of 61644 (93.20%); pairs of records 2788 of 2919 (95.51%), of them written the same 1536 of 1591 (96.54%), in forms the table knows 796 of 820 (97.07%), and in forms it does not 456 of 508 (89.76%); records credited to their ad 13260 of 14067 (94.26%); calls tied to a browser of their caller's 2197 of 3918 (56.07%)
+  wrong pairs: nobody spoke for the other 2408; one spoke for the other, and none says so 278; one spoke for the other, and a record says so 90; by kind contact visitor 596, caller visitor 656, caller contact 810, visitor visitor 103, contact contact 213, caller caller 309, call contact 41, call visitor 26, call caller 22
+    links by device: 11970, 204 between two people
+    links by phone: 7344, 53 between two people
+    links by phone + review: 4799, 13 between two people
+    links by dial: 2792, 379 between two people
+    links by review: 932, 419 between two people
+    links by named + phone: 668, 3 between two people
+    links by email + named + phone: 625, 0 between two people
+    links by device + named + phone: 613, 1 between two people
+    links by device + email + named: 531, 1 between two people
+    links by email + phone: 214, 5 between two people
+    links by device + phone: 129, 2 between two people
+    links by device + email: 124, 0 between two people
+    links by behalf + review: 98, 27 between two people
+    links by email + named: 85, 1 between two people
+    links by email: 66, 40 between two people
+    links by behalf + phone + review: 52, 6 between two people
+    links by named + phone + review: 27, 0 between two people
+    links by email + named + phone + review: 24, 0 between two people
+    links by device + named + phone + review: 19, 0 between two people
+    links by device + email + named + review: 16, 0 between two people
+    links by ward: 7, 0 between two people
+    links by email + phone + review: 7, 0 between two people
+    links by behalf + email + phone + review: 6, 3 between two people
+    links by device + email + phone: 3, 3 between two people
+    links by named + phone + ward: 3, 0 between two people
+    links by email + named + review: 2, 1 between two people
+    links by email + named + phone + ward: 1, 0 between two people
+    links by email + review: 1, 0 between two people
+    links by email + named + ward: 1, 0 between two people
+names written as they are, in a form the table knows, and in one it does not: {"same":16501,"covered":5525,"not":2730}
+marks:
+code ed6ae737d5bb811d9a62b39f2e8ef82cdf630a29, today b9bba69cc4bd09982e9c8b2929afc3e718232de9
+Node v22.23.0, names f5a69fbe139b8541f96a42dae40bf4d564d29d660f2aeb1add0eec776ec8ff2f, seeds 20270361 to 20270380
+
+## base: 20 worlds of 2000 people over 120 days
+today: people whose record is with another's 278 of 9358 (2.97%), and without those one spoke for 180 of 9358 (1.92%); joined pairs right 16815 of 17812 (94.40%); links by a tap or a number shown wrong 18 of 3058 (0.59%); credited records to the wrong ad 127 of 5820 (2.18%)
+  over the worlds: people whose record is with another's 0.85% to 4.59%, its mean within 2.43% to 3.50%; joined pairs right 92.04% to 96.77%, its mean within 93.82% to 95.01%
+  of what today found, kept: pairs with a chain 29092 of 29092 (100.00%); pairs of records 645 of 645 (100.00%), of them written the same 516 of 516 (100.00%), in forms the table knows 0 of 0 (none), and in forms it does not 129 of 129 (100.00%); records credited to their ad 5693 of 5693 (100.00%); calls tied to a browser of their caller's 3044 of 3044 (100.00%)
+  wrong pairs: one spoke for the other, and none says so 539; nobody spoke for the other 458; by kind visitor visitor 60, contact visitor 415, caller contact 251, caller visitor 87, contact contact 162, call visitor 2, call contact 4, caller caller 16
+    links by device: 5400, 216 between two people
+    links by phone: 5349, 150 between two people
+    links by dial: 3058, 18 between two people
+    links by email + phone: 481, 43 between two people
+    links by email: 114, 78 between two people
+    links by device + email + phone: 5, 5 between two people
+    links by device + email: 4, 4 between two people
+    links by device + phone: 2, 2 between two people
+new: people whose record is with another's 198 of 9358 (2.12%), and without those one spoke for 120 of 9358 (1.28%); joined pairs right 17166 of 18018 (95.27%); links by a tap or a number shown wrong 12 of 3043 (0.39%); credited records to the wrong ad 114 of 5878 (1.94%)
+  over the worlds: people whose record is with another's 0.43% to 4.18%, its mean within 1.62% to 2.60%; joined pairs right 92.45% to 97.44%, its mean within 94.74% to 95.85%
+  of what today found, kept: pairs with a chain 29034 of 29092 (99.80%); pairs of records 641 of 645 (99.38%), of them written the same 515 of 516 (99.81%), in forms the table knows 0 of 0 (none), and in forms it does not 126 of 129 (97.67%); records credited to their ad 5676 of 5693 (99.70%); calls tied to a browser of their caller's 3022 of 3044 (99.28%)
+  wrong pairs: one spoke for the other, and none says so 523; nobody spoke for the other 329; by kind visitor visitor 42, contact visitor 374, caller contact 231, caller visitor 65, contact contact 123, call visitor 2, call contact 4, caller caller 11
+    links by device: 5393, 209 between two people
+    links by phone: 5220, 149 between two people
+    links by dial: 3043, 12 between two people
+    links by named + phone: 354, 0 between two people
+    links by email + named + phone: 323, 0 between two people
+    links by email + phone: 148, 34 between two people
+    links by email: 65, 57 between two people
+    links by email + named: 28, 0 between two people
+    links by device + email + phone: 3, 3 between two people
+    links by device + phone: 2, 2 between two people
+    links by device + email + named: 1, 1 between two people
+    links by device + email: 1, 1 between two people
+today pool: people whose record is with another's 278 of 9358 (2.97%), and without those one spoke for 180 of 9358 (1.92%); joined pairs right 18737 of 21244 (88.20%); links by a tap or a number shown wrong 541 of 5025 (10.77%); credited records to the wrong ad 169 of 6472 (2.61%)
+  over the worlds: people whose record is with another's 0.85% to 4.59%, its mean within 2.43% to 3.50%; joined pairs right 85.56% to 91.40%, its mean within 87.45% to 88.97%
+  of what today found, kept: pairs with a chain 29051 of 29092 (99.86%); pairs of records 645 of 645 (100.00%), of them written the same 516 of 516 (100.00%), in forms the table knows 0 of 0 (none), and in forms it does not 129 of 129 (100.00%); records credited to their ad 5663 of 5693 (99.47%); calls tied to a browser of their caller's 3032 of 3044 (99.61%)
+  wrong pairs: nobody spoke for the other 1905; one spoke for the other, and none says so 602; by kind visitor visitor 559, contact visitor 878, caller contact 287, caller visitor 577, contact contact 162, call visitor 16, call contact 7, call caller 1, caller caller 20
+    links by device: 5400, 216 between two people
+    links by phone: 5349, 150 between two people
+    links by lease: 4420, 536 between two people
+    links by dial: 604, 5 between two people
+    links by email + phone: 481, 43 between two people
+    links by email: 114, 78 between two people
+    links by device + email + phone: 5, 5 between two people
+    links by device + email: 4, 4 between two people
+    links by device + phone: 2, 2 between two people
+    links by dial + lease: 1, 0 between two people
+new pool: people whose record is with another's 198 of 9358 (2.12%), and without those one spoke for 120 of 9358 (1.28%); joined pairs right 18699 of 19704 (94.90%); links by a tap or a number shown wrong 82 of 4253 (1.93%); credited records to the wrong ad 124 of 6399 (1.94%)
+  over the worlds: people whose record is with another's 0.43% to 4.18%, its mean within 1.62% to 2.60%; joined pairs right 92.75% to 96.64%, its mean within 94.40% to 95.43%
+  of what today found, kept: pairs with a chain 29055 of 29092 (99.87%); pairs of records 641 of 645 (99.38%), of them written the same 515 of 516 (99.81%), in forms the table knows 0 of 0 (none), and in forms it does not 126 of 129 (97.67%); records credited to their ad 5682 of 5693 (99.81%); calls tied to a browser of their caller's 3038 of 3044 (99.80%)
+  wrong pairs: one spoke for the other, and none says so 571; nobody spoke for the other 434; by kind visitor visitor 58, contact visitor 408, caller contact 253, caller visitor 125, contact contact 123, call visitor 18, call contact 6, caller caller 14
+    links by device: 5393, 209 between two people
+    links by phone: 5220, 149 between two people
+    links by lease: 3089, 78 between two people
+    links by dial: 1161, 4 between two people
+    links by named + phone: 354, 0 between two people
+    links by email + named + phone: 323, 0 between two people
+    links by email + phone: 148, 34 between two people
+    links by email: 65, 57 between two people
+    links by email + named: 28, 0 between two people
+    links by dial + lease: 3, 0 between two people
+    links by device + email + phone: 3, 3 between two people
+    links by device + phone: 2, 2 between two people
+    links by device + email + named: 1, 1 between two people
+    links by device + email: 1, 1 between two people
+new intake: people whose record is with another's 341 of 9437 (3.61%), and without those one spoke for 249 of 9437 (2.64%); joined pairs right 18123 of 19720 (91.90%); links by a tap or a number shown wrong 12 of 3043 (0.39%); credited records to the wrong ad 114 of 6026 (1.89%)
+  over the worlds: people whose record is with another's 1.64% to 5.80%, its mean within 3.06% to 4.17%; joined pairs right 88.20% to 95.50%, its mean within 91.02% to 92.85%
+  of what today found, kept: pairs with a chain 28766 of 29092 (98.88%); pairs of records 639 of 645 (99.07%), of them written the same 513 of 516 (99.42%), in forms the table knows 0 of 0 (none), and in forms it does not 126 of 129 (97.67%); records credited to their ad 5660 of 5693 (99.42%); calls tied to a browser of their caller's 3022 of 3044 (99.28%)
+  wrong pairs: nobody spoke for the other 1149; one spoke for the other, and none says so 386; one spoke for the other, and a record says so 62; by kind visitor visitor 85, contact visitor 465, caller contact 438, caller visitor 247, contact contact 208, call visitor 11, call contact 14, call caller 9, caller caller 120
+    links by device: 5393, 209 between two people
+    links by dial: 3043, 12 between two people
+    links by phone: 2845, 56 between two people
+    links by phone + review: 2613, 21 between two people
+    links by review: 364, 188 between two people
+    links by named + phone: 339, 0 between two people
+    links by email + named + phone: 297, 0 between two people
+    links by email + phone: 148, 34 between two people
+    links by email: 65, 57 between two people
+    links by behalf + phone + review: 41, 13 between two people
+    links by email + named: 27, 0 between two people
+    links by email + named + phone + review: 26, 0 between two people
+    links by named + phone + review: 25, 0 between two people
+    links by behalf + review: 6, 5 between two people
+    links by device + email + phone: 3, 3 between two people
+    links by device + phone: 2, 2 between two people
+    links by email + named + review: 1, 0 between two people
+    links by device + email + named: 1, 1 between two people
+    links by device + email: 1, 1 between two people
+names written as they are, in a form the table knows, and in one it does not: {"same":8919,"covered":0,"not":1487}
+marks:
+  BAD: people whose record is with another's, at most 1%: 198 of 9358 (2.12%)
+  BAD: joined pairs right, at least 98%: 17166 of 18018 (95.27%)
+  held: links by device wrong, at most 5%: 209 of 5393 (3.88%)
+  held: links by phone wrong, at most 5%: 149 of 5220 (2.85%)
+  BAD: links by email + phone wrong, at most 5%: 34 of 148 (22.97%)
+  held: links by dial wrong, at most 5%: 12 of 3043 (0.39%)
+  held: links by named + phone wrong, at most 5%: 0 of 354 (0.00%)
+  held: links by email + named + phone wrong, at most 5%: 0 of 323 (0.00%)
+  held: credited records to the wrong ad, at most 2%: 114 of 5878 (1.94%)
+  held: links by a tap wrong, at most 5%: 12 of 3043 (0.39%)
+  held: with a pool, links by a tap or a number shown wrong, at most 5%: 82 of 4253 (1.93%)
+  held: kept of pairs with a chain, at least 90%: 29034 of 29092 (99.80%)
+  held: kept of calls tied, at least 90%: 3022 of 3044 (99.28%)
+  held: kept with a pool of calls tied, at least 90%: 3038 of 3044 (99.80%)
+  no mark: with a pool, people whose record is with another's 198 of 9358 (2.12%); joined pairs right 18699 of 19704 (94.90%)
+  held: kept of pairs of records, at least 98%: 641 of 645 (99.38%)
+  held: kept of records credited to their ad, at least 90%: 5676 of 5693 (99.70%)
+code ed6ae737d5bb811d9a62b39f2e8ef82cdf630a29, today b9bba69cc4bd09982e9c8b2929afc3e718232de9
+Node v22.23.0, names f5a69fbe139b8541f96a42dae40bf4d564d29d660f2aeb1add0eec776ec8ff2f, seeds 20270361 to 20270380
+
+## low: 20 worlds of 2000 people over 120 days
+today: people whose record is with another's 112 of 8196 (1.37%), and without those one spoke for 66 of 8196 (0.81%); joined pairs right 16332 of 16664 (98.01%); links by a tap or a number shown wrong 1 of 3668 (0.03%); credited records to the wrong ad 41 of 5851 (0.70%)
+  over the worlds: people whose record is with another's 0.47% to 2.53%, its mean within 1.05% to 1.68%; joined pairs right 95.78% to 99.30%, its mean within 97.56% to 98.48%
+  of what today found, kept: pairs with a chain 21415 of 21415 (100.00%); pairs of records 315 of 315 (100.00%), of them written the same 294 of 294 (100.00%), in forms the table knows 0 of 0 (none), and in forms it does not 21 of 21 (100.00%); records credited to their ad 5810 of 5810 (100.00%); calls tied to a browser of their caller's 3671 of 3671 (100.00%)
+  wrong pairs: one spoke for the other, and none says so 177; nobody spoke for the other 155; by kind visitor visitor 25, contact visitor 140, caller visitor 27, caller contact 77, contact contact 58, caller caller 5
+    links by device: 5236, 66 between two people
+    links by phone: 4589, 39 between two people
+    links by dial: 3668, 1 between two people
+    links by email + phone: 259, 22 between two people
+    links by email: 29, 27 between two people
+    links by device + email + phone: 2, 2 between two people
+    links by device + email: 1, 1 between two people
+new: people whose record is with another's 86 of 8196 (1.05%), and without those one spoke for 50 of 8196 (0.61%); joined pairs right 16549 of 16832 (98.32%); links by a tap or a number shown wrong 0 of 3654 (0.00%); credited records to the wrong ad 39 of 5890 (0.66%)
+  over the worlds: people whose record is with another's 0.00% to 2.02%, its mean within 0.78% to 1.33%; joined pairs right 95.91% to 99.65%, its mean within 97.91% to 98.73%
+  of what today found, kept: pairs with a chain 21384 of 21415 (99.86%); pairs of records 315 of 315 (100.00%), of them written the same 294 of 294 (100.00%), in forms the table knows 0 of 0 (none), and in forms it does not 21 of 21 (100.00%); records credited to their ad 5803 of 5810 (99.88%); calls tied to a browser of their caller's 3656 of 3671 (99.59%)
+  wrong pairs: one spoke for the other, and none says so 166; nobody spoke for the other 117; by kind visitor visitor 17, contact visitor 124, caller visitor 22, caller contact 71, contact contact 46, caller caller 3
+    links by device: 5235, 65 between two people
+    links by phone: 4519, 39 between two people
+    links by dial: 3654, 0 between two people
+    links by email + named + phone: 214, 0 between two people
+    links by named + phone: 202, 0 between two people
+    links by email + phone: 41, 18 between two people
+    links by email: 19, 19 between two people
+    links by email + named: 3, 1 between two people
+    links by device + email + phone: 1, 1 between two people
+    links by device + email: 1, 1 between two people
+today pool: people whose record is with another's 112 of 8196 (1.37%), and without those one spoke for 66 of 8196 (0.81%); joined pairs right 17361 of 18557 (93.55%); links by a tap or a number shown wrong 314 of 4842 (6.48%); credited records to the wrong ad 70 of 6257 (1.12%)
+  over the worlds: people whose record is with another's 0.47% to 2.53%, its mean within 1.05% to 1.68%; joined pairs right 90.00% to 96.77%, its mean within 92.82% to 94.36%
+  of what today found, kept: pairs with a chain 21397 of 21415 (99.92%); pairs of records 315 of 315 (100.00%), of them written the same 294 of 294 (100.00%), in forms the table knows 0 of 0 (none), and in forms it does not 21 of 21 (100.00%); records credited to their ad 5783 of 5810 (99.54%); calls tied to a browser of their caller's 3665 of 3671 (99.84%)
+  wrong pairs: nobody spoke for the other 1001; one spoke for the other, and none says so 195; by kind visitor visitor 310, contact visitor 420, caller visitor 313, caller contact 86, contact contact 58, call visitor 4, caller caller 5
+    links by device: 5236, 66 between two people
+    links by phone: 4589, 39 between two people
+    links by lease: 4162, 314 between two people
+    links by dial: 680, 0 between two people
+    links by email + phone: 259, 22 between two people
+    links by email: 29, 27 between two people
+    links by device + email + phone: 2, 2 between two people
+    links by device + email: 1, 1 between two people
+new pool: people whose record is with another's 86 of 8196 (1.05%), and without those one spoke for 50 of 8196 (0.61%); joined pairs right 17351 of 17673 (98.18%); links by a tap or a number shown wrong 25 of 4340 (0.58%); credited records to the wrong ad 42 of 6206 (0.68%)
+  over the worlds: people whose record is with another's 0.00% to 2.02%, its mean within 0.78% to 1.33%; joined pairs right 95.60% to 99.67%, its mean within 97.75% to 98.61%
+  of what today found, kept: pairs with a chain 21392 of 21415 (99.89%); pairs of records 315 of 315 (100.00%), of them written the same 294 of 294 (100.00%), in forms the table knows 0 of 0 (none), and in forms it does not 21 of 21 (100.00%); records credited to their ad 5807 of 5810 (99.95%); calls tied to a browser of their caller's 3666 of 3671 (99.86%)
+  wrong pairs: one spoke for the other, and none says so 178; nobody spoke for the other 144; by kind visitor visitor 19, contact visitor 134, caller visitor 41, caller contact 76, contact contact 46, call visitor 3, caller caller 3
+    links by device: 5235, 65 between two people
+    links by phone: 4519, 39 between two people
+    links by lease: 2933, 25 between two people
+    links by dial: 1405, 0 between two people
+    links by email + named + phone: 214, 0 between two people
+    links by named + phone: 202, 0 between two people
+    links by email + phone: 41, 18 between two people
+    links by email: 19, 19 between two people
+    links by email + named: 3, 1 between two people
+    links by dial + lease: 2, 0 between two people
+    links by device + email + phone: 1, 1 between two people
+    links by device + email: 1, 1 between two people
+new intake: people whose record is with another's 164 of 8221 (1.99%), and without those one spoke for 130 of 8221 (1.58%); joined pairs right 16854 of 17557 (96.00%); links by a tap or a number shown wrong 0 of 3654 (0.00%); credited records to the wrong ad 42 of 5974 (0.70%)
+  over the worlds: people whose record is with another's 0.93% to 3.95%, its mean within 1.55% to 2.45%; joined pairs right 93.04% to 98.93%, its mean within 95.33% to 96.74%
+  of what today found, kept: pairs with a chain 21171 of 21415 (98.86%); pairs of records 315 of 315 (100.00%), of them written the same 294 of 294 (100.00%), in forms the table knows 0 of 0 (none), and in forms it does not 21 of 21 (100.00%); records credited to their ad 5791 of 5810 (99.67%); calls tied to a browser of their caller's 3656 of 3671 (99.59%)
+  wrong pairs: nobody spoke for the other 576; one spoke for the other, and none says so 115; one spoke for the other, and a record says so 12; by kind visitor visitor 59, contact visitor 201, caller visitor 126, caller contact 169, contact contact 88, call visitor 2, call contact 2, caller caller 54, call caller 2
+    links by device: 5235, 65 between two people
+    links by dial: 3654, 0 between two people
+    links by phone + review: 2534, 5 between two people
+    links by phone: 2091, 11 between two people
+    links by named + phone: 190, 0 between two people
+    links by email + named + phone: 189, 0 between two people
+    links by review: 163, 93 between two people
+    links by email + phone: 41, 18 between two people
+    links by email + named + phone + review: 25, 0 between two people
+    links by behalf + phone + review: 23, 1 between two people
+    links by email: 19, 19 between two people
+    links by named + phone + review: 12, 0 between two people
+    links by email + named + review: 3, 1 between two people
+    links by device + email + phone: 1, 1 between two people
+    links by device + email: 1, 1 between two people
+names written as they are, in a form the table knows, and in one it does not: {"same":8292,"covered":0,"not":376}
+marks:
+code ed6ae737d5bb811d9a62b39f2e8ef82cdf630a29, today b9bba69cc4bd09982e9c8b2929afc3e718232de9
+Node v22.23.0, names f5a69fbe139b8541f96a42dae40bf4d564d29d660f2aeb1add0eec776ec8ff2f, seeds 20270361 to 20270380
+
+## high: 20 worlds of 2000 people over 120 days
+today: people whose record is with another's 592 of 11991 (4.94%), and without those one spoke for 316 of 11991 (2.64%); joined pairs right 18801 of 20757 (90.58%); links by a tap or a number shown wrong 79 of 2556 (3.09%); credited records to the wrong ad 220 of 6232 (3.53%)
+  over the worlds: people whose record is with another's 2.39% to 6.50%, its mean within 4.39% to 5.47%; joined pairs right 87.22% to 93.83%, its mean within 89.78% to 91.50%
+  of what today found, kept: pairs with a chain 48361 of 48361 (100.00%); pairs of records 1126 of 1126 (100.00%), of them written the same 689 of 689 (100.00%), in forms the table knows 0 of 0 (none), and in forms it does not 437 of 437 (100.00%); records credited to their ad 6012 of 6012 (100.00%); calls tied to a browser of their caller's 2484 of 2484 (100.00%)
+  wrong pairs: nobody spoke for the other 794; one spoke for the other, and none says so 1162; by kind visitor visitor 72, contact visitor 826, caller contact 482, caller visitor 141, contact contact 387, call visitor 12, call contact 15, call call 1, call caller 1, caller caller 19
+    links by phone: 6990, 287 between two people
+    links by device: 5959, 487 between two people
+    links by dial: 2556, 79 between two people
+    links by email + phone: 722, 105 between two people
+    links by email: 251, 155 between two people
+    links by device + email + phone: 9, 9 between two people
+    links by device + phone: 9, 9 between two people
+    links by device + email: 7, 7 between two people
+new: people whose record is with another's 418 of 11991 (3.49%), and without those one spoke for 212 of 11991 (1.77%); joined pairs right 19167 of 20828 (92.03%); links by a tap or a number shown wrong 59 of 2513 (2.35%); credited records to the wrong ad 186 of 6270 (2.97%)
+  over the worlds: people whose record is with another's 1.71% to 4.74%, its mean within 3.03% to 3.93%; joined pairs right 88.00% to 95.42%, its mean within 91.28% to 92.85%
+  of what today found, kept: pairs with a chain 48193 of 48361 (99.65%); pairs of records 1105 of 1126 (98.13%), of them written the same 683 of 689 (99.13%), in forms the table knows 0 of 0 (none), and in forms it does not 422 of 437 (96.57%); records credited to their ad 5954 of 6012 (99.04%); calls tied to a browser of their caller's 2448 of 2484 (98.55%)
+  wrong pairs: nobody spoke for the other 591; one spoke for the other, and none says so 1070; by kind visitor visitor 57, contact visitor 742, caller contact 439, caller visitor 115, contact contact 268, call visitor 10, call contact 12, call call 1, call caller 1, caller caller 16
+    links by phone: 6770, 283 between two people
+    links by device: 5939, 467 between two people
+    links by dial: 2513, 59 between two people
+    links by named + phone: 523, 1 between two people
+    links by email + phone: 381, 76 between two people
+    links by email + named + phone: 308, 2 between two people
+    links by email: 161, 116 between two people
+    links by email + named: 51, 0 between two people
+    links by device + email + phone: 8, 8 between two people
+    links by device + email: 5, 5 between two people
+    links by device + phone: 5, 5 between two people
+today pool: people whose record is with another's 594 of 11991 (4.95%), and without those one spoke for 318 of 11991 (2.65%); joined pairs right 21744 of 26053 (83.46%); links by a tap or a number shown wrong 876 of 5467 (16.02%); credited records to the wrong ad 264 of 7043 (3.75%)
+  over the worlds: people whose record is with another's 2.39% to 6.64%, its mean within 4.40% to 5.50%; joined pairs right 78.40% to 86.50%, its mean within 82.49% to 84.54%
+  of what today found, kept: pairs with a chain 48295 of 48361 (99.86%); pairs of records 1126 of 1126 (100.00%), of them written the same 689 of 689 (100.00%), in forms the table knows 0 of 0 (none), and in forms it does not 437 of 437 (100.00%); records credited to their ad 5987 of 6012 (99.58%); calls tied to a browser of their caller's 2471 of 2484 (99.48%)
+  wrong pairs: nobody spoke for the other 2981; one spoke for the other, and none says so 1328; by kind visitor visitor 832, contact visitor 1491, caller contact 585, caller visitor 853, contact contact 388, call visitor 90, call contact 42, call call 1, call caller 2, caller caller 25
+    links by phone: 6990, 287 between two people
+    links by device: 5959, 487 between two people
+    links by lease: 4917, 861 between two people
+    links by email + phone: 722, 105 between two people
+    links by dial: 546, 15 between two people
+    links by email: 251, 155 between two people
+    links by device + email + phone: 9, 9 between two people
+    links by device + phone: 9, 9 between two people
+    links by device + email: 7, 7 between two people
+    links by dial + lease: 4, 0 between two people
+new pool: people whose record is with another's 418 of 11991 (3.49%), and without those one spoke for 212 of 11991 (1.77%); joined pairs right 21607 of 23606 (91.53%); links by a tap or a number shown wrong 200 of 4386 (4.56%); credited records to the wrong ad 187 of 6918 (2.70%)
+  over the worlds: people whose record is with another's 1.71% to 4.74%, its mean within 3.03% to 3.93%; joined pairs right 87.19% to 94.61%, its mean within 90.81% to 92.29%
+  of what today found, kept: pairs with a chain 48204 of 48361 (99.68%); pairs of records 1104 of 1126 (98.05%), of them written the same 682 of 689 (98.98%), in forms the table knows 0 of 0 (none), and in forms it does not 422 of 437 (96.57%); records credited to their ad 5961 of 6012 (99.15%); calls tied to a browser of their caller's 2470 of 2484 (99.44%)
+  wrong pairs: nobody spoke for the other 786; one spoke for the other, and none says so 1213; by kind visitor visitor 80, contact visitor 804, caller contact 513, caller visitor 196, contact contact 268, call visitor 78, call contact 38, call call 1, call caller 2, caller caller 19
+    links by phone: 6770, 283 between two people
+    links by device: 5939, 467 between two people
+    links by lease: 3487, 187 between two people
+    links by dial: 892, 13 between two people
+    links by named + phone: 523, 1 between two people
+    links by email + phone: 381, 76 between two people
+    links by email + named + phone: 308, 2 between two people
+    links by email: 161, 116 between two people
+    links by email + named: 51, 0 between two people
+    links by device + email + phone: 8, 8 between two people
+    links by dial + lease: 7, 0 between two people
+    links by device + email: 5, 5 between two people
+    links by device + phone: 5, 5 between two people
+new intake: people whose record is with another's 710 of 12164 (5.84%), and without those one spoke for 490 of 12164 (4.03%); joined pairs right 21185 of 24716 (85.71%); links by a tap or a number shown wrong 59 of 2513 (2.35%); credited records to the wrong ad 192 of 6416 (2.99%)
+  over the worlds: people whose record is with another's 3.32% to 7.64%, its mean within 5.25% to 6.39%; joined pairs right 83.22% to 89.75%, its mean within 84.88% to 86.74%
+  of what today found, kept: pairs with a chain 47599 of 48361 (98.42%); pairs of records 1101 of 1126 (97.78%), of them written the same 683 of 689 (99.13%), in forms the table knows 0 of 0 (none), and in forms it does not 418 of 437 (95.65%); records credited to their ad 5920 of 6012 (98.47%); calls tied to a browser of their caller's 2448 of 2484 (98.55%)
+  wrong pairs: nobody spoke for the other 2618; one spoke for the other, and none says so 789; one spoke for the other, and a record says so 124; by kind visitor visitor 107, contact visitor 900, caller contact 981, caller visitor 472, contact contact 478, call visitor 54, call contact 110, call call 9, call caller 67, caller caller 353
+    links by device: 5939, 467 between two people
+    links by phone: 4485, 114 between two people
+    links by phone + review: 2704, 19 between two people
+    links by dial: 2513, 59 between two people
+    links by review: 995, 493 between two people
+    links by named + phone: 487, 1 between two people
+    links by email + phone: 381, 76 between two people
+    links by email + named + phone: 280, 2 between two people
+    links by email: 161, 116 between two people
+    links by behalf + phone + review: 65, 25 between two people
+    links by email + named: 45, 0 between two people
+    links by named + phone + review: 43, 1 between two people
+    links by email + named + phone + review: 28, 0 between two people
+    links by behalf + review: 15, 11 between two people
+    links by device + email + phone: 8, 8 between two people
+    links by email + named + review: 6, 0 between two people
+    links by device + email: 5, 5 between two people
+    links by device + phone: 5, 5 between two people
+names written as they are, in a form the table knows, and in one it does not: {"same":9944,"covered":0,"not":4256}
+marks:
+  BAD: people whose record is with another's, at most 2.5%: 418 of 11991 (3.49%)
+  held: kept of pairs of records, at least 95%: 1105 of 1126 (98.13%)
+  held: kept of records credited to their ad, at least 90%: 5954 of 6012 (99.04%)
+code ed6ae737d5bb811d9a62b39f2e8ef82cdf630a29, today b9bba69cc4bd09982e9c8b2929afc3e718232de9
+Node v22.23.0, names f5a69fbe139b8541f96a42dae40bf4d564d29d660f2aeb1add0eec776ec8ff2f, seeds 20270361 to 20270380
+
+## busy: 20 worlds of 6000 people over 5 days
+today: people whose record is with another's 398 of 21206 (1.88%), and without those one spoke for 248 of 21206 (1.17%); joined pairs right 33842 of 36801 (91.96%); links by a tap or a number shown wrong 932 of 5932 (15.71%); credited records to the wrong ad 493 of 13921 (3.54%)
+  over the worlds: people whose record is with another's 0.96% to 2.68%, its mean within 1.65% to 2.10%; joined pairs right 90.18% to 94.26%, its mean within 91.48% to 92.46%
+  of what today found, kept: pairs with a chain 62445 of 62445 (100.00%); pairs of records 1134 of 1134 (100.00%), of them written the same 869 of 869 (100.00%), in forms the table knows 0 of 0 (none), and in forms it does not 265 of 265 (100.00%); records credited to their ad 13428 of 13428 (100.00%); calls tied to a browser of their caller's 5010 of 5010 (100.00%)
+  wrong pairs: nobody spoke for the other 2079; one spoke for the other, and none says so 880; by kind contact visitor 1011, caller visitor 888, caller contact 550, contact contact 231, visitor visitor 155, call visitor 25, call contact 5, call caller 2, caller caller 92
+    links by phone: 12311, 285 between two people
+    links by device: 10850, 373 between two people
+    links by dial: 5932, 932 between two people
+    links by email + phone: 850, 45 between two people
+    links by email: 173, 122 between two people
+    links by device + email + phone: 18, 18 between two people
+    links by device + email: 4, 4 between two people
+    links by device + phone: 3, 3 between two people
+new: people whose record is with another's 302 of 21206 (1.42%), and without those one spoke for 182 of 21206 (0.86%); joined pairs right 33758 of 35210 (95.88%); links by a tap or a number shown wrong 114 of 4442 (2.57%); credited records to the wrong ad 199 of 13545 (1.47%)
+  over the worlds: people whose record is with another's 0.93% to 2.03%, its mean within 1.28% to 1.57%; joined pairs right 94.55% to 97.37%, its mean within 95.58% to 96.18%
+  of what today found, kept: pairs with a chain 60591 of 62445 (97.03%); pairs of records 1130 of 1134 (99.65%), of them written the same 868 of 869 (99.88%), in forms the table knows 0 of 0 (none), and in forms it does not 262 of 265 (98.87%); records credited to their ad 12955 of 13428 (96.48%); calls tied to a browser of their caller's 4009 of 5010 (80.02%)
+  wrong pairs: nobody spoke for the other 608; one spoke for the other, and none says so 844; by kind contact visitor 624, caller visitor 176, caller contact 396, contact contact 176, visitor visitor 65, call visitor 3, call contact 1, caller caller 11
+    links by phone: 12102, 284 between two people
+    links by device: 10840, 363 between two people
+    links by dial: 4442, 114 between two people
+    links by named + phone: 678, 0 between two people
+    links by email + named + phone: 565, 0 between two people
+    links by email + phone: 273, 34 between two people
+    links by email: 108, 97 between two people
+    links by email + named: 41, 1 between two people
+    links by device + email + phone: 17, 17 between two people
+    links by device + email: 4, 4 between two people
+    links by device + phone: 2, 2 between two people
+today pool: people whose record is with another's 398 of 21206 (1.88%), and without those one spoke for 248 of 21206 (1.17%); joined pairs right 40053 of 44047 (90.93%); links by a tap or a number shown wrong 961 of 10694 (8.99%); credited records to the wrong ad 276 of 15835 (1.74%)
+  over the worlds: people whose record is with another's 0.96% to 2.68%, its mean within 1.65% to 2.10%; joined pairs right 89.35% to 93.20%, its mean within 90.41% to 91.48%
+  of what today found, kept: pairs with a chain 62422 of 62445 (99.96%); pairs of records 1134 of 1134 (100.00%), of them written the same 869 of 869 (100.00%), in forms the table knows 0 of 0 (none), and in forms it does not 265 of 265 (100.00%); records credited to their ad 13384 of 13428 (99.67%); calls tied to a browser of their caller's 5005 of 5010 (99.90%)
+  wrong pairs: nobody spoke for the other 2960; one spoke for the other, and none says so 1034; by kind contact visitor 1415, caller visitor 970, caller contact 502, contact contact 231, visitor visitor 813, call visitor 30, call contact 2, caller caller 31
+    links by phone: 12311, 285 between two people
+    links by device: 10850, 373 between two people
+    links by lease: 10297, 883 between two people
+    links by email + phone: 850, 45 between two people
+    links by dial: 397, 78 between two people
+    links by email: 173, 122 between two people
+    links by device + email + phone: 18, 18 between two people
+    links by device + email: 4, 4 between two people
+    links by device + phone: 3, 3 between two people
+new pool: people whose record is with another's 302 of 21206 (1.42%), and without those one spoke for 182 of 21206 (0.86%); joined pairs right 36441 of 37886 (96.19%); links by a tap or a number shown wrong 85 of 6513 (1.31%); credited records to the wrong ad 161 of 14426 (1.12%)
+  over the worlds: people whose record is with another's 0.93% to 2.03%, its mean within 1.28% to 1.57%; joined pairs right 94.78% to 98.11%, its mean within 95.83% to 96.55%
+  of what today found, kept: pairs with a chain 62101 of 62445 (99.45%); pairs of records 1130 of 1134 (99.65%), of them written the same 868 of 869 (99.88%), in forms the table knows 0 of 0 (none), and in forms it does not 262 of 265 (98.87%); records credited to their ad 13345 of 13428 (99.38%); calls tied to a browser of their caller's 4847 of 5010 (96.75%)
+  wrong pairs: nobody spoke for the other 560; one spoke for the other, and none says so 885; by kind contact visitor 617, caller visitor 141, caller contact 414, contact contact 176, visitor visitor 64, call visitor 16, call contact 4, caller caller 13
+    links by phone: 12102, 284 between two people
+    links by device: 10840, 363 between two people
+    links by dial: 5627, 19 between two people
+    links by lease: 884, 66 between two people
+    links by named + phone: 678, 0 between two people
+    links by email + named + phone: 565, 0 between two people
+    links by email + phone: 273, 34 between two people
+    links by email: 108, 97 between two people
+    links by email + named: 41, 1 between two people
+    links by device + email + phone: 17, 17 between two people
+    links by device + email: 4, 4 between two people
+    links by dial + lease: 2, 0 between two people
+    links by device + phone: 2, 2 between two people
+new intake: people whose record is with another's 864 of 21362 (4.04%), and without those one spoke for 724 of 21362 (3.39%); joined pairs right 35497 of 40157 (88.40%); links by a tap or a number shown wrong 114 of 4442 (2.57%); credited records to the wrong ad 239 of 13770 (1.74%)
+  over the worlds: people whose record is with another's 2.96% to 5.89%, its mean within 3.66% to 4.42%; joined pairs right 85.83% to 91.46%, its mean within 87.74% to 89.11%
+  of what today found, kept: pairs with a chain 60005 of 62445 (96.09%); pairs of records 1127 of 1134 (99.38%), of them written the same 865 of 869 (99.54%), in forms the table knows 0 of 0 (none), and in forms it does not 262 of 265 (98.87%); records credited to their ad 12914 of 13428 (96.17%); calls tied to a browser of their caller's 4009 of 5010 (80.02%)
+  wrong pairs: nobody spoke for the other 3986; one spoke for the other, and none says so 571; one spoke for the other, and a record says so 103; by kind contact visitor 973, caller visitor 835, caller contact 1389, contact contact 525, visitor visitor 183, call visitor 26, call contact 47, call caller 46, caller caller 634, call call 2
+    links by device: 10840, 363 between two people
+    links by phone: 6406, 86 between two people
+    links by phone + review: 6104, 45 between two people
+    links by dial: 4442, 114 between two people
+    links by review: 1199, 824 between two people
+    links by named + phone: 648, 0 between two people
+    links by email + named + phone: 523, 0 between two people
+    links by email + phone: 273, 34 between two people
+    links by email: 108, 97 between two people
+    links by behalf + phone + review: 102, 26 between two people
+    links by email + named + phone + review: 42, 0 between two people
+    links by email + named: 39, 1 between two people
+    links by named + phone + review: 36, 0 between two people
+    links by device + email + phone: 17, 17 between two people
+    links by behalf + review: 11, 11 between two people
+    links by device + email: 4, 4 between two people
+    links by device + phone: 2, 2 between two people
+    links by email + named + review: 2, 0 between two people
+names written as they are, in a form the table knows, and in one it does not: {"same":19774,"covered":0,"not":3375}
+marks:
+  held: with a pool, links by a tap or a number shown wrong, at most 5%: 85 of 6513 (1.31%)
+  held: kept with a pool of calls tied, at least 90%: 4847 of 5010 (96.75%)
+  no mark: without a pool, links by a tap wrong 114 of 4442 (2.57%); kept of calls tied 4009 of 5010 (80.02%)

@@ -16,6 +16,7 @@ evidence = weight × (2 / subjects sharing it) ^ dilution × 0.5 ^ (gap / halfLi
 | `cap` | The most subjects an identifier can have and still give evidence. |
 | `group` | Kinds that count once. The strongest reason adds to the score, and the others are shown. |
 | `corroborates` | A kind that counts where the pair's other kinds already reach `related`. It creates no link by itself. |
+| `relates` | A kind that says two subjects are two people. The pair is related, and kept apart as a separated pair is, whatever it shares, unless a reviewer or a system joins it. |
 
 A muted identifier gives no evidence.
 
@@ -23,7 +24,7 @@ Evidence that counts combines as a noisy-OR, `1 − Π(1 − evidence)`. Each id
 
 Scores depend only on stored data. The current time and the order of arrival leave them unchanged.
 
-The default policy has no groups or corroborating kinds. [Presets](presets.md) has both: [the preset for contacts entered by staff](presets.md#contacts-entered-by-staff) defines a corroborating `name` kind.
+The default policy has no groups, and one corroborating kind, `named`. [Presets](presets.md) has both: [the preset for contacts entered by staff](presets.md#contacts-entered-by-staff) defines a corroborating `name` kind.
 
 ### Kinds
 
@@ -40,6 +41,9 @@ The default policy has no groups or corroborating kinds. [Presets](presets.md) h
 | `link` | 0.92 | 5 | none | A link sent to one person, opened in this browser. Thins as more people's links are opened there |
 | `dial` | 0.92 | 2 | none | A phone call or a text that began just after exactly one visitor tapped its number |
 | `text` | 0.95 | 2 | none | A text that carried the code one visitor was given |
+| `named` | 0.999 | 10 | none | One number or email given under one name. It corroborates. Written where a policy keeps people apart by `given` |
+| `ward` | 0.97 | 5 | none | Two who were spoken for by one number or email, under one name |
+| `behalf` | 0.92 | 2 | none | Somebody who [speaks for](identify.md#speaking-for-somebody-else) somebody else. It relates and never joins |
 | `lease` | 0.90 | 2 | none | A phone call to a number shown to one visitor. An unmeasured prior |
 | `phone` | 0.90 | 10 | none | A mobile or landline. Joins two subjects, relates three, and gives no link among four or more |
 | `ga` | 0.90 | 10 | none | Google Analytics client id |
@@ -76,10 +80,10 @@ A component of tens of thousands indicates a shared identifier to cap or mute.
 
 ## Facts that keep people apart
 
-Two records can share an email and a phone and still be two people. A policy can keep them apart by a date of birth:
+Two records can share an email and a phone and still be two people. A policy can keep them apart by a date of birth, a first name, or both:
 
 ```json
-{ "apart": ["birth"] }
+{ "apart": ["birth", "given"] }
 ```
 
 ```text
@@ -90,17 +94,27 @@ contact:2 { email, born 1984-07-01 } ──┘
 
 With `IDENTIFIER_SECRET` set, the server then keeps a keyed `birth` of each `dob` in a [`profile`](identify.md), as a note that links nothing. Two subjects that would be in one group, both have a `birth`, and share no value of it are kept apart, whatever path joins them.
 
+With `given` it keeps keyed notes of the names a first name may stand for, from the table in `src/names.ts`: `Bob` stands for `Robert`, and `Lupe` for `Guadalupe`.
+
+| Two records | Come to |
+| --- | --- |
+| Dates that differ | Two people, unless the names agree and the dates have the year or the day and month in common. A father and a son of one name are two. |
+| First names that can stand for no one name | Two people, unless the dates agree, or the names begin with one letter. A mother and a daughter who share a day of birth, and an Alex and an Alexandra, are then one where they share a number. |
+| A name the table does not have | Nothing is said. |
+| One number or email under one name | Confirmed, at 0.999 (`named`), for as long as the number or email is evidence. |
+| Two who were [spoken for](identify.md#speaking-for-somebody-else) by one number or email, under one name | One person, at 0.97 (`ward`), and never the speaker, whatever name is typed. |
+
 | Point | Behavior |
 | --- | --- |
 | One of them has no date | Nothing is said. |
-| A merge, by a reviewer or from your own systems | Overrules it, whichever came first. Taking the merge back gives the fact back. |
-| Where it shows | In the `match` lookup, the Accounts view and Matches, as related with `conflict: "birth"`, however high the score. Credit does not cross it. |
+| A merge, by a reviewer or from your own systems | Overrules it, whichever came first. Taking the merge back gives the fact back. The exception is a caller or a browser joined to two people of two dates of birth: it goes where the fewest such joins are left out, then with whoever was seen first, and the others are in Matches. Same changes nothing there: `split` the caller from the one it is not. |
+| Where it shows | In the `match` lookup, the Accounts view and Matches, as related with `conflict: "birth"` or `"given"`, however high the score. Credit does not cross it. |
 | Where it does not | The `conflicts` lookup, kept-apart lists, disputes and the audit log. Nobody decided it. |
 | A corrected date | The record keeps both values, so it is kept apart from neither, until it is forgotten. |
 | Shared browsers and callers | They go with one of the two, as after a separation. |
-| Turning it on | Rebuild once. Dates sent before are not known: send them again. |
+| Turning it on, or a new version of it | Rebuild once. Dates and names sent before are not known, or not all that is now kept of them: send them again. |
 
-It is off unless a policy lists it, and no preset does. On made-up people at the middle rates it kept one mixed record in five apart, and split 0.9% of the true pairs of records, or 1.3% where staff join callers to records. See [Accuracy](accuracy.md#the-second-run), where it is still far from its bar.
+It is off unless a policy lists it, and no preset does. On made-up people at the middle rates it kept one mixed record in five apart, and split 0.9% of the true pairs of records, or 1.3% where staff join callers to records. See [Accuracy](accuracy.md#the-second-run), where it is still far from its bar, and [the third run](accuracy.md#results-of-the-third-run), where eight of fifty marks came out bad.
 
 ## Model assumptions
 

@@ -88,7 +88,7 @@ Each entry has `type`, `key` and `at`. A field with `?` may be left out.
 
 | Type | Fields | Answers |
 | --- | --- | --- |
-| `profile` | `subject`, `facts`, `event?` | `changes`, `notes`. See [identify](identify.md). |
+| `profile` | `subject`, `facts`, `event?`, `speaker?` | `changes`, `notes`. See [identify](identify.md). |
 | `arrival` | `subject`, `source?`, `medium?`, `campaign?`, `campaignId?`, `adGroupId?`, `adId?`, `term?`, `content?`, `landing?`, `referrer?`, `clicks?`, `custom?` | `subject` |
 | `cost` | `rows`, 1 to 5,000: `day`, `source`, `amount`, `currency`, `campaignId?`, `campaign?`, `clicks?`, `impressions?`, `conversions?`, `conversionValue?` | `written`, `older`: rows written, and rows a newer reading already had |
 | `conversion` | `subject`, `stage`, `value?`, `currency?`, `actions?`, `channel?`, `email?`, `phone?`, `consent?`, `tags?` | `value`, `currency`, `deliveries` |
@@ -103,7 +103,7 @@ Each entry has `type`, `key` and `at`. A field with `?` may be left out.
 
 | Field | Values |
 | --- | --- |
-| `facts` | At least one of `email`, `phone`, `device`, `ip`, `address`, `name`, `dob`, `identifiers` |
+| `facts` | At least one, unless there is a `speaker`: `email`, `phone`, `device`, `ip`, `address`, `name`, `dob`, `identifiers` |
 | `clicks` | `gclid`, `gbraid`, `wbraid`, `fbclid`, `fbp`, `msclkid`, `ttclid` |
 | `custom` | At most 10 names of your own, each with text up to 256 characters |
 | `actions` | What it counts as on each platform, `{ "google": "987654321" }`. Left out, the stage's own. |
@@ -156,7 +156,7 @@ A refusal is an answer, with status 200 and `"ok": false`. None is kept with the
 | `FORGOTTEN` | The key, or what it is about, belongs to somebody who was deleted | |
 | `NOT_ATTEMPTED` | The time ran out before its turn. Nothing was tried. | |
 
-The reserved kinds are `review`, `link`, `carry`, `opened`, `lease`, `dial`, `text`, `place`, `birth` and `dialed`.
+The reserved kinds are `review`, `link`, `carry`, `opened`, `lease`, `dial`, `text`, `place`, `birth`, `dialed`, `behalf`, `named`, `ward`, `given`, `dated` and `initial`.
 
 ### Batches
 

@@ -438,7 +438,11 @@ export function createHandler(core: Core, options: HandlerOptions) {
         const kind = named.slice(0, named.indexOf(':') + 1)
         const others = (await graph.cluster(subject))?.members.filter((member) => member !== named && kind && member.startsWith(kind)) ?? []
         const contested = others.length > 0 && (await graph.holders([tie])).some((edge) => edge.subject !== subject && edge.subject !== named)
-        if (room && (others.length === 0 || contested)) {
+        // Nor one of whoever speaks for them: a mother who opens her son's link is not her son.
+        const group = new Set([subject, ...((await graph.cluster(subject))?.members ?? [])])
+        let spoken = false
+        for (const each of new Set([named, ...((await graph.cluster(named))?.members ?? [])])) spoken ||= (await graph.links(each)).some((link) => group.has(link.subject) && link.level !== 'same' && link.reasons.some((reason) => reason.identifier.startsWith('behalf:')))
+        if (room && !spoken && (others.length === 0 || contested)) {
           identifiers.push(tie, tied)
           also.push({ subject: named, identifiers: [tie], at, event: 'link' })
         } else identifiers.push(identifier('opened', `${named} (not tied)`))
