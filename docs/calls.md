@@ -184,10 +184,10 @@ Mark the numbers to replace on your pages, and add `pool=1` to the script tag:
 
 | When | What happens |
 | --- | --- |
-| A visitor with a visit from an ad, a campaign or another site opens the page | They get the free number that has rested longest, for `POOL_MINUTES` |
+| A visitor with a visit from an ad, a campaign or another site opens the page | They get the number they had last, or else the one that has rested longest, for `POOL_MINUTES` |
 | The page stays in view | The page renews the number every five minutes |
 | The page is hidden or closed | The lease expires, and the page shows its own number again |
-| Every number is taken | The page keeps its own number. `/stats` and the Health view count the request as exhausted. |
+| Every number is taken, or has not rested for `POOL_GRACE_MINUTES` | The page keeps its own number. `/stats` and the Health view count the request as exhausted. |
 | A call reaches a pool number | It is linked at 0.90 to the visitor holding the number when the call began. For `POOL_GRACE_MINUTES` after a lease ends, the last holder still gets the call unless someone has held the number since. One caller per visitor still applies, as do separations. |
 | The number has no holder | A tap decides, as for any other number |
 
@@ -195,7 +195,7 @@ A number is held by one visitor at a time, across all servers. One network gets 
 
 The page's own number also stays for staff, declared bots, visitors who opted out of advertising, and those without a visit in the last 90 days.
 
-> **Size the pool.** Count the visitors with an ad click whose visits overlap within `POOL_MINUTES` at your busiest hour. Start with that many numbers and add more while the exhausted count grows. Report calls to them as for any other number.
+> **Size the pool.** Count the visitors with an ad click who come within `POOL_MINUTES` and `POOL_GRACE_MINUTES` together, at your busiest hours. A number rests for its grace before anyone else is shown it, because whoever had it may still dial it. With fewer numbers, more visitors see the page's own, and the exhausted count says so. Report calls to them as for any other number.
 
 ## Call results
 

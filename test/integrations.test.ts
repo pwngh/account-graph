@@ -1594,8 +1594,8 @@ test('a visitor with an arrival is shown a number of their own, and nobody else 
   assert.deepEqual([reported.visitor, reported.flags], ['visitor:a', ['pool']])
   assert.equal((await graph.attribute(reported.subject, { at: clock + 1000 })).credited?.gclid, 'G-a')
 
-  // A network of invented visitors gets three browsers' worth, whatever it asks for.
-  clock += 3_600_000
+  // A network of invented visitors gets three browsers' worth, whatever it asks for, once the numbers have rested.
+  clock += 4 * 3_600_000
   for (const n of [1, 2, 3, 4]) await page('/collect', { device: `bot-${n}`, touch: { gclid: `B${n}` } }, { from: '203.0.113.200' })
   const before = ((await (await fetch(`${base}/stats`, authorized)).json()) as any).exhausted
   for (const n of [1, 2, 3, 4]) await ask(`bot-${n}`, {}, { from: '203.0.113.200' })

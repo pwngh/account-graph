@@ -1,3 +1,4 @@
+import { ALIKE } from './names.ts'
 import { UNNAMED, evidence, joins, told, usable, weigh } from './policy.ts'
 import type { Fact, Policy } from './policy.ts'
 import type { Edge, Identifier, IdentifierState, Labels, Pair, Reason, Subject } from './types.ts'
@@ -128,11 +129,13 @@ export function conflict(policy: Policy, a: Known | undefined, b: Known | undefi
     return own && others && [...own].some((value) => others.has(value))
   }
   const shared = [...a.things].filter((thing) => b.things.has(thing))
+  const browserAndNumber = shared.some((thing) => thing.startsWith('device:')) && shared.some((thing) => /^(phone|voip):/.test(thing))
+  const named = agree('given') === true || shared.some((thing) => thing.startsWith('named:') && (browserAndNumber || !thing.startsWith(ALIKE)))
   // A name that agrees outranks two dates that one slip of the pen would make one. A father and a son of one name have two dates.
-  if (policy.apart.includes('birth') && agree('birth') === false && !((agree('given') === true || shared.some((thing) => thing.startsWith('named:'))) && agree('dated') === true)) return 'birth'
+  if (policy.apart.includes('birth') && agree('birth') === false && !(named && agree('dated') === true)) return 'birth'
   if (!policy.apart.includes('given') || agree('given') !== false || agree('birth') === true || agree('initial') === true) return undefined
   // Given again from one browser with one number, it is one person by another name.
-  return shared.some((thing) => thing.startsWith('device:')) && shared.some((thing) => /^(phone|voip):/.test(thing)) ? undefined : 'given'
+  return browserAndNumber ? undefined : 'given'
 }
 
 type Adjacency = Map<Subject, Map<Subject, number>>

@@ -351,7 +351,7 @@ async function visitorFor(graph: Graph, call: Heard, options: CallOptions): Prom
   const may = (each: Heard, visitor: Subject) => !apart.get(visitor)!.has(each.subject) && (views.get(each.id)?.own?.has(visitor) ?? true)
 
   const result = ties(tapped, heard, taps, owners, may, redone, { window, near, claim })
-  const undone = kept.filter((each) => redone.has(each.id) && !each.flags.includes('pool') && views.get(each.id)?.holder === undefined && (each.visitor === undefined ? result.get(each.id)!.visitor === undefined && each.recorded > (options.now ?? Date.now)() - STAGED : result.get(each.id)!.visitor !== each.visitor)).map((each) => ({ id: each.id, ambiguous: result.get(each.id)!.doubtful }))
+  const undone = kept.filter((each) => redone.has(each.id) && !each.flags.includes('pool') && views.get(each.id)?.holder === undefined && (each.visitor === undefined ? result.get(each.id)!.visitor === undefined && (each.recorded > (options.now ?? Date.now)() - STAGED || (result.get(each.id)!.doubtful && !each.flags.includes('ambiguous'))) : result.get(each.id)!.visitor !== each.visitor)).map((each) => ({ id: each.id, ambiguous: result.get(each.id)!.doubtful }))
   if (here.holder !== undefined) {
     const free = !(await graph.separations(call.subject)).includes(here.holder) && (await tiesOf(graph, here.holder)).every((tie) => tie.subject === call.subject)
     return { holder: true, grace: here.grace, ...(free && { visitor: here.holder }), notes: [], doubtful: false, undone }

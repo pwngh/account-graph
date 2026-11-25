@@ -40,7 +40,7 @@ import type {
   Edge,
   Entry,
   Flow,
-  Identifier,
+  Identifier, IdentifierState,
   Journey,
   KeptCall,
   KeptText,
@@ -184,10 +184,10 @@ export interface Graph {
   followable(subject: Subject, since: number): Promise<boolean>
   /**
    * Shows a subject one of your numbers as their own for some minutes, or the one they hold for that much longer. No
-   * two subjects hold one number at one time. Undefined when every number is held. With `arrivedSince`, null for a
+   * two subjects hold one number at one time. Undefined when every number is held, or was held less than `rest` milliseconds ago by another. With `arrivedSince`, null for a
    * subject with no arrival since then, or whose standing answer is no to measuring ads.
    */
-  lease(subject: Subject, options: { numbers: readonly string[]; minutes: number; at?: number; arrivedSince?: number }): Promise<Lease | null | undefined>
+  lease(subject: Subject, options: { numbers: readonly string[]; minutes: number; at?: number; arrivedSince?: number; rest?: number }): Promise<Lease | null | undefined>
   /** Who a number was shown to at a time, or within `grace` milliseconds before it when nobody held it since. */
   leaseholder(number: string, at: number, grace?: number): Promise<Subject | undefined>
   /** How many of the numbers are held at a time. */
@@ -529,7 +529,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     }
     const pairs = scorePairs(policy, edges, states)
     const two = pairs.filter(({ reasons }) => told(policy, reasons)).map(({ a, b }): [Subject, Subject] => [a, b])
-    return partition(subjects, pairs, separated, policy, knownOf(policy, edges, (identifier) => states.get(identifier)?.ignored ?? false, two.length > 0), onCut, two, sinceOf(edges))
+    return partition(subjects, pairs, separated, policy, knownOf(policy, edges, silent(states), two.length > 0), onCut, two, sinceOf(edges))
   }
 
   /**
@@ -595,6 +595,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     return out
   }
 
+  /** Whether an identifier says nothing of who somebody is: muted, or evidence that more hold than its cap. A note has no cap to go by. */
+  const silent = (states: ReadonlyMap<Identifier, IdentifierState>) => (identifier: Identifier) => states.get(identifier)?.ignored === true || (ruleFor(policy, identifier).weight > 0 && !usable(policy, identifier, states.get(identifier)))
+
   /** What is known of these subjects that cannot be two people's. Nothing is read where the policy keeps nobody apart by it. */
   async function known(tx: Tx, subjects: readonly Subject[], joins = false): Promise<Map<Subject, Known>> {
     const out = new Map<Subject, Known>()
@@ -602,7 +605,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     for (let i = 0; i < subjects.length; i += TOGETHER) {
       const edges = (await tx.edgesOf(subjects.slice(i, i + TOGETHER))).filter(({ identifier }) => /^(birth|given|initial|dated|review|device|phone|voip|named):/.test(identifier))
       const states = await tx.states(unique(edges.map((edge) => edge.identifier)))
-      for (const [subject, facts] of knownOf(policy, edges, (identifier) => states.get(identifier)?.ignored ?? false, joins)) out.set(subject, facts)
+      for (const [subject, facts] of knownOf(policy, edges, silent(states), joins)) out.set(subject, facts)
     }
     return out
   }
@@ -1439,8 +1442,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
           if (line && visitor !== undefined) await tx.addTouch({ ...line, subject: call.subject, at: call.at })
         }
         if ((await tx.states([identifier])).get(identifier)?.ignored) return []
-        // Nobody decided anything, so nothing is added to the audit log, which is kept for good. The call says it is in doubt.
         const holders = (await tx.edgesOn([identifier])).map((edge) => edge.subject)
+        // Not tied yet, it is kept from being tied, and there is nothing to have decided.
+        if (holders.length > 0) await decide(tx, 'ignore', [identifier], { by: 'calls', reason: 'another call leaves the tap it rests on in doubt', automatic: true })
         await tx.setIgnored(identifier, true)
         if (holders.length === 0) return []
         await mark(tx)
@@ -1456,7 +1460,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return store.read((tx) => followable(tx, subject, since, now()))
     },
 
-    async lease(subject, { numbers, minutes, at = now(), arrivedSince }) {
+    async lease(subject, { numbers, minutes, at = now(), arrivedSince, rest = 0 }) {
       if (typeof subject !== 'string' || !subject) throw new TypeError('A lease requires a subject')
       if (!Number.isSafeInteger(at)) throw new TypeError('A lease requires `at`, an integer in epoch milliseconds')
       if (!(Number.isFinite(minutes) && minutes > 0)) throw new TypeError('A lease requires its length in minutes, above zero')
@@ -1474,9 +1478,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         }
         // Of those free, the one released longest ago: a number seen last week is still on somebody's screen more than one seen last year.
         const ended = (number: string) => newest.get(number)?.until ?? -Infinity
-        const free = unique(numbers).filter((number) => ended(number) <= at)
+        // It rests first: whoever had it may still dial it. The one who had it last gets it back.
+        const free = unique(numbers).filter((number) => ended(number) + rest <= at || (ended(number) <= at && newest.get(number)!.subject === subject))
         if (free.length === 0) return undefined
-        const number = free.reduce((best, next) => (ended(next) < ended(best) ? next : best))
+        const number = free.find((each) => newest.get(each)?.subject === subject) ?? free.reduce((best, next) => (ended(next) < ended(best) ? next : best))
         const lease = { number, subject, start: at, until }
         await tx.setLease(lease)
         return lease

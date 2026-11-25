@@ -1349,14 +1349,22 @@ export function givenKeys(secret: string, first: string): Identifier[] {
   return [...names.map((name) => key('given', name)), ...[...new Set(folded(first).split(/\s+/).map((word) => word[0]!))].sort().map((letter) => key('initial', letter))]
 }
 
+/** How a key of a first letter and a last name begins. It is no agreement of two first names. */
+export const ALIKE = 'named:i-'
+
 /**
  * The keys of a number, an email or a browser under the name it was given with. Two records that share one were given it by
- * one name, or by a name that begins alike and one last name. They are made with a secret, as the rest are.
+ * one name, or by a name that begins alike and one last name. They are made with a secret, as the rest are. A record may have
+ * one of two last names, so each word of it has a key.
  */
 export function namedKeys(secret: string, contact: readonly Identifier[], first: string, last: string): Identifier[] {
   if (typeof secret !== 'string' || secret.length < 32) throw new TypeError('A name key requires a secret of at least 32 characters')
   const words = folded(first).split(/\s+/).filter(Boolean)
-  const firsts = new Set([...namesOf(first), ...words.map((word) => word[0]!)])
-  const lasts = new Set(folded(last).split(/\s+/).filter(Boolean))
-  return contact.flatMap((each) => [...firsts].flatMap((name) => [...lasts].map((surname): Identifier => `named:${createHmac('sha256', secret).update(JSON.stringify(['named', each, name, surname])).digest('hex')}`)))
+  const known = namesOf(first)
+  const lasts = [...new Set(folded(last).split(/\s+/).filter(Boolean))]
+  // A number is one whatever kind of line it was found to be.
+  const details = new Set(contact.map((each) => each.replace(/^voip:/, 'phone:')))
+  const key = (start: string, ...parts: string[]): Identifier => `${start}${createHmac('sha256', secret).update(JSON.stringify(['named', ...parts])).digest('hex')}`
+  const letters = [...new Set(words.map((word) => word[0]!))]
+  return [...details].flatMap((detail) => lasts.flatMap((surname) => [...(known.length > 0 ? known : words).map((name) => key('named:', detail, name, surname)), ...letters.map((letter) => key(ALIKE, detail, letter, surname))]))
 }

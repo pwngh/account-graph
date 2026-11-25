@@ -1589,6 +1589,13 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await strictly('visitor:e'))!.subject, 'visitor:e')
       await graph.consent('visitor:e', { adUserData: false, adPersonalization: false }, { at: T0 + 2 })
       assert.equal(await strictly('visitor:e'), null)
+      // A number rests before another is shown it, and its last holder gets it back.
+      const rested = (subject: string, at: number) => graph.lease(subject, { numbers: ['+15550100099'], minutes: 15, at: T0 + at * MIN, rest: 120 * MIN }).then((each) => each?.start)
+      assert.equal(await rested('visitor:r', 0), T0)
+      assert.equal(await rested('visitor:s', 60), undefined)
+      assert.equal(await rested('visitor:r', 70), T0 + 70 * MIN)
+      assert.equal(await rested('visitor:s', 204), undefined)
+      assert.equal(await rested('visitor:s', 205), T0 + 205 * MIN)
       for (const bad of [{ minutes: 0 }, { minutes: 15, at: 1.5 }]) await assert.rejects(graph.lease('visitor:a', { numbers, ...bad }), TypeError)
       await assert.rejects(graph.lease('', { numbers, minutes: 15 }), TypeError)
       assert.equal(await graph.lease('visitor:a', { numbers: [], minutes: 15, at: T0 }), undefined)

@@ -395,7 +395,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     if (!(await graph.followable(subject, since))) return undefined
     // A program inventing visitors would take every number, so one network gets few.
     if (!tapsFrom(addressOf(request), device, at)) return undefined
-    const lease = await graph.lease(subject, { numbers: pool, minutes: options.pool!.minutes, at, arrivedSince: since })
+    const lease = await graph.lease(subject, { numbers: pool, minutes: options.pool!.minutes, at, arrivedSince: since, rest: options.pool!.grace * 60_000 })
     if (lease === null) return undefined
     tally[lease ? 'leased' : 'exhausted'] += 1
     return lease && { number: lease.number, until: lease.until, lasts: lease.until - at }
