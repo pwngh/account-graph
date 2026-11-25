@@ -152,6 +152,9 @@
 ### Reviewer screen
 
 - `undecided` pages through ranked pairs from recent sightings and can sweep every subject, including those with pruned sightings.
+- Detail cards open from an icon beside a number or a row on Calls, Board, Journey and Health. Each holds what is behind it, names how it is known and leaves out what is not. See the [reviewer screen](docs/operations.md#reviewer-screen).
+- A mark, a number or a dashed wait on the Journey chart shows a short card when it is pointed at or focused. The panel beside the chart has every row.
+- `#/journey/ID/CALL` opens a journey at one call.
 - Each kind of event has one icon, drawn the same in the timeline, its filters, the chart, the story of a missed call and the feeds. A call nobody answered has a phone with a cross.
 - `TARGETS` and the library option `targets` hold the numbers a firm sets itself to meet. Both are off by default, are checked at the start, and are shown on the reviewer screen as set by you. See [targets](docs/operations.md#targets).
 - `Accounts` flags groups where too many conflicting call histories leave some matches unresolved.

@@ -140,13 +140,22 @@ Open `/review` and enter a token. Each view has its own address, so you can link
 | --- | --- | --- |
 | `/review#/accounts` | Accounts | The largest clusters, recent changes, and decisions. |
 | `/review#/accounts/account:42` | Accounts | The subject, its cluster, links and their reasons, transfers, and sightings. The heading and Links table show “First seen here” and “Created in your system” for your records when known. Hover over a time for the exact timestamp. |
-| `/review#/journey/contact:42` | Journey | One person's timeline across all their subjects: visits, page activity, calls, steps and their values, consent, and decisions. |
+| `/review#/journey/contact:42` | Journey | One person's timeline across all their subjects: visits, page activity, calls, steps and their values, consent, and decisions. A call's id may follow, to bring that call into view. |
 | `/review#/board/90` | Board | People by the furthest step they reached. Unreturned missed calls come first. |
 | `/review#/decide` | Matches | Related pairs in different clusters, one at a time, to join or separate. Keys: J, K, S to skip, U to undo. |
 | `/review#/calls` | Calls | Unreturned missed calls, call outcomes by hour and weekday, and coverage, over the last 30 days. Accepts two days in the address, as Channels does. |
 | `/review#/channels` | Channels | The cost and results of each campaign over the last 30 days. |
 | `/review#/channels/2026-11-01/2026-11-30` | Channels | The same for the given days. A breakdown, a step and a number of days may follow. |
 | `/review#/health` | Health | Undelivered alerts, feeds, jobs, conversions, the newest audit hash, and the running policy by kind. A banner appears when a rebuild is due. |
+
+A ring with three lines opens a detail card. It holds what is behind the number or row it stands beside: the counts, when and how something is known, the arithmetic, how to read it, and links. A card is made when it is opened, from what the page holds and the routes a reviewer already has, and is made again when the page is read again. What is not known is left out. Escape, Close or a press outside it closes it.
+
+| View | Cards |
+| --- | --- |
+| Calls | The five numbers, and each call after its state |
+| Board | The four numbers, and each person or text beside its age |
+| Journey | Each call after its state. A mark, a number or a dashed wait on the chart shows a short card when it is pointed at or focused, and opens beside the chart when pressed. |
+| Health | Each feed. One that is not monitored names the setting that would watch it. |
 
 The screen checks for new writes every ten seconds and reloads the view when there are some. It pauses while its tab is hidden, and while someone types in the view or answers a prompt.
 
