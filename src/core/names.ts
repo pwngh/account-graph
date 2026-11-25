@@ -9,6 +9,7 @@
 import { createHmac } from 'node:crypto'
 import { malformed } from '../contract/fault.ts'
 import type { Identifier } from '../contract/types.ts'
+import { birthKeys } from './identifiers.ts'
 
 /** Each full name, and what stands for it: a short form, a name in another language, nothing for a name with no short form. */
 const FORMS = `
@@ -1359,6 +1360,16 @@ const PARTICLES = new Set(['de', 'del', 'la', 'las', 'los', 'el', 'da', 'dos', '
  * browser has none: a front desk's is everybody's. Of somebody who is spoken for, with the detail the speaker's, it is a
  * `ward`: it joins them to whoever was spoken for by the same name and detail, and never to the speaker.
  */
+/** The keys of somebody by the names their first name may stand for, their last name and their date of birth, or none without a date. */
+export function personKeys(secret: string, first: string, last: string, dob: string | undefined): Identifier[] {
+  const [birth] = birthKeys(secret, dob)
+  if (!birth) return []
+  const known = namesOf(first)
+  const firsts = known.length > 0 ? known : folded(first).split(/\s+/).filter((word) => word.length > 1)
+  const lasts = [...new Set(folded(last).split(/\s+/).filter((word) => word.length > 1 && !PARTICLES.has(word)))]
+  return lasts.flatMap((surname) => firsts.map((name): Identifier => `person:${createHmac('sha256', secret).update(JSON.stringify(['person', birth, name, surname])).digest('hex')}`))
+}
+
 export function namedKeys(secret: string, contact: readonly Identifier[], first: string, last: string, kind: 'named' | 'ward' = 'named'): Identifier[] {
   if (typeof secret !== 'string' || secret.length < 32) throw malformed('A name key requires a secret of at least 32 characters')
   const known = namesOf(first)

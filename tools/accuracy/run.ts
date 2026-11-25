@@ -79,6 +79,8 @@ export interface Outcome {
   tapLinks: { links: number; wrong: number }
   /** Pairs of records shown as possibly one person, those that are, and which. */
   waiting: { pairs: number; right: number; found: Set<string> }
+  /** What staff decided of them, where they do. */
+  decided: { seen: number; joins: number; wrongJoins: number; splits: number; wrongSplits: number }
 }
 
 /** The code a world is reported to: this checkout's, or another's, by the same names. */
@@ -94,6 +96,8 @@ export interface Switches {
   pool?: boolean
   speaker?: boolean
   intake?: boolean
+  /** Staff look at the pairs of records that are shown: the share they look at, and of those, the share they decide rightly. */
+  decide?: { seen: number; right: number; seed: number }
 }
 const HERE: Code = { createGraph, createMemoryStore, policyFrom, createHandler }
 
@@ -180,6 +184,31 @@ export async function play(world: World, set: Switches, pool: number, { createGr
   }
   const truths = [...world.truths, ...[...callers].map(([subject, known]): Truth => ({ subject, people: [...known.people], facts: [...known.facts] }))]
   const peopleOf = new Map(truths.map((each) => [each.subject, each.people]))
+  const decided = { seen: 0, joins: 0, wrongJoins: 0, splits: 0, wrongSplits: 0 }
+  if (set.decide) {
+    const { seen, right, seed } = set.decide
+    // Of each pair, and the same whatever else is decided. One that nobody could tell stays shown.
+    const toss = (what: string) => createHash('sha256').update(`${seed} ${what}`).digest().readUInt32BE(0) / 2 ** 32
+    const met = new Set<string>()
+    // A join can bring others beside each other, which are then shown too.
+    for (let pass = 0; pass < 5; pass++) {
+      const open = (await graph.undecided({ limit: Infinity, sightings: Infinity })).pairs.filter(({ a, b, unconfirmed }) => unconfirmed && !met.has(`${a} ${b}`))
+      if (open.length === 0) break
+      for (const { a, b } of open) {
+        met.add(`${a} ${b}`)
+        if (toss(`seen ${a} ${b}`) >= seen) continue
+        // Joined meanwhile by way of another, there is nothing to decide.
+        if ((await graph.cluster(a as never))?.id === (await graph.cluster(b as never))?.id) continue
+        const one = peopleOf.get(a)!.some((each) => peopleOf.get(b)!.includes(each))
+        const says = toss(`right ${a} ${b}`) < right ? one : !one
+        decided.seen += 1
+        if (says) await graph.join(a, b, { by: 'desk' })
+        else await graph.separate(a, b, true, { by: 'desk' })
+        decided[says ? 'joins' : 'splits'] += 1
+        if (says !== one) decided[says ? 'wrongJoins' : 'wrongSplits'] += 1
+      }
+    }
+  }
   const clusterOf = new Map<string, string>()
   const links: Outcome['links'] = new Map()
   const ties: Outcome['ties'] = new Map()
@@ -241,7 +270,7 @@ export async function play(world: World, set: Switches, pool: number, { createGr
     waiting.right += 1
     waiting.found.add([a, b].sort().join('\n'))
   }
-  return { truths, clusterOf, links, credit, creditedRight, exhausted, callerOf, ties, tapLinks, waiting }
+  return { truths, clusterOf, links, credit, creditedRight, exhausted, callerOf, ties, tapLinks, waiting, decided }
 }
 
 /** Whoever shares a fact the rule looks at is one person, and so is whoever they share one with. */
