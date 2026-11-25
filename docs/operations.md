@@ -101,7 +101,7 @@ Set `COOKIE=true` to have the server set the cookie instead. Safari deletes a co
 
 ### Multiple sites
 
-Browsers keep cookies per domain, so each domain assigns its own device id. A person who visits two of your sites counts as two visitors until something links them: the [`domains` option](links.md), a confirmed fingerprint, or the same account signing in on both.
+Browsers keep cookies per domain, so each domain assigns its own device id. A person who visits two of your sites counts as two visitors until something links them: the [`domains` option](identify.md#cross-site-visitors), a confirmed fingerprint, or the same account signing in on both.
 
 ## Tokens
 
@@ -327,7 +327,7 @@ Processes that share a database must agree on these. The database keeps the poli
 | Setting | A process that differs | To change it |
 | --- | --- | --- |
 | `POLICY`, `POLICY_FILE` | Is refused. One without any takes the database's. | Stop the servers, run `account-graph rebuild` with the new one, start them with it |
-| `IDENTIFIER_SECRET`, `LINK_SECRET` | Is refused. One without it is let in, and makes none of its keys. | The same. New keys match none of the old ones, and links already sent become ordinary links. |
+| `IDENTIFIER_SECRET`, `LINK_SECRET` | Is refused. One without it is let in, and makes none of its keys. | The same. New keys match none of the old ones, which cannot be made again, and links already sent become ordinary links. |
 | `RECEIPT_SECRETS` | Is refused where it lacks a secret that a stored receipt was made with | Put the new one first and keep the old ones. See [receipts](#receipts). |
 
 A policy that lacks the kind of a stored identifier is refused too. Nothing else is compared, so give every process the same steps, numbers and opening hours.

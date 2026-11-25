@@ -98,7 +98,7 @@ Each entry has `type`, `key` and `at`. A field with `?` may be left out.
 | `call_update` | `call`, `change` | `state`, `counted`, `followUp` |
 | `text` | `direction`, `from`, `to`, `text?`, `code?`, `tags?` | `subject`, `flags`, `counted`, `visitor?`. See [texts](calls.md#text-messages). |
 | `consent` | `subject`, `consent: { adUserData, adPersonalization }`, `source?` | The answer that applies |
-| `link` | `subject`, `url`, `expires`, `purpose?` | `url`. See [links](links.md). |
+| `link` | `subject`, `url`, `expires`, `purpose?` | `url`. See [signed links](identify.md#signed-links). |
 | `transfer` | `from`, `to`, `amount`, `asset?` | `relation`, `score` |
 
 | Field | Values |

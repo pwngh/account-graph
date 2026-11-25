@@ -209,5 +209,6 @@ The setup steps come from each provider's pages, read in November 2026.
 - Meta: the pages read do not state the source of the test event code.
 - Microsoft: step 5 is unconfirmed, because both help pages failed to load. Email normalization is undocumented, so the server lowercases and trims.
 - Twilio: the pages read do not state the price per lookup.
+- Smarty and Twilio: both readers follow the providers' documented answers. Smarty refuses a wrong key the same way however it is sent, so only a real key can show that it accepts the key in a header, as its authentication page states.
 - Google costs: the developer token steps and header come from memory of Google's developer token page, unread in November 2026.
 - Meta costs: whether every row has `account_currency` is unconfirmed, as is the address of the next page. The server follows `paging.next`.
