@@ -818,7 +818,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
 
   async function originalSeparations(tx: Tx, subjects: readonly Subject[]) {
     const apart = new Set<string>()
-    if (!hasCallRelations) return apart
+    if (!hasCallRelations || !await tx.hasCallEvidence()) return apart
     const own = [...await tx.callEvidence({ subjects }), ...await tx.edgesOf(subjects)]
     const identifiers = unique(own.filter(row => callRelates(row.identifier)).map(row => row.identifier))
     for (const { holders, permits } of (await possibleCallRelations(tx, identifiers)).values()) for (const [i, a] of holders.entries()) {
