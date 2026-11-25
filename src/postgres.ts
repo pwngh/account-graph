@@ -15,6 +15,20 @@ export interface Queryable {
 /** The part of a `pg` Pool the store calls. */
 export interface Pool extends Queryable {
   connect(): Promise<Queryable & { release(): void }>
+  on?(event: 'error', heard: (error: unknown) => void): unknown
+  on?(event: 'connect', heard: (client: { on?(event: 'error', heard: (error: unknown) => void): unknown }) => void): unknown
+}
+
+const watched = new WeakSet<Pool>()
+/**
+ * A connection the database ends is heard of as an event, and an event nobody listens for ends the process. The pool
+ * tells of one at rest. One in use tells only its own client, whose next statement then fails.
+ */
+function watch(pool: Pool): void {
+  if (!pool.on || watched.has(pool)) return
+  watched.add(pool)
+  pool.on('error', (error) => console.error(`database: ${(error as Error)?.message ?? error}`))
+  pool.on('connect', (client) => void client.on?.('error', () => undefined))
 }
 
 export interface PostgresStore extends Store {
@@ -40,6 +54,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
   if (!/^[a-z_][a-z0-9_]*$/.test(schema)) throw new TypeError(`Schema "${schema}" must be a plain lowercase name`)
   if (!(Number.isSafeInteger(page) && page > 0)) throw new TypeError('`page` must be a positive integer')
   const t = (table: string) => `${schema}.${table}`
+  watch(pool)
 
   const callRows = `select c.*, r.answered, r.voicemail, r.waited, r.returned_at, r.recorded_at as result_at from ${t('call')} c left join ${t('call_result')} r on r.id = c.id`
 

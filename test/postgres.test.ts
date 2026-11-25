@@ -328,6 +328,33 @@ if (!url) {
     }
   })
 
+  test('a connection the database ends, at rest or in use, is an error and not the end of the process', async () => {
+    const own = new pg.Pool({ connectionString: url, max: 2 })
+    const schema = `ag_test_${process.pid}_ended`
+    const store = createPostgresStore(own, schema)
+    const pid = async () => (await own.query('select pg_backend_pid() as pid')).rows[0].pid
+    const end = async (which: number) => {
+      await pool.query('select pg_terminate_backend($1)', [which])
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    try {
+      await store.migrate()
+      const graph = createGraph(store)
+      await end(await pid())
+      await graph.observe({ subject: 'a', identifiers: ['email:x'], at: 1 })
+      // In use, and between two statements, so nothing is waiting for its answer.
+      await assert.rejects(store.write(async (tx) => {
+        const { rows } = await pool.query(`select pid from pg_stat_activity where state = 'idle in transaction' and query like '%pg_advisory_xact_lock%' and application_name = ''`)
+        for (const row of rows) await end(row.pid)
+        await tx.edgesOf(['a'])
+      }))
+      assert.equal((await graph.cluster('a'))!.id, 'a')
+    } finally {
+      await pool.query(`drop schema if exists ${schema} cascade`)
+      await own.end()
+    }
+  })
+
   test('the server starts from the environment alone and serves a visit end to end', async () => {
     const schema = `ag_test_${process.pid}_serve`
     const lines: string[] = []

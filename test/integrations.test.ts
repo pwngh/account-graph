@@ -1188,6 +1188,22 @@ test('a reviewer sees refused conversions without keys and puts them back in lin
   }
 })
 
+test('a page event cannot take the id of a conversion a backend has yet to record', async () => {
+  const graph = createGraph(createMemoryStore())
+  const server = createServer(createHandler(graph, { token: 'service', origins: ['https://s.example'], events: ['signup'] })).listen(0)
+  try {
+    const base = `http://localhost:${(server.address() as AddressInfo).port}`
+    const visit = await fetch(`${base}/event`, { method: 'POST', headers: { origin: 'https://s.example', 'content-type': 'text/plain' }, body: JSON.stringify({ device: '1001', event: 'signup', id: '1' }) })
+    assert.equal(visit.status, 204)
+    const convert = (transactionId: string) => fetch(`${base}/convert`, { method: 'POST', headers: { authorization: 'Bearer service' }, body: JSON.stringify({ transactionId, subject: 'account:1001', at: 1, stage: 'signup', value: 250 }) })
+    assert.equal((await convert('signup:1001:1')).status, 200)
+    assert.deepEqual([(await graph.outcomeOf('signup:1001:1'))!.value, (await graph.outcomeOf('page:signup:1001:1'))!.subject], [250, 'visitor:1001'])
+    for (const taken of ['page:signup:1001:1', 'call:CA1', 'text:SM1']) assert.equal((await convert(taken)).status, 400)
+  } finally {
+    server.close()
+  }
+})
+
 test('no route answers with the hashed email and phone of a conversion', async () => {
   const store = createMemoryStore()
   const graph = createGraph(store)
@@ -1243,11 +1259,11 @@ test('steps give page events, calls and outcomes their value and their ad platfo
     await post('/collect', { device: 'd-1', touch: { gclid: 'G1', campaignId: '111' } }, { origin: 'https://site.example' })
     // A page event needs only its name: the step says what it is worth and where it goes.
     assert.equal((await post('/event', { device: 'd-1', event: 'inquiry' }, { origin: 'https://site.example' })).status, 204)
-    assert.deepEqual((await outbox.get(`inquiry:d-1:2026-03-02`)).map((job) => [job.target, job.action, job.value, job.currency]), [['google', '111', 5, 'USD']])
+    assert.deepEqual((await outbox.get(`page:inquiry:d-1:2026-03-02`)).map((job) => [job.target, job.action, job.value, job.currency]), [['google', '111', 5, 'USD']])
     // A step worth something counts once a day per browser, whatever id the page gives and however often it reports.
     assert.equal((await post('/event', { device: 'd-1', event: 'inquiry' }, { origin: 'https://site.example' })).status, 204)
     for (const id of ['a', 'b', 'c']) assert.equal((await post('/event', { device: 'd-1', event: 'inquiry', id }, { origin: 'https://site.example' })).status, 204)
-    assert.deepEqual(await outbox.get('inquiry:d-1:a'), [])
+    assert.deepEqual(await outbox.get('page:inquiry:d-1:a'), [])
     assert.equal((await outbox.counts()).pending, 1)
 
     // A call takes its step the same way, with the caller's number as a match key.
@@ -1261,7 +1277,7 @@ test('steps give page events, calls and outcomes their value and their ad platfo
     assert.deepEqual(await (await post('/convert', { transactionId: 'client-1', subject: 'account:1', at, stage: 'client' })).json(), [])
     await post('/convert', { transactionId: 'client-2', subject: 'account:1', at, stage: 'client', value: 1250 })
     assert.deepEqual((await outbox.run()).sent, 2)
-    assert.deepEqual(sent.flatMap((request) => request.events.map((event) => [event.transactionId, event.conversionValue])).sort(), [['call:CA1', 10], ['inquiry:d-1:2026-03-02', 5]])
+    assert.deepEqual(sent.flatMap((request) => request.events.map((event) => [event.transactionId, event.conversionValue])).sort(), [['call:CA1', 10], ['page:inquiry:d-1:2026-03-02', 5]])
 
     // The report lists the steps in the order they were given, then any others by name.
     await post('/convert', { transactionId: 'other-1', subject: 'account:1', at, stage: 'brochure' })

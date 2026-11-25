@@ -373,7 +373,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     const step = options.stages && Object.hasOwn(options.stages, body.event) ? options.stages[body.event] : undefined
     const weighty = Boolean(step?.value || step?.action)
     const occurrence = !weighty && typeof body.id === 'string' && ID.test(body.id) ? body.id : new Date(at).toISOString().slice(0, 10)
-    const transactionId = `${body.event}:${device}:${occurrence}`
+    // Filed where no backend's own id can be, so a page cannot take one before the backend uses it.
+    const transactionId = `page:${body.event}:${device}:${occurrence}`
     // The same occurrence reported again is already on its way; recording it twice with a new time would be refused.
     if (options.outbox && (await options.outbox.get(transactionId)).length > 0) return
     await convert({ transactionId, subject, at, stage: body.event })
@@ -1036,8 +1037,11 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return graph.disputes()
       case 'GET /audit':
         return graph.audit()
-      case 'POST /convert':
-        return (await convert(await json(request))).map(shownJob)
+      case 'POST /convert': {
+        const body = await json(request)
+        if (/^(call|text|page):/.test(String(body?.transactionId ?? ''))) throw new Refusal(400, 'A `transactionId` cannot begin with call:, text: or page:')
+        return (await convert(body)).map(shownJob)
+      }
       case 'POST /link': {
         if (!options.linkSecret) break
         const body = await json(request)
