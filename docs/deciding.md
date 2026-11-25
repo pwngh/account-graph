@@ -114,7 +114,7 @@ With `given` it keeps keyed notes of the names a first name may stand for, from 
 | Shared browsers and callers | They go with one of the two, as after a separation. |
 | Turning it on, or a new version of it | Rebuild once. Dates and names sent before are not known, or not all that is now kept of them: send them again. |
 
-It is off unless a policy lists it, and no preset does. On made-up people at the middle rates it kept one mixed record in five apart, and split 0.9% of the true pairs of records, or 1.3% where staff join callers to records. See [Accuracy](accuracy.md#the-second-run), where it is still far from its bar.
+It is off unless a policy lists it, and no preset does. On made-up people at the middle rates it kept one mixed record in five apart, and split 0.9% of the true pairs of records, or 1.3% where staff join callers to records. See [Accuracy](accuracy.md#the-second-run), where it is still far from its bar, and [the third run](accuracy.md#results-of-the-third-run), where it and the names of people apart missed eight of fifty marks.
 
 ## Model assumptions
 

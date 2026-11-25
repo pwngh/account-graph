@@ -371,6 +371,37 @@ Of the held seeds. A share is of counts pooled over the worlds, and one with not
 
 Development seeds 20270301 to 20270320, to make sure the code does what it should. There is one configuration, so nothing is chosen between on them. Where they show something broken, what is changed for it is listed here, and each look at them is counted as a round. The final commit is named here before 20270401. Held: 20270401 to 20270420, once.
 
+### Results of the third run
+
+The held seeds 20270401-20, once, at `ed6ae73` with Node v22.23.0, in all settings and arms. **Eight of the fifty marks came out bad**, and the page's marks are as they were written. No code, rate or mark was changed after it.
+
+| Written as bad | Came out |
+| --- | --- |
+| base3: `email + phone` links, over 5% wrong | **Bad.** 10 of 111 (9.01%) |
+| base3: under 98% kept of the pairs of records | **Bad.** 1,342 of 1,409 (95.24%) |
+| high3: under 95% kept of the pairs of records | **Bad.** 2,283 of 2,465 (92.62%) |
+| dirty3: under 98% kept of the pairs of records | **Bad.** 1,307 of 1,377 (94.92%) |
+| base: over 1% of people with a record share a cluster | **Bad.** 210 of 9,345 (2.25%) |
+| base: under 98% of joined pairs right | **Bad.** 17,250 of 18,078 (95.42%) |
+| base: `email + phone` links, over 5% wrong | **Bad.** 41 of 179 (22.91%) |
+| high: over 2.5% of people with a record share a cluster | **Bad.** 427 of 11,751 (3.63%) |
+| base3: people with a record who share a cluster; joined pairs right | Held. 54 of 9,379 (0.58%); 18,588 of 18,954 (98.07%) |
+| base3: credited records to the wrong ad; links by a tap; with a pool | Held. 84 of 6,250 (1.34%); 22 of 2,893 (0.76%); 156 of 4,552 (3.43%) |
+| base3: kept of chained pairs, of calls tied, and with a pool | Held. 29,725 of 30,373 (97.87%); 2,867 of 2,983 (96.11%); 2,956 of 2,983 (99.09%) |
+| busy3, with a pool: taps wrong, calls tied kept | Held. 238 of 6,712 (3.55%); 4,542 of 4,762 (95.38%) |
+| high3, dirty3: people with a record who share a cluster | Held. 183 of 11,841 (1.55%); 104 of 9,379 (1.11%) |
+| Records credited kept, in every setting judged | Held. 97.36% to 99.74% |
+
+All that was printed, in every setting and arm, is in [accuracy-third-held.txt](accuracy-third-held.txt), and the last development run in [accuracy-third-dev.txt](accuracy-third-dev.txt).
+
+**The new settings are easier for the code than the old.** base3 and dirty3 hold what base and high, whose names are letters no table has, do not: 2.25% and 3.63% of people with a record share a cluster with another's. The old settings stay bad.
+
+**Pairs of records are lost for it.** The marks for what is kept of true pairs of records are bad in base3, high3 and dirty3, and every new setting is under its mark. Keeping couples with different names apart, and not using a speaker's details, cost it, and are kept.
+
+**The intake arm is worse, by most counts.** Printed and not judged: base3 mixes 119 of 9,466 (1.26%) against 54 of 9,379 (0.58%) without it, and joined pairs right go from 98.07% to 96.84%. In high it mixes 5.82% against 3.63%. Calls of people put down to the name they give, and records made one, go to the wrong person where the name is another's. Rates are assumed, so it says how this model of intake behaves, and not how a firm's does.
+
+`gaps3` and `busygaps3`, with no mark: taps wrong without a pool 1.16% and 13.01%. busy3 without a pool 5.01%.
+
 Known and not changed: a couple's shared email is put on the first two adults of every household with two; a short form is drawn before an English form, so the realised shares of names are printed and not the rates; a person's ad is reachable by the end of the world and not at an hour after a record; callers are what the server calls them, so a subject of two callers is one of two people; and a Student's t range is how far simulated worlds differ, not how far a firm is.
 
 ## Limitations
