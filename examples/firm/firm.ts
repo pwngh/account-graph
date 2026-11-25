@@ -17,14 +17,14 @@ import { once } from 'node:events'
 import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { accountGraph } from '../src/index.ts'
-import type { CallValue, LocalOptions, RecordEntry, RecordValue } from '../src/index.ts'
-import { createEdge } from '../src/edge/index.ts'
-import { reviewPage } from '../src/edge/review.ts'
-import { runWorkers } from '../src/testing/index.ts'
+import { accountGraph } from '../../src/index.ts'
+import type { CallValue, LocalOptions, RecordEntry, RecordValue } from '../../src/index.ts'
+import { createEdge } from '../../src/edge/index.ts'
+import { reviewPage } from '../../src/edge/review.ts'
+import { runWorkers } from '../../src/testing/index.ts'
 // The months before the story are written straight into the graph, as a program of this repository may. The story itself only uses what the package ships.
-import { internalsOf } from '../src/client/internals.ts'
-import { hashPhone, nameKeys, recordCall } from '../tools/internals.ts'
+import { internalsOf } from '../../src/client/internals.ts'
+import { hashPhone, nameKeys, recordCall } from '../../tools/internals.ts'
 import { clockScript, landing } from './firm-page.ts'
 import { PRACTICES } from './practice.ts'
 import type { Practice } from './practice.ts'
@@ -82,7 +82,7 @@ export async function startFirm({ databaseUrl }: Kept, { ports = [0, 0], quick =
   const when = (days: number, hour: number, minute: number) => new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + days, hour, minute).getTime()
   let ahead = when(0, 8, 50) - Date.now()
   const clock = () => writing ?? Date.now() + ahead
-  const { name, ...builtIn } = JSON.parse(readFileSync(new URL('./household.json', import.meta.url), 'utf8')).kinds
+  const { name, ...builtIn } = JSON.parse(readFileSync(new URL('../household.json', import.meta.url), 'utf8')).kinds
   const alerts: string[] = []
   const sent: { id: string; value: number | undefined }[] = []
   const wasSent = (id: string) => sent.some((each) => each.id === id)

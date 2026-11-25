@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { startFirm } from '../examples/firm.ts'
-import { PRACTICES } from '../examples/practice.ts'
+import { startFirm } from '../examples/firm/firm.ts'
+import { PRACTICES } from '../examples/firm/practice.ts'
 import { hashPhone } from '../tools/internals.ts'
 import { browse, chrome, until, without } from './chrome.ts'
 
