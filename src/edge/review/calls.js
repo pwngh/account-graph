@@ -60,7 +60,7 @@ function missedCalls(open, at) {
     tell()
   }
   const line = (call) => el('div', { class: 'inbox-call', role: 'option', tabindex: call.id === inbox.id ? 0 : -1, 'aria-selected': String(call.id === inbox.id), on: { click: () => pick(call) } },
-    tile(call.state === 'voicemail' ? 'M4.6 10.4a2.4 2.4 0 1 0 0-4.8a2.4 2.4 0 0 0 0 4.8ZM11.4 10.4a2.4 2.4 0 1 0 0-4.8a2.4 2.4 0 0 0 0 4.8ZM4.6 10.4h6.8' : 'M4.5 4.5 8 8l4.2-4.2M4.5 4.5v3M4.5 4.5h3M3 12.5c3-2.4 7-2.4 10 0', call.state === 'voicemail' ? 'related' : 'apart'), el('span', { class: 'inbox-who' }, reviewDisplay.idText(call.subject)), el('span', { class: 'inbox-time' }, reviewDisplay.time(call.at, at)),
+    tile(call.state === 'voicemail' ? 'M4.6 10.4a2.4 2.4 0 1 0 0-4.8a2.4 2.4 0 0 0 0 4.8ZM11.4 10.4a2.4 2.4 0 1 0 0-4.8a2.4 2.4 0 0 0 0 4.8ZM4.6 10.4h6.8' : GLYPHS.missed, call.state === 'voicemail' ? 'related' : 'apart'), el('span', { class: 'inbox-who' }, reviewDisplay.idText(call.subject)), el('span', { class: 'inbox-time' }, reviewDisplay.time(call.at, at)),
     el('span', { class: 'inbox-from' }, `${call.state === 'voicemail' ? 'Voicemail' : 'Missed'} · ${credited(call)}`), call.attempts > 0 ? el('span', { class: 'chip' }, `${amount(call.attempts)} ${call.attempts === 1 ? 'attempt' : 'attempts'}`) : '')
   function pick(call) {
     inbox.id = call.id
@@ -103,7 +103,7 @@ function missedCalls(open, at) {
       const entries = [...journey.entries].reverse()
       const subjects = Object.keys(journey.subjects).length
       story.replaceChildren(head, el('p', { class: 'inbox-age' }, 'History', el('span', { class: 'count' }, `${amount(entries.length)}${journey.next === null ? '' : '+'}`), subjects > 1 ? el('span', { class: 'meta' }, ` · ${amount(subjects)} IDs`) : ''),
-        el('ol', { class: 'story', role: 'list' }, ...entries.slice(0, 14).map((entry) => el('li', { class: `${entry.kind}${entry.kind === 'call' && entry.call.id === call.id ? ' this' : ''}` }, glyph(entry.kind), el('div', { class: 'what' }, ...told(entry)), el('span', { class: 'meta' }, reviewDisplay.time(entry.at > 0 ? entry.at : null, at))))),
+        el('ol', { class: 'story', role: 'list' }, ...entries.slice(0, 14).map((entry) => el('li', { class: `${entry.kind}${entry.kind === 'call' && entry.call.id === call.id ? ' this' : ''}` }, glyph(looksLike(entry)), el('div', { class: 'what' }, ...told(entry)), el('span', { class: 'meta' }, reviewDisplay.time(entry.at > 0 ? entry.at : null, at))))),
         entries.length > 14 ? el('p', { class: 'meta' }, `${amount(entries.length - 14)} more in the journey`) : '')
     } catch (error) {
       if (turn === asked) story.replaceChildren(head, el('p', { class: 'apart' }, `History unavailable: ${error.message}`))

@@ -26,7 +26,7 @@ function workings(ops, refused) {
       el('ul', {}, ...ops.undelivered.map((alert) => el('li', {}, alert.text, el('span', { class: 'reason' }, ago(alert.at, ops.at), alert.error ? ` · ${alert.error}` : ''))))))
   }
 
-  const FEED = { touches: 'M2.5 13 13 8 2.5 3l2 5ZM4.5 8H8', calls: VIEW_ICONS.calls, results: 'M3 8.4 6.4 11.8 13 4.6', costs: 'M8 2.2v11.6M11 4.8c-.6-1-1.7-1.5-3-1.5-1.7 0-3 .9-3 2.3 0 3.2 6.200 1.600 6.200 4.8 0 1.400-1.400 2.3-3.2 2.3-1.5 0-2.700-.6-3.3-1.600' }
+  const FEED = { touches: GLYPHS.visit, calls: GLYPHS.call, results: GLYPHS.result, costs: GLYPHS.value }
   const feeds = el('ul', { class: 'cards' }, ...ops.feeds.map((feed) => el('li', {}, tile(FEED[feed.name]), el('b', {}, NAMES[feed.name]),
     feed.quiet ? el('span', { class: 'chip apart' }, 'Stale') : feed.hours > 0 ? el('span', { class: 'chip same' }, 'OK') : el('span', { class: 'meta' }, 'Not monitored'),
     el('span', { class: 'meta' }, 'Last record ', ago(feed.last, ops.at), feed.hours > 0 ? ` · limit ${amount(feed.hours)} h` : ''))))

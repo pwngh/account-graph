@@ -92,7 +92,7 @@ const row = (ties, subject, lines) => (entry) => {
   const exact = date?.toISOString()
   const time = date ? el('time', { datetime: exact, title: `${when(entry.at)} · ${exact}` }, date.toLocaleTimeString(undefined, { timeStyle: 'short' })) : unrecorded()
   const line = el('li', { class: 'timeline-entry' }, el('span', { class: 'num' }, time),
-    el('span', {}, el('span', { class: `chip kind ${entry.kind}` }, glyph(entry.kind), WHAT[entry.kind])),
+    el('span', {}, el('span', { class: `chip kind ${entry.kind}` }, glyph(looksLike(entry)), WHAT[entry.kind])),
     el('div', { class: 'what' }, ...told(entry)), el('div', { class: 'why' }, ...why(entry, ties, subject)))
   lines.set(entry, line)
   return line
@@ -108,11 +108,6 @@ const charted = { subject: undefined, zoom: 'All', at: undefined, left: undefine
 const DAYS = 86400000
 /** How much time fits about 700 points at each zoom. */
 const ZOOMS = { All: 0, Month: 30 * DAYS, Week: 7 * DAYS, Day: DAYS }
-const GLYPHS = {
-  visit: 'M-5 4L5 0L-5 -4L-2.5 0Z', sighting: 'M-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0Z', call: 'M-5-3.5h10v7h-10Z', text: 'M-5-4h10v6h-6l-4 3Z', link: 'M-5-2h4v-2l5 4l-5 4v-2h-4Z', outcome: 'M0-6L6 0L0 6L-6 0Z', value: 'M0-4.5L4.5 0L0 4.5L-4.5 0Z',
-  consent: 'M-5 0a5 5 0 1 0 10 0a5 5 0 1 0-10 0Z', decision: 'M-4.5 6V-6H5L2.5-2.5L5 1H-2.5V6Z',
-}
-const glyph = (kind) => svg('svg', { class: `glyph ${kind}`, viewBox: '-8 -8 16 16', 'aria-hidden': 'true', focusable: 'false' }, svg('path', { d: GLYPHS[kind] }))
 /** What to call a mark: what it is, in a few words, and when. */
 const named = (entry) => `${WHAT[entry.kind]}, ${when(entry.at)}`
 
@@ -174,7 +169,7 @@ function chart(entries, shown, ties, subject, show) {
     if (!entry) return
     const i = order.indexOf(entry)
     const turn = (step, text, label) => el('button', { type: 'button', 'aria-label': label, 'data-key': label, ...((order[i + step] === undefined) && { disabled: '' }), on: { click: () => { pick(order[i + step]); reach(order[i + step]) } } }, text)
-    card.replaceChildren(el('div', { class: 'told-head' }, el('span', { class: `chip kind ${entry.kind}` }, glyph(entry.kind), WHAT[entry.kind]), el('span', { class: 'meta' }, `${amount(i + 1)} of ${amount(order.length)}`), turn(-1, '‹', 'Previous'), turn(1, '›', 'Next'), el('button', { type: 'button', class: 'shut', 'aria-label': 'Close', on: { click: () => { pick(); marks.get(entry)?.focus({ preventScroll: true }) } } }, '×')),
+    card.replaceChildren(el('div', { class: 'told-head' }, el('span', { class: `chip kind ${entry.kind}` }, glyph(looksLike(entry)), WHAT[entry.kind]), el('span', { class: 'meta' }, `${amount(i + 1)} of ${amount(order.length)}`), turn(-1, '‹', 'Previous'), turn(1, '›', 'Next'), el('button', { type: 'button', class: 'shut', 'aria-label': 'Close', on: { click: () => { pick(); marks.get(entry)?.focus({ preventScroll: true }) } } }, '×')),
       el('p', { class: 'told-when' }, el('b', {}, new Date(entry.at).toLocaleTimeString(undefined, { timeStyle: 'short' })), ` ${dayOf(entry.at)}`),
       el('div', { class: 'what' }, ...told(entry)), el('p', { class: 'told-on' }, ...why(entry, ties, subject)),
       el('button', { type: 'button', on: { click: () => show(entry) } }, 'Show in timeline'))
@@ -249,13 +244,13 @@ function chart(entries, shown, ties, subject, show) {
           continue
         }
         const list = [entry]
-        const mark = el('button', { type: 'button', class: `mark${long > 14 ? ' long' : ''}${entry.state === 'missed' || entry.state === 'voicemail' ? ' missed' : ''}`, 'aria-label': named(entry), title: named(entry), 'aria-pressed': 'false', on: { click: () => {
+        const mark = el('button', { type: 'button', class: `mark${long > 14 ? ' long' : ''}${looksLike(entry) === 'missed' ? ' missed' : ''}`, 'aria-label': named(entry), title: named(entry), 'aria-pressed': 'false', on: { click: () => {
           if (list.length === 1) return pick(list[0])
           const closer = Object.keys(ZOOMS)
           charted.zoom = closer[Math.min(closer.length - 1, closer.indexOf(charted.zoom) + 1)]
           charted.left = list[0].at
           draw()
-        } } }, long > 14 ? '' : glyph(kind))
+        } } }, long > 14 ? '' : glyph(looksLike(entry)))
         mark.style.left = at(entry.at)
         if (long > 14) mark.style.width = `${long.toFixed(1)}px`
         lane.append(mark)
