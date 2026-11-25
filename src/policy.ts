@@ -21,11 +21,17 @@ export interface Rule {
    * pair's other kinds already reach `related` without it.
    */
   corroborates?: true
+  /**
+   * This kind says two subjects are two people who have to do with each
+   * other. A pair that shares one is related, and kept apart in one cluster as
+   * a reviewer's separation would keep it, unless a reviewer or a system joins the two.
+   */
+  relates?: true
 }
 
-/** A fact about somebody that links nothing: the date of birth. */
-export type Fact = 'birth'
-export const FACTS: readonly Fact[] = ['birth']
+/** A fact about somebody that links nothing: the date of birth, and the names their first name may stand for. */
+export type Fact = 'birth' | 'given'
+export const FACTS: readonly Fact[] = ['birth', 'given']
 
 export interface Policy {
   /** At or above this score two subjects join one cluster. */
@@ -41,8 +47,9 @@ export interface Policy {
    */
   unnamed?: readonly string[]
   /**
-   * Facts that no two values of are one person's: `birth`. Two subjects of one group that both have such a fact and share
-   * no value of it are kept apart, whatever joins them, unless a reviewer or a system joined the two. Left out, nobody is.
+   * Facts that no two values of are one person's: `birth`, and `given`. Two subjects of one group that both have such a
+   * fact and share no value of it are kept apart, whatever joins them, unless a reviewer or a system joined the two. A
+   * fact that agrees outranks one that differs, and names that begin with one letter say nothing. Left out, nobody is kept apart.
    */
   apart?: readonly Fact[]
   /** A cluster with more members than this is flagged for review. */
@@ -109,10 +116,19 @@ export const defaultPolicy: Policy = {
     dial: { weight: 0.92, dilution: 0, cap: 2, halfLife: Infinity },
     // A text that carried the code one visitor was given. Better than a tap's time, and still a prior: a text can be forwarded.
     text: { weight: 0.95, dilution: 0, cap: 2, halfLife: Infinity },
+    // Somebody who speaks for somebody else: a parent for a child, a wife for a husband. The credit for what brought the one is the other's, and they are two people.
+    behalf: { weight: 0.92, dilution: 0, cap: 2, halfLife: Infinity, relates: true },
     // A note, not evidence: where an address places a visit. It links nothing.
     place: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
-    // A note, not evidence: what is known of a person that cannot be two people's. It links nothing.
+    // Notes, not evidence: what is known of a person that cannot be two people's. They link nothing.
     birth: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
+    given: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
+    initial: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
+    dated: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
+    // One number or email given under one name. It confirms what the number or email says, and says nothing once that is muted or too many hold it.
+    named: { weight: 0.999, dilution: 0, cap: 10, halfLife: Infinity, corroborates: true },
+    // The same of two who were spoken for by one number or email, which is on neither's record.
+    ward: { weight: 0.97, dilution: 0, cap: 5, halfLife: Infinity },
     // A note, not evidence: the number a visitor tapped, or a call that was recorded. It links nothing.
     dialed: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
   },
@@ -122,10 +138,10 @@ export const defaultPolicy: Policy = {
 export const UNNAMED: readonly string[] = ['visitor', 'caller', 'call']
 
 /** The kinds that are notes. The graph counts on them linking nothing, so a setting may not give them weight. */
-const NOTES = new Set(['opened', 'place', 'dialed', ...FACTS])
+const NOTES = new Set(['opened', 'place', 'dialed', 'initial', 'dated', ...FACTS])
 const LEVELS = ['same', 'related', 'bridge'] as const
 const FIELDS = ['weight', 'dilution', 'cap', 'halfLife'] as const
-const OPTIONAL = ['group', 'corroborates'] as const
+const OPTIONAL = ['group', 'corroborates', 'relates'] as const
 
 /** What is wrong with a policy read from a setting, one line each. The setting only needs what differs from the default. */
 export function policyProblems(given: unknown): string[] {
@@ -154,14 +170,17 @@ export function policyProblems(given: unknown): string[] {
       if (rule.halfLife !== undefined && rule.halfLife !== 'none' && !(number(rule.halfLife, 0, Number.MAX_VALUE) && rule.halfLife > 0)) wrong.push(`kind "${kind}" requires a halfLife in milliseconds, or "none"`)
       if (rule.group !== undefined && !(typeof rule.group === 'string' && rule.group)) wrong.push(`kind "${kind}" requires its group as a string`)
       if (rule.corroborates !== undefined && rule.corroborates !== true) wrong.push(`kind "${kind}" requires its corroborates as true, or left out`)
+      if (rule.relates !== undefined && rule.relates !== true) wrong.push(`kind "${kind}" requires its relates as true, or left out`)
       if (NOTES.has(kind) && rule.weight) wrong.push(`kind "${kind}" is a note and links nothing, so its weight must stay 0`)
     }
   }
   if (wrong.length > 0) return wrong
   const policy = policyFrom(given)
   if (policy.related > policy.same) wrong.push('"related" must not be above "same"')
+  for (const [kind, rule] of Object.entries(policy.kinds)) if (rule.relates && rule.corroborates) wrong.push(`kind "${kind}" cannot both relate and corroborate`)
   const { review } = policy.kinds
   if (review!.corroborates) wrong.push('kind "review" is a reviewer\'s join, so it cannot only corroborate')
+  if (review!.relates) wrong.push('kind "review" is a reviewer\'s join, so it cannot only relate')
   if (review!.weight < Math.max(policy.same, policy.bridge) || review!.cap < 2) wrong.push('kind "review" is a reviewer\'s join, so it must join on its own: a weight of at least "same" and "bridge", a cap of at least 2')
   return wrong
 }
@@ -186,15 +205,18 @@ export function plainPolicy(policy: Policy) {
     ...(policy.apart?.length && { apart: FACTS.filter((fact) => policy.apart!.includes(fact)) }),
     review: policy.review,
     kinds: Object.fromEntries(
-      kinds.map(([kind, { weight, dilution, cap, halfLife, group, corroborates }]) => [kind, { weight, dilution, cap, halfLife: Number.isFinite(halfLife) ? halfLife : ('none' as const), ...(group !== undefined && { group }), ...(corroborates && { corroborates }) }]),
+      kinds.map(([kind, { weight, dilution, cap, halfLife, group, corroborates, relates }]) => [kind, { weight, dilution, cap, halfLife: Number.isFinite(halfLife) ? halfLife : ('none' as const), ...(group !== undefined && { group }), ...(corroborates && { corroborates }), ...(relates && { relates }) }]),
     ),
   }
 }
 
+/** Raised when the code decides differently under one policy, so that what was stored before is known to be due a rebuild. */
+const RULES = 2
+
 /** The same for two policies exactly when they score and cluster alike. What only flags, `review`, is not part of it. */
 export function policyHash(policy: Policy): string {
   const { review: _, ...rest } = plainPolicy(policy)
-  return createHash('sha256').update(JSON.stringify({ ...rest, unnamed: [...new Set(policy.unnamed ?? UNNAMED)].sort() })).digest('hex')
+  return createHash('sha256').update(JSON.stringify({ ...rest, rules: RULES, unnamed: [...new Set(policy.unnamed ?? UNNAMED)].sort() })).digest('hex')
 }
 
 export function ruleFor(policy: Policy, identifier: Identifier): Rule {
@@ -220,6 +242,16 @@ export function evidence(policy: Policy, a: Edge, b: Edge, fanout: number): Reas
   const gap = Math.max(0, Math.max(a.first, b.first) - Math.min(a.last, b.last))
   const thinned = rule.weight * (2 / Math.max(2, fanout)) ** rule.dilution
   return { identifier: a.identifier, evidence: thinned * 0.5 ** (gap / rule.halfLife), fanout, gap }
+}
+
+/** Whether a pair with these reasons is joined by them. */
+export function joins(policy: Policy, score: number, reasons: readonly Reason[]): boolean {
+  return score >= policy.same && !told(policy, reasons)
+}
+
+/** Whether these reasons say that two subjects are two people, and nobody has joined the two in spite of it. */
+export function told(policy: Policy, reasons: readonly Reason[]): boolean {
+  return reasons.some((reason) => ruleFor(policy, reason.identifier).relates) && !reasons.some((reason) => reason.identifier.startsWith('review:'))
 }
 
 /**

@@ -264,7 +264,7 @@ The server normalizes and hashes the email, phone and postal address. `device` i
 
 **Matching**
 
-- A score is a model's, uncalibrated as a probability. On made-up people, one run missed five of the marks set for it: see [Accuracy](docs/accuracy.md). It is unmeasured on real people.
+- A score is a model's, uncalibrated as a probability. On made-up people, three runs missed five, four and eight of the marks set for them: see [Accuracy](docs/accuracy.md). It is unmeasured on real people.
 - Kinds count as independent evidence unless the policy groups them. The default policy has no groups.
 - Matches covers subjects in the newest 10,000 sightings.
 - Multiple separations in one component are resolved one at a time, which can cut more links than necessary.

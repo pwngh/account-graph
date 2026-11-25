@@ -356,7 +356,7 @@ A join leaves a mark on both subjects, `review:join-` and its decision number. `
 
 | Query | Returns |
 | --- | --- |
-| `undecided()` | Pairs that are related but unjoined, strongest first. Reads subjects of the newest 10,000 sightings. |
+| `undecided()` | Pairs that are related but unjoined, and joins that two dates of birth left out, strongest first. Reads subjects of the newest 10,000 sightings. |
 | `clusters()` | The largest clusters, the starting point for review. |
 | `search('account:4')` | Subjects by the start of their id. |
 | `recent()` | The newest cluster changes. |

@@ -77,7 +77,7 @@ An identifier is written `kind:value`. A kind missing from the policy gets 400. 
 | `POST /find` | `{ text }`: a full email or phone number, looked up by hash; the start of a subject's id; or, with no such id, a full ad click id. Answers `{ by, subjects }`, at most 20. The body keeps the text out of address logs. |
 | `GET /recent` | The newest cluster changes. |
 | `GET /changes?after=&limit=` | Every cluster change after a number, oldest first. Requires the service token. See [the change feed](operations.md#change-feed). |
-| `GET /undecided?limit=` | Pairs that are related and not joined, strongest first: `{ pairs, total, seen }`. Covers the subjects of the newest 10,000 sightings, counted in `seen`. `limit` is at most 500. |
+| `GET /undecided?limit=` | Pairs that are related and not joined, and joins that two dates of birth left out, strongest first: `{ pairs, total, seen }`. Covers the subjects of the newest 10,000 sightings, counted in `seen`. `limit` is at most 500. |
 | `GET /flows?subject=` | Subjects that exchanged value with this one, and the identity link to each. |
 | `GET /collusion?subject=` | Counterparties linked by identity, with three or more flows. |
 | `GET /rings?subject=` | Value that left the subject and came back through others. |
@@ -138,7 +138,7 @@ Send `by` only with the service token. A reviewer's decision carries the name of
 
 | Route | Description |
 | --- | --- |
-| `POST /identify` | Identifies a subject from plain facts: `{ subject, device?, email?, phone?, ip?, address?, name?, dob?, identifiers?, at?, event? }`. Answers `{ changes, identifiers, notes }`. See [identify](identify.md). |
+| `POST /identify` | Identifies a subject from plain facts: `{ subject, device?, email?, phone?, ip?, address?, name?, dob?, identifiers?, speaker?, at?, event? }`. Answers `{ changes, identifiers, notes }`. See [identify](identify.md). |
 | `POST /observe` | One observation, or a list: `{ subject, identifiers, at, event? }`. Answers with the cluster changes. |
 | `POST /separate`, list | `{ source, pairs: [{ a, b, separated?, reason? }], reason? }`, at most 1,000 pairs. One transaction, one decision each, by `system:<source>`. Answers `{ changes, recorded, already }`. |
 | `POST /join`, list | The same without `separated`, for records another system merged. |

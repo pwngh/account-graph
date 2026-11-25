@@ -9,6 +9,7 @@
  * desk would. `docs/accuracy.md` says
  * where the rates are from, what is counted, and what would be bad.
  */
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -19,7 +20,7 @@ import { interval, score } from './score.ts'
 import type { Score, Truth } from './score.ts'
 import { SETTINGS } from './rates.ts'
 import { makeWorld } from './world.ts'
-import type { Size, World } from './world.ts'
+import type { Names, Size, World } from './world.ts'
 
 const SITE = 'https://www.example.org'
 const LINE = '+15550100000'
@@ -40,7 +41,7 @@ export const ARMS = {
   'default pool': { pool: true },
   'default birth': { policy: { apart: ['birth'] } },
   'household staff birth': { policy: { ...HOUSEHOLD, apart: ['birth'] }, staff: true },
-} satisfies Record<string, { policy?: object; staff?: boolean; pool?: boolean }>
+} satisfies Record<string, { policy?: object; staff?: boolean; pool?: boolean; speaker?: boolean }>
 export type Arm = keyof typeof ARMS
 /** What each arm is compared with over the same worlds. */
 const BESIDE: Partial<Record<Arm, Arm>> = {
@@ -71,11 +72,33 @@ export interface Outcome {
   creditedRight: Set<string>
   /** Requests for a number of one's own when all were taken. */
   exhausted: number
+  /** By call: the caller's subject, and the browsers it is tied to by a tap or a number shown. */
+  callerOf: Map<string, string>
+  ties: Map<string, string[]>
+  /** Links that rest on a tap or a number shown, each once, and those between two people. */
+  tapLinks: { links: number; wrong: number }
 }
 
+/** The code a world is reported to: this checkout's, or another's, by the same names. */
+export interface Code {
+  createGraph: typeof createGraph
+  createMemoryStore: typeof createMemoryStore
+  policyFrom: typeof policyFrom
+  createHandler: typeof createHandler
+}
+export interface Switches {
+  policy?: object
+  staff?: boolean
+  pool?: boolean
+  speaker?: boolean
+  intake?: boolean
+}
+const HERE: Code = { createGraph, createMemoryStore, policyFrom, createHandler }
+
 /** Reports a world to a server of its own, in the order it happened, and reads who was joined. */
-export async function report(world: World, arm: Arm = 'default', pool = 10): Promise<Outcome> {
-  const set: { policy?: object; staff?: boolean; pool?: boolean } = ARMS[arm]
+export const report = (world: World, arm: Arm = 'default', pool = 10) => play(world, ARMS[arm], pool, HERE)
+
+export async function play(world: World, set: Switches, pool: number, { createGraph, createMemoryStore, policyFrom, createHandler }: Code): Promise<Outcome> {
   const numbers = set.pool ? Array.from({ length: pool }, (_, i) => `+1555010${String(100 + i).padStart(4, '0')}`) : []
   let now = START
   const graph = createGraph(createMemoryStore(), set.policy && policyFrom(set.policy), { now: () => now })
@@ -98,16 +121,27 @@ export async function report(world: World, arm: Arm = 'default', pool = 10): Pro
   const callerOf = new Map<string, string>()
   const dialed = new Map<string, string>()
   let exhausted = 0
+  const lastShown = new Map<string, string>()
   /** The number a page shows somebody: their own where there is one for them, and the firm's. The page asks again while it is in view. */
   const shown = async ({ device, address, agent }: { device: string; address: string; agent: string }) => {
     if (numbers.length === 0) return LINE
     const answer = await post('/number', { device }, page(address, agent))
     if (answer?.number === undefined) exhausted += 1
-    return (answer?.number as string | undefined) ?? LINE
+    const number = (answer?.number as string | undefined) ?? LINE
+    lastShown.set(device, number)
+    return number
   }
+  // A call reported late was dialed when it was, on the number shown then.
+  const steps = world.events.flatMap((event): { at: number; event: World['events'][number]; dial?: true }[] =>
+    event.kind === 'call' && event.told !== undefined ? [{ at: event.at, event, dial: true }, { at: event.told, event }] : [{ at: event.at, event }])
+  const shownTo = async (event: Extract<World['events'][number], { kind: 'call' }>) => (event.page ? await shown(event.page) : (event.redial !== undefined && dialed.get(event.redial)) || (event.wrote !== undefined && lastShown.get(event.wrote)) || LINE)
   try {
-    for (const event of world.events) {
-      now = event.at
+    for (const { at, event, dial } of steps.sort((x, y) => x.at - y.at)) {
+      now = at
+      if (dial) {
+        if (event.kind === 'call') dialed.set(event.id, await shownTo(event))
+        continue
+      }
       if (event.kind === 'visit') {
         await post('/collect', { device: event.device, url: `${SITE}/`, ...(event.ad && { touch: { gclid: event.ad, landing: `${SITE}/` } }) }, page(event.address, event.agent))
         await shown(event)
@@ -115,11 +149,19 @@ export async function report(world: World, arm: Arm = 'default', pool = 10): Pro
       else if (event.kind === 'tap') await post('/event', { device: event.device, event: 'phone_click', number: await shown(event) }, page(event.address, event.agent))
       else if (event.kind === 'join') {
         const caller = callerOf.get(event.call)
-        if (set.staff && caller !== undefined) await post('/join', { source: 'desk', pairs: [{ a: caller, b: event.subject, reason: 'answered by staff' }] }, service)
+        if ((event.intake ? set.intake : set.staff) && caller !== undefined) await post('/join', { source: 'desk', pairs: [{ a: caller, b: event.subject, reason: 'answered by staff' }] }, service)
       }
-      else if (event.kind === 'record') await post('/identify', { subject: event.subject, event: 'form', ...(event.device && { device: event.device }), ...(event.email && { email: event.email }), ...(event.phone && { phone: event.phone }), name: event.name, ...(event.dob && { dob: event.dob }) }, service)
-      else {
-        const to = event.page ? await shown(event.page) : (event.redial !== undefined && dialed.get(event.redial)) || LINE
+      else if (event.kind === 'merge') await post('/join', { source: 'desk', pairs: [{ a: event.a, b: event.b, reason: 'one person, entered twice' }] }, service)
+      else if (event.kind === 'record') {
+        // A firm that asks who speaks says whose each is. One that does not sends what was given as the subject's.
+        const { device, email, phone } = event
+        const mine = set.speaker && event.speaker ? { ...Object.fromEntries(Object.entries({ device, email, phone }).filter(([key]) => !(key in event.speaker!))), ...event.own } : { device, email, phone }
+        await post('/identify', { subject: event.subject, event: 'form', ...Object.fromEntries(Object.entries(mine).filter(([, value]) => value !== undefined)), ...(set.speaker && event.speaker && { speaker: event.speaker }), name: event.name, ...(event.dob && { dob: event.dob }) }, service)
+      } else if (event.kind === 'speaks') {
+        if (set.speaker) await post('/identify', { subject: event.subject, event: 'told', speaker: event.speaker }, service)
+      }
+      else if (event.kind === 'call') {
+        const to = dialed.get(event.id) ?? (await shownTo(event))
         dialed.set(event.id, to)
         const { subject } = await post('/call', { id: event.id, to, at: event.at, duration: event.seconds, answered: event.answered, ...(event.from && { from: event.from }) }, service)
         callerOf.set(event.id, subject)
@@ -138,6 +180,8 @@ export async function report(world: World, arm: Arm = 'default', pool = 10): Pro
   const peopleOf = new Map(truths.map((each) => [each.subject, each.people]))
   const clusterOf = new Map<string, string>()
   const links: Outcome['links'] = new Map()
+  const ties: Outcome['ties'] = new Map()
+  const tapLinks = { links: 0, wrong: 0 }
   for (const { subject, people } of truths) {
     const cluster = await graph.cluster(subject)
     if (cluster) clusterOf.set(subject, cluster.id)
@@ -148,8 +192,17 @@ export async function report(world: World, arm: Arm = 'default', pool = 10): Pro
       const key = [...new Set(link.reasons.map(({ identifier }) => identifier.slice(0, identifier.indexOf(':'))))].sort().join(' + ')
       const row = links.get(key) ?? { links: 0, wrong: 0 }
       links.set(key, row)
+      const tied = link.reasons.filter(({ identifier }) => /^(dial|lease):/.test(identifier))
+      const browser = [subject, link.subject].find((each) => each.startsWith('visitor:'))
+      // A caller may be a whole home's landline, so a tie is held to who made the call it rests on, and one wrong call makes a wrong link.
+      const astray = browser !== undefined && tied.some(({ identifier }) => !world.calls.get(identifier.slice(identifier.indexOf(':') + 1))!.people.some((each) => peopleOf.get(browser)!.includes(each)))
+      const wrong = astray || !people.some((each) => other.includes(each))
       row.links += 1
-      if (!people.some((each) => other.includes(each))) row.wrong += 1
+      if (wrong) row.wrong += 1
+      if (tied.length === 0) continue
+      tapLinks.links += 1
+      if (wrong) tapLinks.wrong += 1
+      if (browser) for (const { identifier } of tied) ties.set(identifier.slice(identifier.indexOf(':') + 1), [...(ties.get(identifier.slice(identifier.indexOf(':') + 1)) ?? []), browser])
     }
   }
 
@@ -177,7 +230,7 @@ export async function report(world: World, arm: Arm = 'default', pool = 10): Pro
     credit.reachable += 1
     if (given === ad) credit.reachableRight += 1
   }
-  return { truths, clusterOf, links, credit, creditedRight, exhausted }
+  return { truths, clusterOf, links, credit, creditedRight, exhausted, callerOf, ties, tapLinks }
 }
 
 /** Whoever shares a fact the rule looks at is one person, and so is whoever they share one with. */
@@ -219,17 +272,18 @@ const percent = ({ mean, low, high }: ReturnType<typeof interval>) => `${(mean *
 const added = <T extends object>(into: T, more: T): T => Object.fromEntries(Object.entries(into).map(([key, value]) => [key, value + (more as Record<string, number>)[key]!])) as T
 
 async function main() {
-  const { values, positionals } = parseArgs({ allowPositionals: true, options: { worlds: { type: 'string', default: '20' }, people: { type: 'string' }, seed: { type: 'string', default: '20261124' }, arm: { type: 'string' }, dry: { type: 'boolean', default: false } } })
+  const { values, positionals } = parseArgs({ allowPositionals: true, options: { worlds: { type: 'string', default: '20' }, names: { type: 'string' }, people: { type: 'string' }, seed: { type: 'string', default: '20261124' }, arm: { type: 'string' }, dry: { type: 'boolean', default: false } } })
   const [worlds, seed] = [Number(values.worlds), Number(values.seed)]
+  const list: Names | undefined = values.names === undefined ? undefined : JSON.parse(readFileSync(values.names, 'utf8'))
   const names = positionals.length > 0 ? positionals : Object.keys(SETTINGS)
-  if (!values.dry) console.log(`Node ${process.version}`)
+  if (!values.dry) console.log(`Node ${process.version}${values.names === undefined ? '' : `, names ${createHash('sha256').update(readFileSync(values.names)).digest('hex')}`}`)
   for (const name of names) {
     const setting = SETTINGS[name]
     if (!setting) throw new Error(`Say one of: ${Object.keys(SETTINGS).join(', ')}`)
     const people = values.people === undefined ? setting.people : Number(values.people)
     const size = (world: number): Size => ({ people, days: setting.days, start: START, seed: seed + world })
     if (values.dry) {
-      const { events, truths } = makeWorld(setting.rates, size(0))
+      const { events, truths } = makeWorld(setting.rates, size(0), list)
       const by = (kind: string) => events.filter((event) => event.kind === kind).length
       console.log(`${name}: ${people} people, ${by('visit')} visits, ${by('tap')} taps, ${by('call')} calls, ${by('record')} records, ${truths.length} subjects before callers`)
       continue
@@ -241,7 +295,7 @@ async function main() {
     /** Pooled over the worlds: of what the arm beside found, what is lost. */
     const lostIn = new Map<Arm, Record<'pairs' | 'recordPairs' | 'credit', [lost: number, of: number]>>()
     for (let world = 0; world < worlds; world++) {
-      const made = makeWorld(setting.rates, size(world))
+      const made = makeWorld(setting.rates, size(world), list)
       const of = new Map<Arm, { result: Score; outcome: Outcome }>()
       for (const arm of arms) {
         const outcome = await report(made, arm, setting.pool)

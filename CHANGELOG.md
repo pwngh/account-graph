@@ -60,9 +60,11 @@
 - An ad click or a campaign visit in the window is credited before a call or text filed under its number.
 - A visit in the same cluster is credited, however weak the chain of links to it (`AttributedTouch.joined`). The outbox sends its click unless `confidence` is set.
 - A report, open calls and the board read the links of fifty thousand people at a time.
+- Placeholder numbers and office mailboxes link nobody, under every policy. Where two are kept apart, what is tied to both as strongly goes with whoever was first seen. Rebuild after upgrading.
+- Under `apart: ["birth"]`, two dates of birth also part a caller or a browser that staff joined to both. `undecided` and Matches show the join that was not followed.
+- A policy's `apart` keeps two subjects apart whose dates of birth differ, or whose first names can stand for no one name (`birthKeys`, `givenKeys`, `Link.conflict`). Under `given`, one number or email given under one name confirms a link (`namedKeys`). Off by default.
 - A change webhook is given up on after five seconds, and ad platforms and lookups after ten to thirty. A server answers reads while a long write of its own lasts.
 - A journey shows no record, and no browser or caller, of a person in another group.
-- A policy's `apart` keeps two subjects apart whose dates of birth differ (`birthKey`, `Link.conflict`). Off by default.
 - `tools/accuracy` measures who is joined, rightly and wrongly, over made-up people. `docs/accuracy.md` has the figures of one run.
 - `pay` and `POST /payment` take payments and refunds, and work out what an outcome is worth.
 - `people` and `POST /people` read several people at once. `POST /forget` takes a list of `subjects`.
@@ -87,7 +89,11 @@
 - Requests with invalid UTF-8, NUL characters or more than 32 levels of nesting return 400.
 - `examples/call-tracking.ts` takes a call tracking webhook, checks its signature and posts the call. `docs/pilot.md` is a trial that sends nothing to ad platforms.
 - `OPEN_HOURS` takes `us` and `us-tx` for holidays. Spanish words ask for no more texts, and none undoes it. `POST /call/ringing` says where in Texas a number is from.
+- `/identify` takes `speaker`, whoever speaks for the subject. Their browser and number are related to the subject and never joined to them, and what brought them earns the credit.
+- A matching rule takes `relates`, for a kind that says two subjects are two people. Clusters need a `rebuild`, because the default policy has the new kind `behalf`.
 - A `zip` tag with a Texas ZIP code adds `county`. `SERVER_RANGES_FILE` names the address ranges of data centers.
+- A tap two callers could have made ties neither. On a number others are using, a tap has to be within thirty seconds of its call. A caller who is one visitor's takes another's pool number only while it is shown.
+- A call to a pool number that was somebody else's less than `POOL_GRACE_MINUTES` before is its holder's only with a tap. One by somebody who dialed it when it was another's is nobody's by it. A visitor who comes back gets the number they had.
 - `npm run firm` starts a sample firm, and `npm run bench -- scale` measures large graphs.
 
 ### Reviewer screen

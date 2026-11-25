@@ -122,14 +122,22 @@ export function nameKeys(secret: string, first: string, last: string, known: { z
 
 /** The key of a date of birth, by which two people are told apart. It links nothing, and is made with a secret because dates are few enough to guess. */
 export function birthKey(secret: string, dob: string | undefined): Identifier | undefined {
+  return birthKeys(secret, dob)[0]
+}
+
+/** That key, and those of its year and of its month and day. Two dates that share either are one slip of the pen apart. */
+export function birthKeys(secret: string, dob: string | undefined): Identifier[] {
   if (typeof secret !== 'string' || secret.length < 32) throw new TypeError('A birth key requires a secret of at least 32 characters')
   const born = birthday(dob)
-  return born && `birth:${createHmac('sha256', secret).update(JSON.stringify(['birth', born])).digest('hex')}`
+  if (!born) return []
+  const key = (kind: string, value: string): Identifier => `${kind}:${createHmac('sha256', secret).update(JSON.stringify([kind, value])).digest('hex')}`
+  return [key('birth', born), key('dated', born.slice(0, 4)), key('dated', born.slice(5))]
 }
 
 /** A date of birth that is one, or undefined: a date that systems write where none was given is nobody's birthday. */
 function birthday(dob: string | undefined): string | undefined {
   const born = dob?.trim() ?? ''
   const day = /^\d{4}-\d{2}-\d{2}$/.test(born) ? Date.parse(`${born}T00:00:00Z`) : NaN
-  return !Number.isNaN(day) && new Date(day).toISOString().slice(0, 10) === born && !['1900-01-01', '1970-01-01'].includes(born) ? born : undefined
+  // Nobody living was born before 1905 or after today, and a system that has no date writes one of those, or one of these.
+  return !Number.isNaN(day) && new Date(day).toISOString().slice(0, 10) === born && born > '1905' && day <= Date.now() && born !== '1970-01-01' ? born : undefined
 }

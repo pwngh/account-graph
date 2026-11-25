@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { SETTINGS } from '../tools/accuracy/rates.ts'
-import { PLAIN, report } from '../tools/accuracy/run.ts'
+import { INTAKE, SETTINGS } from '../tools/accuracy/rates.ts'
+import { PLAIN, play, report } from '../tools/accuracy/run.ts'
 import { interval, score } from '../tools/accuracy/score.ts'
-import { makeWorld } from '../tools/accuracy/world.ts'
+import { asked, makeWorld } from '../tools/accuracy/world.ts'
 
 const contact = (n: number, people: string[], ...facts: string[]) => ({ subject: `contact:${n}`, people, facts })
 
@@ -81,6 +81,8 @@ test('a world is the same for the same seed, and every subject of it has an owne
     if (event.kind === 'record') assert.ok(told.has(event.subject))
     else if (event.kind === 'call') assert.ok(calls.has(event.id))
     else if (event.kind === 'join') assert.ok(calls.has(event.call) && told.has(event.subject))
+    else if (event.kind === 'speaks') assert.ok(told.has(event.subject))
+    else if (event.kind === 'merge') assert.ok(told.has(event.a) && told.has(event.b))
     else assert.ok(told.has(`visitor:${event.device}`))
   }
 })
@@ -100,4 +102,76 @@ test('under the default policy names and birth dates change no group', async () 
   const world = makeWorld(SETTINGS.base!.rates, { people: 80, days: 40, start: Date.parse('2026-03-02T15:00:00Z'), seed: 5 })
   const without = { ...world, events: world.events.map((event) => (event.kind === 'record' ? { ...event, name: undefined, dob: undefined } : event)) } as unknown as typeof world
   assert.deepEqual((await report(world)).clusterOf, (await report(without)).clusterOf)
+})
+
+test('the third world adds to the others without changing them, and says whose facts are whose', async () => {
+  const names = { english: [{ name: 'robert', share: 3, shorts: ['bob', 'rob'] }, { name: 'mary', share: 2, shorts: ['molly'] }], spanish: [{ name: 'guadalupe', share: 1, shorts: ['lupe'], english: [] }], spanishShare: 0.3 }
+  const size = { people: 2_000, days: 120, start: Date.parse('2026-03-02T15:00:00Z'), seed: 7 }
+  const { events, truths } = makeWorld(SETTINGS.high3!.rates, size, names)
+  assert.deepEqual(makeWorld(SETTINGS.high3!.rates, size, names).events, events)
+  assert.throws(() => makeWorld(SETTINGS.high3!.rates, size), /list of names/)
+  const told = events.filter((event) => event.kind === 'record' && event.speaker)
+  assert.ok(told.length > 0)
+  // What is said to be the speaker's was given, and is among the facts of the record.
+  for (const event of told) {
+    if (event.kind !== 'record') continue
+    const { facts } = truths.find((each) => each.subject === event.subject)!
+    for (const [kind, value] of Object.entries(event.speaker!)) assert.ok(facts.includes(`${kind} ${value}`) || kind === 'phone', `${kind} of ${event.subject}`)
+  }
+  const reported = events.map((event) => (event.kind === 'call' && event.told) || event.at)
+  assert.deepEqual(reported, [...reported].sort((x, y) => x - y))
+  // Nobody who does not ask hears of a speaker.
+  const world = makeWorld(SETTINGS.base3!.rates, { ...size, people: 60, days: 30 }, names)
+  const { clusterOf } = await report(world)
+  for (const { subject } of world.truths) assert.ok(clusterOf.has(subject), subject)
+})
+
+test('what staff do at intake adds to a world, names its people and is reported', async () => {
+  const size = { people: 1_000, days: 120, start: Date.parse('2026-03-02T15:00:00Z'), seed: 7 }
+  const world = makeWorld(SETTINGS.high!.rates, size)
+  const taken = asked(world, INTAKE, 7)
+  assert.deepEqual(asked(world, INTAKE, 7), taken)
+  assert.deepEqual(asked(world, { asks: 0, says: 0, saysWrongly: 0, opened: 0, openedWrong: 0, merged: 0, mergedWrong: 0 }, 7), world)
+  // What was there stays, in its order.
+  const kept = new Set(world.events)
+  assert.deepEqual(taken.events.filter((event) => kept.has(event)), world.events)
+  for (const kind of ['join', 'merge', 'speaks'] as const) assert.ok(taken.events.some((event) => event.kind === kind && !kept.has(event)), kind)
+  const peopleOf = new Map(taken.truths.map(({ subject, people }) => [subject, people]))
+  for (const event of taken.events) if (event.kind === 'join' && event.intake) assert.ok(peopleOf.has(event.subject))
+  const { clusterOf } = await play(taken, { intake: true }, 10, await import('../src/index.ts').then(async (index) => ({ ...index, ...(await import('../src/server.ts')) })))
+  for (const { subject } of taken.truths) assert.ok(clusterOf.has(subject), subject)
+})
+
+test('a tie is held to the call it rests on, and not to everybody the line has been', async () => {
+  const at = Date.parse('2026-03-02T15:00:00Z')
+  const page = { address: '198.51.100.7', agent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Mobile Safari' }
+  const events = [
+    { kind: 'visit' as const, at, device: 'd1', ...page },
+    { kind: 'tap' as const, at: at + 60_000, device: 'd1', ...page },
+    { kind: 'call' as const, at: at + 70_000, id: 'c1', from: '+15552000001', seconds: 90, answered: true, people: ['pat'] },
+    { kind: 'visit' as const, at: at + 3_600_000, device: 'd2', ...page },
+    { kind: 'tap' as const, at: at + 3_660_000, device: 'd2', ...page },
+    { kind: 'call' as const, at: at + 3_670_000, id: 'c2', from: '+15552000001', seconds: 90, answered: true, people: ['lee'] },
+  ]
+  const told = (truth: string[]) => ({ events, truths: [{ subject: 'visitor:d1', people: ['pat'], facts: ['device d1'] }, { subject: 'visitor:d2', people: truth, facts: ['device d2'] }], calls: new Map([['c1', { people: ['pat'], facts: [], about: 'pat' }], ['c2', { people: ['lee'], facts: [], about: 'lee' }]]), spoke: new Set<string>(), ads: new Map(), written: new Map(), who: new Map() })
+  const { tapLinks } = await report(told(['pat']) as never)
+  // One line, two callers. The second browser is Pat's, and Lee's call is what ties it.
+  assert.deepEqual(tapLinks, { links: 2, wrong: 1 })
+  assert.deepEqual((await report(told(['lee']) as never)).tapLinks, { links: 2, wrong: 0 })
+})
+
+test('staff see what is written on a record, and make one of all that share it', () => {
+  const at = Date.parse('2026-03-02T15:00:00Z')
+  const name = { first: 'pat', last: 'doe' }
+  const record = (subject: string, given: object) => ({ kind: 'record' as const, at, subject, name, ...given })
+  const call = { kind: 'call' as const, at: at + 86_400_000, id: 'c1', from: '+15552000001', seconds: 90, answered: true, people: ['pat'] }
+  const of = (...records: ReturnType<typeof record>[]) => asked({ events: [...records, call], truths: records.map(({ subject }) => ({ subject, people: ['pat'], facts: [] })), calls: new Map([['c1', { people: ['pat'], facts: [], about: 'pat' }]]), spoke: new Set<string>(), ads: new Map(), written: new Map(), who: new Map([['pat', name]]) } as never, { asks: 1, says: 1, saysWrongly: 0, opened: 1, openedWrong: 0, merged: 1, mergedWrong: 0 }, 1).events
+  const merges = (events: ReturnType<typeof of>) => events.flatMap((event) => (event.kind === 'merge' ? [[event.a, event.b]] : []))
+  const opened = (events: ReturnType<typeof of>) => events.flatMap((event) => (event.kind === 'join' ? [event.subject] : []))
+  // One has the number that rang and is opened. Both have the email, and are made one.
+  const both = of(record('contact:0', { email: 'p@example.org', phone: call.from }), record('contact:1', { email: 'p@example.org' }))
+  assert.deepEqual([merges(both), opened(both)], [[['contact:0', 'contact:1']], ['contact:0']])
+  // An email that is the speaker's is on neither.
+  const spoken = of(record('contact:0', { email: 'm@example.org', speaker: { email: 'm@example.org' } }), record('contact:1', { email: 'm@example.org', speaker: { email: 'm@example.org' } }))
+  assert.deepEqual(merges(spoken), [])
 })
