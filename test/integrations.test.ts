@@ -1561,6 +1561,10 @@ test('/identify keeps whoever speaks for a subject apart from them', async (t) =
   await graph.ignore('device:ww-0000-4000', true)
   await identify({ subject: 'contact:aunt', at: T0, speaker: { device: 'ww-0000-4000' } })
   assert.deepEqual((await graph.links('contact:aunt')).map((link) => link.subject), ['visitor:ww-0000-4000'])
+  // A browser that is there is hers, though it holds the id no longer or not yet.
+  await graph.observe([{ subject: 'visitor:vv-0000-4000', identifiers: ['device:other-vv'], at: T0 }, { subject: 'visitor:vv-alias', identifiers: ['device:vv-0000-4000'], at: T0 }])
+  await identify({ subject: 'contact:uncle', at: T0, speaker: { device: 'vv-0000-4000' } })
+  assert.deepEqual((await graph.links('contact:uncle')).map((link) => link.subject), ['visitor:vv-0000-4000'])
   // Her own record is hers.
   await identify({ subject: 'contact:mother', phone, at: T0 })
   assert.ok((await graph.cluster('contact:mother'))!.members.includes(mother))

@@ -600,9 +600,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     if (ofDevice) {
       // Its own visitor, where there is one. Another that holds the id is taken only while the id is evidence and it is the one that may be it.
       const exact: Subject = `visitor:${device}`
-      const known = new Set((await graph.holders([ofDevice])).map((edge) => edge.subject))
       let who = exact
-      if (!known.has(exact)) {
+      if (!(await graph.cluster(exact))) {
         const apart = new Set(await graph.separations(body.subject))
         const others = (await graph.match([ofDevice], { limit: 100 })).map((each) => each.subject).filter((each) => each.startsWith('visitor:') && !apart.has(each))
         if (others.length === 1) who = others[0]!

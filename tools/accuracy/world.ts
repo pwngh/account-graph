@@ -624,7 +624,12 @@ export function asked(world: World, rates: Intake, seed: number): World {
   const r = randomly(seed ^ 0x3c6ef372)
   const truths = [...world.truths]
   const events = [...world.events]
-  const onFile = world.events.flatMap((event) => (event.kind === 'record' ? [event] : []))
+  // What is written on a record is the subject's: what was said to be the speaker's is not, and what was given beside is.
+  type Filed = { subject: string; at: number; phone?: string; email?: string; name: { first: string; last: string } }
+  const onFile = world.events.flatMap((event): Filed[] => (event.kind === 'record' ? [{
+    subject: event.subject, at: event.at, name: event.name,
+    ...(event.phone !== undefined && event.speaker?.phone === undefined && { phone: event.phone }), ...(event.email !== undefined && event.speaker?.email === undefined && { email: event.email }), ...event.own,
+  }] : []))
   const same = (a: { first: string; last: string }, b: { first: string; last: string }) => a.first === b.first && a.last === b.last
   let made = 0
   for (const event of world.events) {
@@ -633,14 +638,11 @@ export function asked(world: World, rates: Intake, seed: number): World {
     const { people: [caller], about } = world.calls.get(event.id)!
     const says = caller !== about && r.chance(rates.says)
     const mistaken = caller === about && r.chance(rates.saysWrongly)
-    // By a name, and of several the one the number is on, and then the latest.
-    const find = (person: string) => {
-      const found = onFile.filter((each) => each.at <= at && same(each.name, world.who.get(person)!))
-      const known = found.filter((each) => event.from !== undefined && each.phone === event.from)
-      return (known.length > 0 ? known : found).sort((x, y) => x.at - y.at || (x.subject < y.subject ? -1 : 1))
-    }
+    const find = (person: string) => onFile.filter((each) => each.at <= at && same(each.name, world.who.get(person)!)).sort((x, y) => x.at - y.at || (x.subject < y.subject ? -1 : 1))
+    // Of several under a name, the one the number is on is opened, and then the latest.
+    const open = (found: Filed[]) => found.filter((each) => event.from !== undefined && each.phone === event.from).at(-1) ?? found.at(-1)
     if (says || mistaken) {
-      const client = find(about).at(-1)
+      const client = open(find(about))
       if (client && event.from !== undefined) events.push({ kind: 'speaks', at, subject: client.subject, speaker: { phone: event.from } })
       // Whoever speaks is made a record, where they have none and show a number.
       if (says && event.from !== undefined && find(caller!).length === 0) {
@@ -656,7 +658,7 @@ export function asked(world: World, rates: Intake, seed: number): World {
     const there = find(name)
     if (there.length > 0 && r.chance(rates.opened)) {
       const others = onFile.filter((each) => each.at <= at && !there.includes(each))
-      const opened = others.length > 0 && r.chance(rates.openedWrong) ? r.one(others) : there.at(-1)!
+      const opened = others.length > 0 && r.chance(rates.openedWrong) ? r.one(others) : open(there)!
       events.push({ kind: 'join', at: at + MINUTE, call: event.id, subject: opened.subject, intake: true })
     }
     // Before an appointment, records under one name with a number or an email in common are made one.

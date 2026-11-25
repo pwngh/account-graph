@@ -159,3 +159,19 @@ test('a tie is held to the call it rests on, and not to everybody the line has b
   assert.deepEqual(tapLinks, { links: 2, wrong: 1 })
   assert.deepEqual((await report(told(['lee']) as never)).tapLinks, { links: 2, wrong: 0 })
 })
+
+test('staff see what is written on a record, and make one of all that share it', () => {
+  const at = Date.parse('2026-03-02T15:00:00Z')
+  const name = { first: 'pat', last: 'doe' }
+  const record = (subject: string, given: object) => ({ kind: 'record' as const, at, subject, name, ...given })
+  const call = { kind: 'call' as const, at: at + 86_400_000, id: 'c1', from: '+15552000001', seconds: 90, answered: true, people: ['pat'] }
+  const of = (...records: ReturnType<typeof record>[]) => asked({ events: [...records, call], truths: records.map(({ subject }) => ({ subject, people: ['pat'], facts: [] })), calls: new Map([['c1', { people: ['pat'], facts: [], about: 'pat' }]]), spoke: new Set<string>(), ads: new Map(), written: new Map(), who: new Map([['pat', name]]) } as never, { asks: 1, says: 1, saysWrongly: 0, opened: 1, openedWrong: 0, merged: 1, mergedWrong: 0 }, 1).events
+  const merges = (events: ReturnType<typeof of>) => events.flatMap((event) => (event.kind === 'merge' ? [[event.a, event.b]] : []))
+  const opened = (events: ReturnType<typeof of>) => events.flatMap((event) => (event.kind === 'join' ? [event.subject] : []))
+  // One has the number that rang and is opened. Both have the email, and are made one.
+  const both = of(record('contact:0', { email: 'p@example.org', phone: call.from }), record('contact:1', { email: 'p@example.org' }))
+  assert.deepEqual([merges(both), opened(both)], [[['contact:0', 'contact:1']], ['contact:0']])
+  // An email that is the speaker's is on neither.
+  const spoken = of(record('contact:0', { email: 'm@example.org', speaker: { email: 'm@example.org' } }), record('contact:1', { email: 'm@example.org', speaker: { email: 'm@example.org' } }))
+  assert.deepEqual(merges(spoken), [])
+})
