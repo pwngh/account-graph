@@ -589,7 +589,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     const out = new Map<Subject, Known>()
     if (!policy.apart?.length && !joins) return out
     for (let i = 0; i < subjects.length; i += TOGETHER) {
-      const edges = (await tx.edgesOf(subjects.slice(i, i + TOGETHER))).filter(({ identifier }) => /^(birth|given|initial|review):/.test(identifier))
+      const edges = (await tx.edgesOf(subjects.slice(i, i + TOGETHER))).filter(({ identifier }) => /^(birth|given|initial|dated|review|device|phone|voip|named):/.test(identifier))
       const states = await tx.states(unique(edges.map((edge) => edge.identifier).filter((identifier) => identifier.startsWith('review:'))))
       for (const [subject, facts] of knownOf(policy, edges, (identifier) => states.get(identifier)?.ignored ?? false, joins)) out.set(subject, facts)
     }
@@ -673,7 +673,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
   const now = options.now ?? Date.now
 
-  type Reached = Map<Subject, { confidence: number; via: Subject[]; joined?: true; speaks?: true; earns?: true }>
+  type Reached = Map<Subject, { confidence: number; via: Subject[]; joined?: true; speaks?: true; from?: Subject; earns?: true }>
 
   /** Every subject within `hops` links of any of those given, with the strength of the best chain to each. With `only`, through those subjects and to them. */
   async function reach(tx: Tx, from: readonly Subject[], hops: number, only?: ReadonlySet<Subject>, last?: Map<Subject, Link>, crediting = false): Promise<Reached> {
@@ -702,14 +702,18 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     for (const [near, start] of frontier.sort().map((each) => [each, reached.get(each)!] as const)) {
       for (const link of links.get(near) ?? []) {
         const said = speaks(link)
-        if (link.conflict || apart.has(link.subject) || (only && !only.has(link.subject)) || (told(policy, link.reasons) && !said)) continue
+        if ((link.conflict && !said) || apart.has(link.subject) || (only && !only.has(link.subject)) || (told(policy, link.reasons) && !said)) continue
         // Credit goes from whoever speaks to whoever they speak for, and not on: what brought one of their children did not bring another.
         if (said ? !crediting || start.speaks || !names(near) || names(link.subject) || !borders.one(from[0]!, near) : start.speaks && !borders.one(near, link.subject)) continue
         if (!said && !start.speaks && (borders.cut(near, link.subject) || borders.between(near, link.subject) || from.some((origin) => borders.between(origin, link.subject)))) continue
         const confidence = start.confidence * link.score
         const known = reached.get(link.subject)
-        if (known && known.confidence >= confidence) continue
-        reached.set(link.subject, { confidence, via: [...start.via, near], ...((said || start.speaks) && { speaks: true as const }) })
+        const speaking = (said || start.speaks) && { speaks: true as const, from: said ? near : start.from! }
+        if (known && known.confidence >= confidence) {
+          // A stronger way there by other links takes nothing from what the mark says.
+          if (!speaking || known.speaks) continue
+          reached.set(link.subject, { ...known, ...speaking })
+        } else reached.set(link.subject, { confidence, via: [...start.via, near], ...(speaking || (known?.speaks && { speaks: true as const, from: known.from! })) })
         last?.set(link.subject, link)
         improved.add(link.subject)
       }
@@ -824,7 +828,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       const own = clusters.get(subject)
       if (own === undefined) continue
       const homes = new Set([own])
-      for (const [each, found] of reached) if (found.speaks && clusters.get(found.via.at(-1)!) === own) homes.add(clusters.get(each)!)
+      for (const [each, found] of reached) if (found.speaks && clusters.get(found.from!) === own && clusters.get(each) !== own) homes.add(clusters.get(each)!)
       for (const [each, found] of reached) {
         if (clusters.get(each) === own) found.joined = true
         else if (found.speaks && homes.has(clusters.get(each)!)) found.earns = true
@@ -1419,9 +1423,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
           if (line && visitor !== undefined) await tx.addTouch({ ...line, subject: call.subject, at: call.at })
         }
         if ((await tx.states([identifier])).get(identifier)?.ignored) return []
+        // Nobody decided anything, so nothing is added to the audit log, which is kept for good. The call says it is in doubt.
         const holders = (await tx.edgesOn([identifier])).map((edge) => edge.subject)
-        // Not tied yet, it is kept from being tied, and there is nothing to have decided.
-        if (holders.length > 0) await decide(tx, 'ignore', [identifier], { by: 'calls', reason: 'another call leaves the tap it rests on in doubt', automatic: true })
         await tx.setIgnored(identifier, true)
         if (holders.length === 0) return []
         await mark(tx)
@@ -1884,17 +1887,20 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return store.read(async (tx) => {
         const lately = await tx.latelySeen(sightings)
         const pairs = new Map<string, Pair>()
+        const two: [Subject, Subject][] = []
         // A pair kept apart is not a link, and one a reviewer's mark joins has been decided, even where a cut keeps it in two clusters. Of two
         // where one speaks for the other, it has been said that they are two.
         for (const [subject, links] of await neighbors(tx, lately)) {
           for (const link of links) {
+            if (speaks(link)) two.push([subject, link.subject])
             if (link.reasons.some((reason) => reason.identifier.startsWith('review:join-')) || speaks(link)) continue
             const [a, b] = subject < link.subject ? [subject, link.subject] : [link.subject, subject]
             pairs.set(pairKey(a, b), { a, b, score: link.score, level: link.level, reasons: link.reasons, ...(link.conflict && { conflict: link.conflict }) })
           }
         }
-        const labels = await tx.labelsOf(unique([...pairs.values()].flatMap(({ a, b }) => [a, b])))
-        const open = [...pairs.values()].filter(({ a, b }) => labels.get(a)!.cluster !== labels.get(b)!.cluster)
+        const labels = await tx.labelsOf(unique([...[...pairs.values()].flatMap(({ a, b }) => [a, b]), ...two.flat()]))
+        const said = new Set(two.map(([a, b]) => pairKey(labels.get(a)!.cluster, labels.get(b)!.cluster)))
+        const open = [...pairs.values()].filter(({ a, b }) => labels.get(a)!.cluster !== labels.get(b)!.cluster && !said.has(pairKey(labels.get(a)!.cluster, labels.get(b)!.cluster)))
         open.sort((x, y) => y.score - x.score || (x.a === y.a ? (x.b < y.b ? -1 : 1) : x.a < y.a ? -1 : 1))
         return { pairs: open.slice(0, limit), total: open.length, seen: lately.length }
       })

@@ -124,6 +124,9 @@ export const defaultPolicy: Policy = {
     birth: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     given: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     initial: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
+    dated: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
+    // One number, email or browser given under one name. Written where names keep people apart.
+    named: { weight: 0.999, dilution: 0, cap: 10, halfLife: Infinity },
     // A note, not evidence: the number a visitor tapped, or a call that was recorded. It links nothing.
     dialed: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
   },
@@ -133,7 +136,7 @@ export const defaultPolicy: Policy = {
 export const UNNAMED: readonly string[] = ['visitor', 'caller', 'call']
 
 /** The kinds that are notes. The graph counts on them linking nothing, so a setting may not give them weight. */
-const NOTES = new Set(['opened', 'place', 'dialed', 'initial', ...FACTS])
+const NOTES = new Set(['opened', 'place', 'dialed', 'initial', 'dated', ...FACTS])
 const LEVELS = ['same', 'related', 'bridge'] as const
 const FIELDS = ['weight', 'dilution', 'cap', 'halfLife'] as const
 const OPTIONAL = ['group', 'corroborates', 'relates'] as const

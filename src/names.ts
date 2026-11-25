@@ -1348,3 +1348,15 @@ export function givenKeys(secret: string, first: string): Identifier[] {
   if (names.length === 0) return []
   return [...names.map((name) => key('given', name)), ...[...new Set(folded(first).split(/\s+/).map((word) => word[0]!))].sort().map((letter) => key('initial', letter))]
 }
+
+/**
+ * The keys of a number, an email or a browser under the name it was given with. Two records that share one were given it by
+ * one name, or by a name that begins alike and one last name. They are made with a secret, as the rest are.
+ */
+export function namedKeys(secret: string, contact: readonly Identifier[], first: string, last: string): Identifier[] {
+  if (typeof secret !== 'string' || secret.length < 32) throw new TypeError('A name key requires a secret of at least 32 characters')
+  const words = folded(first).split(/\s+/).filter(Boolean)
+  const firsts = new Set([...namesOf(first), ...words.map((word) => word[0]!)])
+  const lasts = new Set(folded(last).split(/\s+/).filter(Boolean))
+  return contact.flatMap((each) => [...firsts].flatMap((name) => [...lasts].map((surname): Identifier => `named:${createHmac('sha256', secret).update(JSON.stringify(['named', each, name, surname])).digest('hex')}`)))
+}

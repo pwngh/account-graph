@@ -6,7 +6,7 @@ import type { CallOptions } from './calls.ts'
 import { Outdated } from './graph.ts'
 import type { Graph, PolicyState } from './graph.ts'
 import type { Hours } from './hours.ts'
-import { birthKey, email, hashPhone, identifier, ip, nameKeys, normalizePhone, phoneOfType, UNSTORABLE } from './identifiers.ts'
+import { birthKeys, email, hashPhone, identifier, ip, nameKeys, normalizePhone, phoneOfType, UNSTORABLE } from './identifiers.ts'
 import { trusted } from './integrations/fingerprint.ts'
 import type { FingerprintVerifier } from './integrations/fingerprint.ts'
 import { placeOf, shared } from './integrations/maxmind.ts'
@@ -16,7 +16,7 @@ import { fromTwilio, twilioCall, twilioText } from './integrations/twilio.ts'
 import type { LineTypeLookup } from './integrations/twilio.ts'
 import { asks, beginnings, codeNote, recordText, replyTo, textCode, texted } from './texts.ts'
 import type { TextOptions } from './texts.ts'
-import { givenKeys } from './names.ts'
+import { givenKeys, namedKeys } from './names.ts'
 import type { IpLookup } from './integrations/maxmind.ts'
 import type { Ops } from './ops.ts'
 import { sentOf } from './outbox.ts'
@@ -554,9 +554,12 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     const speaker = body.speaker === undefined ? undefined : await speakerIn(body)
     if (speaker?.note) notes.speaker = speaker.note
     // What is the speaker's says who the speaker is, so it is not written on whoever they speak for.
+    const contact = [...new Set([...all, ...(speaker?.theirs ?? [])])].filter((each) => /^(device|phone|voip|email):/.test(each))
+    // The same detail under the same name is the same person, whoever the detail is.
+    const named = options.identifierSecret && typeof body.name?.first === 'string' && typeof body.name?.last === 'string' && (await graph.policy()).rules.apart?.includes('given') ? namedKeys(options.identifierSecret, contact, body.name.first, body.name.last) : []
     const theirs = new Set(speaker?.theirs.flatMap((each) => [each, each.replace(/^phone:/, 'voip:'), each.replace(/^voip:/, 'phone:')]))
-    const identifiers = all.filter((each) => !theirs.has(each))
-    if (identifiers.length < all.length) notes.speaker = 'what is the speaker\'s is not used for who they speak for'
+    const identifiers = [...all.filter((each) => !theirs.has(each)), ...named]
+    if (identifiers.length < all.length + named.length) notes.speaker = 'what is the speaker\'s is not used for who they speak for'
     const event = typeof body.event === 'string' && body.event ? (body.event as string) : undefined
     const who = { subject: body.subject as Subject, identifiers }
     if (speaker && speaker.subjects.length > 0) {
@@ -654,8 +657,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     if (body.at !== undefined && !Number.isSafeInteger(body.at)) throw new Refusal(400, '`at` must be an integer in epoch milliseconds')
     // Kept only under a policy that keeps people apart by them. They say who somebody is not, and not who they are, so by themselves they find nobody.
     const apart = options.identifierSecret && (typeof body.dob === 'string' || typeof body.name?.first === 'string') ? ((await graph.policy()).rules.apart ?? []) : []
-    const born = apart.length > 0 && typeof body.dob === 'string' ? birthKey(options.identifierSecret!, body.dob) : undefined
-    const facts = [...(born ? [born] : []), ...(apart.includes('given') && typeof body.name?.first === 'string' ? givenKeys(options.identifierSecret!, body.name.first) : [])]
+    const born = apart.length > 0 && typeof body.dob === 'string' ? birthKeys(options.identifierSecret!, body.dob) : []
+    const facts = [...born, ...(apart.includes('given') && typeof body.name?.first === 'string' ? givenKeys(options.identifierSecret!, body.name.first) : [])]
     if (identifiers.length === 0 && !(saving && (facts.length > 0 || none))) throw new Refusal(400, 'At least one identifying field is required')
     identifiers.push(...facts)
     return { identifiers, notes, at: (body.at ?? now()) as number }

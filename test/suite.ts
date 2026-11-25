@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { after, describe, test } from 'node:test'
-import { givenKeys, Outdated, brokenAt, callState, createGraph, createHours, defaultPolicy, dialed, email, fit, followUp, hashPhone, nameKeys, policyFrom, policyProblems, recordCall, recordCallResult, recordNotLead, recordReturn, recordText, ringing, replyTo, beginnings, textCode, codeNote, texted } from '../src/index.ts'
+import { birthKeys, givenKeys, namedKeys, Outdated, brokenAt, callState, createGraph, createHours, defaultPolicy, dialed, email, fit, followUp, hashPhone, nameKeys, policyFrom, policyProblems, recordCall, recordCallResult, recordNotLead, recordReturn, recordText, ringing, replyTo, beginnings, textCode, codeNote, texted } from '../src/index.ts'
 import type { Change, Graph, GraphOptions, Observation, Policy, Store } from '../src/index.ts'
 
 export interface Opened {
@@ -2771,9 +2771,44 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal(await one('Xyzzyq', 'Maria'), true)
       assert.equal(await one('Carlos', 'Maria', ['1', '1']), true)
       assert.equal(await one('Carlos', 'Maria', ['1', '2']), false)
-      // A date that differs is mistyped where the names are one. Where nothing is known of a name, it counts.
-      assert.equal(await one('Mary', 'María', ['1', '2']), true)
+      // A date one slip away is mistyped where the names are one. Two dates with neither year nor day in common are two people's, as of a father and a son.
+      const dated = async (a: string, b: string, first = ['Mary', 'María']) => {
+        const { graph } = await fresh(policy)
+        await graph.observe([a, b].map((dob, i) => ({ subject: `contact:${i}`, identifiers: ['email:e', ...givenKeys(secret, first[i]!), ...birthKeys(secret, dob)], at: T0 })))
+        return (await members(graph, 'contact:0')).length === 2
+      }
+      assert.equal(await dated('1990-02-03', '1990-11-30'), true)
+      assert.equal(await dated('1990-02-03', '1991-02-03'), true)
+      assert.equal(await dated('1990-02-03', '1962-07-19'), false)
+      assert.equal(await dated('1990-02-03', '1990-11-30', ['Xyzzyq', 'Maria']), false)
+      // Where nothing is known of a name, a date that differs counts.
       assert.equal(await one('Xyzzyq', 'Maria', ['1', '2']), false)
+    })
+
+    test('one detail under one name is one person, whoever speaks for them', async () => {
+      const policy = policyFrom({ apart: ['birth', 'given'] })
+      const secret = 'a secret of more than thirty-two characters'
+      const contact = (n: string, first: string, last: string, details: string[], dob?: string) => ({ subject: `contact:${n}`, identifiers: [...details, ...givenKeys(secret, first), ...namedKeys(secret, details, first, last), ...(dob ? birthKeys(secret, dob) : [])], at: T0 })
+      // A son's record that nobody said was his mother's call, and one that somebody did. The mark takes the mother from both.
+      const { graph } = await fresh(policy)
+      await graph.observe([{ subject: 'caller:1', identifiers: ['phone:1'], at: T0 }, contact('a', 'Robert', 'Lima', ['phone:1'])])
+      assert.deepEqual(await members(graph, 'contact:a'), ['caller:1', 'contact:a'])
+      await graph.speak({ subject: 'contact:b', identifiers: [...givenKeys(secret, 'Bob'), ...namedKeys(secret, ['phone:1'], 'Bob', 'Lima')] }, [{ subject: 'caller:1', identifiers: ['phone:1'] }], T0)
+      assert.deepEqual(await members(graph, 'contact:a'), ['contact:a', 'contact:b'])
+      assert.deepEqual(await graph.verify(), [])
+      // His brother of another name is not him, and neither is a father of his name.
+      await graph.speak({ subject: 'contact:c', identifiers: [...givenKeys(secret, 'Luis'), ...namedKeys(secret, ['phone:1'], 'Luis', 'Lima')] }, [{ subject: 'caller:1', identifiers: ['phone:1'] }], T0)
+      assert.equal((await members(graph, 'contact:c')).length, 1)
+      const { graph: home } = await fresh(policy)
+      await home.observe([contact('a', 'Robert', 'Lima', ['phone:1'], '1990-02-03'), contact('b', 'Robert', 'Lima', ['phone:1'], '1961-08-09')])
+      assert.equal((await members(home, 'contact:a')).length, 1)
+      // Given again from one browser with one number it is one person by another name. One of the two is a household's.
+      for (const [shared, together] of [[['device:d', 'phone:1'], true], [['device:d'], false], [['phone:1'], false]] as const) {
+        const { graph: again } = await fresh(policy)
+        await again.observe([contact('a', 'Carlos', 'Lima', [...shared]), contact('b', 'Maria', 'Lima', [...shared])])
+        assert.equal((await members(again, 'contact:a')).length === 2, together, shared.join())
+        assert.deepEqual(await again.verify(), [])
+      }
     })
 
     test('a join overrules a fact, whichever is told first, and its undoing gives the fact back', async () => {

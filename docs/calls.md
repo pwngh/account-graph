@@ -96,7 +96,7 @@ A call is linked to a tap by time, so on a number that rings often, some calls f
 | Rule | Effect |
 | --- | --- |
 | A busy number has a shorter window | Where somebody else called or tapped the number in the last twenty minutes, a tap has to be within thirty seconds of its call. |
-| A tap two callers could have made is neither's | A call from somebody else within a minute after the tap unties the first, in whichever order the two are reported. Both are `ambiguous`, and the undone tie is in the decision log as a mute by `calls`. |
+| A tap two callers could have made is neither's | A call from somebody else within a minute after the tap unties the first, in whichever order the two are reported. Both are `ambiguous`. A conversion already sent for an undone tie is not taken back. |
 | A tie is undone and never added late | A call reported late can untie calls around it, and gives none of them a visitor it did not have. |
 | A caller's own visitor is theirs | A tap by the visitor a caller is tied to already counts in the whole window, however busy the number is. |
 

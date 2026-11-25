@@ -90,9 +90,13 @@ export function components(subjects: Iterable<Subject>, pairs: readonly Pair[]):
 
 /** What is known of somebody that cannot be two people's, and the joins a reviewer or a system made of them. */
 export interface Known {
-  facts: Map<Fact | 'initial', Set<Identifier>>
+  facts: Map<Fact | 'initial' | 'dated', Set<Identifier>>
   joins: Set<Identifier>
+  /** Their browsers, their numbers, and what they gave under which name. */
+  things: Set<Identifier>
 }
+
+const THINGS = new Set(['device', 'phone', 'voip', 'named'])
 
 /** The facts of the subjects that have one, of the facts a policy keeps people apart by. An undone join is none. With `joins`, those are read whatever the policy. */
 export function knownOf(policy: Policy, edges: readonly Edge[], undone: (identifier: Identifier) => boolean, joins = false): Map<Subject, Known> {
@@ -101,11 +105,13 @@ export function knownOf(policy: Policy, edges: readonly Edge[], undone: (identif
   for (const { subject, identifier } of edges) {
     const kind = identifier.slice(0, identifier.indexOf(':'))
     // Each fact is read for the other to be weighed against, whether or not it keeps anyone apart by itself.
-    if (!policy.apart?.includes(kind as Fact) && kind !== 'birth' && kind !== 'given' && kind !== 'initial' && !(kind === 'review' && !undone(identifier))) continue
-    const known = out.get(subject) ?? { facts: new Map(), joins: new Set() }
+    const thing = THINGS.has(kind) && policy.apart?.includes('given') === true
+    if (!policy.apart?.includes(kind as Fact) && !thing && kind !== 'birth' && kind !== 'given' && kind !== 'initial' && kind !== 'dated' && !(kind === 'review' && !undone(identifier))) continue
+    const known = out.get(subject) ?? { facts: new Map(), joins: new Set(), things: new Set() }
     out.set(subject, known)
     if (kind === 'review') known.joins.add(identifier)
-    else known.facts.set(kind as Fact | 'initial', (known.facts.get(kind as Fact | 'initial') ?? new Set()).add(identifier))
+    else if (thing) known.things.add(identifier)
+    else known.facts.set(kind as Fact | 'initial' | 'dated', (known.facts.get(kind as Fact | 'initial' | 'dated') ?? new Set()).add(identifier))
   }
   return out
 }
@@ -115,13 +121,16 @@ export function conflict(policy: Policy, a: Known | undefined, b: Known | undefi
   if (!a || !b || !policy.apart?.length) return undefined
   if ([...a.joins].some((identifier) => b.joins.has(identifier))) return undefined
   /** Whether they agree on a fact, or undefined where one of them has none. */
-  const agree = (fact: Fact | 'initial') => {
+  const agree = (fact: Fact | 'initial' | 'dated') => {
     const [own, others] = [a.facts.get(fact), b.facts.get(fact)]
     return own && others && [...own].some((value) => others.has(value))
   }
-  // A fact that agrees outranks one that differs: a date is mistyped, and a name is short for another that is not known.
-  if (policy.apart.includes('birth') && agree('birth') === false && agree('given') !== true) return 'birth'
-  return policy.apart.includes('given') && agree('given') === false && agree('birth') !== true && agree('initial') !== true ? 'given' : undefined
+  const shared = [...a.things].filter((thing) => b.things.has(thing))
+  // A name that agrees outranks two dates that one slip of the pen would make one. A father and a son of one name have two dates.
+  if (policy.apart.includes('birth') && agree('birth') === false && !((agree('given') === true || shared.some((thing) => thing.startsWith('named:'))) && agree('dated') === true)) return 'birth'
+  if (!policy.apart.includes('given') || agree('given') !== false || agree('birth') === true || agree('initial') === true) return undefined
+  // Given again from one browser with one number, it is one person by another name.
+  return shared.some((thing) => thing.startsWith('device:')) && shared.some((thing) => /^(phone|voip):/.test(thing)) ? undefined : 'given'
 }
 
 type Adjacency = Map<Subject, Map<Subject, number>>

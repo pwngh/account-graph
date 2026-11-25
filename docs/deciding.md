@@ -41,6 +41,7 @@ The default policy has no groups or corroborating kinds. [Presets](presets.md) h
 | `link` | 0.92 | 5 | none | A link sent to one person, opened in this browser. Thins as more people's links are opened there |
 | `dial` | 0.92 | 2 | none | A phone call or a text that began just after exactly one visitor tapped its number |
 | `text` | 0.95 | 2 | none | A text that carried the code one visitor was given |
+| `named` | 0.999 | 10 | none | One number, email or browser given under one name. Written where a policy keeps people apart by `given` |
 | `behalf` | 0.92 | 2 | none | Somebody who [speaks for](identify.md#speaking-for-somebody-else) somebody else. It relates and never joins |
 | `lease` | 0.90 | 2 | none | A phone call to a number shown to one visitor. An unmeasured prior |
 | `phone` | 0.90 | 10 | none | A mobile or landline. Joins two subjects, relates three, and gives no link among four or more |
@@ -78,10 +79,10 @@ A component of tens of thousands indicates a shared identifier to cap or mute.
 
 ## Facts that keep people apart
 
-Two records can share an email and a phone and still be two people. A policy can keep them apart by a date of birth:
+Two records can share an email and a phone and still be two people. A policy can keep them apart by a date of birth, a first name, or both:
 
 ```json
-{ "apart": ["birth"] }
+{ "apart": ["birth", "given"] }
 ```
 
 ```text
@@ -92,11 +93,20 @@ contact:2 { email, born 1984-07-01 } ──┘
 
 With `IDENTIFIER_SECRET` set, the server then keeps a keyed `birth` of each `dob` sent to [`/identify`](identify.md), as a note that links nothing. Two subjects that would be in one group, both have a `birth`, and share no value of it are kept apart, whatever path joins them.
 
+With `given` it keeps keyed notes of the names a first name may stand for, from the table in `src/names.ts`: `Bob` stands for `Robert`, and `Lupe` for `Guadalupe`.
+
+| Two records | Come to |
+| --- | --- |
+| Dates that differ | Two people, unless the names agree and the dates have the year or the day and month in common. A father and a son of one name are two. |
+| First names that can stand for no one name | Two people, unless the dates agree, the names begin with one letter, or they share both a browser and a phone number. |
+| A name the table does not have | Nothing is said. |
+| One number, email or browser under one name | One person, at 0.999 (`named`), whoever [speaks for them](identify.md#speaking-for-somebody-else). The name is a full name it may stand for, or its first letter, with the last name. |
+
 | Point | Behavior |
 | --- | --- |
 | One of them has no date | Nothing is said. |
 | A reviewer's join, or a join from your own systems | Overrules it, whichever came first. Undoing the join gives the fact back. |
-| Where it shows | In `/links`, `/between`, `/match` and Matches, as related with `conflict: "birth"`, however high the score. Credit does not cross it. |
+| Where it shows | In `/links`, `/between`, `/match` and Matches, as related with `conflict: "birth"` or `"given"`, however high the score. Credit does not cross it. |
 | Where it does not | `/conflicts`, kept-apart lists, disputes and the audit log. Nobody decided it. |
 | A corrected date | The record keeps both values, so it is kept apart from neither, until it is forgotten. |
 | Shared browsers and callers | They go with one of the two, as after a separation. |

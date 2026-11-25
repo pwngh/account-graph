@@ -122,9 +122,16 @@ export function nameKeys(secret: string, first: string, last: string, known: { z
 
 /** The key of a date of birth, by which two people are told apart. It links nothing, and is made with a secret because dates are few enough to guess. */
 export function birthKey(secret: string, dob: string | undefined): Identifier | undefined {
+  return birthKeys(secret, dob)[0]
+}
+
+/** That key, and those of its year and of its month and day. Two dates that share either are one slip of the pen apart. */
+export function birthKeys(secret: string, dob: string | undefined): Identifier[] {
   if (typeof secret !== 'string' || secret.length < 32) throw new TypeError('A birth key requires a secret of at least 32 characters')
   const born = birthday(dob)
-  return born && `birth:${createHmac('sha256', secret).update(JSON.stringify(['birth', born])).digest('hex')}`
+  if (!born) return []
+  const key = (kind: string, value: string): Identifier => `${kind}:${createHmac('sha256', secret).update(JSON.stringify([kind, value])).digest('hex')}`
+  return [key('birth', born), key('dated', born.slice(0, 4)), key('dated', born.slice(5))]
 }
 
 /** A date of birth that is one, or undefined: a date that systems write where none was given is nobody's birthday. */
