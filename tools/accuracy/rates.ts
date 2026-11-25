@@ -81,7 +81,7 @@ function third(at: 0 | 1 | 2): Third {
   }
 }
 
-/** Assumed, and set before it was run. Staff ask four of five, believe what they are told, and are right about a record all but one time in a hundred. */
+/** Assumed, and set before it was run. Staff ask four of five callers, believe what they are told, find records by name, and take the wrong one once in a hundred. */
 export const INTAKE: Intake = { asks: 0.8, says: 0.7, saysWrongly: 0.02, opened: 0.85, openedWrong: 0.01, merged: 0.5, mergedWrong: 0.01 }
 
 export const SETTINGS: Record<string, Setting> = {

@@ -700,7 +700,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     let frontier = [...from]
     for (let hop = 0; hop < hops && frontier.length > 0; hop++) {
       const links = await neighbors(tx, frontier)
-      await borders.load([...from, ...frontier, ...[...links.values()].flat().map((link) => link.subject)], links)
+      await borders.load([...from, ...frontier, ...[...links.values()].flat().map((link) => link.subject)], links, from)
       frontier = spread(reached, apart, frontier, links, borders, from, only, last, crediting)
     }
     return reached
@@ -723,7 +723,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         if ((link.conflict && !said) || apart.has(link.subject) || (only && !only.has(link.subject)) || (told(policy, link.reasons) && !said)) continue
         // Credit goes from whoever speaks to whoever they speak for, and not on: what brought one of their children did not bring another.
         if (said ? !crediting || borders.kept(near, link.subject) || start.speaks || !names(near) || names(link.subject) || !borders.one(from[0]!, near) : start.speaks && !borders.one(near, link.subject)) continue
-        if (!said && !start.speaks && (borders.cut(near, link.subject) || borders.between(near, link.subject) || from.some((origin) => borders.between(origin, link.subject)))) continue
+        if (!said && !start.speaks && (borders.cut(near, link.subject) || borders.between(near, link.subject) || from.some((origin) => borders.kept(origin, link.subject) || borders.between(origin, link.subject)))) continue
         const confidence = start.confidence * link.score
         const known = reached.get(link.subject)
         const speaking = (said || start.speaks) && { speaks: true as const, from: said ? near : start.from! }
@@ -766,15 +766,15 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       one: (a: Subject, b: Subject) => a === b || (labels.has(a) && labels.get(a)!.cluster === labels.get(b)?.cluster),
       /** Whether a separation or a fact took the link between two, and they are not one by others. */
       cut: (a: Subject, b: Subject) => taken.has(pairKey(a, b)) && labels.get(a)?.cluster !== labels.get(b)?.cluster,
-      async load(subjects: Iterable<Subject>, links: ReadonlyMap<Subject, Link[]> = new Map()): Promise<void> {
+      async load(subjects: Iterable<Subject>, links: ReadonlyMap<Subject, Link[]> = new Map(), origins: readonly Subject[] = []): Promise<void> {
         const said = [...links].flatMap(([near, list]) => list.filter(speaks).map((link) => [near, link.subject] as const))
         met ||= said.length > 0
         if (!policy.apart?.length && !met && links.size === 0) return
         const unread = unique([...subjects].filter((subject) => !labels.has(subject)))
         for (let i = 0; i < unread.length; i += TOGETHER) for (const [subject, own] of await tx.labelsOf(unread.slice(i, i + TOGETHER))) labels.set(subject, own)
         for (const [a, b] of said) if (labels.get(a)?.cluster !== labels.get(b)?.cluster) spoken.add(pairKey(labels.get(a)!.cluster, labels.get(b)!.cluster))
-        // Everybody of the groups of those, and who of them a reviewer keeps apart, read together and once.
-        const asked = unique(said.flat()).filter((each) => !checked.has(each))
+        // Everybody of the groups of those and of whoever the search began from, and who of them a reviewer keeps apart, read together and once.
+        const asked = unique([...said.flat(), ...origins]).filter((each) => !checked.has(each))
         if (asked.length > 0) {
           const ofGroup = new Map<Subject, Subject>()
           const ids = unique(asked.flatMap((each) => labels.get(each)?.component ?? []))
@@ -829,8 +829,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         }
         for (const id of ids) read.add(id)
       },
-      between(a: Subject, b: Subject): boolean {
+      between(a: Subject, b: Subject, by?: 'birth'): boolean {
         const [x, y] = [labels.get(a), labels.get(b)]
+        if (by) return x !== undefined && y !== undefined && x.cluster !== y.cluster && x.component === y.component && (facts.get(x.cluster) ?? []).some((one) => (facts.get(y.cluster) ?? []).some((other) => conflict(policy, one, other) === by))
         if (x && y && spoken.has(pairKey(x.cluster, y.cluster))) return true
         if (!x || !y || x.cluster === y.cluster || x.component !== y.component) return false
         const key = pairKey(x.cluster, y.cluster)
@@ -860,7 +861,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
           const some = unread.slice(j, j + TOGETHER)
           const found = await neighbors(tx, some)
           for (const subject of some) links.set(subject, found.get(subject) ?? [])
-          await borders.load([...bySubject.keys(), ...some, ...[...found.values()].flat().map((link) => link.subject)], found)
+          await borders.load([...bySubject.keys(), ...some, ...[...found.values()].flat().map((link) => link.subject)], found, [...bySubject.keys()])
         }
         for (const search of searches) search.frontier = spread(search.reached, search.apart, search.frontier, links, borders, [search.subject], undefined, undefined, true)
       }
@@ -1958,7 +1959,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
             if (speaks(link)) continue
             if (link.reasons.some((reason) => reason.identifier.startsWith('review:join-'))) {
               // Where births took a telephone or a browser from a record it was joined to, that is for somebody to look at.
-              if (!policy.apart?.includes('birth') || names(subject) === names(link.subject)) continue
+              if (!policy.apart?.includes('birth') || (names(subject) && names(link.subject))) continue
               joined.push([subject, link.subject])
             }
             const [a, b] = subject < link.subject ? [subject, link.subject] : [link.subject, subject]
@@ -1968,8 +1969,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const labels = await tx.labelsOf(unique([...[...pairs.values()].flatMap(({ a, b }) => [a, b]), ...two.flat()]))
         const said = new Set(two.map(([a, b]) => pairKey(labels.get(a)!.cluster, labels.get(b)!.cluster)))
         const borders = bordersOf(tx)
-        await borders.load(joined.flat())
-        for (const [a, b] of joined) if (!borders.between(a, b)) pairs.delete(pairKey(a, b))
+        await borders.load(joined.flat(), undefined, joined.flat())
+        for (const [a, b] of joined) if (borders.kept(a, b) || !borders.between(a, b, 'birth')) pairs.delete(pairKey(a, b))
         const open = [...pairs.values()].filter(({ a, b }) => labels.get(a)!.cluster !== labels.get(b)!.cluster && !said.has(pairKey(labels.get(a)!.cluster, labels.get(b)!.cluster)))
         open.sort((x, y) => y.score - x.score || (x.a === y.a ? (x.b < y.b ? -1 : 1) : x.a < y.a ? -1 : 1))
         return { pairs: open.slice(0, limit), total: open.length, seen: lately.length }

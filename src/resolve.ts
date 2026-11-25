@@ -244,12 +244,39 @@ function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subj
   // So two births part a telephone or a browser from one of them, and never two records somebody said are one.
   const unnamed = new Set(policy.unnamed ?? UNNAMED)
   const nobody = (subject: Subject) => unnamed.has(subject.slice(0, Math.max(0, subject.indexOf(':'))))
-  const firm = (a: Subject, b: Subject) => (!decided(a, b) ? 0 : nobody(a) || nobody(b) ? FIRM / 1e3 : FIRM)
+  const loose = (a: Subject, b: Subject) => nobody(a) || nobody(b)
+  const firm = (a: Subject, b: Subject) => (!decided(a, b) ? 0 : loose(a, b) ? JOINED : FIRM)
   for (const [a, b] of differ) cutApart(a, b)
   for (const [a, b] of differ) {
-    const found = minimumCut(adjacency, ...later(a, b), firm)
-    const births = conflict(policy, known.get(a), known.get(b)) === 'birth'
-    if (found.every(([x, y]) => !decided(x, y) || (births && (nobody(x) || nobody(y))))) for (const [x, y] of found) cutApart(x, y)
+    let found = minimumCut(adjacency, ...later(a, b), firm)
+    if (found.some(([x, y]) => decided(x, y))) {
+      if (conflict(policy, known.get(a), known.get(b)) !== 'birth') continue
+      found = leastUndone(a, b)
+      if (found.some(([x, y]) => decided(x, y) && !loose(x, y))) continue
+    }
+    for (const [x, y] of found) cutApart(x, y)
+  }
+
+  /** The cut between two births that leaves out the fewest joins, and of as few, those of whoever was seen later. Nothing else shared chooses between them. */
+  function leastUndone(a: Subject, b: Subject): [Subject, Subject][] {
+    const births = (subject: Subject) => known.get(subject)?.facts.get('birth') ?? new Set<Identifier>()
+    const alike = (one: Subject, other: Subject) => members.filter((each) => each !== one && conflict(policy, known.get(each), known.get(other)) === 'birth' && [...births(each)].some((birth) => births(one).has(birth)))
+    const seen = (each: Subject) => since.get(each) ?? 0
+    // All the records of a birth are on one side, so what is left out is counted once for a person and not for each of their records.
+    const [as, bs] = [[a, ...alike(a, b)], [b, ...alike(b, a)]]
+    const [first, last] = Math.min(...as.map(seen)) <= Math.min(...bs.map(seen)) ? [as, bs] : [bs, as]
+    const own = new Set<Subject>(first)
+    for (const each of own) for (const next of adjacency.get(each)!.keys()) if (!nobody(next)) own.add(next)
+    const sides: Adjacency = new Map([...adjacency].map(([subject, next]) => [subject, new Map(next)]))
+    const tied = new Set<string>()
+    for (const side of [first, last]) {
+      for (const each of side.slice(1)) {
+        tied.add(`${side[0]!}\n${each}`).add(`${each}\n${side[0]!}`)
+        sides.get(side[0]!)!.set(each, 1)
+        sides.get(each)!.set(side[0]!, 1)
+      }
+    }
+    return minimumCut(sides, last[0]!, first[0]!, (x, y) => (tied.has(`${x}\n${y}`) ? FIRM * 10 : decided(x, y) && loose(x, y) ? JOINED + (own.has(x) || own.has(y) ? JOINED / 100 : 0) : firm(x, y)))
   }
 
   if (policy.bridge > policy.same) {
@@ -326,7 +353,9 @@ function pieces(adjacency: Adjacency): Subject[][] {
 const strength = (score: number) => Math.max(1, Math.round(-Math.log(1 - Math.min(score, 1 - 1e-9)) * 1e6))
 
 /** Stronger than any links together, of a link no cut may take unless there is no other way. */
-const FIRM = 1e13
+const FIRM = 1e14
+/** That of a decided link of a telephone or a browser: more than any evidence, and far less than a decided link of two records. */
+const JOINED = 1e12
 
 /**
  * The cheapest set of links whose removal disconnects `source` from `target`,

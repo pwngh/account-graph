@@ -3046,6 +3046,74 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       for (const hops of [1, 2]) assert.deepEqual((await graph.attribute('account:a', { at: T0 + HOUR, hops })).touches, [])
     })
 
+    test('a telephone stays where the fewest joins are left out, and then with whoever was first seen', async () => {
+      const { graph } = await fresh(policyFrom({ apart: ['birth'] }))
+      await graph.observe([
+        { subject: 'contact:wife', identifiers: ['email:w', 'birth:1'], at: T0 },
+        { subject: 'contact:husband', identifiers: ['email:h', 'birth:2'], at: T0 + 1 },
+        { subject: 'contact:husband-2', identifiers: ['email:h', 'birth:2'], at: T0 + 3 },
+        { subject: 'caller:line', identifiers: ['phone:l'], at: T0 },
+      ])
+      for (const each of ['wife', 'husband']) await graph.join('caller:line', `contact:${each}`, { by: 'desk' })
+      // Of one join to each, that of whoever was seen later is left out.
+      assert.deepEqual(await members(graph, 'contact:husband'), ['contact:husband', 'contact:husband-2'])
+      // Nothing else shared moves it.
+      for (const n of [1, 2, 3]) await graph.observe({ subject: `visitor:${n}`, identifiers: ['email:h', 'phone:l', `device:${n}`], at: T0 + 4 })
+      assert.ok((await members(graph, 'contact:wife')).includes('caller:line'))
+      assert.ok((await members(graph, 'contact:husband')).includes('contact:husband-2'))
+      await graph.join('caller:line', 'contact:husband-2', { by: 'desk' })
+      for (const each of ['caller:line', 'contact:husband-2']) assert.ok((await members(graph, 'contact:husband')).includes(each), each)
+      assert.deepEqual(await members(graph, 'contact:wife'), ['contact:wife'])
+      assert.deepEqual(await graph.verify(), [])
+    })
+
+    test('a join births did not follow is for somebody to look at, and one a reviewer did not is not', async () => {
+      const { graph } = await fresh(policyFrom({ apart: ['birth', 'given'] }))
+      await graph.observe([
+        { subject: 'contact:wife', identifiers: ['email:w', 'birth:1'], at: T0 },
+        { subject: 'contact:husband', identifiers: ['email:h', 'birth:2'], at: T0 + 1 },
+        { subject: 'caller:w', identifiers: ['phone:w'], at: T0 },
+        { subject: 'visitor:h', identifiers: ['device:h'], at: T0 },
+      ])
+      await graph.join('contact:wife', 'caller:w', { by: 'desk' })
+      await graph.join('caller:w', 'visitor:h', { by: 'desk' })
+      await graph.join('visitor:h', 'contact:husband', { by: 'desk' })
+      // Whichever join is left out, it has an end nobody is named by, and it is listed.
+      const { pairs } = await graph.undecided()
+      assert.equal(pairs.filter(({ reasons }) => reasons.some(({ identifier }) => identifier.startsWith('review:join-'))).length, 1)
+      const { graph: names } = await fresh(policyFrom({ apart: ['birth', 'given'] }))
+      const secret = 'a secret of more than thirty-two characters'
+      await names.observe([{ subject: 'contact:1', identifiers: ['email:1', ...givenKeys(secret, 'Carlos')], at: T0 }, { subject: 'contact:2', identifiers: ['email:2', ...givenKeys(secret, 'Maria')], at: T0 }, { subject: 'caller:l', identifiers: ['phone:l'], at: T0 }])
+      for (const n of [1, 2]) await names.join('caller:l', `contact:${n}`, { by: 'desk' })
+      await names.separate('contact:1', 'contact:2', true, { by: 'dana' })
+      assert.deepEqual((await names.undecided()).pairs, [])
+    })
+
+    test('a separation is a border whatever joins the two ends of it', async () => {
+      const { graph } = await fresh()
+      await graph.observe([
+        { subject: 'contact:a', identifiers: ['voip:home', 'device:a'], at: T0 },
+        { subject: 'contact:b', identifiers: ['voip:home', 'device:b'], at: T0 },
+        { subject: 'visitor:a', identifiers: ['device:a', 'voip:office'], at: T0 },
+        { subject: 'visitor:b', identifiers: ['device:b', 'voip:office'], at: T0 },
+      ])
+      await graph.touch({ subject: 'visitor:b', at: T0, gclid: 'B' })
+      await graph.separate('contact:a', 'contact:b', true, { by: 'dana' })
+      for (const hops of [1, 2, 3]) assert.deepEqual((await graph.attribute('contact:a', { at: T0 + HOUR, hops })).touches, [])
+      // Nor through somebody of neither.
+      const { graph: other } = await fresh()
+      await other.observe([
+        { subject: 'contact:a', identifiers: ['email:m', 'device:a'], at: T0 },
+        { subject: 'contact:b', identifiers: ['email:m', 'device:b'], at: T0 },
+        { subject: 'account:a', identifiers: ['device:a', 'voip:v'], at: T0 },
+        { subject: 'account:b', identifiers: ['device:b', 'voip:w'], at: T0 },
+        { subject: 'account:z', identifiers: ['voip:v', 'voip:w'], at: T0 },
+      ])
+      await other.touch({ subject: 'account:b', at: T0, gclid: 'B' })
+      await other.separate('contact:a', 'contact:b', true, { by: 'dana' })
+      for (const hops of [1, 2, 3]) for (const from of ['account:a', 'contact:a']) assert.deepEqual((await other.attribute(from, { at: T0 + HOUR, hops })).touches, [])
+    })
+
     test('a fact that is muted keeps nobody apart, and one restored does again', async () => {
       const { graph } = await fresh(policyFrom({ apart: ['birth'] }))
       await graph.observe([{ subject: 'contact:1', identifiers: ['email:e', 'birth:1'], at: T0 }, { subject: 'contact:2', identifiers: ['email:e', 'birth:2'], at: T0 }])

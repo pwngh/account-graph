@@ -156,10 +156,10 @@ export interface Intake {
   /** Of callers asked who do call for another, those who say so; of the rest, those put down as calling for another by mistake. */
   says: number
   saysWrongly: number
-  /** Of callers asked, those whose call is put down to a record, where one of theirs is there; of them, to somebody else's. */
+  /** Of callers asked, those whose call is put down to a record found by the name given, where there is one; of them, to somebody else's. */
   opened: number
   openedWrong: number
-  /** Of people with two records or more, those whose records are made one before an appointment; of records made one with another, those where the other is somebody else's. */
+  /** Of answered callers asked with two records or more under one name, those whose records with a number or an email in common are made one before an appointment; of those, made one with somebody else's. */
   merged: number
   mergedWrong: number
 }
@@ -616,53 +616,57 @@ export function dirtied(world: World, dirt: Dirt, seed: number): World {
 
 /**
  * A made world where staff do three things at intake, from a seed of its own: they ask who is calling, ask whether it is for somebody else and
- * make a record of who is, and make one of records of one person. Nothing else changes. A caller is joined to a record of their own, and never
- * to one they speak for.
+ * make a record of who is, and make one of records that look like one person's. Nothing else changes. Who is who is used for what people
+ * answer, and for nothing staff do: they find records by the name they are told and what is written, and take the latest. A caller who says
+ * they call for another is put down to a record of their own; one who does not say so gives the name of whoever the call is about.
  */
 export function asked(world: World, rates: Intake, seed: number): World {
   const r = randomly(seed ^ 0x3c6ef372)
   const truths = [...world.truths]
   const events = [...world.events]
-  const recordsOf = new Map<string, { subject: string; at: number }[]>()
-  const all: { subject: string; person: string; at: number }[] = []
-  const add = (subject: string, person: string, at: number) => {
-    recordsOf.set(person, [...(recordsOf.get(person) ?? []), { subject, at }])
-    all.push({ subject, person, at })
-  }
-  const ownerOf = new Map(world.truths.map(({ subject, people }) => [subject, people[0]!]))
-  for (const event of world.events) if (event.kind === 'record') add(event.subject, ownerOf.get(event.subject)!, event.at)
+  const onFile = world.events.flatMap((event) => (event.kind === 'record' ? [event] : []))
+  const same = (a: { first: string; last: string }, b: { first: string; last: string }) => a.first === b.first && a.last === b.last
   let made = 0
   for (const event of world.events) {
     if (event.kind !== 'call' || !event.answered || !r.chance(rates.asks)) continue
     const at = event.at + 7 * MINUTE
     const { people: [caller], about } = world.calls.get(event.id)!
-    const there = (person: string) => (recordsOf.get(person) ?? []).filter((each) => each.at <= at)
-    const other = caller !== about ? (r.chance(rates.says) ? about : undefined) : undefined
+    const says = caller !== about && r.chance(rates.says)
     const mistaken = caller === about && r.chance(rates.saysWrongly)
-    if (other !== undefined || mistaken) {
-      for (const { subject } of there(about)) if (event.from !== undefined) events.push({ kind: 'speaks', at, subject, speaker: { phone: event.from } })
+    // By a name, and of several the one the number is on, and then the latest.
+    const find = (person: string) => {
+      const found = onFile.filter((each) => each.at <= at && same(each.name, world.who.get(person)!))
+      const known = found.filter((each) => event.from !== undefined && each.phone === event.from)
+      return (known.length > 0 ? known : found).sort((x, y) => x.at - y.at || (x.subject < y.subject ? -1 : 1))
+    }
+    if (says || mistaken) {
+      const client = find(about).at(-1)
+      if (client && event.from !== undefined) events.push({ kind: 'speaks', at, subject: client.subject, speaker: { phone: event.from } })
       // Whoever speaks is made a record, where they have none and show a number.
-      if (other !== undefined && event.from !== undefined && there(caller!).length === 0) {
-        const subject = `contact:i${made++}`
-        truths.push({ subject, people: [caller!], facts: [`phone ${event.from}`] })
-        events.push({ kind: 'record', at, subject, phone: event.from, name: world.who.get(caller!)! })
-        add(subject, caller!, at)
+      if (says && event.from !== undefined && find(caller!).length === 0) {
+        const record = { kind: 'record' as const, at, subject: `contact:i${made++}`, phone: event.from, name: world.who.get(caller!)! }
+        truths.push({ subject: record.subject, people: [caller!], facts: [`phone ${event.from}`] })
+        events.push(record)
+        onFile.push(record)
       }
     }
-    // One who does not say they speak for another is put down to the record the call is about.
-    const said = caller === about || other !== undefined ? there(caller!) : there(about)
-    if (said.length === 0 || !r.chance(rates.opened)) continue
-    const strangers = all.filter((each) => each.at <= at && each.person !== caller && each.person !== about)
-    const opened = strangers.length > 0 && r.chance(rates.openedWrong) ? r.one(strangers).subject : said.at(-1)!.subject
-    events.push({ kind: 'join', at: at + MINUTE, call: event.id, subject: opened, intake: true })
-  }
-  for (const [person, own] of recordsOf) {
-    if (own.length < 2 || !r.chance(rates.merged)) continue
-    for (const [i, { subject, at }] of own.entries()) {
-      if (i === 0) continue
-      const strangers = all.filter((each) => each.person !== person && each.at <= at)
-      const wrong = strangers.length > 0 && r.chance(rates.mergedWrong)
-      events.push({ kind: 'merge', at: at + 3 * DAY, a: wrong ? r.one(strangers).subject : own[0]!.subject, b: subject })
+    // Nobody is put down to a record on a call that was noted by mistake as somebody else's.
+    if (mistaken) continue
+    const name = says ? caller! : about
+    const there = find(name)
+    if (there.length > 0 && r.chance(rates.opened)) {
+      const others = onFile.filter((each) => each.at <= at && !there.includes(each))
+      const opened = others.length > 0 && r.chance(rates.openedWrong) ? r.one(others) : there.at(-1)!
+      events.push({ kind: 'join', at: at + MINUTE, call: event.id, subject: opened.subject, intake: true })
+    }
+    // Before an appointment, records under one name with a number or an email in common are made one.
+    if (there.length < 2 || !r.chance(rates.merged)) continue
+    const first = there[0]!
+    for (const each of there.slice(1)) {
+      if ((each.phone === undefined || each.phone !== first.phone) && (each.email === undefined || each.email !== first.email)) continue
+      const others = onFile.filter((one) => one.at <= at && !there.includes(one))
+      const wrong = others.length > 0 && r.chance(rates.mergedWrong)
+      events.push({ kind: 'merge', at: at + 3 * DAY, a: wrong ? r.one(others).subject : first.subject, b: each.subject })
     }
   }
   const reported = (event: Event) => (event.kind === 'call' && event.told) || event.at

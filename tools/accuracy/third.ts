@@ -74,19 +74,23 @@ const { values, positionals } = parseArgs({ allowPositionals: true, options: { p
 // For a look at fewer arms. Marks of arms left out have nothing to count.
 if (values.arms) for (const arm of Object.keys(ARMS)) if (!values.arms.split(',').includes(arm)) delete ARMS[arm]
 const settings = positionals.length > 0 ? positionals : ['base3', 'low3', 'high3', 'busy3', 'dirty3', 'gaps3', 'busygaps3', 'base', 'low', 'high', 'busy']
+if (values.arms && !values.arms.split(',').includes('today')) throw new Error('--arms needs `today`: what is kept is held to it')
 for (const name of settings) if (!SETTINGS[name]) throw new Error(`"${name}" is not a setting`)
 if (!values.names || !values.seed || (!values.pinned && !values.dry)) throw new Error('--names, --seed and --pinned are required')
 const list = readFileSync(values.names, 'utf8')
 const names: Names = JSON.parse(list)
 const [worlds, seed] = [Number(values.worlds), Number(values.seed)]
 const PINNED = 'b9bba69'
+/** Of the list of names, as the page has it. */
+const NAMES = 'f5a69fbe139b8541f96a42dae40bf4d564d29d660f2aeb1add0eec776ec8ff2f'
 /** The commit of a checkout, with nothing changed in what it runs. */
 const commitOf = (root: string) => {
   const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim()
-  if (git('status', '--porcelain', '--', 'src', 'tools', 'examples') !== '') throw new Error(`${root} has changes that are not committed`)
+  if (git('status', '--porcelain', '--', 'src', 'tools', 'examples', 'package.json', 'package-lock.json') !== '') throw new Error(`${root} has changes that are not committed`)
   return git('rev-parse', 'HEAD')
 }
 if (!values.dry) {
+  if (createHash('sha256').update(list).digest('hex') !== NAMES) throw new Error('--names is another list than the page has')
   const [here, there] = [commitOf(join(import.meta.dirname, '../..')), commitOf(values.pinned!)]
   if (!there.startsWith(PINNED)) throw new Error(`--pinned is ${there}, and not ${PINNED}`)
   console.log(`code ${here}, today ${there}`)
@@ -127,8 +131,9 @@ for (const name of settings) {
   const kept = new Map(Object.keys(ARMS).map((arm) => [arm, { chained: [0, 0], recordPairs: [0, 0], credit: [0, 0], ties: [0, 0], same: [0, 0], covered: [0, 0], not: [0, 0] } as Record<string, [number, number]>]))
   for (let w = 0; w < worlds; w++) {
     const world = made(w)
-    const saidOf = new Set(world.events.flatMap((event) => (event.kind === 'record' && event.speaker) || event.kind === 'speaks' ? [event.subject] : []))
     const taken = asked(world, INTAKE, seed + w)
+    const saidIn = ({ events }: World) => new Set(events.flatMap((event) => (event.kind === 'record' && event.speaker) || event.kind === 'speaks' ? [event.subject] : []))
+    const said = { asked: saidIn(taken), not: saidIn(world) }
     const before = new Map<string, { found: Set<string>; chained: Set<string>; credit: Set<string>; ties: Set<string> }>()
     for (const [arm, { pinned: old, ...set }] of Object.entries(ARMS)) {
       const outcome = await play(set.intake ? taken : world, set, setting.pool, old ? pinned! : HERE)
@@ -160,7 +165,7 @@ for (const name of settings) {
           for (const b of members.slice(i + 1)) {
             if (a.people.some((each) => b.people.includes(each))) continue
             const spoke = a.people.some((x) => b.people.some((y) => world.spoke.has(`${x} ${y}`) || world.spoke.has(`${y} ${x}`)))
-            const told = [a.subject, b.subject].some((each) => saidOf.has(each))
+            const told = [a.subject, b.subject].some((each) => (set.intake ? said.asked : said.not).has(each))
             const key = spoke ? (told ? 'one spoke for the other, and a record says so' : 'one spoke for the other, and none says so') : 'nobody spoke for the other'
             row.wrongBy.set(key, (row.wrongBy.get(key) ?? 0) + 1)
           }

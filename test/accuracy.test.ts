@@ -127,7 +127,7 @@ test('the third world adds to the others without changing them, and says whose f
 })
 
 test('what staff do at intake adds to a world, names its people and is reported', async () => {
-  const size = { people: 300, days: 60, start: Date.parse('2026-03-02T15:00:00Z'), seed: 7 }
+  const size = { people: 1_000, days: 120, start: Date.parse('2026-03-02T15:00:00Z'), seed: 7 }
   const world = makeWorld(SETTINGS.high!.rates, size)
   const taken = asked(world, INTAKE, 7)
   assert.deepEqual(asked(world, INTAKE, 7), taken)
@@ -140,4 +140,22 @@ test('what staff do at intake adds to a world, names its people and is reported'
   for (const event of taken.events) if (event.kind === 'join' && event.intake) assert.ok(peopleOf.has(event.subject))
   const { clusterOf } = await play(taken, { intake: true }, 10, await import('../src/index.ts').then(async (index) => ({ ...index, ...(await import('../src/server.ts')) })))
   for (const { subject } of taken.truths) assert.ok(clusterOf.has(subject), subject)
+})
+
+test('a tie is held to the call it rests on, and not to everybody the line has been', async () => {
+  const at = Date.parse('2026-03-02T15:00:00Z')
+  const page = { address: '198.51.100.7', agent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Mobile Safari' }
+  const events = [
+    { kind: 'visit' as const, at, device: 'd1', ...page },
+    { kind: 'tap' as const, at: at + 60_000, device: 'd1', ...page },
+    { kind: 'call' as const, at: at + 70_000, id: 'c1', from: '+15552000001', seconds: 90, answered: true, people: ['pat'] },
+    { kind: 'visit' as const, at: at + 3_600_000, device: 'd2', ...page },
+    { kind: 'tap' as const, at: at + 3_660_000, device: 'd2', ...page },
+    { kind: 'call' as const, at: at + 3_670_000, id: 'c2', from: '+15552000001', seconds: 90, answered: true, people: ['lee'] },
+  ]
+  const told = (truth: string[]) => ({ events, truths: [{ subject: 'visitor:d1', people: ['pat'], facts: ['device d1'] }, { subject: 'visitor:d2', people: truth, facts: ['device d2'] }], calls: new Map([['c1', { people: ['pat'], facts: [], about: 'pat' }], ['c2', { people: ['lee'], facts: [], about: 'lee' }]]), spoke: new Set<string>(), ads: new Map(), written: new Map(), who: new Map() })
+  const { tapLinks } = await report(told(['pat']) as never)
+  // One line, two callers. The second browser is Pat's, and Lee's call is what ties it.
+  assert.deepEqual(tapLinks, { links: 2, wrong: 1 })
+  assert.deepEqual((await report(told(['lee']) as never)).tapLinks, { links: 2, wrong: 0 })
 })
