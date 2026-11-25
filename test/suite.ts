@@ -2823,6 +2823,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual([await members(told, 'contact:mother'), await members(told, 'contact:child')], [['caller:1', 'contact:mother'], ['contact:child']])
       assert.deepEqual(namedKeys(secret, ['device:desk'], 'Jose', 'Garcia'), [])
       assert.deepEqual(namedKeys(secret, ['phone:1'], 'J.', 'Lima'), [])
+      assert.ok(!namedKeys(secret, ['phone:1'], 'Ana', 'de Silva').some((each) => namedKeys(secret, ['phone:1'], 'Ana', 'de Souza').includes(each)))
       // Two dates are two people, whatever year they share, where the names are two.
       const { graph: couple } = await fresh(policy)
       await couple.observe([contact('a', 'Mark', 'Lima', ['phone:1', 'email:1'], '1980-03-04'), contact('b', 'Mary', 'Lima', ['phone:1', 'email:1'], '1980-11-20')])

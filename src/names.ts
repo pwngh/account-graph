@@ -1349,6 +1349,9 @@ export function givenKeys(secret: string, first: string): Identifier[] {
   return [...names.map((name) => key('given', name)), ...[...new Set(folded(first).split(/\s+/).map((word) => word[0]!))].sort().map((letter) => key('initial', letter))]
 }
 
+/** Words of a last name that are many people's. */
+const PARTICLES = new Set(['de', 'del', 'la', 'las', 'los', 'el', 'da', 'dos', 'das', 'di', 'van', 'von', 'der', 'den', 'san', 'santa', 'st', 'jr', 'sr', 'ii', 'iii', 'iv'])
+
 /**
  * The keys of a number or an email under the name it was given with. Two records that share one were given it by one name.
  * They are made with a secret, as the rest are. A record may have one of two last names, so each word of it has a key. A
@@ -1359,7 +1362,7 @@ export function namedKeys(secret: string, contact: readonly Identifier[], first:
   const known = namesOf(first)
   // An initial is no name.
   const firsts = known.length > 0 ? known : folded(first).split(/\s+/).filter((word) => word.length > 1)
-  const lasts = [...new Set(folded(last).split(/\s+/).filter(Boolean))]
+  const lasts = [...new Set(folded(last).split(/\s+/).filter((word) => word.length > 1 && !PARTICLES.has(word)))]
   // A number is one whatever kind of line it was found to be.
   const details = new Set(contact.filter((each) => /^(phone|voip|email):/.test(each)).map((each) => each.replace(/^voip:/, 'phone:')))
   return [...details].flatMap((detail) => lasts.flatMap((surname) => firsts.map((name): Identifier => `named:${createHmac('sha256', secret).update(JSON.stringify(['named', detail, name, surname])).digest('hex')}`)))
