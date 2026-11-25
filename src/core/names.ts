@@ -1360,6 +1360,9 @@ const PARTICLES = new Set(['de', 'del', 'la', 'las', 'los', 'el', 'da', 'dos', '
  * browser has none: a front desk's is everybody's. Of somebody who is spoken for, with the detail the speaker's, it is a
  * `ward`: it joins them to whoever was spoken for by the same name and detail, and never to the speaker.
  */
+/** Text of which every letter is a Latin one. */
+const LATIN = /^[\p{Script=Latin}\P{L}]*$/u
+
 /**
  * The keys of somebody by name and date of birth, and none without a date or for a placeholder. `person` is of the whole name as
  * it is written, and confirms. `perhaps` is of each name the first may stand for and each word of the last, and only shows two to
@@ -1372,6 +1375,8 @@ export function personKeys(secret: string, first: string, last: string, dob: str
   const whole = folded(first).split(/\s+/).join(' ')
   const known = namesOf(first)
   const lasts = folded(last).split(/\s+/).filter((word) => word.length > 1 && !PARTICLES.has(word))
+  // Folding is for Latin letters. A name it takes a letter from would be everybody's who is left with the same.
+  if (!LATIN.test(`${first}${last}`) || whole === '' || lasts.length === 0) return []
   return [key('person', whole, lasts.join(' ')), ...[...new Set(lasts)].flatMap((surname) => (known.length > 0 ? known : [whole]).map((name) => key('perhaps', name, surname)))]
 }
 

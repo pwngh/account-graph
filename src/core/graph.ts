@@ -910,7 +910,11 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
   async function asOne(tx: Tx, searches: Map<Subject, Reached>): Promise<Map<Subject, Reached>> {
     const everyone = unique([...searches.values()].flatMap((reached) => [...reached.keys()]))
     const clusters = new Map<Subject, Subject>()
-    for (let i = 0; i < everyone.length; i += TOGETHER) for (const [subject, { cluster }] of await tx.labelsOf(everyone.slice(i, i + TOGETHER))) clusters.set(subject, cluster)
+    const components = new Map<Subject, Subject>()
+    for (let i = 0; i < everyone.length; i += TOGETHER) for (const [subject, { cluster, component }] of await tx.labelsOf(everyone.slice(i, i + TOGETHER))) {
+      clusters.set(subject, cluster)
+      components.set(subject, component)
+    }
     for (const [subject, reached] of searches) {
       const own = clusters.get(subject)
       if (own === undefined) continue
@@ -923,9 +927,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     }
     if (policy.credit === undefined || policy.credit >= policy.same) return searches
     // Under the bar that joins, a browser or a caller that is one with a record is that record's, whoever else is near it.
-    const weak = unique([...searches].flatMap(([subject, reached]) => [...reached].filter(([each, { confidence, joined, earns }]) => confidence < policy.same && !joined && !earns && each !== subject).flatMap(([each]) => clusters.get(each) ?? [])))
+    const weak = new Set([...searches].flatMap(([subject, reached]) => [...reached].filter(([each, { confidence, joined, earns }]) => confidence < policy.same && !joined && !earns && each !== subject).flatMap(([each]) => clusters.get(each) ?? [])))
+    const whole = unique([...clusters].filter(([, cluster]) => weak.has(cluster)).flatMap(([each]) => components.get(each) ?? []))
     const ofRecords = new Set<Subject>()
-    for (const cluster of weak) if ((await tx.clusterOf(cluster)).some(names)) ofRecords.add(cluster)
+    for (let i = 0; i < whole.length; i += TOGETHER) for (const [each, { cluster }] of await tx.membersOf(whole.slice(i, i + TOGETHER))) if (names(each) && weak.has(cluster)) ofRecords.add(cluster)
     for (const reached of searches.values()) for (const [each, found] of reached) if (!found.joined && (names(each) || ofRecords.has(clusters.get(each)!))) found.anothers = true
     return searches
   }

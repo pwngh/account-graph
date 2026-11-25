@@ -3122,10 +3122,13 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       for (const n of [1, 2]) await desk.observe({ subject: `contact:${n}`, identifiers: [`email:${n}`, ...nameKeys(secret, 'Ana', 'Lima', { dob: '1990-06-07' }), ...who('Ana', '1990-06-07')], at: T0 + n })
       assert.deepEqual(await members(desk, 'contact:1'), ['contact:1'])
       assert.deepEqual((await desk.match([...nameKeys(secret, 'Ana', 'Lima', { dob: '1990-06-07' }), ...who('Ana', '1990-06-07')])).map(({ level, unconfirmed }) => [level, unconfirmed]), [['related', true], ['related', true]])
+      // Folding takes letters that are not Latin, and what is left of two names is the same.
+      for (const [first, last] of [['伟', '王'], ['Иван', 'Петров'], ['Ana', 'Van'], ['Unknown', 'Garcia'], ['Ana 伟', 'Lima']] as const) assert.deepEqual(personKeys(secret, first, last, '1990-06-07'), [], `${first} ${last}`)
+      assert.equal(personKeys(secret, 'José', 'Muñoz', '1990-06-07').length > 0, true)
       // A word in common, a name that may be another, and half a last name show two, and join nobody.
       for (const [one, other] of [[['Baby Boy', 'Smith'], ['Baby Girl', 'Smith']], [['Xiadani Yamileth', 'Lima'], ['Yaretzi Yamileth', 'Lima']], [['Mary', 'Lima'], ['Marilyn', 'Lima']], [['Maria', 'Garcia Lopez'], ['Maria', 'Garcia Perez']]] as const) {
         const { graph } = await fresh(policyFrom({ apart: ['birth', 'given'], records: 'confirmed' }))
-        for (const [n, [first, last]] of [[1, one], [2, other]] as const) await graph.observe({ subject: `contact:${n}`, identifiers: ['phone:home', ...birthKeys(secret, '1990-06-07'), ...(first.includes(' ') ? ['compound:yes' as const] : []), ...givenKeys(secret, first), ...personKeys(secret, first, last, '1990-06-07')], at: T0 + n })
+        for (const [n, [first, last]] of [[1, one], [2, other]] as const) await graph.observe({ subject: `contact:${n}`, identifiers: ['phone:home', ...birthKeys(secret, '1990-06-07'), ...(first.includes(' ') ? ['compound:yes' as const] : []), ...givenKeys(secret, first), ...namedKeys(secret, ['phone:home'], first, last), ...personKeys(secret, first, last, '1990-06-07')], at: T0 + n })
         await graph.observe([3, 4].map((n) => ({ subject: `contact:${n}`, identifiers: ['phone:home' as const], at: T0 + n })))
         assert.deepEqual(await members(graph, 'contact:1'), ['contact:1'], `${one} and ${other}`)
       }

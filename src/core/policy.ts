@@ -306,7 +306,9 @@ export function weigh(policy: Policy, reasons: Reason[]): number {
     return { counted: new Set(counted.map((each) => each.reason)), coincidence: counted.reduce((rest, { reason }) => rest * (1 - reason.evidence), 1) }
   }
   const alone = combine(ruled.filter((each) => !each.corroborates))
-  const confirmed = alone.counted.size > 0 && 1 - alone.coincidence >= policy.related
+  // What only may be one name shows two, and is nothing for what only confirms to confirm.
+  const firm = combine(ruled.filter((each) => !each.corroborates && !each.reason.identifier.startsWith('perhaps:')))
+  const confirmed = firm.counted.size > 0 && 1 - firm.coincidence >= policy.related
   const { counted, coincidence } = confirmed ? combine(ruled) : alone
   for (const { reason, group } of ruled) {
     if (group !== undefined) reason.group = group
