@@ -3132,7 +3132,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
         assert.deepEqual(await members(graph, 'contact:1'), ['contact:1', 'contact:2'], `${one} and ${other}`)
       }
       // Two words are two words, whatever letter they begin with, and a date that twins have says nothing.
-      for (const [one, other] of [['Juan Jose', 'Juan Carlos'], ['Juan Jose', 'Juan Javier'], ['Ana Alicia', 'Ana Maria'], ['Maria Magdalena', 'Maria Elena']] as const) {
+      for (const [one, other] of [['Juan Jose', 'Juan Carlos'], ['Juan Jose', 'Juan Javier'], ['Ana Alicia', 'Ana Maria'], ['Maria Magdalena', 'Maria Elena'], ['Maria Xiadani', 'Maria Yaretzi'], ['Juan J', 'Juan C']] as const) {
         const { graph } = await fresh(policy)
         for (const [id, first] of [['1', one], ['2', other]] as const) await graph.observe({ subject: `contact:${id}`, identifiers: ['email:m', 'compound:yes', ...born('1990-06-07'), ...called(first), ...namedKeys(secret, ['email:m'], first, 'Lima')], at: T0 + Number(id) })
         assert.deepEqual(await members(graph, 'contact:1'), ['contact:1'], `${one} and ${other}`)

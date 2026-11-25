@@ -237,9 +237,20 @@ What two records share, such as a mailbox, a number or a computer, may be a hous
 | Two records | Are |
 | --- | --- |
 | Somebody merged | One person |
-| Agree on a date of birth or a first name, and differ in neither | One person, where what they share joins them |
+| Agree on a date of birth, and differ in no name | One person, where what they share joins them |
+| Have one first name, or one has a part of the other's two words, and differ in no date | One person, where what they share joins them |
+| Have names that may stand for one another, such as Robert and Bob | One person with an agreeing date of birth, and unconfirmed without |
+| Differ in a date of birth or a first name, or have two words of which one is another, such as Maria Elena and Maria Guadalupe | Two |
+| Fit two others who differ, such as a Juan with no date beside a father and a son of that name | Unconfirmed with both |
 | Share a number or an email given under one name, a name with one zip code or date of birth, or a passkey | One person |
 | Share anything else, however strong | Two, shown as related with `unconfirmed: true`, and in Matches for somebody to decide |
+
+| Limit | Detail |
+| --- | --- |
+| Names no table has | A date of birth confirms two records with such names only where a number or an email is under one name. Twins who share only a device and have no detail of their own can be joined by their date, where the policy has no `name` kind. |
+| Two words | That a name has several words is noted from the day the rule is on. One sent before counts as one word: send it again. Two second words in no table that begin with one letter look alike. |
+| More than 300 records in one component | Nothing but a decision joins them. The 301st takes back what facts had joined there, so find what they all share and `mute` it. |
+| A father and a son | Of one name with no dates, they are one person by it, as two records of one man would be. |
 
 A record is a subject that names somebody, such as `contact:7` or `account:42`. A browser or a caller is none: it goes with the records it is tied to most strongly, and of two as strong, with whoever was seen first.
 
