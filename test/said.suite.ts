@@ -6,7 +6,7 @@ import { hashPhone } from '../src/core/identifiers.ts'
 import { createEngine } from '../src/core/engine.ts'
 import { createSix } from '../src/core/six.ts'
 import { createGraph } from '../src/core/graph.ts'
-import { createReceipts } from '../src/core/receipts.ts'
+import { createReceipts, RECEIPT_RETENTION } from '../src/core/receipts.ts'
 import type { Graph } from '../src/core/graph.ts'
 import type { Store } from '../src/core/store.ts'
 import type { Opened } from './suite.ts'
@@ -34,6 +34,116 @@ async function inOrder(steps: readonly (() => Promise<unknown>)[]) {
 }
 
 export function saidSuite(name: string, open: () => Promise<Opened>) {
+  test(`${name}: profile receipts expire while the newest creation date stands`, async () => {
+    const { store, close } = await open()
+    try {
+      let clock = AT + 3_600_000
+      const engine = createEngine(store, { now: () => clock })
+      const six = createSix(engine, { receipts: createReceipts(['r'.repeat(40)]) })
+      const expire = () => {
+        clock += RECEIPT_RETENTION + 1
+        return store.write(tx => tx.pruneReceipts(clock - RECEIPT_RETENTION))
+      }
+      const subject = 'contact:legacy'
+      const plain = { type: 'profile', key: 'legacy', at: AT, subject, facts: { email: 'pat@example.org' } } as const
+      // A receipt from 64802da, before profiles could carry a creation time.
+      await store.write(tx => tx.addReceipt({
+        type: 'profile', mac: '7402b4193500c447af5cb96a0d4765f96cb0b46a83faf42c5db266fb1a6e24d0', secretId: 'c2cb0471e211',
+        digest: { at: '0VtTnar1oNZ0ISC2QEZfgx', subject: 'llM50BThug05jEl-9mmqdV', facts: 'TmInCtTQkeBuVShG1jWfiX' },
+        version: 10001, at: AT, recorded: AT + 3_600_000,
+      }, [subject]))
+      const old = { ...plain, key: 'first', at: AT - 20, createdAt: 9 }
+      const corrected = { ...plain, key: 'correction', createdAt: 8 }
+      const { results } = await six.record({ entries: [plain, { ...plain, createdAt: 1 }, old, corrected] })
+      assert.ok(results[0]?.ok && results[0].value.duplicate)
+      assert.deepEqual(results[1], { type: 'profile', key: 'legacy', ok: false, reason: 'KEY_REUSED', fields: ['createdAt'] })
+      assert.ok(results.slice(2).every(r => r.ok && !r.value.duplicate))
+      await assert.rejects(engine.unit(async ({ tx }) => {
+        await tx.setCreatedAt(subject, 7, AT + 1, 'interrupted')
+        throw new Error('stopped before receipt')
+      }), /stopped before receipt/)
+      assert.equal(await expire(), 3)
+      await engine.graph.prune(clock)
+      assert.deepEqual(await engine.graph.history(subject), [])
+      assert.deepEqual((await engine.graph.subjectDates([subject])).get(subject), { firstSeen: old.at, createdAt: 8 })
+      const [retried] = (await six.record({ entries: [old] })).results
+      assert.ok(retried?.ok && !retried.value.duplicate && !retried.value.stands)
+      assert.deepEqual((await engine.graph.subjectDates([subject])).get(subject), { firstSeen: old.at, createdAt: 8 })
+      const replacement = { ...corrected, createdAt: 6 }
+      const replay = (await six.record({ entries: [replacement, replacement, corrected, plain] })).results
+      assert.deepEqual(replay.slice(0, 2).map(r => r.ok && [r.value.duplicate, r.value.stands]), [[false, false], [true, false]])
+      assert.deepEqual(replay[2], { type: 'profile', key: corrected.key, ok: false, reason: 'KEY_REUSED', fields: ['createdAt'] })
+      assert.ok(replay[3]?.ok && !replay[3].value.duplicate)
+      assert.deepEqual((await engine.graph.subjectDates([subject])).get(subject), { firstSeen: old.at, createdAt: 8 })
+      assert.equal(await expire(), 3)
+      const identical = (await six.record({ entries: [corrected, corrected] })).results
+      assert.deepEqual(identical.map(r => r.ok && [r.value.duplicate, r.value.stands]), [[false, true], [true, true]])
+      assert.equal(await expire(), 1)
+      const earlier = { ...corrected, at: AT - 1 }
+      const revised = (await six.record({ entries: [earlier, earlier, old, plain] })).results
+      assert.deepEqual(revised.map(r => r.ok && [r.value.duplicate, r.value.stands]), [[false, false], [true, false], [false, false], [false, true]])
+      assert.deepEqual((await engine.graph.subjectDates([subject])).get(subject), { firstSeen: old.at, createdAt: 8 })
+      assert.ok((await six.forget({ key: 'erase', at: clock, subjects: [subject], by: 'desk', platforms: 'report' })).ok)
+      await expire()
+      assert.deepEqual((await six.record({ entries: [old, corrected, plain] })).results.map(r => !r.ok && r.reason), ['FORGOTTEN', 'FORGOTTEN', 'FORGOTTEN'])
+      assert.deepEqual(await engine.graph.subjectDates([subject]), new Map())
+      assert.ok((await six.record({ entries: [{ ...plain, key: 'new-record', at: AT + 1 }] })).results[0]?.ok)
+      assert.deepEqual((await engine.graph.subjectDates([subject])).get(subject), { firstSeen: AT + 1 })
+    } finally {
+      await close()
+    }
+  })
+
+  test(`${name}: forgetting after receipt expiry treats a dated profile like any other profile`, async () => {
+    const { store, close } = await open()
+    try {
+      let clock = AT
+      const engine = createEngine(store, { now: () => clock })
+      const six = createSix(engine, { receipts: createReceipts(['r'.repeat(40)]) })
+      const subject = 'contact:date-only'
+      const plain = { type: 'profile', key: 'speaker', at: AT, subject, facts: {}, speaker: { email: 'desk@example.org' } } as const
+      const dated = { ...plain, key: 'dated', createdAt: AT - 10 }
+      assert.ok((await six.record({ entries: [plain, dated] })).results.every(row => row.ok))
+      clock += RECEIPT_RETENTION + 1
+      assert.equal(await store.write(tx => tx.pruneReceipts(clock - RECEIPT_RETENTION)), 2)
+      assert.deepEqual((await engine.graph.subjectDates([subject])).get(subject), { createdAt: dated.createdAt })
+      assert.ok((await six.forget({ key: 'erase', at: clock, by: 'desk', subjects: [subject], platforms: 'report' })).ok)
+      assert.deepEqual(await engine.graph.subjectDates([subject]), new Map())
+      // A receipt already pruned before deletion can no longer identify a retry.
+      const replay = (await six.record({ entries: [dated, plain] })).results
+      assert.deepEqual(replay.map(row => row.ok && [row.value.duplicate, row.value.stands]), [[false, true], [false, true]])
+      assert.deepEqual((await engine.graph.subjectDates([subject])).get(subject), { createdAt: dated.createdAt })
+    } finally {
+      await close()
+    }
+  })
+
+  test(`${name}: first seen uses the earliest retained activity on each exact subject`, async () => {
+    const { store, close } = await open()
+    try {
+      const consent = { adUserData: true, adPersonalization: false, recorded: AT }
+      const message = { id: 'one', direction: 'inbound' as const, at: 4, to: '+12025550101', flags: [], recorded: AT, visitor: 'visitor:inferred' }
+      await store.write(async tx => {
+        await tx.addSightings([{ subject: 'sighting', identifier: 'device:one', at: 0, recorded: AT }, { subject: 'staff', identifier: 'review:join-1', at: 0, recorded: AT }])
+        await tx.addTouch({ subject: 'arrival', at: 2, source: 'site' })
+        await tx.setOutcome({ transactionId: 'one', subject: 'outcome', at: 3, stage: 'sale', currency: 'USD', value: 5 })
+        await tx.setCall({ ...message, subject: 'call' })
+        await tx.setText({ ...message, at: 5, subject: 'text' })
+        await tx.addConsent('legacy', { ...consent, at: 0, source: 'before history' })
+        await tx.addConsent('epoch', { ...consent, at: 0, source: 'before history', key: 'banner' })
+        await tx.addConsent('consent', { ...consent, at: 6 })
+        await tx.setLink({ id: 'sent', subject: 'link', at: 7, expires: AT, openings: 0 })
+        await tx.addFlow({ id: 'transfer', from: 'payer', to: 'payee', at: 8, amount: 1, asset: 'USD' })
+        await tx.addTouch({ subject: 'sighting', at: 10, source: 'site' })
+      })
+      const first = { sighting: 0, epoch: 0, arrival: 2, outcome: 3, call: 4, text: 5, consent: 6, link: 7, payer: 8, payee: 8 }
+      const expected = new Map(Object.entries(first).map(([id, firstSeen]) => [id, { firstSeen }]))
+      assert.deepEqual(await store.read(tx => tx.subjectDates([...expected.keys(), 'staff', 'visitor:inferred', 'legacy', 'missing'])), expected)
+    } finally {
+      await close()
+    }
+  })
+
   test(`${name}: two desks that saw no party cannot both name one, even before the call arrives`, async () => {
     const { store, close } = await open()
     try {

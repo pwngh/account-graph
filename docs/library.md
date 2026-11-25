@@ -116,7 +116,7 @@ const graph = accountGraph({ memory: true })
 ```ts
 const { results } = await graph.record({
   entries: [
-    { type: 'profile', key: 'signup-1001', at: 1795460000000, subject: 'contact:1001', event: 'signup', facts: { email: 'pat@example.org', device: '9f3c' } },
+    { type: 'profile', key: 'signup-1001', at: 1795460000000, subject: 'contact:1001', createdAt: 1795300000000, event: 'signup', facts: { email: 'pat@example.org', device: '9f3c' } },
     { type: 'conversion', key: 'enroll-1001', at: 1795460000000, subject: 'contact:1001', stage: 'enrolled', value: 200, currency: 'USD' },
   ],
 })
@@ -128,6 +128,8 @@ for (const result of results) {
 ```
 
 A "no" is a value and never thrown. `changes` lists the subjects that moved, so you can hold a login or a trade before it settles.
+
+Use `createdAt` when you know when your system created the record. Reviewers see it beside the first time the graph saw activity on that ID. To correct it, send a new profile for the same ID with a new key, a later `at` and the corrected date. Profiles that omit it leave the standing date alone. The [profile fields and ordering rules](http.md#entry-types) also apply to the library.
 
 ### Decide
 

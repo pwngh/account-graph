@@ -1,4 +1,4 @@
-import type { DecideRequest, EventsRequest, ForgetRequest, LookupRequest, RecordRequest, ReportRequest } from './api.ts'
+import type { DecideRequest, EventsRequest, ForgetRequest, LookupRequest, ProfileEntry, RecordRequest, ReportRequest } from './api.ts'
 import { FAULT_CODES, fault, malformed } from './fault.ts'
 import { sized } from './json.ts'
 
@@ -62,7 +62,8 @@ const map = (each: Check, most: number, name: RegExp = /^[\w.-]{1,64}$/): Check 
 const any: Check = () => {}
 const both = (...checks: Check[]): Check => (value, path) => checks.forEach((check) => check(value, path))
 
-const at = integer(0, 8_640_000_000_000_000)
+const lastAt = 8_640_000_000_000_000
+const at = integer(0, lastAt)
 const key = string(1, 200)
 /** The ids of calls and texts name things in the graph, so they are plainer than other keys. */
 const providerId = string(1, 128, /^[\w.-]+$/)
@@ -132,9 +133,13 @@ const party = byField('role', { self: namedParty, representative: namedParty, ex
 
 const entry = (fields: Record<string, Check>, keyed: Check = key) => shape({ type: any, key: keyed, at, ...fields })
 const ENTRIES: Record<string, Check> = {
-  profile: both(entry({ subject, facts: known, 'event?': short, 'speaker?': speaker }), (value, path) => {
-    const { facts: given, speaker: by } = value as { facts: object; speaker?: object }
+  profile: both(entry({ subject, facts: known, 'event?': short, 'speaker?': speaker, 'createdAt?': integer(1, lastAt) }), (value, path) => {
+    const { facts: given, speaker: by, createdAt, at, subject } = value as ProfileEntry
     if (!by) some('fact')(given, `${path}.facts`)
+    if (createdAt !== undefined) {
+      recordedParty(subject, `${path}.subject`)
+      if (createdAt > at + 86_400_000) throw bad(`${path}.createdAt`, 'is more than a day after at')
+    }
   }),
   arrival: entry({
     subject, 'source?': text, 'medium?': text, 'campaign?': text, 'campaignId?': text, 'adGroupId?': text, 'adId?': text, 'term?': text, 'content?': text, 'landing?': text, 'referrer?': text,

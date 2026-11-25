@@ -9,8 +9,8 @@ import type { GraphEvent } from '../contract/api.ts'
 import type { Delivery } from './events.ts'
 import type { Receipt } from './receipts.ts'
 import type { Said, SaidOf, Topic } from './said.ts'
-import { byKey, newest } from './said.ts'
-import type { CallEvidence, CallLineKind, Store, Tx } from './store.ts'
+import { byKey, later, newest } from './said.ts'
+import type { CallEvidence, CallLineKind, Store, SubjectDates, Tx } from './store.ts'
 import { CLICK_IDS } from './touch.ts'
 import type { CallResult, Consent, ConsentAnswer, CostRow, Counted, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, NumberedChange, OutcomeValue, Payment, SentLink, Sighting, Subject, Touch } from '../contract/types.ts'
 
@@ -35,6 +35,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
   const byComponent = new Map<Subject, Set<Subject>>()
   const byCluster = new Map<Subject, Set<Subject>>()
   const sightings = new Map<Subject, Sighting[]>()
+  const created = new Map<Subject, { createdAt: number; at: number; key: string }>()
   const touches = new Map<Subject, { touch: Touch; call: string | undefined }[]>()
   const separated = new Map<Subject, Set<Subject>>()
   const flows = new Map<string, FlowEdge>()
@@ -212,6 +213,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
       }
       bySubject.delete(subject)
       sightings.delete(subject)
+      created.delete(subject)
       touches.delete(subject)
       for (const [id, outcome] of outcomes) {
         if (outcome.subject !== subject) continue
@@ -311,6 +313,45 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
     async matchingEdges(subjects) {
       const active = await this.edgesOf(subjects)
       return { active, reserved: withheld.size > 0 && (subjects.some(s => reservedBySubject.has(s)) || active.some(e => reservedByIdentifier.has(e.identifier))) }
+    },
+
+    async setCreatedAt(subject, createdAt, at, key) {
+      const before = created.get(subject)
+      if (before) {
+        const order = later(before, { at, key })
+        if (order >= 0) return order === 0 && before.createdAt === createdAt
+      }
+      created.set(subject, { createdAt, at, key })
+      return true
+    },
+
+    async createdAtStands(subject, createdAt, at, key) {
+      const row = created.get(subject)
+      return row?.at === at && row.key === key && row.createdAt === createdAt
+    },
+
+    async subjectDates(subjects) {
+      const wanted = new Set(subjects)
+      const dates = new Map<Subject, SubjectDates>()
+      const seen = (subject: Subject, at: number) => {
+        const row = dates.get(subject)
+        if (row) row.firstSeen = Math.min(row.firstSeen ?? at, at)
+        else dates.set(subject, { firstSeen: at })
+      }
+      for (const subject of wanted) {
+        const said = created.get(subject)
+        if (said) dates.set(subject, { createdAt: said.createdAt })
+        // Edges keep the first sighting even after its individual log row has been pruned.
+        for (const edge of bySubject.get(subject)?.values() ?? []) if (!edge.identifier.startsWith('review:')) seen(subject, edge.first)
+        for (const row of sightings.get(subject) ?? []) if (!row.identifier.startsWith('review:')) seen(subject, row.at)
+        for (const { touch } of touches.get(subject) ?? []) seen(subject, touch.at)
+        for (const row of consents.get(subject) ?? []) if (row.at !== 0 || row.source !== 'before history' || row.key !== undefined) seen(subject, row.at)
+        for (const key of flowsBy.get(subject) ?? []) seen(subject, flows.get(key)!.first)
+      }
+      for (const collection of [outcomes, calls, texts, sent]) {
+        for (const row of collection.values()) if (wanted.has(row.subject)) seen(row.subject, row.at)
+      }
+      return dates
     },
 
     async edgesOf(subjects) {
@@ -1158,6 +1199,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
     },
 
     async addDecision(decision) {
+      if (decision.action === 'forget') created.delete(decision.about[0]!)
       decisions.push({ ...decision, about: [...decision.about] })
     },
 
@@ -1245,7 +1287,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
   }
 
   /** Every collection, copied together, so what two of them share stays shared. */
-  const collections = { bySubject, byIdentifier, ignored, labels, byComponent, byCluster, sightings, touches, separated, flows, flowsBy, flowIds, consents, decisions, outcomes, values, calls, withheld, reservedBySubject, reservedByIdentifier, callLines, lineKinds, texts, sent, payments, results, spurned, leases, costs, reads, said, receipts, receiptSubjects, settings, events, once, deliveries }
+  const collections = { bySubject, byIdentifier, ignored, labels, byComponent, byCluster, sightings, created, touches, separated, flows, flowsBy, flowIds, consents, decisions, outcomes, values, calls, withheld, reservedBySubject, reservedByIdentifier, callLines, lineKinds, texts, sent, payments, results, spurned, leases, costs, reads, said, receipts, receiptSubjects, settings, events, once, deliveries }
   const snapshot = () => structuredClone({ ...collections, lastEvent, epoch, writes, built, jobs: outbox.jobs, ops: ops.kept })
   const restore = (kept: ReturnType<typeof snapshot>) => {
     const refill = (now: any, then: any) => {

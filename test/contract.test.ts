@@ -73,6 +73,69 @@ function everywhere(name: string, work: (opened: Opened) => Promise<unknown>) {
 const one = async (graph: AccountGraph, entry: RecordEntry): Promise<RecordResult> => (await graph.record({ entries: [entry] })).results[0]!
 const codeOf = (work: Promise<unknown>) => work.then((value) => ({ value }), (error) => (isFault(error) ? { code: error.code, retryable: error.retryable } : { raw: String(error) }))
 
+everywhere('a creation date belongs to the exact record and the newest dated profile stands in either arrival order', async ({ graph, local }) => {
+  const { engine } = await internalsOf(local)!()
+  const records = ['contact:one', 'contact:two']
+  const visitor = 'visitor:alias'
+  const read = () => engine.graph.subjectDates([...records, visitor])
+  const rows = []
+  for (const [i, subject] of records.entries()) {
+    const profile = { type: 'profile', at: AT, subject, facts: { device: 'alias' } } as const
+    const early = { ...profile, at: AT - 1, key: i + '🟣', createdAt: 1 }
+    // UTF-16 and UTF-8 order these two keys differently.
+    const lower = { ...profile, key: i + '\uE000', createdAt: 2 }
+    const winner = { ...profile, key: i + '\u{10000}', createdAt: 3 + i }
+    const order = [early, lower, winner]
+    const plain = { ...profile, key: i + 'plain', at: AT + 1 }
+    const { results } = await graph.record({ entries: [...(i ? order.reverse() : order), plain, early, lower, winner, plain, { ...winner, createdAt: 9 }, { ...plain, createdAt: 9 }] })
+    assert.deepEqual(results.slice(0, 8).map(r => r.ok && [r.value.duplicate, r.value.stands]), [
+      [false, true], [false, !i], [false, !i], [false, true], [true, false], [true, false], [true, true], [true, true],
+    ])
+    assert.deepEqual(results.slice(8).map(r => !r.ok && [r.reason, 'fields' in r && r.fields]), [['KEY_REUSED', ['createdAt']], ['KEY_REUSED', ['createdAt']]])
+    rows.push(results)
+  }
+  await one(graph, { type: 'profile', subject: visitor, facts: { device: 'alias' }, key: 'browser', at: AT - 100 })
+  assert.ok((await graph.decide({ key: 'merge', at: NOW, by: 'desk', action: 'merge', pairs: [{ a: records[0]!, b: records[1]! }] })).ok)
+  assert.deepEqual((await engine.graph.cluster(records[0]!))?.members, [...records, visitor])
+  const expected = [
+    [records[0], { firstSeen: AT - 1, createdAt: 3 }], [records[1], { firstSeen: AT - 1, createdAt: 4 }], [visitor, { firstSeen: AT - 100 }],
+  ]
+  assert.deepEqual([...(await read())].sort(), expected)
+  await engine.graph.rebuild()
+  assert.deepEqual([...(await read())].sort(), expected)
+  assert.ok((await graph.forget({ key: 'erase-one', at: NOW, by: 'desk', subjects: [records[0]!], platforms: 'report' })).ok)
+  assert.deepEqual([...(await read())].sort(), expected.slice(1))
+  return rows
+})
+
+everywhere('creation time is a positive whole millisecond relative to the profile time and only applies to records', async ({ graph, local }) => {
+  const { engine } = await internalsOf(local)!()
+  const entry = { type: 'profile', key: 'p', at: AT - 7 * 86_400_000, subject: 'contact:mine', facts: { email: 'pat@example.org' } } as const
+  const limit = entry.at + 86_400_000
+  const valid = { ...entry, createdAt: limit }
+  for (const bad of [
+    ...[0, -1, 1.5, '1', null, limit + 1, 8_640_000_000_000_001].map(createdAt => ({ ...entry, createdAt })),
+    ...['visitor:', 'caller:', 'call:'].map(prefix => ({ ...valid, subject: prefix + 'mine' })),
+  ]) {
+    assert.deepEqual(await codeOf(graph.record({ entries: [valid, { ...bad, key: 'bad' } as RecordEntry] })), { code: 'INPUT.MALFORMED', retryable: false })
+  }
+  assert.deepEqual(await engine.graph.subjectDates([entry.subject]), new Map())
+  const result = await one(graph, valid)
+  assert.ok(result.ok && !result.value.duplicate)
+  assert.deepEqual((await engine.graph.subjectDates([entry.subject])).get(entry.subject), { firstSeen: entry.at, createdAt: limit })
+  const refused = await one(graph, { ...valid, key: 'too-little', at: AT, createdAt: 1, facts: { address: { street: '1 Example St' } } })
+  assert.ok(!refused.ok && refused.reason === 'NO_FACT_USED')
+  assert.deepEqual((await engine.graph.subjectDates([entry.subject])).get(entry.subject), { firstSeen: entry.at, createdAt: limit })
+  const unlinked = { ...valid, key: 'by-email', subject: 'contact:unlinked', facts: {}, speaker: { email: 'desk@example.org' } }
+  assert.ok((await one(graph, unlinked)).ok)
+  assert.equal(await engine.graph.cluster(unlinked.subject), undefined)
+  assert.deepEqual((await engine.graph.subjectDates([unlinked.subject])).get(unlinked.subject), { createdAt: limit })
+  assert.ok((await graph.forget({ key: 'erase-unlinked', by: 'desk', subjects: [unlinked.subject], at: NOW, platforms: 'report' })).ok)
+  assert.deepEqual(await one(graph, unlinked), { type: 'profile', key: unlinked.key, ok: false, reason: 'FORGOTTEN' })
+  assert.deepEqual(await engine.graph.subjectDates([unlinked.subject]), new Map())
+  return result
+})
+
 const EVERY: RecordEntry[] = [
   { type: 'profile', key: 'p1', at: AT, subject: 'contact:1', event: 'signup', facts: { email: 'Pat.Lee+x@gmail.com', phone: '(555) 867-5309', device: 'd1', ip: '203.0.113.9', identifiers: ['payment:b', 'payment:a'] } },
   { type: 'arrival', key: 'a1', at: AT, subject: 'visitor:d1', source: 'google', medium: 'cpc', campaignId: '20111', clicks: { gclid: 'G1' }, custom: { office: 'north' } },
@@ -179,11 +242,19 @@ test('the pool option applies when a call rings and when it is recorded', async 
   }
 })
 
-everywhere('two that come at once are one', async ({ graph }) => {
+everywhere('two that come at once are one', async ({ graph, local }) => {
   for (const entry of EVERY) {
     const results = await Promise.all([one(graph, entry), one(graph, entry), one(graph, entry)])
     assert.deepEqual(results.map((result) => result.ok && result.value.duplicate).sort(), [false, true, true], entry.type)
   }
+  const subject = 'contact:tied'
+  const profile = { type: 'profile' as const, subject, key: 'same-key', at: AT, facts: { email: 'tied@example.org' } }
+  const entries = [1, 2].map(createdAt => ({ ...profile, createdAt }))
+  const results = await Promise.all(entries.map(entry => one(graph, entry)))
+  assert.equal(results.filter(row => row.ok && !row.value.duplicate && row.value.stands).length, 1)
+  assert.deepEqual(results.find(row => !row.ok), { type: 'profile', key: profile.key, ok: false, reason: 'KEY_REUSED', fields: ['createdAt'] })
+  const { engine } = await internalsOf(local)!()
+  assert.equal((await engine.graph.subjectDates([subject])).get(subject)?.createdAt, entries[results.findIndex(row => row.ok)]!.createdAt)
   return (await graph.report({ kind: 'campaigns', window })).value.total.visits
 })
 

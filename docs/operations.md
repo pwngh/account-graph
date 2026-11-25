@@ -127,7 +127,7 @@ Open `/review` and enter a token. Each view has its own address, so you can link
 | Address | View | Shows |
 | --- | --- | --- |
 | `/review#/accounts` | Accounts | The largest clusters, recent changes, and decisions. |
-| `/review#/accounts/account:42` | Accounts | One subject: its cluster, its links and their reasons, transfers, and sightings. |
+| `/review#/accounts/account:42` | Accounts | The subject, its cluster, links and their reasons, transfers, and sightings. The heading and Links table show “First seen here” and “Created in your system” for your records when known. Hover over a time for the exact timestamp. |
 | `/review#/journey/contact:42` | Journey | One person's timeline across all their subjects: visits, page activity, calls, steps and their values, consent, and decisions. |
 | `/review#/board/90` | Board | People by the furthest step they reached. Unreturned missed calls come first. |
 | `/review#/decide` | Matches | Related pairs in different clusters, one at a time, to join or separate. Keys: J, K, S to skip, U to undo. |
@@ -266,6 +266,8 @@ The limit protects the graph from a single sender, because a script can claim an
 Start the new version. At startup the server applies pending database changes in order. Completed changes stay committed if the process stops. Upgrades 29 and 30 commit together because a confirmed call and its old channel visit must agree about who can see it. Upgrade 31 commits its new columns before filling them. Starting the server again repeats any unfinished phase.
 
 Each change has a number and runs once. When several servers start together, one applies the changes and the others wait. What a caller must change is in the [changelog](../CHANGELOG.md#upgrading).
+
+Upgrade 36 creates an empty table for standing creation dates. First-seen times are read from existing records, so the upgrade needs no backfill. Older servers can keep writing profiles without dates, pruning and forgetting subjects during the rollout. Send profiles with `createdAt` to an upgraded server.
 
 ## Settings that must match
 

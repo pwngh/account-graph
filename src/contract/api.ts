@@ -43,6 +43,8 @@ export type RecordEntry =
 
 export interface ProfileEntry extends Keyed<'profile'> {
   readonly subject: string
+  /** When your system created this record, in epoch milliseconds. The newest statement by (`at`, `key`) stands. */
+  readonly createdAt?: At
   /** At least one, unless somebody speaks for them. */
   readonly facts: Facts
   readonly event?: string

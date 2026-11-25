@@ -75,6 +75,48 @@ both('an independent possible arrival appears after a corrected call loses its c
   assert.deepEqual([after.arrival, after.possible?.campaignId, after.possible?.confidence], [null, 'possible', 0.59])
 }, { policy: { kinds: { hardware: { weight: 0.59, dilution: 0 } } } })
 
+for (const [kind, open] of Object.entries(KINDS)) test(`a record's creation date stays out of matches, events, reports and ad deliveries, ${kind}`, async t => {
+  const payloads: string[] = []
+  const { graph, close } = await open({
+    stages: { sale: {} }, ads: { meta: { pixelId: '1', accessToken: 'test', siteUrl: 'https://example.org/' } },
+    fetch: async (_url: unknown, init: RequestInit) => {
+      payloads.push(String(init.body))
+      return Response.json({ events_received: 1 })
+    },
+  })
+  t.after(close)
+  const subjects = ['contact:one', 'contact:two']
+  const profiles = subjects.map((subject, n) => ({ type: 'profile' as const, subject, at: AT, key: 'profile-' + n, facts: { email: `contact${n}@example.org` } }))
+  assert.ok((await graph.record({ entries: profiles })).results.every(row => row.ok))
+  const events = () => graph.events({ after: null, limit: 100 })
+  const before = await events()
+  assert.ok(before.ok)
+  const { engine } = await internalsOf(graph)!()
+  const identifiers = () => engine.store.read(async tx => (await tx.edgesOf(subjects)).map(edge => edge.identifier).sort())
+  const known = await identifiers()
+  const match = () => graph.lookup({ kind: 'match', facts: profiles[0]!.facts, at: AT })
+  const baseline = await match()
+  const createdAt = 1_456_789_012_345
+  // Reporting the same date on two existing records must leave the graph as the reviewer found it.
+  assert.ok((await graph.record({ entries: profiles.map(row => ({ ...row, key: row.key + '-dated', createdAt })) })).results.every(row => row.ok))
+  assert.deepEqual(await events(), before)
+  assert.deepEqual(await identifiers(), known)
+  assert.deepEqual(await match(), baseline)
+  const people = await graph.lookup({ kind: 'person', subjects, at: NOW })
+  assert.deepEqual(people.people.map(person => person.members), subjects.map(subject => [subject]))
+  const tie = await one(graph, { type: 'transfer', key: 'between', at: AT, from: subjects[0]!, to: subjects[1]!, amount: 1 })
+  assert.ok(tie.type === 'transfer' && tie.ok)
+  assert.deepEqual([tie.value.score, tie.value.relation], [0, 'none'])
+  assert.ok((await one(graph, conversion({ subject: subjects[0], email: profiles[0]!.facts.email, actions: { meta: 'Lead' } }))).ok)
+  await runWorkers(graph)
+  assert.deepEqual(payloads.map(body => JSON.parse(body).data.map((event: { event_id: string }) => event.event_id)), [['c']])
+  const journey = await graph.lookup({ kind: 'journey', subject: subjects[0]! })
+  const board = await graph.report({ kind: 'pipeline', at: NOW, days: 1 })
+  assert.ok(board.value.columns.some(column => column.rows.some(row => row.subject === subjects[0])))
+  const disclosed = JSON.stringify([people, journey, board, await events(), ...payloads])
+  for (const text of ['createdAt', 'firstSeen', String(Math.floor(createdAt / 1000)), new Date(createdAt).toISOString().slice(0, 10)]) assert.ok(!disclosed.includes(text), text)
+})
+
 both('what a platform answers cannot stop the rest', async (graph) => {
   await graph.record({ entries: [conversion({ key: 'bad', actions: { meta: 'Lead' }, email: 'a@example.com' }), conversion({ key: 'good', subject: 'b', actions: { meta: 'Other' }, email: 'b@example.com' })] })
   await runWorkers(graph)
@@ -195,6 +237,58 @@ both('a list is not ended by what could have been seen at its beginning', async 
   ] })
   assert.ok(results.every((each) => each.ok))
   assert.ok((await graph.decide({ key: 'd', at: AT, by: 'x', action: 'split', pairs: [{ a: 'é'.repeat(256), b: 'è'.repeat(256) }] })).ok)
+})
+
+both('the reviewer reads the dates of the account and all its linked and separated IDs together', async graph => {
+  const { engine } = await internalsOf(graph)!()
+  const who = 'contact:self'
+  const linked = 'contact:linked'
+  const apart = '__proto__'
+  // The graph draws only 24 neighbors. Every row in the links table still needs its dates.
+  const empty = Array.from({ length: 25 }, (_, i) => 'contact:empty' + i)
+  const visitor = 'visitor:desk'
+  const reads: string[][] = []
+  const dates = engine.graph.subjectDates
+  engine.graph.subjectDates = subjects => {
+    reads.push([...subjects].sort())
+    return dates(subjects)
+  }
+  const server = createServer(createEdge(graph, { token: 'service', reviewers: { dana: 'reviewer' }, origins: ['https://example.org'] })).listen(0, '127.0.0.1')
+  await new Promise(resolve => server.once('listening', resolve))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const path = base + '/review/api/subject?subject='
+  const record = (entries: object[]) => fetch(base + '/v1/record', { method: 'POST', headers: { authorization: 'Bearer service', 'content-type': 'application/json' }, body: JSON.stringify({ entries }) })
+  try {
+    const self = { type: 'profile', key: 'p1', at: AT, subject: who, createdAt: AT - 500, facts: { email: 'self@example.org', device: 'desk' } }
+    const invalid = await record([self, { ...self, key: 'bad', createdAt: 'yesterday' }])
+    assert.equal(invalid.status, 400)
+    const accepted = await record([self,
+      { type: 'profile', key: 'p2', at: AT + 1, subject: linked, createdAt: AT - 300, facts: { email: 'self@example.org' } },
+      { type: 'profile', key: 'p3', at: AT + 2, subject: apart, createdAt: AT - 800, facts: { email: 'apart@example.org' } },
+      { type: 'profile', key: 'p4', at: AT + 3, subject: visitor, facts: { device: 'desk' } },
+    ])
+    assert.equal(accepted.status, 200)
+    assert.deepEqual(((await accepted.json()) as any).results.map((result: RecordResult) => result.ok && result.value.duplicate), [false, false, false, false])
+    await engine.graph.separateAll([apart, ...empty].map(b => ({ a: who, b })))
+    await engine.graph.touch({ subject: 'contact:arrival', at: AT - 100, source: 'search' })
+    const browser = await fetch(path + who, { headers: { origin: 'https://example.org' } })
+    assert.equal(browser.status, 401)
+    assert.deepEqual(reads, [])
+    const read = async (subject: string) => (await (await fetch(path + subject, { headers: { authorization: 'Bearer reviewer' } })).json()) as any
+    const profile = await read(who)
+    assert.deepEqual(profile.links.map((link: { subject: string }) => link.subject).sort(), [linked, visitor])
+    assert.deepEqual(profile.separated, [apart, ...empty].sort())
+    assert.deepEqual(profile.dates, { [who]: { firstSeen: AT, createdAt: AT - 500 }, [linked]: { firstSeen: AT + 1, createdAt: AT - 300 }, [apart]: { firstSeen: AT + 2, createdAt: AT - 800 }, ...Object.fromEntries(empty.map(id => [id, {}])), [visitor]: {} })
+    assert.deepEqual(reads, [[who, linked, apart, ...empty].sort()])
+    assert.deepEqual(await read('contact:arrival'), { subject: 'contact:arrival', known: false, dates: { 'contact:arrival': { firstSeen: AT - 100 } } })
+    assert.deepEqual(await read('contact:none'), { subject: 'contact:none', known: false })
+    // A call nobody owns is in no journey, and its time is not told by its id.
+    await record([{ type: 'call', key: 'C9', direction: 'inbound', from: '+12025550177', to: '+12025550100', at: AT + 5, duration: 20 }, { type: 'call_update', key: 'C9u', at: AT + 6, call: 'C9', change: { kind: 'party', role: 'unknown', by: 'desk' } }])
+    assert.deepEqual(await read('call:C9'), { subject: 'call:C9', known: false })
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>(resolve => server.close(() => resolve()))
+  }
 })
 
 both('health shows the rebuild command until the stored groups have been rebuilt', async (graph) => {

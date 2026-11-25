@@ -10,7 +10,8 @@ import { browse, chrome, pause, until, without } from './chrome.ts'
 const T0 = 1_700_000_000_000
 test('the reviewer screen signs with the token, keeps what was typed, and refuses an outdated decision', { skip: without, timeout: 180_000 }, async (t) => {
   assert.ok(chrome, 'CI needs a browser')
-  const graph = createGraph(createMemoryStore())
+  const store = createMemoryStore()
+  const graph = createGraph(store)
   await graph.observe([1, 2, 3].map((n) => ({ subject: `account:${n}`, identifiers: ['email:e'], at: T0 })))
   await graph.observe({ subject: 'caller:1', identifiers: [phone('7135550194')], at: T0 })
   await graph.observe([1, 2].map((n) => ({ subject: `person:${n}`, identifiers: [email('both@example.com')], at: T0 })))
@@ -247,6 +248,7 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   const look = (what: string) => run(`(() => { const s = document.getElementById('subject'); s.value = ${JSON.stringify(what)}; s.dispatchEvent(new Event('input')); document.getElementById('find').requestSubmit() })()`)
   await look('(713) 555-0194')
   await until('the caller', async () => (await text('#detail h3')) === 'caller:1')
+  assert.doesNotMatch(await text('#detail > section:first-child'), /First seen here|Created in your system/)
   await look('both@example.com')
   await until('the choice', async () => (await text('#notice')).includes('person:1, person:2'))
   await look('nobody@example.com')
@@ -373,6 +375,30 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   await until('the refund', async () => (await text('#view')).includes('from 200 USD to 150 USD · Refund'))
   await run(`location.hash = '#/channels'`)
   await until('its column', () => run(`[...document.querySelectorAll('th')].some((th) => th.textContent === 'Refunded') && ![...document.querySelectorAll('th')].some((th) => th.textContent === 'Written off')`))
+
+  const record = 'contact:dates'
+  const related = 'contact:linked'
+  const separated = 'contact:apart'
+  const others = ['visitor:dates', 'caller:dates', 'call:dates']
+  await graph.observe([record, related, separated, ...others].map((subject, i) => ({ subject, at: T0 + i, identifiers: [i < 2 ? 'email:dates' : 'device:' + subject] })))
+  await store.write(async tx => {
+    await tx.setCreatedAt(record, T0 - 100, T0, 'born')
+    await tx.setCreatedAt(separated, T0 - 300, T0 + 2, 'apart')
+  })
+  for (const id of [separated, ...others]) await graph.separate(record, id)
+  await run(`location.hash = '#/accounts/contact%3Adates'`)
+  await until('the dates on the account', async () => (await text('#detail h3')) === record)
+  const lines = (selector: string) => run(`[...document.querySelectorAll(${JSON.stringify(selector)})].map(line => [line.firstChild.textContent.trim(), line.querySelector('time').dateTime, line.querySelector('time').title.endsWith(line.querySelector('time').dateTime)])`)
+  const first = (at: number) => ['First seen here', new Date(at).toISOString(), true]
+  const created = (at: number) => ['Created in your system', new Date(at).toISOString(), true]
+  assert.deepEqual(await lines('#detail > section:first-child > .meta'), [first(T0), created(T0 - 100)])
+  const row = (subject: string) => `.links td.who:has(a[title="${subject}"])`
+  assert.deepEqual(await lines(row(related) + ' .meta'), [first(T0 + 1)])
+  assert.deepEqual(await lines(row(separated) + ' .meta'), [first(T0 + 2), created(T0 - 300)])
+  for (const id of others) {
+    assert.ok((await text(row(id))).includes(id))
+    assert.deepEqual(await lines(row(id) + ' .meta'), [])
+  }
 
   await enter('service')
   await until('the service note', async () => (await text('#name')) === 'Service token')

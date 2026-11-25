@@ -89,7 +89,7 @@ Each entry has `type`, `key` and `at`. A field with `?` may be left out.
 
 | Type | Fields | Answers |
 | --- | --- | --- |
-| `profile` | `subject`, `facts`, `event?`, `speaker?` | `changes`, `notes`. See [identify](identify.md). |
+| `profile` | `subject`, `facts`, `event?`, `speaker?`, `createdAt?` | `changes`, `notes`. See [identify](identify.md). |
 | `arrival` | `subject`, `source?`, `medium?`, `campaign?`, `campaignId?`, `adGroupId?`, `adId?`, `term?`, `content?`, `landing?`, `referrer?`, `clicks?`, `custom?` | `subject` |
 | `cost` | `rows`, 1 to 5,000: `day`, `source`, `amount`, `currency`, `campaignId?`, `campaign?`, `clicks?`, `impressions?`, `conversions?`, `conversionValue?` | `written`, `older`: rows written, and rows a newer reading already had |
 | `conversion` | `subject`, `stage`, `value?`, `currency?`, `actions?`, `channel?`, `userAgent?`, `email?`, `phone?`, `consent?`, `tags?` | `value`, `currency`, `deliveries` |
@@ -105,6 +105,7 @@ Each entry has `type`, `key` and `at`. A field with `?` may be left out.
 | Field | Values |
 | --- | --- |
 | `facts` | At least one, unless there is a `speaker`: `email`, `phone`, `device`, `ip`, `address`, `name`, `dob`, `identifiers` |
+| Profile `createdAt` | When your system created this exact record, in whole epoch milliseconds above zero and at most one day after the profile's own `at`. A subject starting with `visitor:`, `caller:` or `call:` cannot have this field. |
 | `clicks` | `gclid`, `gbraid`, `wbraid`, `fbclid`, `fbp`, `msclkid`, `ttclid` |
 | `custom` | At most 10 names of your own, each with text up to 256 characters |
 | `actions` | What it counts as on each platform, `{ "google": "987654321" }`. Left out, the stage's own. |
@@ -207,7 +208,7 @@ Emails and phones are compared as they are normalized, currencies in capitals, i
 
 > **Keep `at` with the key.** A retry that stamps a new `at` is refused with `KEY_REUSED` for most types.
 
-A key is remembered for a year, or longer until receipts are [pruned](operations.md#receipts). A key of somebody who was deleted is remembered for good, as a keyed hash.
+A key is remembered for a year, or longer until receipts are [pruned](operations.md#receipts). A key still known when somebody is deleted is remembered for good, as a keyed hash.
 
 A call or a conversion can come from two reporters, such as Twilio and your backend. Both name it by one id, so it is one record.
 
@@ -217,6 +218,7 @@ Entries may arrive late and in any order. Nothing is refused for being late.
 
 | What | Which stands |
 | --- | --- |
+| Profile `createdAt` | The newest profile with the field for that subject, by `at`, then by the greater key in UTF-8 byte order. A profile without it leaves the date in place. |
 | `correct`, `not_lead` and `lead`, call results, call returns, call parties, `consent` | The newest by `at`, then by `key`. An accepted older statement is kept and answers `stands: false`. |
 | A cost row | The newest `at` for its day, source and campaign |
 | The `code` of a `call` | The first that names a visitor, by when the call was. See [a code read out](calls.md#a-code-read-out). |
@@ -224,6 +226,8 @@ Entries may arrive late and in any order. Nothing is refused for being late.
 | `payment` | All of them. From the first on, the conversion is worth what was paid less what was refunded. |
 
 A conversion without payments is worth the newest `correct`, or else its first value, less every refund and write-off that was not reversed. It is never worth less than zero.
+
+To correct a creation date, send another profile with the corrected `createdAt`, a new key and a later `at`. Reusing the original key with a different date returns `KEY_REUSED` while the receipt is kept. After pruning, the entry is new again. If its `at` and key tie the standing statement, the existing date stays. On a dated profile, `stands` tells whether that exact statement stands, including on a retry.
 
 | Before what it is about | Result |
 | --- | --- |
@@ -473,3 +477,7 @@ Browsers post to `/collect` without a token. The [script tag](operations.md#scri
 | `GET /health` | `{"ok":true}` once the database answers. While stored groups are due a rebuild, `warning` gives the command. |
 
 A Twilio request with a missing or wrong signature gets 403. A call or text that is already known, or whose person was deleted, gets the usual answer, so Twilio does not send it again.
+
+`GET /review/api/subject?subject=contact:7` returns a `dates` object keyed by the requested ID and the IDs in `links` and `separated`. For example, `"contact:7": {"firstSeen":1795460000000,"createdAt":1795300000000}`. Each date is omitted when unknown. An unknown ID with no dates keeps its usual `known: false` answer. The route requires a service or reviewer token.
+
+`firstSeen` is the earliest retained event time on that exact ID. It includes identifier sightings, visits, outcomes, calls and texts filed under the ID, dated consent answers, links sent and transfers in either direction. Each identifier edge keeps its first sighting time even after the individual sighting is pruned. Staff join marks, audit decisions, receipt times and the reported creation date are excluded. An earlier event reported later can move this date earlier. Other members of the group keep their own dates.
