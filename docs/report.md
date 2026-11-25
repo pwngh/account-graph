@@ -87,7 +87,7 @@ curl -X POST https://graph.example.org/v1/record -H "authorization: Bearer $GRAP
   { "type": "conversion", "key": "enroll-1001", "at": 1795460000000, "subject": "account:42", "stage": "enrolled", "value": 200, "currency": "USD" }] }'
 ```
 
-Add `actions` to [send the outcome to the ad platforms](library.md#what-sending-does). Without one, here or in [`STAGES`](#steps), the outcome is counted in the report only.
+Add `actions` to [send the outcome to the ad platforms](providers.md#what-sending-does). Without one, here or in [`STAGES`](#steps), the outcome is counted in the report only.
 
 ## Steps
 

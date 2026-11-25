@@ -197,6 +197,30 @@ META_ADS_TOKEN=…
 
 Both platforms also report conversion counts. Set `GOOGLE_ADS_CONVERSIONS=true`, and `META_ADS_CONVERSIONS=` the action's name in Meta's reports. [The report](report.md#platform-reported-conversions) compares them with credited outcomes. See [Google's metrics](https://developers.google.com/google-ads/api/fields/v26/metrics) and [Meta's action statistics](https://developers.facebook.com/docs/marketing-api/reference/ads-action-stats/).
 
+## What sending does
+
+| Event | Result |
+| --- | --- |
+| The platform accepts the request | `sent` |
+| Rate limit, outage, bad credential, network error | Stays `pending`. Retried after 30 seconds, doubling to an hour, shortened by up to half |
+| Still failing after 8 tries | `failed`, with the last error |
+| The platform rejects a request for one bad event | Each event is sent alone, and only the bad one is `failed` |
+| Without a trusted click, email or phone | Stays `pending` with the note `no_match_key`, and is looked at again in case the person is tied to a click. `skipped` seven days after it happened |
+| The person, or the browser that clicked, refused ad measurement, including after an outcome that said yes | `skipped`: `consent_denied` |
+| The outcome is older than the platform accepts: 7 days for Meta, 90 for Microsoft | `skipped`: `too_old` |
+| A click below 0.9 confidence that is not in the person's cluster, with an email or phone | Sent with the email or phone alone |
+
+The click is worked out when a conversion is sent, so evidence that arrived after the conversion still counts. Each platform gets its own click id, and the email and phone hashed the way it matches them.
+
+| Platform | Match data |
+| --- | --- |
+| Google | One click id: `gclid`, else `gbraid`, else `wbraid` |
+| Meta | `fbc`, built from `fbclid` and the click time, with `fbp` where the site runs Meta's pixel |
+| Microsoft | `msclkid` |
+| TikTok | `ttclid` |
+
+Delivery is at least once. A conversion sent twice after a crash carries the same key. Meta keeps the first copy, and Google treats the second as a restatement of the same value. A worth that changes is sent again to Google, which overwrites the value it holds.
+
 ## Limitations
 
 The setup steps come from each provider's pages, read in November 2026.
