@@ -68,7 +68,7 @@ your site, phones, forms ──▶ server ──▶ reviewer screen
 
 | Step | What to do | Done when |
 | --- | --- | --- |
-| 1. Server | Run it on a machine of yours, with HTTPS in front. Use [`examples/household.json`](matching.md#contacts-entered-by-staff) if staff enter contacts. [Operations](operations.md) | `/health` answers over HTTPS |
+| 1. Server | Run it on a machine of yours, with HTTPS in front. Use [`examples/intake.json`](matching.md#an-intake-desk) where mixing two people's records must not happen, or [`examples/household.json`](matching.md#contacts-entered-by-staff) if staff enter contacts. [Operations](operations.md) | `/health` answers over HTTPS |
 | 2. Backup | Dump it, restore the dump into another database, and look at both. [Backups](operations.md#backups) | `account-graph verify` lists no changes on the copy |
 | 3. Site | Add the [script tag](operations.md#script-tag) to every page, with your consent banner's answer | Your own visit is in the screen, with its ad |
 | 4. Calls | Record each call, or take your provider's webhook. [Calls](calls.md), [`examples/call-tracking.ts`](../examples/call-tracking.ts) | A test call is tied to your own tap |
