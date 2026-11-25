@@ -9,7 +9,7 @@ const ago = (at, now) => reviewDisplay.time(at, now)
 /** The setting that watches each feed, and how its records come. */
 const WATCHED = {
   touches: ['QUIET_TOUCHES_HOURS', 'Visits arrive at any hour.'], calls: ['QUIET_CALLS_HOURS', 'Any call counts, inbound or outbound.'],
-  results: ['QUIET_RESULTS_HOURS', 'A result is recorded when your phone system or staff report it.'], costs: ['QUIET_COSTS_HOURS', 'Costs arrive when the platform sends them, often a day late.'],
+  results: ['QUIET_RESULTS_HOURS', 'A result is recorded when your phone system or staff report it.'], costs: ['QUIET_COSTS_HOURS', 'Costs arrive when the platform sends them, which can be a day or more later.'],
 }
 DETAILS['health.feed'] = {
   now({ feed, at, limits } = {}) {

@@ -181,7 +181,7 @@ DETAILS['calls.answered'] = {
         ['Waiting · unknown result', both(total?.waiting, total?.unknown)], ['Weakest hour, of 5 calls or more', weakest && `${WEEKDAYS[weakest.weekday - 1]} ${hourSpan(weakest.hour)}, ${amount(weakest.answered)} of ${amount(weakest.calls)}`],
         previous({ summary, then }, ({ answered, calls }) => percent(answered / calls))],
       sum: rate === undefined ? undefined : `${percent(rate)} = ${amount(total.answered)} answered ÷ ${amount(total.calls)} ${total.calls === 1 ? 'call' : 'calls'}`,
-      say: [target && rate !== undefined && goal(percent(target), rate >= target, `${amount(short)} more answered ${short === 1 ? 'call' : 'calls'} would reach it`), 'If calls hold steady and this falls, check who was free at those hours.'],
+      say: [target && rate !== undefined && goal(percent(target), rate >= target, `${amount(short)} more answered ${short === 1 ? 'call' : 'calls'} would reach it`), 'If calls hold steady and this falls, look for the hours in Calls by Hour.'],
       links: [toMissed(), byHours(), docs('Call Results', 'calls.md#call-results')] }
   },
   more: (data) => lastPeriods(data ?? {}, ({ answered, calls }) => answered / calls, percent),
@@ -196,7 +196,7 @@ DETAILS['calls.missed'] = {
       rows: [['Missed', counted(total?.missed)], ['Voicemail', counted(total?.voicemail)], ['After hours', counted(after)], ['In open hours', counted(after === undefined ? undefined : lost - after)],
         ['Returned', counted(total?.returned)], ['Called again', counted(total?.calledAgain)], ['Number withheld', counted(total?.hidden)], ['Peak hour', hour && `${hour.at.map(hourSpan).join(', ')} · ${amount(hour.most)}`]],
       sum: total?.calls > 0 ? `${percent(lost / total.calls)} = ${amount(lost)} missed ÷ ${amount(total.calls)} ${total.calls === 1 ? 'call' : 'calls'}` : undefined,
-      say: ['Nobody spoke to these callers. A voicemail is one of them.', closed ? ['In open hours', ' is the part staff can change.'] : undefined],
+      say: ['Nobody spoke to these callers. Voicemails are counted with them.', closed ? ['In open hours', ' is the part staff can change.'] : undefined],
       links: [toMissed(), docs('Opening Hours', 'operations.md#opening-hours')] }
   },
 }
