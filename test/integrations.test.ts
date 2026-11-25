@@ -290,7 +290,10 @@ test('the reviewer screen is a locked-down shell, and its data needs the token',
     assert.match(policy, /connect-src 'self'/)
     assert.match(policy, /form-action 'none'/)
     assert.equal(html.includes('\r'), false)
-    assert.equal(/https?:\/\/(?!www\.w3\.org\/2000\/svg)/.test(html), false, 'the page loads nothing from outside')
+    // The one address outside is the project's own docs, which a card links to, and which nothing on the page loads.
+    const outside = 'https://github.com/pwngh/account-graph/blob/main/docs/'
+    assert.equal(html.split(outside).length, 2)
+    assert.equal(/https?:\/\/(?!www\.w3\.org\/2000\/svg)/.test(html.replace(outside, '')), false, 'the page loads nothing from outside')
     assert.equal(html.includes('innerHTML'), false)
 
     assert.equal((await fetch(`${base}/subject?subject=account:1`)).status, 401)

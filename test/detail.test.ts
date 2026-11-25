@@ -235,10 +235,10 @@ for (const [store, open] of Object.entries(STORES)) test(`every card is true to 
     panels[kind] = await page.says('.chart .told')
     assert.match(panels[kind]!.UTC!, /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/)
   }
-  const visits = panels.visit!
+  // Seen with the browser the contact was seen with, which the account says and the journey does not.
+  assert.equal(panels.sighting!['IDs sharing this device'], '2')
   assert.deepEqual(panels.value!, { ...panels.value, From: '10 USD', To: '25 USD', Outcome: `inquiry, ${await written(page, ago(-67))}` })
   assert.deepEqual([panels.consent!['Ad measurement'], panels.consent!.Source, panels.link!.Purpose, panels.link!.Opened, panels.link!['Still valid'], panels.text!.Text, panels.decision!.By, panels.decision!.Reason], ['Granted', 'banner', 'form', 'Not opened', 'No', 'Sent', 'system desk', 'answered by staff'])
-  assert.ok(visits.UTC)
 
   // Nothing a card says is a number of anybody's, or an identifier.
   const everything = JSON.stringify([answered, inbound, missed, returned, waits, listed, told, hidden, person, waiting, texted, overdue, panels])
