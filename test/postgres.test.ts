@@ -8,6 +8,7 @@ import { malformedSuite } from './malformed.suite.ts'
 import { opsSuite } from './ops.suite.ts'
 import { outboxSuite } from './outbox.suite.ts'
 import { counts, suite } from './suite.ts'
+import { unitSuite } from './unit.suite.ts'
 
 const url = process.env.DATABASE_URL
 
@@ -393,4 +394,12 @@ if (!url) {
   outboxSuite('postgres store', open)
   opsSuite('postgres store', open)
   malformedSuite('postgres store', open)
+  unitSuite('postgres store', async () => {
+    const opened = await open()
+    const schema = `ag_test_${process.pid}_${count - 1}`
+    const tables = (await pool.query('select table_name as name from information_schema.tables where table_schema = $1 order by 1', [schema])).rows.map((row) => row.name)
+    // A number a rolled back write took is not given back, so generated ids are left out.
+    const dump = async () => Object.fromEntries(await Promise.all(tables.map(async (name) => [name, (await pool.query(`select to_jsonb(r) - 'id' as row from ${schema}.${name} r`)).rows.map((row) => JSON.stringify(row.row)).sort()])))
+    return { ...opened, dump }
+  })
 }

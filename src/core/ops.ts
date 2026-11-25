@@ -283,7 +283,7 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
 }
 
 /** Where a memory store keeps what runs by itself. `fed` is how its writes say what they fed, and `forget` how it loses a subject. */
-export function createMemoryOps(): OpsStore & { fed(feed: Feed, at: number): void; forget(subject: string): void } {
+export function createMemoryOps(): OpsStore & { fed(feed: Feed, at: number): void; forget(subject: string): void; kept: Record<'feeds' | 'jobs' | 'runs' | 'alerts', Map<string, unknown>> } {
   const feeds = new Map<Feed, FeedNote>()
   const jobs = new Map<string, Omit<JobRun, 'open'> & { run?: string }>()
   const runs = new Map<string, { name: string; at: number }>()
@@ -291,6 +291,7 @@ export function createMemoryOps(): OpsStore & { fed(feed: Feed, at: number): voi
   const open = () => [...alerts.values()].filter((alert) => alert.delivered === undefined).sort((x, y) => x.at - y.at)
   const bare = ({ delivered: _, tried: __, ...alert }: KeptAlert & { delivered?: number; tried: number }): KeptAlert => alert
   return {
+    kept: { feeds, jobs, runs, alerts },
     fed: (feed, at) => void feeds.set(feed, { ...feeds.get(feed), last: Math.max(at, feeds.get(feed)?.last ?? 0) }),
     forget(subject) {
       for (const [key, alert] of alerts) if (alert.subject === subject) alerts.delete(key)

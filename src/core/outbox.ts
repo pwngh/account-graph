@@ -624,7 +624,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
 }
 
 /** An outbox store in process memory, for tests and demos. `recorded` says whether a job's outcome is on record. */
-export function createMemoryOutbox(recorded: (job: Job) => boolean = () => true): OutboxStore & { remove(subject: Subject): Promise<Job[]> } {
+export function createMemoryOutbox(recorded: (job: Job) => boolean = () => true): OutboxStore & { remove(subject: Subject): Promise<Job[]>; jobs: Map<string, Job> } {
   const jobs = new Map<string, Job>()
   const key = (job: { transactionId: string; target: string }) => `${job.transactionId}\u0000${job.target}`
   const unchanged = (job: Job) => {
@@ -632,6 +632,7 @@ export function createMemoryOutbox(recorded: (job: Job) => boolean = () => true)
     return stored !== undefined && stored.rev === job.rev
   }
   return {
+    jobs,
     async add(job, counted) {
       if (!jobs.has(key(job)) && counted && !recorded(job)) return undefined
       if (!jobs.has(key(job))) jobs.set(key(job), structuredClone({ ...job, rev: 0 }))

@@ -1,16 +1,18 @@
 import { malformed } from '../contract/fault.ts'
 import { createMemoryOps } from './ops.ts'
 import { createMemoryOutbox } from './outbox.ts'
+import type { OutboxStore } from './outbox.ts'
 import { standingFirst } from './store.ts'
 import type { Store, Tx } from './store.ts'
 import { CLICK_IDS } from './touch.ts'
 import type { CallResult, Consent, ConsentAnswer, CostRow, Counted, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, NumberedChange, OutcomeValue, Payment, SentLink, Sighting, Subject, Touch } from '../contract/types.ts'
 
 /**
- * Keeps the graph in process memory. Writes run one at a time; a write that
- * throws is not rolled back, so use it for tests, demos, and small graphs.
+ * Keeps the graph in process memory, for tests, demos, and small graphs.
+ * Writes run one at a time. A write that throws is undone only where it was
+ * asked to be whole, by a copy of everything made before it.
  */
-export function createMemoryStore(): Store {
+export function createMemoryStore(): Store & { snapshot(): unknown } {
   const outbox = createMemoryOutbox((job) => outcomes.get(job.transactionId)?.subject === job.subject)
   const bySubject = new Map<Subject, Map<Identifier, Edge>>()
   const byIdentifier = new Map<Identifier, Map<Subject, Edge>>()
@@ -69,6 +71,8 @@ export function createMemoryStore(): Store {
   }
 
   const tx: Tx = {
+    outbox,
+    nested: (work) => work(),
     async addSightings(rows) {
       const added = new Map<Identifier, number>()
       for (const sighting of rows) {
@@ -720,14 +724,44 @@ export function createMemoryStore(): Store {
     },
   }
 
+  /** Every collection, copied together, so what two of them share stays shared. */
+  const collections = { bySubject, byIdentifier, ignored, labels, byComponent, byCluster, sightings, touches, separated, flows, flowsBy, flowIds, consents, decisions, outcomes, values, calls, texts, sent, payments, results, spurned, leases, costs, moves }
+  const snapshot = () => structuredClone({ ...collections, lastMove, writes, built, jobs: outbox.jobs, ops: ops.kept })
+  const restore = (kept: ReturnType<typeof snapshot>) => {
+    const refill = (now: any, then: any) => {
+      if (Array.isArray(now)) now.splice(0, Infinity, ...then)
+      else {
+        now.clear()
+        for (const each of then) now instanceof Map ? now.set(each[0], each[1]) : now.add(each)
+      }
+    }
+    for (const name of Object.keys(collections) as (keyof typeof collections)[]) refill(collections[name], kept[name])
+    refill(outbox.jobs, kept.jobs)
+    for (const name of Object.keys(ops.kept) as (keyof typeof ops.kept)[]) refill(ops.kept[name], kept.ops[name])
+    ;({ lastMove, writes, built } = kept)
+  }
+
   let tail: Promise<unknown> = Promise.resolve()
   const queue = <T>(work: (tx: Tx) => Promise<T>): Promise<T> => {
     const run = tail.then(() => work(tx))
     tail = run.catch(() => undefined)
     return run
   }
+  const write = <T>(work: (tx: Tx) => Promise<T>, { whole = false } = {}) => queue(async (bound) => {
+    const before = whole ? snapshot() : undefined
+    writes += 1
+    try {
+      return await work(bound)
+    } catch (error) {
+      if (before) restore(before)
+      throw error
+    }
+  })
 
-  return { write: (work) => queue((bound) => (writes += 1, work(bound))), read: queue, outbox, ops }
+  // Asked for from outside a write, a job is changed in a turn of its own, so a write undone takes nothing of it along.
+  const queued = <A extends unknown[], R>(call: (...given: A) => Promise<R>) => (...given: A) => queue(() => call(...given))
+  const jobs: OutboxStore = { add: queued(outbox.add), claim: queued(outbox.claim), swap: queued(outbox.swap), standing: queued(outbox.standing), get: queued(outbox.get), list: queued(outbox.list), counts: queued(outbox.counts), oldestDue: queued(outbox.oldestDue) }
+  return { write, read: queue, outbox: jobs, ops, snapshot }
 }
 
 const copied = (decision: Decision): Decision => ({ ...decision, about: [...decision.about] })

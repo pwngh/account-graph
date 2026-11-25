@@ -60,6 +60,18 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
   const callRows = `select c.*, r.answered, r.voicemail, r.waited, r.returned_at, r.recorded_at as result_at from ${t('call')} c left join ${t('call_result')} r on r.id = c.id`
 
   const bind = (db: Queryable): Tx => ({
+    outbox: outboxOn(db),
+    async nested(work) {
+      await db.query('savepoint inside')
+      try {
+        const result = await work()
+        await db.query('release savepoint inside')
+        return result
+      } catch (error) {
+        await db.query('rollback to savepoint inside; release savepoint inside').catch(() => undefined)
+        throw error
+      }
+    },
     async addSightings(rows) {
       // Fold repeats first: one statement cannot upsert the same edge twice.
       const folded = new Map<string, Edge>()
@@ -858,11 +870,11 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
 
   // Each outbox call is one statement, so it needs neither the write lock nor a transaction.
   const toJob = (row: any): Job => ({ ...row.job, state: row.state, due: Number(row.due), attempts: row.attempts, rev: Number(row.rev) })
-  const outbox: OutboxStore = {
+  const outboxOn = (db: Queryable): OutboxStore => ({
     async add(job, counted = false) {
       // The outcome is held until the job is there, so a deletion waits for it and then finds the job to delete.
       const there = counted ? `from (select 1 from ${t('outcome')} where transaction_id = $1 and subject = $6::jsonb->>'subject' for key share) as o` : ''
-      const { rows } = await pool.query(
+      const { rows } = await db.query(
         `with added as (
            insert into ${t('conversion')} (transaction_id, target, state, due, attempts, job) select $1, $2, $3, $4::bigint, $5::int, $6::jsonb ${there}
            on conflict (transaction_id, target) do nothing returning *
@@ -871,11 +883,11 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
         [job.transactionId, job.target, job.state, job.due, job.attempts, job],
       )
       // Another call may have added it in the same moment, too late for the statement above to see. A new one sees it.
-      const row = rows[0] ?? (await pool.query(`select * from ${t('conversion')} where transaction_id = $1 and target = $2`, [job.transactionId, job.target])).rows[0]
+      const row = rows[0] ?? (await db.query(`select * from ${t('conversion')} where transaction_id = $1 and target = $2`, [job.transactionId, job.target])).rows[0]
       return row && toJob(row)
     },
     async claim(now, lease, limit) {
-      const { rows } = await pool.query(
+      const { rows } = await db.query(
         `update ${t('conversion')} c set attempts = c.attempts + 1, due = $1::bigint + $2::bigint, rev = c.rev + 1
          where (c.transaction_id, c.target) in (
            select transaction_id, target from ${t('conversion')}
@@ -887,14 +899,14 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       return rows.map(toJob).sort((x, y) => (x.transactionId < y.transactionId ? -1 : x.transactionId > y.transactionId ? 1 : x.target < y.target ? -1 : 1))
     },
     async swap(before, after) {
-      const { rows } = await pool.query(
+      const { rows } = await db.query(
         `update ${t('conversion')} set state = $3, due = $4, attempts = $5, job = $6, rev = rev + 1 where transaction_id = $1 and target = $2 and rev = $7 returning 1`,
         [after.transactionId, after.target, after.state, after.due, after.attempts, after, before.rev],
       )
       return rows.length > 0
     },
     async standing(jobs) {
-      const { rows } = await pool.query(
+      const { rows } = await db.query(
         `select c.transaction_id, c.target from unnest($1::text[], $2::text[], $3::bigint[]) as j (id, target, rev)
          join ${t('conversion')} c on c.transaction_id = j.id and c.target = j.target and c.rev = j.rev`,
         [jobs.map((job) => job.transactionId), jobs.map((job) => job.target), jobs.map((job) => job.rev)],
@@ -903,24 +915,25 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       return jobs.filter((job) => found.has(`${job.transactionId}\u0000${job.target}`))
     },
     async get(transactionId) {
-      const { rows } = await pool.query(`select * from ${t('conversion')} where transaction_id = $1 order by target`, [transactionId])
+      const { rows } = await db.query(`select * from ${t('conversion')} where transaction_id = $1 order by target`, [transactionId])
       return rows.map(toJob)
     },
     async list(state, limit) {
-      const { rows } = await pool.query(`select * from ${t('conversion')} where state = $1 order by due desc, transaction_id limit $2`, [state, limit])
+      const { rows } = await db.query(`select * from ${t('conversion')} where state = $1 order by due desc, transaction_id limit $2`, [state, limit])
       return rows.map(toJob)
     },
     async oldestDue() {
-      const { rows } = await pool.query(`select min(due) as due from ${t('conversion')} where state = 'pending'`)
+      const { rows } = await db.query(`select min(due) as due from ${t('conversion')} where state = 'pending'`)
       return rows[0].due === null ? undefined : Number(rows[0].due)
     },
     async counts() {
       const out: Record<JobState, number> = { held: 0, pending: 0, sent: 0, skipped: 0, failed: 0 }
-      const { rows } = await pool.query(`select state, count(*)::int as n from ${t('conversion')} group by state`)
+      const { rows } = await db.query(`select state, count(*)::int as n from ${t('conversion')} group by state`)
       for (const row of rows) out[row.state as JobState] = row.n
       return out
     },
-  }
+  })
+  const outbox = outboxOn(pool)
 
   const toAlert = (row: any): KeptAlert => ({ key: row.key, text: row.text, at: Number(row.at), ...(row.subject !== null && { subject: row.subject }), ...(row.error !== null && { error: row.error }) })
   const ops: OpsStore = {

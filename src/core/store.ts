@@ -9,13 +9,18 @@ import type { CallResult, CallTime, Change, Consent, ConsentAnswer, CostRow, Cou
  */
 export interface Store {
   /** Runs `work` alone: no other write overlaps it, and it commits whole or not at all. */
-  write<T>(work: (tx: Tx) => Promise<T>): Promise<T>
+  write<T>(work: (tx: Tx) => Promise<T>, options?: WriteOptions): Promise<T>
   /** Runs `work` against one consistent snapshot. */
   read<T>(work: (tx: Tx) => Promise<T>): Promise<T>
   /** Conversions waiting to be sent. */
   outbox: OutboxStore
   /** When each feed last wrote something, how jobs ran, and alerts for people. */
   ops: OpsStore
+}
+
+export interface WriteOptions {
+  /** Several writes are made in this one, so what a failed one left must go with it. A store that cannot undo a write otherwise must here. */
+  whole?: boolean
 }
 
 export interface DecisionPage {
@@ -27,6 +32,10 @@ export interface DecisionPage {
 }
 
 export interface Tx {
+  /** The jobs of conversions, written and read in this transaction. */
+  outbox: OutboxStore
+  /** Runs `work` as a write inside this one: where it throws, what it wrote is gone and the rest stands. */
+  nested<T>(work: () => Promise<T>): Promise<T>
   /** Logs sightings and folds them into edges. Returns how many new edges each identifier gained. */
   addSightings(sightings: readonly Sighting[]): Promise<Map<Identifier, number>>
   /** Deletes a subject with its sightings, edges, touches, outcomes, calls, leases, flows, consent, alerts, conversions, and reviewer decisions. */
