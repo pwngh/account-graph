@@ -21,7 +21,7 @@ Someone clicks your ad, taps your phone number, and signs up two days later. You
 
 Each percentage is a score from the policy's weights, not a measured rate of correct matches.
 
-It runs as a server beside your site, phones and backend, on PostgreSQL or in memory. Its only dependency is `pg`, for PostgreSQL. It sends data only to the ad platforms, checking services and webhooks you set up, and it never calls or writes to a customer.
+It runs as a server beside your site, phones and backend, on PostgreSQL or in memory. The only package it can need at run time is `pg`, for PostgreSQL. It sends data only to the ad platforms, checking services and webhooks you set up, and it never calls or writes to a customer.
 
 ## Why it matters
 

@@ -16,7 +16,7 @@ account-graph links subjects that share identifiers, scores each pair, and group
 | Conversion | An outcome reported to an ad platform |
 | Decision | A recorded choice to merge, split or mute, kept in the audit log |
 
-A match score is from 0 to 1. The reviewer screen calls a subject an ID, a merge a join, and a split a separation. The calls name a visit an `arrival`, and an outcome a `conversion`. Links, clusters and scores are computed from sightings.
+A subject is written `type:id`, such as `account:42`, and an identifier `kind:value`, such as `device:9f3c`. A match score is from 0 to 1. The reviewer screen calls a subject an ID, a merge a join, and a split a separation. The calls name a visit an `arrival`, and an outcome a `conversion`. Links, clusters and scores are computed from sightings.
 
 ## Scoring
 
