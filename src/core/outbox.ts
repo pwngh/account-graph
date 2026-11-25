@@ -192,6 +192,12 @@ export interface Outbox {
    * told is in the answer and kept nowhere.
    */
   forget(subject: Subject | readonly Subject[], why?: Deciding, how?: { retract?: boolean }): Promise<{ changes: Change[]; sent: Sent[] }>
+  /** Brings an outcome's jobs to what it is worth on record, and tells the platforms that can be told. */
+  revalue(transactionId: string): Promise<Job[]>
+  /** Whether a platform can be asked to take a conversion back. */
+  canRetract(target: string): boolean
+  /** Asks the platforms that have a way to take back what was sent of somebody who is gone, and says how each answered. */
+  retract(jobs: readonly Job[]): Promise<Sent[]>
   /** The platforms that can be asked to retract a conversion, and whether every `forget` asks them. */
   readonly retraction: { targets: string[]; always: boolean }
   /** Sends every job that is due. Call it on a timer, from as many workers as you like. */
@@ -476,11 +482,10 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
     },
 
     retraction: { targets: options.targets.filter((target) => target.forget).map((target) => target.name), always: options.retractOnForget ?? false },
-    async forget(subject, why, { retract = false } = {}) {
-      let jobs: Job[] = []
-      const changes = await graph.forget(subject, why, (gone) => void (jobs = gone))
+    revalue: settle,
+    canRetract: (target) => Boolean(targets.get(target)?.forget),
+    async retract(jobs) {
       const sent = sentOf(jobs)
-      if (!options.retractOnForget && !retract) return { changes, sent }
       for (const [name, target] of targets) {
         const theirs = jobs.filter((job) => job.target === name && reached(job))
         if (!target.forget) continue
@@ -501,7 +506,12 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
           })
         }
       }
-      return { changes, sent }
+      return sent
+    },
+    async forget(subject, why, { retract = false } = {}) {
+      let jobs: Job[] = []
+      const changes = await graph.forget(subject, why, (gone) => void (jobs = gone))
+      return { changes, sent: options.retractOnForget || retract ? await outbox.retract(jobs) : sentOf(jobs) }
     },
 
     async run() {

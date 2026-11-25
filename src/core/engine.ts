@@ -36,17 +36,17 @@ export interface Engine extends Parts {
   options: EngineOptions
   now: () => number
   /** One entry, as one transaction: all of what it does, or none. */
-  unit<T>(work: (inside: Inside) => Promise<T>): Promise<T>
+  unit<T>(work: (inside: Inside) => Promise<T>, instead?: Partial<Pick<ServiceOptions, 'address' | 'lineType'>>): Promise<T>
 }
 
 export function createEngine(store: Store, options: EngineOptions = {}): Engine {
   const now = options.now ?? Date.now
   const policy = options.policy ?? defaultPolicy
   const { policy: _, delivery, now: __, ...service } = options
-  const parts = (on: Store, onChange?: (changes: Change[]) => void): Parts => {
+  const parts = (on: Store, onChange?: (changes: Change[]) => void, instead: Partial<Pick<ServiceOptions, 'address' | 'lineType'>> = {}): Parts => {
     const graph = createGraph(on, policy, { now, ...(onChange && { onChange }) })
     const outbox = delivery && delivery.targets.length > 0 ? createOutbox(graph, on.outbox, { now, ...delivery }) : undefined
-    return { graph, outbox, service: createService(graph, { ...service, ...(outbox && { outbox }), now }) }
+    return { graph, outbox, service: createService(graph, { ...service, ...instead, ...(outbox && { outbox }), now }) }
   }
   return {
     ...parts(store),
@@ -54,9 +54,9 @@ export function createEngine(store: Store, options: EngineOptions = {}): Engine 
     policy,
     options,
     now,
-    unit: (work) => unit(store, (inside, tx) => {
+    unit: (work, instead) => unit(store, (inside, tx) => {
       const changes: Change[] = []
-      return work({ ...parts(inside, (more) => void changes.push(...more)), tx, changes })
+      return work({ ...parts(inside, (more) => void changes.push(...more), instead), tx, changes })
     }),
   }
 }

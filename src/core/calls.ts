@@ -98,6 +98,8 @@ export interface CallOptions {
   giveBack?: (transactionId: string) => Promise<unknown>
   /** The clock, for tests. */
   now?: () => number
+  /** The result a call carries is kept as one thing said of it, by when it was said, and not as the last word. */
+  said?: { key: string; at: number }
 }
 
 /** How a kept call stands at a time. */
@@ -180,7 +182,7 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   const saved = await graph.keptCall(id)
   if (saved?.direction === 'outbound') throw malformed(`Call "${id}" is already recorded as outbound`)
   if (!saved && from !== undefined && leftOut(from, options)) return { subject, flags: ['left_out'], counted: false, state: 'unknown', duplicate: false }
-  if (result) await graph.keepCallResult(id, result)
+  if (result) await keepResult(graph, id, result, options)
 
   const flags: CallFlag[] = []
   if (!from) flags.push('blocked')
@@ -395,9 +397,15 @@ async function settle(graph: Graph, id: string, options: CallOptions, phone?: st
   }
 }
 
+async function keepResult(graph: Graph, id: string, result: Omit<CallResult, 'recorded'>, { said }: CallOptions): Promise<void> {
+  if (!said || result.answered === undefined) return graph.keepCallResult(id, result)
+  const { answered, voicemail, waited } = result
+  await graph.sayResult({ call: id, ...said, result: { answered, ...(voicemail !== undefined && { voicemail }), ...(waited !== undefined && { waited }) } })
+}
+
 /** Keeps a result and settles its call by it. Resolves to undefined while the call itself has not been recorded. */
 async function tell(graph: Graph, id: string, result: Omit<CallResult, 'recorded'>, options: CallOptions): Promise<{ state: CallState; counted: boolean } | undefined> {
-  await graph.keepCallResult(id, result)
+  await keepResult(graph, id, result, options)
   const counted = await settle(graph, id, options)
   const kept = await graph.keptCall(id)
   return kept && { state: callState(kept, (options.now ?? Date.now)(), options), counted }
@@ -457,6 +465,12 @@ export async function recordNotLead(graph: Graph, report: { call?: string; trans
   if (typeof lead !== 'boolean') throw malformed('`lead` must be true or false')
   const id = call !== undefined ? `call:${call}` : transactionId!
   await graph.markNotLead(id, lead ? undefined : kind)
+  await settleLead(graph, id, lead, options)
+  return { id, lead }
+}
+
+/** Takes an outcome's conversions back where it is no lead, and gives them back where it is one after all. Safe to run again. */
+export async function settleLead(graph: Graph, id: string, lead: boolean, options: CallOptions = {}): Promise<void> {
   if (!lead) await options.takeBack?.(id)
   // A call is counted by what is known of it now, which may not be what was known when it was marked.
   // What was recorded keeps its value.
@@ -464,8 +478,10 @@ export async function recordNotLead(graph: Graph, report: { call?: string; trans
     const kept = id.startsWith('call:') ? await graph.keptCall(id.slice(5)) : undefined
     if (!kept || countsBy(kept, options)) await options.giveBack?.(id)
   } else if (id.startsWith('call:')) await settle(graph, id.slice(5), options)
-  return { id, lead }
 }
+
+/** Brings a kept call's outcome in line with what is known of it. */
+export const settleCall = (graph: Graph, id: string, options: CallOptions = {}): Promise<boolean> => settle(graph, id, options)
 
 /** Whether a number is one of those left out. */
 const leftOut = (number: string, options: CallOptions) => (options.exclude ?? []).some((each) => numberOrSelf(each, options.country) === number)
