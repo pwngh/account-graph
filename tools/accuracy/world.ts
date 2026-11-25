@@ -586,8 +586,9 @@ export function dirtied(world: World, dirt: Dirt, seed: number): World {
       swap(out.subject, kind, out[kind], to)
       out = { ...out, [kind]: to, ...(out.speaker?.[kind] !== undefined && { speaker: { ...out.speaker, [kind]: to } }) }
     }
-    if (r.chance(dirt.placeholder)) put('phone', r.one(['+15555555555', '+11234567890', '+10000000000', '+15551234567']))
-    if (r.chance(dirt.office)) put('email', r.one(['info@office-a.example.org', 'office@office-b.example.org', 'admin@office-c.example.org']))
+    if (r.chance(dirt.placeholder)) put('phone', r.one(['+15555555555', '+11234567890', '+15551234567', '+15557654321']))
+    // Half of them no table has: a firm's own address at a public domain, and one made up by whoever typed it.
+    if (r.chance(dirt.office)) put('email', r.one(['info@office-a.example.org', 'office@office-b.example.org', 'firmagarcia@gmail.com', 'nomasemails@example.org']))
     return out
   })
   return { ...world, events, truths: [...truths.values()] }

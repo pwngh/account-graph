@@ -270,7 +270,7 @@ All that was printed is in [accuracy-held.txt](accuracy-held.txt), and the devel
 
 ## The third run
 
-Written before any of its seeds was run. The two runs above stand as they are, and their settings make the same people as then, draw for draw. `base3`, `low3`, `high3`, `busy3` and `dirty3` are new settings, and are not `base` and the rest. The held seeds of the third run are opened once. This page counts the rounds: three so far, with this one.
+Written before any of its seeds was run. The two runs above stand as they are, and their settings make the same people as then, draw for draw. `base3`, `low3`, `high3`, `busy3` and `dirty3` are new settings, and are not `base` and the rest. The held seeds of the third run are opened once. This page counts the rounds of it below.
 
 ### What is new in the world
 
@@ -317,6 +317,20 @@ The code of the development seeds is `199cddf` on `feat/round3`. The code of the
 The table in `src/names.ts` was frozen at `8d5922b`, from a part of one list, 142 names and 56 pairs of the author's own. Five of 724 English and nine of 46 Spanish held pairs are in it, all by that. The tool prints how many of the written names are in a form the table knows, and what is kept apart for each.
 
 **The line.** A firm with a busy line uses a pool, as [Calls](calls.md#number-pools) says, so `new pool` is judged in busy3 and beside base3, for what links by a tap or a number shown, against `today` without a pool. `new` without one is printed beside it and not judged.
+
+### The looks at development seeds
+
+Each look is a round, and what was changed for it is here. Rules were chosen on what these showed, so their figures are no evidence; the held seeds are. Nothing of the held seeds has been seen.
+
+| Round | Seeds | Code | What it showed, and what was changed after it |
+| --- | --- | --- | --- |
+| 1 | 20270301-20 | `199cddf` | Record pairs kept 92.0% in base3 and 84.7% in high3; busy3 pool 6.9% wrong. Sound is no longer looked up, and a fact that agrees outranks one that differs (`b29fa33`) |
+| 2 | 20270301-20 | `b29fa33` | Kept 94.1% and 89.3%. Names that begin with one letter say nothing, and the world has late dialers (`d735591`) |
+| 3 | 20270321-40 | `d735591` | Kept 95.8% and 91.6%. One detail under one name is one person (`named`), taps by what is known of a number, who speaks, as its own agent wrote them (`5a51b0b`) |
+| 4 | 20270321-40 | `8d196f3` | base3 all held but `email + phone` links, 9 of 78 wrong; dirty3 mixed 1.62%; busy3 pool 10.5%. Placeholders and office mailboxes are nobody's, a pool number that was just another's needs a tap, separations are borders to credit, a muted fact is none, what two share stays with the first (`836d2f8`) |
+| 5 | 20270321-40 | `836d2f8` | base3, high3, dirty3 and their pool held but `email + phone`. A review found that `named` could join a mother and a child by a first letter and a surname; that key is gone (`d445ccf`), and high3 keeps 93.6% of its pairs, under its mark |
+
+The fillers of dirty3 were then half ones no table has. `gaps3` and `busygaps3` are printed with no mark, though they were added after a look; `new pool` in base3 prints what it mixes and has no mark for it, as before.
 
 ### What would be bad
 

@@ -70,7 +70,7 @@ const { values, positionals } = parseArgs({ allowPositionals: true, options: { p
 // For a look at fewer arms. Marks of arms left out have nothing to count.
 if (values.arms) for (const arm of Object.keys(ARMS)) if (!values.arms.split(',').includes(arm)) delete ARMS[arm]
 const settings = positionals.length > 0 ? positionals : ['base3', 'low3', 'high3', 'busy3', 'dirty3']
-for (const name of settings) if (!SETTINGS[name]?.rates.third) throw new Error(`"${name}" is not a setting of the third run`)
+for (const name of settings) if (!SETTINGS[name]) throw new Error(`"${name}" is not a setting`)
 if (!values.names || !values.seed || (!values.pinned && !values.dry)) throw new Error('--names, --seed and --pinned are required')
 const list = readFileSync(values.names, 'utf8')
 const names: Names = JSON.parse(list)
@@ -85,7 +85,7 @@ const mark = (what: string, some: number, all: number, held: (share: number) => 
 for (const name of settings) {
   const setting = SETTINGS[name]!
   const made = (world: number) => {
-    const clean = makeWorld(setting.rates, { people: setting.people, days: setting.days, start: START, seed: seed + world }, names)
+    const clean = makeWorld(setting.rates, { people: setting.people, days: setting.days, start: START, seed: seed + world }, setting.rates.third && names)
     return setting.dirt ? dirtied(clean, setting.dirt, seed + world) : clean
   }
   const covered = { same: 0, covered: 0, not: 0 }
@@ -187,7 +187,9 @@ for (const name of settings) {
   const judged = (arm: string) => ({ row: total.get(arm) ?? { mixed: 0, recorded: 0, right: 0, wrongPairs: 0, tap: 0, tapWrong: 0, creditRight: 0, creditWrong: 0, links: new Map<string, { links: number; wrong: number }>() }, keep: kept.get(arm) ?? ({ chained: [0, 0], recordPairs: [0, 0], credit: [0, 0], ties: [0, 0] } as Record<string, [number, number]>) })
   console.log('marks:')
   const now = judged('new')
-  if (name === 'base3') {
+  // The old settings have the marks of the new ones that came of them.
+  const as = { base: 'base3', high: 'high3', busy: 'busy3' }[name] ?? name
+  if (as === 'base3') {
     mark('people whose record is with another\'s, at most 1%', now.row.mixed, now.row.recorded, (share) => share <= 0.01)
     mark('joined pairs right, at least 98%', now.row.right, now.row.right + now.row.wrongPairs, (share) => share >= 0.98)
     for (const [kind, { links, wrong }] of now.row.links) if ((total.get('today')!.links.get(kind)?.links ?? 0) >= 200 || links >= 200) mark(`links by ${kind} wrong, at most 5%`, wrong, links, (share) => share <= 0.05)
@@ -196,13 +198,14 @@ for (const name of settings) {
     mark('kept of pairs with a chain, at least 90%', ...now.keep.chained!, (share) => share >= 0.9)
     mark('kept of calls tied, at least 90%', ...now.keep.ties!, (share) => share >= 0.9)
     mark('kept with a pool of calls tied, at least 90%', ...judged('new pool').keep.ties!, (share) => share >= 0.9)
+    console.log(`  no mark: with a pool, people whose record is with another's ${part(judged('new pool').row.mixed, judged('new pool').row.recorded)}; joined pairs right ${part(judged('new pool').row.right, judged('new pool').row.right + judged('new pool').row.wrongPairs)}`)
   }
-  if (name === 'base3' || name === 'high3') {
-    if (name === 'high3') mark('people whose record is with another\'s, at most 2.5%', now.row.mixed, now.row.recorded, (share) => share <= 0.025)
-    mark(`kept of pairs of records, at least ${name === 'base3' ? 98 : 95}%`, ...now.keep.recordPairs!, (share) => share >= (name === 'base3' ? 0.98 : 0.95))
+  if (as === 'base3' || as === 'high3') {
+    if (as === 'high3') mark('people whose record is with another\'s, at most 2.5%', now.row.mixed, now.row.recorded, (share) => share <= 0.025)
+    mark(`kept of pairs of records, at least ${as === 'base3' ? 98 : 95}%`, ...now.keep.recordPairs!, (share) => share >= (as === 'base3' ? 0.98 : 0.95))
     mark('kept of records credited to their ad, at least 90%', ...now.keep.credit!, (share) => share >= 0.9)
   }
-  if (name === 'busy3') {
+  if (as === 'busy3') {
     const pool = judged('new pool')
     mark('with a pool, links by a tap or a number shown wrong, at most 5%', pool.row.tapWrong, pool.row.tap, (share) => share <= 0.05)
     mark('kept with a pool of calls tied, at least 90%', ...pool.keep.ties!, (share) => share >= 0.9)
