@@ -396,9 +396,9 @@ All that was printed, in every setting and arm, is in [accuracy-third-held.txt](
 
 **The new settings are easier for the code than the old.** base3 and dirty3 hold what base and high, whose names are letters no table has, do not: 2.25% and 3.63% of people with a record share a cluster with another's. The old settings stay bad.
 
-**Pairs of records are lost for it.** The marks for what is kept of true pairs of records are bad in base3, high3 and dirty3, and every new setting is under its mark. Keeping couples with different names apart, and not using a speaker's details, cost it, and are kept.
+**Pairs of records are lost for it.** The marks for what is kept of true pairs of records are bad in base3, high3 and dirty3. Keeping couples with different names apart, and not using a speaker's details, cost it, and are kept.
 
-**The intake arm is worse, by most counts.** Printed and not judged: base3 mixes 119 of 9,466 (1.26%) against 54 of 9,379 (0.58%) without it, and joined pairs right go from 98.07% to 96.84%. In high it mixes 5.82% against 3.63%. Calls of people put down to the name they give, and records made one, go to the wrong person where the name is another's. Rates are assumed, so it says how this model of intake behaves, and not how a firm's does.
+**The intake arm is worse, by most counts.** Printed and not judged: base3 mixes 119 of 9,466 (1.26%) against 54 of 9,379 (0.58%) without it, and joined pairs right go from 98.07% to 96.84%. In high it mixes 5.82% against 3.63%. Why was not looked into. Rates are assumed, so it says how this model of intake behaves, and not how a firm's does.
 
 `gaps3` and `busygaps3`, with no mark: taps wrong without a pool 1.16% and 13.01%. busy3 without a pool 5.01%.
 
