@@ -497,10 +497,12 @@ export function createHandler(core: Core, options: HandlerOptions) {
   let running: string | undefined
 
   /** Everything the reviewer screen shows about one subject, in one answer. */
+  /** Dates of records only. A call that staff moved away from everybody is in no journey, and its time is not told here either. */
+  const datesOf = (subjects: readonly Subject[]) => graph.subjectDates(subjects.filter((each) => !/^(visitor|caller|call):/.test(each)))
   async function profile(subject: Subject) {
     const cluster = await graph.cluster(subject, true)
     if (!cluster) {
-      const dates = (await graph.subjectDates([subject])).get(subject)
+      const dates = (await datesOf([subject])).get(subject)
       return { subject, known: false, ...(dates && { dates: { [subject]: dates } }) }
     }
     const links = await graph.links(subject)
@@ -524,7 +526,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
     const among: [Subject, Subject][] = []
     for (const other of shown) for (const from of await graph.separations(other)) if (other < from && shown.includes(from)) among.push([other, from])
     const subjects = [subject, ...others]
-    const dates = await graph.subjectDates(subjects)
+    const dates = await datesOf(subjects)
     return {
       subject,
       known: true,

@@ -278,10 +278,13 @@ both('the reviewer reads the dates of the account and all its linked and separat
     const profile = await read(who)
     assert.deepEqual(profile.links.map((link: { subject: string }) => link.subject).sort(), [linked, visitor])
     assert.deepEqual(profile.separated, [apart, ...empty].sort())
-    assert.deepEqual(profile.dates, { [who]: { firstSeen: AT, createdAt: AT - 500 }, [linked]: { firstSeen: AT + 1, createdAt: AT - 300 }, [apart]: { firstSeen: AT + 2, createdAt: AT - 800 }, ...Object.fromEntries(empty.map(id => [id, {}])), [visitor]: { firstSeen: AT + 3 } })
-    assert.deepEqual(reads, [[who, linked, apart, ...empty, visitor].sort()])
+    assert.deepEqual(profile.dates, { [who]: { firstSeen: AT, createdAt: AT - 500 }, [linked]: { firstSeen: AT + 1, createdAt: AT - 300 }, [apart]: { firstSeen: AT + 2, createdAt: AT - 800 }, ...Object.fromEntries(empty.map(id => [id, {}])), [visitor]: {} })
+    assert.deepEqual(reads, [[who, linked, apart, ...empty].sort()])
     assert.deepEqual(await read('contact:arrival'), { subject: 'contact:arrival', known: false, dates: { 'contact:arrival': { firstSeen: AT - 100 } } })
     assert.deepEqual(await read('contact:none'), { subject: 'contact:none', known: false })
+    // A call nobody owns is in no journey, and its time is not told by its id.
+    await record([{ type: 'call', key: 'C9', direction: 'inbound', from: '+12025550177', to: '+12025550100', at: AT + 5, duration: 20 }, { type: 'call_update', key: 'C9u', at: AT + 6, call: 'C9', change: { kind: 'party', role: 'unknown', by: 'desk' } }])
+    assert.deepEqual(await read('call:C9'), { subject: 'call:C9', known: false })
   } finally {
     server.closeAllConnections()
     await new Promise<void>(resolve => server.close(() => resolve()))
