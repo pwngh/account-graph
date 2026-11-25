@@ -1366,5 +1366,5 @@ export function namedKeys(secret: string, contact: readonly Identifier[], first:
   const details = new Set(contact.map((each) => each.replace(/^voip:/, 'phone:')))
   const key = (start: string, ...parts: string[]): Identifier => `${start}${createHmac('sha256', secret).update(JSON.stringify(['named', ...parts])).digest('hex')}`
   const letters = [...new Set(words.map((word) => word[0]!))]
-  return [...details].flatMap((detail) => lasts.flatMap((surname) => [...(known.length > 0 ? known : words).map((name) => key('named:', detail, name, surname)), ...letters.map((letter) => key(ALIKE, detail, letter, surname))]))
+  return [...details].flatMap((detail) => lasts.flatMap((surname) => [...(known.length > 0 ? known : words.filter((word) => word.length > 1)).map((name) => key('named:', detail, name, surname)), ...letters.map((letter) => key(ALIKE, detail, letter, surname))]))
 }

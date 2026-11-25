@@ -1622,7 +1622,10 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await graph.lease('visitor:b', { numbers: ['+15550100001'], minutes: 15, at: T0 + 70 * MIN }))!.start, T0 + 70 * MIN)
       assert.equal((await call('P4a', '+15550100070', 71)).visitor, undefined)
       await graph.observe({ subject: 'visitor:b', identifiers: [dialed('+15550100001', T0 + 71 * MIN + 30_000)], at: T0 + 71 * MIN + 30_000, event: 'phone_click' })
-      assert.deepEqual(await call('P4', '+15550100073', 72).then((each) => [each.visitor, each.flags]), ['visitor:b', ['pool']])
+      assert.deepEqual(await call('P4', '+15550100073', 72).then((each) => [each.visitor, each.flags]), ['visitor:b', []])
+      // Shown to them again, it is still not long since it was another's.
+      await graph.lease('visitor:b', { numbers: ['+15550100001'], minutes: 5, at: T0 + 90 * MIN })
+      assert.equal((await call('P4b', '+15550100069', 91)).visitor, undefined)
       assert.equal((await call('P5', '+15550100074', 85 + 121)).visitor, undefined)
       // Two callers reported at once on one holder's number: one of them is the visitor's caller, and never both.
       await graph.observe({ subject: 'visitor:d', identifiers: ['device:d'], at: T0, event: 'visit' })
