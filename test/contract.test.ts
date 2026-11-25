@@ -868,6 +868,11 @@ test('a reviewer can read a pending party and see whose edit overtook theirs ove
     })
     await post('record', { entries: [{ ...correction, change: { ...correction.change, seen: current.key } }] })
     assert.deepEqual(await lookup(), { key: 'correction', at: AT + 1, role: 'unknown', by: 'dana' })
+    // Whom a call was not with is in no journey, and is not told a reviewer here.
+    await post('record', { entries: [{ ...correction, key: 'not', at: AT + 2, change: { kind: 'party', role: 'excluded', subject: 'record:18', by: 'dana', seen: 'correction' } }] })
+    assert.deepEqual(await lookup(), { key: 'not', at: AT + 2, role: 'excluded', by: 'dana' })
+    const service = await fetch(base + '/v1/lookup', { method: 'POST', headers: { authorization: 'Bearer service', 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'party', call }) })
+    assert.equal((await service.json()).subject, 'record:18')
   } finally {
     await close()
   }

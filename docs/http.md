@@ -331,7 +331,7 @@ POST /v1/lookup
 | `find` | `text` | `by`, `subjects`: a full email or phone, the start of a subject's id, or a full ad click id. At most 20. |
 | `match` | `facts`, `at` | `candidates`, `notes`: who somebody may be, before you save them |
 | `caller` | `from?`, `to`, `at` | Who is calling, [while the phone rings](calls.md#while-the-phone-rings) |
-| `party` | `call` | The standing party statement with its `role`, `subject` when named, `by`, `at` and `key`, or `null` |
+| `party` | `call` | The standing party statement with its `role`, `subject` when named, `by`, `at` and `key`, or `null`. A reviewer token gets no `subject` with `excluded`. |
 | `conflicts` | `subjects`, 1 to 50 | `conflicts`: who of them is [kept apart](matching.md#asking-about-conflicts) |
 | `record` | `type`, `key`, `at` | One conversion, call or text, or `null` |
 | `transfers` | `subject`, `tiedOnly?` | `counterparties`, `rings` |

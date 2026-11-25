@@ -161,7 +161,7 @@ export interface CallResult {
 export interface CallUpdateEntry extends Keyed<'call_update'> {
   readonly call: string
   readonly change:
-    | { readonly kind: 'result', readonly result: CallResult }
+    | { readonly kind: 'result'; readonly result: CallResult }
     | {
         readonly kind: 'returned'
         /** When the caller was reached. */
@@ -251,7 +251,7 @@ export interface Delivery {
 /** None of these is kept with the key: put right what was wrong and send the same key again. */
 export type RecordRefusal =
   /** The party statement that stands. All three fields are null when there is none. */
-  | { readonly reason: 'STALE', readonly decision: string | null, readonly by: string | null, readonly at: At | null }
+  | { readonly reason: 'STALE'; readonly decision: string | null; readonly by: string | null; readonly at: At | null }
   /** The key was used for something else. `fields` names what differs, never its value. */
   | { readonly reason: 'KEY_REUSED'; readonly fields: readonly string[] }
   | { readonly reason: 'UNKNOWN_REFERENCE'; readonly of: { readonly type: 'conversion' | 'call' | 'text' | 'restatement'; readonly key: string } }
@@ -328,7 +328,7 @@ export type LookupRequest =
   | { readonly kind: 'find'; readonly text: string }
   | { readonly kind: 'match'; readonly facts: Facts; readonly at: At }
   | { readonly kind: 'caller'; readonly from?: string; readonly to: string; readonly at: At }
-  | { readonly kind: 'party', readonly call: string }
+  | { readonly kind: 'party'; readonly call: string }
   | { readonly kind: 'conflicts'; /** 1 to 50. */ readonly subjects: readonly string[] }
   | { readonly kind: 'record'; readonly type: 'conversion' | 'call' | 'text'; readonly key: string; readonly at: At }
   | { readonly kind: 'transfers'; readonly subject: string; readonly tiedOnly?: boolean }
@@ -341,8 +341,8 @@ export interface LookupValue {
   match: { readonly candidates: readonly Match[]; readonly notes: Readonly<Record<string, string>> }
   caller: { readonly subject: string | null; readonly area: string | null; readonly known: boolean; readonly people: readonly Match[]; readonly visitor: string | null; /** Missed calls nobody has returned, and texts nobody has answered. */ readonly waiting: { readonly calls: number; readonly texts: number }; readonly arrival: Arrival | null }
   conflicts: { readonly conflicts: readonly Conflict[] }
-  /** The current party statement, even if the phone report has yet to arrive. */
-  party: (PartyStatement & { readonly key: string }) | null
+  /** The current party statement, even if the phone report has yet to arrive. A reviewer token is not told whom a call was not with. */
+  party: ((PartyStatement | { readonly role: 'excluded'; readonly by: string; readonly at: number }) & { readonly key: string }) | null
   record: RecordView | null
   transfers: { readonly counterparties: readonly Tied[]; readonly rings: readonly Ring[] }
 }
