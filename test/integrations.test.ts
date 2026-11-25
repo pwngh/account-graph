@@ -1158,7 +1158,15 @@ test('a call whose result is awaited is held, and nothing is sent until a person
     assert.deepEqual(told, [['call:CA1', [['google', 'sent']]]])
     assert.ok(story.entries.filter((entry: any) => entry.kind === 'call').every((entry: any) => entry.state && !('to' in entry.call)))
     assert.equal((await read('/journey?subject=a&before=soon')).status, 400)
-    assert.deepEqual(Object.keys((await (await read('/undecided?limit=5')).json()) as any).sort(), ['pairs', 'seen', 'total'])
+    await graph.observe(['review:a', 'review:b', 'review:c'].map((subject, i) => ({ subject, identifiers: i === 0 ? ['canvas:ab', 'canvas:ac'] : [i === 1 ? 'canvas:ab' : 'canvas:ac'], at: T0 })))
+    const matchPage = async (query: string) => await (await read(`/undecided?${query}`)).json() as any
+    for (const full of [false, true]) {
+      const first = await matchPage(`full=${full}&limit=1`)
+      assert.deepEqual([first.window.kind, first.more, first.pairs[0].b], [full ? 'full' : 'recent', true, 'review:b'])
+      const last = await matchPage(`cursor=${first.next}&limit=1`)
+      assert.deepEqual([last.window.kind, last.next, last.pairs[0].b], [first.window.kind, null, 'review:c'])
+    }
+    for (const query of ['cursor=x', 'cursor=', 'full=x']) assert.equal((await read(`/undecided?${query}`)).status, 400, query)
     const joined = (await post('/join', { a: 'm:1', b: 'm:2', mark: true })).body
     assert.ok(joined.moved.length > 0 && /^review:join-\d+$/.test(joined.mark))
     assert.ok(Array.isArray((await post('/join', { a: 'm:1', b: 'm:3' })).body))

@@ -7,9 +7,11 @@ import { unjoinSuite } from './unjoin.suite.ts'
 import { saidSuite } from './said.suite.ts'
 import { suite } from './suite.ts'
 import { unitSuite } from './unit.suite.ts'
+import { readHistorySuite } from './read-history.suite.ts'
 
 const open = async () => ({ store: createMemoryStore(), close: async () => {} })
 suite('memory store', open, 3000)
+readHistorySuite('memory store', open, false)
 outboxSuite('memory store', open)
 opsSuite('memory store', open)
 malformedSuite('memory store', open)

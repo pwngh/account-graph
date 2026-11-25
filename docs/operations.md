@@ -138,6 +138,10 @@ Open `/review` and enter a token. Each view has its own address, so you can link
 
 The screen checks for new writes every ten seconds and reloads the view when there are some. It pauses while its tab is hidden, and while someone types in the view or answers a prompt.
 
+The reviewer endpoint `GET /review/api/undecided` returns up to 50 pairs by default. Set `limit` from 1 to 500. Pairs involving a subject from the newest 10,000 sightings come first by score, with ties ordered by the two subject ids. The `window` gives the number of sightings examined, the earliest recording time in epoch milliseconds (`oldest`, or null for an empty history), and whether older sightings were left out (`older`). Pass `next` back as `cursor` while `more` is true to see the rest of this queue.
+
+Start with `?full=true` to review all subjects, including those whose sighting history has been pruned. Each request reads up to 100 subjects in id order and offers each pair under its first subject. Within that subject, pairs are ordered by the other id. The window names the first and last subjects examined. An empty page can still have a next cursor. In both modes, `seen` counts subjects examined and `total` counts qualifying pairs in this window. Each request starts a fresh read, so decisions made between pages take effect. A new or changed pair behind the cursor can be found on the next sweep.
+
 ## Policy
 
 The server runs the default weights, caps and half-lives. `POLICY` overrides only the values it names.

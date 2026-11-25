@@ -23,9 +23,27 @@ export function normalizeEmail(email: string): string {
   return `${clean.slice(0, at).split('+')[0]!.replaceAll('.', '')}@${domain}`
 }
 
+/** A word that says an extension follows, in English or Spanish. What is before it is the line, whatever is left of it. */
+const EXTENSION = /(?<=[\d)])[\s.,/;(-]*(?:extensi[oó]n|ext(?:n)?|anexo|int(?:erno)?|postd)(?![\p{L}])[\s.:(=#-]*\d+(?![\p{L}\d])/iu
+/** A mark that may say so, or stand between the digits of one number: `202x555x0123`. A dialing pause is one. */
+const MARK = /(?<=[\d)])[\s./(-]*(?:x|#|[,;]+|[pw](?=\d))[\s.:(=#-]*(?=\d{1,7}(?![\p{L}\d]|[\s.()-]*\d{3}))/giu
+/** The extension reaches a desk on the line. Its digits must never become part of another line's key. */
+export function withoutPhoneExtension(phone: string): string {
+  const written = phone.normalize('NFC')
+  const word = written.search(EXTENSION)
+  if (word >= 0) return written.slice(0, word)
+  for (const { index } of written.matchAll(MARK)) {
+    const line = written.slice(0, index)
+    const digits = line.replace(/\D/g, '').length
+    // Cut only where what is before it is a whole number.
+    if (written.trim().startsWith('+') ? digits >= 10 && digits <= 15 : digits === 10 || digits === 11) return line
+  }
+  return phone
+}
+
 /** Normalizes a phone number to E.164. A 10-digit number takes `country`, which defaults to 1. */
 export function normalizePhone(phone: string, country = '1'): string {
-  const digits = phone.replace(/\D/g, '')
+  const digits = withoutPhoneExtension(phone).replace(/\D/g, '')
   if (phone.trim().startsWith('+') && digits.length >= 8 && digits.length <= 15) return `+${digits}`
   if (digits.length === 10) return `+${country}${digits}`
   if (digits.length === 11 && digits.startsWith(country)) return `+${digits}`

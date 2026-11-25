@@ -231,6 +231,10 @@ An incoming text receives HTTP 200 with empty TwiML (`<Response/>`), so the grap
 
 > **Do not point an `action` address at this server.** The response to `<Dial action>`, `<Record action>` and similar tells Twilio what the call does next. Handle those in your own application, and record the result as a `call_update` from there. Status callbacks expect no instructions and get none.
 
+### PostgreSQL write counts
+
+The [call write test](../test/call-write.test.ts) counts SQL for a new 60-second inbound call with no previous sightings, taps, party statements, channel or provider lookups. A signed Twilio `completed` callback and a `record` entry each take 51 statements in 50 trips.
+
 ### Other providers
 
 Record each call from your backend, with these fields:
@@ -452,7 +456,7 @@ curl -q --noproxy 127.0.0.1 -X POST http://127.0.0.1:8080/v1/record -H "@${GRAPH
 { "results": [{ "type": "text", "key": "SM1", "ok": true, "value": { "duplicate": false, "stands": true, "subject": "caller:96f2c503…", "flags": ["first", "code"], "counted": true, "visitor": "visitor:fb919054…" } }] }
 ```
 
-`counted` says the text is an outcome of the step `text`. `key` is the provider's id. Reported again with the same key, a text is a `duplicate`: the first report stands, whatever the second says. Report a text again, with the same key, until it is answered.
+`counted` says the text is an outcome of the step `text`. Report a text again with the same provider ID as its `key` until it is answered. An accepted retry answers `duplicate: true`. If it first supplies an opt-out for an inbound text, it also answers `optOutAdded: true`, adds `opt_out` to the flags and withdraws any outcome for the text. The message keeps its original time, so a later START on a different message still stands. An opt-in on a retry changes nothing. A retry keeps any channel touch or visitor link recorded with the original message. An opt-out still counts for an existing message if its sender has since been added to the exclusion list.
 
 1. **Sender.** The sender is the same subject as a caller from that number, so their calls, their texts and a contact with that number are tied.
 2. **Visitor.** The code links the text to the one visitor it was given to, at 0.95. Without a code, the one visitor who tapped your text link within the [tap window](#busy-numbers) is linked, at 0.92. Either joins the two.

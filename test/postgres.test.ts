@@ -14,6 +14,7 @@ import { unjoinSuite } from './unjoin.suite.ts'
 import { saidSuite } from './said.suite.ts'
 import { counts, suite } from './suite.ts'
 import { unitSuite } from './unit.suite.ts'
+import { readHistorySuite } from './read-history.suite.ts'
 
 // Keep the ordinary write budget observable on machines without PostgreSQL. The shared suite checks the resulting groups on a real store.
 test('plain observations use the same SQL trips with an unrelated stated call', async () => {
@@ -936,6 +937,7 @@ if (!url) {
   })
 
   suite('postgres store', open, 400)
+  readHistorySuite('postgres store', open, true)
   outboxSuite('postgres store', open)
   opsSuite('postgres store', open)
   malformedSuite('postgres store', open)

@@ -2211,6 +2211,47 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal(await offered(), true)
     })
 
+    test('review cursors cover a score tie past 500 and a full sweep includes pairs with no recent sightings', async () => {
+      let now = T0
+      const { graph, store } = await fresh(undefined, { now: () => now })
+      const old = ['z:\u{10000}', 'z:\ue000']
+      await graph.observe(old.map(subject => ({ subject, at: T0, identifiers: ['canvas:old'] })))
+      // A full subject page with no pairs and enough sightings to hide the old pair altogether.
+      now++
+      await store.write(tx => tx.addSightings(Array.from({ length: 10_000 }, (_, i) => ({ subject: `a:${i % 100}`, identifier: `canvas:alone-${i % 100}`, at: T0, recorded: now }))))
+      now++
+      const others = Array.from({ length: 501 }, (_, i) => `visitor:${String(i).padStart(3, '0')}`)
+      const identifiers = others.map(subject => `canvas:${subject}`)
+      await graph.observe([{ subject: 'owner', identifiers, at: T0 }, ...others.map((subject, i) => ({ subject, identifiers: [identifiers[i]!], at: T0 }))])
+      const recent = await graph.undecided({ limit: 500 })
+      assert.deepEqual(recent.pairs.map(pair => pair.b), others.slice(0, 500))
+      assert.deepEqual([recent.total, recent.more, recent.window], [501, true, { kind: 'recent', sightings: 10_000, oldest: T0 + 1, older: true }])
+      const smaller = await graph.undecided({ sightings: 100, limit: 2 })
+      const continued = await graph.undecided({ cursor: smaller.next!, limit: 2 })
+      assert.deepEqual(continued.window, smaller.window)
+      assert.deepEqual(continued.pairs.map(pair => pair.b), others.slice(2, 4))
+      // Removing a pair already reviewed must not advance the cursor past another.
+      await graph.separate('owner', others[0]!)
+      const last = await graph.undecided({ cursor: recent.next! })
+      assert.deepEqual([last.pairs.map(pair => pair.b), last.more, last.next], [[others.at(-1)], false, null])
+      await assert.rejects(graph.undecided({ cursor: recent.next!, full: true }), /cursor/i)
+      await assert.rejects(graph.undecided({ cursor: recent.next!, sightings: 2 }), /sighting limit/i)
+
+      await graph.prune(T0 + 1)
+      let page = await graph.undecided({ full: true, limit: 71 })
+      assert.deepEqual([page.pairs, page.seen, page.more], [[], 100, true])
+      const pairs: string[][] = []
+      let pages = 1
+      while (page.more) {
+        assert.ok(++pages < 30)
+        page = await graph.undecided({ cursor: page.next!, limit: 71 })
+        assert.ok(page.seen <= 100)
+        pairs.push(...page.pairs.map(({ a, b }) => [a, b]))
+      }
+      assert.equal(page.next, null)
+      assert.deepEqual(pairs, [...others.slice(1).map(subject => ['owner', subject]), old])
+    })
+
     test('undecided lists pairs related and not joined, and a join taken back by its mark is a label no more', async () => {
       const clock = { now: T0 }
       const { graph } = await fresh(undefined, { now: () => clock.now })
@@ -4515,6 +4556,48 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const both = await Promise.all([0, 5].map((ms) => recordText(graph, { ...once, at: T0 + ms }, { numbers: { '+15550100101': { source: 'listing' } } })))
       assert.deepEqual(both.map((each) => each.duplicate).sort(), [false, true])
       assert.equal((await graph.attribute(both[0]!.subject, { at: T0 + HOUR })).touches.length, 1)
+    })
+
+    test('an opt-out correction survives a concurrent count and a later change of lead status', async () => {
+      const { graph } = await fresh()
+      const msg = { id: 'pending', from: '+12025550130', to: '+12025550131', at: T0 }
+      const counted = await recordText(graph, msg, { convert: async outcome => {
+        const stopped = await recordText(graph, { ...msg, text: 'STOP' })
+        assert.equal(stopped.optOutAdded, true)
+        return graph.outcome(outcome)
+      } })
+      assert.equal(counted.counted, false)
+      assert.deepEqual(counted.flags, ['opt_out'])
+      assert.equal(await graph.outcomeOf('text:pending'), undefined)
+      assert.deepEqual(await graph.texting(counted.subject), { optedOut: true, at: T0 })
+
+      const other = { ...msg, id: 'marked', from: '+12025550132' }
+      assert.equal((await recordText(graph, other)).counted, true)
+      await graph.markNotLead('text:marked', 'spam')
+      await recordText(graph, { ...other, text: 'STOP' })
+      await graph.markNotLead('text:marked', undefined)
+      assert.equal(await graph.outcomeOf('text:marked'), undefined)
+      const first = { ...msg, id: 'change', at: T0 + DAY, text: 'START' }
+      assert.deepEqual((await recordText(graph, first)).flags, ['opt_in'])
+      assert.deepEqual((await recordText(graph, { ...first, text: 'STOP' })).flags, ['opt_out'])
+    })
+
+    test('a newly excluded sender can still correct an existing text to an opt-out', async () => {
+      const { graph } = await fresh()
+      const message = { id: 'saved', from: '+12025550143', to: '+12025550144', at: T0 }
+      const sender = (await recordText(graph, message)).subject
+      const options = { exclude: [message.from, '+12025550145'] }
+      const stop = { ...message, text: 'STOP' }
+      for (const change of [{ id: 'new' }, { from: '+12025550145' }, { to: '+12025550146' }]) {
+        assert.deepEqual((await recordText(graph, { ...stop, ...change }, options)).flags, ['left_out'])
+        assert.equal(await graph.texting(sender), undefined)
+      }
+      assert.equal(await graph.keptText('new'), undefined)
+      for (const added of [true, undefined]) {
+        const retry = await recordText(graph, stop, options)
+        assert.deepEqual([retry.subject, retry.duplicate, retry.counted, retry.flags, retry.optOutAdded], [sender, true, false, ['opt_out'], added])
+      }
+      assert.deepEqual(await graph.texting(sender), { optedOut: true, at: T0 })
     })
 
     test('a text waits until someone replies by text or in a call, or its sender asks for no more', async () => {

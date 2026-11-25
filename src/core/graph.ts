@@ -12,6 +12,9 @@ import type { CallSummary } from './callreport.ts'
 import { byCode, codeTie, firstOpen, followUp, isTie } from './calls.ts'
 import { Gone, asks, beginnings, replyTo } from './texts.ts'
 import { followed } from './followed.ts'
+import { undecided } from './undecided.ts'
+import type { Undecided, UndecidedOptions } from './undecided.ts'
+export type { Undecided } from './undecided.ts'
 import type { Followed } from './followed.ts'
 import type { Hours } from './hours.ts'
 import { UNSTORABLE, nameEvidence } from './identifiers.ts'
@@ -263,6 +266,8 @@ export interface Graph {
   linksSent(subject: Subject): Promise<SentLink[]>
   /** Keeps a text message, with the arrival it is filed under, unless it is kept already. `recordText` does this. Resolves to whether it was written. */
   keepText(text: Omit<KeptText, 'recorded'>, touch?: Touch): Promise<boolean>
+  /** Adds an opt-out to the original inbound message when both numbers still match. */
+  stopText(id: string, subject: Subject, to: string): Promise<{ text: KeptText | undefined; added: boolean }>
   /** A kept text, or undefined for an id no text was kept for. */
   keptText(id: string): Promise<KeptText | undefined>
   /** Every kept text to or from the given subjects, oldest first. */
@@ -369,10 +374,10 @@ export interface Graph {
   /** What two subjects share, however weak, without any reviewer's mark, and how they stand. */
   between(a: Subject, b: Subject): Promise<Between>
   /**
-   * Pairs that are related and not joined, strongest first, for someone to decide. Only pairs with a subject of the newest
-   * sightings, 10,000 unless told otherwise: scoring every pair reads the whole graph.
+   * Pairs that are related and not joined, strongest first among subjects of the newest 10,000 sightings by default.
+   * A full sweep reads a page of subjects in id order. Pass the returned cursor to continue either queue.
    */
-  undecided(options?: { limit?: number; sightings?: number }): Promise<Undecided>
+  undecided(options?: UndecidedOptions): Promise<Undecided>
   /**
    * Every pair a reviewer joined or kept apart, with what the two share, in
    * the form `fit` takes. A pair that shares nothing is left out, since it
@@ -475,14 +480,6 @@ export interface Between {
   reasons: Reason[]
   /** What both hold that links nobody, because it is muted or over its cap. */
   idle: Identifier[]
-}
-
-/** Pairs the graph finds related and has not joined, strongest first. */
-export interface Undecided {
-  pairs: Pair[]
-  /** How many there are among the subjects looked at, and how many subjects those are. */
-  total: number
-  seen: number
 }
 
 export interface BoardOptions {
@@ -818,7 +815,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
 
   async function originalSeparations(tx: Tx, subjects: readonly Subject[]) {
     const apart = new Set<string>()
-    if (!hasCallRelations) return apart
+    if (!hasCallRelations || !await tx.hasCallEvidence()) return apart
     const own = [...await tx.callEvidence({ subjects }), ...await tx.edgesOf(subjects)]
     const identifiers = unique(own.filter(row => callRelates(row.identifier)).map(row => row.identifier))
     for (const { holders, permits } of (await possibleCallRelations(tx, identifiers)).values()) for (const [i, a] of holders.entries()) {
@@ -1927,11 +1924,12 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       await store.write(async (tx) => {
         // Only a visitor still tied by this call: one forgotten meanwhile is not written down again.
         const { visitor, ...rest } = call
-        // One doubted meanwhile is not tied either.
-        const doubted = (await tx.states([`dial:${call.id}`])).get(`dial:${call.id}`)?.ignored === true
+        const before = await tx.callOf(call.id)
+        // A doubted tap can rule out a visitor or preserve a doubt already on the call.
+        const ambiguous = before?.flags.includes('ambiguous') && !call.flags.includes('pool') && !byCode(call)
+        const doubted = (visitor !== undefined || ambiguous) && (await tx.states([`dial:${call.id}`])).get(`dial:${call.id}`)?.ignored === true
         let tied = visitor !== undefined && (await tx.edgesOn([...(doubted ? [] : [`dial:${call.id}`]), `lease:${call.id}`, codeTie(call.id)])).some((edge) => edge.subject === visitor)
         // What was said of it meanwhile stays said.
-        const before = await tx.callOf(call.id)
         const stated = (await tx.saidOf('party', call.id)).length > 0
         const pending = !before && stated && reserved
         if (pending && visitor && reserved.tie) {
@@ -1939,8 +1937,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
           const available = source.pool ? (await holderOf(tx, source.pool.number, call.at, source.pool.grace)) === visitor : (await tx.edgesOn(source.notes ?? [])).some(edge => edge.subject === visitor)
           tied = available && await tieable(tx, call.subject, visitor, source.identifier)
         }
-        const said = before?.flags.includes('ambiguous') && doubted && !call.flags.includes('pool') && !byCode(call)
-        await tx.setCall({ ...rest, ...(said && { flags: [...new Set([...call.flags, 'ambiguous'])] }), ...(tied && { visitor }), recorded: now() }, lineKind, !before && stated)
+        await tx.setCall({ ...rest, ...(ambiguous && doubted && { flags: [...new Set([...call.flags, 'ambiguous'])] }), ...(tied && { visitor }), recorded: now() }, lineKind, !before && stated)
         if (pending) {
           const rows = reserved.identifiers.map(identifier => ({ subject: call.subject, identifier }))
           if (tied && visitor && reserved.tie) for (const subject of [call.subject, visitor]) rows.push({ subject, identifier: reserved.tie.identifier })
@@ -2218,6 +2215,16 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
           await tx.fed('touches', now())
         }
         return true
+      })
+    },
+
+    stopText(id, subject, to) {
+      return store.write(async tx => {
+        const text = await tx.textOf(id)
+        if (text?.direction !== 'inbound' || text.subject !== subject || text.to !== to || text.flags.includes('opt_out')) return { text, added: false }
+        const stopped = { ...text, flags: [...text.flags.filter(flag => flag !== 'opt_in'), 'opt_out'] }
+        await tx.setText(stopped)
+        return { text: stopped, added: true }
       })
     },
 
@@ -2672,9 +2679,8 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       return store.read((tx) => tx.recentChanges(limit))
     },
 
-    async undecided({ limit = 50, sightings = 10_000 } = {}) {
-      return store.read(async (tx) => {
-        const lately = await tx.latelySeen(sightings)
+    async undecided(options = {}) {
+      return store.read(tx => undecided(tx, options, async lately => {
         const pairs = new Map<string, Pair>()
         const two: [Subject, Subject][] = []
         const joined: [Subject, Subject][] = []
@@ -2717,10 +2723,8 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         const borders = bordersOf(tx)
         await borders.load(joined.flat(), undefined, joined.flat())
         for (const [a, b] of joined) if (borders.kept(a, b) || (!policy.records && !borders.between(a, b, 'birth'))) pairs.delete(pairKey(a, b))
-        const open = [...pairs.values()].filter(({ a, b }) => labels.get(a)!.cluster !== labels.get(b)!.cluster && !said.has(pairKey(labels.get(a)!.cluster, labels.get(b)!.cluster)))
-        open.sort((x, y) => y.score - x.score || (x.a === y.a ? (x.b < y.b ? -1 : 1) : x.a < y.a ? -1 : 1))
-        return { pairs: open.slice(0, limit), total: open.length, seen: lately.length }
-      })
+        return [...pairs.values()].filter(({ a, b }) => labels.get(a)!.cluster !== labels.get(b)!.cluster && !said.has(pairKey(labels.get(a)!.cluster, labels.get(b)!.cluster)))
+      }))
     },
 
     reviewed({ exclude } = {}) {

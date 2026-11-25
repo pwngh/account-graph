@@ -275,10 +275,11 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   const visitor = byCode(kept) ? (coded ?? saved?.visitor) : tied
   if (doubtful) flags.push('ambiguous')
   if (visitor !== undefined && holder) flags.push('pool')
-  await graph.keepCall({ ...kept, ...(visitor && { visitor }) })
+  // A new report was saved before looking for its visitor. Save it again only when that search changed it.
+  if (saved || doubtful || visitor !== undefined) await graph.keepCall({ ...kept, ...(visitor && { visitor }) })
   const counted = await settle(graph, id, options, known ?? '')
 
-  if (!(await graph.keptCall(id))!.visitor && line) await graph.touch({ ...line, subject, at }, id)
+  if (line && !(await graph.keptCall(id))!.visitor) await graph.touch({ ...line, subject, at }, id)
   if (saved && call.code !== undefined) await tellCode(graph, (await graph.keptCall(id))!, call.code, options, line)
   const now = (await graph.keptCall(id))!
   await graph.observe({ subject, identifiers: [note], at, event: 'call' })

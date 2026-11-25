@@ -16,6 +16,7 @@
 ### The six calls
 
 - `profile.createdAt` records when your system created a subject. The Accounts heading and Links table show it alongside the earliest activity the graph still holds for each record.
+- `record` applies an inbound opt-out first supplied on a text retry at the original message time and answers `optOutAdded: true` once.
 - `call_update` accepts the party statement key staff saw, or `null` if there was none. A different standing statement returns `STALE` and leaves the entry key free to retry.
 - `lookup` returns the current party statement and its key for a call, even before the phone report arrives.
 - `call_update` records who one call concerned, who said so and when. A statement may arrive before the call and a later statement can correct it. See the [call roles](docs/calls.md#recording-who-was-on-one-call).
@@ -35,6 +36,7 @@
 
 ### People
 
+- `phone` keys exclude extension digits when recording a line or looking it up. Older keys made with extension digits need the [original records](docs/identify.md#fields) to correct them.
 - `split` cuts guessed links before staff merges and restores each merge it can keep while all separations hold.
 - `call_update` withdraws identity evidence for that call while its original holders still count toward shared identifiers. See the [matching rules](docs/matching.md).
 - `name` keeps letters and script marks that distinguish people and recognizes missing-name and newborn labels. Equal birthdays cannot confirm two placeholders. See [confirmed records](docs/matching.md#records-that-have-to-be-confirmed).
@@ -60,6 +62,7 @@
 
 ### Calls and texts
 
+- `call` saves a new call once when the search for a visitor leaves it unchanged and skips unused reads of the dial and the channel.
 - `caller` shows both records as possible when staff linked a line to two people they keep apart.
 - `phones.pool.requireTapAfterReassignment` lets an operator require a tap or code from an untied caller on a reassigned number. The option is off by default. See [number pools](docs/calls.md#number-pools).
 - `call` recognizes a duplicate from before call details were kept when the line has since been excluded.
@@ -74,6 +77,7 @@
 
 ### Attribution and reporting
 
+- `report` and `lookup` read base identifier counts when their PostgreSQL snapshot contains no withdrawn call evidence.
 - `report` assigns confirmed calls, callbacks and call values to their stated owner and counts that owner with explicitly merged duplicate records.
 - `campaignCredit` identifies the campaign when an eligible visitor’s tap, code or pool number credits a confirmed call. The visitor’s private arrival details stay off that callback or pipeline row.
 - `record` `conversion`, `payment` and `restatement` count outcomes. A refund or a write-off is an amount, and `reverse` takes one back.
@@ -127,6 +131,7 @@
 
 ### Reviewer screen
 
+- `undecided` pages through ranked pairs from recent sightings and can sweep every subject, including those with pruned sightings.
 - `Accounts` flags groups where too many conflicting call histories leave some matches unresolved.
 - `Matches` checks the speaker marks of both clusters before offering a pair. An active staff merge broken by a separation remains visible in Links.
 - Accounts shows linked IDs as an interactive graph and as a table with evidence.

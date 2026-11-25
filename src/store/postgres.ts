@@ -52,6 +52,8 @@ export interface PostgresStore extends Store {
 /** The order `standingFirst` gives, in SQL. False sorts first, and rows equal in everything that counts are told apart by id. */
 const STANDING = `at desc, coalesce(key, '') collate "C" desc, recorded_at desc, ad_user_data, ad_personalization, id`
 
+const READ_ONLY = 'begin isolation level repeatable read read only'
+
 // Older writers left staff statements alone when replacing the call row. Some also recorded a call after a pending statement.
 const overwrittenCalls = (schema: string) => `select c.id from ${schema}.call c where c.party is not null and (c.subject <>
   case when c.party->>'role' in ('self', 'representative') then c.party->>'subject' else 'call:' || c.id end
@@ -105,8 +107,24 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
   const latestConsent = async (db: Queryable, subjects: readonly Subject[]) => subjects.length === 0 ? [] : (await db.query(
     `select distinct on (subject) subject, at, ad_user_data, ad_personalization from ${t('consent_log')} where subject = any($1::text[]) order by subject, ${STANDING}`, [subjects],
   )).rows
-  // Only this transaction knows whether its snapshot has any withdrawn edges.
-  const bind = (db: Queryable, snapshot = { noReserved: false }): Tx => ({
+  function evidenceIn(db: Queryable, readOnly: boolean) {
+    let probed: Promise<boolean> | undefined
+    const probe = async () => (await db.query(`select from ${t('call_evidence')} limit 1`)).rows.length > 0
+    return {
+      noReserved: false,
+      // Concurrent reads on this client share the first probe. A writer can still add or roll back evidence.
+      any() { return readOnly ? (probed ??= probe()) : !this.noReserved && probe() },
+      async absent() { return readOnly ? !await this.any() : this.noReserved },
+    }
+  }
+  // A former holder contributes once for an identifier, and only when it no longer holds the active edge.
+  // Restrict both sides of match_identifier to the requested keys before counting.
+  const scopedStates = (wanted: string) => `with wanted as materialized (${wanted}), former as (
+    select w.identifier as id, count(distinct w.subject)::int as extra from wanted join ${t('call_evidence')} w on w.identifier = wanted.id
+    where not exists (select from ${t('edge')} e where e.subject = w.subject and e.identifier = w.identifier) group by w.identifier
+  ), states as (select wanted.id, coalesce(i.fanout, 0) + coalesce(former.extra, 0) as fanout, coalesce(i.ignored, false) as ignored
+    from wanted left join ${t('identifier')} i using (id) left join former using (id))`
+  const bind = (db: Queryable, readOnly: boolean, snapshot = evidenceIn(db, readOnly)): Tx => ({
     addAlert: (alert, again, calls) => addAlert(db, alert, again, calls),
     async pendingAlert({ key, text, at }, start) {
       const { rows } = await db.query(`select 1 from ${t('alert')} where key = $1 and text = $2 and at = $3 and delivered_at is null for share`, [key, text, at])
@@ -239,8 +257,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     },
 
     async hasCallEvidence() {
-      if (snapshot.noReserved) return false
-      return (await db.query(`select from ${t('call_evidence')} limit 1`)).rows.length > 0
+      return snapshot.any()
     },
 
     async rivalCalls(number, first, last, line) {
@@ -250,7 +267,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     },
 
     async callEvidence({ subjects, identifiers, calls, before } = {}) {
-      if (snapshot.noReserved) return []
+      if (subjects?.length === 0 || identifiers?.length === 0 || calls?.length === 0 || await snapshot.absent()) return []
       const filters: string[] = []
       const values: unknown[] = []
       for (const [column, ids] of [['subject', subjects], ['identifier', identifiers], ['call_id', calls]] as const) if (ids) filters.push(`${column} = any($${values.push(ids)}::text[])`)
@@ -272,7 +289,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     },
 
     async callVisitors(ids) {
-      if (!ids.length) return new Map()
+      if (!ids.length || await snapshot.absent()) return new Map()
       const { rows } = await db.query(`select c.id, c.visitor from ${t('call')} c where c.id = any($1::text[]) and c.party is not null and exists (
         select from ${t('call_evidence')} e where e.call_id = c.id and e.subject = c.visitor and e.identifier in ('dial:' || c.id, 'lease:' || c.id, 'text:call:' || c.id)
         and not exists (select from ${t('identifier')} i where i.id = e.identifier and i.ignored))`, [ids])
@@ -280,7 +297,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     },
 
     async matchingEdges(subjects) {
-      if (snapshot.noReserved || !subjects.length) return { active: await this.edgesOf(subjects), reserved: false }
+      if (!subjects.length || await snapshot.absent()) return { active: await this.edgesOf(subjects), reserved: false }
       const { rows } = await db.query(`with active as materialized (select * from ${t('edge')} where subject = any($1::text[])),
         nearby as (select exists (select from ${t('call_evidence')} where subject = any($1::text[])
           union all select from active a join ${t('call_evidence')} r on r.identifier = a.identifier) as reserved)
@@ -334,14 +351,15 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
 
     async *sharing(caps, alone) {
       const kinds = Object.keys(caps)
-      const { rows: unnamed } = await db.query(`select id from ${t('match_identifier')} where fanout >= 2 and not ignored and split_part(id, ':', 1) <> all($1::text[]) limit 1`, [kinds])
+      const table = t(await snapshot.absent() ? 'identifier' : 'match_identifier')
+      const { rows: unnamed } = await db.query(`select id from ${table} where fanout >= 2 and not ignored and split_part(id, ':', 1) <> all($1::text[]) limit 1`, [kinds])
       if (unnamed.length > 0) throw malformed(`Identifier "${unnamed[0].id}" has a kind that is missing from the policy`)
       const rows = cursor(
         db,
         page,
         `select x.subject as a, y.subject as b, array_agg(x.identifier) as identifiers, array_agg(i.fanout) as fanouts,
            array_agg(array[x.first_at, x.last_at, x.sightings, y.first_at, y.last_at, y.sightings]) as times
-         from ${t('match_identifier')} i
+         from ${table} i
          join unnest($1::text[], $2::bigint[]) as rule (kind, cap) on rule.kind = split_part(i.id, ':', 1) and i.fanout <= rule.cap
          join ${t('edge')} x on x.identifier = i.id
          join ${t('edge')} y on y.identifier = i.id and y.subject > x.subject
@@ -378,7 +396,9 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       const out = new Map<Identifier, IdentifierState>()
       if (identifiers.length === 0) return out
       const { rows } = await db.query(
-        `select id, fanout, ignored from ${t(snapshot.noReserved ? 'identifier' : 'match_identifier')} where id = any($1::text[]) and (fanout > 0 or ignored)`,
+        await snapshot.absent()
+          ? `select id, fanout, ignored from ${t('identifier')} where id = any($1::text[]) and (fanout > 0 or ignored)`
+          : `${scopedStates('select distinct unnest($1::text[]) as id')} select id, fanout, ignored from states where fanout > 0 or ignored`,
         [identifiers],
       )
       for (const row of rows) out.set(row.id, { fanout: row.fanout, ignored: row.ignored })
@@ -400,7 +420,9 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
         return new Map([...states].filter(([, state]) => state.fanout > 1 && !state.ignored))
       }
       const { rows } = await db.query(
-        `select id, fanout from ${t('match_identifier')} where fanout > 1 and not ignored and id in (select identifier from ${t('edge')} where subject = any($1::text[]))`,
+        await snapshot.absent()
+          ? `select id, fanout from ${t('identifier')} where fanout > 1 and not ignored and id in (select identifier from ${t('edge')} where subject = any($1::text[]))`
+          : `${scopedStates(`select distinct identifier as id from ${t('edge')} where subject = any($1::text[])`)} select id, fanout from states where fanout > 1 and not ignored`,
         [subjects],
       )
       return new Map(rows.map((row) => [row.id, { fanout: row.fanout, ignored: false }]))
@@ -553,6 +575,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     },
 
     async builtWith() {
+      if (readOnly) return (await db.query(`select policy from ${t('built')}`)).rows[0]?.policy ?? undefined
       const { rows } = await db.query(`select (select policy from ${t('built')}) as policy, coalesce((select true from ${t('call_evidence')} order by call_id limit 1), false) as reserved`)
       snapshot.noReserved = rows[0]?.reserved === false
       return (rows[0]?.policy as string | undefined) ?? undefined
@@ -1183,8 +1206,18 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     },
 
     async latelySeen(sightings) {
-      const { rows } = await db.query(`select distinct subject from (select subject from ${t('sighting')} order by recorded_at desc, subject collate "C" limit $1) newest`, [sightings])
-      return rows.map((row) => row.subject)
+      const { rows } = await db.query(
+        `with newest as materialized (select subject, recorded_at from ${t('sighting')} order by recorded_at desc, subject collate "C" limit $1)
+         select subject, min(recorded_at) as oldest, count(*) as n, (select count(*) > $2 from newest) as older
+         from (select * from newest order by recorded_at desc, subject collate "C" limit $2) taken group by subject`,
+        [Number.isFinite(sightings) ? sightings + 1 : null, Number.isFinite(sightings) ? sightings : null],
+      )
+      return { subjects: rows.map(row => row.subject as Subject), count: rows.reduce((sum, row) => sum + Number(row.n), 0), oldest: rows.length ? rows.reduce((at, row) => Math.min(at, Number(row.oldest)), Infinity) : null, older: Boolean(rows[0]?.older) }
+    },
+
+    async subjectPage(after, inclusive, limit) {
+      const { rows } = await db.query(`select id from ${t('subject')} where id collate "C" ${inclusive ? '>=' : '>'} $1 order by id collate "C" limit $2`, [after ?? '', limit])
+      return rows.map(row => row.id as Subject)
     },
 
     async *sightingsUntil(recorded) {
@@ -1295,7 +1328,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       await client.query(begin)
       if (lock !== 'none' && lockTimeout > 0) await client.query(`set local lock_timeout = ${Math.ceil(lockTimeout)}`)
       if (lock !== 'none') await client.query(`select pg_advisory_xact_lock${lock === 'shared' ? '_shared' : ''}(hashtext($1))`, [`account-graph:${schema}`])
-      const result = await work(bind(client))
+      const result = await work(bind(client, begin === READ_ONLY))
       // A write is counted as it commits, in the same trip to the database.
       try {
         await client.query(lock === 'exclusive' ? `update ${t('pulse')} set writes = writes + 1; commit` : 'commit')
@@ -1468,7 +1501,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     outbox,
     ops,
     write: (work) => inTurn(() => run('begin', 'exclusive', work)),
-    read: (work) => run('begin isolation level repeatable read read only', 'none', work),
+    read: (work) => run(READ_ONLY, 'none', work),
     async migrate() {
       const client = await pool.connect()
       const key = [`account-graph:${schema}:upgrade`]

@@ -41,6 +41,8 @@ To ask who somebody may be without recording it, use the `match` [lookup](http.m
 
 Beside `facts`, `at` is when it happened, `event` is what the person was doing, up to 200 characters, and `speaker` is the [person who speaks for](#speaking-for-somebody-else) the subject: their `device`, `phone` and `email`.
 
+Phone keys use the line before the extension. An extension is written with `ext`, `extn`, `extension`, `extensión`, `anexo`, `int`, `interno`, `;ext=`, `;postd=`, `x`, `#`, a comma or a dialing pause. For example, `+1 (202) 555-0123 ext. 42` and `+1 (202) 555-0123;ext=42` both match `+12025550123`. An `x` or `#` between the digits of one number is not an extension. Older keys that included extension digits stop matching the corrected number. Those hashes hold no record of where an extension began, so a rebuild cannot find or repair them. Use your original records to identify affected contacts and supply their corrected numbers under new entry keys. Review any old links those keys created.
+
 | Kind of your own | Value |
 | --- | --- |
 | `hardware` | The hashed machine id reported by your desktop client |

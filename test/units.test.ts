@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { createHmac } from 'node:crypto'
+import { createHash, createHmac } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -30,6 +30,46 @@ test('emails and phones normalize the way Google documents', () => {
   assert.throws(() => normalizePhone('555-0100'), TypeError)
   // The example hash from Google's Data Manager guide for john.smith@example.com.
   assert.equal(hashEmail('john.smith@example.com'), '8e621e3d0368631d263d07a351fa8d34fba0d17c15fbcdec11a5f58008d022a0')
+})
+
+test('only the line before a phone extension supplies digits for its key', () => {
+  for (const extension of ['x02', ' X 7', ' ext. 03', '(Ext: 4)', ' extension #05', ';ext=6', ' #07', ', extn. 0008', 'x9#', ' EXTN 1-23', ' / ext. 12', ' ext. (12)', ' x12.', ';ext=12;phone-context=+1']) {
+    assert.equal(normalizePhone('+1 (202) 555-0123' + extension), '+12025550123', extension)
+    assert.equal(normalizePhone('202-555-0123' + extension, '44'), '+442025550123', extension)
+    assert.throws(() => normalizePhone('+55501' + extension), TypeError)
+  }
+  assert.throws(() => normalizePhone('+55501;ext=1234'), TypeError)
+  assert.equal(normalizePhone('+1 (202) 555-0123 ext.'), '+12025550123')
+  for (const label of ['FAX12', 'NEXT24', 'X24STORE']) {
+    assert.equal(normalizePhone('+1 (202) 555-0123 ' + label), '+12025550123' + label.replace(/\D/g, ''))
+  }
+})
+
+test('an extension in Spanish or after a dialing pause is left out, and a mark between the digits of one number is not one', () => {
+  for (const extension of [' extensión 42', ' extensio\u0301n 42', ' extension 42', ' anexo 42', ' int. 42', ' interno 42', ',42', ',,42#', 'p42', 'w42', ';postd=42', ' x42', '#42']) {
+    assert.equal(normalizePhone('+1 202 555 0123' + extension), '+12025550123', extension)
+    assert.equal(normalizePhone('202-555-0123' + extension), '+12025550123', extension)
+  }
+  for (const [written, key] of [['202x555x0123', '+12025550123'], ['202-555-x0123', '+12025550123'], ['1x202x555x0123', '+12025550123'], ['202#555#0123', '+12025550123'], ['+1#2025550123', '+12025550123'], ['202,555,0123', '+12025550123'], ['+44 20 7946 x0123', '+442079460123'], ['+1 (202) 555-0123', '+12025550123']] as const) assert.equal(normalizePhone(written), key, written)
+  // A second number is not an extension of the first.
+  assert.throws(() => normalizePhone('+12025550123, 2025550199'), TypeError)
+})
+
+test('100,000 phone forms without an extension keep their previous key or refusal', () => {
+  const prefixes = ['+1', '1', '+', '001', '+44', '44', '011', '', '+000000', '001100']
+  const gaps = ['', ' ', '-', '.', '/', '\u00a0', '\t', '()', '  ', ' - ']
+  for (let i = 0; i < 100_000; i++) {
+    const raw = prefixes[Math.floor(i / 10_000)] + '202' + gaps[Math.floor(i / 1000) % 10] + '555' + gaps[Math.floor(i / 100) % 10] + '01' + String(i % 100).padStart(2, '0')
+    const country = ['1', '44', '52'][i % 3]!
+    // This is how existing keys were made, including length checks on numbers with a leading plus.
+    const digits = raw.replace(/\D/g, '')
+    let previous: string | undefined
+    if (raw.trim().startsWith('+') && digits.length >= 8 && digits.length <= 15) previous = '+' + digits
+    else if (digits.length === 10) previous = '+' + country + digits
+    else if (digits.length === 11 && digits.startsWith(country)) previous = '+' + digits
+    if (previous) assert.equal(hashPhone(raw, country), createHash('sha256').update(previous).digest('hex'), raw)
+    else assert.throws(() => hashPhone(raw, country), TypeError, raw)
+  }
 })
 
 test('an IPv6 address keeps its /64 prefix and an IPv4 address stays whole', () => {

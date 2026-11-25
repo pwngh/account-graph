@@ -4,6 +4,9 @@ import { createEngine } from '../src/core/engine.ts'
 import type { EngineOptions, Inside } from '../src/core/engine.ts'
 import { recordCall, recordCallResult } from '../src/core/calls.ts'
 import { recordText } from '../src/core/texts.ts'
+import { hashPhone } from '../src/core/identifiers.ts'
+import { createReceipts } from '../src/core/receipts.ts'
+import { createSix } from '../src/core/six.ts'
 import type { Store, Tx } from '../src/core/store.ts'
 
 const AT = 1_790_000_000_000
@@ -65,6 +68,70 @@ export interface Dumped {
 }
 
 export function unitSuite(name: string, open: () => Promise<Dumped>) {
+  test(`${name}: a fresh call without a visitor is saved once and only read for its status and result`, async t => {
+    const { store, close } = await open()
+    try {
+      const { graph } = createEngine(store, { now: () => AT })
+      const saved = t.mock.method(graph, 'keepCall')
+      const read = t.mock.method(graph, 'keptCall')
+      const call = await recordCall(graph, { id: 'ordinary', from: '+12025550123', to: '+12025550180', at: AT, duration: 60 })
+      assert.ok(call.counted)
+      assert.equal(saved.mock.callCount(), 1)
+      // Check whether it already exists, settle its outcome, then return the standing call.
+      assert.equal(read.mock.callCount(), 3)
+    } finally {
+      await close()
+    }
+  })
+
+  test(`${name}: phone extensions use the line on profiles, speakers, calls, texts and lookups`, async () => {
+    const { store, close } = await open()
+    try {
+      const engine = createEngine(store, { now: () => AT })
+      const six = createSix(engine, { receipts: createReceipts(['a'.repeat(32)]) })
+      const line = '+12025550123', office = '+12025550180', caller = 'caller:' + hashPhone(line)
+      const contact = 'contact:pat', other = 'contact:lee'
+      const entries = [
+        { type: 'profile', key: 'pat', at: AT, subject: contact, facts: { phone: line + ' ext. 42' } },
+        { type: 'profile', key: 'lee', at: AT, subject: other, facts: { phone: line + '42' } },
+      ] as const
+      assert.ok((await six.record({ entries })).results.every(row => row.ok))
+      assert.deepEqual(await six.lookup({ kind: 'find', text: line }), { by: 'phone', subjects: [contact] })
+      assert.deepEqual(await six.lookup({ kind: 'find', text: line + ';ext=47' }), { by: 'phone', subjects: [contact] })
+      for (const extension of [' / ext. 12', ' ext. (12)', ' x12.', ';ext=12;phone-context=+1', ' x12 (office)']) {
+        assert.deepEqual(await six.lookup({ kind: 'find', text: line + extension }), { by: 'phone', subjects: [contact] }, extension)
+      }
+      const match = await six.lookup({ kind: 'match', at: AT, facts: { phone: line + ' x47' } })
+      assert.ok(match && 'candidates' in match)
+      assert.deepEqual(match.candidates.map(row => [row.subject, row.level]), [[contact, 'same']])
+
+      const [spoken, call, text] = (await six.record({ entries: [
+        { type: 'profile', key: 'spoken', at: AT, subject: 'contact:ward', facts: { phone: line + ' Ext 123' }, speaker: { phone: line } },
+        { type: 'call', key: 'ring', at: AT, direction: 'inbound', from: line + 'x42', to: office + '#90' },
+        { type: 'text', key: 'message', at: AT, direction: 'inbound', from: line + ' (extension 123)', to: office + ';ext=90' },
+      ] })).results
+      assert.ok(spoken?.ok && spoken.type === 'profile' && spoken.value.notes.speaker)
+      assert.ok(call?.ok && call.type === 'call' && call.value.subject === caller)
+      assert.ok(text?.ok && text.type === 'text' && text.value.subject === caller)
+      assert.equal((await engine.graph.keptCall('ring'))?.to, office)
+      assert.equal((await engine.graph.keptText('message'))?.to, office)
+      assert.deepEqual(await six.lookup({ kind: 'find', text: line }), { by: 'phone', subjects: [caller, contact] })
+      const ringing = await six.lookup({ kind: 'caller', at: AT, from: line + '#12', to: office })
+      assert.ok(ringing && 'subject' in ringing && ringing.subject === caller)
+
+      const short = '+55501;ext=1234'
+      await assert.rejects(six.record({ entries: [{ ...entries[0], facts: { phone: short } }] }), { code: 'INPUT.MALFORMED' })
+      const [blocked, leftOut] = (await six.record({ entries: [
+        { type: 'call', key: 'short-call', at: AT, direction: 'inbound', from: short, to: office },
+        { type: 'text', key: 'short-text', at: AT, direction: 'inbound', from: short, to: office },
+      ] })).results
+      assert.ok(blocked?.ok && blocked.type === 'call' && blocked.value.flags.includes('blocked'))
+      assert.ok(leftOut?.ok && leftOut.type === 'text' && leftOut.value.flags.includes('left_out'))
+    } finally {
+      await close()
+    }
+  })
+
   for (const [entry, work] of Object.entries(ENTRIES)) {
     test(`${name}: ${entry} cut off anywhere leaves nothing, and done again leaves all of it`, async () => {
       const { store, dump, close } = await open()

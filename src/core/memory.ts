@@ -1180,7 +1180,20 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
 
     async latelySeen(newest) {
       const all = [...sightings.values()].flat().sort((x, y) => (y.recorded ?? y.at) - (x.recorded ?? x.at) || (x.subject < y.subject ? -1 : 1))
-      return [...new Set(all.slice(0, newest).map((sighting) => sighting.subject))]
+      const window = all.slice(0, newest)
+      const last = window.at(-1)
+      return { subjects: [...new Set(window.map(sighting => sighting.subject))], count: window.length, oldest: last?.recorded ?? last?.at ?? null, older: all.length > window.length }
+    },
+
+    async subjectPage(after, inclusive, limit) {
+      const page: Subject[] = []
+      // Discard later ids as we go so the sweep never has to sort a copy of the whole store.
+      for (const subject of labels.keys()) {
+        if (after !== null && (byKey(subject, after) < 0 || (!inclusive && subject === after))) continue
+        page.push(subject)
+        if (page.length === limit * 2) page.sort(byKey).length = limit
+      }
+      return page.sort(byKey).slice(0, limit)
     },
 
     async *sightingsUntil(recorded) {
