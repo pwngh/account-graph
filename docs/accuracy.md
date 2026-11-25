@@ -489,6 +489,8 @@ The held seeds 20270601-20, once, at `b96207d`, in all five settings and arms. *
 
 Each safety the reviews added took some of these joins: on 20270501-08, base3 joined 76.24% at look 1 and 60.31% at look 3. The marks ask for joined or shown, so they do not see it.
 
+**Each rate by itself.** At its hard end over base3, at `b96207d`, on 20270501-05 with 1,000 people each, 63 rates one at a time. Under `records` no rate by itself put more than 0.17% of people, which is two of them, with another's record. Under `new` it was 0.68% with nothing changed and 1.02% at most. The two drops larger than the noise are short first names, with 49% of the pairs of one person joined against 56%, and people entered twice, with 90.1% credited against 95.3%. A rate that can do nothing in these arms moved joins by three points, so smaller differences say nothing. [All it printed](accuracy-fourth-each.txt).
+
 All that was printed is in [accuracy-fourth-held.txt](accuracy-fourth-held.txt). The worlds and the rules are by one author's hands, the marks were set after looks, and nobody here is real.
 
 ## Limitations

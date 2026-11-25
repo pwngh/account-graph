@@ -176,7 +176,7 @@ Keep a shared phone on each person, and record what you know about the two. Remo
 Use `examples/intake.json` where mixing two people's records is worse than leaving one person with two, such as a law firm or a clinic. It is the preset above, and:
 
 ```json
-{ "apart": ["birth", "given"], "records": "confirmed" }
+{ "apart": ["birth", "given"], "records": "confirmed", "credit": 0.75 }
 ```
 
 Set `IDENTIFIER_SECRET`, and send the `name` and `dob` you have with each `profile`. Without them nothing confirms that two records are one person, and each stays by itself until somebody joins them.
@@ -184,7 +184,7 @@ Set `IDENTIFIER_SECRET`, and send the `name` and `dob` you have with each `profi
 | Ask at intake | Send |
 | --- | --- |
 | Is this for yourself or for somebody else? Make it a required question. | Whoever calls or fills in the form as [`speaker`](identify.md#speaking-for-somebody-else) |
-| First and last name, and date of birth | `name` and `dob` |
+| First and last name, and date of birth, every time. Most duplicates that are missed have no date on one of the two. | `name` and `dob`, and a `match` before you enter somebody |
 | Was this call about the person on screen? | A `merge` of the `caller:` and the contact, only where the caller is that person |
 | Who is on the other side? | A [`split`](#split) |
 
@@ -242,6 +242,8 @@ What two records share, such as a mailbox, a number or a computer, may be a hous
 | Have names that may stand for one another, such as Robert and Bob | One person with an agreeing date of birth, and unconfirmed without |
 | Differ in a date of birth or a first name, or have two words of which one is another, such as Maria Elena and Maria Guadalupe | Two |
 | Fit two others who differ, such as a Juan with no date beside a father and a son of that name | Unconfirmed with both |
+| Have one full name and date of birth, as written, and anything else that agrees, such as a family's phone | One person |
+| Have one full name and date of birth, or names that may be one and the same date, and nothing else | Two, shown as related with `unconfirmed: true`. `match` finds them, so ask it before you enter somebody |
 | Share a number or an email given under one name, a name with one zip code or date of birth, or a passkey | One person |
 | Share anything else, however strong | Two, shown as related with `unconfirmed: true`, and in Matches for somebody to decide |
 
@@ -250,6 +252,7 @@ What two records share, such as a mailbox, a number or a computer, may be a hous
 | Names no table has | A date of birth confirms two records with such names only where a number or an email is under one name. Twins who share only a device and have no detail of their own can be joined by their date, where the policy has no `name` kind. |
 | Two words | That a name has several words is noted from the day the rule is on. One sent before counts as one word: send it again. Two second words in no table that begin with one letter look alike. |
 | More than 300 records in one component | Nothing but a decision joins them. The 301st takes back what facts had joined there, so find what they all share and `mute` it. |
+| Names not in Latin letters | They make no key of a full name and a date, because folding would make many names one. |
 | A father and a son | Of one name with no dates, they are one person by it, as two records of one man would be. |
 
 A record is a subject that names somebody, such as `contact:7` or `account:42`. A browser or a caller is none: it goes with the records it is tied to most strongly, and of two as strong, with whoever was seen first.
@@ -257,6 +260,20 @@ A record is a subject that names somebody, such as `contact:7` or `account:42`. 
 > **Credit is another question.** An ad click on a browser two people share can be credited to both, whichever of them the browser goes with. It is not credited across a split, or between two whose dates of birth or names differ, because whoever is on the other side of a matter must not be shown there.
 
 It is off unless a policy sets it, and turning it on needs a [rebuild](operations.md#policy). [The fourth run](accuracy.md#the-fourth-run) has what it did on made-up people.
+
+### A bar of its own for credit
+
+`"credit": 0.75` in a policy credits a visit at that confidence or above, where without it the bar is `same`, 0.9. A contact and the caller with the phone on file are tied at 0.85 under [the intake preset](#an-intake-desk), which is too little to join two people and enough to say which ad.
+
+| Under the bar of its own | |
+| --- | --- |
+| Joins | Nobody |
+| A journey, the members of a person | Show nothing of it |
+| A browser that is one with another record | Is that record's, and is not credited here |
+| A split, or a date of birth or a name that differs | Is not crossed |
+| A call filed under its number's own channel | Needs `same`, as before |
+| What is sent to an ad platform | Needs 0.9, as before |
+| A changed bar | Needs no rebuild |
 
 ## Model assumptions
 

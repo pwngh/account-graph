@@ -3125,6 +3125,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       // Folding takes letters that are not Latin, and what is left of two names is the same.
       for (const [first, last] of [['伟', '王'], ['Иван', 'Петров'], ['Ana', 'Van'], ['Unknown', 'Garcia'], ['Ana 伟', 'Lima']] as const) assert.deepEqual(personKeys(secret, first, last, '1990-06-07'), [], `${first} ${last}`)
       assert.equal(personKeys(secret, 'José', 'Muñoz', '1990-06-07').length > 0, true)
+      for (const [one, other] of [['Đan', 'An'], ['Øyan', 'Yan']] as const) assert.notEqual(personKeys(secret, one, 'Lima', '1990-06-07')[0], personKeys(secret, other, 'Lima', '1990-06-07')[0])
       // A word in common, a name that may be another, and half a last name show two, and join nobody.
       for (const [one, other] of [[['Baby Boy', 'Smith'], ['Baby Girl', 'Smith']], [['Xiadani Yamileth', 'Lima'], ['Yaretzi Yamileth', 'Lima']], [['Mary', 'Lima'], ['Marilyn', 'Lima']], [['Maria', 'Garcia Lopez'], ['Maria', 'Garcia Perez']]] as const) {
         const { graph } = await fresh(policyFrom({ apart: ['birth', 'given'], records: 'confirmed' }))

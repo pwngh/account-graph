@@ -9,7 +9,7 @@
 import { createHmac } from 'node:crypto'
 import { malformed } from '../contract/fault.ts'
 import type { Identifier } from '../contract/types.ts'
-import { birthKeys, nameKeys } from './identifiers.ts'
+import { FOLDED, birthKeys, nameKeys } from './identifiers.ts'
 
 /** Each full name, and what stands for it: a short form, a name in another language, nothing for a name with no short form. */
 const FORMS = `
@@ -1323,7 +1323,7 @@ zephaniah:zeph
 `
 
 /** A name as it is compared: without case, accents or punctuation. */
-const folded = (text: string) => text.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^a-z ]+/g, '').trim()
+const folded = (text: string) => text.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[ßæœøđðłþı]/g, (letter) => FOLDED[letter]!).replace(/[^a-z ]+/g, '').trim()
 
 /** By every name and short form, the full names it may stand for. */
 const standsFor = new Map<string, Set<string>>()
