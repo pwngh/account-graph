@@ -230,11 +230,12 @@ export function createSix(engine: Engine, options: SixOptions) {
         return { value: { counts: counted !== undefined && !spurned, value: counted?.value ?? null, deliveries: await jobsOf(inside, id) }, subjects: [], stands }
       }
       case 'payment': {
+        let existed = false
         if (!again) {
           const payment = { id: entry.key, transactionId: entry.conversion, amount: entry.amount, kind: entry.direction === 'refunded' ? ('refund' as const) : ('payment' as const), ...(entry.currency && { currency: entry.currency.toUpperCase() }) }
-          await (outbox ? outbox.pay(payment) : graph.pay(payment))
+          existed = (await (outbox ? outbox.pay(payment) : graph.pay(payment))).duplicate
         }
-        return { value: { value: (await graph.outcomeOf(entry.conversion))?.value ?? null, deliveries: await jobsOf(inside, entry.conversion) }, subjects: [] }
+        return { value: { value: (await graph.outcomeOf(entry.conversion))?.value ?? null, deliveries: await jobsOf(inside, entry.conversion) }, subjects: [], existed }
       }
       case 'call': {
         const { type: _, key, result, ...rest } = entry
@@ -282,8 +283,8 @@ export function createSix(engine: Engine, options: SixOptions) {
       }
       case 'transfer': {
         const { type: _, key, at, from, to, amount, asset } = entry
-        const { relation, score } = await graph.transfer({ id: key, at, from, to, amount, ...(asset && { asset }) })
-        return { value: { relation, score }, subjects: [from, to] }
+        const { relation, score, duplicate } = await graph.transfer({ id: key, at, from, to, amount, ...(asset && { asset }) })
+        return { value: { relation, score }, subjects: [from, to], existed: duplicate }
       }
     }
   }
