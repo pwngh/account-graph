@@ -634,7 +634,8 @@ export function createHandler(core: Core, options: HandlerOptions) {
         const opens = party || name === 'report' || ((name === 'decide' || name === 'forget') && body?.by === reviewer) || (name === 'lookup' && (body?.kind === 'journey' || body?.kind === 'find' || body?.kind === 'party'))
         if (!opens) throw fault(FAULT_CODES.AUTH.FORBIDDEN, name === 'decide' || name === 'forget' ? '`by` must match the owner of the token' : 'The token does not open this call')
       }
-      const dispatch = (input: unknown) => core.v1!(name as CallName, guarded && name === 'record' ? recordPages(input, options) : input, gone.signal)
+      const run = (input: unknown) => core.v1!(name as CallName, input, gone.signal)
+      const dispatch = guarded && name === 'record' ? (input: unknown) => recordPages(input, options, run) : run
       const said = owner.role === 'limited' ? await limitedCall(owner, name as CallName, body, dispatch) : await dispatch(body)
       // No journey says whom a call was not with, so a reviewer is not told it here.
       if (owner.role === 'reviewer' && name === 'lookup' && body?.kind === 'party' && (said as any)?.role === 'excluded') {

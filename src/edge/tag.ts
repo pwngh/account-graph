@@ -37,7 +37,7 @@ const run = (server: PageRules) => `
 {
   const self = new URL(import.meta.url)
   const list = name => self.searchParams.getAll(name).flatMap(value => value.split(',').filter(Boolean))
-  const rules = ${JSON.stringify({ ...(server.allowPages && { allowPages: server.allowPages }), ...(server.refusePages && { refusePages: server.refusePages }) })}
+  const rules = ${JSON.stringify({ ...(server.origins?.length && { origins: server.origins }), ...(server.allowPages && { allowPages: server.allowPages }), ...(server.refusePages && { refusePages: server.refusePages }) })}
   if (!hasPageRules(rules)) {
     for (const name of ['allowPages', 'refusePages']) if (self.searchParams.has(name)) rules[name] = list(name)
   }

@@ -19,6 +19,8 @@ test('page patterns cover only the named path or subtree, including when a route
     'https://user:' + key + '@example.org/welcome', 'sms:+12025550100', 'welcome']) {
     assert.equal(pageAddress(path, rules), undefined, path)
   }
+  assert.equal(pageAddress('https://intake.example.org/private', { allowPages: ['/public'], origins: ['HTTPS://INTAKE.EXAMPLE.ORG:443'] }), undefined)
+  assert.equal(pageAddress('https://outside.example.org/report;view/%2F?q=key#private', { allowPages: [], origins: [origin] }), 'https://outside.example.org/report;view/%2F')
   assert.equal(pageAddress('/public', { allowPages: [] }), undefined)
   assert.equal(pageAddress('/public', { refusePages: [] }), '/public')
   for (const setting of ['not a list', null, [''], [42], ['/x*y'], ['/x?private'], ['//x'], ['/a/..']]) assert.equal(validPageRules({ allowPages: setting } as never), false)
@@ -93,11 +95,7 @@ test('the served tag waits for its page and banner, tears down on navigation and
   env.accountGraphConsent = { adUserData: true, adPersonalization: false }
   history.replaceState(null, '', '/files/' + key + '?q=' + key)
   await quiet()
-  document.referrer = origin + '/files/' + key
   history.pushState(null, '', '/welcome')
-  await quiet()
-  document.referrer = ''
-  env.accountGraph.refresh()
   await settle()
   assert.equal(fingerprints.length, 1)
   const consentCount = posted.length
@@ -201,5 +199,34 @@ test('a vendor that finishes loading after navigation never starts identificatio
       assert.equal(await runInNewContext(script + '\n' + name + '(' + args + ')', env), undefined)
       assert.deepEqual([starts, reads], [Number(later === 'agent'), 0])
     }
+  }
+})
+
+test('the served tag keeps arrivals from other sites and drops a private previous page without losing the click', async () => {
+  const sister = 'https://intake.example.org'
+  const allow = { allowPages: ['/pricing', '/services/*'], origins: [origin, sister] }
+  const refuse = { refusePages: ['/files/*'], origins: [origin, sister] }
+  const news = 'https://news.example.org'
+  const search = 'https://search.example.org'
+  for (const [rules, path, referrer, expected] of [
+    [allow, '/pricing', search + '/', search + '/'],
+    [allow, '/services/consult', news + '/story/42?q=' + key + '#' + key, news + '/story/42'],
+    [allow, '/pricing', origin + '/services/consult', undefined],
+    [refuse, '/pricing', news + '/files/article?q=' + key, news + '/files/article'],
+    [refuse, '/pricing', origin + '/files/' + key, undefined],
+    [refuse, '/pricing', sister + '/files/' + key, undefined],
+  ] as const) {
+    const location = new URL(origin + path + '?gclid=G1')
+    const sent: any[] = []
+    const store = { getItem: () => null, setItem() {} }
+    const env = { URL, AbortController, location, localStorage: store, sessionStorage: store, navigator: {},
+      crypto: { randomUUID: () => 'browser' }, history: { pushState() {}, replaceState() {} }, addEventListener() {},
+      document: { referrer, cookie: '', addEventListener() {}, removeEventListener() {} },
+      fetch: async (_url: string, init: RequestInit) => sent.push(JSON.parse(String(init.body))),
+    }
+    const script = browserScripts(rules).collect.replace(/^export /gm, '').replace('import.meta.url', JSON.stringify(origin + '/collect.js'))
+    runInNewContext(script, env)
+    await new Promise<void>(resolve => setImmediate(resolve))
+    assert.deepEqual(sent.map(body => [body.url, body.touch.gclid, body.touch.referrer]), [[origin + path, 'G1', expected]])
   }
 })
