@@ -331,6 +331,15 @@ Each look is a round, and what was changed for it is here. Rules were chosen on 
 | 5 | 20270321-40 | `836d2f8` | base3, high3, dirty3 and their pool held but `email + phone`. A review found that `named` could join a mother and a child by a first letter and a surname; that key is gone (`d445ccf`), and high3 keeps 93.6% of its pairs, under its mark |
 | 6 | 20270341-60, on which nothing was chosen | `bc313e3` | base3 keeps 97.86% of its pairs of records and dirty3 97.82%, under 98%; every other mark of the new settings held, high3 at 95.26%. On the old settings, whose names are letters no table has, mixed records are 2.25% in base and 3.38% in high and stay bad |
 
+After round 6 the code and the tool changed, and their figures are not comparable with the rounds above:
+
+- A tie by a tap or a number shown is held to the call each of its supporting ids names. One wrong call makes a wrong link. Before, it was held to everybody the caller's subject had been.
+- Two dates of birth part a caller or a browser that staff joined to both. Where the cut has a choice, it takes the side with less evidence, so more guesses on one side can win over a join made today; only a tie goes to whoever was first seen. Two people staff joined to one number and whose births are not known are one, as before.
+- A speaker's details make no key of the subject. A browser and a number shared by two with differing names join them no longer. A name confirms only what still counts. Known and not covered: a Sr. and a Jr. of one number with no births are one by the number, and what a speaker's number joins under `ward` outlives a mute of it.
+- `tools/accuracy/third.ts` runs every setting the page promises by default, marks every kind of link either code has, adds the mark for taps without a pool that this page already had, prints the commits and refuses a checkout with changes.
+
+**The intake arm.** `new intake` is `new` with what staff may do at intake: ask who is calling, ask whether it is for somebody else, and make one of a person's records. Its rates are assumed, set before it was run, and in `tools/accuracy/rates.ts`. A caller is put down to their own record, and to the record the call is about only where they do not say they speak for another. It is printed beside the rest, on its own seeds of chance and its own counts. It is judged by no mark and saves none.
+
 The fillers of dirty3 were then half ones no table has. `gaps3` and `busygaps3` are printed with no mark, though they were added after a look; `new pool` in base3 prints what it mixes and has no mark for it, as before.
 
 ### What would be bad

@@ -60,6 +60,8 @@
 - An ad click or a campaign visit in the window is credited before a call or text filed under its number.
 - A visit in the same cluster is credited, however weak the chain of links to it (`AttributedTouch.joined`). The outbox sends its click unless `confidence` is set.
 - A report, open calls and the board read the links of fifty thousand people at a time.
+- Placeholder numbers and office mailboxes link nobody, under every policy. Where two are kept apart, what is tied to both as strongly goes with whoever was first seen. Rebuild after upgrading.
+- Under `apart: ["birth"]`, two dates of birth also part a caller or a browser that staff joined to both. `undecided` and Matches show the join that was not followed.
 - A policy's `apart` keeps two subjects apart whose dates of birth differ, or whose first names can stand for no one name (`birthKeys`, `givenKeys`, `Link.conflict`). Under `given`, one number or email given under one name confirms a link (`namedKeys`). Off by default.
 - A change webhook is given up on after five seconds, and ad platforms and lookups after ten to thirty. A server answers reads while a long write of its own lasts.
 - A journey shows no record, and no browser or caller, of a person in another group.
