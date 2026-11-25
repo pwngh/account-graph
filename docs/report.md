@@ -2,9 +2,9 @@
 
 The report lists each campaign's cost beside the outcomes its visitors produced, using the links already in the graph.
 
-```sh
-curl -H "authorization: Bearer $REVIEWER_TOKEN" \
-  "https://graph.example.org/report?from=2026-11-01&to=2026-11-14"
+```bash
+curl -X POST https://graph.example.org/v1/report -H "authorization: Bearer $REVIEWER_TOKEN" \
+  -d '{ "kind": "campaigns", "window": { "from": "2026-11-01", "to": "2026-11-14", "timeZone": "America/Chicago" } }'
 ```
 
 ```text
@@ -20,9 +20,9 @@ The **Channels** view at `/review` shows the same table. Run `npm run review` to
 ## Data sources
 
 ```text
-ad platform  ──▶ cost per campaign per day ───────┐
-landing page ──▶ touch: click id and campaign id ─┼──▶ report
-your backend ──▶ outcome: who, when, which step ──┘
+ad platform  ──▶ cost per campaign per day ────────┐
+landing page ──▶ arrival: click id and campaign id ┼──▶ report
+your backend ──▶ conversion: who, when, which step ┘
 ```
 
 ### Campaign ids
@@ -67,27 +67,27 @@ GOOGLE_ADS_DEVELOPER_TOKEN=…     # with GOOGLE_ADS_CUSTOMER_ID and GOOGLE_SERV
 META_AD_ACCOUNT_ID=…  META_ADS_TOKEN=…
 ```
 
-For other platforms, post the rows or send a CSV file:
+For other platforms, record a `cost` entry or send a CSV file:
 
-```sh
-curl -X POST https://graph.example.org/costs -H "authorization: Bearer $GRAPH_TOKEN" \
-  -d '[{"day":"2026-11-14","source":"mailer","campaign":"November postcard","amount":300,"currency":"USD"}]'
+```bash
+curl -X POST https://graph.example.org/v1/record -H "authorization: Bearer $GRAPH_TOKEN" -d '{ "entries": [
+  { "type": "cost", "key": "mailer-2026-11-14", "at": 1795460000000, "rows": [{ "day": "2026-11-14", "source": "mailer", "campaign": "November postcard", "amount": 300, "currency": "USD" }] }] }'
 
 GRAPH_URL=https://graph.example.org GRAPH_TOKEN=… npm run costs -- spend.csv
 ```
 
-A row replaces the earlier row for the same day, source and campaign, so a day can be sent again. Each read covers the last seven days, because platforms revise recent days.
+`at` is when the platform was read. A row replaces an earlier reading of the same day, source and campaign, so a day can be sent again, with a new key. A row that a newer reading already has is counted under `older` and changes nothing. Each read covers the last seven days, because platforms revise recent days.
 
 ### Outcomes
 
-Your backend reports what a person did. Name the step in `stage`, and add a value if it has one.
+Your backend records what a person did as a `conversion`. Name the step in `stage`, and add a value if it has one. `key` is your transaction id.
 
-```sh
-curl -X POST https://graph.example.org/convert -H "authorization: Bearer $GRAPH_TOKEN" \
-  -d '{"transactionId":"enroll-1001","subject":"account:42","at":1795460000000,"stage":"enrolled","value":200,"currency":"USD"}'
+```bash
+curl -X POST https://graph.example.org/v1/record -H "authorization: Bearer $GRAPH_TOKEN" -d '{ "entries": [
+  { "type": "conversion", "key": "enroll-1001", "at": 1795460000000, "subject": "account:42", "stage": "enrolled", "value": 200, "currency": "USD" }] }'
 ```
 
-Add `action` to send the outcome to the ad platforms through [the outbox](library.md#the-outbox). Without an action, here or in [`STAGES`](#steps), the outcome is counted in the report only.
+Add `actions` to [send the outcome to the ad platforms](library.md#what-sending-does). Without one, here or in [`STAGES`](#steps), the outcome is counted in the report only.
 
 ## Steps
 
@@ -101,9 +101,8 @@ STAGES='{
 }'
 ```
 
-```sh
-curl -X POST https://graph.example.org/convert -H "authorization: Bearer $GRAPH_TOKEN" \
-  -d '{"transactionId":"client-1001","subject":"account:42","at":1795460000000,"stage":"client"}'
+```json
+{ "type": "conversion", "key": "client-1001", "at": 1795460000000, "subject": "account:42", "stage": "client" }
 ```
 
 This outcome counts 200 USD and is sent to Google and Meta. Page events named `inquiry` and phone calls take their steps the same way.
@@ -114,12 +113,7 @@ This outcome counts 200 USD and is sent to Google and Meta. Page events named `i
 | States its own value, currency or action | What it states. The step fills in the rest. |
 | Names a step that is not listed | Counted under that name, as sent |
 
-When the real amount is known, [restate it](#value-changes) with `POST /restate`. The report changes, and so does the value Google holds:
-
-```sh
-curl -X POST https://graph.example.org/restate -H "authorization: Bearer $GRAPH_TOKEN" \
-  -d '{"transactionId":"client-1001","value":1250}'
-```
+When the real amount is known, [restate it](#value-changes). The report changes, and so does the value Google holds.
 
 Report columns follow the order of `STAGES`. The server refuses to start if an action names a platform that is not set up, or if any step has an action while no ad platform is set up.
 
@@ -127,18 +121,19 @@ Report columns follow the order of `STAGES`. The server refuses to start if an a
 
 ### Payments
 
-Report each payment as it happens, and the outcome's value follows.
+Record each payment as it happens, and the outcome's value follows.
 
-```sh
-curl -X POST https://graph.example.org/payment -H "authorization: Bearer $GRAPH_TOKEN" \
-  -d '{"id":"pay-771","transactionId":"client-1001","amount":300}'
+```json
+{ "type": "payment", "key": "pay-771", "at": 1795460000000, "conversion": "client-1001", "direction": "received", "amount": 300 }
 ```
 
-From the first payment on, the outcome is worth what was paid less what was given back, and never below zero. **Refunded** in the report is the sum of the refunds. Payments may come in any order, and before their outcome. Reporting one again changes nothing. The same `id` with other details, and a second currency for one outcome, are refused. A value you restate stands until the next payment.
+From the first payment on, the outcome is worth what was paid less what was given back, and never below zero. **Refunded** in the report counts the refunds. Payments may come in any order, and before their outcome. Recording one again changes nothing. The same key with other details is `KEY_REUSED`, and a second currency for one outcome is `CURRENCY_MISMATCH`.
 
-An amount is from 0.00001 to 10,000,000,000. The outcome's value, payments less refunds, is rounded to five decimals. Payments stay with the outcome's `transactionId` after it is withdrawn, so use a new `transactionId` for a different outcome.
+> **Use either payments or restatements for one outcome.** Once it has a payment, a restatement of its value is refused with `PAID`. One made before stays on record, and the payments decide the value.
 
-A conversion not sent yet goes out at its time with the new value. Platforms that can restate are told each later change. Use either payments or `/restate` for one outcome.
+An amount is from 0.00001 to 10,000,000,000. The outcome's value, payments less refunds, is rounded to five decimals. Payments stay with the outcome's key after it is withdrawn, so use a new key for a different outcome.
+
+A conversion not sent yet goes out at its time with the new value. Platforms that can restate are told each later change.
 
 ### Cost per step
 
@@ -148,9 +143,10 @@ Cost per outcome counts every step. Pass `per=enrolled`, or use **Cost per** on 
 
 A dimension splits each line by the advertised office, the serving office, the language, the hour or the weekday.
 
-```sh
-curl -H "authorization: Bearer $REVIEWER_TOKEN" \
-  "https://graph.example.org/report?from=2026-11-01&to=2026-11-14&by=outcome.office_served"
+```http
+POST /v1/report
+
+{ "kind": "campaigns", "window": { "from": "2026-11-01", "to": "2026-11-14", "timeZone": "America/Chicago" }, "by": "outcome.office_served" }
 ```
 
 ```json
@@ -163,8 +159,8 @@ curl -H "authorization: Bearer $REVIEWER_TOKEN" \
 | `by` | Splits by | Source |
 | --- | --- | --- |
 | `touch.<name>` | The credited visit | A parameter of your own on the landing address (`collect.js?params=office,lang`), or the `tags` of the number dialed |
-| `outcome.<name>` | The outcome | `tags` on `POST /convert`, or on the `POST /call` it came from |
-| `hour`, `weekday` | When it happened | The report's time zone |
+| `outcome.<name>` | The outcome | `tags` of the `conversion`, or of the `call` it came from |
+| `hour`, `weekday` | When it happened | The window's time zone |
 
 The response lists the `dimensions` recorded in the period; the Channels view offers them in **Breakdown**. Outcomes without a value have their own line, `(not set)`, so the parts add up to the total, rounding aside.
 
@@ -188,9 +184,12 @@ A tag `zip` with a Texas ZIP code adds the tag `county`, where all of the ZIP li
 
 Mark a call or outcome that is spam, a wrong number, a supplier or an existing client:
 
-```sh
-curl -X POST https://graph.example.org/not-lead -H "authorization: Bearer $GRAPH_TOKEN" -d '{"call":"CA1","kind":"spam"}'
-curl -X POST https://graph.example.org/not-lead -H "authorization: Bearer $GRAPH_TOKEN" -d '{"transactionId":"inquiry-1001"}'
+```json
+{ "type": "restatement", "key": "spam-CA1", "at": 1795460000000, "of": { "type": "call", "key": "CA1" }, "change": { "kind": "not_lead", "why": "spam" } }
+```
+
+```json
+{ "type": "restatement", "key": "wrong-1001", "at": 1795460000000, "of": { "type": "conversion", "key": "inquiry-1001" }, "change": { "kind": "not_lead", "why": "other" } }
 ```
 
 | Where | Effect |
@@ -199,29 +198,29 @@ curl -X POST https://graph.example.org/not-lead -H "authorization: Bearer $GRAPH
 | The call summary | Counted as `notLeads` only |
 | The Calls view, the Board and alerts | A missed call no longer waits for a callback |
 | Outcomes after a call | Excluded |
-| A journey, `GET /call`, `GET /outcome` | Still shown, marked `notLead` |
+| A journey, and the `record` lookup | Still shown, marked `notLead` |
 | Ad platforms | Not sent if queued. Restated to zero where the platform supports it; kept by the others. |
 
-A mark can precede its outcome; a call marked before its result is not counted when the result arrives. `"lead": true` removes the mark: everything counts again, and a conversion is sent at its current value. `forget` deletes the mark with its subject, and `prune` deletes marks whose outcome did not arrive.
+A mark can precede its outcome; a call marked before its result is not counted when the result arrives. `"change": { "kind": "lead" }` removes the mark: everything counts again, and a conversion is sent at its current value. The newest of the two by `at`, then by `key`, stands. `forget` deletes the mark with its subject, and `account-graph prune` deletes marks whose outcome did not arrive.
 
 > **Marks are not checked.** A campaign looks cheaper per lead when its poor leads are marked. Mark by a fixed rule, and read `notLeads` beside the cost.
 
 ## Board
 
-The Board puts each person in one column. A person is a cluster, with all its subjects.
+The Board puts each person in one column. A person is a cluster, with all its subjects. The `pipeline` [report](http.md#report) is the same.
 
 | Column | Who is in it |
 | --- | --- |
 | Missed calls | Anyone with an unreturned missed call or voicemail, whatever step they reached. Reaching them on any of their numbers returns it. Callers who hid their number are excluded. |
 | Each step in `STAGES`, in order | Everyone else, at the furthest step they reached. A later inquiry does not move a client back. |
 
-Each column counts its people, and three values for today in `REPORT_TIME_ZONE`:
+Each column counts its `people`, and three values for today in `REPORT_TIME_ZONE`:
 
 | Count | Meaning |
 | --- | --- |
-| New today | They reached this step today, or their oldest missed call came today |
-| Overdue | Longer at this step than its `wait`, in hours, or unreturned longer than `RETURN_HOURS`. Both count [opening hours](operations.md#opening-hours) where set. Without a limit, the count is empty. |
-| Advanced today | They reached a further step, their call was returned, or they called again and got through |
+| New today, `fresh` | They reached this step today, or their oldest missed call came today |
+| Overdue, `late` | Longer at this step than its `wait`, in hours, or unreturned longer than `RETURN_HOURS`. Both count [opening hours](operations.md#opening-hours) where set. Without a limit, the count is empty. |
+| Advanced today, `done` | They reached a further step, their call was returned, or they called again and got through |
 
 ```sh
 STAGES='{"inquiry":{"value":5,"wait":48},"client":{"value":200}}'
@@ -231,11 +230,12 @@ The Board reads people with a step or a call, inbound or outbound, in the period
 
 ## Outcomes after a call
 
-`/followed` counts how many callers reached a step within a number of days.
+The `after_calls` report counts how many callers reached a step within a number of days.
 
-```sh
-curl -H "authorization: Bearer $REVIEWER_TOKEN" \
-  "https://graph.example.org/followed?from=2026-09-01&to=2026-09-30&step=client&days=30"
+```http
+POST /v1/report
+
+{ "kind": "after_calls", "window": { "from": "2026-09-01", "to": "2026-09-30", "timeZone": "America/Chicago" }, "at": 1795460000000, "step": "client", "days": 30 }
 ```
 
 ```json
@@ -271,7 +271,7 @@ To measure the effect, choose at random whom to call back, keep the list, and co
 
 ## Attribution
 
-The report uses the same attribution as `/attribute`. From the account, it follows links to the visitors that are the same person, and credits the newest visit within 90 days that is one person with it: in the same cluster, or linked at 0.9 or higher. A call or text filed under its number's channel has to be linked at 0.9, and gives way to an ad click or a campaign visit of the person's in the same window: the number is where they called, and the ad is what brought them.
+The report uses the same attribution as the `arrival` of a `person` [lookup](http.md#lookup). From the account, it follows links to the visitors that are the same person, and credits the newest visit within 90 days that is one person with it: in the same cluster, or linked at 0.9 or higher. A call or text filed under its number's channel has to be linked at 0.9, and gives way to an ad click or a campaign visit of the person's in the same window: the number is where they called, and the ad is what brought them.
 
 An outcome without such a visit goes on the `(none)` line, so totals add up. An outcome counts on the day it happened: an October click that enrolls in November is in November's report, under October's campaign.
 
@@ -314,31 +314,30 @@ Costs are recorded the day they are spent and outcomes later, so the end of a pe
 
 A step's value is an estimate. Record the step when it happens, and restate the value when you know the amount collected:
 
-```sh
-curl -X POST https://graph.example.org/convert -H "authorization: Bearer $GRAPH_TOKEN" \
-  -d '{"transactionId":"client-42","subject":"contact:42","at":1795460000000,"stage":"client"}'
-curl -X POST https://graph.example.org/restate -H "authorization: Bearer $GRAPH_TOKEN" \
-  -d '{"transactionId":"client-42","value":420.50}'
+```bash
+curl -X POST https://graph.example.org/v1/record -H "authorization: Bearer $GRAPH_TOKEN" -d '{ "entries": [
+  { "type": "conversion", "key": "client-42", "at": 1795460000000, "subject": "contact:42", "stage": "client" },
+  { "type": "restatement", "key": "collected-42", "at": 1796000000000, "of": { "type": "conversion", "key": "client-42" }, "change": { "kind": "correct", "value": 420.50 } }] }'
 ```
 
-`value` is the outcome's value after the change. Set `kind` when money is returned or will not be paid:
+When money is returned or will not be paid, say how much:
 
 | `kind` | Meaning |
 | --- | --- |
-| `refund` | Some of it was given back |
-| `write_off` | Some of it will not be paid |
-| omitted | The known amount is corrected |
+| `refund` | `amount` of it was given back |
+| `write_off` | `amount` of it will not be paid |
+| `reverse` | Takes back the one refund or write-off named in `restatement` |
+| `correct` | It is worth `value` |
 
-```sh
-curl -X POST https://graph.example.org/restate -H "authorization: Bearer $GRAPH_TOKEN" \
-  -d '{"transactionId":"client-42","value":300,"kind":"refund"}'
+```json
+{ "type": "restatement", "key": "refund-42", "at": 1796100000000, "of": { "type": "conversion", "key": "client-42" }, "change": { "kind": "refund", "amount": 120.50 } }
 ```
 
-The decrease is the amount refunded or written off. To reverse one, send the same `kind` with the higher value, up to the amount recorded. Any other increase with a `kind`, or a different currency, answers 400.
+The outcome is then worth 300. An amount is what was lost and not what is left, so the order the entries arrive in does not matter. The value is the newest `correct`, or else the first value, less every refund and write-off that was not reversed, and never below zero.
 
-Sending the same value again changes nothing, so a `kind` cannot be added to an earlier change.
+Sending an entry again changes nothing. Another currency is `CURRENCY_MISMATCH`, and an outcome that is not recorded is `UNKNOWN_REFERENCE`.
 
-`GET /outcome?id=client-42` lists every value an outcome has had. The report gives these figures for each campaign (`valueChange`) and for each month outcomes were first recorded in (`months`):
+The `record` [lookup](http.md#lookup) of the conversion lists every value it has had, under `values`. The report gives these figures for each campaign (`valueChange`) and for each month outcomes were first recorded in (`months`):
 
 | Figure | Meaning |
 | --- | --- |
@@ -366,15 +365,14 @@ Cost per outcome and ROAS are computed per campaign:
 - Spend without a campaign gives no figure.
 - The total covers the campaigns with enough data, and `excluded` counts the others.
 
-A day without a row is missing, even if the campaign was paused. Post a row of zero for a day you know cost nothing.
+A day without a row is missing, even if the campaign was paused. Record a row of zero for a day you know cost nothing.
 
 ### Platform-reported conversions
 
 Ad platforms count conversions by their own rules. Send their number with the cost to see it beside what is credited here:
 
-```sh
-curl -X POST https://graph.example.org/costs -H "authorization: Bearer $GRAPH_TOKEN" \
-  -d '[{"day":"2026-11-14","source":"microsoft","campaignId":"55","amount":300,"currency":"USD","conversions":7.5,"conversionValue":900}]'
+```json
+{ "type": "cost", "key": "microsoft-2026-11-14", "at": 1795460000000, "rows": [{ "day": "2026-11-14", "source": "microsoft", "campaignId": "55", "amount": 300, "currency": "USD", "conversions": 7.5, "conversionValue": 900 }] }
 ```
 
 A `conversionValue` requires `conversions`. CSV columns use the same names. The server can read both from Google Ads and Meta along with the costs; this is off by default.
@@ -399,16 +397,15 @@ The two counts can differ for several reasons:
 - A platform counts visitors it recognizes and estimates some it does not, so its number may be a fraction.
 - A platform counts the actions you set up there. Set `per` to the matching step.
 
-Platforms add to a day for weeks. Set `COST_DAYS` to the length of the platform's window, such as `30`, to read those days again. A resent row replaces the whole row, so post costs and conversions together.
+Platforms add to a day for weeks, and the server reads the last seven days again. Record older days yourself once they have settled. A resent row replaces the whole row, so send costs and conversions together.
 
 ## Limitations
 
 | Area | Detail |
 | --- | --- |
-| Credit | The newest strong visit gets all of it. Earlier visits are in `/attribute` only. |
+| Credit | The newest strong visit gets all of it. Earlier visits are in the journey only. |
 | Currency | Amounts are summed as given. `currencies` lists every currency seen; more than one means the sums mix them. |
-| Days | A day runs midnight to midnight in `REPORT_TIME_ZONE`, or the `tz` parameter. Use the ad account's time zone so the days match the costs. |
+| Days | A day runs midnight to midnight in the window's `timeZone`. The Channels view uses `REPORT_TIME_ZONE`. Use the ad account's time zone so the days match the costs. |
 | Work | The report is computed on request. It reads every outcome and missed call in the range, and follows their links fifty thousand people at a time. |
-| Range | Without `from` and `to`, the last thirty days. |
-| Platforms read automatically | Google Ads and Meta. Costs from Microsoft, TikTok and others go through `/costs`. |
+| Platforms read automatically | Google Ads and Meta. Costs from Microsoft, TikTok and others are recorded as `cost`. |
 | Verification | The tracking parameters are each platform's documented names, untested against a live ad account. |

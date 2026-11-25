@@ -1,23 +1,24 @@
 # Operations
 
-One command upgrades the database, serves the HTTP API and the reviewer screen, and sends queued conversions.
+One command upgrades the database, serves the six calls, browsers, Twilio and the reviewer screen, and runs the workers.
 
 ```sh
 DATABASE_URL=postgres://localhost/graph \
 GRAPH_TOKEN=a-long-random-string \
+RECEIPT_SECRETS=another-one-of-32-characters-or-more \
 ORIGINS=https://example.org \
 npm start
 ```
 
 ```text
-database upgraded: tables, sighting record time
+database upgraded: tables, sighting record time, …
 listening on 0.0.0.0:8080
 collect accepts https://example.org
-reviewers none, server cookie off, fingerprint off, maxmind off, signed links off, staff networks off, opening hours off, alerts off, address checks off, phone line checks off
+reviewers none, server cookie off, fingerprint off, maxmind off, server ranges off, signed links off, staff networks off, opening hours off, webhook off, alerts off, address checks off, phone line checks off
 outbox sends to none (no ad platform configured)
-page events: none (set EVENTS); calls from twilio off; call results not expected; number pool off
-cost sources: none (POST /costs)
-policy b1a4d46bae50 (default)
+page events: none (set EVENTS); calls from twilio off; texts from twilio off; text codes off; number pool off
+cost sources: none (record cost)
+policy d852bb513c02 (default)
 ```
 
 The lines after `collect accepts` list the enabled features. Each provider turns on when its variables are set. [Providers](providers.md) covers where to get the keys.
@@ -27,14 +28,42 @@ The lines after `collect accepts` list the enabled features. Each provider turns
 `docker compose up --build` starts the server and PostgreSQL on port 8080.
 
 ```sh
-GRAPH_TOKEN=a-long-random-string REVIEW_TOKENS='{"dana":"another-one"}' ORIGINS=https://example.org docker compose up --build
+GRAPH_TOKEN=a-long-random-string REVIEW_TOKENS='{"dana":"another-one"}' RECEIPT_SECRETS=… ORIGINS=https://example.org docker compose up --build
 ```
 
 Compose also reads a `.env` file in the same directory. Run `cp .env.example .env` and fill it in. Set `GRAPH_PORT` to publish a different port.
 
 Compose passes the variables in [Environment variables](#environment-variables) through to the server, except `GRAPH_SCHEMA`, `HOST`, `PORT`, `POLICY_FILE`, `CALL_NUMBERS_FILE` and `SERVER_RANGES_FILE`. It sets `DATABASE_URL` itself.
 
-> **Use the compose file for evaluation.** It has a local volume, a fixed database password, the example site's features and a placeholder `LINK_SECRET`. Replace these before production use. Values in `compose.yaml` that start with `change-me` are public, and the server refuses to start with one when `ORIGINS` contains a site outside your own machine.
+> **Use the compose file for evaluation.** It has a local volume, a fixed database password, the example site's features and placeholders for `LINK_SECRET` and `RECEIPT_SECRETS`. Replace these before production use. Values in `compose.yaml` that start with `change-me` are public, and the server refuses to start with one when `ORIGINS` contains a site outside your own machine.
+
+## Commands
+
+`account-graph` without a command is the server. From a checkout, `node src/bin.ts` is the same program, and `npm start` runs it. In the image, it is `node dist/bin.js`.
+
+| Command | Does |
+| --- | --- |
+| `account-graph` | Serves, and runs the workers |
+| `account-graph rebuild` | Takes the policy that is set, and works every cluster out again |
+| `account-graph verify` | Compares the stored clusters with a full recompute. Reads every edge. |
+| `account-graph prune --before 2026-05-01` | Deletes old sightings, events and [receipts](#receipts). [Privacy](privacy.md#deletion) has the full list. |
+| `account-graph retry client-1001 google` | Queues a conversion's failed and skipped deliveries again, for one platform or all |
+| `account-graph stats` | Counts what the graph holds, and deliveries by state |
+| `account-graph alerts test` | Posts a test alert |
+| `account-graph staff-link https://example.org/team` | Makes an address that marks a browser as [staff](#staff-traffic) |
+| `account-graph events new-epoch` | Begins a new history of events, after a [restore](#backups) |
+
+Each command reads the server's environment variables, upgrades the database as a server does, and ends. The workers stay off.
+
+```sh
+account-graph verify
+```
+
+```json
+{ "changes": [], "policy": { "hash": "d852bb513c02…", "builtWith": "d852bb513c02…", "due": false } }
+```
+
+With compose, run `docker compose exec graph node dist/bin.js verify`.
 
 ## Script tag
 
@@ -76,7 +105,7 @@ Browsers keep cookies per domain, so each domain assigns its own device id. A pe
 
 ## Tokens
 
-`GRAPH_TOKEN`, the service token, opens every route. Send it from your own services, and keep it out of browsers. `REVIEW_TOKENS` gives each reviewer a name and a token for the routes of the reviewer screen. Make every token long and random, for example with `openssl rand -hex 32`.
+`GRAPH_TOKEN`, the service token, opens the six calls. Send it from your own services, and keep it out of browsers. `REVIEW_TOKENS` gives each reviewer a name and a token for the reviewer screen, and for [some of the calls](http.md#tokens). Make every token long and random, for example with `openssl rand -hex 32`.
 
 ```sh
 REVIEW_TOKENS='{"dana":"…","lee":"…"}'
@@ -86,7 +115,7 @@ The audit log signs each decision with the name its token belongs to. Issue one 
 
 To replace a token, list both, `{"dana":["new","old"]}`, and restart. Remove the old token once it is out of use. Removing a name ends that person's access; their decisions stay in the audit log.
 
-`/collect`, `/event`, `/carry`, `/collect.js`, `/review` and `/health` are among the [routes without a token](http.md#routes-without-a-token). `/review` serves a page whose data requires one.
+[Routes for browsers](http.md#routes-for-browsers), `/collect.js`, `/review` and `/health` need no token. `/review` serves a page whose data requires one.
 
 ## Reviewer screen
 
@@ -116,9 +145,15 @@ POLICY='{"kinds":{"phone":{"weight":0.85,"halfLife":63072000000}}}' npm start
 
 For a longer policy, set `POLICY_FILE` to the path of a JSON file. [Matching](deciding.md) describes each part of a rule, and [Presets](presets.md) has a policy for contacts entered by staff. A new kind needs its weight, dilution, cap and half-life. Write `"none"` for an unlimited half-life.
 
-> **A changed policy needs a rebuild.** Scores follow the new policy at once. Stored clusters keep the old policy, and new writes mix the two, until you post to `/rebuild` with the service token.
+> **A changed policy needs a rebuild.** The database keeps the policy it was built with. A server started with another one stops with `The policy differs from the one this database was built with. Run account-graph rebuild.`
 
-The server stores a hash of the policy that built the clusters. When the running policy differs, the start log, `GET /stats`, `GET /verify` and the Health view report that a rebuild is due. They report the same for a database created before the hash was stored.
+1. Stop the servers.
+2. Run `account-graph rebuild` with the new policy set. It blocks other writes while it runs.
+3. Start the servers with the same policy.
+
+Without `POLICY` and `POLICY_FILE`, the server takes the policy the database keeps. Removing the variable does not bring the default back. Set `POLICY='{}'` and rebuild for that.
+
+A database from before the policy was kept takes the one that is set, where its clusters were built with it, and the default where none is set. The start log, `account-graph verify` and the Health view say when a rebuild is due.
 
 Startup fails with one line per problem when a setting is invalid. It also fails when the policy omits the kind of a stored identifier.
 
@@ -130,19 +165,19 @@ The server stores every answer about advertising with its time and source. The a
 | --- | --- |
 | The browser's Global Privacy Control signal | `browser signal` |
 | The banner's answer, passed by the page | `banner` |
-| Your backend, with `POST /consent` | The source you name |
+| Your backend, with a `consent` entry | The source you name |
 | An answer stored before consent history existed | `before history`, with no time |
 
 Every page view reports the browser signal again. A signal that says no overrides an earlier banner yes from the first visit that carries it. A visit that carries both counts as the signal.
 
-`forget` deletes a subject's answers and records that deletion in the audit log. `prune` deletes old answers except the one that applies. [Privacy](privacy.md#consent) covers the effect of each answer.
+`forget` deletes a subject's answers and records that deletion in the audit log. `account-graph prune` deletes old answers except the one that applies. [Privacy](privacy.md#consent) covers the effect of each answer.
 
 ## Audit log
 
-Each decision is hashed together with the one before it. `GET /audit` verifies the chain and reports the first altered entry.
+Each decision is hashed together with the one before it. The Health view verifies the chain and reports the first altered entry. So does the route it reads:
 
 ```sh
-curl -s https://graph.example.org/audit -H "authorization: Bearer $REVIEWER_TOKEN" | tee -a /somewhere/else/heads.log
+curl -s https://graph.example.org/review/api/audit -H "authorization: Bearer $REVIEWER_TOKEN" | tee -a /somewhere/else/heads.log
 ```
 
 ```json
@@ -151,7 +186,7 @@ curl -s https://graph.example.org/audit -H "authorization: Bearer $REVIEWER_TOKE
 
 The chain detects an edit to part of the log. Anyone able to rewrite the whole table could rebuild it, so copy the newest hash daily to a place they cannot write.
 
-Copy it from the Health view, or set `AUDIT_HEAD_HOURS=24` to post it to `ALERT_WEBHOOK` once a day. To check an old copy, fetch that entry with `GET /decisions?before=419&limit=1` and compare its hash.
+Copy it from the Health view, or set `AUDIT_HEAD_HOURS=24` to post it to `ALERT_WEBHOOK` once a day, with an `audit.head` [event](#events). To check an old copy, fetch that entry with `GET /review/api/decisions?before=419&limit=1` and compare its hash.
 
 ## Backups
 
@@ -165,9 +200,13 @@ Restore into a new, empty database, then start the server on it:
 
 ```sh
 pg_restore --no-owner --single-transaction --exit-on-error --dbname="$NEW_DATABASE_URL" graph.dump
-curl https://graph.example.org/verify -H "authorization: Bearer $GRAPH_TOKEN"   # no changes
-curl https://graph.example.org/audit -H "authorization: Bearer $GRAPH_TOKEN"    # sound
+account-graph verify             # no changes
+account-graph events new-epoch   # every cursor is lost, and must be
 ```
+
+Run the commands with the new database's address, before the server starts on it.
+
+> **A restore takes the event numbers back.** Without `events new-epoch`, a follower that is ahead of the dump misses what happens next. After it, each follower gets `CURSOR_LOST` and reads everything again.
 
 A dump cut short restores nothing. The server upgrades an older dump when it starts.
 
@@ -175,8 +214,9 @@ A dump cut short restores nothing. The server upgrades an older dump when it sta
 | --- | --- |
 | Restore tests | Restore a dump elsewhere before you need one. |
 | Over a database in use | Restore beside it instead. `--clean` keeps any table newer than the dump, with its rows. Without `--no-owner`, another role gets an error for each table. |
-| Audit hash | Store the newest hash apart from the dumps. After a restore, `/audit` verifies the chain, and the stored hash confirms it is the same log. |
-| Deleted people | Older dumps still contain them. Keep dumps only as long as you need them, and run `forget` again after a restore. |
+| Audit hash | Store the newest hash apart from the dumps. After a restore, the Health view verifies the chain, and the stored hash confirms it is the same log. |
+| Secrets | A dump holds receipts and keyed hashes. Keep `RECEIPT_SECRETS`, `IDENTIFIER_SECRET` and `LINK_SECRET` as long as the dump, and apart from it. |
+| Deleted people | Older dumps still contain them. Keep dumps only as long as you need them, and run `forget` again after a restore, with new keys. |
 | Conversions | Conversions sent since the dump may be sent again with the same id. Meta keeps the first copy, and Google reads the second as a correction. |
 
 ## Behind a proxy
@@ -199,7 +239,7 @@ Point a name under the site, such as `graph.example.org`, at the server with an 
 
 ## Staff traffic
 
-Two settings exclude your own staff from the data. Both are off by default, and `GET /stats` counts the excluded requests as `staff`.
+Two settings exclude your own staff from the data. Both are off by default.
 
 ```sh
 STAFF_NETWORKS=192.0.2.10,198.51.100.0/24   # addresses and ranges your offices browse from
@@ -208,11 +248,10 @@ STAFF_NETWORKS=192.0.2.10,198.51.100.0/24   # addresses and ranges your offices 
 For browsers outside those networks, create a staff link and send it to the person:
 
 ```sh
-curl -X POST https://graph.example.org/staff-link -H "authorization: Bearer $GRAPH_TOKEN" \
-  -d '{"url":"https://example.org/team","days":90}'
+account-graph staff-link https://example.org/team
 ```
 
-Opening the link sets a first-party cookie named `ag_staff`. The server then drops page views and page events from that browser on that site. The mark ends after the given days, or when the browser opens any page with `?ag_staff=off`.
+Opening the link sets a first-party cookie named `ag_staff`. The server then drops page views and page events from that browser on that site. The mark ends after 90 days, or when the browser opens any page with `?ag_staff=off`.
 
 The mark is signed with `LINK_SECRET`. The server records a visit with any other mark as usual.
 
@@ -220,7 +259,7 @@ The mark is signed with `LINK_SECRET`. The server records a visit with any other
 | --- | --- |
 | Proxies | Set `TRUST_PROXY`. Otherwise every visit has the proxy's address, and all visits are dropped if that address is in a staff network. |
 | Sites | The cookie covers one site. Open the link on each of yours. |
-| Duration | The days count from the link's creation. Some browsers delete a script-set cookie sooner: Safari after seven days without a visit. Open the link again. |
+| Duration | The 90 days count from the link's creation. Some browsers delete a script-set cookie sooner: Safari after seven days without a visit. Open the link again. |
 | HTTPS | The link must lead to an `https` address, because the cookie is marked `Secure`. `localhost` is the exception. |
 | Sharing | Anyone who opens the link is marked. A published link hides real visitors until it expires. A new `LINK_SECRET` ends every mark and every other link. |
 | Earlier visits | Visits from before the mark stay recorded. Run `forget` on the browser's `visitor:` subject to delete them. |
@@ -228,7 +267,7 @@ The mark is signed with `LINK_SECRET`. The server records a visit with any other
 
 ## Rate limit
 
-Each address may post a burst of 60 requests and 120 a minute to `/collect`, `/event`, `/carry` and `/number` combined. Beyond that the server answers 429 with a `retry-after` header.
+Each address may post a burst of 60 requests and 120 a minute to `/collect`. Beyond that the server answers 429 with a `retry-after` header.
 
 The limit protects the graph from a single sender, because a script can claim any origin. Set `RATE_LIMIT=off` only when a system in front already limits requests.
 
@@ -236,22 +275,138 @@ The limit protects the graph from a single sender, because a script can claim an
 
 Start the new version. At startup the server applies every pending database change, in order, in one transaction.
 
-Each change has a number and runs once. When several servers start together, one applies the changes and the others wait. `upgrades()` in `account-graph/postgres` lists them.
+Each change has a number and runs once. When several servers start together, one applies the changes and the others wait.
 
-> **The default weights changed.** A phone number alone now joins two subjects, relates three, and reports no link among four or more. A phone, email or `voip` value held by more than 10 subjects links none of them. A server that ran the earlier defaults starts with a notice that a rebuild is due: post to `/rebuild` while writes are paused. To keep the earlier behavior, set `POLICY='{"kinds":{"phone":{"dilution":0,"cap":25},"email":{"cap":25},"voip":{"dilution":0,"cap":25}}}'`.
+### To the six calls
+
+> **Every old route for services is gone.** It answers 404. Change the callers before you upgrade, or upgrade both at once.
+
+| Before | After |
+| --- | --- |
+| `/identify`, `/observe` | `record` `profile`. Raw identifiers go under `facts.identifiers`. |
+| `/touch` | `record` `arrival`. Click ids go under `clicks`. |
+| `/costs` | `record` `cost` |
+| `/convert` | `record` `conversion`. `transactionId` is `key`, `action` is `actions`. |
+| `/restate`, `/not-lead` | `record` `restatement`. A refund or write-off is an amount, where `/restate` took what was left. |
+| `/payment` | `record` `payment`. `kind` is `direction`: `received` or `refunded`. |
+| `/call`, `/call/result`, `/call/returned` | `record` `call`, `call_update` |
+| `/text` | `record` `text` |
+| `/consent` | `record` `consent`, `lookup` `person` |
+| `/link`, `/sent` | `record` `link`, `lookup` `journey` |
+| `/transfer`, `/flows`, `/collusion`, `/rings` | `record` `transfer`, `lookup` `transfers` |
+| `/join`, `/separate`, `/ignore` | `decide` `merge`, `unmerge`, `split`, `unsplit`, `mute`, `unmute` |
+| `/forget` | `forget` |
+| `/people`, `/attribute`, `/cluster`, `/texting` | `lookup` `person` |
+| `/match`, `/call/ringing`, `/conflicts`, `/find` | `lookup` `match`, `caller`, `conflicts`, `find` |
+| `/outcome`, `/conversion`, `GET /call`, `GET /text` | `lookup` `record` |
+| `/report`, `/board`, `/calls/summary`, `/calls`, `/texts`, `/followed`, `/conversions` | `report` `campaigns`, `pipeline`, `calls`, `callbacks`, `texts`, `after_calls`, `deliveries` |
+| `/changes` | `events` |
+| `/rebuild`, `/verify`, `/prune`, `/retry`, `/stats`, `/alerts/test`, `/staff-link` | [Commands](#commands) |
+
+| Also | Detail |
+| --- | --- |
+| `RECEIPT_SECRETS` | Required. Make one with `openssl rand -hex 32`. |
+| `CHANGE_WEBHOOK`, `CHANGE_SECRET` | Now `WEBHOOK_URL` and `WEBHOOK_SECRET`, both or neither. A server with an old name set does not start. The body is an [event envelope](#webhook). |
+| `COST_INTERVAL_MS`, `COST_DAYS`, `OUTBOX_INTERVAL_MS` | No longer exist. Costs are read every six hours for the last seven days, and conversions are sent every 30 seconds. |
+| `at` | Every write names it, and a key of its own. A caller that stamps `at` anew on each retry gets `KEY_REUSED`. |
+| Decisions | A merge is taken back by its pair with `unmerge`. There is no mark to keep. |
+| The change feed | Cluster changes became events and were numbered again. Start with `"after": null`. |
+| Policy | The database keeps it from now on. See [the policy](#policy). |
+| Pages | The old browser paths answer for one release, for pages that keep an old script. |
+
+> **On the day you deploy, a page event can count once more.** Page events now have ids of their own, which begin with `page:`. An event a browser already sent that day has another id, so the same browser can count it a second time. The next day is as before.
+
+### To the current weights
+
+> **The default weights changed.** A phone number alone now joins two subjects, relates three, and reports no link among four or more. A phone, email or `voip` value held by more than 10 subjects links none of them. A server that ran the earlier defaults starts with a notice that a rebuild is due: run `account-graph rebuild` while the servers are stopped. To keep the earlier behavior, set `POLICY='{"kinds":{"phone":{"dilution":0,"cap":25},"email":{"cap":25},"voip":{"dilution":0,"cap":25}}}'` and rebuild if the server asks for it.
+
+## Settings that must match
+
+Processes that share a database must agree on these. The database keeps the policy, and a keyed mark of each secret. A process that differs stops at startup, or gets the fault `CONFIG.MISMATCH` on its first call.
+
+| Setting | A process that differs | To change it |
+| --- | --- | --- |
+| `POLICY`, `POLICY_FILE` | Is refused. One without any takes the database's. | Stop the servers, run `account-graph rebuild` with the new one, start them with it |
+| `IDENTIFIER_SECRET`, `LINK_SECRET` | Is refused. One without it is let in, and makes none of its keys. | The same. New keys match none of the old ones, and links already sent become ordinary links. |
+| `RECEIPT_SECRETS` | Is refused where it lacks a secret that a stored receipt was made with | Put the new one first and keep the old ones. See [receipts](#receipts). |
+
+A policy that lacks the kind of a stored identifier is refused too. Nothing else is compared, so give every process the same steps, numbers and opening hours.
+
+## Receipts
+
+Every key a caller sends is kept as a receipt, so a retry is known. A receipt holds keyed hashes of the key and of the fields that are [compared](http.md#idempotency), the number of a secret, and two times. It holds neither the key nor what came with it.
+
+`RECEIPT_SECRETS` keys the hashes. Separate several with commas. The first signs, and all are tried.
+
+```sh
+RECEIPT_SECRETS=the-new-one…,the-old-one…
+```
+
+| Receipt | Kept |
+| --- | --- |
+| Of a key | A year at least. `account-graph prune` deletes those that are older than a year and than its day. |
+| Of a key whose person was deleted | For good, as a tombstone: a type, a keyed hash and times. A late retry then brings nobody back. |
+
+> **Keep an old secret while receipts made with it are kept.** A server without it does not start. Tombstones stay, so a secret under which anybody was deleted is kept for good.
+
+After its receipt is pruned, a key is new again. A conversion, call, text, payment or transfer that is still on record stays one. A profile, an arrival or a consent answer is written a second time.
 
 ## Monitoring
 
-| Route | Token | Answers |
-| --- | --- | --- |
-| `GET /health` | none | `{"ok":true}` once the database answers. Use it for load balancer checks. |
-| `GET /stats` | service | Since start: requests collected, rate limited, from declared bots, and from staff, plus errors, pool numbers assigned and pool exhaustions. Also the graph's contents, whether a rebuild is due, and outbox jobs by state. |
-| `GET /ops` | review | Feeds and the time of each one's last record, job runs, undelivered alerts, pool usage, and outbox jobs by state. |
-| `GET /verify` | service | `{ changes, policy }`. `changes` lists the subjects whose stored cluster differs from a full recompute, and is empty when they agree. It reads every edge. |
+| Where | Answers |
+| --- | --- |
+| `GET /health` | `{"ok":true}` once the database answers. Needs no token. Use it for load balancer checks. |
+| `account-graph stats` | What the graph holds, and deliveries by state |
+| `account-graph verify` | `{ changes, policy }`. `changes` lists the subjects whose stored cluster differs from a full recompute, and is empty when they agree. |
+| `/review#/health` | Feeds and the time of each one's last record, job runs, undelivered alerts, pool usage, deliveries by state, and whether a rebuild is due |
+
+## Events
+
+An event says that something happened: a cluster changed, a conversion failed, a missed caller has waited too long. [The HTTP API](http.md#events) lists them.
+
+Read them with the `events` call, or have them posted to you. The call is the truth. The webhook is the same body, and tells you sooner.
+
+1. Start with `"after": null`. A subject no `cluster.changed` has named is in the cluster of its own name.
+2. Read with the `cursor` you kept, act on the events, then keep the new `cursor`.
+3. Read again at once while `more` is true. Otherwise read again every minute or so, and whenever the webhook arrives.
+4. On `CURSOR_LOST`, start again with `null`.
+
+If you stop between acting and keeping the cursor, the same events come again, so act on them in a way that can be repeated.
+
+| A cursor is lost when | Do |
+| --- | --- |
+| `account-graph events new-epoch` was run, after a [restore](#backups) | Read everything again |
+| `account-graph prune` deleted events it had not reached | Read what is left, and compare your copy with `lookup` |
+
+> **A deletion takes its events with it.** A subject you delete with `forget` is gone from the events. Delete your own copy when you ask for the deletion.
+
+### Webhook
+
+Set `WEBHOOK_URL` and `WEBHOOK_SECRET`. The server posts new events there within seconds, in order, at most 100 to a post. The first post begins with what happens after it was set.
+
+```http
+POST <WEBHOOK_URL>
+content-type: application/json
+x-account-graph-signature: t=1795460000500,v1=<hex HMAC-SHA256 of "<t>.<body>">
+
+{ "schemaVersion": 1, "cursor": "1fc21682.4182", "more": false, "events": [
+  { "schemaVersion": 1, "seq": 4181, "type": "cluster.changed", "at": 1795460000000,
+    "data": { "subject": "account:42", "from": "account:42", "to": "account:17" } },
+  { "schemaVersion": 1, "seq": 4182, "type": "callback.overdue", "at": 1795460000400,
+    "data": { "call": "CA1", "subject": "caller:96f2…", "missedAt": 1795373600000, "attempts": 1,
+              "source": "google", "campaign": "Search: North", "campaignId": "20111" } }] }
+```
+
+| Rule | Detail |
+| --- | --- |
+| Signature | Over the body as received, under `WEBHOOK_SECRET`. Refuse an old `t`. The library has [`verifyWebhook` and `parseWebhook`](library.md#webhook). |
+| Answer | Any 2xx within ten seconds. Redirects are not followed. |
+| Delivery | At least once, in order, by one process at a time |
+| Refused | Tried again after 30 seconds, doubling to an hour, for a day. Then the events of that post are passed over, and an alert says so. The `events` call still has them. |
 
 ## Alerts
 
-Set `ALERT_WEBHOOK` to a Slack incoming webhook, or any URL that accepts `{"text": "…"}`. The server posts there when an event needs attention:
+Set `ALERT_WEBHOOK` to a Slack incoming webhook, or any URL that accepts `{"text": "…"}`. The server posts there when something needs attention. What is in this table is kept as an [event](#events) too.
 
 | Event | Message content | Frequency |
 | --- | --- | --- |
@@ -267,7 +422,7 @@ The server logs and stores an alert that fails to deliver, retries it every five
 Send a test alert:
 
 ```sh
-curl -X POST https://graph.example.org/alerts/test -H "authorization: Bearer $GRAPH_TOKEN"
+account-graph alerts test
 ```
 
 ```json
@@ -280,7 +435,7 @@ Set how many hours without a record raise an alert. All four settings are off by
 
 | Feed | Setting | Records counted |
 | --- | --- | --- |
-| Visits | `QUIET_TOUCHES_HOURS` | Any touch |
+| Visits | `QUIET_TOUCHES_HOURS` | Any arrival |
 | Calls | `QUIET_CALLS_HOURS` | Any inbound or outbound call |
 | Call results | `QUIET_RESULTS_HOURS` | Any result |
 | Campaign costs | `QUIET_COSTS_HOURS` | Any cost row |
@@ -323,35 +478,7 @@ The call summary reports the calls that began while you were closed, and their o
 
 ### Jobs
 
-The Health view and `GET /ops` list the background jobs: the outbox, each cost import, the audit hash post, and the alert checks. Each shows its last start, success and failure. A run that started and never finished is shown for a month.
-
-### Change webhook
-
-Set `CHANGE_WEBHOOK` to a URL. The server posts `{"changes": [...]}` there each time a cluster changes. Each change names a subject, the cluster it left, and the cluster it joined.
-
-Each post is sent once, and given up on after five seconds. The request that changed the cluster waits for it. Use it to learn at once that something changed, and read the [change feed](#change-feed) for what did.
-
-With `CHANGE_SECRET`, each post carries `x-account-graph-signature: t=<ms>,v1=<hex>`. `v1` is the HMAC-SHA256 of `<t>.<body>` under the secret. Check it over the body as received, and refuse an old `t`.
-
-### Change feed
-
-`GET /changes` answers every cluster change in order, so a system of yours can follow along without missing one.
-
-```sh
-curl "https://graph.example.org/changes?after=4180" -H "authorization: Bearer $GRAPH_TOKEN"
-```
-
-```json
-{ "changes": [{ "seq": 4181, "at": 1795460000000, "subject": "account:42", "from": "account:42", "to": "account:17" }], "next": 4181, "more": false }
-```
-
-1. Start with `after=0`. A subject no change has named is in the cluster of its own name.
-2. Read with the number you kept, act on the changes, then keep the new `next`.
-3. Read again at once while `more` is true. Otherwise read again every minute or so, and whenever the webhook arrives.
-
-If you stop between acting and keeping `next`, the same changes come again, so act on them in a way that can be repeated. `limit` is 500 unless you set it, and at most 1,000.
-
-> **A deletion takes its changes with it.** A subject you delete with `/forget` is gone from the feed. Delete your own copy when you ask for the deletion.
+The Health view lists the background jobs: the outbox, each cost import, the audit hash post, and the alert checks. Each shows its last start, success and failure. A run that started and never finished is shown for a month.
 
 ## Shutdown
 
@@ -367,6 +494,7 @@ A partially set group stops the server at startup, with a message naming the mis
 | --- | --- | --- |
 | `DATABASE_URL` | required | PostgreSQL address. |
 | `GRAPH_TOKEN` | required | Service token. |
+| `RECEIPT_SECRETS` | required | Keys the [receipts](#receipts). Separated by commas, at least 32 characters each. The first signs, and all are tried. |
 | `REVIEW_TOKENS` | none | Reviewers, as JSON: each name with its token or a list of tokens. Each token must be unique and differ from `GRAPH_TOKEN`. |
 | `ORIGINS` | none | Site addresses that may post visits, separated by commas. |
 | `PORT`, `HOST` | `8080`, `0.0.0.0` | Listening port and address. |
@@ -378,8 +506,8 @@ A partially set group stops the server at startup, with a message naming the mis
 | `POLICY`, `POLICY_FILE` | the default policy | Overrides to the default policy, as JSON or a JSON file. Set at most one. |
 | `STAFF_NETWORKS` | none | Addresses and ranges whose visits are dropped, separated by commas: `192.0.2.10,198.51.100.0/24`. |
 | `LINK_SECRET` | none | Signs personal links, staff links, and the tokens that carry a visitor between your sites. At least 32 characters. |
-| `IDENTIFIER_SECRET` | none | Keys the hashes of names sent to `/identify`. At least 32 characters. Changing it changes every key. |
-| `REPORT_TIME_ZONE` | `UTC` | Time zone for the days of `/report` and the call routes, such as `America/New_York`. Use the ad account's. |
+| `IDENTIFIER_SECRET` | none | Keys the hashes of [names](identify.md#names) and dates of birth. At least 32 characters. Changing it changes every key. |
+| `REPORT_TIME_ZONE` | `UTC` | Time zone of the reviewer screen's days, the Board's today, opening hours and alerts, such as `America/New_York`. Use the ad account's. A `report` call names its own zone in its `window`. |
 
 ### Outcomes and calls
 
@@ -399,17 +527,15 @@ A partially set group stops the server at startup, with a message naming the mis
 | `POOL_GRACE_MINUTES` | `120` | Minutes after that in which a call still counts as theirs, if the number has not been reassigned. |
 | `OPEN_HOURS` | none | Opening hours, as JSON. See [opening hours](#opening-hours). |
 
-### Outbox and alerts
+### Outbox, webhook and alerts
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `OUTBOX_INTERVAL_MS` | `30000` | Interval between sends of due conversions. |
 | `OUTBOX_DELAY_MS` | `0` | Delay before the first send of a new outcome. |
 | `FORGET_ADS` | none | `true` asks ad platforms that support it to retract conversions when a person is [deleted](privacy.md#data-at-ad-platforms). |
-| `CHANGE_WEBHOOK` | none | URL that receives cluster changes. |
-| `CHANGE_SECRET` | none | Signs each post to `CHANGE_WEBHOOK`. |
+| `WEBHOOK_URL`, `WEBHOOK_SECRET` | none | URL that receives [events](#webhook), and the secret that signs each post. Set both. |
 | `ALERT_WEBHOOK` | none | URL that receives alerts, as `{"text": "…"}`. |
-| `AUDIT_HEAD_HOURS` | `0` | Posts the newest audit hash to `ALERT_WEBHOOK` at startup and at this interval, at least one hour. Requires `ALERT_WEBHOOK`. `0` disables it. |
+| `AUDIT_HEAD_HOURS` | `0` | Posts the newest audit hash to `ALERT_WEBHOOK` at this interval, at least one hour. Requires `ALERT_WEBHOOK`. `0` disables it. |
 | `QUIET_TOUCHES_HOURS`, `QUIET_CALLS_HOURS`, `QUIET_RESULTS_HOURS`, `QUIET_COSTS_HOURS` | `0` | Hours before a feed is [stale](#stale-feeds). `0` disables the check. |
 | `LATE_HOURS` | `6` | Hours past its due time before a queued conversion raises an alert. `0` disables it. |
 | `RETURN_HOURS` | `24` | Hours before a missed caller from a paid visit raises an alert, and before the board marks any missed caller overdue. `0` disables both. |
@@ -425,8 +551,8 @@ A partially set group stops the server at startup, with a message naming the mis
 | `TWILIO_AUTH_TOKEN`, `TWILIO_WEBHOOK_URL` | none | Accepts Twilio's call reports at `/calls/twilio`. Set both. |
 | `TEXT_CODES` | off | `true` gives each browser a code for your [text links](texts.md). |
 | `TWILIO_TEXT_WEBHOOK_URL` | none | With `TWILIO_AUTH_TOKEN`: accepts Twilio's incoming texts at `/texts/twilio`. |
-| `TWILIO_ACCOUNT_SID` | none | With `TWILIO_AUTH_TOKEN`: looks up the line type of phones posted to `/identify`. |
-| `SMARTY_AUTH_ID`, `SMARTY_AUTH_TOKEN` | none | Checks postal addresses posted to `/identify`. Set both. |
+| `TWILIO_ACCOUNT_SID` | none | With `TWILIO_AUTH_TOKEN`: looks up the line type of phones in a `profile`, a `call` or a `text`. |
+| `SMARTY_AUTH_ID`, `SMARTY_AUTH_TOKEN` | none | Checks postal addresses in a `profile`. Set both. |
 | `GOOGLE_ADS_CUSTOMER_ID`, `GOOGLE_SERVICE_ACCOUNT_FILE` | none | Sends conversions to Google Ads. Set both. |
 | `GOOGLE_ADS_LOGIN_CUSTOMER_ID` | none | The manager account, when the service account belongs to one. |
 | `META_PIXEL_ID`, `META_ACCESS_TOKEN`, `META_SITE_URL` | none | Sends conversions to Meta. Set all three. |
@@ -438,7 +564,6 @@ A partially set group stops the server at startup, with a message naming the mis
 | `META_AD_ACCOUNT_ID`, `META_ADS_TOKEN` | none | Reads campaign costs from Meta. Set both. |
 | `GOOGLE_ADS_CONVERSIONS` | none | `true` also reads Google's conversion count for each campaign. |
 | `META_ADS_CONVERSIONS` | none | The action to read from Meta with its costs, such as `offsite_conversion.fb_pixel_lead`. |
-| `COST_INTERVAL_MS`, `COST_DAYS` | six hours, `7` | Interval between cost imports, and the days each one reads. |
 
 ## Limitations
 

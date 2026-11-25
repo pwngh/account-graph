@@ -1,6 +1,6 @@
 # Library
 
-Call account-graph from a Node program, with the store you choose. Every server feature is a function.
+Call account-graph from a Node program. `accountGraph` gives six calls and `close`, the same whether the graph is on a server, on PostgreSQL in this process, or in memory.
 
 ## Installation
 
@@ -19,194 +19,336 @@ CI scans every commit for keys and tokens. To run the same scan before each loca
 git config core.hooksPath .githooks
 ```
 
-## Usage
-
-Record what each account was seen with on any event. `observe` returns the cluster changes the event caused, so you can hold a login or trade before it settles.
+## Three ways to open it
 
 ```ts
-import { createGraph, createMemoryStore, ip } from 'account-graph'
+import { accountGraph } from 'account-graph'
 
-let graph = createGraph(createMemoryStore())
+// A server you run, over HTTP.
+const remote = accountGraph({ url: 'https://graph.example.org', token: process.env.GRAPH_TOKEN! })
 
-// Record what each account was seen with, on any event.
-await graph.observe({
-  subject: 'account:1',
-  identifiers: ['hardware:9c1f…', ip('203.0.113.20')],
-  at: Date.now(),
-  event: 'login',
+// In this process, on PostgreSQL.
+const local = accountGraph({
+  databaseUrl: process.env.DATABASE_URL!,
+  workers: true,
+  receiptSecrets: [process.env.RECEIPT_SECRET!],
 })
-let changes = await graph.observe({
-  subject: 'account:2',
-  identifiers: ['hardware:9c1f…'],
-  at: Date.now(),
-  event: 'trade',
+
+// In this process, in memory: tests and trials.
+const memory = accountGraph({ memory: true })
+```
+
+Exactly one of `url`, `databaseUrl` and `memory` is given. Two of them do not compile. The three answer alike: a local call is checked by the same code and goes through the same JSON as a remote one, and each answer is a value of its own.
+
+Where there is no Node, the package has the remote graph only. A local one throws `CONFIG.UNSUPPORTED`.
+
+`accountGraph` does no I/O. It throws `CONFIG.INVALID` with everything that is wrong at once. The first call connects to the database and upgrades it. A database that was away is tried again by the next call.
+
+| Option | With | Meaning |
+| --- | --- | --- |
+| `url`, `token` | a server | Its address and the service token, or a reviewer's. Redirects are not followed. |
+| `fetch` | a server | Used in place of the global one. |
+| `databaseUrl` | PostgreSQL | The database. Requires the `pg` package. |
+| `workers` | required on PostgreSQL | Whether this process sends conversions, reads costs, looks for what is late, and posts events. |
+| `receiptSecrets` | required on PostgreSQL | Keys the [receipts](operations.md#receipts). 32 characters or more each. The first signs and all are tried. |
+| `schema` | PostgreSQL | The database schema. `account_graph` when left out. |
+| `timeoutMs` | all | How long one call may take, in milliseconds. 30,000 when left out. |
+
+> **Say `workers` on purpose.** With `true`, a script that runs for a second reads costs and sends conversions. With `false` everywhere, nothing is ever sent.
+
+### Settings
+
+A local graph takes these too. A server has them as [environment variables](operations.md#environment-variables).
+
+| Option | Variable | Holds |
+| --- | --- | --- |
+| `policy` | `POLICY` | What differs from the default [policy](#policy) |
+| `identifierSecret`, `linkSecret` | `IDENTIFIER_SECRET`, `LINK_SECRET` | 32 characters or more each |
+| `stages` | `STAGES` | Your [steps](report.md#steps) |
+| `openHours`, `timeZone` | `OPEN_HOURS`, `REPORT_TIME_ZONE` | When you are open, and the zone |
+| `phones` | `CALL_*`, `POOL_*`, `RETURN_HOURS` | `numbers`, `exclude`, `minimumSeconds`, `resultsExpectedWithinMinutes`, `returnHours`, `country`, `tapSeconds`, `pool` |
+| `ads` | each platform's, `FORGET_ADS`, `OUTBOX_DELAY_MS` | `google`, `meta`, `microsoft`, `tiktok`, `retractOnForget`, `delayMs` |
+| `costs` | each platform's | `google`, `meta` |
+| `checks` | `SMARTY_*`, `TWILIO_*` | `address`, `lineType` |
+| `monitor` | `QUIET_*`, `LATE_HOURS`, `AUDIT_HEAD_HOURS` | `quietHours`, `lateHours`, `auditHours` |
+| `webhook`, `alerts` | `WEBHOOK_URL`, `WEBHOOK_SECRET`, `ALERT_WEBHOOK` | Where [events](operations.md#events) and [alerts](operations.md#alerts) are posted |
+| `now` | none | The clock, for tests |
+| `fetch` | none | Asks ad platforms, checks and webhooks in place of the global one, for tests |
+
+```ts
+import { accountGraph } from 'account-graph'
+
+const graph = accountGraph({
+  databaseUrl: process.env.DATABASE_URL!,
+  workers: true,
+  receiptSecrets: [process.env.RECEIPT_SECRET!],
+  linkSecret: process.env.LINK_SECRET!,
+  timeZone: 'America/Chicago',
+  stages: { inquiry: { value: 5, currency: 'USD' }, client: { value: 200, currency: 'USD', action: { meta: 'Lead' }, wait: 48 } },
+  phones: { numbers: { '+15551230001': { source: 'google', campaignId: '20222' } }, resultsExpectedWithinMinutes: 30 },
+  ads: { meta: { pixelId: '555', accessToken: process.env.META_ACCESS_TOKEN!, siteUrl: 'https://example.org/' } },
+  openHours: { mon: ['09:00-17:00'], tue: ['09:00-17:00'], holidays: ['us'] },
 })
-// changes: [{ subject: 'account:2', from: 'account:2', to: 'account:1' }]
-
-await graph.links('account:2')
-// [{ subject: 'account:1', level: 'same', score: 0.95, reasons: [{ identifier: 'hardware:9c1f…', evidence: 0.95, … }] }]
 ```
 
-Pass `onChange` to `createGraph` for a callback, after each write commits, with the subjects that changed cluster.
+## The calls
 
-### PostgreSQL
-
-```ts
-import pg from 'pg'
-import { createGraph } from 'account-graph'
-import { createPostgresStore } from 'account-graph/postgres'
-
-let store = createPostgresStore(new pg.Pool({ connectionString: process.env.DATABASE_URL }))
-await store.migrate()
-let graph = createGraph(store)
-```
-
-## Integrations
-
-### Hardware id
-
-Use this in a desktop client, on Node or in Electron's main process. It hashes the operating system's machine id with a constant of your app, so the raw id stays on the machine.
-
-```ts
-import { hardwareId } from 'account-graph/hardware'
-
-let hardware = await hardwareId('my-game-client') // 'hardware:9c1f…'
-// Send it with the login. The server observes it on the account.
-```
-
-| Platform | Source |
+| Call | Resolves to |
 | --- | --- |
-| macOS | `IOPlatformUUID` |
-| Windows | `MachineGuid` |
-| Linux | `/etc/machine-id` |
+| `record({ entries })` | `{ results }`, one per entry, in order |
+| `decide({ key, at, by, action, … })` | `{ ok: true, value }` or `{ ok: false, reason, … }` |
+| `forget({ key, at, by, subjects, platforms })` | `{ ok: true, value }` or `{ ok: false, reason, … }` |
+| `lookup({ kind, … })` | What the kind answers |
+| `report({ kind, … })` | `{ asOf, value }` |
+| `events({ after, limit })` | `{ ok: true, value }` or `{ ok: false, reason: 'CURSOR_LOST' }` |
+| `close()` | Nothing |
 
-### Fingerprint
+The [HTTP API](http.md) has every field, refusal and rule. The types are exported from `account-graph`.
 
-The browser receives an event id. The server confirms it with Fingerprint and reads the visitor id there, so a page cannot claim another person's fingerprint.
+Every write takes a `key` and an `at` of yours. Keep both with what you record, so a retry is the same call.
 
-```ts
-// Browser
-import { collect } from 'account-graph/collect'
-import { fingerprintEvent } from 'account-graph/fingerprint/browser'
-
-collect({
-  endpoint: 'https://graph.example.org/collect',
-  fingerprintEvent: fingerprintEvent({ apiKey: 'PUBLIC_KEY' }),
-})
-```
+### Record
 
 ```ts
-// Server
-import { createFingerprintVerifier } from 'account-graph/fingerprint'
+import { accountGraph } from 'account-graph'
 
-let fingerprint = createFingerprintVerifier({ secretKey: process.env.FINGERPRINT_SECRET })
-```
+const graph = accountGraph({ memory: true })
 
-A tampered browser, a bad bot, or an event older than five minutes gives no fingerprint. `openFingerprint` returns the unconfirmed open-source FingerprintJS id, recorded as the weaker `canvas` kind.
-
-### MaxMind
-
-MaxMind classifies each address. A VPN, proxy, data center, phone carrier, campus or office address is recorded and then ignored, so it links no subjects.
-
-```ts
-import { createMaxMindLookup } from 'account-graph/maxmind'
-
-let ipInfo = createMaxMindLookup({ accountId: 123456, licenseKey: process.env.MAXMIND_KEY })
-```
-
-`createDatabaseLookup` does the same from local MaxMind databases opened with the `maxmind` package.
-
-### Server
-
-`createHandler` combines these integrations. `/collect` takes browser visits from your sites, and `/review` serves the reviewer screen. Other routes take calls from your services with a bearer token.
-
-```ts
-import { createServer } from 'node:http'
-import { createHandler } from 'account-graph/server'
-
-createServer(
-  createHandler(graph, {
-    token: process.env.GRAPH_TOKEN,
-    reviewers: { dana: process.env.DANA_TOKEN! },
-    origins: ['https://example.org', 'https://example.com'],
-    fingerprint,
-    ipInfo,
-  }),
-).listen(8080)
-```
-
-With `cookie: true`, `/collect` keeps the device id in a cookie the server sets. Safari deletes a script-set cookie after seven days. A server-set cookie lasts, and page script can neither read nor change it.
-
-Serve `/collect` from the site's own domain, or from a subdomain with `cookie: { domain: 'example.org' }`.
-
-### Reviewer screen
-
-The handler serves a screen at `/review`. It lists the largest clusters, shows each subject's links and the reasons, draws the links, and shows money moved and every sighting. Run `npm run review` to try it with made-up data.
-
-A reviewer can separate two accounts, join two, stop linking through an identifier, or delete a subject (`forget`). Each action takes a reason, stored in the audit log.
-
-| Property | Behavior |
-| --- | --- |
-| Page | One file without outside assets, data or secrets. The browser runs only the script it shipped with and contacts only its own server. |
-| Token | The reviewer enters it. The page keeps it for that browser tab. |
-| `reviewers` | One token per reviewer. Decisions are signed with the reviewer's name. The token cannot record observations, transfers or conversions. |
-| Lists | Loads 50 clusters at a time, suggests subjects as you type, and lists the newest cluster changes. |
-
-### Consent
-
-A browser that sends the Global Privacy Control signal is still recorded, because fraud checks do not depend on advertising consent. Its ad click and analytics id are dropped, and no data about it goes to an ad platform.
-
-```ts
-collect({ endpoint, consent: { adUserData: true, adPersonalization: false } }) // the banner's answer
-await graph.consent('contact:1001', { adUserData: true, adPersonalization: true }, { at, source: 'form' }) // or from your server
-```
-
-### Google tag and Google Ads
-
-`collect` reads the click id from the URL: `gclid`, `gbraid`, `wbraid`, and the Meta, Microsoft and TikTok ids. It falls back to the Google tag's `_gcl_aw` cookie, reads the Analytics client id from `_ga`, and keeps its own first-party device id in the `ag_device` cookie. With a visit it sends Meta's browser id from `_fbp`, when Meta's pixel has set one.
-
-When someone enrolls, your server reads `ag_device` from the request and observes the new contact with it.
-
-```ts
-await graph.observe({
-  subject: 'contact:1001',
-  identifiers: [`device:${cookies.ag_device}`, email(form.email)],
-  at: Date.now(),
-  event: 'enroll',
-})
-
-let attribution = await graph.attribute('contact:1001', { at: Date.now() })
-// attribution.reason: 'credited' | 'low_confidence' | 'no_touch'
-```
-
-Record the outcome in the outbox, which sends it to each ad platform.
-
-```ts
-import { createOutbox, googleAds, ingest, meta, microsoftAds, tiktok } from 'account-graph'
-import { createGoogleTokens } from 'account-graph/google-auth'
-
-let token = createGoogleTokens(JSON.parse(serviceAccountKeyFile))
-let outbox = createOutbox(graph, store.outbox, {
-  targets: [
-    googleAds({ customerId: '123-456-7890', send: async (request) => ingest(request, await token()) }),
-    meta({ pixelId: '555', accessToken: process.env.META_TOKEN, url: 'https://example.org/' }),
-    microsoftAds({ accessToken: microsoftToken, developerToken, customerId: '11', customerAccountId: '22' }),
-    tiktok({ pixelCode: 'C4…', accessToken: process.env.TIKTOK_TOKEN, url: 'https://example.org/' }),
+const { results } = await graph.record({
+  entries: [
+    { type: 'profile', key: 'signup-1001', at: 1795460000000, subject: 'contact:1001', event: 'signup', facts: { email: 'pat@example.org', device: '9f3c' } },
+    { type: 'conversion', key: 'enroll-1001', at: 1795460000000, subject: 'contact:1001', stage: 'enrolled', value: 200, currency: 'USD' },
   ],
 })
 
-await outbox.record({
-  transactionId: 'enroll-1001',
-  subject: 'contact:1001',
-  at: Date.now(),
-  // What the outcome counts as on each platform: an action id, an event name, a goal name, an event name.
-  action: { google: '987654321', meta: 'Lead', microsoft: 'Enrolled', tiktok: 'CompleteRegistration' },
-  value: 200,
-  email: form.email,
-})
-
-let stop = outbox.start(30_000) // send what is due, every 30 seconds
+for (const result of results) {
+  if (!result.ok) console.error(result.key, result.reason)
+  else if (result.type === 'profile') console.log(result.value.changes)
+}
 ```
+
+A "no" is a value and never thrown. `changes` lists the subjects that moved, so you can hold a login or a trade before it settles.
+
+### Refund and write off
+
+A refund or a write-off is an amount. It does not say what is left, so the order they arrive in does not matter.
+
+```ts
+import { accountGraph } from 'account-graph'
+
+const graph = accountGraph({ memory: true })
+const of = { type: 'conversion', key: 'enroll-1001' } as const
+
+await graph.record({
+  entries: [
+    { type: 'conversion', key: 'enroll-1001', at: 1795460000000, subject: 'contact:1001', stage: 'enrolled', value: 200, currency: 'USD' },
+    { type: 'restatement', key: 'refund-7', at: 1795463600000, of, change: { kind: 'refund', amount: 80 } }, // worth 120
+    { type: 'restatement', key: 'undo-7', at: 1795467200000, of, change: { kind: 'reverse', restatement: 'refund-7' } }, // worth 200
+  ],
+})
+```
+
+### Decide
+
+```ts
+import { accountGraph } from 'account-graph'
+
+const graph = accountGraph({ memory: true })
+const at = 1795460000000
+const pairs = [{ a: 'contact:7', b: 'contact:12' }]
+
+const { decisions } = await graph.lookup({ kind: 'person', subjects: ['contact:7', 'contact:12'], at })
+const merged = await graph.decide({ key: 'ticket-88', at, by: 'dana', seen: decisions, action: 'merge', pairs })
+if (!merged.ok && merged.reason === 'STALE') console.log(`${merged.by} decided about them since`)
+if (merged.ok && merged.value.notAsAsked.length > 0) console.log('a split holds them apart')
+```
+
+Take a merge back with `unmerge` of the pair:
+
+```ts
+import { accountGraph } from 'account-graph'
+
+const graph = accountGraph({ memory: true })
+
+const undone = await graph.decide({ key: 'ticket-89', at: 1795463600000, by: 'dana', action: 'unmerge', pairs: [{ a: 'contact:7', b: 'contact:12' }] })
+if (!undone.ok && undone.reason === 'NOT_JOINED') for (const { a, b, because } of undone.pairs) console.log(a, b, because)
+else if (undone.ok) for (const { a, b, because } of undone.value.notAsAsked) console.log(a, b, 'are still together', because)
+```
+
+`NOT_JOINED` says nobody merged the pair, so there is nothing to take back. `because` is `apart` where they are not together, `evidence` where what they share joins them, and `other_merges` where merges with others do. `notAsAsked` lists pairs that stay together after it. `split` keeps those apart.
+
+### Look up
+
+```ts
+import { accountGraph } from 'account-graph'
+
+const graph = accountGraph({ memory: true })
+const at = 1795460000000
+
+// What brought them.
+const { people } = await graph.lookup({ kind: 'person', subjects: ['contact:1001'], at })
+const arrival = people[0]?.arrival // what can be credited, or null
+const possible = people[0]?.possible // the strongest arrival, where none can be
+
+// Who a new intake may be, before it is saved.
+const { candidates } = await graph.lookup({ kind: 'match', facts: { phone: '(555) 010-0007' }, at })
+
+// Everything recorded about one person.
+const { entries, next } = await graph.lookup({ kind: 'journey', subject: 'contact:1001' })
+```
+
+The person of a journey is the subject's cluster, plus any subject linked strongly enough that its visits would be credited. A subject split from any of them is left out. `subjects` gives the reason and score for each.
+
+### Report
+
+```ts
+import { accountGraph } from 'account-graph'
+
+const graph = accountGraph({ memory: true })
+
+const { asOf, value } = await graph.report({ kind: 'campaigns', window: { from: '2026-11-01', to: '2026-11-14', timeZone: 'America/Chicago' }, per: 'enrolled' })
+for (const row of value.rows) console.log(row.source, row.campaignId, row.cost, row.costPerOutcome)
+console.log(`as of ${new Date(asOf).toISOString()}`)
+```
+
+### Follow events
+
+```ts
+import { accountGraph } from 'account-graph'
+
+const graph = accountGraph({ memory: true })
+
+let after: string | null = null // read from where you keep it
+for (;;) {
+  const page = await graph.events({ after, limit: 500 })
+  if (!page.ok) {
+    after = null // CURSOR_LOST: read everything again
+    continue
+  }
+  for (const event of page.value.events) {
+    if (event.type === 'cluster.changed') console.log(event.data.subject, event.data.to)
+  }
+  after = page.value.cursor // keep it once the events are acted on
+  if (!page.value.more) break
+}
+```
+
+An event from a newer server has the type `Unrecognized` and the raw value. Keep it and move on. [Operations](operations.md#events) has the rules of following along.
+
+## Faults
+
+What is not a "no" of the domain is thrown as a `Fault`: an `Error` with a `code`, `retryable` and `detail`. Tell it by its code, never by its message.
+
+```ts
+import { FAULT_CODES, accountGraph, hasCode, isFault } from 'account-graph'
+import type { RecordRequest } from 'account-graph'
+
+const graph = accountGraph({ url: 'https://graph.example.org', token: process.env.GRAPH_TOKEN! })
+
+async function send(request: RecordRequest) {
+  try {
+    return await graph.record(request)
+  } catch (error) {
+    // It may have been written. The same request with the same keys is safe.
+    if (hasCode(error, FAULT_CODES.TRANSPORT.INDETERMINATE)) return graph.record(request)
+    if (isFault(error) && error.retryable) console.warn(`try again later: ${error.code}`)
+    throw error
+  }
+}
+```
+
+| Code | Thrown by a local graph | Thrown by a remote one |
+| --- | --- | --- |
+| `INPUT.MALFORMED`, `INPUT.TOO_LARGE` | Before anything is written, or with the entry that cannot be | Before sending, or from the server |
+| `AUTH.REJECTED`, `AUTH.FORBIDDEN` | Never | From the server |
+| `CONFIG.INVALID` | By `accountGraph` | By `accountGraph`, and for a 404, a 405 or a redirect, because `url` is then no server |
+| `CONFIG.MISMATCH` | When the [settings differ](operations.md#settings-that-must-match) from the database's | From the server |
+| `CONFIG.UNSUPPORTED` | A `link` without `linkSecret`, or `retract` where no platform can | From the server |
+| `GRAPH.UNAVAILABLE` | The database is not available | From the server, and for 429 or 503 of a proxy |
+| `GRAPH.INTERNAL` | Everything else. The cause is kept as `cause`, and is not in the message. | From the server, and for a read whose answer cannot be read |
+| `GRAPH.CLOSED` | After `close` | After `close` |
+| `TRANSPORT.INDETERMINATE` | The time ran out, or the connection was lost as a write was committed | No answer, 502 or 504, or a write whose answer cannot be read |
+| `TRANSPORT.ABORTED` | Your `signal` | Your `signal` |
+
+[Faults](http.md#faults) has the status of each, and which are retryable.
+
+Each call takes `{ signal, correlationId }` as a second argument. `signal` aborts it. `correlationId` is sent to a server as `x-request-id`.
+
+## Close
+
+`close` refuses new calls with `GRAPH.CLOSED`, waits up to 30 seconds for those it accepted, stops the workers and closes the connections. It is safe to call twice.
+
+## Server
+
+`createEdge` serves a local graph over HTTP: the six calls at `/v1`, browsers, Twilio, the reviewer screen and `/health`.
+
+```ts
+import { createServer } from 'node:http'
+import { accountGraph } from 'account-graph'
+import { createEdge } from 'account-graph/edge'
+
+const graph = accountGraph({ databaseUrl: process.env.DATABASE_URL!, workers: true, receiptSecrets: [process.env.RECEIPT_SECRET!] })
+
+const edge = createEdge(graph, {
+  token: process.env.GRAPH_TOKEN!,
+  reviewers: { dana: process.env.DANA_TOKEN! },
+  origins: ['https://example.org', 'https://example.com'],
+})
+const server = createServer(edge).listen(8080)
+
+async function stop() {
+  server.close()
+  await edge.drain() // writes the visits that wait to be written
+  await graph.close()
+}
+```
+
+`createEdge` needs a local graph. A remote one throws `CONFIG.UNSUPPORTED`.
+
+| Option | Variable | Meaning |
+| --- | --- | --- |
+| `token` | `GRAPH_TOKEN` | The service token |
+| `reviewers` | `REVIEW_TOKENS` | Each reviewer's name, with a token or a list of tokens |
+| `origins` | `ORIGINS` | Sites whose pages may post |
+| `trustProxy` | `TRUST_PROXY` | `true`, or how many proxies stand in front |
+| `cookie` | `COOKIE` | `true`, or `{ domain }`, to keep the device id in a cookie the server sets |
+| `limit` | `RATE_*` | `{ perMinute, burst }`, or `false` |
+| `staffNetworks` | `STAFF_NETWORKS` | Networks whose visits are dropped |
+| `events` | `EVENTS` | Page events to record |
+| `twilio` | `TWILIO_*` | `{ authToken, calls?, texts? }`, each the address entered in Twilio |
+| `textCodes` | `TEXT_CODES` | Puts a code in text links |
+| `fingerprint`, `maxmind`, `serverRanges` | `FINGERPRINT_*`, `MAXMIND_*`, `SERVER_RANGES_FILE` | See [providers](providers.md). `serverRanges` is the text of the file. |
+
+With `cookie: true`, `/collect` keeps the device id in a cookie the server sets. Safari deletes a script-set cookie after seven days. A server-set cookie lasts, and page script can neither read nor change it. Serve `/collect` from the site's own domain, or from a subdomain with `cookie: { domain: 'example.org' }`.
+
+## Workers
+
+With `workers: true`, a local graph sends due conversions every 30 seconds, posts events every 5 seconds, looks for what is late every 5 minutes, and reads costs every 6 hours. Several processes may have it on: each kind of work but sending takes a lease, and sending claims its own conversions.
+
+In a test, run one pass of every worker by hand:
+
+```ts
+import { accountGraph } from 'account-graph'
+import { runWorkers } from 'account-graph/testing'
+
+const graph = accountGraph({ memory: true, now: () => 1795460000000 })
+await runWorkers(graph)
+```
+
+### What sending does
+
+| Event | Result |
+| --- | --- |
+| The platform accepts the request | `sent` |
+| Rate limit, outage, bad credential, network error | Stays `pending`. Retried after 30 seconds, doubling to an hour, shortened by up to half |
+| Still failing after 8 tries | `failed`, with the last error |
+| The platform rejects a request for one bad event | Each event is sent alone, and only the bad one is `failed` |
+| Without a trusted click, email or phone | Stays `pending` with the note `no_match_key`, and is looked at again in case the person is tied to a click. `skipped` seven days after it happened |
+| The person, or the browser that clicked, refused ad measurement, including after an outcome that said yes | `skipped`: `consent_denied` |
+| The outcome is older than the platform accepts: 7 days for Meta, 90 for Microsoft | `skipped`: `too_old` |
+| A click below 0.9 confidence that is not in the person's cluster, with an email or phone | Sent with the email or phone alone |
+
+The click is worked out when a conversion is sent, so evidence that arrived after the conversion still counts. Each platform gets its own click id, and the email and phone hashed the way it matches them.
 
 | Platform | Match data |
 | --- | --- |
@@ -215,224 +357,101 @@ let stop = outbox.start(30_000) // send what is due, every 30 seconds
 | Microsoft | `msclkid` |
 | TikTok | `ttclid` |
 
-Each platform also gets the email and phone hashed the way it matches them, as a fallback when the click id is lost. Google and Meta hash a Gmail address and a phone number differently, so keys are stored per platform.
+Delivery is at least once. A conversion sent twice after a crash carries the same key. Meta keeps the first copy, and Google treats the second as a restatement of the same value. A worth that changes is sent again to Google, which overwrites the value it holds.
 
-## The outbox
+## Webhook
 
-`record` stores an outcome and returns at once. The email and phone are hashed before storage. Recording the same `transactionId` again is a no-op, and recording it with different details is refused.
-
-`run` sends what is due. For each job it asks the graph for the click at that moment, so evidence that arrived after the outcome still counts.
-
-| Event | Result |
-| --- | --- |
-| The platform accepts the request | `sent`, with its request id, the click and its confidence |
-| Rate limit, outage, bad credential, network error | Stays `pending`. Retried after 30 seconds, doubling to an hour, shortened by up to half |
-| Still failing after 8 tries | `failed`, with the last error |
-| The platform rejects a request for one bad event | Each event is sent alone, and only the bad one is `failed` |
-| Without a trusted click, email or phone | Stays `pending` with the note `no_match_key`, and is looked at again in case the person is tied to a click. `skipped` seven days after it happened (`patience`) |
-| The person, or the browser that clicked, refused ad measurement, including after an outcome that said yes | `skipped`: `consent_denied` |
-| The outcome is older than the platform accepts: 7 days for Meta, 90 for Microsoft | `skipped`: `too_old` |
-| A click below 0.9 confidence that is not in the person's cluster, with an email or phone | Sent with the email or phone alone |
-
-A worker claims a job by moving its due time one minute ahead. If the worker dies, the job comes due again for another. On PostgreSQL the claim locks its rows, so any number of workers can call `run` at once.
-
-Delivery is at least once. A job sent twice after a crash carries the same `transactionId`. Meta keeps the first copy, and Google treats the second as a restatement of the same value.
-
-`restate` changes an outcome's value after a refund or correction and sends it again. Google overwrites the value it holds.
+A server posts [events](operations.md#webhook) to your address. Check each post before you read it.
 
 ```ts
-await outbox.restate('enroll-1001', 120)
+import { parseWebhook, verifyWebhook } from 'account-graph'
+
+export async function receive(request: Request): Promise<Response> {
+  const webhook = { headers: Object.fromEntries(request.headers), body: await request.text() }
+  if (!(await verifyWebhook(webhook, { secret: process.env.WEBHOOK_SECRET!, now: Date.now(), maxAgeMs: 300_000 }))) return new Response(null, { status: 401 })
+  for (const event of parseWebhook(webhook)) {
+    if (event.type === 'callback.overdue') console.log(event.data.call, event.data.attempts)
+  }
+  return new Response(null, { status: 204 })
+}
 ```
 
-`delay` holds a new outcome before its first send. `graph.forget` deletes a subject's jobs along with everything else about it. `outbox.forget` does the same and reports what had [reached a platform](privacy.md#data-at-ad-platforms).
+`body` is the text as received. Neither function throws on what was sent. `parseWebhook` gives what it does not know as `Unrecognized`, with the raw value.
 
-### Steps and alerts
+## Policy
 
-`withStage` fills an outcome's value, currency and action from a list of your steps. `onFailed` receives the jobs that failed permanently, and `createAlerter` posts them to a webhook.
-
-```ts
-import { createAlerter, createOutbox, withStage } from 'account-graph'
-
-const steps = { inquiry: { value: 5, action: { google: '111' } }, client: { value: 200, action: { google: '333' } } }
-const alert = createAlerter({ url: process.env.ALERT_WEBHOOK })
-const outbox = createOutbox(graph, store.outbox, { targets, onFailed: (jobs) => alert('conversions', `${jobs.length} conversions failed`) })
-
-await outbox.record(withStage(steps, { transactionId: 'client-1001', subject: 'account:42', at: Date.now(), stage: 'client' }))
-```
-
-### Failed conversions
-
-`list` shows the jobs in one state with each reason. `retry` requeues a transaction's failed and skipped jobs.
+Name only what differs from the default. A misspelled kind or field does not compile. A kind of your own goes in `customKinds`, with its weight, dilution, cap and half-life.
 
 ```ts
-await outbox.list('failed')      // [{ transactionId, target, note: 'Google refused the request with 400: …', … }]
-await outbox.retry('enroll-1001')
-```
+import { accountGraph } from 'account-graph'
 
-## Campaign report
-
-`outcome` counts something a subject did, `spend` records campaign costs, and `report` compares the two per campaign.
-
-```ts
-import { googleCosts } from 'account-graph/costs'
-
-await graph.outcome({ transactionId: 'enroll-1001', subject: 'account:42', at: Date.now(), stage: 'enrolled', value: 200, currency: 'USD' })
-await graph.spend(await googleCosts({ customerId, developerToken, accessToken })('2026-11-01', '2026-11-14'))
-
-const { rows, total } = await graph.report({ from: '2026-11-01', to: '2026-11-14', timeZone: 'America/New_York' })
-// rows[0]: { source: 'google', campaignId: '20111', campaign: 'Search: garden tools', cost: 873.6, visits: 9,
-//            stages: { enrolled: { count: 3, value: 600 } }, outcomes: 3, value: 600, … }
-```
-
-`outbox.record` calls `outcome`, so an outcome sent to an ad platform is counted once. `restate` changes the value in both places. See [the report](report.md) for its inputs and columns.
-
-## Phone calls
-
-`recordCall` records a call from any telephone provider. It links the call to the one visitor who tapped the number shortly before, or files it under the number's channel.
-
-```ts
-import { recordCall } from 'account-graph'
-
-const call = await recordCall(graph, { id: 'CA1', from: '+15558675309', to: '+15551230001', at: Date.now(), duration: 140 }, {
-  numbers: { '+15551230001': { source: 'google', campaignId: '20222' } },
+const graph = accountGraph({
+  memory: true,
+  policy: {
+    kinds: { phone: { weight: 0.85, halfLife: 63_072_000_000 } },
+    customKinds: { badge: { weight: 0.95, dilution: 1, cap: 5, halfLife: 'none' } },
+  },
 })
-// { subject: 'caller:96f2…', flags: [], counted: true, visitor: 'visitor:fb91…', duplicate: false }
 ```
 
-See [Page events and phone calls](calls.md) for the flags and for checking Twilio's reports.
-
-## Signed links
-
-`knownLink` makes a URL that names the recipient. The server, given the same secret as `linkSecret`, links the browser that opens it to that person.
-
-```ts
-import { knownLink } from 'account-graph'
-
-const url = knownLink('https://example.org/offer', 'contact:42', { secret: process.env.LINK_SECRET })
-```
-
-See [Signed links](links.md) for link strength and carrying a visitor between sites.
-
-## Write queue
-
-PostgreSQL writes run one at a time. `createBatcher` queues observations that arrive during a write and sends them together in the next. `observe` with a list writes all of it or none: one identifier of a kind the policy lacks refuses the list, where `createBatcher` refuses only the observation that has it.
-
-```ts
-import { createBatcher } from 'account-graph'
-
-let queue = createBatcher(graph)
-await queue.observe({ subject: 'account:1', identifiers: ['email:…'], at: Date.now() })
-```
-
-An idle system writes at once, without a timer. A bad observation fails alone.
-
-## Journey
-
-`journey` returns everything recorded about a person, in order, across their subjects.
-
-```ts
-let { entries, subjects } = await graph.journey('contact:42')
-// entries: { at, subject, kind: 'visit' | 'sighting' | 'call' | 'outcome' | 'value' | 'consent' | 'decision', … }
-// subjects[subject]: { how: 'self' | 'cluster' | 'linked', score, via, kinds }
-```
-
-The person is the subject's cluster, plus any subject linked strongly enough that its visits would be credited. A subject separated from any of them is excluded. `ties` gives the reason and score for each subject. An outcome's conversions are held in the outbox, and `GET /journey` adds them.
-
-## Reviewer decisions
-
-```ts
-await graph.ignore('email:…', true, { by: 'dana', reason: 'front desk mailbox' })
-await graph.separate('account:7', 'account:9', true, { by: 'dana', reason: 'siblings' })
-await graph.join('account:1', 'account:2', { by: 'dana', reason: 'same caller' })
-```
-
-| Decision | Behavior |
-| --- | --- |
-| `separate` | Holds whatever the two share later. Withdraw it with `false`. It can be recorded before either account exists. |
-| `join` | The strongest link. A separation still wins: joining an account to one side of a separated pair pulls it away from the other. |
-| `ignore` | Stops linking through an identifier. |
-
-A join leaves a mark on both subjects, `review:join-` and its decision number. `ignore` the mark to take the join back. The audit log keeps both decisions, and `reviewed()` stops counting the pair.
-
-| Query | Returns |
-| --- | --- |
-| `undecided()` | Pairs that are related but unjoined, strongest first. Reads subjects of the newest 10,000 sightings. |
-| `clusters()` | The largest clusters, the starting point for review. |
-| `search('account:4')` | Subjects by the start of their id. |
-| `recent()` | The newest cluster changes. |
-| `changes({ after })` | Every cluster change after a number, oldest first, with the number to pass next. |
-
-On the benchmark's 124,000 edges in PostgreSQL, `undecided()` took 0.13 seconds, against 0.33 to score every pair. Only the latter grows with the graph.
-
-### Audit log
-
-Every `ignore`, `separate`, `join`, `forget` and `rebuild` is appended to the audit log. Each entry carries a hash of itself and the one before, so editing or deleting an entry breaks every later hash.
-
-```ts
-await graph.decisions() // [{ seq: 1, at, action: 'ignore', about: ['email:…'], by: 'dana', reason, hash }, …]
-await graph.audit()     // { sound: true }
-```
-
-### Past state
-
-`asOf` rebuilds the graph in memory as it stood at a time, from the sightings recorded and decisions made up to then. It uses the recording time, so an event that arrived late is absent from earlier states.
-
-```ts
-let then = await graph.asOf(Date.parse('2026-06-01'))
-await then.cluster('account:7')
-```
-
-### Log retention
-
-Every observation adds rows to the sighting log. `prune` deletes rows recorded before a time and logs a decision. Links and clusters stay the same, because each edge keeps its first and last sighting and its count.
-
-```ts
-await graph.prune(Date.now() - 180 * 24 * 60 * 60 * 1000, { by: 'ops', reason: '180 day retention' })
-```
-
-`history`, `consentHistory` and `asOf` lose what was deleted. Advertising answers are deleted too, except each subject's current one.
+Left out, the policy is the one the database was built with. One that differs throws `CONFIG.MISMATCH` until [`account-graph rebuild`](operations.md#policy). [Matching](deciding.md) describes each part of a rule.
 
 ## Money flows
 
-Flows record who pays whom. Collusion is value moving between accounts that are the same person or linked to one another.
+A `transfer` records who pays whom. Collusion is value moving between accounts that are the same person or linked to one another.
 
 ```ts
-let tie = await graph.transfer({ id: 'trade-81', from: 'account:2', to: 'account:1', amount: 250_000, at: Date.now(), asset: 'gold' })
-// tie.relation: 'same' | 'related' | 'none', with the score and reasons. Hold the trade on anything but 'none'.
+import { accountGraph } from 'account-graph'
 
-await graph.flows('account:1')     // every counterparty: sent, received, count, imbalance, and the tie
-await graph.collusion('account:1') // only those tied by identity, with three or more flows
+const graph = accountGraph({ memory: true })
+
+const { results } = await graph.record({
+  entries: [{ type: 'transfer', key: 'trade-81', at: 1795460000000, from: 'account:2', to: 'account:1', amount: 250_000, asset: 'gold' }],
+})
+const [trade] = results
+// Hold the trade on anything but 'none'.
+if (trade?.ok && trade.type === 'transfer') console.log(trade.value.relation, trade.value.score)
+
+const { counterparties, rings } = await graph.lookup({ kind: 'transfers', subject: 'account:1', tiedOnly: true })
 ```
 
-`id` is yours, one per flow. Repeating a flow with the same details, `at` included, adds no record and answers `duplicate: true`, so retries are safe. The same id with other details is refused.
+`amount` is a whole number of the asset's smallest unit. `counterparties` has what was sent and received with each, the tie, and `imbalance`, which is 1 when value moved one way only. With `tiedOnly`, it keeps those tied by identity with three or more transfers.
 
-`amount` is a whole number of the asset's smallest unit. `imbalance` is 1 when value moved one way only.
+A ring is value that left a subject and returned through others: A paid B, B paid C, C paid A. Its `amount` is the least that moved on any step, and so the most that could have gone all the way round. `tied` counts the others in the subject's cluster. Rings of up to four subjects are found.
 
-`rings` finds value that left a subject and returned through others: A paid B, B paid C, C paid A.
+## Browser and desktop
+
+The [script tag](operations.md#script-tag) is the short way to report visits. A bundled page can call the same code:
 
 ```ts
-await graph.rings('account:1')
-// [{ subjects: ['account:1', 'account:2', 'account:3'], asset: 'gold', amount: 700, tied: 1 }]
+import { collect, event } from 'account-graph/collect'
+
+const options = { endpoint: 'https://graph.example.org/collect', consent: { adUserData: true, adPersonalization: false } }
+await collect(options)
+await event(options, 'inquiry')
 ```
 
-A ring's `amount` is the least that moved on any step, and so the most that could have gone all the way round. `tied` counts the others in the subject's cluster. Rings of up to four subjects are found by default. Pass a second argument for longer ones.
+`collect` reads the click id from the URL: `gclid`, `gbraid`, `wbraid`, and the Meta, Microsoft and TikTok ids. It falls back to the Google tag's `_gcl_aw` cookie, reads the Analytics client id from `_ga`, and keeps its own first-party device id in the `ag_device` cookie. With a visit it sends Meta's browser id from `_fbp`, when Meta's pixel has set one.
 
-## Fitting the weights
+When someone signs up, your server reads `ag_device` from the request and sends it as `facts.device` of a `profile`.
 
-`measure` reports how often each kind was right on pairs that shared only that kind. `fit` sets every weight at once from pairs checked by hand, using the graph's scoring formula. A kind that mostly appears beside a stronger one is credited only with its own accuracy.
+A desktop client, on Node or in Electron's main process, can send a hardware id. It hashes the operating system's machine id with a constant of your app, so the raw id stays on the machine.
 
 ```ts
-import { fit } from 'account-graph'
+import { hardwareId } from 'account-graph/hardware'
 
-// Every pair a reviewer joined or separated, with what the two share.
-let checkedPairs = await graph.reviewed()
-let { policy, kinds, loss, calibration } = fit(checkedPairs, defaultPolicy)
-// kinds.fingerprint: { before: 0.97, after: 0.94, pairs: 812 }
-let graph = createGraph(store, policy)
-await graph.rebuild()
+const hardware = await hardwareId('my-game-client') // 'hardware:9c1f…'
+// Send it with the login. Your server records it in facts.identifiers.
 ```
+
+| Platform | Source |
+| --- | --- |
+| macOS | `IOPlatformUUID` |
+| Windows | `MachineGuid` |
+| Linux | `/etc/machine-id` |
 
 ## Limitations
 
 - **Hardware id.** The client reports it, so a modified client can send a false value.
 - **Restatement.** Google has no way to retract a conversion. Meta, Microsoft and TikTok cannot restate one.
+- **Memory.** A memory graph is lost with its process, and so are its receipts. It copies all it holds before each entry, so it suits tests and small graphs.

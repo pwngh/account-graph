@@ -37,7 +37,7 @@ Under the preset, a phone alone relates two people without joining them. A phone
 
 A name confirms a link that a phone, email or address already made. The two must be related without it, and share a first and last name with the same zip code or date of birth. See [Names](identify.md#names).
 
-> **Names repeat in families.** A father and son, or mother and daughter, with one name at one address are joined once they also share a phone. `separate` them when you know they are two people.
+> **Names repeat in families.** A father and son, or mother and daughter, with one name at one address are joined once they also share a phone. `split` them when you know they are two people.
 
 Phone evidence halves for each two years between the two sightings, because numbers change hands.
 
@@ -47,12 +47,13 @@ A caller becomes a `caller:` subject with their number. Under the preset, the co
 
 To close the gap, have your backend join the two when staff open the contact a call is about. Leave out a call by somebody who speaks for another, such as a parent about a child: that is another person, and joining the two mixes their records.
 
-```sh
-curl -X POST https://graph.example.org/join -H "authorization: Bearer $GRAPH_TOKEN" \
-  -d '{"source":"desk","pairs":[{"a":"caller:96f2c503…","b":"contact:7","reason":"answered by staff"}]}'
+```bash
+curl -X POST https://graph.example.org/v1/decide -H "authorization: Bearer $GRAPH_TOKEN" -d '{
+  "key": "desk-CA1", "at": 1795460000000, "by": "system:desk", "action": "merge",
+  "pairs": [{ "a": "caller:96f2c503…", "b": "contact:7", "reason": "answered by staff" }] }'
 ```
 
-The `caller:` subject is in the answer to `POST /call`.
+The `caller:` subject is in the answer to the `call` entry. Take the merge back with [`unmerge`](deciding.md#taking-a-merge-back).
 
 ### Shared phones
 
@@ -60,15 +61,15 @@ Keep a shared phone on each person, and record what you know about the two. Remo
 
 | What you know | Action |
 | --- | --- |
-| They are one person | `join` the two. |
+| They are one person | `merge` the two. |
 | They are two people, and the distinction has no consequence | Leave them related. |
-| They are two people and must stay distinct | `separate` them. |
-| The number belongs to a front desk, a shelter or a school | `ignore` that number. |
+| They are two people and must stay distinct | `split` them. |
+| The number belongs to a front desk, a shelter or a school | `mute` that number. |
 
 ## Custom presets
 
-Write a policy the same way and start the server with it. `policyProblems` in `account-graph` checks a policy without starting a server. A group is any name you choose, and kinds with the same group count once between them.
+Write a policy the same way, rebuild, and start the server with it. A policy that cannot be stops the server with one line per problem. A group is any name you choose, and kinds with the same group count once between them.
 
 ## Limitations
 
-- **Weights.** The preset's weights are priors chosen for the situation. [`fit`](library.md#fitting-the-weights) sets them from pairs your reviewers have decided.
+- **Weights.** The preset's weights are priors chosen for the situation. [Checked pairs](deciding.md#checked-pairs-from-a-file) give values of your own.
