@@ -328,7 +328,7 @@ export function createSix(engine: Engine, options: SixOptions) {
       case 'text': {
         const { type: _, key, ...rest } = entry
         const recorded = await recordText(graph, { id: key, ...rest }, service.textOptions())
-        return { value: { subject: recorded.subject, flags: recorded.flags, counted: recorded.counted, ...(recorded.visitor && { visitor: recorded.visitor }) }, subjects: [recorded.subject], existed: recorded.duplicate }
+        return { value: { subject: recorded.subject, flags: recorded.flags, counted: recorded.counted, ...(recorded.visitor && { visitor: recorded.visitor }), ...(recorded.optOutAdded && { optOutAdded: true }) }, subjects: [recorded.subject], existed: recorded.duplicate }
       }
       case 'consent': {
         const stands = again || (await graph.consent(entry.subject, entry.consent, { at: entry.at, key: entry.key, ...(entry.source && { source: entry.source }) })).stands

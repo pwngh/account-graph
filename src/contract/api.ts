@@ -229,7 +229,7 @@ export interface RecordValue {
   payment: { readonly value: number | null; readonly deliveries: readonly Delivery[] }
   call: CallValue
   call_update: { readonly state: CallState; readonly counted: boolean; readonly followUp: FollowUp | null }
-  text: { readonly subject: string; readonly flags: readonly string[]; readonly counted: boolean; readonly visitor?: string }
+  text: { readonly subject: string; readonly flags: readonly string[]; readonly counted: boolean; readonly visitor?: string; readonly optOutAdded?: true }
   consent: Readonly<Consent>
   link: { readonly url: string }
   transfer: { readonly relation: Level | 'none'; readonly score: number }

@@ -1248,6 +1248,40 @@ everywhere('a duplicate result or callback says whether that statement still sta
   assert.deepEqual(got.map((row) => row.ok && row.value.stands), [false, false])
 })
 
+everywhere('a text retry can add an opt-out once and keeps the original message time', async ({ graph, local }) => {
+  const { engine } = await internalsOf(local)!()
+  const entry = { type: 'text', key: 'message', at: AT, direction: 'inbound', from: '+12025550121', to: '+12025550122' } as const
+  const stop = { ...entry, at: NOW, text: 'STOP.' }
+  const begin = { ...entry, at: AT + 1, text: 'START' }
+  const original = await one(graph, entry)
+  assert.ok(original.ok && original.type === 'text' && original.value.counted)
+  const subject = original.value.subject
+  const seen = await engine.graph.history(subject)
+  for (const change of [{ from: '+12025550123' }, { to: '+12025550124' }, { direction: 'outbound' as const }]) {
+    const wrong = await one(graph, { ...stop, ...change })
+    assert.ok(!wrong.ok && wrong.reason === 'KEY_REUSED', JSON.stringify(wrong))
+  }
+  assert.equal(await engine.graph.texting(subject), undefined)
+  const results = await Promise.all([one(graph, stop), one(graph, stop)])
+  assert.deepEqual(results.map(row => row.ok && row.type === 'text' && [row.value.duplicate, row.value.flags, row.value.counted]), [[true, ['opt_out'], false], [true, ['opt_out'], false]])
+  assert.equal(results.filter(row => row.ok && row.type === 'text' && row.value.optOutAdded).length, 1)
+  assert.deepEqual(await engine.graph.texting(subject), { optedOut: true, at: AT })
+  assert.equal(await engine.graph.outcomeOf('text:' + entry.key), undefined)
+  assert.deepEqual(await engine.graph.history(subject), seen)
+  assert.ok((await one(graph, begin)).ok)
+  assert.deepEqual(await engine.graph.texting(subject), { optedOut: true, at: AT })
+
+  // A STOP learned after a newer START keeps the time of the original text.
+  const batch = [{ ...entry, key: 'earlier', at: AT + 2 }, { ...begin, key: 'later', at: AT + 3 }, { ...stop, key: 'earlier' }, { ...stop, key: 'earlier' }]
+  const { results: rows } = await graph.record({ entries: batch })
+  assert.deepEqual(rows.map(row => row.ok && row.type === 'text' && [row.value.flags, row.value.optOutAdded ?? false]), [[[], false], [['opt_in'], false], [['opt_out'], true], [['opt_out'], false]])
+  assert.deepEqual(await engine.graph.texting(subject), { optedOut: false, at: AT + 3 })
+  assert.ok((await graph.forget({ key: 'erase', at: NOW, by: 'desk', subjects: [subject], platforms: 'report' })).ok)
+  const gone = await one(graph, stop)
+  assert.ok(!gone.ok && gone.reason === 'FORGOTTEN')
+  assert.deepEqual(await engine.graph.textsOf([subject]), [])
+})
+
 for (const [name, open] of Object.entries({ memory, ...(url && { postgres }) })) test(`one text arriving through record and Twilio together writes its tie and sightings once, ${name}`, async () => {
   const { twilioSignature } = await import('../src/providers/twilio.ts')
   const { graph, close } = await open()
@@ -1276,6 +1310,22 @@ for (const [name, open] of Object.entries({ memory, ...(url && { postgres }) }))
     const seen = [...await engine.graph.history(visitor), ...await engine.graph.history(saved!.subject)]
     assert.equal(seen.length, 5)
     assert.equal(seen.filter((row) => row.identifier.startsWith('phone:')).length, 1)
+
+    const bodyless = { MessageSid: 'body-later', From: '+12025550127', To: '+12025550126' }
+    const callback = (form: Record<string, string>) => fetch(base + '/texts/twilio', { method: 'POST', headers: { 'x-twilio-signature': twilioSignature('secret', address, form) }, body: new URLSearchParams(form) })
+    assert.equal((await callback(bodyless)).status, 200)
+    assert.ok(await engine.graph.outcomeOf('text:' + bodyless.MessageSid))
+    const stop = { ...bodyless, Body: 'ALTO' }
+    for (const response of await Promise.all([callback(stop), callback(stop)])) {
+      assert.equal(response.status, 200)
+      assert.equal(await response.text(), '<Response/>')
+    }
+    const stopped = await engine.graph.keptText(stop.MessageSid)
+    assert.deepEqual(stopped?.flags, ['opt_out'])
+    assert.equal(await engine.graph.outcomeOf('text:' + stop.MessageSid), undefined)
+    assert.ok((await graph.forget({ key: 'erase-stop', at: NOW, by: 'desk', subjects: [stopped!.subject], platforms: 'report' })).ok)
+    assert.equal((await callback(stop)).status, 200)
+    assert.equal(await engine.graph.keptText(stop.MessageSid), undefined)
   } finally {
     server.closeAllConnections()
     server.close()

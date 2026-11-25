@@ -263,6 +263,8 @@ export interface Graph {
   linksSent(subject: Subject): Promise<SentLink[]>
   /** Keeps a text message, with the arrival it is filed under, unless it is kept already. `recordText` does this. Resolves to whether it was written. */
   keepText(text: Omit<KeptText, 'recorded'>, touch?: Touch): Promise<boolean>
+  /** Adds an opt-out to the original inbound message when both numbers still match. */
+  stopText(id: string, subject: Subject, to: string): Promise<{ text: KeptText | undefined; added: boolean }>
   /** A kept text, or undefined for an id no text was kept for. */
   keptText(id: string): Promise<KeptText | undefined>
   /** Every kept text to or from the given subjects, oldest first. */
@@ -2218,6 +2220,16 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
           await tx.fed('touches', now())
         }
         return true
+      })
+    },
+
+    stopText(id, subject, to) {
+      return store.write(async tx => {
+        const text = await tx.textOf(id)
+        if (text?.direction !== 'inbound' || text.subject !== subject || text.to !== to || text.flags.includes('opt_out')) return { text, added: false }
+        const stopped = { ...text, flags: [...text.flags.filter(flag => flag !== 'opt_in'), 'opt_out'] }
+        await tx.setText(stopped)
+        return { text: stopped, added: true }
       })
     },
 

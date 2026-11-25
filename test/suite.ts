@@ -4517,6 +4517,48 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await graph.attribute(both[0]!.subject, { at: T0 + HOUR })).touches.length, 1)
     })
 
+    test('an opt-out correction survives a concurrent count and a later change of lead status', async () => {
+      const { graph } = await fresh()
+      const msg = { id: 'pending', from: '+12025550130', to: '+12025550131', at: T0 }
+      const counted = await recordText(graph, msg, { convert: async outcome => {
+        const stopped = await recordText(graph, { ...msg, text: 'STOP' })
+        assert.equal(stopped.optOutAdded, true)
+        return graph.outcome(outcome)
+      } })
+      assert.equal(counted.counted, false)
+      assert.deepEqual(counted.flags, ['opt_out'])
+      assert.equal(await graph.outcomeOf('text:pending'), undefined)
+      assert.deepEqual(await graph.texting(counted.subject), { optedOut: true, at: T0 })
+
+      const other = { ...msg, id: 'marked', from: '+12025550132' }
+      assert.equal((await recordText(graph, other)).counted, true)
+      await graph.markNotLead('text:marked', 'spam')
+      await recordText(graph, { ...other, text: 'STOP' })
+      await graph.markNotLead('text:marked', undefined)
+      assert.equal(await graph.outcomeOf('text:marked'), undefined)
+      const first = { ...msg, id: 'change', at: T0 + DAY, text: 'START' }
+      assert.deepEqual((await recordText(graph, first)).flags, ['opt_in'])
+      assert.deepEqual((await recordText(graph, { ...first, text: 'STOP' })).flags, ['opt_out'])
+    })
+
+    test('a newly excluded sender can still correct an existing text to an opt-out', async () => {
+      const { graph } = await fresh()
+      const message = { id: 'saved', from: '+12025550143', to: '+12025550144', at: T0 }
+      const sender = (await recordText(graph, message)).subject
+      const options = { exclude: [message.from, '+12025550145'] }
+      const stop = { ...message, text: 'STOP' }
+      for (const change of [{ id: 'new' }, { from: '+12025550145' }, { to: '+12025550146' }]) {
+        assert.deepEqual((await recordText(graph, { ...stop, ...change }, options)).flags, ['left_out'])
+        assert.equal(await graph.texting(sender), undefined)
+      }
+      assert.equal(await graph.keptText('new'), undefined)
+      for (const added of [true, undefined]) {
+        const retry = await recordText(graph, stop, options)
+        assert.deepEqual([retry.subject, retry.duplicate, retry.counted, retry.flags, retry.optOutAdded], [sender, true, false, ['opt_out'], added])
+      }
+      assert.deepEqual(await graph.texting(sender), { optedOut: true, at: T0 })
+    })
+
     test('a text waits until someone replies by text or in a call, or its sender asks for no more', async () => {
       const { graph } = await fresh()
       const ours = '+15550100101'

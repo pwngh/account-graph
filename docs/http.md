@@ -97,7 +97,7 @@ Each entry has `type`, `key` and `at`. A field with `?` may be left out.
 | `payment` | `conversion`, `direction`, `amount`, `currency?` | `value`, `null` until there is a conversion, and `deliveries` |
 | `call` | `direction`, `from?`, `to`, `duration?`, `result?`, `code?`, `tags?` | `subject`, `state`, `counted`, `flags`, `visitor?`. See [calls](calls.md). |
 | `call_update` | `call`, `change` | `state`, `counted`, `followUp` |
-| `text` | `direction`, `from`, `to`, `text?`, `code?`, `tags?` | `subject`, `flags`, `counted`, `visitor?`. See [texts](calls.md#text-messages). |
+| `text` | `direction`, `from`, `to`, `text?`, `code?`, `tags?` | `subject`, `flags`, `counted`, `visitor?`, `optOutAdded?`. See [texts](calls.md#text-messages). |
 | `consent` | `subject`, `consent: { adUserData, adPersonalization }`, `source?` | The answer that applies |
 | `link` | `subject`, `url`, `expires`, `purpose?` | `url`. See [signed links](identify.md#signed-links). |
 | `transfer` | `from`, `to`, `amount`, `asset?` | `relation`, `score` |
@@ -190,14 +190,14 @@ Put a `profile` before its `conversion`. The other way round, a conversion can b
 
 ### Idempotency
 
-Sending an entry again with its key writes nothing and answers `duplicate: true`. Nothing of the first answer is kept. The answer is read from the graph as it stands, so a `profile` sent again has no `changes`.
+An accepted retry of a recorded key answers `duplicate: true`. The answer is read from the graph as it stands, so a `profile` sent again has no `changes`. A second reporter can supply missing call details or an inbound text opt-out.
 
 The same key with other details answers `KEY_REUSED`. What is compared depends on the type:
 
 | Type | Compared | Not compared |
 | --- | --- | --- |
 | `call` | `direction`, `to`, and `from` where both reports name it | `at`, `duration`, `result`, `code`, `tags`. A second reporter often knows more: a `result`, or a `code` the call did not have, counts. |
-| `text` | `direction`, `from`, `to` | `at`, `text`, `code`, `tags`. Twilio sends no time. |
+| `text` | `direction`, `from`, `to` | `at`, `text`, `code`, `tags`. An inbound retry that first supplies an opt-out answers `optOutAdded: true` and applies it at the original message time. |
 | `cost` | `at` and the rows, in any order | |
 | `call_update` with `kind: "party"` | `at`, `call` and the signed statement | `change.seen` |
 | `decide` | `at`, `by`, `action`, and the pairs or the fact. Pairs may be in any order, and so may the two of a pair. | `reason`, the reason of a pair, `seen` |

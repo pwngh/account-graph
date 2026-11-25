@@ -5,7 +5,7 @@ import { numberOrSelf } from './calls.ts'
 import type { Graph } from './graph.ts'
 import { hashPhone, normalizePhone, phoneOfType } from './identifiers.ts'
 import { checkTags } from './tags.ts'
-import type { Identifier, KeptCall, KeptText, Outcome, Subject, TextReply } from '../contract/types.ts'
+import type { Identifier, KeptCall, KeptText, Outcome, Subject, TextReply, Touch } from '../contract/types.ts'
 import { spanishStop } from './lookups.ts'
 
 /** One text message to a number of yours, or from one, as your provider reports it. */
@@ -57,8 +57,10 @@ export interface RecordedText {
   counted: boolean
   /** The visitor it was tied to. The two are now linked. */
   visitor?: Subject
-  /** The text had been recorded before, and nothing was written. */
+  /** The text had been recorded before. */
   duplicate: boolean
+  /** This retry supplied the message's opt-out for the first time. */
+  optOutAdded?: true
 }
 
 const DAY = 86_400_000
@@ -138,37 +140,47 @@ export async function recordText(graph: Graph, text: Text, options: TextOptions 
     theirs = normalizePhone(outbound ? text.to : text.from, options.country)
   } catch {}
   // A short code or a name is a program's, and there is nobody to tie it to.
-  if (theirs === undefined || (options.exclude ?? []).some((each) => numberOrSelf(each, options.country) === theirs)) return { subject: `text:${id}`, flags: ['left_out'], counted: false, duplicate: false }
+  const omitted = { subject: `text:${id}`, flags: ['left_out'], counted: false, duplicate: false } satisfies RecordedText
+  if (theirs === undefined) return omitted
   const subject = `caller:${hashPhone(theirs)}`
-  const before = await graph.keptText(id)
-  if (before && before.direction !== (outbound ? 'outbound' : 'inbound')) throw refused(`Text "${id}" is already recorded as ${before.direction}`, { reason: 'KEY_REUSED', fields: ['direction'] })
-  if (before || outbound) {
-    if (!before) await graph.keepText({ id, direction: 'outbound', subject, at, to: ours, flags: [], ...(tags && { tags }) })
-    // Settled again, in case the report before was cut off after it was kept.
-    const { first, counted } = await settle(graph, before?.subject ?? subject, options, before?.subject === subject && !outbound ? { id, ...(!TOLL_FREE.test(theirs) && { phone: theirs }) } : undefined)
-    return { subject: before?.subject ?? subject, flags: [...(first.has(id) ? (['first'] as const) : []), ...((before?.flags ?? []) as TextFlag[])], counted: counted.has(id), ...(before?.visitor && { visitor: before.visitor }), duplicate: Boolean(before) }
-  }
-
-  const flags: TextFlag[] = []
-  const said = text.text === undefined ? undefined : wish(text.text)
-  if (said) flags.push(said)
+  const direction = outbound ? 'outbound' : 'inbound'
+  const said = !outbound && text.text !== undefined ? wish(text.text) : undefined
+  const excluded = options.exclude?.some(each => numberOrSelf(each, options.country) === theirs)
+  if (excluded && said !== 'opt_out') return omitted
   const tollFree = TOLL_FREE.test(theirs)
-  if (tollFree) flags.push('toll_free')
-  if (!tollFree) {
-    const line = options.lineType ? await options.lineType(theirs).catch(() => undefined) : undefined
-    const phone = phoneOfType(theirs, line?.type)
-    if (phone) await graph.observe({ subject, identifiers: [phone], at, event: 'text' })
+  let before = await graph.keptText(id)
+  // A number may have been excluded after this message arrived. Its own opt-out still counts.
+  if (excluded && (before?.subject !== subject || before.to !== ours || before.direction !== direction)) return omitted
+  let added = false
+  const flags: TextFlag[] = []
+  let visitor: Subject | undefined
+  let touch: Touch | undefined
+  if (!before && !outbound) {
+    if (said) flags.push(said)
+    if (tollFree) flags.push('toll_free')
+    else {
+      const line = options.lineType ? await options.lineType(theirs).catch(() => undefined) : undefined
+      const phone = phoneOfType(theirs, line?.type)
+      if (phone) await graph.observe({ subject, identifiers: [phone], at, event: 'text' })
+    }
+    if (!said) visitor = await tie(graph, { id, at, subject, ours, text, flags }, options)
+    const channel = Object.entries(options.numbers ?? {}).find(([number]) => numberOrSelf(number, options.country) === ours)?.[1]
+    // As with a call, a visitor's own arrival says more than the number does.
+    const custom = channel && checkTags(channel.tags, `Number "${ours}"`)
+    if (!said && channel && !visitor) touch = { subject, at, source: channel.source, medium: 'text', ...(channel.campaign && { campaign: channel.campaign }), ...(channel.campaignId && { campaignId: channel.campaignId }), ...(custom && { custom }), landing: `sms:${ours}` }
   }
-  const visitor = said ? undefined : await tie(graph, { id, at, subject, ours, text, flags }, options)
-
-  const channel = Object.entries(options.numbers ?? {}).find(([number]) => numberOrSelf(number, options.country) === ours)?.[1]
-  // As with a call, a visitor's own arrival says more than the number does.
-  const custom = channel && checkTags(channel.tags, `Number "${ours}"`)
-  const touch = !said && channel && !visitor && { subject, at, source: channel.source, medium: 'text', ...(channel.campaign && { campaign: channel.campaign }), ...(channel.campaignId && { campaignId: channel.campaignId }), ...(custom && { custom }), landing: `sms:${ours}` }
-  // Reported twice at once, the first to be kept stands.
-  const kept = await graph.keepText({ id, direction: 'inbound', subject, at, to: ours, flags, ...(visitor && { visitor }), ...(tags && { tags }) }, touch || undefined)
-  const { first, counted } = await settle(graph, subject, options, { id, ...(!tollFree && { phone: theirs }) })
-  return { subject, flags: [...(first.has(id) ? (['first'] as const) : []), ...flags], counted: counted.has(id), ...(visitor && { visitor }), duplicate: !kept }
+  const message = { id, direction, subject, at, to: ours, flags, ...(visitor && { visitor }), ...(tags && { tags }) } satisfies Omit<KeptText, 'recorded'>
+  if (!before && !await graph.keepText(message, touch)) before = await graph.keptText(id)
+  if (before && before.direction !== direction) throw refused(`Text "${id}" is already recorded as ${before.direction}`, { reason: 'KEY_REUSED', fields: ['direction'] })
+  if (before && said === 'opt_out' && !before.flags.includes('opt_out')) {
+    const stopped = await graph.stopText(id, subject, ours)
+    before = stopped.text ?? before
+    added = stopped.added
+  }
+  const kept = before ?? message
+  // Settled again, in case it was counted before the opt-out was known.
+  const { first, counted, latest = kept } = await settle(graph, kept.subject, options, kept.subject === subject && !outbound ? { id, ...(!tollFree && { phone: theirs }) } : undefined)
+  return { subject: kept.subject, flags: [...(first.has(id) ? (['first'] as const) : []), ...latest.flags as TextFlag[]], counted: counted.has(id), ...(latest.visitor && { visitor: latest.visitor }), duplicate: Boolean(before), ...(added && { optOutAdded: true }) }
 }
 
 /** Whether a text asks for a reply: it came to you, and is no word about being texted. */
@@ -185,7 +197,7 @@ export function beginnings(texts: readonly KeptText[]): Set<string> {
  * that turned out to be in the middle of one. Safe to run again, and from two places at once. `now` has the phone number
  * of the text being recorded, which is not kept. Resolves to the texts that begin a conversation, and those counted.
  */
-async function settle(graph: Graph, subject: Subject, options: TextOptions, now?: { id: string; phone?: string }): Promise<{ first: Set<string>; counted: Set<string> }> {
+async function settle(graph: Graph, subject: Subject, options: TextOptions, now?: { id: string; phone?: string }): Promise<{ first: Set<string>; counted: Set<string>; latest: KeptText | undefined }> {
   const withdraw = options.withdraw ?? graph.withdraw
   const made = new Set<string>()
   for (;;) {
@@ -197,8 +209,8 @@ async function settle(graph: Graph, subject: Subject, options: TextOptions, now?
       const transactionId = `text:${each.id}`
       if (each.direction === 'outbound') continue
       const there = Boolean(await graph.outcomeOf(transactionId))
-      // Said to be no lead, it is not counted anew. What was counted stays on record, and counts nowhere.
-      if (not.has(transactionId)) continue
+      // A no-lead outcome can be restored later. An opt-out was never an inquiry.
+      if (not.has(transactionId) && !each.flags.includes('opt_out')) continue
       if (!first.has(each.id)) {
         if (there) await withdraw(transactionId)
         continue
@@ -218,10 +230,10 @@ async function settle(graph: Graph, subject: Subject, options: TextOptions, now?
       counted.add(each.id)
     }
     // A text that came meanwhile is settled too, and one that was forgotten meanwhile leaves nothing behind.
-    const since = new Set((await graph.textsOf([subject])).map((each) => each.id))
+    const since = new Map((await graph.textsOf([subject])).map(each => [each.id, each]))
     // Unless the id has since been kept for somebody else, whose outcome it then is.
     for (const id of made) if (!since.has(id) && !(await graph.keptText(id))) await withdraw(`text:${id}`)
-    if (since.size === texts.length && texts.every((each) => since.has(each.id))) return { first, counted }
+    if (since.size === texts.length && texts.every(each => since.has(each.id) && asks(since.get(each.id)!) === asks(each))) return { first, counted, latest: now && since.get(now.id) }
   }
 }
 
