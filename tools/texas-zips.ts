@@ -1,7 +1,7 @@
 /**
- * Makes `src/texas-zips.ts` from the Census Bureau's 2020 file of which counties each ZIP code area lies in.
+ * Makes `src/core/texas-zips.ts` from the Census Bureau's 2020 file of which counties each ZIP code area lies in.
  *   curl -O https://www2.census.gov/geo/docs/maps-data/data/rel2020/zcta520/tab20_zcta520_county20_natl.txt
- *   node tools/texas-zips.ts tab20_zcta520_county20_natl.txt > src/texas-zips.ts
+ *   node tools/texas-zips.ts tab20_zcta520_county20_natl.txt > src/core/texas-zips.ts
  */
 import { readFileSync } from 'node:fs'
 

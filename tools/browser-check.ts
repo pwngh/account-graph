@@ -20,7 +20,7 @@ const outbox = createOutbox(graph, store.outbox, {
   targets: [googleAds({ customerId: '123-456-7890', send: async (request) => (sent.push(request), { requestId: 'local-1' }) })],
 })
 const handler = createHandler(graph, { token: 'local-token', origins: ['http://localhost:8787'], outbox, cookie: true })
-const collectJs = readFileSync(new URL('../dist/collect.js', import.meta.url), 'utf8')
+const collectJs = readFileSync(new URL('../dist/edge/collect.js', import.meta.url), 'utf8')
 const page = `<!doctype html><meta charset=utf-8><title>collector test</title><pre id=out>running</pre>
 <script type=module>
 import { collect, read } from '/collect.js'
