@@ -292,7 +292,7 @@ const tiesOf = async (graph: Graph, subject: Subject) =>
   (await graph.links(subject)).flatMap((link) => link.reasons.filter(({ identifier }) => isTie(identifier, subject, link.subject)).map(({ identifier }) => ({ subject: link.subject, identifier })))
 
 type Heard = Pick<KeptCall, 'id' | 'direction' | 'subject' | 'at' | 'to' | 'flags' | 'visitor'>
-interface Tap { visitor: Subject; note: Identifier; when: number }
+interface Tap { visitor: Subject; note: Identifier; when: number; span?: { first: number; last: number } }
 
 /**
  * Who a call to a number is from: whoever it was shown to, or whoever tapped
@@ -314,7 +314,7 @@ async function visitorFor(graph: Graph, call: Heard, options: CallOptions): Prom
   const notes: Identifier[] = []
   for (let bucket = Math.floor((first - Math.max(QUIET, window)) / BUCKET); bucket <= Math.floor((last + SLACK) / BUCKET); bucket++) notes.push(`dialed:${to}@${bucket}`)
   // Of what a note says only its first tap and its last are known to have happened.
-  const taps: Tap[] = (await graph.holders(notes)).flatMap((edge) => [...new Set([edge.first, edge.last])].map((when) => ({ visitor: edge.subject, note: edge.identifier, when })))
+  const taps: Tap[] = (await graph.holders(notes)).flatMap((edge) => [...new Set([edge.first, edge.last])].map((when) => ({ visitor: edge.subject, note: edge.identifier, when, ...(edge.count > 2 && { span: { first: edge.first, last: edge.last } }) })))
   const kept = (await graph.callsTo(to, first - QUIET, last + SLACK + claim + 1)).filter((each) => each.direction === 'inbound' && each.id !== call.id)
   const heard: Heard[] = [...kept, call].sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1))
   const redone = new Set(heard.filter((each) => each.at >= first && each.at <= last).map((each) => each.id))
@@ -374,7 +374,9 @@ async function visitorFor(graph: Graph, call: Heard, options: CallOptions): Prom
 function ties(calls: readonly Heard[], heard: readonly Heard[], taps: readonly Tap[], tied: ReadonlyMap<Subject, ReadonlySet<Subject>>, may: (call: Heard, visitor: Subject) => boolean, full: ReadonlySet<string>, { window, near, claim }: { window: number; near: number; claim: number }): Map<string, { visitor?: Subject; doubtful: boolean }> {
   const within = (when: number, tap: number, time: number, early: number) => when >= tap - early && when <= tap + time
   const busy = new Map(calls.map((call) => [call.id, heard.some((each) => each.subject !== call.subject && each.at <= call.at && each.at >= call.at - QUIET) || new Set(taps.filter((tap) => tap.when >= call.at - QUIET && tap.when <= call.at + SLACK).map((tap) => tap.visitor)).size > 1]))
-  const rivals = new Map(taps.map((tap) => [tap, calls.filter((call) => within(call.at, tap.when, claim, busy.get(call.id) ? SKEW : SLACK) && may(call, tap.visitor))]))
+  // Between the first and the last of more taps there was one at a time nobody knows.
+  const between = (when: number, { span }: Tap, time: number, early: number) => span !== undefined && when >= span.first - early && when <= span.last + time
+  const rivals = new Map(taps.map((tap) => [tap, calls.filter((call) => (within(call.at, tap.when, claim, busy.get(call.id) ? SKEW : SLACK) || between(call.at, tap, claim, SKEW)) && may(call, tap.visitor))]))
   const decide = (call: Heard, owners: ReadonlyMap<Subject, ReadonlySet<Subject>>): { visitor?: Subject; doubtful: boolean } => {
     const of = (tap: Tap) => owners.get(tap.visitor)!
     const contested = (tap: Tap) => of(tap).size === 0 && rivals.get(tap)!.some((each) => each.subject !== call.subject)
@@ -382,8 +384,9 @@ function ties(calls: readonly Heard[], heard: readonly Heard[], taps: readonly T
     // A tap by somebody this caller is tied to already is theirs, however busy the number is.
     const eligible = free.filter((tap) => (busy.get(call.id) && !of(tap).has(call.subject) ? within(call.at, tap.when, near, SKEW) : within(call.at, tap.when, window, SLACK)))
     const visitors = new Set(eligible.filter((tap) => !contested(tap)).map((tap) => tap.visitor))
-    const doubtful = visitors.size > 1 || free.some((tap) => within(call.at, tap.when, claim, busy.get(call.id) ? SKEW : SLACK) && contested(tap))
-    const sure = visitors.size === 1
+    const unseen = free.some((tap) => !visitors.has(tap.visitor) && between(call.at, tap, busy.get(call.id) && !of(tap).has(call.subject) ? near : window, SKEW))
+    const doubtful = unseen || visitors.size > 1 || free.some((tap) => within(call.at, tap.when, claim, busy.get(call.id) ? SKEW : SLACK) && contested(tap))
+    const sure = visitors.size === 1 && !unseen
     return { ...(sure && { visitor: [...visitors][0]! }), doubtful: doubtful && !sure }
   }
   // First by the ties there are. What that makes sure of then says whose the other taps of the same visitor are, the earliest call first.

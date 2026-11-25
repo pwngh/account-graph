@@ -560,10 +560,10 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     // What is the speaker's says who the speaker is, so it is not written on whoever they speak for.
     const contact = [...new Set([...all, ...(speaker?.used ?? [])])]
     // The same detail under the same name is the same person, whoever the detail is.
-    const named = options.identifierSecret && typeof body.name?.first === 'string' && typeof body.name?.last === 'string' && (await graph.policy()).rules.apart?.includes('given') ? namedKeys(options.identifierSecret, contact, body.name.first, body.name.last) : []
+    const keys = await named(body, contact)
     const theirs = new Set(speaker?.theirs.flatMap((each) => [each, each.replace(/^phone:/, 'voip:'), each.replace(/^voip:/, 'phone:')]))
-    const identifiers = [...all.filter((each) => !theirs.has(each)), ...named]
-    if (identifiers.length < all.length + named.length) notes.speaker = 'what is the speaker\'s is not used for who they speak for'
+    const identifiers = [...all.filter((each) => !theirs.has(each)), ...keys]
+    if (identifiers.length < all.length + keys.length) notes.speaker = 'what is the speaker\'s is not used for who they speak for'
     const event = typeof body.event === 'string' && body.event ? (body.event as string) : undefined
     const who = { subject: body.subject as Subject, identifiers }
     if (speaker && speaker.subjects.length > 0) {
@@ -572,6 +572,12 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     }
     const changes = identifiers.length > 0 ? await graph.observe({ ...who, at, ...(event && { event }) }) : []
     return { changes, identifiers, notes }
+  }
+
+  /** The keys of these numbers and emails under the name in a body, where the policy uses names. */
+  async function named(body: any, contact: readonly Identifier[]): Promise<Identifier[]> {
+    if (!options.identifierSecret || typeof body.name?.first !== 'string' || typeof body.name?.last !== 'string') return []
+    return (await graph.policy()).rules.apart?.includes('given') ? namedKeys(options.identifierSecret, contact, body.name.first, body.name.last) : []
   }
 
   /** Somebody who speaks for the subject: what is theirs, and the browser and the caller it is to be written on. */
@@ -595,7 +601,12 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         const { reasons, idle } = await graph.between(body.subject, each)
         if ([...reasons.map((reason) => reason.identifier), ...idle].some((held) => held.startsWith('behalf:'))) before ??= each
       }
-      subjects.push({ subject: before ?? known[0] ?? `visitor:${device}`, identifiers: [ofDevice] })
+      // Its own visitor, where there is one. Another that holds the id is taken only where it is the one that may be it.
+      const exact: Subject = `visitor:${device}`
+      const apart = new Set(await graph.separations(body.subject))
+      const others = known.filter((each) => !apart.has(each))
+      const own = known.includes(exact) || others.length !== 1 ? exact : others[0]!
+      subjects.push({ subject: before ?? own, identifiers: [ofDevice] })
     }
     if (ofPhone) subjects.push({ subject: `caller:${hashPhone(phone, options.calls?.country)}`, identifiers: [ofPhone] })
     if (typeof address === 'string' && address && !nobodysEmail(address)) {
@@ -925,8 +936,9 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       case 'POST /identify':
         return identify(await json(request))
       case 'POST /match': {
-        const { identifiers, notes, at } = await factsIn(await json(request), false)
-        return { candidates: await graph.match(identifiers, { at }), notes }
+        const body = await json(request)
+        const { identifiers, notes, at } = await factsIn(body, false)
+        return { candidates: await graph.match([...identifiers, ...(await named(body, identifiers))], { at }), notes }
       }
       case 'POST /conflicts': {
         const { subjects } = await json(request)

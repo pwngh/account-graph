@@ -830,6 +830,15 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
         await click(graph, 'v', T0 - 10 * SECOND)
         assert.equal((await call(graph, 'C', three, T0)).visitor, 'visitor:v')
       }
+      // Of more taps filed together the one between is not known, so what a later tap hides still casts doubt.
+      for (const late of [false, true]) {
+        const { graph } = await fresh()
+        // Inside one five minutes.
+        const at = T0 - (T0 % (5 * 60 * SECOND)) + 120 * SECOND
+        for (const [who, when] of [['a', -100], ['a', -10], ['b', -9], ...(late ? [['a', 40] as const] : [])] as const) await click(graph, who, at + when * SECOND)
+        const heard = await call(graph, 'ONE', one, at)
+        assert.deepEqual([heard.visitor, heard.flags], [undefined, ['ambiguous']])
+      }
       // Quiet, a tap two minutes before is theirs. With somebody else on the line in the last twenty minutes, thirty seconds is as far as it goes.
       const { graph } = await fresh()
       await click(graph, 'b', T0)

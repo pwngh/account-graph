@@ -1529,6 +1529,10 @@ test('/identify keeps whoever speaks for a subject apart from them', async (t) =
   assert.deepEqual(again.identifiers.map((each: string) => each.split(':')[0]).sort(), ['behalf', 'behalf', 'email'])
   for (const mark of first.identifiers) await graph.ignore(mark, true)
   assert.deepEqual((await identify({ subject: 'contact:child', at: T0, speaker })).identifiers, first.identifiers)
+  // Her browser is the one by that id where there is one, whoever else holds it.
+  await graph.observe([{ subject: 'visitor:aa', identifiers: ['device:zz-0000-4000'], at: T0 }, { subject: 'visitor:zz-0000-4000', identifiers: ['device:zz-0000-4000'], at: T0 }])
+  await identify({ subject: 'contact:nephew', at: T0, speaker: { device: 'zz-0000-4000' } })
+  assert.deepEqual((await graph.links('contact:nephew')).map((link) => link.subject), ['visitor:zz-0000-4000'])
   // Her own record is hers.
   await identify({ subject: 'contact:mother', phone, at: T0 })
   assert.ok((await graph.cluster('contact:mother'))!.members.includes(mother))
@@ -1539,6 +1543,20 @@ test('/identify keeps whoever speaks for a subject apart from them', async (t) =
   const kept = await identify({ subject: 'contact:other', email: 'o@example.org', speaker: { phone: '+18005550199', email: 'o@example.org' } })
   assert.deepEqual([kept.identifiers, kept.notes.speaker], [[], 'what is the speaker\'s is not used for who they speak for'])
   assert.equal((await identify({ subject: 'contact:other', email: 'p@example.org', speaker: { phone: '+18005550199' } })).notes.speaker, 'tollFree: not used')
+})
+
+test('/match finds whoever gave the same number under the same name, though it is not on their record', async (t) => {
+  const graph = createGraph(createMemoryStore(), policyFrom({ apart: ['birth', 'given'] }))
+  const server = createServer(createHandler(graph, { token: 'service', origins: [], identifierSecret: 'a-secret-of-thirty-two-characters!' })).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  t.after(() => void server.close())
+  const post = async (path: string, body: object) => (await (await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}${path}`, { method: 'POST', headers: { authorization: 'Bearer service' }, body: JSON.stringify(body) })).json()) as any
+  const phone = '+15550100181'
+  await post('/identify', { subject: 'contact:son', name: { first: 'Robert', last: 'Lima' }, speaker: { phone } })
+  const found = await post('/match', { phone, name: { first: 'Bob', last: 'Lima' } })
+  assert.ok(found.candidates.some((each: any) => each.subject === 'contact:son' && each.level === 'same'))
+  const other = await post('/match', { phone, name: { first: 'Luis', last: 'Lima' } })
+  assert.ok(!other.candidates.some((each: any) => each.subject === 'contact:son' && each.level === 'same'))
 })
 
 test('a visitor with an arrival is shown a number of their own, and nobody else is', async (t) => {
