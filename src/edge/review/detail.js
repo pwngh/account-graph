@@ -65,8 +65,7 @@ function forgetCards() {
 
 /** The icon that opens a card. `of` gives what the card is made from, when it is made, and `id` tells one from another of its kind. */
 function detail(key, { label, id = '', of }) {
-  const button = el('button', { type: 'button', class: 'detail', 'data-key': `detail ${key} ${id}`, 'aria-label': `Details of ${label}`, 'aria-haspopup': 'dialog', 'aria-expanded': 'false', on: { click: () => cards.press(button) } },
-    svg('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true', focusable: 'false' }, svg('circle', { cx: 8, cy: 8, r: 6.6 }), svg('path', { d: 'M5.2 5.9h5.6M5.2 8.2h5.6M5.2 10.5h3.4' })))
+  const button = el('button', { type: 'button', class: 'detail', 'data-key': `detail ${key} ${id}`, 'aria-label': `Details of ${label}`, 'aria-haspopup': 'dialog', 'aria-expanded': 'false', on: { click: () => cards.press(button) } })
   button.about = { key, of }
   return button
 }
@@ -168,15 +167,31 @@ const cards = (() => {
   addEventListener('pointermove', ({ clientX, clientY }) => Object.assign(resting, { x: clientX, y: clientY }), { passive: true })
 
   /** Under what it is of, or over it where there is more room, and never off the window. */
+  const narrow = matchMedia('(max-width: 520px)')
   function stand(box, by) {
     if (!by?.isConnected) return
     const at = by.getBoundingClientRect()
+    // On a phone it is a sheet at the foot of the screen, and the page is moved up so that what it is of stays in sight above it.
+    // The page is made as much longer as the sheet is tall, so that this can be done at its end too.
+    if (narrow.matches) {
+      const sheet = box.getBoundingClientRect()
+      document.body.style.setProperty('--sheet', `${Math.ceil(sheet.height)}px`)
+      if (sheet.height > 0 && at.bottom + 8 > sheet.top) {
+        by.style.scrollMarginBottom = `${Math.ceil(sheet.height) + 8}px`
+        by.scrollIntoView({ block: 'nearest', behavior: 'instant' })
+      }
+      return
+    }
     const [under, over] = [innerHeight - at.bottom - 16, at.top - 16]
     box.style.maxHeight = ''
     const below = box.offsetHeight <= under || under >= over
-    box.style.maxHeight = `${Math.max(below ? under : over, Math.min(240, innerHeight - 16))}px`
+    // As tall as the side it is on and no taller, its padding and border counted, so the icon is never covered. The rest of a long card is scrolled to.
+    const room = Math.max(below ? under : over, 96)
+    box.style.maxHeight = `${room}px`
+    const extra = box.offsetHeight - room
+    if (extra > 0) box.style.maxHeight = `${Math.max(48, room - extra)}px`
     box.style.left = `${Math.max(8, Math.min(at.left - 14, innerWidth - box.offsetWidth - 8))}px`
-    box.style.top = `${Math.max(8, Math.min(below ? at.bottom + 8 : at.top - box.offsetHeight - 8, innerHeight - box.offsetHeight - 8))}px`
+    box.style.top = `${Math.max(8, below ? at.bottom + 8 : at.top - box.offsetHeight - 8)}px`
   }
   /** Says it, or says there is nothing to say. */
   function show() {

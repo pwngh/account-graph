@@ -33,8 +33,14 @@ function unanswered(text, at) {
     el('div', { class: 'board-chips' }, reviewDisplay.chip(`${amount(text.unanswered)} unanswered`, 'related')))
 }
 
-/** The columns a count is made of, in the order of the board, as many as there is room for. */
-const byColumn = (board, of) => (board?.columns ?? []).filter((column) => of(column) > 0).slice(0, 8).map((column) => [column.step ?? 'Missed calls', amount(of(column))])
+/** A column by its name. A step may be named as the column of missed calls is, and is then said to be a step. */
+const columnName = (column, board) => column.step === null ? 'Missed calls' : column.step.toLowerCase() === 'missed calls' ? `${column.step}, a step` : column.step
+/** The columns a count is made of, in the order of the board. There is room for eight, and the rest are counted together. */
+function byColumn(board, of, words = (column) => amount(of(column)), name = (column) => columnName(column)) {
+  const some = (board?.columns ?? []).filter((column) => of(column) > 0)
+  const rest = some.slice(8)
+  return [...some.slice(0, 8).map((column) => [name(column), words(column)]), ...(rest.length > 0 ? [[`And ${amount(rest.length)} more ${rest.length === 1 ? 'column' : 'columns'}`, amount(rest.reduce((sum, column) => sum + of(column), 0))]] : [])]
+}
 /** Who has been in a column longest, of those that count. Rows are oldest first. */
 const longest = (board, holds) => (board?.columns ?? []).flatMap((column) => column.rows.filter(holds).slice(0, 1)).sort((x, y) => x.at - y.at)[0]
 const longestRow = (board, holds, name) => {
@@ -43,21 +49,21 @@ const longestRow = (board, holds, name) => {
 }
 /** Brings a column into view. */
 const toColumn = (board, of) => {
-  const column = (board?.columns ?? []).find((each) => of(each) > 0)
-  return column && toPart(`Show ${column.step ?? 'Missed Calls'}`, `column-${column.step ?? 'missed'}`)
+  const at = (board?.columns ?? []).findIndex((each) => of(each) > 0)
+  return at >= 0 && toPart(`Show ${board.columns[at].step ?? 'Missed Calls'}`, `column-${at}`)
 }
 const today = (board) => board?.day && `${reviewDisplay.day(board.day)} · ${board.timeZone}`
 DETAILS['board.people'] = { now: ({ board } = {}) => ({ title: 'People', value: board && amount(board.columns.reduce((sum, { people }) => sum + people, 0)),
   rows: [...byColumn(board, ({ people }) => people), longestRow(board, () => true, 'Longest')],
   say: ['Each person is in one column. Missed calls nobody returned come first.'], links: [docs('Board', 'report.md#board')] }) }
 DETAILS['board.overdue'] = { now: ({ board } = {}) => ({ title: 'Overdue', value: board && amount(board.columns.reduce((sum, { late }) => sum + (late ?? 0), 0)),
-  rows: [...byColumn(board, ({ late }) => late ?? 0).map(([name, n]) => [name, `${n} of ${amount(board.columns.find(({ step }) => (step ?? 'Missed calls') === name).people)} over ${lasted(board.columns.find(({ step }) => (step ?? 'Missed calls') === name).wait)}`]), longestRow(board, ({ late }) => late, 'Longest')],
-  say: [['Overdue', ` means longer here than the limit you set for the column${board?.openHours ? ', counted in open hours' : ''}.`]], links: [toColumn(board, ({ late }) => late ?? 0), docs('Steps', 'report.md#steps')] }) }
+  rows: [...byColumn(board, ({ late }) => late ?? 0, (column) => `${amount(column.late)} of ${amount(column.people)} over ${lasted(column.wait)}`), longestRow(board, ({ late }) => late, 'Longest')],
+  say: [['Overdue', ` means longer here than the limit for the column${board?.openHours ? ', counted in open hours' : ''}.`]], links: [toColumn(board, ({ late }) => late ?? 0), docs('Steps', 'report.md#steps')] }) }
 DETAILS['board.fresh'] = { now: ({ board } = {}) => ({ title: 'New today', value: board && amount(board.columns.reduce((sum, { fresh }) => sum + fresh, 0)),
   rows: [...byColumn(board, ({ fresh }) => fresh), ['Today', today(board)]],
   say: [['New', ' means they reached the step they are at today, or their oldest missed call came today.']], links: [toColumn(board, ({ fresh }) => fresh), docs('Board', 'report.md#board')] }) }
 DETAILS['board.advanced'] = { now: ({ board } = {}) => ({ title: 'Advanced today', value: board && amount(board.columns.reduce((sum, { done }) => sum + (done ?? 0), 0)),
-  rows: [...byColumn(board, ({ done }) => done ?? 0).map(([name, n]) => [`From ${name}`, n]), ['Today', today(board)]],
+  rows: [...byColumn(board, ({ done }) => done ?? 0, undefined, (column) => `From ${columnName(column)}`), ['Today', today(board)]],
   say: ['Someone leaves a step by reaching a later one, and missed calls by being called back, or by calling again and getting through.'], links: [docs('Board', 'report.md#board')] }) }
 
 DETAILS['board.person'] = {
@@ -137,13 +143,13 @@ view('board', 'Board', async (box, days = '90') => {
     el('p', { class: board.days === 1 ? 'meta' : 'sr-only', id: 'board-period' }, ACTIVE),
     board.unplaced > 0 ? el('p', { class: 'meta' }, `${amount(board.unplaced)} more at steps outside STAGES`) : '',
     board.columns.length === 1 ? el('p', {}, 'Set STAGES to add a column for each step.') : ''))
-  const columns = board.columns.map((column) => {
-    const name = column.step ?? 'Missed calls'
+  const columns = board.columns.map((column, at) => {
+    const name = columnName(column)
     const counts = [`${amount(column.people)} ${column.people === 1 ? 'person' : 'people'}`, column.fresh > 0 && `${amount(column.fresh)} new`,
       column.late > 0 && `${amount(column.late)} over ${lasted(column.wait)}`, column.done > 0 && `${amount(column.done)} ${column.step === null ? 'reached' : 'advanced'} today`]
     const cards = el('ol', { role: 'list' }, ...column.rows.map((row) => person(row, column, board)))
     const lane = el('div', { class: 'scroll', tabindex: 0, role: 'region', 'aria-label': `${name}: people`, ...(column.rows.length === 0 && { hidden: '' }) }, cards)
-    return el('section', { 'aria-label': name, id: `column-${column.step ?? 'missed'}`, tabindex: -1, ...(column.people === 0 && { class: 'idle' }) }, el('h2', {}, column.step === null ? term(name, 'missedColumn') : name),
+    return el('section', { 'aria-label': name, id: `column-${at}`, tabindex: -1, ...(column.people === 0 && { class: 'idle' }) }, el('h2', {}, column.step === null ? term(name, 'missedColumn') : name),
       el('p', { class: 'counts' }, ...counts.map((count, i) => count ? el('span', i === 2 ? { class: 'apart' } : {}, count) : '')), lane,
       column.people > column.rows.length ? el('p', { class: 'muted board-foot' }, `${amount(column.rows.length)} of ${amount(column.people)}`) : '')
   })

@@ -41,7 +41,8 @@ function missedCalls(open, at) {
   const story = el('div', { class: 'inbox-story' })
   const facts = el('div', { class: 'inbox-facts' })
   const choose = el('div', { class: 'segments', role: 'group', 'aria-label': 'Result' })
-  const root = el('div', { class: 'inbox' }, el('div', { class: 'inbox-side' }, choose, list), story, facts)
+  const empty = el('p', { class: 'muted inbox-age', hidden: '' }, 'None')
+  const root = el('div', { class: 'inbox' }, el('div', { class: 'inbox-side' }, choose, list, empty), story, facts)
   let asked = 0
 
   const shown = () => calls.filter((call) => inbox.state === 'all' || call.state === inbox.state)
@@ -54,8 +55,10 @@ function missedCalls(open, at) {
     const left = new Set(some)
     // The oldest waits longest, so it is first in its group and the oldest group is first.
     const parts = groups.map(([name, holds]) => [name, [...left].filter((call) => holds(call) && left.delete(call))]).reverse()
-    list.replaceChildren(...parts.filter(([, each]) => each.length > 0).map(([name, each]) => el('div', { role: 'rowgroup', 'aria-label': name }, el('p', { class: 'inbox-age' }, name, el('span', { class: 'count' }, amount(each.length))), ...each.map(line))))
-    if (some.length === 0) list.replaceChildren(el('p', { class: 'muted inbox-age' }, 'None'))
+    list.replaceChildren(...parts.filter(([, each]) => each.length > 0).map(([name, each]) => el('div', { role: 'rowgroup', 'aria-label': `${name}, ${amount(each.length)}` }, el('p', { class: 'inbox-age', 'aria-hidden': 'true' }, name, el('span', { class: 'count' }, amount(each.length))), ...each.map(line))))
+    // A grid holds rows and nothing else, so with none it is not there.
+    list.hidden = some.length === 0
+    empty.hidden = !list.hidden
     if (held) list.querySelector('[aria-selected=true]')?.focus({ preventScroll: true })
     tell()
   }

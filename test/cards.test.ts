@@ -176,3 +176,64 @@ test('a card says only what is so: who can still be reached, who waits, and who 
   // Counted while you were open is a count, and not a part anybody can change.
   assert.deepEqual(await run(`DETAILS['calls.missed'].now({ summary: { total: { calls: 3, missed: 2, voicemail: 0 }, closed: { missed: 1, voicemail: 0 }, cells: [] } }).say.at(-1)`), ['In open hours', ' counts those who called while you were open.'])
 })
+
+test('a card has its place, and leaves the page as it was', { skip: without, timeout: 180_000 }, async (t) => {
+  const made = await firm(memory, { stages: { call: {}, missed: { wait: 1 }, 'Missed calls': { wait: 5 }, inquiry: { value: 10, currency: 'USD', wait: 48 }, client: { value: 400, currency: 'USD' } } })
+  t.after(made.close)
+  made.at(-16)
+  for (const [n, stage] of [[1, 'missed'], [2, 'Missed calls']] as const) {
+    await made.record({ type: 'profile', subject: `contact:step-${n}`, facts: { device: `step-${n}` }, event: 'inquiry' })
+    await made.record({ type: 'conversion', key: `step-${n}`, subject: `contact:step-${n}`, stage })
+  }
+  made.at(0)
+  const page = await screen(made.base)
+  t.after(page.close)
+  const { run, key, find, text } = page
+
+  // A step named as the column of missed calls is, has a place and a limit of its own.
+  await page.go('#/board/90')
+  assert.deepEqual(await run(`(() => { const ids = [...document.querySelectorAll('[id]')].map((each) => each.id); return ids.filter((id, i) => ids.indexOf(id) !== i) })()`), [])
+  const overdue = await page.card('#/board/90', 'board.overdue')
+  assert.deepEqual([overdue['Missed calls'], overdue.missed, overdue['Missed calls, a step']], ['1 of 1 over 24 h', '1 of 1 over 1 h', '1 of 1 over 5 h'])
+  // There is room for eight columns, and the rest are counted.
+  assert.deepEqual(await run(`DETAILS['board.people'].now({ board: { at: 1, columns: Array.from({ length: 11 }, (_, i) => ({ step: i ? 'step ' + i : null, people: i + 1, rows: [] })) } }).rows.slice(7, 9)`), [['step 7', '8'], ['And 3 more columns', '30']])
+  // The icon is a button and nothing more, drawn by the page's style, in forced colors too.
+  assert.deepEqual(await run(`(() => { const all = [...document.querySelectorAll('button.detail')]; return [all.length > 3, all.every((each) => each.childElementCount === 0), getComputedStyle(all[0], '::before').maskImage.startsWith('url("data:image/svg+xml')] })()`), [true, true, true])
+  await key('Escape')
+
+  // The search, opened over a card, gives the keyboard back to the icon of the card.
+  await page.go('#/calls')
+  await page.click(find('calls.answered'))
+  await page.settled()
+  await run(`palette.show()`)
+  assert.equal(await page.shown(), false)
+  await key('Escape')
+  assert.equal(await page.focused(), 'detail calls.answered ')
+  // Closed, the search keeps nothing of what it found.
+  await until('it to close', () => run(`document.getElementById('palette-list').childElementCount === 0`))
+
+  // The list of missed calls is a grid of rows and nothing else, and with none to show it is not there.
+  const owned = () => run(`[...document.querySelectorAll('[role=grid] > *, [role=rowgroup] > *')].filter((each) => !['rowgroup', 'row'].includes(each.getAttribute('role')) && each.getAttribute('aria-hidden') !== 'true').length`)
+  assert.equal(await owned(), 0)
+  await page.click(`document.querySelector('[data-key="calls missed"]')`)
+  assert.deepEqual([await owned(), await run(`document.querySelector('[role=grid]').hidden`), await text('.inbox-side > p')], [0, true, 'None'])
+  await page.click(`document.querySelector('[data-key="calls all"]')`)
+
+  // The card never covers what it is of: beside it on a small window, and on a phone with the page moved up above it.
+  for (const [width, height, mobile] of [[720, 450, false], [390, 844, true]] as const) {
+    await page.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile })
+    for (const [hash, name] of [['#/board/90', 'board.person contact:ada'], ['#/calls', 'call bea-1 list'], ['#/calls', 'calls.answered']] as const) {
+      await page.go(hash)
+      await run(`(() => { const n = ${find(name)}; n.scrollIntoView({ block: 'center' }); n.click() })()`)
+      await page.settled()
+      await pause(250)
+      assert.equal(await run(`(() => { const n = ${find(name)}.getBoundingClientRect(), c = $('card').getBoundingClientRect(); return c.bottom <= n.top || c.top >= n.bottom || c.right <= n.left || c.left >= n.right })()`), true, `${width} ${name}`)
+      await key('Escape')
+    }
+  }
+
+  // Signed out, what was typed to look for somebody, and what was asked about them, are gone.
+  await run(`$('subject').value = 'contact:ada'; $('ask-title').textContent = 'Join IDs'; $('ask-text').textContent = 'contact:ada and the other ID'`)
+  await run(`$('leave').click()`)
+  assert.deepEqual(await run(`['subject', 'ask-title', 'ask-text'].map((id) => $(id).value ?? $(id).textContent)`), ['', '', ''])
+})

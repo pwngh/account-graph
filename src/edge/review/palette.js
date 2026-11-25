@@ -129,6 +129,8 @@ const palette = el('dialog', { id: 'palette', 'aria-label': 'Search' })
   palette.show = () => {
     if (palette.open || $('ask').open || !$('token').value) return
     at = 0
+    // Back at its icon first, the focus is there again once the search is closed.
+    cards.close(true)
     palette.showModal()
     draw()
     input.focus()
