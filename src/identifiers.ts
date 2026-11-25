@@ -138,5 +138,6 @@ export function birthKeys(secret: string, dob: string | undefined): Identifier[]
 function birthday(dob: string | undefined): string | undefined {
   const born = dob?.trim() ?? ''
   const day = /^\d{4}-\d{2}-\d{2}$/.test(born) ? Date.parse(`${born}T00:00:00Z`) : NaN
-  return !Number.isNaN(day) && new Date(day).toISOString().slice(0, 10) === born && !['1900-01-01', '1970-01-01'].includes(born) ? born : undefined
+  // Nobody living was born before 1905 or after today, and a system that has no date writes one of those, or one of these.
+  return !Number.isNaN(day) && new Date(day).toISOString().slice(0, 10) === born && born > '1905' && day <= Date.now() && born !== '1970-01-01' ? born : undefined
 }

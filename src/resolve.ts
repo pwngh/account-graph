@@ -106,7 +106,9 @@ export function knownOf(policy: Policy, edges: readonly Edge[], undone: (identif
     const kind = identifier.slice(0, identifier.indexOf(':'))
     // Each fact is read for the other to be weighed against, whether or not it keeps anyone apart by itself.
     const thing = THINGS.has(kind) && policy.apart?.includes('given') === true
-    if (!policy.apart?.includes(kind as Fact) && !thing && kind !== 'birth' && kind !== 'given' && kind !== 'initial' && kind !== 'dated' && !(kind === 'review' && !undone(identifier))) continue
+    if (!policy.apart?.includes(kind as Fact) && !thing && kind !== 'birth' && kind !== 'given' && kind !== 'initial' && kind !== 'dated' && kind !== 'review') continue
+    // A join that was undone is none, and a fact that was muted is none.
+    if (undone(identifier)) continue
     const known = out.get(subject) ?? { facts: new Map(), joins: new Set(), things: new Set() }
     out.set(subject, known)
     if (kind === 'review') known.joins.add(identifier)

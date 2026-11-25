@@ -2947,6 +2947,19 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await of('contact:4'), ['contact:4', 'visitor:x'])
     })
 
+    test('a fact that is muted keeps nobody apart, and one restored does again', async () => {
+      const { graph } = await fresh(policyFrom({ apart: ['birth'] }))
+      await graph.observe([{ subject: 'contact:1', identifiers: ['email:e', 'birth:1'], at: T0 }, { subject: 'contact:2', identifiers: ['email:e', 'birth:2'], at: T0 }])
+      const one = async () => (await members(graph, 'contact:1')).length === 2
+      assert.equal(await one(), false)
+      await graph.ignore('birth:2', true, { by: 'dana', reason: 'typed wrongly' })
+      assert.equal(await one(), true)
+      assert.deepEqual(await graph.verify(), [])
+      await graph.ignore('birth:2', false, { by: 'dana' })
+      assert.equal(await one(), false)
+      assert.deepEqual(await graph.verify(), [])
+    })
+
     test('credit crosses no separation, through a browser that went with the other, and from either side', async () => {
       const { graph } = await fresh()
       await graph.observe([

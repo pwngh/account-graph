@@ -6,7 +6,7 @@ import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { components, conversionEvent, createAlerter, createGraph, createHours, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, hoursProblems, ingestRequest, ip, knownLink, ladderProblems, measure, meta, metaEvent, nameKeys, normalizeEmail, normalizePhone, phoneOfType, codeIn, policyFrom, policyHash, policyProblems, readToken, scorePairs, signToken, sourceOf, textCode, withStage } from '../src/index.ts'
+import { birthKeys, components, conversionEvent, createAlerter, createGraph, createHours, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, hoursProblems, ingestRequest, ip, knownLink, ladderProblems, measure, meta, metaEvent, nameKeys, normalizeEmail, normalizePhone, phoneOfType, codeIn, policyFrom, policyHash, policyProblems, readToken, scorePairs, signToken, sourceOf, textCode, withStage } from '../src/index.ts'
 import { summarizeCalls } from '../src/callreport.ts'
 import { followed } from '../src/followed.ts'
 import type { Caller, Followed } from '../src/followed.ts'
@@ -964,4 +964,10 @@ test('a code is found in a text only where the site wrote it', () => {
   for (const said of [`I need a lawyer. Ref ${code}`, `ref: ${code.toLowerCase()} thanks`, `(Ref#${code})`, `Necesito un abogado\nREF ${code}.`]) assert.equal(codeIn(said), code, said)
   assert.equal(codeIn(`My order Ref ABCDEF. Ref ${code}`), code)
   for (const said of ['THANKS', `${code}`, `Ref ${code}X`, `href ${code}`, 'Ref ABC', 'prefer THANKS', '']) assert.equal(codeIn(said), undefined, said)
+})
+
+test('a date that systems write where none was given is nobody\'s birth', () => {
+  const secret = 'a secret of more than thirty-two characters'
+  for (const none of ['1899-12-30', '1900-01-01', '1901-01-01', '0001-01-01', '1970-01-01', '2099-01-01', '1980-13-01', '1980-02-30', '']) assert.deepEqual(birthKeys(secret, none), [], none)
+  for (const some of ['1931-01-01', '1980-02-29', '2001-12-31']) assert.equal(birthKeys(secret, some).length, 3, some)
 })

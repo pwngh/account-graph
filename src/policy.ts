@@ -208,10 +208,13 @@ export function plainPolicy(policy: Policy) {
   }
 }
 
+/** Raised when the code decides differently under one policy, so that what was stored before is known to be due a rebuild. */
+const RULES = 2
+
 /** The same for two policies exactly when they score and cluster alike. What only flags, `review`, is not part of it. */
 export function policyHash(policy: Policy): string {
   const { review: _, ...rest } = plainPolicy(policy)
-  return createHash('sha256').update(JSON.stringify({ ...rest, unnamed: [...new Set(policy.unnamed ?? UNNAMED)].sort() })).digest('hex')
+  return createHash('sha256').update(JSON.stringify({ ...rest, rules: RULES, unnamed: [...new Set(policy.unnamed ?? UNNAMED)].sort() })).digest('hex')
 }
 
 export function ruleFor(policy: Policy, identifier: Identifier): Rule {

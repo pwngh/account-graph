@@ -590,7 +590,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     if (!policy.apart?.length && !joins) return out
     for (let i = 0; i < subjects.length; i += TOGETHER) {
       const edges = (await tx.edgesOf(subjects.slice(i, i + TOGETHER))).filter(({ identifier }) => /^(birth|given|initial|dated|review|device|phone|voip|named):/.test(identifier))
-      const states = await tx.states(unique(edges.map((edge) => edge.identifier).filter((identifier) => identifier.startsWith('review:'))))
+      const states = await tx.states(unique(edges.map((edge) => edge.identifier)))
       for (const [subject, facts] of knownOf(policy, edges, (identifier) => states.get(identifier)?.ignored ?? false, joins)) out.set(subject, facts)
     }
     return out
@@ -1741,7 +1741,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         if (ignored && why?.automatic && (await tx.newestNaming([identifier], 0, ['ignore', 'restore']))?.action === 'restore') return []
         await decide(tx, ignored ? 'ignore' : 'restore', [identifier], why)
         await tx.setIgnored(identifier, ignored)
-        if (!before || before.fanout > cap) return []
+        // A fact links nobody, and is weighed wherever the policy keeps people apart by one.
+        if (!before || (before.fanout > cap && !(policy.apart?.length && /^(birth|given|initial|dated):/.test(identifier)))) return []
         await mark(tx)
         return settle(tx, new Set((await tx.edgesOn([identifier])).map((edge) => edge.subject)))
       })
