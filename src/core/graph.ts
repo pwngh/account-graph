@@ -1924,11 +1924,12 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       await store.write(async (tx) => {
         // Only a visitor still tied by this call: one forgotten meanwhile is not written down again.
         const { visitor, ...rest } = call
-        // One doubted meanwhile is not tied either.
-        const doubted = (await tx.states([`dial:${call.id}`])).get(`dial:${call.id}`)?.ignored === true
+        const before = await tx.callOf(call.id)
+        // A doubted tap can rule out a visitor or preserve a doubt already on the call.
+        const ambiguous = before?.flags.includes('ambiguous') && !call.flags.includes('pool') && !byCode(call)
+        const doubted = (visitor !== undefined || ambiguous) && (await tx.states([`dial:${call.id}`])).get(`dial:${call.id}`)?.ignored === true
         let tied = visitor !== undefined && (await tx.edgesOn([...(doubted ? [] : [`dial:${call.id}`]), `lease:${call.id}`, codeTie(call.id)])).some((edge) => edge.subject === visitor)
         // What was said of it meanwhile stays said.
-        const before = await tx.callOf(call.id)
         const stated = (await tx.saidOf('party', call.id)).length > 0
         const pending = !before && stated && reserved
         if (pending && visitor && reserved.tie) {
@@ -1936,8 +1937,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
           const available = source.pool ? (await holderOf(tx, source.pool.number, call.at, source.pool.grace)) === visitor : (await tx.edgesOn(source.notes ?? [])).some(edge => edge.subject === visitor)
           tied = available && await tieable(tx, call.subject, visitor, source.identifier)
         }
-        const said = before?.flags.includes('ambiguous') && doubted && !call.flags.includes('pool') && !byCode(call)
-        await tx.setCall({ ...rest, ...(said && { flags: [...new Set([...call.flags, 'ambiguous'])] }), ...(tied && { visitor }), recorded: now() }, lineKind, !before && stated)
+        await tx.setCall({ ...rest, ...(ambiguous && doubted && { flags: [...new Set([...call.flags, 'ambiguous'])] }), ...(tied && { visitor }), recorded: now() }, lineKind, !before && stated)
         if (pending) {
           const rows = reserved.identifiers.map(identifier => ({ subject: call.subject, identifier }))
           if (tied && visitor && reserved.tie) for (const subject of [call.subject, visitor]) rows.push({ subject, identifier: reserved.tie.identifier })

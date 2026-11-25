@@ -62,6 +62,7 @@
 
 ### Calls and texts
 
+- `call` saves a new call once when the search for a visitor leaves it unchanged and skips unused reads of the dial and the channel.
 - `caller` shows both records as possible when staff linked a line to two people they keep apart.
 - `phones.pool.requireTapAfterReassignment` lets an operator require a tap or code from an untied caller on a reassigned number. The option is off by default. See [number pools](docs/calls.md#number-pools).
 - `call` recognizes a duplicate from before call details were kept when the line has since been excluded.

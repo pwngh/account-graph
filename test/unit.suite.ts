@@ -68,6 +68,22 @@ export interface Dumped {
 }
 
 export function unitSuite(name: string, open: () => Promise<Dumped>) {
+  test(`${name}: a fresh call without a visitor is saved once and only read for its status and result`, async t => {
+    const { store, close } = await open()
+    try {
+      const { graph } = createEngine(store, { now: () => AT })
+      const saved = t.mock.method(graph, 'keepCall')
+      const read = t.mock.method(graph, 'keptCall')
+      const call = await recordCall(graph, { id: 'ordinary', from: '+12025550123', to: '+12025550180', at: AT, duration: 60 })
+      assert.ok(call.counted)
+      assert.equal(saved.mock.callCount(), 1)
+      // Check whether it already exists, settle its outcome, then return the standing call.
+      assert.equal(read.mock.callCount(), 3)
+    } finally {
+      await close()
+    }
+  })
+
   test(`${name}: phone extensions use the line on profiles, speakers, calls, texts and lookups`, async () => {
     const { store, close } = await open()
     try {
