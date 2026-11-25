@@ -408,6 +408,7 @@ export interface Graph {
   journey(subject: Subject, options?: { before?: number; limit?: number; deliveries?: boolean }): Promise<RecordedJourney>
   /** Every sighting of a subject, oldest first. With `limit`, only the newest that many. */
   history(subject: Subject, limit?: number): Promise<Sighting[]>
+  subjectDates: Tx['subjectDates']
   /** Recomputes every cluster from edges. Run it after changing the policy. */
   rebuild(why?: Why): Promise<Change[]>
   /** Every decision people made about the graph, oldest first: what was ignored, separated, forgotten, and by whom. */
@@ -3010,6 +3011,10 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
 
     history(subject, limit) {
       return store.read((tx) => tx.history(subject, limit))
+    },
+
+    subjectDates(subjects) {
+      return store.read((tx) => tx.subjectDates(subjects))
     },
 
     rebuild(why) {

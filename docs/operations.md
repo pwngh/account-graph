@@ -127,7 +127,7 @@ Open `/review` and enter a token. Each view has its own address, so you can link
 | Address | View | Shows |
 | --- | --- | --- |
 | `/review#/accounts` | Accounts | The largest clusters, recent changes, and decisions. |
-| `/review#/accounts/account:42` | Accounts | One subject: its cluster, its links and their reasons, transfers, and sightings. |
+| `/review#/accounts/account:42` | Accounts | The subject, its cluster, links and their reasons, transfers, and sightings. The heading and Links table show “First seen here” and “Created in your system” for your records when known. Hover over a time for the exact timestamp. |
 | `/review#/journey/contact:42` | Journey | One person's timeline across all their subjects: visits, page activity, calls, steps and their values, consent, and decisions. |
 | `/review#/board/90` | Board | People by the furthest step they reached. Unreturned missed calls come first. |
 | `/review#/decide` | Matches | Related pairs in different clusters, one at a time, to join or separate. Keys: J, K, S to skip, U to undo. |
@@ -267,6 +267,8 @@ Start the new version. At startup the server applies pending database changes in
 
 Each change has a number and runs once. When several servers start together, one applies the changes and the others wait. What a caller must change is in the [changelog](../CHANGELOG.md#upgrading).
 
+Upgrade 36 creates an empty table for standing creation dates. First-seen times are read from existing records, so the upgrade needs no backfill. Older servers can keep writing profiles without dates, pruning and forgetting subjects during the rollout. Send profiles with `createdAt` to an upgraded server.
+
 ## Settings that must match
 
 Processes that share a database must agree on these. The database keeps the policy, and a keyed mark of each secret. A process that differs stops at startup, or gets the fault `CONFIG.MISMATCH` on its first call.
@@ -291,12 +293,13 @@ RECEIPT_SECRETS=the-new-one…,the-old-one…
 
 | Receipt | Kept |
 | --- | --- |
-| Of a key | A year at least. `account-graph prune` deletes those that are older than a year and than its day. |
+| Of an ordinary entry | A year at least. `account-graph prune` deletes those that are older than a year and than its day. |
+| Of a profile with `createdAt` | Until the subject is forgotten, when the key becomes a tombstone. This includes superseded dates. |
 | Of a key whose person was deleted | For good, as a tombstone: a type, a keyed hash and times. A late retry then brings nobody back. |
 
 > **Keep an old secret while receipts made with it are kept.** A server without it does not start. Tombstones stay, so a secret under which anybody was deleted is kept for good.
 
-After its receipt is pruned, a key is new again. A conversion, call, text, payment or transfer that is still on record stays one. A profile, an arrival or a consent answer is written a second time.
+After its receipt is pruned, a key is new again. A conversion, call, text, payment or transfer that is still on record stays one. A profile without `createdAt`, an arrival or a consent answer is written a second time.
 
 ## Monitoring
 

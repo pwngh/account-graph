@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
 import pg from 'pg'
 import { accountGraph } from '../src/index.ts'
+import { seal } from '../src/core/audit.ts'
 import { createGraph, defaultPolicy, policyHash, recordCall, recordReturn } from '../tools/internals.ts'
 import { createPostgresStore, upgrades } from '../src/store/postgres.ts'
 import { command, serve } from '../src/bin.ts'
@@ -39,6 +40,22 @@ test('plain observations use the same SQL trips with an unrelated stated call', 
 })
 
 const url = process.env.DATABASE_URL
+
+test('the reviewer reads dates for the whole table in one SQL query', async () => {
+  const subjects = ['record:a', 'visitor:b', 'record:c']
+  const requests: unknown[][] = []
+  const query = async (sql: string, values?: unknown[]) => {
+    if (!values) return { rows: [] }
+    requests.push(values)
+    return { rows: [
+      { subject: subjects[0], first_seen: '0', created_at: '42' }, { subject: subjects[1], first_seen: '7', created_at: null }, { subject: subjects[2], first_seen: null, created_at: null },
+    ] }
+  }
+  const store = createPostgresStore({ query, connect: async () => ({ query, release() {} }) }, 'stub')
+  const dates = await store.read(tx => tx.subjectDates(subjects))
+  assert.deepEqual(requests, [[subjects]])
+  assert.deepEqual([...dates], [[subjects[0], { firstSeen: 0, createdAt: 42 }], [subjects[1], { firstSeen: 7 }]])
+})
 
 test('an interrupted callback backfill resumes after its committed schema changes', async () => {
   const schema = 'resume_callbacks'
@@ -148,6 +165,7 @@ if (!url) {
       assert.deepEqual(await store.migrate(), upgrades(schema).map((upgrade) => upgrade.name))
       const { rows } = await pool.query(`select at, recorded_at from ${schema}.sighting order by id`)
       assert.deepEqual(rows.map((row) => [Number(row.at), Number(row.recorded_at)]), [[111, 111], [222, 222]])
+      assert.deepEqual((await store.read(tx => tx.subjectDates(['account:1']))).get('account:1'), { firstSeen: 111 })
 
       // Nothing left to apply, however many processes start at once.
       assert.deepEqual((await Promise.all([store.migrate(), store.migrate(), store.migrate()])).flat(), [])
@@ -171,10 +189,18 @@ if (!url) {
     return createPostgresStore(pool, schema)
   }
 
-  for (const stopped of [30, 31]) test(`upgrade ${stopped} whose session ends before commit rolls back and can run again`, async () => {
+  // The previous server logged a decision and changed the report revision on every full forget.
+  const oldForgetDecision = (store: ReturnType<typeof createPostgresStore>, subject: string, at: number) => store.write(async tx => {
+    const before = await tx.lastDecision()
+    const decision = { seq: (before?.seq ?? 0) + 1, at, action: 'forget' as const, about: [subject] }
+    await tx.setSetting('callParty', 'deletion-' + decision.seq)
+    await tx.addDecision({ ...decision, hash: seal(before?.hash ?? '', decision) })
+  })
+
+  for (const [stopped, start, committed, relation] of [[30, 29, 28, 'said_party_subject'], [31, 29, 30, 'callback_event_calls'], [36, 36, 35, 'profile_created']] as const) test(`upgrade ${stopped} whose session ends before commit rolls back and can run again`, async () => {
     const schema = `ag_test_${process.pid}_interrupted_${stopped}`
     try {
-      const store = await madeBefore(schema, 29)
+      const store = await madeBefore(schema, start)
       const interrupted = createPostgresStore({
         query: pool.query.bind(pool),
         async connect() {
@@ -195,13 +221,40 @@ if (!url) {
         },
       }, schema)
       await assert.rejects(interrupted.migrate(), /upgrade session ended/)
-      assert.equal((await pool.query(`select max(id) as id from ${schema}.upgrade`)).rows[0].id, stopped === 30 ? 28 : 30)
-      const index = stopped === 30 ? 'said_party_subject' : 'callback_event_calls'
-      assert.equal((await pool.query('select to_regclass($1) as name', [schema + '.' + index])).rows[0].name, null)
+      assert.equal((await pool.query(`select max(id) as id from ${schema}.upgrade`)).rows[0].id, committed)
+      assert.equal((await pool.query('select to_regclass($1) as name', [schema + '.' + relation])).rows[0].name, null)
       if (stopped === 31) await pool.query(`select callback_calls from ${schema}.event limit 0`)
-      assert.ok((await store.migrate()).includes(stopped === 30 ? 'staff confirmation of a call' : 'calls behind callback notices'))
+      assert.ok((await store.migrate()).includes(upgrades(schema).find(upgrade => upgrade.id === stopped)!.name))
       assert.deepEqual(await store.migrate(), [])
     } finally {
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
+
+  test('upgrade 36 keeps creation dates through older writes and prune and clears them on older forgets', async () => {
+    const schema = `ag_test_${process.pid}_created`
+    let app: ReturnType<typeof accountGraph> | undefined
+    try {
+      const store = await madeBefore(schema, 36)
+      await store.write(tx => tx.addSightings([{ subject: 'record:a', identifier: 'email:first@example.org', at: 10, recorded: 90 }]))
+      assert.deepEqual(await store.migrate(), ['record creation dates'])
+      assert.deepEqual(await store.migrate(), [])
+      const entry = { key: 'signup', type: 'profile' as const, subject: 'record:a', at: 20, createdAt: 8, facts: { email: 'first@example.org' } }
+      const plain = { key: 'signup-b', type: 'profile' as const, subject: 'record:b', at: 20, facts: { email: 'later@example.org' } }
+      app = accountGraph({ databaseUrl: url!, schema, workers: false, receiptSecrets: ['a'.repeat(32)] })
+      assert.ok((await app.record({ entries: [entry, plain] })).results.every(row => row.ok))
+      // The preceding version continued to write these same sightings, prune SQL and forget decisions.
+      await store.write(tx => tx.addSightings([{ subject: 'record:a', identifier: 'email:first@example.org', at: 4, recorded: 100 }]))
+      await pool.query(`delete from ${schema}.sighting; delete from ${schema}.receipt where forgotten_at is null and recorded_at < 8640000000000000`)
+      assert.deepEqual((await store.read(tx => tx.subjectDates(['record:a']))).get('record:a'), { firstSeen: 4, createdAt: 8 })
+      const retried = (await app.record({ entries: [entry, plain] })).results
+      assert.deepEqual(retried.map(row => row.ok && row.value.duplicate), [true, false])
+      await oldForgetDecision(store, 'record:b', 101)
+      assert.deepEqual((await store.read(tx => tx.subjectDates(['record:a']))).get('record:a'), { firstSeen: 4, createdAt: 8 })
+      await oldForgetDecision(store, 'record:a', 102)
+      assert.deepEqual((await store.read(tx => tx.subjectDates(['record:a']))).get('record:a'), { firstSeen: 4 })
+    } finally {
+      await app?.close()
       await pool.query(`drop schema if exists ${schema} cascade`)
     }
   })
@@ -280,7 +333,7 @@ if (!url) {
       const store = await madeBefore(schema, 35)
       const subject = 'record:returning'
       const graph = createGraph(store, undefined, { now: () => 10 })
-      await graph.forget(subject)
+      await oldForgetDecision(store, subject, 10)
       await store.write(async tx => {
         await tx.setCall({ id: 'returned', subject: 'caller:line', direction: 'inbound', at: 20, to: '+12025550102', recorded: 21, flags: [] })
         await tx.addSaid({ topic: 'party', about: 'returned', key: 'pre-return', at: 100, data: { role: 'self', subject, by: 'desk' } })
@@ -305,7 +358,7 @@ if (!url) {
     try {
       const store = await madeBefore(schema, 33)
       const erased = 'record:erased'
-      await createGraph(store).forget(erased)
+      await oldForgetDecision(store, erased, Date.now())
       await store.write(async tx => {
         await tx.setCall({ id: 'old-call', subject: 'caller:line', direction: 'inbound', at: 1, to: '+12025550102', recorded: 1, flags: [] })
         await tx.addSaid({ topic: 'party', about: 'old-call', key: 'old-key', at: 2, data: { role: 'self', subject: erased, by: 'desk' } })

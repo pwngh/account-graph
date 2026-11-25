@@ -41,14 +41,21 @@ function sentOn(sent) {
 
 function profileOf(profile, more) {
   const detail = []
+  const dates = (subject) => {
+    if (/^(visitor|caller|call):/.test(subject)) return []
+    const { firstSeen, createdAt } = profile.dates?.[subject] ?? {}
+    return [['First seen here', firstSeen], ['Created in your system', createdAt]].filter(([, at]) => at !== undefined)
+      .map(([label, at]) => el('div', { class: 'meta' }, label + ' ', reviewDisplay.time(at)))
+  }
   const title = el('h3', { class: 'page-title' }, badge(profile.subject), reviewDisplay.id(profile.subject, true))
-  if (!profile.known) return [el('section', {}, el('div', { class: 'page-head' }, title), el('p', { class: 'muted' }, 'No records'))]
+  const own = dates(profile.subject)
+  if (!profile.known) return [el('section', {}, el('div', { class: 'page-head' }, title), ...(own.length ? own : [el('p', { class: 'muted' }, 'No records')]))]
   const size = profile.cluster.members.length
   detail.push(el('section', {}, el('div', { class: 'page-head' }, title, explain(), el('div', { class: 'row' },
     el('a', { class: 'button', href: `#/journey/${encodeURIComponent(profile.subject)}` }, 'Journey'),
     el('button', { on: { click: () => act('Join IDs', `${profile.subject} and the other ID will be treated as one person.`, '/join', { a: profile.subject }, 'Join', { otherKey: 'b' }) } }, 'Join with…'),
     el('button', { class: 'danger', on: { click: () => act('Delete data', `All data recorded for ${profile.subject} will be permanently deleted.`, '/forget', { subject: profile.subject, ads: true }, 'Hold to delete', { hold: true, ...(retraction?.targets.length && !retraction.always && { option: { key: 'retract', text: `Ask ${retraction.targets.join(', ')} to retract conversions` } }), done: ({ sent }) => sent.length > 0 && sentOn(sent) }) } }, 'Delete…'))),
-  tiles([term('Linked IDs', 'linkedIds'), amount(size), profile.cluster.oversized ? 'Above review limit' : '', profile.cluster.oversized ? 'apart' : ''],
+  ...own, tiles([term('Linked IDs', 'linkedIds'), amount(size), profile.cluster.oversized ? 'Above review limit' : '', profile.cluster.oversized ? 'apart' : ''],
     profile.links[0] && [term('Strongest link', 'strongest'), percent(Math.max(...profile.links.map((link) => link.score))), `${amount(profile.links.length)} ${profile.links.length === 1 ? 'link' : 'links'}`],
     profile.separated.length > 0 && [term('Separated', 'separated'), amount(profile.separated.length)],
     profile.history[0] && [term('Last seen', 'lastSeen'), reviewDisplay.time(Math.max(...profile.history.map((each) => each.at)), Date.now())],
@@ -69,13 +76,13 @@ function profileOf(profile, more) {
   for (const link of profile.links) {
     const inCluster = members.has(link.subject)
     kinds[link.level !== 'same' ? 'related' : inCluster ? 'same' : 'strong'].push([link.score, el('tr', {},
-      td('who', badge(link.subject), reviewDisplay.subject(link.subject)),
+      td('who', badge(link.subject), reviewDisplay.subject(link.subject), ...dates(link.subject)),
       td('', el('span', { class: `chip ${link.level}` }, link.level === 'same' ? (inCluster ? 'Same person' : 'High confidence') : 'Related'), ' ', contested(link.subject)),
       ...edge([td('num score', reviewDisplay.compare(percent(link.score), link.score)), td('why', ...reasons(link.reasons))]),
       td('edge', el('button', { on: { click: () => act('Separate IDs', `${profile.subject} and ${link.subject} will be treated as different people.`, '/separate', { a: profile.subject, b: link.subject }, 'Separate') } }, 'Separate')))])
   }
   for (const other of profile.separated) {
-    kinds.apart.push([undefined, el('tr', {}, td('who', badge(other), reviewDisplay.subject(other)), td('', el('span', { class: 'chip apart' }, 'Separated'), ' ', contested(other)), ...edge([td('num score', none()), td('why', ...kept(verdict(other)))]),
+    kinds.apart.push([undefined, el('tr', {}, td('who', badge(other), reviewDisplay.subject(other), ...dates(other)), td('', el('span', { class: 'chip apart' }, 'Separated'), ' ', contested(other)), ...edge([td('num score', none()), td('why', ...kept(verdict(other)))]),
       td('edge', el('button', { on: { click: () => act('Remove separation', `${profile.subject} and ${other} can be joined again.`, '/separate', { a: profile.subject, b: other, separated: false }, 'Remove', { undo: true }) } }, 'Remove')))])
   }
   const between = (list) => {

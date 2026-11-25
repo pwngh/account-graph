@@ -195,7 +195,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       }
       await db.query(`delete from ${t('said')} where topic = 'party' and data->>'subject' = $1 and ($2::text[] is null or about = any($2))`, [subject, only ?? null])
       if (only) return callJobs
-      await db.query(`delete from ${t('call_evidence')} where subject = $1`, [subject])
+      await db.query(`with created as (delete from ${t('profile_created')} where subject = $1) delete from ${t('call_evidence')} where subject = $1`, [subject])
       if (!ids.length) await dropCallNotices(db, ids, [subject], [], [creditSubject(subject)])
       const { rows: left } = await db.query(
         `with gone as (delete from ${t('edge')} where subject = $1 returning identifier)
@@ -286,6 +286,38 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
           union all select from active a join ${t('call_evidence')} r on r.identifier = a.identifier) as reserved)
         select e.*, nearby.reserved from nearby left join active e on true`, [subjects])
       return { active: rows[0]?.subject == null ? [] : rows.map(toEdge), reserved: rows[0]?.reserved === true }
+    },
+
+    async setCreatedAt(subject, createdAt, at, key) {
+      const { rows } = await db.query(
+        `insert into ${t('profile_created')} as p (subject, created_at, at, key) values ($1, $2, $3, $4)
+         on conflict (subject) do update set created_at = excluded.created_at, at = excluded.at, key = excluded.key
+         where (p.at, p.key) <= (excluded.at, excluded.key) returning 1`, [subject, createdAt, at, key])
+      return rows.length > 0
+    },
+
+    async createdAtStands(subject, key) {
+      return (await db.query(`select from ${t('profile_created')} where subject = $1 and key = $2`, [subject, key])).rows.length > 0
+    },
+
+    async subjectDates(subjects) {
+      if (subjects.length === 0) return new Map()
+      const { rows } = await db.query(
+        `select s.subject, p.created_at, least(
+           (select min(first_at) from ${t('edge')} where subject = s.subject and not starts_with(identifier, 'review:')),
+           (select min(at) from ${t('sighting')} where subject = s.subject and not starts_with(identifier, 'review:')),
+           (select min(at) from ${t('touch')} where subject = s.subject),
+           (select min(at) from ${t('outcome')} where subject = s.subject),
+           (select min(at) from ${t('call')} where subject = s.subject),
+           (select min(at) from ${t('message')} where subject = s.subject),
+           (select min(at) from ${t('consent_log')} where subject = s.subject and (at <> 0 or source is distinct from 'before history' or key is not null)),
+           (select min(at) from ${t('sent_link')} where subject = s.subject),
+           (select min(first_at) from ${t('flow')} where source = s.subject),
+           (select min(first_at) from ${t('flow')} where target = s.subject)
+         ) as first_seen from unnest($1::text[]) s(subject) left join ${t('profile_created')} p on p.subject = s.subject`, [subjects])
+      return new Map(rows.filter(row => row.first_seen !== null || row.created_at !== null).map(row => [row.subject, {
+        ...(row.first_seen !== null && { firstSeen: Number(row.first_seen) }), ...(row.created_at !== null && { createdAt: Number(row.created_at) }),
+      }]))
     },
 
     async edgesOf(subjects) {
@@ -485,7 +517,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     },
 
     async pruneReceipts(before) {
-      return (await db.query(`with gone as (delete from ${t('receipt')} where forgotten_at is null and recorded_at < $1 returning 1) select count(*)::int as n from gone`, [before])).rows[0].n
+      return (await db.query(`with gone as (delete from ${t('receipt')} where forgotten_at is null and recorded_at < $1 and not (type = 'profile' and coalesce(digest ? 'createdAt', false)) returning 1) select count(*)::int as n from gone`, [before])).rows[0].n
     },
 
     async claimDelivery(sink, now, lease) {
@@ -2107,6 +2139,26 @@ export function upgrades(schema = 'account_graph'): Upgrade[] {
             insert into ${schema}.setting (name, value) select 'repairForgottenParties', 'due' where exists (
               select from ${schema}.said s join ${schema}.decision d on d.action = 'forget' and d.about->>0 = s.data->>'subject' where s.topic = 'party')
             on conflict (name) do update set value = excluded.value;`,
+    },
+    {
+      id: 36,
+      name: 'record creation dates',
+      // Servers on the previous version also write forget decisions and prune receipts. Each dated key must survive to be forgotten.
+      sql: `create table ${schema}.profile_created (
+              subject text primary key, created_at bigint not null, at bigint not null, key text collate "C" not null);
+            create function ${schema}.forget_profile_created() returns trigger language plpgsql as $forget$
+            begin
+              delete from ${schema}.profile_created where subject = new.about->>0;
+              return new;
+            end; $forget$;
+            create trigger forget_profile_created after insert on ${schema}.decision for each row when (new.action = 'forget')
+              execute function ${schema}.forget_profile_created();
+            create function ${schema}.keep_dated_profile_receipt() returns trigger language plpgsql as $keep$
+            begin
+              return null;
+            end; $keep$;
+            create trigger keep_dated_profile_receipt before delete on ${schema}.receipt for each row when (old.type = 'profile' and old.digest ? 'createdAt')
+              execute function ${schema}.keep_dated_profile_receipt();`,
     },
   ]
 }

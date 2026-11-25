@@ -13,6 +13,7 @@ Hashed data here is **pseudonymous**: anyone who holds the original value can id
 | Name | Keyed hashes of it, of the full names it may stand for and of its first letter, only under a policy that uses names | Only with `IDENTIFIER_SECRET`. There are few first names and 26 letters, so with it every one can be tried. |
 | Date of birth | Keyed hashes of it, of its year and of its day and month, only under a policy that keeps people apart by it | Only with `IDENTIFIER_SECRET`. There are few dates, so with it every one can be tried. |
 | Your own ids, such as `contact:7` | As written | By you. |
+| Your record's creation date | The standing timestamp in milliseconds, with the reporting profile's time and key | Yes. Keep personal details out of the key. |
 | Browser | The id in its first-party cookie | It identifies a browser, and a person once something links the two. |
 | IP address | As written; IPv6 as its /64 | Yes. |
 | Ad clicks, campaign ids, the parameters you named, landing pages without their query | As received | They identify what was clicked. |
@@ -35,6 +36,8 @@ Hashed data here is **pseudonymous**: anyone who holds the original value can id
 
 Data goes to these recipients only.
 
+The creation date is for review of the exact record. It contributes no identifier, link or score. Events, reports and ad platform deliveries omit it.
+
 ## Deletion
 
 A retry of a forgotten key is checked against its receipt before the graph asks a line or address provider about the entry.
@@ -55,10 +58,12 @@ Upgrade 30 records which call supplied a channel visit. Older visits only have t
 
 | Action | Deletes | Keeps |
 | --- | --- | --- |
-| `forget` one subject | Its sightings and links, identifiers with no other holder, visits, steps, their values and payments, not-a-lead marks, its calls and their results, its texts, the links made for it, conversions, consent, separations, transfers, alerts, and its events | See the list below |
+| `forget` one subject | Its standing creation date, sightings and links, identifiers with no other holder, visits, steps, their values and payments, not-a-lead marks, its calls and their results, its texts, the links made for it, conversions, consent, separations, transfers, alerts, and its events | See the list below |
 | `prune` before a time | Sightings, superseded consent answers, and call results without a call, all stored before it. Also links that stopped naming anyone and pool assignments that ended before it, and not-a-lead marks set before it without a recorded outcome or call. Events from before it, and receipts that are also older than a year | Links and clusters, because each link keeps its first and last sighting and its count. Visits, steps, calls, and the consent answer that applies |
 | Restating a step | None | Every value it has had |
 | Correcting a call to unanswered | Its outcome, which leaves the report | The call, its result, and the history of its value |
+
+Pruning keeps the standing creation date and the receipts for profiles that supplied a date, including earlier corrections. When the subject is forgotten, those receipts become tombstones. Retrying a dated profile then returns `FORGOTTEN`.
 
 `forget` keeps:
 

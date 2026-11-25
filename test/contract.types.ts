@@ -25,6 +25,10 @@ export async function calls() {
   accountGraph({ memory: true, openHours: { mon: ['nine to five'] } })
   // @ts-expect-error at is required
   void graph.record({ entries: [{ type: 'conversion', key: 'k', subject: 's', stage: 'x' }] })
+  // @ts-expect-error a record's creation time is given in epoch milliseconds
+  void graph.record({ entries: [{ type: 'profile', key: 'k', at: 1, subject: 'contact:1001', facts: { device: 'd' }, createdAt: '1' }] })
+  // @ts-expect-error only a profile can tell when the caller created the record
+  void graph.record({ entries: [{ type: 'arrival', key: 'k', at: 1, subject: 'contact:1001', createdAt: 1 }] })
   // @ts-expect-error a refund is an amount
   void graph.record({ entries: [{ type: 'restatement', key: 'k', at: 1, of: { type: 'conversion', key: 'c' }, change: { kind: 'refund', value: 1 } }] })
   const party = await graph.lookup({ kind: 'party', call: 'CA1' })
@@ -34,7 +38,7 @@ export async function calls() {
   // @ts-expect-error a party expectation is a statement key or null
   void graph.record({ entries: [{ type: 'call_update', key: 'n', at: 2, call: 'CA1', change: { kind: 'party', role: 'unknown', by: 'desk', seen: 0 } }] })
   const { results } = await graph.record({ entries: [
-    { type: 'profile', key: 'signup-1001', at: 1, subject: 'contact:1001', facts: { email: 'a@b.co', device: 'd' } },
+    { type: 'profile', key: 'signup-1001', at: 1, subject: 'contact:1001', createdAt: 1, facts: { email: 'a@example.org', device: 'd' } },
     { type: 'conversion', key: 'enroll-1001', at: 1, subject: 'contact:1001', stage: 'enrolled', value: 200, currency: 'USD' },
     { type: 'call_update', key: 'u', at: 2, call: 'CA1', change: { kind: 'returned', reachedAt: 1 } },
     { type: 'call_update', key: 'p', at: 2, call: 'CA1', change: { kind: 'party', role: 'unknown', by: 'desk', seen } },

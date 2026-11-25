@@ -17,6 +17,11 @@ export interface CallEvidence {
 
 export type CallLineKind = 'phone' | 'voip' | 'none'
 
+export interface SubjectDates {
+  firstSeen?: number
+  createdAt?: number
+}
+
 /**
  * Where the graph lives. Sightings and touches are the record; edges and
  * fanouts fold the sightings; components and clusters are derived and can
@@ -67,6 +72,11 @@ export interface Tx {
   callVisitors(ids: readonly string[]): Promise<Map<string, Subject>>
   /** Active edges and whether a withdrawn edge touches any of these subjects or identifiers. */
   matchingEdges(subjects: readonly Subject[]): Promise<{ active: Edge[]; reserved: boolean }>
+  /** Dates of the exact subjects, where there is a direct observation or a creation statement. */
+  subjectDates(subjects: readonly Subject[]): Promise<Map<Subject, SubjectDates>>
+  /** Keeps the newest creation statement by time and then key. */
+  setCreatedAt(subject: Subject, createdAt: number, at: number, key: string): Promise<boolean>
+  createdAtStands(subject: Subject, key: string): Promise<boolean>
   edgesOf(subjects: readonly Subject[]): Promise<Edge[]>
   edgesOn(identifiers: readonly Identifier[]): Promise<Edge[]>
   /**

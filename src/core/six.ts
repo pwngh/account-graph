@@ -229,12 +229,13 @@ export function createSix(engine: Engine, options: SixOptions) {
           const kind = each.slice(0, each.indexOf(':'))
           if (RESERVED.has(kind)) throw Object.assign(malformed(`Kind "${kind}" is written by the graph itself`), { refusal: { reason: 'KIND_RESERVED', kind } })
         }
-        if (again) return { value: { changes: [], notes: {} }, subjects: [] }
+        if (again) return { value: { changes: [], notes: {} }, subjects: [], stands: entry.createdAt === undefined || await inside.tx.createdAtStands(entry.subject, entry.key) }
         const found = await service.factsIn({ ...entry.facts, at: entry.at }, true, true)
         if (found.identifiers.length === 0 && !entry.speaker) throw Object.assign(malformed('No fact could be used'), { refusal: { reason: 'NO_FACT_USED', notes: found.notes } })
         const { notes, speakers } = await service.identify({ subject: entry.subject, ...entry.facts, at: entry.at, ...(entry.event && { event: entry.event }), ...(entry.speaker && { speaker: entry.speaker }) })
+        const stands = entry.createdAt === undefined || await inside.tx.setCreatedAt(entry.subject, entry.createdAt, entry.at, entry.key)
         // Of whoever speaks too: once they are deleted, a late retry must not bring them back.
-        return { value: { changes: inside.changes, notes }, subjects: [entry.subject, ...speakers] }
+        return { value: { changes: inside.changes, notes }, subjects: [entry.subject, ...speakers], stands }
       }
       case 'arrival':
         if (!again) await graph.touch(touchOf(entry))
