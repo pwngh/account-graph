@@ -366,6 +366,45 @@ test('options that cannot be are refused at once, and each said', async () => {
   await down.close()
 })
 
+test('a list that takes too long is done as far as it got, and the rest says it was not tried', async () => {
+  let now = NOW
+  const { graph, close } = await memory({ now: () => (now += 200) })
+  try {
+    const entries = Array.from({ length: 100 }, (_, n): RecordEntry => ({ type: 'consent', key: `s${n}`, at: AT, subject: `contact:${n}`, consent: { adUserData: true, adPersonalization: true } }))
+    const { results } = await graph.record({ entries })
+    const done = results.findIndex((each) => !each.ok)
+    assert.ok(done > 0 && done < 100, String(done))
+    assert.ok(results.every((each, n) => (n < done ? each.ok : !each.ok && each.reason === 'NOT_ATTEMPTED')))
+    now = NOW
+    const again = (await graph.record({ entries: entries.slice(0, done + 1) })).results
+    assert.deepEqual(again.map((each) => each.ok && each.value.duplicate), [...Array(done).fill(true), false])
+  } finally {
+    await close()
+  }
+})
+
+test('a deletion asks platforms after it, and its answer is kept', async () => {
+  const { createEngine } = await import('../src/core/engine.ts')
+  const { createMemoryStore } = await import('../src/core/memory.ts')
+  const { createReceipts } = await import('../src/core/receipts.ts')
+  const { createSix } = await import('../src/core/six.ts')
+  let cut = true
+  const target = { name: 'ads', restates: false, batch: 10, keys: () => ({ email: 'h' }), click: () => undefined, retryable: () => true, deliver: async () => ({ requestId: 'r' }), forget: async (jobs: readonly unknown[]) => { if (cut) throw new Error('cut off'); return jobs.map(() => undefined) } }
+  const store = createMemoryStore()
+  const engine = createEngine(store, { delivery: { targets: [target] }, now: () => NOW })
+  const six = createSix(engine, { receipts: createReceipts([SECRET]) })
+  const asked = async (subject: string) => {
+    await six.record({ entries: [{ type: 'conversion', key: subject, at: AT, subject, stage: 'sale', actions: { ads: 'Sale' }, email: 'a@example.com' }] })
+    await engine.outbox!.run()
+    const request = { key: `f ${subject}`, at: AT, by: 'dana', subjects: [subject], platforms: 'retract' as const }
+    const answer = await six.forget(request)
+    return [answer, await six.forget(request)].map((each) => each.ok && [each.value.duplicate, each.value.sent.map(({ conversion, state }) => [conversion, state])])
+  }
+  assert.deepEqual(await asked('a'), [[false, [['a', 'rejected']]], [true, [['a', 'rejected']]]])
+  cut = false
+  assert.deepEqual(await asked('b'), [[false, [['b', 'accepted']]], [true, [['b', 'accepted']]]])
+})
+
 test('answers of a report are shared until something is written', async () => {
   let now = NOW
   const { graph, local, close } = await memory({ now: () => now })
@@ -428,7 +467,7 @@ if (url) {
     }
   })
 
-  test('a call that waits too long for the lock ends, and what was not begun says so', async () => {
+  test('a call that waits too long for the lock ends', async () => {
     const { graph, schema, close } = await postgres({ timeoutMs: 600 })
     const holder = await pool!.connect()
     try {
