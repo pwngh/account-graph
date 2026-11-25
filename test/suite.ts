@@ -2683,12 +2683,18 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const of = async (subject: string) => [...new Set((await graph.journey(subject)).entries.flatMap((entry) => ('subject' in entry ? [entry.subject] : [])))].sort()
       assert.deepEqual(await of('contact:1'), ['account:1', 'contact:1'])
       assert.deepEqual(await of('contact:2'), ['account:2', 'contact:2'])
-      // A browser of theirs is theirs too, however strong its own tie, and names nobody on the way to one that is nobody's.
-      await graph.observe([{ subject: 'visitor:2', identifiers: ['device:2', 'carry:1'], at: T0 }, { subject: 'contact:1', identifiers: ['carry:1'], at: T0 }])
-      assert.equal((await graph.cluster('visitor:2'))!.id, (await graph.cluster('contact:2'))!.id)
-      assert.equal((await graph.links('contact:1')).find((link) => link.subject === 'visitor:2')!.level, 'same')
-      assert.deepEqual(await of('contact:1'), ['account:1', 'contact:1'])
-      assert.deepEqual(Object.values((await graph.journey('contact:1')).subjects).flatMap((tie) => tie.via).filter((each) => /2$/.test(each)), [])
+      // A browser of theirs is theirs too, however strong its own tie, and one that is nobody's is reached through none of theirs.
+      await graph.observe([
+        { subject: 'contact:3', identifiers: ['device:x', 'device:y'], at: T0 },
+        { subject: 'contact:4', identifiers: ['device:x'], at: T0 },
+        { subject: 'visitor:x', identifiers: ['device:x'], at: T0 },
+        { subject: 'visitor:y', identifiers: ['device:y'], at: T0 },
+      ])
+      await graph.separate('contact:3', 'contact:4')
+      assert.equal((await graph.cluster('visitor:x'))!.id, (await graph.cluster('contact:4'))!.id)
+      assert.equal((await graph.links('contact:3')).find((link) => link.subject === 'visitor:x')!.level, 'same')
+      assert.deepEqual(await of('contact:3'), ['contact:3', 'visitor:y'])
+      assert.deepEqual(await of('contact:4'), ['contact:4', 'visitor:x'])
     })
 
     test('several subjects are forgotten together, or none is', async () => {

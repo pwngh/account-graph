@@ -68,7 +68,7 @@ An identifier is written `kind:value`. A kind missing from the policy gets 400. 
 | `GET /links?subject=` | Every subject linked to this one, with score and reasons, and `conflict` where a [fact](deciding.md#facts-that-keep-people-apart) says they are two people. |
 | `GET /between?a=&b=` | What two subjects share at any strength, excluding reviewer marks: `{ known, joined, apart, score, reasons, idle }`. `idle` lists shared identifiers that are muted or over their cap. |
 | `GET /history?subject=` | Every sighting of the subject, oldest first. |
-| `GET /journey?subject=&before=` | Everything recorded about the subject's person, oldest first, newest 200: `{ entries, subjects, next, more }`. No entry is of a person in another group, or of a browser or caller in one, however strong the tie. A decision that names two people is in the journey of each. Pass `next` as `before` for earlier entries. |
+| `GET /journey?subject=&before=` | Everything recorded about the subject's person, oldest first, newest 200: `{ entries, subjects, next, more }`. No entry is of a person in another group, or of a browser or caller in a group with one, however strong the tie. A decision that names two people is in the journey of each. Pass `next` as `before` for earlier entries. |
 | `GET /clusters?offset=` | The largest clusters, 50 at a time. |
 | `GET /search?q=` | Subjects whose id starts with the text. |
 | `POST /people` | `{ subjects }`, 1 to 100: each one's cluster, what brought them, and whether they asked for no texts. Answers `{ people }`. |

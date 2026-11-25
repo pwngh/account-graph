@@ -1952,12 +1952,17 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         // of another's, and no path goes through it.
         const unnamed = new Set(policy.unnamed ?? UNNAMED)
         const isNamed = (each: Subject) => !unnamed.has(each.slice(0, Math.max(0, each.indexOf(':'))))
-        const near = [...(await reach(tx, members, 2)).keys()].filter((each) => !within.has(each) && !isNamed(each))
+        const links = new Map<Subject, Link>()
+        let reached = await reach(tx, members, 2, undefined, links)
+        const near = [...reached.keys()].filter((each) => !within.has(each) && !isNamed(each))
         const homes = await tx.labelsOf(near)
         const others = new Set<Subject>()
         for (const cluster of unique([...homes.values()].map((label) => label.cluster))) if ((await tx.clusterOf(cluster)).some(isNamed)) others.add(cluster)
-        const links = new Map<Subject, Link>()
-        const reached = await reach(tx, members, 2, new Set([...members, ...near.filter((each) => !others.has(homes.get(each)?.cluster ?? each))]), links)
+        const theirs = new Set([...members, ...near.filter((each) => !others.has(homes.get(each)?.cluster ?? each))])
+        if ([...reached.keys()].some((each) => !theirs.has(each))) {
+          links.clear()
+          reached = await reach(tx, members, 2, theirs, links)
+        }
         const strong = [...reached].filter(([, { confidence }]) => confidence >= policy.same).map(([each]) => each)
         const everyone = unique([subject, ...members, ...strong.sort()])
         const people = everyone.slice(0, MOST)
