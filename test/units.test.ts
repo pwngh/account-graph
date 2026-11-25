@@ -45,6 +45,16 @@ test('only the line before a phone extension supplies digits for its key', () =>
   }
 })
 
+test('an extension in Spanish or after a dialing pause is left out, and a mark between the digits of one number is not one', () => {
+  for (const extension of [' extensión 42', ' extensio\u0301n 42', ' extension 42', ' anexo 42', ' int. 42', ' interno 42', ',42', ',,42#', 'p42', 'w42', ';postd=42', ' x42', '#42']) {
+    assert.equal(normalizePhone('+1 202 555 0123' + extension), '+12025550123', extension)
+    assert.equal(normalizePhone('202-555-0123' + extension), '+12025550123', extension)
+  }
+  for (const [written, key] of [['202x555x0123', '+12025550123'], ['202-555-x0123', '+12025550123'], ['1x202x555x0123', '+12025550123'], ['202#555#0123', '+12025550123'], ['+1#2025550123', '+12025550123'], ['202,555,0123', '+12025550123'], ['+44 20 7946 x0123', '+442079460123'], ['+1 (202) 555-0123', '+12025550123']] as const) assert.equal(normalizePhone(written), key, written)
+  // A second number is not an extension of the first.
+  assert.throws(() => normalizePhone('+12025550123, 2025550199'), TypeError)
+})
+
 test('100,000 phone forms without an extension keep their previous key or refusal', () => {
   const prefixes = ['+1', '1', '+', '001', '+44', '44', '011', '', '+000000', '001100']
   const gaps = ['', ' ', '-', '.', '/', '\u00a0', '\t', '()', '  ', ' - ']
