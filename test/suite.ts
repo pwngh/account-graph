@@ -3121,6 +3121,16 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await members(twins, 'contact:lead'), ['contact:lead'])
       assert.deepEqual((await twins.links('contact:lead')).map(({ subject, level, unconfirmed }) => [subject, level, unconfirmed]), [['contact:ana', 'related', true], ['contact:mark', 'related', true]])
       assert.deepEqual(await members(juans, 'contact:2'), ['contact:2'])
+      // Whoever it could be was cut off before, and is still somebody it could be.
+      const { graph: son } = await fresh(policy)
+      for (const [id, dates] of [['1', born('1960-01-02')], ['2', []], ['3', born('1991-03-04')]] as const) await son.observe({ subject: `contact:${id}`, identifiers: ['email:m', ...called('Juan'), ...namedKeys(secret, ['email:m'], 'Juan', 'Lima'), ...dates], at: T0 + Number(id) })
+      assert.deepEqual(await members(son, 'contact:2'), ['contact:2'])
+      // Ways to write one name are one name.
+      for (const [one, other] of [['Robert', 'Bob'], ['William', 'Bill'], ['Margaret', 'Peggy'], ['Maria', 'Maria Elena'], ['Jose Antonio', 'Tony']] as const) {
+        const { graph } = await fresh(policy)
+        for (const [id, first] of [['1', one], ['2', other]] as const) await graph.observe({ subject: `contact:${id}`, identifiers: ['email:m', ...born('1990-06-07'), ...called(first), ...namedKeys(secret, ['email:m'], first, 'Lima')], at: T0 + Number(id) })
+        assert.deepEqual(await members(graph, 'contact:1'), ['contact:1', 'contact:2'], `${one} and ${other}`)
+      }
       // Names no table has are names all the same.
       const { graph: rare } = await fresh(policy)
       for (const [id, first] of [['1', 'Xiadani'], ['2', 'Yaretzi'], ['3', 'Mateo']] as const) await rare.observe({ subject: `contact:${id}`, identifiers: ['email:m', ...born('1990-06-07'), ...called(first), ...namedKeys(secret, ['email:m'], first, 'Lima')], at: T0 + Number(id) })

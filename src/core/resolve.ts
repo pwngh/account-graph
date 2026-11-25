@@ -144,13 +144,15 @@ const meets = (one: ReadonlySet<Identifier> | undefined, other: ReadonlySet<Iden
 
 /**
  * Whether a fact of one is another than the other's. Two dates one slip of the pen apart are one date where a name agrees. A
- * Maria Elena and a Maria Guadalupe have a name in common, and each has one the other has not, so they are two.
+ * Maria Elena and a Maria Guadalupe have a name in common, and each has one the other has not, so they are two. A Bob has
+ * names a Robert has not, and they are ways to write one word.
  */
 function disagree(a: Known | undefined, b: Known | undefined): boolean {
   if (!a || !b) return false
   const [ours, theirs] = [a.facts.get('given'), b.facts.get('given')]
   const within = (one: ReadonlySet<Identifier>, other: ReadonlySet<Identifier>) => [...one].every((each) => other.has(each))
-  const given = ours && theirs && meets(ours, theirs) && (within(ours, theirs) || within(theirs, ours))
+  const words = (known: Known) => (known.facts.get('initial')?.size ?? 0) > 1
+  const given = ours && theirs && meets(ours, theirs) && (!(words(a) && words(b)) || within(ours, theirs) || within(theirs, ours))
   if (given === false) return true
   const named = given === true || [...a.things].some((each) => b.things.has(each))
   return meets(a.facts.get('birth'), b.facts.get('birth')) === false && !(named && meets(a.facts.get('dated'), b.facts.get('dated')) === true)
@@ -163,7 +165,7 @@ export function confirmed(a: Known | undefined, b: Known | undefined): boolean {
   if (disagree(a, b)) return false
   if (meets(a.things, b.things) || meets(a.facts.get('given'), b.facts.get('given'))) return true
   // A name no table has is no fact, and is still a name: two who gave names under which nothing is the same are twins as likely as one.
-  const names = (known: Known) => [...known.things].some((each) => THINGS.has(each.slice(0, each.indexOf(':'))))
+  const names = (known: Known) => [...known.things].some((each) => THINGS.has(each.slice(0, each.indexOf(':'))) || each.startsWith('name:'))
   return meets(a.facts.get('birth'), b.facts.get('birth')) === true && !(names(a) && names(b))
 }
 
@@ -272,6 +274,26 @@ function refined(pieces: Subject[][], links: readonly Pair[], policy: Policy, kn
     tie(a, b, score)
     tie(b, a, score)
   }
+  const everyone = pieces.flat().filter((subject) => !nobody(subject))
+  if (everyone.length < 2) return pieces
+  // Who has anything in common that could confirm the two, in all of the component: whoever was cut off may be one's as well.
+  const holders = new Map<Identifier, Subject[]>()
+  const own = (subject: Subject) => {
+    const each = known.get(subject)
+    return each ? [...each.things, ...each.joins, ...(each.facts.get('birth') ?? []), ...(each.facts.get('given') ?? [])] : []
+  }
+  for (const subject of everyone) for (const identifier of own(subject)) void (holders.get(identifier)?.push(subject) ?? holders.set(identifier, [subject]))
+  const asked = new Map<Subject, Map<Subject, 'yes' | 'no' | 'neither'>>()
+  const between = (x: Subject, y: Subject) => {
+    if (!asked.has(x)) asked.set(x, new Map())
+    let found = asked.get(x)!.get(y)
+    if (!found) {
+      const [one, other] = [known.get(x), known.get(y)]
+      asked.get(x)!.set(y, (found = disagree(one, other) && !joinedBy(one, other) ? 'no' : confirmed(one, other) ? 'yes' : 'neither'))
+    }
+    return found
+  }
+  const some = (ours: readonly Subject[], theirs: readonly Subject[], what: 'yes' | 'no') => ours.some((x) => theirs.some((y) => between(x, y) === what))
   return pieces.flatMap((piece) => {
     const inside = new Set(piece)
     const records = piece.filter((subject) => !nobody(subject)).sort((x, y) => at(x) - at(y) || (x < y ? -1 : 1))
@@ -311,25 +333,23 @@ function refined(pieces: Subject[][], links: readonly Pair[], policy: Policy, kn
     }
     // Decisions first, because they stand whatever differs.
     for (const [a, b] of near) if (home.get(a) !== home.get(b) && joinedBy(known.get(a), known.get(b))) unite(a, b)
-    const asked = new Map<Subject, Map<Subject, 'yes' | 'no' | 'neither'>>()
-    const between = (x: Subject, y: Subject) => {
-      if (!asked.has(x)) asked.set(x, new Map())
-      let found = asked.get(x)!.get(y)
-      if (!found) {
-        const [one, other] = [known.get(x), known.get(y)]
-        asked.get(x)!.set(y, (found = disagree(one, other) && !joinedBy(one, other) ? 'no' : confirmed(one, other) ? 'yes' : 'neither'))
+    // Whether one may be somebody else's as well, who differs from the other.
+    const torn = (ours: readonly Subject[], theirs: readonly Subject[]) => {
+      const met = new Set([...ours, ...theirs])
+      for (const x of ours) for (const identifier of own(x)) for (const y of holders.get(identifier)!) {
+        if (met.has(y)) continue
+        met.add(y)
+        if (some(ours, [y], 'yes') && some(theirs, groups.get(home.get(y) ?? y) ?? [y], 'no')) return true
       }
-      return found
+      return false
     }
-    const some = (ours: readonly Subject[], theirs: readonly Subject[], what: 'yes' | 'no') => ours.some((x) => theirs.some((y) => between(x, y) === what))
     for (let changed = true; changed; ) {
       changed = false
       for (const [a, b] of near) {
         if (home.get(a) === home.get(b)) continue
         const [ours, theirs] = [groups.get(home.get(a)!)!, groups.get(home.get(b)!)!]
         if (!some(ours, theirs, 'yes') || some(ours, theirs, 'no')) continue
-        // Either of them may be somebody else's as well, who differs from the other.
-        if ([...groups.values()].some((other) => other !== ours && other !== theirs && ((some(ours, other, 'yes') && some(theirs, other, 'no')) || (some(theirs, other, 'yes') && some(ours, other, 'no'))))) continue
+        if (torn(ours, theirs) || torn(theirs, ours)) continue
         unite(a, b)
         changed = true
       }
