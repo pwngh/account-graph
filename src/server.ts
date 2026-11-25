@@ -491,7 +491,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         const contested = others.length > 0 && (await graph.holders([tie])).some((edge) => edge.subject !== subject && edge.subject !== named)
         // Nor one of whoever speaks for them: a mother who opens her son's link is not her son.
         const group = new Set([subject, ...((await graph.cluster(subject))?.members ?? [])])
-        const spoken = (await graph.links(named)).some((link) => group.has(link.subject) && link.level !== 'same' && link.reasons.some((reason) => reason.identifier.startsWith('behalf:')))
+        let spoken = false
+        for (const each of new Set([named, ...((await graph.cluster(named))?.members ?? [])])) spoken ||= (await graph.links(each)).some((link) => group.has(link.subject) && link.level !== 'same' && link.reasons.some((reason) => reason.identifier.startsWith('behalf:')))
         if (room && !spoken && (others.length === 0 || contested)) {
           identifiers.push(tie, tied)
           also.push({ subject: named, identifiers: [tie], at, event: 'link' })
@@ -597,20 +598,16 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     const ofPhone = !notes.phone?.endsWith(': not used') && theirs.find((each) => /^(phone|voip):/.test(each))
     const subjects: { subject: Subject; identifiers: Identifier[] }[] = []
     if (ofDevice) {
-      // The browser may be known under another id, and hold this one.
-      const known = (await graph.holders([ofDevice])).map((edge) => edge.subject).filter((each) => each.startsWith('visitor:')).sort()
-      // One that was said to speak for the subject before is said to again, so what was muted stays muted.
-      let before: Subject | undefined
-      for (const each of known) {
-        const { reasons, idle } = await graph.between(body.subject, each)
-        if ([...reasons.map((reason) => reason.identifier), ...idle].some((held) => held.startsWith('behalf:'))) before ??= each
-      }
-      // Its own visitor, where there is one. Another that holds the id is taken only where it is the one that may be it.
+      // Its own visitor, where there is one. Another that holds the id is taken only while the id is evidence and it is the one that may be it.
       const exact: Subject = `visitor:${device}`
-      const apart = new Set(await graph.separations(body.subject))
-      const others = known.filter((each) => !apart.has(each))
-      const own = known.includes(exact) || others.length !== 1 ? exact : others[0]!
-      subjects.push({ subject: before ?? own, identifiers: [ofDevice] })
+      const known = new Set((await graph.holders([ofDevice])).map((edge) => edge.subject))
+      let who = exact
+      if (!known.has(exact)) {
+        const apart = new Set(await graph.separations(body.subject))
+        const others = (await graph.match([ofDevice], { limit: 100 })).map((each) => each.subject).filter((each) => each.startsWith('visitor:') && !apart.has(each))
+        if (others.length === 1) who = others[0]!
+      }
+      subjects.push({ subject: who, identifiers: [ofDevice] })
     }
     if (ofPhone) subjects.push({ subject: `caller:${hashPhone(phone, options.calls?.country)}`, identifiers: [ofPhone] })
     if (typeof address === 'string' && address && !nobodysEmail(address)) {
