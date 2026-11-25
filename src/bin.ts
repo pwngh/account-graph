@@ -34,6 +34,8 @@ import { createEdge } from './edge/index.ts'
 import type { EdgeOptions } from './edge/index.ts'
 import { networks, reviewerProblems } from './edge/server.ts'
 import type { Reviewers } from './edge/server.ts'
+import { serviceTokenProblems } from './edge/tokens.ts'
+import type { ServiceToken } from './edge/tokens.ts'
 import { isMaxMindHost, isMaxMindService } from './providers/maxmind.ts'
 
 type Env = Record<string, string | undefined>
@@ -53,7 +55,14 @@ export function readEnvironment(env: Env) {
     if (text === undefined) return undefined
     try {
       const value = JSON.parse(text)
-      if (value && typeof value === 'object' && !Array.isArray(value)) return value
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        // Reviewer values are strings or lists of strings. JSON.parse alone drops a repeated name.
+        if (name === 'REVIEW_TOKENS') {
+          const names = Array.from(text.matchAll(/"(?:[^"\\]|\\.)*"\s*:?/g), match => match[0]).filter(token => token.endsWith(':')).map(token => JSON.parse(token.slice(0, -1)))
+          if (new Set(names).size !== names.length) wrong.push('REVIEW_TOKENS requires unique names')
+        }
+        return value
+      }
     } catch {}
     wrong.push(`${name} must be a JSON object`)
     return undefined
@@ -68,6 +77,15 @@ export function readEnvironment(env: Env) {
     } catch {
       return void wrong.push(`CALL_NUMBERS_FILE: "${env.CALL_NUMBERS_FILE}" cannot be read`)
     }
+  }
+  const serviceTokens = (): readonly ServiceToken[] | undefined => {
+    if (env.SERVICE_TOKENS === undefined && env.SERVICE_TOKENS_FILE === undefined) return undefined
+    if (env.SERVICE_TOKENS !== undefined && env.SERVICE_TOKENS_FILE !== undefined) return void wrong.push('SERVICE_TOKENS and SERVICE_TOKENS_FILE must not both be set')
+    try {
+      const value: unknown = JSON.parse(env.SERVICE_TOKENS ?? readFileSync(env.SERVICE_TOKENS_FILE!, 'utf8'))
+      if (Array.isArray(value)) return value
+    } catch {}
+    return void wrong.push('SERVICE_TOKENS must be a JSON list, given directly or in a readable SERVICE_TOKENS_FILE')
   }
   const serverRanges = (): string | undefined => {
     if (!env.SERVER_RANGES_FILE) return undefined
@@ -129,6 +147,7 @@ export function readEnvironment(env: Env) {
     webhookSecret: env.WEBHOOK_SECRET || undefined,
     schema: env.GRAPH_SCHEMA || 'account_graph',
     token: need('GRAPH_TOKEN'),
+    serviceTokens: serviceTokens(),
     reviewers: parsed('REVIEW_TOKENS') as Reviewers | undefined,
     origins: (env.ORIGINS ?? '').split(',').map((origin) => origin.trim().replace(/\/$/, '')).filter(Boolean),
     port: number('PORT', 8080),
@@ -264,10 +283,12 @@ export function readEnvironment(env: Env) {
   }
     if (config.linkSecret !== undefined && config.linkSecret.length < 32) wrong.push('LINK_SECRET must be at least 32 characters')
   if (config.identifierSecret !== undefined && config.identifierSecret.length < 32) wrong.push('IDENTIFIER_SECRET must be at least 32 characters')
+  if (config.token && !config.token.trim()) wrong.push('GRAPH_TOKEN requires a nonempty token')
   for (const problem of reviewerProblems(config.reviewers, config.token)) wrong.push(`REVIEW_TOKENS: ${problem}`)
+  for (const problem of serviceTokenProblems(config.serviceTokens, config.reviewers, config.token)) wrong.push(`SERVICE_TOKENS: ${problem}`)
   // The secrets in compose.yaml are in the repository for anyone to read, so they are only for trying it out.
   const far = config.origins.find((origin) => !/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|[^/]+\.localhost)(:\d+)?$/.test(origin))
-  const secrets = { GRAPH_TOKEN: [config.token], REVIEW_TOKENS: Object.values(config.reviewers ?? {}).flat(), LINK_SECRET: [config.linkSecret], RECEIPT_SECRETS: config.receiptSecrets }
+  const secrets = { SERVICE_TOKENS: (config.serviceTokens ?? []).map(entry => entry?.token), GRAPH_TOKEN: [config.token], REVIEW_TOKENS: Object.values(config.reviewers ?? {}).flat(), LINK_SECRET: [config.linkSecret], RECEIPT_SECRETS: config.receiptSecrets }
   if (far) for (const [name, held] of Object.entries(secrets)) if (held.some((each) => String(each).startsWith('change-me'))) wrong.push(`${name} must be changed before taking visits from ${far}`)
   if (config.auditHours > 0 && !config.alertWebhook) wrong.push('ALERT_WEBHOOK is required with AUDIT_HEAD_HOURS')
   if (wrong.length > 0) throw new Error(`Cannot start:\n  ${wrong.join('\n  ')}`)
@@ -318,6 +339,7 @@ export function configFrom(env: Env): { graph: LocalOptions; edge: EdgeOptions; 
   const edge: EdgeOptions = {
     token: config.token, origins: config.origins, limit: config.limit, trustProxy: config.trustProxy, staffNetworks: config.staffNetworks, events: config.events, textCodes: config.textCodes,
     ...(config.reviewers && { reviewers: config.reviewers }),
+    ...(config.serviceTokens && { serviceTokens: config.serviceTokens }),
     ...(config.cookie && { cookie: config.cookie }),
     ...(twilio && { twilio: { authToken: twilio.authToken, ...(config.twilio && { calls: config.twilio.url }), ...(config.twilioTexts && { texts: config.twilioTexts.url }) } }),
     ...(config.fingerprint && { fingerprint: config.fingerprint }),

@@ -17,10 +17,15 @@ import type { MaxMindOptions } from '../providers/maxmind.ts'
 import { createHandler, networks, reviewerProblems } from './server.ts'
 import type { Core, HandlerOptions, Reviewers } from './server.ts'
 
+import { serviceTokenProblems } from './tokens.ts'
+import type { ServiceToken } from './tokens.ts'
+export type { ServiceToken } from './tokens.ts'
+
 export interface EdgeOptions {
   /** The bearer token your own services send. It opens the six calls. */
   token: string
   reviewers?: Reviewers
+  serviceTokens?: readonly ServiceToken[]
   /** Site origins a browser may post from, such as `https://example.org`. */
   origins?: readonly string[]
   trustProxy?: boolean | number
@@ -43,8 +48,9 @@ export type Edge = ((request: IncomingMessage, response: ServerResponse) => Prom
 
 function problems(options: EdgeOptions): string[] {
   const wrong: string[] = []
-  if (typeof options?.token !== 'string' || !options.token) wrong.push('`token` is required')
+  if (typeof options?.token !== 'string' || !options.token.trim()) wrong.push('`token` is required')
   else wrong.push(...reviewerProblems(options.reviewers, options.token))
+  wrong.push(...serviceTokenProblems(options?.serviceTokens, options?.reviewers, options?.token))
   try {
     networks(options?.staffNetworks ?? [])
   } catch (error) {
@@ -119,6 +125,7 @@ export function createEdge(graph: AccountGraph, options: EdgeOptions): Edge {
     const { pool, calls } = engine.options
     const handler: HandlerOptions = {
       token: options.token,
+      ...(options.serviceTokens && { serviceTokens: options.serviceTokens }),
       origins: (options.origins ?? []).map((origin) => origin.replace(/\/$/, '')),
       ...(options.reviewers && { reviewers: options.reviewers }),
       ...(options.trustProxy !== undefined && { trustProxy: options.trustProxy }),

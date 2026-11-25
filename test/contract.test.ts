@@ -10,6 +10,7 @@ import { createEdge } from '../src/edge/index.ts'
 import { FAULT_CODES, accountGraph, hasCode, isFault } from '../src/index.ts'
 import type { AccountGraph, DecideRequest, LocalOptions, RecordEntry, RecordResult } from '../src/index.ts'
 import { accountGraph as remoteOnly } from '../src/remote.ts'
+import { tokenRoutes } from './tokens.suite.ts'
 import { runWorkers } from '../src/testing/index.ts'
 
 const AT = 1_790_000_000_000
@@ -68,6 +69,17 @@ function everywhere(name: string, work: (opened: Opened) => Promise<unknown>) {
       }
     })
   }
+}
+
+for (const [kind, open] of Object.entries({ memory, ...(url && { postgres }) })) {
+  test(`service tokens open only the listed calls and kinds, ${kind}`, async () => {
+    const opened = await open({ phones: { pool: { numbers: ['+12025550124'], minutes: 10, graceMinutes: 5 } } })
+    try {
+      await tokenRoutes(opened.local)
+    } finally {
+      await opened.close()
+    }
+  })
 }
 
 const one = async (graph: AccountGraph, entry: RecordEntry): Promise<RecordResult> => (await graph.record({ entries: [entry] })).results[0]!

@@ -5,7 +5,7 @@ import { STATUS, asFault, faultBody } from '../client/faults.ts'
 import type { Service } from '../core/service.ts'
 import type { Call } from '../core/calls.ts'
 import type { Text } from '../core/texts.ts'
-import { randomUUID, timingSafeEqual } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { BlockList, isIP } from 'node:net'
 import { callState, dialed, followUp, numberOrSelf } from '../core/calls.ts'
@@ -33,8 +33,9 @@ import { browserScripts, scriptHeaders } from './tag.ts'
 import { TOUCH_FIELDS } from '../core/touch.ts'
 import type { Change, Deciding, Identifier, Level, Observation, Subject, Touch } from '../contract/types.ts'
 
-/** Each reviewer's name, and the token or tokens that are theirs. */
-export type Reviewers = Readonly<Record<string, string | readonly string[]>>
+import { credentials, limitedCall, serviceTokenProblems } from './tokens.ts'
+import type { Reviewers, ServiceToken } from './tokens.ts'
+export type { Reviewers } from './tokens.ts'
 
 /** What the edge is made on: the graph behind it, and what it is told of calls, texts and deletions. */
 export interface Core {
@@ -72,6 +73,7 @@ export interface HandlerOptions {
    * consent, or conversions.
    */
   reviewers?: Reviewers
+  serviceTokens?: readonly ServiceToken[]
   /** Site origins allowed to post to `/collect`, such as `https://example.org`. */
   origins: readonly string[]
   /**
@@ -195,24 +197,13 @@ class Refusal extends Error {
 export function createHandler(core: Core, options: HandlerOptions) {
   const { graph, service } = core
   const now = options.now ?? Date.now
-  const token = Buffer.from(options.token)
-
-  const [problem] = reviewerProblems(options.reviewers, options.token)
+  if (typeof options.token !== 'string' || !options.token.trim()) throw malformed('`token` is required')
+  const [problem] = [...reviewerProblems(options.reviewers, options.token), ...serviceTokenProblems(options.serviceTokens, options.reviewers, options.token)]
   if (problem) throw malformed(problem)
-  const reviewers = Object.entries(options.reviewers ?? {}).flatMap(([name, tokens]) => [tokens].flat().map((each) => ({ name, token: Buffer.from(each) })))
-  const matches = (sent: Buffer, expected: Buffer) => sent.length === expected.length && timingSafeEqual(sent, expected)
-
-  const sentToken = (request: IncomingMessage) => Buffer.from(request.headers.authorization?.replace(/^Bearer /, '') ?? '')
-  /** The reviewer a request's token belongs to. Every token is compared, so how long it takes says nothing of which. */
-  const reviewerOf = (request: IncomingMessage): string | undefined => {
-    const sent = sentToken(request)
-    return reviewers.filter((each) => matches(sent, each.token))[0]?.name
-  }
-
-  const isService = (request: IncomingMessage) => matches(sentToken(request), token)
-  /** Refuses the request unless it carries the service token or a reviewer's. */
-  const authorize = (request: IncomingMessage) => {
-    if (!isService(request) && reviewerOf(request) === undefined) throw new Refusal(401, 'Missing or invalid token')
+  const ownerOf = credentials(options.token, options.reviewers, options.serviceTokens)
+  const reviewerOf = (request: IncomingMessage) => {
+    const owner = ownerOf(request.headers.authorization)
+    return owner?.role === 'reviewer' ? owner.name : undefined
   }
 
   /** Who one decision is by, why, and what they had seen. A reviewer's name is the one their token belongs to, whatever the body says. */
@@ -618,8 +609,12 @@ export function createHandler(core: Core, options: HandlerOptions) {
     try {
       if (!core.v1 || !(CALLS as string[]).includes(name)) throw new Refusal(404, 'No such call')
       if (request.method !== 'POST') throw new Refusal(405, 'Use POST')
-      const reviewer = reviewerOf(request)
-      if (!isService(request) && reviewer === undefined) throw fault(FAULT_CODES.AUTH.REJECTED, 'Missing or invalid token')
+      const owner = ownerOf(request.headers.authorization)
+      if (!owner) throw fault(FAULT_CODES.AUTH.REJECTED, 'Missing or invalid token')
+      if (owner.role === 'limited') {
+        console.info(`service ${owner.name} requested ${name}`)
+        if (owner.calls[name as CallName] === undefined) throw fault(FAULT_CODES.AUTH.FORBIDDEN, 'The token does not open this call')
+      }
       const given = await text(request)
       let body: any
       try {
@@ -627,14 +622,16 @@ export function createHandler(core: Core, options: HandlerOptions) {
       } catch (error) {
         throw malformed((error as Error).message)
       }
-      if (!isService(request)) {
+      if (owner.role === 'reviewer') {
+        const reviewer = owner.name
         const party = name === 'record' && Array.isArray(body?.entries) && body.entries.length > 0 && body.entries.every((entry: any) => entry?.type === 'call_update' && entry.change?.kind === 'party' && entry.change.by === reviewer)
         const opens = party || name === 'report' || ((name === 'decide' || name === 'forget') && body?.by === reviewer) || (name === 'lookup' && (body?.kind === 'journey' || body?.kind === 'find' || body?.kind === 'party'))
         if (!opens) throw fault(FAULT_CODES.AUTH.FORBIDDEN, name === 'decide' || name === 'forget' ? '`by` must match the owner of the token' : 'The token does not open this call')
       }
-      const said = await core.v1(name as CallName, body, gone.signal)
+      const dispatch = (input: unknown) => core.v1!(name as CallName, input, gone.signal)
+      const said = owner.role === 'limited' ? await limitedCall(owner, name as CallName, body, dispatch) : await dispatch(body)
       // No journey says whom a call was not with, so a reviewer is not told it here.
-      if (!isService(request) && name === 'lookup' && body?.kind === 'party' && (said as any)?.role === 'excluded') {
+      if (owner.role === 'reviewer' && name === 'lookup' && body?.kind === 'party' && (said as any)?.role === 'excluded') {
         const { subject: _, ...shown } = said as any
         return answer(200, shown)
       }
@@ -742,7 +739,9 @@ export function createHandler(core: Core, options: HandlerOptions) {
 
     if (!url.pathname.startsWith('/review/api/')) throw new Refusal(404, 'No such route')
     path = `${request.method} ${url.pathname.slice('/review/api'.length)}`
-    authorize(request)
+    const owner = ownerOf(request.headers.authorization)
+    if (!owner) throw new Refusal(401, 'Missing or invalid token')
+    if (owner.role === 'limited') throw new Refusal(403, 'The token does not open this route')
     storable([...url.searchParams.values()])
     const subject = url.searchParams.get('subject') ?? ''
     if (remember && SLOW_ROUTES.has(path)) return remembered(url, response, () => route(request, response, false))
