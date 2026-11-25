@@ -73,7 +73,7 @@ The story runs from a Monday to a Thursday that have passed. Each scene moves th
 ## Limitations
 
 - **Scores.** A percentage on screen is a score from the sample policy's weights, not a measured accuracy.
-- **Scale.** The demo has a few hundred people. See [Performance](performance.md) for measured speeds.
+- **Scale.** The demo has a few hundred people. See [Performance](operations.md#performance) for measured speeds.
 - **Clock.** Scene 21 moves the clock forward fourteen hours. Run it last.
 - **Repeats.** Each scene runs once. Press R to start over.
 - **Firm systems.** Call answering, scheduling, texts, forms, signing and card payment belong to a firm's own systems. The demo shows made-up screens for them, and makes the requests such systems would, with each text as a `text` entry. No live text, card payment or ad platform is used.

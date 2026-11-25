@@ -201,7 +201,7 @@ Both platforms also report conversion counts. Set `GOOGLE_ADS_CONVERSIONS=true`,
 
 The setup steps come from each provider's pages, read in November 2026.
 
-- Each provider's endpoint has rejected an invalid key as this code expects. Live credentials are untested, including for the two cost readers.
+- The endpoints of Fingerprint, MaxMind, Google (token service, Data Manager, Ads reporting), Meta (conversions and cost reports), Microsoft (Advertising and token service), TikTok, Twilio Lookup and Smarty each rejected an invalid key as this code expects. Live credentials are untested, including for the two cost readers.
 - Fingerprint: the pages read do not state the limits of the free plan.
 - Fingerprint: the two browser loaders are untested.
 - MaxMind: the pages read do not state where the portal shows the account ID.
