@@ -454,7 +454,42 @@ Three looks at 20270501-08 were made, and reviews between them changed the code.
 
 No mark was moved, and no rate was changed. A run of the held seeds was begun at `f643cf3` and stopped when a review found the first of these. It had printed its first line and no figure, and is not counted. [All that look 3 printed](accuracy-fourth-dev.txt).
 
-The code of the held seeds is the commit that the output names.
+The code of the held seeds is `b96207d`, with Node v22.23.0. It has one change that no look saw, the last of look 3's row.
+
+### Results of the fourth run
+
+The held seeds 20270601-20, once, at `b96207d`, in all five settings and arms. **Three of the 48 marks came out bad.**
+
+| Written as bad | Came out |
+| --- | --- |
+| staff4, `staffed records`: fewer than 90% credited of those with a chain | **Bad.** 4,684 of 5,228 (89.59%), and 90.47% without `records` |
+| high3, `records`: more than a point fewer credited than without `records` | **Bad.** 6,224 of 7,056 (88.21%) against 89.33%. The 85% held |
+| high3, `staffed records`: fewer than 65% of the pairs of one person joined or shown | **Bad.** 2,275 of 3,569 (63.74%) |
+| Every other mark | Held |
+
+| Setting, arm | Records with another's | Joined pairs of records that are two people | Pairs of one person: joined; joined or shown | Shown, and of them one person | Credit: to the wrong ad; with a chain, to it |
+| --- | --- | --- | --- | --- | --- |
+| self4, `default` | 3.80% | 12.37% | 89.00%; 89.00% | | 1.50%; 97.81% |
+| self4, `new` | 0.66% | 1.86% | 91.46%; 91.46% | | 1.05%; 98.12% |
+| self4, `records` | **0.02%** | 0.07% | 62.79%; 90.87% | 663, 92.76% | 1.05%; 97.66% |
+| staff4, `default` | 2.56% | 13.74% | 64.62%; 64.62% | | 1.78%; 88.56% |
+| staff4, `staffed` | 1.86% | 7.96% | 78.56%; 78.56% | | 1.62%; 90.47% |
+| staff4, `staffed records` | **0.07%** | 0.62% | 57.68%; 78.13% | 319, 89.66% | 1.46%; 89.59% |
+| base3, `new` | 0.62% | 2.39% | 84.92%; 84.92% | | 1.92%; 94.15% |
+| base3, `records` | **0.04%** | 0.18% | 58.24%; 84.04% | 532, 93.23% | 1.91%; 93.86% |
+| base3, `staffed records` | **0.02%** | 0.09% | 57.36%; 82.22% | 515, 92.82% | 1.85%; 93.58% |
+| high3, `new` | 1.46% | 4.72% | 69.04%; 69.04% | | 3.30%; 89.33% |
+| high3, `records` | **0.18%** | 1.05% | 39.73%; 67.81% | 1,126, 88.99% | 3.26%; 88.21% |
+| high3, `staffed records` | **0.18%** | 1.07% | 38.75%; 63.74% | 1,013, 88.06% | 3.19%; 87.09% |
+| base, `new` | 1.93% | 10.68% | 81.34%; 81.34% | | 1.42%; 94.38% |
+| base, `records` | **0.02%** | 0.15% | 66.80%; 81.34% | 241, 60.17% | 1.45%; 93.91% |
+| base, `staffed records` | **0.02%** | 0.15% | 66.70%; 78.13% | 209, 54.55% | 1.55%; 94.70% |
+
+**The price is joins that somebody has to make.** In self4 91.46% of the pairs of records that are one person are joined by themselves under `new`, and 62.79% under `records`. Most of the rest are shown: 663 pairs over 20 worlds of 2,000 people, of which nine in ten are one person. Until somebody joins them, that person's history is in two.
+
+Each safety the reviews added took some of these joins: 76.24% in base3 at the first look, 58.24% here. The marks ask for joined or shown, so they do not see it.
+
+All that was printed is in [accuracy-fourth-held.txt](accuracy-fourth-held.txt). The worlds and the rules are by one author's hands, the marks were set after looks, and nobody here is real.
 
 ## Limitations
 
