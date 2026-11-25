@@ -1883,3 +1883,30 @@ test('payments, several people and a whole person to delete are taken in one req
     server.close()
   }
 })
+
+test('what a form was filled in with for want of anything is nobody\'s, and the record stands', async () => {
+  const graph = createGraph(createMemoryStore())
+  const server = createServer(createHandler(graph, { token: 'service', origins: [] })).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const post = async (path: string, body: object) => {
+    const response = await fetch(`${base}${path}`, { method: 'POST', headers: { authorization: 'Bearer service' }, body: JSON.stringify(body) })
+    return { status: response.status, body: (await response.json()) as any }
+  }
+  try {
+    for (const [i, told] of [{ phone: '555-555-5555' }, { phone: '(123) 456-7890', email: 'none@example.org' }, { email: 'info@firm.example.org', phone: '+15550100142' }].entries()) {
+      for (const n of [1, 2]) {
+        const { status, body } = await post('/identify', { subject: `contact:${i}${n}`, ...told, ...(told.phone === '+15550100142' && { phone: `+1555010014${n}` }) })
+        assert.equal(status, 200)
+        assert.match(Object.values(body.notes).join(' '), /not used/)
+      }
+      assert.equal((await graph.cluster(`contact:${i}1`))?.members.length ?? 1, 1, JSON.stringify(told))
+    }
+    // An office's name at a public mail domain is a person's, and a number near a placeholder is one.
+    for (const told of [{ email: 'info@gmail.com' }, { phone: '+15550100143' }]) assert.deepEqual((await post('/identify', { subject: 'contact:9', ...told })).body.notes, {})
+    assert.equal((await post('/identify', { subject: 'contact:9' })).status, 400)
+    assert.equal((await post('/match', { phone: '555-555-5555' })).status, 400)
+  } finally {
+    server.close()
+  }
+})

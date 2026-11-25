@@ -16,6 +16,7 @@ import { fromTwilio, twilioCall, twilioText } from './integrations/twilio.ts'
 import type { LineTypeLookup } from './integrations/twilio.ts'
 import { asks, beginnings, codeNote, recordText, replyTo, textCode, texted } from './texts.ts'
 import type { TextOptions } from './texts.ts'
+import { fakePhone, placeholderEmail, sharedMailbox } from './lookups.ts'
 import { givenKeys, namedKeys } from './names.ts'
 import type { IpLookup } from './integrations/maxmind.ts'
 import type { Ops } from './ops.ts'
@@ -145,6 +146,9 @@ export interface HandlerOptions {
 }
 
 const ID = /^[\w.-]{1,128}$/
+const PLACEHOLDER = 'a placeholder: not used'
+/** Why an email is nobody's, or undefined where it may be somebody's. */
+const nobodysEmail = (text: string) => (placeholderEmail(text) ? PLACEHOLDER : sharedMailbox(text) ? 'read by several: not used' : undefined)
 const NAME = /^[\w.-]{1,64}$/
 
 /** What a reviewer's token opens: what the reviewer screen reads, and the decisions a reviewer makes. */
@@ -593,7 +597,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       subjects.push({ subject: before ?? known[0] ?? `visitor:${device}`, identifiers: [ofDevice] })
     }
     if (ofPhone) subjects.push({ subject: `caller:${hashPhone(phone, options.calls?.country)}`, identifiers: [ofPhone] })
-    if (typeof address === 'string' && address) {
+    if (typeof address === 'string' && address && !nobodysEmail(address)) {
       theirs.push(email(address))
       subjects.at(-1)?.identifiers.push(email(address))
     }
@@ -609,13 +613,18 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       if (typeof body.device !== 'string' || !ID.test(body.device)) throw new Refusal(400, 'The device id is malformed')
       identifiers.push(identifier('device', body.device))
     }
-    if (typeof body.email === 'string' && body.email) identifiers.push(email(body.email))
+    // What a form was filled in with for want of anything, and what an office reads together, is nobody's.
+    const nobodys = typeof body.email === 'string' ? nobodysEmail(body.email) : undefined
+    if (nobodys) notes.email = nobodys
+    else if (typeof body.email === 'string' && body.email) identifiers.push(email(body.email))
     if (typeof body.ip === 'string' && body.ip) identifiers.push(ip(body.ip))
     if (typeof body.phone === 'string' && body.phone) {
       const number = normalizePhone(body.phone, options.calls?.country)
+      const made = fakePhone(number)
+      if (made === 'repeated' || made === 'counted') notes.phone = PLACEHOLDER
       // A lookup that is down must not lose the sighting: the number is kept as a plain phone.
-      const line = lineOf && saving ? ((await lineOf(number).catch((error) => void console.error(error))) ?? undefined) : undefined
-      const found = phoneOfType(number, line?.type)
+      const line = lineOf && saving && !notes.phone ? ((await lineOf(number).catch((error) => void console.error(error))) ?? undefined) : undefined
+      const found = notes.phone ? undefined : phoneOfType(number, line?.type)
       if (found) identifiers.push(found)
       // Unlooked at, it is whichever of the two kinds it was saved as.
       if (found && !saving) identifiers.push(identifier('voip', hashPhone(number)))
@@ -659,7 +668,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     const apart = options.identifierSecret && (typeof body.dob === 'string' || typeof body.name?.first === 'string') ? ((await graph.policy()).rules.apart ?? []) : []
     const born = apart.length > 0 && typeof body.dob === 'string' ? birthKeys(options.identifierSecret!, body.dob) : []
     const facts = [...born, ...(apart.includes('given') && typeof body.name?.first === 'string' ? givenKeys(options.identifierSecret!, body.name.first) : [])]
-    if (identifiers.length === 0 && !(saving && (facts.length > 0 || none))) throw new Refusal(400, 'At least one identifying field is required')
+    if (identifiers.length === 0 && !(saving && (facts.length > 0 || none || notes.phone === PLACEHOLDER || notes.email !== undefined))) throw new Refusal(400, 'At least one identifying field is required')
     identifiers.push(...facts)
     return { identifiers, notes, at: (body.at ?? now()) as number }
   }

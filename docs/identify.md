@@ -47,6 +47,9 @@ The email, number, address, name and date of birth are stored only as hashes.
 | Finding | `notes` value | Effect |
 | --- | --- | --- |
 | A mobile or landline | `"phone": "mobile"` | Kept as `phone`, 0.9. |
+| A number of one digit, or a count such as 1234567890 | `"phone": "a placeholder: not used"` | Dropped. The record is kept. |
+| An email made up to fill a field, such as `none@`, or at `test.com` | `"email": "a placeholder: not used"` | Dropped. |
+| An office's email, such as `info@` or `office@`, at no public mail domain | `"email": "read by several: not used"` | Dropped, because several people are behind it. |
 | A number from an internet calling app | `"phone": "nonFixedVoip"` | Kept as `voip`, 0.5: related without joining. |
 | A toll-free or premium line | `"phone": "tollFree: not used"` | Dropped. |
 | An address confirmed to the door | `"address": "confirmed"` | Kept as `address`, 0.6. |
