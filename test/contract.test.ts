@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net'
 import { after, test } from 'node:test'
 import pg from 'pg'
 import { internalsOf } from '../src/client/internals.ts'
+import { hashPhone } from '../src/core/identifiers.ts'
 import { codeNote } from '../tools/internals.ts'
 import { createEdge } from '../src/edge/index.ts'
 import { FAULT_CODES, accountGraph, hasCode, isFault } from '../src/index.ts'
@@ -272,6 +273,63 @@ everywhere('decisions: stale, reused, not joined, and not as asked', async ({ gr
   ]
   assert.deepEqual(out.map((each) => (each.ok ? [each.value.duplicate, each.value.recorded, each.value.notAsAsked.length] : each.reason)), [[false, 1, 0], [true, 0, 0], 'KEY_REUSED', 'STALE', 'NOT_JOINED', [false, 1, 0], [false, 1, 1], [false, 1, 0], [false, 2, 0], [false, 1, 0], [true, 0, 0], [false, 1, 0]])
   return out.map((each) => ('at' in each ? { ...each, at: 0 } : each))
+})
+
+everywhere('a replayed pair decision says whether it still stands for every pair', async ({ graph }) => {
+  const results = []
+  for (const [action, undo] of [['split', 'unsplit'], ['merge', 'unmerge']] as const) {
+    const pair = { a: action + '-a', b: action + '-b' }
+    const first = { key: action, action, at: AT, by: 'dana', pairs: [pair, { a: action + '-c', b: action + '-d' }] }
+    const inverse = { ...first, key: undo, action: undo, pairs: [{ a: pair.b, b: pair.a }] }
+    const again = { ...first, key: action + '-again', pairs: [pair] }
+    const answers = []
+    for (const entry of [first, first, inverse, first, inverse, again, inverse, first]) {
+      const answer = await graph.decide(entry)
+      assert.ok(answer.ok)
+      if (answer.value.duplicate) {
+        assert.deepEqual(answer.value.changes, [])
+        assert.equal(answer.value.recorded, 0)
+        answers.push([answer.value.stands, answer.value.notAsAsked.map(({ a, b }) => [a, b])])
+      } else assert.equal('stands' in answer.value, false)
+    }
+    const moved = action === 'merge'
+    assert.deepEqual(answers, [[true, []], [false, moved ? [[pair.a, pair.b]] : []], [true, []], [false, moved ? [[pair.b, pair.a]] : []], [true, []]], action)
+    results.push(answers)
+  }
+  return results
+})
+
+everywhere('a replayed merge or unmerge can stand while the two are in different clusters than asked', async ({ graph }) => {
+  const a = 'contact:a'
+  const b = 'contact:b'
+  await graph.record({ entries: [a, b].map(subject => ({ type: 'profile', key: subject, at: AT, subject, facts: { identifiers: ['passkey:shared'] } })) })
+  const answers = []
+  for (const action of ['split', 'merge', 'merge', 'unsplit', 'unmerge', 'unmerge', 'merge'] as const) {
+    const answer = await graph.decide({ key: action, action, at: AT, by: 'dana', pairs: [{ a, b }] })
+    assert.ok(answer.ok)
+    if (answer.value.duplicate) answers.push([answer.value.stands, answer.value.notAsAsked.map(pair => pair.because)])
+  }
+  assert.deepEqual(answers, [[true, ['split']], [true, ['evidence']], [false, []]])
+  return answers
+})
+
+everywhere('a replayed phone mute or unmute checks both kinds of line', async ({ graph }) => {
+  const phone = '+12025550110'
+  const mute = { key: 'mute', at: AT, by: 'dana', action: 'mute', fact: { phone } } as const
+  const unmute = { ...mute, key: 'unmute', action: 'unmute' } as const
+  const voip = { identifier: `voip:${hashPhone(phone)}` }
+  const answers = []
+  for (const entry of [mute, mute, { ...unmute, key: 'restore-voip', fact: voip }, mute, unmute, unmute, { ...mute, key: 'mute-voip', fact: voip }, unmute]) {
+    const answer = await graph.decide(entry)
+    assert.ok(answer.ok)
+    if (answer.value.duplicate) {
+      assert.deepEqual(answer.value.changes, [])
+      assert.equal(answer.value.recorded, 0)
+      answers.push(answer.value.stands)
+    } else assert.equal('stands' in answer.value, false)
+  }
+  assert.deepEqual(answers, [true, false, true, false])
+  return answers
 })
 
 everywhere('whoever is forgotten stays forgotten, and what was forgotten can be asked again', async ({ graph, local, schema }) => {

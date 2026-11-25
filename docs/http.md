@@ -259,8 +259,15 @@ POST /v1/decide
 | Answer | Meaning |
 | --- | --- |
 | `recorded` | How many were decided |
-| `already` | How many already stood that way |
+| `already` | How many already stood that way on a first request. On a replay this counts previously processed items. |
 | `notAsAsked` | Pairs that are not as asked afterwards: `{ a, b, because }` |
+| `stands` | On a duplicate, whether the requested decision still holds for every pair or fact |
+
+A replay writes nothing. Read `stands` first. It checks the explicit separation for `split` and its absence for `unsplit`, the merge for `merge` and its absence for `unmerge`, and the mute setting on each applicable identifier for `mute` and `unmute`. A later decision that restores the requested state makes `stands` true again.
+
+Use the reasons in `notAsAsked` on a first answer or a replay with `stands: true`. They describe a merge that leaves the pair apart or an unmerge that leaves them together. On a replay with `stands: false`, the cluster result alone cannot tell you which decision changed.
+
+To load opposing parties, use the `conflicts` lookup with both subject IDs. A row for that exact pair with `how: "recorded"` means the pair is explicitly separated now. See [asking about conflicts](matching.md#asking-about-conflicts).
 
 | `because` in `notAsAsked` | Meaning |
 | --- | --- |

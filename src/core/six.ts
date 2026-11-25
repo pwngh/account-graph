@@ -414,15 +414,22 @@ export function createSix(engine: Engine, options: SixOptions) {
         if (fields && fields.length > 0) return no({ reason: 'KEY_REUSED' as const, fields })
         let recorded = 0
         let already = 0
+        let stands = true
         let notAsAsked: DecideValue['notAsAsked'] = []
         if ('pairs' in request) {
           const { action, pairs } = request
           if (!before) {
             const told = pairs.map(({ a, b, reason }) => ({ a, b, ...(reason !== undefined && { reason }), ...(action === 'unsplit' && { separated: false }) }))
             const done = await (action === 'merge' ? graph.joinAll(told, why(request)) : action === 'unmerge' ? graph.unjoinAll(told, why(request)) : graph.separateAll(told, why(request)))
-            ;({ recorded, already } = done)
+            recorded = done.recorded
+            already = done.already
           } else already = pairs.length
           const standing = await graph.standingOf(pairs.map(({ a, b }) => [a, b]))
+          if (before) {
+            stands = action === 'merge' || action === 'unmerge'
+              ? standing.every(({ joined }) => joined === (action === 'merge'))
+              : standing.every(({ apart }) => apart === (action === 'split'))
+          }
           notAsAsked = pairs.flatMap(({ a, b }, i): DecideValue['notAsAsked'] => {
             const { together } = standing[i]!
             if (action === 'merge' && !together) return [{ a, b, because: 'split' }]
@@ -435,18 +442,24 @@ export function createSix(engine: Engine, options: SixOptions) {
           }
           if (!before) await tx.addReceipt(receipts.make(entry, now()), [...new Set(pairs.flatMap(({ a, b }) => [a, b]))])
         } else {
-          for (const each of before ? [] : identifiers) {
-            // A phone is one of two kinds, and a policy may name only one.
-            if (identifiers.length > 1 && !Object.hasOwn(engine.policy.kinds, each.slice(0, each.indexOf(':')))) continue
-            const decisions = (await tx.lastDecision())?.seq
-            await graph.ignore(each, request.action === 'mute', why(request))
-            if ((await tx.lastDecision())?.seq === decisions) already += 1
-            else recorded += 1
+          // A phone is one of two kinds, and a policy may name only one.
+          const applicable = identifiers.filter(each => identifiers.length === 1 || Object.hasOwn(engine.policy.kinds, each.slice(0, each.indexOf(':'))))
+          const ignored = request.action === 'mute'
+          if (before) {
+            const states = await tx.states(applicable)
+            stands = applicable.every(each => (states.get(each)?.ignored ?? false) === ignored)
+            already = identifiers.length
+          } else {
+            for (const each of applicable) {
+              const decisions = (await tx.lastDecision())?.seq
+              await graph.ignore(each, ignored, why(request))
+              if ((await tx.lastDecision())?.seq === decisions) already += 1
+              else recorded += 1
+            }
+            await tx.addReceipt(receipts.make(entry, now()), [])
           }
-          if (before) already = identifiers.length
-          else await tx.addReceipt(receipts.make(entry, now()), [])
         }
-        return ok({ duplicate: before !== undefined, changes: before ? [] : changes, recorded, already, notAsAsked })
+        return ok({ duplicate: before !== undefined, ...(before && { stands }), changes: before ? [] : changes, recorded, already, notAsAsked })
       })
     } catch (error) {
       if (error instanceof Outdated) return stale(error)

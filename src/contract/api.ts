@@ -284,10 +284,12 @@ export type DecideRequest = Deciding &
   )
 export interface DecideValue {
   readonly duplicate: boolean
+  /** On a replay, whether the requested merge, separation or mute state still holds for every pair or fact. */
+  readonly stands?: boolean
   readonly changes: readonly Change[]
   readonly recorded: number
   readonly already: number
-  /** Pairs not as asked afterwards: a merge a split holds apart, or an unmerge that other evidence still joins. Use `split` to keep those apart. */
+  /** Pairs not as asked afterwards: a merge a split holds apart, or an unmerge that other evidence still joins. On a replay check `stands` first. */
   readonly notAsAsked: readonly { readonly a: string; readonly b: string; readonly because: 'split' | 'evidence' | 'other_merges' }[]
 }
 export type DecideRefusal =
