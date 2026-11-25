@@ -468,6 +468,7 @@ A partially set group stops the server at startup, with a message naming the mis
 | `POOL_NUMBERS` | none | Numbers shown to one visitor at a time, separated by commas. Off by default. |
 | `POOL_MINUTES` | `15` | Minutes a visitor keeps a number after their page last requested it. |
 | `POOL_GRACE_MINUTES` | `120` | Minutes after that in which a call still counts as theirs, if the number has not been reassigned. |
+| `POOL_REQUIRE_TAP_AFTER_REASSIGNMENT` | `false` | With `true`, a caller with no tie to a visitor needs a tap or a code once different visitors have held the number. |
 | `OPEN_HOURS` | none | Opening hours, as JSON. See [opening hours](#opening-hours). |
 
 ### Outbox, webhook and alerts

@@ -135,6 +135,8 @@ export interface Graph {
   observe(input: Observation | readonly Observation[]): Promise<Change[]>
   /** Every subject linked to this one, strongest first, with the reasons. Computed from edges on each call. */
   links(subject: Subject): Promise<Link[]>
+  /** Whether any of these subjects speaks for a member of the person's cluster. */
+  spokenForBy(person: Subject, speakers: ReadonlySet<Subject>): Promise<boolean>
   /** Every subject seen with any of the given identifiers, with when: who else has this fingerprint, who tapped this number. */
   holders(identifiers: readonly Identifier[]): Promise<Edge[]>
   /** The cluster a subject belongs to, or undefined for a subject never observed. */
@@ -1227,6 +1229,17 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return store.read(async (tx) => (await neighbors(tx, [subject])).get(subject) ?? [])
     },
 
+    spokenForBy(person, speakers) {
+      return store.read(async (tx) => {
+        const home = (await tx.labelsOf([person])).get(person)
+        const members = home ? await tx.clusterOf(home.cluster) : [person]
+        for (const links of (await neighbors(tx, members)).values()) {
+          if (links.some((link) => speakers.has(link.subject) && link.level !== 'same' && link.reasons.some((reason) => reason.identifier.startsWith('behalf:')))) return true
+        }
+        return false
+      })
+    },
+
     async match(identifiers, { at = now(), limit = 20 } = {}) {
       const given = unique(identifiers)
       for (const each of given) ruleFor(policy, each)
@@ -1621,13 +1634,25 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const theirs = new Set(held.filter((edge) => edge.subject !== who.subject && edge.identifier.startsWith('device:')).map((edge) => edge.identifier))
         identifiers = who.identifiers.filter((each) => !theirs.has(each))
         const own = edges.filter((edge) => edge.subject === who.subject).map((edge) => edge.identifier).sort()
+        const devices = by.map((each) => each.subject.startsWith('visitor:') ? each.identifiers.filter((identifier) => identifier.startsWith('device:')) : [])
+        const heldDevices = unique(devices.flat())
+        const states = await tx.states([...own, ...heldDevices])
+        const browsers = own.length ? await tx.edgesOn(heldDevices) : []
+        const spoken = (browsers.length ? await tx.edgesOn(own) : edges).filter((edge) => edge.subject !== who.subject && own.includes(edge.identifier)).sort((a, b) => a.identifier < b.identifier ? -1 : a.identifier > b.identifier ? 1 : 0)
+        const marked: { subject: Subject; identifiers: Identifier[] }[] = []
         // Said again, it is the mark there is, muted or not. It names nobody, so a forgotten id leaves no trace.
         for (const [i, each] of by.entries()) {
-          const before = by.findIndex((other) => other.subject === each.subject)
-          marks.push(before < i ? marks[before]! : (own.find((mark) => edges.some((edge) => edge.subject === each.subject && edge.identifier === mark)) ?? `behalf:${randomUUID()}`))
+          const aliases = browsers.filter((edge) => edge.subject.startsWith('visitor:') && devices[i]!.includes(edge.identifier))
+          const same = spoken.filter((edge) => edge.subject === each.subject || aliases.some((other) => other.subject === edge.subject && (states.get(edge.identifier)?.ignored || usable(policy, other.identifier, states.get(other.identifier)))))
+          const past = same.find((edge) => states.get(edge.identifier)?.ignored) ?? same.find((edge) => edge.subject === each.subject) ?? same[0]
+          const before = by.findIndex((other, j) => other.subject === each.subject || devices[i]!.some((device) => devices[j]!.includes(device)))
+          const mark = before < i ? marks[before]! : past?.identifier ?? `behalf:${randomUUID()}`
+          marks.push(mark)
+          // Keep both original holders. A third holder would thin the mark or put it over its cap.
+          if (before === i) marked.push({ subject: past?.subject ?? each.subject, identifiers: [mark] })
         }
         const recorded = now()
-        return record(tx, [{ ...who, identifiers: [...identifiers, ...marks] }, ...by.map((each, i) => ({ ...each, identifiers: [...each.identifiers, marks[i]!] }))].flatMap((each) => unique(each.identifiers).map((identifier) => ({ subject: each.subject, identifier, at, event, recorded }))))
+        return record(tx, [{ ...who, identifiers: [...identifiers, ...marks] }, ...by, ...marked].flatMap((each) => unique(each.identifiers).map((identifier) => ({ subject: each.subject, identifier, at, event, recorded }))))
       })
       return { marks, identifiers: [...identifiers, ...new Set(marks)], changes }
     },

@@ -888,6 +888,41 @@ test('the server takes page events and phone calls, and ties a call to the visit
   }
 })
 
+test('a personal link checks the whole recipient group in one read', async () => {
+  const store = createMemoryStore()
+  const clusters: string[] = []
+  const groups: string[][] = []
+  const graph = createGraph({ ...store, read: (work) => store.read((tx) => work({
+    ...tx,
+    clusterOf: (cluster) => {
+      clusters.push(cluster)
+      return tx.clusterOf(cluster)
+    },
+    shared: (subjects) => {
+      groups.push([...subjects].sort())
+      return tx.shared(subjects)
+    },
+  })) })
+  const records = Array.from({ length: 24 }, (_, n) => `contact:${String(n).padStart(2, '0')}`)
+  const recipient = records[0]!
+  await graph.joinAll(records.slice(1).map((other) => ({ a: recipient, b: other })), { by: 'desk' })
+  await graph.speak({ subject: records.at(-1)!, identifiers: [] }, [{ subject: 'visitor:desk', identifiers: ['device:desk'] }], T0)
+  const origin = 'https://site.example.org'
+  const secret = 'a secret for a signed personal link'
+  const known = new URL(knownLink(origin, recipient, { secret, now: () => T0 })).searchParams.get('ag')
+  const server = createServer(createHandler(graph, { token: 'service', origins: [origin], linkSecret: secret, now: () => T0 })).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  try {
+    const opened = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/collect`, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ device: 'desk', known }) })
+    assert.equal(opened.status, 204)
+    assert.ok((await graph.history('visitor:desk')).some(({ identifier }) => identifier === `opened:${recipient} (not tied)`))
+    assert.deepEqual(groups, [records])
+    assert.equal(clusters.filter((cluster) => cluster === 'visitor:desk').length, 1)
+  } finally {
+    server.close()
+  }
+})
+
 test('a link sent to one person ties the browser that opens it, and a visitor is carried between sites', async () => {
   const graph = createGraph(createMemoryStore())
   let clock = 1_800_000_000_000
@@ -1605,8 +1640,12 @@ test('/identify keeps whoever speaks for a subject apart from them', async (t) =
   const [stale] = (await identify({ subject: 'contact:niece', at: T0, speaker: { device: 'yy-0000-4000' } })).identifiers.filter((each: string) => each.startsWith('behalf:'))
   await graph.ignore(stale, true)
   await graph.observe({ subject: 'visitor:yy-0000-4000', identifiers: ['device:yy-0000-4000'], at: T0 })
-  await identify({ subject: 'contact:niece', at: T0, speaker: { device: 'yy-0000-4000' } })
-  assert.deepEqual((await graph.links('contact:niece')).map((link) => link.subject), ['visitor:yy-0000-4000'])
+  const exact = await identify({ subject: 'contact:niece', at: T0, speaker: { device: 'yy-0000-4000' } })
+  assert.deepEqual(exact.identifiers, [stale])
+  assert.deepEqual(await graph.links('contact:niece'), [])
+  assert.deepEqual((await graph.holders([stale])).map((edge) => edge.subject).sort(), ['contact:niece', 'visitor:old'])
+  await graph.ignore(stale, false)
+  assert.deepEqual((await graph.links('contact:niece')).map((link) => link.subject), ['visitor:old'])
   // Another that holds the id is taken while the id is evidence, and not once it is muted.
   await graph.observe({ subject: 'visitor:mm', identifiers: ['device:ww-0000-4000'], at: T0 })
   await graph.ignore('device:ww-0000-4000', true)

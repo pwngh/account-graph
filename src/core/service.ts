@@ -22,7 +22,7 @@ export interface ServiceOptions {
   stages?: Ladder
   calls?: CallOptions
   texts?: TextOptions
-  pool?: { numbers: readonly string[]; minutes: number; grace: number }
+  pool?: { numbers: readonly string[]; minutes: number; grace: number; requireTapAfterReassignment?: boolean }
   identifierSecret?: string
   address?: AddressVerifier
   lineType?: LineTypeLookup
@@ -50,7 +50,7 @@ export function createService(graph: Graph, options: ServiceOptions) {
     return {
       ...options.calls,
       ...(options.texts?.codeLife !== undefined && { codeLife: options.texts.codeLife }),
-      ...(pool.length > 0 && { pool: { numbers: pool, grace: options.pool!.grace * 60_000 } }),
+      ...(pool.length > 0 && { pool: { numbers: pool, grace: options.pool!.grace * 60_000, requireTapAfterReassignment: options.pool!.requireTapAfterReassignment === true } }),
       now,
       convert,
       count: (outcome) => graph.outcome(staged(outcome)),

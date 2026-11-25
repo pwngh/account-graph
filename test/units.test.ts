@@ -6,12 +6,14 @@ import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { birthKeys, components, conversionEvent, createAlerter, createGraph, createHours, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, hoursProblems, ingestRequest, ip, knownLink, ladderProblems, measure, meta, metaEvent, nameKeys, normalizeEmail, normalizePhone, phoneOfType, codeIn, policyFrom, policyHash, policyProblems, plainPolicy, readToken, scorePairs, signToken, sourceOf, textCode, withStage } from '../tools/internals.ts'
+import { birthKeys, components, conversionEvent, createAlerter, createGraph, createHours, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, hoursProblems, ingestRequest, ip, knownLink, ladderProblems, measure, meta, metaEvent, nameKeys, normalizeEmail, partition, normalizePhone, phoneOfType, codeIn, policyFrom, policyHash, policyProblems, plainPolicy, readToken, scorePairs, signToken, sourceOf, textCode, withStage } from '../tools/internals.ts'
 import { summarizeCalls } from '../src/core/callreport.ts'
 import { followed } from '../src/core/followed.ts'
 import type { Caller, Followed } from '../src/core/followed.ts'
 import { dayIn, paid } from '../src/core/report.ts'
 import { weigh } from '../src/core/policy.ts'
+import type { Known } from '../src/core/resolve.ts'
+import type { Pair } from '../src/contract/types.ts'
 import type { Edge, IdentifierState, KeptCall, Reason } from '../tools/internals.ts'
 import { signWebhook } from '../src/contract/webhook.ts'
 import { readEnvironment as configFrom } from '../src/bin.ts'
@@ -35,6 +37,38 @@ test('an IPv6 address keeps its /64 prefix and an IPv4 address stays whole', () 
   assert.equal(ip('2001:db8:85a3::8a2e:370:7334'), 'ip:2001:db8:85a3:0::/64')
   assert.equal(ip('::ffff:203.0.113.9'), 'ip:203.0.113.9')
   assert.equal(ip('203.0.113.9'), 'ip:203.0.113.9')
+})
+
+for (const [births, records] of [[2, 40], [100, 1]] as const) test(`birth cuts on a shared line skip pairs already apart (${births} by ${records})`, () => {
+  let reads = 0
+  const known = new class extends Map<string, Known> {
+    override get(subject: string) {
+      reads++
+      return super.get(subject)
+    }
+  }()
+  const line = 'caller:line'
+  known.set(line, { facts: new Map(), joins: new Set(), things: new Set() })
+  const links: Pair[] = []
+  const since = new Map<string, number>()
+  for (let birth = 0; birth < births; birth++) {
+    let before = line
+    for (let record = 0; record < records; record++) {
+      const subject = `record:${birth}-${record}`
+      const mark = `review:${subject}`
+      known.set(subject, { facts: new Map([['birth', new Set([`birth:${birth}`])]]), joins: new Set([mark]), things: new Set() })
+      known.get(before)!.joins.add(mark)
+      links.push({ a: before, b: subject, score: 1, level: 'same', reasons: [] })
+      since.set(subject, since.size + 1)
+      before = subject
+    }
+  }
+  reads = 0
+  const labels = partition(known.keys(), links, [], policyFrom({ apart: ['birth'] }), known, undefined, [], since)
+  assert.equal(new Set([...labels.values()].map(({ cluster }) => cluster)).size, births)
+  assert.equal(labels.get(line)!.cluster, labels.get('record:0-0')!.cluster)
+  // Count reads of facts instead of milliseconds: the machine running the suite does not set the limit.
+  assert.ok(reads < known.size ** 2, `${reads} reads of ${known.size} subjects' facts`)
 })
 
 test('scoring ignores the order of its input', () => {
@@ -871,6 +905,8 @@ test('IDENTIFIER_SECRET is checked', () => {
 test('the number pool is off until numbers are given, and its settings are checked', () => {
   const env = { DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', ALERT_WEBHOOK: 'https://hooks.example/x' }
   assert.deepEqual(configFrom(env).poolNumbers, [])
+  assert.equal(configFrom(env).poolRequireTapAfterReassignment, false)
+  assert.equal(configFrom({ ...env, POOL_REQUIRE_TAP_AFTER_REASSIGNMENT: 'true' }).poolRequireTapAfterReassignment, true)
   const { poolNumbers, poolMinutes, poolGrace } = configFrom({ ...env, POOL_NUMBERS: '+15550100001, (555) 010-0002', POOL_MINUTES: '20', POOL_GRACE_MINUTES: '0' })
   assert.deepEqual([poolNumbers, poolMinutes, poolGrace], [['+15550100001', '(555) 010-0002'], 20, 0])
   assert.deepEqual(configFrom({ ...env, CALL_EXCLUDE: '+15550100001, (555) 010-0002' }).callExclude, ['+15550100001', '(555) 010-0002'])

@@ -154,6 +154,30 @@ everywhere('an entry written another way is the same, and one changed anywhere t
   return (await graph.lookup({ kind: 'record', type: 'call', key: 'CA1', at: NOW }))
 })
 
+test('the pool option applies when a call rings and when it is recorded', async () => {
+  const to = '+15550100175'
+  const from = '+15550100176'
+  for (const options of [{}, { requireTapAfterReassignment: true }]) {
+    const { graph, local, close } = await memory({ phones: { pool: { numbers: [to], minutes: 15, graceMinutes: 120, ...options } } })
+    try {
+      const { engine } = await internalsOf(local)!()
+      for (const [subject, at] of [['visitor:past', AT - 86_400_000], ['visitor:present', AT]] as const) {
+        await one(graph, { type: 'profile', key: subject, subject, at, facts: { device: subject.slice('visitor:'.length) } })
+        await engine.graph.lease(subject, { numbers: [to], minutes: 15, at })
+      }
+      const at = AT + 60_000
+      const ring = await graph.lookup({ kind: 'caller', from, to, at })
+      const call = await one(graph, { type: 'call', key: 'saved', direction: 'inbound', from, to, at })
+      const expected = 'requireTapAfterReassignment' in options ? null : 'visitor:present'
+      assert.equal(ring.visitor, expected)
+      assert.ok(call.ok && call.type === 'call')
+      assert.equal(call.value.visitor ?? null, expected)
+    } finally {
+      await close()
+    }
+  }
+})
+
 everywhere('two that come at once are one', async ({ graph }) => {
   for (const entry of EVERY) {
     const results = await Promise.all([one(graph, entry), one(graph, entry), one(graph, entry)])
@@ -739,4 +763,70 @@ test('a call party written by another instance ends a cached report during its g
   await writer.record({ entries: [{ type: 'call_update', key: 'signed', at: NOW, call: 'line', change: { kind: 'party', role: 'self', by: 'desk', subject: 'record:1' } }] })
   await ask()
   assert.equal(runs, 2)
+})
+
+test('a forgotten profile never sends its phone or address to a check on retry', async () => {
+  const { createEngine } = await import('../src/core/engine.ts')
+  const { createMemoryStore } = await import('../src/core/memory.ts')
+  const { createSix } = await import('../src/core/six.ts')
+  const { createReceipts } = await import('../src/core/receipts.ts')
+  const checks = { phone: 0, postal: 0 }
+  const engine = createEngine(createMemoryStore(), { lineType: async () => { checks.phone++; return { type: 'mobile', carrier: undefined } }, address: async () => { checks.postal++; return undefined } })
+  const six = createSix(engine, { receipts: createReceipts([SECRET]) })
+  const fact = { type: 'profile', key: 'checked', subject: 'record:gone', at: AT, facts: { email: 'desk@example.org', phone: '202-555-0100', address: { street: '1 Example St' } } } as const
+  assert.ok((await six.record({ entries: [fact] })).results[0]!.ok)
+  assert.ok((await six.forget({ key: 'erase', at: NOW, by: 'desk', subjects: [fact.subject], platforms: 'report' })).ok)
+  assert.deepEqual(checks, { phone: 1, postal: 1 })
+  const retry = (await six.record({ entries: [fact] })).results[0]!
+  assert.ok(!retry.ok && retry.reason === 'FORGOTTEN')
+  assert.deepEqual(checks, { phone: 1, postal: 1 })
+})
+
+everywhere('a duplicate result or callback says whether that statement still stands', async ({ graph }) => {
+  for (const kind of ['result', 'not_returned'] as const) {
+    const change = kind === 'result' ? { kind, result: { answered: false } } as const : { kind } as const
+    const old = { type: 'call_update', call: 'late-call', at: AT, key: kind + '-a', change } as const
+    const newest: RecordEntry = { ...old, key: kind + '-b', change: kind === 'result' ? { kind, result: { answered: true } } : { kind: 'returned', reachedAt: AT } } as const
+    const got = (await graph.record({ entries: [newest, old, old, newest] })).results
+    assert.deepEqual(got.map((row) => row.ok && [row.value.duplicate, row.value.stands]), [[false, true], [false, false], [true, false], [true, true]])
+  }
+  await one(graph, { type: 'call', direction: 'outbound', at: AT, key: 'placed', from: '+12025550103', to: '+12025550104' })
+  const entry = { type: 'call_update', key: 'did-return', at: NOW, call: 'placed', change: { kind: 'returned', reachedAt: NOW } } as const
+  const got = (await graph.record({ entries: [entry, entry] })).results
+  assert.deepEqual(got.map((row) => row.ok && row.value.stands), [false, false])
+})
+
+for (const [name, open] of Object.entries({ memory, ...(url && { postgres }) })) test(`one text arriving through record and Twilio together writes its tie and sightings once, ${name}`, async () => {
+  const { twilioSignature } = await import('../src/providers/twilio.ts')
+  const { graph, close } = await open()
+  const { engine } = await internalsOf(graph)!()
+  const address = 'https://example.org/texts/twilio'
+  const server = createServer(createEdge(graph, { token: 'service', origins: [], twilio: { authToken: 'secret', texts: address } })).listen(0, '127.0.0.1')
+  try {
+    await new Promise((resolve) => server.once('listening', resolve))
+    const base = 'http://127.0.0.1:' + (server.address() as AddressInfo).port
+    const code = 'K7Q2MX'
+    const visitor = 'visitor:site'
+    await engine.graph.observe({ subject: visitor, identifiers: ['device:site', codeNote(code)], at: AT, event: 'text_code' })
+    const fields = { MessageSid: 'same-message', From: '+12025550105', To: '+12025550106', Body: 'Ref ' + code }
+    const entry = { type: 'text', key: fields.MessageSid, at: NOW, direction: 'inbound', from: fields.From, to: fields.To, text: fields.Body } as const
+    const [received, reported] = await Promise.all([
+      fetch(base + '/texts/twilio', { method: 'POST', headers: { 'x-twilio-signature': twilioSignature('secret', address, fields) }, body: new URLSearchParams(fields) }),
+      fetch(base + '/v1/record', { method: 'POST', headers: { authorization: 'Bearer service' }, body: JSON.stringify({ entries: [entry] }) }),
+    ])
+    assert.deepEqual([received.status, reported.status], [200, 200])
+    assert.equal((await reported.json() as { results: RecordResult[] }).results[0]!.ok, true)
+    const saved = await engine.graph.keptText(entry.key)
+    assert.equal(saved?.visitor, visitor)
+    assert.equal((await engine.graph.textsOf([saved!.subject])).length, 1)
+    assert.equal((await engine.graph.outcomeOf('text:' + entry.key))?.subject, saved!.subject)
+    assert.deepEqual((await engine.graph.holders(['text:' + entry.key])).map((edge) => edge.count), [1, 1])
+    const seen = [...await engine.graph.history(visitor), ...await engine.graph.history(saved!.subject)]
+    assert.equal(seen.length, 5)
+    assert.equal(seen.filter((row) => row.identifier.startsWith('phone:')).length, 1)
+  } finally {
+    server.closeAllConnections()
+    server.close()
+    await close()
+  }
 })

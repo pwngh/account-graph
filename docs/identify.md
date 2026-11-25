@@ -89,7 +89,7 @@ A mother calls about her son. Without being told, the server takes her number an
 | A fact of the speaker's that is on the subject's record already | Left there, with a note. Nothing written before is undone: mute it, or forget the record. |
 | Neither device nor phone | The subject is recorded, with a note. |
 
-What brought the speaker's browser earns the credit for the subject. It is not passed on to anybody else they speak for, or back. The two are never offered for review as one person, and a number written on both later does not join them. A reviewer who joins them has the last word. To take it back, mute the `behalf:` mark of the browser and that of the caller on the reviewer screen: sent again, they stay muted. The subject is a record of yours, not a browser or a caller.
+What brought the speaker's browser earns the credit for the subject. It is not passed on to anybody else they speak for, or back. The two are never offered for review as one person, and a number written on both later does not join them. A reviewer who joins them has the last word. To take it back, mute the `behalf:` mark of the browser and that of the caller on the reviewer screen. The mark stays muted when the same browser reports under another visitor ID. The subject is a record of yours, not a browser or a caller.
 
 ### On a form
 
@@ -245,6 +245,8 @@ The shared identifier scores 0.92, above the 0.9 that joins. Later ad clicks and
 | It is opened in a browser of whoever [speaks for](#speaking-for-somebody-else) the person | Recorded without linking: a mother who opens her son's link is not her son |
 | Two people's links are opened in one browser that belongs to neither | Both are linked, and their scores drop to 0.61, so the browser is joined to neither |
 
+The speaker check covers the recipient's whole cluster in one read and stops at the first match.
+
 Each opening is a note on the visitor for reviewers: `opened:contact:42`, or `opened:contact:42 (not tied)`.
 
 #### What became of a link
@@ -294,7 +296,7 @@ A referrer listed in `ORIGINS` records no new visit, so the original ad click ke
 - **Addresses.** United States only, through Smarty's US Street API.
 - **Reassigned numbers.** A number identified as VoIP stays muted as a `phone`, even if a later check reports a mobile. Restore it with [`decide`](http.md#decide) `unmute` and the phone.
 - **Undeclared bots.** User agents identify only bots that name themselves. One that imitates a browser needs Fingerprint.
-- **Names.** Nicknames, married names and spellings that differ beyond accents are different names.
+- **Names.** Under `apart: ["given"]`, the table recognizes some short forms and spellings, including Gerald and Jerry, and Catherine and Katherine. An exact name key requires the same normalized first and last names, so a nickname or a married surname can give a different key.
 
 | Signed links | Detail |
 | --- | --- |

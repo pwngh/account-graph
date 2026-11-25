@@ -79,7 +79,7 @@ export interface CallOptions {
   /** How long a code names the visitor it was given to, in milliseconds. Defaults to 30 days. */
   codeLife?: number
   /** Numbers shown to one visitor at a time, and how long after a visitor's turn a call still counts as theirs when nobody has had the number since, in milliseconds. */
-  pool?: { numbers: readonly string[]; grace: number }
+  pool?: { numbers: readonly string[]; grace: number; requireTapAfterReassignment?: boolean }
   /** The step a counted call is recorded as. Defaults to `call`. */
   stage?: string
   /** The country code for numbers written without one. Defaults to 1. */
@@ -382,10 +382,11 @@ async function visitorFor(graph: Graph, call: Heard, options: CallOptions): Prom
     const sure = new Set(ties.filter(({ identifier }) => !deciding(identifier)).map((tie) => tie.subject))
     const own = sure.size > 0 && { own: sure }
     const given = await graph.leaseholder(to, each.at, grace)
-    // Shown to somebody else not long before, it may be either's who dials it. Only a tap says whose, as on any other number.
+    // An untied caller may have saved this number from any earlier holder. Renewals by the same visitor say nothing against them.
+    const lookBack = options.pool!.requireTapAfterReassignment === true && all.size === 0 ? Infinity : grace
     let before = given === undefined ? undefined : await graph.shownTo(to, each.at)
-    while (before && before.subject === given && each.at - before.until < grace) before = await graph.shownTo(to, before.start - 1)
-    const holder = before && each.at - before.until < grace ? undefined : given
+    while (before && before.subject === given && each.at - before.until < lookBack) before = await graph.shownTo(to, before.start - 1)
+    const holder = before && each.at - before.until < lookBack ? undefined : given
     if (holder === undefined || all.has(holder)) return { holder, grace, ...own }
     // A caller who dialed this number when it was somebody else's, or nobody's, has it from then.
     for (const before of await graph.callsOf([each.subject])) if (before.to === to && before.direction === 'inbound' && before.at < each.at && (await graph.leaseholder(to, before.at, grace)) !== holder) return { grace, ...own }

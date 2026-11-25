@@ -172,6 +172,15 @@ export function createSix(engine: Engine, options: SixOptions) {
       if ((entry.type === 'call' || entry.type === 'text') && entry.direction === 'inbound' && entry.from) number = normalizePhone(entry.from, country)
     } catch {}
     const postal = entry.type === 'profile' ? entry.facts.address : undefined
+    if ((lineType && (number || spoken)) || (verify && postal)) {
+      // Checks run before the write lock. A retry of an erased key must not disclose its facts again.
+      const gone = await store.read(async (tx) => {
+        const ref = refOf(entry)
+        const own = await tx.receiptOf(entry.type, receipts.mac(entry.type, entry.key).all)
+        return own?.forgotten !== undefined || (ref && (await tx.receiptOf(ref.type, receipts.mac(ref.type, ref.key).all))?.forgotten !== undefined)
+      })
+      if (gone) return { line: undefined, lineFailed: false, address: undefined, addressFailed: false }
+    }
     const [line, theirs, address] = await Promise.all([
       lineType && number !== undefined ? bounded(lineType(number)) : { failed: false },
       lineType && spoken !== undefined && spoken !== number ? bounded(lineType(spoken)) : { failed: false },
@@ -286,22 +295,19 @@ export function createSix(engine: Engine, options: SixOptions) {
       }
       case 'call_update': {
         const { change } = entry
-        let stands = true
-        if (change.kind === 'party') {
+        const topic = change.kind === 'party' || change.kind === 'result' ? change.kind : 'return'
+        let stands: boolean
+        if (again) stands = newest(await inside.tx.saidOf(topic, entry.call))?.key === entry.key
+        else if (change.kind === 'party') {
           const { kind: _, ...party } = change
-          stands = again ? newest(await inside.tx.saidOf('party', entry.call))?.key === entry.key : (await graph.sayParty({ call: entry.call, key: entry.key, at: entry.at, party })).stands
-        } else if (!again) {
-          if (change.kind === 'result') {
-            const { result } = change
-            stands = (await graph.sayResult({ call: entry.call, key: entry.key, at: entry.at, result: { answered: result.answered, ...(result.voicemail !== undefined && { voicemail: result.voicemail }), ...(result.waited !== undefined && { waited: result.waited }) } })).stands
-            await settleCall(graph, entry.call, service.calling())
-          } else {
-            // Said of a call you placed it is kept, and means nothing, as it would had it come first.
-            const outbound = (await graph.keptCall(entry.call))?.direction === 'outbound'
-            stands = (await graph.sayReturn({ call: entry.call, key: entry.key, at: entry.at, ...(change.kind === 'returned' && { reachedAt: change.reachedAt }) })).stands && !outbound
-          }
-        }
+          stands = (await graph.sayParty({ call: entry.call, key: entry.key, at: entry.at, party })).stands
+        } else if (change.kind === 'result') {
+          stands = (await graph.sayResult({ call: entry.call, key: entry.key, at: entry.at, result: change.result })).stands
+          await settleCall(graph, entry.call, service.calling())
+        } else stands = (await graph.sayReturn({ call: entry.call, key: entry.key, at: entry.at, ...(change.kind === 'returned' && { reachedAt: change.reachedAt }) })).stands
         const kept = await graph.keptCall(entry.call)
+        // A return on an outbound call is kept even when the call arrives later, but can never close a callback.
+        if (topic === 'return' && kept?.direction === 'outbound') stands = false
         return {
           value: {
             state: kept ? callState(kept, now(), service.calling()) : 'waiting',

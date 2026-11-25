@@ -141,7 +141,7 @@ A refund and a write-off are amounts, and not what is left. `of.type` is `conver
 | `not_returned` | none | Nobody did |
 | `party` | `role`, `by`, `subject` for every role except `unknown` | Who was on this call |
 
-`role` is `self`, `representative`, `excluded` or `unknown`. The subject names one of your records. A reviewer can sign only their own name. A later party statement can name a different record or undo identification with `unknown`. Results, returns and parties each have their own newest statement, ordered by time and then key. A statement may precede the call.
+`role` is `self`, `representative`, `excluded` or `unknown`. The subject names one of your records. A reviewer can sign only their own name. A later party statement can name a different record or undo identification with `unknown`. Results, returns and parties each have their own newest statement, ordered by time and then key. On a retry, `stands` says whether that statement still stands. A return statement on an outbound call always answers `false`. A statement may precede the call.
 
 ```json
 {"type":"call_update","key":"desk-14","at":1790000000000,"call":"incoming-4","change":{"kind":"party","role":"representative","subject":"record:17","by":"intake"}}

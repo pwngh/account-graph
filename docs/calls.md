@@ -261,6 +261,8 @@ Mark the numbers to replace on your pages, and add `pool=1` to the script tag:
 | A call reaches a pool number | It is linked at 0.90 to the visitor holding the number when the call began. For `POOL_GRACE_MINUTES` after a lease ends, the last holder still gets the call unless someone has held the number since. Where somebody else held it less than `POOL_GRACE_MINUTES` before, either may be dialing it, so the call is the holder's only if they tapped the number just before. One caller per visitor still applies, as do separations. |
 | The number has no holder | A tap decides, as for any other number |
 
+Set `POOL_REQUIRE_TAP_AFTER_REASSIGNMENT=true` or `phones.pool.requireTapAfterReassignment: true` if callers may save the number. When the lease history shows an earlier holder, a caller with no tie to a visitor needs a tap or a code to identify their visit, however long the number rested. This applies when the call rings and when it is recorded. Renewals by the same visitor still count as one holder. Pruning removes expired leases from this history. The option is off by default.
+
 A number is held by one visitor at a time, across all servers. One network gets numbers for three browsers in ten minutes. [Privacy](privacy.md#deletion) says what `forget` and `prune` do with leases, calls and results.
 
 The page's own number also stays for staff, declared bots, visitors who opted out of advertising, and those without a visit in the last 90 days.
@@ -390,6 +392,9 @@ CALL_NUMBERS='{
 
 ## Text messages
 
+A text reported through both `record` and the Twilio route uses the same message ID as its key. If the reports arrive together, the graph writes the message, its tie and each sighting once.
+
+
 A text from your site arrives with a code that says which visit it came from. The graph ties the text to that visit and its ad, lists the texts nobody has answered, and keeps nothing that was said.
 
 ```html
@@ -492,7 +497,7 @@ Callers are stored as a hash of their number, so the view shows an ID. To find t
 | Forged taps | A program can send taps. With `CALL_NUMBERS` set, the server keeps taps on tracking numbers only. It trusts three browsers per network in ten minutes, and links one caller per visitor. A forged tap can still make a call `ambiguous`. |
 | One caller per visitor | The rule is permanent. Each hidden call is its own caller, so a visitor linked to one is skipped for the next. |
 | Calls counted by length | Without [call results](#call-results), a call is counted by its length, which time in a queue can reach. |
-| Saved pool numbers | A call after the grace period is not linked to the visitor who saved the number, and one during another visitor's lease is linked to that visitor in error, unless the caller dialed that number before, when it was not that visitor's, or is tied to somebody already and the lease has ended, or the number was shown to that visitor within the grace and they did not tap it. More numbers mean longer rests and fewer errors. |
+| Saved pool numbers | By default a call after the grace period is not linked to the visitor who saved the number, and one during another visitor's lease is linked to that visitor in error, unless the caller dialed that number before, when it was not that visitor's, or is tied to somebody already and the lease has ended, or the number was shown to that visitor within the grace and they did not tap it. `POOL_REQUIRE_TAP_AFTER_REASSIGNMENT` keeps an untied caller from being linked by the reassigned number alone. |
 | Copied pages | A saved or printed page keeps showing a pool number. |
 | Pool numbers | People behind one address, such as an office, share the three-browser limit. Carriers may label a number that many strangers are called back from. |
 | Conversions | A counted call goes to an ad platform only when the `call` step in `STAGES` has an action. The caller's hashed number is sent as a match key. |

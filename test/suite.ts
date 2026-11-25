@@ -908,6 +908,38 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await call(graph, 'E', '+15550100164', T0 + 3 * HOUR + 120 * SECOND)).visitor, 'visitor:e')
     })
 
+    test('a reassigned pool number can require a tap from an untied caller', async () => {
+      const to = '+15550100175'
+      const from = '+15550100176'
+      const numbers = [to]
+      const when = T0 + 3 * DAY
+      for (const requireTapAfterReassignment of [false, true]) {
+        const { graph } = await fresh()
+        const options = { pool: { numbers, grace: 2 * HOUR, requireTapAfterReassignment } }
+        const show = (subject: string, at: number) => graph.lease(subject, { numbers, minutes: 15, at })
+        const ring = async (at: number) => (await ringing(graph, { to, from, at }, options)).visitor
+        const call = (id: string, at: number) => recordCall(graph, { id, to, from, at, duration: 60 }, options)
+        for (const subject of ['visitor:first', 'visitor:next']) await graph.observe({ subject, identifiers: [subject.replace('visitor:', 'device:')], at: T0 })
+        await show('visitor:first', T0)
+        await show('visitor:first', T0 + DAY)
+        assert.equal(await ring(T0 + DAY + 1000), 'visitor:first')
+        await show('visitor:next', when)
+        await show('visitor:next', when + 60_000)
+        const expected = requireTapAfterReassignment ? undefined : 'visitor:next'
+        assert.equal(await ring(when + 70_000), expected)
+        assert.equal(await ring(when + HOUR), expected)
+        assert.equal((await call('saved', when + 70_000)).visitor, expected)
+        assert.equal((await call('again', when + HOUR)).visitor, expected)
+        if (requireTapAfterReassignment) {
+          await graph.observe({ subject: 'visitor:next', identifiers: [dialed(to, when + 2 * HOUR)], at: when + 2 * HOUR, event: 'phone_click' })
+          const tapped = await call('tapped', when + 2 * HOUR + 1000)
+          assert.deepEqual([tapped.visitor, tapped.flags.includes('pool')], ['visitor:next', false])
+          await show('visitor:next', when + DAY)
+          assert.equal((await call('known', when + DAY + 1000)).visitor, 'visitor:next')
+        }
+      }
+    })
+
     test('a caller who is one visitor\'s is another\'s only while that one is shown the number', async () => {
       const { graph } = await fresh()
       const pool = { numbers: ['+15550100171'], grace: 2 * HOUR }
@@ -2881,6 +2913,8 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
         return (await members(graph, 'contact:0')).length === 2
       }
       for (const [a, b] of [['Mike', 'Michael'], ['Bob', 'Robert'], ['Bill', 'William'], ['Liz', 'Elizabeth'], ['José', 'Jose'], ['José', 'Joe'], ['María Guadalupe', 'María']] as const) assert.equal(await one(a, b), true, `${a} and ${b}`)
+      for (const [a, b] of [['Catherine', 'Katherine'], ['Kaitlyn', 'Caitlin'], ['Gerald', 'Jerry']] as const) assert.equal(await one(a, b), true, `${a} and ${b}`)
+      for (const [a, b] of [['Gerald', 'Jeremiah'], ['Catherine', 'Gerald'], ['Maria', 'Guadalupe']] as const) assert.equal(await one(a, b), false, `${a} and ${b}`)
       for (const [a, b] of [['Carlos', 'Maria'], ['Robert', 'Mary'], ['Pepe', 'Ana']] as const) assert.equal(await one(a, b), false, `${a} and ${b}`)
       // Two that begin with one letter say nothing, and do not agree either.
       assert.equal(await one('Mark', 'Mary'), true)
@@ -4113,6 +4147,23 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       // A reviewer who joins the two has the last word.
       await graph.join('contact:child', 'caller:1')
       assert.ok((await graph.cluster('contact:child'))!.members.includes('caller:1'))
+      assert.deepEqual(await graph.verify(), [])
+    })
+
+    test('a muted speaker mark stays muted when the same browser is named another way', async () => {
+      const { graph } = await fresh()
+      const ward = { subject: 'contact:child', identifiers: [] }
+      const alias = { subject: 'visitor:alias', identifiers: ['device:same'] }
+      const exact = { subject: 'visitor:same', identifiers: ['device:same'] }
+      const [mark] = (await graph.speak(ward, [alias], T0)).marks
+      await graph.ignore(mark!)
+      await graph.observe({ ...exact, at: T0 + 1 })
+      assert.deepEqual((await graph.speak(ward, [exact], T0 + 2)).marks, [mark])
+      assert.deepEqual(await graph.links(ward.subject), [])
+      assert.deepEqual((await graph.holders([mark!])).map((edge) => edge.subject).sort(), [ward.subject, alias.subject])
+      const other = { subject: 'visitor:other', identifiers: ['device:other'] }
+      assert.notEqual((await graph.speak(ward, [other], T0 + 3)).marks[0], mark)
+      assert.deepEqual((await graph.links(ward.subject)).map((link) => link.subject), [other.subject])
       assert.deepEqual(await graph.verify(), [])
     })
 

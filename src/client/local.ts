@@ -150,7 +150,7 @@ export function localGraph(options: LocalOptions, keeping: Keeping = {}): Accoun
       ...checksOf(options),
       ...(options.stages && { stages: options.stages }),
       ...(options.identifierSecret && { identifierSecret: options.identifierSecret }),
-      ...(shown && { pool: { numbers: shown.numbers, minutes: shown.minutes, grace: shown.graceMinutes } }),
+      ...(shown && { pool: { numbers: shown.numbers, minutes: shown.minutes, grace: shown.graceMinutes, requireTapAfterReassignment: shown.requireTapAfterReassignment === true } }),
       calls: {
         ...(numbers && { numbers }), ...(exclude && { exclude }), ...(minimumSeconds !== undefined && { minimumSeconds }), ...(country && { country }), ...(tapSeconds !== undefined && { clickWindow: tapSeconds * 1000 }),
         ...(resultsExpectedWithinMinutes !== undefined && { results: 'expected' as const, resultWait: resultsExpectedWithinMinutes * 60_000 }),

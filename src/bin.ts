@@ -147,6 +147,7 @@ export function readEnvironment(env: Env) {
     poolNumbers: (env.POOL_NUMBERS ?? '').split(',').map((each) => each.trim()).filter(Boolean),
     poolMinutes: number('POOL_MINUTES', 15),
     poolGrace: number('POOL_GRACE_MINUTES', 120),
+    poolRequireTapAfterReassignment: env.POOL_REQUIRE_TAP_AFTER_REASSIGNMENT === 'true',
     // One Twilio token serves two things, each switched on by its second variable: call reports and line lookups.
     twilio: env.TWILIO_AUTH_TOKEN && env.TWILIO_WEBHOOK_URL ? { authToken: env.TWILIO_AUTH_TOKEN, url: env.TWILIO_WEBHOOK_URL } : undefined,
     lineType: env.TWILIO_AUTH_TOKEN && env.TWILIO_ACCOUNT_SID ? { accountSid: env.TWILIO_ACCOUNT_SID, authToken: env.TWILIO_AUTH_TOKEN } : undefined,
@@ -279,7 +280,7 @@ export function configFrom(env: Env): { graph: LocalOptions; edge: EdgeOptions; 
     phones: {
       ...(config.callNumbers && { numbers: config.callNumbers }), exclude: config.callExclude, minimumSeconds: config.callMinimum, tapSeconds: config.callTapSeconds, returnHours: config.returnHours,
       ...(config.callResults === 'expected' && { resultsExpectedWithinMinutes: config.callResultWait }),
-      ...(config.poolNumbers.length > 0 && { pool: { numbers: config.poolNumbers, minutes: config.poolMinutes, graceMinutes: config.poolGrace } }),
+      ...(config.poolNumbers.length > 0 && { pool: { numbers: config.poolNumbers, minutes: config.poolMinutes, graceMinutes: config.poolGrace, requireTapAfterReassignment: config.poolRequireTapAfterReassignment } }),
     },
     ads: {
       retractOnForget: config.forgetAds, delayMs: config.outboxDelay,

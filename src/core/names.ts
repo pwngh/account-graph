@@ -221,7 +221,7 @@ brooklyn:brook,brooke
 bruce:
 bryanna:brianna
 bryant:bry,bryan
-caitlin:cait,caity
+caitlin:cait,caity,kaitlyn
 caitlyn:cait,caity
 caldonia:calliedona
 california:callie
@@ -255,7 +255,7 @@ cassidy:cass,cassie
 cassie:cass
 caswell:cass
 catalina:cata,catherine,kate
-catherine:cassie,cathy,kay,kittie,trina
+catherine:cassie,cathy,katherine,kay,kittie,trina
 cathleen:casey,cassie,cathy,katy,kit,kittie
 cathy:cathleen,kathy
 cecilia:ceci,cissy
@@ -529,7 +529,7 @@ genevieve:eve,jean,jenny
 geoffrey:geoff,jeff
 georgia:georgie
 georgine:george
-gerald:gerry
+gerald:gerry,jerry
 geraldine:dina,gerri,gerrie,jerry
 gerardo:gerard,jerry
 gerhardt:gay

@@ -523,7 +523,7 @@ export interface LocalSettings extends Common {
     /** How long before a call a tap on its number may be. Defaults to 180. */
     readonly tapSeconds?: number
     /** Numbers shown to one visitor at a time. */
-    readonly pool?: { readonly numbers: readonly string[]; readonly minutes: number; readonly graceMinutes: number }
+    readonly pool?: { readonly numbers: readonly string[]; readonly minutes: number; readonly graceMinutes: number; readonly requireTapAfterReassignment?: boolean }
   }
   readonly ads?: {
     readonly google?: { readonly customerId: string; readonly loginCustomerId?: string; readonly serviceAccount: GoogleServiceAccount }

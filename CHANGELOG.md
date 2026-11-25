@@ -4,6 +4,8 @@
 
 ### The six calls
 
+- `record` and the Twilio text route share a concurrency test for one message, its tie and its sightings.
+- `call_update` reports the current standing of a duplicate result or return.
 - `call_update` accepts a signed statement of who one call concerned and keeps its ordered history.
 - `journey`, callback reports and conversion credit follow the record staff named on a call.
 - `forget` erases a confirmed call when the line or any named party is forgotten.
@@ -13,6 +15,7 @@
 - `record` takes up to 100 entries of twelve types, one transaction each, and answers for each.
 - Every write takes a `key` and an `at`. The same key with the same details is a `duplicate`, and with others is refused with `KEY_REUSED` and the names of the fields.
 - A refusal leaves nothing behind, so its key can be sent again (`UNKNOWN_REFERENCE`, `KIND_NOT_IN_POLICY`, `CURRENCY_MISMATCH`, `PAID`, `KIND_RESERVED`).
+- `record` checks a deleted key before sending its phone or address to a provider.
 - `FORGOTTEN` refuses a late retry about somebody who was deleted. Receipts keep keys as hashes that only `receiptSecrets` can make.
 - A fault has a `code`, `retryable` and `detail` (`isFault`, `hasCode`, `FAULT_CODES`). `TRANSPORT.INDETERMINATE` means the same key may be sent again.
 - Faults are the same in process and over HTTP. A program error is `GRAPH.INTERNAL` and answers 500.
@@ -20,6 +23,11 @@
 - The package exports `.`, `./edge`, `./collect`, `./hardware` and `./testing`. Only `src/bin.ts` reads the environment.
 
 ### People
+
+- `given` now has a documented example distinguishing a recognized nickname from an exact name key.
+- `apart` recognizes Catherine and Katherine, Kaitlyn and Caitlin, and Gerald and Jerry as forms of the same given names. Send the names again to add their new keys.
+
+- `speaker` reuses the original mark when the same browser reports for the same record under another visitor ID. A muted mark stays muted.
 
 - `record` `profile` takes a device, email, phone, address, IP, name, date of birth and identifiers of your own, then normalizes, checks and hashes them.
 - Each link has a score and its evidence. A policy sets a weight, cap and half-life for each kind (`POLICY`, `POLICY_FILE`, `policy.kinds`, `policy.customKinds`).
@@ -36,6 +44,7 @@
 - A first name no table has is keyed whole, and letters such as đ and ø are kept, in the keys of names. Send names again to make the new keys.
 - `named` and `ward` exclude placeholder names, and name comparisons keep the letters a Latin spelling would lose. Rebuild and send named profiles again with new keys after upgrading.
 - `policy.apart` takes `given`, and `policy.kinds` takes every built-in kind, in the types of the library.
+- `/collect` checks a personal link's recipient group for a speaker in one read.
 - `record` `link` makes a signed personal link. The same entry gives the same address.
 - `record` `transfer` records value moving between subjects, and `lookup` `transfers` lists counterparties and rings.
 
@@ -44,6 +53,7 @@
 - `record` `call` and `text`, and the Twilio webhooks, record calls and texts without their content. Two reports of one call are one call.
 - `call_update` reports a result, or that a caller was reached. The newest `at` stands, whatever order they arrive in.
 - A call is linked to the visitor who tapped the number or was shown it (`phones.pool`), or attributed to the channel of its number.
+- `phones.pool.requireTapAfterReassignment` keeps a reassigned number from linking an untied caller to its current visitor without a tap or code. The option is off by default.
 - `record` `call` takes `code`, the code of a visitor that the caller read out. It links the call to that visitor in place of a tap or a pool number, and the answer has the flag `code` or `taken`. Codes are given where `TEXT_CODES` is on.
 - A `call` reported again with a `code` it did not have stands as if it had come with it.
 - `data-ag-code` marks an element the script tag fills with the visitor's code, under `collect.js?text=1`.
@@ -61,6 +71,7 @@
 - A visit in the same cluster is credited, however weak the chain of links to it.
 - Placeholder numbers and office mailboxes link nobody, under every policy. Where two are kept apart, what is tied to both as strongly goes with whoever was first seen. Rebuild after upgrading.
 - Under `apart: ["birth"]`, two dates of birth also part a caller or a browser that staff joined to both. Matches shows the join that was not followed.
+- `policy.apart` skips cuts between records that earlier cuts already put in different clusters.
 - `policy.apart` keeps two subjects apart whose dates of birth differ, or whose first names can stand for no one name (`given`). Under `given`, one number or email given under one name confirms a link. Off by default.
 - An ad click or a campaign visit in the window is credited before a call or text filed under its number.
 

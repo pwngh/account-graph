@@ -101,6 +101,8 @@ A cluster above 50 members (`review`) is flagged `oversized`. Clusters that larg
 | Separated pairs | All direct links between separated pairs are removed. Each pair still connected is processed in order of ID by a maximum flow using shortest paths (Edmonds–Karp). After preserving as many merges as possible, the cut minimizes total strength. Strength is `−log(1 − score)`, capped and rounded. If several cuts tie, the one nearest the subject with the later first sighting wins. Equal times favor the cut nearest the smaller ID. | Each flow is at worst `O(V·E²)` in the subjects and links of one component. |
 | Weak bridges | Links below `bridge` are removed as described above. | The rule is off when `bridge` is at or below `same`. |
 
+Once a cut separates two records, later comparisons of their birth dates can skip the search for a path. The remaining pairs are cut in the same order.
+
 A component of tens of thousands indicates a shared identifier to cap or mute.
 
 ## Presets
@@ -208,7 +210,7 @@ contact:2 { email, born 1984-07-01 } ──┘
 
 With `IDENTIFIER_SECRET` set, the server then keeps a keyed `birth` of each `dob` in a [`profile`](identify.md), as a note that links nothing. Two subjects that would be in one group, both have a `birth`, and share no value of it are kept apart, whatever path joins them.
 
-With `given` it keeps keyed notes of the names a first name may stand for, from the table in `src/core/names.ts`: `Bob` stands for `Robert`, and `Lupe` for `Guadalupe`.
+With `given` it keeps keyed notes of the names a first name may stand for, from the table in `src/core/names.ts`: `Bob` stands for `Robert`, and `Lupe` for `Guadalupe`. Catherine and Katherine, Kaitlyn and Caitlin, and Gerald and Jerry each share a possible full name. Gerald and Jeremiah stay distinct even though both can be called Jerry. Send the name again to record a newly recognized form.
 
 | Two records | Come to |
 | --- | --- |
