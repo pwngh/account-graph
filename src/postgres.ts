@@ -814,6 +814,15 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     },
   })
 
+  // Writes wait for one another at the database in any case. Those of one store wait here, so a long one leaves the pool's
+  // connections to whoever reads, and the server answers while it lasts.
+  let turn: Promise<unknown> = Promise.resolve()
+  const inTurn = <T>(work: () => Promise<T>): Promise<T> => {
+    const mine = turn.then(work)
+    turn = mine.catch(() => undefined)
+    return mine
+  }
+
   async function run<T>(begin: string, lock: boolean, work: (tx: Tx) => Promise<T>): Promise<T> {
     const client = await pool.connect()
     try {
@@ -970,7 +979,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
   return {
     outbox,
     ops,
-    write: (work) => run('begin', true, work),
+    write: (work) => inTurn(() => run('begin', true, work)),
     read: (work) => run('begin isolation level repeatable read read only', false, work),
     async migrate() {
       await pool.query(`create schema if not exists ${schema};

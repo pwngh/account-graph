@@ -329,7 +329,7 @@ The Health view and `GET /ops` list the background jobs: the outbox, each cost i
 
 Set `CHANGE_WEBHOOK` to a URL. The server posts `{"changes": [...]}` there each time a cluster changes. Each change names a subject, the cluster it left, and the cluster it joined.
 
-Each post is sent once. Use it to learn at once that something changed, and read the [change feed](#change-feed) for what did.
+Each post is sent once, and given up on after five seconds. The request that changed the cluster waits for it. Use it to learn at once that something changed, and read the [change feed](#change-feed) for what did.
 
 With `CHANGE_SECRET`, each post carries `x-account-graph-signature: t=<ms>,v1=<hex>`. `v1` is the HMAC-SHA256 of `<t>.<body>` under the secret. Check it over the body as received, and refuse an old `t`.
 

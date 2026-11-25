@@ -72,7 +72,7 @@ export function createMaxMindLookup(options: MaxMindOptions): IpLookup {
     const hit = cache.get(address)
     if (hit && hit.until > now()) return hit.info
 
-    const response = await fetcher(base + encodeURIComponent(address), { headers: { authorization, accept: 'application/json' } })
+    const response = await fetcher(base + encodeURIComponent(address), { headers: { authorization, accept: 'application/json' }, signal: AbortSignal.timeout(10_000) })
     let info: IpInfo | undefined
     if (response.ok) info = parse(await response.json())
     else {
