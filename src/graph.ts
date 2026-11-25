@@ -787,6 +787,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
             if (!ofGroup.has(each)) ofGroup.set(each, labels.get(each)?.cluster ?? each)
           }
           const all = [...ofGroup.keys()]
+          // Everybody of a group that was read, so none of them has it read again.
+          for (const each of all) checked.add(each)
           for (let i = 0; i < all.length; i += TOGETHER) for (const [a, b] of await tx.separatedOf(all.slice(i, i + TOGETHER))) {
             for (const each of [a, b]) if (!ofGroup.has(each)) far.add(each)
             apartPairs.push([a, b])
