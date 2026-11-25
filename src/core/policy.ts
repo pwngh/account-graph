@@ -1,4 +1,4 @@
-import { malformed } from '../contract/fault.ts'
+import { malformed, refused } from '../contract/fault.ts'
 import { createHash } from 'node:crypto'
 import type { Edge, Identifier, IdentifierState, Reason } from '../contract/types.ts'
 
@@ -206,7 +206,7 @@ export function ruleFor(policy: Policy, identifier: Identifier): Rule {
   const kind = identifier.slice(0, colon)
   // Own rules only: every object has things like a constructor, and none of them is a rule.
   const rule = Object.hasOwn(policy.kinds, kind) ? policy.kinds[kind] : undefined
-  if (!rule) throw malformed(`Identifier "${identifier}" has a kind that is missing from the policy`)
+  if (!rule) throw refused(`Identifier "${identifier}" has a kind that is missing from the policy`, { reason: 'KIND_NOT_IN_POLICY', kind })
   return rule
 }
 

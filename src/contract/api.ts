@@ -305,7 +305,7 @@ export interface LookupValue {
   journey: { readonly subjects: Readonly<Record<string, Tie>>; readonly entries: readonly JourneyEntry[]; readonly next: number | null; readonly more: number }
   find: { readonly by: 'email' | 'phone' | 'click' | 'subject'; readonly subjects: readonly string[] }
   match: { readonly candidates: readonly Match[]; readonly notes: Readonly<Record<string, string>> }
-  caller: { readonly subject: string | null; readonly area: string | null; readonly known: boolean; readonly people: readonly Match[]; readonly visitor: string | null; readonly waiting: boolean; readonly arrival: Arrival | null }
+  caller: { readonly subject: string | null; readonly area: string | null; readonly known: boolean; readonly people: readonly Match[]; readonly visitor: string | null; /** Missed calls nobody has returned, and texts nobody has answered. */ readonly waiting: { readonly calls: number; readonly texts: number }; readonly arrival: Arrival | null }
   conflicts: { readonly conflicts: readonly Conflict[] }
   record: RecordView | null
   transfers: { readonly counterparties: readonly Tied[]; readonly rings: readonly Ring[] }

@@ -8,6 +8,7 @@ import { malformedSuite } from './malformed.suite.ts'
 import { opsSuite } from './ops.suite.ts'
 import { outboxSuite } from './outbox.suite.ts'
 import { eventsSuite } from './events.suite.ts'
+import { unjoinSuite } from './unjoin.suite.ts'
 import { saidSuite } from './said.suite.ts'
 import { counts, suite } from './suite.ts'
 import { unitSuite } from './unit.suite.ts'
@@ -397,6 +398,7 @@ if (!url) {
   opsSuite('postgres store', open)
   malformedSuite('postgres store', open)
   saidSuite('postgres store', open)
+  unjoinSuite('postgres store', open)
   eventsSuite('postgres store', open)
   unitSuite('postgres store', async () => {
     const opened = await open()

@@ -1,4 +1,4 @@
-import { malformed } from '../contract/fault.ts'
+import { malformed, refused } from '../contract/fault.ts'
 import type { Graph } from './graph.ts'
 import type { Attribution, AttributedTouch, Change, Consent, Counted, Deciding, Loss, Outcome, Payment, Subject } from '../contract/types.ts'
 
@@ -367,7 +367,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
         stored.action === job.action &&
         (stored.restated || stored.value === job.value) &&
         JSON.stringify(Object.entries(stored.keys).sort()) === JSON.stringify(Object.entries(job.keys).sort())
-      if (!same) throw malformed(`Outcome "${outcome.transactionId}" was already recorded with different details`)
+      if (!same) throw refused(`Outcome "${outcome.transactionId}" was already recorded with different details`, { reason: 'KEY_REUSED', fields: [] })
       out.push(stored)
     }
     return out

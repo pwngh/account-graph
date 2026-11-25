@@ -127,7 +127,7 @@ function profileOf(profile, more) {
   return detail
 }
 
-const ACTIONS = { ignore: 'Ignored identifier', restore: 'Restored identifier', separate: 'Separated', rejoin: 'Removed separation', join: 'Joined', forget: 'Deleted data', rebuild: 'Rebuilt all groups', prune: 'Deleted sightings before' }
+const ACTIONS = { ignore: 'Ignored identifier', restore: 'Restored identifier', separate: 'Separated', rejoin: 'Removed separation', join: 'Joined', unjoin: 'Removed join', forget: 'Deleted data', rebuild: 'Rebuilt all groups', prune: 'Deleted sightings before' }
 const queued = (cluster) => el('li', { class: 'line' }, badge(cluster.id), caller(cluster.id), el('span', { class: 'muted' }, `${amount(cluster.size)} IDs`), cluster.oversized ? el('span', { class: 'chip apart' }, 'Review') : '')
 
 /** How many clusters are on screen, so a refresh reads that many again. */

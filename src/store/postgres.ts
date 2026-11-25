@@ -977,7 +977,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       if (pairs.length === 0) return []
       const { rows } = await db.query(
         `select d.* from unnest($1::text[], $2::text[]) as pair (a, b)
-         join ${t('decision')} d on d.about->>0 = pair.a and d.about->>1 = pair.b where d.action in ('join', 'separate', 'rejoin') order by d.seq`,
+         join ${t('decision')} d on d.about->>0 = pair.a and d.about->>1 = pair.b where d.action in ('join', 'unjoin', 'separate', 'rejoin') order by d.seq`,
         [pairs.map((pair) => pair[0]), pairs.map((pair) => pair[1])],
       )
       return rows.map(toDecision)
@@ -985,7 +985,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
 
     async pairsDecidedBySystems(times) {
       const { rows } = await db.query(
-        `select about->>0 as a, about->>1 as b from ${t('decision')} where starts_with(actor, 'system:') and action in ('join', 'separate', 'rejoin')
+        `select about->>0 as a, about->>1 as b from ${t('decision')} where starts_with(actor, 'system:') and action in ('join', 'unjoin', 'separate', 'rejoin')
          group by 1, 2 having count(*) >= $1`,
         [times],
       )
@@ -1650,6 +1650,12 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
               on conflict do nothing;
             insert into ${schema}.event_head (seq, epoch) select coalesce(max(seq), 0), substr(md5(random()::text || clock_timestamp()::text), 1, 8) from ${schema}.event on conflict do nothing;
             drop table ${schema}.change;`,
+    },
+    {
+      id: 27,
+      name: 'joins taken back',
+      sql: `drop index if exists ${schema}.decision_pair;
+            create index if not exists decision_pair on ${schema}.decision ((about->>0), (about->>1)) where action in ('join', 'unjoin', 'separate', 'rejoin');`,
     },
   ]
 }

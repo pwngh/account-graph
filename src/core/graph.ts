@@ -268,9 +268,16 @@ export interface Graph {
    * one decision each. A pair whose last decision already says so is left
    * alone, so a system can send its whole list again.
    */
-  separateAll(pairs: readonly Told[], why?: Why): Promise<Recorded>
+  separateAll(pairs: readonly Told[], why?: Deciding): Promise<Recorded>
   /** Records a list of joins the same way: two records another system merged are one person here too. */
-  joinAll(pairs: readonly Told[], why?: Why): Promise<Recorded>
+  joinAll(pairs: readonly Told[], why?: Deciding): Promise<Recorded>
+  /**
+   * Takes joins back: mutes every mark a pair's joins left, with one decision for each pair. Refused where any of them
+   * has none, and then none is taken back. What joined them besides stays.
+   */
+  unjoinAll(pairs: readonly Told[], why?: Deciding): Promise<Recorded>
+  /** Whether each pair is in one cluster now, whether a split stands between them, and whether a join does. */
+  standingOf(pairs: readonly (readonly [Subject, Subject])[]): Promise<{ together: boolean; apart: boolean; joined: boolean }[]>
   /**
    * Records an answer a subject gave about advertising. Every answer is kept.
    * The newest by when it was given stands, whatever order they arrive in,
@@ -905,6 +912,23 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     return out
   }
 
+  /** The marks reviewers' joins left on both of each pair, that still count. */
+  async function marksOf(tx: Tx, pairs: readonly (readonly [Subject, Subject])[]): Promise<Identifier[][]> {
+    const edges = (await tx.edgesOf(unique(pairs.flat()))).filter((edge) => edge.identifier.startsWith('review:join-'))
+    const states = await tx.states(unique(edges.map((edge) => edge.identifier)))
+    const held = new Map<Subject, Set<Identifier>>()
+    for (const { subject, identifier } of edges) if (!states.get(identifier)!.ignored) held.set(subject, (held.get(subject) ?? new Set()).add(identifier))
+    return pairs.map(([a, b]) => [...(held.get(a) ?? [])].filter((each) => held.get(b)?.has(each)))
+  }
+
+  /** Whether each pair is tied by what they share, any reviewer's mark left out. */
+  async function pairsTied(tx: Tx, pairs: readonly (readonly [Subject, Subject])[]): Promise<boolean[]> {
+    const edges = (await tx.edgesOf(unique(pairs.flat()))).filter((edge) => !edge.identifier.startsWith('review:'))
+    const states = await tx.states(unique(edges.map((edge) => edge.identifier)))
+    const scored = new Set(scorePairs(policy, edges, states).filter((pair) => pair.score >= policy.same).map(({ a, b }) => pairKey(a, b)))
+    return pairs.map(([a, b]) => scored.has(pairKey(a, b)))
+  }
+
   /** Which of the given pairs are kept apart, and which hold a reviewer's or a system's join that was not muted. */
   async function standing(tx: Tx, pairs: readonly (readonly [Subject, Subject])[]) {
     const subjects = unique(pairs.flat())
@@ -950,7 +974,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
   function paidFor(outcome: Counted, payments: readonly Required<Payment>[]): Counted {
     if (payments.length === 0) return outcome
     const paid = payments.find((each) => each.currency)?.currency
-    if (paid && outcome.currency && outcome.currency !== paid) throw malformed(`Outcome "${outcome.transactionId}" must use the currency of its payments`)
+    if (paid && outcome.currency && outcome.currency !== paid) throw refused(`Outcome "${outcome.transactionId}" must use the currency of its payments`, { reason: 'CURRENCY_MISMATCH', expected: paid })
     const value = payments.reduce((sum, { kind, amount }) => sum + (kind === 'refund' ? -amount : amount), 0)
     return { ...outcome, value: Math.max(0, Math.round(value * 1e5) / 1e5), currency: outcome.currency || paid || '' }
   }
@@ -1193,10 +1217,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return store.write(async (tx) => {
         const before = await tx.paymentOf(id)
         const outcome = await tx.outcomeOf(transactionId)
-        if (before && (before.transactionId !== transactionId || before.amount !== amount || before.kind !== kind || before.currency !== currency)) throw malformed(`Payment "${id}" was already recorded with different details`)
+        if (before && (before.transactionId !== transactionId || before.amount !== amount || before.kind !== kind || before.currency !== currency)) throw refused(`Payment "${id}" was already recorded with different details`, { reason: 'KEY_REUSED', fields: [] })
         if (before) return { duplicate: true, ...(outcome && { value: outcome.value }) }
         const payments = [...(await tx.paymentsOf(transactionId)), { id, transactionId, amount, kind, currency }]
-        if (new Set([outcome?.currency, ...payments.map((each) => each.currency)].filter(Boolean)).size > 1) throw malformed(`Payment "${id}" must use the currency of its outcome`)
+        if (new Set([outcome?.currency, ...payments.map((each) => each.currency)].filter(Boolean)).size > 1) throw refused(`Payment "${id}" must use the currency of its outcome`, { reason: 'CURRENCY_MISMATCH', expected: outcome?.currency || payments.find((each) => each.currency)!.currency })
         await tx.addPayment(payments.at(-1)!)
         if (!outcome) return { duplicate: false }
         const worth = paidFor(outcome, payments)
@@ -1739,6 +1763,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       const told = tell(pairs, 'separate', why).map((each) => ({ ...each, action: each.separated ? ('separate' as const) : ('rejoin' as const) }))
       let recorded = 0
       const changes = await changing(async (tx) => {
+        await current(tx, unique(told.flatMap(({ pair }) => pair)), why)
         const next = await news(tx, told)
         recorded = next.length
         if (recorded === 0) return []
@@ -1755,6 +1780,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       const told = tell(pairs, 'join', why).map((each) => ({ ...each, action: 'join' as const }))
       let recorded = 0
       const changes = await changing(async (tx) => {
+        await current(tx, unique(told.flatMap(({ pair }) => pair)), why)
         const next = await news(tx, told)
         recorded = next.length
         if (recorded === 0) return []
@@ -1773,6 +1799,38 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         return sightings.length > 0 ? record(tx, sightings) : []
       })
       return { changes, recorded, already: told.length - recorded }
+    },
+
+    async unjoinAll(pairs, why) {
+      const told = tell(pairs, 'join', why)
+      const changes = await changing(async (tx) => {
+        const subjects = unique(told.flatMap(({ pair }) => pair))
+        await current(tx, subjects, why)
+        const marks = await marksOf(tx, told.map(({ pair }) => pair))
+        const without = told.filter((_, n) => marks[n]!.length === 0)
+        if (without.length > 0) {
+          const labels = await tx.labelsOf(subjects)
+          const found = await pairsTied(tx, without.map(({ pair }) => pair))
+          throw refused('A pair was not joined', {
+            reason: 'NOT_JOINED',
+            pairs: without.map(({ pair: [a, b] }, n) => ({ a, b, because: labels.get(a)?.cluster === undefined || labels.get(a)?.cluster !== labels.get(b)?.cluster ? 'apart' : found[n] ? 'evidence' : 'other_merges' })),
+          })
+        }
+        await decideAll(tx, told.map(({ pair, why }) => ({ action: 'unjoin', about: pair, why })))
+        const gone = unique(marks.flat())
+        for (const mark of gone) await tx.setIgnored(mark, true)
+        await mark(tx)
+        return settle(tx, new Set((await tx.edgesOn(gone)).map((edge) => edge.subject)))
+      })
+      return { changes, recorded: told.length, already: 0 }
+    },
+
+    standingOf(pairs) {
+      return store.read(async (tx) => {
+        const labels = await tx.labelsOf(unique(pairs.flat()))
+        const { apart, joined } = await standing(tx, pairs)
+        return pairs.map(([a, b]) => ({ together: labels.get(a) !== undefined && labels.get(a)?.cluster === labels.get(b)?.cluster, apart: apart.has(pairKey(a, b)), joined: joined.has(pairKey(a, b)) }))
+      })
     },
 
     counts() {
@@ -1877,6 +1935,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
           const [a, b] = about
           if (a === undefined || b === undefined) continue
           if (action === 'join') verdicts.set(pairKey(a, b), { a, b, same: true })
+          if (action === 'unjoin') verdicts.delete(pairKey(a, b))
           if (action === 'separate') verdicts.set(pairKey(a, b), { a, b, same: false })
           if (action === 'rejoin') verdicts.set(pairKey(a, b), undefined)
         }
@@ -1934,7 +1993,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return store.write(async (tx) => {
         const before = await tx.flowOf(id)
         if (before && !(before.from === from && before.to === to && before.amount === amount && before.at === at && before.asset === asset)) {
-          throw malformed(`Flow "${id}" was already recorded with different details`)
+          throw refused(`Flow "${id}" was already recorded with different details`, { reason: 'KEY_REUSED', fields: [] })
         }
         if (!before) await tx.addFlow({ id, from, to, amount, at, asset })
         const tie = (await counterparties(tx, from)).find((row) => row.subject === to && row.asset === asset)!

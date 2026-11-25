@@ -941,7 +941,7 @@ const changed = (events: readonly GraphEvent[]): NumberedChange[] =>
 
 const copied = (decision: Decision): Decision => ({ ...decision, about: [...decision.about] })
 const bySystem = (decision: Decision) => decision.by?.startsWith('system:') ?? false
-const ofPair = (decision: Decision) => decision.action === 'join' || decision.action === 'separate' || decision.action === 'rejoin'
+const ofPair = (decision: Decision) => decision.action === 'join' || decision.action === 'unjoin' || decision.action === 'separate' || decision.action === 'rejoin'
 
 function copy(edge: Edge): Edge {
   return { ...edge }

@@ -206,7 +206,7 @@ export interface Decision extends Why {
   seq: number
   /** When it was made, in epoch milliseconds. */
   at: number
-  action: 'ignore' | 'restore' | 'separate' | 'rejoin' | 'join' | 'forget' | 'rebuild' | 'prune'
+  action: 'ignore' | 'restore' | 'separate' | 'rejoin' | 'join' | 'unjoin' | 'forget' | 'rebuild' | 'prune'
   /** What it was about: an identifier, a subject, or two subjects. */
   about: string[]
   /** Seals this entry to the one before it. */
