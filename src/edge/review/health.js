@@ -6,6 +6,28 @@ const NAMES = { touches: 'Visits', calls: 'Calls', results: 'Call results', cost
 const JOB = { running: 'Running', stuck: 'Stuck', done: 'OK', failed: 'Failed' }
 const ago = (at, now) => reviewDisplay.time(at, now)
 
+/** The setting that watches each feed, and how its records come. */
+const WATCHED = {
+  touches: ['QUIET_TOUCHES_HOURS', 'Visits arrive at any hour.'], calls: ['QUIET_CALLS_HOURS', 'Any call counts, inbound or outbound.'],
+  results: ['QUIET_RESULTS_HOURS', 'A result is recorded when your phone system or staff report it.'], costs: ['QUIET_COSTS_HOURS', 'Costs arrive when the platform sends them, often a day late.'],
+}
+DETAILS['health.feed'] = {
+  now({ feed, at, limits } = {}) {
+    if (!feed) return undefined
+    const [setting, comes] = WATCHED[feed.name] ?? []
+    const open = limits?.openHours && (feed.name === 'calls' || feed.name === 'results')
+    const silent = feed.last === null || feed.last === undefined ? undefined : at - feed.last
+    const left = silent === undefined || open ? undefined : feed.hours * 3600000 - silent
+    const watched = feed.hours > 0
+    return { title: NAMES[feed.name] ?? feed.name, value: feed.quiet ? 'Stale' : watched ? 'OK' : 'Not monitored',
+      rows: [['Last record', silent === undefined ? 'None yet' : moment(feed.last)], ['Silent for', silent === undefined ? undefined : lasted(Math.max(0, silent))],
+        ['Limit', watched ? `${amount(feed.hours)} h${left === undefined ? '' : left > 0 ? ` · ${lasted(left)} left` : ` · over by ${lasted(-left)}`}` : undefined], ['Counted', watched ? (open ? 'In open hours' : 'Around the clock') : undefined],
+        [watched ? 'Set by' : 'Not set', setting]],
+      say: [comes, watched ? 'Past the limit an alert is posted once.' : `Set ${setting} to a number of hours to be told when they stop.`],
+      links: [docs('Stale Feeds', 'operations.md#stale-feeds')] }
+  },
+}
+
 /** Puts a conversion back in line for the platform that refused it. */
 async function again(job, button) {
   button.disabled = true
@@ -28,7 +50,8 @@ function workings(ops, refused) {
 
   const FEED = { touches: GLYPHS.visit, calls: GLYPHS.call, results: GLYPHS.result, costs: GLYPHS.value }
   const feeds = el('ul', { class: 'cards' }, ...ops.feeds.map((feed) => el('li', {}, tile(FEED[feed.name]), el('b', {}, NAMES[feed.name]),
-    feed.quiet ? el('span', { class: 'chip apart' }, 'Stale') : feed.hours > 0 ? el('span', { class: 'chip same' }, 'OK') : el('span', { class: 'meta' }, 'Not monitored'),
+    el('span', { class: 'state' }, feed.quiet ? el('span', { class: 'chip apart' }, 'Stale') : feed.hours > 0 ? el('span', { class: 'chip same' }, 'OK') : el('span', { class: 'meta' }, 'Not monitored'),
+      detail('health.feed', { id: feed.name, label: `${NAMES[feed.name]}, ${feed.quiet ? 'stale' : feed.hours > 0 ? 'OK' : 'not monitored'}`, of: () => ({ feed, at: ops.at, limits }) })),
     el('span', { class: 'meta' }, 'Last record ', ago(feed.last, ops.at), feed.hours > 0 ? ` · limit ${amount(feed.hours)} h` : ''))))
 
   const jobs = el('ul', { class: 'cards' }, ...ops.jobs.map((job) => el('li', {}, tile('M13 8a5 5 0 1 1-1.5-3.6M13 2.5v2.6h-2.6'), el('b', {}, job.name),
