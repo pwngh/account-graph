@@ -568,7 +568,7 @@ export interface Person {
   members: Subject[]
   /** What brought them, where it can be credited at the time asked about. */
   touch?: AttributedTouch
-  /** Whether anyone of the cluster last asked for no more texts. */
+  /** Whether the last word of the cluster was for no more texts, or that of a number somebody in it has. */
   optedOut: boolean
 }
 

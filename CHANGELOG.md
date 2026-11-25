@@ -16,6 +16,7 @@
 ### The six calls
 
 - `profile.createdAt` records when your system created a subject. The Accounts heading and Links table show it alongside the earliest activity the graph still holds for each record.
+- `textsOptedOut` covers a STOP from any phone number the subject’s cluster has, including one only related to it under `records`. A START from inside the cluster does not undo it.
 - `record` applies an inbound opt-out first supplied on a text retry at the original message time and answers `optOutAdded: true` once.
 - `call_update` accepts the party statement key staff saw, or `null` if there was none. A different standing statement returns `STALE` and leaves the entry key free to retry.
 - `lookup` returns the current party statement and its key for a call, even before the phone report arrives.

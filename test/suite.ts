@@ -4205,6 +4205,40 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(found[0]!.touch, (await graph.attribute('contact:1', { at: T0 + HOUR })).credited)
     })
 
+    test('a word against texts is for the number, and is seen on everybody who has it', async () => {
+      // A phone alone makes nobody one person here, so the number that texts is no member of the contact's group.
+      const { graph } = await fresh(policyFrom({ records: 'confirmed', kinds: { phone: { weight: 0.85 } } }))
+      const [mobile, home] = ['+15550100195', '+15550100196']
+      const has = (subject: string, ...phones: string[]) => graph.observe({ subject, identifiers: phones.map((phone) => `phone:${hashPhone(phone)}`), at: T0 })
+      await has('contact:1', mobile, home)
+      await has('contact:2', home)
+      await graph.observe({ subject: 'contact:3', identifiers: [`voip:${hashPhone('+15550100197')}`], at: T0 })
+      const says = (id: string, from: string, hours: number, text: string) => recordText(graph, { id, from, to: '+15550100101', at: T0 + hours * HOUR, text })
+      const all = ['contact:1', 'contact:2', 'contact:3']
+      const out = async () => {
+        const people = await graph.people([...all], { at: T0 + 9 * HOUR })
+        // Asked one by one or together, the answer is the same, and the numbers joined nobody.
+        for (const { subject, members, optedOut } of people) assert.deepEqual([members, (await graph.texting(subject))?.optedOut ?? false], [[subject], optedOut])
+        return people.filter(({ optedOut }) => optedOut).map(({ subject }) => subject)
+      }
+      assert.deepEqual(await out(), [])
+      await says('W1', home, 1, 'STOP')
+      assert.deepEqual(await out(), ['contact:1', 'contact:2'])
+      // A word from one number takes back nothing said from another.
+      await says('W2', mobile, 2, 'START')
+      assert.deepEqual(await out(), ['contact:1', 'contact:2'])
+      // Kept apart, they still have the number.
+      await graph.separate('contact:1', 'contact:2', true, { by: 'ann' })
+      assert.deepEqual(await out(), ['contact:1', 'contact:2'])
+      await says('W3', home, 3, 'START')
+      assert.deepEqual(await out(), [])
+      await says('W4', mobile, 4, 'STOP')
+      assert.deepEqual([await out(), await graph.texting('contact:1')], [['contact:1'], { optedOut: true, at: T0 + 4 * HOUR }])
+      // A number a line check called by another kind is the same number.
+      await says('W5', '+15550100197', 5, 'STOP')
+      assert.deepEqual(await out(), ['contact:1', 'contact:3'])
+    })
+
     test('match says who somebody may be as if they had been seen, and writes nothing', async () => {
       const { graph } = await fresh()
       await graph.observe([

@@ -277,7 +277,7 @@ export interface Graph {
    * are days; pass the last text of a page as `after` for the next.
    */
   openTexts(options: { from: string; to: string; timeZone?: string; limit?: number; after?: { at: number; id: string } }): Promise<OpenText[]>
-  /** Whether anyone of a subject's cluster last asked, by STOP or START, for no more texts, and when. Undefined when nobody has said. */
+  /** Whether the last word of a subject's cluster, by STOP or START, was for no more texts, or that of a number somebody in it has, and when. Undefined when nobody has said. */
   texting(subject: Subject): Promise<{ optedOut: boolean; at: number } | undefined>
   /**
    * Missed calls nobody has returned, oldest first, with what each is
@@ -1284,6 +1284,32 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
 
   const followable = async (tx: Tx, subject: Subject, since: number, at: number) => (await tx.touchesOf([subject], since, at)).length > 0 && (await tx.consentOf([subject])).get(subject)?.adUserData !== false
 
+  /**
+   * The last word on texts of each cluster, and of each number somebody in it has. A STOP is for a number: one sent from a number that
+   * is only related to a contact, as under a policy that confirms records, must still be seen on that contact. A number outside the
+   * cluster can only add a STOP. Its START says nothing of the others.
+   */
+  async function textWords(tx: Tx, subjects: readonly Subject[]) {
+    const numbers = new Map<Subject, Set<Subject>>()
+    for (const { subject, identifier } of subjects.length ? await tx.edgesOf(unique([...subjects])) : []) {
+      // A number is either kind, by what a line check said of it.
+      const number = /^(?:phone|voip):(.*)$/.exec(identifier)?.[1]
+      if (number === undefined) continue
+      const held = numbers.get(subject) ?? new Set()
+      numbers.set(subject, held.add(`caller:${number}`))
+    }
+    const words = (await tx.textsOf(unique([...subjects, ...[...numbers.values()].flatMap((held) => [...held])]))).filter((text) => text.flags.includes('opt_out') || text.flags.includes('opt_in'))
+    const last = new Map(words.map((text, i) => [text.subject, i]))
+    return (members: readonly Subject[]): { optedOut: boolean; at: number } | undefined => {
+      const inside = new Set(members)
+      const own = words.findLast((text) => inside.has(text.subject))
+      const stopped = members.flatMap((member) => [...(numbers.get(member) ?? [])]).filter((number) => !inside.has(number))
+        .flatMap((number) => words[last.get(number) ?? -1] ?? []).filter((text) => text.flags.includes('opt_out'))
+      const said = own?.flags.includes('opt_out') ? own : stopped.sort((x, y) => x.at - y.at).at(-1) ?? own
+      return said && { optedOut: said.flags.includes('opt_out'), at: said.at }
+    }
+  }
+
   /** Whether a caller may be tied to a visitor: no reviewer keeps the two apart, and the visitor is no other caller's. */
   async function formerTies(tx: Tx, subject: Subject) {
     const ids = unique((await tx.callEvidence({ subjects: [subject] })).map(row => row.identifier).filter(id => /^(dial|text|lease):/.test(id)))
@@ -1742,15 +1768,17 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         const asked = unique(subjects)
         const labels = await tx.labelsOf(asked)
         const creditOf = await creditAll(tx, asked.map((subject) => ({ subject, at })), 90 * DAY, 2)
-        const out: Person[] = []
+        const clusters = new Map<Subject, Subject[]>()
         for (const subject of asked) {
           const own = labels.get(subject)
-          const members = own ? (await tx.clusterOf(own.cluster)).sort() : [subject]
-          const said = (await tx.textsOf(members)).filter((text) => text.flags.includes('opt_out') || text.flags.includes('opt_in')).at(-1)
-          const { credited } = creditOf(subject, at)
-          out.push({ subject, members, ...(credited && { touch: credited }), optedOut: said?.flags.includes('opt_out') ?? false })
+          clusters.set(subject, own ? (await tx.clusterOf(own.cluster)).sort() : [subject])
         }
-        return out
+        const saidOf = await textWords(tx, [...clusters.values()].flat())
+        return asked.map((subject) => {
+          const members = clusters.get(subject)!
+          const { credited } = creditOf(subject, at)
+          return { subject, members, ...(credited && { touch: credited }), optedOut: saidOf(members)?.optedOut ?? false }
+        })
       })
     },
 
@@ -2257,8 +2285,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       return store.read(async (tx) => {
         const own = (await tx.labelsOf([subject])).get(subject)
         const members = own ? await tx.clusterOf(own.cluster) : [subject]
-        const said = (await tx.textsOf(members)).filter((text) => text.flags.includes('opt_out') || text.flags.includes('opt_in')).at(-1)
-        return said && { optedOut: said.flags.includes('opt_out'), at: said.at }
+        return (await textWords(tx, members))(members)
       })
     },
 

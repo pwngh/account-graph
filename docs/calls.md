@@ -504,7 +504,7 @@ Mark a sender as [no lead](report.md#not-a-lead) with a `restatement` of the tex
 
 ### Asking for no more texts
 
-The `person` [lookup](http.md#lookup) answers `"textsOptedOut": true` when the last such word from anyone in the subject's cluster was STOP, STOPALL, UNSUBSCRIBE, CANCEL, END, QUIT, REVOKE or OPTOUT, or in Spanish ALTO, PARE, PARAR, DETENER, CANCELAR, BAJA, SALIR, TERMINAR or FIN, and `false` after START or UNSTOP, or when nobody has said either. The word counts only as the whole text. No fluent speaker has read the Spanish words, so have one read them before you rely on them.
+The `person` [lookup](http.md#lookup) answers `"textsOptedOut": true` when the last such word from anyone in the subject's cluster, or from a phone number that somebody in it has, was STOP, STOPALL, UNSUBSCRIBE, CANCEL, END, QUIT, REVOKE or OPTOUT, or in Spanish ALTO, PARE, PARAR, DETENER, CANCELAR, BAJA, SALIR, TERMINAR or FIN, and `false` after START or UNSTOP, or when nobody has said either. A STOP is seen on everybody whose record has that number, whether or not the policy joins them to it. Within one cluster the last word stands, whichever of its numbers it came from. A START takes back nothing said from a number outside the cluster. The word counts only as the whole text. No fluent speaker has read the Spanish words, so have one read them before you rely on them.
 
 It is kept apart from [consent](privacy.md), which is about advertising. Your own system sends the texts, so it must check its own list as well.
 
