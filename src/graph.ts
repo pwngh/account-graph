@@ -184,10 +184,12 @@ export interface Graph {
   followable(subject: Subject, since: number): Promise<boolean>
   /**
    * Shows a subject one of your numbers as their own for some minutes, or the one they hold for that much longer. No
-   * two subjects hold one number at one time. Undefined when every number is held, or was held less than `rest` milliseconds ago by another. With `arrivedSince`, null for a
+   * two subjects hold one number at one time. Undefined when every number is held. With `arrivedSince`, null for a
    * subject with no arrival since then, or whose standing answer is no to measuring ads.
    */
-  lease(subject: Subject, options: { numbers: readonly string[]; minutes: number; at?: number; arrivedSince?: number; rest?: number }): Promise<Lease | null | undefined>
+  lease(subject: Subject, options: { numbers: readonly string[]; minutes: number; at?: number; arrivedSince?: number }): Promise<Lease | null | undefined>
+  /** The last turn of a number that began by a time, whoever's it was. */
+  shownTo(number: string, at: number): Promise<Lease | undefined>
   /** Who a number was shown to at a time, or within `grace` milliseconds before it when nobody held it since. */
   leaseholder(number: string, at: number, grace?: number): Promise<Subject | undefined>
   /** How many of the numbers are held at a time. */
@@ -1460,7 +1462,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return store.read((tx) => followable(tx, subject, since, now()))
     },
 
-    async lease(subject, { numbers, minutes, at = now(), arrivedSince, rest = 0 }) {
+    async lease(subject, { numbers, minutes, at = now(), arrivedSince }) {
       if (typeof subject !== 'string' || !subject) throw new TypeError('A lease requires a subject')
       if (!Number.isSafeInteger(at)) throw new TypeError('A lease requires `at`, an integer in epoch milliseconds')
       if (!(Number.isFinite(minutes) && minutes > 0)) throw new TypeError('A lease requires its length in minutes, above zero')
@@ -1478,14 +1480,18 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         }
         // Of those free, the one released longest ago: a number seen last week is still on somebody's screen more than one seen last year.
         const ended = (number: string) => newest.get(number)?.until ?? -Infinity
-        // It rests first: whoever had it may still dial it. The one who had it last gets it back.
-        const free = unique(numbers).filter((number) => ended(number) + rest <= at || (ended(number) <= at && newest.get(number)!.subject === subject))
+        // The one who had it last gets it back.
+        const free = unique(numbers).filter((number) => ended(number) <= at)
         if (free.length === 0) return undefined
         const number = free.find((each) => newest.get(each)?.subject === subject) ?? free.reduce((best, next) => (ended(next) < ended(best) ? next : best))
         const lease = { number, subject, start: at, until }
         await tx.setLease(lease)
         return lease
       })
+    },
+
+    async shownTo(number, at) {
+      return (await store.read((tx) => tx.newestLeases([number], at)))[0]
     },
 
     leaseholder(number, at, grace = 0) {

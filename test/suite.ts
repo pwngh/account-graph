@@ -1589,13 +1589,9 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await strictly('visitor:e'))!.subject, 'visitor:e')
       await graph.consent('visitor:e', { adUserData: false, adPersonalization: false }, { at: T0 + 2 })
       assert.equal(await strictly('visitor:e'), null)
-      // A number rests before another is shown it, and its last holder gets it back.
-      const rested = (subject: string, at: number) => graph.lease(subject, { numbers: ['+15550100099'], minutes: 15, at: T0 + at * MIN, rest: 120 * MIN }).then((each) => each?.start)
-      assert.equal(await rested('visitor:r', 0), T0)
-      assert.equal(await rested('visitor:s', 60), undefined)
-      assert.equal(await rested('visitor:r', 70), T0 + 70 * MIN)
-      assert.equal(await rested('visitor:s', 204), undefined)
-      assert.equal(await rested('visitor:s', 205), T0 + 205 * MIN)
+      // Whoever had a number last gets it back.
+      const again = (subject: string, at: number) => graph.lease(subject, { numbers: ['+15550100098', '+15550100099'], minutes: 15, at: T0 + at * MIN }).then((each) => each?.number)
+      assert.deepEqual([await again('visitor:r', 0), await again('visitor:s', 1), await again('visitor:r', 30)], ['+15550100098', '+15550100099', '+15550100098'])
       for (const bad of [{ minutes: 0 }, { minutes: 15, at: 1.5 }]) await assert.rejects(graph.lease('visitor:a', { numbers, ...bad }), TypeError)
       await assert.rejects(graph.lease('', { numbers, minutes: 15 }), TypeError)
       assert.equal(await graph.lease('visitor:a', { numbers: [], minutes: 15, at: T0 }), undefined)
@@ -1622,9 +1618,11 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await call('P2', '+15550100071', 60)).visitor, 'visitor:a')
       // Another caller on it is somebody else: a visitor is tied to one caller.
       assert.equal((await call('P3', '+15550100072', 61)).visitor, undefined)
-      // Leased again, it is the new holder's, and past the grace it is nobody's.
+      // Shown to another soon after, either may be dialing it, so only a tap makes a call the new holder's. Past the grace it is nobody's.
       assert.equal((await graph.lease('visitor:b', { numbers: ['+15550100001'], minutes: 15, at: T0 + 70 * MIN }))!.start, T0 + 70 * MIN)
-      assert.equal((await call('P4', '+15550100073', 71)).visitor, 'visitor:b')
+      assert.equal((await call('P4a', '+15550100070', 71)).visitor, undefined)
+      await graph.observe({ subject: 'visitor:b', identifiers: [dialed('+15550100001', T0 + 71 * MIN + 30_000)], at: T0 + 71 * MIN + 30_000, event: 'phone_click' })
+      assert.deepEqual(await call('P4', '+15550100073', 72).then((each) => [each.visitor, each.flags]), ['visitor:b', ['pool']])
       assert.equal((await call('P5', '+15550100074', 85 + 121)).visitor, undefined)
       // Two callers reported at once on one holder's number: one of them is the visitor's caller, and never both.
       await graph.observe({ subject: 'visitor:d', identifiers: ['device:d'], at: T0, event: 'visit' })

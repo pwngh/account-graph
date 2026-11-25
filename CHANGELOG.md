@@ -90,7 +90,7 @@
 - A matching rule takes `relates`, for a kind that says two subjects are two people. Clusters need a `rebuild`, because the default policy has the new kind `behalf`.
 - A `zip` tag with a Texas ZIP code adds `county`. `SERVER_RANGES_FILE` names the address ranges of data centers.
 - A tap two callers could have made ties neither. On a number others are using, a tap has to be within thirty seconds of its call. A caller who is one visitor's takes another's pool number only while it is shown.
-- A pool number is not shown to anyone else for `POOL_GRACE_MINUTES` after its turn (`rest`). A call to it by somebody who dialed it when it was another's is nobody's by it.
+- A call to a pool number that was somebody else's less than `POOL_GRACE_MINUTES` before is its holder's only with a tap. One by somebody who dialed it when it was another's is nobody's by it. A visitor who comes back gets the number they had.
 - `npm run firm` starts a sample firm, and `npm run bench -- scale` measures large graphs.
 
 ### Reviewer screen

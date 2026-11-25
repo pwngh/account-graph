@@ -187,15 +187,15 @@ Mark the numbers to replace on your pages, and add `pool=1` to the script tag:
 | A visitor with a visit from an ad, a campaign or another site opens the page | They get the number they had last, or else the one that has rested longest, for `POOL_MINUTES` |
 | The page stays in view | The page renews the number every five minutes |
 | The page is hidden or closed | The lease expires, and the page shows its own number again |
-| Every number is taken, or has not rested for `POOL_GRACE_MINUTES` | The page keeps its own number. `/stats` and the Health view count the request as exhausted. |
-| A call reaches a pool number | It is linked at 0.90 to the visitor holding the number when the call began. For `POOL_GRACE_MINUTES` after a lease ends, the last holder still gets the call unless someone has held the number since. One caller per visitor still applies, as do separations. |
+| Every number is taken | The page keeps its own number. `/stats` and the Health view count the request as exhausted. |
+| A call reaches a pool number | It is linked at 0.90 to the visitor holding the number when the call began. For `POOL_GRACE_MINUTES` after a lease ends, the last holder still gets the call unless someone has held the number since. Where somebody else held it less than `POOL_GRACE_MINUTES` before, either may be dialing it, so the call is the holder's only if they tapped the number just before. One caller per visitor still applies, as do separations. |
 | The number has no holder | A tap decides, as for any other number |
 
 A number is held by one visitor at a time, across all servers. One network gets numbers for three browsers in ten minutes. `forget` removes a visitor from their leases and keeps the record that the number was held; `prune` deletes leases that ended before its time.
 
 The page's own number also stays for staff, declared bots, visitors who opted out of advertising, and those without a visit in the last 90 days.
 
-> **Size the pool.** Count the visitors with an ad click who come within `POOL_MINUTES` and `POOL_GRACE_MINUTES` together, at your busiest hours. A number rests for its grace before anyone else is shown it, because whoever had it may still dial it. With fewer numbers, more visitors see the page's own, and the exhausted count says so. Report calls to them as for any other number.
+> **Size the pool.** Count the visitors with an ad click who come within `POOL_MINUTES` and `POOL_GRACE_MINUTES` together, at your busiest hours. That is enough for each number to rest for its grace, because whoever had it may still dial it. With fewer, a call to a number that did not rest needs a tap to be anyone's, and the exhausted count says how often there was none to show. Report calls to them as for any other number.
 
 ## Call results
 
@@ -330,7 +330,7 @@ Callers are stored as a hash of their number, so the view shows an ID. To find t
 | Channel numbers | Without a [pool](#number-pools), two visitors who tap a number within the tap window (three minutes by default, see [Busy numbers](#busy-numbers)) cannot be told apart, and a call dialed by hand is filed under the number's channel. |
 | Forged taps | A program can send taps. With `CALL_NUMBERS` set, the server keeps taps on tracking numbers only. It trusts three browsers per network in ten minutes, and links one caller per visitor. A forged tap can still make a call `ambiguous`. |
 | One caller per visitor | The rule is permanent. Each hidden call is its own caller, so a visitor linked to one is skipped for the next. |
-| Saved pool numbers | A call after the grace period is not linked to the visitor who saved the number, and one during another visitor's lease is linked to that visitor in error, unless the caller dialed that number before, when it was not that visitor's, or is tied to somebody already and the lease has ended. More numbers mean longer rests and fewer errors. |
+| Saved pool numbers | A call after the grace period is not linked to the visitor who saved the number, and one during another visitor's lease is linked to that visitor in error, unless the caller dialed that number before, when it was not that visitor's, or is tied to somebody already and the lease has ended, or the number was shown to that visitor within the grace and they did not tap it. More numbers mean longer rests and fewer errors. |
 | Copied pages | A saved or printed page keeps showing a pool number. |
 | Pool numbers | People behind one address, such as an office, share the three-browser limit. Carriers may label a number that many strangers are called back from. |
 | Tap window | Thirty seconds are allowed for clock differences. `CALL_TAP_SECONDS`, or `clickWindow` in the library, changes the three minutes. See [Busy numbers](#busy-numbers). |
