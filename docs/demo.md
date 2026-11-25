@@ -19,6 +19,8 @@ npm run firm
 
 Docker downloads the database image once. After that the demo runs offline without keys, and includes its own ad platform and alert receiver. Every name, number, amount and address is fictional.
 
+Campaigns are named as an agency would name them, such as `North | Family law | Search` and `North | Family law | Búsqueda`. A visit is recorded at `https://www.firm.example.org`, while the site of the demo runs on this machine.
+
 The site is live. Open it with `?gclid=you&utm_id=30333` and its number becomes one from the pool, held for you while the page is open. The form and the text link work too: send the form and the contact it makes is on the Board. Ticked as about somebody else, your browser and number are recorded as the [speaker's](identify.md#speaking-for-somebody-else). What was written and the consent to texts are not recorded here: the firm's own system keeps both.
 
 ## Setup
@@ -54,7 +56,7 @@ The story runs from a Monday to a Thursday that have passed. Each scene moves th
 | 18 | A call to a map listing's number, without a page load, filed under that listing | Channels |
 | 19 | The form on the site in place of a call, credited by the browser | Board |
 | 20 | A parent and child on one phone: related without joining | Matches |
-| 21 | A night without calls: a stale feed and a delivered alert | Health |
+| 21 | A night without calls: the calls feed is stale and an alert is delivered, while visits, results and costs are within their limits | Health |
 
 ## Injury firm
 

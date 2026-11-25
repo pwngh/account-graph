@@ -12,6 +12,8 @@ export interface Practice {
   /** Who is scheduled: the word, which is the tag too. */
   lead: string
   matter: string
+  /** The area of law, as the firm's campaigns name it. */
+  area: string
   links: { papers: string; papersPage: string; last: string; lastPage: string }
   scenes: Record<'papers' | 'scheduled' | 'lead' | 'lastSent' | 'lastOpened' | 'won' | 'sent' | 'value' | 'apart', [title: string, text: string]>
   told: { lastOpen: string; won: string }
@@ -33,6 +35,7 @@ const family: Practice = {
   papers: 'signed', won: 'client', value: 400, later: 1250, cost: 1,
   lead: 'director',
   matter: 'Divorce, with children',
+  area: 'Family law',
   links: { papers: 'documents', papersPage: 'firmar', last: 'payment', lastPage: 'inscripcion' },
   scenes: {
     papers: ['Documents signed', 'Staff text a link to the documents. They open it and sign.'],
@@ -63,6 +66,7 @@ const injury: Practice = {
   papers: 'records', won: 'signed', value: 2500, later: 6000, cost: 5,
   lead: 'attorney',
   matter: 'Car accident, passenger',
+  area: 'Injury law',
   links: { papers: 'records', papersPage: 'expedientes', last: 'agreement', lastPage: 'acuerdo' },
   scenes: {
     papers: ['Records authorized', 'Staff text a link to the medical records authorization. They open it and sign.'],

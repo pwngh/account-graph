@@ -308,7 +308,7 @@
     [1, () => next()], [4.5, () => next()], [8, () => next()], [15, () => next()], [20, () => next()], [28, () => next()],
     // The moment the story turns on is held.
     [31, () => next()], [39, () => next()], [43.5, () => next()], [49, () => next()], [55, () => next()], [59.5, () => next()], [62.5, () => next()], [66, () => next()], [70, () => next()],
-    [74, () => turn(CLIENTS, ['Busqueda: North'])], [82, () => turn('#/journey/contact%3Aines-vega')],
+    [74, () => turn(CLIENTS, [STAGE.campaign])], [82, () => turn('#/journey/contact%3Aines-vega')],
   ]
   const turn = async (address, words) => {
     showCredit()

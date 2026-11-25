@@ -141,6 +141,7 @@
 - A connection the database ends is logged, and the server keeps running.
 - Crawlers, previewers, uptime checks and `STAFF_NETWORKS` are excluded. `/collect` is rate limited per address.
 - Requests with invalid UTF-8, NUL characters or more than 32 levels of nesting are refused.
+- `npm run firm` watches all four feeds, records visits at a made-up address and names campaigns as an agency would.
 - `runWorkers` of `./testing` runs every worker once. `npm run firm` and `examples/six-calls.ts` run in memory.
 - `record` `profile` takes `speaker`, whoever speaks for the subject. Their browser and number are related to the subject and never joined to them, and what brought them earns the credit.
 - `data-ag-for-other` marks the control of a form that says it is about somebody else. The script tag then sends `ag_speaker_device` in place of `ag_device`, and `accountGraph.fields(form)` answers the same way.

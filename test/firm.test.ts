@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { startFirm } from '../examples/firm/firm.ts'
+import { campaignsOf, startFirm } from '../examples/firm/firm.ts'
 import { PRACTICES } from '../examples/firm/practice.ts'
 import { hashPhone } from '../tools/internals.ts'
 import { browse, chrome, until, without } from './chrome.ts'
@@ -39,6 +39,8 @@ for (const practice of ['family', 'injury'] as const) test(`every scene of the $
   }
 
   const kind = PRACTICES[practice]
+  const names = campaignsOf(kind)
+  const said = (name: string) => name.replaceAll('|', '\\|')
   const last = kind.links.last
   const first = kind.value.toLocaleString('en-US')
   const caller = `caller:${hashPhone('+15550100042')}`
@@ -46,26 +48,26 @@ for (const practice of ['family', 'injury'] as const) test(`every scene of the $
   const step = (name: string, value: string) => (text: string) => (text.includes(`${name} · ${value}`) ? name : '')
   const column = (name: string) => (text: string) => (new RegExp(`\n${name}\n[^]*contact:ines-vega`).test(text.slice(0, text.indexOf('contact:ines-vega') + 17)) ? `in ${[...text.slice(0, text.indexOf('contact:ines-vega')).matchAll(/\n(inquiry|intake|signed|scheduled|client)\n/g)].at(-1)?.[1]}` : '')
   const expected: [RegExp, (text: string) => string][] = [
-    [/office north, language es/, (text) => row(text, 'Busqueda: North')],
+    [/office north, language es/, (text) => row(text, names.spanish)],
     [/by the tap\. State: waiting\. Counted: no/, (text) => (/Waiting/.test(text) ? text : '')],
     [/State: missed\. Counted: no\. Sent to the ad platform: no/, (text) => (text.includes(caller.slice(0, 14)) ? 'on the board' : '')],
     [/Missed call: returned\./, (text) => (/returned after/i.test(text) && /answered/i.test(text) ? 'returned' : '')],
     // Tied to a name, and not yet sure enough to credit the ad.
     [/tied to a name\. Ad credit: (7|8)\d%, below the 90%/, (text) => (text.includes('contact:ines-vega') && text.includes('phone 85%') ? 'by phone' : '')],
     [/Link for form: not opened/, () => 'nothing yet'],
-    [/whose browser this is\. Ad credit: 92%, to Busqueda: North/, (text) => (/link 92%/.test(text) ? 'by link' : '')],
+    [new RegExp(`whose browser this is\\. Ad credit: 92%, to ${said(names.spanish)}`), (text) => (/link 92%/.test(text) ? 'by link' : '')],
     [/Step recorded: intake/, column('intake')],
     [new RegExp(`Step recorded: ${kind.papers}`), column(kind.papers)],
     [new RegExp(`Step recorded: scheduled, ${kind.lead} ortega`), column('scheduled')],
     [/Outbound call answered/, (text) => (text.includes('Duration 1,290 s') ? 'called' : '')],
     [new RegExp(`Text recorded\\. Link for ${last}: not opened`), (text) => (new RegExp(`Link sent · ${last}\\s*Not opened`).test(text) ? 'not opened' : '')],
     [new RegExp(`Link for ${last}: opened after 3 minutes\\. ${kind.told.lastOpen}`), (text) => (new RegExp(`Link sent · ${last}\\s*Opened after 3 min`).test(text) ? 'opened' : '')],
-    [new RegExp(`${kind.told.won}: ${kind.value} USD\\. Advertised: north\\. Served: river\\. Attributed to Busqueda: North at 92%`), (text) => step(kind.won, `${first} USD`)(text) && `${/office served: river/.test(text)} ${text.includes(`${kind.lead}: ortega`)}`],
+    [new RegExp(`${kind.told.won}: ${kind.value} USD\\. Advertised: north\\. Served: river\\. Attributed to ${said(names.spanish)} at 92%`), (text) => step(kind.won, `${first} USD`)(text) && `${/office served: river/.test(text)} ${text.includes(`${kind.lead}: ortega`)}`],
     [new RegExp(`Sent to the sample ad platform: ${kind.value} USD, for the first ad click`), (text) => (new RegExp(`${kind.won} · ${first} USD[^]{0,120}Sent to google`).test(text) ? 'sent' : '')],
     [new RegExp(`Initial value ${kind.value} USD, current value ${kind.later} USD.*ad platform: ${kind.later} USD`), (text) => (text.includes(`from ${first} USD to ${kind.later.toLocaleString('en-US')} USD`) ? 'restated' : '')],
     [/Before: joined.*Same cluster: no/, (text) => (text.includes('contact:tomas-vega') && /separated/i.test(text) ? 'separated' : '')],
-    [/Attributed to Map listing, River/, (text) => row(text, 'Map listing, River')],
-    [/Step recorded: inquiry\. Credited to Search: River at 9\d%, by the browser/, (text) => (text.includes('contact:rosa-marin') ? 'in inquiry' : '')],
+    [new RegExp(`Attributed to ${said(names.listing)}`), (text) => row(text, names.listing)],
+    [new RegExp(`Step recorded: inquiry\\. Credited to ${said(names.river)} at 9\\d%, by the browser`), (text) => (text.includes('contact:rosa-marin') ? 'in inquiry' : '')],
     [/Linked at 85% by phone: related/, (text) => (text.includes('contact:marta-lago') && text.includes('contact:teo-lago') ? 'a pair' : '')],
     [/no calls for 12 hours/, (text) => (text.includes('Calls feed is stale') ? 'quiet' : '')],
   ]
@@ -73,18 +75,22 @@ for (const practice of ['family', 'injury'] as const) test(`every scene of the $
     const at = text.indexOf(name)
     return at < 0 ? '' : text.slice(at, at + length)
   }
-  for (const [i, [said, seen]] of expected.entries()) {
+  const read = async (path: string) => (await fetch(`${firm.graph}/review/api${path}`, { headers: { authorization: 'Bearer demo' } })).json() as Promise<any>
+  const feeds = async () => ((await read('/ops')).feeds as { name: string; hours: number; quiet: boolean }[]).map(({ name, hours, quiet }) => [name, hours, quiet] as const)
+  for (const [i, [tells, seen]] of expected.entries()) {
     const before = seen(await view(links[i]!))
     await press('Space')
     await until(`scene ${i + 1}`, async () => (await bar('at')) === String(i + 1) && (await bar('running')) === 'false')
-    assert.match((await run(`document.querySelector('#stage .told').textContent`)) as string, said)
+    assert.match((await run(`document.querySelector('#stage .told').textContent`)) as string, tells)
     assert.ok(Number(await bar('ms')) < 1000, `scene ${i + 1} took ${await bar('ms')} ms`)
     // The stage opens what the scene changed, without a problem, and the phone goes once the call is over.
     assert.equal(await run(`document.getElementById('notice').textContent`), '')
     assert.equal(await run(`document.body.classList.contains('with-phone')`), i < 14)
     assert.equal(await run(`document.getElementById('stage-light').classList.contains('on')`), Boolean(scenes[i]!.spot), `scene ${i + 1} lights its row`)
+    // Until the last scene every feed is within its limit, however far the clock has moved.
+    if (i < 20) assert.deepEqual((await feeds()).filter(([, , quiet]) => quiet), [], `the feeds after scene ${i + 1}`)
     // While it rings, the firm's own screen says where the caller came from.
-    if (i === 1) assert.match((await run(`document.getElementById('stage-desk').textContent`)) as string, /Incoming call.*New, \(555\) 010-0042.*google · Busqueda: North.*\/es.*No missed calls/)
+    if (i === 1) assert.match((await run(`document.getElementById('stage-desk').textContent`)) as string, new RegExp(`Incoming call.*New, \\(555\\) 010-0042.*google · ${said(names.spanish)}.*/es.*No missed calls`))
     if (scenes[i]!.title === 'Details entered') assert.match((await run(`document.getElementById('stage-desk').textContent`)) as string, /Contact saved.*No duplicate on file · a caller and a site visit, by phone POST \/match/)
     if (scenes[i]!.title === 'Separation') assert.match((await run(`document.getElementById('stage-desk').textContent`)) as string, /Conflict check.*Inés Vega, Tomás Vega.*Kept apart, on record/)
     const after = seen(await view(links[i]!))
@@ -92,6 +98,9 @@ for (const practice of ['family', 'injury'] as const) test(`every scene of the $
     if (scenes[i]!.title === 'Form texted') assert.equal(after, before)
     else assert.ok(after && after !== before, `scene ${i + 1} shows on its view: ${JSON.stringify([before, after])}`)
   }
+  // The clock moved, and of the four feeds only the calls have been silent too long. Every visit is recorded at the firm's address.
+  assert.deepEqual(await feeds(), [['touches', 24, false], ['calls', 12, true], ['results', 24, false], ['costs', 48, false]])
+  assert.equal((await read('/journey?subject=visitor:v-4821')).entries.find((entry: { kind: string }) => entry.kind === 'visit').touch.landing, 'https://www.firm.example.org/es')
   // There is nothing after the last.
   assert.equal(await run(`[...document.querySelectorAll('#stage button')].find((each) => each.textContent.startsWith('Next')).hidden`), true)
   // The show plays from the start only.
@@ -115,6 +124,7 @@ for (const practice of ['family', 'injury'] as const) test(`every scene of the $
   }`)
   await until('the form', () => screen.run(`Boolean(document.querySelector('.received'))`).catch(() => false))
   const device = await screen.run(`localStorage.getItem('ag_device')`)
+  assert.equal((await read(`/journey?subject=visitor:${device}`)).entries.find((entry: { kind: string }) => entry.kind === 'visit').touch.landing, 'https://www.firm.example.org/es')
   const his = JSON.stringify(await (await fetch(`${firm.graph}/review/api/subject?subject=contact:dario-ferrer`, { headers: { authorization: 'Bearer demo' } })).json())
   assert.deepEqual([`visitor:${device}`, `caller:${hashPhone('+15550100047')}`, 'behalf:', `device:${device}`, `phone:${hashPhone('+15550100047')}`].map((each) => his.includes(`"${each}`)), [true, true, true, false, false], his)
 })
