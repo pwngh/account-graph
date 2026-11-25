@@ -312,7 +312,7 @@ if (!url) {
       const inside = new Promise<void>((resolve) => (entered = resolve))
       const writes = [store.write(async () => (entered(), held))]
       try {
-        await inside
+        await Promise.race([inside, writes[0]])
         for (let i = 0; i < 10; i++) writes.push(store.write(async () => undefined))
         assert.equal(await Promise.race([graph.counts().then(() => 'answered'), new Promise((resolve) => setTimeout(resolve, 2_000, 'waited'))]), 'answered')
       } finally {
