@@ -12,7 +12,7 @@ const WATCHED = {
   results: ['QUIET_RESULTS_HOURS', 'A result is recorded when your phone system or staff report it.'], costs: ['QUIET_COSTS_HOURS', 'Costs arrive when the platform sends them, which can be a day or more later.'],
 }
 DETAILS['health.feed'] = {
-  now({ feed, at, limits } = {}) {
+  now({ feed, at, limits, alerts } = {}) {
     if (!feed) return undefined
     const [setting, comes] = WATCHED[feed.name] ?? []
     const open = limits?.openHours && (feed.name === 'calls' || feed.name === 'results')
@@ -23,7 +23,7 @@ DETAILS['health.feed'] = {
       rows: [['Last record', silent === undefined ? 'None yet' : moment(feed.last)], ['Silent for', silent === undefined ? undefined : lasted(Math.max(0, silent))],
         ['Limit', watched ? `${amount(feed.hours)} h${left === undefined ? '' : left > 0 ? ` · ${lasted(left)} left` : ` · over by ${lasted(-left)}`}` : undefined], ['Counted', watched ? (open ? 'In open hours' : 'Around the clock') : undefined],
         [watched ? 'Set by' : 'Not set', setting]],
-      say: [comes, watched ? 'Past the limit an alert is posted once.' : `Set ${setting} to a number of hours to be told when they stop.`],
+      say: [comes, watched ? (alerts ? 'Past the limit an alert is posted, once each time.' : 'Past the limit it is marked stale. ALERT_WEBHOOK is not set, so nothing is posted.') : `Set ${setting} to a number of hours, and it is marked stale past them.`],
       links: [docs('Stale Feeds', 'operations.md#stale-feeds')] }
   },
 }
@@ -51,7 +51,7 @@ function workings(ops, refused) {
   const FEED = { touches: GLYPHS.visit, calls: GLYPHS.call, results: GLYPHS.result, costs: GLYPHS.value }
   const feeds = el('ul', { class: 'cards' }, ...ops.feeds.map((feed) => el('li', {}, tile(FEED[feed.name]), el('b', {}, NAMES[feed.name]),
     el('span', { class: 'state' }, feed.quiet ? el('span', { class: 'chip apart' }, 'Stale') : feed.hours > 0 ? el('span', { class: 'chip same' }, 'OK') : el('span', { class: 'meta' }, 'Not monitored'),
-      detail('health.feed', { id: feed.name, label: `${NAMES[feed.name]}, ${feed.quiet ? 'stale' : feed.hours > 0 ? 'OK' : 'not monitored'}`, of: () => ({ feed, at: ops.at, limits }) })),
+      detail('health.feed', { id: feed.name, label: `${NAMES[feed.name]}, ${feed.quiet ? 'stale' : feed.hours > 0 ? 'OK' : 'not monitored'}`, of: () => ({ feed, at: ops.at, limits, alerts: ops.alerts }) })),
     el('span', { class: 'meta' }, 'Last record ', ago(feed.last, ops.at), feed.hours > 0 ? ` · limit ${amount(feed.hours)} h` : ''))))
 
   const jobs = el('ul', { class: 'cards' }, ...ops.jobs.map((job) => el('li', {}, tile('M13 8a5 5 0 1 1-1.5-3.6M13 2.5v2.6h-2.6'), el('b', {}, job.name),

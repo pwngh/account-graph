@@ -1109,7 +1109,7 @@ test('targets are checked at the start, and none are set by default', () => {
   assert.deepEqual(targetProblems({ answered: 0.9, returned: 1, callbackHours: 2, costPerOutcome: 40, roas: 3 }), [])
   for (const [given, problem] of [
     [[], 'must be an object, such as {"answered":0.9}'], [{ answer: 0.9 }, '"answer" is not one of answered, returned, callbackHours, costPerOutcome, roas'],
-    [{ answered: 90 }, '"answered" must be a share from 0 to 1, such as 0.9'], [{ returned: '0.9' }, '"returned" must be a number above 0'], [{ roas: 0 }, '"roas" must be a number above 0'],
+    [{ answered: 90 }, '"answered" must be a share above 0 and up to 1, such as 0.9'], [{ returned: '0.9' }, '"returned" must be a number above 0'], [{ roas: 0 }, '"roas" must be a number above 0'],
   ] as const) assert.deepEqual(targetProblems(given), [problem])
   const env = { DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y' }
   assert.equal(configFrom(env).targets, undefined)

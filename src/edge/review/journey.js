@@ -29,7 +29,9 @@ function told(entry, icon = '') {
     return [entry.event ? entry.event.replaceAll('_', ' ') : 'sighting', more(`${[...kinds].map(([kind, count]) => (count > 1 ? `${kind} (${count})` : kind)).join(', ')}`)]
   }
   if (entry.kind === 'call') {
-    const { call, state, followUp } = entry
+    const { call, state } = entry
+    // Said to be nobody's inquiry, it waits for nobody.
+    const followUp = entry.notLead ? undefined : entry.followUp
     const how = { answered: 'answered', missed: 'missed', voicemail: 'voicemail', waiting: 'waiting for result', unknown: 'unknown result' }[state] ?? 'unknown result'
     const after = followUp && { open: 'Not returned', returned: `Returned after ${lasted(followUp.delay)}${followUp.reported ? ' (reported)' : ''}`, 'called again': `Called again after ${lasted(followUp.delay)}`, hidden: 'Number withheld' }[followUp.state]
     return [call.direction === 'outbound' ? 'Outbound ' : 'Inbound ', reviewDisplay.chip(how[0].toUpperCase() + how.slice(1), reviewDisplay.callTone(state)), notLead(entry.notLead), icon,
@@ -84,16 +86,16 @@ const tagWords = (tags) => Object.entries(tags ?? {}).map(([name, value]) => `${
 const visitWords = (entry) => cameFrom({ source: entry.source, campaign: entry.touch?.campaign, campaignId: entry.touch?.campaignId })
 const CALLED = { answered: 'Answered call', missed: 'Missed call', voicemail: 'Voicemail', waiting: 'Call waiting for a result', unknown: 'Call with no result' }
 const CALL_SAYS = {
-  answered: ['Answered', ' means your phone system reported that a person spoke to them.'],
+  answered: ['Answered', ' means your phone system or staff reported that a person spoke to them.'],
   missed: ['Missed', ' means nobody spoke to them and they left no voicemail.'],
-  voicemail: ['Voicemail', ' means nobody spoke to them and they left a message.'],
+  voicemail: ['Voicemail', ' means nobody spoke to them and the call went to voicemail.'],
   waiting: ['Waiting', ' means a result is expected and has not come yet.'],
-  unknown: ['Unknown', ' means no result was sent, so nothing says whether a person answered.'],
+  unknown: ['Unknown', ' means nothing sent says whether a person answered.'],
 }
 /** What became of a call nobody answered, in words: when, and how long after. Nothing is said of one that needs nothing. */
 function becameOf(call, after, at) {
   if (!after) return []
-  const later = typeof after.delay === 'number' ? `${moment(call.at + after.delay)} · ${lasted(after.delay)}${after.reported ? ' · reported by your system' : ''}` : undefined
+  const later = typeof after.delay === 'number' ? `${moment(call.at + after.delay)} · ${lasted(after.delay)}${after.reported ? ' · reported, with no call' : ''}` : undefined
   return after.state === 'hidden' ? [['Returned', 'Number withheld']] : after.state === 'open' ? [['Returned', at > call.at ? `Not yet, ${lasted(at - call.at)} so far` : 'Not yet']]
     : [[after.state === 'called again' ? 'Called again' : 'Returned', later]]
 }
@@ -133,13 +135,14 @@ function sameCaller(call, entries, partial) {
   return [before.length > 0 && `${amount(before.length)}${partial ? '+' : ''} earlier${missed > 0 ? `, ${amount(missed)} missed` : ''}`, next && `next ${moment(next.at)}`].filter(Boolean).join(' · ')
 }
 /** Everything known of a call that a card has room for. */
-function callRows({ call, state, followUp, entries, partial, credit, limits, at }) {
+function callRows({ call, state, followUp: after, notLead: spurned, entries, partial, credit, limits, at }) {
+  const followUp = spurned ? undefined : after
   const [length, wait] = [seconds(call.duration), seconds(call.result?.waited)]
   const tags = Object.entries(call.tags ?? {})
   return [['Called', moment(call.at, true)],
-    ['How we know', call.result?.answered !== undefined ? `Reported, ${moment(call.result.recorded) ?? 'at a time not kept'}` : state === 'waiting' ? 'No result yet' : 'No result was sent'],
+    ['How we know', call.result?.answered !== undefined ? `Reported, ${moment(call.result.recorded) ?? 'at a time not kept'}` : call.result ? 'Reported, but not whether anybody answered' : state === 'waiting' ? 'No result yet' : 'No result was sent'],
     length && wait ? (length === wait ? ['They waited', `${wait}, the whole call`] : ['Duration · wait', `${length} · ${wait}`]) : length ? ['Duration', length] : ['They waited', wait],
-    ...becameOf(call, followUp, at), ['Attempts before that', followUp?.attempts > 0 ? amount(followUp.attempts) : undefined], ['Time limit', limitWords(call, followUp, limits, at)],
+    ...becameOf(call, followUp, at), [followUp?.state === 'open' ? 'Attempts so far' : 'Attempts before that', followUp?.attempts > 0 ? amount(followUp.attempts) : undefined], ['Time limit', limitWords(call, followUp, limits, at)],
     arrivalOf(call, entries, credit), ['Tied by', tiedBy(call, entries)], tags.length === 1 ? [inWords(tags[0][0])[0].toUpperCase() + inWords(tags[0][0]).slice(1), tags[0][1]] : ['Tags', tagWords(call.tags)],
     ['Same caller', sameCaller(call, entries, partial)]]
 }
@@ -147,12 +150,13 @@ const directionOf = (call) => (call.direction === 'outbound' ? 'Outbound' : 'Inb
 const journeyHash = (subject, call) => `#/journey/${encodeURIComponent(subject)}${call ? `/${encodeURIComponent(call)}` : ''}`
 /** A card of one call. `entries` are everything known of the caller, and where the page has not read them yet they are asked for. */
 function callCard(data, whole) {
-  const { call, state, followUp, notLead: spurned, here } = data
+  const { call, state, notLead: spurned, here } = data
+  const followUp = spurned ? undefined : data.followUp
   const by = followUp && !followUp.reported ? followUp.by : undefined
   const outbound = call.direction === 'outbound'
   return { title: outbound && unreached(state) ? 'Call not answered' : CALLED[state] ?? 'Call', value: `${directionOf(call)}${spurned ? ` · ${spurned === 'spam' ? 'Spam' : 'Not a lead'}` : ''}`, roomy: true,
     rows: whole ? callRows(data) : callRows(data).slice(0, 3),
-    say: [outbound && state === 'answered' ? ['Answered', ' means your phone system reported that they picked up.'] : outbound && state === 'missed' ? ['Missed', ' means they did not pick up.'] : CALL_SAYS[state], !outbound && unreached(state) ? 'Returned means a call back that was answered, or your system reported it.' : undefined],
+    say: [outbound && state === 'answered' ? ['Answered', ' means your phone system or staff reported that they picked up.'] : outbound && state === 'missed' ? ['Missed', ' means nobody picked up.'] : CALL_SAYS[state], !outbound && unreached(state) && !spurned ? 'Returned means a call back that was answered, or a report that they were reached.' : undefined],
     links: whole ? [by && { text: followUp.state === 'returned' ? 'Show Return Call' : 'Show Later Call', href: journeyHash(call.subject, by) }, !here && { text: 'Open Journey', href: journeyHash(call.subject) }, docs('Call Results', 'calls.md#call-results')] : [] }
 }
 DETAILS.call = {
@@ -205,7 +209,7 @@ function inShort(entry) {
   switch (entry.kind) {
     case 'visit': return visitWords(entry)
     case 'sighting': return entry.event ? inWords(entry.event) : 'sighting'
-    case 'call': return `${directionOf(entry.call)}, ${entry.state === 'waiting' ? 'waiting for result' : entry.state === 'unknown' ? 'no result' : entry.state}`
+    case 'call': return `${directionOf(entry.call)}, ${entry.state === 'waiting' ? 'waiting for result' : entry.state === 'unknown' ? 'no result' : entry.state}${entry.notLead ? `, ${entry.notLead === 'spam' ? 'spam' : 'not a lead'}` : ''}`
     case 'text': return entry.text.direction === 'outbound' ? 'Sent' : 'Received'
     case 'link': return entry.link.purpose ? inWords(entry.link.purpose) : 'Link sent'
     case 'outcome': return `${entry.outcome.stage}${entry.outcome.value > 0 ? ` · ${worthOf(entry.outcome.value, entry.outcome.currency)}` : ''}`
@@ -240,9 +244,10 @@ const EVENT_ROWS = {
     return [[['Event', entry.event && inWords(entry.event)], ['Identifiers', [...kinds].map(([kind, n]) => (n > 1 ? `${kind} (${amount(n)})` : kind)).join(', ')]], []]
   },
   call(data, short) {
-    const { state, followUp, notLead: spurned } = data.entry
+    const { state, notLead: spurned } = data.entry
+    const followUp = spurned ? undefined : data.entry.followUp
     const call = data.entry.call ?? {}
-    if (!short) return [callRows({ ...data, call, state, followUp }).slice(1), []]
+    if (!short) return [callRows({ ...data, call, state, followUp, notLead: spurned }).slice(1), []]
     const [length, wait] = [seconds(call.duration), seconds(call.result?.waited)]
     return [[['Result', state && `${directionOf(call)}, ${state === 'waiting' ? 'waiting for result' : state === 'unknown' ? 'no result' : state}${spurned ? `, ${spurned === 'spam' ? 'spam' : 'not a lead'}` : ''}`], length && wait ? ['Duration · wait', `${length} · ${wait}`] : length ? ['Duration', length] : ['Wait', wait], ...becameOf(call, followUp, data.at)], []]
   },
@@ -326,7 +331,7 @@ DETAILS['chart.wait'] = {
     const { call, followUp, pick } = data ?? {}
     if (!call || !(followUp?.delay >= 0)) return undefined
     return { title: `${followUp.state === 'called again' ? 'Called again' : 'Returned'} after ${lasted(followUp.delay)}`,
-      rows: [['From', moment(call.at)], ['To', moment(call.at + followUp.delay)], ['Attempts before that', followUp.attempts > 0 ? amount(followUp.attempts) : undefined], ['How we know', followUp.reported ? 'Reported by your system' : 'An answered call']],
+      rows: [['From', moment(call.at)], ['To', moment(call.at + followUp.delay)], ['Attempts before that', followUp.attempts > 0 ? amount(followUp.attempts) : undefined], ['How we know', followUp.reported ? 'Reported, with no call' : 'An answered call']],
       links: pick ? [{ text: 'Missed Call', href: location.hash, act: () => pick(call.id) }, !followUp.reported && followUp.by && { text: followUp.state === 'called again' ? 'Later Call' : 'Return Call', href: location.hash, act: () => pick(followUp.by) }] : [],
       foot: 'Click for both calls' }
   },
@@ -494,7 +499,7 @@ function chart(entries, shown, ties, subject, show, partial) {
         if (long > 14) mark.style.width = `${long.toFixed(1)}px`
         lane.append(mark)
         // From a missed call to when it was returned.
-        if (entry.followUp?.delay > 0) {
+        if (entry.followUp?.delay > 0 && !entry.notLead) {
           const wait = el('button', { type: 'button', class: 'wait', 'data-key': `detail chart.wait ${entry.call.id}`, 'aria-label': `${entry.followUp.state === 'called again' ? 'Called again' : 'Returned'} after ${lasted(entry.followUp.delay)}`, 'aria-haspopup': 'dialog', 'aria-expanded': 'false', on: { click: () => cards.press(wait) } })
           wait.about = { key: 'chart.wait', of: () => ({ call: entry.call, followUp: entry.followUp, pick: pickCall }) }
           cards.hintable(wait, () => 'chart.wait', wait.about.of, () => wait.getAttribute('aria-expanded') === 'true')

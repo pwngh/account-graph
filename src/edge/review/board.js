@@ -69,7 +69,7 @@ DETAILS['board.person'] = {
     const limit = column?.wait ? `${lasted(column.wait)}${board.openHours ? ` of open hours${row.late ? ' · overdue' : ''}` : row.late ? ` · overdue by ${lasted(Math.max(0, over))}` : ` · ${lasted(Math.max(0, -over))} left`}` : undefined
     return { title: reviewDisplay.idText(row.subject), value: step ?? 'Missed call', roomy: true,
       rows: [[step === null ? 'Waiting since' : 'At this step since', [moment(row.at), between(row.at, board.at)].filter(Boolean).join(' · ')], [step === null ? 'Limit for a call back' : `Limit for ${step}`, limit]],
-      say: [column?.wait ? ['Overdue', ` means longer here than the limit you set for ${step === null ? 'a call back' : 'this step'}${board.openHours ? ', counted in open hours' : ''}.`] : undefined],
+      say: [column?.wait ? ['Overdue', ` means longer here than the limit for ${step === null ? 'a call back' : 'this step'}${board.openHours ? ', counted in open hours' : ''}.`] : undefined],
       links: [{ text: 'Open Journey', href: journeyHash(row.subject) }, { text: 'Account', href: subjectHash(row.subject) }] }
   },
   more: ({ row, board } = {}) => row && recent(`/journey?subject=${encodeURIComponent(row.subject)}`).then((journey) => {
@@ -86,18 +86,19 @@ DETAILS['board.person'] = {
     const day = (at) => new Date(at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
     const worth = of('outcome').findLast((entry) => entry.outcome.stage === row.step)
     const call = of('call').at(-1)
-    const open = of('call').filter((entry) => entry.followUp?.state === 'open')
-    const texts = of('text').filter((entry) => entry.reply?.state === 'open').length
+    const open = of('call').filter((entry) => entry.followUp?.state === 'open' && !entry.notLead)
+    const texts = of('text').filter((entry) => entry.reply?.state === 'open' && !entry.notLead).length
     // With earlier events still unread, the first of these may not be the first.
     const visit = partial ? undefined : of('visit').find((entry) => !byNumber(entry))
     const ties = Object.entries(subjects ?? {}).filter(([, tie]) => tie.how !== 'self')
     const strongest = ties.filter(([, tie]) => tie.score !== null).sort(([, x], [, y]) => y.score - x.score)[0]
     const consent = of('consent').at(-1)
     return {
-      rows: [['Reached', reached.map((step) => `${step} ${day(first.get(step).at)}`).join(' → ')], ['Next step', row.step === null ? undefined : next],
+      // With earlier events still unread, neither is the first of a step.
+      rows: [['Reached', partial ? undefined : reached.map((step) => `${step} ${day(first.get(step).at)}`).join(' → ')], ['Next step', row.step === null ? undefined : next],
         ['Value', worth?.first && worth.first.at > 0 && row.value !== null && worth.first.value !== row.value ? `${worthOf(row.value, row.currency)} · at first ${worthOf(worth.first.value, worth.first.currency)}` : row.value > 0 ? worthOf(row.value, row.currency) : undefined],
-        ['Last call', call && `${inShort(call)}, ${moment(call.at)}${call.followUp?.attempts > 0 ? ` · ${amount(call.followUp.attempts)} ${call.followUp.attempts === 1 ? 'attempt' : 'attempts'} since` : ''}`],
-        ['Texts waiting', texts > 0 ? amount(texts) : undefined], visit ? ['First visit', `${day(visit.at)} · ${visitWords(visit)}`] : ['Credited to', cameFrom(row)],
+        ['Last call', call && `${inShort(call)}, ${moment(call.at)}${call.followUp?.attempts > 0 && !call.notLead ? ` · ${amount(call.followUp.attempts)} ${call.followUp.attempts === 1 ? 'attempt' : 'attempts'} since` : ''}`],
+        ['Texts waiting', texts > 0 ? `${amount(texts)}${partial ? '+' : ''}` : undefined], visit ? ['First visit', `${day(visit.at)} · ${visitWords(visit)}`] : ['Credited to', cameFrom(row)],
         ['IDs', subjects && `${amount(Object.keys(subjects).length)}${partial || journey.more > 0 ? '+' : ''}${strongest ? ` · strongest ${percent(strongest[1].score)}${strongest[1].kinds.length > 0 ? `, ${strongest[1].kinds[0]}` : ''}` : ''}`], ['Consent for ads', consent && consentWords(consent.answer)]],
       links: [open[0] && { text: 'Show Missed Call', href: journeyHash(row.subject, open[0].call.id) }],
     }
@@ -107,15 +108,15 @@ DETAILS['board.text'] = {
   now: ({ text, at } = {}) => text && { title: reviewDisplay.idText(text.subject), value: 'Unanswered texts', roomy: true,
     rows: [['Texts waiting', counted(text.unanswered)], ['Came from', cameFrom(text)], ['Tags', tagWords(text.tags)]],
     say: ['A text is answered by a text back, or by a call somebody answered.'], links: [{ text: 'Open Journey', href: journeyHash(text.subject) }, docs('Unanswered Texts', 'calls.md#unanswered-texts')] },
-  more: ({ text, at } = {}) => text && recent(`/journey?subject=${encodeURIComponent(text.subject)}`).then(({ entries }) => {
+  more: ({ text, at } = {}) => text && recent(`/journey?subject=${encodeURIComponent(text.subject)}`).then(({ entries, next }) => {
     const texts = entries.filter((entry) => entry.kind === 'text' && entry.subject === text.subject)
-    const open = texts.filter((entry) => entry.reply?.state === 'open')
+    const open = texts.filter((entry) => entry.reply?.state === 'open' && !entry.notLead)
     const said = texts.filter((entry) => entry.text.flags?.includes('opt_out') || entry.text.flags?.includes('opt_in')).at(-1)
     const back = texts.findLast((entry) => entry.text.direction === 'outbound')
     const spoke = entries.findLast((entry) => entry.kind === 'call' && entry.subject === text.subject && entry.state === 'answered')
     const last = [back, spoke].filter(Boolean).sort((x, y) => y.at - x.at)[0]
     const ago = (entry) => entry && `${moment(entry.at)} · ${lasted(at - entry.at)} ago`
-    return { rows: [['First of them', ago(open[0])], ['Latest', open.length > 1 ? ago(open.at(-1)) : undefined], ['Asked to stop', said && `${said.text.flags.includes('opt_out') ? 'Yes' : 'Asked for texts again'}, ${moment(said.at)}`], ['Last reply', last && `${last.kind === 'call' ? 'A call' : 'A text'}, ${moment(last.at)}`]] }
+    return { rows: [['First of them', next === null ? ago(open[0]) : undefined], ['Latest', open.length > 1 ? ago(open.at(-1)) : undefined], ['Asked to stop', said && `${said.text.flags.includes('opt_out') ? 'Yes' : 'Asked for texts again'}, ${moment(said.at)}`], ['Last reply', last && `${last.kind === 'call' ? 'A call' : 'A text'}, ${moment(last.at)}`]] }
   }),
 }
 

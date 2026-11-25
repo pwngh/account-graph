@@ -151,6 +151,8 @@ async function lastPeriods({ summary, then }, value, words) {
   return { rows: [[`Your last ${amount(held.length)} periods`, least === most ? least : `${least} – ${most}`]] }
 }
 const previous = ({ summary, then }, words) => [summary?.from ? `Previous ${daysBefore(summary).count === 1 ? 'day' : `${amount(daysBefore(summary).count)} days`}` : '', then?.calls > 0 ? words(then) : undefined]
+/** The zone the hours of a report are in, for a card that names one of them. */
+const zoneOf = (summary, hour) => ['Hours are in', hour && summary?.timeZone]
 const toMissed = () => toPart('View Missed Calls', 'calls-missed')
 const byHours = () => toPart('Calls by Hour', 'calls-hours')
 DETAILS['calls.inbound'] = {
@@ -162,7 +164,7 @@ DETAILS['calls.inbound'] = {
     return { title: 'Inbound calls', value: counted(total?.calls),
       rows: [['Inbound calls', counted(total?.calls)], ['Not a lead, left out', counted(total?.notLeads)], ['First hour with a call', began < 0 ? undefined : hourSpan(began)],
         ['Busiest hour', hour && `${hour.at.map(hourSpan).join(', ')} · ${amount(hour.most)}`], ['Busiest weekday', day && `${day.at.map((i) => WEEKDAYS[i]).join(', ')} · ${amount(day.most)}`],
-        ['Missed, number withheld', counted(total?.hidden)], previous({ summary, then }, ({ calls }) => amount(calls))],
+        ['Missed, number withheld', counted(total?.hidden)], zoneOf(summary, began >= 0), previous({ summary, then }, ({ calls }) => amount(calls))],
       say: ['If visits held and calls fell, check the numbers shown on the site.'],
       links: [byHours(), summary?.from && { text: 'Channels', href: `#/channels/${summary.from}/${summary.to}` }] }
   },
@@ -178,10 +180,10 @@ DETAILS['calls.answered'] = {
     const short = target && rate !== undefined ? Math.max(1, Math.ceil(target * total.calls - total.answered - 1e-9)) : 0
     return { title: 'Answered', value: rate === undefined ? undefined : percent(rate),
       rows: [['Answered by a person', counted(total?.answered)], ['All inbound calls', counted(total?.calls)], ['Missed · voicemail', both(total?.missed, total?.voicemail)],
-        ['Waiting · unknown result', both(total?.waiting, total?.unknown)], ['Weakest hour, of 5 calls or more', weakest && `${WEEKDAYS[weakest.weekday - 1]} ${hourSpan(weakest.hour)}, ${amount(weakest.answered)} of ${amount(weakest.calls)}`],
+        ['Waiting · unknown result', both(total?.waiting, total?.unknown)], ['Weakest hour, of 5 calls or more', weakest && `${WEEKDAYS[weakest.weekday - 1]} ${hourSpan(weakest.hour)}, ${amount(weakest.answered)} of ${amount(weakest.calls)}`], zoneOf(summary, weakest),
         previous({ summary, then }, ({ answered, calls }) => percent(answered / calls))],
       sum: rate === undefined ? undefined : `${percent(rate)} = ${amount(total.answered)} answered ÷ ${amount(total.calls)} ${total.calls === 1 ? 'call' : 'calls'}`,
-      say: [target && rate !== undefined && goal(percent(target), rate >= target, `${amount(short)} more answered ${short === 1 ? 'call' : 'calls'} would reach it`), 'If calls hold steady and this falls, look for the hours in Calls by Hour.'],
+      say: [target && rate !== undefined && goal(sharePercent(target), rate >= target, `${amount(short)} more answered ${short === 1 ? 'call' : 'calls'} would reach it`), 'If calls hold steady and this falls, look for the hours in Calls by Hour.'],
       links: [toMissed(), byHours(), docs('Call Results', 'calls.md#call-results')] }
   },
   more: (data) => lastPeriods(data ?? {}, ({ answered, calls }) => answered / calls, percent),
@@ -194,9 +196,9 @@ DETAILS['calls.missed'] = {
     const hour = peak(sumOf(cells, (cell) => cell.hour, 24, 'missed', 'voicemail'))
     return { title: 'Missed', value: counted(lost),
       rows: [['Missed', counted(total?.missed)], ['Voicemail', counted(total?.voicemail)], ['After hours', counted(after)], ['In open hours', counted(after === undefined ? undefined : lost - after)],
-        ['Returned', counted(total?.returned)], ['Called again', counted(total?.calledAgain)], ['Number withheld', counted(total?.hidden)], ['Peak hour', hour && `${hour.at.map(hourSpan).join(', ')} · ${amount(hour.most)}`]],
+        ['Returned', counted(total?.returned)], ['Called again', counted(total?.calledAgain)], ['Number withheld', counted(total?.hidden)], ['Peak hour', hour && `${hour.at.map(hourSpan).join(', ')} · ${amount(hour.most)}`], zoneOf(summary, hour)],
       sum: total?.calls > 0 ? `${percent(lost / total.calls)} = ${amount(lost)} missed ÷ ${amount(total.calls)} ${total.calls === 1 ? 'call' : 'calls'}` : undefined,
-      say: ['Nobody spoke to these callers. Voicemails are counted with them.', closed ? ['In open hours', ' is the part staff can change.'] : undefined],
+      say: ['Nobody spoke to these callers. Voicemails are counted with them.', closed ? ['In open hours', ' counts those who called while you were open.'] : undefined],
       links: [toMissed(), docs('Opening Hours', 'operations.md#opening-hours')] }
   },
 }
@@ -205,13 +207,16 @@ DETAILS['calls.returned'] = {
     const { total, returnedWithin } = summary ?? {}
     const lost = total && total.missed + total.voicemail
     const rate = lost > 0 ? total.returned / lost : undefined
-    const target = goals?.returned
-    const short = target && rate !== undefined ? Math.max(1, Math.ceil(target * lost - total.returned - 1e-9)) : 0
+    // The target is of those who could be called back: not those who hid their number and were not reached, nor those who got through by themselves.
+    const open = total && lost - total.returned - total.calledAgain - total.hidden
+    const callable = total && total.returned + open
+    const target = callable > 0 ? goals?.returned : undefined
+    const short = target ? Math.max(1, Math.ceil(target * callable - total.returned - 1e-9)) : 0
     return { title: 'Returned', value: rate === undefined ? undefined : percent(rate),
-      rows: [['Returned', counted(total?.returned)], ['Reported by a system', counted(total?.reported)], ['Called again', counted(total?.calledAgain)], ['Still open', total && counted(lost - total.returned - total.calledAgain - total.hidden)],
+      rows: [['Returned', counted(total?.returned)], ['Reported, with no call', counted(total?.reported)], ['Called again', counted(total?.calledAgain)], ['Still open', counted(open)],
         ['Number withheld', counted(total?.hidden)], ['Median time to return', typeof returnedWithin === 'number' ? lasted(returnedWithin) : undefined], ['Time limit', limits?.returnHours ? `${amount(limits.returnHours)} h${limits.openHours ? ' of open hours' : ''}` : undefined]],
       sum: rate === undefined ? undefined : `${percent(rate)} = ${amount(total.returned)} returned ÷ ${amount(lost)} missed`,
-      say: [target && rate !== undefined && goal(percent(target), rate >= target, `${amount(short)} more would reach it`), 'Not compared with the days before: the newest callers have had less time to be reached.'],
+      say: [target && goal(`${sharePercent(target)} of those who could be called back`, total.returned / callable >= target, `${amount(total.returned)} of ${amount(callable)} were returned, and ${amount(short)} more would reach it`), 'Not compared with the days before: the newest callers have had less time to be reached.'],
       links: [toPart('Awaiting Callback', 'calls-missed'), docs('Missed Callers', 'operations.md#missed-callers')] }
   },
 }
@@ -229,7 +234,7 @@ DETAILS['calls.awaiting'] = {
         // In open hours the page cannot tell, so it does not.
         [`Past the limit of ${limits?.returnHours} h`, limits?.returnHours && !limits.openHours ? some(over(limits.returnHours), true) : undefined],
         ['Voicemail', some(({ state }) => state === 'voicemail')], ['Tried already', some(({ attempts }) => attempts > 0)], ['Credited to a source', some(({ source }) => source)]],
-      say: [target && calls.length > 0 && goal(`${target} h by the clock`, !over(target)(oldest), `${some(over(target), true)} ${calls.filter(over(target)).length === 1 ? 'has' : 'have'} waited longer`), 'Callers who withheld their number cannot be called back and are not here.'],
+      say: [target && calls.length > 0 && goal(`${amount(target)} h by the clock`, !over(target)(oldest), `${some(over(target), true)} ${calls.filter(over(target)).length === 1 ? 'has' : 'have'} waited longer`), 'Callers who withheld their number cannot be called back and are not here.'],
       links: [toMissed()] }
   },
 }

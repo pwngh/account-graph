@@ -28,10 +28,12 @@ const counted = (n) => (typeof n === 'number' && Number.isFinite(n) ? amount(n) 
 const both = (a, b) => (counted(a) !== undefined && counted(b) !== undefined ? `${amount(a)} · ${amount(b)}` : undefined)
 /** How long between two times, where both are known. */
 const between = (from, to) => (typeof from === 'number' && typeof to === 'number' ? lasted(Math.max(0, to - from)) : undefined)
-/** When something was, as a card says it. */
-const moment = (at, seconds = false) => (typeof at === 'number' && at > 0 ? new Date(at).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', ...(seconds && { second: '2-digit' }), ...(new Date(at).getFullYear() !== new Date().getFullYear() && { year: 'numeric' }) }) : undefined)
+/** When something was, as a card says it. To the second, it names the zone too: the hours of a report may be in another. */
+const moment = (at, seconds = false) => (typeof at === 'number' && at > 0 ? new Date(at).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', ...(seconds && { second: '2-digit', timeZoneName: 'short' }), ...(new Date(at).getFullYear() !== new Date().getFullYear() && { year: 'numeric' }) }) : undefined)
 /** Where an arrival came from, in words. */
 const cameFrom = (row) => (row?.source ? `${row.source}${row.campaign || row.campaignId ? ` · ${row.campaign ?? row.campaignId}` : ''}` : undefined)
+/** A share as a target is written: whole percents where it is one, and never 0% for one that is more than nothing. */
+const sharePercent = (share) => (share < 0.0001 ? '<0.01%' : `${(share * 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}%`)
 /** A target and whether it is met. Nothing is said where the firm set none. */
 const goal = (text, met, short = '') => [`Target ${text}, set by you.`, met ? ' Met.' : ` Not met${short ? `: ${short}` : ''}.`]
 

@@ -30,8 +30,8 @@ for (const [store, open] of Object.entries(STORES)) test(`every card is true to 
   assert.deepEqual([missed.Missed, missed.Voicemail, missed.Returned, missed['Called again'], missed['Number withheld'], missed['After hours'], missed['In open hours']], ['3', '1', '2', '0', '1', undefined, undefined])
   assert.equal(await page.text('#card .detail-sum'), '50% = 4 missed ÷ 8 calls')
   const returned = await page.card('#/calls', 'calls.returned')
-  assert.deepEqual([returned.Returned, returned['Reported by a system'], returned['Called again'], returned['Still open'], returned['Number withheld'], returned['Median time to return'], returned['Time limit']], ['2', '1', '0', '1', '1', '1 h', '24 h'])
-  assert.match(await page.text('#card .detail-say'), /^Target 25%, set by you\. Met\. Not compared with the days before/)
+  assert.deepEqual([returned.Returned, returned['Reported, with no call'], returned['Called again'], returned['Still open'], returned['Number withheld'], returned['Median time to return'], returned['Time limit']], ['2', '1', '0', '1', '1', '1 h', '24 h'])
+  assert.match(await page.text('#card .detail-say'), /^Target 25% of those who could be called back, set by you\. Met\. Not compared with the days before/)
   const waits = await page.card('#/calls', 'calls.awaiting')
   assert.deepEqual([waits['Awaiting callback'], waits.Oldest, waits['Past the limit of 24 h'], waits.Voicemail, waits['Tried already'], waits['Credited to a source']], ['1', `${await written(page, ago(-50))} · 2 days 2 h ago`, '1', '1', '0', '1'])
   assert.match(await page.text('#card .detail-say'), /^Target 2 h by the clock, set by you\. Not met: 1 has waited longer\./)
@@ -57,7 +57,7 @@ for (const [store, open] of Object.entries(STORES)) test(`every card is true to 
     assert.equal(await page.text('#card-title'), title)
   }
   const told = await page.card(`#/journey/${encodeURIComponent(caller(13))}`, 'call cal-1 timeline')
-  assert.deepEqual([told.Returned, told['Time limit'], (await page.links()).length], [`${await written(page, ago(-27))} · 1 h · reported by your system`, '24 h · inside it', 1])
+  assert.deepEqual([told.Returned, told['Time limit'], (await page.links()).length], [`${await written(page, ago(-27))} · 1 h · reported, with no call`, '24 h · inside it', 1])
   const hidden = await page.card(`#/journey/${encodeURIComponent('call:hid-1')}`, 'call hid-1 timeline')
   assert.deepEqual([hidden.Returned, hidden['Time limit'], hidden['Same caller'], hidden.Duration], ['Number withheld', undefined, undefined, '15 s'])
 

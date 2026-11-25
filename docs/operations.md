@@ -476,8 +476,8 @@ TARGETS='{"answered":0.9,"returned":0.8,"callbackHours":2}'
 
 | Target | Meaning | Shown beside |
 | --- | --- | --- |
-| `answered` | The share of inbound calls a person should answer, from 0 to 1 | Answered, on Calls |
-| `returned` | The share of missed callers who should be reached, from 0 to 1 | Returned, on Calls |
+| `answered` | The share of inbound calls a person should answer, above 0 and up to 1 | Answered, on Calls |
+| `returned` | Of the missed callers who could be called back, the share that should be [returned](calls.md#callbacks), above 0 and up to 1. Callers whose call is `hidden` or `called again` are not counted. | Returned, on Calls |
 | `callbackHours` | Hours by the clock a missed caller may wait | Awaiting callback, on Calls |
 | `costPerOutcome` | What an outcome may cost, in the currency of your costs | Not shown yet |
 | `roas` | What should come back of each unit spent | Not shown yet |

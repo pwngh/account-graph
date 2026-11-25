@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { LocalOptions } from '../src/index.ts'
-import { caller, firm, screen } from './cards.ts'
+import { internalsOf } from '../src/client/internals.ts'
+import { recordCall } from '../tools/internals.ts'
+import { LINE, caller, firm, from, screen } from './cards.ts'
 import { chrome, pause, until, without } from './chrome.ts'
 
 // What a card says and holds, against what changed while it was asked for: another card, another reviewer, a decision, a write.
@@ -121,4 +123,56 @@ test('what a card was told is let go of when anything is written, decided or a m
     await Promise.all([first, kept])
     return [again, dropped, later]
   })()`), [true, true, true])
+})
+
+test('a card says only what is so: who can still be reached, who waits, and who reported it', { skip: without, timeout: 120_000 }, async (t) => {
+  const made = await firm(memory)
+  t.after(made.close)
+  // Somebody missed who got through by calling again. A missed call said to be spam. A result that says how long they waited and nothing else.
+  made.at(-6); await made.call('fay-1', 20, { duration: 9, result: { answered: false } })
+  made.at(-5); await made.call('fay-2', 20, { duration: 90, result: { answered: true } })
+  made.at(-4); await made.call('spam-2', 21, { duration: 9, result: { answered: false } })
+  await made.record({ type: 'restatement', of: { type: 'call', key: 'spam-2' }, change: { kind: 'not_lead', why: 'spam' } })
+  // A phone system may report the wait and leave the answer unknown, as a line that picks up does.
+  const { engine } = await internalsOf(made.graph)!()
+  await recordCall(engine.graph, { id: 'wo-1', from: from(22), to: LINE, at: made.at(-3), duration: 50, waited: 30 })
+  made.at(0)
+  const page = await screen(made.base)
+  t.after(page.close)
+  const { run, text } = page
+
+  // Of five missed, two were returned, one is still open, one hid their number and one got through: two of three who could be called back, and one more would meet it.
+  await page.go('#/calls')
+  await run(`goals = { answered: 0.0001, returned: 1 }; load()`)
+  await until('the view again', () => run(`opening === 0`))
+  const returned = await page.card('#/calls', 'calls.returned')
+  assert.deepEqual([returned.Returned, returned['Called again'], returned['Still open'], returned['Number withheld']], ['2', '1', '1', '1'])
+  assert.match(await text('#card .detail-say'), /^Target 100% of those who could be called back, set by you\. Not met: 2 of 3 were returned, and 1 more would reach it\./)
+  // A share that is more than nothing is not said to be none.
+  await page.card('#/calls', 'calls.answered')
+  assert.match(await text('#card .detail-say'), /^Target 0\.01%, set by you\. Met\./)
+  // The hours of the report are in its zone, and a moment of a call names the browser's.
+  const inbound = await page.card('#/calls', 'calls.inbound')
+  assert.equal(inbound['Hours are in'], 'UTC')
+  assert.match((await page.card('#/journey/' + encodeURIComponent(caller(22)), 'call wo-1 timeline')).Called!, /:00 [A-Z]{2,5}|GMT/)
+
+  // Said to be spam, a missed call waits for nobody.
+  const spam = await page.card('#/journey/' + encodeURIComponent(caller(21)), 'call spam-2 timeline')
+  assert.deepEqual([await text('#card-title'), await text('#card .detail-worth'), spam.Returned, spam['Time limit'], spam['Attempts so far']], ['Missed call', 'Inbound · Spam', undefined, undefined, undefined])
+  assert.doesNotMatch(await text('#card .detail-say'), /Returned/)
+  assert.doesNotMatch(await run(`[...document.querySelectorAll('.timeline-entry .what')].find((each) => each.textContent.includes('Spam')).textContent`), /Not returned/)
+  // A result that does not say whether anybody answered is said to be one.
+  const told = await page.card('#/journey/' + encodeURIComponent(caller(22)), 'call wo-1 timeline')
+  assert.deepEqual([told['How we know'], told['Duration · wait']], ['Reported, but not whether anybody answered', '50 s · 30 s'])
+  // Answered is whatever was reported, by the phone system or by staff.
+  await page.card('#/journey/' + encodeURIComponent(caller(14)), 'call dee-1 timeline')
+  assert.match(await text('#card .detail-say'), /^Answered means your phone system or staff reported that a person spoke to them\.$/)
+  // Without ALERT_WEBHOOK nothing is posted, and the card does not say it is.
+  await page.card('#/health', 'health.feed calls')
+  assert.match(await text('#card .detail-say'), /Past the limit it is marked stale\. ALERT_WEBHOOK is not set, so nothing is posted\./)
+  // A limit may be the one there is by default, so it is not said to be set by anybody.
+  await page.card('#/board/90', `board.person ${caller(12)}`)
+  assert.equal(await text('#card .detail-say'), 'Overdue means longer here than the limit for a call back.')
+  // Counted while you were open is a count, and not a part anybody can change.
+  assert.deepEqual(await run(`DETAILS['calls.missed'].now({ summary: { total: { calls: 3, missed: 2, voicemail: 0 }, closed: { missed: 1, voicemail: 0 }, cells: [] } }).say.at(-1)`), ['In open hours', ' counts those who called while you were open.'])
 })
