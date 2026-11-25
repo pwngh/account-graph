@@ -769,9 +769,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       async load(subjects: Iterable<Subject>, links: ReadonlyMap<Subject, Link[]> = new Map()): Promise<void> {
         const said = [...links].flatMap(([near, list]) => list.filter(speaks).map((link) => [near, link.subject] as const))
         met ||= said.length > 0
-        // A strong link out of a group was cut, and it may be for a mark between two others of the two groups.
-        const strong = [...links].some(([, list]) => list.some((link) => link.level === 'same'))
-        if (!policy.apart?.length && !met && !strong) return
+        if (!policy.apart?.length && !met && links.size === 0) return
         const unread = unique([...subjects].filter((subject) => !labels.has(subject)))
         for (let i = 0; i < unread.length; i += TOGETHER) for (const [subject, own] of await tx.labelsOf(unread.slice(i, i + TOGETHER))) labels.set(subject, own)
         for (const [a, b] of said) if (labels.get(a)?.cluster !== labels.get(b)?.cluster) spoken.add(pairKey(labels.get(a)!.cluster, labels.get(b)!.cluster))
@@ -799,7 +797,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
           for (let i = 0; i < ends.length; i += TOGETHER) for (const [subject, own] of await tx.labelsOf(ends.slice(i, i + TOGETHER))) groupOf.set(subject, own.cluster)
           for (const [a, b] of apartPairs) kept.add(pairKey(groupOf.get(a) ?? a, groupOf.get(b) ?? b))
         }
-        const over = [...links].flatMap(([near, list]) => list.filter((link) => link.level === 'same' && labels.get(near)?.cluster !== labels.get(link.subject)?.cluster).map(() => labels.get(near)?.component ?? near))
+        // A link out of a group to another of its component: the two were cut, and it may be for a decision or a mark between two others of them.
+        const over = [...links].flatMap(([near, list]) => list.filter((link) => labels.get(near)?.cluster !== labels.get(link.subject)?.cluster && (link.level === 'same' || labels.get(near)?.component === labels.get(link.subject)?.component)).map(() => labels.get(near)?.component ?? near))
         const cutUps = unique(over).filter((id) => !marked.has(id))
         for (let i = 0; i < cutUps.length; i += TOGETHER) {
           for (const id of cutUps.slice(i, i + TOGETHER)) marked.add(id)
@@ -1950,18 +1949,27 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const lately = await tx.latelySeen(sightings)
         const pairs = new Map<string, Pair>()
         const two: [Subject, Subject][] = []
+        const joined: [Subject, Subject][] = []
         // A pair kept apart is not a link, and one a reviewer's mark joins has been decided, even where a cut keeps it in two clusters. Of two
         // where one speaks for the other, it has been said that they are two.
         for (const [subject, links] of await neighbors(tx, lately)) {
           for (const link of links) {
             if (speaks(link)) two.push([subject, link.subject])
-            if (link.reasons.some((reason) => reason.identifier.startsWith('review:join-')) || speaks(link)) continue
+            if (speaks(link)) continue
+            if (link.reasons.some((reason) => reason.identifier.startsWith('review:join-'))) {
+              // Where births took a telephone or a browser from a record it was joined to, that is for somebody to look at.
+              if (!policy.apart?.includes('birth') || names(subject) === names(link.subject)) continue
+              joined.push([subject, link.subject])
+            }
             const [a, b] = subject < link.subject ? [subject, link.subject] : [link.subject, subject]
             pairs.set(pairKey(a, b), { a, b, score: link.score, level: link.level, reasons: link.reasons, ...(link.conflict && { conflict: link.conflict }) })
           }
         }
         const labels = await tx.labelsOf(unique([...[...pairs.values()].flatMap(({ a, b }) => [a, b]), ...two.flat()]))
         const said = new Set(two.map(([a, b]) => pairKey(labels.get(a)!.cluster, labels.get(b)!.cluster)))
+        const borders = bordersOf(tx)
+        await borders.load(joined.flat())
+        for (const [a, b] of joined) if (!borders.between(a, b)) pairs.delete(pairKey(a, b))
         const open = [...pairs.values()].filter(({ a, b }) => labels.get(a)!.cluster !== labels.get(b)!.cluster && !said.has(pairKey(labels.get(a)!.cluster, labels.get(b)!.cluster)))
         open.sort((x, y) => y.score - x.score || (x.a === y.a ? (x.b < y.b ? -1 : 1) : x.a < y.a ? -1 : 1))
         return { pairs: open.slice(0, limit), total: open.length, seen: lately.length }
