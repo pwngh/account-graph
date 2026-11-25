@@ -1,4 +1,52 @@
-# Pilot
+# Getting started
+
+Start a server, add the script to your site, and record a person. Then try it for two weeks on your own data.
+
+You need Node 22.18 or later. Docker is optional and provides PostgreSQL. The package is not published to npm, so clone the repository.
+
+## The example site
+
+```sh
+docker compose up --build        # the server on :8080, and its database
+node examples/site.ts            # in a second terminal: an example site on :3000
+```
+
+1. Open <http://localhost:3000/?gclid=demo-click&utm_id=20111> and sign up with any email address.
+2. The page shows the attributed ad click and its confidence, 98%.
+3. Open <http://localhost:8080/review>, sign in with the token `change-me-review-token`, and open the account. **Channels** shows the signup under its campaign.
+
+To use another port, run `GRAPH_PORT=8090 docker compose up --build` and `GRAPH_URL=http://localhost:8090 node examples/site.ts`.
+
+## Install
+
+Start the server and its database with your own secrets. Generate each one with `openssl rand -hex 32`.
+
+```sh
+export GRAPH_TOKEN=…             # your backend sends the same one
+ORIGINS=https://www.example.org REVIEW_TOKENS='{"dana":"…"}' LINK_SECRET=… RECEIPT_SECRETS=… docker compose up --build
+```
+
+`ORIGINS` lists the sites allowed to report. [Operations](operations.md) covers every setting.
+
+Add the script to each page:
+
+```html
+<script type="module" src="https://graph.example.org/collect.js"></script>
+```
+
+## First record
+
+Record the person when they sign in or sign up:
+
+```bash
+curl -X POST https://graph.example.org/v1/record \
+  -H "authorization: Bearer $GRAPH_TOKEN" \
+  -d '{"entries":[{"type":"profile","key":"signup-42","at":1795460000000,"subject":"account:42","event":"signup","facts":{"device":"9f3c1c1e-0000-4000-8000-000000000001","email":"pat@example.org"}}]}'
+```
+
+The server normalizes and hashes the email, phone and postal address. `device` is the `ag_device` cookie set by the script. The answer lists the subjects whose cluster changed. See [Identify](identify.md).
+
+## A two-week trial
 
 A trial on your own calls, forms and ads that sends nothing to an ad platform and changes nothing in your case system. You can stop it at any step.
 
@@ -7,7 +55,7 @@ your site, phones, forms ──▶ server ──▶ reviewer screen
                                   ╳ nothing to ad platforms: no keys are set
 ```
 
-## Before you start
+### Before you start
 
 | Decide | Why |
 | --- | --- |
@@ -16,7 +64,7 @@ your site, phones, forms ──▶ server ──▶ reviewer screen
 | One person who reviews matches each day | Matches are scores from weights. They are unmeasured on your data until somebody checks them. |
 | What would end the trial | Write it down first: a wrong match that matters, or a share of wrong matches over a number you choose. |
 
-## Steps
+### Steps
 
 | Step | What to do | Done when |
 | --- | --- | --- |
@@ -29,7 +77,7 @@ your site, phones, forms ──▶ server ──▶ reviewer screen
 | 7. Apart | Send the pairs your conflict check keeps apart as a [`split`](matching.md#split) | They are shown separated |
 | 8. Two weeks | Review Matches and the missed calls every day. Change nothing else | You have a list of right and wrong matches |
 
-## Deciding
+### Deciding
 
 1. Write down 100 pairs of contacts you know to be one person, and 100 you know not to be, chosen before looking at the screen.
 2. Run [`tools/labels.ts`](matching.md) on them. It prints precision and recall for each kind of evidence, with the counts behind them.
@@ -37,11 +85,11 @@ your site, phones, forms ──▶ server ──▶ reviewer screen
 4. Take ten clients at random. For each, ask how they found you, and compare it with the ad on their journey.
 5. Only then consider sending conversions to an ad platform.
 
-## Stopping
+### Stopping
 
 Remove the script tag, stop recording, and stop the server. [`forget`](http.md#forget) deletes one person. Dropping the database deletes everyone, and your dumps still hold them until you delete those too.
 
-## Limitations
+### Limitations
 
 - The server is one process and one database. A pilot has no failover.
 - No call tracking service, case system or ad platform has been tried live. Expect a day of work for each, and check the first results by hand.
