@@ -1,3 +1,4 @@
+import { malformed } from './contract/fault.ts'
 import { createHash } from 'node:crypto'
 import type { Edge, Identifier, IdentifierState, Reason } from './types.ts'
 
@@ -200,12 +201,12 @@ export function policyHash(policy: Policy): string {
 export function ruleFor(policy: Policy, identifier: Identifier): Rule {
   const colon = identifier.indexOf(':')
   if (colon <= 0 || colon === identifier.length - 1) {
-    throw new TypeError(`Identifier "${identifier}" must have the form "kind:value"`)
+    throw malformed(`Identifier "${identifier}" must have the form "kind:value"`)
   }
   const kind = identifier.slice(0, colon)
   // Own rules only: every object has things like a constructor, and none of them is a rule.
   const rule = Object.hasOwn(policy.kinds, kind) ? policy.kinds[kind] : undefined
-  if (!rule) throw new TypeError(`Identifier "${identifier}" has a kind that is missing from the policy`)
+  if (!rule) throw malformed(`Identifier "${identifier}" has a kind that is missing from the policy`)
   return rule
 }
 

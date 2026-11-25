@@ -4,6 +4,7 @@
  * different ways are seen to share it.
  * https://www.smarty.com/docs/cloud/us-street-api
  */
+import { malformed } from '../contract/fault.ts'
 import { createHash } from 'node:crypto'
 import type { Identifier } from '../types.ts'
 
@@ -54,7 +55,7 @@ export function createAddressVerifier(options: SmartyOptions): AddressVerifier {
   const fetcher = options.fetch ?? fetch
   const authorization = `Basic ${Buffer.from(`${options.authId}:${options.authToken}`).toString('base64')}`
   return async (address) => {
-    if (typeof address?.street !== 'string' || !address.street.trim()) throw new TypeError('An address requires a street')
+    if (typeof address?.street !== 'string' || !address.street.trim()) throw malformed('An address requires a street')
     const url = new URL('https://us-street.api.smarty.com/street-address')
     for (const name of ['street', 'street2', 'secondary', 'city', 'state', 'zipcode'] as const) {
       const value = address[name]

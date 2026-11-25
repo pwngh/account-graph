@@ -2,6 +2,7 @@
  * Facts that are the same for everybody and change slowly, kept as tables so
  * nothing is asked of anyone. Each answers one question and decides nothing.
  */
+import { malformed } from './contract/fault.ts'
 import { BlockList, isIP } from 'node:net'
 import type { IpLookup } from './integrations/maxmind.ts'
 import { ZIPS } from './texas-zips.ts'
@@ -112,7 +113,7 @@ export const HOLIDAYS_SINCE = 1986
  * Christmas that the state closes too, where they fall on a weekday.
  */
 export function holidays(year: number, { texas = false }: { texas?: boolean } = {}): string[] {
-  if (!Number.isSafeInteger(year) || year < HOLIDAYS_SINCE || year > 9999) throw new TypeError(`A year is a whole number from ${HOLIDAYS_SINCE}`)
+  if (!Number.isSafeInteger(year) || year < HOLIDAYS_SINCE || year > 9999) throw malformed(`A year is a whole number from ${HOLIDAYS_SINCE}`)
   const thanksgiving = nth(year, 11, 4, 4)
   const days = [
     kept(day(year, 1, 1)), nth(year, 1, 1, 3), nth(year, 2, 1, 3), nth(year, 5, 1, -1), ...(year >= 2021 ? [kept(day(year, 6, 19))] : []), kept(day(year, 7, 4)),
@@ -148,7 +149,7 @@ export function createRangeLookup(text: string): IpLookup {
     list.addSubnet(address!, Number(bits), version === 4 ? 'ipv4' : 'ipv6')
     count += 1
   }
-  if (count === 0) throw new TypeError('No address range, such as 192.0.2.0/24, was found')
+  if (count === 0) throw malformed('No address range, such as 192.0.2.0/24, was found')
   return async (address) => {
     const version = isIP(address)
     if (version === 0 || !list.check(address, version === 4 ? 'ipv4' : 'ipv6')) return undefined

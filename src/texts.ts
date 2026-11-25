@@ -1,3 +1,4 @@
+import { malformed } from './contract/fault.ts'
 import { randomInt } from 'node:crypto'
 import type { CallOptions } from './calls.ts'
 import { numberOrSelf } from './calls.ts'
@@ -79,13 +80,13 @@ export const textCode = (): string => Array.from({ length: 6 }, () => LETTERS[ra
 
 /** The note a code leaves on the visitor it was given to. It links nothing. */
 export function codeNote(code: string): Identifier {
-  if (!CODE.test(code)) throw new TypeError('A code is six letters and digits')
+  if (!CODE.test(code)) throw malformed('A code is six letters and digits')
   return `dialed:code-${code}`
 }
 
 /** The note left on a visitor who tapped a text link. A call does not find it, and a tap on a phone link leaves another. */
 export function texted(number: string, at: number, country?: string): Identifier {
-  if (!Number.isSafeInteger(at)) throw new TypeError('A tap requires `at`, an integer in epoch milliseconds')
+  if (!Number.isSafeInteger(at)) throw malformed('A tap requires `at`, an integer in epoch milliseconds')
   return `dialed:text-${normalizePhone(number, country)}@${Math.floor(at / BUCKET)}`
 }
 
@@ -109,11 +110,11 @@ function wish(text: string): 'opt_out' | 'opt_in' | undefined {
  * conversation is an outcome. What a text says is never kept.
  */
 export async function recordText(graph: Graph, text: Text, options: TextOptions = {}): Promise<RecordedText> {
-  if (typeof text?.id !== 'string' || !/^[\w.-]{1,128}$/.test(text.id)) throw new TypeError('A text requires an id of letters, digits, dots, dashes or underscores')
-  if (!Number.isSafeInteger(text.at)) throw new TypeError(`Text "${text.id}" requires "at", an integer in epoch milliseconds`)
-  if (text.direction !== undefined && text.direction !== 'inbound' && text.direction !== 'outbound') throw new TypeError(`Text "${text.id}" requires its direction, inbound or outbound`)
-  for (const name of ['from', 'to'] as const) if (typeof text[name] !== 'string') throw new TypeError(`Text "${text.id}" requires "${name}", a phone number`)
-  for (const name of ['text', 'code'] as const) if (text[name] !== undefined && typeof text[name] !== 'string') throw new TypeError(`Text "${text.id}" requires its ${name} as a string`)
+  if (typeof text?.id !== 'string' || !/^[\w.-]{1,128}$/.test(text.id)) throw malformed('A text requires an id of letters, digits, dots, dashes or underscores')
+  if (!Number.isSafeInteger(text.at)) throw malformed(`Text "${text.id}" requires "at", an integer in epoch milliseconds`)
+  if (text.direction !== undefined && text.direction !== 'inbound' && text.direction !== 'outbound') throw malformed(`Text "${text.id}" requires its direction, inbound or outbound`)
+  for (const name of ['from', 'to'] as const) if (typeof text[name] !== 'string') throw malformed(`Text "${text.id}" requires "${name}", a phone number`)
+  for (const name of ['text', 'code'] as const) if (text[name] !== undefined && typeof text[name] !== 'string') throw malformed(`Text "${text.id}" requires its ${name} as a string`)
   const { id, at } = text
   const outbound = text.direction === 'outbound'
   const tags = checkTags(text.tags, `Text "${id}"`)
@@ -126,7 +127,7 @@ export async function recordText(graph: Graph, text: Text, options: TextOptions 
   if (theirs === undefined || (options.exclude ?? []).some((each) => numberOrSelf(each, options.country) === theirs)) return { subject: `text:${id}`, flags: ['left_out'], counted: false, duplicate: false }
   const subject = `caller:${hashPhone(theirs)}`
   const before = await graph.keptText(id)
-  if (before && before.direction !== (outbound ? 'outbound' : 'inbound')) throw new TypeError(`Text "${id}" is already recorded as ${before.direction}`)
+  if (before && before.direction !== (outbound ? 'outbound' : 'inbound')) throw malformed(`Text "${id}" is already recorded as ${before.direction}`)
   if (before || outbound) {
     if (!before) await graph.keepText({ id, direction: 'outbound', subject, at, to: ours, flags: [], ...(tags && { tags }) })
     // Settled again, in case the report before was cut off after it was kept.

@@ -1,3 +1,4 @@
+import { malformed } from './contract/fault.ts'
 import { createHash, createHmac } from 'node:crypto'
 import type { Identifier } from './types.ts'
 
@@ -13,7 +14,7 @@ const sha256 = (text: string) => createHash('sha256').update(text).digest('hex')
 export function normalizeEmail(email: string): string {
   const clean = email.trim().toLowerCase()
   const at = clean.lastIndexOf('@')
-  if (at <= 0 || at === clean.length - 1) throw new TypeError('Email must have the form "name@domain"')
+  if (at <= 0 || at === clean.length - 1) throw malformed('Email must have the form "name@domain"')
   const domain = clean.slice(at + 1)
   if (domain !== 'gmail.com' && domain !== 'googlemail.com') return clean
   return `${clean.slice(0, at).split('+')[0]!.replaceAll('.', '')}@${domain}`
@@ -25,7 +26,7 @@ export function normalizePhone(phone: string, country = '1'): string {
   if (phone.trim().startsWith('+') && digits.length >= 8 && digits.length <= 15) return `+${digits}`
   if (digits.length === 10) return `+${country}${digits}`
   if (digits.length === 11 && digits.startsWith(country)) return `+${digits}`
-  throw new TypeError('Phone must be a 10-digit number or start with "+" and a country code')
+  throw malformed('Phone must be a 10-digit number or start with "+" and a country code')
 }
 
 /** SHA-256 of the normalized email, in hex. The same value Google accepts as a match key. */
@@ -74,14 +75,14 @@ export function ip(address: string): Identifier {
   const left = head ? head.split(':') : []
   const right = tail ? tail.split(':') : []
   const groups = clean.includes('::') ? [...left, ...Array(8 - left.length - right.length).fill('0'), ...right] : left
-  if (groups.length !== 8) throw new TypeError(`"${address}" is not an IP address`)
+  if (groups.length !== 8) throw malformed(`"${address}" is not an IP address`)
   return `ip:${groups.slice(0, 4).map((group) => group.replace(/^0+(?=.)/, '')).join(':')}::/64`
 }
 
 /** An identifier of any other kind. Trims the value; lowercases nothing. */
 export function identifier(kind: string, value: string): Identifier {
   const clean = value.trim()
-  if (!kind || !clean) throw new TypeError('An identifier requires a kind and a value')
+  if (!kind || !clean) throw malformed('An identifier requires a kind and a value')
   return `${kind}:${clean}`
 }
 
@@ -106,8 +107,8 @@ function normalizeName(name: string): string {
  * that only corroborates, as `examples/household.json` does.
  */
 export function nameKeys(secret: string, first: string, last: string, known: { zip5?: string | undefined; dob?: string | undefined }): Identifier[] {
-  if (typeof secret !== 'string' || secret.length < 32) throw new TypeError('A name key requires a secret of at least 32 characters')
-  if (typeof first !== 'string' || typeof last !== 'string') throw new TypeError('A name requires `first` and `last` as strings')
+  if (typeof secret !== 'string' || secret.length < 32) throw malformed('A name key requires a secret of at least 32 characters')
+  if (typeof first !== 'string' || typeof last !== 'string') throw malformed('A name requires `first` and `last` as strings')
   const name = [normalizeName(first), normalizeName(last)]
   // A single letter is an initial, except where a letter is a word of its own.
   if (name.some((part) => !part || /^[a-z]$/.test(part) || NOBODYS.has(part)) || NOBODYS.has(name.join(' ')) || SAMPLES.has(name.join(' '))) return []
@@ -122,7 +123,7 @@ export function nameKeys(secret: string, first: string, last: string, known: { z
 
 /** The key of a date of birth, by which two people are told apart. It links nothing, and is made with a secret because dates are few enough to guess. */
 export function birthKey(secret: string, dob: string | undefined): Identifier | undefined {
-  if (typeof secret !== 'string' || secret.length < 32) throw new TypeError('A birth key requires a secret of at least 32 characters')
+  if (typeof secret !== 'string' || secret.length < 32) throw malformed('A birth key requires a secret of at least 32 characters')
   const born = birthday(dob)
   return born && `birth:${createHmac('sha256', secret).update(JSON.stringify(['birth', born])).digest('hex')}`
 }

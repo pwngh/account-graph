@@ -1,3 +1,4 @@
+import { malformed } from './contract/fault.ts'
 import { DIMENSION, NOT_SET, touchTag, touchTags } from './tags.ts'
 import type { Breakdown, Reported, CostRow, Counted, OutcomeValue, Report, ReportRow, StageCount, Touch, ValueChange } from './types.ts'
 
@@ -74,7 +75,7 @@ export function ahead(at: number, timeZone: string): number {
 export function dayStart(day: string, timeZone = 'UTC'): number {
   const utc = /^\d{4}-\d{2}-\d{2}$/.test(String(day)) ? Date.parse(`${day}T00:00:00Z`) : NaN
   // Date.parse rolls 30 February into March; a day that does not read back as itself is not a day.
-  if (Number.isNaN(utc) || new Date(utc).toISOString().slice(0, 10) !== day) throw new TypeError(`"${day}" is not a day written YYYY-MM-DD`)
+  if (Number.isNaN(utc) || new Date(utc).toISOString().slice(0, 10) !== day) throw malformed(`"${day}" is not a day written YYYY-MM-DD`)
   try {
     // Ask twice: the zone's offset at the guess can differ from its offset at the answer, around a clock change.
     const guess = utc - ahead(utc, timeZone)
@@ -83,7 +84,7 @@ export function dayStart(day: string, timeZone = 'UTC'): number {
     const onDay = [refined, guess].filter((at) => new Date(at + ahead(at, timeZone)).toISOString().slice(0, 10) === day)
     return onDay.length > 0 ? Math.min(...onDay) : refined
   } catch {
-    throw new TypeError(`"${timeZone}" is not a time zone`)
+    throw malformed(`"${timeZone}" is not a time zone`)
   }
 }
 
@@ -92,7 +93,7 @@ export function dayIn(at: number, timeZone = 'UTC'): string {
   try {
     return new Date(at + ahead(at, timeZone)).toISOString().slice(0, 10)
   } catch {
-    throw new TypeError(`"${timeZone}" is not a time zone`)
+    throw malformed(`"${timeZone}" is not a time zone`)
   }
 }
 
@@ -119,7 +120,7 @@ interface Told {
 export function dimension(by: string, timeZone?: string): (told: Told) => string {
   if (by === 'hour' || by === 'weekday') return ({ at }) => hourIn(at, timeZone)[by]
   const [, side, name] = /^(touch|outcome)\.(.+)$/.exec(by) ?? []
-  if (!side || !name || !DIMENSION.test(name)) throw new TypeError(`"${by}" is not a dimension; use touch.<name>, outcome.<name>, hour or weekday`)
+  if (!side || !name || !DIMENSION.test(name)) throw malformed(`"${by}" is not a dimension; use touch.<name>, outcome.<name>, hour or weekday`)
   if (side === 'touch') return ({ touch }) => touchTag(touch, name) ?? NOT_SET
   return ({ tags }) => (tags && Object.hasOwn(tags, name) ? tags[name]! : NOT_SET)
 }

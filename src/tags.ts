@@ -1,3 +1,4 @@
+import { malformed } from './contract/fault.ts'
 import { texasCounty } from './lookups.ts'
 import type { Touch } from './types.ts'
 
@@ -13,14 +14,14 @@ export const DIMENSION = /^[\w.-]{1,64}$/
 /** Tags checked and copied, or undefined for none. Throws when they are not a few short codes. */
 export function checkTags(given: unknown, what: string): Tags | undefined {
   if (given === undefined || given === null) return undefined
-  if (typeof given !== 'object' || Array.isArray(given)) throw new TypeError(`${what} requires its tags as an object, such as {"language":"es"}`)
+  if (typeof given !== 'object' || Array.isArray(given)) throw malformed(`${what} requires its tags as an object, such as {"language":"es"}`)
   const entries = Object.entries(given)
-  if (entries.length > 8) throw new TypeError(`${what} has more than 8 tags`)
+  if (entries.length > 8) throw malformed(`${what} has more than 8 tags`)
   for (const [name, value] of entries) {
-    if (!/^[a-z_]{1,32}$/.test(name)) throw new TypeError(`${what} has a tag named "${name}"; a name is lowercase letters and underscores, at most 32`)
-    if (typeof value !== 'string' || !value.trim() || value.length > 64) throw new TypeError(`${what} requires its tag "${name}" as a string of at most 64 characters`)
+    if (!/^[a-z_]{1,32}$/.test(name)) throw malformed(`${what} has a tag named "${name}"; a name is lowercase letters and underscores, at most 32`)
+    if (typeof value !== 'string' || !value.trim() || value.length > 64) throw malformed(`${what} requires its tag "${name}" as a string of at most 64 characters`)
     // It would read as a value that was never recorded.
-    if (value.trim() === NOT_SET) throw new TypeError(`${what} cannot have "${NOT_SET}" as its tag "${name}"; leave the tag out`)
+    if (value.trim() === NOT_SET) throw malformed(`${what} cannot have "${NOT_SET}" as its tag "${name}"; leave the tag out`)
   }
   if (entries.length === 0) return undefined
   const tags: Tags = Object.fromEntries(entries.map(([name, value]) => [name, value.trim()]))

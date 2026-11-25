@@ -1,3 +1,4 @@
+import { malformed } from './contract/fault.ts'
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import { ip } from './identifiers.ts'
 import type { Subject } from './types.ts'
@@ -22,7 +23,7 @@ export function bodySignature(secret: string, at: number, body: string): string 
  * use from being accepted for another.
  */
 export function signToken(secret: string, purpose: string, payload: string, expires: number): string {
-  if (!secret) throw new TypeError('Signing requires a secret')
+  if (!secret) throw malformed('Signing requires a secret')
   return `${encode(payload)}.${Math.floor(expires / 1000).toString(36)}.${signature(secret, purpose, payload, Math.floor(expires / 1000))}`
 }
 
@@ -39,6 +40,14 @@ export function readToken(secret: string, purpose: string, token: unknown, now: 
   const given = Buffer.from(signed)
   if (given.length !== expected.length || !timingSafeEqual(given, expected)) return undefined
   return expires * 1000 > now ? payload : undefined
+}
+
+function addressOf(url: string): URL {
+  try {
+    return new URL(url)
+  } catch {
+    throw malformed('A link requires a complete address, such as https://example.org/offer')
+  }
 }
 
 export interface KnownLinkOptions {
@@ -58,12 +67,12 @@ export interface KnownLinkOptions {
  */
 export function knownLink(url: string, subject: Subject, options: KnownLinkOptions): string {
   if (typeof subject !== 'string' || !subject || subject !== subject.trim() || Buffer.byteLength(subject) > 512) {
-    throw new TypeError('A link requires the subject it is for, in 512 bytes or fewer, with no space around it')
+    throw malformed('A link requires the subject it is for, in 512 bytes or fewer, with no space around it')
   }
-  const address = new URL(url)
-  if (address.protocol !== 'https:' && address.protocol !== 'http:') throw new TypeError('A link must use http or https')
+  const address = addressOf(url)
+  if (address.protocol !== 'https:' && address.protocol !== 'http:') throw malformed('A link must use http or https')
   const lasts = options.lasts ?? 30 * DAY
-  if (!(lasts > 0 && lasts <= 366 * DAY)) throw new TypeError('A link must last more than zero and at most 366 days')
+  if (!(lasts > 0 && lasts <= 366 * DAY)) throw malformed('A link must last more than zero and at most 366 days')
   const now = (options.now ?? Date.now)()
   address.searchParams.set('ag', options.id === undefined ? signToken(options.secret, 'known', subject, now + lasts) : signToken(options.secret, 'sent', `${options.id}\n${subject}`, now + lasts))
   return address.href
@@ -83,12 +92,12 @@ export interface StaffLinkOptions {
  * removes the mark.
  */
 export function staffLink(url: string, options: StaffLinkOptions): string {
-  const address = new URL(url)
+  const address = addressOf(url)
   // The mark is kept in a Secure cookie, which a browser only takes over HTTPS, or from this machine.
   const local = address.protocol === 'http:' && /^(localhost|127\.0\.0\.1|\[::1\]|.*\.localhost)$/.test(address.hostname)
-  if (address.protocol !== 'https:' && !local) throw new TypeError('A staff link must use https')
+  if (address.protocol !== 'https:' && !local) throw malformed('A staff link must use https')
   const lasts = options.lasts ?? 90 * DAY
-  if (!(lasts > 0 && lasts <= 366 * DAY)) throw new TypeError('A mark must last more than zero and at most 366 days')
+  if (!(lasts > 0 && lasts <= 366 * DAY)) throw malformed('A mark must last more than zero and at most 366 days')
   address.searchParams.set('ag_staff', signToken(options.secret, 'staff', 'staff', (options.now ?? Date.now)() + lasts))
   return address.href
 }

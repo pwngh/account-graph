@@ -1,3 +1,4 @@
+import { isFault, malformed } from './contract/fault.ts'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { BlockList, isIP } from 'node:net'
@@ -187,7 +188,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
   const token = Buffer.from(options.token)
 
   const [problem] = reviewerProblems(options.reviewers, options.token)
-  if (problem) throw new TypeError(problem)
+  if (problem) throw malformed(problem)
   const reviewers = Object.entries(options.reviewers ?? {}).flatMap(([name, tokens]) => [tokens].flat().map((each) => ({ name, token: Buffer.from(each) })))
   const matches = (sent: Buffer, expected: Buffer) => sent.length === expected.length && timingSafeEqual(sent, expected)
 
@@ -1226,7 +1227,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         const { seq, at, action, about, by, reason } = error.decision
         return void response.writeHead(409, JSON_HEADERS).end(JSON.stringify({ error: error.message, decision: { seq, at, action, about, by, reason } }))
       }
-      const refused = error instanceof Refusal || error instanceof TypeError || error instanceof SyntaxError
+      const refused = error instanceof Refusal || isFault(error)
       const status = error instanceof Refusal ? error.status : refused ? 400 : 500
       const message = refused ? (error as Error).message : 'Internal error'
       if (!refused) {
@@ -1245,7 +1246,7 @@ export function networks(list: readonly string[]): BlockList {
     const [address = '', prefix, ...rest] = each.trim().split('/')
     const family = isIP(address)
     const bits = prefix === undefined ? (family === 6 ? 128 : 32) : /^\d{1,3}$/.test(prefix) ? Number(prefix) : NaN
-    if (family === 0 || rest.length > 0 || !(bits >= 0 && bits <= (family === 6 ? 128 : 32))) throw new TypeError(`"${each}" is not an address or a range, such as 198.51.100.0/24`)
+    if (family === 0 || rest.length > 0 || !(bits >= 0 && bits <= (family === 6 ? 128 : 32))) throw malformed(`"${each}" is not an address or a range, such as 198.51.100.0/24`)
     found.addSubnet(address, bits, family === 6 ? 'ipv6' : 'ipv4')
   }
   return found
@@ -1285,7 +1286,13 @@ async function json(request: IncomingMessage): Promise<any> {
 }
 
 function parsed(sent: string): any {
-  const body = JSON.parse(sent)
+  let body: unknown
+  try {
+    body = JSON.parse(sent)
+  } catch (error) {
+    throw malformed((error as Error).message)
+  }
+  if (typeof body !== 'object' || body === null) throw malformed('Body must be a JSON object')
   storable(body)
   return body
 }
@@ -1315,5 +1322,9 @@ async function text(request: IncomingMessage): Promise<string> {
     chunks.push(chunk)
   }
   // Bytes that are not UTF-8 are refused: read leniently, different ones would all become the same text.
-  return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))
+  } catch {
+    throw malformed('Body must be UTF-8')
+  }
 }

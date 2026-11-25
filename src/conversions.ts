@@ -1,3 +1,4 @@
+import { malformed } from './contract/fault.ts'
 import { hashEmail, hashPhone } from './identifiers.ts'
 import type { Attribution, AttributedTouch } from './types.ts'
 
@@ -73,7 +74,7 @@ export function conversionEvent(conversion: Conversion): Record<string, unknown>
     ...(phoneHash ? [{ phoneNumber: phoneHash }] : []),
   ]
   if (!adIdentifiers && userIdentifiers.length === 0) {
-    throw new TypeError(`Conversion "${transactionId}" has no click id, email, or phone for Google to match`)
+    throw malformed(`Conversion "${transactionId}" has no click id, email, or phone for Google to match`)
   }
   return {
     transactionId,

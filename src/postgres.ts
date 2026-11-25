@@ -1,3 +1,4 @@
+import { malformed } from './contract/fault.ts'
 import type { Feed, KeptAlert, OpsStore } from './ops.ts'
 import type { Job, JobState, OutboxStore } from './outbox.ts'
 import type { Store, Tx } from './store.ts'
@@ -51,8 +52,8 @@ const STANDING = 'at desc, recorded_at desc, ad_user_data, ad_personalization, i
  * an answer at a time.
  */
 export function createPostgresStore(pool: Pool, schema = 'account_graph', { page = 5_000 }: { page?: number } = {}): PostgresStore {
-  if (!/^[a-z_][a-z0-9_]*$/.test(schema)) throw new TypeError(`Schema "${schema}" must be a plain lowercase name`)
-  if (!(Number.isSafeInteger(page) && page > 0)) throw new TypeError('`page` must be a positive integer')
+  if (!/^[a-z_][a-z0-9_]*$/.test(schema)) throw malformed(`Schema "${schema}" must be a plain lowercase name`)
+  if (!(Number.isSafeInteger(page) && page > 0)) throw malformed('`page` must be a positive integer')
   const t = (table: string) => `${schema}.${table}`
   watch(pool)
 
@@ -158,7 +159,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     async *sharing(caps, alone) {
       const kinds = Object.keys(caps)
       const { rows: unnamed } = await db.query(`select id from ${t('identifier')} where fanout >= 2 and not ignored and split_part(id, ':', 1) <> all($1::text[]) limit 1`, [kinds])
-      if (unnamed.length > 0) throw new TypeError(`Identifier "${unnamed[0].id}" has a kind that is missing from the policy`)
+      if (unnamed.length > 0) throw malformed(`Identifier "${unnamed[0].id}" has a kind that is missing from the policy`)
       const rows = cursor(
         db,
         page,

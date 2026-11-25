@@ -1,3 +1,4 @@
+import { malformed } from './contract/fault.ts'
 import type { Graph } from './graph.ts'
 import type { Attribution, AttributedTouch, Change, Consent, Counted, Deciding, Loss, Outcome, Payment, Subject } from './types.ts'
 
@@ -236,7 +237,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
   const lease = options.lease ?? 60_000
   const maxAttempts = options.maxAttempts ?? 8
   const targets = new Map(options.targets.map((target) => [target.name, target]))
-  if (targets.size === 0) throw new TypeError('An outbox requires at least one target')
+  if (targets.size === 0) throw malformed('An outbox requires at least one target')
 
   /** Thirty seconds, doubling each try up to an hour, shortened by up to half so workers do not retry in step. */
   const backoff = (attempts: number) => Math.min(3_600_000, 30_000 * 2 ** (attempts - 1)) * (0.5 + random() / 2)
@@ -328,16 +329,16 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
   /** The jobs of an outcome, one for each platform its action names. */
   function prepare(outcome: Outcome, state: 'pending' | 'held'): Job[] {
     const { transactionId, subject, at } = outcome
-    if (!transactionId || !subject) throw new TypeError('An outcome requires a transactionId and a subject')
-    if (!Number.isSafeInteger(at)) throw new TypeError(`Outcome "${transactionId}" requires "at", an integer in epoch milliseconds`)
+    if (!transactionId || !subject) throw malformed('An outcome requires a transactionId and a subject')
+    if (!Number.isSafeInteger(at)) throw malformed(`Outcome "${transactionId}" requires "at", an integer in epoch milliseconds`)
     let actions = outcome.action
     if (typeof actions === 'string') {
-      if (targets.size > 1) throw new TypeError(`Outcome "${transactionId}" must name its action per target, such as { google: '…' }`)
+      if (targets.size > 1) throw malformed(`Outcome "${transactionId}" must name its action per target, such as { google: '…' }`)
       actions = { [options.targets[0]!.name]: actions }
     }
     const named = Object.entries(actions ?? {})
-    if (named.some(([, action]) => !action)) throw new TypeError(`Outcome "${transactionId}" names a target with no action`)
-    for (const [name] of named) if (!targets.has(name)) throw new TypeError(`Outcome "${transactionId}" names an unknown target "${name}"`)
+    if (named.some(([, action]) => !action)) throw malformed(`Outcome "${transactionId}" names a target with no action`)
+    for (const [name] of named) if (!targets.has(name)) throw malformed(`Outcome "${transactionId}" names an unknown target "${name}"`)
     return named.map(([name, action]) => ({
       transactionId,
       target: name,
@@ -366,7 +367,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
         stored.action === job.action &&
         (stored.restated || stored.value === job.value) &&
         JSON.stringify(Object.entries(stored.keys).sort()) === JSON.stringify(Object.entries(job.keys).sort())
-      if (!same) throw new TypeError(`Outcome "${outcome.transactionId}" was already recorded with different details`)
+      if (!same) throw malformed(`Outcome "${outcome.transactionId}" was already recorded with different details`)
       out.push(stored)
     }
     return out

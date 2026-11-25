@@ -1,3 +1,4 @@
+import { malformed } from './contract/fault.ts'
 import { createMemoryOps } from './ops.ts'
 import { createMemoryOutbox } from './outbox.ts'
 import { standingFirst } from './store.ts'
@@ -160,7 +161,7 @@ export function createMemoryStore(): Store {
       for (const [identifier, holders] of byIdentifier) {
         const kind = identifier.slice(0, identifier.indexOf(':'))
         if (ignored.has(identifier) || holders.size < 2) continue
-        if (!Object.hasOwn(caps, kind)) throw new TypeError(`Identifier "${identifier}" has a kind that is missing from the policy`)
+        if (!Object.hasOwn(caps, kind)) throw malformed(`Identifier "${identifier}" has a kind that is missing from the policy`)
         if (holders.size > caps[kind]!) continue
         const edges = [...holders.values()]
         for (const [i, x] of edges.entries()) {

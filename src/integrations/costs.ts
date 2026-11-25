@@ -4,6 +4,7 @@
  * https://developers.google.com/google-ads/api/rest/common/search
  * https://developers.facebook.com/docs/marketing-api/insights
  */
+import { malformed } from '../contract/fault.ts'
 import type { Cost } from '../types.ts'
 
 /** Reads the cost of every campaign for each day from `from` to `to`, both written `YYYY-MM-DD`. */
@@ -25,7 +26,7 @@ export class CostError extends Error {
 const TIMEOUT = 60_000
 const DAY = /^\d{4}-\d{2}-\d{2}$/
 const days = (from: string, to: string) => {
-  if (!DAY.test(from) || !DAY.test(to)) throw new TypeError('Costs are read between two days written YYYY-MM-DD')
+  if (!DAY.test(from) || !DAY.test(to)) throw malformed('Costs are read between two days written YYYY-MM-DD')
 }
 
 export interface GoogleCostOptions {
@@ -175,7 +176,7 @@ export function costsFromCsv(text: string): Cost[] {
   const lines = parseCsv(text).filter((cells) => cells.some((cell) => cell.trim()))
   const head = (lines.shift() ?? []).map((name) => name.trim().toLowerCase().replace(/[\s_]/g, ''))
   const column = (name: string) => head.indexOf(name)
-  for (const needed of ['day', 'source', 'amount']) if (column(needed) < 0) throw new TypeError(`The CSV requires a "${needed}" column`)
+  for (const needed of ['day', 'source', 'amount']) if (column(needed) < 0) throw malformed(`The CSV requires a "${needed}" column`)
   const number = (cells: string[], name: string) => {
     const cell = (cells[column(name)] ?? '').trim().replace(/[$,]/g, '')
     return cell === '' ? undefined : Number(cell)
@@ -183,7 +184,7 @@ export function costsFromCsv(text: string): Cost[] {
   return lines.map((cells, i) => {
     const text = (name: string) => (cells[column(name)] ?? '').trim()
     const amount = number(cells, 'amount')
-    if (amount === undefined || !Number.isFinite(amount)) throw new TypeError(`Line ${i + 2} of the CSV has no amount`)
+    if (amount === undefined || !Number.isFinite(amount)) throw malformed(`Line ${i + 2} of the CSV has no amount`)
     const clicks = number(cells, 'clicks')
     const impressions = number(cells, 'impressions')
     const conversions = number(cells, 'conversions')
