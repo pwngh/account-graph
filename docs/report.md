@@ -17,7 +17,7 @@ google   Search: brand         164.50     70         5        5         3     62
 
 The **Channels** view at `/review` shows the same table. Run `npm run review` to see it with sample data.
 
-A call with a stated owner counts once with that record’s staff-merged duplicates while the join stands. Only a chain of joins between records qualifies. A shared phone or browser does not. Two different stated owners keep separate rows. Each row shows call details and call-derived values or times only for its own record.
+Campaign totals count a stated caller once with duplicates that staff explicitly merged into that record. The chain of merges must run through records. Records linked to that caller only by a shared phone or browser count separately.
 
 ## Data sources
 
@@ -197,7 +197,7 @@ A mark can precede its outcome; a call marked before its result is not counted w
 
 ## Board
 
-The Board puts each person in one column. A person is a cluster, with all its subjects. The `pipeline` [report](http.md#report) is the same.
+The Board puts each person in one column. It normally groups the subjects of one cluster. Two records with calls confirmed for different owners keep separate rows, even when the records share a cluster. Each row shows the call details, values and times belonging to its owner. The `pipeline` report uses the same rows. [Reports](http.md#report)
 
 | Column | Who is in it |
 | --- | --- |

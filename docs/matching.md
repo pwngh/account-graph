@@ -38,7 +38,7 @@ A muted identifier gives no evidence.
 
 A statement about one call withdraws the line and browser evidence that came from that call. The original holders still count when scoring everybody else, including a proposed record. Two records that gave a shared number cannot become a stronger match because staff identified a call. Later calls still compete for the tap or number they dialed.
 
-A withdrawn tie can also change where a separation cuts a group. The graph keeps people together only where they can remain together with any combination of those call ties withdrawn. For one connected group with more than 64 possible readings, it keeps the strong links that no reading can cut. Where facts or decisions can cut that group, it keeps the staff joins it can establish across those readings. A zero-weight tap can still permit corroboration when the related threshold is zero, so it counts among the possible readings. Journeys and campaign credit respect those same cuts. Other groups are scored separately. Muting or restoring a line, or forgetting one of its holders, checks both possible line kinds. A mute preview lists affected groups and keeps private call holders out of the list.
+A withdrawn tie can also change where a separation cuts a group. The graph keeps people together only where they can remain together with any combination of those call ties withdrawn. Repeated carrier readings of one line count once when their dates, kinds and holder counts give the same evidence. Calls with different taps or dates that could change a match still count separately. Even above 64 readings, agreeing facts and links that no separation or weak bridge can cut keep a client with their duplicate records and browsers. Where more than 64 distinct readings still leave doubt, the graph keeps only the links it can establish across them. The reviewer sees a notice on the affected group's account page. Rebuilding after upgrading recalculates groups that the earlier limit kept apart. A zero-weight tap can still permit corroboration when the related threshold is zero, so it counts among the possible readings. Journeys and campaign credit respect those same cuts. Other groups are scored separately. Muting or restoring a line, or forgetting one of its holders, checks both possible line kinds. A mute preview lists affected groups and keeps private call holders out of the list.
 
 PostgreSQL upgrade 32 counts the original lines of older confirmed calls. Those calls did not keep the line type or visitor, so either phone kind can count the line. Rebuild the groups after upgrading.
 
@@ -160,21 +160,18 @@ Phone evidence halves for each two years between the two sightings, because numb
 
 #### Caller attribution
 
-A caller becomes a `caller:` subject with their number. Under the preset, the contact on file with that number is only related to the caller. A later step of the contact is then not credited to the caller's ad click.
+Under the household preset, a contact who gave the caller’s number is usually related to the line. Staff who know which record a particular call concerned can identify that call by its provider ID.
 
-To close the gap, have your backend join the two when staff open the contact a call is about. Leave out a call by somebody who speaks for another, such as a parent about a child: that is another person, and joining the two mixes their records.
-
-```bash
-curl -X POST https://graph.example.org/v1/decide -H "authorization: Bearer $GRAPH_TOKEN" -d '{
-  "key": "desk-CA1", "at": 1795460000000, "by": "system:desk", "action": "merge",
-  "pairs": [{ "a": "caller:96f2c503…", "b": "contact:7", "reason": "answered by staff" }] }'
+```json
+{ "type": "call_update", "key": "desk-CA1", "at": 1795460000000, "call": "CA1",
+  "change": { "kind": "party", "role": "self", "subject": "contact:7", "by": "desk" } }
 ```
 
-The `caller:` subject is in the answer to the `call` entry. Take the merge back with [`unmerge`](#taking-a-merge-back).
+Use `representative` when someone called on the contact’s behalf. Each later call can concern a different person. See [recording who was on one call](calls.md#recording-who-was-on-one-call).
 
 #### Shared phones
 
-Keep a shared phone on each person, and record what you know about the two. Removing the number also removes the link to every call it made.
+Keep a shared phone on each person, and record what you know about the two. Removing the number can remove a guessed link. A confirmed call stays with its stated owner.
 
 | What you know | Action |
 | --- | --- |
@@ -197,7 +194,7 @@ Set `IDENTIFIER_SECRET`, and send the `name` and `dob` you have with each `profi
 | --- | --- |
 | Is this for yourself or for somebody else? Make it a required question. | Whoever calls or fills in the form as [`speaker`](identify.md#speaking-for-somebody-else) |
 | First and last name, and date of birth, every time. Most duplicates that are missed have no date on one of the two. | `name` and `dob`, and a `match` before you enter somebody |
-| Was this call about the person on screen? | A `merge` of the `caller:` and the contact, only where the caller is that person |
+| Was this call about the person on screen? | A `call_update` with the record and the role the caller had on this call |
 | Who is on the other side? | A [`split`](#split) |
 
 ### Custom presets
@@ -264,12 +261,12 @@ What two records share, such as a mailbox, a number or a computer, may be a hous
 | Names no table has | A date of birth confirms two records with such names only where a number or an email is under one name. Twins who share only a device and have no detail of their own can be joined by their date, where the policy has no `name` kind. |
 | Two words | That a name has several words is noted from the day the rule is on. One sent before counts as one word: send it again. Two second words in no table that begin with one letter look alike. |
 | More than 300 records in one component | Nothing but a decision joins them. The 301st takes back what facts had joined there, so find what they all share and `mute` it. |
-| Names not in Latin letters | They make no key of a full name and a date, because folding would make many names one. |
+| Names not in Latin letters | The Latin short-form table supplies no `person` or `perhaps` key. An exact `name` key with a date or verified zip code still works in these scripts. |
 | A father and a son | Of one name with no dates, they are one person by it, as two records of one man would be. |
 
-For a phone or email given under a name, or by someone speaking for its owner, a placeholder such as Unknown / Not Provided gives no name evidence. The Spanish labels Desconocido, Desconocida, Sin Nombre and No Proporcionado, and the French Inconnu and Inconnue, are also missing names. An equal birthday cannot confirm two such placeholders. A different birthday can still keep them apart. Recognizing a missing-name label also preserves the disagreement that its former spelling had with another named record. Where the name table could use part of a spelling, any letters it would lose must agree too. Thus María文 and Maria文 can agree, and Maria李 is a different name. The exact name key with a date or confirmed zip code works in other scripts. It keeps marks that distinguish letters, including Devanagari vowel signs and nukta, Thai tone marks, Greek iota subscript and diaeresis, and Japanese voicing marks. Composed and decomposed forms give the same key. Latin accents, Greek stress and optional Arabic and Hebrew points retain their earlier comparison.
+For a phone or email given under a name, or by someone speaking for its owner, a placeholder such as Unknown / Not Provided gives no name evidence. The Spanish labels Desconocido, Desconocida, Sin Nombre and No Proporcionado, and the French Inconnu and Inconnue, are also missing names. The whole-field labels Неизвестно, غير معروف, अज्ञात, 姓名不详 and 氏名不詳 mean the name is unknown. Baby, Baby Boy and Baby Girl in the first-name field stand for an unnamed newborn. Baby in the surname field keeps its usual spelling. An equal birthday cannot confirm two such placeholders. A different birthday can still keep them apart. Recognizing a missing-name label also preserves the disagreement that its former spelling had with another named record. Where the name table could use part of a spelling, any letters it would lose must agree too. Thus María文 and Maria文 can agree, and Maria李 is a different name. The exact name key with a date or confirmed zip code works in other scripts. It keeps marks that distinguish letters, including Devanagari vowel signs and nukta, Thai tone marks, Greek iota subscript and diaeresis, and Japanese voicing marks. Composed and decomposed forms give the same key. Latin accents, Greek stress and optional Arabic and Hebrew points retain their earlier comparison.
 
-When upgrading from the earlier name rules, stop the servers and run `account-graph rebuild`. The old hashes do not reveal which names lost letters or were placeholders. The rebuild drops those hashes as evidence for a join. They still count how many people share a spelling and carry its mutes. Different old names can still keep records apart, including while only one of the two profiles has been sent again. Where a spelling changes the weight of a link or what a name says about a person, two people stay together only if both the earlier and the checked spelling put them together. Losing one match cannot give that person to another record. Re-send named profiles from their original source with new report keys before serving the graph again. Recreate exact name keys with a date or zip code from the original names as well. The same rebuild warning covers spelling marks. A cached hash cannot recover a missing mark. Old dates can still disagree. A shared date on two older records cannot confirm them by itself until at least one is reported again without a placeholder. Staff decisions keep working through the upgrade.
+When upgrading from the earlier name rules, stop the servers and run `account-graph rebuild`. The old hashes do not reveal which names lost letters or were placeholders. The rebuild drops those hashes as evidence for a join. They still count how many people share a spelling and carry its mutes. Different old names can still keep records apart, including while only one of the two profiles has been sent again. Where a spelling changes the weight of a link or what a name says about a person, two people stay together only if both the earlier and the checked spelling put them together. Losing one match cannot give that person to another record. Re-send named profiles from their original source with new report keys before serving the graph again. Recreate exact name keys with a date or zip code from the original names as well. The same rebuild warning covers spelling marks, newborns and the additional missing-name labels. A cached hash cannot recover a missing mark. Old dates can still disagree. A shared date on two older records cannot confirm them by itself until at least one is reported again without a placeholder. Staff decisions keep working through the upgrade.
 
 A record is a subject that names somebody, such as `contact:7` or `account:42`. A browser or a caller is none: it goes with the records it is tied to most strongly, and of two as strong, with whoever was seen first.
 
@@ -318,12 +315,12 @@ The `conflicts` [lookup](http.md#lookup) takes the people of a matter and answer
 
 ## Decisions from your own systems
 
-Your systems hold facts the graph cannot infer. Report them with [`decide`](http.md#decide).
+Use `decide` to tell the graph which people to keep apart. Use `record` to say who a call concerned. [Six calls](http.md)
 
 | Fact | Owner | What to send |
 | --- | --- | --- |
 | Who is on the other side of a matter | Your case system. People who share a phone, a child or a case may be on one side or on two. | The pair, as a `split`. |
-| Which contact a call was about | Staff, when they take the call. | The caller and contact, as a `merge`, when they are one person. A parent calling about a child is a separate person. [Caller attribution](#caller-attribution) depends on it. |
+| Which contact a call was about | Staff, when they take the call. | The call ID and the contact in a [party statement](calls.md#recording-who-was-on-one-call). A parent calling about a child can name the child’s record with the representative role. |
 | Whether a person may be contacted | The system that sends messages. Consent here covers advertising only. | Message consent, opt-outs, quiet hours and contact frequency stay there. |
 
 | Action | Behavior |

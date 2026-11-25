@@ -1,4 +1,4 @@
-import { affectedMisses, callTraces, creditSubject, ownerOf, partyOf, stopCallJob, withoutGuesses } from './call-party.ts'
+import { affectedMisses, callTraces, creditSubject, ownerOf, partyOf, reopenWaits, stopCallJob, withoutGuesses } from './call-party.ts'
 import { randomUUID } from 'node:crypto'
 import { malformed } from '../contract/fault.ts'
 import { createMemoryOps } from './ops.ts'
@@ -39,6 +39,8 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
   const values = new Map<Subject, Map<string, OutcomeValue[]>>()
   const calls = new Map<string, Omit<KeptCall, 'result'>>()
   const withheld = new Map<string, CallEvidence>()
+  const reservedBySubject = new Map<Subject, Set<string>>()
+  const reservedByIdentifier = new Map<Identifier, Set<string>>()
   const callLines = new Map<string, Subject>()
   const lineKinds = new Map<string, CallLineKind>()
   const texts = new Map<string, KeptText>()
@@ -50,7 +52,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
   const leases = new Map<string, Lease[]>()
   const costs = new Map<string, CostRow>()
   const reads = new Map<string, { at: number; key: string }>()
-  const said = new Map<string, Said[]>()
+  const said = new Map<string, (Said & { deletion?: number })[]>()
   const receipts = new Map<string, Receipt>()
   const receiptSubjects = new Map<string, Set<Subject>>()
   const settings = new Map<string, string>()
@@ -91,23 +93,31 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
 
   const unsay = (about: string, ...topics: Topic[]) => (topics.length > 0 ? topics : (['worth', 'lead'] as Topic[])).forEach((topic) => said.delete(`${topic}\u0000${about}`))
 
-  const partyCallsOf = (subjects: readonly Subject[]) => {
+  const erasedRecord = (subject: Subject) => decisions.findLast(d => d.action === 'forget' && d.about[0] === subject)
+  const partyReturn = (subject: Subject, call: string) => {
+    const erased = erasedRecord(subject)
+    if (!erased) return undefined
+    const held = calls.get(call)
+    // A staff link alone does not put somebody’s profile back on record.
+    return held && held.at > erased.at && [...bySubject.get(subject)?.keys() ?? []].some(id => !id.startsWith('review:')) ? erased.seq : 'forgotten'
+  }
+  const partyCallsOf = (subjects: readonly Subject[], only?: readonly string[]) => {
     const found = new Set<string>()
-    for (const [id, line] of callLines) if (subjects.includes(line) || subjects.includes(calls.get(id)!.subject)) found.add(id)
+    for (const [id, line] of callLines) if ((!only || only.includes(id)) && (subjects.includes(line) || subjects.includes(calls.get(id)!.subject))) found.add(id)
     const retained: string[] = []
     for (const list of said.values()) {
-      if (!list.some(each => each.topic === 'party' && 'subject' in each.data && subjects.includes(each.data.subject))) continue
+      if ((only && !only.includes(list[0]!.about)) || !list.some(each => each.topic === 'party' && 'subject' in each.data && subjects.includes(each.data.subject))) continue
       const last = newest(list)!
       if (last.topic === 'party' && (last.data.role === 'self' || last.data.role === 'representative') && !subjects.includes(last.data.subject) && !found.has(last.about)) retained.push(last.about)
       else found.add(last.about)
     }
     return { found, retained }
   }
-  const dropCallNotices = (ids: ReadonlySet<string>, subjects: Subject[], misses = new Set<string>(), evidence: readonly string[] = []) => {
+  const dropCallNotices = (ids: ReadonlySet<string>, subjects: Subject[], misses = new Set<string>(), evidence: readonly string[] = [], knownAt?: number, owner?: Subject) => {
     const sources = new Set([...ids, ...evidence])
     const conversions = new Set([...ids].map(id => `call:${id}`))
     if (ids.size) ops.dropFailureAlerts(ids)
-    const notices = new Set(ops.dropCallbackAlerts(subjects, sources, misses))
+    const notices = new Set(ops.dropCallbackAlerts(subjects, sources, misses, knownAt, misses.size ? owner : undefined))
     for (const key of notices) once.delete(key)
     for (let i = events.length - 1; i >= 0; i--) {
       const event = events[i]!
@@ -153,13 +163,18 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
     },
 
     async removeSubject(subject, only) {
-      const { found: ids, retained } = partyCallsOf([subject])
+      const { found: ids, retained } = partyCallsOf([subject], only)
       for (const call of retained) {
         const key = `party\u0000${call}`
         said.set(key, said.get(key)!.filter(each => each.topic === 'party' && !('subject' in each.data && each.data.subject === subject)))
       }
-      for (const call of calls.values()) if (call.subject === subject) ids.add(call.id)
-      for (const [key, row] of withheld) if (ids.has(row.call) || (!only && row.subject === subject)) withheld.delete(key)
+      if (!only) for (const call of calls.values()) if (call.subject === subject) ids.add(call.id)
+      for (const [key, row] of withheld) if (ids.has(row.call) || (!only && row.subject === subject)) {
+        withheld.delete(key)
+        unindex(reservedBySubject, row.subject, key)
+        unindex(reservedByIdentifier, row.identifier, key)
+      }
+      if (ids.size) await reopenWaits(this, await this.callsWith([...ids]))
       const gone = []
       const owners = new Set([subject])
       for (const id of ids) {
@@ -181,7 +196,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
         unsay(id, 'party', 'return', 'result')
       }
       if (ids.size || !only) dropCallNotices(ids, [...owners], new Set(), only ? [] : [creditSubject(subject)])
-      if (only === 'parties') return gone
+      if (only) return gone
       for (const identifier of bySubject.get(subject)?.keys() ?? []) {
         const holders = byIdentifier.get(identifier)!
         holders.delete(subject)
@@ -246,14 +261,20 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
       const subjects = new Set(filter.subjects)
       const identifiers = new Set(filter.identifiers)
       const ids = new Set(filter.calls)
-      return [...withheld.values()].filter(row => (!filter.subjects || subjects.has(row.subject)) && (!filter.identifiers || identifiers.has(row.identifier)) &&
+      const keys = filter.subjects ? filter.subjects.flatMap(subject => [...(reservedBySubject.get(subject) ?? [])])
+        : filter.identifiers ? filter.identifiers.flatMap(id => [...(reservedByIdentifier.get(id) ?? [])]) : undefined
+      const rows = keys ? [...new Set(keys)].map(key => withheld.get(key)!) : [...withheld.values()]
+      return rows.filter(row => (!filter.subjects || subjects.has(row.subject)) && (!filter.identifiers || identifiers.has(row.identifier)) &&
         (!filter.calls || ids.has(row.call)) && (filter.before === undefined || row.recorded <= filter.before)).map(row => ({ ...row }))
     },
 
     async reserveCall(rows) {
       for (const row of rows) {
         const key = [row.call, row.subject, row.identifier].join('\u0000')
-        if (!withheld.has(key)) withheld.set(key, { ...row })
+        if (withheld.has(key)) continue
+        withheld.set(key, { ...row })
+        index(reservedBySubject, row.subject, key)
+        index(reservedByIdentifier, row.identifier, key)
       }
     },
 
@@ -279,12 +300,27 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
       return found
     },
 
+    async matchingEdges(subjects) {
+      const active = await this.edgesOf(subjects)
+      return { active, reserved: withheld.size > 0 && (subjects.some(s => reservedBySubject.has(s)) || active.some(e => reservedByIdentifier.has(e.identifier))) }
+    },
+
     async edgesOf(subjects) {
-      return subjects.flatMap((subject) => [...(bySubject.get(subject)?.values() ?? [])].map(copy))
+      const edges: Edge[] = []
+      for (const subject of subjects) {
+        const held = bySubject.get(subject)
+        if (held) for (const edge of held.values()) edges.push(copy(edge))
+      }
+      return edges
     },
 
     async edgesOn(identifiers) {
-      return identifiers.flatMap((identifier) => [...(byIdentifier.get(identifier)?.values() ?? [])].map(copy))
+      const edges: Edge[] = []
+      for (const identifier of identifiers) {
+        const held = byIdentifier.get(identifier)
+        if (held) for (const edge of held.values()) edges.push(copy(edge))
+      }
+      return edges
     },
 
     async *sharing(caps) {
@@ -316,10 +352,18 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
 
     async states(identifiers) {
       const out = new Map<Identifier, IdentifierState>()
-      const extra = new Map<Identifier, Set<Subject>>()
-      for (const row of await this.callEvidence({ identifiers })) if (!byIdentifier.get(row.identifier)?.has(row.subject)) index(extra, row.identifier, row.subject)
       for (const identifier of identifiers) {
-        const fanout = (byIdentifier.get(identifier)?.size ?? 0) + (extra.get(identifier)?.size ?? 0)
+        const active = byIdentifier.get(identifier)
+        let fanout = active?.size ?? 0
+        const rows = withheld.size ? reservedByIdentifier.get(identifier) : undefined
+        if (rows) {
+          const former = new Set<Subject>()
+          for (const key of rows) {
+            const subject = withheld.get(key)!.subject
+            if (!active?.has(subject)) former.add(subject)
+          }
+          fanout += former.size
+        }
         if (fanout > 0 || ignored.has(identifier)) out.set(identifier, { fanout, ignored: ignored.has(identifier) })
       }
       return out
@@ -669,14 +713,31 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
       return callLines.get(id) ?? calls.get(id)?.subject
     },
 
-    async applyCallParty(id, arriving = false) {
+    async overwrittenCalls(limit) {
+      const ids: string[] = []
+      for (const call of calls.values()) {
+        const replayed = call.party && call.direction === 'inbound' && call.subject === 'call:' + call.id &&
+          sightings.get(call.subject)?.some(row => row.at === call.at && row.event === 'call' && row.identifier === 'dialed:call-' + call.id)
+        if (call.party ? replayed || ownerOf(call.id, call.party) !== call.subject : said.has('party\u0000' + call.id)) ids.push(call.id)
+        if (ids.length === limit) break
+      }
+      return ids
+    },
+
+    async applyCallParty(id, arriving = false, overwritten = false) {
       const call = calls.get(id)
-      const party = await partyOf(this, id)
+      const party = await partyOf(this, id) ?? (overwritten ? call?.party : undefined)
       if (!call || !party) return []
       const owner = ownerOf(id, party)
       const line = callLines.get(id) ?? call.subject
-      const first = !call.party && !arriving
-      const { changes, affected } = first ? await callTraces(this, call, line, lineKinds.get(id)) : { changes: [], affected: [] }
+      const first = overwritten || (!call.party && !arriving)
+      const reported = overwritten ? call.subject : line
+      if (overwritten) {
+        delete call.visitor
+        delete call.tags
+        call.flags = withoutGuesses(call.flags)
+      }
+      const { changes, affected } = first ? await callTraces(this, call, reported, lineKinds.get(id)) : { changes: [], affected: [] }
       await this.reserveCall(changes.map(({ edge, recorded }) => ({ call: id, subject: edge.subject, identifier: edge.identifier, at: call.at, recorded })))
       for (const { edge, remove, next } of changes) {
         const { subject, identifier } = edge
@@ -702,8 +763,9 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
           }
         }
       }
-      if (first && !call.visitor && call.direction === 'inbound') await this.dropTouch(line, call.at, `tel:${call.to}`, id, true)
+      if (first && !call.visitor && call.direction === 'inbound') await this.dropTouch(reported, call.at, `tel:${call.to}`, id, true)
       const before = call.subject
+      if (owner !== before) await reopenWaits(this, [withResult(call)])
       const misses = new Set(await affectedMisses(this, withResult(call), owner))
       lineKinds.delete(id)
       callLines.set(id, line)
@@ -721,7 +783,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
         }
       }
       for (const [key, job] of outbox.jobs) if (job.transactionId === transactionId && (job.note !== 'call_party' || job.subject !== owner)) outbox.jobs.set(key, { ...stopCallJob(job, owner), rev: (job.rev ?? 0) + 1 })
-      if (first || before !== owner) dropCallNotices(new Set([id]), [line, before, owner], misses, first && call.direction === 'inbound' ? ['legacy:credit'] : [])
+      if (first || before !== owner) dropCallNotices(new Set([id]), [line, before, owner], misses, first && call.direction === 'inbound' ? ['legacy:credit'] : [], Math.max(call.at, call.recorded), owner)
       return affected
     },
 
@@ -801,7 +863,12 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
     },
 
     async aroundOf(subjects) {
-      return this.membersOf([...new Set(subjects.flatMap((subject) => labels.get(subject)?.component ?? []))])
+      const components = new Set<Subject>()
+      for (const subject of subjects) {
+        const own = labels.get(subject)
+        if (own) components.add(own.component)
+      }
+      return this.membersOf([...components])
     },
 
     async calledBetween(from, to) {
@@ -982,12 +1049,12 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
 
     async keysOf(subjects, only) {
       const of = new Set(subjects)
-      const { found: ids, retained } = partyCallsOf(subjects)
+      const { found: ids, retained } = partyCallsOf(subjects, only)
       const own = [...outcomes.values()].filter((each) => of.has(each.subject)).map((each) => each.transactionId)
       const theirs = only ? new Set([...ids].map(id => `call:${id}`)) : new Set([...own, ...[...ids].map(id => `call:${id}`), ...subjects.flatMap((each) => [...(values.get(each)?.keys() ?? [])].filter((id) => !outcomes.has(id)))])
       return [
         ...[...theirs].map((key) => ({ type: 'conversion', key })),
-        ...[...new Set([...ids, ...[...calls.values()].filter(each => of.has(each.subject)).map(call => call.id)])].map(key => ({ type: 'call', key })),
+        ...[...new Set([...ids, ...(!only ? [...calls.values()].filter(each => of.has(each.subject)).map(call => call.id) : [])])].map(key => ({ type: 'call', key })),
         ...[...ids, ...retained].flatMap(id => (said.get(`party\u0000${id}`) ?? [])
           .filter(each => ids.has(id) || (each.topic === 'party' && 'subject' in each.data && of.has(each.data.subject)))
           .map(({ key }) => ({ type: 'call_update', key }))),
@@ -998,8 +1065,8 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
       ]
     },
 
-    async retainedPartyCalls(subjects) {
-      return partyCallsOf(subjects).retained
+    async retainedPartyCalls(subjects, only) {
+      return partyCallsOf(subjects, only).retained
     },
 
     async forgetReceipts(subjects, keys, at, retainedCalls = [], only) {
@@ -1049,7 +1116,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
     },
 
     async saidOf<T extends Topic>(topic: T, about: string) {
-      return structuredClone(said.get(`${topic}\u0000${about}`) ?? []) as SaidOf<T>[]
+      return structuredClone((said.get(`${topic}\u0000${about}`) ?? []).map(({ deletion: _, ...entry }) => entry)) as SaidOf<T>[]
     },
 
     async costsBetween(from, to) {
@@ -1100,18 +1167,47 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
       return decisions.filter(wanted).slice(-limit).reverse().map(copied)
     },
 
-    async forgottenParties(limit) {
-      const gone = new Set(decisions.filter(d => d.action === 'forget').map(d => d.about[0]))
-      const named = new Set<Subject>()
-      for (const list of said.values()) for (const each of list) {
-        if (each.topic === 'party' && 'subject' in each.data && gone.has(each.data.subject)) named.add(each.data.subject)
-        if (named.size >= limit) return [...named]
+    async unprovenParties(limit) {
+      const pending: Awaited<ReturnType<Tx['unprovenParties']>> = []
+      const prunes = decisions.filter(row => row.action === 'prune').map(row => ({ at: row.at, cutoff: Number(row.about[0]) }))
+      let callsChecked = 0
+      for (const list of said.values()) {
+        const size = pending.length
+        for (const row of list) {
+          if (row.topic !== 'party' || !('subject' in row.data)) continue
+          const subject = row.data.subject
+          const erased = erasedRecord(subject)
+          if (!erased || erased.seq === row.deletion) continue
+          const call = calls.get(row.about)
+          let fresh = Infinity
+          for (const sighting of sightings.get(subject) ?? []) {
+            const recorded = sighting.recorded ?? sighting.at
+            if (!sighting.identifier.startsWith('review:') && recorded > erased.at) fresh = Math.min(fresh, recorded)
+          }
+          const ready = call && call.at > erased.at && fresh !== Infinity ? Math.max(call.recorded, fresh) : undefined
+          const retryFrom = prunes.reduce((first, p) => p.cutoff > erased.at ? Math.min(first, p.at) : first, Infinity)
+          pending.push({ subject, call: row.about, key: row.key, deletion: erased.seq, erasedAt: erased.at, ...(ready !== undefined && { ready }), ...(retryFrom !== Infinity && { retryFrom }) })
+        }
+        if (pending.length > size && ++callsChecked === limit) break
       }
-      return [...named]
+      return pending
     },
 
-    async wasForgotten(subject) {
-      return decisions.some(d => d.action === 'forget' && d.about[0] === subject)
+    async partyReturn(subject, call) {
+      return partyReturn(subject, call)
+    },
+
+    async confirmPartyReturn(call, key, deletion) {
+      const row = said.get('party\u0000' + call)?.find(row => row.key === key)
+      if (row) row.deletion = deletion
+    },
+
+    async removePartyStatements(call, keys) {
+      const id = 'party\u0000' + call
+      const gone = new Set(keys)
+      const left = (said.get(id) ?? []).filter(row => !gone.has(row.key))
+      if (left.length) said.set(id, left)
+      else said.delete(id)
     },
 
     async decisionsNaming(subjects) {
@@ -1141,7 +1237,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
   }
 
   /** Every collection, copied together, so what two of them share stays shared. */
-  const collections = { bySubject, byIdentifier, ignored, labels, byComponent, byCluster, sightings, touches, separated, flows, flowsBy, flowIds, consents, decisions, outcomes, values, calls, withheld, callLines, lineKinds, texts, sent, payments, results, spurned, leases, costs, reads, said, receipts, receiptSubjects, settings, events, once, deliveries }
+  const collections = { bySubject, byIdentifier, ignored, labels, byComponent, byCluster, sightings, touches, separated, flows, flowsBy, flowIds, consents, decisions, outcomes, values, calls, withheld, reservedBySubject, reservedByIdentifier, callLines, lineKinds, texts, sent, payments, results, spurned, leases, costs, reads, said, receipts, receiptSubjects, settings, events, once, deliveries }
   const snapshot = () => structuredClone({ ...collections, lastEvent, epoch, writes, built, jobs: outbox.jobs, ops: ops.kept })
   const restore = (kept: ReturnType<typeof snapshot>) => {
     const refill = (now: any, then: any) => {

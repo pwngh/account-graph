@@ -244,7 +244,7 @@ export function plainPolicy(policy: Policy) {
 }
 
 /** Raised when the code decides differently under one policy, so that what was stored before is known to be due a rebuild. */
-const RULES = 7
+const RULES = 8
 
 export const REBUILD_NOTICE = 'Groups are due a rebuild. Run account-graph rebuild.'
 

@@ -88,6 +88,8 @@ export interface Cluster {
   members: Subject[]
   /** Larger than the policy's `review` size. A cluster this big is more often a bad identifier than one person. */
   oversized: boolean
+  /** Set in the reviewer profile when the number of private call readings limits the matches shown. */
+  limitedByCalls?: true
 }
 
 /** Where a subject sits: the component it can reach over `same` links, and its cluster inside it. */

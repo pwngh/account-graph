@@ -53,6 +53,7 @@ function profileOf(profile, more) {
     profile.separated.length > 0 && [term('Separated', 'separated'), amount(profile.separated.length)],
     profile.history[0] && [term('Last seen', 'lastSeen'), reviewDisplay.time(Math.max(...profile.history.map((each) => each.at)), Date.now())],
     profile.consent[0] && [term('Ad consent', 'consent'), profile.consent[0].adUserData && profile.consent[0].adPersonalization ? 'Granted' : profile.consent[0].adUserData || profile.consent[0].adPersonalization ? 'Partial' : 'Denied', profile.consent[0].source ?? '']),
+  profile.cluster.limitedByCalls ? el('p', { class: 'banner' }, 'Several call histories fit this group. Some possible matches have been kept apart.') : '',
   profile.cluster.oversized ? el('p', { class: 'banner' }, el('b', {}, 'Large group. '), 'A widely shared identifier may be joining different people. Review the links below.') : ''))
 
   if (profile.edges.length > 0 || profile.separated.length > 0) detail.push(el('section', {}, el('h2', {}, term('Graph', 'graph')), graphOf(profile, more),

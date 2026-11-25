@@ -141,7 +141,7 @@ A refund and a write-off are amounts, and not what is left. `of.type` is `conver
 | `not_returned` | none | Nobody did |
 | `party` | `role`, `by`, `subject` for every role except `unknown` | Who was on this call |
 
-`role` is `self`, `representative`, `excluded` or `unknown`. The subject names one of your records. A reviewer can sign only their own name. A later party statement can name a different record or undo identification with `unknown`. Results, returns and parties each have their own newest statement, ordered by time and then key. On a retry, `stands` says whether that statement still stands. A return statement on an outbound call always answers `false`. A statement may precede the call.
+`role` is `self`, `representative`, `excluded` or `unknown`. The subject names one of your records. A reviewer can sign only their own name. A later party statement can name a different record or undo identification with `unknown`. Results, returns and parties each have their own newest statement, ordered by time and then key. On a retry, `stands` says whether that statement still stands. A return statement on an outbound call always answers `false`. A statement may precede the call for a record that has never been deleted. For a returning record, first record its new profile and the call. Its start time must be after the most recent deletion. Earlier or missing calls receive `FORGOTTEN`.
 
 ```json
 {"type":"call_update","key":"desk-14","at":1790000000000,"call":"incoming-4","change":{"kind":"party","role":"representative","subject":"record:17","by":"intake"}}
@@ -298,7 +298,6 @@ POST /v1/forget
 
 A journey or record lookup reads its entries, party history and delivery details as of the same instant. The reviewer journey also reads each outcome and its delivery state together. A person or caller lookup reads call history, matches and arrivals together as well.
 
-
 Reads. Nothing is written.
 
 ```http
@@ -323,6 +322,8 @@ POST /v1/lookup
 | `conflicts` | `subjects`, 1 to 50 | `conflicts`: who of them is [kept apart](matching.md#asking-about-conflicts) |
 | `record` | `type`, `key`, `at` | One conversion, call or text, or `null` |
 | `transfers` | `subject`, `tiedOnly?` | `counterparties`, `rings` |
+
+A person lookup shows `possible` only when no arrival earns credit. For example, correcting a call can remove its credited tap and leave an independent visit at 0.59. That visit now appears as a suggestion with its existing score. It earns no campaign credit.
 
 `match`, `transfers`, `caller` and `journey` say why by `kinds`, such as `["phone", "device"]`. No identifier leaves the graph, because most are hashes of an email or a phone. A candidate with `unconfirmed` shares what would join it, and [nothing confirms](matching.md#records-that-have-to-be-confirmed) that the two are one person.
 

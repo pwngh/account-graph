@@ -19,7 +19,7 @@ import { newest } from './said.ts'
 import { sentOf } from './outbox.ts'
 import type { Job } from './outbox.ts'
 import type { PostalAddress, VerifiedAddress } from './ports.ts'
-import type { Receipts } from './receipts.ts'
+import { RECEIPT_RETENTION, type Receipts } from './receipts.ts'
 import { dayIn, dayStart, sourceOf } from './report.ts'
 import { knownLink } from './sign.ts'
 import { asks, beginnings, recordText, replyTo } from './texts.ts'
@@ -457,25 +457,59 @@ export function createSix(engine: Engine, options: SixOptions) {
     }
   }
 
-  async function eraseReceipts(tx: Tx, subjects: readonly Subject[], only?: 'parties') {
+  async function eraseReceipts(tx: Tx, subjects: readonly Subject[], only?: readonly string[]) {
     const keys = (await tx.keysOf(subjects, only)).map(({ type, key }) => ({ type, ...receipts.mac(type, key) }))
-    const kept = (await tx.retainedPartyCalls(subjects)).flatMap(key => receipts.mac('call', key).all)
+    const kept = (await tx.retainedPartyCalls(subjects, only)).flatMap(key => receipts.mac('call', key).all)
     await tx.forgetReceipts(subjects, keys, now(), kept, only)
   }
 
-  // Upgrade 33 can find an old statement, but only this process can make tombstones with every configured receipt secret.
+  // Only this process can verify an old receipt and make tombstones with every configured receipt secret.
   async function repairForgottenParties() {
     if (await store.read(tx => tx.settingOf('repairForgottenParties')) !== 'due') return
     for (;;) {
       const done = await engine.unit(async ({ graph, tx }) => {
         if (await tx.settingOf('repairForgottenParties') !== 'due') return true
-        const subjects = await tx.forgottenParties(50)
-        if (subjects.length) {
-          await eraseReceipts(tx, subjects, 'parties')
-          await graph.forget(subjects, undefined, undefined, 'parties')
+        const pending = await tx.unprovenParties(50)
+        const calls = new Map<string, typeof pending>()
+        for (const row of pending) {
+          const list = calls.get(row.call)
+          if (list) list.push(row)
+          else calls.set(row.call, [row])
         }
-        if (subjects.length < 50) await tx.setSetting('repairForgottenParties', 'done')
-        return subjects.length < 50
+        for (const [call, candidates] of calls) {
+          const history = await tx.saidOf('party', call)
+          const entries = new Map(history.map(row => [row.key, row]))
+          const callKeys = receipts.mac('call', call).all
+          const erased = new Map<string, Subject>()
+          for (const { subject, key, ready, retryFrom, deletion, erasedAt } of candidates) {
+            const entry = entries.get(key)!
+            const receipt = ready === undefined ? undefined : await tx.receiptOf('call_update', receipts.mac('call_update', key).all)
+            // Report times are supplied by the writer. Only the recorded arrival can establish that the call and profile were already here.
+            // A prune is logged before it runs. A receipt stamped afterwards can be a replacement for a pre-return assertion.
+            const original = receipt && (receipt.recorded < (retryFrom ?? Infinity) || receipt.recorded - RECEIPT_RETENTION <= erasedAt)
+            if (ready !== undefined && original && receipt.digest && receipt.recorded > ready && receipt.ref?.type === 'call' && callKeys.includes(receipt.ref.mac) &&
+              receipts.differs(receipt, { type: 'call_update', call, key, at: entry.at, change: { kind: 'party', ...entry.data } })?.length === 0) {
+              await tx.confirmPartyReturn(call, key, deletion)
+            } else erased.set(key, subject)
+          }
+          if (!erased.size) continue
+          const previous = erased.get(newest(history)!.key)
+          const kept = history.filter(row => !erased.has(row.key))
+          const next = newest(kept)?.data
+          if (previous !== undefined && next?.role !== 'self' && next?.role !== 'representative') {
+            await eraseReceipts(tx, [previous], [call])
+            await graph.forget(previous, undefined, undefined, [call])
+            continue
+          }
+          // The surviving signed owner keeps the call, even where a discarded statement claimed to have been signed later.
+          const keys = [...erased.keys()].map(key => ({ type: 'call_update', ...receipts.mac('call_update', key) }))
+          const noLongerNamed = [...new Set(erased.values())].filter(subject => !kept.some(row => 'subject' in row.data && row.data.subject === subject))
+          await tx.forgetReceipts(noLongerNamed, keys, now(), callKeys, [call])
+          await tx.removePartyStatements(call, [...erased.keys()])
+          if (previous !== undefined) await graph.refreshParty(call)
+        }
+        if (calls.size < 50) await tx.setSetting('repairForgottenParties', 'done')
+        return calls.size < 50
       })
       if (done) return
     }

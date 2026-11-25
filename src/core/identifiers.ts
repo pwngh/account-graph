@@ -95,7 +95,8 @@ export const FOLDED: Record<string, string> = { ß: 'ss', æ: 'ae', œ: 'oe', ø
 /** The original name hash counts everyone who held that spelling and carries its mutes. A suffix says exactly which spelling passed the newer check. */
 export const foldedNameKey = (id: Identifier): Identifier | undefined => /^(?:name|given|initial|named|ward|person|perhaps):[0-9a-f]{64}(?=$|~)/.exec(id)?.[0]
 /** Only a spelling checked against the current missing-name list may give positive evidence. Older hashes still cap the evidence. */
-export const checkedNameKey = (id: Identifier) => id.includes('~2.') || id.endsWith('~2')
+export const CHECKED_NAME = '~3'
+export const checkedNameKey = (id: Identifier) => id.includes(CHECKED_NAME + '.') || id.endsWith(CHECKED_NAME)
 
 /** A fresh exact name has one spelling. Keep its older hash beside it for its fanout, mutes and comparison with old records. */
 export function nameEvidence(identifiers: readonly Identifier[]): Identifier[] {
@@ -104,13 +105,13 @@ export function nameEvidence(identifiers: readonly Identifier[]): Identifier[] {
     if (/^birth:[0-9a-f]{64}(~placeholder|~missing)?$/.test(id)) {
       const birth = id.split('~')[0]!
       out.add(birth)
-      if (id === birth) out.add(birth + '~1')
+      if (id === birth) out.add(birth + '~2')
       else if (id.endsWith('~missing')) out.add(id)
       continue
     }
     const base = id.startsWith('name:') && foldedNameKey(id)
     if (base) out.add(base)
-    out.add(base === id ? id + '~2' : id)
+    out.add(base === id ? id + CHECKED_NAME : id)
   }
   return [...out]
 }
@@ -118,6 +119,9 @@ export function nameEvidence(identifiers: readonly Identifier[]): Identifier[] {
 const NOBODYS = new Set(['unknown', 'unk', 'none', 'null', 'undefined', 'na', 'n a', 'noname', 'no name', 'nobody', 'not given', 'not provided', 'not available', 'placeholder', 'test', 'tester', 'testing', 'dummy', 'firstname', 'first name', 'lastname', 'last name', 'caller', 'wireless caller', 'customer', 'client'])
 // Spanish intake labels from lookups.ts and the Spanish and French missing-name forms reported by reviewers.
 const MISSING = new Set(['desconocido', 'desconocida', 'sin nombre', 'no proporcionado', 'no proporcionada', 'no dio', 'no tiene', 'inconnu', 'inconnue', 'inconnu e'])
+// Whole intake labels meaning unknown or name unknown. Compare the script's letters, including its vowel signs.
+const UNKNOWN_NAME = new Set(['неизвестно', 'غير معروف', 'अज्ञात', '姓名不详', '氏名不詳'].map(label => normalizeName(label, true)))
+const NEWBORN = new Set(['baby', 'baby boy', 'baby girl'])
 const SAMPLES = new Set(['john doe', 'jane doe'])
 
 /** The old folded spelling still sets the cap. An exact spelling also keeps marks that change the letters of a name. */
@@ -137,6 +141,7 @@ function normalizeName(name: string, exact = false): string {
 export function nameParts(first: string, last: string, previous = false): string[] | undefined {
   const name = [normalizeName(first), normalizeName(last)]
   if ([...name, name.join(' ')].some((part) => NOBODYS.has(part) || (!previous && MISSING.has(part))) || SAMPLES.has(name.join(' '))) return undefined
+  if (!previous && (NEWBORN.has(name[0]!) || [first, last].some(field => /[^\u0000-\u007f]/u.test(field) && UNKNOWN_NAME.has(normalizeName(field, true))))) return undefined
   return name
 }
 
@@ -158,7 +163,7 @@ export function nameKeys(secret: string, first: string, last: string, known: { z
   const mac = (parts: string[]) => createHmac('sha256', secret).update(JSON.stringify(parts)).digest('hex')
   const key = (by: string, value: string): Identifier => {
     const base = 'name:' + mac([...name, by, value])
-    return whole.some((part, i) => part !== name[i]) ? base + '~2.' + mac([...whole, by, value]) : base
+    return whole.some((part, i) => part !== name[i]) ? base + CHECKED_NAME + '.' + mac([...whole, by, value]) : base
   }
   const keys: Identifier[] = []
   const zip = /^(\d{5})(-?\d{4})?$/.exec(known.zip5?.trim() ?? '')?.[1]

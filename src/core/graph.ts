@@ -9,7 +9,7 @@ import { creditSubject } from './call-party.ts'
 import { callGroups } from './call-partition.ts'
 import { summarizeCalls } from './callreport.ts'
 import type { CallSummary } from './callreport.ts'
-import { byCode, codeTie, followUp, isTie } from './calls.ts'
+import { byCode, codeTie, firstOpen, followUp, isTie } from './calls.ts'
 import { Gone, asks, beginnings, replyTo } from './texts.ts'
 import { followed } from './followed.ts'
 import type { Followed } from './followed.ts'
@@ -147,7 +147,7 @@ export interface Graph {
   /** Every subject seen with any of the given identifiers, with when: who else has this fingerprint, who tapped this number. */
   holders(identifiers: readonly Identifier[]): Promise<Edge[]>
   /** The cluster a subject belongs to, or undefined for a subject never observed. */
-  cluster(subject: Subject): Promise<Cluster | undefined>
+  cluster(subject: Subject, explain?: boolean): Promise<Cluster | undefined>
   /** Records a marketing touchpoint. */
   touch(touch: Touch, call?: string): Promise<void>
   /** Finds the touches that led to a conversion by this subject. */
@@ -183,8 +183,11 @@ export interface Graph {
   sayLead(said: { id: string; key: string; at: number; kind?: NotLead['kind'] | undefined }): Promise<{ stands: boolean; lead: boolean }>
   /** `keepCallResult`, by when it was said. The result that stands counts whole. */
   sayResult(said: { call: string; key: string; at: number; result: { answered: boolean; voicemail?: boolean; waited?: number } }): Promise<{ stands: boolean }>
+  /** An older process could put the physical line and its matching evidence back after a staff confirmation. */
+  repairCallReports(): Promise<void>
   /** Identifies one call independently of the line or the call result. */
   sayParty(said: { call: string; key: string; at: number; party: CallParty & { by: string } }): Promise<{ stands: boolean }>
+  refreshParty(id: string): Promise<Change[]>
   partyHistory(id: string): Promise<(PartyStatement & { key: string })[]>
   partyRevision(): Promise<string | undefined>
   /** `keepReturn`, by when it was said, which is not when they were reached. */
@@ -396,7 +399,7 @@ export interface Graph {
    * included, or several together: all of them or, if it is refused, none.
    * `gone` hears what conversions were deleted, once they are.
    */
-  forget(subject: Subject | readonly Subject[], why?: Deciding, gone?: (jobs: Job[]) => void, only?: 'parties'): Promise<Change[]>
+  forget(subject: Subject | readonly Subject[], why?: Deciding, gone?: (jobs: Job[]) => void, only?: readonly string[]): Promise<Change[]>
   /**
    * Everything recorded about the person a subject is: arrivals, what they
    * were seen doing, calls, steps and their values, consent and decisions,
@@ -564,15 +567,17 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
   }
 
   /** Components and clusters of the given subjects, from their edges and the reviewer's separations. */
-  async function compute(tx: Tx, subjects: readonly Subject[], supposing?: Supposed, onCut?: (a: Subject, b: Subject) => void): Promise<Map<Subject, Labels>> {
+  async function compute(tx: Tx, subjects: readonly Subject[], supposing?: Supposed, onCut?: (a: Subject, b: Subject) => void, onLimited?: (subjects: Subject[]) => void, local?: { active: Edge[]; reserved: boolean }): Promise<Map<Subject, Labels>> {
+    const first = local ?? await tx.matchingEdges(subjects)
     // A removed tie can move a separation's cut to a different link. Include the former holders and their components when testing both readings.
-    if (!(await tx.hasCallEvidence())) return computeOn(tx, subjects, [], supposing, onCut)
+    if (!first.reserved) return computeOn(tx, subjects, [], supposing, onCut, onLimited, first.active)
     const scope = new Set(subjects)
     let next = [...subjects]
+    const batches = [first.active]
     const checked = new Set<Identifier>()
     while (next.length) {
       const privateEdges = await tx.callEvidence({ subjects: next })
-      const edges = await tx.edgesOf(next)
+      const edges = batches[batches.length - 1]!
       const ids = unique([...edges, ...privateEdges].map(edge => edge.identifier)).filter(id => !checked.has(id))
       for (const id of ids) checked.add(id)
       const rows = await tx.callEvidence({ identifiers: ids })
@@ -581,13 +586,15 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       const added = unique([...rows, ...holders].map(edge => edge.subject)).filter(subject => !scope.has(subject))
       next = unique([...added, ...(await tx.aroundOf(added)).keys()]).filter(subject => !scope.has(subject))
       for (const subject of next) scope.add(subject)
+      if (next.length) batches.push(await tx.edgesOf(next))
     }
-    return computeOn(tx, [...scope], await tx.callEvidence({ subjects: [...scope] }), supposing, onCut)
+    const everyone = [...scope]
+    return computeOn(tx, everyone, await tx.callEvidence({ subjects: everyone }), supposing, onCut, onLimited, batches.length === 1 ? first.active : batches.flat())
   }
 
-  async function computeOn(tx: Tx, subjects: readonly Subject[], withdrawn: readonly CallEvidence[], supposing?: Supposed, onCut?: (a: Subject, b: Subject) => void): Promise<Map<Subject, Labels>> {
-    let active = await tx.edgesOf(subjects)
-    const states = await tx.states(unique([...active, ...withdrawn].map(row => row.identifier)))
+  async function computeOn(tx: Tx, subjects: readonly Subject[], withdrawn: readonly CallEvidence[], supposing?: Supposed, onCut?: (a: Subject, b: Subject) => void, onLimited?: (subjects: Subject[]) => void, loaded?: Edge[]): Promise<Map<Subject, Labels>> {
+    let active = loaded ?? await tx.edgesOf(subjects)
+    const states = await tx.states(unique((withdrawn.length ? [...active, ...withdrawn] : active).map(row => row.identifier)))
     const among = new Set(subjects)
     let separated = (await tx.separatedOf(subjects)).filter(([a, b]) => among.has(a) && among.has(b))
     if (supposing?.action === 'join') {
@@ -600,7 +607,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       if (supposing.separated ?? true) separated.push([supposing.a, supposing.b])
     }
 
-    return callGroups(policy, [...subjects], active, withdrawn, states, separated, group, onCut)
+    return callGroups(policy, [...subjects], active, withdrawn, states, separated, group, onCut, onLimited)
 
     function group(subjects: Subject[], edges: Edge[], states: Map<Identifier, IdentifierState>) {
       let different = false
@@ -609,7 +616,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       const spoken = (links: Pair[]) => links.filter(({ reasons }) => told(policy, reasons)).map(({ a, b }): [Subject, Subject] => [a, b])
       const two = spoken(pairs)
       const facts = knownOf(policy, edges, silent(states), separated.length > 0 || two.length > 0)
-      const since = sinceOf(edges)
+      const since = separated.length || two.length || facts.size || different || policy.records === 'confirmed' ? sinceOf(edges) : undefined
       const current = partition(subjects, pairs, separated, policy, facts, onCut, two, since)
       if (!different && ![...facts.values()].some((own) => own.changed)) return current
       const before = scorePairs(policy, edges, states, undefined, policy.related, earlierReasons)
@@ -626,10 +633,19 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
    * far end is in one of these components. Clusters are cut from whole
    * components, which is why components, not clusters, bound the work.
    */
-  async function settle(tx: Tx, affected: ReadonlySet<Subject>): Promise<Change[]> {
-    const own = await tx.labelsOf([...affected])
-    const stored = await tx.membersOf(unique([...own.values()].map((labels) => labels.component)))
-    const next = await compute(tx, [...stored.keys()])
+  async function settle(tx: Tx, affected: ReadonlySet<Subject>, privateHolders = false): Promise<Change[]> {
+    const stored = await tx.aroundOf([...affected])
+    // A line known only through stated calls has no stored group. It can still lead to active holders of earlier call ties.
+    const subjects = privateHolders ? unique([...stored.keys(), ...affected]) : [...stored.keys()]
+    const local = await tx.matchingEdges(subjects)
+    // A lone subject cannot change its own group unless a former holder brings another group into reach.
+    if (!local.reserved && subjects.length === 1) {
+      const subject = subjects[0]!
+      const labels = stored.get(subject)
+      if (labels?.component === subject && labels.cluster === subject) return []
+    }
+    const next = await compute(tx, subjects, undefined, undefined, undefined, local)
+    if (!local.reserved) return apply(tx, stored, next)
     const more = [...next.keys()].filter(subject => !stored.has(subject))
     if (more.length) for (const [subject, labels] of await tx.labelsOf(more)) stored.set(subject, labels)
     const changes = await apply(tx, stored, next)
@@ -645,7 +661,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
     }
     if (moved.size > 0) await tx.setLabels(moved)
     const changes = diff(stored, next).filter((change) => change.from !== change.to)
-    await tx.addChanges(now(), changes)
+    if (changes.length) await tx.addChanges(now(), changes)
     return changes
   }
 
@@ -1158,8 +1174,8 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
   // Identical public credit on the same path needs no replacement notice. The private proof keeps no ad click or campaign text.
   const arrivalKey = (touch: AttributedTouch) => `credit:${createHash('sha256').update(JSON.stringify([touch.subject, touch.at, touch.via, sourceOf(touch), touch.campaign, touch.campaignId])).digest('hex')}`
 
-  async function settleParty(tx: Tx, id: string, arriving = false): Promise<Change[]> {
-    const affected = await tx.applyCallParty(id, arriving)
+  async function settleParty(tx: Tx, id: string, arriving = false, overwritten = false): Promise<Change[]> {
+    const affected = await tx.applyCallParty(id, arriving, overwritten)
     const changes = await settle(tx, new Set(affected))
     await recheckCallbacks(tx, affected)
     return changes
@@ -1446,7 +1462,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
     const open = touched.filter((identifier) => {
       const state = states.get(identifier)!
       const before = state.fanout - (added.get(identifier) ?? 0)
-      return !state.ignored && before <= ruleFor(policy, identifier).cap
+      return !state.ignored && before <= ruleFor(policy, identifier).cap && state.fanout > 1
     })
     const affected = new Set(sightings.map((sighting) => sighting.subject))
     for (const edge of await tx.edgesOn(open)) affected.add(edge.subject)
@@ -1647,12 +1663,14 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       return store.read((tx) => tx.edgesOn(identifiers))
     },
 
-    cluster(subject) {
+    cluster(subject, explain) {
       return store.read(async (tx) => {
-        const id = (await tx.labelsOf([subject])).get(subject)?.cluster
-        if (id === undefined) return undefined
-        const members = (await tx.clusterOf(id)).sort()
-        return { id, members, oversized: members.length > policy.review }
+        const own = (await tx.labelsOf([subject])).get(subject)
+        if (!own) return undefined
+        const members = (await tx.clusterOf(own.cluster)).sort()
+        let limited = false
+        if (explain && await tx.hasCallEvidence()) await compute(tx, [...(await tx.membersOf([own.component])).keys()], undefined, undefined, group => { if (group.includes(subject)) limited = true })
+        return { id: own.cluster, members, oversized: members.length > policy.review, ...(limited ? { limitedByCalls: true as const } : {}) }
       })
     },
 
@@ -1822,18 +1840,41 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       })
     },
 
+    async repairCallReports() {
+      if (await store.read(tx => tx.settingOf('repairCallReports')) !== 'due') return
+      let done = false
+      while (!done) await changing(async tx => {
+        const ids = await tx.overwrittenCalls(50)
+        const changes: Change[] = []
+        for (const id of ids) changes.push(...await settleParty(tx, id, false, true))
+        if (ids.length) await tx.setSetting('callParty', randomUUID())
+        done = ids.length < 50
+        if (done) await tx.setSetting('repairCallReports', 'done')
+        return changes
+      })
+    },
+
     async sayParty({ call, key, at, party }) {
       keepable(key, call, party.by, ...(party.role === 'unknown' ? [] : [party.subject]))
       let stands = false
       await changing(async (tx) => {
-        if ('subject' in party && await tx.wasForgotten(party.subject)) throw refused('The record named for this call was forgotten', { reason: 'FORGOTTEN' })
+        const deletion = 'subject' in party ? await tx.partyReturn(party.subject, call) : undefined
+        if (deletion === 'forgotten') throw refused('The record named for this call was forgotten', { reason: 'FORGOTTEN' })
         const added = await tx.addSaid({ topic: 'party', about: call, key, at, data: party })
+        if (added && deletion !== undefined) await tx.confirmPartyReturn(call, key, deletion)
         stands = newest(await tx.saidOf('party', call))!.key === key
         if (!added || !stands) return []
         await tx.setSetting('callParty', randomUUID())
         return settleParty(tx, call)
       })
       return { stands }
+    },
+
+    refreshParty(id) {
+      return changing(async tx => {
+        await tx.setSetting('callParty', randomUUID())
+        return settleParty(tx, id)
+      })
     },
 
     partyHistory(id) {
@@ -1886,22 +1927,23 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         let tied = visitor !== undefined && (await tx.edgesOn([...(doubted ? [] : [`dial:${call.id}`]), `lease:${call.id}`, codeTie(call.id)])).some((edge) => edge.subject === visitor)
         // What was said of it meanwhile stays said.
         const before = await tx.callOf(call.id)
-        const pending = !before && reserved && (await tx.saidOf('party', call.id)).length > 0
+        const stated = (await tx.saidOf('party', call.id)).length > 0
+        const pending = !before && stated && reserved
         if (pending && visitor && reserved.tie) {
           const source = reserved.tie
           const available = source.pool ? (await holderOf(tx, source.pool.number, call.at, source.pool.grace)) === visitor : (await tx.edgesOn(source.notes ?? [])).some(edge => edge.subject === visitor)
           tied = available && await tieable(tx, call.subject, visitor, source.identifier)
         }
         const said = before?.flags.includes('ambiguous') && doubted && !call.flags.includes('pool') && !byCode(call)
-        await tx.setCall({ ...rest, ...(said && { flags: [...new Set([...call.flags, 'ambiguous'])] }), ...(tied && { visitor }), recorded: now() }, lineKind)
+        await tx.setCall({ ...rest, ...(said && { flags: [...new Set([...call.flags, 'ambiguous'])] }), ...(tied && { visitor }), recorded: now() }, lineKind, !before && stated)
         if (pending) {
           const rows = reserved.identifiers.map(identifier => ({ subject: call.subject, identifier }))
           if (tied && visitor && reserved.tie) for (const subject of [call.subject, visitor]) rows.push({ subject, identifier: reserved.tie.identifier })
           await tx.reserveCall(rows.map(row => ({ ...row, call: call.id, at: call.at, recorded: now() })))
           const holders = await tx.edgesOn(rows.map(row => row.identifier))
-          await settle(tx, new Set([...holders, ...rows].map(edge => edge.subject)))
+          await settle(tx, new Set([...holders, ...rows].map(edge => edge.subject)), true)
         }
-        if ((await tx.saidOf('party', call.id)).length > 0) await settleParty(tx, call.id, !before)
+        if (stated) await settleParty(tx, call.id, !before)
         await tx.fed('calls', now())
       })
     },
@@ -1989,7 +2031,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
           const call = await tx.callOf(withheldCall)
           if (!call || await tx.callLine(withheldCall) !== caller) return []
           await tx.reserveCall([caller, visitor].map(subject => ({ call: withheldCall, subject, identifier, at, recorded: call.recorded })))
-          return settle(tx, new Set([caller, visitor]))
+          return settle(tx, new Set([caller, visitor]), true)
         }
         return record(tx, [caller, visitor].map((subject) => ({ subject, identifier, at, event: 'call', recorded: now() })))
       })
@@ -2020,7 +2062,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         const affected = new Set([...holders, ...withheld.map(row => row.subject)])
         if (!affected.size) return []
         await mark(tx)
-        const changes = await settle(tx, affected)
+        const changes = await settle(tx, affected, withheld.length > 0)
         await recheckCallbacks(tx, [...affected], false, id)
         return changes
       })
@@ -2045,7 +2087,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
           await tx.markPartyCode(id, tied ? visitor : undefined)
           await tx.setSetting('callParty', randomUUID())
           const affected = new Set([...guessed.map(row => row.subject), raw.subject, visitor])
-          const changes = await settle(tx, affected)
+          const changes = await settle(tx, affected, tied || guessed.length > 0)
           await recheckCallbacks(tx, [...affected], false, id)
           return changes
         }
@@ -2231,7 +2273,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         const calls = await leadsOf(tx, await tx.callsOf([call.subject]), callId)
         if (!calls.some((each) => each.id === call.id)) return false
         const wait = followUp(call, calls)
-        const first = calls.find((each) => each.direction === 'inbound' && each.result?.answered === false && followUp(each, calls).state === 'open')
+        const first = firstOpen(calls)
         if (wait.state !== 'open' || wait.attempts !== data.attempts || !first || alert.key !== `unreturned:${call.subject}:${first.id}`) return false
         const creditOf = await creditAll(tx, [call], 90 * DAY, 2, undefined, [call])
         const { credited } = creditOf(call.subject, call.at, call)

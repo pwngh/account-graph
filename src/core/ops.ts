@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { NewEvent } from './events.ts'
-import { followUp } from './calls.ts'
+import { firstOpen } from './calls.ts'
 import { keepableText } from './identifiers.ts'
 import type { Graph } from './graph.ts'
 import type { Job, OutboxStore } from './outbox.ts'
@@ -289,7 +289,7 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
             const all = await graph.callsOf([call.subject])
             const not = await graph.notLeads(all.map((each) => `call:${each.id}`))
             const calls = all.filter((each) => !not.has(`call:${each.id}`))
-            const first = calls.find((each) => each.direction === 'inbound' && each.result?.answered === false && followUp(each, calls).state === 'open') ?? call
+            const first = firstOpen(calls) ?? call
             const tries = attempts === 0 ? 'No callback attempts.' : attempts === 1 ? '1 callback attempt.' : `${attempts} callback attempts.`
             await ops.once(`unreturned:${call.subject}:${first.id}`, `account-graph: a caller from ${sourceOf(touch)}${touch.campaign || touch.campaignId ? `, ${touch.campaign || touch.campaignId}` : ''} has waited over ${hours} ${options.hours ? 'open ' : ''}${hours === 1 ? 'hour' : 'hours'} for a callback. Missed ${when(call.at)} (${timeZone}). ${tries} ${call.subject}`, call.subject, { type: 'callback.overdue', at, data: { call: call.id, subject: call.subject, missedAt: call.at, attempts, source: sourceOf(touch), campaign: touch.campaign ?? null, campaignId: touch.campaignId ?? null } })
           }
@@ -340,7 +340,7 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
 }
 
 /** Where a memory store keeps what runs by itself. `fed` is how its writes say what they fed, and `forget` how it loses a subject. */
-export function createMemoryOps(): OpsStore & { fed(feed: Feed, at: number): void; forget(subject: string): void; unname(keys: readonly string[]): void; dropFailureAlerts(ids: ReadonlySet<string>): void; callbacksThrough(sources: ReadonlySet<string>): Map<string, readonly string[]>; dropCallbacks(keys: readonly string[]): void; dropCallbackAlerts(subjects: readonly string[], calls: ReadonlySet<string>, misses: ReadonlySet<string>): string[]; kept: Record<'feeds' | 'jobs' | 'runs' | 'alerts', Map<string, unknown>> } {
+export function createMemoryOps(): OpsStore & { fed(feed: Feed, at: number): void; forget(subject: string): void; unname(keys: readonly string[]): void; dropFailureAlerts(ids: ReadonlySet<string>): void; callbacksThrough(sources: ReadonlySet<string>): Map<string, readonly string[]>; dropCallbacks(keys: readonly string[]): void; dropCallbackAlerts(subjects: readonly string[], calls: ReadonlySet<string>, misses: ReadonlySet<string>, knownAt?: number, changedOwner?: string): string[]; kept: Record<'feeds' | 'jobs' | 'runs' | 'alerts', Map<string, unknown>> } {
   const feeds = new Map<Feed, FeedNote>()
   const jobs = new Map<string, Omit<JobRun, 'open'> & { run?: string }>()
   const runs = new Map<string, { name: string; at: number }>()
@@ -365,9 +365,9 @@ export function createMemoryOps(): OpsStore & { fed(feed: Feed, at: number): voi
     dropCallbacks(keys) {
       for (const key of keys) alerts.delete(key)
     },
-    dropCallbackAlerts(subjects, ids, misses) {
+    dropCallbackAlerts(subjects, ids, misses, knownAt, changedOwner) {
       const gone: string[] = []
-      for (const [key, alert] of alerts) if (key.startsWith('unreturned:') && (alert.calls ? alert.calls.some(id => ids.has(id)) || (alert.delivered === undefined && misses.has(alert.calls[0]!)) : alert.delivered === undefined && alert.subject !== undefined && subjects.includes(alert.subject))) {
+      for (const [key, alert] of alerts) if (key.startsWith('unreturned:') && (alert.calls ? alert.calls.some(id => ids.has(id)) || (alert.delivered === undefined && misses.has(alert.calls[0]!)) : alert.delivered === undefined && alert.subject !== undefined && subjects.includes(alert.subject) && (knownAt === undefined || alert.at >= knownAt || alert.subject === changedOwner))) {
         alerts.delete(key)
         gone.push(key)
       }

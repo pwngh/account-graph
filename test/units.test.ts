@@ -187,10 +187,13 @@ test('missing name labels catch no given name or short form in either field', as
   const forms = /const FORMS = `([\s\S]+?)`/.exec(source)![1]!.trim().split(/[\n:,]+/).filter(Boolean)
   assert.ok(new Set(forms).size > 1500)
   for (const name of new Set(forms)) for (const [first, last] of [[name, 'Lima'], ['Ana', name]] as const) assert.ok(nameParts(first, last), first + ' ' + last)
-  for (const missing of ['Desconocido', 'Desconocida', 'Sin Nombre', 'No Proporcionado', 'No proporcionada', 'Inconnu', 'Inconnue', 'Inconnu(e)']) {
+  for (const missing of ['Desconocido', 'Desconocida', 'Sin Nombre', 'No Proporcionado', 'No proporcionada', 'Inconnu', 'Inconnue', 'Inconnu(e)', 'Неизвестно', 'غير معروف', 'अज्ञात', '姓名不详', '氏名不詳']) {
     assert.equal(nameParts(missing, 'Lima'), undefined, missing)
     assert.equal(nameParts('Ana', missing), undefined, missing)
   }
+  assert.equal(nameParts('Baby', 'Lima'), undefined)
+  assert.ok(nameParts('Ana', 'Baby'))
+  assert.ok(nameParts('Babylon', 'Lima'))
 })
 
 test('records that have to be confirmed need the facts that confirm them, and are part of a policy', () => {

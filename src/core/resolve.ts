@@ -1,6 +1,6 @@
 import { UNNAMED, checkedReasons, evidence, joins, told, usable, weigh } from './policy.ts'
 import type { Fact, Policy } from './policy.ts'
-import { checkedNameKey, foldedNameKey } from './identifiers.ts'
+import { CHECKED_NAME, checkedNameKey, foldedNameKey } from './identifiers.ts'
 import type { Edge, Identifier, IdentifierState, Labels, Pair, Reason, Subject } from '../contract/types.ts'
 
 /**
@@ -112,7 +112,7 @@ const THINGS = new Set(['named', 'ward'])
 /** Of the things one person has, those made of a name, which a half of a name is not enough for. */
 const NAMED = new Set([...THINGS, 'person'])
 /** Records of one component, past which nothing but a decision joins them where records have to be confirmed. */
-const CROWD = 300
+export const crowdedRecords = (size: number) => size > 300
 /** What one person has and no other: a name with a zip code or a date of birth, and a passkey. */
 const OWN = new Set(['name', 'passkey', 'person'])
 
@@ -135,7 +135,8 @@ export function knownOf(policy: Policy, edges: readonly Edge[], undone: (identif
     // A join that was undone is none, and a fact that was muted is none.
     const base = foldedNameKey(identifier)
     if (undone(identifier) || (base && base !== identifier && undone(base))) continue
-    if (kind === 'birth' && identifier.endsWith('~1')) {
+    if (kind === 'birth' && identifier.endsWith('~1')) continue
+    if (kind === 'birth' && identifier.endsWith('~2')) {
       const dates = attested.get(subject) ?? new Set()
       attested.set(subject, dates.add(identifier.slice(0, -2)))
       continue
@@ -166,7 +167,7 @@ export function knownOf(policy: Policy, edges: readonly Edge[], undone: (identif
 /** Whether comparing the full spelling can change a fact. Ordinary checked names have exactly the same facts under both readings. */
 function changedSpelling(known: Known): boolean {
   if (!known.earlier) return false
-  const same = (before: Set<Identifier> | undefined, after: Set<Identifier> | undefined) => before?.size === after?.size && (!before || [...before].every((id) => after!.has(foldedNameKey(id) ? id + '~2' : id)))
+  const same = (before: Set<Identifier> | undefined, after: Set<Identifier> | undefined) => before?.size === after?.size && (!before || [...before].every((id) => after!.has(foldedNameKey(id) ? id + CHECKED_NAME : id)))
   return !same(known.earlier.things, known.things) || !same(known.earlier.facts.get('given'), known.facts.get('given')) || !same(known.earlier.facts.get('initial'), known.facts.get('initial'))
 }
 
@@ -370,7 +371,7 @@ function refined(pieces: Subject[][], links: readonly Pair[], policy: Policy, kn
   const everyone = pieces.flat().filter((subject) => !nobody(subject))
   if (everyone.length < 2) return pieces
   // So many come of something everybody shares, and what confirms them is then shared by chance: decisions alone join them.
-  const crowd = everyone.length > CROWD
+  const crowd = crowdedRecords(everyone.length)
   // Who has anything in common that could confirm the two, in all of the component: whoever was cut off may be one's as well.
   const holders = new Map<Identifier, Subject[]>()
   const own = (subject: Subject) => {

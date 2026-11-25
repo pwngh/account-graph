@@ -1,4 +1,5 @@
-import type { Edge, KeptCall, Subject } from '../contract/types.ts'
+import { firstOpen, stands } from './calls.ts'
+import type { CallTime, Edge, KeptCall, Subject } from '../contract/types.ts'
 import type { Job } from './outbox.ts'
 import type { CallLineKind, Tx } from './store.ts'
 import { newest } from './said.ts'
@@ -10,13 +11,29 @@ export async function partyOf(tx: Tx, id: string): Promise<KeptCall['party']> {
 
 export const ownerOf = (id: string, party: NonNullable<KeptCall['party']>) => party.role === 'self' || party.role === 'representative' ? party.subject : `call:${id}`
 
+// Removing the answer between two misses can make them one wait again. Its old alert can already be waiting for a retry.
+export async function reopenWaits(tx: Tx, removed: readonly CallTime[]): Promise<void> {
+  const answered = new Set(removed.filter(call => call.result?.answered || stands(call)).map(call => call.subject))
+  if (!answered.size) return
+  const past = await tx.callTimes([...answered])
+  const gone = new Set(removed.map(call => call.id))
+  const keys: string[] = []
+  for (const subject of answered) {
+    const own = past.filter(call => call.subject === subject)
+    const before = firstOpen(own)
+    const after = firstOpen(own.filter(call => !gone.has(call.id)))
+    if (before && after && before.id !== after.id) keys.push(`unreturned:${subject}:${before.id}`)
+  }
+  if (keys.length) await tx.dropCallbacks(keys)
+}
+
 // A pending notice for the new owner can also have changed, even though it knew nothing of this call.
 export async function affectedMisses(tx: Tx, call: KeptCall, owner: Subject): Promise<string[]> {
   if (owner === call.subject || (await tx.notLeads([`call:${call.id}`])).size) return []
   const before = call.direction === 'outbound' || call.result?.answered ? call.at : -Infinity
   const missed = call.direction === 'inbound' && call.result?.answered === false
   const returned = missed ? call.result?.returned ?? -Infinity : -Infinity
-  return (await tx.callTimes([owner])).filter(each => each.direction === 'inbound' && each.result?.answered === false &&
+  return (await tx.callTimes([owner])).filter(each => each.id !== call.id && each.direction === 'inbound' && each.result?.answered === false &&
     (each.at < Math.max(before, returned) || (missed && call.at <= each.at))).map(each => each.id)
 }
 

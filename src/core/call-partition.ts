@@ -1,8 +1,8 @@
-import type { Edge, IdentifierState, Labels, Subject } from '../contract/types.ts'
+import type { Edge, IdentifierState, Labels, Pair, Subject } from '../contract/types.ts'
 import type { CallEvidence } from './store.ts'
 import { UNNAMED, earlierReasons, ruleFor, usable } from './policy.ts'
 import type { Policy } from './policy.ts'
-import { commonClusters, components, scorePairs } from './resolve.ts'
+import { commonClusters, components, confirmed, conflict, knownOf, crowdedRecords, scorePairs } from './resolve.ts'
 
 type States = Map<string, IdentifierState>
 type Groups = Map<Subject, Labels>
@@ -34,8 +34,70 @@ function restore(active: Edge[], rows: readonly CallEvidence[]) {
   return [...edges.values()]
 }
 
+type Reading = { rows: CallEvidence[]; omitted: CallEvidence[] }
+
+/** Carrier reports on the same line can give the very same interval, first sighting and holder count. Read each distinct effect once. */
+function repeatedLines(choices: Reading[][], date: (row: CallEvidence) => number | undefined): Reading[][] {
+  const separate: Reading[][] = []
+  const lines = new Map<string, Reading[][]>()
+  for (const variants of choices) {
+    const rows = variants.flatMap(reading => reading.rows)
+    if (rows.some(row => !/^(phone|voip):/.test(row.identifier))) {
+      separate.push(variants)
+      continue
+    }
+    const keys = (rows: CallEvidence[]) => rows.map(row => JSON.stringify([keyOf(row), date(row)])).sort()
+    const key = JSON.stringify(variants.map(reading => [keys(reading.rows), keys(reading.omitted)]))
+    const same = lines.get(key)
+    if (same) same.push(variants)
+    else lines.set(key, [variants])
+  }
+  for (const calls of lines.values()) {
+    const variants = calls[0]!
+    if (calls.length === 1) {
+      separate.push(variants)
+      continue
+    }
+    // At most four alternatives per call. Repeating one adds no evidence. A holder disappears only if every call omits it.
+    const readings = new Map<string, Reading>()
+    const omittedByKey = groupBy([...new Set(calls.flat().flatMap(reading => reading.omitted))], keyOf)
+    for (let mask = 1; mask < 2 ** variants.length; mask++) {
+      const selected = variants.filter((_, i) => mask & (1 << i))
+      if (selected.length > calls.length) continue
+      const shown = new Map(selected.flatMap(reading => reading.rows).map(row => [keyOf(row), row]))
+      const absent = [...omittedByKey.keys()].filter(key => selected.every(reading => reading.omitted.some(row => keyOf(row) === key)))
+      readings.set(JSON.stringify([[...shown.keys()].sort(), absent.sort()]), { rows: [...shown.values()], omitted: absent.flatMap(key => omittedByKey.get(key)!) })
+    }
+    separate.push([...readings.values()])
+  }
+  return separate
+}
+
+/** With no decision, relationship or fact to split this component, only a weak bridge could break a surviving match. */
+function agreeingFloor(policy: Policy, group: Subject[], edges: Edge[], states: States, pairs: Pair[], named: (subject: Subject) => boolean, labels: Groups) {
+  const records = group.filter(named)
+  if (policy.records === 'confirmed' && crowdedRecords(records.length)) return
+  const known = knownOf(policy, edges, id => states.get(id)?.ignored === true || (ruleFor(policy, id).weight > 0 && !usable(policy, id, states.get(id))))
+  const facts = [...known.values()].filter(own => own.facts.size || own.earlier?.facts.size)
+  for (const [i, a] of facts.entries()) for (let j = i + 1; j < facts.length; j++) {
+    const b = facts[j]!
+    if (conflict(policy, a, b) || conflict(policy, a.earlier ?? a, b.earlier ?? b)) return
+  }
+  if (policy.records === 'confirmed') for (const [i, a] of records.entries()) for (let j = i + 1; j < records.length; j++) {
+    const x = known.get(a)
+    const y = known.get(records[j]!)
+    if (!confirmed(x, y) || !confirmed(x?.earlier ?? x, y?.earlier ?? y)) return
+  }
+  if (policy.bridge <= policy.same) return labels
+  const strong = components(group, pairs.filter(pair => pair.level === 'same' && pair.score >= policy.bridge))
+  // A weak bridge can grow another endpoint when more ties are restored. Anonymous pieces go back to their only named piece.
+  const one = new Set(records.map(s => strong.get(s))).size === 1
+  const namedHomes = new Set(records.map(s => labels.get(s)!.cluster))
+  return commonClusters(labels, new Map(group.map(s => [s, { component: group[0]!, cluster: one && namedHomes.has(labels.get(s)!.cluster) ? records[0]! : strong.get(s)! }])))
+}
+
 /** A statement can take evidence away, never change which of two separated people gets an unrelated subject. */
-export function callGroups(policy: Policy, subjects: Subject[], active: Edge[], withdrawn: readonly CallEvidence[], states: States, apart: [Subject, Subject][], read: ReadGroups, onCut?: (a: Subject, b: Subject) => void): Groups {
+export function callGroups(policy: Policy, subjects: Subject[], active: Edge[], withdrawn: readonly CallEvidence[], states: States, apart: [Subject, Subject][], read: ReadGroups, onCut?: (a: Subject, b: Subject) => void, onLimited?: (subjects: Subject[]) => void): Groups {
   const current = read(subjects, active, states)
   if (!withdrawn.length) return current
   const calls = groupBy(withdrawn, row => row.call)
@@ -81,7 +143,7 @@ export function callGroups(policy: Policy, subjects: Subject[], active: Edge[], 
       const stable = new Map(edges.map(edge => [keyOf(edge), edge]))
       const first = new Map<Subject, number>()
       for (const edge of edges) if (!edge.identifier.startsWith('review:')) first.set(edge.subject, Math.min(first.get(edge.subject) ?? Infinity, edge.first))
-      const choices = [...relevant].map(call => {
+      let choices = [...relevant].map(call => {
         const rows = calls.get(call)!
         const different = rows.filter(row => {
           if (possible.has(keyOf(row))) return true
@@ -101,8 +163,13 @@ export function callGroups(policy: Policy, subjects: Subject[], active: Edge[], 
         }
         return variants
       }).filter(variants => variants.length > 1)
-      const limit = choices.reduce((cost, variants) => cost * variants.length, 1)
-      if (limit <= 64) {
+      const count = () => choices.reduce((cost, variants) => cost * variants.length, 1)
+      if (count() > 64) choices = repeatedLines(choices, row => {
+        if (row.at < (first.get(row.subject) ?? Infinity)) return row.at
+        if (Number.isFinite(ruleFor(policy, row.identifier).halfLife) && usable(policy, row.identifier, upperStates.get(row.identifier)) && (byIdentifier.get(row.identifier)?.length ?? 0) > 1) return row.at
+        return undefined
+      })
+      if (count() <= 64) {
         const visit = (position: number, restored: CallEvidence[], omitted: CallEvidence[]) => {
           if (position === choices.length) {
             if (restored.length || omitted.length) labels = commonClusters(labels, read(group, restore(edges, restored.filter(row => members.has(row.subject))), counts(new Set(omitted))))
@@ -117,23 +184,34 @@ export function callGroups(policy: Policy, subjects: Subject[], active: Edge[], 
         }
       } else {
         // Bound work inside a write. Keep links that no possible reading can cut. Only this connected component pays for the ambiguity.
-        const named = (subject: Subject) => !(policy.unnamed ?? UNNAMED).includes(subject.split(':')[0]!)
+        const named = (subject: Subject) => !(policy.unnamed ?? UNNAMED).includes(subject.slice(0, Math.max(0, subject.indexOf(':'))))
         const pairs = scorePairs(policy, edges, states)
         const separations = apart.filter(([a, b]) => members.has(a) && members.has(b))
-        const constrained = separations.length > 0 || (policy.records === 'confirmed' && group.filter(named).length > 1) ||
-          (policy.apart?.length && edges.some(edge => /^(birth|given):/.test(edge.identifier))) ||
-          [...ids].some(id => ruleFor(policy, id).relates)
-        const strong = pairs.filter(pair => pair.level === 'same' && pair.score >= policy.bridge && pair.reasons.some(reason => reason.identifier.startsWith('review:join-') && reason.evidence >= Math.max(policy.same, policy.bridge)))
-        const reviewed = components(group, possiblePairs.filter(pair => members.has(pair.a) && pair.reasons.some(reason => reason.identifier.startsWith('review:join-'))))
-        const disputed = new Set(separations.filter(([a, b]) => reviewed.get(a) === reviewed.get(b)).map(([a]) => reviewed.get(a)))
-        const loose = (policy.records === 'confirmed' && group.filter(named).length > 1) ||
-          (policy.apart?.includes('birth') && new Set(edges.filter(edge => edge.identifier.startsWith('birth:')).map(edge => edge.identifier)).size > 1)
-        const safe = constrained ? strong.filter(({ a, b }) => !disputed.has(reviewed.get(a)) && (!loose || (named(a) && named(b)))) :
-          pairs.filter(pair => pair.level === 'same' && pair.reasons.some(reason => !ruleFor(policy, reason.identifier).corroborates && !/^(name|named|person|perhaps|ward):/.test(reason.identifier) && reason.evidence >= Math.max(policy.same, policy.bridge)))
-        const floor = components(group, safe)
-        // A journey or campaign must respect the same boundary as the stored groups.
-        if (onCut) for (const { a, b } of pairs) if (floor.get(a) !== floor.get(b)) onCut(a, b)
-        labels = commonClusters(labels, new Map(group.map(subject => [subject, { component: id, cluster: floor.get(subject)! }])))
+        const relates = [...ids].some(id => ruleFor(policy, id).relates && usable(policy, id, upperStates.get(id)) && (byIdentifier.get(id)?.length ?? 0) > 1)
+        const agreeing = !separations.length && !relates ? agreeingFloor(policy, group, edges, states, pairs, named, labels) : undefined
+        if (agreeing) {
+          if (group.some(subject => agreeing.get(subject)!.cluster !== labels.get(subject)!.cluster)) {
+            onLimited?.(group)
+            if (onCut) for (const { a, b } of pairs) if (agreeing.get(a)!.cluster !== agreeing.get(b)!.cluster) onCut(a, b)
+          }
+          labels = agreeing
+        } else {
+          onLimited?.(group)
+          const constrained = separations.length > 0 || (policy.records === 'confirmed' && group.filter(named).length > 1) ||
+            (policy.apart?.length && edges.some(edge => /^(birth|given):/.test(edge.identifier))) ||
+            [...ids].some(id => ruleFor(policy, id).relates)
+          const strong = pairs.filter(pair => pair.level === 'same' && pair.score >= policy.bridge && pair.reasons.some(reason => reason.identifier.startsWith('review:join-') && reason.evidence >= Math.max(policy.same, policy.bridge)))
+          const reviewed = components(group, possiblePairs.filter(pair => members.has(pair.a) && pair.reasons.some(reason => reason.identifier.startsWith('review:join-'))))
+          const disputed = new Set(separations.filter(([a, b]) => reviewed.get(a) === reviewed.get(b)).map(([a]) => reviewed.get(a)))
+          const loose = (policy.records === 'confirmed' && group.filter(named).length > 1) ||
+            (policy.apart?.includes('birth') && new Set(edges.filter(edge => edge.identifier.startsWith('birth:')).map(edge => edge.identifier)).size > 1)
+          const safe = constrained ? strong.filter(({ a, b }) => !disputed.has(reviewed.get(a)) && (!loose || (named(a) && named(b)))) :
+            pairs.filter(pair => pair.level === 'same' && pair.reasons.some(reason => !ruleFor(policy, reason.identifier).corroborates && !/^(name|named|person|perhaps|ward):/.test(reason.identifier) && reason.evidence >= Math.max(policy.same, policy.bridge)))
+          const floor = components(group, safe)
+          // A journey or campaign must respect the same boundary as the stored groups.
+          if (onCut) for (const { a, b } of pairs) if (floor.get(a) !== floor.get(b)) onCut(a, b)
+          labels = commonClusters(labels, new Map(group.map(subject => [subject, { component: id, cluster: floor.get(subject)! }])))
+        }
       }
     }
     for (const [subject, own] of labels) if (observed.has(subject)) result.set(subject, { component: id, cluster: own.cluster })

@@ -496,7 +496,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
 
   /** Everything the reviewer screen shows about one subject, in one answer. */
   async function profile(subject: Subject) {
-    const cluster = await graph.cluster(subject)
+    const cluster = await graph.cluster(subject, true)
     if (!cluster) return { subject, known: false }
     const links = await graph.links(subject)
     const ties = new Map<string, { a: Subject; b: Subject; score: number; level: Level }>()

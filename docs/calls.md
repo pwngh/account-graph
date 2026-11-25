@@ -48,13 +48,15 @@ Two people can use the same line. When staff know who an individual call concern
 | `excluded` | Staff know the call did not concern the named record. | It stays under its call ID until someone identifies the person. |
 | `unknown` | Staff take back the earlier identification. Omit `subject`. | It stays under its call ID. |
 
-The newest statement wins, by `at` and then by key in byte order. It can arrive before the call. Use a new key for a correction. Results and reported returns have their own order. The call lookup keeps the statements and who made each one. A new statement naming a record that was forgotten receives `FORGOTTEN`, even when the call has not arrived.
+The newest statement wins, by `at` and then by key in byte order. It can arrive before the call. Use a new key for a correction. Results and reported returns have their own order. The call lookup keeps the statements and who made each one. After a deletion, a new statement can name the returning record once it has a fresh observation, such as a profile, and the call is on file with a start time after the deletion. A staff merge alone cannot establish a return. For an earlier or missing call the statement receives `FORGOTTEN`. A refused new key can be retried after the call arrives.
 
-Forgetting a former party removes their statements. A call since confirmed for another record stays with that record, along with its outcome and value. Forgetting the original line still deletes the call. This applies to a pending statement too.
+Forgetting a former party removes their statements. A call since confirmed for another record stays with that record, along with its outcome and value. Forgetting the original line of a recorded call still deletes it. If the phone report has yet to arrive, the current party statement determines whether the pending call stays.
 
 After a recorded call has a party statement, a later phone report or a competing tap leaves its details intact. Staff can still update its result, return or party. The call also loses the channel visit supplied by its tracking number. Visits from other calls at the same instant keep their sources.
 
-The call, its outcome and value history belong to the exact record staff named, even when another record shares its cluster. Its callback is closed by a return for the same record. Reports credit the newest qualifying arrival on that record or on the visitor tied to this particular call by its tap, code or pool number. A valid code reported later can supply that visitor or replace an earlier tap for the same call. A visitor grouped with another named record cannot supply that credit. An unassigned call earns no person's ad credit. When only the private call tie connects the visitor and the record, the callback and pipeline rows give the campaign and leave the arrival empty. The visitor’s arrival appears in the record’s journey only if the graph links them independently. Grouping a visitor with another record or muting the call tie revises cached campaign reports and removes callback notices that depended on that credit. For a call confirmed before the upgrade, the old visitor cannot be recovered. A valid code supplied later can still identify a visitor for that call’s credit. The next call on the line needs its own confirmation. A call without a statement follows the usual rules.
+When an older server tries to file the call under its line again, PostgreSQL refuses that report. Send it to an upgraded server. A rolling upgrade and the repair of earlier reports are described in the [operations guide](operations.md).
+
+The call, its outcome and its value history belong to the exact record staff named, even when another record shares its cluster. Its callback is closed by a return for the same record. Reports credit the newest qualifying arrival on that record or on the visitor tied to this particular call by its tap, code or pool number. A valid code reported later can supply that visitor or replace an earlier tap for the same call. A visitor grouped with another named record cannot supply that credit. An unassigned call earns no person's ad credit. When only the private call tie connects the visitor and the record, the callback and pipeline rows give the campaign and leave the arrival empty. The visitor’s arrival appears in the record’s journey only if the graph links them independently. Grouping a visitor with another record or muting the call tie revises cached campaign reports and removes callback notices that depended on that credit. For a call confirmed before the upgrade, the old visitor cannot be recovered. A valid code supplied later can still identify a visitor for that call’s credit. The next call on the line needs its own confirmation. A call without a statement follows the usual rules.
 
 A party statement stops new ad conversions for this call. A platform that already received the conversion can still receive a corrected value, a refund or a withdrawal where it supports these. Those adjustments use only the matching details sent for the original conversion. A representative's number and consent belong to the representative. Each batch and each single-job retry checks the current job as it starts the request. If a correction or deletion changes the graph while a worker is finding credit, the worker checks credit and consent again for the affected batch before sending. A request already in flight can still reach the platform.
 
@@ -87,6 +89,8 @@ The server processes a reported call in four steps.
 Each visitor is linked to one caller. Visitors already linked to another caller, or separated from this caller by a reviewer, are skipped.
 
 `key` is the provider's id. Recording it again answers `"duplicate": true`. A result in the second report counts by its `at`, as a [result](#call-results) reported by itself would. A [code](#a-code-read-out) the call did not have yet counts too. The rest is ignored. See [idempotency](http.md#idempotency).
+
+A retry of a call recorded before call details were kept still answers `duplicate` if its line was later excluded.
 
 | Flag | Meaning | Effect |
 | --- | --- | --- |
@@ -275,10 +279,6 @@ The page's own number also stays for staff, declared bots, visitors who opted ou
 
 > **Size the pool.** Count the visitors with an ad click who come within `POOL_MINUTES` and `POOL_GRACE_MINUTES` together, at your busiest hours. That is enough for each number to rest for its grace, because whoever had it may still dial it. With fewer, a call to a number that did not rest needs a tap to be anyone's, and the exhausted count says how often there was none to show. Report calls to them as for any other number.
 
-Correcting an earlier call leaves a later callback alert and its event in place when the later miss, callback attempts and paid visit are independent.
-
-A retry of a call recorded before call details were kept still answers `duplicate` if its line was later excluded.
-
 ## Call results
 
 A result says whether a person spoke to the caller. It is true, false or unknown, independent of call length. Report it from your backend, before or after the call itself:
@@ -339,6 +339,8 @@ curl -X POST https://graph.example.org/v1/lookup -H "authorization: Bearer $GRAP
 
 The `callbacks` [report](http.md#report) lists the missed calls nobody has returned, oldest first.
 
+Correcting an earlier call leaves a later callback alert and its event in place when the later miss, callback attempts and paid visit are independent. If the corrected or erased call had closed an earlier wait, that earlier miss can become due again. Its new alert replaces the later wait’s notice.
+
 | State of a missed call | Meaning |
 | --- | --- |
 | `open` | The caller has not been reached since. `attempts` counts the calls you placed without a known answer. |
@@ -348,7 +350,7 @@ The `callbacks` [report](http.md#report) lists the missed calls nobody has retur
 
 For an outbound call, `from` is your number and `to` is theirs, kept as its hash. Outbound calls are excluded from outcomes, and record no identifier about the person called.
 
-Calls after the missed one decide its state, whatever order they are reported in. One answered call closes every earlier missed call of that number.
+Calls after the missed one decide its state, whatever order they are reported in. One answered call closes earlier misses assigned to the same subject. For a call staff identified, that subject is its stated record.
 
 ### Reported returns
 
@@ -403,7 +405,6 @@ CALL_NUMBERS='{
 ## Text messages
 
 A text reported through both `record` and the Twilio route uses the same message ID as its key. If the reports arrive together, the graph writes the message, its tie and each sighting once.
-
 
 A text from your site arrives with a code that says which visit it came from. The graph ties the text to that visit and its ad, lists the texts nobody has answered, and keeps nothing that was said.
 

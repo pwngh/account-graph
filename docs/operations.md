@@ -261,7 +261,7 @@ The limit protects the graph from a single sender, because a script can claim an
 
 ## Upgrades
 
-Start the new version. At startup the server applies every pending database change, in order, in one transaction.
+Start the new version. At startup the server applies pending database changes in order. Completed changes stay committed if the process stops. Upgrades 29 and 30 commit together because a confirmed call and its old channel visit must agree about who can see it. Upgrade 31 commits its new columns before filling them. Starting the server again repeats any unfinished phase.
 
 Each change has a number and runs once. When several servers start together, one applies the changes and the others wait. What a caller must change is in the [changelog](../CHANGELOG.md#upgrading).
 
@@ -325,7 +325,13 @@ If you stop between acting and keeping the cursor, the same events come again, s
 
 A callback notice keeps track of its missed calls, outgoing attempts, number-channel visits and the identity links that earned its credit. Assigning one of those calls to another record or forgetting it removes the notice and its retained event. After a correction changes a component, a notice that used an identity link keeps its event if the same route still credits the same arrival. A later check can issue a corrected notice for a miss that is still open. A message already received outside the graph stays with its recipient.
 
-PostgreSQL upgrade 31 checks old callback events by the owner and times they contain. An old event that may have counted another record’s call is removed. Older notices could draw credit through links that have since disappeared. After a correction to an inbound call, an old notice keeps its campaign where the call’s confirmed record or a paid arrival on the exact subject accounts for it. Where old alerts for one owner cannot be told apart, their possible source calls are kept together for later corrections.
+PostgreSQL upgrade 31 reads calls, their former lines and their named parties once into a temporary list indexed by owner, direction and time. Each old event finds its named call by primary key, its possible misses and attempts by that index, and a qualifying visit by subject and time. Alerts share one summary per notice and one per owner. The backfill holds the graph write lock and pauses changes to the alert and event tables. Ordinary reads can continue after the new columns commit. The temporary lists disappear when the backfill finishes or rolls back.
+
+PostgreSQL upgrade 31 checks old callback events by the owner and times they contain. Only misses and attempts reported by the time the notice was queued can have supplied it. An attempt also has to fall between the missed call and the notice. Assigning a later attempt to another record can change that record’s pending callback. An independent earlier notice on the former line stays. An old event that may have counted another record’s call is removed. Older notices could draw credit through links that have since disappeared. After a correction to an inbound call, an old notice keeps its campaign where the call’s confirmed record or a paid arrival on the exact subject accounts for it. Where old alerts for one owner cannot be told apart, their possible source calls are kept together for later corrections.
+
+Retire older servers and workers before enabling call confirmations. Upgrade 34 refuses an older server’s raw report for a call that staff already assigned, including a statement made before the first report. Retry the report on an upgraded server. Before serving or starting workers, startup repairs earlier reports whose stored owner disagrees with the statement, in batches of 50. A blocked call may still have the right owner. Its dated completed-call note also shows that an old writer reported it again. It applies the standing statement to the call, its matching evidence, value history, pending deliveries and callbacks. It drops the overwritten visitor and tags. The original time, duration and dialed number cannot be recovered from an overwritten report.
+
+Upgrade 35 rechecks statements about previously deleted records even if an older server already completed its repair. Startup checks each old statement against the receipt and sighting times before it serves requests. A confirmed call can stay with a returning record while an earlier statement about that same call is erased. [Call statement privacy](privacy.md)
 
 If the corrected call was already forgotten, an old receipt can be all that survives. A call and a party update erased together can still be recognised after receipt pruning. For older receipts that could also describe an ordinary result or return, the upgrade looks for a saved revision from a party correction. Where both are present it removes older notices whose missed call, attempts or campaign can no longer be accounted for. A matching notice for another miss can stay, even on the same line.
 
@@ -529,6 +535,8 @@ Measured on an Apple M1 Max with Node 22 and synthetic data. PostgreSQL 16 ran i
 | PostgreSQL | 183 observations/s | 1,900/s | 3,600/s | 2.7 ms |
 
 PostgreSQL writes are serialized by an advisory lock. The write queue combines the visits that browsers report at one time into one transaction.
+
+Before regrouping, the stores check whether a stated call supplied an edge to these subjects or one of their identifiers. Other groups use their current edges alone. PostgreSQL makes the check in the same round trip as the edge read.
 
 The figures are of observations written by the engine. An entry of `record` is a transaction of its own and also writes a receipt, which these figures leave out.
 

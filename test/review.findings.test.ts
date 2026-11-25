@@ -54,6 +54,27 @@ const stateOf = async (graph: AccountGraph, key: string) => {
 }
 const codeOf = (work: Promise<unknown>) => work.then(() => 'ok', (error) => (isFault(error) ? error.code : `raw ${error}`))
 
+both('an independent possible arrival appears after a corrected call loses its credited arrival', async graph => {
+  const { engine } = await internalsOf(graph)!()
+  const { dialed, hashPhone } = await import('../tools/internals.ts')
+  const from = '+12025550101', to = '+12025550102'
+  const line = 'caller:' + hashPhone(from)
+  await engine.graph.observe([
+    { subject: 'visitor:tap', at: AT - 100, identifiers: [dialed(to, AT - 100)] },
+    { subject: 'visitor:other', at: AT - 200, identifiers: ['hardware:shared'] },
+    { subject: line, at: AT - 200, identifiers: ['hardware:shared'] },
+  ])
+  await engine.graph.touch({ subject: 'visitor:tap', at: AT - 100, campaignId: 'credited' })
+  await engine.graph.touch({ subject: 'visitor:other', at: AT - 200, campaignId: 'possible' })
+  const person = async () => (await graph.lookup({ kind: 'person', subjects: [line], at: NOW })).people[0]!
+  assert.ok((await one(graph, { type: 'call', key: 'stated', at: AT, direction: 'inbound', from, to, duration: 60 })).ok)
+  const before = await person()
+  assert.deepEqual([before.arrival?.campaignId, before.possible], ['credited', null])
+  assert.ok((await one(graph, { type: 'call_update', key: 'party', at: AT + 1, call: 'stated', change: { kind: 'party', role: 'self', subject: 'contact:named', by: 'desk' } })).ok)
+  const after = await person()
+  assert.deepEqual([after.arrival, after.possible?.campaignId, after.possible?.confidence], [null, 'possible', 0.59])
+}, { policy: { kinds: { hardware: { weight: 0.59, dilution: 0 } } } })
+
 both('what a platform answers cannot stop the rest', async (graph) => {
   await graph.record({ entries: [conversion({ key: 'bad', actions: { meta: 'Lead' }, email: 'a@example.com' }), conversion({ key: 'good', subject: 'b', actions: { meta: 'Other' }, email: 'b@example.com' })] })
   await runWorkers(graph)
@@ -351,7 +372,7 @@ for (const [label, first, other, last, otherLast, together] of [
   }
 }, { identifierSecret: SECRET, policy: namePolicy })
 
-for (const [first, last] of [['Unknown', 'Lima'], ['N/A', 'N/A'], ['Desconocida', 'Lima'], ['Sin', 'Nombre'], ['Lima', 'No proporcionado'], ['Inconnue', 'Lima']] as const) both(`a placeholder and one birthday cannot confirm two records, ${first} ${last}`, async (graph) => {
+for (const [first, last] of [['Unknown', 'Lima'], ['N/A', 'N/A'], ['Desconocida', 'Lima'], ['Sin', 'Nombre'], ['Lima', 'No proporcionado'], ['Inconnue', 'Lima'], ['Неизвестно', 'Lima'], ['Ana', 'غير معروف'], ['अज्ञात', 'Lima'], ['姓名不详', '李'], ['氏名不詳', '山田'], ['Baby', 'Lima'], ['Baby Boy', 'Lima']] as const) both(`a placeholder and one birthday cannot confirm two records, ${first} ${last}`, async (graph) => {
   const { engine } = await internalsOf(graph)!()
   const facts = { email: 'house@example.org', name: { first, last }, dob: '1980-06-07' }
   for (const subject of ['contact:a', 'contact:b']) {
@@ -391,6 +412,22 @@ both('a rebuild retires shared birthdays and checked names whose source could ha
   await engine.graph.rebuild()
   assert.deepEqual((await engine.graph.cluster('contact:a'))!.members, ['contact:a'])
   assert.deepEqual((await (await engine.graph.asOf(NOW)).cluster('contact:b'))!.members, ['contact:b'])
+}, { identifierSecret: SECRET, policy: namePolicy })
+
+both('a rebuild retires the checked name and birthday of a newborn label', async (graph) => {
+  const { engine } = await internalsOf(graph)!()
+  const { birthKey } = await import('../src/core/identifiers.ts')
+  const date = birthKey(SECRET, '1980-06-07')!
+  const named = 'named:' + 'b'.repeat(64)
+  const subjects = ['contact:a', 'contact:b']
+  await engine.store.write(async tx => {
+    const old = ['email:household', named, named + '~2', date, date + '~1']
+    await tx.addSightings(subjects.flatMap(subject => old.map(identifier => ({ subject, identifier, at: AT }))))
+    await tx.setBuiltWith('earlier rules')
+  })
+  await engine.graph.rebuild()
+  assert.deepEqual((await engine.graph.cluster(subjects[0]!))?.members, subjects.slice(0, 1))
+  assert.deepEqual(await engine.graph.verify(), [])
 }, { identifierSecret: SECRET, policy: namePolicy })
 
 both('a rebuild retires name evidence written before all distinguishing letters were kept', async (graph) => {

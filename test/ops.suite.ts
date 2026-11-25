@@ -5,6 +5,7 @@ import type { OpsOptions, Store } from '../tools/internals.ts'
 import type { Opened } from './suite.ts'
 import type { ReportValue } from '../src/contract/api.ts'
 import { createEngine } from '../src/core/engine.ts'
+import { affectedMisses } from '../src/core/call-party.ts'
 import { createSix } from '../src/core/six.ts'
 import { createReceipts } from '../src/core/receipts.ts'
 
@@ -99,6 +100,43 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       assert.deepEqual((await ops.state()).feeds.map((feed) => feed.last), [clock.now, clock.now, clock.now, clock.now])
     })
 
+    test('a legacy pending alert survives the reassignment of an attempt that was still unreported', async () => {
+      const { graph, store } = await fresh()
+      const subject = 'caller:line'
+      const key = 'unreturned:caller:line:miss'
+      await store.ops.addAlert({ key, subject, at: T0 + 10, text: 'One earlier attempt.' })
+      await store.write(tx => tx.setCall({ id: 'late', direction: 'outbound', subject, to: '+12025550110', at: T0 + 5, recorded: T0 + 12, flags: [] }))
+      await graph.sayParty({ call: 'late', key: 'later', at: T0 + 14, party: { role: 'self', subject: 'record:a', by: 'desk' } })
+      assert.deepEqual((await store.ops.undelivered()).map(alert => alert.key), [key])
+      await store.write(tx => tx.setCall({ id: 'possible', direction: 'outbound', subject, to: '+12025550110', at: T0 + 4, recorded: T0 + 8, flags: [] }))
+      await graph.sayParty({ call: 'possible', key: 'earlier', at: T0 + 15, party: { role: 'self', subject: 'record:a', by: 'desk' } })
+      assert.deepEqual(await store.ops.undelivered(), [])
+    })
+
+    test('assigning a later attempt changes only its new owner’s pending legacy wait', async () => {
+      const { graph, store } = await fresh()
+      const subject = 'caller:line', owner = 'record:a'
+      for (const each of [subject, owner]) await store.ops.addAlert({ key: 'unreturned:' + each + ':miss', subject: each, at: T0 + 10, text: 'An open wait.' })
+      await store.write(async tx => {
+        await tx.setCall({ id: 'miss', direction: 'inbound', subject: owner, to: '+12025550110', at: T0 + 2, recorded: T0 + 2, flags: [] })
+        await tx.setCallResult('miss', { answered: false, recorded: T0 + 2 })
+        await tx.setCall({ id: 'late', direction: 'outbound', subject, to: '+12025550110', at: T0 + 5, recorded: T0 + 12, flags: [] })
+      })
+      await graph.sayParty({ call: 'late', key: 'said', at: T0 + 14, party: { role: 'self', subject: owner, by: 'desk' } })
+      assert.deepEqual((await store.ops.undelivered()).map(alert => alert.subject), [subject])
+    })
+
+    test('a reassigned miss is never a previous miss for its new owner', async () => {
+      const { store } = await fresh()
+      const owner = 'record:a'
+      await store.write(async tx => {
+        await tx.setCall({ id: 'moved', direction: 'inbound', subject: owner, to: '+12025550111', at: T0, recorded: T0, flags: [] })
+        await tx.setCallResult('moved', { answered: false, recorded: T0 })
+        const call = (await tx.callOf('moved'))!
+        assert.deepEqual(await affectedMisses(tx, { ...call, subject: 'caller:former' }, owner), [])
+      })
+    })
+
     test('correcting another call on the same line preserves an independent pending callback and its event', async () => {
       const { graph, clock, posted, hook, store, make } = await fresh()
       const ops = make({ returnHours: 1, emit: event => store.write(tx => tx.emit([event])) })
@@ -120,6 +158,55 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       clock.now += HOUR
       await ops.check()
       assert.deepEqual(posted, [before[0]!.text])
+    })
+
+    for (const queued of [false, true]) test(`each overdue alert names its own miss after the first call moves, queued ${queued}`, async () => {
+      const { graph, clock, posted, hook, store, make } = await fresh()
+      const ops = make({ returnHours: 1, emit: event => store.write(tx => tx.emit([event])) })
+      const from = '+12025550131', to = '+12025550132'
+      const first = await recordCall(graph, { id: 'M1', at: T0 + 1, from, to, answered: false })
+      await graph.touch({ subject: first.subject, at: T0, gclid: 'one', campaign: 'First' })
+      await graph.touch({ subject: first.subject, at: T0 + HOUR, gclid: 'two', campaign: 'Second' })
+      await recordCall(graph, { id: 'M2', at: T0 + HOUR + 1, from, to, answered: false })
+      clock.now += 4 * HOUR
+      if (queued) {
+        hook.status = 503
+        await ops.check()
+        assert.match((await store.ops.undelivered())[0]!.text, /First/)
+      }
+      await graph.sayParty({ call: 'M1', key: 'first-party', at: clock.now, party: { role: 'self', subject: 'contact:other', by: 'desk' } })
+      hook.status = 200
+      clock.now += HOUR
+      await ops.check()
+      const events = (await store.read(tx => tx.eventsAfter(0, 100))).filter(event => event.type === 'callback.overdue')
+      assert.deepEqual(events.map(({ data }) => [data.call, data.campaign, data.missedAt]), [['M2', 'Second', T0 + HOUR + 1]])
+      assert.deepEqual(posted, [`account-graph: a caller from google, Second has waited over 1 hour for a callback. Missed Nov 14, 2023, 11:13 PM (UTC). No callback attempts. ${first.subject}`])
+    })
+
+    for (const erase of [false, true]) for (const reported of [false, true]) test(`an earlier miss reopened by a corrected return replaces a later pending notice, reported ${reported}, erased ${erase}`, async () => {
+      const { graph, clock, posted, hook, store, make } = await fresh()
+      const ops = make({ returnHours: 1, emit: event => store.write(tx => tx.emit([event])) })
+      const from = '+12025550131', to = '+12025550132'
+      const owner = 'contact:waiting'
+      await recordCall(graph, { id: 'first-miss', at: T0, from, to, answered: false })
+      await graph.touch({ subject: owner, at: T0 - 1, gclid: 'one', campaign: 'First' })
+      const between = await recordCall(graph, { id: 'return', at: T0 + HOUR, from: '+12025550139', to, answered: !reported })
+      if (reported) await graph.sayReturn({ call: 'return', at: T0 + HOUR + 2, key: 'reached', reachedAt: T0 + HOUR + 1 })
+      await graph.touch({ subject: owner, at: T0 + HOUR + 1, gclid: 'two', campaign: 'Second' })
+      await recordCall(graph, { id: 'later-miss', at: T0 + 2 * HOUR, from, to, answered: false })
+      for (const call of ['first-miss', 'return', 'later-miss']) await graph.sayParty({ call, key: call, at: T0 + 3 * HOUR, party: { role: 'self', subject: owner, by: 'desk' } })
+      hook.status = 503
+      clock.now += 5 * HOUR
+      await ops.check()
+      assert.match((await store.ops.undelivered())[0]!.text, /Second/)
+      if (erase) await graph.forget(between.subject)
+      else await graph.sayParty({ call: 'return', key: 'moved', at: clock.now, party: { role: 'self', subject: 'contact:other', by: 'desk' } })
+      hook.status = 200
+      clock.now += HOUR
+      await ops.check()
+      assert.deepEqual((await store.read(tx => tx.eventsAfter(0, 100))).filter(event => event.type === 'callback.overdue').map(event => event.data.call), ['first-miss'])
+      assert.equal(posted.length, 1)
+      assert.match(posted[0]!, /First/)
     })
 
     test('a statement about the caller removes a pending callback alert that names the line', async () => {

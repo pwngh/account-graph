@@ -27,6 +27,7 @@ import { ladderProblems } from './core/ladder.ts'
 import type { Ladder } from './core/ladder.ts'
 import { createRangeLookup } from './core/lookups.ts'
 import { defaultPolicy, policyProblems, REBUILD_NOTICE } from './core/policy.ts'
+import { RECEIPT_RETENTION } from './core/receipts.ts'
 import { staffLink } from './core/sign.ts'
 import { checkTags } from './core/tags.ts'
 import { createEdge } from './edge/index.ts'
@@ -388,7 +389,7 @@ export async function command(env: Env, args: readonly string[], log: (line: str
         if (!/^\d{4}-\d{2}-\d{2}$/.test(day ?? '') || Number.isNaN(before)) usage('prune --before YYYY-MM-DD')
         const pruned = await engine.graph.prune(before, { by: 'command line' })
         // A key may be sent again for as long as its receipt is kept, so those stay a year whatever is asked.
-        const year = Math.min(before, engine.now() - 365 * 86_400_000)
+        const year = Math.min(before, engine.now() - RECEIPT_RETENTION)
         const { events, receipts } = await engine.store.write(async (tx) => ({ events: await tx.pruneEvents(before), receipts: await tx.pruneReceipts(year) }))
         return show({ pruned, events, receipts })
       }

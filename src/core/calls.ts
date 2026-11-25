@@ -519,6 +519,16 @@ async function placed(graph: Graph, call: Call, theirs: string, result: Omit<Cal
 /** Whether a return reported for a call counts: the call was to you, nobody answered it, and it began before it is said to have been returned. */
 export const stands = (call: CallTime): boolean => call.direction === 'inbound' && call.result?.answered === false && call.result.returned !== undefined && call.result.returned > call.at
 
+/** Which miss began the current wait, from one person's calls in order of time and id. An answer at the same instant does not close it. */
+export function firstOpen(calls: readonly CallTime[]): CallTime | undefined {
+  let reached = -Infinity
+  for (const call of calls) {
+    if (call.result?.answered) reached = Math.max(reached, call.at)
+    if (stands(call)) reached = Math.max(reached, call.result!.returned!)
+  }
+  return calls.find(call => call.direction === 'inbound' && call.result?.answered === false && call.subject !== `call:${call.id}` && call.at >= reached)
+}
+
 /**
  * What became of a call no one answered, from every call to and from its
  * subject. Worked out from the calls themselves each time, so it does not

@@ -9,7 +9,7 @@
 import { createHmac } from 'node:crypto'
 import { malformed } from '../contract/fault.ts'
 import type { Identifier } from '../contract/types.ts'
-import { FOLDED, birthKeys, nameKeys, nameParts } from './identifiers.ts'
+import { CHECKED_NAME, FOLDED, birthKeys, nameKeys, nameParts } from './identifiers.ts'
 
 /** Each full name, and what stands for it: a short form, a name in another language, nothing for a name with no short form. */
 const FORMS = `
@@ -1335,7 +1335,7 @@ function spelling(text: string): string {
 function checkedKeys(secret: string, fields: string[], extra: string[] = [], usable = true): Identifier[] {
   const mac = (parts: string[]) => createHmac('sha256', secret).update(JSON.stringify(parts)).digest('hex')
   const base = `${fields[0]}:${mac(fields)}`
-  return usable ? [`${base}~2${extra.some(Boolean) ? '.' + mac([...fields, ...extra]) : ''}`, base] : [base]
+  return usable ? [`${base}${CHECKED_NAME}${extra.some(Boolean) ? '.' + mac([...fields, ...extra]) : ''}`, base] : [base]
 }
 
 /** By every name and short form, the full names it may stand for. */
