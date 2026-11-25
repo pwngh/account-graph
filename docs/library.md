@@ -275,7 +275,7 @@ async function stop() {
 | `staffNetworks` | `STAFF_NETWORKS` | Networks whose visits are dropped |
 | `events` | `EVENTS` | Page events to record |
 | `twilio` | `TWILIO_*` | `{ authToken, calls?, texts? }`, each the address entered in Twilio |
-| `textCodes` | `TEXT_CODES` | Puts a code in text links |
+| `textCodes` | `TEXT_CODES` | Puts a code in text links, and on pages that show it to callers |
 | `fingerprint`, `maxmind`, `serverRanges` | `FINGERPRINT_*`, `MAXMIND_*`, `SERVER_RANGES_FILE` | See [providers](providers.md). `serverRanges` is the text of the file. |
 
 `cookie` is described under [device cookie](operations.md#device-cookie). Serve `/collect` from the site's own domain, or from a subdomain with `cookie: { domain: 'example.org' }`.

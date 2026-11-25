@@ -32,6 +32,9 @@
 - `record` `call` and `text`, and the Twilio webhooks, record calls and texts without their content. Two reports of one call are one call.
 - `call_update` reports a result, or that a caller was reached. The newest `at` stands, whatever order they arrive in.
 - A call is linked to the visitor who tapped the number or was shown it (`phones.pool`), or attributed to the channel of its number.
+- `record` `call` takes `code`, the code of a visitor that the caller read out. It links the call to that visitor in place of a tap or a pool number, and the answer has the flag `code` or `taken`. Codes are given where `TEXT_CODES` is on.
+- A `call` reported again with a `code` it did not have stands as if it had come with it.
+- `data-ag-code` marks an element the script tag fills with the visitor's code, under `collect.js?text=1`.
 - `report` `callbacks`, `texts`, `calls` and `after_calls` list missed calls, unanswered texts, call results and what followed calls.
 - `OPEN_HOURS` limits waiting times and stale-feed checks to open hours, with `us` and `us-tx` holidays.
 

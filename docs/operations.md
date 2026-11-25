@@ -89,6 +89,7 @@ List the site in `ORIGINS`, or `/collect` answers 403. A site with a content sec
 | `collect.js?params=mailing,placement` | Stores your own address parameters with each visit. |
 | `collect.js?domains=shop.example,help.example` | Carries the visitor along links to your other sites. Requires `LINK_SECRET`. |
 | `collect.js?pool=1` | Shows each visitor a separate phone number in elements marked `data-ag-pool`. Requires `POOL_NUMBERS`. See [number pools](calls.md#number-pools). |
+| `collect.js?text=1` | Puts the visitor's code in text links and in elements marked `data-ag-code`. Requires `TEXT_CODES`. See [text messages](calls.md#text-messages) and [a code read out](calls.md#a-code-read-out). |
 | `collect.js?forms=all` | Adds the device id and landing page to every form that posts, on submit. By default, only to forms marked `data-ag-fields`. |
 
 The script also reports taps on phone links and clicks on elements marked `data-ag-event`. List the event names to accept in `EVENTS`. See [calls and texts](calls.md).
@@ -491,7 +492,7 @@ A partially set group stops the server at startup, with a message naming the mis
 | `SERVER_RANGES_FILE` | none | A file with the address ranges of data centers, written as `192.0.2.0/24` or `2001:db8::/32` in any text: what [AWS](https://ip-ranges.amazonaws.com/ip-ranges.json) and [Google Cloud](https://www.gstatic.com/ipranges/cloud.json) publish, one after the other. An address in them is recorded and is no evidence. Read when the server starts, so fetch it again now and then. |
 | `MAXMIND_SERVICE`, `MAXMIND_HOST` | `insights`, `geoip.maxmind.com` | MaxMind service and host. |
 | `TWILIO_AUTH_TOKEN`, `TWILIO_WEBHOOK_URL` | none | Accepts Twilio's call reports at `/calls/twilio`. Set both. |
-| `TEXT_CODES` | off | `true` gives each browser a code for your [text links](calls.md#text-messages). |
+| `TEXT_CODES` | off | `true` gives each browser a code for your [text links](calls.md#text-messages) and for [callers to read out](calls.md#a-code-read-out). |
 | `TWILIO_TEXT_WEBHOOK_URL` | none | With `TWILIO_AUTH_TOKEN`: accepts Twilio's incoming texts at `/texts/twilio`. |
 | `TWILIO_ACCOUNT_SID` | none | With `TWILIO_AUTH_TOKEN`: looks up the line type of phones in a `profile`, a `call` or a `text`. |
 | `SMARTY_AUTH_ID`, `SMARTY_AUTH_TOKEN` | none | Checks postal addresses in a `profile`. Set both. |
