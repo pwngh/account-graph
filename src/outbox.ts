@@ -455,9 +455,13 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
       for (const job of await store.get(transactionId)) {
         if (!targets.get(job.target)?.restates) continue
         let done = false
-        const next = await change(job, (current) => {
+        const next = await change(job, async (current) => {
           done = !(current.state === 'skipped' || current.state === 'held' || current.withdrawn)
-          return done ? { ...current, value, ...(currency && { currency }), restated: true, state: 'pending', attempts: 0, due: now(), note: 'restated' } : undefined
+          if (!done) return undefined
+          // Read after the job: whoever restates later changes the job later too. One with no outcome on record is worth what was said.
+          const outcome = await graph.outcomeOf(transactionId)
+          const worth = outcome ? { value: outcome.value, ...(outcome.currency && { currency: outcome.currency }) } : { value, ...(currency && { currency }) }
+          return { ...current, ...worth, restated: true, state: 'pending', attempts: 0, due: now(), note: 'restated' }
         })
         if (done) changed.push(next)
       }

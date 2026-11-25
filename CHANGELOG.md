@@ -61,6 +61,7 @@
 - A visit in the same cluster is credited, however weak the chain of links to it (`AttributedTouch.joined`). The outbox sends its click unless `confidence` is set.
 - A report, open calls and the board read the links of fifty thousand people at a time.
 - A policy's `apart` keeps two subjects apart whose dates of birth differ, or whose first names can stand for no one name (`birthKeys`, `givenKeys`, `Link.conflict`). Under `given`, one number, email or browser given under one name is one person (`namedKeys`). Off by default.
+- A journey shows no record, and no browser or caller, of a person in another group.
 - `tools/accuracy` measures who is joined, rightly and wrongly, over made-up people. `docs/accuracy.md` has the figures of one run.
 - `pay` and `POST /payment` take payments and refunds, and work out what an outcome is worth.
 - `people` and `POST /people` read several people at once. `POST /forget` takes a list of `subjects`.
