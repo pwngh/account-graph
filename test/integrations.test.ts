@@ -1884,7 +1884,7 @@ test('payments, several people and a whole person to delete are taken in one req
   }
 })
 
-test('what a form was filled in with for want of anything is nobody\'s, and the record stands', async () => {
+test('what a form was filled in with for want of anything is nobody\'s, and nothing is refused for it', async () => {
   const graph = createGraph(createMemoryStore())
   const server = createServer(createHandler(graph, { token: 'service', origins: [] })).listen(0, '127.0.0.1')
   await new Promise((resolve) => server.once('listening', resolve))
@@ -1900,7 +1900,7 @@ test('what a form was filled in with for want of anything is nobody\'s, and the 
         assert.equal(status, 200)
         assert.match(Object.values(body.notes).join(' '), /not used/)
       }
-      assert.equal((await graph.cluster(`contact:${i}1`))?.members.length ?? 1, 1, JSON.stringify(told))
+      assert.deepEqual((await graph.cluster(`contact:${i}1`))?.members, i === 2 ? ['contact:21'] : undefined, JSON.stringify(told))
     }
     // An office's name at a public mail domain is a person's, and a number near a placeholder is one.
     for (const told of [{ email: 'info@gmail.com' }, { phone: '+15550100143' }]) assert.deepEqual((await post('/identify', { subject: 'contact:9', ...told })).body.notes, {})

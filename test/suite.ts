@@ -2968,12 +2968,32 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       }
     })
 
+    test('nobody is credited through whoever speaks for them where a reviewer keeps one of their groups apart', async () => {
+      const { graph } = await fresh()
+      await graph.observe([
+        { subject: 'contact:a', identifiers: ['email:a'], at: T0 },
+        { subject: 'caller:c', identifiers: ['device:v'], at: T0 },
+        { subject: 'visitor:v', identifiers: ['device:v'], at: T0 },
+      ])
+      await graph.speak({ subject: 'contact:a', identifiers: ['email:a'] }, [{ subject: 'visitor:v', identifiers: ['device:v'] }], T0, 'form')
+      await graph.touch({ subject: 'visitor:v', at: T0, gclid: 'v' })
+      const credit = async () => (await graph.attribute('contact:a', { at: T0 + HOUR })).credited?.gclid
+      assert.equal(await credit(), 'v')
+      await graph.separate('contact:a', 'caller:c', true, { by: 'dana' })
+      assert.equal(await credit(), undefined)
+      await graph.separate('contact:a', 'caller:c', false, { by: 'dana' })
+      assert.equal(await credit(), 'v')
+    })
+
     test('a fact that is muted keeps nobody apart, and one restored does again', async () => {
       const { graph } = await fresh(policyFrom({ apart: ['birth'] }))
       await graph.observe([{ subject: 'contact:1', identifiers: ['email:e', 'birth:1'], at: T0 }, { subject: 'contact:2', identifiers: ['email:e', 'birth:2'], at: T0 }])
       const one = async () => (await members(graph, 'contact:1')).length === 2
       assert.equal(await one(), false)
+      assert.equal((await graph.match(['email:e', 'birth:2'])).find((each) => each.subject === 'contact:1')!.conflict, 'birth')
+      assert.ok((await graph.foresee({ action: 'ignore', identifier: 'birth:2' })).moved > 0)
       await graph.ignore('birth:2', true, { by: 'dana', reason: 'typed wrongly' })
+      assert.equal((await graph.match(['email:e', 'birth:2'])).find((each) => each.subject === 'contact:1')!.conflict, undefined)
       assert.equal(await one(), true)
       assert.deepEqual(await graph.verify(), [])
       await graph.ignore('birth:2', false, { by: 'dana' })

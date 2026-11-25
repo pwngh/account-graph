@@ -706,6 +706,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     return reached
   }
 
+  /** Whether the policy keeps people apart by an identifier, which then counts however many hold it. */
+  const isFact = (identifier: Identifier) => Boolean(policy.apart?.length) && /^(birth|given|initial|dated):/.test(identifier)
   /** Whether one of the two speaks for the other. */
   const speaks = (link: Link) => told(policy, link.reasons) && link.reasons.some(({ identifier }) => identifier.startsWith('behalf:'))
   const unnamed = new Set(policy.unnamed ?? UNNAMED)
@@ -720,7 +722,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const said = speaks(link)
         if ((link.conflict && !said) || apart.has(link.subject) || (only && !only.has(link.subject)) || (told(policy, link.reasons) && !said)) continue
         // Credit goes from whoever speaks to whoever they speak for, and not on: what brought one of their children did not bring another.
-        if (said ? !crediting || start.speaks || !names(near) || names(link.subject) || !borders.one(from[0]!, near) : start.speaks && !borders.one(near, link.subject)) continue
+        if (said ? !crediting || borders.kept(near, link.subject) || start.speaks || !names(near) || names(link.subject) || !borders.one(from[0]!, near) : start.speaks && !borders.one(near, link.subject)) continue
         if (!said && !start.speaks && (borders.cut(near, link.subject) || borders.between(near, link.subject) || from.some((origin) => borders.between(origin, link.subject)))) continue
         const confidence = start.confidence * link.score
         const known = reached.get(link.subject)
@@ -751,7 +753,11 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     const spoken = new Set<string>()
     const marked = new Set<Subject>()
     let met = false
+    /** The groups of two a reviewer keeps apart, looked for wherever one speaks for another: a decision comes before what was said. */
+    const kept = new Set<string>()
     return {
+      /** Whether a reviewer keeps somebody of the one's group apart from somebody of the other's. */
+      kept: (a: Subject, b: Subject) => kept.has(pairKey(labels.get(a)?.cluster ?? a, labels.get(b)?.cluster ?? b)),
       /** Whether two are one subject or in one group. */
       one: (a: Subject, b: Subject) => a === b || (labels.has(a) && labels.get(a)!.cluster === labels.get(b)?.cluster),
       /** Whether a separation or a fact took the link between two, and they are not one by others. */
@@ -765,6 +771,11 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const unread = unique([...subjects].filter((subject) => !labels.has(subject)))
         for (let i = 0; i < unread.length; i += TOGETHER) for (const [subject, own] of await tx.labelsOf(unread.slice(i, i + TOGETHER))) labels.set(subject, own)
         for (const [a, b] of said) if (labels.get(a)?.cluster !== labels.get(b)?.cluster) spoken.add(pairKey(labels.get(a)!.cluster, labels.get(b)!.cluster))
+        for (const key of new Set(said.map(([a, b]) => pairKey(labels.get(a)?.cluster ?? a, labels.get(b)?.cluster ?? b)))) {
+          const [x, y] = key.split('\u0000') as [Subject, Subject]
+          const [one, other] = [new Set([x, ...(await tx.clusterOf(x))]), new Set([y, ...(await tx.clusterOf(y))])]
+          if ((await tx.separatedOf([...one])).some(([a, b]) => (one.has(a) && other.has(b)) || (one.has(b) && other.has(a)))) kept.add(key)
+        }
         const over = [...links].flatMap(([near, list]) => list.filter((link) => link.level === 'same' && labels.get(near)?.cluster !== labels.get(link.subject)?.cluster).map(() => labels.get(near)?.component ?? near))
         const cutUps = unique(over).filter((id) => !marked.has(id))
         for (let i = 0; i < cutUps.length; i += TOGETHER) {
@@ -1123,7 +1134,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const out: Candidate[] = []
         const some = found.slice(0, limit)
         const facts = await known(tx, some.map((pair) => pair.b))
-        const own = knownOf(policy, given.map((identifier): Edge => ({ subject: nobody, identifier, first: at, last: at, count: 1 })), () => false).get(nobody)
+        const own = knownOf(policy, given.map((identifier): Edge => ({ subject: nobody, identifier, first: at, last: at, count: 1 })), (identifier) => states.get(identifier)?.ignored ?? false).get(nobody)
         for (const { b: subject, score, level, reasons } of some) {
           const between = conflict(policy, own, facts.get(subject))
           out.push({ subject, score, level: between ? 'related' : level, reasons, ...(between && { conflict: between }), members: (await tx.clusterOf(labels.get(subject)!.cluster)).sort() })
@@ -1764,7 +1775,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         await decide(tx, ignored ? 'ignore' : 'restore', [identifier], why)
         await tx.setIgnored(identifier, ignored)
         // A fact links nobody, and is weighed wherever the policy keeps people apart by one.
-        if (!before || (before.fanout > cap && !(policy.apart?.length && /^(birth|given|initial|dated):/.test(identifier)))) return []
+        if (!before || (before.fanout > cap && !isFact(identifier))) return []
         await mark(tx)
         return settle(tx, new Set((await tx.edgesOn([identifier])).map((edge) => edge.subject)))
       })
@@ -1866,7 +1877,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
           const { cap } = ruleFor(policy, decision.identifier)
           const state = (await tx.states([decision.identifier])).get(decision.identifier)
           // What nobody holds, or too many to link, joins nobody either way.
-          about = !state || state.fanout > cap ? [] : unique((await tx.edgesOn([decision.identifier])).map((edge) => edge.subject))
+          about = !state || (state.fanout > cap && !isFact(decision.identifier)) ? [] : unique((await tx.edgesOn([decision.identifier])).map((edge) => edge.subject))
         } else about = [decision.a, decision.b]
         const own = await tx.labelsOf(about)
         const stored = await tx.membersOf(unique([...own.values()].map((labels) => labels.component)))
@@ -2133,13 +2144,20 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
         const entries: Entry[] = []
         for (const touch of await tx.touchesOf(people, 0, before - 1)) entries.push({ at: touch.at, subject: touch.subject, kind: 'visit', touch })
-        const calls = await tx.callsOf(people)
+        // A call or a text names the browser it was tied to, where that is this person's.
+        const theirOwn = new Set(people)
+        const namingOwn = <T extends { visitor?: Subject }>(each: T): T => {
+          if (each.visitor === undefined || theirOwn.has(each.visitor)) return each
+          const { visitor: _, ...rest } = each
+          return rest as T
+        }
+        const calls = (await tx.callsOf(people)).map(namingOwn)
         const outcomes = await tx.outcomesOf(people)
         const not = await tx.notLeads([...calls.map(callId), ...outcomes.map(outcomeId)])
         const spurned = (id: string) => (not.has(id) ? { notLead: not.get(id)!.kind } : {})
         for (const call of calls) entries.push({ at: call.at, subject: call.subject, kind: 'call', call, ...spurned(callId(call)), ...(call.direction === 'inbound' && call.result?.answered === false && { followUp: followUp(call, calls.filter((each) => !not.has(callId(each)))) }) })
         for (const link of await tx.linksSent(people)) entries.push({ at: link.at, subject: link.subject, kind: 'link', link })
-        const texts = await tx.textsOf(people)
+        const texts = (await tx.textsOf(people)).map(namingOwn)
         const badTexts = await tx.notLeads(texts.map((text) => `text:${text.id}`))
         for (const text of texts) {
           const bad = badTexts.get(`text:${text.id}`)
