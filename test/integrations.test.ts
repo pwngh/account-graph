@@ -1905,7 +1905,9 @@ test('what a form was filled in with for want of anything is nobody\'s, and noth
     // An office's name at a public mail domain is a person's, and a number near a placeholder is one.
     for (const told of [{ email: 'info@gmail.com' }, { phone: '+15550100143' }]) assert.deepEqual((await post('/identify', { subject: 'contact:9', ...told })).body.notes, {})
     assert.equal((await post('/identify', { subject: 'contact:9' })).status, 400)
-    assert.equal((await post('/match', { phone: '555-555-5555' })).status, 400)
+    // Asked of nothing but a placeholder, who they may be is nobody.
+    const asked = await post('/match', { phone: '555-555-5555' })
+    assert.deepEqual([asked.status, asked.body.candidates], [200, []])
   } finally {
     server.close()
   }

@@ -299,6 +299,35 @@ if (!url) {
     }
   })
 
+  test('reads are answered while a long write lasts, however many writes wait for it', async () => {
+    const schema = `ag_test_${process.pid}_turns`
+    const few = new pg.Pool({ connectionString: url, max: 3 })
+    try {
+      const store = createPostgresStore(few, schema)
+      await store.migrate()
+      const graph = createGraph(store)
+      let done!: () => void
+      const held = new Promise<void>((resolve) => (done = resolve))
+      let entered!: () => void
+      const inside = new Promise<void>((resolve) => (entered = resolve))
+      const writes = [store.write(async () => (entered(), held))]
+      try {
+        await Promise.race([inside, writes[0]])
+        for (let i = 0; i < 10; i++) writes.push(store.write(async () => undefined))
+        assert.equal(await Promise.race([graph.counts().then(() => 'answered'), new Promise((resolve) => setTimeout(resolve, 2_000, 'waited'))]), 'answered')
+      } finally {
+        done()
+        await Promise.allSettled(writes)
+      }
+      // One that fails holds up nobody.
+      await assert.rejects(store.write(async () => Promise.reject(new Error('refused'))), /refused/)
+      await store.write(async () => undefined)
+    } finally {
+      await few.query(`drop schema if exists ${schema} cascade`)
+      await few.end()
+    }
+  })
+
   test('the server starts from the environment alone and serves a visit end to end', async () => {
     const schema = `ag_test_${process.pid}_serve`
     const lines: string[] = []

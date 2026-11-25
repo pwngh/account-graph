@@ -287,7 +287,7 @@ export async function serve(env: Env = process.env, log: (line: string) => void 
   const notify = async (changes: Change[]) => {
     const body = JSON.stringify({ changes })
     const signed = config.changeSecret && { 'x-account-graph-signature': bodySignature(config.changeSecret, Date.now(), body) }
-    const response = await fetch(webhook!, { method: 'POST', headers: { 'content-type': 'application/json', ...signed }, body })
+    const response = await fetch(webhook!, { method: 'POST', headers: { 'content-type': 'application/json', ...signed }, body, signal: AbortSignal.timeout(5_000) })
     if (!response.ok) throw new Error(`The change webhook returned ${response.status}`)
   }
   const policy = config.policy ?? defaultPolicy

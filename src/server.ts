@@ -670,7 +670,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     const apart = options.identifierSecret && (typeof body.dob === 'string' || typeof body.name?.first === 'string') ? ((await graph.policy()).rules.apart ?? []) : []
     const born = apart.length > 0 && typeof body.dob === 'string' ? birthKeys(options.identifierSecret!, body.dob) : []
     const facts = [...born, ...(apart.includes('given') && typeof body.name?.first === 'string' ? givenKeys(options.identifierSecret!, body.name.first) : [])]
-    if (identifiers.length === 0 && !(saving && (facts.length > 0 || none || notes.phone === PLACEHOLDER || notes.email !== undefined))) throw new Refusal(400, 'At least one identifying field is required')
+    if (identifiers.length === 0 && !(saving && (facts.length > 0 || none)) && notes.phone !== PLACEHOLDER && notes.email === undefined) throw new Refusal(400, 'At least one identifying field is required')
     identifiers.push(...facts)
     return { identifiers, notes, at: (body.at ?? now()) as number }
   }
