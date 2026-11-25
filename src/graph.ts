@@ -605,7 +605,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     const out = new Map<Subject, Known>()
     if (!policy.apart?.length && !joins) return out
     for (let i = 0; i < subjects.length; i += TOGETHER) {
-      const edges = (await tx.edgesOf(subjects.slice(i, i + TOGETHER))).filter(({ identifier }) => /^(birth|given|initial|dated|review|device|phone|voip|email|named):/.test(identifier))
+      const edges = (await tx.edgesOf(subjects.slice(i, i + TOGETHER))).filter(({ identifier }) => /^(birth|given|initial|dated|review|device|phone|voip|named):/.test(identifier))
       const states = await tx.states(unique(edges.map((edge) => edge.identifier)))
       for (const [subject, facts] of knownOf(policy, edges, silent(states), joins)) out.set(subject, facts)
     }

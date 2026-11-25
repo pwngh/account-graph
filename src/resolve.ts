@@ -1,4 +1,3 @@
-import { ALIKE } from './names.ts'
 import { UNNAMED, evidence, joins, told, usable, weigh } from './policy.ts'
 import type { Fact, Policy } from './policy.ts'
 import type { Edge, Identifier, IdentifierState, Labels, Pair, Reason, Subject } from './types.ts'
@@ -93,11 +92,11 @@ export function components(subjects: Iterable<Subject>, pairs: readonly Pair[]):
 export interface Known {
   facts: Map<Fact | 'initial' | 'dated', Set<Identifier>>
   joins: Set<Identifier>
-  /** Their browsers, numbers and emails, and what they gave under which name. */
+  /** Their browsers and numbers, and what they gave under which name. */
   things: Set<Identifier>
 }
 
-const THINGS = new Set(['device', 'phone', 'voip', 'email', 'named'])
+const THINGS = new Set(['device', 'phone', 'voip', 'named'])
 
 /** The facts of the subjects that have one, of the facts a policy keeps people apart by. An undone join is none. With `joins`, those are read whatever the policy. */
 export function knownOf(policy: Policy, edges: readonly Edge[], undone: (identifier: Identifier) => boolean, joins = false): Map<Subject, Known> {
@@ -131,9 +130,7 @@ export function conflict(policy: Policy, a: Known | undefined, b: Known | undefi
   }
   const shared = [...a.things].filter((thing) => b.things.has(thing))
   const browserAndNumber = shared.some((thing) => thing.startsWith('device:')) && shared.some((thing) => thing.startsWith('phone:'))
-  // Two details under a name that begins alike are as good as one under the name.
-  const two = new Set(shared.filter((thing) => !thing.startsWith('named:')).map((thing) => thing.slice(0, thing.indexOf(':')))).size > 1
-  const named = agree('given') === true || shared.some((thing) => thing.startsWith('named:') && (two || !thing.startsWith(ALIKE)))
+  const named = agree('given') === true || shared.some((thing) => thing.startsWith('named:'))
   // A name that agrees outranks two dates that one slip of the pen would make one. A father and a son of one name have two dates.
   if (policy.apart.includes('birth') && agree('birth') === false && !(named && agree('dated') === true)) return 'birth'
   if (!policy.apart.includes('given') || agree('given') !== false || agree('birth') === true || agree('initial') === true) return undefined

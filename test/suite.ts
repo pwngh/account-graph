@@ -2807,8 +2807,17 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await graph.speak({ subject: 'contact:b', identifiers: [...givenKeys(secret, 'Bob'), ...namedKeys(secret, ['phone:1'], 'Bob', 'Lima')] }, [{ subject: 'caller:1', identifiers: ['phone:1'] }], T0)
       assert.deepEqual(await members(graph, 'contact:a'), ['contact:a', 'contact:b'])
       assert.deepEqual(await graph.verify(), [])
-      // An initial typed as a first name is no full name.
-      assert.ok(namedKeys(secret, ['phone:1'], 'J.', 'Lima').every((each) => each.startsWith('named:i-')))
+      // A child whose name begins as hers is not her, and neither are two clients at one front desk.
+      const { graph: told } = await fresh(policy)
+      await told.observe([{ subject: 'caller:1', identifiers: ['phone:1'], at: T0 }, contact('mother', 'Maria', 'Lima', ['phone:1'])])
+      await told.speak({ subject: 'contact:child', identifiers: [...givenKeys(secret, 'Miguel'), ...namedKeys(secret, ['phone:1'], 'Miguel', 'Lima')] }, [{ subject: 'caller:1', identifiers: ['phone:1'] }], T0)
+      assert.deepEqual([await members(told, 'contact:mother'), await members(told, 'contact:child')], [['caller:1', 'contact:mother'], ['contact:child']])
+      assert.deepEqual(namedKeys(secret, ['device:desk'], 'Jose', 'Garcia'), [])
+      assert.deepEqual(namedKeys(secret, ['phone:1'], 'J.', 'Lima'), [])
+      // Two dates are two people, whatever year they share, where the names are two.
+      const { graph: couple } = await fresh(policy)
+      await couple.observe([contact('a', 'Mark', 'Lima', ['phone:1', 'email:1'], '1980-03-04'), contact('b', 'Mary', 'Lima', ['phone:1', 'email:1'], '1980-11-20')])
+      assert.equal((await members(couple, 'contact:a')).length, 1)
       // His brother of another name is not him, and neither is a father of his name.
       await graph.speak({ subject: 'contact:c', identifiers: [...givenKeys(secret, 'Luis'), ...namedKeys(secret, ['phone:1'], 'Luis', 'Lima')] }, [{ subject: 'caller:1', identifiers: ['phone:1'] }], T0)
       assert.equal((await members(graph, 'contact:c')).length, 1)

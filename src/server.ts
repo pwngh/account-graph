@@ -558,7 +558,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     const speaker = body.speaker === undefined ? undefined : await speakerIn(body)
     if (speaker?.note) notes.speaker = speaker.note
     // What is the speaker's says who the speaker is, so it is not written on whoever they speak for.
-    const contact = [...new Set([...all, ...(speaker?.theirs ?? [])])].filter((each) => /^(device|phone|voip|email):/.test(each))
+    const contact = [...new Set([...all, ...(speaker?.used ?? [])])]
     // The same detail under the same name is the same person, whoever the detail is.
     const named = options.identifierSecret && typeof body.name?.first === 'string' && typeof body.name?.last === 'string' && (await graph.policy()).rules.apart?.includes('given') ? namedKeys(options.identifierSecret, contact, body.name.first, body.name.last) : []
     const theirs = new Set(speaker?.theirs.flatMap((each) => [each, each.replace(/^phone:/, 'voip:'), each.replace(/^voip:/, 'phone:')]))
@@ -575,13 +575,14 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
   }
 
   /** Somebody who speaks for the subject: what is theirs, and the browser and the caller it is to be written on. */
-  async function speakerIn(body: any): Promise<{ theirs: Identifier[]; subjects: { subject: Subject; identifiers: Identifier[] }[]; note?: string }> {
+  async function speakerIn(body: any): Promise<{ theirs: Identifier[]; subjects: { subject: Subject; identifiers: Identifier[] }[]; used: Identifier[]; note?: string }> {
     const { device, phone, email: address } = typeof body.speaker === 'object' && body.speaker !== null ? body.speaker : {}
     if (/^(visitor|caller|call):/.test(body.subject)) throw new Refusal(400, 'A speaker speaks for a record of yours, not for a browser or a caller')
     if (device === undefined && !(typeof phone === 'string' && phone)) throw new Refusal(400, 'A speaker requires a device or a phone')
     const { identifiers: theirs, notes } = await factsIn({ device, phone }, true, true)
     const ofDevice = theirs.find((each) => each.startsWith('device:'))
-    // A number that names nobody is the speaker's all the same.
+    // A number that names nobody is the speaker's all the same, and nothing more is made of it.
+    const used = [...theirs]
     if (typeof phone === 'string' && phone) theirs.push(`phone:${hashPhone(phone, options.calls?.country)}`)
     const ofPhone = !notes.phone?.endsWith(': not used') && theirs.find((each) => /^(phone|voip):/.test(each))
     const subjects: { subject: Subject; identifiers: Identifier[] }[] = []
@@ -599,9 +600,10 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     if (ofPhone) subjects.push({ subject: `caller:${hashPhone(phone, options.calls?.country)}`, identifiers: [ofPhone] })
     if (typeof address === 'string' && address && !nobodysEmail(address)) {
       theirs.push(email(address))
+      used.push(email(address))
       subjects.at(-1)?.identifiers.push(email(address))
     }
-    return { theirs, subjects, ...(subjects.length === 0 && { note: notes.phone ?? 'not used' }) }
+    return { theirs, subjects, used, ...(subjects.length === 0 && { note: notes.phone ?? 'not used' }) }
   }
 
   /** The identifiers in plain facts about somebody, normalized, checked and hashed, and what came of the checks. Only where they are to be saved is the line of a number looked up, because that can mute it. */

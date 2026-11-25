@@ -125,7 +125,7 @@ export const defaultPolicy: Policy = {
     given: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     initial: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     dated: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
-    // One number, email or browser given under one name. Written where names keep people apart.
+    // One number or email given under one name. Written where names keep people apart.
     named: { weight: 0.999, dilution: 0, cap: 10, halfLife: Infinity },
     // A note, not evidence: the number a visitor tapped, or a call that was recorded. It links nothing.
     dialed: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
