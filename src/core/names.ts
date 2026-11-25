@@ -9,7 +9,7 @@
 import { createHmac } from 'node:crypto'
 import { malformed } from '../contract/fault.ts'
 import type { Identifier } from '../contract/types.ts'
-import { FOLDED, birthKeys, nameKeys } from './identifiers.ts'
+import { FOLDED, birthKeys, nameKeys, nameParts } from './identifiers.ts'
 
 /** Each full name, and what stands for it: a short form, a name in another language, nothing for a name with no short form. */
 const FORMS = `
@@ -1325,6 +1325,19 @@ zephaniah:zeph
 /** A name as it is compared: without case, accents or punctuation. */
 const folded = (text: string) => text.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[ßæœøđðłþı]/g, (letter) => FOLDED[letter]!).replace(/[^a-z ]+/g, '').trim()
 
+/** Where folding loses letters, the old comparison must agree and the whole spelling must agree too. Marks on other scripts can distinguish letters. */
+function spelling(text: string): string {
+  const letters = text.normalize('NFKD').toLowerCase().replace(/(\p{Script=Latin})\p{M}*/gu, (_, letter: string) => FOLDED[letter] ?? letter).replace(/[^\p{L}\p{M} ]+/gu, '').trim().replace(/ +/g, ' ')
+  return /[^a-z ]/u.test(letters) ? letters : ''
+}
+
+/** The spelling that can confirm a name, and the older hash that caps its evidence. A placeholder counts towards the cap and confirms nothing. */
+function checkedKeys(secret: string, fields: string[], extra: string[] = [], usable = true): Identifier[] {
+  const mac = (parts: string[]) => createHmac('sha256', secret).update(JSON.stringify(parts)).digest('hex')
+  const base = `${fields[0]}:${mac(fields)}`
+  return usable ? [`${base}~${extra.some(Boolean) ? mac([...fields, ...extra]) : '1'}`, base] : [base]
+}
+
 /** By every name and short form, the full names it may stand for. */
 const standsFor = new Map<string, Set<string>>()
 for (const line of FORMS.trim().split('\n')) {
@@ -1343,12 +1356,18 @@ export function namesOf(first: string): string[] {
  * The keys of the names a first name may stand for, and of the letters it begins with, where one is known. They link
  * nothing, and are made with a secret because names are few enough to guess. There are 26 letters, so a letter's key hides little.
  */
-export function givenKeys(secret: string, first: string): Identifier[] {
+export function givenKeys(secret: string, first: string, placeholderOn?: string): Identifier[] {
   if (typeof secret !== 'string' || secret.length < 32) throw malformed('A name key requires a secret of at least 32 characters')
-  const key = (kind: string, value: string): Identifier => `${kind}:${createHmac('sha256', secret).update(JSON.stringify([kind, value])).digest('hex')}`
   const names = namesOf(first)
   if (names.length === 0) return []
-  return [...names.map((name) => key('given', name)), ...[...new Set(folded(first).split(/\s+/).map((word) => word[0]!))].sort().map((letter) => key('initial', letter))]
+  const whole = spelling(first)
+  const initials = new Set<Identifier>()
+  for (const word of (whole || folded(first)).split(/\s+/).sort()) {
+    const letter = folded(word)[0]
+    if (letter) for (const key of checkedKeys(secret, ['initial', letter], word.startsWith(letter) ? [] : [[...word][0]!])) initials.add(key)
+  }
+  // A first name from a placeholder such as John Doe cannot confirm any other record. Keeping it private to this record also keeps earlier disagreements.
+  return [...names.flatMap((name) => checkedKeys(secret, ['given', name], placeholderOn === undefined ? [whole] : ['placeholder', placeholderOn, whole])), ...initials]
 }
 
 /** Words of a last name that are many people's. */
@@ -1371,17 +1390,20 @@ const LATIN = /^[\p{Script=Latin}\P{L}]*$/u
 export function personKeys(secret: string, first: string, last: string, dob: string | undefined): Identifier[] {
   const [birth] = birthKeys(secret, dob)
   if (!birth || nameKeys(secret, first, last, { dob }).length === 0) return []
-  const key = (kind: string, ...of: string[]): Identifier => `${kind}:${createHmac('sha256', secret).update(JSON.stringify([kind, birth, ...of])).digest('hex')}`
+  const spellings = [spelling(first), spelling(last)]
+  const keys = (kind: string, ...of: string[]) => checkedKeys(secret, [kind, birth, ...of], spellings)
   const whole = folded(first).split(/\s+/).join(' ')
   const known = namesOf(first)
   const lasts = folded(last).split(/\s+/).filter((word) => word.length > 1 && !PARTICLES.has(word))
   // Folding is for Latin letters. A name it takes a letter from would be everybody's who is left with the same.
   if (!LATIN.test(`${first}${last}`) || whole === '' || lasts.length === 0) return []
-  return [key('person', whole, lasts.join(' ')), ...[...new Set(lasts)].flatMap((surname) => (known.length > 0 ? known : [whole]).map((name) => key('perhaps', name, surname)))]
+  return [...keys('person', whole, lasts.join(' ')), ...[...new Set(lasts)].flatMap((surname) => (known.length > 0 ? known : [whole]).flatMap((name) => keys('perhaps', name, surname)))]
 }
 
 export function namedKeys(secret: string, contact: readonly Identifier[], first: string, last: string, kind: 'named' | 'ward' = 'named'): Identifier[] {
   if (typeof secret !== 'string' || secret.length < 32) throw malformed('A name key requires a secret of at least 32 characters')
+  const usable = Boolean(nameParts(first, last))
+  const spellings = [spelling(first), spelling(last)]
   const known = namesOf(first)
   // An initial is no name.
   // Of a name no table has, all of it: a Baby Boy and a Baby Girl have a word in common.
@@ -1390,5 +1412,5 @@ export function namedKeys(secret: string, contact: readonly Identifier[], first:
   const lasts = [...new Set(folded(last).split(/\s+/).filter((word) => word.length > 1 && !PARTICLES.has(word)))]
   // A number is one whatever kind of line it was found to be.
   const details = new Set(contact.filter((each) => /^(phone|voip|email):/.test(each)).map((each) => each.replace(/^voip:/, 'phone:')))
-  return [...details].flatMap((detail) => lasts.flatMap((surname) => firsts.map((name): Identifier => `${kind}:${createHmac('sha256', secret).update(JSON.stringify([kind, detail, name, surname])).digest('hex')}`)))
+  return [...details].flatMap((detail) => lasts.flatMap((surname) => firsts.flatMap((name) => checkedKeys(secret, [kind, detail, name, surname], spellings, usable))))
 }

@@ -255,6 +255,10 @@ What two records share, such as a mailbox, a number or a computer, may be a hous
 | Names not in Latin letters | They make no key of a full name and a date, because folding would make many names one. |
 | A father and a son | Of one name with no dates, they are one person by it, as two records of one man would be. |
 
+For a phone or email given under a name, or by someone speaking for its owner, a placeholder such as Unknown / Not Provided gives no name evidence. Where the name table could use part of a spelling, any letters it would lose must agree too. Thus María文 and Maria文 can agree, and Maria李 is a different name. The exact name key with a date or confirmed zip code still works in other scripts.
+
+When upgrading from the earlier name rules, stop the servers and run `account-graph rebuild`. The old hashes do not reveal which names lost letters or were placeholders. The rebuild drops those hashes as evidence for a join. They still count how many people share a spelling and carry its mutes. Re-send named profiles from their original source with new report keys before serving the graph again. Exact name keys with a date or zip code, dates of birth themselves and staff decisions keep working through the upgrade.
+
 A record is a subject that names somebody, such as `contact:7` or `account:42`. A browser or a caller is none: it goes with the records it is tied to most strongly, and of two as strong, with whoever was seen first.
 
 > **Credit is another question.** An ad click on a browser two people share can be credited to both, whichever of them the browser goes with. It is not credited across a split, or between two whose dates of birth or names differ, because whoever is on the other side of a matter must not be shown there.

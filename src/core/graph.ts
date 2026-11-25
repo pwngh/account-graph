@@ -16,7 +16,7 @@ import { UNSTORABLE } from './identifiers.ts'
 import { CLICK_IDS, checkTouch } from './touch.ts'
 import { createMemoryStore } from './memory.ts'
 import type { Job } from './outbox.ts'
-import { UNNAMED, defaultPolicy, evidence, joins, plainPolicy, policyHash, ruleFor, told, usable, weigh } from './policy.ts'
+import { UNNAMED, checkedReasons, defaultPolicy, evidence, joins, plainPolicy, policyHash, ruleFor, told, usable, weigh } from './policy.ts'
 import type { Policy } from './policy.ts'
 import { dayIn, dayStart, dimension, fold, nextDay } from './report.ts'
 import type { Credited } from './report.ts'
@@ -597,7 +597,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     const two: [Subject, Subject][] = []
     for await (const batch of tx.sharing(caps, alone)) {
       for (const shared of batch) {
-        const reasons = shared.map(({ a, b, fanout }) => evidence(policy, a, b, fanout))
+        const reasons = checkedReasons(shared.map(({ a, b, fanout }) => evidence(policy, a, b, fanout)))
+        if (reasons.length === 0) continue
         const score = weigh(policy, reasons)
         if (told(policy, reasons)) two.push([shared[0]!.a.subject, shared[0]!.b.subject])
         if (!joins(policy, score, reasons)) continue

@@ -30,6 +30,7 @@
 - Under `records`, one full name and date of birth shows two records, and joins them where anything else agrees. `lookup` `match` finds them by it.
 - `policy.credit` is the confidence at which a visit is credited, apart from the one that joins. Off by default.
 - A first name no table has is keyed whole, and letters such as đ and ø are kept, in the keys of names. Send names again to make the new keys.
+- `named` and `ward` exclude placeholder names, and name comparisons keep the letters a Latin spelling would lose. Rebuild and send named profiles again with new keys after upgrading.
 - `policy.apart` takes `given`, and `policy.kinds` takes every built-in kind, in the types of the library.
 - `record` `link` makes a signed personal link. The same entry gives the same address.
 - `record` `transfer` records value moving between subjects, and `lookup` `transfers` lists counterparties and rings.

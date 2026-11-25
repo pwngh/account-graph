@@ -1,5 +1,6 @@
-import { UNNAMED, evidence, joins, told, usable, weigh } from './policy.ts'
+import { UNNAMED, checkedReasons, evidence, joins, told, usable, weigh } from './policy.ts'
 import type { Fact, Policy } from './policy.ts'
+import { foldedNameKey } from './identifiers.ts'
 import type { Edge, Identifier, IdentifierState, Labels, Pair, Reason, Subject } from '../contract/types.ts'
 
 /**
@@ -45,7 +46,9 @@ export function scorePairs(
 
   const pairs: Pair[] = []
   for (const [a, row] of found) {
-    for (const [b, reasons] of row) {
+    for (const [b, shared] of row) {
+      const reasons = checkedReasons(shared)
+      if (reasons.length === 0) continue
       const score = weigh(policy, reasons)
       // That one speaks for the other is said, whatever it comes to.
       if (score < least && !told(policy, reasons)) continue
@@ -118,7 +121,8 @@ export function knownOf(policy: Policy, edges: readonly Edge[], undone: (identif
     const thing = (THINGS.has(kind) && policy.apart?.includes('given') === true) || (confirming && OWN.has(kind))
     if (!policy.apart?.includes(kind as Fact) && !thing && kind !== 'birth' && kind !== 'given' && kind !== 'initial' && kind !== 'dated' && kind !== 'compound' && kind !== 'review') continue
     // A join that was undone is none, and a fact that was muted is none.
-    if (undone(identifier)) continue
+    const base = foldedNameKey(identifier)
+    if (base === identifier || undone(identifier) || (base && undone(base))) continue
     const known = out.get(subject) ?? { facts: new Map(), joins: new Set(), things: new Set() }
     out.set(subject, known)
     if (kind === 'review') known.joins.add(identifier)

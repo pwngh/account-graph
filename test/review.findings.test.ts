@@ -308,3 +308,86 @@ if (url) {
     }
   })
 }
+
+const namePolicy = { apart: ['given', 'birth'], records: 'confirmed', kinds: { phone: { weight: 0.85 } } }
+
+for (const [label, first, other, last, otherLast, together] of [
+  ['placeholder', 'Unknown', 'Unknown', 'Not Provided', 'Not Provided', false],
+  ['mixed first names', 'Maria文', 'Maria李', 'Lima', 'Lima', false],
+  ['mixed surnames', 'Maria', 'Maria', 'Lima文', 'Lima李', false],
+  ['same mixed name', 'María文', 'Maria文', 'Lima李', 'Lima李', true],
+  ['ordinary name', 'José', 'Jose', 'Muñoz', 'Munoz', true],
+  ['wholly non-Latin names on a phone', '李', '李', '王', '王', false],
+] as const) both(`a shared phone and a name, ${label}`, async (graph) => {
+  for (const speaker of [false, true]) {
+    const subjects = [0, 1].map((n) => `contact:${speaker}-${n}`)
+    for (const [n, subject] of subjects.entries()) {
+      const name = { first: n ? other : first, last: n ? otherLast : last }
+      const phone = speaker ? '202-555-0101' : '202-555-0100'
+      assert.ok((await one(graph, { type: 'profile', key: subject, subject, at: AT, facts: { name, phone }, ...(speaker && { speaker: { phone } }) })).ok)
+    }
+    const { people } = await graph.lookup({ kind: 'person', subjects, at: NOW })
+    assert.equal(people[0]!.members.includes(subjects[1]!), together, `speaker ${speaker}`)
+  }
+}, { identifierSecret: SECRET, policy: namePolicy })
+
+both('a rebuild retires name evidence written before all distinguishing letters were kept', async (graph) => {
+  const { engine } = await internalsOf(graph)!()
+  const subjects = ['contact:one', 'contact:two']
+  const phone = 'phone:56bcf01f15ebc008e3e50bad3555d6cfafa76c6472eb64c8d4b24f06f3c995d8'
+  // Produced at 7c178f1 for Maria文 Lima and Maria李 Lima, on the same number and secret.
+  const old = ['given:97f2c03d8be6dc182b376cc600928b772c7b846bd268407c25e34a7798f942b7', 'initial:901660c02479d03128393ca21ed0e7be7159ddc9e1d22e8153b3720d25b52070', 'named:aaf79ec1dcc55abd840e3eaf99a759cd5a2d43b5859cd980bffdb436b8c7339a', 'ward:b87419f29a31f48fb2f99fd1b6c81ccee68bca033c7c4bc077eb1813bfb4e8ab']
+  await engine.store.write(async (tx) => {
+    await tx.addSightings(subjects.flatMap((subject) => [phone, ...old].map((identifier) => ({ subject, identifier, at: AT }))))
+    await tx.setLabels(new Map(subjects.map((subject) => [subject, { cluster: subjects[0]!, component: subjects[0]! }])))
+    await tx.setBuiltWith('old rules')
+  })
+  const members = async () => (await graph.lookup({ kind: 'person', subjects, at: NOW })).people[0]!.members
+  assert.deepEqual(await members(), subjects)
+  await engine.graph.rebuild()
+  assert.deepEqual(await members(), subjects.slice(0, 1))
+  assert.deepEqual(await engine.graph.verify(), [])
+  for (const subject of subjects) assert.ok((await one(graph, { type: 'profile', key: subject, subject, at: AT, facts: { phone: '202-555-0100', name: { first: 'Maria文', last: 'Lima' } } })).ok)
+  assert.deepEqual(await members(), subjects)
+  assert.deepEqual(await engine.graph.rebuild(), [])
+  assert.deepEqual(await members(), subjects)
+}, { identifierSecret: SECRET, policy: namePolicy })
+
+both('a name taken from a placeholder cannot confirm a record or lift an earlier disagreement', async (graph) => {
+  for (const [n, first, last] of [[1, 'John', 'Doe'], [2, 'John', 'Doe'], [3, 'Maria', 'Lima']] as const) {
+    const subject = `contact:${n}`
+    assert.ok((await one(graph, { type: 'profile', subject, key: subject, at: AT, facts: { email: 'party@example.org', name: { first, last }, ...(n !== 2 && { dob: '1980-04-05' }) } })).ok)
+  }
+  const { people } = await graph.lookup({ kind: 'person', subjects: ['contact:1', 'contact:2', 'contact:3'], at: NOW })
+  assert.deepEqual(people.map((person) => person.members), [['contact:1'], ['contact:2'], ['contact:3']])
+}, { identifierSecret: SECRET, policy: namePolicy })
+
+both('the exact name and birth in another script still confirm the shared email', async (graph) => {
+  for (const [n, last] of [[1, '王'], [2, '王'], [3, '文']] as const) {
+    const subject = `contact:${n}`
+    assert.ok((await one(graph, { type: 'profile', subject, key: subject, at: AT, facts: { email: 'family@example.org', name: { first: '李', last }, dob: '1980-04-05' } })).ok)
+  }
+  const { people } = await graph.lookup({ kind: 'person', subjects: ['contact:1', 'contact:3'], at: NOW })
+  assert.deepEqual(people.map((person) => person.members), [['contact:1', 'contact:2'], ['contact:3']])
+}, { identifierSecret: SECRET, policy: { ...namePolicy, customKinds: { name: { weight: 0.6, dilution: 1, cap: 5, halfLife: 'none', group: 'name', corroborates: true } } } })
+
+both('keeping all letters of a name still honours the cap and mute on its earlier spelling', async (graph) => {
+  const { engine } = await internalsOf(graph)!()
+  const firsts = ['Maria文', 'Maria文', 'Maria李', 'Maria王', 'Maria林', 'Maria林']
+  for (const [n, first] of firsts.entries()) {
+    const subject = `contact:${n}`
+    assert.ok((await one(graph, { type: 'profile', key: subject, subject, at: AT, speaker: { phone: '202-555-0100' }, facts: { name: { first, last: 'Lima' } } })).ok)
+    assert.deepEqual(await engine.graph.verify(), [])
+  }
+  const together = async () => (await graph.lookup({ kind: 'person', subjects: ['contact:0'], at: NOW })).people[0]!.members.includes('contact:1')
+  assert.equal(await together(), false)
+  await graph.forget({ key: 'gone', by: 'desk', at: NOW, subjects: ['contact:5'], platforms: 'report' })
+  assert.equal(await together(), true)
+  const marks = (await engine.graph.links('contact:0')).find(({ subject }) => subject === 'contact:1')!.reasons.filter(({ identifier }) => identifier.startsWith('ward:'))
+  for (const { identifier } of marks) await engine.graph.ignore(identifier)
+  assert.equal(await together(), false)
+  assert.deepEqual(await engine.graph.verify(), [])
+  for (const { identifier } of marks) await engine.graph.ignore(identifier, false)
+  assert.equal(await together(), true)
+  assert.deepEqual(await engine.graph.rebuild(), [])
+}, { identifierSecret: SECRET, policy: namePolicy })
