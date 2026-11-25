@@ -128,6 +128,7 @@ const cards = (() => {
   let tell
   let hinted
   let aimed
+  let gone
   let timer
   const resting = { x: -1, y: -1 }
   addEventListener('pointermove', ({ clientX, clientY }) => Object.assign(resting, { x: clientX, y: clientY }), { passive: true })
@@ -164,6 +165,8 @@ const cards = (() => {
     card.focus({ preventScroll: true })
   }
   function close(back = false) {
+    clearTimeout(gone)
+    gone = undefined
     const button = from
     from = tell = undefined
     if (card.matches(':popover-open')) card.hidePopover()
@@ -225,7 +228,8 @@ const cards = (() => {
     if (!from || from.isConnected) return
     const { key } = from.dataset
     const next = [...$('view').querySelectorAll('button[data-key]')].find((each) => each.about && each.dataset.key === key)
-    if (!next) return close()
+    // The chart draws its marks once it has been measured, which is a moment after the rest.
+    if (!next) return void (gone ??= setTimeout(() => { gone = undefined; if (from && !from.isConnected) close() }, 200))
     from = next
     from.setAttribute('aria-expanded', 'true')
     if (!show()) close()

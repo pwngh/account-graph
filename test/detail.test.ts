@@ -206,7 +206,7 @@ for (const [store, open] of Object.entries(STORES)) test(`every card is true to 
   })
   assert.match(person.IDs!, /^3 · strongest \d+%/)
   const waiting = await page.card('#/board/90', `board.person ${caller(12)}`)
-  assert.deepEqual([waiting['Waiting since'], waiting['Limit for a call back'], waiting['Last call']], [`${await written(page, ago(-50))} · 2 days 2 h`, '24 h · overdue by 26 h', `Inbound, voicemail, ${await written(page, ago(-50))}`])
+  assert.deepEqual([waiting['Waiting since'], waiting['Limit for a call back'], waiting['Last call'], waiting['Credited to'], waiting['First visit']], [`${await written(page, ago(-50))} · 2 days 2 h`, '24 h · overdue by 26 h', `Inbound, voicemail, ${await written(page, ago(-50))}`, 'listing · Map listing', undefined])
   assert.deepEqual((await page.links()).map(([text, href]) => [text, href]), [['Open Journey', `#/journey/${encodeURIComponent(caller(12))}`], ['Account', `#/accounts/${encodeURIComponent(caller(12))}`], ['Show Missed Call', `#/journey/${encodeURIComponent(caller(12))}/bea-1`]])
   const texted = await page.card('#/board/90', `board.text ${caller(17)}`)
   assert.deepEqual(texted, { 'Texts waiting': '2', 'Came from': 'listing · Map listing', Tags: 'language: es', 'First of them': `${await written(page, ago(-3) + MINUTE)} · 2 h 59 min ago`, Latest: `${await written(page, ago(-3) + 2 * MINUTE)} · 2 h 58 min ago` })
@@ -454,6 +454,13 @@ test('a card opens, closes, stays through a refresh, and says when something is 
   await page.click(`document.querySelector('.chart .wait')`)
   await page.settled()
   assert.deepEqual([await hinted(), (await page.says())['Attempts before that'], (await page.links()).map(([words]) => words)], [false, '1', ['Missed Call', 'Return Call']])
+  // Read again by itself, the chart is drawn anew, and the card of a wait on it stays.
+  made.at(0.04)
+  await made.call('new-2', 21, { duration: 5, result: { answered: true } })
+  await run(`window.old = document.querySelector('.chart .wait'); look()`)
+  await until('the new chart', () => run(`!window.old.isConnected && document.querySelector('.chart .wait') !== null`))
+  await pause(300)
+  assert.deepEqual([await shown(), await run(`document.querySelector('.chart .wait').getAttribute('aria-expanded')`)], [true, 'true'])
   await page.click(`[...document.querySelectorAll('#card a')].find((a) => a.textContent === 'Return Call')`)
   assert.match(await text('.chart .told'), /Outbound.*Answered/)
   // Pressed, a mark opens beside the chart as before, and does not say the same twice.

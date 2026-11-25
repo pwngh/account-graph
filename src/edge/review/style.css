@@ -404,7 +404,7 @@ dialog#ask { opacity: 0; transform: translateY(8px) scale(.985); transition: opa
 }
 /* A palette the reader forces keeps what color alone would lose: what is picked, what is a part, and what is a mark. */
 @media (forced-colors: active) {
-  .part, .key, .meter .fill, .meter .track, .shape rect, .ranked li > i, .letter, .badge, .tile svg, .chip::before, .board-age::before, .dot, .glyph, .graph .stage > svg, [class^="heat"] { forced-color-adjust: none; }
+  .part, .key, .meter .fill, .meter .track, .shape rect, .ranked li > i, .letter, .badge, .tile svg, .chip::before, .board-age::before, .dot, .glyph, .chart .wait, .graph .stage > svg, [class^="heat"] { forced-color-adjust: none; }
   [aria-current], [aria-selected=true], [aria-pressed=true] { outline: 2px solid Highlight; outline-offset: -2px; } tr.behind { background: none; }
 }
 @media (prefers-reduced-motion: reduce) { *, ::before, ::after { transition: none !important; animation: none !important; } }

@@ -97,7 +97,7 @@ DETAILS['board.person'] = {
       rows: [['Reached', reached.map((step) => `${step} ${day(first.get(step).at)}`).join(' → ')], ['Next step', row.step === null ? undefined : next],
         ['Value', worth?.first && worth.first.at > 0 && row.value !== null && worth.first.value !== row.value ? `${worthOf(row.value, row.currency)} · at first ${worthOf(worth.first.value, worth.first.currency)}` : row.value > 0 ? worthOf(row.value, row.currency) : undefined],
         ['Last call', call && `${inShort(call)}, ${moment(call.at)}${call.followUp?.attempts > 0 ? ` · ${amount(call.followUp.attempts)} ${call.followUp.attempts === 1 ? 'attempt' : 'attempts'} since` : ''}`],
-        ['Texts waiting', texts > 0 ? amount(texts) : undefined], ['First visit', visit && `${day(visit.at)} · ${visitWords(visit)}`],
+        ['Texts waiting', texts > 0 ? amount(texts) : undefined], visit ? ['First visit', `${day(visit.at)} · ${visitWords(visit)}`] : ['Credited to', cameFrom(row)],
         ['IDs', subjects && `${amount(Object.keys(subjects).length)}${partial || journey.more > 0 ? '+' : ''}${strongest ? ` · strongest ${percent(strongest[1].score)}${strongest[1].kinds.length > 0 ? `, ${strongest[1].kinds[0]}` : ''}` : ''}`], ['Consent for ads', consent && consentWords(consent.answer)]],
       links: [open[0] && { text: 'Show Missed Call', href: journeyHash(row.subject, open[0].call.id) }],
     }
