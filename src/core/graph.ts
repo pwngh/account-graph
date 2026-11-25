@@ -557,7 +557,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     }
     const pairs = scorePairs(policy, edges, states)
     const two = pairs.filter(({ reasons }) => told(policy, reasons)).map(({ a, b }): [Subject, Subject] => [a, b])
-    return partition(subjects, pairs, separated, policy, knownOf(policy, edges, silent(states), two.length > 0), onCut, two, sinceOf(edges))
+    return partition(subjects, pairs, separated, policy, knownOf(policy, edges, silent(states), separated.length > 0 || two.length > 0), onCut, two, sinceOf(edges))
   }
 
   /**
@@ -609,7 +609,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     const subjects = [...joined]
     const separated = (await tx.separatedOf(subjects)).filter(([a, b]) => joined.has(a) && joined.has(b))
     const said = two.filter(([a, b]) => joined.has(a) && joined.has(b))
-    const facts = await known(tx, subjects, said.length > 0)
+    const facts = await known(tx, subjects, separated.length > 0 || said.length > 0)
     // Where records have to be confirmed, when each was first seen can say whose a browser is.
     const kept = unique([...(policy.records ? subjects : []), ...separated.flat(), ...said.flat(), ...[...facts].filter(([, own]) => own.facts.size > 0).map(([subject]) => subject)])
     const since = new Map<Subject, number>()

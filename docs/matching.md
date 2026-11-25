@@ -87,7 +87,7 @@ Notes give no evidence and link nothing.
 Every subject reachable over `same` links forms a component. Three cuts, applied in order, divide a component into clusters.
 
 1. **Separated pairs.** The direct link of each separated pair is removed, and of each pair whose [facts differ](#facts-that-keep-people-apart).
-2. **Paths between separated pairs.** If the two are still connected through others, the weakest set of links between them is cut. Strengths add up, so two weak links outweigh one.
+2. **Paths between separated pairs.** If a pair that staff separated is still connected through others, the graph cuts guessed links wherever that keeps every active merge. If a path consists entirely of merges, the separation stands and the cut breaks as few merged links as possible. Among cuts that break the same number, it takes the weakest set of links. [Facts that keep people apart](#facts-that-keep-people-apart) have their own rules for merges.
 3. **Weak bridges.** A link below 0.97 (`bridge`) cannot be the sole connection between two groups of two or more subjects. The weakest is cut first, until none remains. It may still add a single subject to a group. A group that names nobody, made only of browsers and phone numbers that called (`visitor:`, `caller:` and `call:`), then goes back to the named group it was cut from, if there is exactly one. With none or several, it stays apart.
 
 For example, a chain of four accounts, each sharing one machine with the next, becomes two pairs. If the outer two also share a phone, all four form one cluster, because the groups are then connected twice.
@@ -98,7 +98,7 @@ A cluster above 50 members (`review`) is flagged `oversized`. Clusters that larg
 
 | Cut | Method | Cost and behavior |
 | --- | --- | --- |
-| Separated pairs | All direct links between separated pairs are removed. Each pair still connected, in order of id, is cut at minimum total strength: a maximum flow by shortest paths (Edmonds-Karp). Strength is `−log(1 − score)`, held to a maximum and rounded. Of all cheapest cuts, the unique one nearest the first subject is taken, so the result is independent of arrival order. | Each flow is at worst `O(V·E²)` in the subjects and links of one component. A component of hundreds is quick. |
+| Separated pairs | All direct links between separated pairs are removed. Each pair still connected is processed in order of ID by a maximum flow using shortest paths (Edmonds–Karp). After preserving as many merges as possible, the cut minimizes total strength. Strength is `−log(1 − score)`, capped and rounded. If several cuts tie, the one nearest the subject with the later first sighting wins. Equal times favor the cut nearest the smaller ID. | Each flow is at worst `O(V·E²)` in the subjects and links of one component. |
 | Weak bridges | Links below `bridge` are removed as described above. | The rule is off when `bridge` is at or below `same`. |
 
 A component of tens of thousands indicates a shared identifier to cap or mute.

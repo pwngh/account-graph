@@ -384,6 +384,59 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await graph.verify(), [])
     })
 
+    test('a separation keeps a staff join when cutting guesses honours both decisions', async () => {
+      const [a, b, c] = ['contact:a', 'contact:b', 'contact:c'] as const
+      const paths = [1, 2, 3, 4, 5]
+      const mail = (side: string, n: number) => email(`${side}-${n}@example.org`)
+      const facts = [
+        { subject: b, identifiers: paths.map((n) => mail('b', n)), at: T0 },
+        { subject: c, identifiers: paths.map((n) => mail('c', n)), at: T0 },
+        ...paths.map((n) => ({ subject: `contact:x${n}`, identifiers: [mail('b', n), mail('c', n)], at: T0 })),
+      ]
+      const presets = ['household', 'intake'].map((name) => policyFrom(JSON.parse(readFileSync(new URL(`../examples/${name}.json`, import.meta.url), 'utf8'))))
+      for (const policy of [defaultPolicy, policyFrom({ apart: ['birth', 'given'] }), ...presets]) {
+        let forward: string[] | undefined
+        for (const reversed of [false, true]) {
+          const { graph } = await fresh(policy, { now: () => T0 })
+          const join = async () => {
+            const preview = await graph.foresee({ action: 'join', a, b })
+            assert.equal((await graph.join(a, b, { by: 'desk' })).length, preview.moved)
+          }
+          const separate = async () => {
+            const preview = await graph.foresee({ action: 'separate', a, b: c })
+            assert.equal((await graph.separate(a, c, true, { by: 'desk' })).length, preview.moved)
+          }
+          const reports = [join, ...facts.map((fact) => () => graph.observe(fact)), separate]
+          for (const report of reversed ? reports.reverse() : reports) {
+            await report()
+            assert.deepEqual(await graph.verify(), [])
+          }
+          const ours = await members(graph, a)
+          assert.ok(ours.includes(b), `the staff join was cut: ${ours}`)
+          assert.ok(!ours.includes(c))
+          if (forward) assert.deepEqual(ours, forward)
+          else forward = ours
+          assert.deepEqual(await graph.rebuild(), [])
+          const mark = (await graph.history(a)).find((sighting) => sighting.identifier.startsWith('review:'))!.identifier
+          await graph.ignore(mark)
+          assert.deepEqual(await members(graph, a), [a])
+          await graph.ignore(mark, false)
+          assert.deepEqual(await members(graph, a), ours)
+          assert.deepEqual(await graph.verify(), [])
+        }
+      }
+    })
+
+    test('a separation along a path made entirely by staff cuts one join', async () => {
+      const { graph } = await fresh()
+      await graph.join('a', 'b', { by: 'desk' })
+      await graph.join('b', 'c', { by: 'desk' })
+      await graph.separate('a', 'c', true, { by: 'desk' })
+      assert.ok(!(await members(graph, 'a')).includes('c'))
+      assert.equal((await members(graph, 'b')).length, 2)
+      assert.deepEqual(await graph.verify(), [])
+    })
+
     test('a decision made before any evidence still holds when the evidence arrives', async () => {
       const { graph } = await fresh()
       assert.deepEqual(await graph.separate('x', 'y'), [])

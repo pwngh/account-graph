@@ -194,8 +194,8 @@ type Adjacency = Map<Subject, Map<Subject, number>>
  *
  * 1. A pair a reviewer separated, or whose facts say it is two people, is
  *    never linked directly.
- * 2. If the two are still connected through others, the weakest set of links
- *    between them is removed.
+ * 2. If the two are still connected through others, a separation cuts the
+ *    fewest links a decision made, then the least total strength.
  * 3. A single link below `policy.bridge` may add one subject to a group, but
  *    may not be the only thing joining two groups of two or more. The weakest
  *    such link is removed, then the next, until none is left. A group that
@@ -435,8 +435,6 @@ function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subj
   for (const [a, b] of apart) cutApart(a, b)
   // A cut that could be made in two places is made beside whoever came later, so a shared browser stays with the first.
   const later = (a: Subject, b: Subject): [Subject, Subject] => ((since.get(a) ?? 0) < (since.get(b) ?? 0) ? [b, a] : [a, b])
-  for (const pair of apart) for (const [x, y] of minimumCut(adjacency, ...later(...pair))) cutApart(x, y)
-  // Facts come after decisions, and cut no link a decision made: two held together by those alone stay together.
   // Kept by pair, because the cuts ask of the same links over and over.
   const answered = new Map<Subject, Map<Subject, boolean>>()
   const decided = (a: Subject, b: Subject) => {
@@ -445,6 +443,18 @@ function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subj
     if (found === undefined) answered.get(a)!.set(b, (found = [...(known.get(a)?.joins ?? [])].some((identifier) => known.get(b)?.joins.has(identifier))))
     return found
   }
+  let priority = 0
+  for (const pair of apart) {
+    const [source, target] = later(...pair)
+    let found = minimumCut(adjacency, source, target)
+    if (found.some(([x, y]) => decided(x, y))) {
+      // One more decision costs more than all the evidence in the component. Among cuts that lose as many, the old strengths decide.
+      if (!priority) priority = links.reduce((sum, link) => sum + strength(link.score), 1)
+      found = minimumCut(adjacency, source, target, (x, y, score) => decided(x, y) ? priority + strength(score) : 0)
+    }
+    for (const [x, y] of found) cutApart(x, y)
+  }
+  // Facts come after decisions, and cut no link a decision made: two held together by those alone stay together.
   // That a call was about one, and another call about the other, does not say the two are one: a telephone is many people's.
   // So two births part a telephone or a browser from one of them, and never two records somebody said are one.
   const unnamed = new Set(policy.unnamed ?? UNNAMED)
@@ -595,12 +605,12 @@ const FIRM = 1e13
  * by maximum flow. Of all cheapest cuts it returns the one nearest `source`,
  * which is unique, so the answer does not depend on search order.
  */
-function minimumCut(adjacency: Adjacency, source: Subject, target: Subject, firm: (a: Subject, b: Subject) => number = () => 0): [Subject, Subject][] {
+function minimumCut(adjacency: Adjacency, source: Subject, target: Subject, firm: (a: Subject, b: Subject, score: number) => number = () => 0): [Subject, Subject][] {
   const piece = reach(adjacency, source)
   if (!piece.has(target)) return []
   const residual = new Map<Subject, Map<Subject, number>>()
   for (const node of piece) {
-    residual.set(node, new Map([...adjacency.get(node)!].map(([next, score]) => [next, firm(node, next) || strength(score)])))
+    residual.set(node, new Map([...adjacency.get(node)!].map(([next, score]) => [next, firm(node, next, score) || strength(score)])))
   }
 
   for (;;) {
