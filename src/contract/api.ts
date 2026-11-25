@@ -568,7 +568,7 @@ export interface RuleOptions {
   readonly corroborates?: true
   readonly relates?: true
 }
-export type BuiltInKind = 'review' | 'passkey' | 'email' | 'phone' | 'voip' | 'address' | 'payment' | 'device' | 'ga' | 'hardware' | 'fingerprint' | 'canvas' | 'ip' | 'link' | 'carry' | 'opened' | 'lease' | 'dial' | 'text' | 'place' | 'birth' | 'dialed' | 'behalf' | 'named' | 'ward' | 'given' | 'initial' | 'dated' | 'compound'
+export type BuiltInKind = 'review' | 'passkey' | 'email' | 'phone' | 'voip' | 'address' | 'payment' | 'device' | 'ga' | 'hardware' | 'fingerprint' | 'canvas' | 'ip' | 'link' | 'carry' | 'opened' | 'lease' | 'dial' | 'text' | 'place' | 'birth' | 'dialed' | 'behalf' | 'named' | 'ward' | 'given' | 'initial' | 'dated' | 'compound' | 'person' | 'perhaps'
 export interface PolicyOptions {
   readonly same?: number
   readonly related?: number
@@ -577,6 +577,8 @@ export interface PolicyOptions {
   readonly apart?: readonly ('birth' | 'given')[]
   /** Two records are one person only where somebody said so, or a name or a date of birth agrees. Requires `apart`. */
   readonly records?: 'confirmed'
+  /** At or above this confidence a visit is credited, from 0.5. Left out, as `same`. It joins nobody. */
+  readonly credit?: number
   /** Only what differs. A misspelled kind or field does not compile. */
   readonly kinds?: { readonly [K in BuiltInKind]?: Partial<RuleOptions> }
   /** Kinds of your own, said in full. */

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { after, describe, test } from 'node:test'
-import { birthKeys, givenKeys, namedKeys, Outdated, brokenAt, callState, createGraph, createHours, defaultPolicy, dialed, email, fit, followUp, hashPhone, nameKeys, policyFrom, policyProblems, recordCall, recordCallResult, recordNotLead, recordReturn, recordText, ringing, replyTo, beginnings, textCode, codeNote, texted } from '../tools/internals.ts'
+import { birthKeys, givenKeys, namedKeys, personKeys, Outdated, brokenAt, callState, createGraph, createHours, defaultPolicy, dialed, email, fit, followUp, hashPhone, nameKeys, policyFrom, policyProblems, recordCall, recordCallResult, recordNotLead, recordReturn, recordText, ringing, replyTo, beginnings, textCode, codeNote, texted } from '../tools/internals.ts'
 import type { Change, Graph, GraphOptions, Observation, Policy, Store } from '../tools/internals.ts'
 
 export interface Opened {
@@ -3082,6 +3082,94 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const { graph: twins } = await fresh(policy)
       for (const [n, name] of [[1, 'Maria'], [2, 'Robert']] as const) await twins.observe({ subject: `contact:${n}`, identifiers: ['email:m', ...birthKeys(secret, '1980-01-02'), ...givenKeys(secret, name)], at: T0 })
       assert.deepEqual(await members(twins, 'contact:1'), ['contact:1'])
+    })
+
+    test('records of one name and date of birth are shown and found, and joined where anything else agrees', async () => {
+      const secret = 'a secret of more than thirty-two characters'
+      const { graph } = await fresh(policyFrom({ apart: ['birth', 'given'], records: 'confirmed' }))
+      const who = (first: string, date: string) => [...birthKeys(secret, date), ...givenKeys(secret, first), ...personKeys(secret, first, 'Lima', date)]
+      await graph.observe([
+        { subject: 'contact:1', identifiers: ['email:a', ...who('Robert', '1990-06-07')], at: T0 },
+        { subject: 'contact:2', identifiers: ['email:b', ...who('Bob', '1990-06-07')], at: T0 + 1 },
+        { subject: 'contact:3', identifiers: ['email:c', ...who('Maria', '1990-06-07')], at: T0 + 2 },
+        { subject: 'contact:4', identifiers: ['email:d', ...who('Robert', '1990-06-08')], at: T0 + 3 },
+      ])
+      assert.deepEqual(await members(graph, 'contact:1'), ['contact:1'])
+      assert.deepEqual((await graph.undecided()).pairs.map(({ a, b, level, unconfirmed }) => [a, b, level, unconfirmed]), [['contact:1', 'contact:2', 'related', true]])
+      // Before somebody is entered twice.
+      assert.deepEqual((await graph.match(who('Robert', '1990-06-07'))).map(({ subject, level, unconfirmed }) => [subject, level, unconfirmed]), [['contact:1', 'related', true], ['contact:2', 'related', true]])
+      assert.deepEqual(await graph.match(who('Ana', '1990-06-07')), [])
+      // Decided either way, they are shown no more.
+      await graph.separate('contact:1', 'contact:2', true, { by: 'dana' })
+      assert.deepEqual((await graph.undecided()).pairs, [])
+      await graph.separate('contact:1', 'contact:2', false, { by: 'dana' })
+      await graph.join('contact:1', 'contact:2', { by: 'dana' })
+      assert.deepEqual((await graph.undecided()).pairs, [])
+      assert.deepEqual(await members(graph, 'contact:1'), ['contact:1', 'contact:2'])
+      assert.deepEqual(await graph.verify(), [])
+      // With a phone a whole family has, which by itself says nothing, they are one.
+      const { graph: family } = await fresh(policyFrom({ apart: ['birth', 'given'], records: 'confirmed' }))
+      for (const [n, first, date] of [[1, 'Robert', '1990-06-07'], [2, 'Robert', '1990-06-07'], [3, 'Maria', '1960-06-07'], [4, 'Carlos', '1961-06-07']] as const) await family.observe({ subject: `contact:${n}`, identifiers: ['phone:home', ...who(first, date)], at: T0 + n })
+      assert.deepEqual(await members(family, 'contact:1'), ['contact:1', 'contact:2'])
+      for (const n of [3, 4]) assert.deepEqual(await members(family, `contact:${n}`), [`contact:${n}`])
+      assert.deepEqual(await family.verify(), [])
+      // Twins have the date and the last name, and no name.
+      const { graph: twins } = await fresh(policyFrom({ apart: ['birth', 'given'], records: 'confirmed' }))
+      for (const [n, first] of [[1, 'Robert'], [2, 'Maria'], [3, 'Xiadani'], [4, 'Yaretzi']] as const) await twins.observe({ subject: `contact:${n}`, identifiers: ['phone:home', 'email:home', ...who(first, '1990-06-07')], at: T0 + n })
+      for (const n of [1, 2, 3, 4]) assert.deepEqual(await members(twins, `contact:${n}`), [`contact:${n}`])
+      // A preset may keep a name as well, which says the same thing once.
+      const { graph: desk } = await fresh(policyFrom({ apart: ['birth', 'given'], records: 'confirmed', kinds: { name: { weight: 0.6, dilution: 1, cap: 5, halfLife: 'none', group: 'name', corroborates: true } } }))
+      for (const n of [1, 2]) await desk.observe({ subject: `contact:${n}`, identifiers: [`email:${n}`, ...nameKeys(secret, 'Ana', 'Lima', { dob: '1990-06-07' }), ...who('Ana', '1990-06-07')], at: T0 + n })
+      assert.deepEqual(await members(desk, 'contact:1'), ['contact:1'])
+      assert.deepEqual((await desk.match([...nameKeys(secret, 'Ana', 'Lima', { dob: '1990-06-07' }), ...who('Ana', '1990-06-07')])).map(({ level, unconfirmed }) => [level, unconfirmed]), [['related', true], ['related', true]])
+      // Folding takes letters that are not Latin, and what is left of two names is the same.
+      for (const [first, last] of [['伟', '王'], ['Иван', 'Петров'], ['Ana', 'Van'], ['Unknown', 'Garcia'], ['Ana 伟', 'Lima']] as const) assert.deepEqual(personKeys(secret, first, last, '1990-06-07'), [], `${first} ${last}`)
+      assert.equal(personKeys(secret, 'José', 'Muñoz', '1990-06-07').length > 0, true)
+      for (const [one, other] of [['Đan', 'An'], ['Øyan', 'Yan']] as const) assert.notEqual(personKeys(secret, one, 'Lima', '1990-06-07')[0], personKeys(secret, other, 'Lima', '1990-06-07')[0])
+      // A word in common, a name that may be another, and half a last name show two, and join nobody.
+      for (const [one, other] of [[['Baby Boy', 'Smith'], ['Baby Girl', 'Smith']], [['Xiadani Yamileth', 'Lima'], ['Yaretzi Yamileth', 'Lima']], [['Mary', 'Lima'], ['Marilyn', 'Lima']], [['Maria', 'Garcia Lopez'], ['Maria', 'Garcia Perez']]] as const) {
+        const { graph } = await fresh(policyFrom({ apart: ['birth', 'given'], records: 'confirmed' }))
+        for (const [n, [first, last]] of [[1, one], [2, other]] as const) await graph.observe({ subject: `contact:${n}`, identifiers: ['phone:home', ...birthKeys(secret, '1990-06-07'), ...(first.includes(' ') ? ['compound:yes' as const] : []), ...givenKeys(secret, first), ...namedKeys(secret, ['phone:home'], first, last), ...personKeys(secret, first, last, '1990-06-07')], at: T0 + n })
+        await graph.observe([3, 4].map((n) => ({ subject: `contact:${n}`, identifiers: ['phone:home' as const], at: T0 + n })))
+        assert.deepEqual(await members(graph, 'contact:1'), ['contact:1'], `${one} and ${other}`)
+      }
+      // Off, nothing of it is there.
+      const { graph: off } = await fresh(policyFrom({ apart: ['birth', 'given'] }))
+      for (const n of [1, 2]) await off.observe({ subject: `contact:${n}`, identifiers: [`email:${n}`, ...birthKeys(secret, '1990-06-07'), ...givenKeys(secret, 'Robert')], at: T0 })
+      assert.deepEqual((await off.undecided()).pairs, [])
+    })
+
+    test('credit has a bar of its own, which joins nobody, shows nobody and crosses no split', async () => {
+      for (const [credit, expected] of [[undefined, undefined], [0.75, 'G']] as const) {
+        const { graph } = await fresh(policyFrom({ kinds: { phone: { weight: 0.85 } }, ...(credit && { credit }) }))
+        await graph.observe([
+          { subject: 'contact:1', identifiers: ['phone:p'], at: T0 },
+          { subject: 'caller:p', identifiers: ['phone:p', 'dial:c'], at: T0 },
+          { subject: 'visitor:1', identifiers: ['dial:c', 'device:d'], at: T0 },
+        ])
+        await graph.touch({ subject: 'visitor:1', at: T0, gclid: 'G' })
+        assert.equal((await graph.attribute('contact:1', { at: T0 + HOUR })).credited?.gclid, expected)
+        assert.deepEqual(await members(graph, 'contact:1'), ['contact:1'])
+        assert.equal(Object.keys((await graph.journey('contact:1')).subjects).includes('visitor:1'), false)
+        await graph.separate('contact:1', 'caller:p', true, { by: 'dana' })
+        assert.equal((await graph.attribute('contact:1', { at: T0 + HOUR })).credited, undefined)
+      }
+      // A browser that is one with another record is that record's.
+      const { graph: others } = await fresh(policyFrom({ kinds: { phone: { weight: 0.85 } }, apart: ['birth'], credit: 0.75 }))
+      await others.observe([
+        { subject: 'contact:a', identifiers: ['phone:p', 'birth:1980'], at: T0 },
+        { subject: 'caller:p', identifiers: ['phone:p', 'dial:c'], at: T0 },
+        { subject: 'visitor:x', identifiers: ['dial:c', 'device:d'], at: T0 },
+        { subject: 'contact:b', identifiers: ['device:d', 'birth:1970'], at: T0 },
+      ])
+      await others.touch({ subject: 'visitor:x', at: T0, gclid: 'B' })
+      assert.equal((await others.attribute('contact:b', { at: T0 + HOUR })).credited?.gclid, 'B')
+      assert.equal((await others.attribute('contact:a', { at: T0 + HOUR })).credited, undefined)
+      // A call's own line is no ad, and needs the bar it had.
+      const { graph: line } = await fresh(policyFrom({ kinds: { phone: { weight: 0.85 } }, credit: 0.75 }))
+      await line.observe([{ subject: 'contact:1', identifiers: ['phone:p'], at: T0 }, { subject: 'caller:p', identifiers: ['phone:p'], at: T0 }])
+      await line.touch({ subject: 'caller:p', at: T0, source: 'line', medium: 'call', landing: 'tel:+15550100001' })
+      assert.equal((await line.attribute('contact:1', { at: T0 + HOUR })).credited, undefined)
     })
 
     test('no third record, caller or half a name makes one of two who differ', async () => {

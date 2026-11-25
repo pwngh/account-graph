@@ -90,7 +90,8 @@ export function identifier(kind: string, value: string): Identifier {
 }
 
 /** Letters that are one letter with a mark to their readers, and letters of their own to Unicode. */
-const FOLDED: Record<string, string> = { ß: 'ss', æ: 'ae', œ: 'oe', ø: 'o', đ: 'd', ð: 'd', ł: 'l', þ: 'th', ı: 'i' }
+/** Letters that are Latin and have no simpler form of their own. */
+export const FOLDED: Record<string, string> = { ß: 'ss', æ: 'ae', œ: 'oe', ø: 'o', đ: 'd', ð: 'd', ł: 'l', þ: 'th', ı: 'i' }
 /** What is written where a name is not known. */
 const NOBODYS = new Set(['unknown', 'unk', 'none', 'null', 'undefined', 'na', 'n a', 'noname', 'no name', 'nobody', 'not given', 'not provided', 'not available', 'placeholder', 'test', 'tester', 'testing', 'dummy', 'firstname', 'first name', 'lastname', 'last name', 'caller', 'wireless caller', 'customer', 'client'])
 const SAMPLES = new Set(['john doe', 'jane doe'])

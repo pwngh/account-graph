@@ -310,6 +310,8 @@ export interface AttributedTouch extends Touch {
   joined: boolean
   /** It is of somebody who speaks for the converting subject: another person, whose arrival brought them. */
   speaker?: true
+  /** It is of a group that has a record, which is not the converting subject's. Told only where credit has a bar of its own. */
+  anothers?: true
   /** The subjects that chain passes through, starting at the converting subject. */
   via: Subject[]
 }

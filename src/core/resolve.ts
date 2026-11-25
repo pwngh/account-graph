@@ -100,10 +100,12 @@ export interface Known {
 }
 
 const THINGS = new Set(['named', 'ward'])
+/** Of the things one person has, those made of a name, which a half of a name is not enough for. */
+const NAMED = new Set([...THINGS, 'person'])
 /** Records of one component, past which nothing but a decision joins them where records have to be confirmed. */
 const CROWD = 300
 /** What one person has and no other: a name with a zip code or a date of birth, and a passkey. */
-const OWN = new Set(['name', 'passkey'])
+const OWN = new Set(['name', 'passkey', 'person'])
 
 /** The facts of the subjects that have one, of the facts a policy keeps people apart by. An undone join is none. With `joins`, those are read whatever the policy. */
 export function knownOf(policy: Policy, edges: readonly Edge[], undone: (identifier: Identifier) => boolean, joins = false): Map<Subject, Known> {
@@ -176,9 +178,9 @@ export function confirmed(a: Known | undefined, b: Known | undefined): boolean {
   // which. One name is itself, and half of a name of several words.
   const within = (one: ReadonlySet<Identifier>, other: ReadonlySet<Identifier>) => [...one].every((each) => other.has(each))
   const loosely = ours !== undefined && theirs !== undefined && !(within(ours, theirs) && (within(theirs, ours) || b.facts.has('compound'))) && !(within(theirs, ours) && a.facts.has('compound'))
-  if (loosely ? [...a.things].some((each) => b.things.has(each) && !THINGS.has(each.slice(0, each.indexOf(':')))) : meets(a.things, b.things) || meets(ours, theirs)) return true
+  if (loosely ? [...a.things].some((each) => b.things.has(each) && !NAMED.has(each.slice(0, each.indexOf(':')))) : meets(a.things, b.things) || meets(ours, theirs)) return true
   // A name no table has is no fact, and is still a name: two who gave names under which nothing is the same are twins as likely as one.
-  const names = (known: Known) => [...known.things].some((each) => THINGS.has(each.slice(0, each.indexOf(':'))) || each.startsWith('name:'))
+  const names = (known: Known) => [...known.things].some((each) => NAMED.has(each.slice(0, each.indexOf(':'))) || each.startsWith('name:'))
   return dates && (meets(ours, theirs) === true || !(names(a) && names(b)))
 }
 

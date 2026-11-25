@@ -1,6 +1,7 @@
 {
   "apart": ["birth", "given"],
   "records": "confirmed",
+  "credit": 0.75,
   "kinds": {
     "phone": { "weight": 0.85, "dilution": 1, "cap": 10, "halfLife": 63072000000, "group": "household" },
     "voip": { "group": "household" },

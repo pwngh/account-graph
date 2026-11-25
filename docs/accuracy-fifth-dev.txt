@@ -1,0 +1,92 @@
+code 8036815b9938e689849b72b8a790f116a63d1856, with changes or not, Node v22.23.0, names f5a69fbe139b8541f96a42dae40bf4d564d29d660f2aeb1add0eec776ec8ff2f, seeds 20270701 to 20270708
+
+## self5, records: 8 worlds of 2000 people over 120 days
+identity: people whose record is with another's 0 of 3804 (0.00%), worst world 0.00%; pairs of records joined that are two people 0 of 700 (0.00%)
+  pairs of records that are one person: joined 700 of 915 (76.50%), joined or shown 864 of 915 (94.43%); shown 165, 164 of 165 (99.39%) of them one person; all joined pairs right 6155 of 6176 (99.66%)
+credit: to the wrong ad 36 of 3123 (1.15%); of those with a chain of facts, to it 3084 of 3151 (97.87%)
+
+## self5, records decided: 8 worlds of 2000 people over 120 days
+identity: people whose record is with another's 0 of 3804 (0.00%), worst world 0.00%; pairs of records joined that are two people 0 of 844 (0.00%)
+  pairs of records that are one person: joined 844 of 915 (92.24%), joined or shown 864 of 915 (94.43%); shown 20, 20 of 20 (100.00%) of them one person; all joined pairs right 6438 of 6460 (99.66%)
+credit: to the wrong ad 38 of 3136 (1.21%); of those with a chain of facts, to it 3091 of 3151 (98.10%)
+staff decided 141 pairs: joined 134, 0 of them wrongly; kept apart 7, 6 of them wrongly
+
+## self5, staffed records: 8 worlds of 2000 people over 120 days
+identity: people whose record is with another's 0 of 3804 (0.00%), worst world 0.00%; pairs of records joined that are two people 0 of 691 (0.00%)
+  pairs of records that are one person: joined 691 of 915 (75.52%), joined or shown 837 of 915 (91.48%); shown 147, 146 of 147 (99.32%) of them one person; all joined pairs right 6244 of 6335 (98.56%)
+credit: to the wrong ad 37 of 3127 (1.18%); of those with a chain of facts, to it 3084 of 3151 (97.87%)
+
+## self5, staffed decided: 8 worlds of 2000 people over 120 days
+identity: people whose record is with another's 0 of 3804 (0.00%), worst world 0.00%; pairs of records joined that are two people 0 of 820 (0.00%)
+  pairs of records that are one person: joined 820 of 915 (89.62%), joined or shown 836 of 915 (91.37%); shown 16, 16 of 16 (100.00%) of them one person; all joined pairs right 6510 of 6603 (98.59%)
+credit: to the wrong ad 39 of 3129 (1.25%); of those with a chain of facts, to it 3080 of 3151 (97.75%)
+staff decided 127 pairs: joined 121, 0 of them wrongly; kept apart 6, 5 of them wrongly
+code 8036815b9938e689849b72b8a790f116a63d1856, with changes or not, Node v22.23.0, names f5a69fbe139b8541f96a42dae40bf4d564d29d660f2aeb1add0eec776ec8ff2f, seeds 20270701 to 20270708
+
+## staff5, records: 8 worlds of 2000 people over 120 days
+identity: people whose record is with another's 0 of 3619 (0.00%), worst world 0.00%; pairs of records joined that are two people 0 of 387 (0.00%)
+  pairs of records that are one person: joined 387 of 541 (71.53%), joined or shown 486 of 541 (89.83%); shown 102, 99 of 102 (97.06%) of them one person; all joined pairs right 7076 of 7155 (98.90%)
+credit: to the wrong ad 33 of 1841 (1.79%); of those with a chain of facts, to it 1808 of 2019 (89.55%)
+
+## staff5, records decided: 8 worlds of 2000 people over 120 days
+identity: people whose record is with another's 0 of 3619 (0.00%), worst world 0.00%; pairs of records joined that are two people 0 of 478 (0.00%)
+  pairs of records that are one person: joined 478 of 541 (88.35%), joined or shown 489 of 541 (90.39%); shown 11, 11 of 11 (100.00%) of them one person; all joined pairs right 7248 of 7333 (98.84%)
+credit: to the wrong ad 33 of 1851 (1.78%); of those with a chain of facts, to it 1813 of 2019 (89.80%)
+staff decided 85 pairs: joined 82, 0 of them wrongly; kept apart 3, 0 of them wrongly
+
+## staff5, staffed records: 8 worlds of 2000 people over 120 days
+identity: people whose record is with another's 0 of 3619 (0.00%), worst world 0.00%; pairs of records joined that are two people 0 of 384 (0.00%)
+  pairs of records that are one person: joined 384 of 541 (70.98%), joined or shown 479 of 541 (88.54%); shown 98, 95 of 98 (96.94%) of them one person; all joined pairs right 7692 of 7979 (96.40%)
+credit: to the wrong ad 32 of 1948 (1.64%); of those with a chain of facts, to it 1899 of 2019 (94.06%)
+
+## staff5, staffed decided: 8 worlds of 2000 people over 120 days
+identity: people whose record is with another's 0 of 3619 (0.00%), worst world 0.00%; pairs of records joined that are two people 0 of 469 (0.00%)
+  pairs of records that are one person: joined 469 of 541 (86.69%), joined or shown 482 of 541 (89.09%); shown 13, 13 of 13 (100.00%) of them one person; all joined pairs right 7889 of 8197 (96.24%)
+credit: to the wrong ad 33 of 1955 (1.69%); of those with a chain of facts, to it 1901 of 2019 (94.16%)
+staff decided 80 pairs: joined 77, 0 of them wrongly; kept apart 3, 0 of them wrongly
+code 8036815b9938e689849b72b8a790f116a63d1856, with changes or not, Node v22.23.0, names f5a69fbe139b8541f96a42dae40bf4d564d29d660f2aeb1add0eec776ec8ff2f, seeds 20270701 to 20270708
+
+## base3, records: 8 worlds of 2000 people over 120 days
+identity: people whose record is with another's 2 of 3745 (0.05%), worst world 0.44%; pairs of records joined that are two people 1 of 466 (0.21%)
+  pairs of records that are one person: joined 465 of 779 (59.69%), joined or shown 682 of 779 (87.55%); shown 228, 217 of 228 (95.18%) of them one person; all joined pairs right 7163 of 7244 (98.88%)
+credit: to the wrong ad 32 of 2539 (1.26%); of those with a chain of facts, to it 2507 of 2653 (94.50%)
+
+## base3, records decided: 8 worlds of 2000 people over 120 days
+identity: people whose record is with another's 2 of 3745 (0.05%), worst world 0.44%; pairs of records joined that are two people 1 of 669 (0.15%)
+  pairs of records that are one person: joined 668 of 779 (85.75%), joined or shown 687 of 779 (88.19%); shown 19, 19 of 19 (100.00%) of them one person; all joined pairs right 7570 of 7655 (98.89%)
+credit: to the wrong ad 31 of 2548 (1.22%); of those with a chain of facts, to it 2513 of 2653 (94.72%)
+staff decided 200 pairs: joined 183, 0 of them wrongly; kept apart 17, 6 of them wrongly
+
+## base3, staffed records: 8 worlds of 2000 people over 120 days
+identity: people whose record is with another's 2 of 3745 (0.05%), worst world 0.44%; pairs of records joined that are two people 1 of 462 (0.22%)
+  pairs of records that are one person: joined 461 of 779 (59.18%), joined or shown 659 of 779 (84.60%); shown 209, 198 of 209 (94.74%) of them one person; all joined pairs right 7556 of 7816 (96.67%)
+credit: to the wrong ad 35 of 2589 (1.35%); of those with a chain of facts, to it 2541 of 2653 (95.78%)
+
+## base3, staffed decided: 8 worlds of 2000 people over 120 days
+identity: people whose record is with another's 4 of 3745 (0.11%), worst world 0.44%; pairs of records joined that are two people 3 of 651 (0.46%)
+  pairs of records that are one person: joined 648 of 779 (83.18%), joined or shown 665 of 779 (85.37%); shown 17, 17 of 17 (100.00%) of them one person; all joined pairs right 8007 of 8284 (96.66%)
+credit: to the wrong ad 34 of 2595 (1.31%); of those with a chain of facts, to it 2544 of 2653 (95.89%)
+staff decided 184 pairs: joined 169, 0 of them wrongly; kept apart 15, 4 of them wrongly
+code 8036815b9938e689849b72b8a790f116a63d1856, with changes or not, Node v22.23.0, names f5a69fbe139b8541f96a42dae40bf4d564d29d660f2aeb1add0eec776ec8ff2f, seeds 20270701 to 20270708
+
+## high3, records: 8 worlds of 2000 people over 120 days
+identity: people whose record is with another's 8 of 4834 (0.17%), worst world 0.68%; pairs of records joined that are two people 4 of 564 (0.71%)
+  pairs of records that are one person: joined 560 of 1408 (39.77%), joined or shown 1008 of 1408 (71.59%); shown 487, 448 of 487 (91.99%) of them one person; all joined pairs right 7839 of 8126 (96.47%)
+credit: to the wrong ad 64 of 2607 (2.45%); of those with a chain of facts, to it 2543 of 2794 (91.02%)
+
+## high3, records decided: 8 worlds of 2000 people over 120 days
+identity: people whose record is with another's 10 of 4834 (0.21%), worst world 0.68%; pairs of records joined that are two people 6 of 992 (0.60%)
+  pairs of records that are one person: joined 986 of 1408 (70.03%), joined or shown 1027 of 1408 (72.94%); shown 47, 41 of 47 (87.23%) of them one person; all joined pairs right 8676 of 8988 (96.53%)
+credit: to the wrong ad 59 of 2617 (2.25%); of those with a chain of facts, to it 2554 of 2794 (91.41%)
+staff decided 422 pairs: joined 382, 1 of them wrongly; kept apart 40, 9 of them wrongly
+
+## high3, staffed records: 8 worlds of 2000 people over 120 days
+identity: people whose record is with another's 10 of 4834 (0.21%), worst world 0.68%; pairs of records joined that are two people 6 of 547 (1.10%)
+  pairs of records that are one person: joined 541 of 1408 (38.42%), joined or shown 951 of 1408 (67.54%); shown 448, 410 of 448 (91.52%) of them one person; all joined pairs right 8523 of 9229 (92.35%)
+credit: to the wrong ad 63 of 2635 (2.39%); of those with a chain of facts, to it 2558 of 2794 (91.55%)
+
+## high3, staffed decided: 8 worlds of 2000 people over 120 days
+identity: people whose record is with another's 12 of 4834 (0.25%), worst world 0.68%; pairs of records joined that are two people 8 of 939 (0.85%)
+  pairs of records that are one person: joined 931 of 1408 (66.12%), joined or shown 967 of 1408 (68.68%); shown 41, 36 of 41 (87.80%) of them one person; all joined pairs right 9448 of 10216 (92.48%)
+credit: to the wrong ad 56 of 2630 (2.13%); of those with a chain of facts, to it 2556 of 2794 (91.48%)
+staff decided 389 pairs: joined 349, 1 of them wrongly; kept apart 40, 9 of them wrongly

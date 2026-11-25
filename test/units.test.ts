@@ -6,7 +6,7 @@ import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { birthKeys, components, conversionEvent, createAlerter, createGraph, createHours, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, hoursProblems, ingestRequest, ip, knownLink, ladderProblems, measure, meta, metaEvent, nameKeys, normalizeEmail, normalizePhone, phoneOfType, codeIn, policyFrom, policyHash, policyProblems, readToken, scorePairs, signToken, sourceOf, textCode, withStage } from '../tools/internals.ts'
+import { birthKeys, components, conversionEvent, createAlerter, createGraph, createHours, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, hoursProblems, ingestRequest, ip, knownLink, ladderProblems, measure, meta, metaEvent, nameKeys, normalizeEmail, normalizePhone, phoneOfType, codeIn, policyFrom, policyHash, policyProblems, plainPolicy, readToken, scorePairs, signToken, sourceOf, textCode, withStage } from '../tools/internals.ts'
 import { summarizeCalls } from '../src/core/callreport.ts'
 import { followed } from '../src/core/followed.ts'
 import type { Caller, Followed } from '../src/core/followed.ts'
@@ -114,6 +114,10 @@ test('records that have to be confirmed need the facts that confirm them, and ar
   assert.deepEqual(policyProblems({ records: 'confirmed' }), ['"records" requires "apart", such as ["birth", "given"], because it goes by those facts'])
   assert.deepEqual(policyProblems({ apart: ['birth'], records: 'all' }), ['"records" must be "confirmed", or left out'])
   assert.notEqual(policyHash(policyFrom({ apart: ['birth'], records: 'confirmed' })), policyHash(policyFrom({ apart: ['birth'] })))
+  // What only credits is no reason to work the clusters out again.
+  assert.equal(policyHash(policyFrom({ credit: 0.75 })), policyHash(policyFrom({})))
+  assert.deepEqual(policyProblems({ credit: 0.2 }), ['"credit" must be a number from 0.5 to 1'])
+  assert.deepEqual(policyFrom(JSON.parse(JSON.stringify(plainPolicy(policyFrom({ apart: ['birth'], records: 'confirmed', credit: 0.75 }))))).kinds.person, policyFrom({ apart: ['birth'], records: 'confirmed' }).kinds.person)
 })
 
 test('a kind that only confirms is a sound rule, names its policy, and fit gives it no more than it confirms', () => {

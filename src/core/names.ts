@@ -9,6 +9,7 @@
 import { createHmac } from 'node:crypto'
 import { malformed } from '../contract/fault.ts'
 import type { Identifier } from '../contract/types.ts'
+import { FOLDED, birthKeys, nameKeys } from './identifiers.ts'
 
 /** Each full name, and what stands for it: a short form, a name in another language, nothing for a name with no short form. */
 const FORMS = `
@@ -1322,7 +1323,7 @@ zephaniah:zeph
 `
 
 /** A name as it is compared: without case, accents or punctuation. */
-const folded = (text: string) => text.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^a-z ]+/g, '').trim()
+const folded = (text: string) => text.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[ßæœøđðłþı]/g, (letter) => FOLDED[letter]!).replace(/[^a-z ]+/g, '').trim()
 
 /** By every name and short form, the full names it may stand for. */
 const standsFor = new Map<string, Set<string>>()
@@ -1359,11 +1360,33 @@ const PARTICLES = new Set(['de', 'del', 'la', 'las', 'los', 'el', 'da', 'dos', '
  * browser has none: a front desk's is everybody's. Of somebody who is spoken for, with the detail the speaker's, it is a
  * `ward`: it joins them to whoever was spoken for by the same name and detail, and never to the speaker.
  */
+/** Text of which every letter is a Latin one. */
+const LATIN = /^[\p{Script=Latin}\P{L}]*$/u
+
+/**
+ * The keys of somebody by name and date of birth, and none without a date or for a placeholder. `person` is of the whole name as
+ * it is written, and confirms. `perhaps` is of each name the first may stand for and each word of the last, and only shows two to
+ * somebody who can look: a Mary and a Marilyn, a Garcia Lopez and a Garcia Perez.
+ */
+export function personKeys(secret: string, first: string, last: string, dob: string | undefined): Identifier[] {
+  const [birth] = birthKeys(secret, dob)
+  if (!birth || nameKeys(secret, first, last, { dob }).length === 0) return []
+  const key = (kind: string, ...of: string[]): Identifier => `${kind}:${createHmac('sha256', secret).update(JSON.stringify([kind, birth, ...of])).digest('hex')}`
+  const whole = folded(first).split(/\s+/).join(' ')
+  const known = namesOf(first)
+  const lasts = folded(last).split(/\s+/).filter((word) => word.length > 1 && !PARTICLES.has(word))
+  // Folding is for Latin letters. A name it takes a letter from would be everybody's who is left with the same.
+  if (!LATIN.test(`${first}${last}`) || whole === '' || lasts.length === 0) return []
+  return [key('person', whole, lasts.join(' ')), ...[...new Set(lasts)].flatMap((surname) => (known.length > 0 ? known : [whole]).map((name) => key('perhaps', name, surname)))]
+}
+
 export function namedKeys(secret: string, contact: readonly Identifier[], first: string, last: string, kind: 'named' | 'ward' = 'named'): Identifier[] {
   if (typeof secret !== 'string' || secret.length < 32) throw malformed('A name key requires a secret of at least 32 characters')
   const known = namesOf(first)
   // An initial is no name.
-  const firsts = known.length > 0 ? known : folded(first).split(/\s+/).filter((word) => word.length > 1)
+  // Of a name no table has, all of it: a Baby Boy and a Baby Girl have a word in common.
+  const whole = folded(first).split(/\s+/).join(' ')
+  const firsts = known.length > 0 ? known : whole.length > 1 ? [whole] : []
   const lasts = [...new Set(folded(last).split(/\s+/).filter((word) => word.length > 1 && !PARTICLES.has(word)))]
   // A number is one whatever kind of line it was found to be.
   const details = new Set(contact.filter((each) => /^(phone|voip|email):/.test(each)).map((each) => each.replace(/^voip:/, 'phone:')))

@@ -6,7 +6,7 @@ import { birthKeys, email, hashPhone, identifier, ip, nameKeys, normalizePhone, 
 import { withStage } from './ladder.ts'
 import type { Ladder } from './ladder.ts'
 import { fakePhone, placeholderEmail, sharedMailbox } from './lookups.ts'
-import { givenKeys, namedKeys } from './names.ts'
+import { givenKeys, namedKeys, personKeys } from './names.ts'
 import type { Job, Outbox } from './outbox.ts'
 import { addressIdentifier } from './ports.ts'
 import type { AddressVerifier, LineTypeLookup } from './ports.ts'
@@ -213,6 +213,8 @@ export function createService(graph: Graph, options: ServiceOptions) {
       }
     }
     if (body.at !== undefined && !Number.isSafeInteger(body.at)) throw malformed('`at` must be an integer in epoch milliseconds')
+    // Where records have to be confirmed, a full name and a date of birth are somebody.
+    if (options.identifierSecret && typeof body.dob === 'string' && typeof body.name?.first === 'string' && typeof body.name?.last === 'string' && (await graph.policy()).rules.records) identifiers.push(...personKeys(options.identifierSecret, body.name.first, body.name.last, body.dob))
     // Kept only under a policy that keeps people apart by them. They say who somebody is not, and not who they are, so by themselves they find nobody.
     const apart = options.identifierSecret && (typeof body.dob === 'string' || typeof body.name?.first === 'string') ? ((await graph.policy()).rules.apart ?? []) : []
     const born = apart.length > 0 && typeof body.dob === 'string' ? birthKeys(options.identifierSecret!, body.dob) : []

@@ -118,5 +118,7 @@ export const SETTINGS: Record<string, Setting> = {
 SETTINGS.self4 = { rates: { ...base, form: 0.8, call: 0.2, spokenFor: 0.03, ownEmailTypo: 0.02, ownPhoneTypo: 0.01, third: { ...third(1), formTold: 0.8 } }, people: 2_000, days: 120, pool: 10 }
 /** People call, staff enter them, and asking whether it is for somebody else is required. */
 SETTINGS.staff4 = { rates: { ...base, form: 0.2, call: 0.8, spokenFor: 0.08, third: { ...third(1), staffTold: 0.8 } }, people: 2_000, days: 120, pool: 10 }
+/** The fifth run's: the same flows where a date of birth is always asked for, and nineteen of twenty give it. */
+for (const name of ['self', 'staff'] as const) SETTINGS[`${name}5`] = { ...SETTINGS[`${name}4`]!, rates: { ...SETTINGS[`${name}4`]!.rates, birthAsked: 0.95 } }
 SETTINGS.low3!.rates = { ...SETTINGS.low!.rates, third: third(0) }
 SETTINGS.high3!.rates = { ...SETTINGS.high!.rates, third: third(2) }
