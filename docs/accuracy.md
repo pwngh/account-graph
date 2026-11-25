@@ -329,6 +329,7 @@ Each look is a round, and what was changed for it is here. Rules were chosen on 
 | 3 | 20270321-40 | `d735591` | Kept 95.8% and 91.6%. One detail under one name is one person (`named`), taps by what is known of a number, who speaks, as its own agent wrote them (`5a51b0b`) |
 | 4 | 20270321-40 | `8d196f3` | base3 all held but `email + phone` links, 9 of 78 wrong; dirty3 mixed 1.62%; busy3 pool 10.5%. Placeholders and office mailboxes are nobody's, a pool number that was just another's needs a tap, separations are borders to credit, a muted fact is none, what two share stays with the first (`836d2f8`) |
 | 5 | 20270321-40 | `836d2f8` | base3, high3, dirty3 and their pool held but `email + phone`. A review found that `named` could join a mother and a child by a first letter and a surname; that key is gone (`d445ccf`), and high3 keeps 93.6% of its pairs, under its mark |
+| 6 | 20270341-60, on which nothing was chosen | `bc313e3` | base3 keeps 97.86% of its pairs of records and dirty3 97.82%, under 98%; every other mark of the new settings held, high3 at 95.26%. On the old settings, whose names are letters no table has, mixed records are 2.25% in base and 3.38% in high and stay bad |
 
 The fillers of dirty3 were then half ones no table has. `gaps3` and `busygaps3` are printed with no mark, though they were added after a look; `new pool` in base3 prints what it mixes and has no mark for it, as before.
 
