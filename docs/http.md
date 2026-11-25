@@ -150,6 +150,7 @@ A refusal is an answer, with status 200 and `"ok": false`. None is kept with the
 | `UNKNOWN_REFERENCE` | What it is about is not recorded | `of` |
 | `KIND_NOT_IN_POLICY` | An identifier has a kind the policy lacks | `kind` |
 | `KIND_RESERVED` | An identifier has a kind the graph writes itself | `kind` |
+| `NO_FACT_USED` | No fact of a profile says who somebody is | `notes` |
 | `CURRENCY_MISMATCH` | It names another currency | `expected` |
 | `PAID` | The conversion has payments, so it is worth what was paid | |
 | `FORGOTTEN` | The key, or what it is about, belongs to somebody who was deleted | |
@@ -167,7 +168,7 @@ The reserved kinds are `review`, `link`, `carry`, `opened`, `lease`, `dial`, `te
 
 Entries not begun when nine tenths of the time are out answer `NOT_ATTEMPTED`. The time is 30 seconds. Send those again.
 
-Some entries are found to be impossible only as they are written. Examples are a tag name with a capital letter, consent dated more than a day ahead, or facts that give no identifier. These end the request with a fault, and the entries before it stand.
+Every entry is checked before the first is written. One that cannot be ends the request with a fault, and nothing is written.
 
 If a fault ends a `record` part way, send the whole list again. The entries that stand answer `duplicate: true`.
 
@@ -184,7 +185,7 @@ The same key with other details answers `KEY_REUSED`. What is compared depends o
 | `call` | `direction`, `to`, and `from` where both reports name it | `at`, `duration`, `result`, `tags`. A second reporter often knows more. |
 | `text` | `direction`, `from`, `to` | `at`, `text`, `code`, `tags`. Twilio sends no time. |
 | `cost` | `at` and the rows, in any order | |
-| `decide` | `at`, `by`, `action`, and the pairs with their reasons or the fact. Pairs may be in any order, and so may the two of a pair. | `reason`, `seen` |
+| `decide` | `at`, `by`, `action`, and the pairs or the fact. Pairs may be in any order, and so may the two of a pair. | `reason`, the reason of a pair, `seen` |
 | `forget` | `at`, `by`, `platforms`, and the subjects in any order | `reason`, `seen` |
 | Every other entry | Every field | |
 

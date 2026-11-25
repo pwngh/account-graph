@@ -1185,7 +1185,7 @@ export interface PolicyOptions {
   "exports": {
     ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
     "./edge": { "types": "./dist/edge/index.d.ts", "default": "./dist/edge/index.js" },
-    "./collect": { "types": "./dist/edge/collect.d.ts", "default": "./dist/edge/collect.js" },
+    "./collect": { "types": "./dist/edge/browser.d.ts", "default": "./dist/edge/browser.js" },
     "./hardware": { "types": "./dist/edge/hardware.d.ts", "default": "./dist/edge/hardware.js" },
     "./testing": { "types": "./dist/testing/index.d.ts", "default": "./dist/testing/index.js" },
     "./package.json": "./package.json"
@@ -1397,6 +1397,8 @@ Built on `feat/six-calls`, from `main` at `34d21bd`. Where this section and sect
 | `LocalOptions` | — | Has `fetch`, `phones.country`, `tapSeconds` and `pool` | Tests and demos, and what the edge and the graph must agree on |
 | Connection pools | Two | One. Writes of a process wait in the process. | `main` had fixed R15 already (pull request 150) |
 | `account-graph export` | A command | `tools/export.ts`, as before | It reads tables, and is a tool of the repository |
+| A profile with no usable fact | A fault | `NO_FACT_USED`, with the notes | Found while the docs were written: an address with no address service looked recorded |
+| `at` of a decision or deletion | When it was decided | Compared, and kept with the key. The record and `STALE` have the server's time. | The record is sealed in the order it is written |
 | Receipts, pruned | Left to you | Kept a year by `account-graph prune`. Tombstones stay. | The proposal in 6.8 |
 
 ### 7.2 What was verified
