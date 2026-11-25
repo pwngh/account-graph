@@ -2,6 +2,7 @@ import { createHash, createHmac } from 'node:crypto'
 import type { DecideRequest, ForgetRequest, RecordEntry } from '../contract/api.ts'
 import { FAULT_CODES, fault } from '../contract/fault.ts'
 import { canonical } from '../contract/json.ts'
+import { numberOrSelf } from './calls.ts'
 import { normalizeEmail } from './identifiers.ts'
 
 /** What is written of a key that was used. Neither the key nor what came with it is in here: each is a hash only the secret can make. */
@@ -21,10 +22,11 @@ export interface Receipt {
   forgotten?: number
 }
 
-const VERSION = 1
+/** The country is in it: with another, the same digits are another number, and the two are not compared. */
+const versionOf = (country: string) => 10_000 + Number(country)
 const secretId = (secret: string) => createHmac('sha256', secret).update('receipt secret id').digest('hex').slice(0, 12)
 
-const phone = (value: string) => (value.trim().startsWith('+') ? '+' : '') + value.replace(/\D/g, '')
+const phoneOf = (country: string) => (value: string) => numberOrSelf(value, country)
 const email = (value: string) => {
   try {
     return normalizeEmail(value)
@@ -33,20 +35,21 @@ const email = (value: string) => {
   }
 }
 const sorted = <T>(list: readonly T[]) => [...list].map(canonical).sort()
-const facts = (value: any) => ({ ...value, ...(value.email && { email: email(value.email) }), ...(value.phone && { phone: phone(value.phone) }), ...(value.identifiers && { identifiers: [...new Set(value.identifiers)].sort() }) })
+const facts = (value: any, phone: (value: string) => string) => ({ ...value, ...(value.email && { email: email(value.email) }), ...(value.phone && { phone: phone(value.phone) }), ...(value.identifiers && { identifiers: [...new Set(value.identifiers)].sort() }) })
 const pair = ({ a, b, reason }: any) => (a < b ? { a, b, reason } : { a: b, b: a, reason })
 
 /** The fields of an entry that make it the same one, each written one way. What a second reporter may know better, or a provider makes up on each try, is not among them. */
-export function compared(entry: RecordEntry | ({ type: 'decide' } & DecideRequest) | ({ type: 'forget' } & ForgetRequest)): Record<string, unknown> {
+export function compared(entry: RecordEntry | ({ type: 'decide' } & DecideRequest) | ({ type: 'forget' } & ForgetRequest), country = '1'): Record<string, unknown> {
+  const phone = phoneOf(country)
   const { type, key: _, ...fields } = entry as any
   if (type === 'call') return { direction: fields.direction, to: phone(fields.to), ...(fields.from && { from: phone(fields.from) }) }
   if (type === 'text') return { direction: fields.direction, from: phone(fields.from), to: phone(fields.to) }
   if (type === 'cost') return { at: fields.at, rows: sorted(fields.rows.map((row: any) => ({ ...row, currency: row.currency.toUpperCase() }))) }
-  if (type === 'decide') return { at: fields.at, by: fields.by, action: fields.action, ...(fields.pairs ? { pairs: sorted(fields.pairs.map(pair)) } : { fact: facts(fields.fact) }) }
+  if (type === 'decide') return { at: fields.at, by: fields.by, action: fields.action, ...(fields.pairs ? { pairs: sorted(fields.pairs.map(pair)) } : { fact: facts(fields.fact, phone) }) }
   if (type === 'forget') return { at: fields.at, by: fields.by, subjects: [...new Set(fields.subjects)].sort(), platforms: fields.platforms }
   return {
     ...fields,
-    ...(fields.facts && { facts: facts(fields.facts) }),
+    ...(fields.facts && { facts: facts(fields.facts, phone) }),
     ...(fields.email && { email: email(fields.email) }),
     ...(type === 'conversion' && fields.phone && { phone: phone(fields.phone) }),
     ...(fields.currency && { currency: fields.currency.toUpperCase() }),
@@ -64,12 +67,13 @@ export interface Receipts {
   covers(ids: readonly string[]): void
 }
 
-export function createReceipts(secrets: readonly string[]): Receipts {
+export function createReceipts(secrets: readonly string[], country = '1'): Receipts {
+  const VERSION = versionOf(country)
   if (secrets.length === 0 || secrets.some((secret) => typeof secret !== 'string' || secret.length < 32)) throw fault(FAULT_CODES.CONFIG.INVALID, '`receiptSecrets` requires at least one secret of 32 characters or more')
   const known = secrets.map((secret) => ({ id: secretId(secret), secret }))
   const macBy = (secret: string, type: string, key: string) => createHmac('sha256', secret).update(`${type}\0${key}`).digest('hex')
   const digest = (secret: string, entry: Parameters<typeof compared>[0]) =>
-    Object.fromEntries(Object.entries(compared(entry)).filter(([, value]) => value !== undefined).map(([name, value]) => [name, createHmac('sha256', secret).update(`${name}\0${canonical(value)}`).digest('base64url').slice(0, 22)]))
+    Object.fromEntries(Object.entries(compared(entry, country)).filter(([, value]) => value !== undefined).map(([name, value]) => [name, createHmac('sha256', secret).update(`${name}\0${canonical(value)}`).digest('base64url').slice(0, 22)]))
   const mac: Receipts['mac'] = (type, key) => ({ mac: macBy(known[0]!.secret, type, key), secretId: known[0]!.id, all: known.map(({ secret }) => macBy(secret, type, key)) })
   return {
     mac,

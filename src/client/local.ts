@@ -80,6 +80,7 @@ export function localProblems(options: LocalOptions): string[] {
       }
     }
   }
+  if (options.phones?.country !== undefined && !/^[1-9]\d{0,2}$/.test(options.phones.country)) wrong.push('phones.country must be a country code, such as 1')
   if (options.phones?.pool && !(options.phones.pool.minutes >= 1)) wrong.push('phones.pool.minutes must be at least 1')
   if (options.phones?.tapSeconds !== undefined && !(options.phones.tapSeconds >= 0 && options.phones.tapSeconds <= 3600)) wrong.push('phones.tapSeconds must be from 0 to 3600')
   if (options.webhook && !(options.webhook.url && options.webhook.secret)) wrong.push('`webhook` requires its url and its secret')
@@ -132,7 +133,7 @@ export function localGraph(options: LocalOptions, keeping: Keeping = {}): Accoun
 
   async function open(): Promise<Internals> {
     const store = await openStore()
-    const receipts = createReceipts(options.databaseUrl === undefined ? [randomBytes(32).toString('hex')] : options.receiptSecrets)
+    const receipts = createReceipts(options.databaseUrl === undefined ? [randomBytes(32).toString('hex')] : options.receiptSecrets, options.phones?.country)
     receipts.covers(options.databaseUrl === undefined ? [] : await store.read((tx) => tx.receiptSecrets()))
     const policy = await settle(store)
     const hours = options.openHours && createHours(options.openHours, options.timeZone)
