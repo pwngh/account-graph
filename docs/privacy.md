@@ -49,7 +49,6 @@ Data goes to these recipients only.
 `forget` keeps:
 
 - Audit log entries that name the subject, including the deletion itself, because entries are hashed in a chain.
-- Cluster changes of other subjects that name it as their cluster.
 - A muted identifier.
 - Calls and texts of another subject that were linked to it, with the link removed.
 - The fact that a pool number was held at that time, without the holder.
