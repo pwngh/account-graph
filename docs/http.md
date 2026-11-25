@@ -96,7 +96,7 @@ Each entry has `type`, `key` and `at`. A field with `?` may be left out.
 | `payment` | `conversion`, `direction`, `amount`, `currency?` | `value`, `null` until there is a conversion, and `deliveries` |
 | `call` | `direction`, `from?`, `to`, `duration?`, `result?`, `tags?` | `subject`, `state`, `counted`, `flags`, `visitor?`. See [calls](calls.md). |
 | `call_update` | `call`, `change` | `state`, `counted`, `followUp` |
-| `text` | `direction`, `from`, `to`, `text?`, `code?`, `tags?` | `subject`, `flags`, `counted`, `visitor?`. See [texts](texts.md). |
+| `text` | `direction`, `from`, `to`, `text?`, `code?`, `tags?` | `subject`, `flags`, `counted`, `visitor?`. See [texts](calls.md#text-messages). |
 | `consent` | `subject`, `consent: { adUserData, adPersonalization }`, `source?` | The answer that applies |
 | `link` | `subject`, `url`, `expires`, `purpose?` | `url`. See [links](links.md). |
 | `transfer` | `from`, `to`, `amount`, `asset?` | `relation`, `score` |
@@ -317,7 +317,7 @@ A `find` by id matches the start of it and reads the subject table. A `journey` 
 
 ## report
 
-Reads figures. Each kind is described with [the report](report.md), [calls](calls.md) and [texts](texts.md).
+Reads figures. Each kind is described with [the report](report.md) and [calls and texts](calls.md).
 
 ```http
 POST /v1/report

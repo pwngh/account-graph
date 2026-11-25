@@ -549,7 +549,7 @@ A partially set group stops the server at startup, with a message naming the mis
 | `SERVER_RANGES_FILE` | none | A file with the address ranges of data centers, written as `192.0.2.0/24` or `2001:db8::/32` in any text: what [AWS](https://ip-ranges.amazonaws.com/ip-ranges.json) and [Google Cloud](https://www.gstatic.com/ipranges/cloud.json) publish, one after the other. An address in them is recorded and is no evidence. Read when the server starts, so fetch it again now and then. |
 | `MAXMIND_SERVICE`, `MAXMIND_HOST` | `insights`, `geoip.maxmind.com` | MaxMind service and host. |
 | `TWILIO_AUTH_TOKEN`, `TWILIO_WEBHOOK_URL` | none | Accepts Twilio's call reports at `/calls/twilio`. Set both. |
-| `TEXT_CODES` | off | `true` gives each browser a code for your [text links](texts.md). |
+| `TEXT_CODES` | off | `true` gives each browser a code for your [text links](calls.md#text-messages). |
 | `TWILIO_TEXT_WEBHOOK_URL` | none | With `TWILIO_AUTH_TOKEN`: accepts Twilio's incoming texts at `/texts/twilio`. |
 | `TWILIO_ACCOUNT_SID` | none | With `TWILIO_AUTH_TOKEN`: looks up the line type of phones in a `profile`, a `call` or a `text`. |
 | `SMARTY_AUTH_ID`, `SMARTY_AUTH_TOKEN` | none | Checks postal addresses in a `profile`. Set both. |
