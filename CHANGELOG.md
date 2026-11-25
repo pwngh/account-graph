@@ -74,6 +74,7 @@
 - Requests with invalid UTF-8, NUL characters or more than 32 levels of nesting are refused.
 - `runWorkers` of `./testing` runs every worker once. `npm run firm` and `examples/six-calls.ts` run in memory.
 - `record` `profile` takes `speaker`, whoever speaks for the subject. Their browser and number are related to the subject and never joined to them, and what brought them earns the credit.
+- `data-ag-for-other` marks the control of a form that says it is about somebody else. The script tag then sends `ag_speaker_device` in place of `ag_device`, and `accountGraph.fields(form)` answers the same way.
 - A matching rule takes `relates`, for a kind that says two subjects are two people. Clusters need a `rebuild`, because the default policy has the new kind `behalf`.
 - A tap two callers could have made ties neither. On a number others are using, a tap has to be within thirty seconds of its call. A caller who is one visitor's takes another's pool number only while it is shown.
 - A call to a pool number that was somebody else's less than `POOL_GRACE_MINUTES` before is its holder's only with a tap. One by somebody who dialed it when it was another's is nobody's by it. A visitor who comes back gets the number they had.

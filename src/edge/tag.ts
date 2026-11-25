@@ -48,7 +48,7 @@ const RUN = `
   collect(options).catch(() => undefined)
   globalThis.accountGraph = { event: (name, detail) => event(options, name, detail).catch(() => undefined) }
   watch(options)
-  globalThis.accountGraph.fields = () => fields(options.consent)
+  globalThis.accountGraph.fields = (form) => fields(options.consent, form)
   fill({ all: self.searchParams.get('forms') === 'all', consent: options.consent })
   if (self.searchParams.get('pool')) pool(options)
   if (self.searchParams.get('text')) texts(options)

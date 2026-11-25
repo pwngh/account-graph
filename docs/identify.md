@@ -73,7 +73,7 @@ A number identified as VoIP also stops counting as a `phone` wherever it was sto
 
 ## Speaking for somebody else
 
-A mother calls about her son. Without being told, the server takes her number and her browser for his. Send what is hers as `speaker`, from a box on the form or a mark your staff make:
+A mother calls about her son. Without being told, the server takes her number and her browser for his. Send what is hers as `speaker`, from [a box on the form](#on-a-form) or a mark your staff make:
 
 ```json
 { "type": "profile", "key": "intake-9", "at": 1795460000000, "subject": "contact:son",
@@ -91,6 +91,39 @@ A mother calls about her son. Without being told, the server takes her number an
 
 What brought the speaker's browser earns the credit for the subject. It is not passed on to anybody else they speak for, or back. The two are never offered for review as one person, and a number written on both later does not join them. A reviewer who joins them has the last word. To take it back, mute the `behalf:` mark of the browser and that of the caller on the reviewer screen: sent again, they stay muted. The subject is a record of yours, not a browser or a caller.
 
+### On a form
+
+Mark the box that says so with `data-ag-for-other`. When it is ticked, the script tag sends the device as `ag_speaker_device` in place of `ag_device`, so a backend that copies `ag_device` does not write the speaker's browser on the client.
+
+```html
+<form action="/inquiry" method="post" data-ag-fields>
+  <label><input type="checkbox" name="other" value="yes" data-ag-for-other> This is about somebody else</label>
+```
+
+| Marked control | Says somebody else when |
+| --- | --- |
+| A checkbox | It is ticked |
+| A radio button | It is chosen, and its value is `other` |
+| A select, or any other field | Its value is `other` |
+
+Send the field back as `speaker.device`, whatever number and email are the speaker's own beside it, and the client's own details as `facts`:
+
+```json
+{ "type": "profile", "key": "form-31", "at": 1795460000000, "subject": "contact:son",
+  "facts": { "name": { "first": "Dario", "last": "Ferrer" }, "dob": "2008-07-08" },
+  "speaker": { "device": "9f3c1c1e-0000-4000-8000-000000000001", "phone": "(555) 010-0047" } }
+```
+
+> **The cookie is the speaker's too.** A form that posts to your own backend brings the `ag_device` cookie whatever was ticked. When it is about somebody else, the cookie belongs in `speaker.device`. Go by the box itself, which also works without the script.
+
+Only a marked control counts. The answer is read as the form is submitted, so it can be changed and the form sent again.
+
+### At intake
+
+Make it a required question with no answer chosen beforehand, on the form and in the script staff read: "Is this for you, or for somebody else?" Two radio buttons can be `required`. A box cannot, and one left alone says the client wrote. Then ask whose the number and the email are.
+
+On a call, the caller's number is the speaker's `phone`, and the client's own number, if they gave one, goes in `facts`. Record the call itself as usual.
+
 ## Hosted forms
 
 A form that posts to your own backend arrives with the `ag_device` cookie. For a hosted form, CRM or booking tool, mark the form and the script tag adds the device id on submit.
@@ -107,9 +140,10 @@ the other system ──▶ your backend, later ──▶ record a profile with f
 | Field | Holds |
 | --- | --- |
 | `ag_device` | The visitor's device id. Send it back as `facts.device`. |
+| `ag_speaker_device` | The same id, in place of `ag_device`, where the form is [about somebody else](#on-a-form). Send it back as `speaker.device`. |
 | `ag_landing` | The address this browser session began on, with its click id and campaign. |
 
-`collect.js?forms=all` fills every form that posts. A script that posts a form itself can read the same two values from `accountGraph.fields()`.
+`collect.js?forms=all` fills every form that posts. A script that posts a form itself can read the same values from `accountGraph.fields()`, or from `accountGraph.fields(form)` where the form may be about somebody else.
 
 | Form | Filled |
 | --- | --- |
@@ -117,8 +151,9 @@ the other system ──▶ your backend, later ──▶ record a profile with f
 | Unmarked, with `method="post"`, under `forms=all` | Both fields. |
 | Unmarked, sending its fields in the address, under `forms=all` | None, because an address is seen by more than its receiver. |
 | Visitor opted out of advertising | `ag_device` only, because the landing page holds the ad click. |
+| [About somebody else](#on-a-form) | The same, with `ag_speaker_device` in place of `ag_device`. Never both. |
 
-When your backend can read the `ag_device` cookie, prefer it to the field. With `COOKIE=true` the server's cookie outlives the page's stored id. The id a page reports is kept on the same visitor, so either one finds them.
+When your backend can read the `ag_device` cookie, prefer it to the field, and use it as the field would be used: for whoever wrote. With `COOKIE=true` the server's cookie outlives the page's stored id. The id a page reports is kept on the same visitor, so either one finds them.
 
 ## Chat
 

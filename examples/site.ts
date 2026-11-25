@@ -43,7 +43,8 @@ createServer(async (request, response) => {
   try {
     if (url.pathname === '/') {
       return html(page(host, 'Example shop', `<p>Landing page. The script reports the <code>gclid</code> in the address to the server.</p>
-        <form method="post" action="/signup" data-ag-fields><input name="email" type="email" placeholder="you@example.com" required> <button>Sign up</button></form>
+        <form method="post" action="/signup" data-ag-fields><input name="email" type="email" placeholder="you@example.com" required> <button>Sign up</button>
+        <label><input type="checkbox" name="other" data-ag-for-other> This is about somebody else, and the email is theirs</label></form>
         <p>The script also reports taps on <a href="tel:+15551230001">555-123-0001</a> and clicks on
         <button type="button" data-ag-event="brochure">Request a brochure</button>. Set <code>EVENTS=brochure,phone_click</code> on the server to record them.</p>
         <p><a href="${otherSite(host)}/">Second site</a>: the same site under another host name. Following the link keeps the visitor.
@@ -53,13 +54,15 @@ createServer(async (request, response) => {
       const form = new URLSearchParams(await new Response(request as unknown as ReadableStream).text())
       // The cookie names the visitor. Where there is none, the script tag added the same id to the form as it was
       // submitted, which is how a form posted to another system, one that never sees this site's cookie, carries it.
-      const filled = device ?? form.get('ag_device')
+      // Ticked as about somebody else, the field has another name, and the cookie is that browser's too: it is whoever wrote, and not the account.
+      const other = form.has('other')
+      const filled = device ?? form.get(other ? 'ag_speaker_device' : 'ag_device')
       const subject = `account:${++accounts}`
       const at = Date.now()
       // Hand the server the facts as they are; it hashes the email and ties the account to the browser.
       // Count the sign-up too, so the report can set it beside what the campaign cost. The keys are the account's own, so a retry adds nothing.
       const { results } = await graph.record({ entries: [
-        { type: 'profile', key: subject, at, subject, event: 'signup', facts: { email: form.get('email') ?? '', ...(filled && { device: filled }) } },
+        { type: 'profile', key: subject, at, subject, event: 'signup', facts: { email: form.get('email') ?? '', ...(filled && !other && { device: filled }) }, ...(filled && other && { speaker: { device: filled } }) },
         { type: 'conversion', key: subject, at, subject, stage: 'signup', value: 25, currency: 'USD' },
       ] })
       for (const result of results) if (!result.ok) throw new Error(`${result.type} was refused: ${result.reason}`)

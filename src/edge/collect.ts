@@ -353,20 +353,31 @@ export function carry(options: CollectOptions): () => void {
 }
 
 
+/** Every control a form sends, wherever on the page it is. */
+const controls = (form: HTMLFormElement) => Array.from(form.elements ?? []) as HTMLInputElement[]
+/** Whether a form's answer is that it is about somebody else: a marked box that is ticked, or a marked choice whose value is `other`. */
+const aboutOther = (form: HTMLFormElement): boolean =>
+  controls(form).some((each) => each.hasAttribute('data-ag-for-other') && (each.type === 'checkbox' ? each.checked : each.value === 'other' && (each.type !== 'radio' || each.checked)))
+
 /**
  * What a form should carry so whatever receives it can say which visitor
  * filled it in: the device id, and the page this browser session began on.
  * The landing page holds the ad click, so it is left out for a visitor who
- * opted out of advertising.
+ * opted out of advertising. With a form whose answer is that it is about
+ * somebody else, the device goes by another name: it is not theirs, and
+ * whoever copies `ag_device` must not write it on them.
  */
-export function fields(consent?: CollectOptions['consent']): { ag_device: string; ag_landing?: string } {
+export function fields(consent?: CollectOptions['consent']): { ag_device: string; ag_landing?: string }
+export function fields(consent: CollectOptions['consent'], form: HTMLFormElement | undefined): { ag_device?: string; ag_speaker_device?: string; ag_landing?: string }
+export function fields(consent?: CollectOptions['consent'], form?: HTMLFormElement): { ag_device?: string; ag_speaker_device?: string; ag_landing?: string } {
+  const device = form && aboutOther(form) ? { ag_speaker_device: deviceId() } : { ag_device: deviceId() }
   const optedOut = (navigator as { globalPrivacyControl?: boolean }).globalPrivacyControl === true || consent?.adUserData === false
-  if (optedOut) return { ag_device: deviceId() }
+  if (optedOut) return device
   let landing: string | null = null
   try {
     landing = sessionStorage.getItem('ag_landing')
   } catch {}
-  return { ag_device: deviceId(), ag_landing: landing ?? location.href }
+  return { ...device, ag_landing: landing ?? location.href }
 }
 
 /**
@@ -378,15 +389,27 @@ export function fields(consent?: CollectOptions['consent']): { ag_device: string
  * a CRM. Returns a function that stops.
  */
 export function fill(options: { all?: boolean; consent?: CollectOptions['consent'] } = {}): () => void {
+  const off = new WeakSet<HTMLInputElement>()
   const submitted = (happened: Event) => {
     const form = (happened.target as Element | null)?.closest?.('form')
     if (!form) return
     const posts = (form.getAttribute('method') ?? 'get').toLowerCase() === 'post'
     if (!(form.hasAttribute('data-ag-fields') || (options.all && posts))) return
-    const filled = fields(options.consent)
+    const filled = fields(options.consent, form)
     // A form filled before the visitor opted out gives up the landing page it was holding.
     const held = form.querySelector('input[name="ag_landing"]') as HTMLInputElement | null
     if (held && filled.ag_landing === undefined) held.value = ''
+    // Nor does it send the device by the name it had before the answer changed. Disabled, a field is not sent at all, and one the page wrote is still there.
+    for (const each of controls(form)) {
+      if (each.name !== 'ag_device' && each.name !== 'ag_speaker_device') continue
+      if (each.name in filled) {
+        if (off.delete(each)) each.disabled = false
+      } else if (!each.disabled) {
+        off.add(each)
+        each.value = ''
+        each.disabled = true
+      }
+    }
     for (const [name, value] of Object.entries(filled)) {
       let input = form.querySelector(`input[name="${name}"]`) as HTMLInputElement | null
       if (!input) {

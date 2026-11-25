@@ -19,7 +19,7 @@ npm run firm
 
 Docker downloads the database image once. After that the demo runs offline without keys, and includes its own ad platform and alert receiver. Every name, number, amount and address is fictional.
 
-The site is live. Open it with `?gclid=you&utm_id=30333` and its number becomes one from the pool, held for you while the page is open. The form and the text link work too: send the form and the contact it makes is on the Board. What was written and the consent to texts are not recorded here: the firm's own system keeps both.
+The site is live. Open it with `?gclid=you&utm_id=30333` and its number becomes one from the pool, held for you while the page is open. The form and the text link work too: send the form and the contact it makes is on the Board. Ticked as about somebody else, your browser and number are recorded as the [speaker's](identify.md#speaking-for-somebody-else). What was written and the consent to texts are not recorded here: the firm's own system keeps both.
 
 ## Setup
 
