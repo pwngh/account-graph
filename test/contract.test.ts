@@ -624,8 +624,8 @@ test('options that cannot be are refused at once, and each said', async () => {
     }
   }
   assert.deepEqual([{}, { url: 'nope', token: 't' }, { url: 'ftp://x', token: 't' }, { url: 'https://x', token: '' }, { memory: true, url: 'https://x' }, { databaseUrl: 'x', memory: true }].map((each) => problems(each).length), [1, 1, 1, 1, 1, 1])
-  const wrong = problems({ databaseUrl: 'postgres://x', receiptSecrets: ['short'], schema: 'A', identifierSecret: 'x', timeZone: 'Mars/One', policy: { same: 9, kinds: { phnoe: { weight: 1 } } }, openHours: { mon: ['nine'] }, stages: { a: { value: 'x' } }, phones: { exclude: ['x'], tapSeconds: 9999 }, webhook: { url: 'https://x' } })
-  assert.equal(wrong.length >= 11, true, wrong.join('\n'))
+  const wrong = problems({ databaseUrl: 'postgres://x', receiptSecrets: ['short'], schema: 'A', identifierSecret: 'x', timeZone: 'Mars/One', policy: { same: 9, kinds: { phnoe: { weight: 1 } } }, openHours: { mon: ['nine'] }, targets: { answered: 90 }, stages: { a: { value: 'x' } }, phones: { exclude: ['x'], tapSeconds: 9999 }, webhook: { url: 'https://x' } })
+  assert.equal(wrong.length >= 12, true, wrong.join('\n'))
   assert.throws(() => remoteOnly({ memory: true }), (error) => hasCode(error, FAULT_CODES.CONFIG.UNSUPPORTED))
   const remote = accountGraph({ url: 'https://g.example', token: 't' })
   assert.throws(() => createEdge(remote, { token: 't' }), (error) => hasCode(error, FAULT_CODES.CONFIG.UNSUPPORTED))

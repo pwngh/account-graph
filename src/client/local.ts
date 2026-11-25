@@ -18,6 +18,7 @@ import { createSix } from '../core/six.ts'
 import type { Asked } from '../core/six.ts'
 import type { Store } from '../core/store.ts'
 import { checkTags } from '../core/tags.ts'
+import { targetProblems } from '../core/targets.ts'
 import { createPostgresStore } from '../store/postgres.ts'
 import type { Pool, PostgresStore } from '../store/postgres.ts'
 import { createGate } from './closing.ts'
@@ -63,6 +64,7 @@ export function localProblems(options: LocalOptions): string[] {
     for (const problem of policyProblems(JSON.parse(JSON.stringify(policyOf(options.policy))))) wrong.push(`policy: ${problem}`)
   }
   if (options.openHours) for (const problem of hoursProblems(options.openHours)) wrong.push(`openHours: ${problem}`)
+  if (options.targets !== undefined) for (const problem of targetProblems(options.targets)) wrong.push(`targets: ${problem}`)
   if (options.stages) for (const problem of ladderProblems(options.stages, Object.entries(options.ads ?? {}).filter(([, value]) => typeof value === 'object').map(([name]) => name))) wrong.push(`stages: ${problem}`)
   for (const [number, channel] of Object.entries(options.phones?.numbers ?? {})) {
     try {

@@ -6,7 +6,7 @@ import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { birthKeys, components, conversionEvent, createAlerter, createGraph, createHours, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, hoursProblems, ingestRequest, ip, knownLink, ladderProblems, measure, meta, metaEvent, nameKeys, normalizeEmail, partition, normalizePhone, phoneOfType, codeIn, policyFrom, policyHash, policyProblems, plainPolicy, readToken, scorePairs, signToken, sourceOf, textCode, withStage } from '../tools/internals.ts'
+import { birthKeys, components, conversionEvent, createAlerter, createGraph, createHours, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, hoursProblems, targetProblems, ingestRequest, ip, knownLink, ladderProblems, measure, meta, metaEvent, nameKeys, normalizeEmail, partition, normalizePhone, phoneOfType, codeIn, policyFrom, policyHash, policyProblems, plainPolicy, readToken, scorePairs, signToken, sourceOf, textCode, withStage } from '../tools/internals.ts'
 import { summarizeCalls } from '../src/core/callreport.ts'
 import { followed } from '../src/core/followed.ts'
 import type { Caller, Followed } from '../src/core/followed.ts'
@@ -1102,6 +1102,20 @@ test('opening hours count time while open, across nights, holidays, clock change
   assert.equal(configFrom(env).openHours, undefined)
   assert.deepEqual(configFrom({ ...env, OPEN_HOURS: '{"mon":["09:00-24:00"]}' }).openHours, { mon: ['09:00-24:00'] })
   assert.throws(() => configFrom({ ...env, OPEN_HOURS: '{"mon":["9"]}' }), /OPEN_HOURS: "mon" has "9"/)
+})
+
+test('targets are checked at the start, and none are set by default', () => {
+  assert.deepEqual(targetProblems({}), [])
+  assert.deepEqual(targetProblems({ answered: 0.9, returned: 1, callbackHours: 2, costPerOutcome: 40, roas: 3 }), [])
+  for (const [given, problem] of [
+    [[], 'must be an object, such as {"answered":0.9}'], [{ answer: 0.9 }, '"answer" is not one of answered, returned, callbackHours, costPerOutcome, roas'],
+    [{ answered: 90 }, '"answered" must be a share from 0 to 1, such as 0.9'], [{ returned: '0.9' }, '"returned" must be a number above 0'], [{ roas: 0 }, '"roas" must be a number above 0'],
+  ] as const) assert.deepEqual(targetProblems(given), [problem])
+  const env = { DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y' }
+  assert.equal(configFrom(env).targets, undefined)
+  assert.deepEqual(configFrom({ ...env, TARGETS: '{"answered":0.9}' }).targets, { answered: 0.9 })
+  assert.throws(() => configFrom({ ...env, TARGETS: '{"answered":90}' }), /TARGETS: "answered" must be a share/)
+  assert.throws(() => configFrom({ ...env, TARGETS: '90' }), /TARGETS must be a JSON object/)
 })
 
 test('a code is found in a text only where the site wrote it', () => {

@@ -457,6 +457,24 @@ A day left out is closed. A span such as `18:00-02:00` runs past midnight and be
 
 The call summary reports the calls that began while you were closed, and their outcomes, under `closed`.
 
+### Targets
+
+A target is a number you set yourself to meet. The reviewer screen shows it beside what was reached, as set by you, and says whether it is met. It changes no count, color or alert. Without `TARGETS` none is shown.
+
+```sh
+TARGETS='{"answered":0.9,"returned":0.8,"callbackHours":2}'
+```
+
+| Target | Meaning | Shown beside |
+| --- | --- | --- |
+| `answered` | The share of inbound calls a person should answer, from 0 to 1 | Answered, on Calls |
+| `returned` | The share of missed callers who should be reached, from 0 to 1 | Returned, on Calls |
+| `callbackHours` | Hours by the clock a missed caller may wait | Awaiting callback, on Calls |
+| `costPerOutcome` | What an outcome may cost, in the currency of your costs | Not shown yet |
+| `roas` | What should come back of each unit spent | Not shown yet |
+
+Each is optional, and a name or value that is not one of these stops the server at startup. The library takes the same object as `targets`.
+
 ### Jobs
 
 The ordinary server starts workers. The outbox can deliver older pending jobs on startup. Use a fresh database and empty stage actions for an offline run. A delay postpones new jobs and `retry` can requeue old ones. For a single credentialed probe, the named checker runs without starting a graph or a worker.
@@ -514,6 +532,7 @@ A partially set group stops the server at startup, with a message naming the mis
 | `POOL_GRACE_MINUTES` | `120` | Minutes after that in which a call still counts as theirs, if the number has not been reassigned. |
 | `POOL_REQUIRE_TAP_AFTER_REASSIGNMENT` | `false` | With `true`, a caller with no tie to a visitor needs a tap or a code once different visitors have held the number. |
 | `OPEN_HOURS` | none | Opening hours, as JSON. See [opening hours](#opening-hours). |
+| `TARGETS` | none | The numbers you set yourself to meet, as JSON. See [targets](#targets). |
 
 ### Outbox, webhook and alerts
 

@@ -151,6 +151,7 @@
 ### Reviewer screen
 
 - `undecided` pages through ranked pairs from recent sightings and can sweep every subject, including those with pruned sightings.
+- `TARGETS` and the library option `targets` hold the numbers a firm sets itself to meet. Both are off by default, are checked at the start, and are shown on the reviewer screen as set by you. See [targets](docs/operations.md#targets).
 - `Accounts` flags groups where too many conflicting call histories leave some matches unresolved.
 - `Matches` checks the speaker marks of both clusters before offering a pair. An active staff merge broken by a separation remains visible in Links.
 - Accounts shows linked IDs as an interactive graph and as a table with evidence.
