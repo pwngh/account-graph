@@ -677,7 +677,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       // In one group in spite of a fact, decisions hold them there, and the fact is overruled.
       const between = homes.get(a) && homes.get(a)!.cluster === homes.get(b)?.cluster ? undefined : conflict(policy, facts.get(a), facts.get(b))
       // However strong what they share is, they are two people, and are shown as related.
-      const possibly = !between && (level === 'same' || reasons.some((reason) => reason.identifier.startsWith('person:'))) && unsure(a, b, homes)
+      const possibly = !between && (level === 'same' || reasons.some((reason) => /^(person|perhaps):/.test(reason.identifier))) && unsure(a, b, homes)
       const link = { score, level: between || possibly ? ('related' as const) : level, reasons, ...(between && { conflict: between }), ...(possibly && { unconfirmed: true as const }) }
       add(a, { subject: b, ...link })
       add(b, { subject: a, ...link })
@@ -721,7 +721,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
   const now = options.now ?? Date.now
 
-  type Reached = Map<Subject, { confidence: number; via: Subject[]; joined?: true; speaks?: true; from?: Subject; earns?: true }>
+  type Reached = Map<Subject, { confidence: number; via: Subject[]; joined?: true; speaks?: true; from?: Subject; earns?: true; anothers?: true }>
 
   /** Every subject within `hops` links of any of those given, with the strength of the best chain to each. With `only`, through those subjects and to them. */
   async function reach(tx: Tx, from: readonly Subject[], hops: number, only?: ReadonlySet<Subject>, last?: Map<Subject, Link>, crediting = false): Promise<Reached> {
@@ -921,6 +921,12 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         else if (found.speaks && homes.has(clusters.get(each)!)) found.earns = true
       }
     }
+    if (policy.credit === undefined || policy.credit >= policy.same) return searches
+    // Under the bar that joins, a browser or a caller that is one with a record is that record's, whoever else is near it.
+    const weak = unique([...searches].flatMap(([subject, reached]) => [...reached].filter(([each, { confidence, joined, earns }]) => confidence < policy.same && !joined && !earns && each !== subject).flatMap(([each]) => clusters.get(each) ?? [])))
+    const ofRecords = new Set<Subject>()
+    for (const cluster of weak) if ((await tx.clusterOf(cluster)).some(names)) ofRecords.add(cluster)
+    for (const reached of searches.values()) for (const [each, found] of reached) if (!found.joined && (names(each) || ofRecords.has(clusters.get(each)!))) found.anothers = true
     return searches
   }
 
@@ -958,7 +964,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
    * Of touches newest first, the one that earns the credit: the newest that is the person's. Where that is a phone line, an
    * ad click or a campaign that brought them before it comes first, because the line is only where they called.
    */
-  const own = (touches: readonly AttributedTouch[]) => touches.filter((touch) => touch.confidence >= (byLine(touch) ? policy.same : (policy.credit ?? policy.same)) || ((touch.joined || touch.speaker) && !byLine(touch)))
+  const own = (touches: readonly AttributedTouch[]) => touches.filter((touch) => touch.confidence >= (byLine(touch) || touch.anothers ? policy.same : (policy.credit ?? policy.same)) || ((touch.joined || touch.speaker) && !byLine(touch)))
   const earning = (touches: readonly AttributedTouch[]): AttributedTouch | undefined => {
     const theirs = own(touches)
     return (theirs[0] && byLine(theirs[0]) && theirs.find(campaigned)) || theirs[0]
@@ -967,8 +973,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
   function credited(subject: Subject, at: number, reached: Reached, found: readonly Touch[]): Attribution {
     const touches: AttributedTouch[] = found
       .map((touch) => {
-        const { confidence, via, joined = false, earns } = reached.get(touch.subject)!
-        return { ...touch, confidence, via, joined, ...(earns && { speaker: true as const }) }
+        const { confidence, via, joined = false, earns, anothers } = reached.get(touch.subject)!
+        return { ...touch, confidence, via, joined, ...(earns && { speaker: true as const }), ...(anothers && { anothers }) }
       })
       .sort((x, y) => y.at - x.at || y.confidence - x.confidence || (x.subject < y.subject ? -1 : 1))
     const best = earning(touches)
@@ -1221,7 +1227,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
           const theirs = names(subject) ? [facts.get(subject)] : [...(await known(tx, members.filter(names))).values()]
           const between = theirs.map((each) => conflict(policy, own, each)).find((each) => each !== undefined)
           // Asked about before they are on record, they are a record to be.
-          const possibly = !between && (level === 'same' ? !theirs.some((each) => confirmed(own, each)) : reasons.some((reason) => reason.identifier.startsWith('person:'))) && policy.records === 'confirmed' && members.some(names)
+          const possibly = !between && (level === 'same' ? !theirs.some((each) => confirmed(own, each)) : reasons.some((reason) => /^(person|perhaps):/.test(reason.identifier))) && policy.records === 'confirmed' && members.some(names)
           out.push({ subject, score, level: between || possibly ? 'related' : level, reasons, ...(between && { conflict: between }), ...(possibly && { unconfirmed: true as const }), members })
         }
         return out

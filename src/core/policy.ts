@@ -141,6 +141,7 @@ export const defaultPolicy: Policy = {
     dated: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     // One full name and date of birth, kept where records have to be confirmed, and then it is evidence: see PERSON. Elsewhere it says nothing.
     person: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
+    perhaps: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     // That a first name has several words, so a half of it is not all of it. Kept where records have to be confirmed.
     compound: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     // One number or email given under one name. It confirms what the number or email says, and says nothing once that is muted or too many hold it.
@@ -156,7 +157,7 @@ export const defaultPolicy: Policy = {
 export const UNNAMED: readonly string[] = ['visitor', 'caller', 'call']
 
 /** The kinds that are notes. The graph counts on them linking nothing, so a setting may not give them weight. */
-const NOTES = new Set(['opened', 'place', 'dialed', 'initial', 'dated', 'compound', 'person', ...FACTS])
+const NOTES = new Set(['opened', 'place', 'dialed', 'initial', 'dated', 'compound', 'person', 'perhaps', ...FACTS])
 const LEVELS = ['same', 'related', 'bridge'] as const
 const FIELDS = ['weight', 'dilution', 'cap', 'halfLife'] as const
 const OPTIONAL = ['group', 'corroborates', 'relates'] as const
@@ -192,7 +193,7 @@ export function policyProblems(given: unknown): string[] {
       if (rule.group !== undefined && !(typeof rule.group === 'string' && rule.group)) wrong.push(`kind "${kind}" requires its group as a string`)
       if (rule.corroborates !== undefined && rule.corroborates !== true) wrong.push(`kind "${kind}" requires its corroborates as true, or left out`)
       if (rule.relates !== undefined && rule.relates !== true) wrong.push(`kind "${kind}" requires its relates as true, or left out`)
-      if (NOTES.has(kind) && rule.weight) wrong.push(`kind "${kind}" is a note and links nothing, so its weight must stay 0`)
+      if (NOTES.has(kind) && rule.weight && !(given.records && (kind === 'person' || kind === 'perhaps'))) wrong.push(`kind "${kind}" is a note and links nothing, so its weight must stay 0`)
     }
   }
   if (wrong.length > 0) return wrong
@@ -207,7 +208,10 @@ export function policyProblems(given: unknown): string[] {
 }
 
 /** Two of one full name and date of birth in one firm are rare, and not so rare that nothing else has to agree. */
-const PERSON: Rule = { weight: 0.85, dilution: 0, cap: 10, halfLife: Infinity, group: 'person' }
+// In one group with the name a preset may keep as well, because it says the same thing.
+const PERSON: Rule = { weight: 0.85, dilution: 0, cap: 10, halfLife: Infinity, group: 'name' }
+/** And two whose names may be one. It is shown, and is no evidence that joins with a little more. */
+const PERHAPS: Rule = { weight: 0.55, dilution: 0, cap: 10, halfLife: Infinity, group: 'name' }
 
 /** The default policy with what a setting names laid over it, kind by kind. Check the setting with `policyProblems` first. */
 export function policyFrom(given: any): Policy {
@@ -215,7 +219,8 @@ export function policyFrom(given: any): Policy {
   for (const [kind, { halfLife, ...rule }] of Object.entries<any>(given.kinds ?? {})) {
     kinds.set(kind, { ...kinds.get(kind), ...rule, ...(halfLife !== undefined && { halfLife: halfLife === 'none' ? Infinity : halfLife }) })
   }
-  if (given.records) kinds.set('person', PERSON)
+  // Whatever a kept policy says of the two, they are evidence where records have to be confirmed and nowhere else.
+  for (const [kind, rule] of [['person', PERSON], ['perhaps', PERHAPS]] as const) kinds.set(kind, given.records ? rule : defaultPolicy.kinds[kind]!)
   const levels = Object.fromEntries([...LEVELS, 'review'].filter((name) => given[name] !== undefined).map((name) => [name, given[name]]))
   return { ...defaultPolicy, ...levels, ...(given.apart?.length > 0 && { apart: FACTS.filter((fact) => given.apart.includes(fact)) }), ...(given.records && { records: given.records }), ...(given.credit !== undefined && { credit: given.credit }), kinds: Object.fromEntries(kinds) }
 }
@@ -244,7 +249,7 @@ const RULES = 2
 export function policyHash(policy: Policy): string {
   const { review: _, credit: __, ...rest } = plainPolicy(policy)
   // A note that links nothing and says nothing but where records have to be confirmed: a policy without is what it was.
-  if (!policy.records) for (const kind of ['compound', 'person']) delete (rest.kinds as Record<string, unknown>)[kind]
+  if (!policy.records) for (const kind of ['compound', 'person', 'perhaps']) delete (rest.kinds as Record<string, unknown>)[kind]
   return createHash('sha256').update(JSON.stringify({ ...rest, rules: RULES, unnamed: [...new Set(policy.unnamed ?? UNNAMED)].sort() })).digest('hex')
 }
 

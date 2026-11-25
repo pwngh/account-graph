@@ -121,7 +121,8 @@ export function localGraph(options: LocalOptions, keeping: Keeping = {}): Accoun
       const policy = given ?? stored ?? defaultPolicy
       const unnamed = (await tx.kinds()).filter((kind) => !Object.hasOwn(policy.kinds, kind))
       if (unnamed.length > 0) throw fault(FAULT_CODES.CONFIG.MISMATCH, `Identifiers of kind ${unnamed.map((kind) => `"${kind}"`).join(', ')} are stored, and the policy names no such kind`)
-      if (!stored || (keeping.adopt && given)) await tx.setSetting('policy', JSON.stringify(plainPolicy(policy)))
+      // What only credits or flags is no reason to refuse a process, and whoever is given none takes what was said last.
+      if (!stored || (given && (keeping.adopt || JSON.stringify(plainPolicy(given)) !== JSON.stringify(plainPolicy(stored))))) await tx.setSetting('policy', JSON.stringify(plainPolicy(policy)))
       for (const name of ['identifierSecret', 'linkSecret'] as const) {
         const mark = secretMark(options[name])
         const before = await tx.settingOf(name)
