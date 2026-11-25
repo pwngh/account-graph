@@ -444,7 +444,17 @@ Counts pooled over the worlds. One with nothing to count is bad.
 
 Seeds 20270501 to 20270508 are for development, and 20270301-2 and 20270501-6 were looked at in a first form of the tool, while the rule was written. The marks were written after those looks and before the held seeds, 20270601 to 20270620, which are run once at the commit named here. The list of names is the third run's.
 
-The code of the held seeds is `f643cf3`. The look at 20270501-08 was at `dfb5ef5`, which decides who is joined as `f643cf3` does. Its one mark that came out bad is `staffed records` in high3, pairs joined or shown, 937 of 1,458 (64.27%) against 65%. No mark was moved for it. [All it printed](accuracy-fourth-dev.txt).
+Three looks at 20270501-08 were made, and reviews between them changed the code. A mark is judged in 48 places.
+
+| Look | Code | Marks that came out bad, of 48 | Changed after it |
+| --- | --- | --- | --- |
+| 1 | `dfb5ef5` | high3, `staffed records`, pairs joined or shown: 64.27% against 65% | A third record, a caller, or a half of a name could make one of two who differ. A record that could be two people's is nobody's |
+| 2 | `0778ce6` | The same, 64.33% | The same further: half names, records cut off before, names that only may be one, more than 300 records |
+| 3 | `c82edda` | The same, 64.54%, and staff4 credited of those with a chain, 89.84% against 90% | Second words of a name that no table has, not looked at again |
+
+No mark was moved, and no rate was changed. A run of the held seeds was begun at `f643cf3` and stopped when a review found the first of these. It had printed its first line and no figure, and is not counted. [All that look 3 printed](accuracy-fourth-dev.txt).
+
+The code of the held seeds is the commit that the output names.
 
 ## Limitations
 

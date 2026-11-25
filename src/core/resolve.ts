@@ -157,9 +157,9 @@ function disagree(a: Known | undefined, b: Known | undefined): boolean {
   const [ours, theirs] = [a.facts.get('given'), b.facts.get('given')]
   const within = (one: ReadonlySet<Identifier>, other: ReadonlySet<Identifier>) => [...one].every((each) => other.has(each))
   const several = a.facts.has('compound') && b.facts.has('compound')
-  // A second word no table has is known by its letter.
+  // A second word no table has is known by its letter, so names that are one by the table have to have the same letters.
   const [letters, others] = [a.facts.get('initial') ?? new Set<Identifier>(), b.facts.get('initial') ?? new Set<Identifier>()]
-  const given = ours && theirs && meets(ours, theirs) && (!several || ((within(ours, theirs) || within(theirs, ours)) && (within(letters, others) || within(others, letters))))
+  const given = ours && theirs && meets(ours, theirs) && (!several || (within(ours, theirs) && within(theirs, ours) ? within(letters, others) && within(others, letters) : (within(ours, theirs) && within(letters, others)) || (within(theirs, ours) && within(others, letters))))
   if (given === false) return true
   const named = given === true || [...a.things].some((each) => b.things.has(each))
   return meets(a.facts.get('birth'), b.facts.get('birth')) === false && !(named && meets(a.facts.get('dated'), b.facts.get('dated')) === true)
