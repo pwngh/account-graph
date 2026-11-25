@@ -331,11 +331,10 @@ async function visitorFor(graph: Graph, call: Heard, options: CallOptions): Prom
     const sure = new Set(ties.filter(({ identifier }) => !deciding(identifier)).map((tie) => tie.subject))
     const own = sure.size > 0 && { own: sure }
     const given = await graph.leaseholder(to, each.at, grace)
-    // Shown to somebody else not long before, it may be either's who dials it, and only a tap says whose.
-    const turn = given !== undefined ? await graph.shownTo(to, each.at) : undefined
-    const before = turn && (await graph.shownTo(to, turn.start - 1))
-    const either = before !== undefined && before.subject !== given && each.at - before.until < grace
-    const holder = either && !taps.some((tap) => tap.visitor === given && each.at >= tap.when - SLACK && each.at <= tap.when + window) ? undefined : given
+    // Shown to somebody else not long before, it may be either's who dials it. Only a tap says whose, as on any other number.
+    let before = given === undefined ? undefined : await graph.shownTo(to, each.at)
+    while (before && before.subject === given && each.at - before.until < grace) before = await graph.shownTo(to, before.start - 1)
+    const holder = before && before.subject !== given && each.at - before.until < grace ? undefined : given
     if (holder === undefined || all.has(holder)) return { holder, grace, ...own }
     // A caller who dialed this number when it was somebody else's, or nobody's, has it from then.
     for (const before of await graph.callsOf([each.subject])) if (before.to === to && before.direction === 'inbound' && before.at < each.at && (await graph.leaseholder(to, before.at, grace)) !== holder) return { grace, ...own }

@@ -131,7 +131,7 @@ export function conflict(policy: Policy, a: Known | undefined, b: Known | undefi
   const shared = [...a.things].filter((thing) => b.things.has(thing))
   const browserAndNumber = shared.some((thing) => thing.startsWith('device:')) && shared.some((thing) => /^(phone|voip):/.test(thing))
   // Two details under a name that begins alike are as good as one under the name.
-  const two = new Set(shared.filter((thing) => !thing.startsWith('named:')).map((thing) => thing.slice(0, thing.indexOf(':')))).size > 1
+  const two = new Set(shared.filter((thing) => !thing.startsWith('named:')).map((thing) => thing.slice(0, thing.indexOf(':')).replace('voip', 'phone'))).size > 1
   const named = agree('given') === true || shared.some((thing) => thing.startsWith('named:') && (two || !thing.startsWith(ALIKE)))
   // A name that agrees outranks two dates that one slip of the pen would make one. A father and a son of one name have two dates.
   if (policy.apart.includes('birth') && agree('birth') === false && !(named && agree('dated') === true)) return 'birth'
