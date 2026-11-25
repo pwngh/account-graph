@@ -179,6 +179,8 @@ export interface ConsentAnswer extends Consent {
   source?: string
   /** When it was written down. */
   recorded: number
+  /** Whoever gave it has an id for it. */
+  key?: string
 }
 
 /** Who made a decision and why, for the record. */
@@ -371,6 +373,8 @@ export interface OutcomeValue {
   at: number
   /** Why it changed, where that was said: money given back, or money that will not come. Without it, what was known was corrected. */
   kind?: Loss
+  /** What changed it, where it was said with a key of its own. */
+  why?: 'correct' | Loss | 'reverse' | 'payment'
 }
 
 /** A reason an outcome came to be worth less. */

@@ -2,6 +2,7 @@ import { createMemoryStore } from '../tools/internals.ts'
 import { malformedSuite } from './malformed.suite.ts'
 import { opsSuite } from './ops.suite.ts'
 import { outboxSuite } from './outbox.suite.ts'
+import { saidSuite } from './said.suite.ts'
 import { suite } from './suite.ts'
 import { unitSuite } from './unit.suite.ts'
 
@@ -10,6 +11,7 @@ suite('memory store', open, 3000)
 outboxSuite('memory store', open)
 opsSuite('memory store', open)
 malformedSuite('memory store', open)
+saidSuite('memory store', open)
 unitSuite('memory store', async () => {
   const store = createMemoryStore()
   return { store, dump: async () => store.snapshot(), close: async () => {} }

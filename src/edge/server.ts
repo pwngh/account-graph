@@ -757,7 +757,8 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       }
       case 'POST /consent': {
         const body = await json(request)
-        return graph.consent(body.subject, body.consent, { ...(body.at !== undefined && { at: body.at }), ...(body.source !== undefined && { source: body.source }) })
+        await graph.consent(body.subject, body.consent, { ...(body.at !== undefined && { at: body.at }), ...(body.source !== undefined && { source: body.source }) })
+        return undefined
       }
       case 'POST /join': {
         const body = await json(request)

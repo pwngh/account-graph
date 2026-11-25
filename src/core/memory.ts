@@ -3,6 +3,8 @@ import { createMemoryOps } from './ops.ts'
 import { createMemoryOutbox } from './outbox.ts'
 import type { OutboxStore } from './outbox.ts'
 import { standingFirst } from './store.ts'
+import type { Said, SaidOf, Topic } from './said.ts'
+import { byKey } from './said.ts'
 import type { Store, Tx } from './store.ts'
 import { CLICK_IDS } from './touch.ts'
 import type { CallResult, Consent, ConsentAnswer, CostRow, Counted, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, NumberedChange, OutcomeValue, Payment, SentLink, Sighting, Subject, Touch } from '../contract/types.ts'
@@ -39,6 +41,8 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
   /** By number, the one that began first, first. */
   const leases = new Map<string, Lease[]>()
   const costs = new Map<string, CostRow>()
+  const reads = new Map<string, { at: number; key: string }>()
+  const said = new Map<string, Said[]>()
   const moves: NumberedChange[] = []
   let lastMove = 0
   let writes = 0
@@ -69,6 +73,8 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
     index(byComponent, next.component, subject)
     index(byCluster, next.cluster, subject)
   }
+
+  const unsay = (about: string, ...topics: Topic[]) => (topics.length > 0 ? topics : (['worth', 'lead'] as Topic[])).forEach((topic) => said.delete(`${topic}\u0000${about}`))
 
   const tx: Tx = {
     outbox,
@@ -114,16 +120,20 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
         if (outcome.subject !== subject) continue
         outcomes.delete(id)
         spurned.delete(id)
+        unsay(id)
       }
       // Its outcomes, and those taken back, unless they are somebody else's since.
       const own = values.get(subject)
       for (const [id, { transactionId }] of payments) if (own?.has(transactionId) && !outcomes.has(transactionId)) payments.delete(id)
+      for (const id of own?.keys() ?? []) if (!outcomes.has(id)) unsay(id)
       values.delete(subject)
       for (const [id, call] of calls) {
         if (call.subject === subject) {
           calls.delete(id)
           results.delete(id)
           spurned.delete(`call:${id}`)
+          unsay(id, 'result', 'return')
+          unsay(`call:${id}`)
         } else if (call.visitor === subject) delete call.visitor
       }
       for (const [id, link] of sent) if (link.subject === subject) sent.delete(id)
@@ -131,6 +141,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
         if (text.subject === subject) {
           texts.delete(id)
           spurned.delete(`text:${id}`)
+          unsay(`text:${id}`)
         } else if (text.visitor === subject) delete text.visitor
       }
       assign(subject, undefined)
@@ -427,6 +438,13 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
             lost.refund += amount
             lostIn.push(currency)
           }
+          for (const each of said.get(`worth\u0000${transactionId}`) ?? []) {
+            if (each.topic !== 'worth' || (each.data.kind !== 'refund' && each.data.kind !== 'write_off')) continue
+            const { kind, amount } = each.data
+            if ((said.get(`worth\u0000${transactionId}`) ?? []).some((other) => other.topic === 'worth' && other.data.kind === 'reverse' && other.data.restatement === each.key)) continue
+            lost[kind] += amount
+            lostIn.push(first.currency)
+          }
           return [[transactionId, { ...first, most: rest.reduce((most, each) => Math.max(most, each.value), first.value), refunded: lost.refund, writtenOff: lost.write_off, lostIn }]]
         }),
       )
@@ -619,7 +637,10 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
 
     async pruneCallResults(before) {
       let gone = 0
-      for (const [id, result] of results) if (!calls.has(id) && result.recorded < before) gone += Number(results.delete(id))
+      for (const [id, result] of results) if (!calls.has(id) && result.recorded < before) {
+        gone += Number(results.delete(id))
+        unsay(id, 'result', 'return')
+      }
       return gone
     },
 
@@ -646,8 +667,30 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
         .map((outcome) => structuredClone(outcome))
     },
 
-    async addCosts(rows) {
-      for (const cost of rows) costs.set([cost.day, cost.source, cost.campaignId].join('\u0000'), { ...cost })
+    async addCosts(rows, read) {
+      let written = 0
+      for (const row of rows) {
+        const key = [row.day, row.source, row.campaignId].join('\u0000')
+        const before = reads.get(key)
+        if (read && before && (before.at - read.at || byKey(before.key, read.key)) > 0) continue
+        costs.set(key, { ...row })
+        if (read) reads.set(key, { ...read })
+        else reads.delete(key)
+        written += 1
+      }
+      return written
+    },
+
+    async addSaid(each) {
+      const key = `${each.topic}\u0000${each.about}`
+      const list = said.get(key) ?? []
+      if (list.some((other) => other.key === each.key)) return false
+      said.set(key, [...list, structuredClone(each)])
+      return true
+    },
+
+    async saidOf<T extends Topic>(topic: T, about: string) {
+      return structuredClone(said.get(`${topic}\u0000${about}`) ?? []) as SaidOf<T>[]
     },
 
     async costsBetween(from, to) {
@@ -725,7 +768,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
   }
 
   /** Every collection, copied together, so what two of them share stays shared. */
-  const collections = { bySubject, byIdentifier, ignored, labels, byComponent, byCluster, sightings, touches, separated, flows, flowsBy, flowIds, consents, decisions, outcomes, values, calls, texts, sent, payments, results, spurned, leases, costs, moves }
+  const collections = { bySubject, byIdentifier, ignored, labels, byComponent, byCluster, sightings, touches, separated, flows, flowsBy, flowIds, consents, decisions, outcomes, values, calls, texts, sent, payments, results, spurned, leases, costs, reads, said, moves }
   const snapshot = () => structuredClone({ ...collections, lastMove, writes, built, jobs: outbox.jobs, ops: ops.kept })
   const restore = (kept: ReturnType<typeof snapshot>) => {
     const refill = (now: any, then: any) => {

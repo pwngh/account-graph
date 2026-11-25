@@ -1,4 +1,6 @@
 import type { Feed, OpsStore } from './ops.ts'
+import type { Said, SaidOf, Topic } from './said.ts'
+import { byKey } from './said.ts'
 import type { Job, OutboxStore } from './outbox.ts'
 import type { CallResult, CallTime, Change, Consent, ConsentAnswer, CostRow, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, NumberedChange, SentLink, OutcomeValue, Payment, Sighting, Subject, Touch } from '../contract/types.ts'
 
@@ -187,7 +189,10 @@ export interface Tx {
   /** The newest outcomes of each step with `from <= at < to`, at most `each` of one step. */
   newestOutcomes(from: number, to: number, each: number): Promise<Counted[]>
   /** Records what campaigns cost, replacing any row with the same day, source and campaign. */
-  addCosts(costs: readonly CostRow[]): Promise<void>
+  addCosts(costs: readonly CostRow[], read?: { at: number; key: string }): Promise<number>
+  /** Keeps one thing said. Resolves to false where that key of that topic and thing was there. */
+  addSaid(said: Said): Promise<boolean>
+  saidOf<T extends Topic>(topic: T, about: string): Promise<SaidOf<T>[]>
   /** Costs with `from <= day <= to`, days written `YYYY-MM-DD`. */
   costsBetween(from: string, to: string): Promise<CostRow[]>
   /** Sightings of a subject, oldest first. With `limit`, only the newest that many. */
@@ -215,9 +220,9 @@ export interface Tx {
 
 /**
  * Puts the standing answer first: the newest by when it was given, then by
- * when it was written down. Two that tie on both stand as the refusal, so
+ * its key, then by when it was written down. Two that tie on both stand as the refusal, so
  * the answer never depends on the order they arrived in.
  */
 export function standingFirst(x: ConsentAnswer, y: ConsentAnswer): number {
-  return y.at - x.at || y.recorded - x.recorded || Number(x.adUserData) - Number(y.adUserData) || Number(x.adPersonalization) - Number(y.adPersonalization)
+  return y.at - x.at || byKey(y.key ?? '', x.key ?? '') || y.recorded - x.recorded || Number(x.adUserData) - Number(y.adUserData) || Number(x.adPersonalization) - Number(y.adPersonalization)
 }

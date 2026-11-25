@@ -1,6 +1,7 @@
 import { malformed } from '../contract/fault.ts'
 import type { Feed, KeptAlert, OpsStore } from '../core/ops.ts'
 import type { Job, JobState, OutboxStore } from '../core/outbox.ts'
+import type { SaidOf, Topic } from '../core/said.ts'
 import type { Store, Tx } from '../core/store.ts'
 import { CLICK_IDS } from '../core/touch.ts'
 import type { CallResult, CallTime, Consent, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, OutcomeValue, Payment, SentLink, Sighting, Subject, Touch } from '../contract/types.ts'
@@ -43,7 +44,7 @@ export interface PostgresStore extends Store {
 }
 
 /** The order `standingFirst` gives, in SQL. False sorts first, and rows equal in everything that counts are told apart by id. */
-const STANDING = 'at desc, recorded_at desc, ad_user_data, ad_personalization, id'
+const STANDING = `at desc, coalesce(key, '') collate "C" desc, recorded_at desc, ad_user_data, ad_personalization, id`
 
 /**
  * Keeps the graph in PostgreSQL. Writes take one advisory lock, so they run
@@ -132,6 +133,14 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       // What nobody holds any more goes too, unless it is muted: that is a decision, and stands for whoever holds it next.
       await db.query(`delete from ${t('identifier')} where id = any($1::text[]) and fanout <= 0 and not ignored`, [left.filter((row) => row.fanout <= 0).map((row) => row.id)])
       await db.query(`delete from ${t('not_lead')} where id in (select transaction_id from ${t('outcome')} where subject = $1 union all select 'call:' || id from ${t('call')} where subject = $1 union all select 'text:' || id from ${t('message')} where subject = $1)`, [subject])
+      await db.query(
+        `delete from ${t('said')} where (topic in ('worth', 'lead') and about in (
+             select transaction_id from ${t('outcome')} where subject = $1
+             union all select transaction_id from ${t('outcome_value')} v where subject = $1 and not exists (select from ${t('outcome')} o where o.transaction_id = v.transaction_id)
+             union all select 'call:' || id from ${t('call')} where subject = $1 union all select 'text:' || id from ${t('message')} where subject = $1))
+           or (topic in ('result', 'return') and about in (select id from ${t('call')} where subject = $1))`,
+        [subject],
+      )
       await db.query(`delete from ${t('sighting')} where subject = $1`, [subject])
       await db.query(`delete from ${t('touch')} where subject = $1`, [subject])
       await db.query(`delete from ${t('outcome')} where subject = $1`, [subject])
@@ -389,10 +398,10 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       )
     },
 
-    async addConsent(subject, { at, adUserData, adPersonalization, source, recorded }) {
+    async addConsent(subject, { at, adUserData, adPersonalization, source, recorded, key }) {
       await db.query(
-        `insert into ${t('consent_log')} (subject, at, ad_user_data, ad_personalization, source, recorded_at) values ($1, $2, $3, $4, $5, $6)`,
-        [subject, at, adUserData, adPersonalization, source ?? null, recorded],
+        `insert into ${t('consent_log')} (subject, at, ad_user_data, ad_personalization, source, recorded_at, key) values ($1, $2, $3, $4, $5, $6, $7)`,
+        [subject, at, adUserData, adPersonalization, source ?? null, recorded, key ?? null],
       )
     },
 
@@ -406,7 +415,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
 
     async consentHistory(subject, limit) {
       const { rows } = await db.query(`select * from ${t('consent_log')} where subject = $1 order by ${STANDING} limit $2`, [subject, limit ?? null])
-      return rows.map((row) => ({ at: Number(row.at), adUserData: row.ad_user_data, adPersonalization: row.ad_personalization, ...(row.source !== null && { source: row.source }), recorded: Number(row.recorded_at) }))
+      return rows.map((row) => ({ at: Number(row.at), adUserData: row.ad_user_data, adPersonalization: row.ad_personalization, ...(row.source !== null && { source: row.source }), recorded: Number(row.recorded_at), ...(row.key !== null && { key: row.key }) }))
     },
 
     async pruneConsent(before) {
@@ -456,12 +465,12 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       return rows[0] && toCounted(rows[0])
     },
 
-    async addValue(transactionId, subject, { value, currency, at, kind }) {
-      await db.query(`insert into ${t('outcome_value')} (transaction_id, subject, value, currency, at, kind) values ($1, $2, $3, $4, $5, $6)`, [transactionId, subject, value, currency, at, kind ?? null])
+    async addValue(transactionId, subject, { value, currency, at, kind, why }) {
+      await db.query(`insert into ${t('outcome_value')} (transaction_id, subject, value, currency, at, kind, why) values ($1, $2, $3, $4, $5, $6, $7)`, [transactionId, subject, value, currency, at, kind ?? null, why ?? null])
     },
 
     async valuesOf(transactionId, subject) {
-      const { rows } = await db.query(`select value, currency, at, kind from ${t('outcome_value')} where transaction_id = $1 and subject = $2 order by id`, [transactionId, subject])
+      const { rows } = await db.query(`select value, currency, at, kind, why from ${t('outcome_value')} where transaction_id = $1 and subject = $2 order by id`, [transactionId, subject])
       return rows.map(toValue)
     },
 
@@ -472,8 +481,10 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
            select v.*, lag(v.value) over (partition by v.transaction_id order by v.id) - v.value as lost
            from unnest($1::text[], $2::text[]) as o (id, subject) join ${t('outcome_value')} v on v.transaction_id = o.id and v.subject = o.subject)
          select distinct on (transaction_id) *, max(value) over mine as most,
-           coalesce(sum(lost) filter (where kind = 'refund') over mine, 0) + coalesce((select sum(amount) from ${t('payment')} p where p.transaction_id = theirs.transaction_id and p.kind = 'refund'), 0) as refunded,
-           coalesce(sum(lost) filter (where kind = 'write_off') over mine, 0) as written_off,
+           coalesce(sum(lost) filter (where kind = 'refund') over mine, 0) + coalesce((select sum(amount) from ${t('payment')} p where p.transaction_id = theirs.transaction_id and p.kind = 'refund'), 0) + coalesce((select sum((x.data->>'amount')::float8) from ${t('said')} x where x.topic = 'worth' and x.about = theirs.transaction_id and x.data->>'kind' = 'refund'
+             and not exists (select from ${t('said')} y where y.topic = 'worth' and y.about = x.about and y.data->>'kind' = 'reverse' and y.data->>'restatement' = x.key)), 0) as refunded,
+           coalesce(sum(lost) filter (where kind = 'write_off') over mine, 0) + coalesce((select sum((x.data->>'amount')::float8) from ${t('said')} x where x.topic = 'worth' and x.about = theirs.transaction_id and x.data->>'kind' = 'write_off'
+             and not exists (select from ${t('said')} y where y.topic = 'worth' and y.about = x.about and y.data->>'kind' = 'reverse' and y.data->>'restatement' = x.key)), 0) as written_off,
            array_agg(currency) filter (where kind is not null) over mine || array(select currency from ${t('payment')} p where p.transaction_id = theirs.transaction_id and p.kind = 'refund') as lost_in
          from theirs window mine as (partition by transaction_id) order by transaction_id, id`,
         [given.map((each) => each.transactionId), given.map((each) => each.subject)],
@@ -699,7 +710,8 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
 
     async pruneCallResults(before) {
       const { rows } = await db.query(
-        `with gone as (delete from ${t('call_result')} r where recorded_at < $1 and not exists (select 1 from ${t('call')} c where c.id = r.id) returning 1) select count(*)::int as n from gone`,
+        `with gone as (delete from ${t('call_result')} r where recorded_at < $1 and not exists (select 1 from ${t('call')} c where c.id = r.id) returning id),
+           unsaid as (delete from ${t('said')} where topic in ('result', 'return') and about in (select id from gone)) select count(*)::int as n from gone`,
         [before],
       )
       return rows[0].n as number
@@ -724,16 +736,18 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       return rows.map(toCounted)
     },
 
-    async addCosts(costs) {
+    async addCosts(costs, read) {
       // Fold repeats first, keeping the last: one statement cannot upsert the same row twice.
       const last = [...new Map(costs.map((cost) => [[cost.day, cost.source, cost.campaignId].join('\u0000'), cost])).values()]
-      if (last.length === 0) return
-      await db.query(
-        `insert into ${t('cost')} (day, source, campaign_id, campaign, amount, currency, clicks, impressions, conversions, claimed_value)
-         select * from unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::float8[], $6::text[], $7::bigint[], $8::bigint[], $9::float8[], $10::float8[])
+      if (last.length === 0) return 0
+      const { rows } = await db.query(
+        `insert into ${t('cost')} (day, source, campaign_id, campaign, amount, currency, clicks, impressions, conversions, claimed_value, read_at, read_key)
+         select *, $11::bigint, $12::text from unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::float8[], $6::text[], $7::bigint[], $8::bigint[], $9::float8[], $10::float8[])
          on conflict (day, source, campaign_id) do update set
            campaign = excluded.campaign, amount = excluded.amount, currency = excluded.currency, clicks = excluded.clicks, impressions = excluded.impressions,
-           conversions = excluded.conversions, claimed_value = excluded.claimed_value`,
+           conversions = excluded.conversions, claimed_value = excluded.claimed_value, read_at = excluded.read_at, read_key = excluded.read_key
+         where $11::bigint is null or ${t('cost')}.read_at is null or (${t('cost')}.read_at, ${t('cost')}.read_key collate "C") <= ($11::bigint, $12::text collate "C")
+         returning 1`,
         [
           last.map((c) => c.day),
           last.map((c) => c.source),
@@ -745,8 +759,21 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
           last.map((c) => c.impressions),
           last.map((c) => c.conversions ?? null),
           last.map((c) => c.conversionValue ?? null),
+          read?.at ?? null,
+          read?.key ?? null,
         ],
       )
+      return rows.length
+    },
+
+    async addSaid({ topic, about, key, at, data }) {
+      const { rows } = await db.query(`insert into ${t('said')} (topic, about, key, at, data) values ($1, $2, $3, $4, $5) on conflict do nothing returning 1`, [topic, about, key, at, data])
+      return rows.length > 0
+    },
+
+    async saidOf<T extends Topic>(topic: T, about: string) {
+      const { rows } = await db.query(`select * from ${t('said')} where topic = $1 and about = $2`, [topic, about])
+      return rows.map((row) => ({ topic, about, key: row.key, at: Number(row.at), data: row.data })) as unknown as SaidOf<T>[]
     },
 
     async costsBetween(from, to) {
@@ -1050,7 +1077,7 @@ function toCounted(row: any): Counted {
 }
 
 function toValue(row: any): OutcomeValue {
-  return { value: row.value, currency: row.currency, at: Number(row.at), ...(row.kind && { kind: row.kind }) }
+  return { value: row.value, currency: row.currency, at: Number(row.at), ...(row.kind && { kind: row.kind }), ...(row.why && { why: row.why }) }
 }
 
 function toResult(row: any): CallResult {
@@ -1426,6 +1453,22 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
       name: 'payments',
       sql: `create table if not exists ${schema}.payment (id text primary key, transaction_id text not null, amount float8 not null, kind text not null, currency text not null);
             create index if not exists payment_transaction on ${schema}.payment (transaction_id);`,
+    },
+    {
+      id: 24,
+      name: 'what was said, and when',
+      // Restatements, results and the like as they were said, so what they come to does not depend on their order.
+      sql: `create table if not exists ${schema}.said (
+              topic text not null,
+              about text not null,
+              key text not null,
+              at bigint not null,
+              data jsonb not null,
+              primary key (topic, about, key)
+            );
+            alter table ${schema}.cost add column if not exists read_at bigint, add column if not exists read_key text;
+            alter table ${schema}.consent_log add column if not exists key text;
+            alter table ${schema}.outcome_value add column if not exists why text;`,
     },
   ]
 }

@@ -1,4 +1,5 @@
-import { malformed } from '../contract/fault.ts'
+import { malformed, refused } from '../contract/fault.ts'
+import { newest, worthOf } from './said.ts'
 import { brokenAt, seal } from './audit.ts'
 import { board } from './board.ts'
 import type { BoardColumn, BoardPlace } from './board.ts'
@@ -161,6 +162,17 @@ export interface Graph {
   people(subjects: readonly Subject[], options?: { at?: number }): Promise<Person[]>
   /** Takes a recorded outcome out of the report: it turned out not to have happened. Resolves to false for an unknown id. */
   withdraw(transactionId: string): Promise<boolean>
+  /**
+   * Says what a recorded outcome is worth, or how much of it was lost. Kept as it was said, so its worth does not depend
+   * on the order things arrive in. Refused for one that is not recorded, or that has payments.
+   */
+  revise(said: { key: string; at: number; transactionId: string; change: { kind: 'correct'; value: number; currency?: string } | { kind: Loss; amount: number; currency?: string } | { kind: 'reverse'; restatement: string } }): Promise<{ value: number; currency: string; stands: boolean }>
+  /** `markNotLead`, by when it was said. */
+  sayLead(said: { id: string; key: string; at: number; kind?: NotLead['kind'] | undefined }): Promise<{ stands: boolean; lead: boolean }>
+  /** `keepCallResult`, by when it was said. The result that stands counts whole. */
+  sayResult(said: { call: string; key: string; at: number; result: { answered: boolean; voicemail?: boolean; waited?: number } }): Promise<{ stands: boolean }>
+  /** `keepReturn`, by when it was said, which is not when they were reached. */
+  sayReturn(said: { call: string; key: string; at: number; reachedAt?: number | undefined }): Promise<{ stands: boolean }>
   /** Every value a recorded outcome has had, oldest first. */
   values(transactionId: string): Promise<OutcomeValue[]>
   /** An outcome as it was recorded, or undefined when it was not. */
@@ -236,7 +248,7 @@ export interface Graph {
   /** How a call went, whether or not the call itself was kept. */
   callResult(id: string): Promise<CallResult | undefined>
   /** Records what campaigns cost. A row for the same day, source and campaign replaces the one before. */
-  spend(costs: Cost | readonly Cost[]): Promise<void>
+  spend(costs: Cost | readonly Cost[], read?: { at: number; key: string }): Promise<number>
   /**
    * What each campaign cost and what it brought in over a range of days.
    * Each outcome in the range goes to the campaign of its credited touch,
@@ -264,7 +276,7 @@ export interface Graph {
    * The newest by when it was given stands, whatever order they arrive in,
    * and the outbox honours that one. `at` defaults to now.
    */
-  consent(subject: Subject, consent: Consent, given?: { at?: number; source?: string }): Promise<void>
+  consent(subject: Subject, consent: Consent, given?: { at?: number; source?: string; key?: string }): Promise<{ stands: boolean }>
   /** The standing answer of each given subject. A subject that never answered is absent. */
   consentOf(subjects: readonly Subject[]): Promise<Map<Subject, Consent>>
   /** Every answer a subject gave, the standing one first. With `limit`, only that many. */
@@ -944,9 +956,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
   }
 
   /** Adds an outcome's value to its history, unless it is the one it already has. */
-  async function revalue(tx: Tx, { transactionId, subject, value, currency }: Counted, kind?: Loss): Promise<void> {
+  async function revalue(tx: Tx, { transactionId, subject, value, currency }: Counted, kind?: Loss, why?: OutcomeValue['why']): Promise<void> {
     const last = (await tx.valuesOf(transactionId, subject)).at(-1)
-    if (last?.value !== value || last.currency !== currency) await tx.addValue(transactionId, subject, { value, currency, at: now(), ...(kind && { kind }) })
+    if (last?.value !== value || last.currency !== currency) await tx.addValue(transactionId, subject, { value, currency, at: now(), ...(kind && { kind }), ...(why && { why }) })
   }
 
   /** Refuses text the database cannot keep, before anything is written. */
@@ -1162,7 +1174,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         // Whoever was forgotten while their text was being counted is not written down again.
         if (outcome.ofText !== undefined && (await tx.textOf(outcome.ofText))?.subject !== subject) throw new Gone()
         // Paid for before it was recorded, it is worth what was paid.
-        const worth = paidFor(counted, await tx.paymentsOf(transactionId))
+        const payments = await tx.paymentsOf(transactionId)
+        // Taken back and counted again, it is worth what was said of it meanwhile too.
+        const said = payments.length === 0 ? worthOf(await tx.saidOf('worth', transactionId)) : undefined
+        const worth = said ? { ...counted, value: said.value, currency: said.currency } : paidFor(counted, payments)
         await tx.setOutcome(worth)
         await revalue(tx, worth)
         return true
@@ -1188,7 +1203,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         if (worth.value !== outcome.value || worth.currency !== outcome.currency) {
           await tx.setOutcome(worth)
           // What was given back is counted from the refunds, which come in any order, and not from how the value moved.
-          await revalue(tx, worth)
+          await revalue(tx, worth, undefined, 'payment')
         }
         return { duplicate: false, value: worth.value }
       })
@@ -1240,6 +1255,70 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         await tx.setOutcome(restated)
         await revalue(tx, restated, kind)
         return true
+      })
+    },
+
+    async revise({ key, at, transactionId, change }) {
+      keepable(key, transactionId)
+      return store.write(async (tx) => {
+        const found = await tx.outcomeOf(transactionId)
+        if (!found) throw refused(`No conversion "${transactionId}" is recorded`, { reason: 'UNKNOWN_REFERENCE' })
+        if ((await tx.paymentsOf(transactionId)).length > 0) throw refused(`Conversion "${transactionId}" has payments, so it is worth what was paid`, { reason: 'PAID' })
+        if ('currency' in change && change.currency && found.currency && change.currency !== found.currency) throw refused(`Conversion "${transactionId}" is in ${found.currency}`, { reason: 'CURRENCY_MISMATCH', expected: found.currency })
+        const before = await tx.saidOf('worth', transactionId)
+        if (change.kind === 'reverse' && !before.some((each) => each.key === change.restatement && (each.data.kind === 'refund' || each.data.kind === 'write_off'))) throw refused(`No refund or write-off "${change.restatement}" of conversion "${transactionId}" is recorded`, { reason: 'UNKNOWN_REFERENCE', restatement: change.restatement })
+        if (before.length === 0) await tx.addSaid({ topic: 'worth', about: transactionId, key: '', at: found.at, data: { kind: 'base', value: found.value, currency: found.currency } })
+        const data = change.kind === 'correct' ? { kind: change.kind, value: change.value, ...(change.currency && { currency: change.currency }) } : change.kind === 'reverse' ? { kind: change.kind, restatement: change.restatement } : { kind: change.kind, amount: change.amount }
+        await tx.addSaid({ topic: 'worth', about: transactionId, key, at, data })
+        const worth = worthOf(await tx.saidOf('worth', transactionId))!
+        const restated = { ...found, value: worth.value, currency: worth.currency }
+        await tx.setOutcome(restated)
+        await revalue(tx, restated, undefined, change.kind)
+        return { value: worth.value, currency: worth.currency, stands: change.kind !== 'correct' || worth.stands === key }
+      })
+    },
+
+    async sayLead({ id, key, at, kind }) {
+      keepable(key, id)
+      return store.write(async (tx) => {
+        const before = await tx.saidOf('lead', id)
+        const [marked] = (await tx.notLeads([id])).values()
+        // What was said before anything was kept of who said it when.
+        if (before.length === 0 && marked) await tx.addSaid({ topic: 'lead', about: id, key: '', at: marked.at, data: { kind: marked.kind } })
+        await tx.addSaid({ topic: 'lead', about: id, key, at, data: { kind: kind ?? null } })
+        const stands = newest(await tx.saidOf('lead', id))!
+        await tx.setNotLead(id, stands.data.kind ? { kind: stands.data.kind, at: stands.at } : undefined)
+        return { stands: stands.key === key, lead: stands.data.kind === null }
+      })
+    },
+
+    async sayResult({ call, key, at, result }) {
+      keepable(key, call)
+      return store.write(async (tx) => {
+        const before = await tx.callResultOf(call)
+        if ((await tx.saidOf('result', call)).length === 0 && before?.answered !== undefined) {
+          const { answered, voicemail, waited, recorded } = before
+          await tx.addSaid({ topic: 'result', about: call, key: '', at: (await tx.callOf(call))?.at ?? recorded, data: { answered, ...(voicemail !== undefined && { voicemail }), ...(waited !== undefined && { waited }) } })
+        }
+        await tx.addSaid({ topic: 'result', about: call, key, at, data: result })
+        const stands = newest(await tx.saidOf('result', call))!
+        await tx.setCallResult(call, { ...stands.data, ...(before?.returned !== undefined && { returned: before.returned }), recorded: now() })
+        await tx.fed('results', now())
+        return { stands: stands.key === key }
+      })
+    },
+
+    async sayReturn({ call, key, at, reachedAt }) {
+      keepable(key, call)
+      return store.write(async (tx) => {
+        const { returned, ...before } = (await tx.callResultOf(call)) ?? { recorded: now() }
+        if ((await tx.saidOf('return', call)).length === 0 && returned !== undefined) await tx.addSaid({ topic: 'return', about: call, key: '', at: returned, data: { reachedAt: returned } })
+        await tx.addSaid({ topic: 'return', about: call, key, at, data: { reachedAt: reachedAt ?? null } })
+        const stands = newest(await tx.saidOf('return', call))!
+        const reached = stands.data.reachedAt
+        if (reached === null && !('answered' in before) && !('voicemail' in before) && !('waited' in before)) await tx.removeCallResult(call)
+        else await tx.setCallResult(call, { ...before, ...(reached !== null && { returned: reached }) })
+        return { stands: stands.key === key }
       })
     },
 
@@ -1525,7 +1604,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return store.read((tx) => tx.callResultOf(id))
     },
 
-    async spend(input) {
+    async spend(input, read) {
       const costs = Array.isArray(input) ? (input as readonly Cost[]) : [input as Cost]
       const rows = costs.map((cost): CostRow => {
         dayStart(cost?.day)
@@ -1557,12 +1636,11 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
           ...(cost.conversionValue !== undefined && { conversionValue: cost.conversionValue }),
         }
       })
-      if (rows.length > 0) {
-        await store.write(async (tx) => {
-          await tx.addCosts(rows)
-          await tx.fed('costs', now())
-        })
-      }
+      if (rows.length === 0) return 0
+      return store.write(async (tx) => {
+        await tx.fed('costs', now())
+        return tx.addCosts(rows, read)
+      })
     },
 
     async report({ from, to, timeZone, window = 90 * DAY, hops = 2, by, per }) {
@@ -1824,13 +1902,17 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         throw malformed('Consent requires adUserData and adPersonalization, each true or false')
       }
       const recorded = now()
-      const { at = recorded, source } = given
+      const { at = recorded, source, key } = given
       if (!Number.isSafeInteger(at) || at < 0) throw malformed('Consent requires `at`, an integer in epoch milliseconds')
       // An answer dated ahead would stand over every real one until that day came.
       if (at > recorded + DAY) throw malformed('Consent cannot be dated in the future')
       if (source !== undefined && (typeof source !== 'string' || source.length > 200)) throw malformed('Consent `source` must be a string of at most 200 characters')
-      keepable(subject, source)
-      await store.write((tx) => tx.addConsent(subject, { at, adUserData: consent.adUserData, adPersonalization: consent.adPersonalization, ...(source && { source }), recorded }))
+      keepable(subject, source, key)
+      return store.write(async (tx) => {
+        await tx.addConsent(subject, { at, adUserData: consent.adUserData, adPersonalization: consent.adPersonalization, ...(source && { source }), ...(key && { key }), recorded })
+        const [first] = await tx.consentHistory(subject, 1)
+        return { stands: first?.at === at && first.recorded === recorded && (key === undefined || first.key === key) }
+      })
     },
 
     consentOf(subjects) {

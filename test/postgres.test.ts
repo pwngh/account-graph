@@ -7,6 +7,7 @@ import { serve } from '../src/edge/serve.ts'
 import { malformedSuite } from './malformed.suite.ts'
 import { opsSuite } from './ops.suite.ts'
 import { outboxSuite } from './outbox.suite.ts'
+import { saidSuite } from './said.suite.ts'
 import { counts, suite } from './suite.ts'
 import { unitSuite } from './unit.suite.ts'
 
@@ -394,6 +395,7 @@ if (!url) {
   outboxSuite('postgres store', open)
   opsSuite('postgres store', open)
   malformedSuite('postgres store', open)
+  saidSuite('postgres store', open)
   unitSuite('postgres store', async () => {
     const opened = await open()
     const schema = `ag_test_${process.pid}_${count - 1}`
