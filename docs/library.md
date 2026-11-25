@@ -44,36 +44,32 @@ Where there is no Node, the package has the remote graph only. A local one throw
 
 `accountGraph` does no I/O. It throws `CONFIG.INVALID` with everything that is wrong at once. The first call connects to the database and upgrades it. A database that was away is tried again by the next call.
 
-| Option | With | Meaning |
-| --- | --- | --- |
-| `url`, `token` | a server | Its address and the service token, or a reviewer's. Redirects are not followed. |
-| `fetch` | a server | Used in place of the global one. |
-| `databaseUrl` | PostgreSQL | The database. Requires the `pg` package. |
-| `workers` | required on PostgreSQL | Whether this process sends conversions, reads costs, looks for what is late, and posts events. |
-| `receiptSecrets` | required on PostgreSQL | Keys the [receipts](operations.md#receipts). 32 characters or more each. The first signs and all are tried. |
-| `schema` | PostgreSQL | The database schema. `account_graph` when left out. |
-| `timeoutMs` | all | How long one call may take, in milliseconds. 30,000 when left out. |
+A server has the settings as [environment variables](operations.md#environment-variables).
+
+| Option | With | Variable | Meaning |
+| --- | --- | --- | --- |
+| `url`, `token` | a server | none | Its address and the service token, or a reviewer's. Redirects are not followed. |
+| `databaseUrl` | PostgreSQL | `DATABASE_URL` | The database. Requires the `pg` package. |
+| `workers` | required on PostgreSQL | none | Whether this process sends conversions, reads costs, looks for what is late, and posts events. |
+| `receiptSecrets` | required on PostgreSQL | `RECEIPT_SECRETS` | Keys the [receipts](operations.md#receipts). 32 characters or more each. The first signs and all are tried. |
+| `schema` | PostgreSQL | `GRAPH_SCHEMA` | The database schema. `account_graph` when left out. |
+| `policy` | a local graph | `POLICY` | What differs from the default [policy](#policy) |
+| `identifierSecret`, `linkSecret` | a local graph | `IDENTIFIER_SECRET`, `LINK_SECRET` | 32 characters or more each |
+| `stages` | a local graph | `STAGES` | Your [steps](report.md#steps) |
+| `openHours`, `timeZone` | a local graph | `OPEN_HOURS`, `REPORT_TIME_ZONE` | When you are open, and the zone |
+| `phones` | a local graph | `CALL_*`, `POOL_*`, `RETURN_HOURS` | `numbers`, `exclude`, `minimumSeconds`, `resultsExpectedWithinMinutes`, `returnHours`, `country`, `tapSeconds`, `pool` |
+| `ads` | a local graph | each platform's, `FORGET_ADS`, `OUTBOX_DELAY_MS` | `google`, `meta`, `microsoft`, `tiktok`, `retractOnForget`, `delayMs` |
+| `costs` | a local graph | each platform's | `google`, `meta` |
+| `checks` | a local graph | `SMARTY_*`, `TWILIO_*` | `address`, `lineType` |
+| `monitor` | a local graph | `QUIET_*`, `LATE_HOURS`, `AUDIT_HEAD_HOURS` | `quietHours`, `lateHours`, `auditHours` |
+| `webhook`, `alerts` | a local graph | `WEBHOOK_URL`, `WEBHOOK_SECRET`, `ALERT_WEBHOOK` | Where [events](operations.md#events) and [alerts](operations.md#alerts) are posted |
+| `now` | a local graph | none | The clock, for tests |
+| `fetch` | all | none | Used in place of the global one. A local graph asks ad platforms, checks and webhooks with it, for tests. |
+| `timeoutMs` | all | none | How long one call may take, in milliseconds. 30,000 when left out. |
 
 > **Say `workers` on purpose.** With `true`, a script that runs for a second reads costs and sends conversions. With `false` everywhere, nothing is ever sent.
 
-### Settings
-
-A local graph takes these too. A server has them as [environment variables](operations.md#environment-variables).
-
-| Option | Variable | Holds |
-| --- | --- | --- |
-| `policy` | `POLICY` | What differs from the default [policy](#policy) |
-| `identifierSecret`, `linkSecret` | `IDENTIFIER_SECRET`, `LINK_SECRET` | 32 characters or more each |
-| `stages` | `STAGES` | Your [steps](report.md#steps) |
-| `openHours`, `timeZone` | `OPEN_HOURS`, `REPORT_TIME_ZONE` | When you are open, and the zone |
-| `phones` | `CALL_*`, `POOL_*`, `RETURN_HOURS` | `numbers`, `exclude`, `minimumSeconds`, `resultsExpectedWithinMinutes`, `returnHours`, `country`, `tapSeconds`, `pool` |
-| `ads` | each platform's, `FORGET_ADS`, `OUTBOX_DELAY_MS` | `google`, `meta`, `microsoft`, `tiktok`, `retractOnForget`, `delayMs` |
-| `costs` | each platform's | `google`, `meta` |
-| `checks` | `SMARTY_*`, `TWILIO_*` | `address`, `lineType` |
-| `monitor` | `QUIET_*`, `LATE_HOURS`, `AUDIT_HEAD_HOURS` | `quietHours`, `lateHours`, `auditHours` |
-| `webhook`, `alerts` | `WEBHOOK_URL`, `WEBHOOK_SECRET`, `ALERT_WEBHOOK` | Where [events](operations.md#events) and [alerts](operations.md#alerts) are posted |
-| `now` | none | The clock, for tests |
-| `fetch` | none | Asks ad platforms, checks and webhooks in place of the global one, for tests |
+A local graph with settings:
 
 ```ts
 import { accountGraph } from 'account-graph'
@@ -107,13 +103,17 @@ The [HTTP API](http.md) has every field, refusal and rule. The types are exporte
 
 Every write takes a `key` and an `at` of yours. Keep both with what you record, so a retry is the same call.
 
-### Record
+The examples below use this graph:
 
 ```ts
 import { accountGraph } from 'account-graph'
 
 const graph = accountGraph({ memory: true })
+```
 
+### Record
+
+```ts
 const { results } = await graph.record({
   entries: [
     { type: 'profile', key: 'signup-1001', at: 1795460000000, subject: 'contact:1001', event: 'signup', facts: { email: 'pat@example.org', device: '9f3c' } },
@@ -129,31 +129,9 @@ for (const result of results) {
 
 A "no" is a value and never thrown. `changes` lists the subjects that moved, so you can hold a login or a trade before it settles.
 
-### Refund and write off
-
-A refund or a write-off is an amount. It does not say what is left, so the order they arrive in does not matter.
-
-```ts
-import { accountGraph } from 'account-graph'
-
-const graph = accountGraph({ memory: true })
-const of = { type: 'conversion', key: 'enroll-1001' } as const
-
-await graph.record({
-  entries: [
-    { type: 'conversion', key: 'enroll-1001', at: 1795460000000, subject: 'contact:1001', stage: 'enrolled', value: 200, currency: 'USD' },
-    { type: 'restatement', key: 'refund-7', at: 1795463600000, of, change: { kind: 'refund', amount: 80 } }, // worth 120
-    { type: 'restatement', key: 'undo-7', at: 1795467200000, of, change: { kind: 'reverse', restatement: 'refund-7' } }, // worth 200
-  ],
-})
-```
-
 ### Decide
 
 ```ts
-import { accountGraph } from 'account-graph'
-
-const graph = accountGraph({ memory: true })
 const at = 1795460000000
 const pairs = [{ a: 'contact:7', b: 'contact:12' }]
 
@@ -166,23 +144,16 @@ if (merged.ok && merged.value.notAsAsked.length > 0) console.log('a split holds 
 Take a merge back with `unmerge` of the pair:
 
 ```ts
-import { accountGraph } from 'account-graph'
-
-const graph = accountGraph({ memory: true })
-
 const undone = await graph.decide({ key: 'ticket-89', at: 1795463600000, by: 'dana', action: 'unmerge', pairs: [{ a: 'contact:7', b: 'contact:12' }] })
 if (!undone.ok && undone.reason === 'NOT_JOINED') for (const { a, b, because } of undone.pairs) console.log(a, b, because)
 else if (undone.ok) for (const { a, b, because } of undone.value.notAsAsked) console.log(a, b, 'are still together', because)
 ```
 
-`NOT_JOINED` says nobody merged the pair, so there is nothing to take back. `because` is `apart` where they are not together, `evidence` where what they share joins them, and `other_merges` where merges with others do. `notAsAsked` lists pairs that stay together after it. `split` keeps those apart.
+[`decide`](http.md#decide) has what each `because` means.
 
 ### Look up
 
 ```ts
-import { accountGraph } from 'account-graph'
-
-const graph = accountGraph({ memory: true })
 const at = 1795460000000
 
 // What brought them.
@@ -197,15 +168,9 @@ const { candidates } = await graph.lookup({ kind: 'match', facts: { phone: '(555
 const { entries, next } = await graph.lookup({ kind: 'journey', subject: 'contact:1001' })
 ```
 
-The person of a journey is the subject's cluster, plus any subject linked strongly enough that its visits would be credited. A subject split from any of them is left out. `subjects` gives the reason and score for each.
-
 ### Report
 
 ```ts
-import { accountGraph } from 'account-graph'
-
-const graph = accountGraph({ memory: true })
-
 const { asOf, value } = await graph.report({ kind: 'campaigns', window: { from: '2026-11-01', to: '2026-11-14', timeZone: 'America/Chicago' }, per: 'enrolled' })
 for (const row of value.rows) console.log(row.source, row.campaignId, row.cost, row.costPerOutcome)
 console.log(`as of ${new Date(asOf).toISOString()}`)
@@ -214,10 +179,6 @@ console.log(`as of ${new Date(asOf).toISOString()}`)
 ### Follow events
 
 ```ts
-import { accountGraph } from 'account-graph'
-
-const graph = accountGraph({ memory: true })
-
 let after: string | null = null // read from where you keep it
 for (;;) {
   const page = await graph.events({ after, limit: 500 })
@@ -257,20 +218,18 @@ async function send(request: RecordRequest) {
 }
 ```
 
-| Code | Thrown by a local graph | Thrown by a remote one |
+[Faults](http.md#faults) has every code, its status, when it is thrown, and which are retryable. This is what Node adds:
+
+| Code | A local graph | A remote one |
 | --- | --- | --- |
 | `INPUT.MALFORMED`, `INPUT.TOO_LARGE` | Before anything is written, or with the entry that cannot be | Before sending, or from the server |
 | `AUTH.REJECTED`, `AUTH.FORBIDDEN` | Never | From the server |
 | `CONFIG.INVALID` | By `accountGraph` | By `accountGraph`, and for a 404, a 405 or a redirect, because `url` is then no server |
-| `CONFIG.MISMATCH` | When the [settings differ](operations.md#settings-that-must-match) from the database's | From the server |
 | `CONFIG.UNSUPPORTED` | A `link` without `linkSecret`, or `retract` where no platform can | From the server |
-| `GRAPH.UNAVAILABLE` | The database is not available | From the server, and for 429 or 503 of a proxy |
-| `GRAPH.INTERNAL` | Everything else. The cause is kept as `cause`, and is not in the message. | From the server, and for a read whose answer cannot be read |
-| `GRAPH.CLOSED` | After `close` | After `close` |
+| `GRAPH.UNAVAILABLE` | The database is not available | Also for 429 or 503 of a proxy |
+| `GRAPH.INTERNAL` | Everything else. The cause is kept as `cause`, and is not in the message. | Also for a read whose answer cannot be read |
 | `TRANSPORT.INDETERMINATE` | The time ran out, or the connection was lost as a write was committed | No answer, 502 or 504, or a write whose answer cannot be read |
 | `TRANSPORT.ABORTED` | Your `signal` | Your `signal` |
-
-[Faults](http.md#faults) has the status of each, and which are retryable.
 
 Each call takes `{ signal, correlationId }` as a second argument. `signal` aborts it. `correlationId` is sent to a server as `x-request-id`.
 
@@ -319,13 +278,13 @@ async function stop() {
 | `textCodes` | `TEXT_CODES` | Puts a code in text links |
 | `fingerprint`, `maxmind`, `serverRanges` | `FINGERPRINT_*`, `MAXMIND_*`, `SERVER_RANGES_FILE` | See [providers](providers.md). `serverRanges` is the text of the file. |
 
-With `cookie: true`, `/collect` keeps the device id in a cookie the server sets. Safari deletes a script-set cookie after seven days. A server-set cookie lasts, and page script can neither read nor change it. Serve `/collect` from the site's own domain, or from a subdomain with `cookie: { domain: 'example.org' }`.
+`cookie` is described under [device cookie](operations.md#device-cookie). Serve `/collect` from the site's own domain, or from a subdomain with `cookie: { domain: 'example.org' }`.
 
 ## Workers
 
 With `workers: true`, a local graph sends due conversions every 30 seconds, posts events every 5 seconds, looks for what is late every 5 minutes, and reads costs every 6 hours. Several processes may have it on: each kind of work but sending takes a lease, and sending claims its own conversions.
 
-In a test, run one pass of every worker by hand:
+[Providers](providers.md#what-sending-does) says what sending does. In a test, run one pass of every worker by hand:
 
 ```ts
 import { accountGraph } from 'account-graph'
@@ -334,30 +293,6 @@ import { runWorkers } from 'account-graph/testing'
 const graph = accountGraph({ memory: true, now: () => 1795460000000 })
 await runWorkers(graph)
 ```
-
-### What sending does
-
-| Event | Result |
-| --- | --- |
-| The platform accepts the request | `sent` |
-| Rate limit, outage, bad credential, network error | Stays `pending`. Retried after 30 seconds, doubling to an hour, shortened by up to half |
-| Still failing after 8 tries | `failed`, with the last error |
-| The platform rejects a request for one bad event | Each event is sent alone, and only the bad one is `failed` |
-| Without a trusted click, email or phone | Stays `pending` with the note `no_match_key`, and is looked at again in case the person is tied to a click. `skipped` seven days after it happened |
-| The person, or the browser that clicked, refused ad measurement, including after an outcome that said yes | `skipped`: `consent_denied` |
-| The outcome is older than the platform accepts: 7 days for Meta, 90 for Microsoft | `skipped`: `too_old` |
-| A click below 0.9 confidence that is not in the person's cluster, with an email or phone | Sent with the email or phone alone |
-
-The click is worked out when a conversion is sent, so evidence that arrived after the conversion still counts. Each platform gets its own click id, and the email and phone hashed the way it matches them.
-
-| Platform | Match data |
-| --- | --- |
-| Google | One click id: `gclid`, else `gbraid`, else `wbraid` |
-| Meta | `fbc`, built from `fbclid` and the click time, with `fbp` where the site runs Meta's pixel |
-| Microsoft | `msclkid` |
-| TikTok | `ttclid` |
-
-Delivery is at least once. A conversion sent twice after a crash carries the same key. Meta keeps the first copy, and Google treats the second as a restatement of the same value. A worth that changes is sent again to Google, which overwrites the value it holds.
 
 ## Webhook
 
@@ -394,7 +329,7 @@ const graph = accountGraph({
 })
 ```
 
-Left out, the policy is the one the database was built with. One that differs throws `CONFIG.MISMATCH` until [`account-graph rebuild`](operations.md#policy). [Matching](deciding.md) describes each part of a rule.
+Left out, the policy is the one the database was built with. One that differs throws `CONFIG.MISMATCH` until [`account-graph rebuild`](operations.md#policy). [Matching](matching.md) describes each part of a rule.
 
 ## Money flows
 
@@ -415,9 +350,9 @@ if (trade?.ok && trade.type === 'transfer') console.log(trade.value.relation, tr
 const { counterparties, rings } = await graph.lookup({ kind: 'transfers', subject: 'account:1', tiedOnly: true })
 ```
 
-`amount` is a whole number of the asset's smallest unit. `counterparties` has what was sent and received with each, the tie, and `imbalance`, which is 1 when value moved one way only. With `tiedOnly`, it keeps those tied by identity with three or more transfers.
+`amount` is a whole number of the asset's smallest unit. `counterparties` has what was sent and received with each, the tie, and `imbalance`, which is 1 when value moved one way only.
 
-A ring is value that left a subject and returned through others: A paid B, B paid C, C paid A. Its `amount` is the least that moved on any step, and so the most that could have gone all the way round. `tied` counts the others in the subject's cluster. Rings of up to four subjects are found.
+A ring is value that left a subject and returned through others: A paid B, B paid C, C paid A. Its `amount` is the least that moved on any step, and so the most that could have gone all the way round. `tied` counts the others in the subject's cluster. Rings of up to four subjects are found. Flows and rings use running totals for each pair, without the order of transfers.
 
 ## Browser and desktop
 
@@ -453,5 +388,5 @@ const hardware = await hardwareId('my-game-client') // 'hardware:9c1f…'
 ## Limitations
 
 - **Hardware id.** The client reports it, so a modified client can send a false value.
-- **Restatement.** Google has no way to retract a conversion. Meta, Microsoft and TikTok cannot restate one.
+- **Windows.** The Windows hardware id is untested.
 - **Memory.** A memory graph is lost with its process, and so are its receipts. It copies all it holds before each entry, so it suits tests and small graphs.

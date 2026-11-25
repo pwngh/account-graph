@@ -1,11 +1,11 @@
 /**
  * Three stories on made-up data, through the package's own calls: duplicate
  * accounts on a game platform, an enrollment traced back to an ad click, and
- * a decision about two people. Run with `node demo.ts`.
+ * a decision about two people. Run with `node examples/six-calls.ts`.
  */
 import { createServer } from 'node:http'
-import { accountGraph, parseWebhook, verifyWebhook } from './src/index.ts'
-import { runWorkers } from './src/testing/index.ts'
+import { accountGraph, parseWebhook, verifyWebhook } from '../src/index.ts'
+import { runWorkers } from '../src/testing/index.ts'
 
 const HOUR = 3_600_000
 const noon = Date.UTC(2026, 10, 23, 18)

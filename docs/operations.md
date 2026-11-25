@@ -63,6 +63,8 @@ account-graph verify
 { "changes": [], "policy": { "hash": "d852bb513c02…", "builtWith": "d852bb513c02…", "due": false } }
 ```
 
+`changes` lists the subjects whose stored cluster differs from a full recompute, and is empty when they agree.
+
 With compose, run `docker compose exec graph node dist/bin.js verify`.
 
 ## Script tag
@@ -89,7 +91,7 @@ List the site in `ORIGINS`, or `/collect` answers 403. A site with a content sec
 | `collect.js?pool=1` | Shows each visitor a separate phone number in elements marked `data-ag-pool`. Requires `POOL_NUMBERS`. See [number pools](calls.md#number-pools). |
 | `collect.js?forms=all` | Adds the device id and landing page to every form that posts, on submit. By default, only to forms marked `data-ag-fields`. |
 
-The script also reports taps on phone links and clicks on elements marked `data-ag-event`. List the event names to accept in `EVENTS`. See [page events and phone calls](calls.md).
+The script also reports taps on phone links and clicks on elements marked `data-ag-event`. List the event names to accept in `EVENTS`. See [calls and texts](calls.md).
 
 To pass the answer from a consent banner, set `window.accountGraphConsent = { adUserData: true, adPersonalization: false }` before the tag.
 
@@ -97,11 +99,11 @@ To pass the answer from a consent banner, set `window.accountGraphConsent = { ad
 
 The script stores the visitor's device id in a cookie named `ag_device`, marked `Secure`. The cookie requires HTTPS, except on `localhost`.
 
-Set `COOKIE=true` to have the server set the cookie instead. Safari deletes a cookie set by script after seven days; a cookie set by the server lasts. This works when the server answers on the site's own domain, or on a subdomain with `COOKIE=example.org`.
+Set `COOKIE=true` to have the server set the cookie instead. Safari deletes a cookie set by script after seven days; a cookie set by the server lasts, and page script can neither read nor change it. This works when the server answers on the site's own domain, or on a subdomain with `COOKIE=example.org`. The server-set cookie is untested in Safari.
 
 ### Multiple sites
 
-Browsers keep cookies per domain, so each domain assigns its own device id. A person who visits two of your sites counts as two visitors until something links them: the [`domains` option](links.md), a confirmed fingerprint, or the same account signing in on both.
+Browsers keep cookies per domain, so each domain assigns its own device id. A person who visits two of your sites counts as two visitors until something links them: the [`domains` option](identify.md#cross-site-visitors), a confirmed fingerprint, or the same account signing in on both.
 
 ## Tokens
 
@@ -143,7 +145,7 @@ The server runs the default weights, caps and half-lives. `POLICY` overrides onl
 POLICY='{"kinds":{"phone":{"weight":0.85,"halfLife":63072000000}}}' npm start
 ```
 
-For a longer policy, set `POLICY_FILE` to the path of a JSON file. [Matching](deciding.md) describes each part of a rule, and [Presets](presets.md) has a policy for contacts entered by staff. A new kind needs its weight, dilution, cap and half-life. Write `"none"` for an unlimited half-life.
+For a longer policy, set `POLICY_FILE` to the path of a JSON file. [Matching](matching.md) describes each part of a rule, and [Presets](matching.md#presets) has a policy for contacts entered by staff. A new kind needs its weight, dilution, cap and half-life. Write `"none"` for an unlimited half-life.
 
 > **A changed policy needs a rebuild.** The database keeps the policy it was built with. A server started with another one stops with `The policy differs from the one this database was built with. Run account-graph rebuild.`
 
@@ -156,21 +158,6 @@ Without `POLICY` and `POLICY_FILE`, the server takes the policy the database kee
 A database from before the policy was kept takes the one that is set, where its clusters were built with it, and the default where none is set. The start log, `account-graph verify` and the Health view say when a rebuild is due.
 
 Startup fails with one line per problem when a setting is invalid. It also fails when the policy omits the kind of a stored identifier.
-
-## Consent
-
-The server stores every answer about advertising with its time and source. The answer given most recently applies, whatever order answers arrive in.
-
-| Origin of the answer | Stored source |
-| --- | --- |
-| The browser's Global Privacy Control signal | `browser signal` |
-| The banner's answer, passed by the page | `banner` |
-| Your backend, with a `consent` entry | The source you name |
-| An answer stored before consent history existed | `before history`, with no time |
-
-Every page view reports the browser signal again. A signal that says no overrides an earlier banner yes from the first visit that carries it. A visit that carries both counts as the signal.
-
-`forget` deletes a subject's answers and records that deletion in the audit log. `account-graph prune` deletes old answers except the one that applies. [Privacy](privacy.md#consent) covers the effect of each answer.
 
 ## Audit log
 
@@ -269,56 +256,13 @@ The mark is signed with `LINK_SECRET`. The server records a visit with any other
 
 Each address may post a burst of 60 requests and 120 a minute to `/collect`. Beyond that the server answers 429 with a `retry-after` header.
 
-The limit protects the graph from a single sender, because a script can claim any origin. Set `RATE_LIMIT=off` only when a system in front already limits requests.
+The limit protects the graph from a single sender, because a script can claim any origin. Set `RATE_LIMIT=off` only when a system in front already limits requests. Each server process counts for itself.
 
 ## Upgrades
 
 Start the new version. At startup the server applies every pending database change, in order, in one transaction.
 
-Each change has a number and runs once. When several servers start together, one applies the changes and the others wait.
-
-### To the six calls
-
-> **Every old route for services is gone.** It answers 404. Change the callers before you upgrade, or upgrade both at once.
-
-| Before | After |
-| --- | --- |
-| `/identify`, `/observe` | `record` `profile`. Raw identifiers go under `facts.identifiers`. |
-| `/touch` | `record` `arrival`. Click ids go under `clicks`. |
-| `/costs` | `record` `cost` |
-| `/convert` | `record` `conversion`. `transactionId` is `key`, `action` is `actions`. |
-| `/restate`, `/not-lead` | `record` `restatement`. A refund or write-off is an amount, where `/restate` took what was left. |
-| `/payment` | `record` `payment`. `kind` is `direction`: `received` or `refunded`. |
-| `/call`, `/call/result`, `/call/returned` | `record` `call`, `call_update` |
-| `/text` | `record` `text` |
-| `/consent` | `record` `consent`, `lookup` `person` |
-| `/link`, `/sent` | `record` `link`, `lookup` `journey` |
-| `/transfer`, `/flows`, `/collusion`, `/rings` | `record` `transfer`, `lookup` `transfers` |
-| `/join`, `/separate`, `/ignore` | `decide` `merge`, `unmerge`, `split`, `unsplit`, `mute`, `unmute` |
-| `/forget` | `forget` |
-| `/people`, `/attribute`, `/cluster`, `/texting` | `lookup` `person` |
-| `/match`, `/call/ringing`, `/conflicts`, `/find` | `lookup` `match`, `caller`, `conflicts`, `find` |
-| `/outcome`, `/conversion`, `GET /call`, `GET /text` | `lookup` `record` |
-| `/report`, `/board`, `/calls/summary`, `/calls`, `/texts`, `/followed`, `/conversions` | `report` `campaigns`, `pipeline`, `calls`, `callbacks`, `texts`, `after_calls`, `deliveries` |
-| `/changes` | `events` |
-| `/rebuild`, `/verify`, `/prune`, `/retry`, `/stats`, `/alerts/test`, `/staff-link` | [Commands](#commands) |
-
-| Also | Detail |
-| --- | --- |
-| `RECEIPT_SECRETS` | Required. Make one with `openssl rand -hex 32`. |
-| `CHANGE_WEBHOOK`, `CHANGE_SECRET` | Now `WEBHOOK_URL` and `WEBHOOK_SECRET`, both or neither. A server with an old name set does not start. The body is an [event envelope](#webhook). |
-| `COST_INTERVAL_MS`, `COST_DAYS`, `OUTBOX_INTERVAL_MS` | No longer exist. Costs are read every six hours for the last seven days, and conversions are sent every 30 seconds. |
-| `at` | Every write names it, and a key of its own. A caller that stamps `at` anew on each retry gets `KEY_REUSED`. |
-| Decisions | A merge is taken back by its pair with `unmerge`. There is no mark to keep. |
-| The change feed | Cluster changes became events and were numbered again. Start with `"after": null`. |
-| Policy | The database keeps it from now on. See [the policy](#policy). |
-| Pages | The old browser paths answer for one release, for pages that keep an old script. |
-
-> **On the day you deploy, a page event can count once more.** Page events now have ids of their own, which begin with `page:`. An event a browser already sent that day has another id, so the same browser can count it a second time. The next day is as before.
-
-### To the current weights
-
-> **The default weights changed.** A phone number alone now joins two subjects, relates three, and reports no link among four or more. A phone, email or `voip` value held by more than 10 subjects links none of them. A server that ran the earlier defaults starts with a notice that a rebuild is due: run `account-graph rebuild` while the servers are stopped. To keep the earlier behavior, set `POLICY='{"kinds":{"phone":{"dilution":0,"cap":25},"email":{"cap":25},"voip":{"dilution":0,"cap":25}}}'` and rebuild if the server asks for it.
+Each change has a number and runs once. When several servers start together, one applies the changes and the others wait. What a caller must change is in the [changelog](../CHANGELOG.md#upgrading).
 
 ## Settings that must match
 
@@ -327,7 +271,7 @@ Processes that share a database must agree on these. The database keeps the poli
 | Setting | A process that differs | To change it |
 | --- | --- | --- |
 | `POLICY`, `POLICY_FILE` | Is refused. One without any takes the database's. | Stop the servers, run `account-graph rebuild` with the new one, start them with it |
-| `IDENTIFIER_SECRET`, `LINK_SECRET` | Is refused. One without it is let in, and makes none of its keys. | The same. New keys match none of the old ones, and links already sent become ordinary links. |
+| `IDENTIFIER_SECRET`, `LINK_SECRET` | Is refused. One without it is let in, and makes none of its keys. | The same. New keys match none of the old ones, which cannot be made again, and links already sent become ordinary links. |
 | `RECEIPT_SECRETS` | Is refused where it lacks a secret that a stored receipt was made with | Put the new one first and keep the old ones. See [receipts](#receipts). |
 
 A policy that lacks the kind of a stored identifier is refused too. Nothing else is compared, so give every process the same steps, numbers and opening hours.
@@ -356,8 +300,6 @@ After its receipt is pruned, a key is new again. A conversion, call, text, payme
 | Where | Answers |
 | --- | --- |
 | `GET /health` | `{"ok":true}` once the database answers. Needs no token. Use it for load balancer checks. |
-| `account-graph stats` | What the graph holds, and deliveries by state |
-| `account-graph verify` | `{ changes, policy }`. `changes` lists the subjects whose stored cluster differs from a full recompute, and is empty when they agree. |
 | `/review#/health` | Feeds and the time of each one's last record, job runs, undelivered alerts, pool usage, deliveries by state, and whether a rebuild is due |
 
 ## Events
@@ -417,7 +359,7 @@ Set `ALERT_WEBHOOK` to a Slack incoming webhook, or any URL that accepts `{"text
 | Conversions are `LATE_HOURS` overdue | Due time of the oldest | Once a day while it lasts |
 | A missed caller from a paid visit has waited `RETURN_HOURS` | Campaign, time, and number of callback attempts | Once per wait |
 
-The server logs and stores an alert that fails to deliver, retries it every five minutes, and shows it on the Health view. The work it reports on continues. Without a webhook, alerts are stored and shown there.
+The server logs and stores an alert that fails to deliver, retries it every five minutes, and shows it on the Health view. The work it reports on continues. Without a webhook, alerts are stored and shown there. Delivery to a live alert webhook is untested.
 
 Send a test alert:
 
@@ -440,7 +382,7 @@ Set how many hours without a record raise an alert. All four settings are off by
 | Call results | `QUIET_RESULTS_HOURS` | Any result |
 | Campaign costs | `QUIET_COSTS_HOURS` | Any cost row |
 
-The check uses the time the server stored the record. Choose hours longer than your slowest night or weekend.
+The check uses the time the server stored the record. Choose hours longer than your slowest night or weekend. A stale feed is found by the absence of records. Records that are wrong are not found.
 
 ### Missed callers
 
@@ -472,7 +414,7 @@ OPEN_HOURS='{
 
 > **Set them together.** With `OPEN_HOURS` set, `RETURN_HOURS=24` is three working days of eight hours, and `8` is one.
 
-A day left out is closed. A span such as `18:00-02:00` runs past midnight and belongs to the day it starts on, so a holiday on that day closes all of it. Hours use `REPORT_TIME_ZONE`, or `"timeZone"` beside the days.
+A day left out is closed. A span such as `18:00-02:00` runs past midnight and belongs to the day it starts on, so a holiday on that day closes all of it. Hours use `REPORT_TIME_ZONE`, or `"timeZone"` beside the days. They are one weekly schedule and a list of closed days for the whole organization.
 
 The call summary reports the calls that began while you were closed, and their outcomes, under `closed`.
 
@@ -549,7 +491,7 @@ A partially set group stops the server at startup, with a message naming the mis
 | `SERVER_RANGES_FILE` | none | A file with the address ranges of data centers, written as `192.0.2.0/24` or `2001:db8::/32` in any text: what [AWS](https://ip-ranges.amazonaws.com/ip-ranges.json) and [Google Cloud](https://www.gstatic.com/ipranges/cloud.json) publish, one after the other. An address in them is recorded and is no evidence. Read when the server starts, so fetch it again now and then. |
 | `MAXMIND_SERVICE`, `MAXMIND_HOST` | `insights`, `geoip.maxmind.com` | MaxMind service and host. |
 | `TWILIO_AUTH_TOKEN`, `TWILIO_WEBHOOK_URL` | none | Accepts Twilio's call reports at `/calls/twilio`. Set both. |
-| `TEXT_CODES` | off | `true` gives each browser a code for your [text links](texts.md). |
+| `TEXT_CODES` | off | `true` gives each browser a code for your [text links](calls.md#text-messages). |
 | `TWILIO_TEXT_WEBHOOK_URL` | none | With `TWILIO_AUTH_TOKEN`: accepts Twilio's incoming texts at `/texts/twilio`. |
 | `TWILIO_ACCOUNT_SID` | none | With `TWILIO_AUTH_TOKEN`: looks up the line type of phones in a `profile`, a `call` or a `text`. |
 | `SMARTY_AUTH_ID`, `SMARTY_AUTH_TOKEN` | none | Checks postal addresses in a `profile`. Set both. |
@@ -565,6 +507,35 @@ A partially set group stops the server at startup, with a message naming the mis
 | `GOOGLE_ADS_CONVERSIONS` | none | `true` also reads Google's conversion count for each campaign. |
 | `META_ADS_CONVERSIONS` | none | The action to read from Meta with its costs, such as `offsite_conversion.fb_pixel_lead`. |
 
-## Limitations
+## Performance
 
-- Consent covers what may be sent to ad platforms. It is neither a record of consent to be called, texted or written to, nor a legal record.
+Measured on an Apple M1 Max with Node 22 and synthetic data. PostgreSQL 16 ran in Docker on the same machine with two processors and default settings, including `fsync`. Run `DATABASE_URL=postgres://… npm run bench` to measure your own hardware, or omit the variable to measure the memory store.
+
+20,000 accounts:
+
+| Store | One at a time | In batches of 100 | Through the write queue | Reading one subject's links |
+| --- | --- | --- | --- | --- |
+| Memory | 28,700 observations/s | 13,800/s | 16,900/s | 0.02 ms |
+| PostgreSQL | 183 observations/s | 1,900/s | 3,600/s | 2.7 ms |
+
+PostgreSQL writes are serialized by an advisory lock. The write queue combines the visits that browsers report at one time into one transaction.
+
+The figures are of observations written by the engine. An entry of `record` is a transaction of its own and also writes a receipt, which these figures leave out.
+
+Large graphs, five edges per account, with `DATABASE_URL=postgres://… npm run bench -- scale 1000000 5000000 10000000`. Cells show time and peak memory:
+
+| Edges | On disk | `rebuild` | `verify` | Observation, one subject's links |
+| --- | --- | --- | --- | --- |
+| 1 million | 420 MB | 7 s, 159 MB | 6 s, 150 MB | 6.6 ms, 2.3 ms |
+| 5 million | 2.1 GB | 45 s, 198 MB | 40 s, 206 MB | 8.1 ms, 2.9 ms |
+| 10 million | 4.3 GB | 94 s, 291 MB | 85 s, 402 MB | 10.7 ms, 3.7 ms |
+
+The last column is the median of 300 sequential runs. Other tests used the database during the two larger runs, so those times are upper estimates.
+
+## What was tried
+
+- The shared test suite runs on the memory store and PostgreSQL 16, locally and in CI. It includes a fuzz test of observations, decisions, deletions and transfers, and six concurrent outbox workers.
+- The Docker image, the example site, ad click attribution, signed links, cross-site visitors and tap-to-call matching were exercised end to end in Chrome.
+- The reviewer screen and the `HttpOnly` device cookie were exercised in Chrome under their production headers.
+- A database created before an upgrade was upgraded by starting the server.
+- The hardware id was exercised on macOS and Linux.

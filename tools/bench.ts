@@ -1,8 +1,8 @@
 /**
  * Measures write and read speed on this machine.
- *   node bench.ts                      memory store
- *   DATABASE_URL=postgres://... node bench.ts   PostgreSQL too
- *   DATABASE_URL=postgres://... node bench.ts scale 1000000 5000000
+ *   node tools/bench.ts                      memory store
+ *   DATABASE_URL=postgres://... node tools/bench.ts   PostgreSQL too
+ *   DATABASE_URL=postgres://... node tools/bench.ts scale 1000000 5000000
  *
  * The last makes a graph of that many edges in PostgreSQL, in a schema of its
  * own that is dropped after, and measures what reads all of it: a rebuild, a
@@ -12,8 +12,8 @@
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import { createBatcher, createGraph, createMemoryStore } from './tools/internals.ts'
-import type { Graph, Observation } from './tools/internals.ts'
+import { createBatcher, createGraph, createMemoryStore } from './internals.ts'
+import type { Graph, Observation } from './internals.ts'
 
 const ACCOUNTS = 20_000
 const T0 = 1_700_000_000_000
@@ -95,7 +95,7 @@ async function fill(pool: { query(text: string): Promise<{ rows: any[] }> }, sch
 /** One measurement on a graph made before, in this process alone. */
 async function measure(what: string, schema: string) {
   const { default: pg } = await import('pg')
-  const { createPostgresStore } = await import('./src/store/postgres.ts')
+  const { createPostgresStore } = await import('../src/store/postgres.ts')
   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
   const graph = createGraph(createPostgresStore(pool, schema))
   let start = performance.now()
@@ -125,7 +125,7 @@ async function measure(what: string, schema: string) {
 
 async function scale(sizes: readonly number[]) {
   const { default: pg } = await import('pg')
-  const { createPostgresStore } = await import('./src/store/postgres.ts')
+  const { createPostgresStore } = await import('../src/store/postgres.ts')
   for (const edges of sizes) {
     const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
     // Made by this run and by no other, so it is this run's to drop.
@@ -167,7 +167,7 @@ await run('memory', createGraph(createMemoryStore()), 50_000)
 
 if (process.env.DATABASE_URL) {
   const { default: pg } = await import('pg')
-  const { createPostgresStore } = await import('./src/store/postgres.ts')
+  const { createPostgresStore } = await import('../src/store/postgres.ts')
   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
   const schema = `ag_bench_${process.pid}`
   const store = createPostgresStore(pool, schema)

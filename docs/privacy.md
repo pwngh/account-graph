@@ -103,11 +103,23 @@ Two answers are stored separately: measuring ads (`adUserData`) and personalizin
 | Outbox, on send | Skipped when the outcome says no to measuring ads, or when the last answer of the subject or the clicking browser was no. For an outcome that carries a yes, only a no given since counts. |
 | Personalization | A no does not stop the send. The answer is passed on when the outcome carries one, or when the subject and the clicking browser, if different, have both answered. Otherwise the platform gets no answer and applies the ad account's setting. |
 | Later answer | Replaces an earlier one. A dated answer always replaces one without a time. |
+| History | Each page view that reports consent adds a row. `account-graph prune` deletes superseded ones. |
+
+The server stores every answer about advertising with its time and source. The answer given most recently applies, whatever order answers arrive in.
+
+| Origin of the answer | Stored source |
+| --- | --- |
+| The browser's Global Privacy Control signal | `browser signal` |
+| The banner's answer, passed by the page | `banner` |
+| Your backend, with a `consent` entry | The source you name |
+| An answer stored before consent history existed | `before history`, with no time |
+
+Every page view reports the browser signal again. A signal that says no overrides an earlier banner yes from the first visit that carries it. A visit that carries both counts as the signal.
 
 ## Limitations
 
 - This page makes no claim about any law.
 - Platform documentation does not state that a retraction deletes the data matched to reach a conversion.
-- A request marked `accepted` is unconfirmed beyond the platform's response.
-- Consent covers advertising. Message consent, opt-outs, quiet hours and contact frequency belong to the system that calls or sends.
+- A request marked `accepted` is unconfirmed beyond the platform's response. No live request has been made.
+- Consent covers advertising. Message consent, opt-outs, quiet hours and contact frequency belong to the system that calls or sends. What is stored here is no record of consent to be called, texted or written to, and no legal record.
 - A no to advertising still records visits, calls and steps for your own report. Use `forget` to delete them.

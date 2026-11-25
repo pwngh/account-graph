@@ -144,7 +144,7 @@ test('the household preset is a sound policy, and fit counts a group once', () =
   const given = JSON.parse(readFileSync(new URL('../examples/household.json', import.meta.url), 'utf8'))
   assert.deepEqual(policyProblems(given), [])
   // The page that explains it shows the same thing.
-  const shown = /```json\n([\s\S]*?)```/.exec(readFileSync(new URL('../docs/presets.md', import.meta.url), 'utf8'))![1]!
+  const shown = /```json\n([\s\S]*?)```/.exec(readFileSync(new URL('../docs/matching.md', import.meta.url), 'utf8'))![1]!
   assert.deepEqual(JSON.parse(shown), given)
   assert.deepEqual(policyProblems({ kinds: { phone: { group: '' } } }), ['kind "phone" requires its group as a string'])
 

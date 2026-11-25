@@ -1,6 +1,6 @@
-# Page events and phone calls
+# Calls and texts
 
-The script tag reports what a visitor does on a page. A phone call that follows a tap on your number is linked to the visitor who tapped, and credited to the ad click that brought them.
+The script tag reports what a visitor does on a page. A phone call that follows a tap on your number is linked to the visitor who tapped, and credited to the ad click that brought them. A [text](#text-messages) from your site is tied to its visit by a code or a tap.
 
 ```html
 <a href="tel:+15551230001">Call us</a>
@@ -39,7 +39,7 @@ A page reports events without the service token, in one of three ways.
 | On the page | Reported as |
 | --- | --- |
 | A link whose address starts with `tel:` | `phone_click`, with the number |
-| A link whose address starts with `sms:` | `text_click`, with the number. See [texts](texts.md). |
+| A link whose address starts with `sms:` | `text_click`, with the number. See [text messages](#text-messages). |
 | Any element with `data-ag-event="name"` | `name`, when clicked; on a form, when submitted |
 | `accountGraph.event('name', { id })` from your own script | `name` |
 
@@ -60,7 +60,7 @@ The server processes a reported call in four steps.
 
 Each visitor is linked to one caller. Visitors already linked to another caller, or separated from this caller by a reviewer, are skipped.
 
-`key` is the provider's id. Recording it again answers `"duplicate": true`. A result in the second report counts by its `at`, as a [result](#call-results) reported by itself would; the rest is ignored. Another direction or number under the same key is `KEY_REUSED`.
+`key` is the provider's id. Recording it again answers `"duplicate": true`. A result in the second report counts by its `at`, as a [result](#call-results) reported by itself would; the rest is ignored. See [idempotency](http.md#idempotency).
 
 | Flag | Meaning | Effect |
 | --- | --- | --- |
@@ -113,6 +113,8 @@ A call is linked to a tap by time, so on a number that rings often, some calls f
 CALL_TAP_SECONDS=180
 ```
 
+`CALL_TAP_SECONDS`, or `phones.tapSeconds` in the library, changes the three minutes. Thirty seconds are allowed for clock differences.
+
 A shorter window loses callers who took longer to dial. A number that is always busy needs a [pool](#number-pools): no window tells two callers apart who tap and call together.
 
 Choose it from your own calls. Count the ties at each length, then move every tap by several amounts, such as a day and a week, to times as busy on the same number, and count again. The second counts estimate chance.
@@ -121,17 +123,21 @@ Choose it from your own calls. Count the ties at each length, then move every ta
 
 ### Twilio
 
-Twilio can report calls directly. The server verifies Twilio's signature on each request, so the route needs no token.
+Twilio can report calls and incoming texts directly. The server verifies Twilio's signature on each request, so the routes need no token.
 
 1. In the Twilio console, open the phone number and set **Call status changes** to `https://graph.example.org/calls/twilio`, method POST.
-2. Copy the account's **Auth Token** from the console's account page.
+2. For texts, set **A message comes in** to `https://graph.example.org/texts/twilio`, method POST. If a system of yours answers there already, have it record each text.
+3. Copy the account's **Auth Token** from the console's account page.
 
 ```sh
 TWILIO_AUTH_TOKEN=…
-TWILIO_WEBHOOK_URL=https://graph.example.org/calls/twilio   # exactly as entered in Twilio
+TWILIO_WEBHOOK_URL=https://graph.example.org/calls/twilio        # exactly as entered in Twilio
+TWILIO_TEXT_WEBHOOK_URL=https://graph.example.org/texts/twilio   # for texts, the same
 ```
 
 The signature covers that address, so the two must match to the character. A request that fails the check gets 403.
+
+The answer to a text is empty, so the sender gets no reply from the graph. Record the texts you send with `"direction": "outbound"`.
 
 | Reported by Twilio | Recorded as |
 | --- | --- |
@@ -143,16 +149,17 @@ The signature covers that address, so the two must match to the character. A req
 
 ### Other providers
 
-Record each call from your backend.
+Record each call from your backend, with these fields:
 
 | Field | Meaning |
 | --- | --- |
-| `key` | The provider's id for the call |
+| `key` | The provider's own id for the call, so a report sent twice counts once |
+| `from` | Inbound: the caller's number. Leave it out where the caller hid it. Outbound: yours. |
+| `to` | Inbound: the number the visitor saw and dialed, not the one it was forwarded to, because a tap is matched on it. Outbound: the customer's number. |
+| `at` | When the call began, in epoch milliseconds. Convert a time with a zone. |
+| `duration` | How long it lasted, in seconds. Check its unit. |
+| `result` | `{ answered, voicemail?, waited? }`. `answered: true` only where a person, and not a menu or a machine, is known to have answered. `answered: false` for a known miss, with `voicemail: true` where it went there. Leave `result` out when unknown, and report the [result](#call-results) later. |
 | `direction` | `inbound`, or `outbound` for a call you placed |
-| `from`, `to` | Who called, and the number dialed. Leave `from` out where the caller hid it. |
-| `at` | When the call began, in epoch milliseconds |
-| `duration` | How long it lasted, in seconds |
-| `result` | The [result](#call-results), if already known: `{ answered, voicemail?, waited? }` |
 
 ### A call tracking service
 
@@ -162,16 +169,6 @@ A service that swaps the numbers on your pages can stay. Keep its script, and ha
 visitor taps the number it put there ──▶ POST /collect, kind event: that number, when
 the service's webhook ──▶ your backend ──▶ record a call { key, from, to, at, duration, … }
 ```
-
-| Field | From the service |
-| --- | --- |
-| `key` | Its own id for the call, so a report sent twice counts once |
-| `from` | Inbound: the caller's number. Outbound: yours. |
-| `to` | Inbound: the number the visitor saw and dialed, not the one it was forwarded to, because a tap is matched on it. Outbound: the customer's number. |
-| `at` | Its start time as epoch milliseconds. Convert a time with a zone. |
-| `duration` | Seconds. Check its unit. |
-| `result` | `answered: true` only where a person, and not a menu or a machine, is known to have answered. `answered: false` for a known miss, with `voicemail: true` where it went there. Leave `result` out when unknown, and report the [result](#call-results) later. |
-| `direction` | `outbound` for calls you placed |
 
 CallRail's API documents a call with `customer_phone_number`, `tracking_phone_number`, `start_time`, `duration`, `answered`, `voicemail` and `direction`. Check the body your account sends, and its signature, before relying on any field. [`examples/call-tracking.ts`](../examples/call-tracking.ts) takes its webhook, checks the signature and records the call, and keeps calls while the server is away. No such service has been tried against a live account here.
 
@@ -201,7 +198,7 @@ Mark the numbers to replace on your pages, and add `pool=1` to the script tag:
 | A call reaches a pool number | It is linked at 0.90 to the visitor holding the number when the call began. For `POOL_GRACE_MINUTES` after a lease ends, the last holder still gets the call unless someone has held the number since. Where somebody else held it less than `POOL_GRACE_MINUTES` before, either may be dialing it, so the call is the holder's only if they tapped the number just before. One caller per visitor still applies, as do separations. |
 | The number has no holder | A tap decides, as for any other number |
 
-A number is held by one visitor at a time, across all servers. One network gets numbers for three browsers in ten minutes. `forget` removes a visitor from their leases and keeps the record that the number was held; `account-graph prune` deletes leases that ended before its day.
+A number is held by one visitor at a time, across all servers. One network gets numbers for three browsers in ten minutes. [Privacy](privacy.md#deletion) says what `forget` and `prune` do with leases, calls and results.
 
 The page's own number also stays for staff, declared bots, visitors who opted out of advertising, and those without a visit in the last 90 days.
 
@@ -301,6 +298,7 @@ curl -X POST https://graph.example.org/v1/record -H "authorization: Bearer $GRAP
 | Eligibility | Applies to a missed call, from after it began. An answered call that reached them sooner takes precedence. |
 | `not_returned` | Withdraws the report |
 | Order | The newest by `at`, then by `key`, stands. It may arrive before the call. |
+| Checks | None. A report is applied as received. |
 
 ## Call tags
 
@@ -327,6 +325,90 @@ CALL_NUMBERS='{
 }'
 ```
 
+## Text messages
+
+A text from your site arrives with a code that says which visit it came from. The graph ties the text to that visit and its ad, lists the texts nobody has answered, and keeps nothing that was said.
+
+```html
+<script type="module" src="https://graph.example.org/collect.js?text=1"></script>
+<a href="sms:+15550100101?body=I%20need%20a%20lawyer.">Text us</a>
+```
+
+```text
+tap ──▶ I need a lawyer. Ref K7Q2MX ──▶ your number ──▶ record a text ──▶ the visit, and its ad
+```
+
+Set `TEXT_CODES=true` on the server. The script asks for this browser's code and adds it to the message as the link is followed. Without an answer, the link works as you wrote it.
+
+A browser keeps its code for a week and is then given another. A code names its browser for 30 days after it was last given, in capital or small letters.
+
+### Recording a text
+
+Report each text as it arrives or is sent.
+
+```bash
+curl -X POST https://graph.example.org/v1/record -H "authorization: Bearer $GRAPH_TOKEN" -d '{ "entries": [
+  { "type": "text", "key": "SM1", "at": 1795460000000, "direction": "inbound", "from": "+15550100141", "to": "+15550100101", "text": "I need a lawyer. Ref K7Q2MX" }] }'
+```
+
+```json
+{ "results": [{ "type": "text", "key": "SM1", "ok": true, "value": { "duplicate": false, "stands": true, "subject": "caller:96f2c503…", "flags": ["first", "code"], "counted": true, "visitor": "visitor:fb919054…" } }] }
+```
+
+`counted` says the text is an outcome of the step `text`. `key` is the provider's id. Reported again with the same key, a text is a `duplicate`: the first report stands, whatever the second says. Report a text again, with the same key, until it is answered.
+
+1. **Sender.** The sender is the same subject as a caller from that number, so their calls, their texts and a contact with that number are tied.
+2. **Visitor.** The code links the text to the one visitor it was given to, at 0.95. Without a code, the one visitor who tapped your text link within the [tap window](#busy-numbers) is linked, at 0.92. Either joins the two.
+3. **Lead.** The first text of a conversation is an outcome of the step `text`. A conversation ends after 30 days of silence. It is the same whatever order texts are reported in: one that arrives late can take a lead counted from a later text back. Add `text` to `STAGES` to give it a value and a column on the Board.
+4. **Channel.** A text without a visitor is filed under the channel `CALL_NUMBERS` gives its number, with the medium `text`.
+
+> **What a text says is never stored.** It is read for the code and for a word such as STOP, and dropped. To keep it from reaching the server at all, read the code yourself and send `code` in place of `text`.
+
+| Flag | Meaning |
+| --- | --- |
+| `first` | It begins a conversation, and is counted |
+| `code` | The code named the visitor |
+| `taken` | It named a visitor already tied to another caller or sender, so the two are not tied |
+| `tap` | The visitor tapped the text link just before |
+| `ambiguous` | More than one visitor tapped it just before, so none is tied |
+| `opt_out`, `opt_in` | It was STOP or START, or a word that means the same. It is no lead. |
+| `toll_free` | The sender's number is toll-free, and is excluded from linking |
+| `left_out` | From or to a number in `CALL_EXCLUDE`, or from a number that is no phone's. It is not kept. |
+
+### Unanswered texts
+
+The `texts` [report](http.md#report) lists the oldest unanswered text of each sender, oldest first.
+
+```http
+POST /v1/report
+
+{ "kind": "texts", "window": { "from": "2026-11-01", "to": "2026-11-30", "timeZone": "America/Chicago" }, "at": 1795460000000 }
+```
+
+```json
+{ "asOf": 1795460000000, "value": { "rows": [{ "text": "SM1", "subject": "caller:96f2c503…", "at": 1795460000000, "unanswered": 2, "arrival": { "at": 1795459900000, "source": "google", "campaign": null, "campaignId": "30111", "landing": "https://example.org/help", "custom": {}, "confidence": 0.95, "how": "cluster" } }], "next": null } }
+```
+
+`unanswered` counts what they have sent since anyone replied. A text from you, or a call with them that someone answered, replies to every text before it, whatever order they are reported in.
+
+The `record` lookup of a text, and the journey of its sender, say what became of it under `reply`:
+
+| `state` | Meaning |
+| --- | --- |
+| `open` | Nobody has replied |
+| `replied` | `by` is the text or call that did, `how` says which, and `delay` is the time it took, in milliseconds |
+| `stopped` | The sender asked for no more texts before anyone replied |
+
+Mark a sender as [no lead](report.md#not-a-lead) with a `restatement` of the text. Their texts then wait for nobody.
+
+### Asking for no more texts
+
+The `person` [lookup](http.md#lookup) answers `"textsOptedOut": true` when the last such word from anyone in the subject's cluster was STOP, STOPALL, UNSUBSCRIBE, CANCEL, END, QUIT, REVOKE or OPTOUT, or in Spanish ALTO, PARE, PARAR, DETENER, CANCELAR, BAJA, SALIR, TERMINAR or FIN, and `false` after START or UNSTOP, or when nobody has said either. The word counts only as the whole text. No fluent speaker has read the Spanish words, so have one read them before you rely on them.
+
+It is kept apart from [consent](privacy.md), which is about advertising. Your own system sends the texts, so it must check its own list as well.
+
+A form's consent to texts belongs there too: the wording shown, when, and by whom it was given. Nothing here stores it or decides who may be sent a text. Do not use a `consent` entry for it, because a no there stops advertising conversions.
+
 ## Calls view
 
 Open `/review#/calls`. The view is read-only and covers the days you pick, in the server's time zone.
@@ -344,15 +426,20 @@ Callers are stored as a hash of their number, so the view shows an ID. To find t
 
 | Area | Detail |
 | --- | --- |
-| Channel numbers | Without a [pool](#number-pools), two visitors who tap a number within the tap window (three minutes by default, see [Busy numbers](#busy-numbers)) cannot be told apart, and a call dialed by hand is filed under the number's channel. |
 | Forged taps | A program can send taps. With `CALL_NUMBERS` set, the server keeps taps on tracking numbers only. It trusts three browsers per network in ten minutes, and links one caller per visitor. A forged tap can still make a call `ambiguous`. |
 | One caller per visitor | The rule is permanent. Each hidden call is its own caller, so a visitor linked to one is skipped for the next. |
+| Calls counted by length | Without [call results](#call-results), a call is counted by its length, which time in a queue can reach. |
 | Saved pool numbers | A call after the grace period is not linked to the visitor who saved the number, and one during another visitor's lease is linked to that visitor in error, unless the caller dialed that number before, when it was not that visitor's, or is tied to somebody already and the lease has ended, or the number was shown to that visitor within the grace and they did not tap it. More numbers mean longer rests and fewer errors. |
 | Copied pages | A saved or printed page keeps showing a pool number. |
 | Pool numbers | People behind one address, such as an office, share the three-browser limit. Carriers may label a number that many strangers are called back from. |
-| Tap window | Thirty seconds are allowed for clock differences. `CALL_TAP_SECONDS`, or `phones.tapSeconds` in the library, changes the three minutes. See [Busy numbers](#busy-numbers). |
 | Conversions | A counted call goes to an ad platform only when the `call` step in `STAGES` has an action. The caller's hashed number is sent as a match key. |
 | Returns by number | A caller reached on a different number leaves the missed call open, unless you [report the return](#reported-returns). |
 | Older calls | A call recorded before calls were stored has no state, and a result for it finds no call. Its outcome stays counted. |
-| Retention | `forget` deletes a caller's calls and results. `account-graph prune` deletes results whose call did not arrive, and keeps calls. |
-| Verification | Twilio's statuses and callback behavior were read from its documentation in November 2026; the console's field names were not. The signature check matches the example on Twilio's webhook security page. No real Twilio request has been received. |
+| Deleted codes | Someone who deletes the code from the message is tied by their tap, or not at all. |
+| Forwarded texts | Whoever sends a message with the code is tied to the browser it was given to. One visitor is tied to one sender. |
+| Computers | A code opened on one device and sent from another ties the two, which is usually right. |
+| Opt-out words | Only a message that is one of the words above is read as one. A sentence that asks to stop is not. |
+| Pictures and groups | A picture is recorded as a text. Group messages are not told apart. |
+| Delivery of texts | Whether a text you sent was delivered is not read. A text you report as sent counts as a reply. |
+| Twilio's time | Twilio sends no time with an incoming text, so it is the time the report arrived. |
+| Verification | Twilio's statuses and callback behavior were read from its documentation in November 2026; the console's field names were not. The signature check matches the example on Twilio's webhook security page. No real Twilio request has been received, for a call or a text. |

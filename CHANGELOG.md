@@ -72,7 +72,7 @@
 - A connection the database ends is logged, and the server keeps running.
 - Crawlers, previewers, uptime checks and `STAFF_NETWORKS` are excluded. `/collect` is rate limited per address.
 - Requests with invalid UTF-8, NUL characters or more than 32 levels of nesting are refused.
-- `runWorkers` of `./testing` runs every worker once. `npm run firm` and `demo.ts` run in memory.
+- `runWorkers` of `./testing` runs every worker once. `npm run firm` and `examples/six-calls.ts` run in memory.
 - `record` `profile` takes `speaker`, whoever speaks for the subject. Their browser and number are related to the subject and never joined to them, and what brought them earns the credit.
 - A matching rule takes `relates`, for a kind that says two subjects are two people. Clusters need a `rebuild`, because the default policy has the new kind `behalf`.
 - A tap two callers could have made ties neither. On a number others are using, a tap has to be within thirty seconds of its call. A caller who is one visitor's takes another's pool number only while it is shown.
@@ -91,3 +91,48 @@
 - A printed page leaves out the controls and shows lists in full.
 - An info icon beside a term shows its definition, and a guide is available on each view.
 - A command palette opens with Ctrl+K or ⌘K. Light, dark and forced-color modes are supported.
+
+### Upgrading
+
+#### To the six calls
+
+> **Every old route for services is gone.** It answers 404. Change the callers before you upgrade, or upgrade both at once.
+
+| Before | After |
+| --- | --- |
+| `/identify`, `/observe` | `record` `profile`. Raw identifiers go under `facts.identifiers`. |
+| `/touch` | `record` `arrival`. Click ids go under `clicks`. |
+| `/costs` | `record` `cost` |
+| `/convert` | `record` `conversion`. `transactionId` is `key`, `action` is `actions`. |
+| `/restate`, `/not-lead` | `record` `restatement`. A refund or write-off is an amount, where `/restate` took what was left. |
+| `/payment` | `record` `payment`. `kind` is `direction`: `received` or `refunded`. |
+| `/call`, `/call/result`, `/call/returned` | `record` `call`, `call_update` |
+| `/text` | `record` `text` |
+| `/consent` | `record` `consent`, `lookup` `person` |
+| `/link`, `/sent` | `record` `link`, `lookup` `journey` |
+| `/transfer`, `/flows`, `/collusion`, `/rings` | `record` `transfer`, `lookup` `transfers` |
+| `/join`, `/separate`, `/ignore` | `decide` `merge`, `unmerge`, `split`, `unsplit`, `mute`, `unmute` |
+| `/forget` | `forget` |
+| `/people`, `/attribute`, `/cluster`, `/texting` | `lookup` `person` |
+| `/match`, `/call/ringing`, `/conflicts`, `/find` | `lookup` `match`, `caller`, `conflicts`, `find` |
+| `/outcome`, `/conversion`, `GET /call`, `GET /text` | `lookup` `record` |
+| `/report`, `/board`, `/calls/summary`, `/calls`, `/texts`, `/followed`, `/conversions` | `report` `campaigns`, `pipeline`, `calls`, `callbacks`, `texts`, `after_calls`, `deliveries` |
+| `/changes` | `events` |
+| `/rebuild`, `/verify`, `/prune`, `/retry`, `/stats`, `/alerts/test`, `/staff-link` | [Commands](docs/operations.md#commands) |
+
+| Also | Detail |
+| --- | --- |
+| `RECEIPT_SECRETS` | Required. Make one with `openssl rand -hex 32`. |
+| `CHANGE_WEBHOOK`, `CHANGE_SECRET` | Now `WEBHOOK_URL` and `WEBHOOK_SECRET`, both or neither. A server with an old name set does not start. The body is an [event envelope](docs/operations.md#webhook). |
+| `COST_INTERVAL_MS`, `COST_DAYS`, `OUTBOX_INTERVAL_MS` | No longer exist. Costs are read every six hours for the last seven days, and conversions are sent every 30 seconds. |
+| `at` | Every write names it, and a key of its own. A caller that stamps `at` anew on each retry gets `KEY_REUSED`. |
+| Decisions | A merge is taken back by its pair with `unmerge`. There is no mark to keep. |
+| The change feed | Cluster changes became events and were numbered again. Start with `"after": null`. |
+| Policy | The database keeps it from now on. See [the policy](docs/operations.md#policy). |
+| Pages | The old browser paths answer for one release, for pages that keep an old script. |
+
+> **On the day you deploy, a page event can count once more.** Page events now have ids of their own, which begin with `page:`. An event a browser already sent that day has another id, so the same browser can count it a second time. The next day is as before.
+
+#### To the current weights
+
+> **The default weights changed.** A phone number alone now joins two subjects, relates three, and reports no link among four or more. A phone, email or `voip` value held by more than 10 subjects links none of them. A server that ran the earlier defaults starts with a notice that a rebuild is due: run `account-graph rebuild` while the servers are stopped. To keep the earlier behavior, set `POLICY='{"kinds":{"phone":{"dilution":0,"cap":25},"email":{"cap":25},"voip":{"dilution":0,"cap":25}}}'` and rebuild if the server asks for it.

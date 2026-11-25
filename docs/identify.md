@@ -1,6 +1,6 @@
 # Identify
 
-A `profile` entry of [`record`](http.md#record) records what your backend knows about a person: sign-in, email, phone and postal address. Send the facts as they are. The server normalizes, checks and hashes them, then answers with the cluster changes.
+A `profile` entry of [`record`](http.md#record) records what your backend knows about a person: sign-in, email, phone and postal address. Send the facts as they are. The server normalizes, checks and hashes them, then answers with the cluster changes. A [signed link](#signed-links) says who opened it.
 
 ```bash
 curl -X POST https://graph.example.org/v1/record -H "authorization: Bearer $GRAPH_TOKEN" -d '{ "entries": [{
@@ -122,17 +122,7 @@ When your backend can read the `ag_device` cookie, prefer it to the field. With 
 
 ## Chat
 
-A chat service hands over a lead with an email or a phone number, and often no device. Have your backend record the person, then the step:
-
-```bash
-curl -X POST https://graph.example.org/v1/record -H "authorization: Bearer $GRAPH_TOKEN" -d '{ "entries": [
-  { "type": "profile", "key": "chat-7", "at": 1795460000000, "subject": "contact:7", "event": "chat",
-    "facts": { "phone": "+15550100142", "device": "9f3c1c1e-0000-4000-8000-000000000001" } },
-  { "type": "conversion", "key": "chat-7", "at": 1795460000000, "subject": "contact:7", "stage": "chat" }
-] }'
-```
-
-The profile comes first, so the conversion finds the click.
+A chat service hands over a lead with an email or a phone number, and often no device. Have your backend record the person as a `profile`, with the phone or email and the `device` where there is one, then the step as a `conversion`. The profile comes first, so the conversion finds the click.
 
 | The chat box | What to send |
 | --- | --- |
@@ -160,7 +150,7 @@ A name confirms that two people who share a phone are one. It creates no link by
   "facts": { "phone": "(555) 010-0007", "name": { "first": "José", "last": "Muñoz" }, "dob": "1990-02-03" } }
 ```
 
-To use names, set `IDENTIFIER_SECRET` and a policy with a `name` kind that only corroborates, such as [the preset for contacts entered by staff](presets.md#contacts-entered-by-staff).
+To use names, set `IDENTIFIER_SECRET` and a policy with a `name` kind that only corroborates, such as [the preset for contacts entered by staff](matching.md#contacts-entered-by-staff).
 
 | Step | Behavior |
 | --- | --- |
@@ -170,7 +160,7 @@ To use names, set `IDENTIFIER_SECRET` and a policy with a `name` kind that only 
 | Keying | The key is an HMAC under `IDENTIFIER_SECRET`, because a plain hash of a guessable name can be reversed. Name keys are withheld from ad platforms. |
 | Cap | A key held by more than five people confirms no one. |
 
-Under a policy with [`apart`](deciding.md#facts-that-keep-people-apart), `dob` is also kept by itself, with or without a name, to tell two people apart. It links nothing.
+Under a policy with [`apart`](matching.md#facts-that-keep-people-apart), `dob` is also kept by itself, with or without a name, to tell two people apart. It links nothing.
 
 `notes.name` states whether the name was used, and the reason when it was not. A default `dob`, such as 1900-01-01, is ignored.
 
@@ -178,11 +168,103 @@ Under a policy with [`apart`](deciding.md#facts-that-keep-people-apart), `dob` i
 
 Each new number is one paid Twilio lookup. Answers are kept for thirty days.
 
+## Signed links
+
+A signed link identifies the person it was sent to. Opening it links their browser to them without a sign-in. The same signing carries one visitor across your sites.
+
+```json
+{ "type": "link", "key": "offer-42", "at": 1795460000000, "subject": "contact:42", "url": "https://example.org/offer", "expires": 1798052000000 }
+```
+
+```json
+{ "results": [{ "type": "link", "key": "offer-42", "ok": true, "value": { "duplicate": false, "stands": true, "url": "https://example.org/offer?ag=b2ZmZXItNDIK…" } }] }
+```
+
+The same entry always gives the same address, so a lost answer can be asked for again.
+
+Send that address to contact 42 by email or text message. Both features need one setting on the server:
+
+```sh
+LINK_SECRET=$(openssl rand -hex 32)
+```
+
+### Personal links
+
+```text
+your backend ──▶ record a link ──▶ address with a signed token
+person opens it ──▶ script tag reads the token ──▶ POST /collect
+server checks the signature ──▶ this browser and contact:42 share a link identifier
+```
+
+The token holds the key, the subject and an expiry, signed with `LINK_SECRET`. Changing or making one needs the secret. The script tag sends it with the visit, then removes it from the address bar so it is not bookmarked or shared with the page.
+
+The shared identifier scores 0.92, above the 0.9 that joins. Later ad clicks and sign-ups in that browser then belong to a known person.
+
+> **Anyone who holds a link can use it.** A forwarded link reaches another person's browser. These rules limit what that can join, without preventing it.
+
+| When | What happens |
+| --- | --- |
+| A person's link is opened in a first, second and third browser | Each is linked to them at 0.92, and joined |
+| It is opened in a fourth | Recorded without linking. More than a phone, a laptop and a tablet suggests a forwarded link. |
+| The browser already belongs to another person of the same kind, by a sign-in or a device cookie | Recorded without linking: `contact:alice`'s link on `contact:bob`'s phone does not join them |
+| It is opened in a browser of whoever [speaks for](#speaking-for-somebody-else) the person | Recorded without linking: a mother who opens her son's link is not her son |
+| Two people's links are opened in one browser that belongs to neither | Both are linked, and their scores drop to 0.61, so the browser is joined to neither |
+
+Each opening is a note on the visitor for reviewers: `opened:contact:42`, or `opened:contact:42 (not tied)`.
+
+#### What became of a link
+
+Say what a link is for with `purpose`, a short word of your own: `form`, `documents`, `payment`. The person's `journey` [lookup](http.md#lookup) has each link and whether it was opened.
+
+```json
+{ "at": 1795460000000, "subject": "contact:42", "kind": "link", "link": "offer-42", "purpose": "payment", "opened": 1795460060000, "openings": 1 }
+```
+
+Each link is one entry, with a key of its own, even for the same purpose. `opened` is the first opening, by whoever had the link. A link opened and not followed by its step, such as a payment, is one to ask about. Where a link leads is not kept. Once its person is deleted, a link names nobody.
+
+| Field | Meaning |
+| --- | --- |
+| `key` | Yours. It is in the token. |
+| `subject` | Who it is for, up to 512 bytes. Anyone holding the link can read it, so use an id. Avoid names and emails. |
+| `url` | An `http` or `https` address. Its other parameters are kept. |
+| `expires` | Until when the link identifies its person: after `at`, and at most 366 days later. It is then an ordinary link. |
+| `purpose` | What it is for, up to 64 letters, digits, dots, dashes and underscores. May be left out. |
+
+Without `LINK_SECRET`, a link is the fault `CONFIG.UNSUPPORTED`.
+
+### Cross-site visitors
+
+Browsers keep a separate cookie for each site, so one person on two of your sites is two visitors. List your other sites on the script tag to carry the visitor across.
+
+```html
+<script type="module" src="https://graph.example.org/collect.js?domains=shop.example,help.example"></script>
+```
+
+```text
+page on example.org ──▶ POST /collect, kind carry ──▶ a token for this browser, good for an hour
+visitor follows a link to shop.example ──▶ the script adds the token to that link
+shop.example's script tag ──▶ POST /collect with the token ──▶ the two visitors are joined
+```
+
+Put the tag, with its own `domains`, on each site, and list each site in `ORIGINS`. The script changes a link to a listed site at the moment it is followed, and leaves other links alone.
+
+> **A carry token is bound to the browser's user agent and network.** It has no effect on another network or browser version, which stops a stranger from attaching their ad click to a sign-up by handing over a link. [Limitations](#limitations) covers look-alike browsers on one network.
+
+A carried visitor is linked at 0.95, which joins two visitors and cannot merge two groups on its own. It is recorded per receiving site, so one visitor carried to three sites is joined on each. When look-alike browsers on a shared network use one token, a third holder ends the join and a fifth ends the link.
+
+A referrer listed in `ORIGINS` records no new visit, so the original ad click keeps the credit. Subdomains of one site can share a cookie instead with `COOKIE=example.org`; see [Operations](operations.md#behind-a-proxy).
+
 ## Limitations
 
 - **Addresses.** United States only, through Smarty's US Street API.
 - **Reassigned numbers.** A number identified as VoIP stays muted as a `phone`, even if a later check reports a mobile. Restore it with [`decide`](http.md#decide) `unmute` and the phone.
 - **Undeclared bots.** User agents identify only bots that name themselves. One that imitates a browser needs Fingerprint.
-- **Names.** A name confirms a link two accounts already have, under a policy that includes names. Nicknames, married names and spellings that differ beyond accents are different names.
-- **`IDENTIFIER_SECRET`.** Changing it makes new keys that match none of the old ones, and the old keys cannot be regenerated.
-- **Verification.** Smarty and Twilio are untested with live credentials. Both readers follow the providers' documented answers. Smarty refuses a wrong key the same way however it is sent, so only a real key can show that it accepts the key in a header, as its authentication page states.
+- **Names.** Nicknames, married names and spellings that differ beyond accents are different names.
+
+| Signed links | Detail |
+| --- | --- |
+| Browser without an account | A forwarded link links a stranger's browser to the person it identifies. If the stranger later signs up there, the two share a cluster until a reviewer separates them. |
+| Person of another kind | `contact:alice`'s link in a browser signed in as `account:bob` joins the two, because only subjects of the same kind are compared. Lower `link` in the policy below 0.9 to relate a browser to its person without joining. |
+| Look-alike browser | Someone on your visitor's network with the same browser version could hand them a link that joins the two visits. That lone visitor joins the other's cluster, and their ad click can be credited with the other's sign-up. The link cannot merge two groups of accounts by itself, and a reviewer can separate them. |
+| Not carried across sites | A visitor who types the second site's address. A confirmed fingerprint or a sign-in still links them.<br>A visitor whose network changes between the sites, such as on leaving wifi.<br>A link opened from its menu (right-click, long press), because the menu can also copy the address. This relies on the browser announcing the menu, which was not checked for long press on every phone browser.<br>A link followed while the token is renewed. A token lasts an hour, and is renewed after thirty minutes, or when a tab returns to view. |
+| Proxies | The network comes from `x-forwarded-for`, so `TRUST_PROXY` must state how many proxies you run. See [Operations](operations.md#behind-a-proxy). |
