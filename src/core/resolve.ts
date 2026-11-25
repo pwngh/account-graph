@@ -140,15 +140,20 @@ export function conflict(policy: Policy, a: Known | undefined, b: Known | undefi
 /** Whether a decision joined two. */
 const joinedBy = (a: Known | undefined, b: Known | undefined) => Boolean(a && b && [...a.joins].some((each) => b.joins.has(each)))
 
-/** Whether a fact of one is another than the other's. Two dates one slip of the pen apart are one date where a name agrees. */
+const meets = (one: ReadonlySet<Identifier> | undefined, other: ReadonlySet<Identifier> | undefined) => one && other && [...one].some((each) => other.has(each))
+
+/**
+ * Whether a fact of one is another than the other's. Two dates one slip of the pen apart are one date where a name agrees. A
+ * Maria Elena and a Maria Guadalupe have a name in common, and each has one the other has not, so they are two.
+ */
 function disagree(a: Known | undefined, b: Known | undefined): boolean {
   if (!a || !b) return false
-  const agree = (fact: Fact | 'dated') => {
-    const [own, others] = [a.facts.get(fact), b.facts.get(fact)]
-    return own && others && [...own].some((each) => others.has(each))
-  }
-  const named = agree('given') === true || [...a.things].some((each) => b.things.has(each))
-  return (agree('birth') === false && !(named && agree('dated') === true)) || agree('given') === false
+  const [ours, theirs] = [a.facts.get('given'), b.facts.get('given')]
+  const within = (one: ReadonlySet<Identifier>, other: ReadonlySet<Identifier>) => [...one].every((each) => other.has(each))
+  const given = ours && theirs && meets(ours, theirs) && (within(ours, theirs) || within(theirs, ours))
+  if (given === false) return true
+  const named = given === true || [...a.things].some((each) => b.things.has(each))
+  return meets(a.facts.get('birth'), b.facts.get('birth')) === false && !(named && meets(a.facts.get('dated'), b.facts.get('dated')) === true)
 }
 
 /** Whether something says that two records are one person, other than what they share: a decision, or a name, a date or a thing of one person's that agrees where nothing differs. */
@@ -156,14 +161,10 @@ export function confirmed(a: Known | undefined, b: Known | undefined): boolean {
   if (!a || !b) return false
   if (joinedBy(a, b)) return true
   if (disagree(a, b)) return false
-  const meet = (one: ReadonlySet<Identifier> | undefined, other: ReadonlySet<Identifier> | undefined) => Boolean(one && other && [...one].some((each) => other.has(each)))
-  if (meet(a.facts.get('birth'), b.facts.get('birth'))) return true
-  // A Maria Elena and a Maria Guadalupe have a name in common, and each has one the other has not.
-  const [ours, theirs] = [a.facts.get('given'), b.facts.get('given')]
-  const within = (one: ReadonlySet<Identifier>, other: ReadonlySet<Identifier>) => [...one].every((each) => other.has(each))
-  const halves = ours !== undefined && theirs !== undefined && !within(ours, theirs) && !within(theirs, ours)
-  const things = halves ? [...a.things].filter((each) => !THINGS.has(each.slice(0, each.indexOf(':')))) : [...a.things]
-  return things.some((each) => b.things.has(each)) || (!halves && meet(ours, theirs))
+  if (meets(a.things, b.things) || meets(a.facts.get('given'), b.facts.get('given'))) return true
+  // A name no table has is no fact, and is still a name: two who gave names under which nothing is the same are twins as likely as one.
+  const names = (known: Known) => [...known.things].some((each) => THINGS.has(each.slice(0, each.indexOf(':'))))
+  return meets(a.facts.get('birth'), b.facts.get('birth')) === true && !(names(a) && names(b))
 }
 
 type Adjacency = Map<Subject, Map<Subject, number>>
@@ -256,7 +257,7 @@ export function partition(
 /**
  * Groups of which each is one person by something that says so. Two groups of records are one where they are tied, directly
  * or through browsers and callers, some record of the one is confirmed to be some record of the other, and none differs from
- * any in a fact. A decision joins the two it names whatever differs. Each browser and caller then goes with the group it is
+ * any in a fact. One that could be either of two who differ is neither's. A decision joins the two it names whatever differs. Each browser and caller then goes with the group it is
  * tied to most strongly, by itself or through others that name nobody, and of two as strong, with the one first seen. No link
  * is taken for it: what they share is as it was.
  */
@@ -310,13 +311,25 @@ function refined(pieces: Subject[][], links: readonly Pair[], policy: Policy, kn
     }
     // Decisions first, because they stand whatever differs.
     for (const [a, b] of near) if (home.get(a) !== home.get(b) && joinedBy(known.get(a), known.get(b))) unite(a, b)
+    const asked = new Map<Subject, Map<Subject, 'yes' | 'no' | 'neither'>>()
+    const between = (x: Subject, y: Subject) => {
+      if (!asked.has(x)) asked.set(x, new Map())
+      let found = asked.get(x)!.get(y)
+      if (!found) {
+        const [one, other] = [known.get(x), known.get(y)]
+        asked.get(x)!.set(y, (found = disagree(one, other) && !joinedBy(one, other) ? 'no' : confirmed(one, other) ? 'yes' : 'neither'))
+      }
+      return found
+    }
+    const some = (ours: readonly Subject[], theirs: readonly Subject[], what: 'yes' | 'no') => ours.some((x) => theirs.some((y) => between(x, y) === what))
     for (let changed = true; changed; ) {
       changed = false
       for (const [a, b] of near) {
         if (home.get(a) === home.get(b)) continue
         const [ours, theirs] = [groups.get(home.get(a)!)!, groups.get(home.get(b)!)!]
-        if (!ours.some((x) => theirs.some((y) => confirmed(known.get(x), known.get(y))))) continue
-        if (ours.some((x) => theirs.some((y) => disagree(known.get(x), known.get(y)) && !joinedBy(known.get(x), known.get(y))))) continue
+        if (!some(ours, theirs, 'yes') || some(ours, theirs, 'no')) continue
+        // Either of them may be somebody else's as well, who differs from the other.
+        if ([...groups.values()].some((other) => other !== ours && other !== theirs && ((some(ours, other, 'yes') && some(theirs, other, 'no')) || (some(theirs, other, 'yes') && some(ours, other, 'no'))))) continue
         unite(a, b)
         changed = true
       }

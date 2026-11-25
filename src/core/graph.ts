@@ -653,8 +653,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
   }
 
   /** Whether two records are joined by what they share alone, where the policy asks for more. */
-  const unsure = (a: Subject, b: Subject, labels: ReadonlyMap<Subject, Labels>, facts: ReadonlyMap<Subject, Known>) =>
-    policy.records === 'confirmed' && names(a) && names(b) && labels.get(a)?.cluster !== labels.get(b)?.cluster && !confirmed(facts.get(a), facts.get(b))
+  const unsure = (a: Subject, b: Subject, labels: ReadonlyMap<Subject, Labels>) =>
+    policy.records === 'confirmed' && names(a) && names(b) && labels.get(a)?.cluster !== labels.get(b)?.cluster
 
   /** Links of each given subject, scored from edges. A pair a reviewer separated is not a link. */
   async function neighbors(tx: Tx, subjects: readonly Subject[]): Promise<Map<Subject, Link[]>> {
@@ -677,7 +677,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       // In one group in spite of a fact, decisions hold them there, and the fact is overruled.
       const between = homes.get(a) && homes.get(a)!.cluster === homes.get(b)?.cluster ? undefined : conflict(policy, facts.get(a), facts.get(b))
       // However strong what they share is, they are two people, and are shown as related.
-      const possibly = !between && level === 'same' && unsure(a, b, homes, facts)
+      const possibly = !between && level === 'same' && unsure(a, b, homes)
       const link = { score, level: between || possibly ? ('related' as const) : level, reasons, ...(between && { conflict: between }), ...(possibly && { unconfirmed: true as const }) }
       add(a, { subject: b, ...link })
       add(b, { subject: a, ...link })
