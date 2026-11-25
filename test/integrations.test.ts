@@ -921,9 +921,14 @@ test('a link sent to one person ties the browser that opens it, and a visitor is
     assert.equal((await page('/collect', { device: 'hers', known: his })).status, 204)
     assert.deepEqual([await members('contact:son'), await members('visitor:hers')], [['contact:son'], ['caller:hers', 'visitor:hers']])
     assert.ok((await graph.history('visitor:hers')).some((each) => each.identifier === 'opened:contact:son (not tied)'))
+    // Nor one sent to another record of his.
+    await graph.observe({ subject: 'contact:son-again', identifiers: ['email:son'], at: T0 })
+    const twin = new URL(((await (await service('/link', { url: 'https://site.example/offer', subject: 'contact:son-again' })).json()) as { url: string }).url).searchParams.get('ag')!
+    assert.equal((await page('/collect', { device: 'hers', known: twin })).status, 204)
+    assert.deepEqual(await members('visitor:hers'), ['caller:hers', 'visitor:hers'])
     // In a browser of his own it is his.
     assert.equal((await page('/collect', { device: 'his', known: his })).status, 204)
-    assert.deepEqual(await members('contact:son'), ['contact:son', 'visitor:his'])
+    assert.deepEqual(await members('contact:son'), ['contact:son', 'contact:son-again', 'visitor:his'])
 
     // A second person's link opened in the same browser. Both are there by a link alone, so neither wins: each thins, and the browser is joined to nobody.
     const linkFor = async (subject: string) => new URL(((await (await service('/link', { url: 'https://site.example/offer', subject })).json()) as { url: string }).url).searchParams.get('ag')!
@@ -1544,6 +1549,18 @@ test('/identify keeps whoever speaks for a subject apart from them', async (t) =
   await graph.observe([{ subject: 'visitor:aa', identifiers: ['device:zz-0000-4000'], at: T0 }, { subject: 'visitor:zz-0000-4000', identifiers: ['device:zz-0000-4000'], at: T0 }])
   await identify({ subject: 'contact:nephew', at: T0, speaker: { device: 'zz-0000-4000' } })
   assert.deepEqual((await graph.links('contact:nephew')).map((link) => link.subject), ['visitor:zz-0000-4000'])
+  // It is hers though an alias was said to speak before there was one, and what was muted of that one stays muted.
+  await graph.observe({ subject: 'visitor:old', identifiers: ['device:yy-0000-4000'], at: T0 })
+  const [stale] = (await identify({ subject: 'contact:niece', at: T0, speaker: { device: 'yy-0000-4000' } })).identifiers.filter((each: string) => each.startsWith('behalf:'))
+  await graph.ignore(stale, true)
+  await graph.observe({ subject: 'visitor:yy-0000-4000', identifiers: ['device:yy-0000-4000'], at: T0 })
+  await identify({ subject: 'contact:niece', at: T0, speaker: { device: 'yy-0000-4000' } })
+  assert.deepEqual((await graph.links('contact:niece')).map((link) => link.subject), ['visitor:yy-0000-4000'])
+  // Another that holds the id is taken while the id is evidence, and not once it is muted.
+  await graph.observe({ subject: 'visitor:mm', identifiers: ['device:ww-0000-4000'], at: T0 })
+  await graph.ignore('device:ww-0000-4000', true)
+  await identify({ subject: 'contact:aunt', at: T0, speaker: { device: 'ww-0000-4000' } })
+  assert.deepEqual((await graph.links('contact:aunt')).map((link) => link.subject), ['visitor:ww-0000-4000'])
   // Her own record is hers.
   await identify({ subject: 'contact:mother', phone, at: T0 })
   assert.ok((await graph.cluster('contact:mother'))!.members.includes(mother))
