@@ -3158,6 +3158,13 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await recordText(graph, { id: 'RT', from: '+15550100190', to: ours, at: T0 + 90 * 60_000, text: 'hello?' })
       const again = await ringing(graph, call('+15550100190', 120))
       assert.deepEqual([again.known, again.subject, again.touch!.gclid, again.waiting, again.people.map((each) => each.subject)], [true, made.subject, 'G1', { calls: 1, texts: 1 }, ['visitor:1']])
+      // Two records of one number that a reviewer keeps apart are two people. The caller is at most one of them.
+      const line = `caller:${hashPhone('+15550100197')}`
+      await graph.observe([line, 'contact:wife', 'contact:husband'].map((subject) => ({ subject, identifiers: [`email:home`], at: T0 })))
+      await graph.separate('contact:wife', 'contact:husband')
+      const heard = await ringing(graph, call('+15550100197', 190))
+      assert.equal(heard.people.filter((each) => each.level === 'same').length, 1)
+      assert.equal(heard.people.length, 2)
       // A visitor who is another caller's is not shown for this one, nor one who is kept apart, nor a record that is.
       await graph.observe({ subject: 'visitor:1', identifiers: ['device:1', dialed(ours, T0 + 200 * 60_000)], at: T0 + 200 * 60_000, event: 'phone_click' })
       assert.equal((await ringing(graph, call('+15550100192', 201))).visitor, undefined)

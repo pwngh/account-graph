@@ -271,7 +271,9 @@ export async function ringing(graph: Graph, call: { from?: string; to: string; a
   // A caller who is on record is tied already. Of one who is not, the number says who they may be.
   const ties = subject ? await graph.links(subject) : []
   const people: Candidate[] = []
-  for (const { subject: other, score, level, reasons } of ties) people.push({ subject: other, score, level, reasons, members: (await graph.cluster(other))?.members ?? [other] })
+  const own = new Set(subject ? (await graph.cluster(subject))?.members : [])
+  // However strong what they share with the caller is, one who was kept out of the caller's group is somebody else.
+  for (const { subject: other, score, level, reasons } of ties) people.push({ subject: other, score, level: own.has(other) ? level : 'related', reasons, members: (await graph.cluster(other))?.members ?? [other] })
   const apart = new Set(subject ? await graph.separations(subject) : [])
   if (ties.length === 0 && from && !TOLL_FREE.test(from)) people.push(...(await graph.match([`phone:${hashPhone(from)}`, `voip:${hashPhone(from)}`], { at: call.at })).filter((each) => each.subject !== subject && !apart.has(each.subject)))
   const touch = (subject && (await graph.attribute(subject, { at: call.at })).credited) ?? (visitor && (await graph.attribute(visitor, { at: call.at })).credited)

@@ -914,6 +914,17 @@ test('a link sent to one person ties the browser that opens it, and a visitor is
     assert.deepEqual(await members('visitor:phone-2'), ['visitor:phone-2'])
     assert.deepEqual((await graph.links('contact:1')).map((link) => [link.subject, link.level, link.reasons[0]!.identifier]), [['visitor:phone-1', 'same', 'link:phone-1']])
 
+    // Opened by whoever speaks for them, in whichever browser of hers, it is not theirs.
+    await graph.observe([{ subject: 'visitor:hers', identifiers: ['device:hers', 'dial:hers'], at: T0 }, { subject: 'caller:hers', identifiers: ['phone:hers', 'dial:hers'], at: T0 }])
+    await graph.speak({ subject: 'contact:son', identifiers: ['email:son'] }, [{ subject: 'caller:hers', identifiers: ['phone:hers'] }], T0)
+    const his = new URL(((await (await service('/link', { url: 'https://site.example/offer', subject: 'contact:son' })).json()) as { url: string }).url).searchParams.get('ag')!
+    assert.equal((await page('/collect', { device: 'hers', known: his })).status, 204)
+    assert.deepEqual([await members('contact:son'), await members('visitor:hers')], [['contact:son'], ['caller:hers', 'visitor:hers']])
+    assert.ok((await graph.history('visitor:hers')).some((each) => each.identifier === 'opened:contact:son (not tied)'))
+    // In a browser of his own it is his.
+    assert.equal((await page('/collect', { device: 'his', known: his })).status, 204)
+    assert.deepEqual(await members('contact:son'), ['contact:son', 'visitor:his'])
+
     // A second person's link opened in the same browser. Both are there by a link alone, so neither wins: each thins, and the browser is joined to nobody.
     const linkFor = async (subject: string) => new URL(((await (await service('/link', { url: 'https://site.example/offer', subject })).json()) as { url: string }).url).searchParams.get('ag')!
     // The opening is noted on the link, whichever of its two names the token comes under.
