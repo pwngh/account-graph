@@ -55,6 +55,8 @@ Scores depend only on stored data. The current time and the order of arrival lea
 
 The last two could be one person or one household. With only this evidence, they are related and do not join on their own. These rows use the default weights, with two records per identifier and no time between sightings. A strong pair can still be [held apart](#clusters): by a separation, or as a single weak link between two groups.
 
+Under the default policy, a shared phone alone can make `lookup` with `kind: "match"` return `same` for someone else, including an opposing party. Treat `match` as a suggestion for staff to check. Never use it to block intake. Where a wrong join matters, use the [intake preset](#an-intake-desk) and load known separations with [`split`](#split) before entering the first contact.
+
 The default policy has no groups, and one corroborating kind, `named`. [Presets](#presets) has both: [the preset for contacts entered by staff](#contacts-entered-by-staff) defines a corroborating `name` kind.
 
 ### Kinds
@@ -345,7 +347,7 @@ curl -X POST https://graph.example.org/v1/decide -H "authorization: Bearer $GRAP
 { "ok": true, "value": { "duplicate": false, "changes": [{ "subject": "contact:7", "from": "contact:12", "to": "contact:7" }], "recorded": 1, "already": 0, "notAsAsked": [] } }
 ```
 
-Send it at intake, when your conflict check runs, instead of in a later batch. Until it arrives, an outcome of one side can be credited to the other's ad click. Once it stands, neither is reached from the other, directly or through a third subject.
+Load known pairs before entering the first contact. Send newly discovered pairs as soon as your conflict check identifies them. Until the split arrives, an outcome of one side can be credited to the other's ad click. Once it stands, neither is reached from the other, directly or through a third subject.
 
 A list is written in one transaction, with one decision per pair. A pair whose last report agrees and still holds is left alone and counted under `already`, so a system can send its whole list again, with a new key. Sign a system's decisions `system:` and its name, so people's and systems' are told apart.
 

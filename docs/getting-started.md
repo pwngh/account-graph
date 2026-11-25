@@ -35,6 +35,8 @@ Add the script to each page:
 
 ## First record
 
+Under the default policy a shared phone alone can make `lookup` with `kind: "match"` suggest `same` for someone else, including an opposing party. Treat the answer as a suggestion to check and never use it to block a contact. Where a wrong join matters, use the [intake preset](matching.md#an-intake-desk). Load known separations with [`split`](matching.md#split) before entering the first contact. You can send a pair before either person's record exists.
+
 Record the person when they sign in or sign up. For this loopback example, the owner puts one line, `Authorization: Bearer <service token>`, into a private mode-0600 file outside the checkout. Set `GRAPH_AUTH_HEADER_FILE` to its path. Run credentialed commands under the private account with tracing and recording off. Curl reads the header from the file.
 
 ```bash
@@ -68,14 +70,14 @@ For a field pilot, agree on consent, retention and a daily reviewer before conne
 | --- | --- | --- |
 | 1. Server | Run it on a machine of yours, with HTTPS in front. Use [`examples/intake.json`](matching.md#an-intake-desk) where mixing two people's records must not happen, or [`examples/household.json`](matching.md#contacts-entered-by-staff) if staff enter contacts. [Operations](operations.md) | `/health` answers over HTTPS |
 | 2. Backup | Dump it and restore into a new isolated database. Run `account-graph verify` there. Before starting followers on the copy, run `account-graph events new-epoch` on that copy. [Backups](operations.md#backups) | Verification lists no changes on the copy |
-| 3. Site | Add the [script tag](operations.md#script-tag) to every page, with your consent banner's answer | Your own visit is in the screen, with its ad |
-| 4. Calls | Record each call, or take your provider's webhook. [Calls](calls.md), [`examples/call-tracking.ts`](../examples/call-tracking.ts) | A test call is tied to your own tap |
-| 5. Contacts | Record each new contact from your form or case system as a [`profile`](identify.md) | A test form is tied to your own visit |
-| 6. Clients | Record each signed client as a [`conversion`](report.md#outcomes), with the value you give it | The client is under a campaign |
-| 7. Apart | Send the pairs your conflict check keeps apart as a [`split`](matching.md#split) | They are shown separated |
+| 3. Apart | Send the pairs your conflict check keeps apart as a [`split`](matching.md#split) | They are shown separated |
+| 4. Site | Add the [script tag](operations.md#script-tag) to every page, with your consent banner's answer | Your own visit is in the screen, with its ad |
+| 5. Calls | Record each call, or take your provider's webhook. [Calls](calls.md), [`examples/call-tracking.ts`](../examples/call-tracking.ts) | A test call is tied to your own tap |
+| 6. Contacts | Record each new contact from your form or case system as a [`profile`](identify.md) | A test form is tied to your own visit |
+| 7. Clients | Record each signed client as a [`conversion`](report.md#outcomes), with the value you give it | The client is under a campaign |
 | 8. Two weeks | Review Matches and the missed calls every day. Change nothing else | You have a list of right and wrong matches |
 
-To rehearse steps 3–8, use a synthetic campaign URL and consent decision, intercept the phone tap, replay a signed call locally, and submit a synthetic form, a nominal-value outcome with no ad action, and a pair to keep apart. Compare the journey, missed calls, value and separation with the fixture ledger. Only a field pilot needs fourteen days of observation.
+To rehearse steps 3–8, load a synthetic pair to keep apart. Use a synthetic campaign URL and consent decision, intercept the phone tap, replay a signed call locally, and submit a synthetic form and a nominal-value outcome with no ad action. Compare the journey, missed calls, value and separation with the fixture ledger. Only a field pilot needs fourteen days of observation.
 
 ### Deciding
 
