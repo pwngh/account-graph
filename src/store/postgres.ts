@@ -68,12 +68,20 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
 
   const partyCalls = `select id from ${t('call')} where line_subject = any($1::text[]) or (party is not null and subject = any($1::text[]))
     union select about as id from ${t('said')} where topic = 'party' and data->>'subject' = any($1::text[])`
-  const dropCallbacks = async (db: Queryable, ids: string[], subjects: Subject[]) => {
+  const dropCallNotices = async (db: Queryable, ids: string[], subjects: Subject[]) => {
+    const conversions = ids.map(id => `call:${id}`)
     await db.query(`delete from ${t('alert')} where subject = any($1::text[]) and starts_with(key, 'unreturned:') and delivered_at is null`, [subjects])
-    await db.query(`delete from ${t('event')} where type = 'callback.overdue' and data->>'call' = any($1::text[])`, [ids])
+    await db.query(`delete from ${t('alert')} where starts_with(key, 'alert:conversions:') and exists (select from unnest($1::text[]) as c(id) where position(('• ' || c.id || ' to ') in text) > 0)`, [conversions])
+    await db.query(`delete from ${t('event')} where (type = 'callback.overdue' and data->>'call' = any($1::text[])) or (type = 'conversion.failed' and data->>'conversion' = any($2::text[]))`, [ids, conversions])
     await db.query(`delete from ${t('event_once')} where subject = any($1::text[]) and said_once in (select 'unreturned:' || subject || ':' || id from unnest($2::text[]) as ids(id))`, [subjects, ids])
   }
+  const addAlert = async (db: Queryable, { key, text, at, subject, error }: KeptAlert, again = false) => {
+    const conflict = again ? 'do update set at = excluded.at, text = excluded.text, error = excluded.error, tried_at = excluded.tried_at, delivered_at = null' : 'do nothing'
+    const { rows } = await db.query(`insert into ${t('alert')} (key, text, at, subject, error, tried_at) values ($1, $2, $3, $4, $5, $3) on conflict (key) ${conflict} returning 1`, [key, text, at, subject ?? null, error ?? null])
+    return rows.length > 0
+  }
   const bind = (db: Queryable): Tx => ({
+    addAlert: (alert, again) => addAlert(db, alert, again),
     outbox: outboxOn(db),
     async nested(work) {
       await db.query('savepoint inside')
@@ -144,7 +152,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
         const refs = ids.map(id => `call:${id}`)
         const { rows } = await db.query(`delete from ${t('call')} where id = any($1::text[]) returning subject, line_subject`, [ids])
         const owners = rows.flatMap(row => [row.subject, row.line_subject]).filter(Boolean)
-        await dropCallbacks(db, ids, [subject, ...owners])
+        await dropCallNotices(db, ids, [subject, ...owners])
         await db.query(`delete from ${t('call_result')} where id = any($1::text[])`, [ids])
         await db.query(`delete from ${t('said')} where (topic in ('worth', 'lead') and about = any($1::text[])) or (topic in ('party', 'result', 'return') and about = any($2::text[]))`, [refs, ids])
         await db.query(`delete from ${t('not_lead')} where id = any($1::text[])`, [refs])
@@ -585,13 +593,12 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       await db.query(`delete from ${t('outcome')} where transaction_id = $1`, [transactionId])
     },
 
-    async setCall({ id, direction, subject, at, to, duration, flags, visitor, tags, recorded }) {
+    async setCall({ id, direction, subject, at, to, duration, flags, visitor, tags, recorded }, lineKind) {
       await db.query(
-        `insert into ${t('call')} (id, subject, at, dialed, duration, flags, visitor, recorded_at, direction, tags) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-         on conflict (id) do update set subject = case when ${t('call')}.party is null then excluded.subject else ${t('call')}.subject end,
-           at = excluded.at, dialed = excluded.dialed, duration = excluded.duration,
-           flags = case when ${t('call')}.party is null then excluded.flags else ${t('call')}.flags end, visitor = case when ${t('call')}.party is null then excluded.visitor end, recorded_at = excluded.recorded_at, direction = excluded.direction, tags = excluded.tags`,
-        [id, subject, at, to, duration ?? null, flags, visitor ?? null, recorded, direction, tags ?? null],
+        `insert into ${t('call')} (id, subject, at, dialed, duration, flags, visitor, recorded_at, direction, tags, line_kind) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         on conflict (id) do update set subject = excluded.subject, at = excluded.at, dialed = excluded.dialed, duration = excluded.duration,
+           flags = excluded.flags, visitor = excluded.visitor, recorded_at = excluded.recorded_at, direction = excluded.direction, tags = excluded.tags where ${t('call')}.party is null`,
+        [id, subject, at, to, duration ?? null, flags, visitor ?? null, recorded, direction, tags ?? null, lineKind ?? null],
       )
     },
 
@@ -606,9 +613,10 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       const call = await this.callOf(id)
       if (!call) return []
       const owner = ownerOf(id, party)
-      const line = (await this.callLine(id))!
+      const { rows: [raw] } = await db.query(`select coalesce(line_subject, subject) as line, line_kind from ${t('call')} where id = $1`, [id])
+      const line = raw.line
       const first = !call.party && !arriving
-      const { changes, affected } = first ? await callTraces(this, call, line) : { changes: [], affected: [] }
+      const { changes, affected } = first ? await callTraces(this, call, line, raw.line_kind ?? undefined) : { changes: [], affected: [] }
       for (const { edge, remove, next } of changes) {
         const { subject, identifier } = edge
         if (remove) await db.query(`delete from ${t('sighting')} where id in (select id from ${t('sighting')} where subject = $1 and identifier = $2 and at = $3 and event = 'call' order by id limit $4)`, [subject, identifier, call.at, remove])
@@ -623,7 +631,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
         await db.query(`delete from ${t('subject')} s where id = any($1::text[]) and not exists (select from ${t('edge')} e where e.subject = s.id)`, [changes.map(({ edge }) => edge.subject)])
       }
       if (first && !call.visitor && call.direction === 'inbound') await this.dropTouch(line, call.at, `tel:${call.to}`)
-      await db.query(`update ${t('call')} set line_subject = $2, subject = $3, party = $4, visitor = null, flags = $5 where id = $1`, [id, line, owner, party, withoutGuesses(call.flags)])
+      await db.query(`update ${t('call')} set line_subject = $2, line_kind = null, subject = $3, party = $4, visitor = null, flags = $5 where id = $1`, [id, line, owner, party, withoutGuesses(call.flags)])
       const transactionId = `call:${id}`
       if (owner !== call.subject) {
         for (const table of ['outcome', 'outcome_value']) await db.query(`update ${t(table)} set subject = $2 where transaction_id = $1 and subject = $3`, [transactionId, owner, call.subject])
@@ -634,7 +642,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
         const job = toJob(row)
         if (job.note !== 'call_party' || job.subject !== owner) await this.outbox.swap(job, stopCallJob(job, owner))
       }
-      if (first || call.subject !== owner) await dropCallbacks(db, [id], [line, call.subject, owner])
+      if (first || call.subject !== owner) await dropCallNotices(db, [id], [line, call.subject, owner])
       return affected
     },
 
@@ -1221,9 +1229,9 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
         open: row.open.map(Number),
       }))
     },
-    async addAlert({ key, text, at, subject, error }) {
-      const { rows } = await pool.query(`insert into ${t('alert')} (key, text, at, subject, error, tried_at) values ($1, $2, $3, $4, $5, $3) on conflict do nothing returning 1`, [key, text, at, subject ?? null, error ?? null])
-      return rows.length > 0
+    addAlert: (alert, again) => addAlert(pool, alert, again),
+    async pendingAlert({ key, text, at }) {
+      return (await pool.query(`select 1 from ${t('alert')} where key = $1 and text = $2 and at = $3 and delivered_at is null`, [key, text, at])).rows.length > 0
     },
     async keepAlert({ key, text, at, subject, error }) {
       await pool.query(
@@ -1241,11 +1249,15 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       )
       return rows[0] && toAlert(rows[0])
     },
-    async alertDelivered(key, at) {
-      await pool.query(`update ${t('alert')} set delivered_at = $2 where key = $1`, [key, at])
+    async alertDelivered(key, at, expected) {
+      if (expected && key.startsWith('alert:conversions:')) {
+        await pool.query(`delete from ${t('alert')} where key = $1 and text = $2 and at = $3 and delivered_at is null`, [key, expected.text, expected.at])
+        return
+      }
+      await pool.query(`update ${t('alert')} set delivered_at = $2 where key = $1 and ($3::text is null or (text = $3 and at = $4))`, [key, at, expected?.text ?? null, expected?.at ?? null])
     },
-    async alertFailed(key, error) {
-      await pool.query(`update ${t('alert')} set error = $2 where key = $1`, [key, error])
+    async alertFailed(key, error, expected) {
+      await pool.query(`update ${t('alert')} set error = $2 where key = $1 and ($3::text is null or (text = $3 and at = $4))`, [key, error, expected?.text ?? null, expected?.at ?? null])
     },
     async undelivered() {
       const { rows } = await pool.query(`select * from ${t('alert')} where delivered_at is null order by at`)
@@ -1765,7 +1777,8 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
     {
       id: 29,
       name: 'staff confirmation of a call',
-      sql: `alter table ${schema}.call add column if not exists party jsonb, add column if not exists line_subject text;
+      sql: `alter table ${schema}.call add column if not exists party jsonb, add column if not exists line_subject text,
+              add column if not exists line_kind text check (line_kind in ('phone', 'voip', 'none'));
             create index if not exists call_line on ${schema}.call (line_subject) where line_subject is not null;
             create index if not exists said_party_subject on ${schema}.said ((data->>'subject')) where topic = 'party';`,
     },

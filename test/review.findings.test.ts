@@ -353,6 +353,50 @@ both('a rebuild retires name evidence written before all distinguishing letters 
   assert.deepEqual(await members(), subjects)
 }, { identifierSecret: SECRET, policy: namePolicy })
 
+for (const [label, keys, confirmed] of [
+  ['different given names', [['given:97f2c03d8be6dc182b376cc600928b772c7b846bd268407c25e34a7798f942b7', 'initial:901660c02479d03128393ca21ed0e7be7159ddc9e1d22e8153b3720d25b52070'], ['given:4f718e3fc81fca184edeafe1fb1e98200cd613c4c57ecc839a6bb5de51979a4c', 'initial:e5f0aa26614ab3951eff85e3e3a5ed1b46cbc9194ad16e447b916d462fa29016']], false],
+  ['different given names and an equal birth', [['given:97f2c03d8be6dc182b376cc600928b772c7b846bd268407c25e34a7798f942b7'], ['given:4f718e3fc81fca184edeafe1fb1e98200cd613c4c57ecc839a6bb5de51979a4c']], true],
+  ['two named records and an equal birth', [['named:3de17624df4a665fb7ef0ea252b18d580d7a8dfddcd7b6a3c59e05bc4bda2803'], ['named:77174593c325e8c3ff8d6f1cbfe4d5ce487d83b768b363ebdbdcb490a21f67e1']], true],
+] as const) both(`a rebuild keeps an earlier disagreement, ${label}`, async (graph) => {
+  const { engine } = await internalsOf(graph)!()
+  const subjects = ['contact:one', 'contact:two']
+  // Written with the old name rules for Maria and Carlos, and for two names outside the table.
+  await engine.store.write(async (tx) => {
+    await tx.addSightings(subjects.flatMap((subject, n) => ['email:shared', ...keys[n]!, ...(confirmed ? ['birth:same'] : [])].map((identifier) => ({ subject, identifier, at: AT }))))
+    await tx.setLabels(new Map(subjects.map((subject) => [subject, { cluster: subject, component: subjects[0]! }])))
+    await tx.setBuiltWith('old rules')
+  })
+  const memberships = async () => (await graph.lookup({ kind: 'person', subjects, at: NOW })).people.map((person) => person.members)
+  assert.deepEqual(await memberships(), subjects.map((subject) => [subject]))
+  await engine.graph.rebuild()
+  assert.deepEqual(await memberships(), subjects.map((subject) => [subject]))
+  // A new report on just one side must still respect the facts on the other.
+  await engine.graph.observe({ subject: subjects[0]!, at: AT + 1, identifiers: keys[0].map((identifier) => identifier + '~1') })
+  assert.deepEqual(await memberships(), subjects.map((subject) => [subject]))
+  assert.deepEqual(await engine.graph.verify(), [])
+}, { policy: { apart: ['given'], ...(confirmed && { records: 'confirmed' }) } })
+
+both('removing an old name match cannot give the person to a third record', async (graph) => {
+  const { engine } = await internalsOf(graph)!()
+  const { birthKeys, email } = await import('../src/core/identifiers.ts')
+  const { givenKeys, namedKeys } = await import('../src/core/names.ts')
+  const subjects = ['contact:a', 'contact:b', 'contact:c']
+  const detail = 'common@example.org'
+  const dob = '1980-04-05'
+  const old = [...givenKeys(SECRET, 'John'), ...namedKeys(SECRET, [email(detail)], 'John', 'Doe')].filter((key) => !key.includes('~'))
+  await engine.graph.observe({ subject: subjects[0]!, identifiers: [email(detail), ...old, ...birthKeys(SECRET, dob)], at: AT })
+  for (const [n, first] of ['Maria', 'Maria文'].entries()) {
+    const subject = subjects[n + 1]!
+    assert.ok((await one(graph, { type: 'profile', subject, key: subject, at: AT + n + 1, facts: { email: detail, name: { first, last: 'Doe' }, ...(n === 0 && { dob }) } })).ok)
+  }
+  // Under the old rules only b and c were together. Checking the last letter separates them.
+  const groups = async () => (await graph.lookup({ kind: 'person', subjects, at: NOW })).people.map((person) => person.members)
+  assert.deepEqual(await groups(), subjects.map((subject) => [subject]))
+  assert.deepEqual(await engine.graph.verify(), [])
+  await engine.graph.rebuild()
+  assert.deepEqual(await groups(), subjects.map((subject) => [subject]))
+}, { identifierSecret: SECRET, policy: { apart: ['given'] } })
+
 both('a name taken from a placeholder cannot confirm a record or lift an earlier disagreement', async (graph) => {
   for (const [n, first, last] of [[1, 'John', 'Doe'], [2, 'John', 'Doe'], [3, 'Maria', 'Lima']] as const) {
     const subject = `contact:${n}`

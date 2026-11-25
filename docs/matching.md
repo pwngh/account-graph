@@ -84,7 +84,7 @@ Notes give no evidence and link nothing.
 
 ## Clusters
 
-Every subject reachable over `same` links forms a component. Three cuts, applied in order, divide a component into clusters.
+Every subject reachable over `same` links forms a component. When checking a name changes a link, the component also includes the subjects reachable under the earlier spelling so a later report can update everyone affected. Three cuts, applied in order, divide a component into clusters.
 
 1. **Separated pairs.** The direct link of each separated pair is removed, and of each pair whose [facts differ](#facts-that-keep-people-apart).
 2. **Paths between separated pairs.** If a pair that staff separated is still connected through others, the graph cuts guessed links wherever that keeps every active merge. If a path consists entirely of merges, the separation stands and the cut breaks as few merged links as possible. Among cuts that break the same number, it takes the weakest set of links. [Facts that keep people apart](#facts-that-keep-people-apart) have their own rules for merges.
@@ -259,7 +259,7 @@ What two records share, such as a mailbox, a number or a computer, may be a hous
 
 For a phone or email given under a name, or by someone speaking for its owner, a placeholder such as Unknown / Not Provided gives no name evidence. Where the name table could use part of a spelling, any letters it would lose must agree too. Thus María文 and Maria文 can agree, and Maria李 is a different name. The exact name key with a date or confirmed zip code still works in other scripts.
 
-When upgrading from the earlier name rules, stop the servers and run `account-graph rebuild`. The old hashes do not reveal which names lost letters or were placeholders. The rebuild drops those hashes as evidence for a join. They still count how many people share a spelling and carry its mutes. Re-send named profiles from their original source with new report keys before serving the graph again. Exact name keys with a date or zip code, dates of birth themselves and staff decisions keep working through the upgrade.
+When upgrading from the earlier name rules, stop the servers and run `account-graph rebuild`. The old hashes do not reveal which names lost letters or were placeholders. The rebuild drops those hashes as evidence for a join. They still count how many people share a spelling and carry its mutes. Different old names can still keep records apart, including while only one of the two profiles has been sent again. Where a spelling changes the weight of a link or what a name says about a person, two people stay together only if both the earlier and the checked spelling put them together. Losing one match cannot give that person to another record. Re-send named profiles from their original source with new report keys before serving the graph again. Exact name keys with a date or zip code, dates of birth themselves and staff decisions keep working through the upgrade.
 
 A record is a subject that names somebody, such as `contact:7` or `account:42`. A browser or a caller is none: it goes with the records it is tied to most strongly, and of two as strong, with whoever was seen first.
 

@@ -1,6 +1,6 @@
 import type { Edge, KeptCall, Subject } from '../contract/types.ts'
 import type { Job } from './outbox.ts'
-import type { Tx } from './store.ts'
+import type { CallLineKind, Tx } from './store.ts'
 import { newest } from './said.ts'
 
 export async function partyOf(tx: Tx, id: string): Promise<KeptCall['party']> {
@@ -26,20 +26,29 @@ export interface CallTrace {
 }
 
 /** The phone may have been seen many times. A note or tie reserved to this call may also outlive its pruned sightings. */
-export async function callTraces(tx: Tx, call: KeptCall, line: Subject): Promise<{ changes: CallTrace[]; affected: Subject[] }> {
+export async function callTraces(tx: Tx, call: KeptCall, line: Subject, lineKind?: CallLineKind): Promise<{ changes: CallTrace[]; affected: Subject[] }> {
   if (call.direction === 'outbound') return { changes: [], affected: [] }
   const marks = [`dialed:call-${call.id}`, `dial:${call.id}`, `lease:${call.id}`, `text:call:${call.id}`]
   const hash = line.startsWith('caller:') && !call.flags.includes('toll_free') ? line.slice(7) : undefined
-  const refs = [...marks, ...(hash ? [`phone:${hash}`, `voip:${hash}`] : [])]
+  const raw = hash && lineKind !== 'none' ? (lineKind ? [`${lineKind}:${hash}`] : [`phone:${hash}`, `voip:${hash}`]) : []
+  const refs = [...marks, ...raw]
   const edges = await tx.edgesOn(refs)
   // A text's tap is called dial:text-<id>. Even at the same instant its own occurrence stays.
   const text = call.id.startsWith('text-') ? await tx.textOf(call.id.slice(5)) : undefined
   const changes: CallTrace[] = []
   const history = new Map<Subject, Awaited<ReturnType<Tx['history']>>>()
+  const observed = new Set<string>()
+  if (raw.length === 2) {
+    // An older call has no stored line kind. Its dated sighting is better evidence than the bounds of a pruned edge.
+    const seen = await tx.history(line)
+    history.set(line, seen)
+    for (const row of seen) if (row.at === call.at && row.event === 'call' && raw.includes(row.identifier)) observed.add(row.identifier)
+  }
   for (const edge of edges) {
     const { subject, identifier } = edge
     const mark = marks.includes(identifier)
-    if ((!mark && subject !== line) || call.at < edge.first || call.at > edge.last) continue
+    if (call.at < edge.first || call.at > edge.last) continue
+    if (!mark && (subject !== line || (observed.size > 0 && !observed.has(identifier)))) continue
     let seen = history.get(subject)
     if (!seen) history.set(subject, (seen = await tx.history(subject)))
     const all = seen.filter(row => row.identifier === identifier)
@@ -50,7 +59,9 @@ export async function callTraces(tx: Tx, call: KeptCall, line: Subject): Promise
     const pruned = edge.count - all.length
     // Losing the only dated row for a pruned boundary leaves just the bounds the other rows still establish.
     const otherPruned = other && all.length - remove === 0 ? 1 : 0
-    const old = mark ? Math.max(0, pruned - otherPruned) : remove ? 0 : Math.min(1, pruned)
+    // Each missing boundary accounts for one pruned sighting which cannot be this call.
+    const elsewhere = !mark && pruned > 0 ? [...new Set([edge.first, edge.last])].filter(at => at !== call.at && !all.some(row => row.at === at)).length : 0
+    const old = mark ? Math.max(0, pruned - otherPruned) : remove ? 0 : Math.min(1, Math.max(0, pruned - elsewhere))
     const count = edge.count - remove - old
     if (count === edge.count) continue
     const removed = new Set(at.slice(0, remove))

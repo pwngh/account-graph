@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { isRefused } from '../src/contract/fault.ts'
+import { recordCall } from '../src/core/calls.ts'
+import { hashPhone } from '../src/core/identifiers.ts'
 import { createGraph } from '../src/core/graph.ts'
 import { createReceipts } from '../src/core/receipts.ts'
 import type { Graph } from '../src/core/graph.ts'
@@ -29,6 +31,43 @@ async function inOrder(steps: readonly (() => Promise<unknown>)[]) {
 }
 
 export function saidSuite(name: string, open: () => Promise<Opened>) {
+  test(`${name}: a raw report cannot replace a confirmed call`, async () => {
+    const { store, close } = await open()
+    try {
+      const graph = createGraph(store)
+      const call = 'late-report'
+      await store.write(tx => tx.setCall({ id: call, direction: 'inbound', subject: 'caller:line', at: AT, to: '+12025550101', duration: 4, flags: ['short'], tags: { office: 'one' }, recorded: AT }, 'phone'))
+      await graph.sayParty({ call, key: 'a', at: AT + 1, party: { role: 'self', subject: 'record:a', by: 'desk' } })
+      const confirmed = await graph.keptCall(call)
+      await store.write(tx => tx.setCall({ id: call, direction: 'outbound', subject: 'caller:other', at: AT + 2, to: '+12025550102', duration: 60, flags: ['pool'], visitor: 'visitor:other', tags: { office: 'two' }, recorded: AT + 3 }, 'voip'))
+      assert.deepEqual(await graph.keptCall(call), confirmed)
+      assert.equal(await store.read(tx => tx.callLine(call)), 'caller:line')
+      await graph.sayResult({ call, key: 'missed', at: AT + 4, result: { answered: false } })
+      await graph.sayReturn({ call, key: 'returned', at: AT + 5, reachedAt: AT + 5 })
+      await graph.sayParty({ call, key: 'b', at: AT + 6, party: { role: 'representative', subject: 'record:b', by: 'desk' } })
+      const corrected = (await graph.keptCall(call))!
+      assert.deepEqual([corrected.subject, corrected.party?.role, corrected.result?.answered, corrected.result?.returned], ['record:b', 'representative', false, AT + 5])
+    } finally {
+      await close()
+    }
+  })
+
+  test(`${name}: a late doubt about a tap cannot mute a confirmed call`, async () => {
+    const { store, close } = await open()
+    try {
+      const graph = createGraph(store)
+      const call = 'late-doubt'
+      await recordCall(graph, { id: call, at: AT, from: '+12025550103', to: '+12025550104' })
+      await graph.sayParty({ call, key: 'heard', at: AT + 1, party: { role: 'self', subject: 'record:a', by: 'desk' } })
+      const confirmed = await graph.keptCall(call)
+      await graph.doubtCall(call, true)
+      assert.deepEqual([...(await store.read(tx => tx.states([`dial:${call}`]))).keys()], [])
+      assert.deepEqual(await graph.keptCall(call), confirmed)
+    } finally {
+      await close()
+    }
+  })
+
   test(`${name}: confirming one call moves its history and erases only that call's guesses`, async () => {
     const { store, close } = await open()
     const line = 'caller:line'
@@ -132,6 +171,86 @@ export function saidSuite(name: string, open: () => Promise<Opened>) {
         assert.equal((await tx.textOf(text))?.visitor, visitor)
         assert.deepEqual((await tx.history(visitor)).map(row => row.identifier), pruned ? [] : [dial])
       })
+    } finally {
+      await close()
+    }
+  })
+
+  test(`${name}: a call's phone sighting leaves the other line kind intact after pruning`, async () => {
+    const { store, close } = await open()
+    try {
+      for (const kind of ['phone', 'voip']) for (const pruned of [false, true]) await store.write(async tx => {
+        const id = `${kind}-${Number(pruned)}`
+        const subject = `caller:${id}`
+        const own = `${kind}:${id}`
+        const other = `${kind === 'phone' ? 'voip' : 'phone'}:${id}`
+        await tx.setCall({ id, subject, direction: 'inbound', to: '+12025550101', at: AT, recorded: AT, flags: [] })
+        await tx.addSightings([AT - 1, AT + 1].map(at => ({ subject, identifier: other, at, recorded: AT, event: 'profile' })))
+        await tx.addSightings([{ subject, identifier: own, at: AT, recorded: AT + 2, event: 'call' }])
+        await tx.pruneSightings(AT + (pruned ? 3 : 1))
+        await tx.addSaid({ topic: 'party', about: id, key: id, at: AT + 3, data: { by: 'desk', role: 'self', subject: 'record:a' } })
+        await tx.applyCallParty(id)
+        assert.deepEqual(await tx.edgesOn([own, other]), [{ subject, identifier: other, count: 2, first: AT - 1, last: AT + 1 }])
+      })
+    } finally {
+      await close()
+    }
+  })
+
+  test(`${name}: confirmation uses the line check of its own call after the sightings are pruned`, async () => {
+    const { store, close } = await open()
+    try {
+      const graph = createGraph(store, undefined, { now: () => AT })
+      const from = '+12025550100'
+      const hash = hashPhone(from)
+      for (const type of ['mobile', 'nonFixedVoip', 'pager']) {
+        await recordCall(graph, { id: type, at: AT, from, to: '+12025550101' }, { now: () => AT, lineType: async () => ({ type }) })
+      }
+      const edges = () => store.read(async tx => (await tx.edgesOn([`phone:${hash}`, `voip:${hash}`])).map(({ identifier, count }) => [identifier, count]).sort())
+      const guessed = [[`phone:${hash}`, 1], [`voip:${hash}`, 1]]
+      assert.deepEqual(await edges(), guessed)
+      await store.write(tx => tx.pruneSightings(AT + 1))
+      for (const [i, call] of ['pager', 'nonFixedVoip', 'mobile'].entries()) {
+        await graph.sayParty({ call, key: call, at: AT + 2, party: { role: 'self', subject: 'record:a', by: 'desk' } })
+        assert.deepEqual(await edges(), guessed.slice(0, 2 - i))
+        assert.equal('lineKind' in (await graph.keptCall(call))!, false)
+        assert.deepEqual(await graph.verify(), [])
+      }
+    } finally {
+      await close()
+    }
+  })
+
+  test(`${name}: naming and deleting a call removes its delivery failure events and pending alerts`, async () => {
+    const { store, close } = await open()
+    try {
+      const subject = 'caller:line'
+      const id = 'failed-call'
+      const owner = 'record:a'
+      const error = { type: 'conversion.failed', at: AT, subject, data: { conversion: `call:${id}`, platform: 'test', note: 'rejected' } } as const
+      const alert = { key: 'alert:conversions:failed', text: `• call:${id} to test: rejected`, at: AT }
+      const delivered = { ...alert, key: 'alert:conversions:delivered' }
+      await store.ops.addAlert(delivered)
+      await store.ops.alertDelivered(delivered.key, AT)
+      await store.write(async tx => {
+        await tx.setCall({ id, subject, direction: 'inbound', at: AT, to: '+12025550101', flags: [], recorded: AT })
+        await tx.emit([error, { ...error, data: { ...error.data, conversion: 'call:untouched' } }])
+        await tx.addAlert(alert)
+        await tx.addAlert({ ...alert, key: 'alert:conversions:other', text: '• call:untouched to test: rejected' })
+        await tx.addSaid({ topic: 'party', about: id, key: id, at: AT + 1, data: { by: 'desk', role: 'self', subject: owner } })
+        await tx.applyCallParty(id)
+        assert.deepEqual((await tx.eventsAfter(0, 20)).filter(event => event.type === 'conversion.failed').map(event => event.data.conversion), ['call:untouched'])
+      })
+      assert.deepEqual((await store.ops.undelivered()).map(({ key }) => key), ['alert:conversions:other'])
+      assert.ok(await store.ops.addAlert(delivered))
+      await store.ops.alertDelivered(delivered.key, AT)
+      await store.write(async tx => {
+        await tx.emit([error])
+        await tx.addAlert(alert)
+        await tx.removeSubject(owner)
+        assert.deepEqual((await tx.eventsAfter(0, 20)).filter(event => event.type === 'conversion.failed').map(event => event.data.conversion), ['call:untouched'])
+      })
+      assert.deepEqual((await store.ops.undelivered()).map(({ key }) => key), ['alert:conversions:other'])
     } finally {
       await close()
     }

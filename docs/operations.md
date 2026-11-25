@@ -389,6 +389,8 @@ The check uses the time the server stored the record. Choose hours longer than y
 
 The server alerts once, after `RETURN_HOURS`, about a missed caller from a paid visit who has not been reached. Another call from the same person during the wait adds no alert. Being reached and then missed again starts a new wait.
 
+The server checks the call's owner, missed status and paid arrival in the same write that queues its alert and event. Changing the owner or forgetting the call clears the waiting alert. Each sender checks the waiting message again just before posting it. A send that has already passed that check can still arrive.
+
 A visit is paid when it carries an ad click id, a campaign id, or a medium such as `cpc`. Meta's click id alone is insufficient, because unpaid links also carry it.
 
 Missed callers require [call results](calls.md#call-results). The Calls view lists missed calls more than two weeks overdue.

@@ -25,7 +25,8 @@ import { asFault } from './faults.ts'
 import { keep } from './internals.ts'
 import type { Internals } from './internals.ts'
 import { checksOf, targetsOf } from './providers.ts'
-import { createWorkers, failedText } from './workers.ts'
+import { createWorkers } from './workers.ts'
+import type { Job } from '../core/outbox.ts'
 import type { Workers } from './workers.ts'
 
 /** What a program that keeps the database may do, and a caller may not. */
@@ -141,7 +142,7 @@ export function localGraph(options: LocalOptions, keeping: Keeping = {}): Accoun
     const policy = await settle(store)
     const hours = options.openHours && createHours(options.openHours, options.timeZone)
     const { numbers, exclude, minimumSeconds, resultsExpectedWithinMinutes, country, tapSeconds, pool: shown } = options.phones ?? {}
-    let tell: (jobs: Parameters<typeof failedText>[0]) => void = () => {}
+    let tell: (jobs: Job[]) => Promise<void> = async () => {}
     const now = options.now ?? Date.now
     const targets = targetsOf(options)
     const engine = createEngine(store, {
@@ -157,24 +158,13 @@ export function localGraph(options: LocalOptions, keeping: Keeping = {}): Accoun
       },
       ...(targets.length > 0 && { delivery: { targets, retractOnForget: options.ads?.retractOnForget ?? false, ...(options.ads?.delayMs !== undefined && { delay: options.ads.delayMs }), onFailed: (jobs) => tell(jobs) } }),
     })
-    const emit = (event: NewEvent) => store.write(async (tx) => {
-      // Looked up in the write that says it: somebody deleted since it was found out is not named again.
-      if (event.type === 'callback.overdue' && (await tx.callOf(event.data.call))?.subject !== event.data.subject) return 'gone' as const
-      return tx.emit([event])
-    })
+    const emit = (event: NewEvent) => store.write((tx) => tx.emit([event]))
     const { quietHours, lateHours } = options.monitor ?? {}
     const ops = createOps(engine.graph, store.ops, {
       ...(options.alerts && { url: options.alerts.url }), ...(quietHours && { quiet: quietHours }), returnHours: options.phones?.returnHours ?? 24, ...(hours && { hours }),
       outbox: store.outbox, lateHours: lateHours ?? 6, timeZone: options.timeZone ?? 'UTC', now, emit, ...(options.fetch && { fetch: options.fetch }), onError: (error) => log(`alert: ${String((error as Error)?.message ?? error)}`),
     })
-    tell = (jobs) => {
-      void store.write(async (tx) => {
-        const there = await Promise.all(jobs.map(async (job) => (await tx.outbox.get(job.transactionId)).some((each) => each.target === job.target)))
-        const left = jobs.filter((_, i) => there[i])
-        await tx.emit(left.map((job) => ({ type: 'conversion.failed' as const, at: now(), subject: job.subject, data: { conversion: job.transactionId, platform: job.target, note: job.note ?? '' } })))
-      }).catch((error) => log(String(error)))
-      void ops.alert('conversions', failedText(jobs))
-    }
+    tell = jobs => ops.failed(jobs, store).catch(error => log(String(error)))
     const six = createSix(engine, { receipts, returnHours: options.phones?.returnHours ?? 24, ...(options.linkSecret && { linkSecret: options.linkSecret }), ...(hours && { hours }), ...(options.timeZone && { timeZone: options.timeZone }) })
     workers = createWorkers(engine, ops, options, log)
     // From here on, and not from the first time it is posted to.

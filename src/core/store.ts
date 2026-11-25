@@ -1,4 +1,4 @@
-import type { Feed, OpsStore } from './ops.ts'
+import type { Feed, KeptAlert, OpsStore } from './ops.ts'
 import type { GraphEvent } from '../contract/api.ts'
 import type { Delivery, EventHead, NewEvent } from './events.ts'
 import type { Receipt } from './receipts.ts'
@@ -6,6 +6,8 @@ import type { Said, SaidOf, Topic } from './said.ts'
 import { byKey } from './said.ts'
 import type { Job, OutboxStore } from './outbox.ts'
 import type { CallResult, CallTime, Change, Consent, ConsentAnswer, CostRow, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, NumberedChange, SentLink, OutcomeValue, Payment, Sighting, Subject, Touch } from '../contract/types.ts'
+
+export type CallLineKind = 'phone' | 'voip' | 'none'
 
 /**
  * Where the graph lives. Sightings and touches are the record; edges and
@@ -82,6 +84,8 @@ export interface Tx {
    * is seen before a lower one. Call it last: that row is held from here on. Resolves to how many were new.
    */
   emit(events: readonly NewEvent[]): Promise<number>
+  /** Keeps an alert with the event it names. A fresh failure batch may reopen the same message. */
+  addAlert(alert: KeptAlert, again?: boolean): Promise<boolean>
   eventHead(): Promise<EventHead>
   eventsAfter(seq: number, limit: number): Promise<GraphEvent[]>
   /** Begins another history, as after a restored backup. Every cursor is lost. */
@@ -149,7 +153,7 @@ export interface Tx {
   /** Deletes what was said before a time about outcomes and calls that never came. Returns how many went. */
   pruneNotLeads(before: number): Promise<number>
   /** Keeps a call, replacing one with the same id. Its result is kept apart, and may arrive first. */
-  setCall(call: Omit<KeptCall, 'result'>): Promise<void>
+  setCall(call: Omit<KeptCall, 'result'>, lineKind?: CallLineKind): Promise<void>
   /** The physical line of a recorded call, for deleting either side of a staff confirmation. */
   callLine(id: string): Promise<Subject | undefined>
   /** Applies the standing assertion to this call. A call arriving after its assertion left no guesses to take back. */

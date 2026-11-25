@@ -2,7 +2,6 @@ import type { LocalOptions } from '../contract/api.ts'
 import type { Engine } from '../core/engine.ts'
 import { createWebhook } from '../core/delivery.ts'
 import type { Ops } from '../core/ops.ts'
-import type { Job } from '../core/outbox.ts'
 import { costSourcesOf } from './providers.ts'
 
 const MINUTE = 60_000
@@ -13,13 +12,6 @@ export interface Workers {
   /** One pass of each, whether it is due or not. */
   pass(): Promise<void>
   stop(): Promise<void>
-}
-
-/** What people are told when conversions fail for good. */
-export function failedText(jobs: readonly Job[]): string {
-  const lines = jobs.slice(0, 10).map((job) => `• ${job.transactionId} to ${job.target}: ${job.note ?? 'no reason given'}`)
-  const more = jobs.length > 10 ? `\n…and ${jobs.length - 10} more` : ''
-  return `account-graph: ${jobs.length} ${jobs.length === 1 ? 'conversion' : 'conversions'} rejected.\n${lines.join('\n')}${more}\nRetry them from the Health view.`
 }
 
 /** What runs by itself: sending, reading costs, looking for what is late, and telling of it. Each takes a lease, so many processes do it once. */

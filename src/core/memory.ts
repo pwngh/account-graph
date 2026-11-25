@@ -10,7 +10,7 @@ import type { Delivery } from './events.ts'
 import type { Receipt } from './receipts.ts'
 import type { Said, SaidOf, Topic } from './said.ts'
 import { byKey } from './said.ts'
-import type { Store, Tx } from './store.ts'
+import type { CallLineKind, Store, Tx } from './store.ts'
 import { CLICK_IDS } from './touch.ts'
 import type { CallResult, Consent, ConsentAnswer, CostRow, Counted, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, NumberedChange, OutcomeValue, Payment, SentLink, Sighting, Subject, Touch } from '../contract/types.ts'
 
@@ -39,6 +39,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
   const values = new Map<Subject, Map<string, OutcomeValue[]>>()
   const calls = new Map<string, Omit<KeptCall, 'result'>>()
   const callLines = new Map<string, Subject>()
+  const lineKinds = new Map<string, CallLineKind>()
   const texts = new Map<string, KeptText>()
   const sent = new Map<string, SentLink>()
   const payments = new Map<string, Required<Payment>>()
@@ -95,16 +96,19 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
     for (const list of said.values()) for (const each of list) if (each.topic === 'party' && 'subject' in each.data && subjects.includes(each.data.subject)) found.add(each.about)
     return found
   }
-  const dropCallbacks = (ids: ReadonlySet<string>, subjects: Subject[]) => {
+  const dropCallNotices = (ids: ReadonlySet<string>, subjects: Subject[]) => {
+    const conversions = new Set([...ids].map(id => `call:${id}`))
+    ops.dropFailureAlerts([...conversions])
     ops.dropCallbackAlerts(subjects)
     for (let i = events.length - 1; i >= 0; i--) {
       const event = events[i]!
-      if (event.type === 'callback.overdue' && ids.has(event.data.call)) events.splice(i, 1)
+      if ((event.type === 'callback.overdue' && ids.has(event.data.call)) || (event.type === 'conversion.failed' && conversions.has(event.data.conversion))) events.splice(i, 1)
     }
     for (const subject of subjects) for (const id of ids) once.delete(`unreturned:${subject}:${id}`)
   }
 
   const tx: Tx = {
+    addAlert: ops.addAlert,
     outbox,
     nested: (work) => work(),
     async addSightings(rows) {
@@ -148,6 +152,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
         const outcome = `call:${id}`
         calls.delete(id)
         callLines.delete(id)
+        lineKinds.delete(id)
         results.delete(id)
         outcomes.delete(outcome)
         spurned.delete(outcome)
@@ -157,7 +162,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
         unsay(outcome)
         unsay(id, 'party', 'return', 'result')
       }
-      if (ids.size) dropCallbacks(ids, [...owners])
+      if (ids.size) dropCallNotices(ids, [...owners])
       for (const identifier of bySubject.get(subject)?.keys() ?? []) {
         const holders = byIdentifier.get(identifier)!
         holders.delete(subject)
@@ -180,6 +185,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
       for (const [id, call] of calls) {
         if (call.subject === subject) {
           calls.delete(id)
+          lineKinds.delete(id)
           results.delete(id)
           spurned.delete(`call:${id}`)
           unsay(id, 'result', 'return')
@@ -565,11 +571,11 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
       outcomes.delete(transactionId)
     },
 
-    async setCall(call) {
+    async setCall(call, lineKind) {
       const kept = calls.get(call.id)
-      // A retry can refresh call details, but cannot replace what staff said or restore a guessed browser.
-      const { visitor, ...rest } = call
-      calls.set(call.id, structuredClone(kept?.party ? { ...rest, subject: kept.subject, party: kept.party, flags: withoutGuesses(call.flags) } : call))
+      if (kept?.party) return
+      if (!kept && lineKind) lineKinds.set(call.id, lineKind)
+      calls.set(call.id, structuredClone(call))
     },
 
     async callLine(id) {
@@ -583,7 +589,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
       const owner = ownerOf(id, party)
       const line = callLines.get(id) ?? call.subject
       const first = !call.party && !arriving
-      const { changes, affected } = first ? await callTraces(this, call, line) : { changes: [], affected: [] }
+      const { changes, affected } = first ? await callTraces(this, call, line, lineKinds.get(id)) : { changes: [], affected: [] }
       for (const { edge, remove, next } of changes) {
         const { subject, identifier } = edge
         const seen = sightings.get(subject)
@@ -610,6 +616,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
       }
       if (first && !call.visitor && call.direction === 'inbound') await this.dropTouch(line, call.at, `tel:${call.to}`)
       const before = call.subject
+      lineKinds.delete(id)
       callLines.set(id, line)
       Object.assign(call, { subject: owner, party, flags: withoutGuesses(call.flags) })
       delete call.visitor
@@ -626,7 +633,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
         }
       }
       for (const [key, job] of outbox.jobs) if (job.transactionId === transactionId && (job.note !== 'call_party' || job.subject !== owner)) outbox.jobs.set(key, { ...stopCallJob(job, owner), rev: (job.rev ?? 0) + 1 })
-      if (first || before !== owner) dropCallbacks(new Set([id]), [line, before, owner])
+      if (first || before !== owner) dropCallNotices(new Set([id]), [line, before, owner])
       return affected
     },
 
@@ -1017,7 +1024,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
   }
 
   /** Every collection, copied together, so what two of them share stays shared. */
-  const collections = { bySubject, byIdentifier, ignored, labels, byComponent, byCluster, sightings, touches, separated, flows, flowsBy, flowIds, consents, decisions, outcomes, values, calls, callLines, texts, sent, payments, results, spurned, leases, costs, reads, said, receipts, receiptSubjects, settings, events, once, deliveries }
+  const collections = { bySubject, byIdentifier, ignored, labels, byComponent, byCluster, sightings, touches, separated, flows, flowsBy, flowIds, consents, decisions, outcomes, values, calls, callLines, lineKinds, texts, sent, payments, results, spurned, leases, costs, reads, said, receipts, receiptSubjects, settings, events, once, deliveries }
   const snapshot = () => structuredClone({ ...collections, lastEvent, epoch, writes, built, jobs: outbox.jobs, ops: ops.kept })
   const restore = (kept: ReturnType<typeof snapshot>) => {
     const refill = (now: any, then: any) => {

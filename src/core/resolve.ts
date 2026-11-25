@@ -15,6 +15,7 @@ export function scorePairs(
   states: ReadonlyMap<Identifier, IdentifierState>,
   from?: ReadonlySet<Subject>,
   least = policy.related,
+  select: (reasons: Reason[]) => Reason[] = checkedReasons,
 ): Pair[] {
   const byIdentifier = new Map<Identifier, Edge[]>()
   for (const edge of edges) {
@@ -47,7 +48,7 @@ export function scorePairs(
   const pairs: Pair[] = []
   for (const [a, row] of found) {
     for (const [b, shared] of row) {
-      const reasons = checkedReasons(shared)
+      const reasons = select(shared)
       if (reasons.length === 0) continue
       const score = weigh(policy, reasons)
       // That one speaks for the other is said, whatever it comes to.
@@ -62,7 +63,7 @@ export function scorePairs(
  * Connected components over `same` pairs, by union-find.
  * Each subject maps to the smallest member of its component.
  */
-export function components(subjects: Iterable<Subject>, pairs: readonly Pair[]): Map<Subject, Subject> {
+export function components(subjects: Iterable<Subject>, pairs: readonly Pick<Pair, 'a' | 'b' | 'level'>[]): Map<Subject, Subject> {
   const parent = new Map<Subject, Subject>()
   for (const subject of subjects) parent.set(subject, subject)
 
@@ -100,6 +101,9 @@ export interface Known {
   joins: Set<Identifier>
   /** What they gave under which name. */
   things: Set<Identifier>
+  /** The earlier spelling can still rule a match out while a profile awaits a new report. */
+  earlier?: Known
+  changed?: true
 }
 
 const THINGS = new Set(['named', 'ward'])
@@ -115,6 +119,11 @@ export function knownOf(policy: Policy, edges: readonly Edge[], undone: (identif
   const out = new Map<Subject, Known>()
   if (!policy.apart?.length && !joins) return out
   const confirming = policy.records === 'confirmed'
+  const remember = (known: Known, kind: string, identifier: Identifier, thing: boolean) => {
+    if (kind === 'review') known.joins.add(identifier)
+    else if (thing) known.things.add(identifier)
+    else known.facts.set(kind as Note, (known.facts.get(kind as Note) ?? new Set()).add(identifier))
+  }
   for (const { subject, identifier } of edges) {
     const kind = identifier.slice(0, identifier.indexOf(':'))
     // Each fact is read for the other to be weighed against, whether or not it keeps anyone apart by itself.
@@ -122,18 +131,50 @@ export function knownOf(policy: Policy, edges: readonly Edge[], undone: (identif
     if (!policy.apart?.includes(kind as Fact) && !thing && kind !== 'birth' && kind !== 'given' && kind !== 'initial' && kind !== 'dated' && kind !== 'compound' && kind !== 'review') continue
     // A join that was undone is none, and a fact that was muted is none.
     const base = foldedNameKey(identifier)
-    if (base === identifier || undone(identifier) || (base && undone(base))) continue
-    const known = out.get(subject) ?? { facts: new Map(), joins: new Set(), things: new Set() }
+    if (undone(identifier) || (base && base !== identifier && undone(base))) continue
+    const known: Known = out.get(subject) ?? { facts: new Map(), joins: new Set(), things: new Set() }
     out.set(subject, known)
-    if (kind === 'review') known.joins.add(identifier)
-    else if (thing) known.things.add(identifier)
-    else known.facts.set(kind as Note, (known.facts.get(kind as Note) ?? new Set()).add(identifier))
+    // Keep a second reading only for names written both ways. Either reading can keep people apart.
+    if (base && !known.earlier) known.earlier = { facts: new Map([...known.facts].map(([kind, ids]) => [kind, new Set(ids)])), joins: known.joins, things: new Set(known.things) }
+    if (base !== identifier) remember(known, kind, identifier, thing)
+    if (known.earlier && (!base || base === identifier)) remember(known.earlier, kind, identifier, thing)
   }
+  for (const known of out.values()) if (changedSpelling(known)) known.changed = true
   return out
+}
+
+/** Whether comparing the full spelling can change a fact. Ordinary checked names have exactly the same facts under both readings. */
+function changedSpelling(known: Known): boolean {
+  if (!known.earlier) return false
+  const same = (before: Set<Identifier> | undefined, after: Set<Identifier> | undefined) => before?.size === after?.size && (!before || [...before].every((id) => after!.has(foldedNameKey(id) ? id + '~1' : id)))
+  return !same(known.earlier.things, known.things) || !same(known.earlier.facts.get('given'), known.facts.get('given')) || !same(known.earlier.facts.get('initial'), known.facts.get('initial'))
+}
+
+/** A weaker name can move a cut to another link. Only keep people together who belong together under both readings. */
+export function commonClusters(current: Map<Subject, Labels>, previous: Map<Subject, Labels>): Map<Subject, Labels> {
+  const subjects = [...new Set([...current.keys(), ...previous.keys()])].sort()
+  const links: { a: Subject; b: Subject; level: 'same' }[] = []
+  for (const reading of [current, previous]) for (const [subject, labels] of reading) if (subject !== labels.component) links.push({ a: subject, b: labels.component, level: 'same' })
+  // A change may affect a cut in either component. Keep both within reach of the next incremental update.
+  const together = components(subjects, links)
+  const groups = new Map<Subject, Map<Subject, Subject>>()
+  const labels = new Map<Subject, Labels>()
+  for (const subject of subjects) {
+    const [now, then] = [current.get(subject)?.cluster ?? subject, previous.get(subject)?.cluster ?? subject]
+    if (!groups.has(now)) groups.set(now, new Map())
+    const within = groups.get(now)!
+    if (!within.has(then)) within.set(then, subject)
+    labels.set(subject, { component: together.get(subject)!, cluster: within.get(then)! })
+  }
+  return labels
 }
 
 /** The fact two subjects cannot both be one person by, if there is one. */
 export function conflict(policy: Policy, a: Known | undefined, b: Known | undefined): Fact | undefined {
+  return differingFact(policy, a, b) ?? ((a?.changed || b?.changed) && differingFact(policy, a?.earlier ?? a, b?.earlier ?? b))
+}
+
+function differingFact(policy: Policy, a: Known | undefined, b: Known | undefined): Fact | undefined {
   if (!a || !b || !policy.apart?.length) return undefined
   if ([...a.joins].some((identifier) => b.joins.has(identifier))) return undefined
   /** Whether they agree on a fact, or undefined where one of them has none. */
@@ -159,6 +200,10 @@ const meets = (one: ReadonlySet<Identifier> | undefined, other: ReadonlySet<Iden
  * names a Robert has not, and they are ways to write one word.
  */
 function disagree(a: Known | undefined, b: Known | undefined): boolean {
+  return mismatched(a, b) || Boolean((a?.changed || b?.changed) && mismatched(a?.earlier ?? a, b?.earlier ?? b))
+}
+
+function mismatched(a: Known | undefined, b: Known | undefined): boolean {
   if (!a || !b) return false
   const [ours, theirs] = [a.facts.get('given'), b.facts.get('given')]
   const within = (one: ReadonlySet<Identifier>, other: ReadonlySet<Identifier>) => [...one].every((each) => other.has(each))
@@ -173,9 +218,13 @@ function disagree(a: Known | undefined, b: Known | undefined): boolean {
 
 /** Whether something says that two records are one person, other than what they share: a decision, or a name, a date or a thing of one person's that agrees where nothing differs. */
 export function confirmed(a: Known | undefined, b: Known | undefined): boolean {
+  return corroborated(a, b) && (!(a?.changed || b?.changed) || corroborated(a?.earlier ?? a, b?.earlier ?? b))
+}
+
+function corroborated(a: Known | undefined, b: Known | undefined): boolean {
   if (!a || !b) return false
   if (joinedBy(a, b)) return true
-  if (disagree(a, b)) return false
+  if (mismatched(a, b)) return false
   const dates = meets(a.facts.get('birth'), b.facts.get('birth')) === true
   const [ours, theirs] = [a.facts.get('given'), b.facts.get('given')]
   // Names that may be written for one another, and need not be: a Mary and a Marilyn, a Robert and a Bob. A date has to say
@@ -262,7 +311,7 @@ export function partition(
       out.set(id, { component: id, cluster: id })
       continue
     }
-    const told = group.filter((subject) => known.get(subject)?.facts.size).sort().map((subject) => ({ subject, own: known.get(subject)! }))
+    const told = group.filter((subject) => known.get(subject)?.facts.size || known.get(subject)?.earlier?.facts.size).sort().map((subject) => ({ subject, own: known.get(subject)! }))
     const differ: Difference[] = []
     for (const [i, a] of told.entries()) for (let j = i + 1; j < told.length; j++) {
       const b = told[j]!

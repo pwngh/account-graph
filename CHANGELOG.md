@@ -7,7 +7,9 @@
 - `record` and the Twilio text route share a concurrency test for one message, its tie and its sightings.
 - `call_update` reports the current standing of a duplicate result or return.
 - `call_update` accepts a signed statement of who one call concerned and keeps its ordered history.
+- `call` keeps its confirmed details when a late report or competing tap arrives.
 - `journey`, callback reports and conversion credit follow the record staff named on a call.
+- `call_update` removes the phone evidence recorded for that call after pruning.
 - `forget` erases a confirmed call when the line or any named party is forgotten.
 
 - `accountGraph({ url, token })`, `accountGraph({ databaseUrl, workers, receiptSecrets })` and `accountGraph({ memory: true })` return one interface: `record`, `decide`, `forget`, `lookup`, `report`, `events` and `close`.
@@ -26,7 +28,7 @@
 
 - `lookup` `match` checks a caller’s own facts for conflicts with a proposed record.
 - `given` now has a documented example distinguishing a recognized nickname from an exact name key.
-- `apart` recognizes Catherine and Katherine, Kaitlyn and Caitlin, and Gerald and Jerry as forms of the same given names. Send the names again to add their new keys.
+- `apart` recognizes Catherine and Katherine, Kaitlyn and Caitlin, and Gerald and Jerry as forms of the same given names. Reporting these names again records their new keys.
 
 - `speaker` reuses the original mark when the same browser reports for the same record under another visitor ID. A muted mark stays muted.
 
@@ -43,7 +45,8 @@
 - Under `records`, one full name and date of birth shows two records, and joins them where anything else agrees. `lookup` `match` finds them by it.
 - `policy.credit` is the confidence at which a visit is credited, apart from the one that joins. Off by default.
 - A first name no table has is keyed whole, and letters such as đ and ø are kept, in the keys of names. Send names again to make the new keys.
-- `named` and `ward` exclude placeholder names, and name comparisons keep the letters a Latin spelling would lose. Rebuild and send named profiles again with new keys after upgrading.
+- `rebuild` preserves disagreements between names stored under the earlier rules, including when losing a name match changes which link would be cut.
+- `named` and `ward` exclude placeholder names, and name comparisons keep the letters a Latin spelling would lose. Upgrading these derived keys requires a rebuild and new reports of the named profiles.
 - `policy.apart` takes `given`, and `policy.kinds` takes every built-in kind, in the types of the library.
 - `/collect` checks a personal link's recipient group for a speaker in one read.
 - `record` `link` makes a signed personal link. The same entry gives the same address.
@@ -57,6 +60,8 @@
 - `call_update` reports a result, or that a caller was reached. The newest `at` stands, whatever order they arrive in.
 - A call is linked to the visitor who tapped the number or was shown it (`phones.pool`), or attributed to the channel of its number.
 - `phones.pool.requireTapAfterReassignment` keeps a reassigned number from linking an untied caller to its current visitor without a tap or code. The option is off by default.
+- `call_update` clears superseded delivery alerts and failure events for the call.
+- `callback.overdue` and its alert are queued together while the call, owner and paid visit still match. A sender checks that the alert is still pending before posting it.
 - `record` `call` takes `code`, the code of a visitor that the caller read out. It links the call to that visitor in place of a tap or a pool number, and the answer has the flag `code` or `taken`. Codes are given where `TEXT_CODES` is on.
 - A `call` reported again with a `code` it did not have stands as if it had come with it.
 - `data-ag-code` marks an element the script tag fills with the visitor's code, under `collect.js?text=1`.

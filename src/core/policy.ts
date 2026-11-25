@@ -244,7 +244,7 @@ export function plainPolicy(policy: Policy) {
 }
 
 /** Raised when the code decides differently under one policy, so that what was stored before is known to be due a rebuild. */
-const RULES = 4
+const RULES = 5
 
 /** The same for two policies exactly when they score and cluster alike. What only flags, `review`, and what only credits, `credit`, are not part of it. */
 export function policyHash(policy: Policy): string {
@@ -290,14 +290,23 @@ export function told(policy: Policy, reasons: readonly Reason[]): boolean {
 }
 
 /** A shared spelling permits its original hash to count once, with the original fanout, strength and mute. An old hash alone permits nothing. */
-export function checkedReasons(reasons: Reason[]): Reason[] {
+export function checkedReasons(reasons: Reason[], missing?: () => void): Reason[] {
   if (!reasons.some(({ identifier }) => foldedNameKey(identifier))) return reasons
   const checked = new Set<Identifier>()
   for (const { identifier } of reasons) {
     const base = foldedNameKey(identifier)
     if (base && base !== identifier) checked.add(base)
   }
-  return reasons.filter(({ identifier }) => !foldedNameKey(identifier) || checked.has(identifier))
+  return reasons.filter(({ identifier }) => {
+    const base = foldedNameKey(identifier)
+    if (base === identifier && !checked.has(base)) missing?.()
+    return !base || checked.has(identifier)
+  })
+}
+
+/** The evidence that would have been available before spellings were checked. */
+export function earlierReasons(reasons: Reason[]): Reason[] {
+  return reasons.filter(({ identifier }) => (foldedNameKey(identifier) ?? identifier) === identifier)
 }
 
 /**

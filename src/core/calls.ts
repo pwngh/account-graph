@@ -249,7 +249,7 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   // It is kept before its visitor is looked for too: of two calls reported at once, the later then finds the other.
   const kept = { id, direction: 'inbound' as const, subject, at, to, flags, ...(call.duration !== undefined && { duration: call.duration }), ...(tags && { tags }) }
   // Reported again, what it was tied to stands until that is decided anew.
-  if (!saved) await graph.keepCall(kept)
+  if (!saved) await graph.keepCall(kept, phone ? (phone.startsWith('voip:') ? 'voip' : 'phone') : 'none')
 
   const { holder, grace, visitor: found, notes, doubtful, undone } = await visitorFor(graph, kept, options)
   for (const other of undone) await graph.doubtCall(other.id, other.ambiguous, line)

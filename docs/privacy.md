@@ -41,6 +41,9 @@ A retry of a forgotten key is checked against its receipt before the graph asks 
 
 An identification made for a single call belongs to that call. The original line stays private. Forgetting the line or any record named by a party statement erases the call, its statements, its conversion and value changes. This includes a former or excluded party and a statement that arrived before the call. A tombstone covers the call and associated keys, so a late retry receives `FORGOTTEN`. A platform that had already received a conversion can still appear in the deletion report.
 
+When staff identify a call, the graph erases earlier delivery failure events for that call and any stored failure notices that name it. A pending notice that also names other failures is discarded as a whole. The events for those other failures stay. A notice already delivered to a webhook may still be held by its recipient.
+
+An inbound call keeps which phone identifier it added until staff name its party. This lets the graph remove just that sighting, even after pruning. Calls stored before upgrade 29 have no such record. The graph uses the remaining sightings and the first and last times on each link. If both phone and VoIP could have supplied a pruned sighting, it weakens both possible links to avoid keeping evidence from the confirmed call.
 
 `forget` deletes the subjects you name and leaves the person's others in place. To delete a person, read their `members` with the `person` [lookup](http.md#lookup), check them, and send all of them as `subjects`, 50 at most: all are deleted, or none. A payment whose outcome was never recorded names no person and stays.
 

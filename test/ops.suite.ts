@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { after, describe, test } from 'node:test'
 import { createGraph, createHours, createOps, hashPhone, recordCall } from '../tools/internals.ts'
-import type { OpsOptions } from '../tools/internals.ts'
+import type { OpsOptions, Store } from '../tools/internals.ts'
 import type { Opened } from './suite.ts'
 
 const T0 = 1_700_000_000_000
@@ -111,6 +111,107 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       await ops.check()
       assert.equal(posted.length, 1)
       assert.match(posted[0]!, /own.*contact:owner/)
+    })
+
+    test('a failure alert already claimed drops a corrected call before posting', async () => {
+      const { graph, store, clock } = await fresh()
+      const id = 'already-claimed'
+      await graph.keepCall({ id, subject: 'caller:line', direction: 'inbound', at: T0, to: '+12025550101', flags: [] })
+      await store.ops.addAlert({ key: 'alert:conversions:stale', text: `• call:${id} to test: rejected`, at: T0 })
+      clock.now += 120_000
+      let claims = 0
+      let posts = 0
+      const racing = { ...store.ops, claimAlert: async (at: number, before: number) => {
+        const kept = await store.ops.claimAlert(at, before)
+        if (kept) {
+          claims++
+          await graph.sayParty({ call: id, key: id, at, party: { role: 'self', subject: 'record:a', by: 'desk' } })
+        }
+        return kept
+      } }
+      await createOps(graph, racing, { now: () => clock.now, url: 'https://example.org/alerts', fetch: async () => {
+        posts++
+        return new Response(null, { status: 200 })
+      } }).check()
+      assert.deepEqual([claims, posts, await store.ops.undelivered()], [1, 0, []])
+    })
+
+    test('the callback event and alert use the current paid arrival', async () => {
+      const { graph, store, clock } = await fresh()
+      const subject = 'contact:desk'
+      await graph.touch({ subject, at: T0, source: 'google', campaign: 'before', gclid: 'first' })
+      await recordCall(graph, { id: 'miss', from: '+12025550173', to: '+12025550174', at: T0 + 2, answered: false })
+      await graph.sayParty({ call: 'miss', key: 'party', at: T0 + 3, party: { role: 'self', subject, by: 'desk' } })
+      clock.now += 2 * HOUR
+      let changed = false
+      const reader = { ...graph, openCalls: async (...args: Parameters<typeof graph.openCalls>) => {
+        const page = await graph.openCalls(...args)
+        if (!changed) {
+          changed = true
+          await graph.touch({ subject, at: T0 + 1, source: 'google', campaign: 'after', gclid: 'second' })
+        }
+        return page
+      } }
+      const ops = createOps(reader, store.ops, { returnHours: 1, now: () => clock.now, emit: (event) => store.write((tx) => tx.emit([event])) })
+      const events = async () => (await store.read((tx) => tx.eventsAfter(0, 100))).filter((event) => event.type === 'callback.overdue')
+      await ops.check()
+      assert.deepEqual([await events(), await store.ops.undelivered()], [[], []])
+      await ops.check()
+      assert.deepEqual((await events()).map((event) => [event.data.call, event.data.subject, event.data.campaign]), [['miss', subject, 'after']])
+      assert.match((await store.ops.undelivered())[0]!.text, /google, after .*contact:desk$/)
+    })
+
+    for (const change of ['reassign', 'erase']) for (const during of ['enqueue', 'retry']) test(`a callback alert held during ${during} cannot name a record after ${change}`, async () => {
+      const { graph, store, clock } = await fresh()
+      const from = '+12025550171'
+      const to = '+12025550172'
+      const id = 'miss'
+      for (const subject of ['contact:a', 'contact:b']) await graph.touch({ subject, at: T0, source: 'google', campaignId: subject.slice(-1), gclid: subject.slice(-1) })
+      await recordCall(graph, { id, from, to, at: T0 + 1, answered: false })
+      await graph.sayParty({ call: id, key: 'first', at: T0 + 2, party: { role: 'self', subject: 'contact:a', by: 'desk' } })
+      clock.now += 2 * HOUR
+      let changed = false
+      const move = async () => {
+        changed = true
+        if (change === 'erase') await graph.forget('contact:a')
+        else await graph.sayParty({ call: id, key: 'second', at: clock.now, party: { role: 'self', subject: 'contact:b', by: 'desk' } })
+      }
+      const events = async () => (await store.read((tx) => tx.eventsAfter(0, 100))).filter((event) => event.type === 'callback.overdue')
+      const racing: Store = { ...store,
+        write: async (work, options) => {
+          const result = await store.write(work, options)
+          if (during === 'enqueue' && !changed && (await events()).length > 0) await move()
+          return result
+        },
+        ops: { ...store.ops, claimAlert: async (at, before) => {
+          const alert = await store.ops.claimAlert(at, before)
+          if (during === 'retry' && !changed && alert) await move()
+          return alert
+        } },
+      }
+      const posted: string[] = []
+      const options: OpsOptions = { now: () => clock.now, returnHours: 1, emit: (event) => racing.write((tx) => tx.emit([event])) }
+      const reader = createGraph(racing)
+      if (during === 'retry') {
+        await createOps(reader, racing.ops, options).check()
+        assert.equal((await store.ops.undelivered()).length, 1)
+        clock.now += 120_000
+      }
+      const ops = createOps(reader, racing.ops, { ...options, url: 'https://example.org/hooks', fetch: async (_url, init) => {
+        posted.push(JSON.parse(String(init?.body)).text)
+        return new Response(null, { status: 200 })
+      } })
+      await ops.check()
+      assert.ok(changed)
+      assert.deepEqual(posted, [])
+      assert.deepEqual(await events(), [])
+      assert.deepEqual(await store.ops.undelivered(), [])
+      await ops.check()
+      if (change === 'reassign') {
+        assert.equal(posted.length, 1)
+        assert.match(posted[0]!, /google, b .*contact:b$/)
+        assert.deepEqual((await events()).map((event) => event.data), [{ call: id, subject: 'contact:b', missedAt: T0 + 1, attempts: 0, source: 'google', campaign: null, campaignId: 'b' }])
+      } else assert.deepEqual([posted, await events()], [[], []])
     })
 
     test('a missed caller from a paid arrival is told once, when they have waited long enough', async () => {

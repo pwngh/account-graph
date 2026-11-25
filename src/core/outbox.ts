@@ -254,7 +254,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
   async function fail(job: Job, note: string, pass: Pass, failed: Job[]): Promise<void> {
     const dead: Job = { ...job, state: 'failed', note }
     if (!(await store.swap(job, dead))) return
-    failed.push(dead)
+    failed.push({ ...dead, rev: job.rev! + 1 })
     pass.failed += 1
   }
 

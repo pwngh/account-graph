@@ -70,6 +70,7 @@ if (!url) {
       await pool.query(`insert into ${schema}.call (id, subject, at, dialed, flags, recorded_at) values ('old', 'caller:line', 1, '+12025550101', '{}', 1);
         insert into ${schema}.call_result (id, answered, recorded_at) values ('old', false, 1)`)
       assert.ok((await store.migrate()).includes('staff confirmation of a call'))
+      assert.equal((await pool.query(`select line_kind from ${schema}.call where id = 'old'`)).rows[0]?.line_kind, null)
       await store.write(async tx => {
         assert.deepEqual([(await tx.callOf('old'))?.party, await tx.callLine('old'), (await tx.callResultOf('old'))?.answered], [undefined, 'caller:line', false])
         await tx.addSaid({ topic: 'party', about: 'old', key: 'confirmed', at: 2, data: { role: 'self', subject: 'record:a', by: 'desk' } })

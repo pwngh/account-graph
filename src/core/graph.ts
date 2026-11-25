@@ -16,14 +16,16 @@ import { UNSTORABLE } from './identifiers.ts'
 import { CLICK_IDS, checkTouch } from './touch.ts'
 import { createMemoryStore } from './memory.ts'
 import type { Job } from './outbox.ts'
-import { UNNAMED, checkedReasons, defaultPolicy, evidence, joins, plainPolicy, policyHash, ruleFor, told, usable, weigh } from './policy.ts'
+import type { KeptAlert } from './ops.ts'
+import type { NewEvent } from './events.ts'
+import { UNNAMED, checkedReasons, defaultPolicy, earlierReasons, evidence, joins, plainPolicy, policyHash, ruleFor, told, usable, weigh } from './policy.ts'
 import type { Policy } from './policy.ts'
-import { dayIn, dayStart, dimension, fold, nextDay } from './report.ts'
+import { dayIn, dayStart, dimension, fold, nextDay, paid, sourceOf } from './report.ts'
 import type { Credited } from './report.ts'
-import { confirmed, conflict, knownOf, partition, scorePairs } from './resolve.ts'
+import { commonClusters, confirmed, conflict, knownOf, partition, scorePairs } from './resolve.ts'
 import type { Known } from './resolve.ts'
 import { checkTags, touchTag } from './tags.ts'
-import type { DecisionPage, Store, Tx } from './store.ts'
+import type { CallLineKind, DecisionPage, Store, Tx } from './store.ts'
 import type {
   Attribution,
   AttributedTouch,
@@ -187,7 +189,7 @@ export interface Graph {
   /** An outcome as it was recorded, or undefined when it was not. */
   outcomeOf(transactionId: string): Promise<Counted | undefined>
   /** Keeps a call. `recordCall` does this. */
-  keepCall(call: Omit<KeptCall, 'result' | 'recorded'>): Promise<void>
+  keepCall(call: Omit<KeptCall, 'result' | 'recorded'>, lineKind?: CallLineKind): Promise<void>
   /** Keeps how a call went, which may be known before or after the call itself. What a report leaves out stays as an earlier one said it. */
   keepCallResult(id: string, result: Omit<CallResult, 'recorded'>): Promise<void>
   /** Keeps when a caller was reached as a system of yours reports it, or with undefined takes that back. `recordReturn` does this. */
@@ -266,6 +268,8 @@ export interface Graph {
    * credited to. `from` and `to` are days; pass the last call of a page as `after` for the next.
    */
   openCalls(options: { from: string; to: string; timeZone?: string; limit?: number; after?: { at: number; id: string } }): Promise<OpenCall[]>
+  /** Checks the overdue call and its credit while keeping the alert and its optional event. */
+  queueCallback(alert: KeptAlert, event: Extract<NewEvent, { type: 'callback.overdue' }>, keepEvent: boolean): Promise<boolean>
   /** Calls to you over a range of days: how they went, by hour and weekday, and how many could be placed. */
   callSummary(options: { from: string; to: string; timeZone?: string; at?: number; results?: 'expected'; resultWait?: number; hours?: Hours }): Promise<CallSummary>
   /**
@@ -563,9 +567,19 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       separated = separated.filter(([a, b]) => !(a === supposing.a && b === supposing.b) && !(a === supposing.b && b === supposing.a))
       if (supposing.separated ?? true) separated.push([supposing.a, supposing.b])
     }
-    const pairs = scorePairs(policy, edges, states)
-    const two = pairs.filter(({ reasons }) => told(policy, reasons)).map(({ a, b }): [Subject, Subject] => [a, b])
-    return partition(subjects, pairs, separated, policy, knownOf(policy, edges, silent(states), separated.length > 0 || two.length > 0), onCut, two, sinceOf(edges))
+    let different = false
+    const select = (shared: Reason[]) => checkedReasons(shared, () => { different = true })
+    const pairs = scorePairs(policy, edges, states, undefined, policy.related, select)
+    const spoken = (links: Pair[]) => links.filter(({ reasons }) => told(policy, reasons)).map(({ a, b }): [Subject, Subject] => [a, b])
+    const two = spoken(pairs)
+    const facts = knownOf(policy, edges, silent(states), separated.length > 0 || two.length > 0)
+    const since = sinceOf(edges)
+    const current = partition(subjects, pairs, separated, policy, facts, onCut, two, since)
+    if (!different && ![...facts.values()].some((own) => own.changed)) return current
+    const before = scorePairs(policy, edges, states, undefined, policy.related, earlierReasons)
+    const oldTwo = spoken(before)
+    const oldFacts = oldTwo.length && !two.length && !separated.length ? knownOf(policy, edges, silent(states), true) : facts
+    return commonClusters(current, partition(subjects, before, separated, policy, previousFacts(oldFacts), onCut, oldTwo, since))
   }
 
   /**
@@ -593,11 +607,19 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     return changes
   }
 
+  const previousFacts = (known: Map<Subject, Known>) => new Map([...known].map(([subject, facts]) => [subject, facts.earlier ?? facts]))
+
   /**
    * Where every subject should sit that is joined to another, from all edges. One that is not here is on its own. Reads
    * the edges a pair at a time, and keeps only the pairs that join: the graph may be larger than memory.
    */
   async function recompute(tx: Tx): Promise<Map<Subject, Labels>> {
+    let changed = false
+    const current = await fromPairs(tx, false, () => { changed = true })
+    return changed ? commonClusters(current, await fromPairs(tx, true)) : current
+  }
+
+  async function fromPairs(tx: Tx, previous: boolean, changed?: () => void): Promise<Map<Subject, Labels>> {
     const caps = Object.fromEntries(Object.entries(policy.kinds).map(([kind, rule]) => [kind, rule.cap]))
     const alone = Object.entries(policy.kinds).filter(([, rule]) => policy.same <= 0 || rule.relates || (!rule.corroborates && rule.weight >= policy.same - 1e-9)).map(([kind]) => kind)
     const pairs: Pair[] = []
@@ -605,7 +627,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     const two: [Subject, Subject][] = []
     for await (const batch of tx.sharing(caps, alone)) {
       for (const shared of batch) {
-        const reasons = checkedReasons(shared.map(({ a, b, fanout }) => evidence(policy, a, b, fanout)))
+        const raw = shared.map(({ a, b, fanout }) => evidence(policy, a, b, fanout))
+        const reasons = previous ? earlierReasons(raw) : checkedReasons(raw, changed)
         if (reasons.length === 0) continue
         const score = weigh(policy, reasons)
         if (told(policy, reasons)) two.push([shared[0]!.a.subject, shared[0]!.b.subject])
@@ -618,9 +641,11 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     const subjects = [...joined]
     const separated = (await tx.separatedOf(subjects)).filter(([a, b]) => joined.has(a) && joined.has(b))
     const said = two.filter(([a, b]) => joined.has(a) && joined.has(b))
-    const facts = await known(tx, subjects, separated.length > 0 || said.length > 0)
+    const read = await known(tx, subjects, separated.length > 0 || said.length > 0)
+    if (changed && [...read.values()].some((own) => own.changed)) changed()
+    const facts = previous ? previousFacts(read) : read
     // Where records have to be confirmed, when each was first seen can say whose a browser is.
-    const kept = unique([...(policy.records ? subjects : []), ...separated.flat(), ...said.flat(), ...[...facts].filter(([, own]) => own.facts.size > 0).map(([subject]) => subject)])
+    const kept = unique([...(policy.records ? subjects : []), ...separated.flat(), ...said.flat(), ...[...facts].filter(([, own]) => own.facts.size || own.earlier?.facts.size).map(([subject]) => subject)])
     const since = new Map<Subject, number>()
     for (let i = 0; i < kept.length; i += TOGETHER) for (const [subject, at] of sinceOf(await tx.edgesOf(kept.slice(i, i + TOGETHER)))) since.set(subject, at)
     return partition(subjects, pairs, separated, policy, facts, undefined, said, since)
@@ -860,7 +885,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
           const some = new Map<Subject, Known[]>()
           for (const [subject, own] of await known(tx, [...members.keys()])) {
             const { cluster, component } = members.get(subject)!
-            if (own.facts.size === 0) continue
+            if (!(own.facts.size || own.earlier?.facts.size)) continue
             facts.set(cluster, [...(facts.get(cluster) ?? []), own])
             some.set(component, [...(some.get(component) ?? []), own])
           }
@@ -1573,7 +1598,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return store.read((tx) => tx.outcomeOf(transactionId))
     },
 
-    async keepCall(call) {
+    async keepCall(call, lineKind) {
       await store.write(async (tx) => {
         // Only a visitor still tied by this call: one forgotten meanwhile is not written down again.
         const { visitor, ...rest } = call
@@ -1583,7 +1608,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         // What was said of it meanwhile stays said.
         const before = await tx.callOf(call.id)
         const said = before?.flags.includes('ambiguous') && doubted && !call.flags.includes('pool') && !byCode(call)
-        await tx.setCall({ ...rest, ...(said && { flags: [...new Set([...call.flags, 'ambiguous'])] }), ...(tied && { visitor }), recorded: now() })
+        await tx.setCall({ ...rest, ...(said && { flags: [...new Set([...call.flags, 'ambiguous'])] }), ...(tied && { visitor }), recorded: now() }, lineKind)
         if ((await tx.saidOf('party', call.id)).length > 0) await settle(tx, new Set(await tx.applyCallParty(call.id, !before)))
         await tx.fed('calls', now())
       })
@@ -1678,8 +1703,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         // What a person has looked at and restored stays.
         if ((await tx.newestNaming([identifier], 0, ['ignore', 'restore']))?.action === 'restore') return []
         const call = await tx.callOf(id)
-        // Shown the number, or named by a code, it is of no tap.
-        if (call && (call.flags.includes('pool') || byCode(call))) return []
+        // A late rival for a tap cannot overrule a party, a pool number or a code.
+        if (call && (call.party || call.flags.includes('pool') || byCode(call))) return []
         if (call && (call.visitor !== undefined || (ambiguous && !call.flags.includes('ambiguous')))) {
           const { visitor, ...rest } = call
           await tx.setCall({ ...rest, flags: [...new Set([...call.flags, ...(ambiguous ? ['ambiguous'] : [])])] })
@@ -1863,6 +1888,25 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         }
         return out
       })
+    },
+
+    queueCallback(alert, event, keepEvent) {
+      return store.write(async (tx) => {
+        const { data } = event
+        const call = await tx.callOf(data.call)
+        if (!call || call.subject !== data.subject || alert.subject !== call.subject || call.at !== data.missedAt || call.direction !== 'inbound' || call.result?.answered !== false) return false
+        const calls = await leadsOf(tx, await tx.callsOf([call.subject]), callId)
+        if (!calls.some((each) => each.id === call.id)) return false
+        const wait = followUp(call, calls)
+        const first = calls.find((each) => each.direction === 'inbound' && each.result?.answered === false && followUp(each, calls).state === 'open')
+        if (wait.state !== 'open' || wait.attempts !== data.attempts || !first || alert.key !== `unreturned:${call.subject}:${first.id}`) return false
+        const creditOf = await creditAll(tx, [call], 90 * DAY, 2)
+        const { credited } = creditOf(call.subject, call.at, call.party)
+        if (!credited || !paid(credited) || sourceOf(credited) !== data.source || (credited.campaign ?? null) !== data.campaign || (credited.campaignId ?? null) !== data.campaignId) return false
+        if (!await tx.addAlert(alert)) return false
+        if (keepEvent) await tx.emit([{ ...event, once: alert.key, subject: call.subject }])
+        return true
+      }, { whole: true })
     },
 
     callSummary({ from, to, timeZone, at = now(), ...options }) {

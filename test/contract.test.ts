@@ -737,6 +737,66 @@ test('a confirmed call cannot send the line’s ad keys on a retry or a change o
   assert.deepEqual(await engine.outbox!.get('call:' + next.key), [])
 })
 
+test('delivery failure batches keep the ten-minute alert interval and reopen it after a failed post', async () => {
+  let now = NOW
+  let status = 200
+  const posts: string[] = []
+  const local = accountGraph({ memory: true, now: () => now, ads: { meta: { pixelId: 'test', accessToken: 'test', siteUrl: 'https://example.org' } },
+    alerts: { url: 'https://example.org/alerts' },
+    fetch: async (_url, init) => {
+      posts.push(String(init?.body))
+      return new Response(null, { status })
+    },
+  })
+  try {
+    const { engine } = await internalsOf(local)!()
+    for (const [i, minutes] of [0, 5, 10, 20, 20].entries()) {
+      now = NOW + minutes * 60_000
+      status = i === 3 ? 503 : 200
+      await engine.store.outbox.add({ transactionId: `sale-${i}`, at: AT, due: AT, subject: 'record:a', target: 'missing', action: 'test', state: 'pending', attempts: 0, keys: {} })
+      await engine.outbox!.run()
+      await engine.store.write(async () => {})
+    }
+    assert.deepEqual(posts.map(text => text.match(/sale-\d+/)?.[0]), ['sale-0', 'sale-2', 'sale-3', 'sale-4'])
+    assert.equal((await engine.store.read(tx => tx.eventsAfter(0, 20))).filter(event => event.type === 'conversion.failed').length, 5)
+  } finally {
+    await local.close()
+  }
+})
+
+test('a failed conversion corrected before the worker reports it creates no alert or event', async () => {
+  const posted: string[] = []
+  const local = accountGraph({ memory: true, now: () => NOW, ads: { meta: { pixelId: 'test', accessToken: 'test', siteUrl: 'https://example.org' } },
+    alerts: { url: 'https://example.org/alerts' },
+    fetch: async (_url, init) => {
+      posted.push(String(init?.body))
+      return new Response(null, { status: 200 })
+    },
+  })
+  try {
+    const { engine } = await internalsOf(local)!()
+    await engine.graph.keepCall({ id: 'late', subject: 'caller:line', direction: 'inbound', at: AT, to: '+12025550101', flags: [] })
+    const queue = engine.store.outbox
+    for (const id of ['late', 'other']) await queue.add({ transactionId: `call:${id}`, subject: 'caller:line', at: AT, due: AT, target: 'missing', action: 'test', state: 'pending', attempts: 0, keys: {} })
+    // Ownership changes after the failure was stored and before the batch announces it.
+    const swap = queue.swap.bind(queue)
+    queue.swap = async (before, after) => {
+      const wrote = await swap(before, after)
+      if (wrote && after.state === 'failed' && after.transactionId === 'call:late') await engine.graph.sayParty({ call: 'late', key: 'confirmed', at: NOW, party: { role: 'self', subject: 'record:a', by: 'desk' } })
+      return wrote
+    }
+    assert.equal((await engine.outbox!.run()).failed, 2)
+    await engine.store.write(async () => {})
+    assert.equal(posted.length, 1)
+    assert.ok(posted[0]!.includes('call:other'))
+    assert.ok(!posted[0]!.includes('call:late'))
+    const failed = (await engine.store.read(tx => tx.eventsAfter(0, 20))).filter(event => event.type === 'conversion.failed')
+    assert.deepEqual(failed.map(event => event.data.conversion), ['call:other'])
+  } finally {
+    await local.close()
+  }
+})
+
 test('a call party written by another instance ends a cached report during its grace', async () => {
   const { createEngine } = await import('../src/core/engine.ts')
   const { createMemoryStore } = await import('../src/core/memory.ts')
@@ -771,7 +831,16 @@ test('a forgotten profile never sends its phone or address to a check on retry',
   const { createSix } = await import('../src/core/six.ts')
   const { createReceipts } = await import('../src/core/receipts.ts')
   const checks = { phone: 0, postal: 0 }
-  const engine = createEngine(createMemoryStore(), { lineType: async () => { checks.phone++; return { type: 'mobile', carrier: undefined } }, address: async () => { checks.postal++; return undefined } })
+  const engine = createEngine(createMemoryStore(), {
+    lineType: async () => {
+      checks.phone++
+      return { type: 'mobile', carrier: undefined }
+    },
+    address: async () => {
+      checks.postal++
+      return undefined
+    },
+  })
   const six = createSix(engine, { receipts: createReceipts([SECRET]) })
   const fact = { type: 'profile', key: 'checked', subject: 'record:gone', at: AT, facts: { email: 'desk@example.org', phone: '202-555-0100', address: { street: '1 Example St' } } } as const
   assert.ok((await six.record({ entries: [fact] })).results[0]!.ok)
