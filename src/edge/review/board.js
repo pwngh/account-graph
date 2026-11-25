@@ -1,5 +1,5 @@
 const REACHED = { answered: 'answered', missed: 'missed', voicemail: 'voicemail', waiting: 'waiting for result', unknown: 'unknown result' }
-const PERIODS = [[7, '7 days'], [30, '30 days'], [90, '90 days'], [365, '1 year']]
+const PERIODS = [[1, 'Today'], [7, '7 days'], [30, '30 days'], [90, '90 days'], [365, '1 year']]
 
 /** A length of time in its largest unit, for where there is little room. The title beside it has it whole. */
 const brief = (ms) => (ms < 3600000 ? `${Math.max(1, Math.round(ms / 60000))}m` : ms < 172800000 ? `${Math.round(ms / 3600000)}h` : `${Math.floor(ms / 86400000)}d`)
@@ -30,16 +30,18 @@ function unanswered(text, at) {
     el('div', { class: 'board-chips' }, reviewDisplay.chip(`${amount(text.unanswered)} unanswered`, 'related')))
 }
 
+const ACTIVE = 'Today is the people active today, with a call or a step, in the time zone of the line under the numbers. Overdue counts only those people.'
 // Everybody once, at the furthest step they reached, with missed calls nobody returned first.
 view('board', 'Board', async (box, days = '90') => {
   const board = await api('GET', `/board?days=${encodeURIComponent(days)}`)
   const { texts, next: further } = await api('GET', `/texts?from=${board.from}&to=${board.day}`)
   const sum = (of) => board.columns.reduce((total, column) => total + (of(column) ?? 0), 0)
   const [people, late, fresh, moved] = [sum((column) => column.people), sum((column) => column.late), sum((column) => column.fresh), sum((column) => column.done)]
-  const pick = el('select', { on: { change: () => go(`#/board/${pick.value}`) } }, ...PERIODS.map(([value, text]) => el('option', { value, ...(value === board.days && { selected: '' }) }, text)))
+  const pick = el('select', { title: ACTIVE, 'aria-describedby': 'board-period', on: { change: () => go(`#/board/${pick.value}`) } }, ...PERIODS.map(([value, text]) => el('option', { value, ...(value === board.days && { selected: '' }) }, text)))
   box.append(el('section', {}, reviewDisplay.heading('Board', el('label', {}, 'Period', pick)),
     tiles([term('People', 'board'), amount(people)], [term('Overdue', 'overdue', board.openHours ? 'Limits count open hours.' : ''), amount(late), board.columns.some((column) => column.late !== null) ? '' : 'No limits set', late > 0 ? 'apart' : ''], ['New today', amount(fresh)], [term('Advanced today', 'advanced'), amount(moved)]),
     reviewDisplay.range({ from: board.from, to: board.day, timeZone: board.timeZone }),
+    el('p', { class: board.days === 1 ? 'meta' : 'sr-only', id: 'board-period' }, ACTIVE),
     board.unplaced > 0 ? el('p', { class: 'meta' }, `${amount(board.unplaced)} more at steps outside STAGES`) : '',
     board.columns.length === 1 ? el('p', {}, 'Set STAGES to add a column for each step.') : ''))
   const columns = board.columns.map((column) => {

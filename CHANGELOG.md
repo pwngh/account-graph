@@ -157,7 +157,7 @@
 - `Matches` checks the speaker marks of both clusters before offering a pair. An active staff merge broken by a separation remains visible in Links.
 - Accounts shows linked IDs as an interactive graph and as a table with evidence.
 - Journey shows one person's events on a timeline.
-- Board shows people by step, with overdue people marked.
+- Board shows people by step, with overdue people marked. Its periods begin with Today.
 - Matches compares pending pairs side by side, with a preview and undo.
 - Calls lists missed calls with their history, call results and calls by hour.
 - Channels compares campaigns, with breakdowns, sorting, filters and CSV export.
