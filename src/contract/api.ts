@@ -110,7 +110,9 @@ export interface ConversionEntry extends Keyed<'conversion'> {
   readonly currency?: string
   /** What it counts as on each platform. Left out, the stage's own. */
   readonly actions?: Readonly<Record<string, string>>
-  readonly channel?: 'WEB' | 'APP' | 'IN_STORE' | 'PHONE' | 'MESSAGE' | 'OTHER'
+  /** The actual converting browser's HTTP user agent, only for consented Meta website conversions with capture enabled. */
+  readonly userAgent?: string
+  readonly channel?: 'WEB' | 'APP' | 'IN_STORE' | 'PHONE' | 'MESSAGE' | 'OTHER' | 'SYSTEM_GENERATED'
   readonly email?: string
   readonly phone?: string
   readonly consent?: Consent
@@ -531,18 +533,18 @@ export interface LocalSettings extends Common {
   }
   readonly ads?: {
     readonly google?: { readonly customerId: string; readonly loginCustomerId?: string; readonly serviceAccount: GoogleServiceAccount }
-    readonly meta?: { readonly pixelId: string; readonly accessToken: string; readonly siteUrl: string; readonly testEventCode?: string }
-    readonly microsoft?: { readonly clientId: string; readonly refreshToken: string; readonly developerToken: string; readonly customerId: string; readonly accountId: string; readonly clientSecret?: string }
-    readonly tiktok?: { readonly pixelCode: string; readonly accessToken: string; readonly siteUrl: string }
+    readonly meta?: { readonly pixelId: string; readonly accessToken: string; readonly siteUrl: string; readonly testEventCode?: string; readonly clientUserAgent?: boolean }
+    readonly microsoft?: { readonly clientId: string; readonly refreshToken: string; readonly developerToken: string; readonly customerId: string; readonly accountId: string; readonly clientSecret?: string; readonly sandbox?: boolean }
+    readonly tiktok?: { readonly pixelCode: string; readonly accessToken: string; readonly siteUrl: string; readonly testEventCode?: string }
     readonly retractOnForget?: boolean
     readonly delayMs?: number
   }
   readonly costs?: {
-    readonly google?: { readonly customerId: string; readonly developerToken: string; readonly loginCustomerId?: string; readonly serviceAccount: GoogleServiceAccount; readonly conversions?: boolean }
+    readonly google?: { readonly customerId: string; readonly developerToken?: string; readonly loginCustomerId?: string; readonly serviceAccount: GoogleServiceAccount; readonly conversions?: boolean }
     readonly meta?: { readonly adAccountId: string; readonly accessToken: string; readonly conversions?: string }
   }
   readonly checks?: {
-    readonly address?: { readonly authId: string; readonly authToken: string }
+    readonly address?: { readonly authId: string; readonly authToken: string; readonly license?: string }
     readonly lineType?: { readonly accountSid: string; readonly authToken: string }
   }
   readonly monitor?: { readonly quietHours?: Partial<Record<'touches' | 'calls' | 'results' | 'costs', number>>; readonly lateHours?: number; readonly auditHours?: number }

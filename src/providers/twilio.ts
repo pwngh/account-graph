@@ -53,7 +53,7 @@ export function twilioCall(fields: Readonly<Record<string, string>>, now: number
 
 /** The text an incoming message webhook reports, or undefined for a status report of one you sent. `now` is its time, which Twilio does not send. */
 export function twilioText(fields: Readonly<Record<string, string>>, now: number): Text | undefined {
-  if (!fields.MessageSid || !fields.From || !fields.To || (fields.SmsStatus ?? 'received') !== 'received') return undefined
+  if (!fields.MessageSid || !fields.From || !fields.To || (fields.SmsStatus ?? 'received') !== 'received' || !['received', 'receiving'].includes(fields.MessageStatus ?? 'received')) return undefined
   return { id: fields.MessageSid, from: fields.From, to: fields.To, at: now, text: fields.Body ?? '' }
 }
 
@@ -91,10 +91,12 @@ export function createLineTypeLookup(options: LookupOptions): LineTypeLookup {
     let line: LineType | undefined
     let settled = true
     if (response.ok) {
-      const found = ((await response.json()) as any)?.line_type_intelligence
+      const body = await response.json()
+      const found = body?.line_type_intelligence
       // An error inside the answer, such as a country that needs approval, may clear up: it is not remembered.
-      settled = !found?.error_code
-      line = { type: typeof found?.type === 'string' && settled ? found.type : 'unknown', carrier: found?.carrier_name ?? undefined }
+      // A line Twilio knows no type of is an answer, and one that is asked again each time is paid for each time.
+      settled = body?.valid !== false && found !== null && typeof found === 'object' && !found.error_code && 'type' in found
+      line = { type: settled && typeof found.type === 'string' && found.type.trim() ? found.type : 'unknown', carrier: found?.carrier_name ?? undefined }
     } else if (response.status !== 404) throw new Error(`Twilio rejected the lookup with ${response.status}: ${(await response.text()).slice(0, 200)}`)
     if (settled) {
       if (cache.size >= limit) cache.delete(cache.keys().next().value!)

@@ -70,12 +70,12 @@ export interface VerifiedFingerprint {
   at: number
   /** The address Fingerprint saw the browser at. */
   ip: string | undefined
-  incognito: boolean
-  bot: 'not_detected' | 'good' | 'bad'
-  vpn: boolean
-  proxy: boolean
+  incognito?: boolean
+  bot?: 'not_detected' | 'good' | 'bad'
+  vpn?: boolean
+  proxy?: boolean
   /** The browser was altered to change its fingerprint. */
-  tampering: boolean
+  tampering?: boolean
 }
 
 export type FingerprintVerifier = (eventId: string) => Promise<VerifiedFingerprint | undefined>

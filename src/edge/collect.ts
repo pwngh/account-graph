@@ -209,8 +209,13 @@ export interface EventDetail {
 export async function event(options: CollectOptions, name: string, detail: EventDetail = {}): Promise<void> {
   const page = new URL(location.href)
   const staff = staffMark()
+  // The page can replace its banner answer after the tag has loaded.
+  const banner = (globalThis as { accountGraphConsent?: CollectOptions['consent'] }).accountGraphConsent
+  const refusal = banner?.adUserData === false ? banner : options.consent?.adUserData === false ? options.consent : undefined
   const body = JSON.stringify({
     kind: 'event',
+    ...((navigator as { globalPrivacyControl?: boolean }).globalPrivacyControl === true && { gpc: true }),
+    ...(refusal && { consent: refusal }),
     device: deviceId(),
     event: name,
     url: page.origin + page.pathname,

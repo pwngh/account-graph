@@ -123,6 +123,7 @@ export async function ingest(
     method: 'POST',
     headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
     body: JSON.stringify(request),
+    signal: AbortSignal.timeout(30_000),
   })
   const body = await response.text()
   if (!response.ok) throw new GoogleError(response.status, body)

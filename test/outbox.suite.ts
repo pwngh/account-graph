@@ -380,6 +380,51 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       assert.equal(remote.requests.length, 0)
     })
 
+    for (const retry of [false, true]) test(`Meta checks a newly refused browser before a ${retry ? 'single retry' : 'batch'} leaves`, async () => {
+      const sent: string[][] = []
+      const target = meta({ pixelId: '7', url: 'https://example.org', accessToken: 'example', clientUserAgent: true, fetch: async (_, init) => {
+        const { data } = JSON.parse(String(init?.body))
+        assert.ok(data.every((event: any) => event.user_data.client_user_agent === 'ExampleBrowser/1'))
+        sent.push(data.map((event: any) => event.event_id))
+        if (retry && data.length > 1) return Response.json({}, { status: 400 })
+        return Response.json({ events_received: data.length })
+      } })
+      const { graph, outbox, store, clock } = await fresh({ targets: [target] })
+      for (const n of [1, 2]) {
+        await enroll(graph, n)
+        await graph.touch({ subject: 'visitor:v' + n, at: T0, fbclid: 'example' + n })
+        await outbox.record(outcome(n, { action: { meta: 'Lead' }, userAgent: 'ExampleBrowser/1', consent: { adUserData: true, adPersonalization: true } }))
+      }
+      let changed = false
+      const delayed = { ...store.outbox, standing: async (jobs: Parameters<typeof store.outbox.standing>[0]) => {
+        const standing = await store.outbox.standing(jobs)
+        if (!changed && (!retry || jobs.length === 1)) {
+          changed = true
+          await graph.consent('visitor:v1', { adUserData: false, adPersonalization: false }, { at: T0 + HOUR + 1 })
+        }
+        return standing
+      } }
+      const result = await createOutbox(graph, delayed, { targets: [target], now: () => clock.now }).run()
+      assert.deepEqual(sent, [...(retry ? [['enroll-1', 'enroll-2']] : []), ['enroll-2']])
+      assert.equal(result.skipped, 1)
+      assert.equal((await outbox.get('enroll-1'))[0]!.metaUserAgent, undefined)
+    })
+
+    test('held, withdrawn and reassigned Meta jobs have no browser header', async () => {
+      const target = meta({ pixelId: '7', url: 'https://example.org', accessToken: 'example', clientUserAgent: true, fetch: async () => { throw Error('unexpected request') } })
+      const { graph, outbox } = await fresh({ targets: [target] })
+      const fields = { action: { meta: 'Lead' }, userAgent: 'ExampleBrowser/1', consent: { adUserData: true, adPersonalization: true } }
+      const [held] = await outbox.hold(outcome(1, fields))
+      const [pending] = await outbox.record(outcome(2, fields))
+      assert.equal(pending!.metaUserAgent, fields.userAgent)
+      const [withdrawn] = await outbox.withdraw('enroll-2')
+      await graph.keepCall({ id: 'reassign', subject: 'visitor:original', at: T0, direction: 'inbound', to: '+12025550101', flags: [] })
+      await outbox.record({ ...outcome(3, fields), subject: 'visitor:original', transactionId: 'call:reassign' })
+      await graph.sayParty({ call: 'reassign', at: T0 + 1, key: 'owner', party: { role: 'self', subject: 'record:other', by: 'desk' } })
+      const [reassigned] = await outbox.get('call:reassign')
+      assert.deepEqual([held, withdrawn, reassigned].map(job => [job!.state, job!.metaUserAgent]), [['held', undefined], ['held', undefined], ['skipped', undefined]])
+    })
+
     test('stored consent decides when the outcome carries none', async () => {
       const { graph, outbox, remote } = await fresh()
       for (const n of [1, 2, 3]) await enroll(graph, n)
@@ -630,7 +675,7 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       assert.deepEqual(await outbox.run(), { sent: 2, skipped: 0, failed: 0, retried: 0 })
 
       assert.deepEqual(remote.requests[0]!.events[0]!.adIdentifiers, { gclid: 'G1' })
-      assert.equal(posted[0]!.url, 'https://graph.facebook.com/v27.0/555/events?access_token=meta-token')
+      assert.equal(posted[0]!.url, 'https://graph.facebook.com/v27.0/555/events')
       assert.deepEqual(posted[0]!.body, {
         data: [
           {

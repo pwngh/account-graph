@@ -21,6 +21,8 @@ export interface Job {
   source?: Outcome['source']
   /** The email and phone, hashed the way this platform matches them. */
   keys: Record<string, string>
+  /** Raw HTTP user agent only for opted-in Meta website conversions. Never a match key. */
+  metaUserAgent?: string
   consent?: Consent
   state: JobState
   /** How many times a worker has picked it up. */
@@ -55,6 +57,8 @@ export interface Item {
 export interface Target {
   /** The name outcomes use for it in `action`. */
   name: string
+  /** Accept the actual converting browser's user agent with advertising consent. */
+  clientUserAgent?: boolean
   /** The email and phone of an outcome, hashed the way this platform matches them. */
   keys(outcome: Outcome): Record<string, string>
   /** The touch this platform can credit: the newest one that carries its click id at or above `confidence`. The outbox gives only touches it trusts, and 0. */
@@ -98,8 +102,8 @@ export interface OutboxStore {
   swap(before: Job, after: Job): Promise<boolean>
   /** Which of the given jobs have not been claimed or changed since they were read. */
   standing(jobs: readonly Job[]): Promise<Job[]>
-  /** Starts a request with the standing jobs and the current call ownership revision. Both are guarded until the request starts. */
-  start(jobs: readonly Job[], send: (standing: readonly Job[], partyRevision: string | undefined) => void): Promise<void>
+  /** Guards the jobs, call ownership and requested subjects' latest advertising refusals until the request starts. */
+  start(jobs: readonly Job[], send: (standing: readonly Job[], partyRevision: string | undefined, refusals: ReadonlyMap<Subject, number>) => void, subjects?: readonly Subject[]): Promise<void>
   /** Every job of one transaction, one per target. */
   get(transactionId: string): Promise<Job[]>
   /** Jobs in one state, the most recently due first. */
@@ -257,7 +261,8 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
 
   /** Marks a job failed for good and remembers it for `onFailed`. */
   async function fail(job: Job, note: string, pass: Pass, failed: Job[]): Promise<void> {
-    const dead: Job = { ...job, state: 'failed', note: privateNote(job, note) }
+    const { metaUserAgent, ...kept } = job
+    const dead: Job = { ...kept, state: 'failed', note: privateNote(job, note) }
     if (!(await store.swap(job, dead))) return
     failed.push({ ...dead, rev: job.rev! + 1 })
     pass.failed += 1
@@ -298,8 +303,9 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
 
   /** A job whose outcome was taken back: held if it never arrived, worth nothing where the platform can be told, and left where it cannot. */
   function takenBack(job: Job): Job {
-    if (!reached(job)) return { ...job, withdrawn: true, state: 'held', attempts: 0, note: 'withdrawn' }
-    const gone: Job = { ...job, delivered: true, withdrawn: true }
+    const { metaUserAgent, ...kept } = job
+    if (!reached(job)) return { ...kept, withdrawn: true, state: 'held', attempts: 0, note: 'withdrawn' }
+    const gone: Job = { ...kept, delivered: true, withdrawn: true }
     if (!targets.get(job.target)?.restates) return { ...gone, state: 'sent', note: 'withdrawn, but this platform keeps it' }
     return { ...gone, value: 0, restated: true, state: 'pending', attempts: 0, due: now(), note: 'withdrawn' }
   }
@@ -327,7 +333,8 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
   function landed(sent: Job, current: Job, target: Target): Job | undefined {
     // Already known to have arrived, with the value it has now: there is nothing to put right.
     if (current.delivered && current.value === sent.value) return undefined
-    const arrived: Job = { ...current, delivered: true, ...(sent.click && { click: sent.click }) }
+    const { metaUserAgent, ...kept } = current
+    const arrived: Job = { ...kept, delivered: true, ...(sent.click && { click: sent.click }) }
     if (current.withdrawn) return takenBack(arrived)
     if (!target.restates || current.value === sent.value) return arrived
     return { ...arrived, restated: true, state: 'pending', attempts: 0, due: now() }
@@ -341,20 +348,34 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
     let items: Item[] = []
     let request: ReturnType<Target['deliver']> | undefined
     try {
-      await store.start(standing, (current, party) => {
+      const subjects = new Set<Subject>()
+      for (const { job, touch } of claimed) if (job.metaUserAgent) {
+        subjects.add(job.subject)
+        if (touch) subjects.add(touch.subject)
+      }
+      await store.start(standing, (current, party, refusals) => {
         // Correcting another call or forgetting its visitor can remove this job's click without changing the job itself.
         if (party !== selection.party) {
           for (const job of current) selection.again.add(jobKey(job))
           return
         }
         const kept = new Set(current)
-        items = claimed.filter(({ job }) => kept.has(job))
+        items = claimed.filter(({ job, touch }) => {
+          if (!kept.has(job)) return false
+          // A refusal since selection can belong to the person or the browser whose click was credited.
+          const since = job.consent ? job.at : 0
+          if (job.metaUserAgent && ((refusals.get(job.subject) ?? -Infinity) >= since || (touch && (refusals.get(touch.subject) ?? -Infinity) >= since))) {
+            selection.again.add(jobKey(job))
+            return false
+          }
+          return true
+        })
         if (!items.length) return
         const sending = items.map(item => ({ ...item, job: forTarget(item.job) }))
         request = (async () => target.deliver(action, sending))()
         // It can already be rejected while PostgreSQL is releasing the read locks.
         void request.catch(() => {})
-      })
+      }, [...subjects])
     } catch (error) {
       // Once the request has started, a lost reply to the read transaction cannot take it back.
       if (!request) throw error
@@ -363,7 +384,8 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
     try {
       const { requestId } = await request
       for (const { job, consent } of items) {
-        const sent: Job = { ...job, ...(job.transactionId.startsWith('call:') && target.restates && consent && { consent }), state: 'sent', delivered: true, ...(requestId && { requestId }) }
+        const { metaUserAgent, ...kept } = job
+        const sent: Job = { ...kept, ...(job.transactionId.startsWith('call:') && target.restates && consent && { consent }), state: 'sent', delivered: true, ...(requestId && { requestId }) }
         if (!(await store.swap(job, sent))) await change(job, (current) => landed(job, current, target), sent)
         pass.sent += 1
       }
@@ -395,7 +417,8 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
         continue
       }
       const skip = async (note: string) => {
-        if (await store.swap(job, { ...job, state: 'skipped', note: privateNote(job, note) })) pass.skipped += 1
+        const { metaUserAgent, ...kept } = job
+        if (await store.swap(job, { ...kept, state: 'skipped', note: privateNote(job, note) })) pass.skipped += 1
       }
       const target = targets.get(job.target)
       if (!target) {
@@ -466,7 +489,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
   }
 
   /** The jobs of an outcome, one for each platform its action names. */
-  function prepare(outcome: Outcome, state: 'pending' | 'held'): Job[] {
+  async function prepare(outcome: Outcome, state: 'pending' | 'held'): Promise<Job[]> {
     const { transactionId, subject, at } = outcome
     if (!transactionId || !subject) throw malformed('An outcome requires a transactionId and a subject')
     if (!Number.isSafeInteger(at)) throw malformed(`Outcome "${transactionId}" requires "at", an integer in epoch milliseconds`)
@@ -478,6 +501,14 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
     const named = Object.entries(actions ?? {})
     if (named.some(([, action]) => !action)) throw malformed(`Outcome "${transactionId}" names a target with no action`)
     for (const [name] of named) if (!targets.has(name)) throw malformed(`Outcome "${transactionId}" names an unknown target "${name}"`)
+    let metaUserAgent: string | undefined
+    if (state === 'pending' && targets.get('meta')?.clientUserAgent && named.some(([name]) => name === 'meta') && (outcome.source ?? 'WEB') === 'WEB' && outcome.consent?.adUserData !== false) {
+      const agent = outcome.userAgent
+      if (typeof agent === 'string' && /^[^\p{Cc}\p{Cs}]{1,1024}$/u.test(agent)) {
+        const saved = (await graph.consentOf([subject])).get(subject)
+        if (saved?.adUserData !== false && (outcome.consent?.adUserData ?? saved?.adUserData)) metaUserAgent = agent
+      }
+    }
     return named.map(([name, action]) => ({
       transactionId,
       target: name,
@@ -488,6 +519,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
       ...(outcome.currency && { currency: outcome.currency }),
       ...(outcome.source && { source: outcome.source }),
       keys: targets.get(name)!.keys(outcome),
+      ...(name === 'meta' && metaUserAgent && { metaUserAgent }),
       ...(outcome.consent && { consent: outcome.consent }),
       state,
       attempts: 0,
@@ -540,7 +572,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
 
   const outbox: Outbox = {
     async record(outcome) {
-      const jobs = prepare(outcome, 'pending')
+      const jobs = await prepare(outcome, 'pending')
       // Counted first: it checks the rest of the outcome, and a job must never be queued for an outcome the report refused.
       await graph.outcome(outcome)
       const counted = await graph.outcomeOf(outcome.transactionId)
@@ -552,7 +584,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
 
     async hold(outcome) {
       // One already held, or on its way, stands as it is; a platform left out when this was cut off is added.
-      return Promise.all(prepare(outcome, 'held').map(async (job) => (await store.add(job))!))
+      return Promise.all((await prepare(outcome, 'held')).map(async (job) => (await store.add(job))!))
     },
 
     async release(outcome) {
@@ -703,7 +735,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
 const jobKey = (job: { transactionId: string; target: string }) => `${job.transactionId}\u0000${job.target}`
 
 /** An outbox store in process memory, for tests and demos. `recorded` says whether a job's outcome is on record. */
-export function createMemoryOutbox(recorded: (job: Job) => boolean = () => true, partyRevision: () => string | undefined = () => undefined): OutboxStore & { remove(subject: Subject): Promise<Job[]>; jobs: Map<string, Job> } {
+export function createMemoryOutbox(recorded: (job: Job) => boolean = () => true, partyRevision: () => string | undefined = () => undefined, refusals: (subjects: readonly Subject[]) => Map<Subject, number> = () => new Map()): OutboxStore & { remove(subject: Subject): Promise<Job[]>; jobs: Map<string, Job> } {
   const jobs = new Map<string, Job>()
   const unchanged = (job: Job) => {
     const stored = jobs.get(jobKey(job))
@@ -733,8 +765,8 @@ export function createMemoryOutbox(recorded: (job: Job) => boolean = () => true,
     async standing(given) {
       return given.filter(unchanged)
     },
-    async start(given, send) {
-      send(given.filter(unchanged), partyRevision())
+    async start(given, send, subjects = []) {
+      send(given.filter(unchanged), partyRevision(), refusals(subjects))
     },
     async get(transactionId) {
       return [...jobs.values()].filter((job) => job.transactionId === transactionId).map((job) => structuredClone(job))

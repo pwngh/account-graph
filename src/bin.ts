@@ -34,6 +34,7 @@ import { createEdge } from './edge/index.ts'
 import type { EdgeOptions } from './edge/index.ts'
 import { networks, reviewerProblems } from './edge/server.ts'
 import type { Reviewers } from './edge/server.ts'
+import { isMaxMindHost, isMaxMindService } from './providers/maxmind.ts'
 
 type Env = Record<string, string | undefined>
 
@@ -107,7 +108,20 @@ export function readEnvironment(env: Env) {
     return problems.length > 0 ? undefined : value
   }
   const policy = policyGiven()
+  for (const name of ['MICROSOFT_SANDBOX', 'META_CLIENT_USER_AGENT', 'GOOGLE_ADS_COSTS']) {
+    if (env[name] && !['true', 'false'].includes(env[name]!)) wrong.push(`${name} must be true or false`)
+  }
+  const readGoogleCosts = env.GOOGLE_ADS_COSTS ? env.GOOGLE_ADS_COSTS === 'true' : Boolean(env.GOOGLE_ADS_DEVELOPER_TOKEN)
+  if (readGoogleCosts && !env.GOOGLE_ADS_CUSTOMER_ID && !env.GOOGLE_SERVICE_ACCOUNT_FILE) {
+    wrong.push('Google cost reporting requires GOOGLE_ADS_CUSTOMER_ID and GOOGLE_SERVICE_ACCOUNT_FILE')
+  }
 
+  const maxMindHost = env.MAXMIND_HOST || 'geoip.maxmind.com'
+  const maxMindService = env.MAXMIND_SERVICE || 'insights'
+  const host = isMaxMindHost(maxMindHost) ? maxMindHost : undefined
+  const service = isMaxMindService(maxMindService) ? maxMindService : undefined
+  if (env.MAXMIND_ACCOUNT_ID && !host) wrong.push('MAXMIND_HOST must be geoip.maxmind.com, geolite.info or sandbox.maxmind.com')
+  if (env.MAXMIND_ACCOUNT_ID && !service) wrong.push('MAXMIND_SERVICE must be insights, city or country')
   const config = {
     databaseUrl: need('DATABASE_URL'),
     receiptSecrets: need('RECEIPT_SECRETS').split(',').map((each) => each.trim()).filter(Boolean),
@@ -152,21 +166,21 @@ export function readEnvironment(env: Env) {
     // One Twilio token serves two things, each switched on by its second variable: call reports and line lookups.
     twilio: env.TWILIO_AUTH_TOKEN && env.TWILIO_WEBHOOK_URL ? { authToken: env.TWILIO_AUTH_TOKEN, url: env.TWILIO_WEBHOOK_URL } : undefined,
     lineType: env.TWILIO_AUTH_TOKEN && env.TWILIO_ACCOUNT_SID ? { accountSid: env.TWILIO_ACCOUNT_SID, authToken: env.TWILIO_AUTH_TOKEN } : undefined,
-    smarty: group(['SMARTY_AUTH_ID', 'SMARTY_AUTH_TOKEN']) ? { authId: env.SMARTY_AUTH_ID!, authToken: env.SMARTY_AUTH_TOKEN! } : undefined,
-    googleCosts: env.GOOGLE_ADS_DEVELOPER_TOKEN
-      ? group(['GOOGLE_ADS_DEVELOPER_TOKEN', 'GOOGLE_ADS_CUSTOMER_ID', 'GOOGLE_SERVICE_ACCOUNT_FILE'])
+    smarty: group(['SMARTY_AUTH_ID', 'SMARTY_AUTH_TOKEN']) ? { authId: env.SMARTY_AUTH_ID!, authToken: env.SMARTY_AUTH_TOKEN!, ...(env.SMARTY_LICENSE && { license: env.SMARTY_LICENSE }) } : undefined,
+    googleCosts: readGoogleCosts
+      ? group(['GOOGLE_ADS_CUSTOMER_ID', 'GOOGLE_SERVICE_ACCOUNT_FILE'])
         ? { developerToken: env.GOOGLE_ADS_DEVELOPER_TOKEN, customerId: env.GOOGLE_ADS_CUSTOMER_ID!, loginCustomerId: env.GOOGLE_ADS_LOGIN_CUSTOMER_ID, keyFile: env.GOOGLE_SERVICE_ACCOUNT_FILE!, conversions: env.GOOGLE_ADS_CONVERSIONS === 'true' }
         : undefined
       : undefined,
     metaCosts: group(['META_AD_ACCOUNT_ID', 'META_ADS_TOKEN']) ? { adAccountId: env.META_AD_ACCOUNT_ID!, accessToken: env.META_ADS_TOKEN!, ...(env.META_ADS_CONVERSIONS && { conversions: env.META_ADS_CONVERSIONS }) } : undefined,
     fingerprint: env.FINGERPRINT_SECRET ? { secretKey: env.FINGERPRINT_SECRET, region: (env.FINGERPRINT_REGION || 'us') as 'us' | 'eu' | 'ap' } : undefined,
     serverRanges: serverRanges(),
-    maxmind: group(['MAXMIND_ACCOUNT_ID', 'MAXMIND_LICENSE_KEY'])
+    maxmind: group(['MAXMIND_ACCOUNT_ID', 'MAXMIND_LICENSE_KEY']) && host && service
       ? {
           accountId: env.MAXMIND_ACCOUNT_ID!,
           licenseKey: env.MAXMIND_LICENSE_KEY!,
-          service: (env.MAXMIND_SERVICE || 'insights') as 'insights' | 'city' | 'country',
-          host: (env.MAXMIND_HOST || 'geoip.maxmind.com') as 'geoip.maxmind.com' | 'geolite.info',
+          service,
+          host,
         }
       : undefined,
     google:
@@ -176,16 +190,17 @@ export function readEnvironment(env: Env) {
           : undefined
         : undefined,
     meta: group(['META_PIXEL_ID', 'META_ACCESS_TOKEN', 'META_SITE_URL'])
-      ? { pixelId: env.META_PIXEL_ID!, accessToken: env.META_ACCESS_TOKEN!, url: env.META_SITE_URL!, testEventCode: env.META_TEST_EVENT_CODE }
+      ? { pixelId: env.META_PIXEL_ID!, accessToken: env.META_ACCESS_TOKEN!, url: env.META_SITE_URL!, testEventCode: env.META_TEST_EVENT_CODE, clientUserAgent: env.META_CLIENT_USER_AGENT === 'true' }
       : undefined,
     tiktok: group(['TIKTOK_PIXEL_CODE', 'TIKTOK_ACCESS_TOKEN', 'TIKTOK_SITE_URL'])
-      ? { pixelCode: env.TIKTOK_PIXEL_CODE!, accessToken: env.TIKTOK_ACCESS_TOKEN!, url: env.TIKTOK_SITE_URL! }
+      ? { pixelCode: env.TIKTOK_PIXEL_CODE!, accessToken: env.TIKTOK_ACCESS_TOKEN!, url: env.TIKTOK_SITE_URL!, testEventCode: env.TIKTOK_TEST_EVENT_CODE }
       : undefined,
     microsoft: group(['MICROSOFT_CLIENT_ID', 'MICROSOFT_REFRESH_TOKEN', 'MICROSOFT_DEVELOPER_TOKEN', 'MICROSOFT_CUSTOMER_ID', 'MICROSOFT_ACCOUNT_ID'])
       ? {
           clientId: env.MICROSOFT_CLIENT_ID!,
           refreshToken: env.MICROSOFT_REFRESH_TOKEN!,
           clientSecret: env.MICROSOFT_CLIENT_SECRET,
+          sandbox: env.MICROSOFT_SANDBOX === 'true',
           developerToken: env.MICROSOFT_DEVELOPER_TOKEN!,
           customerId: env.MICROSOFT_CUSTOMER_ID!,
           customerAccountId: env.MICROSOFT_ACCOUNT_ID!,
@@ -286,12 +301,12 @@ export function configFrom(env: Env): { graph: LocalOptions; edge: EdgeOptions; 
     ads: {
       retractOnForget: config.forgetAds, delayMs: config.outboxDelay,
       ...(google && { google }),
-      ...(config.meta && { meta: { pixelId: config.meta.pixelId, accessToken: config.meta.accessToken, siteUrl: config.meta.url, ...(config.meta.testEventCode && { testEventCode: config.meta.testEventCode }) } }),
-      ...(config.tiktok && { tiktok: { pixelCode: config.tiktok.pixelCode, accessToken: config.tiktok.accessToken, siteUrl: config.tiktok.url } }),
-      ...(config.microsoft && { microsoft: { clientId: config.microsoft.clientId, refreshToken: config.microsoft.refreshToken, developerToken: config.microsoft.developerToken, customerId: config.microsoft.customerId, accountId: config.microsoft.customerAccountId, ...(config.microsoft.clientSecret && { clientSecret: config.microsoft.clientSecret }) } }),
+      ...(config.meta && { meta: { pixelId: config.meta.pixelId, accessToken: config.meta.accessToken, siteUrl: config.meta.url, clientUserAgent: config.meta.clientUserAgent, ...(config.meta.testEventCode && { testEventCode: config.meta.testEventCode }) } }),
+      ...(config.tiktok && { tiktok: { pixelCode: config.tiktok.pixelCode, accessToken: config.tiktok.accessToken, siteUrl: config.tiktok.url, ...(config.tiktok.testEventCode && { testEventCode: config.tiktok.testEventCode }) } }),
+      ...(config.microsoft && { microsoft: { clientId: config.microsoft.clientId, refreshToken: config.microsoft.refreshToken, developerToken: config.microsoft.developerToken, customerId: config.microsoft.customerId, accountId: config.microsoft.customerAccountId, sandbox: config.microsoft.sandbox, ...(config.microsoft.clientSecret && { clientSecret: config.microsoft.clientSecret }) } }),
     },
     costs: {
-      ...(config.googleCosts && { google: { customerId: config.googleCosts.customerId, developerToken: config.googleCosts.developerToken, serviceAccount: account(config.googleCosts.keyFile), conversions: config.googleCosts.conversions, ...(config.googleCosts.loginCustomerId && { loginCustomerId: config.googleCosts.loginCustomerId }) } }),
+      ...(config.googleCosts && { google: { customerId: config.googleCosts.customerId, ...(config.googleCosts.developerToken && { developerToken: config.googleCosts.developerToken }), serviceAccount: account(config.googleCosts.keyFile), conversions: config.googleCosts.conversions, ...(config.googleCosts.loginCustomerId && { loginCustomerId: config.googleCosts.loginCustomerId }) } }),
       ...(config.metaCosts && { meta: config.metaCosts }),
     },
     checks: { ...(config.smarty && { address: config.smarty }), ...(config.lineType && { lineType: config.lineType }) },
@@ -397,7 +412,7 @@ export async function command(env: Env, args: readonly string[], log: (line: str
         const [id, platform] = rest
         if (!id) usage('retry CONVERSION [PLATFORM]')
         if (!engine.outbox) throw new Error('No ad platform is configured')
-        return show((await engine.outbox.retry(id!, platform)).map(({ keys: _, ...job }) => job))
+        return show((await engine.outbox.retry(id!, platform)).map(({ keys: _, metaUserAgent: __, ...job }) => job))
       }
       case 'stats':
         return show({ graph: await engine.graph.counts(), ...(engine.outbox && { outbox: await engine.outbox.counts() }) })

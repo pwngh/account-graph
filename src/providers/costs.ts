@@ -32,8 +32,8 @@ const days = (from: string, to: string) => {
 export interface GoogleCostOptions {
   /** The Google Ads account whose campaigns to read. Dashes are removed. */
   customerId: string
-  /** The developer token of your Google Ads manager account. */
-  developerToken: string
+  /** Legacy developer token. Google retired this credential on September 9, 2026. */
+  developerToken?: string
   /** Resolves to an access token with the scope `https://www.googleapis.com/auth/adwords`. */
   accessToken: () => Promise<string>
   /** The manager account the credentials belong to, when they reach the account through one. */
@@ -60,7 +60,7 @@ export function googleCosts(options: GoogleCostOptions): CostSource {
       method: 'POST',
       headers: {
         authorization: `Bearer ${await options.accessToken()}`,
-        'developer-token': options.developerToken,
+        ...(options.developerToken && { 'developer-token': options.developerToken }),
         'content-type': 'application/json',
         ...(options.loginCustomerId && { 'login-customer-id': options.loginCustomerId.replace(/\D/g, '') }),
       },
@@ -81,6 +81,9 @@ export function googleCosts(options: GoogleCostOptions): CostSource {
       const detail = refused?.details?.find((each: any) => each?.errors)?.errors?.[0]?.message
       const requestId = refused?.details?.find((each: any) => each?.requestId)?.requestId ?? response.headers.get('request-id') ?? undefined
       throw new CostError(`Google Ads refused the cost report with ${response.status}: ${detail ?? refused?.message ?? text.slice(0, 300)}`, response.status, requestId)
+    }
+    if (!Array.isArray(body) || batches.some(batch => !batch || typeof batch !== 'object' || Array.isArray(batch) || (batch.results !== undefined && !Array.isArray(batch.results)))) {
+      throw new CostError('Google Ads returned an invalid report stream', response.status)
     }
     const costs: Cost[] = []
     for (const batch of batches) {
@@ -139,12 +142,15 @@ export function metaCosts(options: MetaCostOptions): CostSource {
     let next: string | undefined = first.href
     // Each answer names the address of the next page. Two hundred pages is a hundred thousand rows.
     for (let page = 0; next && page < 200; page++) {
-      const response: Response = await fetcher(next, { headers: { authorization: `Bearer ${options.accessToken}` }, signal: AbortSignal.timeout(TIMEOUT) })
+      const pageUrl = URL.parse(next)
+      if (pageUrl?.origin !== first.origin || pageUrl.username || pageUrl.password) throw new CostError('Meta returned an invalid next page', 200)
+      const response: Response = await fetcher(pageUrl.href, { redirect: 'error', headers: { authorization: `Bearer ${options.accessToken}` }, signal: AbortSignal.timeout(TIMEOUT) })
       const body: any = await response.json().catch(() => undefined)
       if (!response.ok || body?.error) {
         throw new CostError(`Meta refused the cost report with ${response.status}: ${body?.error?.message ?? 'no reason given'}`, response.status, body?.error?.fbtrace_id)
       }
-      for (const row of body?.data ?? []) {
+      if (!Array.isArray(body?.data)) throw new CostError('Meta returned an invalid report', response.status)
+      for (const row of body.data) {
         // Listed with no number, how many there were is not known. Not listed, there were none.
         const count = options.conversions ? counted(row.actions, options.conversions) : null
         const value = options.conversions && counted(row.action_values, options.conversions)
@@ -160,8 +166,10 @@ export function metaCosts(options: MetaCostOptions): CostSource {
           ...(count !== null && { conversions: count ?? 0, ...(typeof value === 'number' && { conversionValue: value }) }),
         })
       }
-      next = typeof body?.paging?.next === 'string' ? body.paging.next : undefined
+      next = body.paging?.next
+      if (next !== undefined && (typeof next !== 'string' || !next)) throw new CostError('Meta returned an invalid next page', response.status)
     }
+    if (next) throw new CostError('Meta report exceeded the 200 page limit', 200)
     return costs
   }
 }

@@ -1,0 +1,57 @@
+{
+  "google": {
+    "requestId": "126365e1-16d0-4c81-9de9-f362711e250a",
+    "fieldWarnings": [
+      {
+        "field": "events.events[0].cart_data.items[0].merchant_product_id",
+        "description": "The merchant product ID is missing in the cart item.",
+        "reason": "WARNING_REASON_CART_DATA_ITEM_MERCHANT_PRODUCT_ID_MISSING"
+      }
+    ]
+  },
+  "googleCosts": [
+    {
+      "results": [
+        {
+          "customer": { "currencyCode": "USD" },
+          "campaign": { "id": "7", "name": "Example" },
+          "segments": { "date": "2026-11-24" },
+          "metrics": { "costMicros": "1250000", "clicks": "3", "impressions": "20" }
+        }
+      ]
+    }
+  ],
+  "meta": { "events_received": 1, "messages": [], "fbtrace_id": "example-meta-receipt" },
+  "metaCosts": {
+    "data": [
+      {
+        "campaign_id": "7", "campaign_name": "Example", "date_start": "2026-11-24",
+        "spend": "1.25", "clicks": "3", "impressions": "20", "account_currency": "USD"
+      }
+    ]
+  },
+  "microsoft": {
+    "PartialErrors": [{ "Index": 0, "Code": 1, "ErrorCode": "ExampleError", "Message": "Example refusal" }]
+  },
+  "tiktok": { "message": "OK", "code": 0, "request_id": "{{request_id}}", "data": {} },
+  "maxmind": {
+    "city": { "names": { "en": "Houston" } },
+    "country": { "iso_code": "US" },
+    "subdivisions": [{ "iso_code": "TX" }],
+    "traits": { "autonomous_system_number": 209, "user_type": "residential" }
+  },
+  "smarty": [{
+    "delivery_line_1": "1 Santa Claus Ln",
+    "last_line": "North Pole AK 99705-9901",
+    "delivery_point_barcode": "997059901010",
+    "metadata": { "rdi": "Commercial" },
+    "analysis": { "dpv_match_code": "Y", "dpv_cmra": "N", "dpv_vacant": "N" }
+  }],
+  "fingerprint": {
+    "timestamp": 1708102555327,
+    "event_id": "1708102555327.NLOjmg",
+    "source": "device",
+    "identification": { "visitor_id": "example-visitor", "confidence": { "score": 0.97 } },
+    "bot": "not_detected"
+  }
+}

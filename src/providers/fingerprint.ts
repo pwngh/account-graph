@@ -34,18 +34,18 @@ export function createFingerprintVerifier(options: FingerprintOptions): Fingerpr
     if (!response.ok) throw new Error(`Fingerprint rejected the lookup with ${response.status}: ${await response.text()}`)
     const event = (await response.json()) as any
     const visitorId = event?.identification?.visitor_id
-    if (typeof visitorId !== 'string' || !visitorId) return undefined
+    if (event?.event_id !== eventId || typeof visitorId !== 'string' || !visitorId) return undefined
     return {
       visitorId,
-      eventId: event.event_id ?? eventId,
+      eventId,
       confidence: Number(event.identification.confidence?.score ?? 0),
       at: Number(event.timestamp ?? 0),
       ip: event.ip_address ?? undefined,
-      incognito: event.incognito === true,
-      bot: event.bot === 'bad' || event.bot === 'good' ? event.bot : 'not_detected',
-      vpn: event.vpn === true,
-      proxy: event.proxy === true,
-      tampering: event.tampering === true,
+      incognito: typeof event.incognito === 'boolean' ? event.incognito : undefined,
+      bot: ['good', 'bad', 'not_detected'].includes(event.bot) ? event.bot : undefined,
+      vpn: typeof event.vpn === 'boolean' ? event.vpn : undefined,
+      proxy: typeof event.proxy === 'boolean' ? event.proxy : undefined,
+      tampering: typeof event.tampering === 'boolean' ? event.tampering : undefined,
     }
   }
 }
@@ -68,8 +68,8 @@ export interface TrustOptions {
  */
 export function trusted(fingerprint: VerifiedFingerprint, options: TrustOptions): boolean {
   if (fingerprint.bot === 'bad' || fingerprint.tampering) return false
-  if (fingerprint.confidence < (options.confidence ?? 0.9)) return false
-  if (Math.abs(options.now - fingerprint.at) > (options.maxAge ?? 5 * 60_000)) return false
+  if (!Number.isFinite(fingerprint.confidence) || fingerprint.confidence > 1 || fingerprint.confidence < (options.confidence ?? 0.9)) return false
+  if (!Number.isFinite(fingerprint.at) || Math.abs(options.now - fingerprint.at) > (options.maxAge ?? 5 * 60_000)) return false
   if (options.ip !== undefined && fingerprint.ip !== undefined && options.ip !== fingerprint.ip) return false
   return true
 }

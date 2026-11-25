@@ -102,6 +102,9 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     return rows.length > 0
   }
   const settingOf = async (db: Queryable, name: string): Promise<string | undefined> => (await db.query(`select value from ${t('setting')} where name = $1`, [name])).rows[0]?.value
+  const latestConsent = async (db: Queryable, subjects: readonly Subject[]) => subjects.length === 0 ? [] : (await db.query(
+    `select distinct on (subject) subject, at, ad_user_data, ad_personalization from ${t('consent_log')} where subject = any($1::text[]) order by subject, ${STANDING}`, [subjects],
+  )).rows
   // Only this transaction knows whether its snapshot has any withdrawn edges.
   const bind = (db: Queryable, snapshot = { noReserved: false }): Tx => ({
     addAlert: (alert, again, calls) => addAlert(db, alert, again, calls),
@@ -597,9 +600,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
 
     async consentOf(subjects) {
       const out = new Map<Subject, Consent>()
-      if (subjects.length === 0) return out
-      const { rows } = await db.query(`select distinct on (subject) * from ${t('consent_log')} where subject = any($1::text[]) order by subject, ${STANDING}`, [subjects])
-      for (const row of rows) out.set(row.subject, { adUserData: row.ad_user_data, adPersonalization: row.ad_personalization })
+      for (const row of await latestConsent(db, subjects)) out.set(row.subject, { adUserData: row.ad_user_data, adPersonalization: row.ad_personalization })
       return out
     },
 
@@ -1329,8 +1330,10 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       return rows.length > 0
     },
     standing: (jobs) => standing(db, jobs),
-    async start(jobs, send) {
-      send(await standing(db, jobs, true), await settingOf(db, 'callParty'))
+    async start(jobs, send, subjects = []) {
+      const refusals = new Map<Subject, number>()
+      for (const row of await latestConsent(db, subjects)) if (!row.ad_user_data) refusals.set(row.subject, Number(row.at))
+      send(await standing(db, jobs, true), await settingOf(db, 'callParty'), refusals)
     },
     async get(transactionId) {
       const { rows } = await db.query(`select * from ${t('conversion')} where transaction_id = $1 order by target`, [transactionId])
@@ -1354,7 +1357,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
   const outbox: OutboxStore = {
     ...outboxOn(pool),
     // The shared graph lock also guards the time before the first party statement creates its setting.
-    start: (jobs, send) => run('begin', 'shared', (tx) => tx.outbox.start(jobs, send)),
+    start: (jobs, send, subjects) => run('begin', 'shared', (tx) => tx.outbox.start(jobs, send, subjects)),
   }
 
   const toAlert = (row: any): KeptAlert => ({ key: row.key, text: row.text, at: Number(row.at), ...(row.subject !== null && { subject: row.subject }), ...(row.error !== null && { error: row.error }) })

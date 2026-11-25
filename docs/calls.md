@@ -3,21 +3,21 @@
 The script tag reports what a visitor does on a page. A phone call that follows a tap on your number is linked to the visitor who tapped, and credited to the ad click that brought them. A [text](#text-messages) from your site is tied to its visit by a code or a tap.
 
 ```html
-<a href="tel:+15551230001">Call us</a>
+<a href="tel:+12025550101">Call us</a>
 <button data-ag-event="brochure">Request a brochure</button>
 ```
 
 ```sh
 EVENTS=brochure,phone_click \
-CALL_NUMBERS='{"+15551230001":{"source":"google","campaignId":"20222"}}' \
+CALL_NUMBERS='{"+12025550101":{"source":"google","campaignId":"20222"}}' \
 npm start
 ```
 
-Tap the number on the page, then record the call the way a phone provider would:
+In a rehearsal, intercept the tap so it never opens the dialer. Record a synthetic call on loopback. The curl examples read the authorization header from the private file described in [First record](getting-started.md#first-record).
 
 ```bash
-curl -X POST https://graph.example.org/v1/record -H "authorization: Bearer $GRAPH_TOKEN" -d '{ "entries": [
-  { "type": "call", "key": "CA1", "at": 1795460000000, "direction": "inbound", "from": "+15558675309", "to": "+15551230001", "duration": 140 }] }'
+curl -q --noproxy 127.0.0.1 -X POST http://127.0.0.1:8080/v1/record -H "@${GRAPH_AUTH_HEADER_FILE:?}" -d '{ "entries": [
+  { "type": "call", "key": "CA1", "at": 1795460000000, "direction": "inbound", "from": "+12025550141", "to": "+12025550101", "duration": 140 }] }'
 ```
 
 ```json
@@ -116,7 +116,7 @@ A caller who sees a code on the page can read it to whoever answers. It says whi
 Set `TEXT_CODES=true` on the server, or `textCodes` in the library. Without it no page is given a code, and a `code` you send names nobody. The code is the one [text links](#text-messages) carry. The script puts it in every element marked `data-ag-code`, and leaves them as you wrote them for a visitor who is given none. To hide the sentence then, use `p:has([data-ag-code]:empty) { display: none }`.
 
 ```json
-{ "type": "call", "key": "CA1", "at": 1795460000000, "direction": "inbound", "from": "+15550100141", "to": "+15550100101", "duration": 140, "code": "K7Q2MX" }
+{ "type": "call", "key": "CA1", "at": 1795460000000, "direction": "inbound", "from": "+12025550141", "to": "+12025550101", "duration": 140, "code": "K7Q2MX" }
 ```
 
 | Rule | Detail |
@@ -149,7 +149,7 @@ The `caller` [lookup](http.md#lookup) says who is calling, for the screen of who
 ```http
 POST /v1/lookup
 
-{ "kind": "caller", "from": "+15558675309", "to": "+15551230001", "at": 1795460000000 }
+{ "kind": "caller", "from": "+12025550141", "to": "+12025550101", "at": 1795460000000 }
 ```
 
 ```json
@@ -191,15 +191,15 @@ A shorter window loses callers who took longer to dial. A number that is always 
 
 Choose it from your own calls. Count the ties at each length, then move every tap by several amounts, such as a day and a week, to times as busy on the same number, and count again. The second counts estimate chance.
 
-> **Twilio dates an unanswered call from the end of its ringing.** Leave room for the ringing if Twilio reports your calls, or missed calls lose their visitor.
+The Twilio adapter estimates when a call began from the callback timestamp (or receipt time) minus connected seconds. Ring time and delivery delay can move a missed call outside the tap window. [Twilio status callbacks](https://www.twilio.com/docs/voice/twiml#statuscallback-request-parameters)
 
 ### Twilio
 
-Twilio can report calls and incoming texts directly. The server verifies Twilio's signature on each request, so the routes need no token.
+Replay the public Twilio signature with `node --test test/provider-fixtures.test.ts`. This runs locally and needs no account. A live callback also exercises the number's routing and the public receiver. Twilio's legacy test credentials do not generate these callbacks. [Signed example](https://github.com/twilio/twilio-go#validating-requests) · [Test credentials](https://www.twilio.com/docs/iam/test-credentials)
 
-1. In the Twilio console, open the phone number and set **Call status changes** to `https://graph.example.org/calls/twilio`, method POST.
-2. For texts, set **A message comes in** to `https://graph.example.org/texts/twilio`, method POST. If a system of yours answers there already, have it record each text.
-3. Copy the account's **Auth Token** from the console's account page.
+1. For voice on a dedicated configurable number, open **Active Numbers**, select the number, and set **Voice → Call status changes** to your public HTTPS `/calls/twilio` route. Choose POST and save. Leave the voice instructions URL in place. The shared trial's **Try out Voice → Inbound** offers scenarios. A final status callback there is **not verified**. Skip the voice check if this setting is absent. [Number settings](https://www.twilio.com/docs/phone-numbers/api/incomingphonenumber-resource) · [Trial voice](https://www.twilio.com/docs/usage/trials/try-out-voice)
+2. For incoming SMS on a dedicated SMS-capable number, set **Messaging → A message comes in → Webhook** to your HTTPS `/texts/twilio` route, choose POST and save. On the shared trial, open **Try out SMS → Inbound → Auto-Reply settings → Custom**. The trial sender must use their verified handset. If you already have an SMS responder, have it record incoming texts. [Incoming messages](https://www.twilio.com/docs/messaging/guides/webhook-request) · [Trial SMS](https://www.twilio.com/docs/usage/trials/try-out-sms)
+3. The owner supplies the account's **Auth Token** privately and the external URLs exactly as configured. The receiver verifies the default form signature in `X-Twilio-Signature` with that token. A separate shared-key signing configuration needs a different verifier. [Webhook security](https://www.twilio.com/docs/usage/webhooks/webhooks-security) · [Shared-key settings](https://www.twilio.com/docs/usage/webhooks/webhook-shared-keys)
 
 ```sh
 TWILIO_AUTH_TOKEN=…
@@ -209,7 +209,7 @@ TWILIO_TEXT_WEBHOOK_URL=https://graph.example.org/texts/twilio   # for texts, th
 
 The signature covers that address, so the two must match to the character. A request that fails the check gets 403.
 
-The answer to a text is empty, so the sender gets no reply from the graph. Record the texts you send with `"direction": "outbound"`.
+An incoming text receives HTTP 200 with empty TwiML (`<Response/>`), so the graph sends no reply. Delivery reports for outbound texts are ignored. Have the sending system record its own texts with `"direction": "outbound"`. A final voice callback receives HTTP 204. After testing, restore the QA number's prior settings. [Messaging status callbacks](https://www.twilio.com/docs/messaging/guides/track-outbound-message-status)
 
 | Reported by Twilio | Recorded as |
 | --- | --- |
@@ -243,22 +243,28 @@ visitor taps the number it put there ──▶ POST /collect, kind event: that n
 the service's webhook ──▶ your backend ──▶ record a call { key, from, to, at, duration, … }
 ```
 
-CallRail's API documents a call with `customer_phone_number`, `tracking_phone_number`, `start_time`, `duration`, `answered`, `voicemail` and `direction`. Check the body your account sends, and its signature, before relying on any field. [`examples/call-tracking.ts`](../examples/call-tracking.ts) takes its webhook, checks the signature and records the call, and keeps calls while the server is away. No such service has been tried against a live account here.
+For CallRail, first run `node --test test/provider-fixtures.test.ts test/call-tracking.test.ts`. A signed made-up post exercises the receiver's verifier and call mapping offline. CallRail's own sample payload, key and signature can be tried the same way. Fixture tests for taps and call mapping need no number-swapping script. On a QA site using CallRail's own script, disable form capture unless it is part of the test. [Signature and sample](https://apidocs.callrail.com/#validating-payloads) · [Form capture](https://apidocs.callrail.com/#form-capture)
+
+1. Run [the forwarder](../examples/call-tracking.ts) with `node examples/call-tracking.ts`. Give it a private `SPOOL` directory, the graph's `GRAPH_URL` and `GRAPH_TOKEN`, and the QA company's webhook `SIGNING_KEY` through its private process settings. The key is on that company's Webhooks configuration page. Forward only HTTPS `POST /calls` to the forwarder (port 3001 by default). [CallRail signing](https://apidocs.callrail.com/#validating-payloads)
+2. In the QA company's **Integrations → Webhooks**, enter the receiver's URL under **Post-call** for inbound calls and save. **Outbound post-call** is a separate subscription. Only enable the direction under test. CallRail can deliver an inbound report up to 20 minutes after hangup and does not retry failed deliveries. [Console setup](https://support.callrail.com/hc/en-us/articles/5711246459149-Webhooks) · [Timing and delivery](https://apidocs.callrail.com/#post-call-webhook)
+3. The receiver checks the `Signature` header against the exact request bytes before parsing. A bad signature gets 401. A valid call is spooled before the 204 response and forwarded under `callrail-<id>` so a repeat is counted once. Compare direction, dialed number, zoned start and duration with your call log. Review any refused files privately and remove the test webhook afterward. [Post-call fields](https://apidocs.callrail.com/#post-call-webhook)
+
+CallRail can report `answered: true` for a phone menu or answering system. The forwarder maps an explicit voicemail or miss and leaves a bare positive answer unknown in either direction. So an answered call no longer closes a missed one or counts under `CALL_RESULTS=expected` until staff report it. Where only people answer these numbers, start the forwarder with `ANSWERED_BY=person`. An outbound attempt alone cannot close an earlier missed call. Have staff report a confirmed conversation with a [call result](#call-results), and set `CALL_RESULTS=expected` to hold inbound outcomes until that confirmation. [CallRail answer definition](https://support.callrail.com/hc/en-us/articles/5712132142605-Unanswered-calls-report)
 
 > **List its numbers or none.** With `CALL_NUMBERS` set, a tap on a number that is neither in it nor in the pool leaves no note to match a call by. Add each number the service shows, or leave `CALL_NUMBERS` unset.
 
 ## Number pools
 
-A number pool shows each visitor a number of their own for a while, so a call dialed by hand is linked to them without a tap. Pools are off until you set the numbers:
+A number pool shows each visitor a number of their own for a while, so a call dialed by hand can be linked without a tap. The graph leases numbers already in its list. To receive actual calls, provision each line separately with your phone provider and configure its call routing and callbacks. For a local test, use fictional numbers, intercept taps and replay call records. [Twilio number configuration](https://www.twilio.com/docs/phone-numbers/api/incomingphonenumber-resource)
 
 ```sh
-POOL_NUMBERS=+15550100101,+15550100102,+15550100103
+POOL_NUMBERS=+12025550101,+12025550102,+12025550103
 ```
 
 Mark the numbers to replace on your pages, and add `pool=1` to the script tag:
 
 ```html
-<a href="tel:+15550100100" data-ag-pool>Call (555) 010-0100</a>
+<a href="tel:+12025550100" data-ag-pool>Call (202) 555-0100</a>
 <script type="module" src="https://graph.example.org/collect.js?pool=1"></script>
 ```
 
@@ -284,7 +290,7 @@ The page's own number also stays for staff, declared bots, visitors who opted ou
 A result says whether a person spoke to the caller. It is true, false or unknown, independent of call length. Report it from your backend, before or after the call itself:
 
 ```bash
-curl -X POST https://graph.example.org/v1/record -H "authorization: Bearer $GRAPH_TOKEN" -d '{ "entries": [
+curl -q --noproxy 127.0.0.1 -X POST http://127.0.0.1:8080/v1/record -H "@${GRAPH_AUTH_HEADER_FILE:?}" -d '{ "entries": [
   { "type": "call_update", "key": "result-CA1", "at": 1795460200000, "call": "CA1", "change": { "kind": "result", "result": { "answered": true, "waited": 12 } } }] }'
 ```
 
@@ -328,9 +334,9 @@ Without the setting, a call is counted by its length when it is reported. If a l
 Report the calls you place as well, and each missed call shows whether it was returned.
 
 ```bash
-curl -X POST https://graph.example.org/v1/record -H "authorization: Bearer $GRAPH_TOKEN" -d '{ "entries": [
-  { "type": "call", "key": "CB1", "at": 1795463600000, "direction": "outbound", "from": "+15550100001", "to": "+15550100041", "duration": 80, "result": { "answered": true } }] }'
-curl -X POST https://graph.example.org/v1/lookup -H "authorization: Bearer $GRAPH_TOKEN" -d '{ "kind": "record", "type": "call", "key": "CA2", "at": 1795463700000 }'
+curl -q --noproxy 127.0.0.1 -X POST http://127.0.0.1:8080/v1/record -H "@${GRAPH_AUTH_HEADER_FILE:?}" -d '{ "entries": [
+  { "type": "call", "key": "CB1", "at": 1795463600000, "direction": "outbound", "from": "+13125550101", "to": "+13125550141", "duration": 80, "result": { "answered": true } }] }'
+curl -q --noproxy 127.0.0.1 -X POST http://127.0.0.1:8080/v1/lookup -H "@${GRAPH_AUTH_HEADER_FILE:?}" -d '{ "kind": "record", "type": "call", "key": "CA2", "at": 1795463700000 }'
 ```
 
 ```json
@@ -357,7 +363,7 @@ Calls after the missed one decide its state, whatever order they are reported in
 Report a caller reached another way, such as by text, in person or from an unreported line:
 
 ```bash
-curl -X POST https://graph.example.org/v1/record -H "authorization: Bearer $GRAPH_TOKEN" -d '{ "entries": [
+curl -q --noproxy 127.0.0.1 -X POST http://127.0.0.1:8080/v1/record -H "@${GRAPH_AUTH_HEADER_FILE:?}" -d '{ "entries": [
   { "type": "call_update", "key": "return-CA1", "at": 1795467300000, "call": "CA1", "change": { "kind": "returned", "reachedAt": 1795467200000 } }] }'
 ```
 
@@ -382,11 +388,11 @@ curl -X POST https://graph.example.org/v1/record -H "authorization: Bearer $GRAP
 Tags attach facts to a call, such as the language chosen at the prompt. A tracking number can carry tags too.
 
 ```sh
-CALL_NUMBERS='{"+15550100001":{"source":"listing","tags":{"office_advertised":"north","language":"es"}}}'
+CALL_NUMBERS='{"+13125550101":{"source":"listing","tags":{"office_advertised":"north","language":"es"}}}'
 ```
 
 ```json
-{ "type": "call", "key": "CA1", "at": 1795460000000, "direction": "inbound", "from": "+15550100041", "to": "+15550100001", "duration": 140, "tags": { "language": "es" } }
+{ "type": "call", "key": "CA1", "at": 1795460000000, "direction": "inbound", "from": "+13125550141", "to": "+13125550101", "duration": 140, "tags": { "language": "es" } }
 ```
 
 A call's tags are copied to its outcome. A number's tags go on the visit recorded for a call filed under that number; a call linked to a visitor uses the visitor's own visit instead. The report [breaks down](report.md#breakdowns) by either.
@@ -397,8 +403,8 @@ A map, business listing, directory or printed page loads no script. Give each it
 
 ```sh
 CALL_NUMBERS='{
-  "+15550100104": { "source": "listing", "medium": "map", "campaign": "Map listing, River", "tags": { "office_advertised": "river" } },
-  "+15550100106": { "source": "listing", "medium": "map", "campaign": "Map listing, North", "tags": { "office_advertised": "north" } }
+  "+12025550104": { "source": "listing", "medium": "map", "campaign": "Map listing, River", "tags": { "office_advertised": "river" } },
+  "+12025550106": { "source": "listing", "medium": "map", "campaign": "Map listing, North", "tags": { "office_advertised": "north" } }
 }'
 ```
 
@@ -410,7 +416,7 @@ A text from your site arrives with a code that says which visit it came from. Th
 
 ```html
 <script type="module" src="https://graph.example.org/collect.js?text=1"></script>
-<a href="sms:+15550100101?body=I%20need%20a%20lawyer.">Text us</a>
+<a href="sms:+12025550101?body=I%20need%20a%20lawyer.">Text us</a>
 ```
 
 ```text
@@ -426,8 +432,8 @@ A browser keeps its code for a week and is then given another. A code names its 
 Report each text as it arrives or is sent.
 
 ```bash
-curl -X POST https://graph.example.org/v1/record -H "authorization: Bearer $GRAPH_TOKEN" -d '{ "entries": [
-  { "type": "text", "key": "SM1", "at": 1795460000000, "direction": "inbound", "from": "+15550100141", "to": "+15550100101", "text": "I need a lawyer. Ref K7Q2MX" }] }'
+curl -q --noproxy 127.0.0.1 -X POST http://127.0.0.1:8080/v1/record -H "@${GRAPH_AUTH_HEADER_FILE:?}" -d '{ "entries": [
+  { "type": "text", "key": "SM1", "at": 1795460000000, "direction": "inbound", "from": "+12025550141", "to": "+12025550101", "text": "I need a lawyer. Ref K7Q2MX" }] }'
 ```
 
 ```json
@@ -522,4 +528,4 @@ Callers are stored as a hash of their number, so the view shows an ID. To find t
 | Pictures and groups | A picture is recorded as a text. Group messages are not told apart. |
 | Delivery of texts | Whether a text you sent was delivered is not read. A text you report as sent counts as a reply. |
 | Twilio's time | Twilio sends no time with an incoming text, so it is the time the report arrived. |
-| Verification | Twilio's statuses and callback behavior were read from its documentation in November 2026; the console's field names were not. The signature check matches the example on Twilio's webhook security page. No real Twilio request has been received, for a call or a text. |
+| Verification | Local tests reproduce the published Twilio and CallRail signatures and reject altered inputs. Real voice/SMS delivery, proxy configuration and phone routing still require a dedicated account and a controlled line. [Fixture sources](../test/fixtures/providers/README.md) |
