@@ -568,7 +568,7 @@ export interface RuleOptions {
   readonly corroborates?: true
   readonly relates?: true
 }
-export type BuiltInKind = 'review' | 'passkey' | 'email' | 'phone' | 'voip' | 'address' | 'payment' | 'device' | 'ga' | 'hardware' | 'fingerprint' | 'canvas' | 'ip' | 'link' | 'carry' | 'opened' | 'lease' | 'dial' | 'text' | 'place' | 'birth' | 'dialed' | 'behalf' | 'named' | 'ward' | 'given' | 'initial' | 'dated'
+export type BuiltInKind = 'review' | 'passkey' | 'email' | 'phone' | 'voip' | 'address' | 'payment' | 'device' | 'ga' | 'hardware' | 'fingerprint' | 'canvas' | 'ip' | 'link' | 'carry' | 'opened' | 'lease' | 'dial' | 'text' | 'place' | 'birth' | 'dialed' | 'behalf' | 'named' | 'ward' | 'given' | 'initial' | 'dated' | 'compound'
 export interface PolicyOptions {
   readonly same?: number
   readonly related?: number

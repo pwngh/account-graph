@@ -26,7 +26,7 @@ import { checkTags } from './tags.ts'
 import { checkTouch } from './touch.ts'
 
 /** Kinds of identifier the graph writes itself. One a caller wrote would join people with nobody having decided it. */
-const RESERVED = new Set(['behalf', 'named', 'ward', 'given', 'dated', 'initial', 'review', 'link', 'carry', 'opened', 'lease', 'dial', 'text', 'place', 'birth', 'dialed'])
+const RESERVED = new Set(['behalf', 'named', 'ward', 'given', 'dated', 'initial', 'compound', 'review', 'link', 'carry', 'opened', 'lease', 'dial', 'text', 'place', 'birth', 'dialed'])
 /** How many checks of addresses and lines are under way at once, and how long one may take. */
 const TOGETHER = 8
 const CHECK = 3_000

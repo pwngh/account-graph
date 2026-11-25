@@ -88,15 +88,20 @@ export function components(subjects: Iterable<Subject>, pairs: readonly Pair[]):
   return out
 }
 
+/** The facts, and what is noted beside them to weigh them by. */
+type Note = Fact | 'initial' | 'dated' | 'compound'
+
 /** What is known of somebody that cannot be two people's, and the joins a reviewer or a system made of them. */
 export interface Known {
-  facts: Map<Fact | 'initial' | 'dated', Set<Identifier>>
+  facts: Map<Note, Set<Identifier>>
   joins: Set<Identifier>
   /** What they gave under which name. */
   things: Set<Identifier>
 }
 
 const THINGS = new Set(['named', 'ward'])
+/** Records of one component, past which nothing but a decision joins them where records have to be confirmed. */
+const CROWD = 300
 /** What one person has and no other: a name with a zip code or a date of birth, and a passkey. */
 const OWN = new Set(['name', 'passkey'])
 
@@ -109,14 +114,14 @@ export function knownOf(policy: Policy, edges: readonly Edge[], undone: (identif
     const kind = identifier.slice(0, identifier.indexOf(':'))
     // Each fact is read for the other to be weighed against, whether or not it keeps anyone apart by itself.
     const thing = (THINGS.has(kind) && policy.apart?.includes('given') === true) || (confirming && OWN.has(kind))
-    if (!policy.apart?.includes(kind as Fact) && !thing && kind !== 'birth' && kind !== 'given' && kind !== 'initial' && kind !== 'dated' && kind !== 'review') continue
+    if (!policy.apart?.includes(kind as Fact) && !thing && kind !== 'birth' && kind !== 'given' && kind !== 'initial' && kind !== 'dated' && kind !== 'compound' && kind !== 'review') continue
     // A join that was undone is none, and a fact that was muted is none.
     if (undone(identifier)) continue
     const known = out.get(subject) ?? { facts: new Map(), joins: new Set(), things: new Set() }
     out.set(subject, known)
     if (kind === 'review') known.joins.add(identifier)
     else if (thing) known.things.add(identifier)
-    else known.facts.set(kind as Fact | 'initial' | 'dated', (known.facts.get(kind as Fact | 'initial' | 'dated') ?? new Set()).add(identifier))
+    else known.facts.set(kind as Note, (known.facts.get(kind as Note) ?? new Set()).add(identifier))
   }
   return out
 }
@@ -151,8 +156,8 @@ function disagree(a: Known | undefined, b: Known | undefined): boolean {
   if (!a || !b) return false
   const [ours, theirs] = [a.facts.get('given'), b.facts.get('given')]
   const within = (one: ReadonlySet<Identifier>, other: ReadonlySet<Identifier>) => [...one].every((each) => other.has(each))
-  const words = (known: Known) => (known.facts.get('initial')?.size ?? 0) > 1
-  const given = ours && theirs && meets(ours, theirs) && (!(words(a) && words(b)) || within(ours, theirs) || within(theirs, ours))
+  const several = a.facts.has('compound') && b.facts.has('compound')
+  const given = ours && theirs && meets(ours, theirs) && (!several || within(ours, theirs) || within(theirs, ours))
   if (given === false) return true
   const named = given === true || [...a.things].some((each) => b.things.has(each))
   return meets(a.facts.get('birth'), b.facts.get('birth')) === false && !(named && meets(a.facts.get('dated'), b.facts.get('dated')) === true)
@@ -163,10 +168,16 @@ export function confirmed(a: Known | undefined, b: Known | undefined): boolean {
   if (!a || !b) return false
   if (joinedBy(a, b)) return true
   if (disagree(a, b)) return false
-  if (meets(a.things, b.things) || meets(a.facts.get('given'), b.facts.get('given'))) return true
+  const dates = meets(a.facts.get('birth'), b.facts.get('birth')) === true
+  const [ours, theirs] = [a.facts.get('given'), b.facts.get('given')]
+  // Names that may be written for one another, and need not be: a Mary and a Marilyn, a Robert and a Bob. A date has to say
+  // which. One name is itself, and half of a name of several words.
+  const within = (one: ReadonlySet<Identifier>, other: ReadonlySet<Identifier>) => [...one].every((each) => other.has(each))
+  const loosely = ours !== undefined && theirs !== undefined && !(within(ours, theirs) && (within(theirs, ours) || b.facts.has('compound'))) && !(within(theirs, ours) && a.facts.has('compound'))
+  if (loosely ? [...a.things].some((each) => b.things.has(each) && !THINGS.has(each.slice(0, each.indexOf(':')))) : meets(a.things, b.things) || meets(ours, theirs)) return true
   // A name no table has is no fact, and is still a name: two who gave names under which nothing is the same are twins as likely as one.
   const names = (known: Known) => [...known.things].some((each) => THINGS.has(each.slice(0, each.indexOf(':'))) || each.startsWith('name:'))
-  return meets(a.facts.get('birth'), b.facts.get('birth')) === true && !(names(a) && names(b))
+  return dates && (meets(ours, theirs) === true || !(names(a) && names(b)))
 }
 
 type Adjacency = Map<Subject, Map<Subject, number>>
@@ -276,6 +287,8 @@ function refined(pieces: Subject[][], links: readonly Pair[], policy: Policy, kn
   }
   const everyone = pieces.flat().filter((subject) => !nobody(subject))
   if (everyone.length < 2) return pieces
+  // So many come of something everybody shares, and what confirms them is then shared by chance: decisions alone join them.
+  const crowd = everyone.length > CROWD
   // Who has anything in common that could confirm the two, in all of the component: whoever was cut off may be one's as well.
   const holders = new Map<Identifier, Subject[]>()
   const own = (subject: Subject) => {
@@ -343,7 +356,7 @@ function refined(pieces: Subject[][], links: readonly Pair[], policy: Policy, kn
       }
       return false
     }
-    for (let changed = true; changed; ) {
+    for (let changed = !crowd; changed; ) {
       changed = false
       for (const [a, b] of near) {
         if (home.get(a) === home.get(b)) continue

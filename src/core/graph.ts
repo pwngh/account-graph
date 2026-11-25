@@ -632,7 +632,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     const out = new Map<Subject, Known>()
     if (!policy.apart?.length && !joins) return out
     for (let i = 0; i < subjects.length; i += TOGETHER) {
-      const edges = (await tx.edgesOf(subjects.slice(i, i + TOGETHER))).filter(({ identifier }) => /^(birth|given|initial|dated|review|named|ward|name|passkey):/.test(identifier))
+      const edges = (await tx.edgesOf(subjects.slice(i, i + TOGETHER))).filter(({ identifier }) => /^(birth|given|initial|dated|compound|review|named|ward|name|passkey):/.test(identifier))
       const states = await tx.states(unique(edges.map((edge) => edge.identifier)))
       for (const [subject, facts] of knownOf(policy, edges, silent(states), joins)) out.set(subject, facts)
     }
@@ -739,7 +739,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
   }
 
   /** Whether the policy keeps people apart by an identifier, which then counts however many hold it. */
-  const isFact = (identifier: Identifier) => Boolean(policy.apart?.length) && /^(birth|given|initial|dated):/.test(identifier)
+  const isFact = (identifier: Identifier) => Boolean(policy.apart?.length) && /^(birth|given|initial|dated|compound):/.test(identifier)
   /** Whether one of the two speaks for the other. */
   const speaks = (link: Link) => told(policy, link.reasons) && link.reasons.some(({ identifier }) => identifier.startsWith('behalf:'))
   const unnamed = new Set(policy.unnamed ?? UNNAMED)

@@ -133,6 +133,8 @@ export const defaultPolicy: Policy = {
     given: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     initial: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     dated: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
+    // That a first name has several words, so a half of it is not all of it. Kept where records have to be confirmed.
+    compound: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     // One number or email given under one name. It confirms what the number or email says, and says nothing once that is muted or too many hold it.
     named: { weight: 0.999, dilution: 0, cap: 10, halfLife: Infinity, corroborates: true },
     // The same of two who were spoken for by one number or email, which is on neither's record.
@@ -146,7 +148,7 @@ export const defaultPolicy: Policy = {
 export const UNNAMED: readonly string[] = ['visitor', 'caller', 'call']
 
 /** The kinds that are notes. The graph counts on them linking nothing, so a setting may not give them weight. */
-const NOTES = new Set(['opened', 'place', 'dialed', 'initial', 'dated', ...FACTS])
+const NOTES = new Set(['opened', 'place', 'dialed', 'initial', 'dated', 'compound', ...FACTS])
 const LEVELS = ['same', 'related', 'bridge'] as const
 const FIELDS = ['weight', 'dilution', 'cap', 'halfLife'] as const
 const OPTIONAL = ['group', 'corroborates', 'relates'] as const
@@ -227,6 +229,8 @@ const RULES = 2
 /** The same for two policies exactly when they score and cluster alike. What only flags, `review`, is not part of it. */
 export function policyHash(policy: Policy): string {
   const { review: _, ...rest } = plainPolicy(policy)
+  // A note that links nothing and says nothing but where records have to be confirmed: a policy without is what it was.
+  if (!policy.records) delete (rest.kinds as Record<string, unknown>).compound
   return createHash('sha256').update(JSON.stringify({ ...rest, rules: RULES, unnamed: [...new Set(policy.unnamed ?? UNNAMED)].sort() })).digest('hex')
 }
 
