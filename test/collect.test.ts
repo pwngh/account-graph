@@ -194,6 +194,25 @@ test('page events are reported by name, from code and from marked elements', asy
   assert.equal(listeners.size, 0)
 })
 
+test('a page event carries a new banner refusal or the current browser privacy signal', async () => {
+  const page = browser('https://example.org/form')
+  const options = { endpoint: 'https://example.org/collect', consent: { adUserData: true, adPersonalization: true } }
+  const banner = { adUserData: false, adPersonalization: false }
+  const globals = globalThis as typeof globalThis & { accountGraphConsent?: typeof banner }
+  try {
+    globals.accountGraphConsent = banner
+    await event(options, 'lead')
+    delete globals.accountGraphConsent
+    ;(globalThis as any).navigator.globalPrivacyControl = true
+    await event(options, 'lead')
+    await settle()
+    assert.deepEqual(page.sent[0].consent, banner)
+    assert.equal(page.sent[1].gpc, true)
+  } finally {
+    delete globals.accountGraphConsent
+  }
+})
+
 test('tokens on the address are sent once and taken out of the address bar', async () => {
   const page = browser('https://site.example/offer?ag=KNOWN.token.x&utm_source=mailer&ag_from=CARRY.token.y#top')
   const replaced: string[] = []

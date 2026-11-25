@@ -44,6 +44,8 @@ const pair = ({ a, b }: any) => (a < b ? { a, b } : { a: b, b: a })
 export function compared(entry: RecordEntry | ({ type: 'decide' } & DecideRequest) | ({ type: 'forget' } & ForgetRequest), country = '1'): Record<string, unknown> {
   const phone = phoneOf(country)
   const { type, key: _, ...fields } = entry as any
+  // A conversion's optional HTTP user agent is only kept on the opted-in delivery.
+  if (type === 'conversion') delete fields.userAgent
   if (type === 'call') {
     const from = fields.direction === 'outbound' ? fields.from && phone(fields.from) : callerNumber(fields.from, country)
     return { direction: fields.direction, to: phone(fields.to), ...(from && { from }) }

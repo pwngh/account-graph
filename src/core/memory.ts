@@ -20,7 +20,14 @@ import type { CallResult, Consent, ConsentAnswer, CostRow, Counted, Decision, Ed
  * asked to be whole, by a copy of everything made before it.
  */
 export function createMemoryStore(): Store & { snapshot(): unknown } {
-  const outbox = createMemoryOutbox((job) => outcomes.get(job.transactionId)?.subject === job.subject, () => settings.get('callParty'))
+  const outbox = createMemoryOutbox((job) => outcomes.get(job.transactionId)?.subject === job.subject, () => settings.get('callParty'), (subjects) => {
+    const refusals = new Map<Subject, number>()
+    for (const subject of subjects) {
+      const answer = latestConsent(subject)
+      if (answer?.adUserData === false) refusals.set(subject, answer.at)
+    }
+    return refusals
+  })
   const bySubject = new Map<Subject, Map<Identifier, Edge>>()
   const byIdentifier = new Map<Identifier, Map<Subject, Edge>>()
   const ignored = new Set<Identifier>()
@@ -34,6 +41,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
   const flowsBy = new Map<Subject, Set<string>>()
   const flowIds = new Map<string, Required<Flow>>()
   const consents = new Map<Subject, ConsentAnswer[]>()
+  const latestConsent = (subject: Subject) => [...(consents.get(subject) ?? [])].sort(standingFirst)[0]
   const decisions: Decision[] = []
   const outcomes = new Map<string, Counted>()
   const values = new Map<Subject, Map<string, OutcomeValue[]>>()
@@ -587,7 +595,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
     async consentOf(subjects) {
       const out = new Map<Subject, Consent>()
       for (const subject of subjects) {
-        const [standing] = [...(consents.get(subject) ?? [])].sort(standingFirst)
+        const standing = latestConsent(subject)
         if (standing) out.set(subject, { adUserData: standing.adUserData, adPersonalization: standing.adPersonalization })
       }
       return out

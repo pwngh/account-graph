@@ -7,13 +7,24 @@
 import type { IpInfo, IpLookup } from '../core/ports.ts'
 
 
+const hosts = ['geoip.maxmind.com', 'geolite.info', 'sandbox.maxmind.com'] as const
+const services = ['insights', 'city', 'country'] as const
+
+export function isMaxMindHost(value: string): value is typeof hosts[number] {
+  return hosts.some((host) => host === value)
+}
+
+export function isMaxMindService(value: string): value is typeof services[number] {
+  return services.some((service) => service === value)
+}
+
 export interface MaxMindOptions {
   accountId: string | number
   licenseKey: string
   /** `insights` returns the user type and anonymity flags. Defaults to `insights`. */
-  service?: 'insights' | 'city' | 'country'
+  service?: typeof services[number]
   /** `geolite.info` for a free GeoLite account, which has no Insights. Defaults to `geoip.maxmind.com`. */
-  host?: 'geoip.maxmind.com' | 'geolite.info'
+  host?: typeof hosts[number]
   /** How many answers to keep. Defaults to 10,000. Each is kept for a day. */
   cache?: number
   fetch?: typeof fetch
@@ -47,7 +58,10 @@ export function createMaxMindLookup(options: MaxMindOptions): IpLookup {
   const fetcher = options.fetch ?? fetch
   const now = options.now ?? Date.now
   const limit = options.cache ?? 10_000
-  const base = `https://${options.host ?? 'geoip.maxmind.com'}/geoip/v2.1/${options.service ?? 'insights'}/`
+  const host = options.host ?? 'geoip.maxmind.com'
+  const service = options.service ?? 'insights'
+  if (!isMaxMindHost(host) || !isMaxMindService(service)) throw new TypeError('Unknown MaxMind host or service')
+  const base = `https://${host}/geoip/v2.1/${service}/`
   const authorization = `Basic ${Buffer.from(`${options.accountId}:${options.licenseKey}`).toString('base64')}`
   const cache = new Map<string, { info: IpInfo | undefined; until: number }>()
 
@@ -55,7 +69,7 @@ export function createMaxMindLookup(options: MaxMindOptions): IpLookup {
     const hit = cache.get(address)
     if (hit && hit.until > now()) return hit.info
 
-    const response = await fetcher(base + encodeURIComponent(address), { headers: { authorization, accept: 'application/json' }, signal: AbortSignal.timeout(10_000) })
+    const response = await fetcher(base + encodeURIComponent(address), { headers: { authorization, accept: 'application/json' }, redirect: 'error', signal: AbortSignal.timeout(10_000) })
     let info: IpInfo | undefined
     if (response.ok) info = parse(await response.json())
     else {

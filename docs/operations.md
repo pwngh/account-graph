@@ -31,9 +31,9 @@ The lines after `collect accepts` list the enabled features. Each provider turns
 GRAPH_TOKEN=a-long-random-string REVIEW_TOKENS='{"dana":"another-one"}' RECEIPT_SECRETS=… ORIGINS=https://example.org docker compose up --build
 ```
 
-Compose also reads a `.env` file in the same directory. Run `cp .env.example .env` and fill it in. Set `GRAPH_PORT` to publish a different port.
+Compose also reads a `.env` file in the same directory. Use `.env.example` for synthetic local settings. For a credentialed run, inject secrets privately into the selected process. Keep them out of the checkout, shell history and command arguments. Container administrators can inspect the environment. Set `GRAPH_PORT` to publish a different port.
 
-Compose passes the variables in [Environment variables](#environment-variables) through to the server, except `GRAPH_SCHEMA`, `HOST`, `PORT`, `POLICY_FILE`, `CALL_NUMBERS_FILE` and `SERVER_RANGES_FILE`. It sets `DATABASE_URL` itself.
+Compose passes the variables in [Environment variables](#environment-variables) through to the server, except `GRAPH_SCHEMA`, `HOST`, `PORT`, `POLICY_FILE`, `CALL_NUMBERS_FILE` and `SERVER_RANGES_FILE`. It sets `DATABASE_URL` itself. Compose passes the Google key file path but does not mount the file. Supply a separate read-only secret mount and use its path inside the container. A shell running the checker does not read Compose’s .env.
 
 > **Use the compose file for evaluation.** It has a local volume, a fixed database password, the example site's features and placeholders for `LINK_SECRET` and `RECEIPT_SECRETS`. Replace these before production use. Values in `compose.yaml` that start with `change-me` are public, and the server refuses to start with one when `ORIGINS` contains a site outside your own machine.
 
@@ -84,7 +84,7 @@ List the site in `ORIGINS`, or `/collect` answers 403. A site with a content sec
 
 | Address | Effect |
 | --- | --- |
-| `collect.js?fingerprint=PUBLIC_KEY` | Confirms each visitor with Fingerprint. Add `&region=eu` or `&region=ap` outside the US, and `&endpoints=…` for your own subdomain. |
+| `collect.js?fingerprint=PUBLIC_KEY` | Loads the Fingerprint agent and requests an identification. Enable it only after the intended device owner has agreed. Match the server region. Add `&region=eu` or `&region=ap` outside the US, and `&endpoints=…` for a configured identification proxy. The loader still contacts the public CDN. |
 | `collect.js?canvas=open` | Adds the open-source FingerprintJS id, recorded as the weaker `canvas` kind. |
 | `collect.js?params=mailing,placement` | Stores your own address parameters with each visit. |
 | `collect.js?domains=shop.example,help.example` | Carries the visitor along links to your other sites. Requires `LINK_SECRET`. |
@@ -165,12 +165,14 @@ Startup fails with one line per problem when a setting is invalid. It also fails
 Each decision is hashed together with the one before it. The Health view verifies the chain and reports the first altered entry. So does the route it reads:
 
 ```sh
-curl -s https://graph.example.org/review/api/audit -H "authorization: Bearer $REVIEWER_TOKEN" | tee -a /somewhere/else/heads.log
+curl -s https://graph.example.org/review/api/audit --header @/private/graph/reviewer-header | tee -a /somewhere/else/heads.log
 ```
 
 ```json
 { "sound": true, "head": { "seq": 418, "hash": "9c1f…" } }
 ```
+
+The header file above is an owner-readable file containing the complete Authorization header.
 
 The chain detects an edit to part of the log. Anyone able to rewrite the whole table could rebuild it, so copy the newest hash daily to a place they cannot write.
 
@@ -205,7 +207,7 @@ A dump cut short restores nothing. The server upgrades an older dump when it sta
 | Audit hash | Store the newest hash apart from the dumps. After a restore, the Health view verifies the chain, and the stored hash confirms it is the same log. |
 | Secrets | A dump holds receipts and keyed hashes. Keep `RECEIPT_SECRETS`, `IDENTIFIER_SECRET` and `LINK_SECRET` as long as the dump, and apart from it. |
 | Deleted people | Older dumps still contain them. Keep dumps only as long as you need them, and run `forget` again after a restore, with new keys. |
-| Conversions | Conversions sent since the dump may be sent again with the same id. Meta keeps the first copy, and Google reads the second as a correction. |
+| Conversions | Conversions sent since the dump may be sent again with the same id. Reconcile with the provider before restarting workers. Meta deduplication depends on the event name, ID and timing. Google value changes require the original transaction, destination and action. A zero value can leave the count. [Meta deduplication](https://developers.facebook.com/docs/marketing-api/conversions-api/deduplicate-pixel-and-server-events/) · [Google adjustments](https://developers.google.com/data-manager/api/devguides/events/google-ads/conversion-adjustments) |
 
 ## Behind a proxy
 
@@ -337,7 +339,7 @@ If the corrected call was already forgotten, an old receipt can be all that surv
 
 ### Webhook
 
-Set `WEBHOOK_URL` and `WEBHOOK_SECRET`. The server posts new events there within seconds, in order, at most 100 to a post. The first post begins with what happens after it was set.
+Set `WEBHOOK_URL` and `WEBHOOK_SECRET`. The server posts new events there within seconds, in order, at most 100 to a post. On a fresh database the worker initializes its cursor on its first pass. Produce test events after that pass.
 
 ```http
 POST <WEBHOOK_URL>
@@ -354,14 +356,14 @@ x-account-graph-signature: t=1795460000500,v1=<hex HMAC-SHA256 of "<t>.<body>">
 
 | Rule | Detail |
 | --- | --- |
-| Signature | Over the body as received, under `WEBHOOK_SECRET`. Refuse an old `t`. The library has [`verifyWebhook` and `parseWebhook`](library.md#webhook). |
+| Signature | Over the body as received, under `WEBHOOK_SECRET`. Refuse an old `t`. Use the original bytes, a local clock and a maximum age in milliseconds. Deduplicate by event sequence within each cursor history before applying effects. The library has [`verifyWebhook` and `parseWebhook`](library.md#webhook). |
 | Answer | Any 2xx within ten seconds. Redirects are not followed. |
 | Delivery | At least once, in order, by one process at a time. If an event is erased or redacted while a batch is being signed, the sender signs the current batch before posting. |
 | Refused | Tried again after 30 seconds, doubling to an hour, for a day. Then the events of that post are passed over, and an alert says so. The `events` call still has them. |
 
 ## Alerts
 
-Set `ALERT_WEBHOOK` to a Slack incoming webhook, or any URL that accepts `{"text": "…"}`. The server posts there when something needs attention. What is in this table is kept as an [event](#events) too.
+Set `ALERT_WEBHOOK` to a private receiver, such as a Slack incoming webhook, that accepts `{"text": "…"}`. This POST is unsigned. The URL can itself be a secret. It can receive transaction IDs, campaign details and error text. Configure the final receiver URL directly. The alert client can follow redirects. Use a loopback receiver with synthetic data for an offline test. What is in this table is kept as an [event](#events) too.
 
 | Event | Message content | Frequency |
 | --- | --- | --- |
@@ -374,7 +376,7 @@ Set `ALERT_WEBHOOK` to a Slack incoming webhook, or any URL that accepts `{"text
 
 The server logs and stores an alert that fails to deliver, retries it every five minutes, and shows it on the Health view. The work it reports on continues. Without a webhook, alerts are stored and shown there. Delivery to a live alert webhook is untested.
 
-Send a test alert:
+The following CLI command sends a fixed test message to the configured receiver and reports the immediate delivery result. A failure is kept for a later worker pass. Regular failed alerts and their retries can be exercised against a local sink.
 
 ```sh
 account-graph alerts test
@@ -435,11 +437,15 @@ The call summary reports the calls that began while you were closed, and their o
 
 ### Jobs
 
+The ordinary server starts workers. The outbox can deliver older pending jobs on startup. Use a fresh database and empty stage actions for an offline run. A delay postpones new jobs and `retry` can requeue old ones. For a single credentialed probe, the named checker runs without starting a graph or a worker.
+
+Each cost worker requests seven UTC days ago through today, inclusively, every six hours. The one-day check only reads the report. Compare dates in the ad account’s reporting time zone, currency and conversion definition before reconciling spend.
+
 The Health view lists the background jobs: the outbox, each cost import, the audit hash post, and the alert checks. Each shows its last start, success and failure. A run that started and never finished is shown for a month.
 
 ## Shutdown
 
-On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes in progress, and closes its database connections. If a conversion's send is interrupted, the next start sends it again. The ad platforms keep the first copy.
+On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes in progress, and closes its database connections. If a conversion's send is interrupted, the next start sends it again. Check the receiving platform’s deduplication rules and reconcile ambiguous deliveries.
 
 ## Environment variables
 
@@ -490,7 +496,7 @@ A partially set group stops the server at startup, with a message naming the mis
 | Variable | Default | Description |
 | --- | --- | --- |
 | `OUTBOX_DELAY_MS` | `0` | Delay before the first send of a new outcome. |
-| `FORGET_ADS` | none | `true` asks ad platforms that support it to retract conversions when a person is [deleted](privacy.md#data-at-ad-platforms). |
+| `FORGET_ADS` | none | `true` requests the supported adjustment when a person is [deleted](privacy.md#data-at-ad-platforms). Google can reduce value to zero while the count remains. |
 | `WEBHOOK_URL`, `WEBHOOK_SECRET` | none | URL that receives [events](#webhook), and the secret that signs each post. Set both. |
 | `ALERT_WEBHOOK` | none | URL that receives alerts, as `{"text": "…"}`. |
 | `AUDIT_HEAD_HOURS` | `0` | Posts the newest audit hash to `ALERT_WEBHOOK` at this interval, at least one hour. Requires `ALERT_WEBHOOK`. `0` disables it. |
@@ -502,26 +508,33 @@ A partially set group stops the server at startup, with a message naming the mis
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `FINGERPRINT_SECRET`, `FINGERPRINT_REGION` | none, `us` | Confirms Fingerprint events. |
+| `FINGERPRINT_SECRET`, `FINGERPRINT_REGION` | none, `us` | Reads Fingerprint events. Regions are `us`, `eu` and `ap`. Choose the same region on the browser. |
 | `MAXMIND_ACCOUNT_ID`, `MAXMIND_LICENSE_KEY` | none | Classifies addresses with MaxMind. Set both. |
 | `SERVER_RANGES_FILE` | none | A file with the address ranges of data centers, written as `192.0.2.0/24` or `2001:db8::/32` in any text: what [AWS](https://ip-ranges.amazonaws.com/ip-ranges.json) and [Google Cloud](https://www.gstatic.com/ipranges/cloud.json) publish, one after the other. An address in them is recorded and is no evidence. Read when the server starts, so fetch it again now and then. |
-| `MAXMIND_SERVICE`, `MAXMIND_HOST` | `insights`, `geoip.maxmind.com` | MaxMind service and host. |
+| `MAXMIND_SERVICE`, `MAXMIND_HOST` | `insights`, `geoip.maxmind.com` | Use `country`, `city` or `insights`. Use `geolite.info` for the appropriate GeoLite service, or `sandbox.maxmind.com` with its own eligible account, key and published inputs. Other hosts are refused. [Sandbox](https://dev.maxmind.com/geoip/docs/web-services/sandbox-environment/) |
 | `TWILIO_AUTH_TOKEN`, `TWILIO_WEBHOOK_URL` | none | Accepts Twilio's call reports at `/calls/twilio`. Set both. |
 | `TEXT_CODES` | off | `true` gives each browser a code for your [text links](calls.md#text-messages) and for [callers to read out](calls.md#a-code-read-out). |
 | `TWILIO_TEXT_WEBHOOK_URL` | none | With `TWILIO_AUTH_TOKEN`: accepts Twilio's incoming texts at `/texts/twilio`. |
 | `TWILIO_ACCOUNT_SID` | none | With `TWILIO_AUTH_TOKEN`: looks up the line type of phones in a `profile`, a `call` or a `text`. |
 | `SMARTY_AUTH_ID`, `SMARTY_AUTH_TOKEN` | none | Checks postal addresses in a `profile`. Set both. |
+| `SMARTY_LICENSE` | none | If multiple subscriptions cover US Street, set the license value from the account’s Subscriptions page to choose which allowance is used. [License selection](https://www.smarty.com/docs/account/license-selection) |
 | `GOOGLE_ADS_CUSTOMER_ID`, `GOOGLE_SERVICE_ACCOUNT_FILE` | none | Sends conversions to Google Ads. Set both. |
 | `GOOGLE_ADS_LOGIN_CUSTOMER_ID` | none | The manager account, when the service account belongs to one. |
 | `META_PIXEL_ID`, `META_ACCESS_TOKEN`, `META_SITE_URL` | none | Sends conversions to Meta. Set all three. |
-| `META_TEST_EVENT_CODE` | none | Routes Meta events to its test tool. |
+| `META_CLIENT_USER_AGENT` | `false` | With `true`, keep the converting browser’s real user agent in the Meta website job only with explicit ad-user-data consent. Pending jobs can keep it for retry. Holding, withdrawal, successful delivery, a skip or terminal failure clears it. |
+| `META_TEST_EVENT_CODE` | none | Adds the dataset’s Test Events code. These events may still affect targeting and measurement. [Meta Test Events](https://developers.facebook.com/documentation/ads-commerce/conversions-api/using-the-api) |
 | `MICROSOFT_CLIENT_ID`, `MICROSOFT_REFRESH_TOKEN`, `MICROSOFT_DEVELOPER_TOKEN`, `MICROSOFT_CUSTOMER_ID`, `MICROSOFT_ACCOUNT_ID` | none | Sends conversions to Microsoft Advertising. Set all five. |
+| `MICROSOFT_SANDBOX` | `false` | Set `true` to direct Microsoft conversion uploads and adjustments to the sandbox. Use its own account and goal. |
 | `MICROSOFT_CLIENT_SECRET` | none | Required only for a web app registration. |
 | `TIKTOK_PIXEL_CODE`, `TIKTOK_ACCESS_TOKEN`, `TIKTOK_SITE_URL` | none | Sends conversions to TikTok. Set all three. |
-| `GOOGLE_ADS_DEVELOPER_TOKEN` | none | Reads campaign costs from Google Ads. Requires `GOOGLE_ADS_CUSTOMER_ID` and `GOOGLE_SERVICE_ACCOUNT_FILE`. |
+| `TIKTOK_TEST_EVENT_CODE` | none | Includes the QA pixel’s test event code in TikTok uploads. |
+| `GOOGLE_ADS_COSTS` | off unless legacy token set | Set `true` to read Google Ads costs with the customer and service-account file. This pair also configures the Google conversion target in the server. Set `false` to disable the cost worker. |
+| `GOOGLE_ADS_DEVELOPER_TOKEN` | none | Optional for existing configurations. Google retired developer tokens on September 9, 2026. [Google Ads access](https://developers.google.com/google-ads/api/docs/api-policy/developer-token) |
 | `META_AD_ACCOUNT_ID`, `META_ADS_TOKEN` | none | Reads campaign costs from Meta. Set both. |
 | `GOOGLE_ADS_CONVERSIONS` | none | `true` also reads Google's conversion count for each campaign. |
 | `META_ADS_CONVERSIONS` | none | The action to read from Meta with its costs, such as `offsite_conversion.fb_pixel_lead`. |
+
+The checker uses its own process environment. `FINGERPRINT_EVENT_ID`, `GOOGLE_ADS_CONVERSION_ACTION_ID` and `TWILIO_LOOKUP_NUMBER` identify the single authorized input for those checks. Run `npm run live-check -- --list` to print the complete send list offline.
 
 ## Performance
 

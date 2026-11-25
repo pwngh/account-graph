@@ -29,13 +29,14 @@ export function signed(raw: Buffer, signature: string | undefined, key: string):
 const number = (value: unknown) => (typeof value === 'string' && /^\+\d{8,15}$/.test(value) ? value : undefined)
 
 /** The call as the graph server takes it, or why it cannot be. */
-export function toCall(said: Record<string, unknown>): { call: RecordEntry } | { problem: string } {
+export function toCall(said: Record<string, unknown>, person = process.env.ANSWERED_BY === 'person'): { call: RecordEntry } | { problem: string } {
   const { id, customer_phone_number, tracking_phone_number, start_time, duration, answered, voicemail, direction } = said
   if (!/^[\w.-]{1,80}$/.test(typeof id === 'number' ? String(id) : typeof id === 'string' ? id : '')) return { problem: 'no id' }
   // A time without its zone could be hours off, and a tap is matched within minutes.
   if (typeof start_time !== 'string' || !/(Z|[+-]\d\d:?\d\d)$/.test(start_time) || Number.isNaN(Date.parse(start_time))) return { problem: 'no start_time with a zone' }
   const [customer, tracking] = [number(customer_phone_number), number(tracking_phone_number)]
   if (!tracking) return { problem: 'no tracking_phone_number' }
+  if (direction !== 'inbound' && direction !== 'outbound') return { problem: 'no call direction' }
   const outbound = direction === 'outbound'
   if (outbound && !customer) return { problem: 'an outbound call to no number' }
   const seconds = duration === undefined || duration === null || duration === '' ? NaN : Number(duration)
@@ -44,8 +45,8 @@ export function toCall(said: Record<string, unknown>): { call: RecordEntry } | {
       type: 'call', key: `callrail-${id}`, at: Date.parse(start_time),
       ...(outbound ? { direction: 'outbound', from: tracking, to: customer! } : { direction: 'inbound', ...(customer && { from: customer }), to: tracking }),
       ...(Number.isFinite(seconds) && seconds >= 0 && { duration: Math.round(seconds) }),
-      // Voicemail is not an answer, whatever else is said. Unknown is left out, and can be reported later.
-      ...(voicemail === true ? { result: { answered: false, voicemail: true } } : typeof answered === 'boolean' && { result: { answered } }),
+      // An answered line can be a phone menu. ANSWERED_BY=person says that only people answer these numbers. Otherwise the desk reports it.
+      ...(voicemail === true ? { result: { answered: false, voicemail: true } } : typeof answered === 'boolean' && (person || !answered) && { result: { answered } }),
     },
   }
 }

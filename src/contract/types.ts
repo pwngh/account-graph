@@ -350,7 +350,9 @@ export interface Outcome {
   /** The text it is of. It is recorded only while that text is kept. `recordText` sets this. */
   ofText?: string
   /** Where it happened. Defaults to WEB. */
-  source?: 'WEB' | 'APP' | 'IN_STORE' | 'PHONE' | 'MESSAGE' | 'OTHER'
+  source?: 'WEB' | 'APP' | 'IN_STORE' | 'PHONE' | 'MESSAGE' | 'OTHER' | 'SYSTEM_GENERATED'
+  /** The HTTP user agent of the converting browser, when known. */
+  userAgent?: string
   /** Hashed before it is stored. */
   email?: string
   phone?: string

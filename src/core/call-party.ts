@@ -43,7 +43,7 @@ export const creditSubject = (subject: Subject) => `subject:${subject}`
 /** A reported party supersedes the browser tied by the old guess and any flag about somebody using that line before. */
 export const withoutGuesses = (flags: string[]) => flags.filter(flag => flag !== 'code' && flag !== 'taken' && flag !== 'pool' && flag !== 'ambiguous' && flag !== 'repeat')
 
-export function stopCallJob(job: Job, owner: Subject): Job {
+export function stopCallJob({ metaUserAgent, ...job }: Job, owner: Subject): Job {
   if (job.note === 'call_party') return { ...job, subject: owner }
   if (job.state === 'sent' || job.delivered || job.requestId) return { ...job, subject: owner, delivered: true, state: job.state === 'pending' && job.restated ? 'pending' : 'sent', note: 'call_party' }
   const { consent, click, confidence, ...rest } = job

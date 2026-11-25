@@ -44,7 +44,7 @@ export function googleAds(options: GoogleAdsOptions): Target {
           ...(job.keys.phone && { phoneHash: job.keys.phone }),
           ...(job.value !== undefined && { value: job.value }),
           ...(job.currency && { currency: job.currency }),
-          ...(job.source && { source: job.source }),
+          ...(job.source && { source: job.source === 'SYSTEM_GENERATED' ? 'OTHER' : job.source }),
           ...(consent && { consent }),
         }
       })
@@ -66,6 +66,8 @@ export interface MetaOptions {
   url: string
   /** Meta's code for its Test Events tool. Leave it out in production. */
   testEventCode?: string
+  /** Keep and send the converting browser's user agent only with explicit advertising consent. */
+  clientUserAgent?: boolean
   /** The Graph API version. Defaults to v27.0. */
   version?: string
   fetch?: typeof fetch
@@ -76,8 +78,8 @@ export class MetaError extends Error {
   status: number
   /** Meta's own error code, when the body carried one. 190 is a bad access token. */
   code: number | undefined
-  constructor(status: number, body: string) {
-    super(`Meta refused the request with ${status}: ${body}`)
+  constructor(status: number, body: string, privateResponse = false) {
+    super(`Meta refused the request with ${status}${privateResponse ? '' : ': ' + body}`)
     this.status = status
     try {
       this.code = JSON.parse(body)?.error?.code
@@ -86,13 +88,13 @@ export class MetaError extends Error {
 }
 
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex')
-const SOURCES = { WEB: 'website', APP: 'app', IN_STORE: 'physical_store', PHONE: 'phone_call', MESSAGE: 'chat', OTHER: 'other' } as const
+const SOURCES = { WEB: 'website', APP: 'app', IN_STORE: 'physical_store', PHONE: 'phone_call', MESSAGE: 'chat', OTHER: 'other', SYSTEM_GENERATED: 'system_generated' } as const
 
 /** How Meta writes its browser id: version, subdomain level, when it was made, and a random number. */
 const FBP = /^fb\.\d\.\d{10,14}\.\d{1,20}$/
 
 /** One Conversions API event. `fbc` is built from the ad click the graph credited, and `fbp` is the id of the browser it was made in. */
-export function metaEvent(action: string, { job, touch }: Item, url: string): Record<string, unknown> {
+export function metaEvent(action: string, { job, touch, consent }: Item, url: string, clientUserAgent = false): Record<string, unknown> {
   const source = SOURCES[job.source ?? 'WEB']
   if (touch?.fbclid) job.click = { fbclid: touch.fbclid }
   return {
@@ -102,6 +104,7 @@ export function metaEvent(action: string, { job, touch }: Item, url: string): Re
     action_source: source,
     ...(source === 'website' && { event_source_url: touch?.landing ?? url }),
     user_data: {
+      ...(source === 'website' && clientUserAgent && consent?.adUserData && job.metaUserAgent && { client_user_agent: job.metaUserAgent }),
       ...(job.keys.em && { em: [job.keys.em] }),
       ...(job.keys.ph && { ph: [job.keys.ph] }),
       ...(touch?.fbclid && { fbc: `fb.1.${touch.at}.${touch.fbclid}` }),
@@ -120,6 +123,7 @@ export function meta(options: MetaOptions): Target {
   const fetcher = options.fetch ?? fetch
   return {
     name: 'meta',
+    clientUserAgent: options.clientUserAgent === true,
     batch: 1000,
     maxAge: 7 * 86_400_000,
     // Meta matches a lowercased email as written, and a phone as digits with the country code.
@@ -136,18 +140,27 @@ export function meta(options: MetaOptions): Target {
     async deliver(action, items) {
       const token = typeof options.accessToken === 'function' ? await options.accessToken() : options.accessToken
       const endpoint = `https://graph.facebook.com/${options.version ?? 'v27.0'}/${encodeURIComponent(options.pixelId)}/events`
-      const response = await fetcher(`${endpoint}?access_token=${encodeURIComponent(token)}`, {
+      const response = await fetcher(endpoint, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
         body: JSON.stringify({
-          data: items.map((item) => metaEvent(action, item, options.url)),
+          data: items.map((item) => metaEvent(action, item, options.url, options.clientUserAgent)),
           ...(options.testEventCode && { test_event_code: options.testEventCode }),
         }),
         signal: AbortSignal.timeout(30_000),
       })
       const body = await response.text()
-      if (!response.ok) throw new MetaError(response.status, body)
-      const trace = JSON.parse(body)?.fbtrace_id
+      // The provider may quote the raw browser header in its error detail.
+      if (!response.ok) throw new MetaError(response.status, body, items.some(item => Boolean(item.job.metaUserAgent)))
+      let receipt
+      try {
+        receipt = JSON.parse(body)
+      } catch {
+        // It may have been taken: it is sent again, and Meta keeps the first event of an id.
+        throw new Error('Meta answered with a receipt that cannot be read')
+      }
+      if (typeof receipt?.events_received === 'number' && receipt.events_received !== items.length) throw new MetaError(response.status, 'events_received does not match the submitted batch')
+      const trace = receipt.fbtrace_id
       return typeof trace === 'string' ? { requestId: trace } : {}
     },
     retryable(error) {
@@ -261,6 +274,8 @@ export function microsoftAds(options: MicrosoftAdsOptions): Target {
 }
 
 export interface TikTokOptions {
+  /** TikTok's Test Events code. Leave it out in production. */
+  testEventCode?: string
   /** The pixel code that measures your site's events. */
   pixelCode: string
   /** An Events API access token, or a function that returns one. */
@@ -315,7 +330,7 @@ export function tiktok(options: TikTokOptions): Target {
       const response = await fetcher('https://business-api.tiktok.com/open_api/v1.3/event/track/', {
         method: 'POST',
         headers: { 'Access-Token': token, 'content-type': 'application/json' },
-        body: JSON.stringify({ event_source: 'web', event_source_id: options.pixelCode, data }),
+        body: JSON.stringify({ event_source: 'web', event_source_id: options.pixelCode, data, ...(options.testEventCode && { test_event_code: options.testEventCode }) }),
         signal: AbortSignal.timeout(30_000),
       })
       const body = await response.text()

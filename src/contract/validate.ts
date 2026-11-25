@@ -140,7 +140,7 @@ const ENTRIES: Record<string, Check> = {
     'clicks?': shape({ 'gclid?': click, 'gbraid?': click, 'wbraid?': click, 'fbclid?': click, 'fbp?': click, 'msclkid?': click, 'ttclid?': click }), 'custom?': map(string(1, 256), 10),
   }),
   cost: entry({ rows: list(shape({ day, source: short, amount: money, currency, 'campaignId?': short, 'campaign?': text, 'clicks?': integer(0, 1e12), 'impressions?': integer(0, 1e12), 'conversions?': number(0, 1e12), 'conversionValue?': number(-1e15, 1e15) }), 1, 5000) }),
-  conversion: entry({ subject, stage: short, 'value?': money, 'currency?': currency, 'actions?': map(short, 20), 'channel?': oneOf('WEB', 'APP', 'IN_STORE', 'PHONE', 'MESSAGE', 'OTHER'), 'email?': string(3, 512), 'phone?': phone, 'consent?': consent, 'tags?': tags }, conversionKey),
+  conversion: entry({ subject, stage: short, 'value?': money, 'currency?': currency, 'actions?': map(short, 20), 'userAgent?': string(1, 1024), 'channel?': oneOf('WEB', 'APP', 'IN_STORE', 'PHONE', 'MESSAGE', 'OTHER', 'SYSTEM_GENERATED'), 'email?': string(3, 512), 'phone?': phone, 'consent?': consent, 'tags?': tags }, conversionKey),
   restatement: entry({
     of: shape({ type: oneOf('conversion', 'call', 'text'), key }),
     change: byField('kind', {

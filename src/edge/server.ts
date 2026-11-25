@@ -167,7 +167,7 @@ const DECISIONS = new Set(['POST /forget', 'POST /separate', 'POST /join', 'POST
 const JSON_HEADERS = { 'content-type': 'application/json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }
 
 /** A job as an answer shows it: the hashed email and phone are for its platform only. */
-const shownJob = ({ keys, ...job }: Job) => {
+const shownJob = ({ keys, metaUserAgent, ...job }: Job) => {
   if (job.note !== 'call_party') return job
   // The click and consent used for the original send belonged to the line.
   const { click, confidence, consent, ...delivery } = job
@@ -337,7 +337,9 @@ export function createHandler(core: Core, options: HandlerOptions) {
     const transactionId = `page:${body.event}:${device}:${occurrence}`
     // The same occurrence reported again is already on its way; recording it twice with a new time would be refused.
     if (core.outbox && (await core.outbox.get(transactionId)).length > 0) return
-    await convert({ transactionId, subject, at, stage: body.event })
+    const userAgent = request.headers['user-agent']
+    const allowed = request.headers['sec-gpc'] !== '1' && body.gpc !== true && body.consent?.adUserData !== false
+    await convert({ transactionId, subject, at, stage: body.event, ...(allowed && userAgent && { userAgent }) })
   }
 
   /**

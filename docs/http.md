@@ -92,7 +92,7 @@ Each entry has `type`, `key` and `at`. A field with `?` may be left out.
 | `profile` | `subject`, `facts`, `event?`, `speaker?` | `changes`, `notes`. See [identify](identify.md). |
 | `arrival` | `subject`, `source?`, `medium?`, `campaign?`, `campaignId?`, `adGroupId?`, `adId?`, `term?`, `content?`, `landing?`, `referrer?`, `clicks?`, `custom?` | `subject` |
 | `cost` | `rows`, 1 to 5,000: `day`, `source`, `amount`, `currency`, `campaignId?`, `campaign?`, `clicks?`, `impressions?`, `conversions?`, `conversionValue?` | `written`, `older`: rows written, and rows a newer reading already had |
-| `conversion` | `subject`, `stage`, `value?`, `currency?`, `actions?`, `channel?`, `email?`, `phone?`, `consent?`, `tags?` | `value`, `currency`, `deliveries` |
+| `conversion` | `subject`, `stage`, `value?`, `currency?`, `actions?`, `channel?`, `userAgent?`, `email?`, `phone?`, `consent?`, `tags?` | `value`, `currency`, `deliveries` |
 | `restatement` | `of: { type, key }`, `change` | `counts`, `value`, `deliveries` |
 | `payment` | `conversion`, `direction`, `amount`, `currency?` | `value`, `null` until there is a conversion, and `deliveries` |
 | `call` | `direction`, `from?`, `to`, `duration?`, `result?`, `code?`, `tags?` | `subject`, `state`, `counted`, `flags`, `visitor?`. See [calls](calls.md). |
@@ -108,7 +108,8 @@ Each entry has `type`, `key` and `at`. A field with `?` may be left out.
 | `clicks` | `gclid`, `gbraid`, `wbraid`, `fbclid`, `fbp`, `msclkid`, `ttclid` |
 | `custom` | At most 10 names of your own, each with text up to 256 characters |
 | `actions` | What it counts as on each platform, `{ "google": "987654321" }`. Left out, the stage's own. |
-| `channel` | `WEB`, `APP`, `IN_STORE`, `PHONE`, `MESSAGE` or `OTHER` |
+| `channel` | `WEB`, `APP`, `IN_STORE`, `PHONE`, `MESSAGE`, `OTHER` or `SYSTEM_GENERATED` |
+| `userAgent` | The real user agent on the converting web request, when known. Meta can use it with `META_CLIENT_USER_AGENT=true` and explicit ad-user-data consent. Omit it when the converting browser is unknown. |
 | `tags` | At most 8. A name is lowercase letters and underscores, up to 32. A value is up to 64 characters. |
 | Payment `direction` | `received` or `refunded` |
 | Payment `amount` | From 0.00001 to 10,000,000,000 |

@@ -2,6 +2,17 @@
 
 ## Unreleased (0.1.0)
 
+### Providers
+
+- The tests replay Twilio’s published signature and response examples for the ad and lookup providers. A loopback receiver checks the graph’s event signature and unsigned alert.
+- `live-check` runs one named check, lists the data it sends and exits unsuccessfully on missing credentials or an inconclusive result. Dummy credentials require an explicit flag.
+- Meta website events can include the converting browser’s user agent with explicit advertising consent and an opt-in setting. Meta sends its token in the Authorization header and fails a batch whose receipt counts fewer events. `SYSTEM_GENERATED` is a channel.
+- Microsoft conversion uploads can use the sandbox. TikTok accepts a test event code. Google cost reporting can run without a developer token.
+- The CallRail example leaves the human answer unknown when a line picks up, so it no longer closes a missed call or counts where results are expected. `ANSWERED_BY=person` restores that. A call without a direction is refused.
+- Twilio retries incomplete line-type lookups on the next request and ignores outbound SMS status callbacks.
+- An address with a field longer than Smarty takes is not looked up. `SMARTY_LICENSE` selects a license. MaxMind accepts its sandbox, and with MaxMind keys an unknown host or service stops the start. Fingerprint checks the returned event ID and preserves missing signals. The checker requires a fresh, confident identification.
+- Incomplete or malformed cost report envelopes raise errors. Meta reporting refuses pagination to a different origin.
+
 ### The six calls
 
 - `call_update` records who one call concerned, who said so and when. A statement may arrive before the call and a later statement can correct it. See the [call roles](docs/calls.md#recording-who-was-on-one-call).
