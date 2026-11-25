@@ -6,11 +6,13 @@ import { createMemoryOutbox } from './outbox.ts'
 import type { OutboxStore } from './outbox.ts'
 import { standingFirst } from './store.ts'
 import type { GraphEvent } from '../contract/api.ts'
+import { contactFact, factActive } from './fact-fold.ts'
+import type { FactProfile, FactStamp } from './fact-fold.ts'
 import type { Delivery } from './events.ts'
 import type { Receipt } from './receipts.ts'
 import type { Said, SaidOf, Topic } from './said.ts'
 import { byKey, later, newest } from './said.ts'
-import type { CallEvidence, CallLineKind, Store, SubjectDates, Tx } from './store.ts'
+import type { AddedSightings, CallEvidence, CallLineKind, Store, SubjectDates, Tx } from './store.ts'
 import { CLICK_IDS } from './touch.ts'
 import type { CallResult, Consent, ConsentAnswer, CostRow, Counted, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, NumberedChange, OutcomeValue, Payment, SentLink, Sighting, Subject, Touch } from '../contract/types.ts'
 
@@ -30,6 +32,10 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
   })
   const bySubject = new Map<Subject, Map<Identifier, Edge>>()
   const byIdentifier = new Map<Identifier, Map<Subject, Edge>>()
+  const profiles = new Map<Subject, Map<Identifier, FactProfile>>()
+  const hidden = new Map<Subject, Map<Identifier, Edge>>()
+  const withdrawals = new Map<Subject, Map<Identifier, FactStamp>>()
+  const factStatements = new Map<Subject, { identifiers: Identifier[]; at: number; key: string; recorded: number; decision?: number }[]>()
   const ignored = new Set<Identifier>()
   const labels = new Map<Subject, Labels>()
   const byComponent = new Map<Subject, Set<Subject>>()
@@ -108,7 +114,8 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
     if (!erased) return undefined
     const held = calls.get(call)
     // A staff link alone does not put somebody’s profile back on record.
-    return held && held.at > erased.at && [...bySubject.get(subject)?.keys() ?? []].some(id => !id.startsWith('review:')) ? erased.seq : 'forgotten'
+    const observed = [bySubject.get(subject), hidden.get(subject)].some(edges => edges && [...edges.keys()].some(id => !id.startsWith('review:')))
+    return held && held.at > erased.at && observed ? erased.seq : 'forgotten'
   }
   const partyCallsOf = (subjects: readonly Subject[], only?: readonly string[]) => {
     const found = new Set<string>()
@@ -138,13 +145,37 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
     for (const subject of subjects) for (const id of ids) once.delete(`unreturned:${subject}:${id}`)
   }
 
+  function valuesFor<T>(map: Map<Subject, Map<Identifier, T>>, subject: Subject) {
+    const before = map.get(subject)
+    if (before) return before
+    const values = new Map<Identifier, T>()
+    map.set(subject, values)
+    return values
+  }
+
+  // Edges and their holder counts have one active index for every consumer, including rebuild.
+  function show(edge: Edge, active: boolean) {
+    const { subject, identifier } = edge
+    if (active) {
+      hidden.get(subject)?.delete(identifier)
+      valuesFor(bySubject, subject).set(identifier, edge)
+      valuesFor(byIdentifier, identifier).set(subject, edge)
+    } else {
+      valuesFor(hidden, subject).set(identifier, edge)
+      bySubject.get(subject)?.delete(identifier)
+      const holders = byIdentifier.get(identifier)
+      holders?.delete(subject)
+      if (!holders?.size) byIdentifier.delete(identifier)
+    }
+  }
+
   const tx: Tx = {
     addAlert: ops.addAlert,
     pendingAlert: ops.pendingAlert,
     outbox,
     nested: (work) => work(),
     async addSightings(rows) {
-      const added = new Map<Identifier, number>()
+      const added: AddedSightings = new Map()
       for (const sighting of rows) {
         const { subject, identifier, at } = sighting
         const log = sightings.get(subject)
@@ -152,23 +183,60 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
         else sightings.set(subject, [sighting])
         if (!labels.has(subject)) assign(subject, { component: subject, cluster: subject })
 
-        let edges = bySubject.get(subject)
-        if (!edges) bySubject.set(subject, (edges = new Map()))
-        const edge = edges.get(identifier)
-        if (edge) {
-          edge.first = Math.min(edge.first, at)
-          edge.last = Math.max(edge.last, at)
-          edge.count += 1
-          continue
+        const before = bySubject.get(subject)?.get(identifier)
+        const edge = before ?? hidden.get(subject)?.get(identifier) ?? { subject, identifier, first: at, last: at, count: 0 }
+        const cuts = withdrawals.get(subject)
+        const profile = profiles.get(subject)?.get(identifier)
+        if (sighting.profileKey !== undefined) {
+          const next = { at, key: sighting.profileKey, ...(sighting.fact && { fact: sighting.fact }) }
+          if (!profile || later(next, profile) > 0) valuesFor(profiles, subject).set(identifier, next)
         }
-        const fresh: Edge = { subject, identifier, first: at, last: at, count: 1 }
-        edges.set(identifier, fresh)
-        let holders = byIdentifier.get(identifier)
-        if (!holders) byIdentifier.set(identifier, (holders = new Map()))
-        holders.set(subject, fresh)
-        added.set(identifier, (added.get(identifier) ?? 0) + 1)
+        edge.first = Math.min(edge.first, at)
+        edge.last = Math.max(edge.last, at)
+        edge.count += 1
+        const active = !cuts || factActive(identifier, profiles.get(subject)?.get(identifier), cuts)
+        if (active && !before) {
+          if (cuts && !factActive(identifier, { at: -Infinity, key: '', ...(sighting.fact && { fact: sighting.fact }) }, cuts)) {
+            settings.set('callParty', randomUUID())
+            if (!added.restored) added.restored = new Set()
+            added.restored.add(subject)
+          }
+          added.set(identifier, (added.get(identifier) ?? 0) + 1)
+        }
+        if (!before || !active) show(edge, active)
       }
       return added
+    },
+
+    async withdrawFact(subject, identifiers, at, key, recorded, decision) {
+      const statements = factStatements.get(subject) ?? []
+      statements.push({ at, key, recorded, identifiers: [...identifiers], ...(decision !== undefined && { decision }) })
+      factStatements.set(subject, statements)
+      const cuts = valuesFor(withdrawals, subject)
+      for (const identifier of identifiers) {
+        const fact = contactFact(identifier)
+        const before = cuts.get(fact)
+        if (!before || later({ at, key }, before) > 0) cuts.set(fact, { at, key })
+      }
+      const changed = []
+      for (const edge of bySubject.get(subject)?.values() ?? []) {
+        const profile = profiles.get(subject)?.get(edge.identifier)
+        if (factActive(edge.identifier, profile, cuts)) continue
+        changed.push(edge.identifier)
+        show(edge, false)
+      }
+      return changed
+    },
+
+    async factWithdrawn(subject, identifiers, at, key) {
+      return identifiers.every(identifier => {
+        const cut = withdrawals.get(subject)?.get(contactFact(identifier))
+        return cut?.at === at && cut.key === key && !bySubject.get(subject)?.has(identifier)
+      })
+    },
+
+    async factHistory(before) {
+      return [...factStatements].flatMap(([subject, rows]) => rows.filter(row => row.recorded <= before).map(({ recorded, ...row }) => ({ ...row, subject, identifiers: [...row.identifiers].sort(byKey) })))
     },
 
     async removeSubject(subject, only) {
@@ -212,6 +280,10 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
         if (holders.size === 0) byIdentifier.delete(identifier)
       }
       bySubject.delete(subject)
+      profiles.delete(subject)
+      hidden.delete(subject)
+      withdrawals.delete(subject)
+      factStatements.delete(subject)
       sightings.delete(subject)
       created.delete(subject)
       touches.delete(subject)
@@ -343,6 +415,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
         if (said) dates.set(subject, { createdAt: said.createdAt })
         // Edges keep the first sighting even after its individual log row has been pruned.
         for (const edge of bySubject.get(subject)?.values() ?? []) if (!edge.identifier.startsWith('review:')) seen(subject, edge.first)
+        for (const row of hidden.get(subject)?.values() ?? []) seen(subject, row.first)
         for (const row of sightings.get(subject) ?? []) if (!row.identifier.startsWith('review:')) seen(subject, row.at)
         for (const { touch } of touches.get(subject) ?? []) seen(subject, touch.at)
         for (const row of consents.get(subject) ?? []) if (row.at !== 0 || row.source !== 'before history' || row.key !== undefined) seen(subject, row.at)
@@ -396,7 +469,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
     },
 
     async *everyone() {
-      yield [...new Set([...labels.keys(), ...bySubject.keys()])].map((subject) => ({ subject, labels: labels.get(subject), held: (bySubject.get(subject)?.size ?? 0) > 0 }))
+      yield [...new Set([...labels.keys(), ...bySubject.keys()])].map((subject) => ({ subject, labels: labels.get(subject), held: Boolean(bySubject.get(subject)?.size || hidden.get(subject)?.size) }))
     },
 
     async states(identifiers) {
@@ -528,7 +601,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
     async pruneReceipts(before) {
       let gone = 0
       for (const [id, receipt] of receipts) {
-        if (receipt.forgotten !== undefined || receipt.recorded >= before) continue
+        if (receipt.forgotten !== undefined || receipt.ref?.type === 'withdraw' || receipt.recorded >= before) continue
         receiptSubjects.delete(id)
         gone += Number(receipts.delete(id))
       }
@@ -1175,7 +1248,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
 
     async history(subject, limit) {
       const all = [...(sightings.get(subject) ?? [])].sort((x, y) => x.at - y.at)
-      return limit === undefined ? all : all.slice(Math.max(0, all.length - limit))
+      return (limit === undefined ? all : all.slice(Math.max(0, all.length - limit))).map(({ profileKey, fact, ...sighting }) => sighting)
     },
 
     async latelySeen(newest) {
@@ -1300,7 +1373,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
   }
 
   /** Every collection, copied together, so what two of them share stays shared. */
-  const collections = { bySubject, byIdentifier, ignored, labels, byComponent, byCluster, sightings, created, touches, separated, flows, flowsBy, flowIds, consents, decisions, outcomes, values, calls, withheld, reservedBySubject, reservedByIdentifier, callLines, lineKinds, texts, sent, payments, results, spurned, leases, costs, reads, said, receipts, receiptSubjects, settings, events, once, deliveries }
+  const collections = { bySubject, byIdentifier, profiles, hidden, withdrawals, factStatements, ignored, labels, byComponent, byCluster, sightings, created, touches, separated, flows, flowsBy, flowIds, consents, decisions, outcomes, values, calls, withheld, reservedBySubject, reservedByIdentifier, callLines, lineKinds, texts, sent, payments, results, spurned, leases, costs, reads, said, receipts, receiptSubjects, settings, events, once, deliveries }
   const snapshot = () => structuredClone({ ...collections, lastEvent, epoch, writes, built, jobs: outbox.jobs, ops: ops.kept })
   const restore = (kept: ReturnType<typeof snapshot>) => {
     const refill = (now: any, then: any) => {

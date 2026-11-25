@@ -285,6 +285,8 @@ Each change has a number and runs once. When several servers start together, one
 
 Upgrade 36 creates an empty table for standing creation dates. First-seen times are read from existing records, so the upgrade needs no backfill. Older servers can keep writing profiles without dates, pruning and forgetting subjects during the rollout. Send profiles with `createdAt` to an upgraded server.
 
+Upgrade 37 adds nullable columns for profile ordering and creates empty tables for withdrawals and their matching evidence. It requires no backfill. If the upgrade stops before committing, restart it. Older servers can keep recording while a withdrawal is in force. Send withdrawals and profiles that restore facts to an upgraded server, and use that version for historical snapshots, rebuild and verification. See [withdrawing a matching fact](matching.md#withdrawing-a-matching-fact).
+
 ## Settings that must match
 
 Processes that share a database must agree on these. The database keeps the policy, and a keyed mark of each secret. A process that differs stops at startup, or gets the fault `CONFIG.MISMATCH` on its first call.

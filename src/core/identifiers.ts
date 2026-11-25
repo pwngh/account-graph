@@ -2,6 +2,14 @@ import { malformed } from '../contract/fault.ts'
 import { createHash, createHmac } from 'node:crypto'
 import type { Identifier } from '../contract/types.ts'
 
+/** Callers cannot supply the graph's own review, call and name evidence as profile identifiers. */
+export const RESERVED = new Set(['behalf', 'named', 'ward', 'given', 'dated', 'initial', 'compound', 'person', 'perhaps', 'review', 'link', 'carry', 'opened', 'lease', 'dial', 'text', 'place', 'birth', 'dialed'])
+
+export function withdrawable(id: Identifier): boolean {
+  const kind = id.slice(0, id.indexOf(':'))
+  return kind !== 'name' && !RESERVED.has(kind)
+}
+
 /** What no text may hold: a NUL, or half of a character. PostgreSQL refuses the first, and keeps every one of the second as the same replacement character, so two subjects would become one. */
 export const UNSTORABLE = /[\0\p{Surrogate}]/u
 

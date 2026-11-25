@@ -17,7 +17,7 @@ import type { Undecided, UndecidedOptions } from './undecided.ts'
 export type { Undecided } from './undecided.ts'
 import type { Followed } from './followed.ts'
 import type { Hours } from './hours.ts'
-import { UNSTORABLE, nameEvidence } from './identifiers.ts'
+import { UNSTORABLE, nameEvidence, withdrawable } from './identifiers.ts'
 import { CLICK_IDS, checkTouch } from './touch.ts'
 import { createMemoryStore } from './memory.ts'
 import type { Job } from './outbox.ts'
@@ -140,9 +140,21 @@ export interface Foreseen {
   after: { id: Subject; size: number }[]
 }
 
+interface ProfileSource {
+  key: string
+  sources: ReadonlyMap<Identifier, Identifier>
+}
+
+function ownership(subject: Subject, identifier: Identifier, profile?: ProfileSource) {
+  if (!profile || /^(visitor|caller|call):/.test(subject)) return {}
+  const fact = profile.sources.get(identifier)
+  if (!fact && !withdrawable(identifier)) return {}
+  return { profileKey: profile.key, ...(fact && { fact }) }
+}
+
 export interface Graph {
   /** Records observations and returns every subject whose cluster moved. */
-  observe(input: Observation | readonly Observation[]): Promise<Change[]>
+  observe(input: Observation | readonly Observation[], profile?: ProfileSource): Promise<Change[]>
   /** Every subject linked to this one, strongest first, with the reasons. Computed from edges on each call. */
   links(subject: Subject): Promise<Link[]>
   /** Whether any of these subjects speaks for a member of the person's cluster. */
@@ -257,7 +269,7 @@ export interface Graph {
    * subject by a mark of its own, and not joined to it. Said again, it is the mark there is. `identifiers` are what the subject was given of
    * its own, and the marks.
    */
-  speak(who: { subject: Subject; identifiers: readonly Identifier[] }, by: readonly { subject: Subject; identifiers: readonly Identifier[] }[], at: number, event?: string): Promise<{ marks: Identifier[]; identifiers: Identifier[]; changes: Change[] }>
+  speak(who: { subject: Subject; identifiers: readonly Identifier[] }, by: readonly { subject: Subject; identifiers: readonly Identifier[] }[], at: number, event?: string, profile?: ProfileSource): Promise<{ marks: Identifier[]; identifiers: Identifier[]; changes: Change[] }>
   /** Keeps a link made for one person. `POST /link` does this. */
   keepLink(link: { id: string; subject: Subject; purpose?: string; at: number; expires: number }): Promise<void>
   /** Notes that a link made for a subject was opened. Resolves to false when no such link is kept. */
@@ -305,6 +317,8 @@ export interface Graph {
    * the same touch `attribute` credits, on the day the outcome happened.
    */
   report(options: ReportOptions): Promise<Report>
+  /** Withdraws matching evidence on the exact subject that owned it. */
+  withdrawFact(subject: Subject, identifiers: readonly Identifier[], at: number, key: string, why: Deciding): Promise<Change[]>
   /** Stops, or with `false` resumes, linking through one identifier. */
   ignore(identifier: Identifier, ignored?: boolean, why?: Deciding): Promise<Change[]>
   /**
@@ -643,6 +657,8 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       if (labels?.component === subject && labels.cluster === subject) return []
     }
     const next = await compute(tx, subjects, undefined, undefined, undefined, local)
+    // A record with its last fact withdrawn still exists. A withheld call alone never creates a person.
+    if (local.reserved) for (const subject of stored.keys()) if (!next.has(subject) && !/^(visitor|caller|call):/.test(subject)) next.set(subject, { component: subject, cluster: subject })
     if (!local.reserved) return apply(tx, stored, next)
     const more = [...next.keys()].filter(subject => !stored.has(subject))
     if (more.length) for (const [subject, labels] of await tx.labelsOf(more)) stored.set(subject, labels)
@@ -1331,12 +1347,12 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
   }
 
   /** Appends decisions to the record, each sealed to the one before it. Returns their sequence numbers. */
-  async function decideAll(tx: Tx, entries: readonly { action: Decision['action']; about: string[]; why?: Why | undefined }[]): Promise<number[]> {
+  async function decideAll(tx: Tx, entries: readonly { action: Decision['action']; about: string[]; why?: Why | undefined; at?: number }[]): Promise<number[]> {
     let last = await tx.lastDecision()
     const seqs: number[] = []
-    for (const { action, about, why } of entries) {
+    for (const { action, about, why, at = now() } of entries) {
       keepable(why?.by, why?.reason)
-      const entry = { seq: (last?.seq ?? 0) + 1, at: now(), action, about, ...(why?.by && { by: why.by }), ...(why?.reason && { reason: why.reason }) }
+      const entry = { seq: (last?.seq ?? 0) + 1, at, action, about, ...(why?.by && { by: why.by }), ...(why?.reason && { reason: why.reason }) }
       last = { ...entry, hash: seal(last?.hash ?? '', entry) }
       await tx.addDecision(last)
       seqs.push(entry.seq)
@@ -1484,13 +1500,19 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
     const states = await tx.states(touched)
     // An identifier that was public before this write linked nothing then and links nothing now.
     const open = touched.filter((identifier) => {
-      const state = states.get(identifier)!
+      const state = states.get(identifier)
+      if (!state) return false
       const before = state.fanout - (added.get(identifier) ?? 0)
       return !state.ignored && before <= ruleFor(policy, identifier).cap && state.fanout > 1
     })
     const affected = new Set(sightings.map((sighting) => sighting.subject))
     for (const edge of await tx.edgesOn(open)) affected.add(edge.subject)
-    return settle(tx, affected)
+    if (!added.restored?.size) return settle(tx, affected)
+    const former = [...(await tx.aroundOf([...affected])).keys()]
+    const moved = await settle(tx, affected)
+    await recheckCallbacks(tx, former)
+    await recheckCallbacks(tx, former, true)
+    return moved
   }
 
   async function policyState(tx: Tx): Promise<PolicyState> {
@@ -1504,7 +1526,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
   }
 
   const graph: Graph = {
-    async observe(input) {
+    async observe(input, profile) {
       const observations = Array.isArray(input) ? (input as readonly Observation[]) : [input as Observation]
       const sightings: Sighting[] = []
       const recorded = now()
@@ -1518,7 +1540,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         for (const identifier of nameEvidence(identifiers)) {
           if (UNSTORABLE.test(identifier)) throw malformed('An observation contains unsupported characters')
           ruleFor(policy, identifier)
-          sightings.push(event === undefined ? { subject, identifier, at, recorded } : { subject, identifier, at, event, recorded })
+          sightings.push({ subject, identifier, at, recorded, ...(event !== undefined && { event }), ...ownership(subject, identifier, profile) })
         }
       }
       if (sightings.length === 0) return []
@@ -2010,7 +2032,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       return store.read((tx) => tx.callOf(id))
     },
 
-    async speak(who, by, at, event = 'speaker') {
+    async speak(who, by, at, event = 'speaker', profile) {
       ruleFor(policy, 'behalf:0')
       if (!names(who.subject) || by.some((each) => names(each.subject))) throw malformed('A browser or a caller speaks for a record of yours')
       const marks: Identifier[] = []
@@ -2042,7 +2064,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
           if (before === i) marked.push({ subject: past?.subject ?? each.subject, identifiers: [mark] })
         }
         const recorded = now()
-        return record(tx, [{ ...who, identifiers: [...identifiers, ...marks] }, ...by, ...marked].flatMap((each) => nameEvidence(each.identifiers).map((identifier) => ({ subject: each.subject, identifier, at, event, recorded }))))
+        return record(tx, [{ ...who, identifiers: [...identifiers, ...marks] }, ...by, ...marked].flatMap((each) => nameEvidence(each.identifiers).map((identifier) => ({ subject: each.subject, identifier, at, event, recorded, ...(each.subject === who.subject && identifiers.includes(identifier) && ownership(each.subject, identifier, profile)) }))))
       })
       return { marks, identifiers: [...identifiers, ...new Set(marks)], changes }
     },
@@ -2501,6 +2523,28 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         const missed: typeof notLeads = []
         for (const call of uncounted) (spurned.has(callId(call)) ? notLeads : missed).push({ at: call.at, ...creditOf(call, ofCall), tags: call.tags })
         return fold(from, to, await tx.costsBetween(from, to), await tx.touchesBetween(start, end), credited, { missed, notLeads, by, per, timeZone, through: dayIn(now(), timeZone), history })
+      })
+    },
+
+    async withdrawFact(subject, identifiers, at, key, why) {
+      for (const id of identifiers) ruleFor(policy, id)
+      return changing(async tx => {
+        await current(tx, [subject], why)
+        const recorded = now()
+        const [decision] = await decideAll(tx, [{ action: 'withdraw', about: [subject], why, at: recorded }])
+        const changed = await tx.withdrawFact(subject, identifiers, at, key, recorded, decision)
+        if (!changed.length) return []
+        await mark(tx)
+        await tx.setSetting('callParty', randomUUID())
+        const states = await tx.states(changed)
+        const open = [...await withinCaps(tx, changed, states)].filter(id => !states.get(id)?.ignored)
+        const holders = [...await tx.edgesOn(open), ...await tx.callEvidence({ identifiers: open })]
+        const affected = new Set([subject, ...holders.map(row => row.subject)])
+        const former = [...(await tx.aroundOf([...affected])).keys()]
+        const moved = await settle(tx, affected)
+        await recheckCallbacks(tx, former)
+        await recheckCallbacks(tx, former, true)
+        return moved
       })
     },
 
@@ -3107,15 +3151,19 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         if (withdrawn.length) await copy.write(tx => tx.reserveCall(withdrawn))
         let batch: Sighting[] = []
         for await (const sightings of tx.sightingsUntil(at)) {
-          for (const { subject, identifier, at: seen, event } of sightings) {
-            batch.push({ subject, identifier, at: seen, recorded: at, ...(event !== undefined && { event }) })
+          for (const sighting of sightings) {
+            batch.push({ ...sighting, recorded: at })
             if (batch.length < 1000) continue
             await copy.write((tx) => past.record(tx, batch))
             batch = []
           }
         }
         if (batch.length > 0) await copy.write((tx) => past.record(tx, batch))
-        return (await tx.decisions()).filter((decision) => decision.at <= at)
+        const decisions = (await tx.decisions()).filter((decision) => decision.at <= at)
+        if (decisions.some(row => row.action === 'withdraw')) {
+          for (const row of await tx.factHistory(at)) await past.graph.withdrawFact(row.subject, row.identifiers, row.at, row.key, {})
+        }
+        return decisions
       })
       for (const { action, about } of decisions) {
         if (action === 'ignore' || action === 'restore') await past.graph.ignore(about[0]!, action === 'ignore')

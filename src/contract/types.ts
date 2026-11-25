@@ -21,6 +21,10 @@ export interface Sighting {
   /** When it happened, in epoch milliseconds. */
   at: number
   event?: string
+  /** Only a keyed assertion of a record's own fact may reverse its withdrawal. */
+  profileKey?: string
+  /** The contact behind a name-and-contact hash, so withdrawing one cannot suppress another. */
+  fact?: Identifier
   /** When it was written down, which can be later than when it happened. The graph sets this. */
   recorded?: number
 }
@@ -212,7 +216,7 @@ export interface Decision extends Why {
   seq: number
   /** When it was made, in epoch milliseconds. */
   at: number
-  action: 'ignore' | 'restore' | 'separate' | 'rejoin' | 'join' | 'unjoin' | 'forget' | 'rebuild' | 'prune'
+  action: 'ignore' | 'restore' | 'separate' | 'rejoin' | 'join' | 'unjoin' | 'withdraw' | 'forget' | 'rebuild' | 'prune'
   /** What it was about: an identifier, a subject, or two subjects. */
   about: string[]
   /** Seals this entry to the one before it. */

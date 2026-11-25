@@ -93,7 +93,7 @@ export function createService(graph: Graph, options: ServiceOptions) {
    * to hash or normalize anything: the device cookie, an email, a phone
    * number, a postal address, the address the request came from.
    */
-  async function identify(body: any) {
+  async function identify(body: any, key?: string) {
     if (typeof body?.subject !== 'string' || !body.subject) throw malformed('Body requires a subject')
     const { identifiers: all, notes, at } = await factsIn(body, true)
     const speaker = body.speaker === undefined ? undefined : await speakerIn(body)
@@ -101,24 +101,34 @@ export function createService(graph: Graph, options: ServiceOptions) {
     // What is the speaker's says who the speaker is, so it is not written on whoever they speak for.
     const theirs = new Set(speaker?.theirs.flatMap((each) => [each, each.replace(/^phone:/, 'voip:'), each.replace(/^voip:/, 'phone:')]))
     const own = all.filter((each) => !theirs.has(each))
-    const identifiers = [...own, ...(await named(body, own)), ...(speaker && speaker.subjects.length > 0 ? await named(body, speaker.used, 'ward') : [])]
+    const sources = new Map<Identifier, Identifier>()
+    const identifiers = [...own, ...(await named(body, own, 'named', sources)), ...(speaker && speaker.subjects.length > 0 ? await named(body, speaker.used, 'ward') : [])]
     if (own.length < all.length) notes.speaker = 'what is the speaker\'s is not used for who they speak for'
     // What was written before anybody said so stays written, and only a person can say whose it is.
     if (theirs.size > 0 && (await graph.holders([...theirs])).some((edge) => edge.subject === body.subject)) notes.speaker = 'on this record already, from before: mute or forget it if it is the speaker\'s'
     const event = typeof body.event === 'string' && body.event ? (body.event as string) : undefined
     const who = { subject: body.subject as Subject, identifiers }
+    const profile = key === undefined ? undefined : { key, sources }
     if (speaker && speaker.subjects.length > 0) {
-      const said = await graph.speak(who, speaker.subjects, at, event)
+      const said = await graph.speak(who, speaker.subjects, at, event, profile)
       return { changes: said.changes, identifiers: said.identifiers, notes, speakers: speaker.subjects.map((each) => each.subject) }
     }
-    const changes = identifiers.length > 0 ? await graph.observe({ ...who, at, ...(event && { event }) }) : []
+    const changes = identifiers.length > 0 ? await graph.observe({ ...who, at, ...(event && { event }) }, profile) : []
     return { changes, identifiers, notes, speakers: [] as Subject[] }
   }
 
   /** The keys of these numbers and emails under the name in a body, where the policy uses names. */
-  async function named(body: any, contact: readonly Identifier[], kind: 'named' | 'ward' = 'named'): Promise<Identifier[]> {
+  async function named(body: any, contact: readonly Identifier[], kind: 'named' | 'ward' = 'named', sources?: Map<Identifier, Identifier>): Promise<Identifier[]> {
     if (!options.identifierSecret || typeof body.name?.first !== 'string' || typeof body.name?.last !== 'string') return []
-    return (await graph.policy()).rules.apart?.includes('given') ? namedKeys(options.identifierSecret, contact, body.name.first, body.name.last, kind) : []
+    if (!(await graph.policy()).rules.apart?.includes('given')) return []
+    const result: Identifier[] = []
+    for (const fact of new Set(contact.filter(id => /^(phone|voip|email):/.test(id)).map(id => id.replace(/^voip:/, 'phone:')))) {
+      for (const id of namedKeys(options.identifierSecret, [fact], body.name.first, body.name.last, kind)) {
+        sources?.set(id, fact)
+        result.push(id)
+      }
+    }
+    return result
   }
 
   /** Somebody who speaks for the subject: what is theirs, and the browser and the caller it is to be written on. */

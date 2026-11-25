@@ -7,6 +7,8 @@ import { byKey } from './said.ts'
 import type { Job, OutboxStore } from './outbox.ts'
 import type { CallResult, CallTime, Change, Consent, ConsentAnswer, CostRow, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, NumberedChange, SentLink, OutcomeValue, Payment, Sighting, Subject, Touch } from '../contract/types.ts'
 
+export type AddedSightings = Map<Identifier, number> & { restored?: Set<Subject> }
+
 export interface CallEvidence {
   call: string
   subject: Subject
@@ -57,7 +59,11 @@ export interface Tx {
   /** Runs `work` as a write inside this one: where it throws, what it wrote is gone and the rest stands. */
   nested<T>(work: () => Promise<T>): Promise<T>
   /** Logs sightings and folds them into edges. Returns how many new edges each identifier gained. */
-  addSightings(sightings: readonly Sighting[]): Promise<Map<Identifier, number>>
+  addSightings(sightings: readonly Sighting[]): Promise<AddedSightings>
+  /** Records a withdrawal and returns every identifier whose active holders changed, including dependent name keys. */
+  withdrawFact(subject: Subject, identifiers: readonly Identifier[], at: number, key: string, recorded: number, decision?: number): Promise<Identifier[]>
+  factHistory(before: number): Promise<{ subject: Subject; identifiers: Identifier[]; at: number; key: string; decision?: number }[]>
+  factWithdrawn(subject: Subject, identifiers: readonly Identifier[], at: number, key: string): Promise<boolean>
   /** Deletes a subject with its sightings, edges, touches, outcomes, calls, leases, flows, consent, alerts, conversions, and reviewer decisions. */
   removeSubject(subject: Subject, only?: readonly string[]): Promise<Job[]>
   /** A removed call sighting counts its holder and bounds which cuts can change, but gives no positive evidence. */

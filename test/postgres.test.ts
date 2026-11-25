@@ -11,20 +11,22 @@ import { opsSuite } from './ops.suite.ts'
 import { outboxSuite } from './outbox.suite.ts'
 import { eventsSuite } from './events.suite.ts'
 import { unjoinSuite } from './unjoin.suite.ts'
+import { factSuite } from './fact.suite.ts'
 import { saidSuite } from './said.suite.ts'
 import { counts, suite } from './suite.ts'
 import { unitSuite } from './unit.suite.ts'
 import { readHistorySuite } from './read-history.suite.ts'
 
 // Keep the ordinary write budget observable on machines without PostgreSQL. The shared suite checks the resulting groups on a real store.
-test('plain observations use the same SQL trips with an unrelated stated call', async () => {
-  for (const paired of [false, true]) for (const elsewhere of [false, true]) {
+test('ordinary observations and link reads keep their SQL statement counts across the fact upgrade', async () => {
+  for (const upgraded of [false, true]) for (const paired of [false, true]) for (const elsewhere of [false, true]) {
     const subjects = paired ? ['account:b', 'account:a'] : ['account:a']
     const identifier = 'email:desk@example.org'
     const edges = subjects.map(subject => ({ subject, identifier, first_at: 1, last_at: 1, sightings: 1 }))
     const queries: string[] = []
     const query = async (sql: string) => {
       queries.push(sql)
+      if (sql.includes('pg_advisory_xact_lock')) return { rows: [{ fact_schema: upgraded }] }
       if (sql.includes('from stub.built')) return { rows: [{ policy: policyHash(defaultPolicy), reserved: elsewhere }] }
       if (sql.startsWith('with upserted')) return { rows: [{ identifier, added: 1 }] }
       if (sql.includes('select id, fanout, ignored')) return { rows: [{ id: identifier, fanout: subjects.length, ignored: false }] }
@@ -36,7 +38,16 @@ test('plain observations use the same SQL trips with an unrelated stated call', 
     const store = createPostgresStore({ query, connect: async () => ({ query, release() {} }) }, 'stub')
     const changes = await createGraph(store).observe({ subject: 'account:a', identifiers: [identifier], at: 1 })
     assert.equal(changes.length, Number(paired))
-    assert.ok(queries.length <= (paired ? 15 : 10), `${queries.length} trips for ${subjects.length} subjects: ${queries.map(sql => sql.split('\n')[0]).join(', ')}`)
+    assert.equal(queries.length, paired ? 15 : 10, `${queries.length} trips for ${subjects.length} subjects: ${queries.map(sql => sql.split('\n')[0]).join(', ')}`)
+    const statements = () => queries.reduce((count, sql) => count + sql.split(';').filter(part => part.trim()).length, 0)
+    assert.equal(statements(), paired ? 16 : 11)
+    assert.equal(queries.filter(sql => sql.includes('from stub.fact_withdrawal')).length, Number(upgraded))
+    assert.ok(!queries.some(sql => sql.includes('from stub.withdrawn_edge')))
+    queries.length = 0
+    await createGraph(store).links('account:a')
+    assert.equal(queries.length, paired ? 7 : 6)
+    assert.equal(statements(), paired ? 7 : 6)
+    assert.ok(!queries.some(sql => sql.includes('fact_withdrawal') || sql.includes('withdrawn_edge')))
   }
 })
 
@@ -198,7 +209,7 @@ if (!url) {
     await tx.addDecision({ ...decision, hash: seal(before?.hash ?? '', decision) })
   })
 
-  for (const [stopped, start, committed, relation] of [[30, 29, 28, 'said_party_subject'], [31, 29, 30, 'callback_event_calls'], [36, 36, 35, 'profile_created']] as const) test(`upgrade ${stopped} whose session ends before commit rolls back and can run again`, async () => {
+  for (const [stopped, start, committed, relation] of [[30, 29, 28, 'said_party_subject'], [31, 29, 30, 'callback_event_calls'], [36, 36, 35, 'profile_created'], [37, 37, 36, 'withdrawn_edge']] as const) test(`upgrade ${stopped} whose session ends before commit rolls back and can run again`, async () => {
     const schema = `ag_test_${process.pid}_interrupted_${stopped}`
     try {
       const store = await madeBefore(schema, start)
@@ -239,7 +250,7 @@ if (!url) {
       const store = await madeBefore(schema, 36)
       await store.write(tx => tx.addSightings([{ subject: 'record:a', identifier: 'email:first@example.org', at: 10, recorded: 90 }]))
       const other = createPostgresStore(pool, schema)
-      assert.deepEqual((await Promise.all([store.migrate(), other.migrate()])).flat(), ['record creation dates'])
+      assert.deepEqual((await Promise.all([store.migrate(), other.migrate()])).flat(), upgrades(schema).filter(u => u.id >= 36).map(u => u.name))
       const entry = { key: 'signup', type: 'profile' as const, subject: 'record:a', at: 20, createdAt: 8, facts: { email: 'first@example.org' } }
       const second = { ...entry, key: 'signup-b', subject: 'record:b', createdAt: 9 }
       const kept = { ...entry, key: 'signup-c', subject: 'record:c', createdAt: 12 }
@@ -273,6 +284,88 @@ if (!url) {
       ]))
     } finally {
       await app?.close()
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
+
+  test('upgrade 37 preserves older observations and protects withdrawn facts and receipts alongside an older writer', async () => {
+    const schema = `ag_test_${process.pid}_fact`
+    const subject = 'record:shared'
+    // The old writer takes the same lock, omits the new columns and counts only edges its upsert returned.
+    const old = createPostgresStore({
+      query: pool.query.bind(pool),
+      async connect() {
+        const client = await pool.connect()
+        return {
+          release: () => client.release(),
+          async query(sql, values) {
+            if (!sql.includes('account_graph.fact_writer')) return client.query(sql, values)
+            await client.query('select pg_advisory_xact_lock(hashtext($1))', values!.slice(0, 1))
+            return { rows: [{ fact_schema: false }] }
+          },
+        }
+      },
+    }, schema)
+    const email = 'email:desk@example.org'
+    try {
+      const store = await madeBefore(schema, 37)
+      await store.write(tx => tx.addSightings([{ subject, identifier: email, at: 5 }]))
+      assert.deepEqual(await store.read(tx => tx.subjectDates([subject])), new Map([[subject, { firstSeen: 5 }]]))
+      assert.deepEqual(await createGraph(store).verify(), [])
+      assert.deepEqual((await Promise.all([store.migrate(), createPostgresStore(pool, schema).migrate()])).flat(), ['withdrawn matching facts on one record'])
+      const oldGraph = createGraph(old, defaultPolicy, { now: () => 10 })
+      const graph = createGraph(store, defaultPolicy, { now: () => 12 })
+      await oldGraph.observe({ subject, identifiers: [email], at: 10 })
+      await graph.withdrawFact(subject, [email], 9, 'before', { by: 'desk' })
+      assert.deepEqual(await (await graph.asOf(12)).holders([email]), [])
+      assert.deepEqual(await graph.holders([email]), [])
+      await graph.withdrawFact(subject, [email], 10, 'same-time', { by: 'desk' })
+      assert.deepEqual(await (await graph.asOf(12)).holders([email]), [])
+      await store.write(async tx => {
+        await tx.pruneSightings(11)
+        await tx.addReceipt({ type: 'decide', mac: 'sample', digest: {}, secretId: 'sample', version: 1, at: 10, recorded: 12, ref: { type: 'withdraw', mac: 'sample' } }, [subject])
+      })
+      await old.write(async tx => {
+        await tx.addSightings([{ subject, identifier: email, at: 14 }])
+        // The old graph reads this row even when there is no remaining positive holder.
+        assert.deepEqual((await tx.states([email])).get(email), { ignored: true, fanout: 0 })
+      })
+      assert.deepEqual(await (await graph.asOf(14)).holders([email]), [])
+      assert.deepEqual(await store.read(tx => tx.states([email])), new Map())
+      assert.deepEqual((await pool.query(`select id from ${schema}.identifier where id = $1`, [email])).rows, [])
+      assert.deepEqual(await store.read(tx => tx.edgesOf([subject])), [])
+      assert.deepEqual(await store.read(tx => tx.subjectDates([subject])), new Map([[subject, { firstSeen: 5 }]]))
+      const other = 'record:other'
+      await oldGraph.observe([{ subject, identifiers: [email, 'device:still-here'], at: 15 }, { subject: other, identifiers: [email], at: 15 }])
+      assert.deepEqual((await store.read(tx => tx.edgesOn([email]))).map(e => e.subject), [other])
+      assert.deepEqual((await store.read(tx => tx.states([email]))).get(email), { ignored: false, fanout: 1 })
+      assert.deepEqual((await store.read(tx => tx.edgesOf([subject]))).map(e => e.identifier), ['device:still-here'])
+      assert.deepEqual(await oldGraph.rebuild(), [])
+      await graph.observe({ subject, identifiers: [email], at: 16 }, { key: 'restored', sources: new Map() })
+      assert.deepEqual((await graph.holders([email])).map(row => row.subject).sort(), [other, subject])
+      await graph.withdrawFact(subject, [email], 17, 'again', { by: 'desk' })
+      assert.deepEqual((await graph.holders([email])).map(row => row.subject), [other])
+      assert.deepEqual(await createGraph(store).verify(), [])
+      const lone = 'email:lone@example.org'
+      const muted = 'email:muted@example.org'
+      await oldGraph.observe({ subject, identifiers: [lone, muted], at: 15 })
+      await store.write(async tx => {
+        await tx.setIgnored(muted, true)
+        await tx.withdrawFact(subject, [lone, muted], 16, 'two', 16)
+      })
+      await oldGraph.observe({ subject, identifiers: [lone, muted], at: 15 })
+      // The preceding server prunes every live receipt. It can still erase and tombstone this decision.
+      await pool.query(`delete from ${schema}.receipt where forgotten_at is null and recorded_at < 100`)
+      assert.ok(await store.read(tx => tx.receiptOf('decide', ['sample'])))
+      await old.write(tx => tx.forgetReceipts([subject], [], 16))
+      await oldGraph.forget(subject)
+      assert.equal((await store.read(tx => tx.receiptOf('decide', ['sample'])))?.forgotten, 16)
+      assert.deepEqual(await store.read(tx => tx.factHistory(100)), [])
+      assert.deepEqual((await pool.query(`select * from ${schema}.withdrawn_edge`)).rows, [])
+      assert.deepEqual((await pool.query(`select id, fanout, ignored from ${schema}.identifier where id = any($1::text[])`, [[lone, muted]])).rows, [{ id: muted, fanout: 0, ignored: true }])
+      await oldGraph.observe({ subject, identifiers: [email], at: 17 })
+      assert.deepEqual((await store.read(tx => tx.edgesOn([email]))).map(e => e.subject).sort(), [other, subject])
+    } finally {
       await pool.query(`drop schema if exists ${schema} cascade`)
     }
   })
@@ -941,6 +1034,7 @@ if (!url) {
   outboxSuite('postgres store', open)
   opsSuite('postgres store', open)
   malformedSuite('postgres store', open)
+  factSuite('postgres store', open)
   saidSuite('postgres store', open)
   unjoinSuite('postgres store', open)
   eventsSuite('postgres store', open)

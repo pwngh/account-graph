@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto'
+import { contactFact, factActive, type FactProfile, type FactStamp } from '../core/fact-fold.ts'
+import { later } from '../core/said.ts'
 import { affectedMisses, callTraces, creditSubject, ownerOf, partyOf, reopenWaits, stopCallJob, withoutGuesses } from '../core/call-party.ts'
 import { malformed } from '../contract/fault.ts'
 import type { Feed, KeptAlert, OpsStore } from '../core/ops.ts'
@@ -5,7 +8,7 @@ import type { Job, JobState, OutboxStore } from '../core/outbox.ts'
 import type { GraphEvent } from '../contract/api.ts'
 import type { Receipt } from '../core/receipts.ts'
 import type { SaidOf, Topic } from '../core/said.ts'
-import type { Store, Tx } from '../core/store.ts'
+import type { AddedSightings, Store, Tx } from '../core/store.ts'
 import { CLICK_IDS } from '../core/touch.ts'
 import type { CallResult, CallTime, Consent, Cost, Counted, Decision, Edge, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, OutcomeValue, Payment, SentLink, Sighting, Subject, Touch } from '../contract/types.ts'
 
@@ -72,6 +75,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
   if (!(Number.isSafeInteger(page) && page > 0)) throw malformed('`page` must be a positive integer')
   const t = (table: string) => `${schema}.${table}`
   watch(pool)
+  let factSchema = true
 
   const callRows = `select c.*, r.answered, r.voicemail, r.waited, r.returned_at, r.recorded_at as result_at from ${t('call')} c left join ${t('call_result')} r on r.id = c.id`
 
@@ -124,7 +128,44 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     where not exists (select from ${t('edge')} e where e.subject = w.subject and e.identifier = w.identifier) group by w.identifier
   ), states as (select wanted.id, coalesce(i.fanout, 0) + coalesce(former.extra, 0) as fanout, coalesce(i.ignored, false) as ignored
     from wanted left join ${t('identifier')} i using (id) left join former using (id))`
-  const bind = (db: Queryable, readOnly: boolean, snapshot = evidenceIn(db, readOnly)): Tx => ({
+  type Folded = Edge & { profile?: FactProfile | undefined }
+  const edgeKey = (row: Edge) => row.subject + '\u0000' + row.identifier
+  const latest = (a?: FactProfile, b?: FactProfile) => !a || b && later(b, a) > 0 ? b : a
+  function combine(a: Folded, b: Folded): Folded {
+    return { subject: a.subject, identifier: a.identifier, first: Math.min(a.first, b.first), last: Math.max(a.last, b.last), count: a.count + b.count, profile: latest(a.profile, b.profile) }
+  }
+  const fieldsOf = (rows: Folded[]) => [rows.map(r => r.subject), rows.map(r => r.identifier), rows.map(r => r.first), rows.map(r => r.last), rows.map(r => r.count),
+    rows.map(r => r.profile?.at ?? null), rows.map(r => r.profile?.key ?? null), rows.map(r => r.profile?.fact ?? null)]
+  const rawFields = 'subject, identifier, first_at, last_at, sightings, profile_at, profile_key, source_fact'
+  const rawValues = 'unnest($1::text[], $2::text[], $3::bigint[], $4::bigint[], $5::int[], $6::bigint[], $7::text[], $8::text[])'
+  async function factRows(db: Queryable, subjects: Subject[]) {
+    const masks = new Map<Subject, Map<Identifier, FactStamp>>()
+    const saved = new Map<string, { edge: Folded; hidden: boolean }>()
+    const masksRead = await db.query(`select distinct on (subject, identifier) subject, identifier, at, key from ${t('fact_withdrawal')} where subject = any($1::text[])
+      order by subject, identifier, at desc, key desc`, [subjects])
+    for (const row of masksRead.rows) {
+      let own = masks.get(row.subject)
+      if (!own) masks.set(row.subject, own = new Map())
+      const fact = contactFact(row.identifier)
+      const next = { at: Number(row.at), key: row.key }
+      const before = own.get(fact)
+      if (!before || later(next, before) > 0) own.set(fact, next)
+    }
+    const edges = await db.query(`select ${rawFields}, false as hidden from ${t('edge')} where subject = any($1::text[])
+      union all select ${rawFields}, true as hidden from ${t('withdrawn_edge')} where subject = any($1::text[])`, [subjects])
+    for (const row of edges.rows) {
+      const edge: Folded = { ...toEdge(row), ...(row.profile_key !== null && { profile: { at: Number(row.profile_at), key: row.profile_key, ...(row.source_fact && { fact: row.source_fact }) } }) }
+      saved.set(edgeKey(edge), { edge, hidden: row.hidden })
+    }
+    return { saved, masks }
+  }
+  async function hideEdges(db: Queryable, edges: Folded[]) {
+    if (!edges.length) return
+    await db.query(`insert into ${t('withdrawn_edge')} (${rawFields}) select * from ${rawValues}
+      on conflict (subject, identifier) do update set (first_at, last_at, sightings, profile_at, profile_key, source_fact) =
+        (excluded.first_at, excluded.last_at, excluded.sightings, excluded.profile_at, excluded.profile_key, excluded.source_fact)`, fieldsOf(edges))
+  }
+  const bind = (db: Queryable, readOnly: boolean, factSchema: boolean, snapshot = evidenceIn(db, readOnly)): Tx => ({
     addAlert: (alert, again, calls) => addAlert(db, alert, again, calls),
     async pendingAlert({ key, text, at }, start) {
       const { rows } = await db.query(`select 1 from ${t('alert')} where key = $1 and text = $2 and at = $3 and delivered_at is null for share`, [key, text, at])
@@ -147,36 +188,64 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     },
     async addSightings(rows) {
       // Fold repeats first: one statement cannot upsert the same edge twice.
-      const folded = new Map<string, Edge>()
-      for (const { subject, identifier, at } of rows) {
-        const key = `${subject}\u0000${identifier}`
-        const edge = folded.get(key)
-        if (edge) {
-          edge.first = Math.min(edge.first, at)
-          edge.last = Math.max(edge.last, at)
-          edge.count += 1
-        } else folded.set(key, { subject, identifier, first: at, last: at, count: 1 })
+      const folded = new Map<string, Folded>()
+      for (const { subject, identifier, at, profileKey, fact } of rows) {
+        const edge: Folded = { subject, identifier, first: at, last: at, count: 1, ...(profileKey !== undefined && { profile: { at, key: profileKey, ...(fact && { fact }) } }) }
+        const previous = folded.get(edgeKey(edge))
+        folded.set(edgeKey(edge), previous ? combine(previous, edge) : edge)
       }
-      const edges = [...folded.values()]
-
-      await db.query(
-        `insert into ${t('sighting')} (subject, identifier, at, event, recorded_at)
-         select * from unnest($1::text[], $2::text[], $3::bigint[], $4::text[], $5::bigint[])`,
-        [rows.map((r) => r.subject), rows.map((r) => r.identifier), rows.map((r) => r.at), rows.map((r) => r.event ?? null), rows.map((r) => r.recorded ?? r.at)],
-      )
+      let edges = [...folded.values()]
+      const insert = `insert into ${t('sighting')} (subject, identifier, at, event, recorded_at${factSchema ? ', profile_key, source_fact' : ''})
+         select * from unnest($1::text[], $2::text[], $3::bigint[], $4::text[], $5::bigint[]${factSchema ? ', $6::text[], $7::text[]' : ''})`
+      const found = await db.query(factSchema
+        ? `with observed as (${insert}) select subject from (select distinct unnest($1::text[]) as subject) written
+           where exists (select from ${t('fact_withdrawal')} f where f.subject = written.subject)`
+        : insert, [rows.map(r => r.subject), rows.map(r => r.identifier), rows.map(r => r.at), rows.map(r => r.event ?? null), rows.map(r => r.recorded ?? r.at),
+          ...(factSchema ? [rows.map(r => r.profileKey ?? null), rows.map(r => r.fact ?? null)] : [])])
       await db.query(
         `insert into ${t('subject')} (id, component, cluster)
          select distinct s, s, s from unnest($1::text[]) as s on conflict (id) do nothing`,
         [edges.map((e) => e.subject)],
       )
+      const regained = new Set<Subject>()
+      if (found.rows.length) {
+        const { saved, masks } = await factRows(db, found.rows.map(r => r.subject))
+        const hidden: Folded[] = []
+        const restored: Folded[] = []
+        edges = edges.flatMap(edge => {
+          const own = masks.get(edge.subject)
+          if (!own) return [edge]
+          const previous = saved.get(edgeKey(edge))
+          const total = previous ? combine(previous.edge, edge) : edge
+          if (factActive(edge.identifier, total.profile, own)) {
+            if (!previous && !factActive(edge.identifier, total.profile?.fact ? { ...total.profile, at: -Infinity } : undefined, own)) regained.add(edge.subject)
+            if (!previous?.hidden) return [edge]
+            regained.add(edge.subject)
+            restored.push(total)
+            return [total]
+          }
+          hidden.push(total)
+          return []
+        })
+        await hideEdges(db, hidden)
+        if (restored.length) {
+          await db.query(`delete from ${t('withdrawn_edge')} w using unnest($1::text[], $2::text[]) as r(subject, identifier) where w.subject = r.subject and w.identifier = r.identifier`, fieldsOf(restored).slice(0, 2))
+        }
+        if (regained.size) await this.setSetting('callParty', randomUUID())
+      }
+      const table = t('edge')
+      const newer = `excluded.profile_at is not null and (${table}.profile_at is null or (excluded.profile_at, excluded.profile_key) > (${table}.profile_at, ${table}.profile_key))`
       const { rows: tally } = await db.query(
         `with upserted as (
-           insert into ${t('edge')} (subject, identifier, first_at, last_at, sightings)
-           select * from unnest($1::text[], $2::text[], $3::bigint[], $4::bigint[], $5::int[])
+           insert into ${table} (${factSchema ? rawFields : 'subject, identifier, first_at, last_at, sightings'})
+           select * from ${factSchema ? rawValues : 'unnest($1::text[], $2::text[], $3::bigint[], $4::bigint[], $5::int[])'}
            on conflict (subject, identifier) do update set
              first_at = least(${t('edge')}.first_at, excluded.first_at),
              last_at = greatest(${t('edge')}.last_at, excluded.last_at),
-             sightings = ${t('edge')}.sightings + excluded.sightings
+             sightings = ${table}.sightings + excluded.sightings${factSchema ? `,
+             profile_at = case when ${newer} then excluded.profile_at else ${table}.profile_at end,
+             profile_key = case when ${newer} then excluded.profile_key else ${table}.profile_key end,
+             source_fact = case when ${newer} then excluded.source_fact else ${table}.source_fact end` : ''}
            returning identifier, (xmax = 0) as fresh
          ), tally as (
            select identifier, count(*) filter (where fresh)::int as added from upserted group by identifier
@@ -185,15 +254,43 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
            on conflict (id) do update set fanout = ${t('identifier')}.fanout + excluded.fanout
          )
          select identifier, added from tally where added > 0`,
-        [
-          edges.map((e) => e.subject),
-          edges.map((e) => e.identifier),
-          edges.map((e) => e.first),
-          edges.map((e) => e.last),
-          edges.map((e) => e.count),
-        ],
+        fieldsOf(edges).slice(0, factSchema ? 8 : 5),
       )
-      return new Map(tally.map((row) => [row.identifier as Identifier, row.added as number]))
+      const added: AddedSightings = new Map(tally.map((row) => [row.identifier as Identifier, row.added as number]))
+      if (regained.size) added.restored = regained
+      return added
+    },
+
+    async withdrawFact(subject, identifiers, at, key, recorded, decision) {
+      const facts = [...new Set(identifiers)]
+      await db.query(`insert into ${t('fact_withdrawal')} (subject, identifier, at, key, recorded_at, decision)
+        select $1, id, $3, $4, $5, $6 from unnest($2::text[]) as id on conflict do nothing`, [subject, facts, at, key, recorded, decision ?? null])
+      const { masks, saved } = await factRows(db, [subject])
+      const hidden = [...saved.values()].filter(({ edge, hidden }) => !hidden && !factActive(edge.identifier, edge.profile, masks.get(subject)!)).map(row => row.edge)
+      if (hidden.length) {
+        await hideEdges(db, hidden)
+        const ids = hidden.map(row => row.identifier)
+        await db.query(`with gone as (delete from ${t('edge')} where subject = $1 and identifier = any($2::text[]) returning identifier)
+          update ${t('identifier')} set fanout = fanout - 1 where id in (select identifier from gone)`, [subject, ids])
+        await db.query(`delete from ${t('identifier')} where id = any($1::text[]) and fanout = 0 and not ignored`, [ids])
+      }
+      return hidden.map(row => row.identifier)
+    },
+
+    async factWithdrawn(subject, identifiers, at, key) {
+      const { masks, saved } = await factRows(db, [subject])
+      const own = masks.get(subject)
+      if (!own) return false
+      return identifiers.every(id => {
+        const stamp = own.get(contactFact(id))
+        return stamp?.key === key && stamp.at === at && !factActive(id, saved.get(subject + '\u0000' + id)?.edge.profile, own)
+      })
+    },
+
+    async factHistory(before) {
+      const { rows } = await db.query(`select subject, at, key, decision, array_agg(identifier order by identifier collate "C") as identifiers
+        from ${t('fact_withdrawal')} where recorded_at <= $1 group by subject, at, key, decision`, [before])
+      return rows.map(r => ({ subject: r.subject, identifiers: r.identifiers, at: Number(r.at), key: r.key, ...(r.decision !== null && { decision: Number(r.decision) }) }))
     },
 
     async removeSubject(subject, only) {
@@ -213,7 +310,8 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       }
       await db.query(`delete from ${t('said')} where topic = 'party' and data->>'subject' = $1 and ($2::text[] is null or about = any($2))`, [subject, only ?? null])
       if (only) return callJobs
-      await db.query(`with created as (delete from ${t('profile_created')} where subject = $1) delete from ${t('call_evidence')} where subject = $1`, [subject])
+      await db.query(`with created as (delete from ${t('profile_created')} where subject = $1)
+        ${factSchema ? `, facts as (delete from ${t('fact_withdrawal')} where subject = $1), hidden as (delete from ${t('withdrawn_edge')} where subject = $1)` : ''} delete from ${t('call_evidence')} where subject = $1`, [subject])
       if (!ids.length) await dropCallNotices(db, ids, [subject], [], [creditSubject(subject)])
       const { rows: left } = await db.query(
         `with gone as (delete from ${t('edge')} where subject = $1 returning identifier)
@@ -322,6 +420,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       const { rows } = await db.query(
         `select s.subject, p.created_at, least(
            (select min(first_at) from ${t('edge')} where subject = s.subject and not starts_with(identifier, 'review:')),
+           ${factSchema ? `(select min(first_at) from ${t('withdrawn_edge')} where subject = s.subject),` : ''}
            (select min(at) from ${t('sighting')} where subject = s.subject and not starts_with(identifier, 'review:')),
            (select min(at) from ${t('touch')} where subject = s.subject),
            (select min(at) from ${t('outcome')} where subject = s.subject),
@@ -386,7 +485,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
         db,
         page,
         `select coalesce(s.id, held.subject) as id, s.component, s.cluster, held.subject is not null as held
-         from ${t('subject')} s full join (select distinct subject from ${t('edge')}) held on held.subject = s.id`,
+         from ${t('subject')} s full join (select distinct subject from ${t('edge')}${factSchema ? ` union select subject from ${t('withdrawn_edge')}` : ''}) held on held.subject = s.id`,
         [],
       )
       for await (const batch of rows) yield batch.map((row) => ({ subject: row.id, labels: row.component === null ? undefined : { component: row.component, cluster: row.cluster }, held: row.held }))
@@ -539,7 +638,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     },
 
     async pruneReceipts(before) {
-      return (await db.query(`with gone as (delete from ${t('receipt')} where forgotten_at is null and recorded_at < $1 returning 1) select count(*)::int as n from gone`, [before])).rows[0].n
+      return (await db.query(`with gone as (delete from ${t('receipt')} where forgotten_at is null and ref_type is distinct from 'withdraw' and recorded_at < $1 returning 1) select count(*)::int as n from gone`, [before])).rows[0].n
     },
 
     async claimDelivery(sink, now, lease) {
@@ -1202,7 +1301,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
         `select subject, identifier, at, event, recorded_at from ${t('sighting')} where subject = $1 order by at desc, id desc limit $2`,
         [subject, limit ?? null],
       )
-      return rows.reverse().map(toSighting)
+      return rows.reverse().map(row => toSighting(row))
     },
 
     async latelySeen(sightings) {
@@ -1221,7 +1320,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     },
 
     async *sightingsUntil(recorded) {
-      for await (const batch of cursor(db, page, `select subject, identifier, at, event, recorded_at from ${t('sighting')} where recorded_at <= $1 order by id`, [recorded])) yield batch.map(toSighting)
+      for await (const batch of cursor(db, page, `select * from ${t('sighting')} where recorded_at <= $1 order by id`, [recorded])) yield batch.map(row => toSighting(row, true))
     },
 
     async pruneSightings(before) {
@@ -1268,7 +1367,8 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
 
     async partyReturn(subject, call) {
       const { rows: [row] } = await db.query(`select erased.seq, exists (select from ${t('call')} c where c.id = $2 and c.at > erased.at)
-        and exists (select from ${t('edge')} e where e.subject = $1 and not starts_with(e.identifier, 'review:')) as allowed
+        and (exists (select from ${t('edge')} e where e.subject = $1 and not starts_with(e.identifier, 'review:'))
+          ${factSchema ? `or exists (select from ${t('withdrawn_edge')} w where w.subject = $1 and not starts_with(w.identifier, 'review:'))` : ''}) as allowed
         from (${erasedRecord('$1')}) erased`, [subject, call])
       return !row ? undefined : row.allowed ? Number(row.seq) : 'forgotten'
     },
@@ -1327,8 +1427,11 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     try {
       await client.query(begin)
       if (lock !== 'none' && lockTimeout > 0) await client.query(`set local lock_timeout = ${Math.ceil(lockTimeout)}`)
-      if (lock !== 'none') await client.query(`select pg_advisory_xact_lock${lock === 'shared' ? '_shared' : ''}(hashtext($1))`, [`account-graph:${schema}`])
-      const result = await work(bind(client, begin === READ_ONLY))
+      // A writer on the preceding schema can still fold sightings while the migration is waiting for its DDL lock.
+      const locked = lock === 'none' ? undefined : await client.query(`select pg_advisory_xact_lock${lock === 'shared' ? '_shared' : ''}(hashtext($1)),
+        set_config('account_graph.fact_writer', case when fact_schema then 'on' else 'off' end, true), fact_schema from (select to_regclass($2) is not null as fact_schema) schema_version`, [`account-graph:${schema}`, t('fact_withdrawal')])
+      if (typeof locked?.rows[0]?.fact_schema === 'boolean') factSchema = locked.rows[0].fact_schema
+      const result = await work(bind(client, begin === READ_ONLY, factSchema))
       // A write is counted as it commits, in the same trip to the database.
       try {
         await client.query(lock === 'exclusive' ? `update ${t('pulse')} set writes = writes + 1; commit` : 'commit')
@@ -1530,6 +1633,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
           applied.push(upgrade.name)
         }
         await client.query('commit')
+        factSchema = true
         return applied
       } catch (error) {
         await client.query('rollback').catch(() => undefined)
@@ -1544,8 +1648,9 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
 
 const moved = (row: any): Moved => ({ subject: row.data.subject, from: row.data.from ?? undefined, to: row.data.to ?? undefined, at: Number(row.at) })
 
-function toSighting(row: any): Sighting {
+function toSighting(row: any, replay = false): Sighting {
   const sighting = { subject: row.subject, identifier: row.identifier, at: Number(row.at), recorded: Number(row.recorded_at) }
+  if (replay && row.profile_key != null) Object.assign(sighting, { profileKey: row.profile_key }, row.source_fact != null && { fact: row.source_fact })
   return row.event === null ? sighting : { ...sighting, event: row.event }
 }
 
@@ -2186,6 +2291,70 @@ export function upgrades(schema = 'account_graph'): Upgrade[] {
             end; $forget$;
             create trigger forget_profile_created after insert on ${schema}.decision for each row when (new.action = 'forget')
               execute function ${schema}.forget_profile_created();`,
+    },
+    {
+      id: 37,
+      name: 'withdrawn matching facts on one record',
+      // Nullable columns need no backfill. The first withdrawal for a subject reads only its indexed folded edges.
+      sql: `alter table ${schema}.edge add column profile_at bigint, add column profile_key text collate "C", add column source_fact text;
+            alter table ${schema}.sighting add column profile_key text, add column source_fact text;
+            create table ${schema}.withdrawn_edge (like ${schema}.edge including constraints, primary key (subject, identifier));
+            create table ${schema}.fact_withdrawal (subject text not null, identifier text not null, at bigint not null, key text collate "C" not null,
+              recorded_at bigint not null, decision bigint, primary key (subject, identifier, key));
+            alter table ${schema}.identifier add column old_empty boolean;
+            create function ${schema}.old_fact_cut(owner text, fact text) returns boolean language sql stable as $hidden$
+              select exists (select from ${schema}.fact_withdrawal f where f.subject = owner and (regexp_replace(f.identifier, '^voip:', 'phone:') = regexp_replace(fact, '^voip:', 'phone:') or
+                (starts_with(fact, 'named:') and (starts_with(f.identifier, 'email:') or starts_with(f.identifier, 'phone:') or starts_with(f.identifier, 'voip:')))))
+            $hidden$;
+            create function ${schema}.fold_old_fact() returns trigger language plpgsql as $fold$
+            begin
+              if not ${schema}.old_fact_cut(new.subject, new.identifier) then return new; end if;
+              if exists (select from ${schema}.edge e where e.subject = new.subject and e.identifier = new.identifier) then return new; end if;
+              if tg_table_name = 'sighting' then
+                -- Old writers read a state for every identifier they attempted. Give them a zero-holder state in this transaction only.
+                insert into ${schema}.identifier as i (id, fanout, ignored, old_empty) values (new.identifier, 0, true, true)
+                  on conflict (id) do update set ignored = true, old_empty = true where i.fanout = 0 and not i.ignored;
+                return new;
+              end if;
+              insert into ${schema}.withdrawn_edge as w (subject, identifier, first_at, last_at, sightings)
+                values (new.subject, new.identifier, new.first_at, new.last_at, new.sightings)
+                on conflict (subject, identifier) do update set first_at = least(w.first_at, excluded.first_at),
+                  last_at = greatest(w.last_at, excluded.last_at), sightings = w.sightings + excluded.sightings;
+              return null;
+            end; $fold$;
+            create trigger prepare_old_fact before insert on ${schema}.sighting for each row when (current_setting('account_graph.fact_writer', true) is distinct from 'on')
+              execute function ${schema}.fold_old_fact();
+            create trigger fold_old_fact before insert on ${schema}.edge for each row when (current_setting('account_graph.fact_writer', true) is distinct from 'on')
+              execute function ${schema}.fold_old_fact();
+            create function ${schema}.release_old_empty() returns trigger language plpgsql as $release$
+            begin
+              if tg_when = 'AFTER' then
+                delete from ${schema}.identifier where id = new.id and old_empty;
+                return null;
+              end if;
+              if tg_name = 'old_empty_holder' then new.ignored := false; end if;
+              new.old_empty := null;
+              return new;
+            end; $release$;
+            create trigger old_empty_holder before update of fanout on ${schema}.identifier for each row when (old.old_empty and new.fanout > 0)
+              execute function ${schema}.release_old_empty();
+            create trigger old_empty_decision before update of ignored on ${schema}.identifier for each row when (old.old_empty and new.old_empty)
+              execute function ${schema}.release_old_empty();
+            create constraint trigger release_old_empty after insert or update on ${schema}.identifier deferrable initially deferred for each row when (new.old_empty)
+              execute function ${schema}.release_old_empty();
+            create function ${schema}.keep_withdrawal_receipt() returns trigger language plpgsql as $keep$
+            begin
+              return null;
+            end; $keep$;
+            create trigger keep_withdrawal_receipt before delete on ${schema}.receipt for each row when (old.ref_type = 'withdraw')
+              execute function ${schema}.keep_withdrawal_receipt();
+            create or replace function ${schema}.forget_profile_created() returns trigger language plpgsql as $forget$
+            begin
+              with hidden as (delete from ${schema}.withdrawn_edge where subject = new.about->>0),
+                facts as (delete from ${schema}.fact_withdrawal where subject = new.about->>0)
+              delete from ${schema}.profile_created where subject = new.about->>0;
+              return new;
+            end; $forget$;`,
     },
   ]
 }

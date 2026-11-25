@@ -1353,3 +1353,39 @@ for (const [name, open] of Object.entries({ memory, ...(url && { postgres }) }))
     await close()
   }
 })
+
+everywhere('restoring one record across the fanout cap settles every other holder in either arrival order', async ({ graph, local }) => {
+  const subjects = Array.from({ length: 11 }, (_, i) => 'contact:fanout-' + i)
+  const entries = subjects.map((subject, i) => ({ type: 'profile' as const, key: 'first-' + i, facts: { email: 'robin@example.org' }, subject, at: AT }))
+  const people = () => graph.lookup({ kind: 'person', subjects, at: AT + 4 })
+  const sizes = async () => (await people()).people.map(person => person.members.length)
+  const withdrawn = { key: 'first-cut', action: 'withdraw' as const, fact: entries[0]!.facts, at: AT + 1, subject: subjects[0]!, by: 'desk' }
+  assert.ok((await graph.record({ entries })).results.every(row => row.ok))
+  assert.deepEqual(await sizes(), Array(11).fill(1))
+  assert.ok((await graph.decide(withdrawn)).ok)
+  assert.deepEqual(await sizes(), [1, ...Array(10).fill(10)])
+  // The astral key sorts after the BMP key in UTF-8, and before it in UTF-16.
+  for (const order of [false, true]) {
+    const at = AT + (order ? 3 : 2)
+    const down = () => graph.decide({ ...withdrawn, at, key: '\uE000' + at })
+    const up = () => graph.record({ entries: [{ ...entries[0]!, at, key: '\u{10000}' + at }] })
+    await Promise.all(order ? [down(), up()] : [up(), down()])
+    assert.deepEqual(await sizes(), Array(11).fill(1))
+    assert.deepEqual(await (await internalsOf(local)!()).engine.graph.verify(), [])
+  }
+  const answers = await graph.events({ after: null, limit: 1000 })
+  assert.ok(answers.ok && answers.value.events.some(e => e.type === 'cluster.changed' && e.data.subject === subjects[10]))
+  assert.ok((await graph.forget({ at: AT + 4, key: 'erase-cut', by: 'desk', subjects: [subjects[0]!], platforms: 'report' })).ok)
+  assert.deepEqual(await graph.decide(withdrawn), { ok: false, reason: 'FORGOTTEN' })
+  assert.deepEqual((await graph.lookup({ kind: 'person', subjects: subjects.slice(1), at: AT + 4 })).people.map(person => person.members.length), Array(10).fill(10))
+})
+
+everywhere('a withdrawal requires one identifying fact of a named record and a signer', async ({ graph }) => {
+  const entry = { key: 'statement', at: AT, by: 'desk', action: 'withdraw', subject: 'contact:one', fact: { device: 'one' } } as const
+  for (const change of [{ by: '   ' }, { subject: 'caller:example' }, { subject: 'visitor:example' }, { subject: 'call:example' }, { fact: {} },
+    { fact: { email: 'pat@example.org', device: 'one' } }, { fact: { identifier: 'behalf:staff' } }, { fact: { identifier: 'review:join-1' } }]) {
+    assert.deepEqual(await codeOf(graph.decide({ ...entry, ...change } as DecideRequest)), { code: 'INPUT.MALFORMED', retryable: false })
+  }
+  assert.deepEqual(await graph.decide({ ...entry, fact: { identifier: 'unknown:example' } }), { ok: false, reason: 'KIND_NOT_IN_POLICY', kind: 'unknown' })
+  assert.ok((await graph.decide(entry)).ok)
+})
