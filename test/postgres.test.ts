@@ -798,8 +798,9 @@ if (!url) {
   })
 
   test('a connection the database ends, at rest or in use, is an error and not the end of the process', async () => {
-    const own = new pg.Pool({ connectionString: url, max: 2 })
     const schema = `ag_test_${process.pid}_ended`
+    // Named, so that it ends its own connections and not those of the test files that run beside it.
+    const own = new pg.Pool({ connectionString: url, max: 2, application_name: schema })
     const store = createPostgresStore(own, schema)
     const pid = async () => (await own.query('select pg_backend_pid() as pid')).rows[0].pid
     const end = async (which: number) => {
@@ -813,7 +814,8 @@ if (!url) {
       await graph.observe({ subject: 'a', identifiers: ['email:x'], at: 1 })
       // In use, and between two statements, so nothing is waiting for its answer.
       await assert.rejects(store.write(async (tx) => {
-        const { rows } = await pool.query(`select pid from pg_stat_activity where state = 'idle in transaction' and query like '%pg_advisory_xact_lock%' and application_name = ''`)
+        const { rows } = await pool.query(`select pid from pg_stat_activity where state = 'idle in transaction' and query like '%pg_advisory_xact_lock%' and application_name = $1`, [schema])
+        assert.equal(rows.length, 1)
         for (const row of rows) await end(row.pid)
         await tx.edgesOf(['a'])
       }))
