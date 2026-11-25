@@ -404,6 +404,46 @@ All that was printed, in every setting and arm, is in [accuracy-third-held.txt](
 
 Known and not changed: a couple's shared email is put on the first two adults of every household with two; a short form is drawn before an English form, so the realised shares of names are printed and not the rates; a person's ad is reachable by the end of the world and not at an hour after a record; callers are what the server calls them, so a subject of two callers is one of two people; and a Student's t range is how far simulated worlds differ, not how far a firm is.
 
+## The fourth run
+
+Written before any of its held seeds was run. The three runs above stand as they are: no rate, mark or figure of theirs is changed.
+
+### What is asked
+
+The runs before judge one graph for two jobs. Whether two records are one person has to be right, because a wrong answer shows one client another's history. Which ad brought somebody may be wrong now and then. Here the two are judged by themselves, in the two flows a firm has:
+
+| Setting | Flow |
+| --- | --- |
+| `self4` | People fill in a form whose fields are checked as they are typed: 80% forms, 2% of emails and 1% of numbers mistyped, 3% for somebody else, and the box ticked for 80% of those |
+| `staff4` | People call and staff enter them: 80% calls, 8% for somebody else, and staff say so for 80%, because asking is required |
+| `base3`, `high3`, `base` | As they were. `high3` has every rate at its hard end at once, which no firm has. `base` has names no table knows |
+
+Every rate not named is base3's. All are assumed.
+
+| Arm | Policy |
+| --- | --- |
+| `default`, `new` | The default policy, and the third run's `new`. Printed and not judged |
+| `records` | `new` with [`"records": "confirmed"`](matching.md#records-that-have-to-be-confirmed). Judged everywhere but in `staff4` |
+| `staffed` | `examples/intake.json` without `records`, staff joining callers. Printed and not judged |
+| `staffed records` | `examples/intake.json`, staff joining callers. Judged everywhere but in `self4` |
+
+`tools/accuracy/fourth.ts` also prints, with no mark, what each rate does **by itself** at its hard end over base3, because `high` and `high3` cannot say which of them does it.
+
+### What would be bad in the fourth run
+
+Counts pooled over the worlds. One with nothing to count is bad.
+
+| In | Bad |
+| --- | --- |
+| Every setting | More than 0.25% of people with a record share a cluster with somebody else's; 0.5% in high3 |
+| Every setting | More than 2% of the pairs of records that are joined are two people |
+| Every setting | Fewer than 75% of the pairs of records that are one person are joined, or shown to somebody to decide; 65% in high3 |
+| Every setting | Fewer than 25% of the pairs shown are one person |
+| Every setting | More than 2.5% of credit goes to somebody else's ad or to somebody who came by none; 4% in high3 |
+| Every setting | Of records with a chain of facts to their ad, fewer than 90% are credited to it, or more than a point fewer than without `records`; 85% in high3 |
+
+Seeds 20270501 to 20270508 are for development, and 20270301-2 and 20270501-6 were looked at in a first form of the tool, while the rule was written. The marks were written after those looks and before the held seeds, 20270601 to 20270620, which are run once at the commit named here. The list of names is the third run's.
+
 ## Limitations
 
 - Most rates are assumed. Under `high`, every one is at its hard end at once.

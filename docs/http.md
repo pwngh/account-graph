@@ -309,7 +309,7 @@ POST /v1/lookup
 | `record` | `type`, `key`, `at` | One conversion, call or text, or `null` |
 | `transfers` | `subject`, `tiedOnly?` | `counterparties`, `rings` |
 
-`match`, `transfers`, `caller` and `journey` say why by `kinds`, such as `["phone", "device"]`. No identifier leaves the graph, because most are hashes of an email or a phone.
+`match`, `transfers`, `caller` and `journey` say why by `kinds`, such as `["phone", "device"]`. No identifier leaves the graph, because most are hashes of an email or a phone. A candidate with `unconfirmed` shares what would join it, and [nothing confirms](matching.md#records-that-have-to-be-confirmed) that the two are one person.
 
 A `find` by id matches the start of it and reads the subject table. The person of a journey is the subject's cluster, plus any subject linked strongly enough that its visits would be credited. A subject split from any of them is left out. `subjects` gives the reason and score for each. A `journey` reads up to 60 subjects of one person, and keeps the state of a conversion without the time it was sent.
 

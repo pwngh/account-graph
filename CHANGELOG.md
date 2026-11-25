@@ -24,6 +24,9 @@
 - `unmerge` takes a pair. It is refused with `NOT_JOINED` where nobody merged the two, and `notAsAsked` names the pairs that still stand another way.
 - `forget` deletes up to 50 subjects and says which of their conversions had reached an ad platform. The answer is kept with its key.
 - `lookup` `match`, `find`, `caller` and `conflicts` write nothing. Answers name kinds of evidence and no identifier.
+- `policy.records` `"confirmed"` makes two records one person only where a decision, a name or a date of birth confirms it. Others are related with `unconfirmed`, and in Matches. Off by default.
+- `examples/intake.json` is a policy for an intake desk.
+- `policy.apart` takes `given`, and `policy.kinds` takes every built-in kind, in the types of the library.
 - `record` `link` makes a signed personal link. The same entry gives the same address.
 - `record` `transfer` records value moving between subjects, and `lookup` `transfers` lists counterparties and rings.
 
