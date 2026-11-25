@@ -108,7 +108,7 @@ const meter = (share, marks = []) => {
 }
 /** The few numbers a view is about, large, each with what it is of. `tone` marks one that needs someone, in words as well as color. */
 const tiles = (...list) => el('dl', { class: 'tiles' }, ...list.filter(Boolean).map(([label, value, note = '', tone = '', more]) =>
-  el('div', tone ? { class: tone } : {}, el('dt', {}, label), el('dd', {}, el('span', { class: 'tile-line' }, el('b', {}, value), more?.change ?? ''), note ? el('span', { class: 'reason' }, note) : '', more?.bars ?? ''))))
+  el('div', tone ? { class: tone } : {}, el('dt', {}, label), el('dd', {}, el('span', { class: 'tile-line' }, el('b', {}, value), more?.change ?? '', more?.detail ?? ''), note ? el('span', { class: 'reason' }, note) : '', more?.bars ?? ''))))
 /** The same number of days just before a period. */
 function daysBefore({ from, to }) {
   const day = 86400000
@@ -256,6 +256,9 @@ function notice(text, bad = false) {
 let me
 /** The ad platforms that can be asked to retract a conversion, and whether each deletion asks them. */
 let retraction
+/** The numbers the firm set itself to meet, and how long it lets a missed caller wait, as the server says with who signed in. */
+let goals = {}
+let limits = { returnHours: null, openHours: false }
 /** Shows who decides, in place of the token. The name is the server's answer, never something typed here. */
 function signedIn(answer) {
   me = answer
@@ -515,7 +518,7 @@ function place() {
 }
 
 /** Which control this is, whatever moves around it or changes beside it: what it is and does, and the subject its row is about. */
-const which = (node) => [node.tagName, node.dataset.key, node.matches('a, button') ? node.textContent : '', node.getAttribute('href'), node.getAttribute('aria-label'), node.title, node.closest('tr, li')?.querySelector('a')?.getAttribute('href')].join('\n')
+const which = (node) => node.matches('.detail') ? node.dataset.key : [node.tagName, node.dataset.key, node.matches('a, button') ? node.textContent : '', node.getAttribute('href'), node.getAttribute('aria-label'), node.title, node.closest('tr, li')?.querySelector('a')?.getAttribute('href')].join('\n')
 /** Which notes these are, whatever sections come and go around them. */
 const fold = (node) => {
   const section = node.closest('section')
@@ -562,9 +565,12 @@ async function load(tag) {
     // Read the tag before the view: a change that lands while the view loads is then noticed on the next look.
     const seen = tag ?? (await pulse())
     if (me === undefined) {
-      const { reviewer, retraction: asked } = await api('GET', '/me')
+      const answer = await api('GET', '/me')
       if (turn !== loading) return false
-      retraction = asked
+      const { reviewer } = answer
+      retraction = answer.retraction
+      goals = answer.targets ?? goals
+      limits = answer.limits ?? limits
       signedIn(reviewer)
     }
     await views.get(name).show(box, ...parts)

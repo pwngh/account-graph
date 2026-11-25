@@ -14,6 +14,8 @@ const enter = (token) => {
   drawn.off.clear()
   narrowed.clear()
   opened.length = 0
+  cards.close()
+  lately.clear()
   inbox.id = charted.subject = undefined
   load()
 }
