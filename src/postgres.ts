@@ -814,11 +814,11 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     },
   })
 
-  // Writes wait for one another at the database in any case. In one process they wait here, so a long one leaves the
+  // Writes wait for one another at the database in any case. Those of one store wait here, so a long one leaves the pool's
   // connections to whoever reads, and the server answers while it lasts.
   let turn: Promise<unknown> = Promise.resolve()
   const inTurn = <T>(work: () => Promise<T>): Promise<T> => {
-    const mine = turn.then(work, work)
+    const mine = turn.then(work)
     turn = mine.catch(() => undefined)
     return mine
   }
