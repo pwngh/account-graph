@@ -2683,7 +2683,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const of = async (subject: string) => [...new Set((await graph.journey(subject)).entries.flatMap((entry) => ('subject' in entry ? [entry.subject] : [])))].sort()
       assert.deepEqual(await of('contact:1'), ['account:1', 'contact:1'])
       assert.deepEqual(await of('contact:2'), ['account:2', 'contact:2'])
-      // A browser of theirs is theirs too, however strong its own tie, and one that is nobody's is reached through none of theirs.
+      // Each journey has its own browser, however strong the other's tie.
       await graph.observe([
         { subject: 'contact:3', identifiers: ['device:x', 'device:y'], at: T0 },
         { subject: 'contact:4', identifiers: ['device:x'], at: T0 },
