@@ -1170,7 +1170,9 @@ test('a reviewer sees refused conversions without keys and puts them back in lin
     assert.deepEqual(failed.map((job: any) => `${job.transactionId} ${job.target} ${'keys' in job}`).sort(), ['t1 ads false', 't1 more false', 't2 ads false', 't2 more false'])
     assert.ok(failed.every((job: any) => job.note === 'action_111 was not found for (left out) and (left out)'))
     assert.deepEqual((await call('service', 'GET', '/conversions?state=failed')).body, failed)
-    assert.equal((await call('service', 'GET', '/conversion?id=t1')).body[0].keys.email, 'Key+of:a1@example.com')
+    // Kept for the platform, and shown to nobody.
+    assert.equal((await outbox.get('t1'))[0]!.keys.email, 'Key+of:a1@example.com')
+    assert.deepEqual((await call('service', 'GET', '/conversion?id=t1')).body.map((job: any) => `${job.target} ${'keys' in job}`).sort(), ['ads false', 'more false'])
     for (const bad of [{}, { transactionId: 5 }, { transactionId: ['t1'] }, { transactionId: 't1', target: 5 }]) assert.equal((await call('reviewer', 'POST', '/retry', bad)).status, 400)
     refuse = false
     // Only the platform named, and then the rest.
@@ -1181,6 +1183,38 @@ test('a reviewer sees refused conversions without keys and puts them back in lin
     assert.deepEqual(await outbox.counts().then((counts) => [counts.sent, counts.failed]), [2, 2])
     assert.deepEqual(await again('reviewer', { transactionId: 't1' }), [])
     assert.equal((await call('reviewer', 'GET', '/conversion?id=t1')).status, 403)
+  } finally {
+    server.close()
+  }
+})
+
+test('no route answers with the hashed email and phone of a conversion', async () => {
+  const store = createMemoryStore()
+  const graph = createGraph(store)
+  const at = Date.now() - 60_000
+  const target = { name: 'ads', restates: true, batch: 10, keys: () => ({ email: 'hashed-email', phone: 'hashed-phone' }), click: () => undefined, retryable: () => true, deliver: async () => ({}) }
+  const outbox = createOutbox(graph, store.outbox, { targets: [target] })
+  const server = createServer(createHandler(graph, { token: 'service', outbox, origins: [] })).listen(0)
+  try {
+    const base = `http://localhost:${(server.address() as AddressInfo).port}`
+    const call = async (method: string, path: string, body?: unknown) => {
+      const response = await fetch(base + path, { method, headers: { authorization: 'Bearer service' }, ...(body !== undefined && { body: JSON.stringify(body) }) })
+      return { status: response.status, text: await response.text() }
+    }
+    const answers = {
+      convert: await call('POST', '/convert', { transactionId: 't1', subject: 'a1', at, action: 'Lead', value: 5, currency: 'USD', email: 'a1@example.com', phone: '+15558675309' }),
+      payment: await call('POST', '/payment', { id: 'p1', transactionId: 't1', amount: 3 }),
+      restate: await call('POST', '/restate', { transactionId: 't1', value: 2 }),
+      conversion: await call('GET', '/conversion?id=t1'),
+      conversions: await call('GET', '/conversions?state=pending'),
+    }
+    for (const [name, { status, text }] of Object.entries(answers)) {
+      assert.equal(status, 200, name)
+      // The job is in the answer, so there was something to leave out.
+      assert.match(text, /"transactionId":"t1","target":"ads"/, name)
+      assert.doesNotMatch(text, /"keys"|hashed-/, name)
+    }
+    assert.deepEqual((await outbox.get('t1'))[0]!.keys, { email: 'hashed-email', phone: 'hashed-phone' })
   } finally {
     server.close()
   }

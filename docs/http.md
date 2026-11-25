@@ -158,7 +158,7 @@ Send `by` only with the service token. A reviewer's decision carries the name of
 | `POST /payment` | Money received for an outcome, or given back: `{ id, transactionId, amount, kind?, currency? }`, `kind` `payment` (the default) or `refund`. From the first one on, the outcome is worth what was paid less what was given back. May precede the outcome. Answers `{ duplicate, value?, jobs }`. See [payments](report.md#payments). |
 | `POST /not-lead` | Marks an outcome or a call as not a lead: `{ call }` or `{ transactionId }`, with `kind` `spam` or `other` (the default). `lead: true` undoes it. May precede the outcome or call. Answers `{ id, lead }`. |
 | `POST /costs` | A list of `{ day, source, amount, campaignId?, campaign?, currency?, clicks?, impressions?, conversions?, conversionValue? }`. A row replaces an earlier one with the same day, source and campaign. |
-| `GET /conversion?id=` | The jobs of one transaction, one per ad platform. |
+| `GET /conversion?id=` | The jobs of one transaction, one per ad platform. No route answers with a job's hashed email and phone. |
 
 ### Calls
 

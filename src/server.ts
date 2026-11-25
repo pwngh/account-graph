@@ -162,7 +162,7 @@ const DECISIONS = new Set(['POST /forget', 'POST /separate', 'POST /join', 'POST
 /** Answers hold people's data, so nothing keeps a copy of one. */
 const JSON_HEADERS = { 'content-type': 'application/json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }
 
-/** A job as a person is shown it: the hashed email and phone are for its platform only. */
+/** A job as an answer shows it: the hashed email and phone are for its platform only. */
 const shownJob = ({ keys, ...job }: Job) => job
 
 /** A route that wrote its own answer. */
@@ -1037,7 +1037,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       case 'GET /audit':
         return graph.audit()
       case 'POST /convert':
-        return convert(await json(request))
+        return (await convert(await json(request))).map(shownJob)
       case 'POST /link': {
         if (!options.linkSecret) break
         const body = await json(request)
@@ -1157,13 +1157,16 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return { followUp: (await recordReturn(graph, await json(request), calling())) ?? null }
       case 'POST /restate': {
         const body = await json(request)
-        if (options.outbox) return options.outbox.restate(body.transactionId, body.value, body.currency, body.kind)
+        if (options.outbox) return (await options.outbox.restate(body.transactionId, body.value, body.currency, body.kind)).map(shownJob)
         await graph.restate(body.transactionId, body.value, body.currency, body.kind)
         return []
       }
       case 'POST /payment': {
         const body = await json(request)
-        if (options.outbox) return options.outbox.pay(body)
+        if (options.outbox) {
+          const paid = await options.outbox.pay(body)
+          return { ...paid, jobs: paid.jobs.map(shownJob) }
+        }
         return { ...(await graph.pay(body)), jobs: [] }
       }
       case 'POST /people': {
@@ -1203,7 +1206,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       }
       case 'GET /conversion':
         if (!options.outbox) break
-        return options.outbox.get(url.searchParams.get('id') ?? '')
+        return (await options.outbox.get(url.searchParams.get('id') ?? '')).map(shownJob)
     }
     throw new Refusal(404, 'No such route')
   }
