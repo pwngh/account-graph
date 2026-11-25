@@ -83,6 +83,7 @@ jobs:
       REVIEW_TOKENS: '{"ci":"ci-review-token"}'
       ORIGINS: http://localhost:3000
       LINK_SECRET: ci-link-secret-ci-link-secret-ci
+      RECEIPT_SECRETS: ci-receipt-secret-ci-receipt-secret
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -108,10 +109,11 @@ jobs:
       - run: npm ci
       - name: start the server with two linked accounts
         run: |
-          node src/edge/serve.ts > server.log 2>&1 &
+          node src/bin.ts > server.log 2>&1 &
           timeout 30 sh -c 'until curl -sf http://127.0.0.1:8080/health; do sleep 0.5; done'
-          curl -sSf http://127.0.0.1:8080/observe -H "authorization: Bearer $GRAPH_TOKEN" \
-            -d "[{\"subject\":\"account:1\",\"identifiers\":[\"device:ci\",\"payment:ci\"],\"at\":$(date +%s)000},{\"subject\":\"account:2\",\"identifiers\":[\"device:ci\",\"payment:ci\"],\"at\":$(date +%s)000}]"
+          at="$(date +%s)000"
+          curl -sSf http://127.0.0.1:8080/v1/record -H "authorization: Bearer $GRAPH_TOKEN" \
+            -d "{\"entries\":[{\"type\":\"profile\",\"key\":\"1\",\"at\":$at,\"subject\":\"account:1\",\"facts\":{\"device\":\"ci\",\"identifiers\":[\"payment:ci\"]}},{\"type\":\"profile\",\"key\":\"2\",\"at\":$at,\"subject\":\"account:2\",\"facts\":{\"device\":\"ci\",\"identifiers\":[\"payment:ci\"]}}]}"
       # -nmhe: keep going after errors, so that a scan cannot pass by giving up on the server.
       - name: scan
         run: |

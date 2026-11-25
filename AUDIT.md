@@ -1,6 +1,6 @@
 # API surface audit
 
-Audited 2026-11-24 at `b9bba69`, which the line numbers refer to. The audit changed no source file. Finding 8 has been fixed since, and section 6 reviews the design. Reference: `economy-edge`, working tree on top of `60f71b3`.
+Audited 2026-11-24 at `99e4779`, which the line numbers refer to. An earlier version of this page named `b9bba69`: the checkout moved on while it was read. The audit changed no source file. Finding 8 has been fixed since, and section 6 reviews the design. Reference: `economy-edge`, working tree on top of `60f71b3`.
 
 ## Verdict
 
@@ -1225,7 +1225,7 @@ Three tests hold it, the first modelled on economy-edge's `test/arch.test.ts`:
 
 Each step lands alone and keeps the tests passing. Baseline: 261 pass and 1 skipped in memory, 416 pass on PostgreSQL 16.
 
-**Stop after step 3 and report, before the schema changes.**
+**All steps are done**, on the branch `feat/six-calls`. Section 7 has what was built and where it differs from this page.
 
 | Step | Change | Done when | Risk |
 | --- | --- | --- | --- |
@@ -1234,7 +1234,6 @@ Each step lands alone and keeps the tests passing. Baseline: 261 pass and 1 skip
 | 1 | `Fault`, `Outcome`, `Decided`, the validator and canonical JSON. Only a `Fault` is a 400; any other error is a 500. | The contract suite's error table passes for what exists | **Medium, was Low.** There are 148 `throw new TypeError` in `src/` and 98 lines of tests that name `TypeError`. Missing one turns a 400 into a 500. |
 | 2 | Strip `keys` from four routes (finding 8) | Done | Done |
 | 3 | Move `convert`, `calling`, `textOptions`, `factsIn`, `find` out of `src/server.ts` into `core/` | No test changes, and `arch.test.ts` passes for `core/` | Medium. No behaviour change, much code. |
-| — | **Report and wait** | | |
 | 4a | One transaction per entry: `recordCall`, `recordText`, `convert`, `pay` and `restate` on `Tx`; `Tx.addJob`; checks before the lock (R1, R6, R6a) | A fault injected at every statement leaves all or nothing. `forget` at every pause leaves no trace. | **High, was not listed.** Step 4 is not possible without it. |
 | 4b | Values and results worked out from kept entries: restatements, call updates, not-a-lead, cost rows (R9, R10) | Every order of every set of up to five entries gives one answer | High. Migrates `outcome_value`, `call_result`, `not_lead`, `cost`. |
 | 4c | `receipt`, `receipt_subject`, digest, tombstones, settings kept in the database (R2–R5, R7, R16) | Property test: key order, casing and list order never give `KEY_REUSED`; a changed field always does. A dump after `forget` holds no key, subject or digest. | High |
@@ -1246,7 +1245,7 @@ Each step lands alone and keeps the tests passing. Baseline: 261 pass and 1 skip
 
 ## 5. Not verified
 
-- The target is a design. Nothing in section 3 has been built. Its types compile.
+- Written before anything was built. Section 7 has what was verified since.
 - Findings in section 1 marked **run** used the memory store. Section 6 used both, and says which.
 - Section 6's timings are from one laptop and a database with a few thousand rows. They compare shapes and predict nothing about yours.
 - What a receipt costs each write was not measured. It adds a read and two inserts. Step 4a takes a call from five or six commits to one, which should more than pay for it.
@@ -1255,7 +1254,7 @@ Each step lands alone and keeps the tests passing. Baseline: 261 pass and 1 skip
 
 ## 6. Red-Team Design Review & Fixes
 
-Run 2026-11-24 against the code at `b9bba69` with finding 8 fixed, on the memory store and on a throwaway PostgreSQL 16.14. Scripts were kept outside the repo. No source file was changed.
+Run 2026-11-24 against the code at `99e4779` with finding 8 fixed, on the memory store and on a throwaway PostgreSQL 16.14. Scripts were kept outside the repo. No source file was changed.
 
 **The design as first written would have lost data.** 30 flaws were found. Seven are in the server today: R2, R6a, R8, R14, R15, R18 over HTTP, and trace 8 of R11. R8 and R14 should not wait for this work. Sections 2.4, 3 and 4 above already contain every fix.
 
@@ -1376,3 +1375,49 @@ Reserved kinds, refused in `facts.identifiers`: `review`, `link`, `carry`, `open
 | A caller that stamps `at` anew on each retry | Gets `KEY_REUSED`, by design. It should be the first line of the migration notes. |
 | `forget` of one subject of a person | Deletes that subject only, as today. Another subject's record of the same call stays. |
 | Retraction interrupted by a crash | Reported as `pending` and cannot be finished (R22) |
+
+## 7. As built
+
+Built on `feat/six-calls`, from `main` at `34d21bd`. Where this section and sections 2 to 4 differ, this one is right.
+
+### 7.1 Where it differs
+
+| Point | Design | Built | Why |
+| --- | --- | --- | --- |
+| Phones in a digest | No default country | `phones.country`, and the country is part of `digest_version` | Found by a test: Twilio's `+1555…` and a backend's ten digits were two callers. With another country, digests are not compared, so nothing is refused for it. |
+| `receipt.key_mac` | `bytea` | `text`, in hex | The same on both stores |
+| `digest` | One hash | One for each field | `KEY_REUSED` names the fields |
+| Things said of a value, a call or a lead | Four tables changed | One `said` table, and the old ones worked out from it | One rule for order in one place |
+| `event.said_once` | A column | `event_once`, with its subject | Forgetting somebody forgets that they were spoken of, though their event is gone |
+| Remote client without Node | Lazy imports | A `node` condition in `exports`. Elsewhere `.` is `dist/remote.js`. | The factory is synchronous, and names everything wrong at once |
+| Reviewer screen | 13 routes of its own, the rest from the six calls | 27 routes under `/review/api` | The screen draws identifiers and scores, which the calls no longer give out |
+| `Arrival` | — | Has `custom` | The office an ad was for was lost otherwise |
+| `Person` | — | Has `possible` | `/attribute` could tell a weak arrival from none |
+| `lookup caller`, `waiting` | `boolean` | `{ calls, texts }` | Nothing is lost |
+| `LocalOptions` | — | Has `fetch`, `phones.country`, `tapSeconds` and `pool` | Tests and demos, and what the edge and the graph must agree on |
+| Connection pools | Two | One. Writes of a process wait in the process. | `main` had fixed R15 already (pull request 150) |
+| `account-graph export` | A command | `tools/export.ts`, as before | It reads tables, and is a tool of the repository |
+| Receipts, pruned | Left to you | Kept a year by `account-graph prune`. Tombstones stay. | The proposal in 6.8 |
+
+### 7.2 What was verified
+
+| What | How |
+| --- | --- |
+| One transaction an entry | Eight kinds of entry, cut off at every step they take, on both stores: nothing is left, and done again all of it is |
+| Order | Every order of up to five things said of a value, a call, a lead, a cost and a consent gives one answer, on both stores |
+| Keys | Every kind of entry, sent again, written another way, changed in each field that counts, and three at once |
+| `forget` | Every key of a person is refused afterwards, those from before there were receipts too. What is left in the table was read and holds no key, subject or digest. |
+| Events | Twelve writers, writes that fail, and a reader: none missed, no number skipped |
+| `unmerge` | The eight traces of R11, and two more |
+| Local and remote | One script in memory, on PostgreSQL and over HTTP. Every answer and every fault is compared. |
+| Types | `test/contract.types.ts`: what must compile, and eleven that must not |
+| Rings, names and paths | `test/arch.test.ts`. The built package was installed, and each path that is not listed was refused. |
+| Speed | 146 calls a second one by one, against 128 for the six transactions before, on one laptop. A visit beside a list of 100 calls: 7 ms at the median, 26 at most. |
+
+### 7.3 What was not
+
+- Nothing here has run against a live Google, Meta, Microsoft, TikTok, Twilio, Smarty or MaxMind account.
+- No database with real data was upgraded. The upgrades were run on empty databases and on the old ones the tests make.
+- `record` and the crash of a process were tested by failing every statement, not by killing processes.
+- The old functions behind `graph.restate`, `recordNotLead`, `asOf` and the like are still in `core/`. Nothing the package shows calls them. The tests do, through `test/harness.ts`.
+- In memory, an entry copies the store before it writes, to undo it. That is for tests and demos, and slow with much in it.

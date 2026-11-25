@@ -1,81 +1,90 @@
 /**
- * Two stories on made-up data: duplicate accounts on a game platform, and an
- * enrollment traced back to an ad click. Run with `node demo.ts`.
+ * Three stories on made-up data, through the package's own calls: duplicate
+ * accounts on a game platform, an enrollment traced back to an ad click, and
+ * a decision about two people. Run with `node demo.ts`.
  */
-import { createGraph, createMemoryStore, createOutbox, email, googleAds, ip } from './tools/internals.ts'
-import type { Link } from './tools/internals.ts'
+import { createServer } from 'node:http'
+import { accountGraph, parseWebhook, verifyWebhook } from './src/index.ts'
+import { runWorkers } from './src/testing/index.ts'
 
-const store = createMemoryStore()
-const graph = createGraph(store)
 const HOUR = 3_600_000
 const noon = Date.UTC(2026, 10, 23, 18)
 
-const explain = (links: Link[]) =>
-  links.map(
-    (link) =>
-      `  ${link.subject}  ${link.level} ${link.score.toFixed(3)}  because ` +
-      link.reasons.map((r) => `${r.identifier.split(':')[0]} ${r.evidence.toFixed(2)} (${r.fanout} share it)`).join(' + '),
-  )
+// A receiver of events. It checks each before it reads it.
+const heard: string[] = []
+const receiver = createServer(async (request, response) => {
+  let body = ''
+  for await (const chunk of request) body += chunk
+  const webhook = { headers: request.headers as Record<string, string>, body }
+  const genuine = await verifyWebhook(webhook, { secret: 'a-demo-secret', now: noon + 60 * HOUR, maxAgeMs: 300_000 })
+  if (genuine) heard.push(...parseWebhook(webhook).map((event) => event.type))
+  response.writeHead(genuine ? 204 : 401).end()
+}).listen(0, '127.0.0.1')
+await new Promise((resolve) => receiver.once('listening', resolve))
+
+const graph = accountGraph({
+  memory: true,
+  now: () => noon + 60 * HOUR,
+  // An ad platform that takes everything: what would be sent is printed.
+  ads: { meta: { pixelId: '555', accessToken: 'made-up', siteUrl: 'https://site.example/' } },
+  fetch: async (address, init) => {
+    if (String(address).startsWith('http://127.0.0.1')) return fetch(address, init)
+    const [event] = JSON.parse(String(init?.body)).data
+    console.log('sent to Meta:', JSON.stringify({ event_name: event.event_name, event_id: event.event_id, custom_data: event.custom_data }))
+    return Response.json({ events_received: 1, fbtrace_id: 'demo-1' })
+  },
+  webhook: { url: `http://127.0.0.1:${(receiver.address() as { port: number }).port}/`, secret: 'a-demo-secret' },
+})
+await runWorkers(graph)
+const members = async (subject: string) => (await graph.lookup({ kind: 'person', subjects: [subject], at: noon })).people[0]!.members.join(', ')
 
 console.log('1. Duplicate accounts\n')
-await graph.observe([
-  { subject: 'account:ana', identifiers: ['hardware:HW-7F', 'canvas:c-iphone15', ip('203.0.113.20')], at: noon, event: 'login' },
-  { subject: 'account:ana2', identifiers: ['hardware:HW-7F', 'canvas:c-iphone15', ip('198.51.100.4')], at: noon + HOUR, event: 'login' },
+const login = (subject: string, hours: number, facts: { ip?: string; identifiers: string[] }) => ({ type: 'profile' as const, key: `login ${subject} ${hours}`, at: noon + hours * HOUR, subject, facts, event: 'login' })
+await graph.record({ entries: [
+  login('account:ana', 0, { ip: '203.0.113.20', identifiers: ['hardware:HW-7F', 'canvas:c-iphone15'] }),
+  login('account:ana2', 1, { ip: '198.51.100.4', identifiers: ['hardware:HW-7F', 'canvas:c-iphone15'] }),
   // A roommate: same address and the same phone model, so the same browser hash, but a different machine.
-  { subject: 'account:ben', identifiers: ['hardware:HW-22', 'canvas:c-iphone15', ip('203.0.113.20')], at: noon, event: 'login' },
+  login('account:ben', 0, { ip: '203.0.113.20', identifiers: ['hardware:HW-22', 'canvas:c-iphone15'] }),
   // A cafe: thirty strangers behind one address.
-  ...Array.from({ length: 30 }, (_, i) => ({
-    subject: `account:cafe${i}`,
-    identifiers: [`hardware:HW-C${i}`, ip('192.0.2.77')],
-    at: noon,
-    event: 'login',
-  })),
-])
-const trade = await graph.observe({ subject: 'account:ana2', identifiers: ['hardware:HW-7F'], at: noon + 2 * HOUR, event: 'trade' })
-console.log('ana2 trades. Cluster changes from that one event:', trade.length === 0 ? 'none (already joined at login)' : trade)
-console.log('links of account:ana2:')
-console.log(explain(await graph.links('account:ana2')).join('\n'))
-console.log('cluster:', (await graph.cluster('account:ana2'))!.members.join(', '))
-console.log('links of account:ben (roommate: same address, same phone model):')
-console.log(explain(await graph.links('account:ben')).join('\n'))
-console.log('cluster of account:ben:', (await graph.cluster('account:ben'))!.members.join(', '))
-console.log('links of account:cafe3 (address is past its cap):', (await graph.links('account:cafe3')).length)
+  ...Array.from({ length: 30 }, (_, i) => login(`account:cafe${i}`, 0, { ip: '192.0.2.77', identifiers: [`hardware:HW-C${i}`] })),
+] })
+console.log('account:ana2 is', await members('account:ana2'))
+console.log('account:ben, the roommate, is', await members('account:ben'))
+console.log('account:cafe3 is', await members('account:cafe3'))
+const { results: [trade] } = await graph.record({ entries: [{ type: 'transfer', key: 'trade-1', at: noon + 2 * HOUR, from: 'account:ana2', to: 'account:ana', amount: 250_000, asset: 'gold' }] })
+console.log('a trade between the two comes back flagged:', trade!.ok && trade!.value)
 
 console.log('\n2. Ad click to enrollment\n')
-// Monday: an ad click lands on the marketing site. Nobody knows who this is.
-await graph.observe({ subject: 'visitor:d-481', identifiers: ['device:d-481', ip('203.0.113.50')], at: noon, event: 'visit' })
-await graph.touch({ subject: 'visitor:d-481', at: noon, gclid: 'Cj0KCQ-demo', source: 'google', medium: 'cpc', campaign: 'spring', landing: 'https://site.example/start' })
-// Wednesday: the same browser returns directly and enrolls. Your server reads the device cookie.
 const enrolled = noon + 50 * HOUR
-await graph.observe({ subject: 'contact:1001', identifiers: ['device:d-481', email('Pat.Lee@gmail.com')], at: enrolled, event: 'enroll' })
+// Monday: an ad click lands on the site, and nobody knows who this is. Wednesday: the same browser returns and enrolls.
+await graph.record({ entries: [
+  { type: 'arrival', key: 'click-481', at: noon, subject: 'visitor:d-481', source: 'facebook', medium: 'cpc', campaign: 'spring', campaignId: '42', clicks: { fbclid: 'demo-click' }, landing: 'https://site.example/start' },
+  { type: 'profile', key: 'visit-481', at: noon, subject: 'visitor:d-481', facts: { device: 'd-481' } },
+  { type: 'profile', key: 'enroll-1001', at: enrolled, subject: 'contact:1001', facts: { device: 'd-481', email: 'Pat.Lee@gmail.com' } },
+  { type: 'conversion', key: 'enroll-1001', at: enrolled, subject: 'contact:1001', stage: 'enrolled', value: 200, currency: 'USD', actions: { meta: 'Lead' }, email: 'Pat.Lee@gmail.com' },
+] })
+const { arrival } = (await graph.lookup({ kind: 'person', subjects: ['contact:1001'], at: enrolled })).people[0]!
+console.log(`credited to ${arrival!.campaign} at ${arrival!.confidence}, by the ${arrival!.how}`)
+await runWorkers(graph)
+const refund = { type: 'restatement' as const, key: 'refund-1', at: enrolled + HOUR, of: { type: 'conversion' as const, key: 'enroll-1001' }, change: { kind: 'refund' as const, amount: 80 } }
+console.log('after a partial refund:', JSON.stringify((await graph.record({ entries: [refund] })).results[0]))
+console.log('the same refund again:', JSON.stringify((await graph.record({ entries: [refund] })).results[0]))
+const { value: report } = await graph.report({ kind: 'campaigns', window: { from: '2026-11-23', to: '2026-11-25', timeZone: 'UTC' } })
+console.log('report:', report.rows.map((row) => `${row.source} ${row.campaignId}: ${row.outcomes} for ${row.value}`).join('; '))
 
-const attribution = await graph.attribute('contact:1001', { at: enrolled })
-console.log(`attribution: ${attribution.reason}, via ${attribution.credited?.via.join(' > ')} > visitor:d-481,`, `confidence ${attribution.credited?.confidence}`)
-
-// The outbox records the outcome once and sends it. Here "Google" is a function that prints.
-const outbox = createOutbox(graph, store.outbox, {
-  targets: [googleAds({ customerId: '123-456-7890', send: async (request) => (console.log('sent to Google:', JSON.stringify(request.events[0])), { requestId: 'demo-1' }) })],
-})
-await outbox.record({ transactionId: 'enroll-1001', subject: 'contact:1001', at: enrolled, action: '987654321', value: 200, email: 'Pat.Lee@gmail.com' })
-console.log('outbox pass:', JSON.stringify(await outbox.run()))
-await outbox.restate('enroll-1001', 120)
-console.log('after a partial refund:', JSON.stringify(await outbox.run()))
-
-console.log('\n3. A ring\n')
-// Four accounts in a row, each sharing one machine with the next. No one link is strong.
-const ring = ['account:r1', 'account:r2', 'account:r3', 'account:r4']
-await graph.observe(ring.map((subject, i) => ({ subject, identifiers: [`hardware:M${i}`, `hardware:M${i + 1}`], at: noon, event: 'login' })))
-console.log('one weak link may not join two groups:', (await graph.cluster('account:r1'))!.members.join(', '), '|', (await graph.cluster('account:r4'))!.members.join(', '))
-
-// Value only ever moves one way inside the first pair.
-for (let i = 0; i < 4; i++) await graph.transfer({ id: `trade-${i}`, from: 'account:r2', to: 'account:r1', amount: 250_000, at: noon + i * HOUR, asset: 'gold' })
-const held = await graph.transfer({ id: 'trade-held', from: 'account:r2', to: 'account:r1', amount: 250_000, at: noon + 5 * HOUR, asset: 'gold' })
-console.log(`a trade between them comes back flagged: relation ${held.relation}, ${held.count} trades, imbalance ${held.imbalance}`)
-console.log('collusion report for r1:', (await graph.collusion('account:r1')).map((row) => `${row.subject} sent ${row.received} ${row.asset} over ${row.count} trades`).join('; '))
-
-// A reviewer looks at r3 and r4 and decides they are two people. The decision is recorded and sealed.
-await graph.separate('account:r3', 'account:r4', true, { by: 'dana', reason: 'siblings, one family computer' })
-console.log('after the review (r3 is now one account tied to r2, so it joins that pair):', (await graph.cluster('account:r3'))!.members.join(', '), '|', (await graph.cluster('account:r4'))!.members.join(', '))
-console.log('decisions:', (await graph.decisions()).map((d) => `#${d.seq} ${d.action} ${d.about.join(' / ')} by ${d.by}`).join('; '), '| record sound:', (await graph.audit()).sound)
-
-console.log('\nstored clusters match a full recompute:', (await graph.verify()).length === 0)
+console.log('\n3. A decision\n')
+const pairs = [{ a: 'account:ana', b: 'account:ana2' }]
+const { decisions } = await graph.lookup({ kind: 'person', subjects: ['account:ana'], at: noon })
+const unmerged = await graph.decide({ key: 'ticket-7', at: enrolled, by: 'dana', seen: decisions, action: 'unmerge', pairs })
+console.log('nobody joined them, the graph did:', JSON.stringify(unmerged))
+console.log('so they are split:', JSON.stringify(await graph.decide({ key: 'ticket-8', at: enrolled, by: 'dana', seen: decisions, action: 'split', pairs: pairs.map((pair) => ({ ...pair, reason: 'sisters, one family computer' })) })))
+console.log('account:ana2 is now', await members('account:ana2'))
+const late = await graph.decide({ key: 'ticket-9', at: enrolled, by: 'lee', seen: decisions, action: 'merge', pairs })
+console.log('someone who had not seen that:', late.ok || late.reason)
+const forgotten = await graph.forget({ key: 'request-3', at: enrolled, by: 'dana', subjects: ['contact:1001'], platforms: 'report' })
+console.log('contact:1001 is deleted:', JSON.stringify(forgotten.ok && forgotten.value.sent))
+console.log('a late retry brings nobody back:', JSON.stringify((await graph.record({ entries: [refund] })).results[0]))
+await runWorkers(graph)
+console.log(`\nthe receiver heard ${heard.length} events: ${[...new Set(heard)].join(', ')}`)
+await graph.close()
+receiver.close()

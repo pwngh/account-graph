@@ -12,6 +12,7 @@
  * http://localhost:3000/reset makes this browser a new visitor again.
  */
 import { createServer } from 'node:http'
+import { accountGraph } from '../src/index.ts'
 
 const GRAPH = process.env.GRAPH_URL ?? 'http://localhost:8080'
 const TOKEN = process.env.GRAPH_TOKEN ?? 'change-me-service-token'
@@ -29,12 +30,8 @@ const page = (host: string, title: string, body: string) => `<!doctype html><met
 <style>body{font:16px/1.5 system-ui;max-width:36rem;margin:3rem auto;padding:0 1rem}input,button{font:inherit;padding:.4rem .6rem}pre{background:#f3f3f0;padding:1rem;overflow:auto}</style>
 <h1>${title}</h1>${body}<p><a href="/who">Show this browser's cluster</a></p>${tag(host)}`
 
-/** Calls the graph server as your own backend would: over HTTP, with the service token. */
-async function graph(method: string, path: string, body?: unknown): Promise<any> {
-  const response = await fetch(GRAPH + path, { method, headers: { authorization: `Bearer ${TOKEN}` }, ...(body !== undefined && { body: JSON.stringify(body) }) })
-  if (!response.ok) throw new Error(`${method} ${path} answered ${response.status}: ${await response.text()}`)
-  return response.status === 204 ? undefined : response.json()
-}
+/** The graph server, as your own backend would call it: over HTTP, with the service token. */
+const graph = accountGraph({ url: GRAPH, token: TOKEN })
 
 let accounts = Date.now() % 100_000
 
@@ -60,24 +57,30 @@ createServer(async (request, response) => {
       const subject = `account:${++accounts}`
       const at = Date.now()
       // Hand the server the facts as they are; it hashes the email and ties the account to the browser.
-      const { changes } = await graph('POST', '/identify', { subject, at, event: 'signup', email: form.get('email'), ...(filled && { device: filled }) })
-      // Count the sign-up, so the report can set it beside what the campaign cost.
-      await graph('POST', '/convert', { transactionId: `signup-${subject}`, subject, at, stage: 'signup', value: 25, currency: 'USD' })
-      const attribution = await graph('GET', `/attribute?subject=${encodeURIComponent(subject)}&at=${at}`)
+      // Count the sign-up too, so the report can set it beside what the campaign cost. The keys are the account's own, so a retry adds nothing.
+      const { results } = await graph.record({ entries: [
+        { type: 'profile', key: subject, at, subject, event: 'signup', facts: { email: form.get('email') ?? '', ...(filled && { device: filled }) } },
+        { type: 'conversion', key: subject, at, subject, stage: 'signup', value: 25, currency: 'USD' },
+      ] })
+      for (const result of results) if (!result.ok) throw new Error(`${result.type} was refused: ${result.reason}`)
+      const { arrival, members } = (await graph.lookup({ kind: 'person', subjects: [subject], at })).people[0]!
       return html(page(host, 'Signed up', `<p>You are <code>${subject}</code>.</p>
-        <p>${attribution.credited ? `Attributed to ad click <code>${attribution.credited.gclid ?? attribution.credited.source ?? 'a visit'}</code> at ${Math.round(attribution.credited.confidence * 100)}% confidence.` : `Unattributed (${attribution.reason}).`}</p>
-        <p>Cluster changes: ${changes.length}.</p>
+        <p>${arrival ? `Attributed to <code>${arrival.source}${arrival.campaignId ? ` ${arrival.campaignId}` : ''}</code> at ${Math.round(arrival.confidence * 100)}% confidence.` : 'Unattributed.'}</p>
+        <p>Known as: ${members.join(', ')}.</p>
         <p><a href="${GRAPH}/review#${encodeURIComponent(subject)}">Open the account</a> or <a href="${GRAPH}/review#!channels">the campaign report</a> on the reviewer screen. <a href="/">Back</a>.</p>`))
     }
     if (url.pathname === '/mail') {
       // Your backend knows a contact and asks the graph server for a link that names them. Needs LINK_SECRET on the server.
       const subject = `contact:${++accounts}`
-      const link = await graph('POST', '/link', { url: `http://${host}/`, subject })
-      return html(page(host, 'Sample email', `<p>To <code>${subject}</code>: your offer is ready. <a href="${link.url}">Open it</a>.</p>
+      const at = Date.now()
+      const { results: [link] } = await graph.record({ entries: [{ type: 'link', key: subject, at, subject, url: `http://${host}/`, expires: at + 30 * 86_400_000 }] })
+      if (!link?.ok || link.type !== 'link') throw new Error('The link was refused')
+      return html(page(host, 'Sample email', `<p>To <code>${subject}</code>: your offer is ready. <a href="${link.value.url}">Open it</a>.</p>
         <p>The link carries a signed token for this contact. Opening it links this browser to the contact.</p>`))
     }
     if (url.pathname === '/who') {
-      const cluster = device ? await graph('GET', `/cluster?subject=${encodeURIComponent(`visitor:${device}`)}`) : null
+      const known = device ? (await graph.lookup({ kind: 'person', subjects: [`visitor:${device}`], at: Date.now() })).people[0] : undefined
+      const cluster = known?.known ? known : null
       return html(page(host, 'Browser cluster', cluster
         ? `<p>This browser is <code>visitor:${device}</code>. Cluster members:</p><pre>${cluster.members.join('\n')}</pre>`
         : '<p>No data for this browser. Open the <a href="/">landing page</a> first.</p>'))

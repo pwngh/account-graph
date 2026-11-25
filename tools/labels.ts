@@ -19,7 +19,7 @@ if (!file || !GRAPH_URL || !GRAPH_TOKEN) {
   process.exit(2)
 }
 const read = async (path: string): Promise<any> => {
-  const response = await fetch(new URL(path, GRAPH_URL), { headers: { authorization: `Bearer ${GRAPH_TOKEN}` } })
+  const response = await fetch(new URL(`/review/api${path}`, GRAPH_URL), { headers: { authorization: `Bearer ${GRAPH_TOKEN}` } })
   if (!response.ok) throw new Error(`The server answered ${response.status}: ${await response.text()}`)
   return response.json()
 }

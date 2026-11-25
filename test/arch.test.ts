@@ -54,3 +54,29 @@ test('only a program reads the environment', () => {
     if (!READS_ENVIRONMENT.has(name)) assert.doesNotMatch(readFileSync(file, 'utf8'), /process\.env/, name)
   }
 })
+
+test('what runs where there is no Node reaches nothing of it', () => {
+  const seen = new Set<string>()
+  const visit = (file: string) => {
+    if (seen.has(file)) return
+    seen.add(file)
+    const source = readFileSync(file, 'utf8')
+    for (const match of source.matchAll(/(?:^|\n)(?:import|export) (type )?[^'"\n]*?from\s+['"]([^'"]+)['"]/g)) {
+      if (match[1]) continue
+      assert.ok(match[2]!.startsWith('.'), `${relative(SRC, file)} needs ${match[2]}`)
+      visit(resolve(dirname(file), match[2]!))
+    }
+  }
+  visit(join(SRC, 'remote.ts'))
+  assert.ok(seen.size >= 6)
+})
+
+test('the package shows these names and these paths, and no others', async () => {
+  const manifest = JSON.parse(readFileSync(join(SRC, '..', 'package.json'), 'utf8'))
+  assert.deepEqual(Object.keys(manifest.exports), ['.', './edge', './collect', './hardware', './testing', './package.json'])
+  assert.deepEqual(Object.keys(await import('../src/index.ts')), ['FAULT_CODES', 'accountGraph', 'hasCode', 'isFault', 'parseWebhook', 'verifyWebhook'])
+  assert.deepEqual(Object.keys(await import('../src/remote.ts')), ['FAULT_CODES', 'accountGraph', 'hasCode', 'isFault', 'parseWebhook', 'verifyWebhook'])
+  assert.deepEqual(Object.keys(await import('../src/testing/index.ts')), ['runWorkers'])
+  assert.deepEqual(Object.keys(await import('../src/edge/index.ts')), ['createEdge'])
+  assert.deepEqual(Object.keys(await import('../src/edge/hardware.ts')), ['hardwareId'])
+})

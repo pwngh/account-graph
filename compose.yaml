@@ -1,6 +1,6 @@
 # The server and its database, for trying it out:
 #   docker compose up --build
-# Change the two tokens and LINK_SECRET before anything real touches it. GRAPH_PORT moves it off 8080.
+# Change the two tokens, LINK_SECRET and RECEIPT_SECRETS before anything real touches it. GRAPH_PORT moves it off 8080.
 services:
   postgres:
     image: postgres:16
@@ -25,6 +25,7 @@ services:
     environment:
       DATABASE_URL: postgres://postgres:graph@postgres:5432/graph
       GRAPH_TOKEN: ${GRAPH_TOKEN:-change-me-service-token}
+      RECEIPT_SECRETS: ${RECEIPT_SECRETS:-change-me-receipt-secret-change-me}
       # The people who review, each with a token of their own.
       REVIEW_TOKENS: ${REVIEW_TOKENS:-{"reviewer":"change-me-review-token"}}
       # What differs from the default policy, as JSON.
@@ -54,21 +55,18 @@ services:
       RETURN_HOURS: ${RETURN_HOURS:-24}
       LATE_HOURS: ${LATE_HOURS:-6}
       STAFF_NETWORKS: ${STAFF_NETWORKS:-}
-      CHANGE_WEBHOOK: ${CHANGE_WEBHOOK:-}
-      CHANGE_SECRET: ${CHANGE_SECRET:-}
+      WEBHOOK_URL: ${WEBHOOK_URL:-}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
       TRUST_PROXY: ${TRUST_PROXY:-}
       COOKIE: ${COOKIE:-}
       RATE_PER_MINUTE: ${RATE_PER_MINUTE:-}
       RATE_BURST: ${RATE_BURST:-}
       RATE_LIMIT: ${RATE_LIMIT:-}
-      OUTBOX_INTERVAL_MS: ${OUTBOX_INTERVAL_MS:-}
       OUTBOX_DELAY_MS: ${OUTBOX_DELAY_MS:-}
       FORGET_ADS: ${FORGET_ADS:-}
       CALL_MIN_SECONDS: ${CALL_MIN_SECONDS:-}
       CALL_TAP_SECONDS: ${CALL_TAP_SECONDS:-}
       CALL_EXCLUDE: ${CALL_EXCLUDE:-}
-      COST_INTERVAL_MS: ${COST_INTERVAL_MS:-}
-      COST_DAYS: ${COST_DAYS:-}
       FINGERPRINT_SECRET: ${FINGERPRINT_SECRET:-}
       FINGERPRINT_REGION: ${FINGERPRINT_REGION:-}
       MAXMIND_ACCOUNT_ID: ${MAXMIND_ACCOUNT_ID:-}

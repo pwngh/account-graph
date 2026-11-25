@@ -15,6 +15,8 @@ import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { join } from 'node:path'
+import { accountGraph, isFault } from '../src/index.ts'
+import type { RecordEntry } from '../src/index.ts'
 
 /** Whether a body was signed with the key: HMAC-SHA1 in base64, as CallRail's API says. */
 export function signed(raw: Buffer, signature: string | undefined, key: string): boolean {
@@ -27,7 +29,7 @@ export function signed(raw: Buffer, signature: string | undefined, key: string):
 const number = (value: unknown) => (typeof value === 'string' && /^\+\d{8,15}$/.test(value) ? value : undefined)
 
 /** The call as the graph server takes it, or why it cannot be. */
-export function toCall(said: Record<string, unknown>): { call: Record<string, unknown> } | { problem: string } {
+export function toCall(said: Record<string, unknown>): { call: RecordEntry } | { problem: string } {
   const { id, customer_phone_number, tracking_phone_number, start_time, duration, answered, voicemail, direction } = said
   if (!/^[\w.-]{1,80}$/.test(typeof id === 'number' ? String(id) : typeof id === 'string' ? id : '')) return { problem: 'no id' }
   // A time without its zone could be hours off, and a tap is matched within minutes.
@@ -39,24 +41,25 @@ export function toCall(said: Record<string, unknown>): { call: Record<string, un
   const seconds = duration === undefined || duration === null || duration === '' ? NaN : Number(duration)
   return {
     call: {
-      id: `callrail-${id}`, at: Date.parse(start_time),
-      ...(outbound ? { direction: 'outbound', from: tracking, to: customer } : { ...(customer && { from: customer }), to: tracking }),
+      type: 'call', key: `callrail-${id}`, at: Date.parse(start_time),
+      ...(outbound ? { direction: 'outbound', from: tracking, to: customer! } : { direction: 'inbound', ...(customer && { from: customer }), to: tracking }),
       ...(Number.isFinite(seconds) && seconds >= 0 && { duration: Math.round(seconds) }),
       // Voicemail is not an answer, whatever else is said. Unknown is left out, and can be reported later.
-      ...(voicemail === true ? { answered: false, voicemail: true } : typeof answered === 'boolean' && { answered }),
+      ...(voicemail === true ? { result: { answered: false, voicemail: true } } : typeof answered === 'boolean' && { result: { answered } }),
     },
   }
 }
 
 export interface Forwarder {
   /** Keeps the call, then tries to send what is kept. */
-  take(call: Record<string, unknown>): void
+  take(call: RecordEntry): void
   /** Sends what is kept, oldest first, and stops at the first the server cannot be reached for. */
   flush(): Promise<{ sent: number; refused: number; left: number }>
 }
 
-export function createForwarder({ folder, graph, token, fetch: call = fetch }: { folder: string; graph: string; token: string; fetch?: typeof fetch }): Forwarder {
+export function createForwarder({ folder, graph, token, fetch: fetcher }: { folder: string; graph: string; token: string; fetch?: typeof fetch }): Forwarder {
   mkdirSync(folder, { recursive: true, mode: 0o700 })
+  const calls = accountGraph({ url: graph, token, timeoutMs: 10_000, ...(fetcher && { fetch: fetcher }) })
   let running: Promise<{ sent: number; refused: number; left: number }> | undefined
   const kept = () => readdirSync(folder).filter((name) => name.endsWith('.json')).sort()
   async function run() {
@@ -64,21 +67,29 @@ export function createForwarder({ folder, graph, token, fetch: call = fetch }: {
     let refused = 0
     for (const name of kept()) {
       const at = join(folder, name)
-      const response = await call(`${graph}/call`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: readFileSync(at), signal: AbortSignal.timeout(10_000) }).catch(() => undefined)
-      if (response?.ok) {
-        rmSync(at)
-        sent += 1
-      } else if (response?.status === 400) {
-        // The same call would be refused again: it is set aside for somebody to look at.
+      // The same call would be refused again: it is set aside for somebody to look at.
+      const aside = () => {
         renameSync(at, `${at}.refused`)
         refused += 1
-      } else break
+      }
+      try {
+        const { results: [result] } = await calls.record({ entries: [JSON.parse(readFileSync(at, 'utf8'))] })
+        // Somebody who was deleted since stays so.
+        if (result!.ok || result!.reason === 'FORGOTTEN') {
+          rmSync(at)
+          sent += 1
+        } else aside()
+      } catch (error) {
+        // A fault that may pass holds up the rest, and the key makes the next try safe.
+        if (!isFault(error) || error.retryable || error.code !== 'INPUT.MALFORMED') break
+        aside()
+      }
     }
     return { sent, refused, left: kept().length }
   }
   return {
     take(made) {
-      const name = `${String(made.at).padStart(15, '0')}-${createHash('sha256').update(String(made.id)).digest('hex').slice(0, 16)}.json`
+      const name = `${String(made.at).padStart(15, '0')}-${createHash('sha256').update(made.key).digest('hex').slice(0, 16)}.json`
       writeFileSync(join(folder, `${name}.part`), JSON.stringify(made), { mode: 0o600, flush: true })
       renameSync(join(folder, `${name}.part`), join(folder, name))
     },
