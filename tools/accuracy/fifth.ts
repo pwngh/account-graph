@@ -30,6 +30,14 @@ const ARMS: Record<string, (seed: number) => Switches> = {
   'staffed records': () => ({ policy: INTAKE, speaker: true, staff: true }),
   'staffed decided': (seed) => ({ policy: INTAKE, speaker: true, staff: true, decide: desk(seed) }),
 }
+/** Where each arm is judged, and what would be bad: shares at most, and at least. Written before the held seeds. */
+const JUDGED: Record<string, string[]> = { self5: ['records decided'], staff5: ['staffed decided'], base3: ['records decided', 'staffed decided'], high3: ['records decided', 'staffed decided'] }
+const MARKS: Record<string, { mixed: number; wrong: number; joined: number; astray: number; credited: number; decided: number }> = {
+  self5: { mixed: 0.001, wrong: 0.01, joined: 0.9, astray: 0.02, credited: 0.97, decided: 0.05 },
+  staff5: { mixed: 0.001, wrong: 0.01, joined: 0.85, astray: 0.02, credited: 0.93, decided: 0.05 },
+  base3: { mixed: 0.0025, wrong: 0.01, joined: 0.8, astray: 0.02, credited: 0.93, decided: 0.07 },
+  high3: { mixed: 0.005, wrong: 0.02, joined: 0.62, astray: 0.03, credited: 0.89, decided: 0.11 },
+}
 const START = Date.parse('2026-03-02T15:00:00Z')
 const NAMES = 'f5a69fbe139b8541f96a42dae40bf4d564d29d660f2aeb1add0eec776ec8ff2f'
 
@@ -84,6 +92,7 @@ async function run(rates: Rates, people: number, days: number, pool: number, arm
   return sums
 }
 
+const mark = (what: string, some: number, all: number, held: (share: number) => boolean) => console.log(`  ${all === 0 ? 'BAD (nothing)' : held(some / all) ? 'held' : 'BAD'}: ${what}: ${of(some, all)}`)
 const of = (some: number, all: number) => `${some} of ${all} (${all === 0 ? 'none' : `${((some / all) * 100).toFixed(2)}%`})`
 const lines = (t: Sum) => [
   `identity: people whose record is with another's ${of(t.mixed, t.recorded)}, worst world ${(Math.max(...t.spread) * 100).toFixed(2)}%; pairs of records joined that are two people ${of(t.wrong, t.found + t.wrong)}`,
@@ -91,7 +100,7 @@ const lines = (t: Sum) => [
   `credit: to the wrong ad ${of(t.astray + t.coldWrong, t.right + t.astray + t.coldWrong)}; of those with a chain of facts, to it ${of(t.reached, t.reach)}`,
 ]
 
-for (const name of positionals.length > 0 ? positionals : ['self5', 'staff5', 'self4', 'staff4', 'base3', 'high3']) {
+for (const name of positionals.length > 0 ? positionals : ['self5', 'staff5', 'base3', 'high3']) {
   const { rates, people, days, pool } = SETTINGS[name]!
   const size = Number(values.people ?? people)
   const sums = await run(rates, size, days, pool, Object.keys(ARMS))
@@ -99,5 +108,13 @@ for (const name of positionals.length > 0 ? positionals : ['self5', 'staff5', 's
     console.log(`\n## ${name}, ${arm}: ${worlds} worlds of ${size} people over ${days} days`)
     for (const line of lines(t)) console.log(line)
     if (t.decided > 0) console.log(`staff decided ${t.decided} pairs: joined ${t.joins}, ${t.wrongJoins} of them wrongly; kept apart ${t.splits}, ${t.wrongSplits} of them wrongly`)
+    if (!JUDGED[name]?.includes(arm)) continue
+    const bad = MARKS[name]!
+    mark("people whose record is with another's", t.mixed, t.recorded, (share) => share <= bad.mixed)
+    mark('pairs of records joined that are two people', t.wrong, t.found + t.wrong, (share) => share <= bad.wrong)
+    mark('pairs of records that are one person, joined', t.found, t.pairs, (share) => share >= bad.joined)
+    mark('credit to the wrong ad', t.astray + t.coldWrong, t.right + t.astray + t.coldWrong, (share) => share <= bad.astray)
+    mark('of those with a chain of facts to their ad, credited to it', t.reached, t.reach, (share) => share >= bad.credited)
+    mark('pairs staff had to decide, of people with a record', t.decided, t.recorded, (share) => share <= bad.decided)
   }
 }

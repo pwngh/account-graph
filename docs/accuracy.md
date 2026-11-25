@@ -493,6 +493,43 @@ Each safety the reviews added took some of these joins: on 20270501-08, base3 jo
 
 All that was printed is in [accuracy-fourth-held.txt](accuracy-fourth-held.txt). The worlds and the rules are by one author's hands, the marks were set after looks, and nobody here is real.
 
+## The fifth run
+
+Written before its held seeds were run. Nothing of the four runs above is changed.
+
+### What is asked in the fifth run
+
+Of the pairs of records the fourth run's rule left undone, about four in five had no date of birth on one of the two, and nobody looked at what was shown. This run asks what is left where a firm does both: it asks for a date every time, and its staff decide what they are shown.
+
+| What | Rate |
+| --- | --- |
+| `self5`, `staff5` | `self4` and `staff4` with a date of birth on 95% of records in place of 50% |
+| Pairs shown that staff look at | 90%. The rest stay shown |
+| Of those, decided rightly | 98%. A wrong one joins two people, or keeps one person's records apart for good |
+
+All are assumed, and were set before any look of this run. A wrong decision is as likely for a hard pair as for an easy one, which is kinder than life. Staff know no more of a pair than whether it is one person, 98 times of 100.
+
+New in the code: [one full name and date of birth](matching.md#records-that-have-to-be-confirmed) shows two records, and joins them where anything else agrees; [credit has a bar of its own](matching.md#a-bar-of-its-own-for-credit), 0.75 in `examples/intake.json`.
+
+| Arm | Policy |
+| --- | --- |
+| `records decided` | `new` with `"records": "confirmed"`, and staff decide. Judged in self5, base3 and high3 |
+| `staffed decided` | `examples/intake.json`, staff joining callers and deciding. Judged in staff5, base3 and high3 |
+| `default`, `new`, `records`, `staffed records` | Printed and not judged |
+
+### What would be bad in the fifth run
+
+| Of the counts pooled over the worlds | self5 | staff5 | base3 | high3 |
+| --- | --- | --- | --- | --- |
+| People whose record is with another's, more than | 0.1% | 0.1% | 0.25% | 0.5% |
+| Pairs of records joined that are two people, more than | 1% | 1% | 1% | 2% |
+| Pairs of records that are one person, joined, fewer than | 90% | 85% | 80% | 62% |
+| Credit to the wrong ad, more than | 2% | 2% | 2% | 3% |
+| Of those with a chain of facts to their ad, credited, fewer than | 97% | 93% | 93% | 89% |
+| Pairs staff had to decide, of people with a record, more than | 5% | 5% | 7% | 11% |
+
+Seeds 20270701 to 20270708 are for development, and were looked at several times while the code was written: the marks were set after the last of those looks, at `8036815`, and near what it showed. A review after it changed how letters such as đ are kept, not looked at again. Held: 20270801 to 20270820, once, at the commit the output names.
+
 ## Limitations
 
 - Most rates are assumed. Under `high`, every one is at its hard end at once.
