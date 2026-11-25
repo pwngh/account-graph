@@ -74,6 +74,7 @@
 
 - `createOutbox` sends each outcome once, with leases, backoff and retries. `googleAds`, `meta`, `microsoftAds` and `tiktok` are targets.
 - `outbox.hold`, `release`, `withdraw`, `takeBack` and `giveBack` change a queued or sent conversion. `GET /conversions` and `POST /retry` list and retry rejected conversions.
+- `POST /convert`, `POST /restate`, `POST /payment` and `GET /conversion` answer with jobs without their `keys`, the hashed email and phone.
 - `consent`, `consentHistory` and `POST /consent` record advertising consent, including Global Privacy Control.
 - `POST /forget` with `ads: true` lists conversions held by ad platforms. `FORGET_ADS`, or `retract: true` for one deletion, asks platforms that support it to retract them. `GET /me` returns `retraction`.
 
