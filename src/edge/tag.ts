@@ -26,7 +26,7 @@ function browserModule(name: string): string {
  *   collect.js?domains=shop.example,help.example   carry the visitor along links to your other sites
  *   collect.js?forms=all                           add the device id and landing page to every form
  *   collect.js?pool=1                              show this visitor a number of their own in elements marked data-ag-pool
- *   collect.js?text=1                              put this visitor's code in text links
+ *   collect.js?text=1                              put this visitor's code in text links, and in elements marked data-ag-code
  * Set `window.accountGraphConsent = { adUserData, adPersonalization }` before
  * the tag to pass a consent banner's answer. Once loaded, the page can call
  * `accountGraph.event('inquiry')`, and taps on phone links and on elements
@@ -48,7 +48,7 @@ const RUN = `
   collect(options).catch(() => undefined)
   globalThis.accountGraph = { event: (name, detail) => event(options, name, detail).catch(() => undefined) }
   watch(options)
-  globalThis.accountGraph.fields = () => fields(options.consent)
+  globalThis.accountGraph.fields = (form) => fields(options.consent, form)
   fill({ all: self.searchParams.get('forms') === 'all', consent: options.consent })
   if (self.searchParams.get('pool')) pool(options)
   if (self.searchParams.get('text')) texts(options)

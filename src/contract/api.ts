@@ -144,6 +144,8 @@ export interface CallEntry extends Keyed<'call'> {
   readonly to: string
   readonly duration?: number
   readonly result?: CallResult
+  /** The code the caller read out or entered, from the page they saw. Pages are given codes where the server has `textCodes` on. Never kept. */
+  readonly code?: string
   readonly tags?: Readonly<Record<string, string>>
 }
 

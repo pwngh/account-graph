@@ -35,6 +35,9 @@
 - `record` `call` and `text`, and the Twilio webhooks, record calls and texts without their content. Two reports of one call are one call.
 - `call_update` reports a result, or that a caller was reached. The newest `at` stands, whatever order they arrive in.
 - A call is linked to the visitor who tapped the number or was shown it (`phones.pool`), or attributed to the channel of its number.
+- `record` `call` takes `code`, the code of a visitor that the caller read out. It links the call to that visitor in place of a tap or a pool number, and the answer has the flag `code` or `taken`. Codes are given where `TEXT_CODES` is on.
+- A `call` reported again with a `code` it did not have stands as if it had come with it.
+- `data-ag-code` marks an element the script tag fills with the visitor's code, under `collect.js?text=1`.
 - `report` `callbacks`, `texts`, `calls` and `after_calls` list missed calls, unanswered texts, call results and what followed calls.
 - `OPEN_HOURS` limits waiting times and stale-feed checks to open hours, with `us` and `us-tx` holidays.
 
@@ -77,6 +80,7 @@
 - Requests with invalid UTF-8, NUL characters or more than 32 levels of nesting are refused.
 - `runWorkers` of `./testing` runs every worker once. `npm run firm` and `examples/six-calls.ts` run in memory.
 - `record` `profile` takes `speaker`, whoever speaks for the subject. Their browser and number are related to the subject and never joined to them, and what brought them earns the credit.
+- `data-ag-for-other` marks the control of a form that says it is about somebody else. The script tag then sends `ag_speaker_device` in place of `ag_device`, and `accountGraph.fields(form)` answers the same way.
 - A matching rule takes `relates`, for a kind that says two subjects are two people. Clusters need a `rebuild`, because the default policy has the new kind `behalf`.
 - A tap two callers could have made ties neither. On a number others are using, a tap has to be within thirty seconds of its call. A caller who is one visitor's takes another's pool number only while it is shown.
 - A call to a pool number that was somebody else's less than `POOL_GRACE_MINUTES` before is its holder's only with a tap. One by somebody who dialed it when it was another's is nobody's by it. A visitor who comes back gets the number they had.

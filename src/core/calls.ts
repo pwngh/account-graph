@@ -4,8 +4,8 @@ import type { Graph } from './graph.ts'
 import { hashPhone, normalizePhone, phoneOfType } from './identifiers.ts'
 import { texasArea } from './lookups.ts'
 import { checkTags } from './tags.ts'
-import { asks, replyTo } from './texts.ts'
-import type { AttributedTouch, CallResult, CallTime, Candidate, FollowUp, Identifier, KeptCall, NotLead, Outcome, Subject } from '../contract/types.ts'
+import { asks, namedBy, replyTo } from './texts.ts'
+import type { AttributedTouch, CallResult, CallTime, Candidate, FollowUp, Identifier, KeptCall, NotLead, Outcome, Subject, Touch } from '../contract/types.ts'
 
 /** One phone call to a number of yours, or from one, as your telephone provider reports it. */
 export interface Call {
@@ -35,6 +35,11 @@ export interface Call {
   voicemail?: boolean
   /** How long the caller waited before someone answered or they gave up, in seconds. */
   waited?: number
+  /**
+   * The code the caller read out or entered, from the page they saw. One that names exactly one visitor says whose call it is,
+   * in place of the number they were shown or a tap. Codes are given to pages only where text codes are on. Never kept.
+   */
+  code?: string
   /** Facts about the call, such as the language chosen at the prompt, carried on to its outcome. */
   tags?: Record<string, string>
 }
@@ -55,9 +60,12 @@ export interface Channel {
  * a toll-free line, which is a business or a machine, not a person;
  * `short` it ended before `minimumSeconds`; `repeat` this number has called
  * before; `ambiguous` more than one visitor tapped the number just before;
- * `pool` it was tied to the visitor the number was shown to.
+ * `pool` it was tied to the visitor the number was shown to;
+ * `code` it was tied to the visitor its code names; `taken` its code names a
+ * visitor already someone else's, or kept apart from this caller, so it is
+ * tied to nobody.
  */
-export type CallFlag = 'blocked' | 'toll_free' | 'short' | 'repeat' | 'ambiguous' | 'pool' | 'left_out'
+export type CallFlag = 'blocked' | 'toll_free' | 'short' | 'repeat' | 'ambiguous' | 'pool' | 'code' | 'taken' | 'left_out'
 
 export interface CallOptions {
   /** Your tracking numbers, each with the channel it is published on. Written any way a phone number is. */
@@ -68,6 +76,8 @@ export interface CallOptions {
   minimumSeconds?: number
   /** How long before a call a tap on its number may be, in milliseconds. Defaults to three minutes. */
   clickWindow?: number
+  /** How long a code names the visitor it was given to, in milliseconds. Defaults to 30 days. */
+  codeLife?: number
   /** Numbers shown to one visitor at a time, and how long after a visitor's turn a call still counts as theirs when nobody has had the number since, in milliseconds. */
   pool?: { numbers: readonly string[]; grace: number }
   /** The step a counted call is recorded as. Defaults to `call`. */
@@ -117,7 +127,7 @@ export interface RecordedCall {
   counted: boolean
   /** How it stands: answered, missed, gone to voicemail, waiting for its result, or not known. */
   state: CallState
-  /** The visitor the number was shown to, or who tapped it just before when there was exactly one. The two are now linked. */
+  /** The visitor the code names, the number was shown to, or who tapped it just before when there was exactly one. The two are now linked. */
   visitor?: Subject
   /** The call had been recorded before, and nothing was written. */
   duplicate: boolean
@@ -151,7 +161,7 @@ export function dialed(number: string, at: number, country?: string): Identifier
 /**
  * Records a phone call. The caller becomes a subject carrying their phone
  * number, so an account that later gives the same number is tied to the
- * call. If the number was shown to one visitor, or exactly one tapped it on
+ * call. If its code names one visitor, the number was shown to one, or exactly one tapped it on
  * your site just before, the call is tied to that visitor, and so to the ad click that brought them.
  * Otherwise the call is filed under the channel its tracking number is published on.
  */
@@ -164,6 +174,7 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   if (typeof call.to !== 'string') throw malformed(`Call "${call.id}" requires "to", the dialed number`)
   const to = normalizePhone(call.to, options.country)
   const tags = checkTags(call.tags, `Call "${call.id}"`)
+  if (call.code !== undefined && typeof call.code !== 'string') throw malformed(`Call "${call.id}" requires its code as a string`)
   const { id, at } = call
   if (call.direction === 'outbound') return placed(graph, call, to, result, tags, options)
 
@@ -184,8 +195,11 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   if (before) {
     // Reported again with a result it did not have before, the call is settled by it.
     const settled = result && (await tell(graph, id, result, options))
+    // Or with the code it did not have, and then it stands as it would had the code come first.
+    const first = call.code === undefined ? undefined : await graph.keptCall(id)
+    if (first) await tellCode(graph, first, call.code, options, channel && lineOf(channel, custom, to))
     const kept = await graph.keptCall(id)
-    return { subject: before.subject, flags: [], counted: settled?.counted ?? false, state: kept ? callState(kept, (options.now ?? Date.now)(), options) : 'unknown', duplicate: true }
+    return { subject: before.subject, flags: [], ...(first && kept && { flags: kept.flags as CallFlag[], ...(kept.visitor && { visitor: kept.visitor }) }), counted: settled?.counted ?? false, state: kept ? callState(kept, (options.now ?? Date.now)(), options) : 'unknown', duplicate: true }
   }
   const saved = await graph.keptCall(id)
   if (saved?.direction === 'outbound') throw refused(`Call "${id}" is already recorded as outbound`, { reason: 'KEY_REUSED', fields: ['direction'] })
@@ -207,7 +221,13 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   if (phone) await graph.observe({ subject, identifiers: [phone], at, event: 'call' })
 
   // A visitor's own arrival says more than the number does, so the number's channel is only the fallback.
-  const line = channel && { source: channel.source, medium: channel.medium ?? 'call', ...(channel.campaign && { campaign: channel.campaign }), ...(channel.campaignId && { campaignId: channel.campaignId }), ...(custom && { custom }), landing: `tel:${to}` }
+  const line = channel && lineOf(channel, custom, to)
+  // What a code says stands over who was shown the number and who tapped it, and those are then not looked for.
+  // A call that was cut off half-recorded keeps what its code said then, and takes another at the end, as one reported again does.
+  const code = saved ? undefined : await namedBy(graph, call.code, at, options.codeLife)
+  const coded = code && (await graph.tieCall(subject, code.visitor, codeTie(id), at, { notes: [code.note] })) ? code.visitor : undefined
+  if (code) flags.push(coded ? 'code' : 'taken')
+  if (saved && byCode(saved)) flags.push(saved.flags.includes('code') ? 'code' : 'taken')
   // The outcome comes before the touch: if recording it fails, the call is reported again and nothing has been written twice.
   // What would be sent is held before the call is kept, while the number is at hand: a result that finds the call then finds that too.
   if (!short) await options.hold?.(outcomeOf({ id, subject, at, ...(tags && { tags }) }, options, known))
@@ -222,16 +242,34 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   if (saved?.visitor !== undefined && !saved.flags.includes('pool') && saved.visitor !== found) await graph.doubtCall(id, doubtful, line)
   // A visitor already tied to a different caller is passed over, so a browser cannot collect call after call by tapping again.
   // The same caller ringing back still counts. A visitor a reviewer has kept apart from this caller is passed over too.
-  const visitor = found !== undefined && (await graph.tieCall(subject, found, `${holder ? 'lease' : 'dial'}:${id}`, at, holder ? { pool: to, grace } : { notes })) ? found : undefined
+  const tied = found !== undefined && (await graph.tieCall(subject, found, `${holder ? 'lease' : 'dial'}:${id}`, at, holder ? { pool: to, grace } : { notes })) ? found : undefined
+  const visitor = byCode(kept) ? (coded ?? saved?.visitor) : tied
   if (doubtful) flags.push('ambiguous')
   if (visitor !== undefined && holder) flags.push('pool')
   await graph.keepCall({ ...kept, ...(visitor && { visitor }) })
   const counted = await settle(graph, id, options, known ?? '')
 
+  if (!(await graph.keptCall(id))!.visitor && line) await graph.touch({ ...line, subject, at })
+  if (saved && call.code !== undefined) await tellCode(graph, (await graph.keptCall(id))!, call.code, options, line)
   const now = (await graph.keptCall(id))!
-  if (!now.visitor && line) await graph.touch({ ...line, subject, at })
   await graph.observe({ subject, identifiers: [note], at, event: 'call' })
   return { subject, flags: now.flags as CallFlag[], counted, state: callState(now, (options.now ?? Date.now)(), options), ...(now.visitor && { visitor: now.visitor }), duplicate: false }
+}
+
+/** Whether a code said whose call it is, or that it is nobody's. */
+export const byCode = (call: Pick<KeptCall, 'flags'>): boolean => call.flags.includes('code') || call.flags.includes('taken')
+
+/** What ties a caller to the visitor their code names. A text's is named after its id, which has no colon. */
+export const codeTie = (id: string): Identifier => `text:call:${id}`
+
+/** The channel of a number, as an arrival on it. */
+const lineOf = (channel: Channel, custom: Record<string, string> | undefined, to: string): Omit<Touch, 'subject' | 'at'> => ({ source: channel.source, medium: channel.medium ?? 'call', ...(channel.campaign && { campaign: channel.campaign }), ...(channel.campaignId && { campaignId: channel.campaignId }), ...(custom && { custom }), landing: `tel:${to}` })
+
+/** Takes the code of a call that was recorded without one, by when the call was. The first code that named somebody stands. */
+async function tellCode(graph: Graph, call: KeptCall, given: string | undefined, options: CallOptions, line: Omit<Touch, 'subject' | 'at'> | undefined): Promise<void> {
+  if (byCode(call)) return
+  const named = await namedBy(graph, given, call.at, options.codeLife)
+  if (named) await graph.nameCall(call.id, named.visitor, named.note, line)
 }
 
 /** Who is calling, while the phone rings: what a call from this number to this one would be tied to. Nothing is written. */
@@ -350,11 +388,13 @@ async function visitorFor(graph: Graph, call: Heard, options: CallOptions): Prom
   }
   const views = new Map<string, Awaited<ReturnType<typeof shown>>>([[call.id, here]])
   if (pooled) for (const each of kept) views.set(each.id, await shown(each))
-  const tapped = heard.filter((each) => views.get(each.id)?.holder === undefined)
+  // One a code says is somebody's, or nobody's, came of no tap. It still makes the number busy.
+  const tapped = heard.filter((each) => !byCode(each) && views.get(each.id)?.holder === undefined)
   const may = (each: Heard, visitor: Subject) => !apart.get(visitor)!.has(each.subject) && (views.get(each.id)?.own?.has(visitor) ?? true)
 
   const result = ties(tapped, heard, taps, owners, may, redone, { window, near, claim })
-  const undone = kept.filter((each) => redone.has(each.id) && !each.flags.includes('pool') && views.get(each.id)?.holder === undefined && (each.visitor === undefined ? result.get(each.id)!.visitor === undefined && (each.recorded > (options.now ?? Date.now)() - STAGED || (result.get(each.id)!.doubtful && !each.flags.includes('ambiguous'))) : result.get(each.id)!.visitor !== each.visitor)).map((each) => ({ id: each.id, ambiguous: result.get(each.id)!.doubtful }))
+  const undone = kept.filter((each) => redone.has(each.id) && !each.flags.includes('pool') && !byCode(each) && views.get(each.id)?.holder === undefined && (each.visitor === undefined ? result.get(each.id)!.visitor === undefined && (each.recorded > (options.now ?? Date.now)() - STAGED || (result.get(each.id)!.doubtful && !each.flags.includes('ambiguous'))) : result.get(each.id)!.visitor !== each.visitor)).map((each) => ({ id: each.id, ambiguous: result.get(each.id)!.doubtful }))
+  if (byCode(call)) return { holder: false, grace: 0, notes: [], doubtful: false, undone }
   if (here.holder !== undefined) {
     const free = !(await graph.separations(call.subject)).includes(here.holder) && (await tiesOf(graph, here.holder)).every((tie) => tie.subject === call.subject)
     return { holder: true, grace: here.grace, ...(free && { visitor: here.holder }), notes: [], doubtful: false, undone }

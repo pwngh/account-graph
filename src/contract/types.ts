@@ -415,7 +415,7 @@ export interface KeptCall {
   /** How long it lasted in seconds, from when the phone system picked up. Absent when the provider did not say. */
   duration?: number
   flags: string[]
-  /** The visitor whose tap led to it. */
+  /** The visitor whose it is: by a code, the number they were shown, or a tap. */
   visitor?: Subject
   /** Facts about it, carried on to its outcome. */
   tags?: Record<string, string>

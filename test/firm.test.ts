@@ -104,4 +104,16 @@ for (const practice of ['family', 'injury'] as const) test(`every scene of the $
   // The site shows a visitor from an ad a number of their own, in their language.
   await screen.run(`location.href = ${JSON.stringify(`${firm.site}/es?gclid=you&utm_id=30333`)}`)
   await until('a pool number', async () => ((await screen.run(`document.querySelector('.call')?.textContent ?? ''`).catch(() => '')) as string).includes('(555) 010-011'))
+  // A mother writes about her son: her browser and her number are related to him, and are not his.
+  await screen.run(`{
+    const form = document.querySelector('form'), say = (name, value) => (form.elements[name].value = value)
+    say('first', 'Alma'); say('last', 'Ferrer'); say('phone', '(555) 010-0047')
+    form.elements.about_other.click()
+    say('their_first', 'Dario'); say('their_last', 'Ferrer')
+    form.requestSubmit()
+  }`)
+  await until('the form', () => screen.run(`Boolean(document.querySelector('.received'))`).catch(() => false))
+  const device = await screen.run(`localStorage.getItem('ag_device')`)
+  const his = JSON.stringify(await (await fetch(`${firm.graph}/review/api/subject?subject=contact:dario-ferrer`, { headers: { authorization: 'Bearer demo' } })).json())
+  assert.deepEqual([`visitor:${device}`, `caller:${hashPhone('+15550100047')}`, 'behalf:', `device:${device}`, `phone:${hashPhone('+15550100047')}`].map((each) => his.includes(`"${each}`)), [true, true, true, false, false], his)
 })

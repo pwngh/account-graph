@@ -7,7 +7,7 @@ import type { BoardColumn, BoardPlace } from './board.ts'
 import type { Labeled } from './calibrate.ts'
 import { summarizeCalls } from './callreport.ts'
 import type { CallSummary } from './callreport.ts'
-import { followUp, isTie } from './calls.ts'
+import { byCode, codeTie, followUp, isTie } from './calls.ts'
 import { Gone, asks, beginnings, replyTo } from './texts.ts'
 import { followed } from './followed.ts'
 import type { Followed } from './followed.ts'
@@ -218,6 +218,12 @@ export interface Graph {
    * or came of it, or makes the number busy. Untied, it is filed under `line`, the channel of the number it rang.
    */
   doubtCall(id: string, ambiguous: boolean, line?: Omit<Touch, 'subject' | 'at'>): Promise<void>
+  /**
+   * Gives a call that was recorded without it the visitor its code names, as `tieCall` would have: whoever it was tied to by a
+   * tap or a number shown to them is untied, and it is flagged `code`, or `taken` and filed under `line` where the two cannot
+   * be tied. Nothing where a code has said already, or a person has restored the tie it has.
+   */
+  nameCall(id: string, visitor: Subject, note: Identifier, line?: Omit<Touch, 'subject' | 'at'>): Promise<void>
   /** Kept calls to a number with `from <= at < to`, oldest first. */
   callsTo(number: string, from: number, to: number): Promise<KeptCall[]>
   /** Every kept call to or from the given subjects, oldest first. */
@@ -982,6 +988,12 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
   const followable = async (tx: Tx, subject: Subject, since: number, at: number) => (await tx.touchesOf([subject], since, at)).length > 0 && (await tx.consentOf([subject])).get(subject)?.adUserData !== false
 
+  /** Whether a caller may be tied to a visitor: no reviewer keeps the two apart, and the visitor is no other caller's. */
+  const tieable = async (tx: Tx, caller: Subject, visitor: Subject, identifier: Identifier): Promise<boolean> =>
+    !(await tx.separatedOf([caller])).some((pair) => pair.includes(visitor)) &&
+    !((await neighbors(tx, [visitor])).get(visitor) ?? []).some((link) => link.subject !== caller && link.reasons.some((reason) => isTie(reason.identifier, visitor, link.subject))) &&
+    !(await tx.states([identifier])).get(identifier)?.ignored
+
   const holderOf = async (tx: Tx, number: string, at: number, grace: number): Promise<Subject | undefined> => {
     const [last] = await tx.newestLeases([number], at)
     return last && (at < last.until || (grace > 0 && at - last.until <= grace)) ? last.subject || undefined : undefined
@@ -1501,9 +1513,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const { visitor, ...rest } = call
         // One doubted meanwhile is not tied either.
         const doubted = (await tx.states([`dial:${call.id}`])).get(`dial:${call.id}`)?.ignored === true
-        const tied = visitor !== undefined && (await tx.edgesOn([...(doubted ? [] : [`dial:${call.id}`]), `lease:${call.id}`])).some((edge) => edge.subject === visitor)
+        const tied = visitor !== undefined && (await tx.edgesOn([...(doubted ? [] : [`dial:${call.id}`]), `lease:${call.id}`, codeTie(call.id)])).some((edge) => edge.subject === visitor)
         // What was said of it meanwhile stays said.
-        const said = (await tx.callOf(call.id))?.flags.includes('ambiguous') && doubted && !call.flags.includes('pool')
+        const said = (await tx.callOf(call.id))?.flags.includes('ambiguous') && doubted && !call.flags.includes('pool') && !byCode(call)
         await tx.setCall({ ...rest, ...(said && { flags: [...new Set([...call.flags, 'ambiguous'])] }), ...(tied && { visitor }), recorded: now() })
         await tx.fed('calls', now())
       })
@@ -1571,12 +1583,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       let tied = false
       // One transaction: two calls reported at once cannot both find the visitor free.
       await changing(async (tx) => {
-        const apart = (await tx.separatedOf([caller])).some((pair) => pair.includes(visitor))
-        const others = ((await neighbors(tx, [visitor])).get(visitor) ?? []).some((link) => link.subject !== caller && link.reasons.some((reason) => isTie(reason.identifier, visitor, link.subject)))
         // What matched the two is read again: whoever was forgotten meanwhile is not tied, even where they have been seen since.
         const matched = 'pool' in by ? (await holderOf(tx, by.pool, at, by.grace)) === visitor : (await tx.edgesOn(by.notes)).some((edge) => edge.subject === visitor)
         // Another call reported meanwhile may have cast doubt on it.
-        tied = !apart && !others && matched && !(await tx.states([identifier])).get(identifier)?.ignored
+        tied = matched && (await tieable(tx, caller, visitor, identifier))
         return tied ? record(tx, [caller, visitor].map((subject) => ({ subject, identifier, at, event: 'call', recorded: now() }))) : []
       })
       return tied
@@ -1588,8 +1598,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         // What a person has looked at and restored stays.
         if ((await tx.newestNaming([identifier], 0, ['ignore', 'restore']))?.action === 'restore') return []
         const call = await tx.callOf(id)
-        // Shown the number, it is of no tap.
-        if (call?.flags.includes('pool')) return []
+        // Shown the number, or named by a code, it is of no tap.
+        if (call && (call.flags.includes('pool') || byCode(call))) return []
         if (call && (call.visitor !== undefined || (ambiguous && !call.flags.includes('ambiguous')))) {
           const { visitor, ...rest } = call
           await tx.setCall({ ...rest, flags: [...new Set([...call.flags, ...(ambiguous ? ['ambiguous'] : [])])] })
@@ -1603,6 +1613,36 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         if (holders.length === 0) return []
         await mark(tx)
         return settle(tx, new Set(holders))
+      })
+    },
+
+    async nameCall(id, visitor, note, line) {
+      const identifier = codeTie(id)
+      ruleFor(policy, identifier)
+      await changing(async (tx) => {
+        const call = await tx.callOf(id)
+        const guesses = [`dial:${id}`, `lease:${id}`]
+        if (!call || byCode(call) || (await tx.newestNaming(guesses, 0, ['ignore', 'restore']))?.action === 'restore') return []
+        // Forgotten since the code was looked up, whoever it named is named by nothing.
+        if (!(await tx.edgesOn([note])).some((edge) => edge.subject === visitor)) return []
+        // Left beside the code's, a tie by a tap would count twice what is known once.
+        const guessed = await tx.edgesOn(guesses)
+        const held = unique(guessed.map((edge) => edge.identifier))
+        const states = await tx.states(held)
+        for (const each of held) {
+          if (states.get(each)?.ignored) continue
+          await decide(tx, 'ignore', [each], { by: 'calls', reason: 'the caller gave the code of a visitor', automatic: true })
+          await tx.setIgnored(each, true)
+        }
+        await mark(tx)
+        const changes = await settle(tx, new Set(guessed.map((edge) => edge.subject)))
+        const tied = await tieable(tx, call.subject, visitor, identifier)
+        const { visitor: guess, ...rest } = call
+        await tx.setCall({ ...rest, flags: [...call.flags.filter((flag) => flag !== 'ambiguous' && flag !== 'pool'), tied ? 'code' : 'taken'], ...(tied && { visitor }) })
+        // As it would be had the code come first: filed under its number only where it is tied to nobody.
+        if (tied && line && guess === undefined) await tx.dropTouch(call.subject, call.at, line.landing!)
+        if (!tied && line && guess !== undefined) await tx.addTouch({ ...line, subject: call.subject, at: call.at })
+        return tied ? [...changes, ...(await record(tx, [call.subject, visitor].map((subject) => ({ subject, identifier, at: call.at, event: 'call', recorded: now() }))))] : changes
       })
     },
 

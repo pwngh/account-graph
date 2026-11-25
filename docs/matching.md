@@ -65,7 +65,7 @@ The default policy has no groups, and one corroborating kind, `named`. [Presets]
 | `carry` | 0.95 | 4 | none | A visitor who followed a link from another of your sites, proven by a token made for that browser. Thins when several browsers use one token |
 | `link` | 0.92 | 5 | none | A link sent to one person, opened in this browser. Thins as more people's links are opened there |
 | `dial` | 0.92 | 2 | none | A phone call or a text that began just after exactly one visitor tapped its number |
-| `text` | 0.95 | 2 | none | A text that carried the code one visitor was given |
+| `text` | 0.95 | 2 | none | A text that carried the code one visitor was given, or a call whose caller read it out |
 | `named` | 0.999 | 10 | none | One number or email given under one name. It corroborates. Written where a policy keeps people apart by `given` |
 | `ward` | 0.97 | 5 | none | Two who were spoken for by one number or email, under one name |
 | `behalf` | 0.92 | 2 | none | Somebody who [speaks for](identify.md#speaking-for-somebody-else) somebody else. It relates and never joins |
