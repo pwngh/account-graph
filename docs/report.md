@@ -60,12 +60,7 @@ Costs and visits are matched by campaign id first, then by name:
 
 ### Costs
 
-The server reads Google Ads and Meta costs every six hours once their variables are set. See [providers.md](providers.md) for the steps.
-
-```sh
-GOOGLE_ADS_DEVELOPER_TOKEN=…     # with GOOGLE_ADS_CUSTOMER_ID and GOOGLE_SERVICE_ACCOUNT_FILE
-META_AD_ACCOUNT_ID=…  META_ADS_TOKEN=…
-```
+The server reads Google Ads and Meta costs every six hours once their variables are set. See [Campaign costs](providers.md#campaign-costs) for the steps.
 
 For other platforms, record a `cost` entry or send a CSV file:
 
@@ -81,11 +76,6 @@ GRAPH_URL=https://graph.example.org GRAPH_TOKEN=… npm run costs -- spend.csv
 ### Outcomes
 
 Your backend records what a person did as a `conversion`. Name the step in `stage`, and add a value if it has one. `key` is your transaction id.
-
-```bash
-curl -X POST https://graph.example.org/v1/record -H "authorization: Bearer $GRAPH_TOKEN" -d '{ "entries": [
-  { "type": "conversion", "key": "enroll-1001", "at": 1795460000000, "subject": "account:42", "stage": "enrolled", "value": 200, "currency": "USD" }] }'
-```
 
 Add `actions` to [send the outcome to the ad platforms](providers.md#what-sending-does). Without one, here or in [`STAGES`](#steps), the outcome is counted in the report only.
 
@@ -117,7 +107,7 @@ When the real amount is known, [restate it](#value-changes). The report changes,
 
 Report columns follow the order of `STAGES`. The server refuses to start if an action names a platform that is not set up, or if any step has an action while no ad platform is set up.
 
-> **Page-reported steps can be forged.** A step listed in both `EVENTS` and `STAGES` can be created by a browser: once a day per browser, at the step's value. See [Page events](calls.md#page-events) for choosing which steps to allow.
+A step in both `EVENTS` and `STAGES` can be forged from a browser. See [Page events](calls.md#page-events) for choosing which steps to allow.
 
 ### Payments
 
@@ -127,11 +117,11 @@ Record each payment as it happens, and the outcome's value follows.
 { "type": "payment", "key": "pay-771", "at": 1795460000000, "conversion": "client-1001", "direction": "received", "amount": 300 }
 ```
 
-From the first payment on, the outcome is worth what was paid less what was given back, and never below zero. **Refunded** in the report counts the refunds. Payments may come in any order, and before their outcome. Recording one again changes nothing. The same key with other details is `KEY_REUSED`, and a second currency for one outcome is `CURRENCY_MISMATCH`.
+From the first payment on, the outcome is worth what was paid less what was given back, and never below zero. **Refunded** in the report counts the refunds. [Order](http.md#order) says what a payment that arrives early or late does. A second currency for one outcome is `CURRENCY_MISMATCH`.
 
 > **Use either payments or restatements for one outcome.** Once it has a payment, a restatement of its value is refused with `PAID`. One made before stays on record, and the payments decide the value.
 
-An amount is from 0.00001 to 10,000,000,000. The outcome's value, payments less refunds, is rounded to five decimals. Payments stay with the outcome's key after it is withdrawn, so use a new key for a different outcome.
+The outcome's value, payments less refunds, is rounded to five decimals. Payments stay with the outcome's key after it is withdrawn, so use a new key for a different outcome.
 
 A conversion not sent yet goes out at its time with the new value. Platforms that can restate are told each later change.
 
@@ -178,7 +168,7 @@ Use these names so reports stay comparable from month to month. Values are short
 
 The advertised and serving offices are separate facts, and neither is filled in from the other.
 
-A tag `zip` with a Texas ZIP code adds the tag `county`, where all of the ZIP lies in one county, you sent no `county`, and there is room for it. An outcome or call carries at most 8 tags of yours. A name is lowercase letters and underscores, up to 32 characters; a value is up to 64. `(not set)` is reserved and rejected as a value.
+A tag `zip` with a Texas ZIP code adds the tag `county`, where all of the ZIP lies in one county, you sent no `county`, and there is room for it. [Entry types](http.md#entry-types) has the limits of tags. `(not set)` is reserved and rejected as a value.
 
 ## Not a lead
 
@@ -188,9 +178,7 @@ Mark a call or outcome that is spam, a wrong number, a supplier or an existing c
 { "type": "restatement", "key": "spam-CA1", "at": 1795460000000, "of": { "type": "call", "key": "CA1" }, "change": { "kind": "not_lead", "why": "spam" } }
 ```
 
-```json
-{ "type": "restatement", "key": "wrong-1001", "at": 1795460000000, "of": { "type": "conversion", "key": "inquiry-1001" }, "change": { "kind": "not_lead", "why": "other" } }
-```
+`of` names a `call`, a `text` or a `conversion`, and `why` is `spam` or `other`.
 
 | Where | Effect |
 | --- | --- |
@@ -201,7 +189,7 @@ Mark a call or outcome that is spam, a wrong number, a supplier or an existing c
 | A journey, and the `record` lookup | Still shown, marked `notLead` |
 | Ad platforms | Not sent if queued. Restated to zero where the platform supports it; kept by the others. |
 
-A mark can precede its outcome; a call marked before its result is not counted when the result arrives. `"change": { "kind": "lead" }` removes the mark: everything counts again, and a conversion is sent at its current value. The newest of the two by `at`, then by `key`, stands. `forget` deletes the mark with its subject, and `account-graph prune` deletes marks whose outcome did not arrive.
+A mark can precede its outcome; a call marked before its result is not counted when the result arrives. `"change": { "kind": "lead" }` removes the mark: everything counts again, and a conversion is sent at its current value. [Order](http.md#order) says which of the two stands, and [Privacy](privacy.md#deletion) when a mark is deleted.
 
 > **Marks are not checked.** A campaign looks cheaper per lead when its poor leads are marked. Mark by a fixed rule, and read `notLeads` beside the cost.
 
@@ -320,22 +308,13 @@ curl -X POST https://graph.example.org/v1/record -H "authorization: Bearer $GRAP
   { "type": "restatement", "key": "collected-42", "at": 1796000000000, "of": { "type": "conversion", "key": "client-42" }, "change": { "kind": "correct", "value": 420.50 } }] }'
 ```
 
-When money is returned or will not be paid, say how much:
-
-| `kind` | Meaning |
-| --- | --- |
-| `refund` | `amount` of it was given back |
-| `write_off` | `amount` of it will not be paid |
-| `reverse` | Takes back the one refund or write-off named in `restatement` |
-| `correct` | It is worth `value` |
+When money is returned or will not be paid, say how much with a [`refund` or a `write_off`](http.md#entry-types). `reverse` takes one back.
 
 ```json
 { "type": "restatement", "key": "refund-42", "at": 1796100000000, "of": { "type": "conversion", "key": "client-42" }, "change": { "kind": "refund", "amount": 120.50 } }
 ```
 
-The outcome is then worth 300. An amount is what was lost and not what is left, so the order the entries arrive in does not matter. The value is the newest `correct`, or else the first value, less every refund and write-off that was not reversed, and never below zero.
-
-Sending an entry again changes nothing. Another currency is `CURRENCY_MISMATCH`, and an outcome that is not recorded is `UNKNOWN_REFERENCE`.
+The outcome is then worth 300. An amount is what was lost and not what is left, so the order the entries arrive in does not matter. [Order](http.md#order) has the rule of the value.
 
 The `record` [lookup](http.md#lookup) of the conversion lists every value it has had, under `values`. The report gives these figures for each campaign (`valueChange`) and for each month outcomes were first recorded in (`months`):
 
