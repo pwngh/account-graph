@@ -189,7 +189,7 @@ To use names, set `IDENTIFIER_SECRET` and a policy with a `name` kind that only 
 
 | Step | Behavior |
 | --- | --- |
-| Folding | Accents, case and punctuation are ignored: `José Muñoz-Ruiz` and `JOSE MUNOZ RUIZ` are one name. |
+| Folding | Case, accents and punctuation fold together. `José Muñoz-Ruiz` and `JOSE MUNOZ RUIZ` are one name. Alphabetic vowel signs distinguish names such as किरण and करण. |
 | Placeholders | `Unknown`, `Test`, `John Doe`, a single initial and similar values produce no key. |
 | Scope | A key needs the zip code of a confirmed address, or a date of birth. |
 | Keying | The key is an HMAC under `IDENTIFIER_SECRET`, because a plain hash of a guessable name can be reversed. Name keys are withheld from ad platforms. |

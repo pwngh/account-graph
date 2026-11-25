@@ -29,6 +29,58 @@ if (!url) {
     await store.migrate()
     return { store, close: async () => void (await pool.query(`drop schema ${schema} cascade`)) }
   }
+  test('dispatch guards the first party decision before an ownership revision exists', async () => {
+    const schema = `ag_test_${process.pid}_dispatch`
+    const ready = createPostgresStore(pool, schema)
+    try {
+      await ready.migrate()
+      let started = false
+      let checked = false
+      const watching = createPostgresStore({
+        query: (sql, values) => pool.query(sql, values),
+        connect: async () => {
+          const client = await pool.connect()
+          return {
+            release: (destroy?: boolean) => client.release(destroy),
+            query: async (sql, values) => {
+              if (sql === 'commit' && started) {
+                // A second session uses the exact lock a graph write takes, before the dispatch transaction releases it.
+                const { rows } = await pool.query('select pg_try_advisory_xact_lock(hashtext($1)) as free', [`account-graph:${schema}`])
+                assert.equal(rows[0].free, false)
+                checked = true
+              }
+              return client.query(sql, values)
+            },
+          }
+        },
+      }, schema)
+      await watching.outbox.start([], (_jobs, party) => {
+        assert.equal(party, undefined)
+        started = true
+      })
+      assert.ok(checked)
+    } finally {
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
+
+  test('another worker cannot reclaim a job while its request starts', async () => {
+    const { store, close } = await open()
+    try {
+      await store.outbox.add({ transactionId: 'call:one', target: 'ads', subject: 'caller:line', at: 1, action: 'Call', keys: {}, state: 'pending', attempts: 0, due: 1 })
+      const claimed = await store.outbox.claim(1, 1, 1)
+      assert.equal(claimed.length, 1)
+      await store.write(async (tx) => {
+        await tx.outbox.start(claimed, (jobs) => assert.deepEqual(jobs, claimed))
+        // A claim skips locked rows and ignores the graph's advisory lock. The lease has expired.
+        assert.deepEqual(await store.outbox.claim(3, 1, 1), [])
+      })
+      assert.equal((await store.outbox.claim(3, 1, 1)).length, 1)
+    } finally {
+      await close()
+    }
+  })
+
   test('a database from before an upgrade is brought up to date, once', async () => {
     const schema = `ag_test_${process.pid}_old`
     try {
@@ -77,6 +129,83 @@ if (!url) {
         await tx.applyCallParty('old')
         assert.deepEqual([(await tx.callOf('old'))?.subject, await tx.callLine('old'), (await tx.callResultOf('old'))?.answered], ['record:a', 'caller:line', false])
       })
+    } finally {
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
+
+  test('upgrading removes ambiguous old channel visits for calls already confirmed', async () => {
+    const schema = `ag_test_${process.pid}_call_visits`
+    try {
+      const store = await madeBefore(schema, 30)
+      await pool.query(`insert into ${schema}.call (id, subject, line_subject, at, dialed, flags, recorded_at, party)
+        values ('old', 'record:a', 'caller:line', 1, '+12025550101', '{}', 1, '{"role":"self","subject":"record:a","by":"desk","at":2}');
+        insert into ${schema}.touch (subject, at, detail) values
+          ('caller:line', 1, '{"landing":"tel:+12025550101","source":"one"}'), ('caller:line', 1, '{"landing":"tel:+12025550101","source":"two"}'),
+          ('caller:line', 2, '{"landing":"tel:+12025550101","source":"later"}')`)
+      assert.ok((await store.migrate()).includes('source call of a channel visit'))
+      await store.read(async tx => assert.deepEqual((await tx.touchesOf(['caller:line'], 1, 2)).map(touch => touch.source), ['later']))
+    } finally {
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
+
+  test('upgrading old callback events drops attempts that could belong to a different record', async () => {
+    const schema = `ag_test_${process.pid}_callback_sources`
+    try {
+      const store = await madeBefore(schema, 31)
+      await pool.query(`insert into ${schema}.call (id, subject, line_subject, at, direction, dialed, flags, recorded_at, party)
+        values ('attempt', 'record:b', 'caller:line', 3, 'outbound', '+12025550101', '{}', 3, '{"role":"self","subject":"record:b","by":"desk","at":7}');
+        insert into ${schema}.event (seq, type, at, subject, data) values
+          (1, 'callback.overdue', 6, 'caller:line', '{"call":"miss","subject":"caller:line","attempts":1,"missedAt":2}'),
+          (2, 'callback.overdue', 6, 'caller:other', '{"call":"other","subject":"caller:other","attempts":1,"missedAt":2}'),
+          (3, 'callback.overdue', 6, 'caller:line', '{"call":"later","subject":"caller:line","attempts":0,"missedAt":4}');
+        insert into ${schema}.alert (key, subject, at, tried_at, text) values ('unreturned:caller:line:first', 'caller:line', 6, 6, '1 callback attempt');
+        insert into ${schema}.event_once (said_once, subject) values ('unreturned:caller:line:first', 'caller:line')`)
+      assert.ok((await store.migrate()).includes('calls behind callback notices'))
+      assert.deepEqual((await store.read(tx => tx.eventsAfter(0, 100))).map(event => event.seq), [2, 3])
+      assert.deepEqual(await store.ops.undelivered(), [])
+      assert.deepEqual((await pool.query(`select * from ${schema}.event_once`)).rows, [])
+    } finally {
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
+
+  for (const history of ['none', 'standing', 'erased', 'expired', 'ordinary']) test(`an unprovable old callback after upgrading a database with ${history} party history`, async () => {
+    const schema = `ag_test_${process.pid}_old_route_${history}`
+    const erased = history === 'erased' || history === 'expired'
+    const corrected = erased || history === 'standing'
+    try {
+      const store = await madeBefore(schema, 31)
+      // At version 30 the queue lost the physical line's channel visit, but kept the missed caller's credited event.
+      await pool.query(`insert into ${schema}.call (id,subject,at,dialed,flags,recorded_at) values ('credit','caller:x',1,'+12025550101','{}',1), ('miss','caller:y',2,'+12025550102','{}',2), ('own','caller:other',2,'+12025550103','{}',2);
+        insert into ${schema}.event (seq,type,at,subject,data) values
+          (1,'callback.overdue',4,'caller:y','{"call":"miss","subject":"caller:y","missedAt":2,"attempts":0,"source":"google","campaign":null,"campaignId":"former"}'),
+          (2,'callback.overdue',4,'caller:other','{"call":"own","subject":"caller:other","missedAt":2,"attempts":0,"source":"google","campaign":null,"campaignId":"own"}');
+        insert into ${schema}.touch (subject,at,detail) values ('caller:other',1,'{"gclid":"own","campaignId":"own"}');
+        insert into ${schema}.alert (key,subject,at,tried_at,text) values ('unreturned:caller:y:first','caller:y',4,4,'former'), ('unreturned:caller:z:pruned','caller:z',4,4,'no event remains'), ('unreturned:caller:other:own','caller:other',4,4,'own');
+        insert into ${schema}.event_once (said_once,subject) select key,subject from ${schema}.alert`)
+      if (history === 'standing') await pool.query(`update ${schema}.call set subject='record:b', line_subject='caller:x', party='{"role":"self","subject":"record:b","by":"desk","at":5}' where id='credit'`)
+      if (erased || history === 'ordinary') {
+        await pool.query(`delete from ${schema}.call where id='credit';
+          insert into ${schema}.call (id,subject,at,dialed,flags,recorded_at) values ('orphan','caller:other',2,'+12025550103','{}',2);
+          insert into ${schema}.event (seq,type,at,subject,data) values
+            (3,'callback.overdue',4,'caller:other','{"call":"orphan","subject":"caller:other","missedAt":2,"attempts":1,"source":"google","campaign":null,"campaignId":"own"}'),
+            (4,'callback.overdue',4,'caller:other','{"call":"lost","subject":"caller:other","missedAt":2,"attempts":0,"source":"google","campaign":null,"campaignId":"own"}')`)
+        // After receipt pruning, only a party statement's key gets a call_update tombstone of version zero.
+        await pool.query(`insert into ${schema}.receipt (type,key_mac,secret_id,digest_version,at,recorded_at,forgotten_at) values
+          ('call','old-call','fixture',1,1,1,7), ('call_update','old-update','fixture',$1,5,5,7)`, [history === 'expired' ? 0 : 1])
+        if (history === 'erased') await pool.query(`insert into ${schema}.setting (name,value) values ('callParty','old-revision')`)
+      }
+      await store.migrate()
+      const events = async () => (await store.read(tx => tx.eventsAfter(0, 10))).map(event => event.seq)
+      assert.deepEqual(await events(), corrected ? [2] : history === 'ordinary' ? [1, 2, 3, 4] : [1, 2])
+      assert.equal((await store.ops.undelivered()).length, corrected ? 1 : 3)
+      if (history === 'ordinary') return
+      if (!corrected) await createGraph(store).sayParty({ call: 'credit', key: 'corrected', at: 6, party: { role: 'self', subject: 'record:b', by: 'desk' } })
+      assert.deepEqual(await events(), [2])
+      assert.deepEqual((await store.ops.undelivered()).map(alert => alert.key), ['unreturned:caller:other:own'])
+      assert.deepEqual((await pool.query(`select said_once from ${schema}.event_once`)).rows, [{ said_once: 'unreturned:caller:other:own' }])
     } finally {
       await pool.query(`drop schema if exists ${schema} cascade`)
     }

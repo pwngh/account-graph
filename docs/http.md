@@ -296,6 +296,9 @@ POST /v1/forget
 
 ## lookup
 
+A journey or record lookup reads its entries, party history and delivery details as of the same instant. The reviewer journey also reads each outcome and its delivery state together. A person or caller lookup reads call history, matches and arrivals together as well.
+
+
 Reads. Nothing is written.
 
 ```http
@@ -353,7 +356,7 @@ POST /v1/report
 
 `window` is two days and a time zone. `callbacks` and `texts` answer `{ rows, next }`, 50 rows at a time. Pass `next` as `after`.
 
-`asOf` is the moment the answer is of. `campaigns`, `pipeline`, `calls` and `after_calls` are worked out once for everybody who asks at the same time, and shared until something is written. While data is being written, an answer is shared for four times as long as it took, and a minute at most. A `decide` or `forget` through the same process ends that at once. A change of call party invalidates report answers across processes. An `at` within a minute of now is answered from the shared answer.
+`asOf` is the moment the answer is of. `campaigns`, `pipeline`, `calls` and `after_calls` are worked out once for everybody who asks at the same time, and shared until something is written. While data is being written, an answer is shared for four times as long as it took, and a minute at most. A `decide` through the same process ends that at once. Forgetting a person or changing a call party invalidates report answers across processes. An `at` within a minute of now is answered from the shared answer.
 
 ## events
 

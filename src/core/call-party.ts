@@ -10,6 +10,19 @@ export async function partyOf(tx: Tx, id: string): Promise<KeptCall['party']> {
 
 export const ownerOf = (id: string, party: NonNullable<KeptCall['party']>) => party.role === 'self' || party.role === 'representative' ? party.subject : `call:${id}`
 
+// A pending notice for the new owner can also have changed, even though it knew nothing of this call.
+export async function affectedMisses(tx: Tx, call: KeptCall, owner: Subject): Promise<string[]> {
+  if (owner === call.subject || (await tx.notLeads([`call:${call.id}`])).size) return []
+  const before = call.direction === 'outbound' || call.result?.answered ? call.at : -Infinity
+  const missed = call.direction === 'inbound' && call.result?.answered === false
+  const returned = missed ? call.result?.returned ?? -Infinity : -Infinity
+  return (await tx.callTimes([owner])).filter(each => each.direction === 'inbound' && each.result?.answered === false &&
+    (each.at < Math.max(before, returned) || (missed && call.at <= each.at))).map(each => each.id)
+}
+
+// Call ids contain no colons. A route subject is private evidence for a callback's credit.
+export const creditSubject = (subject: Subject) => `subject:${subject}`
+
 /** A reported party supersedes the browser tied by the old guess and any flag about somebody using that line before. */
 export const withoutGuesses = (flags: string[]) => flags.filter(flag => flag !== 'code' && flag !== 'taken' && flag !== 'pool' && flag !== 'ambiguous' && flag !== 'repeat')
 

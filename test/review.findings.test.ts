@@ -435,3 +435,80 @@ both('keeping all letters of a name still honours the cap and mute on its earlie
   assert.equal(await together(), true)
   assert.deepEqual(await engine.graph.rebuild(), [])
 }, { identifierSecret: SECRET, policy: namePolicy })
+
+for (const [preset, records] of [['household', false], ['intake', true]] as const) both(`an exact name on a shared phone keeps its vowel signs under ${preset}`, async (graph) => {
+  const { engine } = await internalsOf(graph)!()
+  const { nameKeys, phone } = await import('../src/core/identifiers.ts')
+  for (const [line, second] of [['202-555-0100', 'करण'], ['202-555-0101', 'किरण']] as const) {
+    const dob = second === 'करण' ? '1980-04-05' : '1980-06-07'
+    const subjects = ['contact:' + line + '-1', 'contact:' + line + '-2']
+    for (const [n, first] of ['किरण', second].entries()) {
+      const subject = subjects[n]!
+      assert.ok((await one(graph, { type: 'profile', key: subject, subject, at: AT, facts: { phone: line, name: { first, last: 'राय' }, dob } })).ok)
+    }
+    const { people } = await graph.lookup({ kind: 'person', subjects, at: NOW })
+    assert.equal(people[0]!.members.includes(subjects[1]!), second === 'किरण')
+    const exact = nameKeys(SECRET, 'किरण', 'राय', { dob })
+    const matches = await engine.graph.match([phone(line), ...exact], { at: AT })
+    const candidate = matches.find((entry) => entry.subject === subjects[1])!
+    assert.equal(candidate.reasons.some(({ identifier }) => identifier.startsWith('name:')), second === 'किरण')
+    assert.deepEqual(await engine.graph.verify(), [])
+  }
+}, {
+  identifierSecret: SECRET,
+  policy: { ...(records && { apart: ['birth', 'given'], records: 'confirmed' }), kinds: { phone: { weight: 0.85 } }, customKinds: { name: { weight: 0.6, dilution: 1, cap: 5, halfLife: 'none', group: 'name', corroborates: true } } },
+})
+
+both('a rebuild retires an exact name whose old hash lost a vowel', async (graph) => {
+  const { engine } = await internalsOf(graph)!()
+  const { phone } = await import('../src/core/identifiers.ts')
+  const subjects = ['contact:one', 'contact:two']
+  const line = phone('202-555-0100')
+  // The exact name and birth of किरण राय and करण राय both made this key.
+  const legacy = 'name:5d8af5b42c269af7a1544035e9174ec8b8a772411f795bd582294fd6feb84950'
+  await engine.store.write(async (tx) => {
+    await tx.addSightings(subjects.flatMap((subject) => [line, legacy].map((identifier) => ({ subject, identifier, at: AT }))))
+    await tx.setLabels(new Map(subjects.map((subject) => [subject, { cluster: subjects[0]!, component: subjects[0]! }])))
+    await tx.setBuiltWith('old rules')
+  })
+  const members = async () => (await graph.lookup({ kind: 'person', subjects, at: NOW })).people[0]!.members
+  await engine.graph.rebuild()
+  assert.deepEqual(await members(), subjects.slice(0, 1))
+  assert.deepEqual((await (await engine.graph.asOf(NOW)).cluster(subjects[0]!))!.members, subjects.slice(0, 1))
+  for (const [n, subject] of subjects.entries()) {
+    if (n === 1) await engine.graph.ignore(legacy)
+    assert.ok((await one(graph, { type: 'profile', key: subject, subject, at: AT, facts: { phone: '202-555-0100', name: { first: 'किरण', last: 'राय' }, dob: '1980-04-05' } })).ok)
+    assert.deepEqual(await members(), subjects.slice(0, 1))
+  }
+  await engine.graph.ignore(legacy, false)
+  assert.deepEqual(await members(), subjects)
+  assert.deepEqual(await engine.graph.verify(), [])
+}, { identifierSecret: SECRET, policy: { kinds: { phone: { weight: 0.85 } }, customKinds: { name: { weight: 0.6, dilution: 1, cap: 5, halfLife: 'none', group: 'name', corroborates: true } } } })
+
+both('a checked vowel sign leaves the earlier exact name cap in force', async (graph) => {
+  const { engine } = await internalsOf(graph)!()
+  const { nameKeys, phone } = await import('../src/core/identifiers.ts')
+  const line = phone('202-555-0102')
+  const names = ['किरण', 'किरण', 'करण', 'कीरण', 'कुरण', 'कूरण']
+  for (const [n, first] of names.entries()) {
+    const keys = nameKeys(SECRET, first, 'राय', { zip5: '62701' })
+    await engine.graph.observe({ subject: 'contact:' + n, identifiers: n < 2 ? [line, ...keys] : keys, at: AT })
+  }
+  assert.deepEqual((await engine.graph.cluster('contact:0'))!.members, ['contact:0'])
+  for (const n of [5, 4, 3, 2]) await engine.graph.forget('contact:' + n)
+  assert.deepEqual((await engine.graph.cluster('contact:0'))!.members, ['contact:0', 'contact:1'])
+  assert.deepEqual(await engine.graph.verify(), [])
+}, { identifierSecret: SECRET, policy: { kinds: { phone: { weight: 0.85 } }, customKinds: { name: { weight: 0.6, dilution: 1, cap: 5, halfLife: 'none', group: 'name', corroborates: true } } } })
+
+both('a proposed record counts towards the cap on facts that could confirm it', async (graph) => {
+  const { nameKeys } = await import('../src/core/identifiers.ts')
+  const identifiers = nameKeys(SECRET, 'কিরণ', 'রায়', { zip5: '62701' })
+  const facts = { identifiers, email: 'one@example.org' }
+  const lookup = async () => (await graph.lookup({ kind: 'match', facts, at: AT })).candidates.find(({ subject }) => subject === 'contact:one')
+  assert.ok((await one(graph, { type: 'profile', key: 'one', subject: 'contact:one', at: AT, facts })).ok)
+  assert.equal((await lookup())!.level, 'same')
+  assert.ok((await one(graph, { type: 'profile', key: 'two', subject: 'contact:two', at: AT, facts: { identifiers, email: 'two@example.org' } })).ok)
+  assert.equal((await lookup())!.unconfirmed, true)
+  assert.ok((await one(graph, { type: 'profile', key: 'next', subject: 'contact:next', at: AT, facts })).ok)
+  assert.deepEqual((await graph.lookup({ kind: 'person', subjects: ['contact:next'], at: NOW })).people[0]!.members, ['contact:next'])
+}, { identifierSecret: SECRET, policy: { apart: ['birth', 'given'], records: 'confirmed', customKinds: { name: { weight: 0.6, dilution: 1, cap: 2, halfLife: 'none', group: 'name', corroborates: true } } } })

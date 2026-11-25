@@ -39,11 +39,13 @@ Data goes to these recipients only.
 
 A retry of a forgotten key is checked against its receipt before the graph asks a line or address provider about the entry.
 
-An identification made for a single call belongs to that call. The original line stays private. Forgetting the line or any record named by a party statement erases the call, its statements, its conversion and value changes. This includes a former or excluded party and a statement that arrived before the call. A tombstone covers the call and associated keys, so a late retry receives `FORGOTTEN`. A platform that had already received a conversion can still appear in the deletion report.
+An identification made for a single call belongs to that call. The original line stays private. Forgetting the line or any record named by a party statement erases the call, its statements, its conversion and value changes. This includes a former or excluded party and a statement that arrived before the call. A tombstone covers the call and associated keys, so a late retry receives `FORGOTTEN`. A platform that had already received a conversion can still appear in the deletion report. The delivery shown alongside the confirmed record omits the original click ID, matching confidence and consent. The store keeps the platform's original matching details for a retraction. If a platform acknowledges a send after the correction, its private delivery row keeps the match details needed to request a retraction. A later deletion erases that row.
 
-When staff identify a call, the graph erases earlier delivery failure events for that call and any stored failure notices that name it. A pending notice that also names other failures is discarded as a whole. The events for those other failures stay. A notice already delivered to a webhook may still be held by its recipient.
+When staff identify a call, the graph erases earlier delivery failure events for that call and any stored failure notices that count it, including calls beyond the first ten shown. An older truncated batch without stored call IDs is discarded when a call is corrected or erased. Forgetting someone with no calls preserves that batch. A pending notice that also names other failures is discarded as a whole. The events for those other failures stay. A notice already delivered to a webhook may still be held by its recipient.
 
 An inbound call keeps which phone identifier it added until staff name its party. This lets the graph remove just that sighting, even after pruning. Calls stored before upgrade 29 have no such record. The graph uses the remaining sightings and the first and last times on each link. If both phone and VoIP could have supplied a pruned sighting, it weakens both possible links to avoid keeping evidence from the confirmed call.
+
+Upgrade 30 records which call supplied a channel visit. Older visits only have the line, dialed number and time. If several old visits fit a confirmed call, all of those visits are removed to keep that call out of another record’s journey. The upgrade also clears these visits for calls that were already confirmed.
 
 `forget` deletes the subjects you name and leaves the person's others in place. To delete a person, read their `members` with the `person` [lookup](http.md#lookup), check them, and send all of them as `subjects`, 50 at most: all are deleted, or none. A payment whose outcome was never recorded names no person and stays.
 
@@ -64,6 +66,8 @@ An inbound call keeps which phone identifier it added until staff name its party
 - A tombstone of each key that was about it: a type, a keyed hash and times. The key is answered `FORGOTTEN` from then on, so a late retry brings nobody back. The same subject may be written again with new keys.
 
 Backups keep their data until you delete them. Run `forget` again after restoring one, with new keys.
+
+The alert sender checks an overdue or rejected-conversion notice and starts its request while the notice is still current. A correction that finishes first cancels the old notice. A request already started can reach its receiver.
 
 ## Data at ad platforms
 

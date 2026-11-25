@@ -167,7 +167,12 @@ const DECISIONS = new Set(['POST /forget', 'POST /separate', 'POST /join', 'POST
 const JSON_HEADERS = { 'content-type': 'application/json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }
 
 /** A job as an answer shows it: the hashed email and phone are for its platform only. */
-const shownJob = ({ keys, ...job }: Job) => job
+const shownJob = ({ keys, ...job }: Job) => {
+  if (job.note !== 'call_party') return job
+  // The click and consent used for the original send belonged to the line.
+  const { click, confidence, consent, ...delivery } = job
+  return delivery
+}
 
 /** A route that wrote its own answer. */
 const SENT = Symbol('sent')
@@ -559,7 +564,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
       const party = await graph.partyRevision()
       if (deciding > 0) {
         const answer = await work()
-        if (decided !== since || party !== await graph.partyRevision()) continue
+        if (party !== await graph.partyRevision() || decided !== since) continue
         return answer
       }
       const version = await graph.version()
@@ -581,7 +586,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
       const answer = await known.answer
       const newest = waited ? await graph.version() : version
       // Nothing is awaited between this and the answer being given.
-      if (decided !== since || deciding > 0 || party !== await graph.partyRevision()) continue
+      if (party !== await graph.partyRevision() || decided !== since || deciding > 0) continue
       // Made before the newest write: the screen that gets it asks again.
       if (known.version !== newest) response.setHeader('age', String(Math.max(1, Math.ceil((now() - known.at) / 1000))))
       return answer
@@ -793,21 +798,12 @@ export function createHandler(core: Core, options: HandlerOptions) {
       case 'GET /journey': {
         const before = url.searchParams.has('before') ? Number(url.searchParams.get('before')) : undefined
         if (before !== undefined && !Number.isSafeInteger(before)) throw new Refusal(400, '`before` must be a `next` value from a page')
-        const journey = await graph.journey(subject, before === undefined ? {} : { before })
-        // What became of each step at the ad platforms. A job keeps how it stands, and not when it got there.
-        const jobs = new Map<string, { target: string; state: JobState; note?: string; value?: number }[]>()
-        if (core.outbox) {
-          for (const entry of journey.entries) {
-            if (entry.kind !== 'outcome') continue
-            const { transactionId } = entry.outcome
-            jobs.set(transactionId, (await core.outbox.get(transactionId)).map(({ target, state, note, value }) => ({ target, state, ...(note && { note }), ...(value !== undefined && { value }) })))
-          }
-        }
+        const journey = await graph.journey(subject, { ...(before !== undefined && { before }), deliveries: Boolean(core.outbox) })
         return {
           ...journey,
           entries: journey.entries.map((entry) => {
             if (entry.kind === 'visit') return { ...entry, source: sourceOf(entry.touch) }
-            if (entry.kind === 'outcome') return { ...entry, sent: jobs.get(entry.outcome.transactionId) ?? [] }
+            if (entry.kind === 'outcome') return { ...entry, sent: entry.sent ?? [] }
             if (entry.kind === 'text') {
               const { to: _, ...kept } = entry.text
               return { ...entry, text: kept }

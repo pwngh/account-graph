@@ -57,9 +57,9 @@ export interface OpsStore {
   jobEnded(run: string, name: string, at: number, error?: string): Promise<void>
   jobs(): Promise<JobRun[]>
   /** Keeps an alert unless its key is already kept. A fresh failure batch can reopen an earlier notice. */
-  addAlert(alert: KeptAlert, again?: boolean): Promise<boolean>
-  /** Whether this message still waits, after it was handed to a sender. */
-  pendingAlert(alert: KeptAlert): Promise<boolean>
+  addAlert(alert: KeptAlert, again?: boolean, calls?: readonly string[]): Promise<boolean>
+  /** Starts the request while this alert is still current. Its response is awaited after releasing the row. */
+  pendingAlert(alert: KeptAlert, start?: () => void): Promise<boolean>
   /** Keeps an alert as not delivered. One with its key that is still waiting stays as it is; one that was delivered waits again. */
   keepAlert(alert: KeptAlert): Promise<void>
   /** Hands out the undelivered alert tried longest ago, if not since `before`, and notes that it is tried now, so no two servers deliver one. */
@@ -163,8 +163,12 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
   /** Delivers a kept alert, and writes down whether it arrived. */
   async function post(alert: KeptAlert): Promise<boolean> {
     const expected = alert.key.startsWith('unreturned:') || alert.key.startsWith('alert:conversions:') ? alert : undefined
-    if (expected && !await store.pendingAlert(expected)) return true
-    const error = await deliver(alert.text)
+    let posting: Promise<string | undefined> | undefined
+    if (expected) {
+      await store.pendingAlert(expected, () => { posting = deliver(alert.text) })
+      if (!posting) return true
+    } else posting = deliver(alert.text)
+    const error = await posting
     if (error === undefined) await store.alertDelivered(alert.key, now(), expected)
     else await store.alertFailed(alert.key, error, expected)
     return error === undefined
@@ -223,7 +227,7 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
           alert = { key: `alert:conversions:${createHash('sha256').update(text).digest('hex').slice(0, 16)}`, text, at }
           sent.set('conversions', at)
           claimed = true
-          await tx.addAlert(alert, true)
+          await tx.addAlert(alert, true, [...new Set(failed.flatMap(job => job.transactionId.startsWith('call:') ? [job.transactionId.slice(5)] : []))])
         }
         await tx.emit(events)
         return alert
@@ -336,24 +340,38 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
 }
 
 /** Where a memory store keeps what runs by itself. `fed` is how its writes say what they fed, and `forget` how it loses a subject. */
-export function createMemoryOps(): OpsStore & { fed(feed: Feed, at: number): void; forget(subject: string): void; unname(keys: readonly string[]): void; dropFailureAlerts(conversions: readonly string[]): void; dropCallbackAlerts(subjects: readonly string[]): void; kept: Record<'feeds' | 'jobs' | 'runs' | 'alerts', Map<string, unknown>> } {
+export function createMemoryOps(): OpsStore & { fed(feed: Feed, at: number): void; forget(subject: string): void; unname(keys: readonly string[]): void; dropFailureAlerts(ids: ReadonlySet<string>): void; callbacksThrough(sources: ReadonlySet<string>): Map<string, readonly string[]>; dropCallbacks(keys: readonly string[]): void; dropCallbackAlerts(subjects: readonly string[], calls: ReadonlySet<string>, misses: ReadonlySet<string>): string[]; kept: Record<'feeds' | 'jobs' | 'runs' | 'alerts', Map<string, unknown>> } {
   const feeds = new Map<Feed, FeedNote>()
   const jobs = new Map<string, Omit<JobRun, 'open'> & { run?: string }>()
   const runs = new Map<string, { name: string; at: number }>()
-  const alerts = new Map<string, KeptAlert & { delivered?: number; tried: number }>()
+  const alerts = new Map<string, KeptAlert & { delivered?: number; tried: number; calls?: readonly string[] }>()
   const open = () => [...alerts.values()].filter((alert) => alert.delivered === undefined).sort((x, y) => x.at - y.at)
-  const bare = ({ delivered: _, tried: __, ...alert }: KeptAlert & { delivered?: number; tried: number }): KeptAlert => alert
+  const bare = ({ delivered: _, tried: __, calls: ___, ...alert }: KeptAlert & { delivered?: number; tried: number; calls?: readonly string[] }): KeptAlert => alert
   return {
     kept: { feeds, jobs, runs, alerts },
     fed: (feed, at) => void feeds.set(feed, { ...feeds.get(feed), last: Math.max(at, feeds.get(feed)?.last ?? 0) }),
     unname(keys) {
       for (const [key, alert] of alerts) if (alert.delivered === undefined && keys.some((each) => alert.text.includes(each))) alerts.delete(key)
     },
-    dropFailureAlerts(conversions) {
-      for (const [key, alert] of alerts) if (key.startsWith('alert:conversions:') && conversions.some(id => alert.text.includes(`• ${id} to `))) alerts.delete(key)
+    dropFailureAlerts(ids) {
+      for (const [key, alert] of alerts) if (key.startsWith('alert:conversions:')) {
+        // An older truncated notice cannot tell which calls supplied its remaining count.
+        if (alert.calls ? alert.calls.some(id => ids.has(id)) : alert.text.includes('\n…and ') || [...ids].some(id => alert.text.includes(`• call:${id} to `))) alerts.delete(key)
+      }
     },
-    dropCallbackAlerts(subjects) {
-      for (const [key, alert] of alerts) if (alert.delivered === undefined && key.startsWith('unreturned:') && alert.subject !== undefined && subjects.includes(alert.subject)) alerts.delete(key)
+    callbacksThrough(sources) {
+      return new Map([...alerts].flatMap(([key, alert]) => key.startsWith('unreturned:') && alert.calls?.some(id => sources.has(id)) ? [[key, alert.calls] as const] : []))
+    },
+    dropCallbacks(keys) {
+      for (const key of keys) alerts.delete(key)
+    },
+    dropCallbackAlerts(subjects, ids, misses) {
+      const gone: string[] = []
+      for (const [key, alert] of alerts) if (key.startsWith('unreturned:') && (alert.calls ? alert.calls.some(id => ids.has(id)) || (alert.delivered === undefined && misses.has(alert.calls[0]!)) : alert.delivered === undefined && alert.subject !== undefined && subjects.includes(alert.subject))) {
+        alerts.delete(key)
+        gone.push(key)
+      }
+      return gone
     },
     forget(subject) {
       for (const [key, alert] of alerts) if (alert.subject === subject) alerts.delete(key)
@@ -379,15 +397,17 @@ export function createMemoryOps(): OpsStore & { fed(feed: Feed, at: number): voi
       const began = (name: string) => [...runs.values()].filter((run) => run.name === name).map((run) => run.at).sort((x, y) => y - x)
       return [...jobs.values()].sort((x, y) => (x.name < y.name ? -1 : 1)).map(({ run: _, ...job }) => ({ ...job, open: began(job.name) }))
     },
-    async addAlert(alert, again = false) {
+    async addAlert(alert, again = false, calls) {
       if (!again && alerts.has(alert.key)) return false
       // Whoever adds it has just tried it, or is about to.
-      alerts.set(alert.key, { ...alert, tried: alert.at })
+      alerts.set(alert.key, { ...alert, tried: alert.at, ...(calls && { calls: [...calls] }) })
       return true
     },
-    async pendingAlert({ key, text, at }) {
+    async pendingAlert({ key, text, at }, start) {
       const alert = alerts.get(key)
-      return alert?.text === text && alert.at === at && alert.delivered === undefined
+      if (!alert || alert.text !== text || alert.at !== at || alert.delivered !== undefined) return false
+      start?.()
+      return true
     },
     async keepAlert(alert) {
       if (alerts.get(alert.key)?.delivered === undefined && alerts.has(alert.key)) return

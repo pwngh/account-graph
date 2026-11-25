@@ -1,4 +1,4 @@
-import { callTraces, ownerOf, partyOf, stopCallJob, withoutGuesses } from './call-party.ts'
+import { affectedMisses, callTraces, creditSubject, ownerOf, partyOf, stopCallJob, withoutGuesses } from './call-party.ts'
 import { randomUUID } from 'node:crypto'
 import { malformed } from '../contract/fault.ts'
 import { createMemoryOps } from './ops.ts'
@@ -20,7 +20,7 @@ import type { CallResult, Consent, ConsentAnswer, CostRow, Counted, Decision, Ed
  * asked to be whole, by a copy of everything made before it.
  */
 export function createMemoryStore(): Store & { snapshot(): unknown } {
-  const outbox = createMemoryOutbox((job) => outcomes.get(job.transactionId)?.subject === job.subject)
+  const outbox = createMemoryOutbox((job) => outcomes.get(job.transactionId)?.subject === job.subject, () => settings.get('callParty'))
   const bySubject = new Map<Subject, Map<Identifier, Edge>>()
   const byIdentifier = new Map<Identifier, Map<Subject, Edge>>()
   const ignored = new Set<Identifier>()
@@ -28,7 +28,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
   const byComponent = new Map<Subject, Set<Subject>>()
   const byCluster = new Map<Subject, Set<Subject>>()
   const sightings = new Map<Subject, Sighting[]>()
-  const touches = new Map<Subject, Touch[]>()
+  const touches = new Map<Subject, { touch: Touch; call: string | undefined }[]>()
   const separated = new Map<Subject, Set<Subject>>()
   const flows = new Map<string, FlowEdge>()
   const flowsBy = new Map<Subject, Set<string>>()
@@ -53,7 +53,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
   const receipts = new Map<string, Receipt>()
   const receiptSubjects = new Map<string, Set<Subject>>()
   const settings = new Map<string, string>()
-  const events: (GraphEvent & { subject?: Subject })[] = []
+  const events: (GraphEvent & { subject?: Subject; notice?: string; calls?: readonly string[] })[] = []
   const once = new Map<string, Subject | undefined>()
   const deliveries = new Map<string, Delivery & { lease: number }>()
   const pruned = { seq: 0 }
@@ -96,19 +96,25 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
     for (const list of said.values()) for (const each of list) if (each.topic === 'party' && 'subject' in each.data && subjects.includes(each.data.subject)) found.add(each.about)
     return found
   }
-  const dropCallNotices = (ids: ReadonlySet<string>, subjects: Subject[]) => {
+  const dropCallNotices = (ids: ReadonlySet<string>, subjects: Subject[], misses = new Set<string>(), evidence: readonly string[] = []) => {
+    const sources = new Set([...ids, ...evidence])
     const conversions = new Set([...ids].map(id => `call:${id}`))
-    ops.dropFailureAlerts([...conversions])
-    ops.dropCallbackAlerts(subjects)
+    if (ids.size) ops.dropFailureAlerts(ids)
+    const notices = new Set(ops.dropCallbackAlerts(subjects, sources, misses))
+    for (const key of notices) once.delete(key)
     for (let i = events.length - 1; i >= 0; i--) {
       const event = events[i]!
-      if ((event.type === 'callback.overdue' && ids.has(event.data.call)) || (event.type === 'conversion.failed' && conversions.has(event.data.conversion))) events.splice(i, 1)
+      if ((event.type === 'callback.overdue' && (ids.has(event.data.call) || event.calls?.some(id => sources.has(id)) || (event.notice && notices.has(event.notice)))) || (event.type === 'conversion.failed' && conversions.has(event.data.conversion))) {
+        if (event.notice) once.delete(event.notice)
+        events.splice(i, 1)
+      }
     }
     for (const subject of subjects) for (const id of ids) once.delete(`unreturned:${subject}:${id}`)
   }
 
   const tx: Tx = {
     addAlert: ops.addAlert,
+    pendingAlert: ops.pendingAlert,
     outbox,
     nested: (work) => work(),
     async addSightings(rows) {
@@ -142,6 +148,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
     async removeSubject(subject) {
       // The line, the current party and even an earlier party can all have data under this call's id.
       const ids = partyCallsOf([subject])
+      for (const call of calls.values()) if (call.subject === subject) ids.add(call.id)
       const gone = []
       const owners = new Set([subject])
       for (const id of ids) {
@@ -162,7 +169,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
         unsay(outcome)
         unsay(id, 'party', 'return', 'result')
       }
-      if (ids.size) dropCallNotices(ids, [...owners])
+      dropCallNotices(ids, [...owners], new Set(), [creditSubject(subject)])
       for (const identifier of bySubject.get(subject)?.keys() ?? []) {
         const holders = byIdentifier.get(identifier)!
         holders.delete(subject)
@@ -330,10 +337,24 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
       for (const { once: name, subject, ...event } of given) {
         if (name !== undefined && once.has(name)) continue
         if (name !== undefined) once.set(name, subject)
-        events.push({ schemaVersion: 1, seq: ++lastEvent, ...structuredClone(event), ...(subject && { subject }) } as GraphEvent)
+        events.push({ schemaVersion: 1, seq: ++lastEvent, ...structuredClone(event), ...(subject && { subject }), ...(name && event.type === 'callback.overdue' && { notice: name }) } as GraphEvent)
         made += 1
       }
       return made
+    },
+
+    async callbacksThrough(sources) {
+      const paths = new Set(sources)
+      const notices = ops.callbacksThrough(paths)
+      for (const event of events) if (event.notice && event.calls?.some(id => paths.has(id))) notices.set(event.notice, event.calls)
+      return notices
+    },
+
+    async dropCallbacks(keys) {
+      const gone = new Set(keys)
+      ops.dropCallbacks(keys)
+      for (const key of gone) once.delete(key)
+      for (let i = events.length - 1; i >= 0; i--) if (gone.has(events[i]!.notice ?? '')) events.splice(i, 1)
     },
 
     async eventHead() {
@@ -341,7 +362,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
     },
 
     async eventsAfter(seq, limit) {
-      return events.filter((each) => each.seq > seq).slice(0, limit).map(({ subject: _, ...event }) => structuredClone(event) as GraphEvent)
+      return events.filter((each) => each.seq > seq).slice(0, limit).map(({ subject: _, notice: __, calls: ___, ...event }) => structuredClone(event) as GraphEvent)
     },
 
     async newEpoch() {
@@ -487,30 +508,40 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
       return gone
     },
 
-    async addTouch(touch) {
+    async addTouch(touch, call) {
+      const row = { touch: structuredClone(touch), call }
       const list = touches.get(touch.subject)
-      if (list) list.push(structuredClone(touch))
-      else touches.set(touch.subject, [structuredClone(touch)])
+      if (list) list.push(row)
+      else touches.set(touch.subject, [row])
     },
 
-    async dropTouch(subject, at, landing) {
+    async dropTouch(subject, at, landing, call, confirmed) {
       const list = touches.get(subject) ?? []
-      const found = list.findIndex((touch) => touch.at === at && touch.landing === landing)
-      if (found >= 0) list.splice(found, 1)
+      const matches = list.filter(row => row.touch.at === at && row.touch.landing === landing)
+      const own = matches.filter(row => row.call === call)
+      const older = matches.filter(row => row.call === undefined)
+      const gone = new Set(own.length ? own : confirmed ? older : older.slice(0, 1))
+      if (gone.size) touches.set(subject, list.filter(row => !gone.has(row)))
+    },
+
+    async callsBehind(touch) {
+      const matches = (touches.get(touch.subject) ?? []).filter(({ touch: other }) => other.at === touch.at && other.landing === touch.landing && other.source === touch.source && other.campaign === touch.campaign && other.campaignId === touch.campaignId)
+      const older = matches.some(({ call }) => call === undefined) ? [...calls.values()].filter(call => !call.party && !call.visitor && call.direction === 'inbound' && call.subject === touch.subject && call.at === touch.at && 'tel:' + call.to === touch.landing).map(call => call.id) : []
+      return [...new Set([...older, ...matches.flatMap(({ call }) => call ?? [])])]
     },
 
     async touchesOf(subjects, from, to) {
       return subjects.flatMap((subject) =>
-        (touches.get(subject) ?? []).filter((touch) => touch.at >= from && touch.at <= to).map((touch) => structuredClone(touch)),
+        (touches.get(subject) ?? []).filter(({ touch }) => touch.at >= from && touch.at <= to).map(({ touch }) => structuredClone(touch)),
       )
     },
 
     async clicked(id, limit) {
-      return [...touches].filter(([, list]) => list.some((touch) => CLICK_IDS.some((name) => touch[name] === id))).map(([subject]) => subject).sort().slice(0, limit)
+      return [...touches].filter(([, list]) => list.some(({ touch }) => CLICK_IDS.some((name) => touch[name] === id))).map(([subject]) => subject).sort().slice(0, limit)
     },
 
     async touchesBetween(from, to) {
-      const found = [...touches.values()].flatMap((list) => list.filter((touch) => touch.at >= from && touch.at < to).map((touch) => structuredClone(touch)))
+      const found = [...touches.values()].flatMap((list) => list.filter(({ touch }) => touch.at >= from && touch.at < to).map(({ touch }) => structuredClone(touch)))
       return found.sort((x, y) => x.at - y.at)
     },
 
@@ -614,8 +645,9 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
           }
         }
       }
-      if (first && !call.visitor && call.direction === 'inbound') await this.dropTouch(line, call.at, `tel:${call.to}`)
+      if (first && !call.visitor && call.direction === 'inbound') await this.dropTouch(line, call.at, `tel:${call.to}`, id, true)
       const before = call.subject
+      const misses = new Set(await affectedMisses(this, withResult(call), owner))
       lineKinds.delete(id)
       callLines.set(id, line)
       Object.assign(call, { subject: owner, party, flags: withoutGuesses(call.flags) })
@@ -633,7 +665,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
         }
       }
       for (const [key, job] of outbox.jobs) if (job.transactionId === transactionId && (job.note !== 'call_party' || job.subject !== owner)) outbox.jobs.set(key, { ...stopCallJob(job, owner), rev: (job.rev ?? 0) + 1 })
-      if (first || before !== owner) dropCallNotices(new Set([id]), [line, before, owner])
+      if (first || before !== owner) dropCallNotices(new Set([id]), [line, before, owner], misses, first && call.direction === 'inbound' ? ['legacy:credit'] : [])
       return affected
     },
 
@@ -1059,8 +1091,8 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
 
   // Asked for from outside a write, a job is changed in a turn of its own, so a write undone takes nothing of it along.
   const queued = <A extends unknown[], R>(call: (...given: A) => Promise<R>) => (...given: A) => queue(() => call(...given))
-  const jobs: OutboxStore = { add: queued(outbox.add), claim: queued(outbox.claim), swap: queued(outbox.swap), standing: queued(outbox.standing), get: queued(outbox.get), list: queued(outbox.list), counts: queued(outbox.counts), oldestDue: queued(outbox.oldestDue) }
-  return { write, read: queue, outbox: jobs, ops, snapshot }
+  const jobs: OutboxStore = { add: queued(outbox.add), claim: queued(outbox.claim), swap: queued(outbox.swap), standing: queued(outbox.standing), start: queued(outbox.start), get: queued(outbox.get), list: queued(outbox.list), counts: queued(outbox.counts), oldestDue: queued(outbox.oldestDue) }
+  return { write, read: queue, outbox: jobs, ops: { ...ops, pendingAlert: queued(ops.pendingAlert) }, snapshot }
 }
 
 /** The cluster changes among events, as they were before there were others. */

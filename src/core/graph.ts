@@ -1,10 +1,11 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { malformed, refused } from '../contract/fault.ts'
 import { later, newest, worthOf } from './said.ts'
 import { brokenAt, seal } from './audit.ts'
 import { board } from './board.ts'
 import type { BoardColumn, BoardPlace } from './board.ts'
 import type { Labeled } from './calibrate.ts'
+import { creditSubject } from './call-party.ts'
 import { summarizeCalls } from './callreport.ts'
 import type { CallSummary } from './callreport.ts'
 import { byCode, codeTie, followUp, isTie } from './calls.ts'
@@ -12,7 +13,7 @@ import { Gone, asks, beginnings, replyTo } from './texts.ts'
 import { followed } from './followed.ts'
 import type { Followed } from './followed.ts'
 import type { Hours } from './hours.ts'
-import { UNSTORABLE } from './identifiers.ts'
+import { UNSTORABLE, nameEvidence } from './identifiers.ts'
 import { CLICK_IDS, checkTouch } from './touch.ts'
 import { createMemoryStore } from './memory.ts'
 import type { Job } from './outbox.ts'
@@ -111,6 +112,9 @@ export interface ReportOptions {
   per?: string
 }
 
+type JourneyDelivery = Pick<Job, 'target' | 'state' | 'note' | 'value'>
+type RecordedJourney = Omit<Journey, 'entries'> & { entries: (Entry & { sent?: JourneyDelivery[] })[] }
+
 export interface GraphOptions {
   /**
    * Called after a write commits, with the subjects whose cluster moved.
@@ -144,7 +148,7 @@ export interface Graph {
   /** The cluster a subject belongs to, or undefined for a subject never observed. */
   cluster(subject: Subject): Promise<Cluster | undefined>
   /** Records a marketing touchpoint. */
-  touch(touch: Touch): Promise<void>
+  touch(touch: Touch, call?: string): Promise<void>
   /** Finds the touches that led to a conversion by this subject. */
   attribute(subject: Subject, options: AttributeOptions): Promise<Attribution>
   /**
@@ -394,7 +398,7 @@ export interface Graph {
    * were seen doing, calls, steps and their values, consent and decisions,
    * each with the subject it is on and why that subject is this person.
    */
-  journey(subject: Subject, options?: { before?: number; limit?: number }): Promise<Journey>
+  journey(subject: Subject, options?: { before?: number; limit?: number; deliveries?: boolean }): Promise<RecordedJourney>
   /** Every sighting of a subject, oldest first. With `limit`, only the newest that many. */
   history(subject: Subject, limit?: number): Promise<Sighting[]>
   /** Recomputes every cluster from edges. Run it after changing the policy. */
@@ -535,6 +539,10 @@ export class Outdated extends Error {
 }
 
 export function createGraph(store: Store, policy: Policy = defaultPolicy, options: GraphOptions = {}): Graph {
+  return graphOn(store, policy, options).graph
+}
+
+function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: Graph; record: (tx: Tx, sightings: readonly Sighting[]) => Promise<Change[]> } {
   // A copy, so a caller that edits its own policy later changes nothing here: the hash always names what scores.
   policy = structuredClone(policy)
   const hash = policyHash(policy)
@@ -666,16 +674,16 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
   }
 
   /** Whether an identifier says nothing of who somebody is: muted, or evidence that more hold than its cap. A note has no cap to go by. */
-  const silent = (states: ReadonlyMap<Identifier, IdentifierState>) => (identifier: Identifier) => states.get(identifier)?.ignored === true || (ruleFor(policy, identifier).weight > 0 && !usable(policy, identifier, states.get(identifier)))
+  const silent = (states: ReadonlyMap<Identifier, IdentifierState>, unavailable?: ReadonlySet<Identifier>) => (identifier: Identifier) => unavailable?.has(identifier) === true || states.get(identifier)?.ignored === true || (ruleFor(policy, identifier).weight > 0 && !usable(policy, identifier, states.get(identifier)))
 
   /** What is known of these subjects that cannot be two people's. Nothing is read where the policy keeps nobody apart by it. */
-  async function known(tx: Tx, subjects: readonly Subject[], joins = false): Promise<Map<Subject, Known>> {
+  async function known(tx: Tx, subjects: readonly Subject[], joins = false, unavailable?: ReadonlySet<Identifier>): Promise<Map<Subject, Known>> {
     const out = new Map<Subject, Known>()
     if (!policy.apart?.length && !joins) return out
     for (let i = 0; i < subjects.length; i += TOGETHER) {
       const edges = (await tx.edgesOf(subjects.slice(i, i + TOGETHER))).filter(({ identifier }) => /^(birth|given|initial|dated|compound|review|named|ward|name|passkey|person):/.test(identifier))
       const states = await tx.states(unique(edges.map((edge) => edge.identifier)))
-      for (const [subject, facts] of knownOf(policy, edges, silent(states), joins)) out.set(subject, facts)
+      for (const [subject, facts] of knownOf(policy, edges, silent(states, unavailable), joins)) out.set(subject, facts)
     }
     return out
   }
@@ -1004,6 +1012,31 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     }
   }
 
+  // Identical public credit on the same path needs no replacement notice. The private proof keeps no ad click or campaign text.
+  const arrivalKey = (touch: AttributedTouch) => `credit:${createHash('sha256').update(JSON.stringify([touch.subject, touch.at, touch.via, sourceOf(touch), touch.campaign, touch.campaignId])).digest('hex')}`
+
+  async function settleParty(tx: Tx, id: string, arriving = false): Promise<Change[]> {
+    const affected = await tx.applyCallParty(id, arriving)
+    const changes = await settle(tx, new Set(affected))
+    await recheckCallbacks(tx, affected)
+    return changes
+  }
+
+  async function recheckCallbacks(tx: Tx, affected: Subject[]): Promise<void> {
+    if (!affected.length) return
+    // A different path can move a cut across a link that still stands, so credit is checked against the settled groups.
+    const notices = await tx.callbacksThrough(affected.map(creditSubject))
+    if (!notices.size) return
+    const calls = await tx.callsWith(unique([...notices.values()].map(sources => sources[0]!)))
+    const credit = await creditAll(tx, calls, 90 * DAY, 2)
+    const current = new Map(calls.map(call => {
+      const { credited } = credit(call.subject, call.at, call.party)
+      return [call.id, credited && arrivalKey(credited)] as const
+    }))
+    const gone = [...notices].filter(([, sources]) => !sources.includes(current.get(sources[0]!) ?? '')).map(([key]) => key)
+    if (gone.length) await tx.dropCallbacks(gone)
+  }
+
   /** The touches in the window before a conversion, on every subject reached, and the one that earns the credit. */
   const credit = async (subject: Subject, at: number, window: number, reached: Reached, tx: Tx): Promise<Attribution> => credited(subject, at, reached, await tx.touchesOf([...reached.keys()], at - window, at))
 
@@ -1246,7 +1279,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         if (event !== undefined && typeof event !== 'string') throw malformed(`Observation of "${subject}" requires its event as a string`)
         if (!Array.isArray(identifiers) || identifiers.some((each) => typeof each !== 'string')) throw malformed(`Observation of "${subject}" requires its identifiers as a list of strings`)
         if (UNSTORABLE.test(subject) || (event !== undefined && UNSTORABLE.test(event))) throw malformed('An observation contains unsupported characters')
-        for (const identifier of new Set(identifiers)) {
+        for (const identifier of nameEvidence(identifiers)) {
           if (UNSTORABLE.test(identifier)) throw malformed('An observation contains unsupported characters')
           ruleFor(policy, identifier)
           sightings.push(event === undefined ? { subject, identifier, at, recorded } : { subject, identifier, at, event, recorded })
@@ -1273,12 +1306,18 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     },
 
     async match(identifiers, { at = now(), limit = 20 } = {}) {
-      const given = unique(identifiers)
+      const given = nameEvidence(identifiers)
       for (const each of given) ruleFor(policy, each)
       // Nobody's id: no subject on record has an empty one.
       const nobody = ''
       return store.read(async (tx) => {
-        const states = new Map([...(await tx.states(given))].map(([identifier, state]) => [identifier, { ...state, fanout: state.fanout + 1 }]))
+        const states = await tx.states(given)
+        for (const identifier of given) {
+          const kept = states.get(identifier)
+          states.set(identifier, { ignored: kept?.ignored ?? false, fanout: (kept?.fanout ?? 0) + 1 })
+        }
+        // Counting this record can make a name public for it and for everyone who already holds it.
+        const unavailable = new Set(given.filter(silent(states)))
         const open = given.filter((identifier) => usable(policy, identifier, states.get(identifier)))
         const edges = [...(await tx.edgesOn(open)), ...open.map((identifier): Edge => ({ subject: nobody, identifier, first: at, last: at, count: 1 }))]
         const found = scorePairs(policy, edges, states, new Set([nobody]))
@@ -1286,12 +1325,12 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         found.sort((x, y) => y.score - x.score || (x.b < y.b ? -1 : 1))
         const out: Candidate[] = []
         const some = found.slice(0, limit)
-        const facts = await known(tx, some.map((pair) => pair.b))
-        const own = knownOf(policy, given.map((identifier): Edge => ({ subject: nobody, identifier, first: at, last: at, count: 1 })), (identifier) => states.get(identifier)?.ignored ?? false).get(nobody)
+        const facts = await known(tx, some.map((pair) => pair.b), false, unavailable)
+        const own = knownOf(policy, given.map((identifier): Edge => ({ subject: nobody, identifier, first: at, last: at, count: 1 })), (identifier) => unavailable.has(identifier)).get(nobody)
         for (const { b: subject, score, level, reasons } of some) {
           const members = (await tx.clusterOf(labels.get(subject)!.cluster)).sort()
           // A browser or a caller answers for the records it is one with, because they are shown with it.
-          const theirs = names(subject) ? [facts.get(subject)] : [...(await known(tx, members.filter(names))).values()]
+          const theirs = names(subject) ? [facts.get(subject)] : [...(await known(tx, members.filter(names), false, unavailable)).values()]
           // The caller's own facts can keep a probe apart. Only a record can confirm a claim on another record.
           const between = conflict(policy, own, facts.get(subject)) ?? theirs.map((each) => conflict(policy, own, each)).find((each) => each !== undefined)
           // Asked about before they are on record, they are a record to be.
@@ -1385,10 +1424,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       })
     },
 
-    async touch(touch) {
+    async touch(touch, call) {
       checkTouch(touch)
       await store.write(async (tx) => {
-        await tx.addTouch(touch)
+        await tx.addTouch(touch, call ?? '')
         await tx.fed('touches', now())
       })
     },
@@ -1559,7 +1598,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         stands = newest(await tx.saidOf('party', call))!.key === key
         if (!added || !stands) return []
         await tx.setSetting('callParty', randomUUID())
-        return settle(tx, new Set(await tx.applyCallParty(call)))
+        return settleParty(tx, call)
       })
       return { stands }
     },
@@ -1616,7 +1655,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const before = await tx.callOf(call.id)
         const said = before?.flags.includes('ambiguous') && doubted && !call.flags.includes('pool') && !byCode(call)
         await tx.setCall({ ...rest, ...(said && { flags: [...new Set([...call.flags, 'ambiguous'])] }), ...(tied && { visitor }), recorded: now() }, lineKind)
-        if ((await tx.saidOf('party', call.id)).length > 0) await settle(tx, new Set(await tx.applyCallParty(call.id, !before)))
+        if ((await tx.saidOf('party', call.id)).length > 0) await settleParty(tx, call.id, !before)
         await tx.fed('calls', now())
       })
     },
@@ -1685,7 +1724,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
           if (before === i) marked.push({ subject: past?.subject ?? each.subject, identifiers: [mark] })
         }
         const recorded = now()
-        return record(tx, [{ ...who, identifiers: [...identifiers, ...marks] }, ...by, ...marked].flatMap((each) => unique(each.identifiers).map((identifier) => ({ subject: each.subject, identifier, at, event, recorded }))))
+        return record(tx, [{ ...who, identifiers: [...identifiers, ...marks] }, ...by, ...marked].flatMap((each) => nameEvidence(each.identifiers).map((identifier) => ({ subject: each.subject, identifier, at, event, recorded }))))
       })
       return { marks, identifiers: [...identifiers, ...new Set(marks)], changes }
     },
@@ -1715,7 +1754,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         if (call && (call.visitor !== undefined || (ambiguous && !call.flags.includes('ambiguous')))) {
           const { visitor, ...rest } = call
           await tx.setCall({ ...rest, flags: [...new Set([...call.flags, ...(ambiguous ? ['ambiguous'] : [])])] })
-          if (line && visitor !== undefined) await tx.addTouch({ ...line, subject: call.subject, at: call.at })
+          if (line && visitor !== undefined) await tx.addTouch({ ...line, subject: call.subject, at: call.at }, id)
         }
         if ((await tx.states([identifier])).get(identifier)?.ignored) return []
         const holders = (await tx.edgesOn([identifier])).map((edge) => edge.subject)
@@ -1752,8 +1791,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const { visitor: guess, ...rest } = call
         await tx.setCall({ ...rest, flags: [...call.flags.filter((flag) => flag !== 'ambiguous' && flag !== 'pool'), tied ? 'code' : 'taken'], ...(tied && { visitor }) })
         // As it would be had the code come first: filed under its number only where it is tied to nobody.
-        if (tied && line && guess === undefined) await tx.dropTouch(call.subject, call.at, line.landing!)
-        if (!tied && line && guess !== undefined) await tx.addTouch({ ...line, subject: call.subject, at: call.at })
+        if (tied && line && guess === undefined) await tx.dropTouch(call.subject, call.at, line.landing!, id)
+        if (!tied && line && guess !== undefined) await tx.addTouch({ ...line, subject: call.subject, at: call.at }, id)
         return tied ? [...changes, ...(await record(tx, [call.subject, visitor].map((subject) => ({ subject, identifier, at: call.at, event: 'call', recorded: now() }))))] : changes
       })
     },
@@ -1841,7 +1880,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const tied = visitor !== undefined && (await tx.edgesOn([`text:${text.id}`, `dial:text-${text.id}`])).some((edge) => edge.subject === visitor)
         await tx.setText({ ...rest, ...(tied && { visitor }), recorded: now() })
         if (touch) {
-          await tx.addTouch(touch)
+          await tx.addTouch(touch, '')
           await tx.fed('touches', now())
         }
         return true
@@ -1910,8 +1949,13 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const creditOf = await creditAll(tx, [call], 90 * DAY, 2)
         const { credited } = creditOf(call.subject, call.at, call.party)
         if (!credited || !paid(credited) || sourceOf(credited) !== data.source || (credited.campaign ?? null) !== data.campaign || (credited.campaignId ?? null) !== data.campaignId) return false
-        if (!await tx.addAlert(alert)) return false
-        if (keepEvent) await tx.emit([{ ...event, once: alert.key, subject: call.subject }])
+        // The notice may name a later miss than its key, and count attempts that staff can later assign to someone else.
+        const attempts = calls.filter(each => each.direction === 'outbound' && each.at > call.at)
+        const channel = credited.landing?.startsWith('tel:') ? await tx.callsBehind(credited) : []
+        const route = [...credited.via, credited.subject]
+        const sources = unique([call.id, first.id, ...attempts.map(each => each.id), ...channel, ...(credited.via.length ? [...route.map(creditSubject), arrivalKey(credited)] : [])])
+        if (!await tx.addAlert(alert, false, sources)) return false
+        if (keepEvent) await tx.emit([{ ...event, once: alert.key, subject: call.subject, calls: sources }])
         return true
       }, { whole: true })
     },
@@ -2472,7 +2516,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       const changes = await changing(async (tx) => {
         await current(tx, subjects, why)
         jobs = []
-        if (await tx.settingOf('callParty')) await tx.setSetting('callParty', randomUUID())
+        // Other workers may already have a cached report about this person, even before a party was named.
+        await tx.setSetting('callParty', randomUUID())
         const keys = (await tx.keysOf(subjects)).map(({ key }) => key).filter((key) => key.length > 3)
         for (const each of subjects) await decideAll(tx, [{ action: 'forget', about: [each], why }])
         const edges = await tx.edgesOf(subjects)
@@ -2489,6 +2534,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const open = identifiers.filter((identifier) => usable(policy, identifier, states.get(identifier)))
         for (const edge of await tx.edgesOn(open)) affected.add(edge.subject)
         const moved = await settle(tx, affected)
+        await recheckCallbacks(tx, [...affected])
         // Last: what moved is said of the groups they were in, and those may have had their names.
         await tx.unname(subjects, keys)
         return moved
@@ -2497,7 +2543,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return changes
     },
 
-    async journey(subject, { before = Number.MAX_SAFE_INTEGER, limit = 200 } = {}) {
+    async journey(subject, { before = Number.MAX_SAFE_INTEGER, limit = 200, deliveries = false } = {}) {
       if (!(Number.isInteger(limit) && limit > 0)) throw malformed('limit must be a positive integer')
       return store.read(async (tx) => {
         const own = (await tx.labelsOf([subject])).get(subject)
@@ -2593,10 +2639,16 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         let cut = Math.max(0, found.length - limit)
         while (cut > 0 && found[cut - 1]!.at === found[cut]!.at) cut -= 1
         const page = found.slice(cut)
+        // Delivery state belongs beside the ownership that was current when this journey was read.
+        const shown = deliveries ? await Promise.all(page.map(async entry => {
+          if (entry.kind !== 'outcome') return entry
+          const jobs = await tx.outbox.get(entry.outcome.transactionId)
+          return { ...entry, sent: jobs.map(({ target, state, note, value }) => ({ target, state, ...(note && { note }), ...(value !== undefined && { value }) })) }
+        })) : page
         return {
           subject,
           subjects: Object.fromEntries(unique(page.map((entry) => entry.subject)).map((each) => [each, tie(each)])),
-          entries: page,
+          entries: shown,
           next: cut > 0 ? page[0]!.at : null,
           more: everyone.length - people.length,
         }
@@ -2657,26 +2709,27 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 
     async asOf(at) {
       // Stamp the copy's sightings with the time asked about, so the copy's own log reads as of then.
-      const past = createGraph(createMemoryStore(), policy, { now: () => at })
+      const copy = createMemoryStore()
+      const past = graphOn(copy, policy, { now: () => at })
       const decisions = await store.read(async (tx) => {
-        // A thousand to a write, however many come at a time.
-        let batch: Observation[] = []
+        // Copy the stored evidence exactly. Repeating a legacy name as a fresh observation would vouch for a spelling nobody checked.
+        let batch: Sighting[] = []
         for await (const sightings of tx.sightingsUntil(at)) {
           for (const { subject, identifier, at: seen, event } of sightings) {
-            batch.push({ subject, identifiers: [identifier], at: seen, ...(event !== undefined && { event }) })
+            batch.push({ subject, identifier, at: seen, recorded: at, ...(event !== undefined && { event }) })
             if (batch.length < 1000) continue
-            await past.observe(batch)
+            await copy.write((tx) => past.record(tx, batch))
             batch = []
           }
         }
-        if (batch.length > 0) await past.observe(batch)
+        if (batch.length > 0) await copy.write((tx) => past.record(tx, batch))
         return (await tx.decisions()).filter((decision) => decision.at <= at)
       })
       for (const { action, about } of decisions) {
-        if (action === 'ignore' || action === 'restore') await past.ignore(about[0]!, action === 'ignore')
-        if (action === 'separate' || action === 'rejoin') await past.separate(about[0]!, about[1]!, action === 'separate')
+        if (action === 'ignore' || action === 'restore') await past.graph.ignore(about[0]!, action === 'ignore')
+        if (action === 'separate' || action === 'rejoin') await past.graph.separate(about[0]!, about[1]!, action === 'separate')
       }
-      return past
+      return past.graph
     },
 
     policy() {
@@ -2691,7 +2744,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       return store.read(async (tx) => ({ changes: await differences(tx), policy: await policyState(tx) }))
     },
   }
-  return graph
+  return { graph, record }
 }
 
 /** One entry per subject in either map, with the cluster it had and the cluster it has. */

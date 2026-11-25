@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { after, describe, test } from 'node:test'
-import { GoogleError, MetaError, createBatcher, createGraph, createOutbox, googleAds, hashEmail, meta, microsoftAds, tiktok, recordNotLead } from '../tools/internals.ts'
+import { GoogleError, MetaError, createBatcher, codeNote, recordCall, createGraph, createOutbox, googleAds, hashEmail, meta, microsoftAds, tiktok, recordNotLead } from '../tools/internals.ts'
 import type { IngestRequest, OutboxOptions, Outcome, Store } from '../tools/internals.ts'
 import type { Opened } from './suite.ts'
 
@@ -602,6 +602,117 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       await outbox.record({ ...outcome(1), transactionId: 'later', action: 'Enrolled' })
       status = 401
       assert.deepEqual(await outbox.run(), { sent: 0, skipped: 0, failed: 0, retried: 1 })
+    })
+
+    for (const change of ['confirm', 'forget']) for (const fallback of [false, true]) test(`ad credit from another call is checked at dispatch, ${change} before ${fallback ? 'a retry' : 'the batch'}`, async () => {
+      const posted: [string, string | undefined, string | undefined][] = []
+      let refused = false
+      const target: OutboxOptions['targets'][number] = {
+        name: 'ads', restates: false, batch: 10, keys: () => ({}), click: (attribution) => attribution.credited, retryable: () => false,
+        deliver: async (_action, items) => {
+          if (fallback && !refused && items.length > 1) {
+            refused = true
+            for (const { job, touch } of items) if (touch?.gclid) job.click = { gclid: touch.gclid }
+            throw new Error('try separately')
+          }
+          posted.push(...items.map(({ job, touch }): [string, string | undefined, string | undefined] => [job.transactionId, touch?.gclid, job.click?.gclid]))
+          return {}
+        },
+      }
+      const { graph, store } = await fresh({ targets: [target] })
+      const visitor = 'visitor:ad'
+      await graph.observe({ subject: visitor, identifiers: ['device:ad', codeNote('K7Q2MZ')], at: T0 - 200, event: 'text_code' })
+      await graph.touch({ subject: visitor, at: T0 - 200, source: 'google', gclid: 'former-click' })
+      const { subject } = await recordCall(graph, { id: 'related-claim', from: '+12025550101', to: '+12025550105', at: T0 - 100, answered: true, code: 'K7Q2MZ' })
+      await recordCall(graph, { id: 'separate-conversion', from: '+12025550101', to: '+12025550106', at: T0, answered: true })
+      assert.equal((await graph.attribute(subject, { at: T0 })).credited?.gclid, 'former-click')
+      for (const [transactionId, owner, hasKeys] of [['call:separate-conversion', subject, false], ['has-keys', subject, true], ['independent', 'record:other', true]] as const) {
+        await store.outbox.add({ transactionId, subject: owner, target: 'ads', at: T0, action: 'Call', keys: hasKeys ? { email: 'test-hash' } : {}, state: 'pending', attempts: 0, due: T0 })
+      }
+      let changed = false
+      const delayed = { ...store.outbox, standing: async (jobs: Parameters<typeof store.outbox.standing>[0]) => {
+        const standing = await store.outbox.standing(jobs)
+        if (!changed && (!fallback || refused)) {
+          changed = true
+          if (change === 'forget') await graph.forget(visitor)
+          else await graph.sayParty({ call: 'related-claim', key: 'who', at: T0, party: { role: 'representative', subject: 'record:other', by: 'desk' } })
+        }
+        return standing
+      } }
+      const pass = await createOutbox(graph, delayed, { targets: [target], now: () => T0 + HOUR }).run()
+      assert.ok(changed)
+      assert.deepEqual((await graph.attribute(subject, { at: T0 })).credited, undefined)
+      assert.deepEqual(posted.sort((a, b) => a[0].localeCompare(b[0])), [['has-keys', undefined, undefined], ['independent', undefined, undefined]])
+      assert.equal(pass.sent, 2)
+      assert.equal((await store.outbox.get('call:separate-conversion'))[0]!.note, 'no_match_key')
+    })
+
+    test('a claim invalidated again is due immediately', async () => {
+      const { graph, store, remote, clock } = await fresh()
+      await store.outbox.add({ transactionId: 'still-eligible', subject: 'record:a', target: 'google', at: T0, action: 'Call', keys: { email: 'test-hash' }, state: 'pending', attempts: 0, due: T0 })
+      let changes = 0
+      const delayed = { ...store.outbox, standing: async (jobs: Parameters<typeof store.outbox.standing>[0]) => {
+        const standing = await store.outbox.standing(jobs)
+        if (changes < 2) await graph.sayParty({ call: 'other', key: String(++changes), at: T0 + changes, party: { role: 'self', subject: 'record:other', by: 'desk' } })
+        return standing
+      } }
+      const worker = createOutbox(graph, delayed, { targets: [googleAds({ customerId: '1', send: remote.send })], now: () => clock.now })
+      assert.deepEqual(await worker.run(), { sent: 0, failed: 0, skipped: 0, retried: 1 })
+      assert.deepEqual(remote.ids(), [])
+      assert.equal((await store.outbox.get('still-eligible'))[0]!.due, clock.now)
+      assert.equal((await worker.run()).sent, 1)
+      assert.deepEqual(remote.ids(), ['still-eligible'])
+    })
+
+    for (const fallback of [false, true]) test(`a corrected call is removed at dispatch from a ${fallback ? 'fallback' : 'batch'} request`, async () => {
+      const posted: string[][] = []
+      const target = {
+        name: 'ads', restates: false, batch: 10, keys: () => ({ email: 'test-hash' }), click: () => undefined, retryable: () => false,
+        deliver: async (_action: string, items: readonly { job: { transactionId: string } }[]) => {
+          posted.push(items.map(({ job }) => job.transactionId))
+          if (fallback && items.length > 1) throw new Error('try separately')
+          return {}
+        },
+      }
+      const { graph, outbox, store, clock } = await fresh({ targets: [target] })
+      for (const id of ['one', 'two']) {
+        const subject = 'caller:' + id
+        await graph.keepCall({ id, subject, at: T0, direction: 'inbound', to: '+12025550101', flags: [] })
+        await outbox.record({ transactionId: 'call:' + id, subject, stage: 'call', action: 'Call', at: T0, email: 'desk@example.org' })
+      }
+      const delayed = { ...store.outbox, standing: async (jobs: Parameters<typeof store.outbox.standing>[0]) => {
+        const before = await store.outbox.standing(jobs)
+        if (before.some((job) => job.transactionId === 'call:one') && (!fallback || jobs.length === 1)) {
+          await graph.sayParty({ call: 'one', at: T0 + 1, key: 'who', party: { role: 'self', subject: 'record:a', by: 'desk' } })
+        }
+        return before
+      } }
+      const pass = await createOutbox(graph, delayed, { targets: [target], now: () => clock.now }).run()
+      assert.deepEqual(posted, [...(fallback ? [['call:one', 'call:two']] : []), ['call:two']])
+      assert.equal(pass.sent, 1)
+    })
+
+    test('a call corrected during an acknowledged send can still be retracted by its original identifiers', async () => {
+      let confirm: () => Promise<unknown>
+      const posted: Record<string, string>[] = []
+      const target = microsoftAds({ accessToken: 'test', developerToken: 'test', customerId: '11', customerAccountId: '22', fetch: async (_url, request) => {
+        const body = JSON.parse(String(request?.body))
+        if (body.OfflineConversions) await confirm()
+        else posted.push(...body.OfflineConversionAdjustments)
+        return new Response('{}')
+      } })
+      const { graph, outbox } = await fresh({ targets: [target] })
+      const subject = 'caller:line'
+      await graph.keepCall({ id: 'one', subject, at: T0, direction: 'inbound', to: '+12025550101', flags: [] })
+      await graph.touch({ subject, at: T0, msclkid: 'test-click' })
+      await outbox.record({ transactionId: 'call:one', subject, stage: 'call', action: { microsoft: 'Call' }, at: T0, email: 'desk@example.org' })
+      confirm = () => graph.sayParty({ call: 'one', at: T0 + 1, key: 'who', party: { role: 'self', subject: 'record:a', by: 'desk' } })
+      assert.equal((await outbox.run()).sent, 1)
+      assert.equal((await outbox.run()).sent, 0)
+      const { sent } = await outbox.forget('record:a', undefined, { retract: true })
+      assert.deepEqual(sent.map(job => job.state), ['accepted'])
+      assert.deepEqual(posted.map(row => [row.MicrosoftClickId, row.HashedEmailAddress]), [['test-click', hashEmail('desk@example.org')]])
+      assert.deepEqual(await outbox.get('call:one'), [])
     })
 
     test('a platform that has a way is told when someone is forgotten, only where that is asked for', async () => {

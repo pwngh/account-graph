@@ -35,6 +35,8 @@ export interface Engine extends Parts {
   policy: Policy
   options: EngineOptions
   now: () => number
+  /** Reads the graph and its delivery rows in the same store snapshot. */
+  read<T>(work: (parts: Parts) => Promise<T>): Promise<T>
   /** One entry, as one transaction: all of what it does, or none. */
   unit<T>(work: (inside: Inside) => Promise<T>, instead?: Partial<Pick<ServiceOptions, 'address' | 'lineType'>>): Promise<T>
 }
@@ -54,6 +56,12 @@ export function createEngine(store: Store, options: EngineOptions = {}): Engine 
     policy,
     options,
     now,
+    read: work => store.read(tx => work(parts({
+      read: each => each(tx),
+      write: async () => { throw new Error('A lookup cannot write') },
+      outbox: tx.outbox,
+      ops: store.ops,
+    }))),
     unit: (work, instead) => unit(store, (inside, tx) => {
       const changes: Change[] = []
       return work({ ...parts(inside, (more) => void changes.push(...more), instead), tx, changes })

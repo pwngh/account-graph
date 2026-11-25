@@ -323,6 +323,12 @@ If you stop between acting and keeping the cursor, the same events come again, s
 
 > **A deletion takes its events with it.** A subject you delete with `forget` is gone from the events. Delete your own copy when you ask for the deletion.
 
+A callback notice keeps track of its missed calls, outgoing attempts, number-channel visits and the identity links that earned its credit. Assigning one of those calls to another record or forgetting it removes the notice and its retained event. After a correction changes a component, a notice that used an identity link keeps its event if the same route still credits the same arrival. A later check can issue a corrected notice for a miss that is still open. A message already received outside the graph stays with its recipient.
+
+PostgreSQL upgrade 31 checks old callback events by the owner and times they contain. An old event that may have counted another record’s call is removed. Older notices could draw credit through links that have since disappeared. After a correction to an inbound call, an old notice keeps its campaign where the call’s confirmed record or a paid arrival on the exact subject accounts for it. Where old alerts for one owner cannot be told apart, their possible source calls are kept together for later corrections.
+
+If the corrected call was already forgotten, an old receipt can be all that survives. A call and a party update erased together can still be recognised after receipt pruning. For older receipts that could also describe an ordinary result or return, the upgrade looks for a saved revision from a party correction. Where both are present it removes older notices whose missed call, attempts or campaign can no longer be accounted for. A matching notice for another miss can stay, even on the same line.
+
 ### Webhook
 
 Set `WEBHOOK_URL` and `WEBHOOK_SECRET`. The server posts new events there within seconds, in order, at most 100 to a post. The first post begins with what happens after it was set.
@@ -344,7 +350,7 @@ x-account-graph-signature: t=1795460000500,v1=<hex HMAC-SHA256 of "<t>.<body>">
 | --- | --- |
 | Signature | Over the body as received, under `WEBHOOK_SECRET`. Refuse an old `t`. The library has [`verifyWebhook` and `parseWebhook`](library.md#webhook). |
 | Answer | Any 2xx within ten seconds. Redirects are not followed. |
-| Delivery | At least once, in order, by one process at a time |
+| Delivery | At least once, in order, by one process at a time. If an event is erased or redacted while a batch is being signed, the sender signs the current batch before posting. |
 | Refused | Tried again after 30 seconds, doubling to an hour, for a day. Then the events of that post are passed over, and an alert says so. The `events` call still has them. |
 
 ## Alerts

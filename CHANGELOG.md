@@ -4,11 +4,32 @@
 
 ### The six calls
 
+- `callback.overdue` notices from before an erasure lose unsupported credit and attempts during PostgreSQL upgrade 31.
+
+- `call_update` and `forget` make workers check credit again for other ad jobs prepared before the change.
+
+- `call_update` stops a claimed ad job that changes before its batch or retry starts sending.
+
+- `GET /review/api/journey` reads each outcome and its delivery state together.
+- `Links` is documented as the place to inspect a staff join kept out of a cluster by a separation.
+- `forget` preserves old rejected batches when the deleted subject had no calls.
+- `alerts` removes a rejected batch that counted a corrected call beyond its ten named failures.
+- `alerts` starts a callback or conversion failure notification while the stored notice is still current.
+- `GET /review/api/conversions` hides the former caller’s click ID, matching confidence and consent on a corrected delivery.
+
+- `events` webhook batches reflect corrections and erasures that arrive during signing.
+
+- `callback.overdue` and pending alerts lose attempts, number-channel credit and credit through identity links from calls reassigned or forgotten.
 - `record` and the Twilio text route share a concurrency test for one message, its tie and its sightings.
 - `call_update` reports the current standing of a duplicate result or return.
 - `call_update` accepts a signed statement of who one call concerned and keeps its ordered history.
 - `call` keeps its confirmed details when a late report or competing tap arrives.
+- `forget` can retract a conversion acknowledged after its call was corrected using the identifiers originally sent.
+- `forget` invalidates cached reports across workers and during the final check before a report returns.
+- `lookup` reads a caller’s history and a person’s arrivals from the same snapshot as their matches.
+- `lookup` reads a journey or record with its call history and delivery details in one transaction.
 - `journey`, callback reports and conversion credit follow the record staff named on a call.
+- `call_update` removes the channel visit from the identified call when several calls shared its line, number and time.
 - `call_update` removes the phone evidence recorded for that call after pruning.
 - `forget` erases a confirmed call when the line or any named party is forgotten.
 
@@ -25,6 +46,10 @@
 - The package exports `.`, `./edge`, `./collect`, `./hardware` and `./testing`. Only `src/bin.ts` reads the environment.
 
 ### People
+
+- `match` counts the proposed record against the cap on names and other facts before confirming a match.
+
+- `name` keeps alphabetic vowel signs in exact names with a date of birth or a verified zip code. A rebuild retires earlier exact name matches until the profiles are sent again.
 
 - `verify` and `rebuild` reread edges for staff joins only in components that may need a cut when the policy has no `apart` facts.
 - `lookup` `match` checks a caller’s own facts for conflicts with a proposed record.

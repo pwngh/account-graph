@@ -1198,6 +1198,34 @@ test('a call whose result is awaited is held, and nothing is sent until a person
   }
 })
 
+test('a sent delivery shown with a confirmed record does not disclose the original click or consent', async () => {
+  const store = createMemoryStore()
+  const graph = createGraph(store)
+  const at = 1790000000000
+  const original = { click: { msclkid: 'first-visitor-click' }, confidence: 0.93, consent: { adUserData: true, adPersonalization: false } }
+  await store.write(async tx => {
+    await tx.setCall({ id: 'confirmed', subject: 'caller:line', direction: 'inbound', at, recorded: at, to: '+12025550102', flags: [] })
+    await tx.outbox.add({ transactionId: 'call:confirmed', subject: 'caller:line', target: 'test', action: 'call', at, due: at, state: 'sent', attempts: 1, keys: {}, ...original })
+    await tx.outbox.add({ transactionId: 'unrelated', subject: 'record:other', target: 'test', action: 'call', at, due: at, state: 'sent', attempts: 1, keys: {}, ...original })
+  })
+  const outbox = createOutbox(graph, store.outbox, { targets: [{ name: 'test', batch: 10, keys: () => ({}), click: () => undefined, deliver: async () => ({}), retryable: () => false }] })
+  const server = createServer(createHandler(graph, { token: 'service', reviewers: { desk: 'staff' }, outbox, origins: [] })).listen(0, '127.0.0.1')
+  await new Promise<void>(resolve => server.once('listening', resolve))
+  try {
+    await graph.sayParty({ call: 'confirmed', key: 'owner', at: at + 1, party: { role: 'self', subject: 'record:a', by: 'desk' } })
+    const response = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/conversions?state=sent`, { headers: { authorization: 'Bearer staff' } })
+    assert.equal(response.status, 200)
+    const rows = await response.json() as Record<string, unknown>[]
+    const row = rows.find(each => each.transactionId === 'call:confirmed')!
+    const other = rows.find(each => each.transactionId === 'unrelated')!
+    assert.deepEqual([other.click, other.confidence, other.consent], [original.click, original.confidence, original.consent])
+    assert.equal(row.subject, 'record:a')
+    assert.deepEqual([row.click, row.confidence, row.consent], [undefined, undefined, undefined])
+  } finally {
+    await new Promise<void>(resolve => server.close(() => resolve()))
+  }
+})
+
 test('a reviewer sees refused conversions without keys and puts them back in line', async () => {
   const store = createMemoryStore()
   const graph = createGraph(store)
@@ -1965,6 +1993,15 @@ test('a slow answer is worked out once for everybody, shared for a moment while 
     held = undefined
     release!()
     assert.deepEqual([seen, (await overlapping).people, worked - begun], [2, 2, 2])
+    // A deletion may finish during the last database read before the reviewer receives the cached board.
+    const revision = graph.partyRevision
+    let checked = 0
+    graph.partyRevision = async () => {
+      const read = await revision()
+      if (++checked === 2) await post('/forget', { subject: 'account:4' })
+      return read
+    }
+    assert.equal((await read()).people, 1)
     // The first of two values is the one that counts, so the order of them is another question.
     await read('?days=7&days=30')
     const first = worked

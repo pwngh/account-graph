@@ -244,7 +244,7 @@ export function plainPolicy(policy: Policy) {
 }
 
 /** Raised when the code decides differently under one policy, so that what was stored before is known to be due a rebuild. */
-const RULES = 5
+const RULES = 6
 
 /** The same for two policies exactly when they score and cluster alike. What only flags, `review`, and what only credits, `credit`, are not part of it. */
 export function policyHash(policy: Policy): string {

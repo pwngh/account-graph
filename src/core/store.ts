@@ -85,7 +85,11 @@ export interface Tx {
    */
   emit(events: readonly NewEvent[]): Promise<number>
   /** Keeps an alert with the event it names. A fresh failure batch may reopen the same message. */
-  addAlert(alert: KeptAlert, again?: boolean): Promise<boolean>
+  addAlert(alert: KeptAlert, again?: boolean, calls?: readonly string[]): Promise<boolean>
+  pendingAlert: OpsStore['pendingAlert']
+  /** Private sources of callback notices whose credited paths touched these subjects. */
+  callbacksThrough(sources: readonly string[]): Promise<Map<string, readonly string[]>>
+  dropCallbacks(keys: readonly string[]): Promise<void>
   eventHead(): Promise<EventHead>
   eventsAfter(seq: number, limit: number): Promise<GraphEvent[]>
   /** Begins another history, as after a restored backup. Every cursor is lost. */
@@ -126,11 +130,14 @@ export interface Tx {
   consentHistory(subject: Subject, limit?: number): Promise<ConsentAnswer[]>
   /** Deletes answers written down before a time, except each subject's standing one. Returns how many went. */
   pruneConsent(before: number): Promise<number>
-  addTouch(touch: Touch): Promise<void>
-  /** Takes back one arrival that turned out to be none: that of a call filed under its number, by the landing it was filed with. */
-  dropTouch(subject: Subject, at: number, landing: string): Promise<void>
+  /** The call whose number supplied this arrival, an empty string for another source, or absent for an older row. */
+  addTouch(touch: Touch, call?: string): Promise<void>
+  /** A confirmation removes every indistinguishable old arrival if the call predates source tracking. */
+  dropTouch(subject: Subject, at: number, landing: string, call: string, confirmed?: boolean): Promise<void>
   /** Touches on the given subjects with `from <= at <= to`. */
   touchesOf(subjects: readonly Subject[], from: number, to: number): Promise<Touch[]>
+  /** Which calls supplied this number-channel visit. Older visits may have several possible sources. */
+  callsBehind(touch: Touch): Promise<string[]>
   /** The subjects with a touch that carries this ad click id, whole, in order. */
   clicked(id: string, limit: number): Promise<Subject[]>
   /** Every touch with `from <= at < to`, whoever it belongs to. */

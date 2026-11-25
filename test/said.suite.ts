@@ -148,6 +148,46 @@ export function saidSuite(name: string, open: () => Promise<Opened>) {
     }
   })
 
+  test(`${name}: confirmation removes only the channel visit that came from that call`, async () => {
+    const { store, close } = await open()
+    try {
+      const graph = createGraph(store, undefined, { now: () => AT })
+      const from = '+12025550100'
+      const to = '+12025550101'
+      const line = `caller:${hashPhone(from)}`
+      const visits = async () => (await graph.journey(line)).entries.flatMap(row => row.kind === 'visit' ? row.touch.source : []).sort()
+      await graph.touch({ subject: line, at: AT, landing: `tel:${to}`, source: 'independent' })
+      for (const id of ['first', 'second', 'unlisted']) {
+        await recordCall(graph, { id, at: AT, from, to }, id === 'unlisted' ? {} : { numbers: { [to]: { source: id } } })
+      }
+      assert.deepEqual(await visits(), ['first', 'independent', 'second'])
+      for (const [call, left] of [['second', ['first', 'independent']], ['unlisted', ['first', 'independent']], ['first', ['independent']]] as const) {
+        await graph.sayParty({ call, key: call, at: AT + 1, party: { role: 'self', subject: 'record:a', by: 'desk' } })
+        assert.deepEqual(await visits(), left)
+      }
+    } finally {
+      await close()
+    }
+  })
+
+  test(`${name}: confirmation hides ambiguous channel visits stored before their calls were identified`, async () => {
+    const { store, close } = await open()
+    try {
+      await store.write(async tx => {
+        const subject = 'caller:line'
+        const to = '+12025550101'
+        await tx.setCall({ id: 'old', direction: 'inbound', subject, at: AT, to, flags: [], recorded: AT })
+        for (const source of ['one', 'two']) await tx.addTouch({ subject, at: AT, landing: `tel:${to}`, source })
+        await tx.addTouch({ subject, at: AT + 1, landing: `tel:${to}`, source: 'later' })
+        await tx.addSaid({ topic: 'party', about: 'old', key: 'desk', at: AT + 2, data: { role: 'unknown', by: 'desk' } })
+        await tx.applyCallParty('old')
+        assert.deepEqual((await tx.touchesOf([subject], AT, AT + 1)).map(touch => touch.source), ['later'])
+      })
+    } finally {
+      await close()
+    }
+  })
+
   test(`${name}: confirming a call keeps a simultaneous text tie and other sightings of the line, even after pruning`, async () => {
     const { store, close } = await open()
     try {

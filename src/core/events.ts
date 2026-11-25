@@ -1,7 +1,7 @@
 import type { GraphEvent } from '../contract/api.ts'
 
 /** Something that happened, before it has a number. */
-export type NewEvent = { [T in GraphEvent['type']]: { type: T; at: number; data: Extract<GraphEvent, { type: T }>['data']; /** Whom it is about, so forgetting them deletes it. */ subject?: string; /** Said once: another with the same name is not. */ once?: string } }[GraphEvent['type']]
+export type NewEvent = { [T in GraphEvent['type']]: { type: T; at: number; data: Extract<GraphEvent, { type: T }>['data']; /** Whom it is about, so forgetting them deletes it. */ subject?: string; /** Calls that this callback notice counts or credits, private to the store. */ calls?: readonly string[]; /** Said once: another with the same name is not. */ once?: string } }[GraphEvent['type']]
 
 /** Where events stand: the newest number, the oldest that is kept, and which history these numbers are of. */
 export interface EventHead {

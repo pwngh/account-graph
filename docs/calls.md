@@ -50,11 +50,11 @@ Two people can use the same line. When staff know who an individual call concern
 
 The newest statement wins, by `at` and then by key in byte order. It can arrive before the call. Use a new key for a correction. Results and reported returns have their own order. The call lookup keeps the statements and who made each one.
 
-After a recorded call has a party statement, a later phone report or a competing tap leaves its details intact. Staff can still update its result, return or party.
+After a recorded call has a party statement, a later phone report or a competing tap leaves its details intact. Staff can still update its result, return or party. The call also loses the channel visit supplied by its tracking number. Visits from other calls at the same instant keep their sources.
 
 The call, its outcome and value history belong to the exact record staff named, even when another record shares its cluster. Its callback is closed by a return for the same record. Reports use that record's own arrival for credit. An unassigned call earns no person's ad credit. A statement removes earlier guesses for that call, including a tap, code or leased number. The next call on the line needs its own confirmation. A call without a statement follows the usual rules.
 
-A party statement stops further ad deliveries for this call. A representative's number and consent belong to the representative. A delivery already sent or in flight can still reach the platform.
+A party statement stops further ad deliveries for this call. A representative's number and consent belong to the representative. Each batch and each single-job retry checks the current job as it starts the request. If a correction or deletion changes the graph while a worker is finding credit, the worker checks credit and consent again for the affected batch before sending. A request already in flight can still reach the platform.
 
 ## Page events
 

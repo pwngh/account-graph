@@ -797,6 +797,150 @@ test('a failed conversion corrected before the worker reports it creates no aler
   }
 })
 
+test('the reviewer journey reads its delivery details at the same time as the call', async () => {
+  const { local, base, close } = await http({ ads: { meta: { pixelId: 'test', accessToken: 'test', siteUrl: 'https://example.org' } } })
+  try {
+    const { engine } = await internalsOf(local)!()
+    const { graph, store } = engine
+    await graph.keepCall({ id: 'one', direction: 'inbound', subject: 'caller:line', to: '+12025550101', at: AT, flags: [] })
+    await graph.outcome({ transactionId: 'call:one', subject: 'caller:line', at: AT })
+    await store.outbox.add({ transactionId: 'call:one', target: 'test', action: 'sale', subject: 'caller:line', state: 'pending', attempts: 0, at: AT, due: NOW, keys: {} })
+    const read = store.read.bind(store)
+    let corrected = false
+    store.read = async work => {
+      const value = await read(work)
+      if (!corrected && value && typeof value === 'object' && 'entries' in value && 'subjects' in value) {
+        corrected = true
+        await graph.sayParty({ call: 'one', key: 'signed', at: NOW, party: { role: 'self', subject: 'record:b', by: 'desk' } })
+      }
+      return value
+    }
+    const journey = async (subject: string) => {
+      const response = await fetch(`${base}/review/api/journey?subject=${subject}`, { headers: { authorization: 'Bearer reviewer' } })
+      assert.equal(response.status, 200)
+      return await response.json() as { entries: { kind: string; sent?: { note?: string; state: string }[] }[] }
+    }
+    const before = await journey('caller:line')
+    assert.ok(corrected)
+    assert.deepEqual(before.entries.find(entry => entry.kind === 'outcome')?.sent?.map(job => job.state), ['pending'])
+    assert.ok(!(await journey('caller:line')).entries.some(entry => entry.kind === 'call' || entry.kind === 'outcome'))
+    assert.deepEqual((await journey('record:b')).entries.find(entry => entry.kind === 'outcome')?.sent?.map(job => job.note), ['call_party'])
+  } finally {
+    await close()
+  }
+})
+
+test('call and journey lookups read a correction and its delivery details at one point in time', async () => {
+  const local = accountGraph({ memory: true, now: () => NOW, ads: { meta: { pixelId: 'test', accessToken: 'test', siteUrl: 'https://example.org' } } })
+  try {
+    const { engine } = await internalsOf(local)!()
+    const { graph, store } = engine
+    await graph.keepCall({ id: 'one', direction: 'inbound', subject: 'caller:line', to: '+12025550101', at: AT, flags: [] })
+    await graph.outcome({ transactionId: 'call:one', subject: 'caller:line', at: AT })
+    await store.outbox.add({ transactionId: 'call:one', target: 'test', action: 'sale', subject: 'caller:line', state: 'pending', attempts: 0, keys: {}, at: AT, due: NOW })
+    const read = store.read.bind(store)
+    let correction: string | undefined = 'record:a'
+    store.read = async work => {
+      const value = await read(work)
+      if (correction && !(value instanceof Map)) {
+        const subject = correction
+        correction = undefined
+        await graph.sayParty({ call: 'one', key: subject, at: subject === 'record:a' ? AT : NOW, party: { role: 'self', subject, by: 'desk' } })
+      }
+      return value
+    }
+    const journey = await local.lookup({ kind: 'journey', subject: 'caller:line' })
+    const conversion = journey.entries.find(row => row.kind === 'conversion')
+    correction = 'record:b'
+    const call = await local.lookup({ kind: 'record', type: 'call', key: 'one', at: NOW })
+    assert.ok(call?.type === 'call')
+    const latest = call.partyHistory?.at(-1)
+    assert.equal(correction, undefined)
+    assert.deepEqual([!conversion || conversion.deliveries.every(job => job.note !== 'call_party'), latest && latest.role !== 'unknown' && call.subject === latest.subject], [true, true])
+  } finally {
+    await local.close()
+  }
+})
+
+test('caller and person lookups agree on what was still known of a confirmed call', async () => {
+  const from = '+12025550102'
+  const to = '+12025550101'
+  const coherent: boolean[] = []
+  for (const kind of ['caller', 'person'] as const) {
+    const local = accountGraph({ memory: true, now: () => NOW, phones: { numbers: { [to]: { source: 'directory' } } } })
+    try {
+      const { engine } = await internalsOf(local)!()
+      const { graph, store } = engine
+      const [call] = (await local.record({ entries: [{ type: 'call', key: 'one', at: AT, direction: 'inbound', from, to, result: { answered: false } }] })).results
+      assert.ok(call?.ok && call.type === 'call')
+      const subject = call.value.subject
+      const ask = async () => kind === 'caller' ? local.lookup({ kind, from, to, at: NOW }) : (await local.lookup({ kind, subjects: [subject], at: NOW })).people[0]!
+      const before = await ask()
+      assert.deepEqual([before.known, before.arrival?.source], [true, 'directory'])
+      const read = store.read.bind(store)
+      let corrected = false
+      store.read = async work => {
+        const value = await read(work)
+        const hasCall = Array.isArray(value) && value.some(row => row?.id === 'one' || row?.touch?.source === 'directory')
+        if (!corrected && (hasCall || (value && typeof value === 'object' && ('waiting' in value || 'people' in value)))) {
+          corrected = true
+          await graph.sayParty({ call: 'one', key: 'who', at: NOW, party: { role: 'self', subject: 'record:a', by: 'desk' } })
+        }
+        return value
+      }
+      const person = await ask()
+      assert.equal(corrected, true)
+      coherent.push(person.known === (person.arrival?.source === 'directory'))
+      const after = await ask()
+      assert.deepEqual([after.known, after.arrival], [false, null])
+    } finally {
+      await local.close()
+    }
+  }
+  assert.deepEqual(coherent, [true, true])
+})
+
+test('a cached report loses a forgotten conversion during its last check and across instances', async () => {
+  const { createEngine } = await import('../src/core/engine.ts')
+  const { createMemoryStore } = await import('../src/core/memory.ts')
+  const { createSix } = await import('../src/core/six.ts')
+  const { createReceipts } = await import('../src/core/receipts.ts')
+  const coherent: boolean[] = []
+  for (const other of [false, true]) {
+    let at = NOW
+    const store = createMemoryStore()
+    const engine = createEngine(store, { now: () => at })
+    const options = { receipts: createReceipts([SECRET]) }
+    const reader = createSix(engine, options)
+    const writer = other ? createSix(createEngine(store, { now: () => at }), options) : reader
+    const run = engine.graph.report
+    engine.graph.report = async request => {
+      at += 500
+      return run(request)
+    }
+    const ask = async () => (await reader.report({ kind: 'campaigns', window })).value
+    const erase = async () => assert.ok((await writer.forget({ key: 'gone', at, by: 'desk', subjects: ['record:a'], platforms: 'report' })).ok)
+    await writer.record({ entries: [{ type: 'conversion', key: 'one', at: AT, subject: 'record:a', stage: 'intake', value: 17, currency: 'USD' }] })
+    const before = await ask()
+    if (other) await erase()
+    else {
+      const read = engine.graph.partyRevision
+      let reads = 0
+      engine.graph.partyRevision = async () => {
+        const revision = await read()
+        if (++reads === 2) await erase()
+        return revision
+      }
+    }
+    const during = await ask()
+    at += 60_001
+    const after = await ask()
+    assert.notDeepEqual(before, after)
+    coherent.push(JSON.stringify(during) === JSON.stringify(after))
+  }
+  assert.deepEqual(coherent, [true, true])
+})
+
 test('a call party written by another instance ends a cached report during its grace', async () => {
   const { createEngine } = await import('../src/core/engine.ts')
   const { createMemoryStore } = await import('../src/core/memory.ts')

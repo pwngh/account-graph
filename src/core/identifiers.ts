@@ -93,15 +93,26 @@ export function identifier(kind: string, value: string): Identifier {
 /** Letters that are Latin and have no simpler form of their own. */
 export const FOLDED: Record<string, string> = { ß: 'ss', æ: 'ae', œ: 'oe', ø: 'o', đ: 'd', ð: 'd', ł: 'l', þ: 'th', ı: 'i' }
 /** The original name hash counts everyone who held that spelling and carries its mutes. A suffix says exactly which spelling passed the newer check. */
-export const foldedNameKey = (id: Identifier): Identifier | undefined => /^(?:given|initial|named|ward|person|perhaps):[0-9a-f]{64}(?=$|~)/.exec(id)?.[0]
+export const foldedNameKey = (id: Identifier): Identifier | undefined => /^(?:name|given|initial|named|ward|person|perhaps):[0-9a-f]{64}(?=$|~)/.exec(id)?.[0]
+/** A fresh exact name has one spelling. Keep its older hash beside it for its fanout, mutes and comparison with old records. */
+export function nameEvidence(identifiers: readonly Identifier[]): Identifier[] {
+  const out = new Set<Identifier>()
+  for (const id of identifiers) {
+    const base = id.startsWith('name:') && foldedNameKey(id)
+    if (base) out.add(base)
+    out.add(base === id ? id + '~1' : id)
+  }
+  return [...out]
+}
 /** What is written where a name is not known. */
 const NOBODYS = new Set(['unknown', 'unk', 'none', 'null', 'undefined', 'na', 'n a', 'noname', 'no name', 'nobody', 'not given', 'not provided', 'not available', 'placeholder', 'test', 'tester', 'testing', 'dummy', 'firstname', 'first name', 'lastname', 'last name', 'caller', 'wireless caller', 'customer', 'client'])
 const SAMPLES = new Set(['john doe', 'jane doe'])
 
 /** A name as it is compared: without case, accents or punctuation. */
-function normalizeName(name: string): string {
-  const letters = name.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[ßæœøđðłþı]/g, (letter) => FOLDED[letter]!)
-  return letters.replace(/['’ʼ.]/g, '').replace(/[^\p{L}]+/gu, ' ').trim()
+function normalizeName(name: string, vowels = false): string {
+  // A vowel sign such as ि is alphabetic. Accent folding must not turn किरण into करण.
+  const letters = name.normalize('NFKD').replace(/\p{M}/gu, (mark) => vowels && /\p{Alphabetic}/u.test(mark) && !/\p{Diacritic}/u.test(mark) ? mark : '').toLowerCase().replace(/[ßæœøđðłþı]/g, (letter) => FOLDED[letter]!)
+  return letters.replace(/['’ʼ.]/g, '').replace(/[^\p{L}\p{M}]+/gu, ' ').trim()
 }
 
 /** The two parts of a name, or nothing for something written in place of a name. */
@@ -125,7 +136,12 @@ export function nameKeys(secret: string, first: string, last: string, known: { z
   const name = nameParts(first, last)
   // A single letter is an initial, except where a letter is a word of its own.
   if (!name || name.some((part) => !part || /^[a-z]$/.test(part))) return []
-  const key = (by: string, value: string): Identifier => `name:${createHmac('sha256', secret).update(JSON.stringify([...name, by, value])).digest('hex')}`
+  const whole = [normalizeName(first, true), normalizeName(last, true)]
+  const mac = (parts: string[]) => createHmac('sha256', secret).update(JSON.stringify(parts)).digest('hex')
+  const key = (by: string, value: string): Identifier => {
+    const base = 'name:' + mac([...name, by, value])
+    return whole.some((part, i) => part !== name[i]) ? base + '~' + mac([...whole, by, value]) : base
+  }
   const keys: Identifier[] = []
   const zip = /^(\d{5})(-?\d{4})?$/.exec(known.zip5?.trim() ?? '')?.[1]
   if (zip && zip !== '00000' && zip !== '99999') keys.push(key('zip', zip))

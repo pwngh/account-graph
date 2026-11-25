@@ -9,7 +9,7 @@ import type { Decided, Outcome } from '../contract/outcome.ts'
 import type { AttributedTouch, Candidate, Counterparty, Identifier, Reason, Subject, Touch } from '../contract/types.ts'
 import { callState, followUp, recordCall, ringing, settleCall, settleLead } from './calls.ts'
 import type { CallOptions, Call } from './calls.ts'
-import type { Engine, Inside } from './engine.ts'
+import type { Engine, Inside, Parts } from './engine.ts'
 import { cursorOf, seqOf } from './events.ts'
 import { Outdated } from './graph.ts'
 import type { Hours } from './hours.ts'
@@ -492,7 +492,7 @@ export function createSix(engine: Engine, options: SixOptions) {
 
   // ── lookup ────────────────────────────────────────────────────────────────
 
-  async function person(subjects: readonly Subject[], at: At): Promise<Person[]> {
+  async function person({ graph }: Parts, subjects: readonly Subject[], at: At): Promise<Person[]> {
     const people = await graph.people(subjects, { at })
     const consents = await graph.consentOf(subjects)
     return Promise.all(people.map(async ({ subject, members, touch, optedOut }) => {
@@ -502,7 +502,7 @@ export function createSix(engine: Engine, options: SixOptions) {
     }))
   }
 
-  async function journey(subject: Subject, before?: number): Promise<LookupValue['journey']> {
+  async function journey({ graph, outbox }: Parts, subject: Subject, before?: number): Promise<LookupValue['journey']> {
     const { subjects, entries, next, more } = await graph.journey(subject, before === undefined ? {} : { before })
     const options = callOptions()
     const shown = await Promise.all(entries.map(async (entry): Promise<JourneyEntry | undefined> => {
@@ -535,7 +535,7 @@ export function createSix(engine: Engine, options: SixOptions) {
     return { subjects, entries: shown.filter((each) => each !== undefined), next, more }
   }
 
-  async function view(type: 'conversion' | 'call' | 'text', key: string, at: At): Promise<RecordView | null> {
+  async function view({ graph, outbox }: Parts, type: 'conversion' | 'call' | 'text', key: string, at: At): Promise<RecordView | null> {
     const id = ofKey(type, key)
     const notLead = (await graph.notLeads([id])).get(id)?.kind ?? null
     if (type === 'conversion') {
@@ -562,13 +562,13 @@ export function createSix(engine: Engine, options: SixOptions) {
 
   async function lookup(request: LookupRequest): Promise<LookupValue[LookupRequest['kind']]> {
     switch (request.kind) {
-      case 'person': {
-        // Read before the people: a decision made meanwhile is then newer than what was seen, and refuses.
-        const decisions = (await graph.decisionPage({ limit: 1 }))[0]?.seq ?? 0
-        return { decisions, people: await person(request.subjects, request.at) }
-      }
+      case 'person':
+        return engine.read(async parts => {
+          const decisions = (await parts.graph.decisionPage({ limit: 1 }))[0]?.seq ?? 0
+          return { decisions, people: await person(parts, request.subjects, request.at) }
+        })
       case 'journey':
-        return journey(request.subject, request.before)
+        return engine.read(parts => journey(parts, request.subject, request.before))
       case 'find':
         return service.find(request.text)
       case 'match': {
@@ -582,13 +582,13 @@ export function createSix(engine: Engine, options: SixOptions) {
         } catch (error) {
           throw malformed(`request.to: ${(error as Error).message}`, { path: 'request.to' })
         }
-        const { subject, area, known, people, visitor, touch, waiting } = await ringing(graph, { to: request.to, at: request.at, ...(request.from !== undefined && { from: request.from }) }, callOptions())
+        const { subject, area, known, people, visitor, touch, waiting } = await engine.read(({ graph }) => ringing(graph, { to: request.to, at: request.at, ...(request.from !== undefined && { from: request.from }) }, callOptions()))
         return { subject: subject ?? null, area: area ?? null, known, people: people.map(match), visitor: visitor ?? null, waiting, arrival: arrival(touch, subject ?? '') }
       }
       case 'conflicts':
         return { conflicts: await graph.conflicts(request.subjects) }
       case 'record':
-        return view(request.type, request.key, request.at)
+        return engine.read(parts => view(parts, request.type, request.key, request.at))
       case 'transfers': {
         const counterparties = (request.tiedOnly ? await graph.collusion(request.subject) : await graph.flows(request.subject)).map(tied)
         return { counterparties, rings: await graph.rings(request.subject) }
@@ -678,7 +678,7 @@ export function createSix(engine: Engine, options: SixOptions) {
       const party = await graph.partyRevision()
       if (deciding > 0) {
         const value = await work(request)
-        if (decided !== since || party !== await graph.partyRevision()) continue
+        if (party !== await graph.partyRevision() || decided !== since) continue
         return { asOf: at ?? asked, value }
       }
       const version = await graph.version()
@@ -696,7 +696,7 @@ export function createSix(engine: Engine, options: SixOptions) {
         )
       }
       const value = await known.answer
-      if (decided !== since || deciding > 0 || party !== await graph.partyRevision()) continue
+      if (party !== await graph.partyRevision() || decided !== since || deciding > 0) continue
       return { asOf: lately || at === undefined ? known.at : at, value }
     }
   }

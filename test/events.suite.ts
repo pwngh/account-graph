@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import type { GraphEvent } from '../src/contract/api.ts'
 import { parseWebhook, signWebhook, verifyWebhook } from '../src/contract/webhook.ts'
 import { createWebhook } from '../src/core/delivery.ts'
 import { cursorOf, seqOf } from '../src/core/events.ts'
@@ -66,6 +67,54 @@ export function eventsSuite(name: string, open: () => Promise<Opened>) {
       assert.deepEqual([1, 2, 3].map((seq) => seqOf(pruned, cursorOf(head, seq))), [undefined, 2, 3])
       await store.write((tx) => tx.newEpoch())
       assert.equal(seqOf(await store.read((tx) => tx.eventHead()), cursorOf(head, 4)), undefined)
+    } finally {
+      await close()
+    }
+  })
+
+  test(`${name}: a call correction while an event batch is signed removes its old notices before posting`, async t => {
+    const { store, close } = await open()
+    try {
+      const graph = createGraph(store)
+      const id = 'missed'
+      const subject = 'caller:line'
+      const bodies: string[][] = []
+      const deliver = createWebhook(store, { now: () => AT, url: 'https://example.org/events', secret: 's', fetch: async (_, request) => {
+        const events: GraphEvent[] = JSON.parse(String(request?.body)).events
+        bodies.push(events.map(event => event.type === 'cluster.changed' ? `from ${event.data.from}` : event.type))
+        return new Response('', { status: 200 })
+      } })
+      await deliver.run()
+      await store.write(async tx => {
+        await tx.setCall({ id, subject, direction: 'inbound', at: AT, to: '+12025550101', flags: [], recorded: AT })
+        await tx.emit([
+          { type: 'callback.overdue', at: AT, subject, data: { call: id, subject, missedAt: AT, attempts: 0, source: 'old', campaign: null, campaignId: null } },
+          { type: 'conversion.failed', at: AT, subject, data: { conversion: 'call:missed', platform: 'test', note: 'old' } },
+          { type: 'cluster.changed', at: AT, subject: 'record:b', data: { subject: 'record:b', from: 'record:former', to: null } },
+          { type: 'delivery.late', at: AT, data: { oldestDue: AT } },
+        ])
+      })
+      let signing!: () => void
+      let corrected!: () => void
+      const started = new Promise<void>(resolve => { signing = resolve })
+      const resume = new Promise<void>(resolve => { corrected = resolve })
+      const sign = crypto.subtle.sign.bind(crypto.subtle)
+      t.mock.method(crypto.subtle, 'sign', async (...args: Parameters<typeof sign>) => {
+        signing()
+        await resume
+        return sign(...args)
+      })
+      const posting = deliver.run()
+      await started
+      try {
+        await graph.sayParty({ call: id, key: 'signed', at: AT + 1, party: { role: 'self', subject: 'record:a', by: 'desk' } })
+        await graph.forget('record:former')
+        assert.deepEqual((await store.read(tx => tx.eventsAfter(0, 99))).map(event => event.type), ['cluster.changed', 'delivery.late'])
+      } finally {
+        corrected()
+      }
+      await posting
+      assert.deepEqual(bodies, [['from null', 'delivery.late']])
     } finally {
       await close()
     }

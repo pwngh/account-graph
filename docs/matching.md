@@ -94,6 +94,8 @@ For example, a chain of four accounts, each sharing one machine with the next, b
 
 A cluster above 50 members (`review`) is flagged `oversized`. Clusters that large come more often from one bad identifier than from one person.
 
+When a separation keeps an active staff join out of the cluster, open either subject’s Links to see its join evidence. Decisions shows the original join and the separation. Matches lists undecided pairs, so it does not offer that join again.
+
 ### Cut algorithms
 
 | Cut | Method | Cost and behavior |
@@ -226,7 +228,7 @@ With `given` it keeps keyed notes of the names a first name may stand for, from 
 | --- | --- |
 | One of them has no date | Nothing is said. |
 | A merge, by a reviewer or from your own systems | Overrules it, whichever came first. Taking the merge back gives the fact back. The exception is a caller or a browser joined to two people of two dates of birth: it goes where the fewest such joins are left out, then with whoever was seen first, and the others are in Matches. Same changes nothing there: `split` the caller from the one it is not. |
-| Where it shows | The `match` lookup checks facts on the candidate itself, including a caller or browser, and on the records it stands for. The lookup, Accounts and Matches show a conflict as related with `conflict: "birth"` or `"given"`, however high the score. Credit does not cross it. |
+| Where it shows | The `match` lookup counts the proposed record when applying caps to evidence and confirming facts. It checks facts on the candidate itself, including a caller or browser, and on the records it stands for. The lookup, Accounts and Matches show a conflict as related with `conflict: "birth"` or `"given"`, however high the score. Credit does not cross it. |
 | Where it does not | The `conflicts` lookup, kept-apart lists, disputes and the audit log. Nobody decided it. |
 | A corrected date | The record keeps both values, so it is kept apart from neither, until it is forgotten. |
 | Shared browsers and callers | They go with one of the two, as after a separation. |
@@ -259,9 +261,9 @@ What two records share, such as a mailbox, a number or a computer, may be a hous
 | Names not in Latin letters | They make no key of a full name and a date, because folding would make many names one. |
 | A father and a son | Of one name with no dates, they are one person by it, as two records of one man would be. |
 
-For a phone or email given under a name, or by someone speaking for its owner, a placeholder such as Unknown / Not Provided gives no name evidence. Where the name table could use part of a spelling, any letters it would lose must agree too. Thus María文 and Maria文 can agree, and Maria李 is a different name. The exact name key with a date or confirmed zip code still works in other scripts.
+For a phone or email given under a name, or by someone speaking for its owner, a placeholder such as Unknown / Not Provided gives no name evidence. Where the name table could use part of a spelling, any letters it would lose must agree too. Thus María文 and Maria文 can agree, and Maria李 is a different name. The exact name key with a date or confirmed zip code works in other scripts. It keeps alphabetic vowel signs, so किरण and करण with the same surname give different keys.
 
-When upgrading from the earlier name rules, stop the servers and run `account-graph rebuild`. The old hashes do not reveal which names lost letters or were placeholders. The rebuild drops those hashes as evidence for a join. They still count how many people share a spelling and carry its mutes. Different old names can still keep records apart, including while only one of the two profiles has been sent again. Where a spelling changes the weight of a link or what a name says about a person, two people stay together only if both the earlier and the checked spelling put them together. Losing one match cannot give that person to another record. Re-send named profiles from their original source with new report keys before serving the graph again. Exact name keys with a date or zip code, dates of birth themselves and staff decisions keep working through the upgrade.
+When upgrading from the earlier name rules, stop the servers and run `account-graph rebuild`. The old hashes do not reveal which names lost letters or were placeholders. The rebuild drops those hashes as evidence for a join. They still count how many people share a spelling and carry its mutes. Different old names can still keep records apart, including while only one of the two profiles has been sent again. Where a spelling changes the weight of a link or what a name says about a person, two people stay together only if both the earlier and the checked spelling put them together. Losing one match cannot give that person to another record. Re-send named profiles from their original source with new report keys before serving the graph again. Recreate exact name keys with a date or zip code from the original names as well. A cached hash cannot recover a missing vowel. Dates of birth themselves and staff decisions keep working through the upgrade.
 
 A record is a subject that names somebody, such as `contact:7` or `account:42`. A browser or a caller is none: it goes with the records it is tied to most strongly, and of two as strong, with whoever was seen first.
 

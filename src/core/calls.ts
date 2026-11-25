@@ -263,7 +263,7 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   await graph.keepCall({ ...kept, ...(visitor && { visitor }) })
   const counted = await settle(graph, id, options, known ?? '')
 
-  if (!(await graph.keptCall(id))!.visitor && line) await graph.touch({ ...line, subject, at })
+  if (!(await graph.keptCall(id))!.visitor && line) await graph.touch({ ...line, subject, at }, id)
   if (saved && call.code !== undefined) await tellCode(graph, (await graph.keptCall(id))!, call.code, options, line)
   const now = (await graph.keptCall(id))!
   await graph.observe({ subject, identifiers: [note], at, event: 'call' })

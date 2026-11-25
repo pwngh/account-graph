@@ -98,6 +98,8 @@ export interface OutboxStore {
   swap(before: Job, after: Job): Promise<boolean>
   /** Which of the given jobs have not been claimed or changed since they were read. */
   standing(jobs: readonly Job[]): Promise<Job[]>
+  /** Starts a request with the standing jobs and the current call ownership revision. Both are guarded until the request starts. */
+  start(jobs: readonly Job[], send: (standing: readonly Job[], partyRevision: string | undefined) => void): Promise<void>
   /** Every job of one transaction, one per target. */
   get(transactionId: string): Promise<Job[]>
   /** Jobs in one state, the most recently due first. */
@@ -259,14 +261,18 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
   }
 
   /** Changes a stored job, starting again from what is stored whenever something else changed it first. */
-  async function change(job: Job, make: (current: Job) => Job | undefined | Promise<Job | undefined>, arrived = false): Promise<Job> {
+  async function change(job: Job, make: (current: Job) => Job | undefined | Promise<Job | undefined>, sent?: Job): Promise<Job> {
     for (;;) {
       const current = (await store.get(job.transactionId)).find((each) => each.target === job.target)
       // Forgotten meanwhile, or nothing to change.
       if (!current) return job
-      // A send already in flight may land after a correction. Remember its arrival for deletion without restoring its keys or sending again.
-      if (current.note === 'call_party' && (!arrived || current.delivered)) return current
-      const next: Job | undefined = current.note === 'call_party' ? { ...current, delivered: true, state: 'sent' } : await make(current)
+      // A send may finish after a correction. Only a platform that can retract it needs its original match details.
+      let next: Job | undefined
+      if (current.note === 'call_party') {
+        if (!sent || current.delivered) return current
+        const match = targets.get(sent.target)?.forget ? { keys: sent.keys, ...(sent.click && { click: sent.click }) } : {}
+        next = { ...current, ...match, delivered: true, state: 'sent' }
+      } else next = await make(current)
       if (!next) return current
       if (await store.swap(current, next)) return { ...next, rev: (current.rev ?? 0) + 1 }
     }
@@ -311,16 +317,37 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
     return { ...arrived, restated: true, state: 'pending', attempts: 0, due: now() }
   }
 
-  async function deliver(target: Target, action: string, claimed: readonly Item[], pass: Pass, failed: Job[]): Promise<void> {
+  type Selection = { party: string | undefined; again: Set<string> }
+  async function deliver(target: Target, action: string, claimed: readonly Item[], pass: Pass, failed: Job[], selection: Selection): Promise<void> {
     // What was taken back or changed since it was claimed is left to the next pass.
-    const standing = new Set(await store.standing(claimed.map(({ job }) => job)))
-    const items = claimed.filter(({ job }) => standing.has(job))
-    if (items.length === 0) return
+    const standing = await store.standing(claimed.map(({ job }) => job))
+    if (!standing.length) return
+    let items: Item[] = []
+    let request: ReturnType<Target['deliver']> | undefined
     try {
-      const { requestId } = await target.deliver(action, items)
+      await store.start(standing, (current, party) => {
+        // Correcting another call or forgetting its visitor can remove this job's click without changing the job itself.
+        if (party !== selection.party) {
+          for (const job of current) selection.again.add(jobKey(job))
+          return
+        }
+        const kept = new Set(current)
+        items = claimed.filter(({ job }) => kept.has(job))
+        if (!items.length) return
+        request = (async () => target.deliver(action, items))()
+        // It can already be rejected while PostgreSQL is releasing the read locks.
+        void request.catch(() => {})
+      })
+    } catch (error) {
+      // Once the request has started, a lost reply to the read transaction cannot take it back.
+      if (!request) throw error
+    }
+    if (!request) return
+    try {
+      const { requestId } = await request
       for (const { job } of items) {
         const sent: Job = { ...job, state: 'sent', delivered: true, ...(requestId && { requestId }) }
-        if (!(await store.swap(job, sent))) await change(job, (current) => landed(job, current, target), true)
+        if (!(await store.swap(job, sent))) await change(job, (current) => landed(job, current, target), sent)
         pass.sent += 1
       }
     } catch (error) {
@@ -332,9 +359,85 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
         }
       } else if (items.length > 1) {
         // A platform rejects a whole request for one bad event. Send each alone to find it.
-        for (const item of items) await deliver(target, action, [item], pass, failed)
+        for (const item of items) await deliver(target, action, [item], pass, failed, selection)
       } else await fail(items[0]!.job, note, pass, failed)
     }
+  }
+
+  async function sendClaimed(claimed: readonly Job[], pass: Pass, failed: Job[]): Promise<Job[]> {
+    const selection: Selection = { party: await graph.partyRevision(), again: new Set() }
+    const groups = new Map<string, { target: Target; action: string; items: Item[] }>()
+    const attributions = new Map<string, Attribution>()
+    const spurned = await graph.notLeads(claimed.map((job) => job.transactionId))
+    for (const job of claimed) {
+      // Said to be no lead before it was queued: it waits, and one that is taking a conversion back goes out.
+      if (spurned.has(job.transactionId) && !job.withdrawn) {
+        await change(job, (current) => (current.withdrawn ? undefined : takenBack(current)))
+        // Taken back in between, it is given back: whoever did that may have found nothing to give.
+        if ((await graph.notLeads([job.transactionId])).size === 0) await outbox.giveBack(job.transactionId)
+        continue
+      }
+      const skip = async (note: string) => {
+        if (await store.swap(job, { ...job, state: 'skipped', note })) pass.skipped += 1
+      }
+      const target = targets.get(job.target)
+      if (!target) {
+        await fail(job, 'unknown_target', pass, failed)
+        continue
+      }
+      if (job.consent && !job.consent.adUserData) {
+        await skip('consent_denied')
+        continue
+      }
+      if (target.maxAge !== undefined && now() - job.at > target.maxAge) {
+        await skip('too_old')
+        continue
+      }
+      const asked = `${job.subject}\u0000${job.at}`
+      let attribution = attributions.get(asked)
+      if (!attribution) attributions.set(asked, (attribution = await graph.attribute(job.subject, { at: job.at, window: options.window ?? 90 * DAY })))
+      // A person's own click counts however weak the chain to it, unless a lowest confidence was asked for.
+      const touches = attribution.touches.filter((each) => each.confidence >= confidence || (each.joined && options.confidence === undefined))
+      const touch = target.click({ ...attribution, touches, credited: touches[0], reason: touches[0] ? 'credited' : attribution.touches[0] ? 'low_confidence' : 'no_touch' }, 0)
+      const subjects = touch && touch.subject !== job.subject ? [job.subject, touch.subject] : [job.subject]
+      // With no consent on the outcome, use what the person and the browser that clicked told us.
+      let consent = job.consent
+      if (consent) {
+        // What the outcome said was true when it happened. A refusal given since is newer, so it decides.
+        const since = (await Promise.all(subjects.map((subject) => graph.consentHistory(subject, 1)))).flat().filter((answer) => answer.at >= job.at)
+        if (since.some((answer) => !answer.adUserData)) {
+          await skip('consent_denied')
+          continue
+        }
+        if (since.some((answer) => !answer.adPersonalization)) consent = { ...consent, adPersonalization: false }
+      } else {
+        const known = [...(await graph.consentOf(subjects)).values()]
+        if (known.some((each) => !each.adUserData)) {
+          await skip('consent_denied')
+          continue
+        }
+        if (known.length === subjects.length) consent = { adUserData: true, adPersonalization: known.every((each) => each.adPersonalization) }
+      }
+      if (!touch && Object.keys(job.keys).length === 0) {
+        // Whose it is can come out later: they open a link, or call again. Looked at less and less often, it is given up on in the end.
+        const age = now() - job.at
+        const until = Math.ceil(job.at + (options.patience ?? 7 * DAY))
+        if (now() >= until) await skip('no_match_key')
+        else if (await store.swap(job, { ...job, attempts: job.attempts - 1, due: Math.min(until, now() + Math.max(10 * 60_000, Math.ceil(age / 4))), note: 'no_match_key' })) pass.retried += 1
+        continue
+      }
+      // It waited for this, and waits no more.
+      if (job.note === 'no_match_key') delete job.note
+      const key = `${job.target}\u0000${job.action}`
+      const group = groups.get(key) ?? { target, action: job.action, items: [] }
+      groups.set(key, group)
+      group.items.push({ job: { ...job, ...(touch && { confidence: touch.confidence }) }, touch, consent })
+    }
+    for (const { target, action, items } of groups.values()) {
+      for (let i = 0; i < items.length; i += target.batch) await deliver(target, action, items.slice(i, i + target.batch), pass, failed, selection)
+    }
+    // Prepare the original claim again. A refused adapter may have stamped its old click on the item it was given.
+    return claimed.filter((job) => selection.again.has(jobKey(job)))
   }
 
   /** The jobs of an outcome, one for each platform its action names. */
@@ -522,76 +625,10 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
     async run() {
       const pass: Pass = { sent: 0, skipped: 0, failed: 0, retried: 0 }
       const failed: Job[] = []
-      const groups = new Map<string, { target: Target; action: string; items: Item[] }>()
-      const attributions = new Map<string, Attribution>()
       const claimed = await store.claim(now(), lease, options.batch ?? 500)
-      const spurned = await graph.notLeads(claimed.map((job) => job.transactionId))
-      for (const job of claimed) {
-        // Said to be no lead before it was queued: it waits, and one that is taking a conversion back goes out.
-        if (spurned.has(job.transactionId) && !job.withdrawn) {
-          await change(job, (current) => (current.withdrawn ? undefined : takenBack(current)))
-          // Taken back in between, it is given back: whoever did that may have found nothing to give.
-          if ((await graph.notLeads([job.transactionId])).size === 0) await outbox.giveBack(job.transactionId)
-          continue
-        }
-        const skip = async (note: string) => {
-          if (await store.swap(job, { ...job, state: 'skipped', note })) pass.skipped += 1
-        }
-        const target = targets.get(job.target)
-        if (!target) {
-          await fail(job, 'unknown_target', pass, failed)
-          continue
-        }
-        if (job.consent && !job.consent.adUserData) {
-          await skip('consent_denied')
-          continue
-        }
-        if (target.maxAge !== undefined && now() - job.at > target.maxAge) {
-          await skip('too_old')
-          continue
-        }
-        const asked = `${job.subject}\u0000${job.at}`
-        let attribution = attributions.get(asked)
-        if (!attribution) attributions.set(asked, (attribution = await graph.attribute(job.subject, { at: job.at, window: options.window ?? 90 * DAY })))
-        // A person's own click counts however weak the chain to it, unless a lowest confidence was asked for.
-        const touches = attribution.touches.filter((each) => each.confidence >= confidence || (each.joined && options.confidence === undefined))
-        const touch = target.click({ ...attribution, touches, credited: touches[0], reason: touches[0] ? 'credited' : attribution.touches[0] ? 'low_confidence' : 'no_touch' }, 0)
-        const subjects = touch && touch.subject !== job.subject ? [job.subject, touch.subject] : [job.subject]
-        // With no consent on the outcome, use what the person and the browser that clicked told us.
-        let consent = job.consent
-        if (consent) {
-          // What the outcome said was true when it happened. A refusal given since is newer, so it decides.
-          const since = (await Promise.all(subjects.map((subject) => graph.consentHistory(subject, 1)))).flat().filter((answer) => answer.at >= job.at)
-          if (since.some((answer) => !answer.adUserData)) {
-            await skip('consent_denied')
-            continue
-          }
-          if (since.some((answer) => !answer.adPersonalization)) consent = { ...consent, adPersonalization: false }
-        } else {
-          const known = [...(await graph.consentOf(subjects)).values()]
-          if (known.some((each) => !each.adUserData)) {
-            await skip('consent_denied')
-            continue
-          }
-          if (known.length === subjects.length) consent = { adUserData: true, adPersonalization: known.every((each) => each.adPersonalization) }
-        }
-        if (!touch && Object.keys(job.keys).length === 0) {
-          // Whose it is can come out later: they open a link, or call again. Looked at less and less often, it is given up on in the end.
-          const age = now() - job.at
-          const until = Math.ceil(job.at + (options.patience ?? 7 * DAY))
-          if (now() >= until) await skip('no_match_key')
-          else if (await store.swap(job, { ...job, attempts: job.attempts - 1, due: Math.min(until, now() + Math.max(10 * 60_000, Math.ceil(age / 4))), note: 'no_match_key' })) pass.retried += 1
-          continue
-        }
-        // It waited for this, and waits no more.
-        if (job.note === 'no_match_key') delete job.note
-        const key = `${job.target}\u0000${job.action}`
-        const group = groups.get(key) ?? { target, action: job.action, items: [] }
-        groups.set(key, group)
-        group.items.push({ job: { ...job, ...(touch && { confidence: touch.confidence }) }, touch, consent })
-      }
-      for (const { target, action, items } of groups.values()) {
-        for (let i = 0; i < items.length; i += target.batch) await deliver(target, action, items.slice(i, i + target.batch), pass, failed)
+      if (claimed.length) for (const job of await sendClaimed(claimed, pass, failed)) {
+        // Give each still-current job its own fresh reading. Repeated corrections release the claim for the next pass at once.
+        if ((await sendClaimed([job], pass, failed)).length && await store.swap(job, { ...job, due: now(), attempts: job.attempts - 1 })) pass.retried++
       }
       if (failed.length > 0 && options.onFailed) {
         try {
@@ -638,20 +675,21 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
   return outbox
 }
 
+const jobKey = (job: { transactionId: string; target: string }) => `${job.transactionId}\u0000${job.target}`
+
 /** An outbox store in process memory, for tests and demos. `recorded` says whether a job's outcome is on record. */
-export function createMemoryOutbox(recorded: (job: Job) => boolean = () => true): OutboxStore & { remove(subject: Subject): Promise<Job[]>; jobs: Map<string, Job> } {
+export function createMemoryOutbox(recorded: (job: Job) => boolean = () => true, partyRevision: () => string | undefined = () => undefined): OutboxStore & { remove(subject: Subject): Promise<Job[]>; jobs: Map<string, Job> } {
   const jobs = new Map<string, Job>()
-  const key = (job: { transactionId: string; target: string }) => `${job.transactionId}\u0000${job.target}`
   const unchanged = (job: Job) => {
-    const stored = jobs.get(key(job))
+    const stored = jobs.get(jobKey(job))
     return stored !== undefined && stored.rev === job.rev
   }
   return {
     jobs,
     async add(job, counted) {
-      if (!jobs.has(key(job)) && counted && !recorded(job)) return undefined
-      if (!jobs.has(key(job))) jobs.set(key(job), structuredClone({ ...job, rev: 0 }))
-      return structuredClone(jobs.get(key(job))!)
+      if (!jobs.has(jobKey(job)) && counted && !recorded(job)) return undefined
+      if (!jobs.has(jobKey(job))) jobs.set(jobKey(job), structuredClone({ ...job, rev: 0 }))
+      return structuredClone(jobs.get(jobKey(job))!)
     },
     async claim(now, lease, limit) {
       const due = [...jobs.values()].filter((job) => job.state === 'pending' && job.due <= now).sort((x, y) => x.due - y.due)
@@ -664,11 +702,14 @@ export function createMemoryOutbox(recorded: (job: Job) => boolean = () => true)
     },
     async swap(before, after) {
       if (!unchanged(before)) return false
-      jobs.set(key(after), structuredClone({ ...after, rev: before.rev! + 1 }))
+      jobs.set(jobKey(after), structuredClone({ ...after, rev: before.rev! + 1 }))
       return true
     },
     async standing(given) {
       return given.filter(unchanged)
+    },
+    async start(given, send) {
+      send(given.filter(unchanged), partyRevision())
     },
     async get(transactionId) {
       return [...jobs.values()].filter((job) => job.transactionId === transactionId).map((job) => structuredClone(job))
