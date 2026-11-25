@@ -47,6 +47,53 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       for (const each of opened) await each.close()
     })
 
+    test('random call histories gain no matches or strength over the same reports without a party', async () => {
+      const numbers = ['+12025550174', '+12025550175']
+      const to = '+12025550176'
+      const subjects = ['contact:a', 'contact:b', 'visitor:a', 'visitor:b', ...numbers.map(number => `caller:${hashPhone(number)}`)]
+      const read = async (graph: Graph) => Promise.all(subjects.map(async subject => ({
+        group: (await graph.cluster(subject))?.id ?? subject,
+        links: new Map((await graph.links(subject)).map(link => [link.subject, link])),
+      })))
+      for (const seed of [37, 61]) {
+        const next = random(seed)
+        const pick = (size: number) => Math.floor(next() * size)
+        const { graph: stated } = await fresh()
+        const { graph: control } = await fresh()
+        for (const graph of [stated, control]) await graph.observe(subjects.slice(0, 2).map(subject => ({ subject, identifiers: [`phone:${hashPhone(numbers[0]!)}`], at: T0 })))
+        const steps: ((graph: Graph) => Promise<unknown>)[] = []
+        for (let i = 0; i < 4; i++) {
+          const at = T0 + pick(16) * 1_000
+          const subject = subjects[2 + pick(2)]!
+          const record = subjects[pick(2)]!
+          const call = { id: `c${i}`, from: numbers[i % 2]!, to, at }
+          steps.push(graph => graph.observe({ subject, at: at - 10_000, identifiers: [dialed(to, at - 10_000)] }), graph => recordCall(graph, call))
+          if (i < 2) steps.push(async graph => {
+            if (graph === stated) await graph.sayParty({ call: call.id, key: call.id, at: at + 1, party: { by: 'desk', role: i ? 'self' : 'excluded', subject: record } })
+          })
+          if (i === 2) steps.push(graph => graph.separate(record, subject))
+          if (i === 3) steps.push(graph => graph.join(record, subject))
+        }
+        for (let step = 0; steps.length; step++) {
+          const report = steps.splice(pick(steps.length), 1)[0]!
+          for (const graph of [stated, control]) {
+            await report(graph)
+            assert.deepEqual(await graph.verify(), [], `seed ${seed} step ${step}`)
+          }
+          const original = await read(control)
+          const actual = await read(stated)
+          for (const [i, subject] of subjects.entries()) for (const [j, other] of subjects.slice(0, i).entries()) {
+            const wanted = original[i]!.links.get(other)
+            const found = actual[i]!.links.get(other)
+            const where = `seed ${seed} step ${step} ${subject} and ${other}`
+            if (actual[i]!.group === actual[j]!.group) assert.equal(original[i]!.group, original[j]!.group, where)
+            if (found?.level === 'same') assert.equal(wanted?.level, 'same', where)
+            assert.ok((found?.score ?? 0) <= (wanted?.score ?? 0) + 1e-12, where)
+          }
+        }
+      }
+    })
+
     test('two accounts on one machine join a cluster, with reasons', async () => {
       const { graph } = await fresh()
       await graph.observe({ subject: 'account:1', identifiers: ['hardware:h1', 'fingerprint:f1', 'ip:198.51.100.7'], at: T0, event: 'login' })
@@ -66,6 +113,312 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual((await graph.history('account:2', 1)).map((s) => s.identifier), ['email:later'])
       assert.equal((await graph.history('account:2', 50)).length, 3)
       assert.deepEqual(await graph.history('account:2', 0), [])
+    })
+
+    test('a call party keeps its line counted without linking it, before or after the call', async () => {
+      const from = '+12025550104'
+      const phone = `phone:${hashPhone(from)}`
+      const line = `caller:${hashPhone(from)}`
+      const a = 'contact:a'
+      const b = 'contact:b'
+      const presets = ['household', 'intake'].map(name => policyFrom(JSON.parse(readFileSync(new URL(`../examples/${name}.json`, import.meta.url), 'utf8'))))
+      for (const policy of [defaultPolicy, ...presets]) for (const pending of [false, true]) {
+        const { graph, store } = await fresh(policy, { now: () => T0 + 10 })
+        const { graph: unstated } = await fresh(policy, { now: () => T0 + 10 })
+        const call = { id: 'shared', at: T0 + 1, from, to: '+12025550105' }
+        const state = (g: Graph) => g.sayParty({ call: call.id, key: 'desk', at: T0 + 2, party: { role: 'excluded', subject: a, by: 'desk' } })
+        for (const g of [graph, unstated]) {
+          await g.observe([a, b].map(subject => ({ subject, at: T0, identifiers: [phone] })))
+          if (g === graph && pending) await state(g)
+          await recordCall(g, call)
+          if (g === graph && !pending) await state(g)
+        }
+        const pair = async (g: Graph) => (await g.links(a)).find(link => link.subject === b)
+        const probe = async (g: Graph) => (await g.match([phone])).filter(each => each.subject === a).map(each => each.score)
+        assert.equal((await store.read(tx => tx.states([phone]))).get(phone)?.fanout, 3)
+        assert.deepEqual(await graph.holders([phone]).then(rows => rows.map(row => row.subject).sort()), [a, b])
+        for (const g of [graph, await graph.asOf(T0 + 10)]) {
+          assert.deepEqual(await pair(g), await pair(unstated))
+          assert.deepEqual(await probe(g), await probe(unstated))
+          assert.deepEqual((await g.cluster(a))?.members, [a])
+          assert.deepEqual(await g.verify(), [])
+          await g.rebuild()
+          assert.deepEqual((await g.cluster(a))?.members, [a])
+        }
+        await graph.observe({ subject: line, at: T0 + 5, identifiers: [phone] })
+        assert.equal((await store.read(tx => tx.states([phone]))).get(phone)?.fanout, 3)
+        await graph.forget(line)
+        assert.equal((await store.read(tx => tx.states([phone]))).get(phone)?.fanout, 2)
+        assert.deepEqual(await graph.verify(), [])
+      }
+    })
+
+    test('removing a call tie cannot move a separation across an independent link and join new people', async () => {
+      const { graph } = await fresh()
+      const from = '+12025550106'
+      const to = '+12025550107'
+      const line = `caller:${hashPhone(from)}`
+      const visitor = 'visitor:v'
+      const record = 'contact:a'
+      await graph.observe([
+        { subject: visitor, at: T0, identifiers: [dialed(to, T0)] },
+        ...[record, line].map(subject => ({ subject, at: T0, identifiers: ['phone:independent'] })),
+      ])
+      await recordCall(graph, { id: 'tap', at: T0 + 1, from, to })
+      await graph.separate(record, visitor)
+      assert.deepEqual((await graph.cluster(record))?.members, [record])
+      await graph.sayParty({ call: 'tap', key: 'correct', at: T0 + 2, party: { by: 'desk', role: 'unknown' } })
+      assert.deepEqual((await graph.cluster(record))?.members, [record])
+      assert.deepEqual(await graph.verify(), [])
+      await graph.rebuild()
+      assert.deepEqual((await graph.cluster(record))?.members, [record])
+    })
+
+    test('arriving calls with pending statements settle the earlier visitors of their private line', async () => {
+      const policy = policyFrom(JSON.parse(readFileSync(new URL('../examples/household.json', import.meta.url), 'utf8')))
+      const { graph } = await fresh(policy, { now: () => T0 + DAY })
+      const from = '+12025550111'
+      const to = '+12025550112'
+      const code = 'K7Q2MZ'
+      await graph.observe([
+        { subject: 'visitor:1', identifiers: ['device:0', codeNote(code)], at: T0 },
+        { subject: 'visitor:2', identifiers: ['payment:x'], at: T0 },
+        { subject: 'visitor:3', identifiers: ['payment:x', 'device:2'], at: T0 },
+        { subject: 'contact:b', identifiers: ['device:0', 'device:2'], at: T0 },
+      ])
+      await graph.separate('visitor:1', 'visitor:2')
+      for (let i = 0; i < 4; i++) await graph.sayParty({ call: 'early' + i, key: 'party' + i, at: T0 + i, party: { role: 'self', subject: 'contact:b', by: 'desk' } })
+      for (let i = 0; i < 4; i++) {
+        const at = T0 + i * HOUR + 1000
+        if (i === 1) await graph.observe({ subject: 'visitor:2', identifiers: [dialed(to, at - 1)], at: at - 1 })
+        await recordCall(graph, { id: 'early' + i, from, to, at, ...(i === 2 && { code }) }, { lineType: async () => ({ type: 'mobile' }) })
+        assert.deepEqual(await graph.verify(), [], 'call ' + i)
+      }
+    })
+
+    test('a withdrawn zero-weight tap can still have corroborated a match across a separation', async () => {
+      const { graph } = await fresh(policyFrom({ related: 0, kinds: { dial: { weight: 0 }, ga: { weight: 0.999, corroborates: true } } }))
+      const from = '+12025550106'
+      const to = '+12025550107'
+      const line = `caller:${hashPhone(from)}`
+      await graph.observe([
+        { subject: 'visitor:web', at: T0, identifiers: [dialed(to, T0), 'ga:visit'] },
+        { subject: line, at: T0, identifiers: ['ga:visit', 'phone:independent'] },
+        { subject: 'contact:a', at: T0, identifiers: ['phone:independent'] },
+      ])
+      await recordCall(graph, { id: 'tap', at: T0 + 1, from, to })
+      await graph.separate('contact:a', 'visitor:web')
+      assert.deepEqual(await members(graph, 'contact:a'), ['contact:a'])
+      await graph.sayParty({ call: 'tap', key: 'said', at: T0 + 2, party: { role: 'unknown', by: 'desk' } })
+      assert.deepEqual(await members(graph, 'contact:a'), ['contact:a'])
+      assert.deepEqual(await graph.verify(), [])
+    })
+
+    test('a stated call still competes with another line for the same tap', async () => {
+      for (const pending of [false, true]) {
+        const { graph } = await fresh()
+        const to = '+12025550108'
+        const visitor = 'visitor:web'
+        await graph.observe({ subject: visitor, identifiers: [dialed(to, T0)], at: T0 })
+        const state = () => graph.sayParty({ call: 'first', key: 'said', at: T0 + 5, party: { role: 'unknown', by: 'desk' } })
+        if (pending) await state()
+        await recordCall(graph, { id: 'first', at: T0 + 100, from: '+12025550109', to })
+        if (!pending) await state()
+        const next = await recordCall(graph, { id: 'second', at: T0 + 101, from: '+12025550110', to })
+        assert.equal(next.visitor, undefined)
+        assert.deepEqual((await graph.cluster(visitor))?.members, [visitor])
+        assert.deepEqual(await graph.verify(), [])
+      }
+    })
+
+    test('a withdrawn holder causes no change event for another untouched group', async () => {
+      const { graph, store } = await fresh()
+      const phone = '+12025550136'
+      const id = `phone:${hashPhone(phone)}`
+      await graph.observe(['contact:a', 'contact:b'].map(subject => ({ subject, identifiers: [id], at: T0 })))
+      await recordCall(graph, { id: 'event', from: phone, to: '+12025550137', at: T0 + 1 })
+      await graph.sayParty({ call: 'event', key: 'who', at: T0 + 2, party: { role: 'excluded', subject: 'contact:a', by: 'desk' } })
+      const before = await store.read(tx => tx.eventsAfter(0, 100))
+      assert.deepEqual(await graph.observe({ subject: 'contact:a', identifiers: ['device:own'], at: T0 + 3 }), [])
+      assert.deepEqual(await store.read(tx => tx.eventsAfter(0, 100)), before)
+    })
+
+    test('a second withdrawn tap cannot restore the link blocked when only the first tap was withdrawn', async () => {
+      const { graph } = await fresh()
+      const from = ['+12025550154', '+12025550155']
+      const to = ['+12025550160', '+12025550161']
+      const line = from.map(number => `caller:${hashPhone(number)}`)
+      const visitors = ['visitor:a', 'visitor:b']
+      for (const [i, visitor] of visitors.entries()) {
+        await graph.observe({ subject: visitor, identifiers: [dialed(to[i]!, T0)], at: T0 })
+        assert.equal((await recordCall(graph, { id: `c${i}`, from: from[i]!, to: to[i]!, at: T0 + 1_000 })).visitor, visitor)
+      }
+      await graph.observe([...line.map(subject => ({ subject, identifiers: ['email:common'], at: T0 + 2_000 })), ...[visitors[0]!, line[1]!].map(subject => ({ subject, identifiers: ['ga:common'], at: T0 + 2_000 }))])
+      await graph.separate(visitors[0]!, visitors[1]!)
+      for (const id of ['c0', 'c1']) {
+        await graph.sayParty({ call: id, key: id, at: T0 + 3_000, party: { role: 'unknown', by: 'desk' } })
+        assert.equal((await graph.cluster(line[0]!))!.members.includes(visitors[0]!), false)
+        assert.deepEqual(await graph.verify(), [])
+      }
+    })
+
+    test('repeated statements keep a confirmed duplicate, its browser and its campaign together', async () => {
+      const intake = policyFrom(JSON.parse(readFileSync(new URL('../examples/intake.json', import.meta.url), 'utf8')))
+      const { graph } = await fresh(intake)
+      const record = 'contact:one'
+      const duplicate = 'contact:duplicate'
+      const visitor = 'visitor:site'
+      const secret = 'a secret of at least thirty-two characters'
+      const same = ['email:one@example.org', ...birthKeys(secret, '1980-04-01'), ...givenKeys(secret, 'Robert'), ...nameKeys(secret, 'Robert', 'Lima', { dob: '1980-04-01' })]
+      await graph.observe([
+        { subject: record, identifiers: ['device:site', ...same], at: T0 }, { subject: duplicate, identifiers: same, at: T0 },
+        { subject: visitor, identifiers: ['device:site'], at: T0 },
+      ])
+      await graph.touch({ subject: visitor, at: T0, source: 'search', campaign: 'spring' })
+      for (let i = 0; i < 8; i++) {
+        const at = T0 + HOUR * i + 1000
+        await graph.observe({ subject: visitor, identifiers: [dialed('+12025550132', at - 1)], at: at - 1 })
+        await recordCall(graph, { id: 'repeat' + i, from: '+12025550131', to: '+12025550132', at })
+        await graph.sayParty({ call: 'repeat' + i, key: 'party' + i, at: at + 1, party: { role: 'self', subject: record, by: 'desk' } })
+        assert.deepEqual(await members(graph, record), [duplicate, record, visitor])
+        assert.equal((await graph.attribute(record, { at: at + 1 })).credited?.campaign, 'spring')
+        assert.deepEqual(await graph.verify(), [])
+      }
+      assert.equal((await graph.cluster(record, true))?.limitedByCalls, undefined)
+    })
+
+    test('a repeated reading of one line counts once when a separation can cut the group', async () => {
+      const { graph } = await fresh()
+      const from = '+12025550170'
+      const phone = hashPhone(from)
+      const line = 'caller:' + phone
+      await graph.observe([
+        { subject: 'contact:a', identifiers: ['phone:' + phone, 'device:stable'], at: T0 },
+        { subject: 'visitor:site', identifiers: ['device:stable'], at: T0 },
+        ...[line, 'contact:c'].map(subject => ({ subject, identifiers: ['device:other'], at: T0 })),
+      ])
+      await graph.separate('contact:a', 'contact:c')
+      for (let i = 0; i < 8; i++) {
+        await recordCall(graph, { id: 'repeat' + i, from, to: '+12025550171', at: T0 })
+        await graph.sayParty({ call: 'repeat' + i, key: 'party' + i, at: T0 + 1, party: { role: 'unknown', by: 'desk' } })
+        assert.ok((await members(graph, 'contact:a')).includes('visitor:site'))
+        assert.deepEqual(await graph.verify(), [])
+      }
+      assert.equal((await graph.cluster('contact:a', true))?.limitedByCalls, undefined)
+    })
+
+    test('journeys and credit respect a separation across many withdrawn call ties', async () => {
+      const { graph } = await fresh()
+      const from = '+12025550197'
+      const to = '+12025550196'
+      const line = `caller:${hashPhone(from)}`
+      const code = 'K7Q2MZ'
+      await graph.observe([
+        { subject: 'visitor:site', identifiers: [codeNote(code)], at: T0 },
+        ...[line, 'contact:a'].map(subject => ({ subject, identifiers: ['phone:independent'], at: T0 })),
+      ])
+      await graph.touch({ subject: line, at: T0, source: 'desk' })
+      for (let i = 0; i < 7; i++) await recordCall(graph, { id: `c${i}`, from, to, at: T0 + i + 1, code })
+      await graph.separate('contact:a', 'visitor:site')
+      for (let i = 0; i <= 7; i++) {
+        assert.deepEqual(await members(graph, 'contact:a'), ['contact:a'])
+        assert.equal((await graph.journey('contact:a')).entries.some(entry => entry.subject === line), false)
+        assert.equal((await graph.attribute('contact:a', { at: T0 + 100 })).credited, undefined)
+        if (i < 7) await graph.sayParty({ call: `c${i}`, key: `k${i}`, at: T0 + 100 + i, party: { role: 'unknown', by: 'desk' } })
+      }
+      assert.equal((await graph.cluster('contact:a', true))?.limitedByCalls, true)
+      assert.deepEqual(await graph.verify(), [])
+    })
+
+    test('a call correction leaves a former record’s line out of another record’s journey', async () => {
+      const { graph } = await fresh(policyFrom({ records: 'confirmed', apart: ['birth'], bridge: 0.9 }))
+      const from = '+12025550197'
+      const line = `caller:${hashPhone(from)}`
+      const code = 'K7Q2MZ'
+      await graph.observe([
+        { subject: 'visitor:site', identifiers: [codeNote(code), 'email:desk@example.org'], at: T0 },
+        { subject: 'contact:b', identifiers: ['email:desk@example.org'], at: T0 },
+        ...[line, 'contact:a'].map(subject => ({ subject, identifiers: ['phone:independent'], at: T0 })),
+      ])
+      await graph.touch({ subject: line, at: T0, source: 'desk' })
+      await recordCall(graph, { id: 'coded', from, to: '+12025550196', at: T0 + 1, code })
+      assert.ok((await members(graph, 'contact:b')).includes(line))
+      const shown = async () => (await graph.journey('contact:a')).entries.some(entry => entry.subject === line)
+      assert.equal(await shown(), false)
+      await graph.sayParty({ call: 'coded', key: 'unknown', at: T0 + 2, party: { role: 'unknown', by: 'desk' } })
+      assert.equal(await shown(), false)
+    })
+
+    test('a late code on a stated call cannot make its visitor free for a different line', async () => {
+      const { graph } = await fresh()
+      const visitor = 'visitor:code'
+      const code = 'K7Q2MZ'
+      const first = { id: 'first', from: '+12025550101', to: '+12025550104', at: T0 + 1000 }
+      await graph.observe({ subject: visitor, identifiers: [codeNote(code)], at: T0 })
+      await recordCall(graph, first)
+      await graph.sayParty({ call: first.id, at: T0 + 1500, key: 'exclude', party: { role: 'excluded', subject: 'contact:one', by: 'desk' } })
+      const before = await graph.keptCall(first.id)
+      await recordCall(graph, { ...first, code })
+      const next = await recordText(graph, { id: 'next', from: '+12025550102', to: first.to, at: T0 + 2000, code })
+      assert.equal(next.visitor, undefined)
+      assert.ok(next.flags.includes('taken'))
+      assert.deepEqual(await graph.keptCall(first.id), before)
+      assert.deepEqual((await graph.cluster(visitor))?.members, [visitor])
+      assert.deepEqual(await graph.verify(), [])
+    })
+
+    test('replaying a corrected call before a later report counts the line from its first report', async () => {
+      let clock = T0
+      const { graph } = await fresh(undefined, { now: () => clock })
+      const from = '+12025550103'
+      const call = { id: 'early', from, to: '+12025550104', at: T0 }
+      const phone = `phone:${hashPhone(from)}`
+      await graph.observe(['contact:a', 'contact:b'].map(subject => ({ subject, identifiers: [phone], at: T0 })))
+      await recordCall(graph, call)
+      clock += 1000
+      await graph.keepCall((await graph.keptCall(call.id))!)
+      await graph.sayParty({ call: call.id, key: 'who', at: clock, party: { by: 'desk', role: 'unknown' } })
+      assert.deepEqual((await (await graph.asOf(T0)).cluster('contact:a'))?.members, ['contact:a'])
+    })
+
+    test('a withdrawn call tie that says two people differ still bounds their link and journey', async () => {
+      const { graph } = await fresh(policyFrom({ kinds: { dial: { weight: 0, relates: true } } }))
+      const from = '+12025550154', to = '+12025550160', caller = `caller:${hashPhone(from)}`, visitor = 'visitor:v'
+      await graph.observe([{ subject: caller, identifiers: ['email:desk'], at: T0 }, { subject: visitor, identifiers: ['email:desk', dialed(to, T0)], at: T0 }])
+      await graph.touch({ subject: visitor, source: 'independent', at: T0 })
+      assert.equal((await recordCall(graph, { id: 'c', from, to, at: T0 + 1000 })).visitor, visitor)
+      for (const stated of [false, true]) {
+        if (stated) await graph.sayParty({ call: 'c', key: 's', at: T0 + 2000, party: { role: 'unknown', by: 'desk' } })
+        assert.equal((await graph.links(caller)).find(link => link.subject === visitor)?.level, 'related')
+        assert.equal((await graph.between(caller, visitor)).joined, false)
+        assert.equal((await graph.journey(caller)).entries.some(row => row.subject === visitor), false)
+        assert.deepEqual(await graph.verify(), [])
+      }
+    })
+
+    test('an unknown original line kind cannot shift a cut when a statement arrives first', async () => {
+      const policy = policyFrom({ kinds: { voip: { weight: 0.9 } } })
+      const from = '+12025550154', hash = hashPhone(from), to = '+12025550160'
+      const caller = 'caller:' + hash, other = 'caller:' + hashPhone('+12025550155')
+      for (const pending of [false, true]) {
+        const { graph } = await fresh(policy)
+        await graph.observe([
+          { subject: caller, identifiers: ['ga:common'], at: T0 },
+          { subject: 'visitor:b', identifiers: ['ga:common', 'email:common'], at: T0 },
+          { subject: other, identifiers: ['email:common', 'voip:' + hash], at: T0 },
+          { subject: 'visitor:a', identifiers: ['phone:' + hash], at: T0 },
+        ])
+        await graph.separate('visitor:a', other)
+        if (pending) await graph.sayParty({ call: 'c', at: T0 + 1, key: 's', party: { role: 'unknown', by: 'desk' } })
+        let checks = 0
+        await recordCall(graph, { id: 'c', from, to, at: T0 + 2 }, { lineType: async () => {
+          checks += 1
+          return { type: 'mobile' }
+        } })
+        assert.equal(checks, Number(!pending))
+        assert.equal((await graph.cluster(caller))!.members.includes(other), false)
+        assert.deepEqual(await graph.verify(), [])
+      }
     })
 
     test('what one store could not keep, neither takes', async () => {
@@ -384,6 +737,75 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await graph.verify(), [])
     })
 
+    test('a separation keeps a staff join when cutting guesses honours both decisions', async () => {
+      const [a, b, c] = ['contact:a', 'contact:b', 'contact:c'] as const
+      const paths = [1, 2, 3, 4, 5]
+      const mail = (side: string, n: number) => email(`${side}-${n}@example.org`)
+      const facts = [
+        { subject: b, identifiers: paths.map((n) => mail('b', n)), at: T0 },
+        { subject: c, identifiers: paths.map((n) => mail('c', n)), at: T0 },
+        ...paths.map((n) => ({ subject: `contact:x${n}`, identifiers: [mail('b', n), mail('c', n)], at: T0 })),
+      ]
+      const presets = ['household', 'intake'].map((name) => policyFrom(JSON.parse(readFileSync(new URL(`../examples/${name}.json`, import.meta.url), 'utf8'))))
+      for (const policy of [defaultPolicy, policyFrom({ apart: ['birth', 'given'] }), ...presets]) {
+        let forward: string[] | undefined
+        for (const reversed of [false, true]) {
+          const { graph } = await fresh(policy, { now: () => T0 })
+          const join = async () => {
+            const preview = await graph.foresee({ action: 'join', a, b })
+            assert.equal((await graph.join(a, b, { by: 'desk' })).length, preview.moved)
+          }
+          const separate = async () => {
+            const preview = await graph.foresee({ action: 'separate', a, b: c })
+            assert.equal((await graph.separate(a, c, true, { by: 'desk' })).length, preview.moved)
+          }
+          const reports = [join, ...facts.map((fact) => () => graph.observe(fact)), separate]
+          for (const report of reversed ? reports.reverse() : reports) {
+            await report()
+            assert.deepEqual(await graph.verify(), [])
+          }
+          const ours = await members(graph, a)
+          assert.ok(ours.includes(b), `the staff join was cut: ${ours}`)
+          assert.ok(!ours.includes(c))
+          if (forward) assert.deepEqual(ours, forward)
+          else forward = ours
+          assert.deepEqual(await graph.rebuild(), [])
+          const mark = (await graph.history(a)).find((sighting) => sighting.identifier.startsWith('review:'))!.identifier
+          await graph.ignore(mark)
+          assert.deepEqual(await members(graph, a), [a])
+          await graph.ignore(mark, false)
+          assert.deepEqual(await members(graph, a), ours)
+          assert.deepEqual(await graph.verify(), [])
+        }
+      }
+    })
+
+    test('a second separation leaves the staff joins that honour both decisions together', async () => {
+      for (const reversed of [false, true]) {
+        const { graph } = await fresh()
+        const reports = [
+          () => graph.join('a', 'b'), () => graph.join('b', 'c'), () => graph.join('c', 'd'),
+          () => graph.separate('b', 'd'), () => graph.separate('a', 'd'),
+        ]
+        for (const report of reversed ? reports.reverse() : reports) {
+          await report()
+          assert.deepEqual(await graph.verify(), [])
+        }
+        assert.deepEqual(await members(graph, 'a'), ['a', 'b'])
+        assert.deepEqual(await members(graph, 'd'), ['c', 'd'])
+      }
+    })
+
+    test('a separation along a path made entirely by staff cuts one join', async () => {
+      const { graph } = await fresh()
+      await graph.join('a', 'b', { by: 'desk' })
+      await graph.join('b', 'c', { by: 'desk' })
+      await graph.separate('a', 'c', true, { by: 'desk' })
+      assert.ok(!(await members(graph, 'a')).includes('c'))
+      assert.equal((await members(graph, 'b')).length, 2)
+      assert.deepEqual(await graph.verify(), [])
+    })
+
     test('a decision made before any evidence still holds when the evidence arrives', async () => {
       const { graph } = await fresh()
       assert.deepEqual(await graph.separate('x', 'y'), [])
@@ -447,6 +869,32 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       for (const id of ['a1', 'B1', '_x', 'a-1', 'a 1']) await graph.observe(chain('email', id, `${id}~`))
       assert.deepEqual((await graph.clusters()).map((cluster) => cluster.id), ['B1', '_x', 'a 1', 'a-1', 'a1'])
       assert.deepEqual((await graph.clusters(2)).map((cluster) => cluster.id), ['B1', '_x'])
+    })
+
+    test('verifying separations only rereads edges in components they split when no facts keep people apart', async () => {
+      const { graph, store } = await fresh()
+      await graph.observe(Array.from({ length: 50 }, (_, i) => chain('email', `account:${i}-a`, `account:${i}-b`)).flat())
+      await graph.join('account:0-b', 'account:extra')
+      const read = new Set<string>()
+      const counted = createGraph({
+        ...store,
+        read: (fn) => store.read((tx) => fn({
+          ...tx,
+          edgesOf: (subjects) => {
+            for (const subject of subjects) read.add(subject)
+            return tx.edgesOf(subjects)
+          },
+        })),
+      })
+      // Both records already belong to different components.
+      await graph.separate('account:1-a', 'account:2-b')
+      assert.deepEqual(await counted.verify(), [])
+      assert.deepEqual([...read], [])
+      // The join from b to extra must survive the cut between a and extra.
+      await graph.separate('account:0-a', 'account:extra')
+      assert.deepEqual(await members(graph, 'account:extra'), ['account:0-b', 'account:extra'])
+      assert.deepEqual(await counted.verify(), [])
+      assert.deepEqual([...read].filter((subject) => !['account:0-a', 'account:0-b', 'account:extra'].includes(subject)), [])
     })
 
     test('the version changes with every write and with nothing else', async () => {
@@ -592,6 +1040,21 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await assert.rejects(graph.report({ from: '2026-03-01', to: '2026-03-01', timeZone: 'Mars/Olympus' }), TypeError)
     })
 
+    test('a write in another group does not read the withdrawn calls again', async () => {
+      const { graph, store } = await fresh()
+      await graph.sayParty({ call: 'elsewhere', key: 'desk', at: T0, party: { role: 'unknown', by: 'desk' } })
+      await recordCall(graph, { id: 'elsewhere', from: '+12025550114', to: '+12025550115', at: T0 })
+      let reads = 0
+      const measured = createGraph({ ...store, write: work => store.write(tx => work({ ...tx, callEvidence: async filter => {
+        reads++
+        return tx.callEvidence(filter)
+      } })) })
+      const changes = await measured.observe(['account:a', 'account:b'].map(subject => ({ subject, identifiers: ['email:desk@example.org'], at: T0 + 1 })))
+      assert.equal(changes.length, 1)
+      assert.equal(reads, 0)
+      assert.deepEqual(await graph.verify(), [])
+    })
+
     test('a report, open calls and the board read many people together, and credit each as attribute does', async () => {
       const { graph, store } = await fresh()
       const next = random(7)
@@ -668,6 +1131,16 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await graph.foresee({ action: 'ignore', identifier: 'email:nobody' }), { moved: 0, before: [], after: [] })
       assert.deepEqual(await graph.foresee({ action: 'join', a: 'c:1', b: 'never:seen' }), { moved: 1, before: [{ id: 'c:1', size: 1 }, { id: 'never:seen', size: 1 }], after: [{ id: 'c:1', size: 2 }] })
       for (const bad of [{}, { action: 'forget' }, { action: 'join', a: 'a:1' }, { action: 'join', a: 'a:1', b: 'a:1' }, { action: 'ignore' }, { action: 'ignore', identifier: 'email:b', ignored: 'false' }, { action: 'separate', a: 'a:1', b: 'b:1', separated: 0 }]) await assert.rejects(graph.foresee(bad as never), TypeError)
+    })
+
+    test('an excluded line still recognizes a call recorded before call details were kept', async () => {
+      const { graph } = await fresh()
+      const from = '+12025550130'
+      const subject = 'caller:' + hashPhone(from)
+      await graph.observe({ subject, identifiers: ['dialed:call-old'], at: T0, event: 'call' })
+      const old = await recordCall(graph, { id: 'old', from, to: '+12025550131', at: T0 }, { exclude: [from] })
+      assert.deepEqual([old.duplicate, old.flags, old.subject], [true, [], subject])
+      assert.equal(await graph.keptCall('old'), undefined)
     })
 
     test('a call from a number left out, or placed to one, records nothing, and one recorded before still settles', async () => {
@@ -853,6 +1326,38 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       // Twenty minutes on, it is quiet again.
       await click(graph, 'e', T0 + 3 * HOUR)
       assert.equal((await call(graph, 'E', '+15550100164', T0 + 3 * HOUR + 120 * SECOND)).visitor, 'visitor:e')
+    })
+
+    test('a reassigned pool number can require a tap from an untied caller', async () => {
+      const to = '+15550100175'
+      const from = '+15550100176'
+      const numbers = [to]
+      const when = T0 + 3 * DAY
+      for (const requireTapAfterReassignment of [false, true]) {
+        const { graph } = await fresh()
+        const options = { pool: { numbers, grace: 2 * HOUR, requireTapAfterReassignment } }
+        const show = (subject: string, at: number) => graph.lease(subject, { numbers, minutes: 15, at })
+        const ring = async (at: number) => (await ringing(graph, { to, from, at }, options)).visitor
+        const call = (id: string, at: number) => recordCall(graph, { id, to, from, at, duration: 60 }, options)
+        for (const subject of ['visitor:first', 'visitor:next']) await graph.observe({ subject, identifiers: [subject.replace('visitor:', 'device:')], at: T0 })
+        await show('visitor:first', T0)
+        await show('visitor:first', T0 + DAY)
+        assert.equal(await ring(T0 + DAY + 1000), 'visitor:first')
+        await show('visitor:next', when)
+        await show('visitor:next', when + 60_000)
+        const expected = requireTapAfterReassignment ? undefined : 'visitor:next'
+        assert.equal(await ring(when + 70_000), expected)
+        assert.equal(await ring(when + HOUR), expected)
+        assert.equal((await call('saved', when + 70_000)).visitor, expected)
+        assert.equal((await call('again', when + HOUR)).visitor, expected)
+        if (requireTapAfterReassignment) {
+          await graph.observe({ subject: 'visitor:next', identifiers: [dialed(to, when + 2 * HOUR)], at: when + 2 * HOUR, event: 'phone_click' })
+          const tapped = await call('tapped', when + 2 * HOUR + 1000)
+          assert.deepEqual([tapped.visitor, tapped.flags.includes('pool')], ['visitor:next', false])
+          await show('visitor:next', when + DAY)
+          assert.equal((await call('known', when + DAY + 1000)).visitor, 'visitor:next')
+        }
+      }
     })
 
     test('a caller who is one visitor\'s is another\'s only while that one is shown the number', async () => {
@@ -1688,6 +2193,24 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual([(await graph.between('a', 'b')).known, (await graph.between('a', 'b')).apart], [false, false])
     })
 
+    test('the review window respects an older speaker mark on a record alias', async () => {
+      let now = T0
+      const { graph } = await fresh(policyFrom({ apart: ['birth'], records: 'confirmed', kinds: { phone: { weight: 0.85 } } }), { now: () => now })
+      const represented = 'record:a'
+      const alias = 'record:other-id'
+      const caller = 'caller:line'
+      await graph.speak({ subject: represented, identifiers: ['email:a@example.org'] }, [{ subject: caller, identifiers: ['phone:home'] }], T0)
+      await graph.join(represented, alias, { by: 'desk' })
+      now++
+      await graph.observe({ subject: alias, identifiers: ['phone:home'], at: T0 + 1 })
+      const offered = async () => (await graph.undecided({ sightings: 1 })).pairs.some(({ a, b }) => a === caller && b === alias)
+      assert.equal((await graph.undecided()).pairs.some(({ a, b }) => a === caller && b === alias), false)
+      assert.equal(await offered(), false)
+      const [mark] = (await graph.history(represented)).filter(row => row.identifier.startsWith('behalf:'))
+      await graph.ignore(mark!.identifier)
+      assert.equal(await offered(), true)
+    })
+
     test('undecided lists pairs related and not joined, and a join taken back by its mark is a label no more', async () => {
       const clock = { now: T0 }
       const { graph } = await fresh(undefined, { now: () => clock.now })
@@ -1871,6 +2394,84 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const summary = await graph.callSummary({ from: '2023-11-10', to: '2023-11-14', at: T0, ...options, hours })
       assert.deepEqual([summary.total.calls, summary.closed!.calls, summary.closed!.missed, summary.closed!.answered], [3, 2, 1, 1])
       assert.equal((await graph.callSummary({ from: '2023-11-10', to: '2023-11-14', at: T0, ...options })).closed, null)
+    })
+
+    test('people counts include an explicitly merged duplicate of one stated owner', async () => {
+      const { graph } = await fresh(undefined, { now: () => T0 + DAY })
+      const a = 'contact:owner', b = 'contact:duplicate', other = 'contact:guess'
+      const days = { from: '2023-11-14', to: '2023-11-15' }
+      for (const subject of [b, other]) {
+        await graph.observe({ subject, identifiers: ['email:shared'], at: T0 })
+        if (subject === b) await graph.outcome({ subject, transactionId: subject, stage: 'sale', at: T0 + 120_000, value: 2, currency: 'USD' })
+      }
+      await graph.join(a, b, { by: 'desk' })
+      await recordCall(graph, { id: 'stated', from: '+12025550142', to: '+12025550143', at: T0, answered: true, duration: 60 })
+      await graph.sayParty({ call: 'stated', key: 'who', at: T0 + 1, party: { role: 'self', subject: a, by: 'desk' } })
+      const check = async (together: boolean) => {
+        const report = await graph.report(days)
+        assert.equal(report.total.people, together ? 1 : 2)
+        const board = await graph.board({ at: T0 + DAY, steps: [{ name: 'call' }, { name: 'sale' }] })
+        assert.deepEqual(board.columns.map(column => column.people), together ? [0, 0, 1] : [0, 1, 1])
+        for (const row of board.columns.flatMap(column => column.rows)) if (row.subject !== a) assert.equal(row.call?.id, undefined)
+        const followed = await graph.followed({ ...days, step: 'sale', days: 1, at: T0 + 3 * DAY, least: 1 })
+        assert.equal(followed.groups[0]!.rows.reduce((sum, row) => sum + row.reached, 0), together ? 1 : 0)
+        for (const subject of [b, other]) assert.ok(!JSON.stringify(await graph.journey(subject)).includes('"id":"stated"'))
+      }
+      await check(true)
+      await graph.separate(a, b)
+      await check(false)
+      await graph.separate(a, b, false)
+      await check(true)
+      await graph.outcome({ subject: other, transactionId: other, stage: 'sale', at: T0 + 120_000, value: 2, currency: 'USD' })
+      assert.equal((await graph.report(days)).total.people, 2)
+      await graph.outcome({ subject: b, transactionId: 'next-call-stage', stage: 'call', at: T0 + 300_000, value: 1, currency: 'USD' })
+      const only = (await graph.board({ steps: [{ name: 'call' }], at: T0 + DAY })).columns[1]!.rows[0]!
+      assert.deepEqual([only.subject, only.at, only.call?.id], [b, T0 + 300_000, undefined])
+    })
+
+    test('one call belongs to the exact record staff named in the journey, callbacks and credit', async () => {
+      const { graph } = await fresh(undefined, { now: () => T0 + DAY })
+      const [a, b] = ['contact:a', 'contact:b'] as const
+      const [from, to] = ['+12025550113', '+12025550114'] as const
+      const days = { from: '2023-11-14', to: '2023-11-15' }
+      await graph.join(a, b, { by: 'desk' })
+      await graph.touch({ subject: a, at: T0, source: 'ads', campaignId: 'A' })
+      await graph.touch({ subject: b, at: T0 + 100, source: 'ads', campaignId: 'B' })
+      const call = (id: string, at: number, answered: boolean) => recordCall(graph, { id, from, to, at, duration: 45, answered }, { numbers: { [to]: { source: 'line', campaignId: 'LINE' } } })
+      await call('miss-A', T0 + 500, false)
+      await call('talk-B', T0 + 1000, true)
+      await graph.restate('call:talk-B', 12, 'USD')
+      await graph.sayParty({ call: 'miss-A', key: 'who-missed', at: T0 + 3000, party: { role: 'self', subject: a, by: 'desk' } })
+      await graph.sayParty({ call: 'talk-B', key: 'who-talked', at: T0 + 3000, party: { role: 'representative', subject: b, by: 'desk' } })
+      const check = async () => {
+        const ours = await graph.journey(a)
+        assert.deepEqual(ours.entries.flatMap((entry) => entry.kind === 'call' ? [entry.call.id] : []), ['miss-A'])
+        assert.ok(!JSON.stringify(ours).includes('talk-B'))
+        const theirs = await graph.journey(b)
+        assert.ok(!JSON.stringify(theirs).includes('miss-A'))
+        assert.deepEqual(theirs.entries.flatMap((entry) => entry.kind === 'value' ? [entry.to.value] : []), [12])
+        for (const who of [a, b, `caller:${hashPhone(from)}`]) {
+          const { entries } = await graph.journey(who)
+          assert.deepEqual(entries.filter((entry) => (entry.kind === 'sighting' && entry.event === 'call') || (entry.kind === 'visit' && entry.touch.landing === `tel:${to}`)), [])
+        }
+        const open = await graph.openCalls(days)
+        assert.deepEqual(open.map(({ call, followUp, touch }) => [call.id, call.subject, followUp.state, touch?.campaignId]), [['miss-A', a, 'open', 'A']])
+        const summary = await graph.callSummary(days)
+        assert.deepEqual([summary.total.missed, summary.total.calledAgain], [1, 0])
+        const { columns } = await graph.board({ steps: [{ name: 'call' }], at: T0 + DAY })
+        assert.deepEqual(columns.map((column) => column.rows.map((row) => [row.subject, row.touch?.campaignId, row.call?.id])), [[[a, 'A', 'miss-A']], [[b, 'B', 'talk-B']]])
+        const report = await graph.report(days)
+        assert.deepEqual(report.rows.filter((row) => row.missed || row.outcomes).map((row) => [row.campaignId, row.missed, row.outcomes]).sort(), [['A', 1, 0], ['B', 0, 1]])
+        const followed = await graph.followed({ ...days, step: 'intake', days: 1, at: T0 + 3 * DAY, least: 1 })
+        assert.equal(followed.groups[0]!.rows.reduce((sum, row) => sum + row.people, 0), 2)
+      }
+      await check()
+      await graph.separate(a, b)
+      await check()
+      await graph.sayParty({ call: 'talk-B', key: 'corrected', at: T0 + 4000, party: { role: 'self', subject: a, by: 'desk' } })
+      assert.deepEqual(await graph.openCalls(days), [])
+      assert.ok(!JSON.stringify(await graph.journey(b)).includes('talk-B'))
+      assert.deepEqual(await graph.verify(), [])
     })
 
     test('what was no lead stays on record, is counted apart, and counts nowhere else until that is taken back', async () => {
@@ -2783,6 +3384,8 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
         return (await members(graph, 'contact:0')).length === 2
       }
       for (const [a, b] of [['Mike', 'Michael'], ['Bob', 'Robert'], ['Bill', 'William'], ['Liz', 'Elizabeth'], ['José', 'Jose'], ['José', 'Joe'], ['María Guadalupe', 'María']] as const) assert.equal(await one(a, b), true, `${a} and ${b}`)
+      for (const [a, b] of [['Catherine', 'Katherine'], ['Kaitlyn', 'Caitlin'], ['Gerald', 'Jerry']] as const) assert.equal(await one(a, b), true, `${a} and ${b}`)
+      for (const [a, b] of [['Gerald', 'Jeremiah'], ['Catherine', 'Gerald'], ['Maria', 'Guadalupe']] as const) assert.equal(await one(a, b), false, `${a} and ${b}`)
       for (const [a, b] of [['Carlos', 'Maria'], ['Robert', 'Mary'], ['Pepe', 'Ana']] as const) assert.equal(await one(a, b), false, `${a} and ${b}`)
       // Two that begin with one letter say nothing, and do not agree either.
       assert.equal(await one('Mark', 'Mary'), true)
@@ -2803,6 +3406,106 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal(await dated('1990-02-03', '1990-11-30', ['Xyzzyq', 'Maria']), false)
       // Where nothing is known of a name, a date that differs counts.
       assert.equal(await one('Xyzzyq', 'Maria', ['1', '2']), false)
+    })
+
+    test('a match probe gains no claim on a visitor when a party withdraws its only tie to a record', async () => {
+      const from = '+12025550149'
+      const to = '+12025550148'
+      const line = 'caller:' + hashPhone(from)
+      const visitor = 'visitor:probe'
+      const email = 'email:probe@example.org'
+      for (const records of [undefined, 'confirmed'] as const) {
+        const { graph } = await fresh(policyFrom({ apart: ['birth'], ...(records && { records }) }))
+        await graph.observe([{ subject: 'contact:a', identifiers: ['birth:one'], at: T0 }, { subject: visitor, identifiers: [email, dialed(to, T0)], at: T0 }])
+        await graph.join(line, 'contact:a')
+        await recordCall(graph, { id: 'probe', from, to, at: T0 + 100 })
+        const probe = async (facts: string[]) => (await graph.match([email, ...facts], { at: T0 + 200 }))[0]!
+        assert.equal((await probe(['birth:two'])).level, 'related')
+        assert.equal((await probe([])).level, records ? 'related' : 'same')
+        await graph.sayParty({ key: 'party', call: 'probe', at: T0 + 200, party: { role: 'unknown', by: 'desk' } })
+        for (const read of [0, 1]) {
+          if (read) await graph.rebuild()
+          const candidate = await probe(['birth:two'])
+          assert.deepEqual([candidate.level, candidate.members, candidate.conflict], ['related', [visitor], undefined])
+          assert.equal((await probe([])).level, records ? 'related' : 'same')
+          assert.equal((await probe(['birth:one'])).level, 'same')
+        }
+        assert.deepEqual(await graph.verify(), [])
+      }
+    })
+
+    test('a withdrawn identifier that says two are distinct cannot make a match probe stronger', async () => {
+      const { graph } = await fresh(policyFrom({ kinds: { phone: { relates: true } } }))
+      const from = '+12025550154'
+      const line = 'caller:' + hashPhone(from)
+      const email = 'email:desk@example.org'
+      const phone = 'phone:' + hashPhone(from)
+      const probe = async () => (await graph.match([email, phone], { at: T0 + 2000 }))[0]!
+      await graph.observe({ subject: line, identifiers: [email], at: T0 })
+      await recordCall(graph, { from, to: '+12025550160', id: 'distinct', at: T0 + 1000 })
+      assert.equal((await probe()).level, 'related')
+      await graph.sayParty({ key: 'party', call: 'distinct', at: T0 + 2000, party: { role: 'unknown', by: 'desk' } })
+      const candidate = await probe()
+      assert.deepEqual([candidate.level, candidate.reasons.map(reason => reason.identifier)], ['related', [email]])
+      await graph.ignore(phone)
+      assert.equal((await probe()).level, 'same')
+    })
+
+    test('a pending call with an unknown line type cannot take a distinction away from a match probe', async () => {
+      const from = '+12025550154'
+      const identifiers = ['voip:' + hashPhone(from), 'email:desk@example.org']
+      for (const pending of [false, true]) {
+        const { graph } = await fresh(policyFrom({ kinds: { voip: { relates: true, cap: 2 } } }))
+        await graph.observe({ subject: 'contact:a', identifiers, at: T0 })
+        if (pending) await graph.sayParty({ call: 'cap', key: 'party', at: T0, party: { role: 'unknown', by: 'desk' } })
+        await recordCall(graph, { id: 'cap', from, to: '+12025550160', at: T0 + 10 }, { lineType: async () => ({ type: 'mobile' }) })
+        assert.equal((await graph.match(identifiers))[0]!.level, 'related')
+        await graph.observe({ subject: 'contact:b', identifiers, at: T0 })
+        assert.equal((await graph.links('contact:a')).find(link => link.subject === 'contact:b')!.level, 'related')
+        assert.equal((await graph.match(identifiers))[0]!.level, 'same')
+      }
+    })
+
+    test('a mute or one fewer holder settles every possible reading of a capped call line', async () => {
+      const from = '+12025550121'
+      const key = 'voip:' + hashPhone(from)
+      const identifiers = [key, 'email:shared@example.org']
+      for (const cap of [2, 5]) {
+        const { graph } = await fresh(policyFrom({ kinds: { voip: { relates: true, cap } } }))
+        await graph.observe(['contact:a', 'contact:b'].map(subject => ({ subject, identifiers, at: T0 })))
+        await graph.sayParty({ call: 'capped', key: 'party', at: T0, party: { role: 'unknown', by: 'desk' } })
+        await recordCall(graph, { id: 'capped', from, to: '+12025550122', at: T0 + 10 }, { lineType: async () => ({ type: 'mobile' }) })
+        for (const ignored of [true, false]) {
+          const preview = await graph.foresee({ action: 'ignore', identifier: key, ignored })
+          assert.equal(preview.moved, 1)
+          assert.ok([...preview.before, ...preview.after].every(group => !group.id.startsWith('caller:')))
+          const changes = await graph.ignore(key, ignored)
+          assert.equal(changes.length, preview.moved)
+          assert.deepEqual(await graph.verify(), [])
+        }
+        if (cap === 2) {
+          await graph.observe({ subject: 'contact:c', identifiers: [key], at: T0 + 20 })
+          assert.deepEqual(await members(graph, 'contact:a'), ['contact:a', 'contact:b'])
+          await graph.forget('contact:c')
+          assert.deepEqual(await members(graph, 'contact:a'), ['contact:a'])
+          assert.deepEqual(await graph.verify(), [])
+        }
+      }
+    })
+
+    test('a match probe respects a caller’s own birth without letting the caller confirm a record', async () => {
+      const { graph } = await fresh(policyFrom({ apart: ['birth'], records: 'confirmed' }))
+      const email = 'email:desk@example.org'
+      await graph.observe({ subject: 'caller:line', identifiers: [email, 'birth:one'], at: T0 })
+      const probe = async (birth: string) => (await graph.match([email, birth], { at: T0 + 1 })).find(p => p.subject === 'caller:line')!
+      const older = await probe('birth:two')
+      assert.deepEqual([older.level, older.conflict, older.score], ['related', 'birth', 0.99])
+      await graph.join('record:a', 'caller:line', { by: 'desk' })
+      const agreeing = await probe('birth:one')
+      assert.deepEqual([agreeing.level, agreeing.conflict, agreeing.unconfirmed], ['related', undefined, true])
+      await graph.ignore('birth:one')
+      const muted = await probe('birth:two')
+      assert.deepEqual([muted.level, muted.conflict], ['related', undefined])
     })
 
     test('one detail under one name is one person, whoever speaks for them', async () => {
@@ -3531,6 +4234,23 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await found('contact:ana', 'contact:ben', 'contact:ana-2', 'contact:maybe'), [])
     })
 
+    test('a ringing line with two separated staff claims shows both as possible', async () => {
+      const { graph } = await fresh(policyFrom({ kinds: { review: { weight: 0.97 } } }))
+      const from = '+12025550100'
+      const caller = `caller:${hashPhone(from)}`
+      const first = 'record:first'
+      const other = 'record:other'
+      await graph.join(caller, first, { by: 'desk' })
+      await graph.join(caller, other, { by: 'desk' })
+      await graph.observe([caller, first].map(subject => ({ subject, identifiers: ['email:one@example.org'], at: T0 })))
+      await graph.separate(first, other, true, { by: 'desk' })
+      const people = (await ringing(graph, { from, to: '+12025550101', at: T0 + 2 })).people
+      assert.deepEqual(people.map(({ subject, level }) => [subject, level]), [[first, 'related'], [other, 'related']])
+      assert.ok(people[0]!.score > people[1]!.score)
+      await graph.separate(first, other, false, { by: 'desk' })
+      assert.deepEqual((await ringing(graph, { from, to: '+12025550101', at: T0 + 2 })).people.map(p => p.level), ['same', 'same'])
+    })
+
     test('while a phone rings, the caller, who they may be and what brought them are known, and nothing is written', async () => {
       const { graph } = await fresh()
       const ours = '+15550100101'
@@ -4015,6 +4735,23 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       // A reviewer who joins the two has the last word.
       await graph.join('contact:child', 'caller:1')
       assert.ok((await graph.cluster('contact:child'))!.members.includes('caller:1'))
+      assert.deepEqual(await graph.verify(), [])
+    })
+
+    test('a muted speaker mark stays muted when the same browser is named another way', async () => {
+      const { graph } = await fresh()
+      const ward = { subject: 'contact:child', identifiers: [] }
+      const alias = { subject: 'visitor:alias', identifiers: ['device:same'] }
+      const exact = { subject: 'visitor:same', identifiers: ['device:same'] }
+      const [mark] = (await graph.speak(ward, [alias], T0)).marks
+      await graph.ignore(mark!)
+      await graph.observe({ ...exact, at: T0 + 1 })
+      assert.deepEqual((await graph.speak(ward, [exact], T0 + 2)).marks, [mark])
+      assert.deepEqual(await graph.links(ward.subject), [])
+      assert.deepEqual((await graph.holders([mark!])).map((edge) => edge.subject).sort(), [ward.subject, alias.subject])
+      const other = { subject: 'visitor:other', identifiers: ['device:other'] }
+      assert.notEqual((await graph.speak(ward, [other], T0 + 3)).marks[0], mark)
+      assert.deepEqual((await graph.links(ward.subject)).map((link) => link.subject), [other.subject])
       assert.deepEqual(await graph.verify(), [])
     })
 

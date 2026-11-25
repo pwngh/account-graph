@@ -17,6 +17,8 @@ google   Search: brand         164.50     70         5        5         3     62
 
 The **Channels** view at `/review` shows the same table. Run `npm run review` to see it with sample data.
 
+Campaign totals count a stated caller once with duplicates that staff explicitly merged into that record. The chain of merges must run through records. Records linked to that caller only by a shared phone or browser count separately.
+
 ## Data sources
 
 ```text
@@ -195,7 +197,7 @@ A mark can precede its outcome; a call marked before its result is not counted w
 
 ## Board
 
-The Board puts each person in one column. A person is a cluster, with all its subjects. The `pipeline` [report](http.md#report) is the same.
+The Board puts each person in one column. It normally groups the subjects of one cluster. Two records with calls confirmed for different owners keep separate rows, even when the records share a cluster. Each row shows the call details, values and times belonging to its owner. The `pipeline` report uses the same rows. [Reports](http.md#report)
 
 | Column | Who is in it |
 | --- | --- |
@@ -288,7 +290,7 @@ A visit's source is the platform of its click id, then its `utm_source`, then th
 
 Each step counts people as well as outcomes. A person is a cluster: two accounts of one person count once, and a renewal is a second outcome of the same person. The Channels view shows both numbers where they differ.
 
-`stages.<step>.delay` gives the days from the newest visit to the outcome.
+`stages.<step>.delay` gives the days from the newest visit to the outcome. A confirmed call can earn campaign credit from a visitor outside the named record's group. That call contributes no arrival time to delay statistics and appears under `(not set)` for visit tag breakdowns.
 
 | Field | Meaning |
 | --- | --- |

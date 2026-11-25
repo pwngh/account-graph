@@ -25,7 +25,7 @@ import type { Ops } from '../core/ops.ts'
 import type { Job, JobState, Outbox } from '../core/outbox.ts'
 import { dayIn, dayStart, sourceOf } from '../core/report.ts'
 import type { Ladder } from '../core/ladder.ts'
-import { defaultPolicy, plainPolicy } from '../core/policy.ts'
+import { defaultPolicy, plainPolicy, REBUILD_NOTICE } from '../core/policy.ts'
 import { reviewPage } from './review.ts'
 import { browserMark, readToken, signToken } from '../core/sign.ts'
 import { browserScripts, scriptHeaders } from './tag.ts'
@@ -167,7 +167,12 @@ const DECISIONS = new Set(['POST /forget', 'POST /separate', 'POST /join', 'POST
 const JSON_HEADERS = { 'content-type': 'application/json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }
 
 /** A job as an answer shows it: the hashed email and phone are for its platform only. */
-const shownJob = ({ keys, ...job }: Job) => job
+const shownJob = ({ keys, ...job }: Job) => {
+  if (job.note !== 'call_party') return job
+  // The click and consent used for the original send belonged to the line.
+  const { click, confidence, consent, ...delivery } = job
+  return delivery
+}
 
 /** A route that wrote its own answer. */
 const SENT = Symbol('sent')
@@ -436,13 +441,11 @@ export function createHandler(core: Core, options: HandlerOptions) {
         // belongs to them. Where the other person is there by a link too, both are written and thin each other out,
         // so whoever's link was opened first does not win.
         const kind = named.slice(0, named.indexOf(':') + 1)
-        const others = (await graph.cluster(subject))?.members.filter((member) => member !== named && kind && member.startsWith(kind)) ?? []
+        const members = (await graph.cluster(subject))?.members ?? []
+        const others = members.filter((member) => member !== named && kind && member.startsWith(kind))
         const contested = others.length > 0 && (await graph.holders([tie])).some((edge) => edge.subject !== subject && edge.subject !== named)
         // Nor one of whoever speaks for them: a mother who opens her son's link is not her son.
-        const group = new Set([subject, ...((await graph.cluster(subject))?.members ?? [])])
-        let spoken = false
-        for (const each of new Set([named, ...((await graph.cluster(named))?.members ?? [])])) spoken ||= (await graph.links(each)).some((link) => group.has(link.subject) && link.level !== 'same' && link.reasons.some((reason) => reason.identifier.startsWith('behalf:')))
-        if (room && !spoken && (others.length === 0 || contested)) {
+        if (room && (others.length === 0 || contested) && !(await graph.spokenForBy(named, new Set([subject, ...members])))) {
           identifiers.push(tie, tied)
           also.push({ subject: named, identifiers: [tie], at, event: 'link' })
         } else identifiers.push(identifier('opened', `${named} (not tied)`))
@@ -493,7 +496,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
 
   /** Everything the reviewer screen shows about one subject, in one answer. */
   async function profile(subject: Subject) {
-    const cluster = await graph.cluster(subject)
+    const cluster = await graph.cluster(subject, true)
     if (!cluster) return { subject, known: false }
     const links = await graph.links(subject)
     const ties = new Map<string, { a: Subject; b: Subject; score: number; level: Level }>()
@@ -549,7 +552,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
   // What takes long to work out is worked out once for everybody who asks at the same time, and is good until something is
   // written. While things are being written all the time, it is good for a few times as long as it took, so a screen left
   // open costs a small share of the server however many are.
-  const answers = new Map<string, { version: number; at: number; until: number; made: boolean; answer: Promise<unknown> }>()
+  const answers = new Map<string, { party: string | undefined; version: number; at: number; until: number; made: boolean; answer: Promise<unknown> }>()
   // Goes up with each decision and deletion: an answer that was being worked out meanwhile is worked out again.
   let decided = 0
   // While one is under way nothing is shared: it can be done already, and waiting for what follows it.
@@ -558,18 +561,20 @@ export function createHandler(core: Core, options: HandlerOptions) {
     const key = url.pathname + url.search
     for (;;) {
       const since = decided
+      const party = await graph.partyRevision()
       if (deciding > 0) {
         const answer = await work()
-        if (decided !== since) continue
+        if (party !== await graph.partyRevision() || decided !== since) continue
         return answer
       }
       const version = await graph.version()
       let known = answers.get(key)
+      if (known?.party !== party) known = undefined
       // Who has waited too long changes with the clock, so nothing is good for more than a minute.
       if (known?.made && !(now() - known.at < 60_000 && (known.version === version || now() < known.until))) known = undefined
       if (!known) {
         const at = now()
-        const next = (known = { version, at, until: Infinity, made: false, answer: work() })
+        const next = (known = { party, version, at, until: Infinity, made: false, answer: work() })
         for (const [old, { made }] of answers) if (answers.size >= 200 && made) answers.delete(old)
         answers.set(key, next)
         next.answer.then(
@@ -581,7 +586,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
       const answer = await known.answer
       const newest = waited ? await graph.version() : version
       // Nothing is awaited between this and the answer being given.
-      if (decided !== since || deciding > 0) continue
+      if (party !== await graph.partyRevision() || decided !== since || deciding > 0) continue
       // Made before the newest write: the screen that gets it asks again.
       if (known.version !== newest) response.setHeader('age', String(Math.max(1, Math.ceil((now() - known.at) / 1000))))
       return answer
@@ -611,7 +616,8 @@ export function createHandler(core: Core, options: HandlerOptions) {
         throw malformed((error as Error).message)
       }
       if (!isService(request)) {
-        const opens = name === 'report' || ((name === 'decide' || name === 'forget') && body?.by === reviewer) || (name === 'lookup' && (body?.kind === 'journey' || body?.kind === 'find'))
+        const party = name === 'record' && Array.isArray(body?.entries) && body.entries.length > 0 && body.entries.every((entry: any) => entry?.type === 'call_update' && entry.change?.kind === 'party' && entry.change.by === reviewer)
+        const opens = party || name === 'report' || ((name === 'decide' || name === 'forget') && body?.by === reviewer) || (name === 'lookup' && (body?.kind === 'journey' || body?.kind === 'find'))
         if (!opens) throw fault(FAULT_CODES.AUTH.FORBIDDEN, name === 'decide' || name === 'forget' ? '`by` must match the owner of the token' : 'The token does not open this call')
       }
       return answer(200, await core.v1(name as CallName, body, gone.signal))
@@ -696,9 +702,8 @@ export function createHandler(core: Core, options: HandlerOptions) {
     }
 
     if (path === 'GET /health') {
-      // Reads one row, so it answers only when the database does.
-      await graph.separations('health')
-      return { ok: true }
+      const { due } = await graph.policy()
+      return { ok: true, ...(due && { warning: REBUILD_NOTICE }) }
     }
 
     if (path === 'GET /collect.js' || path === 'GET /fingerprint.js') {
@@ -792,21 +797,12 @@ export function createHandler(core: Core, options: HandlerOptions) {
       case 'GET /journey': {
         const before = url.searchParams.has('before') ? Number(url.searchParams.get('before')) : undefined
         if (before !== undefined && !Number.isSafeInteger(before)) throw new Refusal(400, '`before` must be a `next` value from a page')
-        const journey = await graph.journey(subject, before === undefined ? {} : { before })
-        // What became of each step at the ad platforms. A job keeps how it stands, and not when it got there.
-        const jobs = new Map<string, { target: string; state: JobState; note?: string; value?: number }[]>()
-        if (core.outbox) {
-          for (const entry of journey.entries) {
-            if (entry.kind !== 'outcome') continue
-            const { transactionId } = entry.outcome
-            jobs.set(transactionId, (await core.outbox.get(transactionId)).map(({ target, state, note, value }) => ({ target, state, ...(note && { note }), ...(value !== undefined && { value }) })))
-          }
-        }
+        const journey = await graph.journey(subject, { ...(before !== undefined && { before }), deliveries: Boolean(core.outbox) })
         return {
           ...journey,
           entries: journey.entries.map((entry) => {
             if (entry.kind === 'visit') return { ...entry, source: sourceOf(entry.touch) }
-            if (entry.kind === 'outcome') return { ...entry, sent: jobs.get(entry.outcome.transactionId) ?? [] }
+            if (entry.kind === 'outcome') return { ...entry, sent: entry.sent ?? [] }
             if (entry.kind === 'text') {
               const { to: _, ...kept } = entry.text
               return { ...entry, text: kept }
@@ -820,7 +816,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
       case 'GET /policy': {
         const { builtWith, ...state } = await graph.policy()
         const standard = plainPolicy(defaultPolicy)
-        return { ...state, builtWith: builtWith ?? null, changed: Object.keys(state.rules.kinds).filter((kind) => JSON.stringify(state.rules.kinds[kind]) !== JSON.stringify(standard.kinds[kind])) }
+        return { ...state, ...(state.due && { warning: REBUILD_NOTICE }), builtWith: builtWith ?? null, changed: Object.keys(state.rules.kinds).filter((kind) => JSON.stringify(state.rules.kinds[kind]) !== JSON.stringify(standard.kinds[kind])) }
       }
       case 'GET /decisions': {
         const limit = Math.min(500, Math.max(1, Math.floor(Number(url.searchParams.get('limit')) || 50)))

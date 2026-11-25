@@ -36,6 +36,12 @@ evidence = weight × (2 / subjects sharing it) ^ dilution × 0.5 ^ (gap / halfLi
 
 A muted identifier gives no evidence.
 
+A statement about one call withdraws the line and browser evidence that came from that call. The original holders still count when scoring everybody else, including a proposed record. Two records that gave a shared number cannot become a stronger match because staff identified a call. Later calls still compete for the tap or number they dialed.
+
+A withdrawn tie can also change where a separation cuts a group. The graph keeps people together only where they can remain together with any combination of those call ties withdrawn. Repeated carrier readings of one line count once when their dates, kinds and holder counts give the same evidence. Calls with different taps or dates that could change a match still count separately. Even above 64 readings, agreeing facts and links that no separation or weak bridge can cut keep a client with their duplicate records and browsers. Where more than 64 distinct readings still leave doubt, the graph keeps only the links it can establish across them. The reviewer sees a notice on the affected group's account page. Rebuilding after upgrading recalculates groups that the earlier limit kept apart. A zero-weight tap can still permit corroboration when the related threshold is zero, so it counts among the possible readings. Journeys and campaign credit respect those same cuts. Other groups are scored separately. Muting or restoring a line, or forgetting one of its holders, checks both possible line kinds. A mute preview lists affected groups and keeps private call holders out of the list.
+
+PostgreSQL upgrade 32 counts the original lines of older confirmed calls. Those calls did not keep the line type or visitor, so either phone kind can count the line. Rebuild the groups after upgrading.
+
 Evidence that counts combines as a noisy-OR, `1 − Π(1 − evidence)`. Each identifier is one way two subjects could be one person, correct as often as its evidence states. The pair is two people only if every piece is a coincidence. At 0.9 (`same`) the pair joins one cluster, and at 0.5 (`related`) it is reported as related.
 
 Scores depend only on stored data. The current time and the order of arrival leave them unchanged.
@@ -84,22 +90,28 @@ Notes give no evidence and link nothing.
 
 ## Clusters
 
-Every subject reachable over `same` links forms a component. Three cuts, applied in order, divide a component into clusters.
+Every subject reachable over `same` links forms a component. When checking a name changes a link, the component also includes the subjects reachable under the earlier spelling so a later report can update everyone affected. Three cuts, applied in order, divide a component into clusters.
 
 1. **Separated pairs.** The direct link of each separated pair is removed, and of each pair whose [facts differ](#facts-that-keep-people-apart).
-2. **Paths between separated pairs.** If the two are still connected through others, the weakest set of links between them is cut. Strengths add up, so two weak links outweigh one.
+2. **Paths between separated pairs.** If a pair that staff separated is still connected through others, the graph cuts guessed links wherever that keeps every active merge. If a path consists entirely of merges, the separation stands and the cut breaks as few merged links as possible. Among cuts that break the same number, it takes the weakest set of links. After all separations hold, the graph reconsiders the merges it cut, in order of the two subject IDs. It restores a merge if the two groups can come together while every separated pair stays apart. Guessed links inside the reunited group count again when applying the [rules for conflicting facts](#facts-that-keep-people-apart).
 3. **Weak bridges.** A link below 0.97 (`bridge`) cannot be the sole connection between two groups of two or more subjects. The weakest is cut first, until none remains. It may still add a single subject to a group. A group that names nobody, made only of browsers and phone numbers that called (`visitor:`, `caller:` and `call:`), then goes back to the named group it was cut from, if there is exactly one. With none or several, it stays apart.
 
 For example, a chain of four accounts, each sharing one machine with the next, becomes two pairs. If the outer two also share a phone, all four form one cluster, because the groups are then connected twice.
 
 A cluster above 50 members (`review`) is flagged `oversized`. Clusters that large come more often from one bad identifier than from one person.
 
+When a separation keeps an active staff join out of the cluster, open either subject’s Links to see its join evidence. Decisions shows the original join and the separation. Matches lists undecided pairs, so it does not offer that join again.
+
 ### Cut algorithms
 
 | Cut | Method | Cost and behavior |
 | --- | --- | --- |
-| Separated pairs | All direct links between separated pairs are removed. Each pair still connected, in order of id, is cut at minimum total strength: a maximum flow by shortest paths (Edmonds-Karp). Strength is `−log(1 − score)`, held to a maximum and rounded. Of all cheapest cuts, the unique one nearest the first subject is taken, so the result is independent of arrival order. | Each flow is at worst `O(V·E²)` in the subjects and links of one component. A component of hundreds is quick. |
+| Separated pairs | All direct links between separated pairs are removed. Each pair still connected is processed in order of ID by a maximum flow using shortest paths (Edmonds–Karp). After preserving as many merges as possible, the cut minimizes total strength. Strength is `−log(1 − score)`, capped and rounded. If several cuts tie, the one nearest the subject with the later first sighting wins. Equal times favor the cut nearest the smaller ID. | The flows for staff separations share one index of the component’s links and their strengths. Each flow takes at worst `O(V·E²)` time and `O(V+E)` space for `V` subjects and `E` links. |
 | Weak bridges | Links below `bridge` are removed as described above. | The rule is off when `bridge` is at or below `same`. |
+
+With no `apart` facts, a full verification or rebuild rereads edges for staff joins only in components containing both ends of a separation or a link that says two people are different.
+
+Once a cut separates two records, later comparisons of their birth dates can skip the search for a path. The remaining pairs are cut in the same order.
 
 A component of tens of thousands indicates a shared identifier to cap or mute.
 
@@ -148,21 +160,18 @@ Phone evidence halves for each two years between the two sightings, because numb
 
 #### Caller attribution
 
-A caller becomes a `caller:` subject with their number. Under the preset, the contact on file with that number is only related to the caller. A later step of the contact is then not credited to the caller's ad click.
+Under the household preset, a contact who gave the caller’s number is usually related to the line. Staff who know which record a particular call concerned can identify that call by its provider ID.
 
-To close the gap, have your backend join the two when staff open the contact a call is about. Leave out a call by somebody who speaks for another, such as a parent about a child: that is another person, and joining the two mixes their records.
-
-```bash
-curl -X POST https://graph.example.org/v1/decide -H "authorization: Bearer $GRAPH_TOKEN" -d '{
-  "key": "desk-CA1", "at": 1795460000000, "by": "system:desk", "action": "merge",
-  "pairs": [{ "a": "caller:96f2c503…", "b": "contact:7", "reason": "answered by staff" }] }'
+```json
+{ "type": "call_update", "key": "desk-CA1", "at": 1795460000000, "call": "CA1",
+  "change": { "kind": "party", "role": "self", "subject": "contact:7", "by": "desk" } }
 ```
 
-The `caller:` subject is in the answer to the `call` entry. Take the merge back with [`unmerge`](#taking-a-merge-back).
+Use `representative` when someone called on the contact’s behalf. Each later call can concern a different person. See [recording who was on one call](calls.md#recording-who-was-on-one-call).
 
 #### Shared phones
 
-Keep a shared phone on each person, and record what you know about the two. Removing the number also removes the link to every call it made.
+Keep a shared phone on each person, and record what you know about the two. Removing the number can remove a guessed link. A confirmed call stays with its stated owner.
 
 | What you know | Action |
 | --- | --- |
@@ -185,7 +194,7 @@ Set `IDENTIFIER_SECRET`, and send the `name` and `dob` you have with each `profi
 | --- | --- |
 | Is this for yourself or for somebody else? Make it a required question. | Whoever calls or fills in the form as [`speaker`](identify.md#speaking-for-somebody-else) |
 | First and last name, and date of birth, every time. Most duplicates that are missed have no date on one of the two. | `name` and `dob`, and a `match` before you enter somebody |
-| Was this call about the person on screen? | A `merge` of the `caller:` and the contact, only where the caller is that person |
+| Was this call about the person on screen? | A `call_update` with the record and the role the caller had on this call |
 | Who is on the other side? | A [`split`](#split) |
 
 ### Custom presets
@@ -208,7 +217,7 @@ contact:2 { email, born 1984-07-01 } ──┘
 
 With `IDENTIFIER_SECRET` set, the server then keeps a keyed `birth` of each `dob` in a [`profile`](identify.md), as a note that links nothing. Two subjects that would be in one group, both have a `birth`, and share no value of it are kept apart, whatever path joins them.
 
-With `given` it keeps keyed notes of the names a first name may stand for, from the table in `src/core/names.ts`: `Bob` stands for `Robert`, and `Lupe` for `Guadalupe`.
+With `given` it keeps keyed notes of the names a first name may stand for, from the table in `src/core/names.ts`: `Bob` stands for `Robert`, and `Lupe` for `Guadalupe`. Catherine and Katherine, Kaitlyn and Caitlin, and Gerald and Jerry each share a possible full name. Gerald and Jeremiah stay distinct even though both can be called Jerry. Send the name again to record a newly recognized form.
 
 | Two records | Come to |
 | --- | --- |
@@ -222,7 +231,7 @@ With `given` it keeps keyed notes of the names a first name may stand for, from 
 | --- | --- |
 | One of them has no date | Nothing is said. |
 | A merge, by a reviewer or from your own systems | Overrules it, whichever came first. Taking the merge back gives the fact back. The exception is a caller or a browser joined to two people of two dates of birth: it goes where the fewest such joins are left out, then with whoever was seen first, and the others are in Matches. Same changes nothing there: `split` the caller from the one it is not. |
-| Where it shows | In the `match` lookup, the Accounts view and Matches, as related with `conflict: "birth"` or `"given"`, however high the score. Credit does not cross it. |
+| Where it shows | The `match` lookup counts the proposed record when applying caps to evidence and confirming facts. It checks facts on the candidate itself, including a caller or browser, and on the records it stands for. Withdrawing a call tie cannot turn a possible match into a definite one. A browser’s former record can still rule out the proposed match. Its id and facts stay private. The lookup, Accounts and Matches show a conflict as related with `conflict: "birth"` or `"given"`, however high the score. Credit does not cross it. |
 | Where it does not | The `conflicts` lookup, kept-apart lists, disputes and the audit log. Nobody decided it. |
 | A corrected date | The record keeps both values, so it is kept apart from neither, until it is forgotten. |
 | Shared browsers and callers | They go with one of the two, as after a separation. |
@@ -252,8 +261,12 @@ What two records share, such as a mailbox, a number or a computer, may be a hous
 | Names no table has | A date of birth confirms two records with such names only where a number or an email is under one name. Twins who share only a device and have no detail of their own can be joined by their date, where the policy has no `name` kind. |
 | Two words | That a name has several words is noted from the day the rule is on. One sent before counts as one word: send it again. Two second words in no table that begin with one letter look alike. |
 | More than 300 records in one component | Nothing but a decision joins them. The 301st takes back what facts had joined there, so find what they all share and `mute` it. |
-| Names not in Latin letters | They make no key of a full name and a date, because folding would make many names one. |
+| Names not in Latin letters | The Latin short-form table supplies no `person` or `perhaps` key. An exact `name` key with a date or verified zip code still works in these scripts. |
 | A father and a son | Of one name with no dates, they are one person by it, as two records of one man would be. |
+
+For a phone or email given under a name, or by someone speaking for its owner, a placeholder such as Unknown / Not Provided gives no name evidence. The Spanish labels Desconocido, Desconocida, Sin Nombre and No Proporcionado, and the French Inconnu and Inconnue, are also missing names. The whole-field labels Неизвестно, غير معروف, अज्ञात, 姓名不详 and 氏名不詳 mean the name is unknown. Baby, Baby Boy and Baby Girl in the first-name field stand for an unnamed newborn. Baby in the surname field keeps its usual spelling. An equal birthday cannot confirm two such placeholders. A different birthday can still keep them apart. Recognizing a missing-name label also preserves the disagreement that its former spelling had with another named record. Where the name table could use part of a spelling, any letters it would lose must agree too. Thus María文 and Maria文 can agree, and Maria李 is a different name. The exact name key with a date or confirmed zip code works in other scripts. It keeps marks that distinguish letters, including Devanagari vowel signs and nukta, Thai tone marks, Greek iota subscript and diaeresis, and Japanese voicing marks. Composed and decomposed forms give the same key. Latin accents, Greek stress and optional Arabic and Hebrew points retain their earlier comparison.
+
+When upgrading from the earlier name rules, stop the servers and run `account-graph rebuild`. The old hashes do not reveal which names lost letters or were placeholders. The rebuild drops those hashes as evidence for a join. They still count how many people share a spelling and carry its mutes. Different old names can still keep records apart, including while only one of the two profiles has been sent again. Where a spelling changes the weight of a link or what a name says about a person, two people stay together only if both the earlier and the checked spelling put them together. Losing one match cannot give that person to another record. Re-send named profiles from their original source with new report keys before serving the graph again. Recreate exact name keys with a date or zip code from the original names as well. The same rebuild warning covers spelling marks, newborns and the additional missing-name labels. A cached hash cannot recover a missing mark. Old dates can still disagree. A shared date on two older records cannot confirm them by itself until at least one is reported again without a placeholder. Staff decisions keep working through the upgrade.
 
 A record is a subject that names somebody, such as `contact:7` or `account:42`. A browser or a caller is none: it goes with the records it is tied to most strongly, and of two as strong, with whoever was seen first.
 
@@ -302,12 +315,12 @@ The `conflicts` [lookup](http.md#lookup) takes the people of a matter and answer
 
 ## Decisions from your own systems
 
-Your systems hold facts the graph cannot infer. Report them with [`decide`](http.md#decide).
+Use `decide` to tell the graph which people to keep apart. Use `record` to say who a call concerned. [Six calls](http.md)
 
 | Fact | Owner | What to send |
 | --- | --- | --- |
 | Who is on the other side of a matter | Your case system. People who share a phone, a child or a case may be on one side or on two. | The pair, as a `split`. |
-| Which contact a call was about | Staff, when they take the call. | The caller and contact, as a `merge`, when they are one person. A parent calling about a child is a separate person. [Caller attribution](#caller-attribution) depends on it. |
+| Which contact a call was about | Staff, when they take the call. | The call ID and the contact in a [party statement](calls.md#recording-who-was-on-one-call). A parent calling about a child can name the child’s record with the representative role. |
 | Whether a person may be contacted | The system that sends messages. Consent here covers advertising only. | Message consent, opt-outs, quiet hours and contact frequency stay there. |
 
 | Action | Behavior |
@@ -418,9 +431,9 @@ A pair labelled both ways is left out and counted.
 - **Conflict checks.** account-graph runs none. A `split` acts on pairs you already know, and whom you may serve stays your decision.
 - **Splits from your own systems.** They are applied as received.
 - **Shared browsers.** A browser that both sides and a third person used can still be reached from each side.
-- **Many separations in one component.** Pairs are cut one after another, which can remove more in total than the best combined cut. The exact multicut or multiway cut is hard to compute.
+- **Many separations in one component.** Each merge left out by the separations would reconnect a separated pair. A different choice of cuts could still keep more merges overall. The exact multicut or multiway cut is hard to compute.
 - **Three dates of birth on two lines.** Where staff joined two lines to people of three or more dates, more of those joins can be left out than need be, and which ones can depend on ids. One review met it in 3 of 15,000 random graphs.
 - **Score calibration.** Clusters come from the cuts above and carry no probability.
-- **Matches.** It covers subjects in the newest 10,000 sightings.
+- **Matches.** It covers subjects in the newest 10,000 sightings. A speaker mark on any member of either person’s cluster keeps the pair out of Matches, even when the mark is older.
 - **Staff labels.** Staff find pairs that already look alike. A kind they search by looks better than it is, and strangers who share it are hardly in the file.
 - **Deleted evidence.** A merged-away record whose evidence was deleted cannot be used as a checked pair. The tool counts these, which were often the surest pairs.

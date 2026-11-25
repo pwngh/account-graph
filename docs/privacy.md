@@ -37,6 +37,20 @@ Data goes to these recipients only.
 
 ## Deletion
 
+A retry of a forgotten key is checked against its receipt before the graph asks a line or address provider about the entry.
+
+An identification made for a single call belongs to that call. The original line stays private. Forgetting the original line or the record that currently owns the call erases the call, its statements, its conversion and value changes. When staff have since confirmed another record as the owner, that record keeps the call and its value history. Only statements naming the deleted record are removed, including their receipt field hashes. An unrelated alert stays even when its text happens to contain a removed statement's key. This also applies when the call has yet to arrive. When nobody else is confirmed as the owner, the call is erased. Every erased key has a tombstone, so a late retry receives `FORGOTTEN`.
+
+A visitor known only from a call's tap, code or pool number supplies its campaign to reports. The named record's callback and pipeline rows keep the visitor's arrival time, landing address, language and custom fields private.
+
+A platform that had already received a conversion can still appear in the deletion report. The delivery shown alongside the confirmed record omits the original click ID, matching confidence and consent. The store keeps the original matching details for refunds, corrected values and retractions on platforms that accept them. This also applies when the platform acknowledges the original send after the correction. A new conversion remains stopped. A later deletion erases that row.
+
+When staff identify a call, the graph erases earlier delivery failure events for that call and any stored failure notices that count it, including calls beyond the first ten shown. An older truncated batch without stored call IDs is discarded when a call is corrected or erased. Forgetting someone with no calls preserves that batch. A pending notice that also names other failures is discarded as a whole. The events for those other failures stay. A notice already delivered to a webhook may still be held by its recipient.
+
+An inbound call keeps which phone identifier it added until staff name its party. This lets the graph remove just that sighting, even after pruning. Calls stored before upgrade 29 have no such record. The graph uses the remaining sightings and the first and last times on each link. If both phone and VoIP could have supplied a pruned sighting, it weakens both possible links to avoid keeping evidence from the confirmed call.
+
+Upgrade 30 records which call supplied a channel visit. Older visits only have the line, dialed number and time. If several old visits fit a confirmed call, all of those visits are removed to keep that call out of another record’s journey. The upgrade also clears these visits for calls that were already confirmed.
+
 `forget` deletes the subjects you name and leaves the person's others in place. To delete a person, read their `members` with the `person` [lookup](http.md#lookup), check them, and send all of them as `subjects`, 50 at most: all are deleted, or none. A payment whose outcome was never recorded names no person and stays.
 
 | Action | Deletes | Keeps |
@@ -55,7 +69,13 @@ Data goes to these recipients only.
 - Other subjects of the same person.
 - A tombstone of each key that was about it: a type, a keyed hash and times. The key is answered `FORGOTTEN` from then on, so a late retry brings nobody back. The same subject may be written again with new keys.
 
+On a database where an older version already accepted a party statement after its record was forgotten, the first server to open the upgraded database cleans up those statements before serving requests. It uses the configured receipt secrets to tombstone the keys, including keys whose receipts were pruned. Only the affected calls and statements are checked. A new profile or independent outcome entered under the same record ID stays. A new statement checked after the record returned keeps the sequence number of the deletion it passed. For an older statement, the repair needs a matching receipt recorded strictly after both the call report and a surviving post-deletion sighting of that record. During the first year after deletion, a receipt from that period is too young to have been pruned and recreated. After that, the receipt must predate any logged prune whose requested cutoff reached past the deletion. A retry can recreate a pruned receipt. Missing proof or a clock tie leaves the old statement unproved. After removing unproved statements and emptying their receipts, the newest surviving statement by signed time and key stands. Its named owner keeps the call, its conversion and its value history. If an unproved statement owned the call and no surviving statement assigns it to a record, the call is erased. An interrupted repair resumes on the next start.
+
+The graph checks the latest signed deletion before accepting a statement about a returning record. A fresh observation must exist for that record and the call must have started strictly after the deletion. The time the statement was signed cannot move an earlier call into the new history. A missing call also receives `FORGOTTEN`. Its new statement key can be retried once the call is on file. Keys tombstoned by the deletion stay tombstoned.
+
 Backups keep their data until you delete them. Run `forget` again after restoring one, with new keys.
+
+The alert sender checks an overdue or rejected-conversion notice and starts its request while the notice is still current. A correction that finishes first cancels the old notice. A request already started can reach its receiver.
 
 ## Data at ad platforms
 

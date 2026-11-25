@@ -54,6 +54,27 @@ const stateOf = async (graph: AccountGraph, key: string) => {
 }
 const codeOf = (work: Promise<unknown>) => work.then(() => 'ok', (error) => (isFault(error) ? error.code : `raw ${error}`))
 
+both('an independent possible arrival appears after a corrected call loses its credited arrival', async graph => {
+  const { engine } = await internalsOf(graph)!()
+  const { dialed, hashPhone } = await import('../tools/internals.ts')
+  const from = '+12025550101', to = '+12025550102'
+  const line = 'caller:' + hashPhone(from)
+  await engine.graph.observe([
+    { subject: 'visitor:tap', at: AT - 100, identifiers: [dialed(to, AT - 100)] },
+    { subject: 'visitor:other', at: AT - 200, identifiers: ['hardware:shared'] },
+    { subject: line, at: AT - 200, identifiers: ['hardware:shared'] },
+  ])
+  await engine.graph.touch({ subject: 'visitor:tap', at: AT - 100, campaignId: 'credited' })
+  await engine.graph.touch({ subject: 'visitor:other', at: AT - 200, campaignId: 'possible' })
+  const person = async () => (await graph.lookup({ kind: 'person', subjects: [line], at: NOW })).people[0]!
+  assert.ok((await one(graph, { type: 'call', key: 'stated', at: AT, direction: 'inbound', from, to, duration: 60 })).ok)
+  const before = await person()
+  assert.deepEqual([before.arrival?.campaignId, before.possible], ['credited', null])
+  assert.ok((await one(graph, { type: 'call_update', key: 'party', at: AT + 1, call: 'stated', change: { kind: 'party', role: 'self', subject: 'contact:named', by: 'desk' } })).ok)
+  const after = await person()
+  assert.deepEqual([after.arrival, after.possible?.campaignId, after.possible?.confidence], [null, 'possible', 0.59])
+}, { policy: { kinds: { hardware: { weight: 0.59, dilution: 0 } } } })
+
 both('what a platform answers cannot stop the rest', async (graph) => {
   await graph.record({ entries: [conversion({ key: 'bad', actions: { meta: 'Lead' }, email: 'a@example.com' }), conversion({ key: 'good', subject: 'b', actions: { meta: 'Other' }, email: 'b@example.com' })] })
   await runWorkers(graph)
@@ -174,6 +195,26 @@ both('a list is not ended by what could have been seen at its beginning', async 
   ] })
   assert.ok(results.every((each) => each.ok))
   assert.ok((await graph.decide({ key: 'd', at: AT, by: 'x', action: 'split', pairs: [{ a: 'é'.repeat(256), b: 'è'.repeat(256) }] })).ok)
+})
+
+both('health shows the rebuild command until the stored groups have been rebuilt', async (graph) => {
+  const { engine } = await internalsOf(graph)!()
+  await engine.graph.observe({ subject: 'contact:a', identifiers: ['email:sample'], at: AT })
+  await engine.store.write(tx => tx.setBuiltWith('earlier rules'))
+  const server = createServer(createEdge(graph, { token: 't' })).listen(0, '127.0.0.1')
+  await new Promise(resolve => server.once('listening', resolve))
+  const read = (path: string) => fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}${path}`, { headers: { authorization: 'Bearer t' } }).then(response => response.json())
+  try {
+    const warning = 'Groups are due a rebuild. Run account-graph rebuild.'
+    assert.deepEqual(await read('/health'), { ok: true, warning })
+    assert.equal((await read('/review/api/policy')).warning, warning)
+    await engine.graph.rebuild()
+    assert.deepEqual(await read('/health'), { ok: true })
+    assert.equal((await read('/review/api/policy')).warning, undefined)
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>(resolve => server.close(() => resolve()))
+  }
 })
 
 test('the edge is closed with its instance, and what it took is finished', async () => {
@@ -308,3 +349,284 @@ if (url) {
     }
   })
 }
+
+const namePolicy = { apart: ['given', 'birth'], records: 'confirmed', kinds: { phone: { weight: 0.85 } } }
+
+for (const [label, first, other, last, otherLast, together] of [
+  ['placeholder', 'Unknown', 'Unknown', 'Not Provided', 'Not Provided', false],
+  ['mixed first names', 'Maria文', 'Maria李', 'Lima', 'Lima', false],
+  ['mixed surnames', 'Maria', 'Maria', 'Lima文', 'Lima李', false],
+  ['same mixed name', 'María文', 'Maria文', 'Lima李', 'Lima李', true],
+  ['ordinary name', 'José', 'Jose', 'Muñoz', 'Munoz', true],
+  ['wholly non-Latin names on a phone', '李', '李', '王', '王', false],
+] as const) both(`a shared phone and a name, ${label}`, async (graph) => {
+  for (const speaker of [false, true]) {
+    const subjects = [0, 1].map((n) => `contact:${speaker}-${n}`)
+    for (const [n, subject] of subjects.entries()) {
+      const name = { first: n ? other : first, last: n ? otherLast : last }
+      const phone = speaker ? '202-555-0101' : '202-555-0100'
+      assert.ok((await one(graph, { type: 'profile', key: subject, subject, at: AT, facts: { name, phone }, ...(speaker && { speaker: { phone } }) })).ok)
+    }
+    const { people } = await graph.lookup({ kind: 'person', subjects, at: NOW })
+    assert.equal(people[0]!.members.includes(subjects[1]!), together, `speaker ${speaker}`)
+  }
+}, { identifierSecret: SECRET, policy: namePolicy })
+
+for (const [first, last] of [['Unknown', 'Lima'], ['N/A', 'N/A'], ['Desconocida', 'Lima'], ['Sin', 'Nombre'], ['Lima', 'No proporcionado'], ['Inconnue', 'Lima'], ['Неизвестно', 'Lima'], ['Ana', 'غير معروف'], ['अज्ञात', 'Lima'], ['姓名不详', '李'], ['氏名不詳', '山田'], ['Baby', 'Lima'], ['Baby Boy', 'Lima']] as const) both(`a placeholder and one birthday cannot confirm two records, ${first} ${last}`, async (graph) => {
+  const { engine } = await internalsOf(graph)!()
+  const facts = { email: 'house@example.org', name: { first, last }, dob: '1980-06-07' }
+  for (const subject of ['contact:a', 'contact:b']) {
+    assert.ok((await one(graph, { type: 'profile', key: subject, subject, at: AT, facts })).ok)
+    assert.deepEqual(await engine.graph.verify(), [])
+  }
+  assert.deepEqual((await engine.graph.cluster('contact:a'))!.members, ['contact:a'])
+  assert.equal((await graph.lookup({ kind: 'match', facts, at: AT })).candidates.some((candidate) => candidate.level === 'same'), false)
+  await engine.graph.rebuild()
+  assert.deepEqual((await (await engine.graph.asOf(NOW)).cluster('contact:b'))!.members, ['contact:b'])
+}, { identifierSecret: SECRET, policy: namePolicy })
+
+both('recognizing an additional placeholder cannot confirm it as the other name on a shared birthday', async (graph) => {
+  const { engine } = await internalsOf(graph)!()
+  const facts = { email: 'family@example.org', dob: '1980-04-02' }
+  const first = { ...facts, name: { first: 'يوسف', last: 'Muñoz' } }
+  const second = { ...facts, name: { first: 'Inconnu', last: 'Κάππα' } }
+  assert.ok((await one(graph, { type: 'profile', key: 'one', at: AT, subject: 'contact:a', facts: first })).ok)
+  assert.equal((await graph.lookup({ kind: 'match', facts: second, at: AT })).candidates[0]?.level, 'related')
+  assert.ok((await one(graph, { type: 'profile', key: 'two', at: AT, subject: 'contact:b', facts: second })).ok)
+  await engine.graph.rebuild()
+  assert.deepEqual((await engine.graph.cluster('contact:a'))!.members, ['contact:a'])
+}, { identifierSecret: SECRET, policy: { ...namePolicy, customKinds: { name: { weight: 0.6, dilution: 1, cap: 5, halfLife: 'none', group: 'name', corroborates: true } } } })
+
+both('a rebuild retires shared birthdays and checked names whose source could have been a placeholder', async (graph) => {
+  const { engine } = await internalsOf(graph)!()
+  const { birthKeys } = await import('../src/core/identifiers.ts')
+  const date = birthKeys(SECRET, '1980-06-07')
+  const base = 'named:' + 'a'.repeat(64)
+  const subjects = ['contact:a', 'contact:b']
+  await engine.store.write(async (tx) => {
+    await tx.addSightings(subjects.flatMap((subject) => ['email:shared', base, base + '~1', ...date].map((identifier) => ({ subject, identifier, at: AT }))))
+    await tx.setLabels(new Map(subjects.map((subject) => [subject, { cluster: subjects[0]!, component: subjects[0]! }])))
+    await tx.setBuiltWith('old rules')
+  })
+  assert.ok((await engine.graph.policy()).due)
+  await engine.graph.rebuild()
+  assert.deepEqual((await engine.graph.cluster('contact:a'))!.members, ['contact:a'])
+  assert.deepEqual((await (await engine.graph.asOf(NOW)).cluster('contact:b'))!.members, ['contact:b'])
+}, { identifierSecret: SECRET, policy: namePolicy })
+
+both('a rebuild retires the checked name and birthday of a newborn label', async (graph) => {
+  const { engine } = await internalsOf(graph)!()
+  const { birthKey } = await import('../src/core/identifiers.ts')
+  const date = birthKey(SECRET, '1980-06-07')!
+  const named = 'named:' + 'b'.repeat(64)
+  const subjects = ['contact:a', 'contact:b']
+  await engine.store.write(async tx => {
+    const old = ['email:household', named, named + '~2', date, date + '~1']
+    await tx.addSightings(subjects.flatMap(subject => old.map(identifier => ({ subject, identifier, at: AT }))))
+    await tx.setBuiltWith('earlier rules')
+  })
+  await engine.graph.rebuild()
+  assert.deepEqual((await engine.graph.cluster(subjects[0]!))?.members, subjects.slice(0, 1))
+  assert.deepEqual(await engine.graph.verify(), [])
+}, { identifierSecret: SECRET, policy: namePolicy })
+
+both('a rebuild retires name evidence written before all distinguishing letters were kept', async (graph) => {
+  const { engine } = await internalsOf(graph)!()
+  const subjects = ['contact:one', 'contact:two']
+  const phone = 'phone:56bcf01f15ebc008e3e50bad3555d6cfafa76c6472eb64c8d4b24f06f3c995d8'
+  // Produced at 7c178f1 for Maria文 Lima and Maria李 Lima, on the same number and secret.
+  const old = ['given:97f2c03d8be6dc182b376cc600928b772c7b846bd268407c25e34a7798f942b7', 'initial:901660c02479d03128393ca21ed0e7be7159ddc9e1d22e8153b3720d25b52070', 'named:aaf79ec1dcc55abd840e3eaf99a759cd5a2d43b5859cd980bffdb436b8c7339a', 'ward:b87419f29a31f48fb2f99fd1b6c81ccee68bca033c7c4bc077eb1813bfb4e8ab']
+  await engine.store.write(async (tx) => {
+    await tx.addSightings(subjects.flatMap((subject) => [phone, ...old].map((identifier) => ({ subject, identifier, at: AT }))))
+    await tx.setLabels(new Map(subjects.map((subject) => [subject, { cluster: subjects[0]!, component: subjects[0]! }])))
+    await tx.setBuiltWith('old rules')
+  })
+  const members = async () => (await graph.lookup({ kind: 'person', subjects, at: NOW })).people[0]!.members
+  assert.deepEqual(await members(), subjects)
+  await engine.graph.rebuild()
+  assert.deepEqual(await members(), subjects.slice(0, 1))
+  assert.deepEqual(await engine.graph.verify(), [])
+  for (const subject of subjects) assert.ok((await one(graph, { type: 'profile', key: subject, subject, at: AT, facts: { phone: '202-555-0100', name: { first: 'Maria文', last: 'Lima' } } })).ok)
+  assert.deepEqual(await members(), subjects)
+  assert.deepEqual(await engine.graph.rebuild(), [])
+  assert.deepEqual(await members(), subjects)
+}, { identifierSecret: SECRET, policy: namePolicy })
+
+for (const [label, keys, confirmed] of [
+  ['different given names', [['given:97f2c03d8be6dc182b376cc600928b772c7b846bd268407c25e34a7798f942b7', 'initial:901660c02479d03128393ca21ed0e7be7159ddc9e1d22e8153b3720d25b52070'], ['given:4f718e3fc81fca184edeafe1fb1e98200cd613c4c57ecc839a6bb5de51979a4c', 'initial:e5f0aa26614ab3951eff85e3e3a5ed1b46cbc9194ad16e447b916d462fa29016']], false],
+  ['different given names and an equal birth', [['given:97f2c03d8be6dc182b376cc600928b772c7b846bd268407c25e34a7798f942b7'], ['given:4f718e3fc81fca184edeafe1fb1e98200cd613c4c57ecc839a6bb5de51979a4c']], true],
+  ['two named records and an equal birth', [['named:3de17624df4a665fb7ef0ea252b18d580d7a8dfddcd7b6a3c59e05bc4bda2803'], ['named:77174593c325e8c3ff8d6f1cbfe4d5ce487d83b768b363ebdbdcb490a21f67e1']], true],
+] as const) both(`a rebuild keeps an earlier disagreement, ${label}`, async (graph) => {
+  const { engine } = await internalsOf(graph)!()
+  const subjects = ['contact:one', 'contact:two']
+  // Written with the old name rules for Maria and Carlos, and for two names outside the table.
+  await engine.store.write(async (tx) => {
+    await tx.addSightings(subjects.flatMap((subject, n) => ['email:shared', ...keys[n]!, ...(confirmed ? ['birth:same'] : [])].map((identifier) => ({ subject, identifier, at: AT }))))
+    await tx.setLabels(new Map(subjects.map((subject) => [subject, { cluster: subject, component: subjects[0]! }])))
+    await tx.setBuiltWith('old rules')
+  })
+  const memberships = async () => (await graph.lookup({ kind: 'person', subjects, at: NOW })).people.map((person) => person.members)
+  assert.deepEqual(await memberships(), subjects.map((subject) => [subject]))
+  await engine.graph.rebuild()
+  assert.deepEqual(await memberships(), subjects.map((subject) => [subject]))
+  // A new report on just one side must still respect the facts on the other.
+  await engine.graph.observe({ subject: subjects[0]!, at: AT + 1, identifiers: keys[0].map((identifier) => identifier + '~1') })
+  assert.deepEqual(await memberships(), subjects.map((subject) => [subject]))
+  assert.deepEqual(await engine.graph.verify(), [])
+}, { policy: { apart: ['given'], ...(confirmed && { records: 'confirmed' }) } })
+
+both('removing an old name match cannot give the person to a third record', async (graph) => {
+  const { engine } = await internalsOf(graph)!()
+  const { birthKeys, email } = await import('../src/core/identifiers.ts')
+  const { givenKeys, namedKeys } = await import('../src/core/names.ts')
+  const subjects = ['contact:a', 'contact:b', 'contact:c']
+  const detail = 'common@example.org'
+  const dob = '1980-04-05'
+  const old = [...givenKeys(SECRET, 'John'), ...namedKeys(SECRET, [email(detail)], 'John', 'Doe')].filter((key) => !key.includes('~'))
+  await engine.graph.observe({ subject: subjects[0]!, identifiers: [email(detail), ...old, ...birthKeys(SECRET, dob)], at: AT })
+  for (const [n, first] of ['Maria', 'Maria文'].entries()) {
+    const subject = subjects[n + 1]!
+    assert.ok((await one(graph, { type: 'profile', subject, key: subject, at: AT + n + 1, facts: { email: detail, name: { first, last: 'Doe' }, ...(n === 0 && { dob }) } })).ok)
+  }
+  // Under the old rules only b and c were together. Checking the last letter separates them.
+  const groups = async () => (await graph.lookup({ kind: 'person', subjects, at: NOW })).people.map((person) => person.members)
+  assert.deepEqual(await groups(), subjects.map((subject) => [subject]))
+  assert.deepEqual(await engine.graph.verify(), [])
+  await engine.graph.rebuild()
+  assert.deepEqual(await groups(), subjects.map((subject) => [subject]))
+}, { identifierSecret: SECRET, policy: { apart: ['given'] } })
+
+both('a name taken from a placeholder cannot confirm a record or lift an earlier disagreement', async (graph) => {
+  for (const [n, first, last] of [[1, 'John', 'Doe'], [2, 'John', 'Doe'], [3, 'Maria', 'Lima']] as const) {
+    const subject = `contact:${n}`
+    assert.ok((await one(graph, { type: 'profile', subject, key: subject, at: AT, facts: { email: 'party@example.org', name: { first, last }, ...(n !== 2 && { dob: '1980-04-05' }) } })).ok)
+  }
+  const { people } = await graph.lookup({ kind: 'person', subjects: ['contact:1', 'contact:2', 'contact:3'], at: NOW })
+  assert.deepEqual(people.map((person) => person.members), [['contact:1'], ['contact:2'], ['contact:3']])
+}, { identifierSecret: SECRET, policy: namePolicy })
+
+both('the exact name and birth in another script still confirm the shared email', async (graph) => {
+  for (const [n, last] of [[1, '王'], [2, '王'], [3, '文']] as const) {
+    const subject = `contact:${n}`
+    assert.ok((await one(graph, { type: 'profile', subject, key: subject, at: AT, facts: { email: 'family@example.org', name: { first: '李', last }, dob: '1980-04-05' } })).ok)
+  }
+  const { people } = await graph.lookup({ kind: 'person', subjects: ['contact:1', 'contact:3'], at: NOW })
+  assert.deepEqual(people.map((person) => person.members), [['contact:1', 'contact:2'], ['contact:3']])
+}, { identifierSecret: SECRET, policy: { ...namePolicy, customKinds: { name: { weight: 0.6, dilution: 1, cap: 5, halfLife: 'none', group: 'name', corroborates: true } } } })
+
+both('keeping all letters of a name still honours the cap and mute on its earlier spelling', async (graph) => {
+  const { engine } = await internalsOf(graph)!()
+  const firsts = ['Maria文', 'Maria文', 'Maria李', 'Maria王', 'Maria林', 'Maria林']
+  for (const [n, first] of firsts.entries()) {
+    const subject = `contact:${n}`
+    assert.ok((await one(graph, { type: 'profile', key: subject, subject, at: AT, speaker: { phone: '202-555-0100' }, facts: { name: { first, last: 'Lima' } } })).ok)
+    assert.deepEqual(await engine.graph.verify(), [])
+  }
+  const together = async () => (await graph.lookup({ kind: 'person', subjects: ['contact:0'], at: NOW })).people[0]!.members.includes('contact:1')
+  assert.equal(await together(), false)
+  await graph.forget({ key: 'gone', by: 'desk', at: NOW, subjects: ['contact:5'], platforms: 'report' })
+  assert.equal(await together(), true)
+  const marks = (await engine.graph.links('contact:0')).find(({ subject }) => subject === 'contact:1')!.reasons.filter(({ identifier }) => identifier.startsWith('ward:'))
+  for (const { identifier } of marks) await engine.graph.ignore(identifier)
+  assert.equal(await together(), false)
+  assert.deepEqual(await engine.graph.verify(), [])
+  for (const { identifier } of marks) await engine.graph.ignore(identifier, false)
+  assert.equal(await together(), true)
+  assert.deepEqual(await engine.graph.rebuild(), [])
+}, { identifierSecret: SECRET, policy: namePolicy })
+
+for (const [preset, records] of [['household', false], ['intake', true]] as const) both(`an exact name on a shared phone keeps its vowel signs under ${preset}`, async (graph) => {
+  const { engine } = await internalsOf(graph)!()
+  const { nameKeys, phone } = await import('../src/core/identifiers.ts')
+  for (const [line, second] of [['202-555-0100', 'करण'], ['202-555-0101', 'किरण']] as const) {
+    const dob = second === 'करण' ? '1980-04-05' : '1980-06-07'
+    const subjects = ['contact:' + line + '-1', 'contact:' + line + '-2']
+    for (const [n, first] of ['किरण', second].entries()) {
+      const subject = subjects[n]!
+      assert.ok((await one(graph, { type: 'profile', key: subject, subject, at: AT, facts: { phone: line, name: { first, last: 'राय' }, dob } })).ok)
+    }
+    const { people } = await graph.lookup({ kind: 'person', subjects, at: NOW })
+    assert.equal(people[0]!.members.includes(subjects[1]!), second === 'किरण')
+    const exact = nameKeys(SECRET, 'किरण', 'राय', { dob })
+    const matches = await engine.graph.match([phone(line), ...exact], { at: AT })
+    const candidate = matches.find((entry) => entry.subject === subjects[1])!
+    assert.equal(candidate.reasons.some(({ identifier }) => identifier.startsWith('name:')), second === 'किरण')
+    assert.deepEqual(await engine.graph.verify(), [])
+  }
+}, {
+  identifierSecret: SECRET,
+  policy: { ...(records && { apart: ['birth', 'given'], records: 'confirmed' }), kinds: { phone: { weight: 0.85 } }, customKinds: { name: { weight: 0.6, dilution: 1, cap: 5, halfLife: 'none', group: 'name', corroborates: true } } },
+})
+
+both('an exact name and a shared mailbox keep distinguishing marks in their script', async (graph) => {
+  const { engine } = await internalsOf(graph)!()
+  const pairs = [
+    ['राम', 'रमा', 'शर्मा', false], ['क़मर', 'कमर', 'शर्मा', false], ['ก้อง', 'กอง', 'แก้ว', false],
+    ['ᾍδης', 'Ἅδης', 'Πέτρου', false], ['Αϊδα', 'Αιδα', 'Πέτρου', false], ['ᾍδης', 'Ἅ\u0345δης', 'Πέτρου', true],
+    ['ばら', 'はら', '中村', false], ['ばら', 'は\u3099ら', '中村', true], ['क़मर', 'क़मर', 'शर्मा', true],
+    ['يُوسُف', 'يوسف', 'حسن', true], ['מֹשֶׁה', 'משה', 'כהן', true], ['Αλέξης', 'Αλεξης', 'Πέτρου', true],
+  ] as const
+  for (const [n, [first, other, last, together]] of pairs.entries()) {
+    const subjects = [`contact:${n}-a`, `contact:${n}-b`]
+    for (const [j, subject] of subjects.entries()) {
+      const facts = { email: `home${n}@example.org`, dob: '1980-04-05', name: { first: j ? other : first, last } }
+      assert.ok((await one(graph, { type: 'profile', key: subject, subject, at: AT, facts })).ok)
+    }
+    assert.equal((await engine.graph.cluster(subjects[0]!))!.members.includes(subjects[1]!), together, first + ' / ' + other)
+  }
+  assert.deepEqual(await engine.graph.verify(), [])
+}, { identifierSecret: SECRET, policy: { ...namePolicy, customKinds: { name: { weight: 0.6, dilution: 1, cap: 5, halfLife: 'none', group: 'name', corroborates: true } } } })
+
+both('a rebuild retires an exact name whose old hash lost a vowel', async (graph) => {
+  const { engine } = await internalsOf(graph)!()
+  const { phone } = await import('../src/core/identifiers.ts')
+  const subjects = ['contact:one', 'contact:two']
+  const line = phone('202-555-0100')
+  // The exact name and birth of किरण राय and करण राय both made this key.
+  const legacy = 'name:5d8af5b42c269af7a1544035e9174ec8b8a772411f795bd582294fd6feb84950'
+  await engine.store.write(async (tx) => {
+    await tx.addSightings(subjects.flatMap((subject) => [line, legacy].map((identifier) => ({ subject, identifier, at: AT }))))
+    await tx.setLabels(new Map(subjects.map((subject) => [subject, { cluster: subjects[0]!, component: subjects[0]! }])))
+    await tx.setBuiltWith('old rules')
+  })
+  const members = async () => (await graph.lookup({ kind: 'person', subjects, at: NOW })).people[0]!.members
+  await engine.graph.rebuild()
+  assert.deepEqual(await members(), subjects.slice(0, 1))
+  assert.deepEqual((await (await engine.graph.asOf(NOW)).cluster(subjects[0]!))!.members, subjects.slice(0, 1))
+  for (const [n, subject] of subjects.entries()) {
+    if (n === 1) await engine.graph.ignore(legacy)
+    assert.ok((await one(graph, { type: 'profile', key: subject, subject, at: AT, facts: { phone: '202-555-0100', name: { first: 'किरण', last: 'राय' }, dob: '1980-04-05' } })).ok)
+    assert.deepEqual(await members(), subjects.slice(0, 1))
+  }
+  await engine.graph.ignore(legacy, false)
+  assert.deepEqual(await members(), subjects)
+  assert.deepEqual(await engine.graph.verify(), [])
+}, { identifierSecret: SECRET, policy: { kinds: { phone: { weight: 0.85 } }, customKinds: { name: { weight: 0.6, dilution: 1, cap: 5, halfLife: 'none', group: 'name', corroborates: true } } } })
+
+both('a checked vowel sign leaves the earlier exact name cap in force', async (graph) => {
+  const { engine } = await internalsOf(graph)!()
+  const { nameKeys, phone } = await import('../src/core/identifiers.ts')
+  const line = phone('202-555-0102')
+  const names = ['किरण', 'किरण', 'करण', 'कीरण', 'कुरण', 'कूरण']
+  for (const [n, first] of names.entries()) {
+    const keys = nameKeys(SECRET, first, 'राय', { zip5: '62701' })
+    await engine.graph.observe({ subject: 'contact:' + n, identifiers: n < 2 ? [line, ...keys] : keys, at: AT })
+  }
+  assert.deepEqual((await engine.graph.cluster('contact:0'))!.members, ['contact:0'])
+  for (const n of [5, 4, 3, 2]) await engine.graph.forget('contact:' + n)
+  assert.deepEqual((await engine.graph.cluster('contact:0'))!.members, ['contact:0', 'contact:1'])
+  assert.deepEqual(await engine.graph.verify(), [])
+}, { identifierSecret: SECRET, policy: { kinds: { phone: { weight: 0.85 } }, customKinds: { name: { weight: 0.6, dilution: 1, cap: 5, halfLife: 'none', group: 'name', corroborates: true } } } })
+
+both('a proposed record counts towards the cap on facts that could confirm it', async (graph) => {
+  const { nameKeys } = await import('../src/core/identifiers.ts')
+  const identifiers = nameKeys(SECRET, 'কিরণ', 'রায়', { zip5: '62701' })
+  const facts = { identifiers, email: 'one@example.org' }
+  const lookup = async () => (await graph.lookup({ kind: 'match', facts, at: AT })).candidates.find(({ subject }) => subject === 'contact:one')
+  assert.ok((await one(graph, { type: 'profile', key: 'one', subject: 'contact:one', at: AT, facts })).ok)
+  assert.equal((await lookup())!.level, 'same')
+  assert.ok((await one(graph, { type: 'profile', key: 'two', subject: 'contact:two', at: AT, facts: { identifiers, email: 'two@example.org' } })).ok)
+  assert.equal((await lookup())!.unconfirmed, true)
+  assert.ok((await one(graph, { type: 'profile', key: 'next', subject: 'contact:next', at: AT, facts })).ok)
+  assert.deepEqual((await graph.lookup({ kind: 'person', subjects: ['contact:next'], at: NOW })).people[0]!.members, ['contact:next'])
+}, { identifierSecret: SECRET, policy: { apart: ['birth', 'given'], records: 'confirmed', customKinds: { name: { weight: 0.6, dilution: 1, cap: 2, halfLife: 'none', group: 'name', corroborates: true } } } })

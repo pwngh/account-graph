@@ -36,7 +36,7 @@ const WRITTEN: Record<string, readonly string[]> = { office_advertised: ['office
 const READ = new Map(Object.entries(WRITTEN).flatMap(([name, written]) => written.map((each) => [each, name])))
 
 /** What an arrival says of a dimension, from the parameters of your own that it carried. */
-export function touchTag(touch: Touch | undefined, name: string): string | undefined {
+export function touchTag(touch: Pick<Touch, 'custom'> | undefined, name: string): string | undefined {
   const custom = touch?.custom
   for (const written of Object.hasOwn(WRITTEN, name) ? WRITTEN[name]! : [name]) {
     // A touch may have been posted with anything here.
@@ -47,4 +47,4 @@ export function touchTag(touch: Touch | undefined, name: string): string | undef
 }
 
 /** The dimensions an arrival has something to say of, of those that can be asked for. */
-export const touchTags = (touch: Touch | undefined): string[] => [...new Set(Object.keys(touch?.custom ?? {}).filter((name) => DIMENSION.test(name)).map((name) => READ.get(name) ?? name))]
+export const touchTags = (touch: Pick<Touch, 'custom'> | undefined): string[] => [...new Set(Object.keys(touch?.custom ?? {}).filter((name) => DIMENSION.test(name)).map((name) => READ.get(name) ?? name))]

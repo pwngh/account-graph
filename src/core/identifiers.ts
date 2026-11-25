@@ -92,14 +92,57 @@ export function identifier(kind: string, value: string): Identifier {
 /** Letters that are one letter with a mark to their readers, and letters of their own to Unicode. */
 /** Letters that are Latin and have no simpler form of their own. */
 export const FOLDED: Record<string, string> = { ß: 'ss', æ: 'ae', œ: 'oe', ø: 'o', đ: 'd', ð: 'd', ł: 'l', þ: 'th', ı: 'i' }
+/** The original name hash counts everyone who held that spelling and carries its mutes. A suffix says exactly which spelling passed the newer check. */
+export const foldedNameKey = (id: Identifier): Identifier | undefined => /^(?:name|given|initial|named|ward|person|perhaps):[0-9a-f]{64}(?=$|~)/.exec(id)?.[0]
+/** Only a spelling checked against the current missing-name list may give positive evidence. Older hashes still cap the evidence. */
+export const CHECKED_NAME = '~3'
+export const checkedNameKey = (id: Identifier) => id.includes(CHECKED_NAME + '.') || id.endsWith(CHECKED_NAME)
+
+/** A fresh exact name has one spelling. Keep its older hash beside it for its fanout, mutes and comparison with old records. */
+export function nameEvidence(identifiers: readonly Identifier[]): Identifier[] {
+  const out = new Set<Identifier>()
+  for (const id of identifiers) {
+    if (/^birth:[0-9a-f]{64}(~placeholder|~missing)?$/.test(id)) {
+      const birth = id.split('~')[0]!
+      out.add(birth)
+      if (id === birth) out.add(birth + '~2')
+      else if (id.endsWith('~missing')) out.add(id)
+      continue
+    }
+    const base = id.startsWith('name:') && foldedNameKey(id)
+    if (base) out.add(base)
+    out.add(base === id ? id + CHECKED_NAME : id)
+  }
+  return [...out]
+}
 /** What is written where a name is not known. */
 const NOBODYS = new Set(['unknown', 'unk', 'none', 'null', 'undefined', 'na', 'n a', 'noname', 'no name', 'nobody', 'not given', 'not provided', 'not available', 'placeholder', 'test', 'tester', 'testing', 'dummy', 'firstname', 'first name', 'lastname', 'last name', 'caller', 'wireless caller', 'customer', 'client'])
+// Spanish intake labels from lookups.ts and the Spanish and French missing-name forms reported by reviewers.
+const MISSING = new Set(['desconocido', 'desconocida', 'sin nombre', 'no proporcionado', 'no proporcionada', 'no dio', 'no tiene', 'inconnu', 'inconnue', 'inconnu e'])
+// Whole intake labels meaning unknown or name unknown. Compare the script's letters, including its vowel signs.
+const UNKNOWN_NAME = new Set(['неизвестно', 'غير معروف', 'अज्ञात', '姓名不详', '氏名不詳'].map(label => normalizeName(label, true)))
+const NEWBORN = new Set(['baby', 'baby boy', 'baby girl'])
 const SAMPLES = new Set(['john doe', 'jane doe'])
 
-/** A name as it is compared: without case, accents or punctuation. */
-function normalizeName(name: string): string {
-  const letters = name.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[ßæœøđðłþı]/g, (letter) => FOLDED[letter]!)
-  return letters.replace(/['’ʼ.]/g, '').replace(/[^\p{L}]+/gu, ' ').trim()
+/** The old folded spelling still sets the cap. An exact spelling also keeps marks that change the letters of a name. */
+function normalizeName(name: string, exact = false): string {
+  const decomposed = name.normalize('NFKD')
+  const letters = (exact ? decomposed.replace(/(\p{L})(\p{M}+)/gu, (_, letter: string, marks: string) => {
+    // Greek writes an iota under some vowels, and diaeresis distinguishes two adjacent vowels from a diphthong.
+    if (/\p{Script=Greek}/u.test(letter)) return letter + marks.replace(/[^\u0345\u0308]/gu, '')
+    // Latin accents and optional Arabic and Hebrew points keep their established comparison.
+    if (/[\p{Script=Latin}\p{Script=Arabic}\p{Script=Hebrew}]/u.test(letter)) return letter + [...marks].filter(mark => /\p{Alphabetic}/u.test(mark) && !/\p{Diacritic}/u.test(mark)).join('')
+    return letter + marks
+  }) : decomposed.replace(/\p{M}/gu, '')).toLowerCase().replace(/[ßæœøđðłþı]/g, (letter) => FOLDED[letter]!)
+  return letters.replace(/['’ʼ.]/g, '').replace(/[^\p{L}\p{M}]+/gu, ' ').trim()
+}
+
+/** The two parts of a name, or nothing for something written in place of a name. */
+export function nameParts(first: string, last: string, previous = false): string[] | undefined {
+  const name = [normalizeName(first), normalizeName(last)]
+  if ([...name, name.join(' ')].some((part) => NOBODYS.has(part) || (!previous && MISSING.has(part))) || SAMPLES.has(name.join(' '))) return undefined
+  if (!previous && (NEWBORN.has(name[0]!) || [first, last].some(field => /[^\u0000-\u007f]/u.test(field) && UNKNOWN_NAME.has(normalizeName(field, true))))) return undefined
+  return name
 }
 
 /**
@@ -113,10 +156,15 @@ function normalizeName(name: string): string {
 export function nameKeys(secret: string, first: string, last: string, known: { zip5?: string | undefined; dob?: string | undefined }): Identifier[] {
   if (typeof secret !== 'string' || secret.length < 32) throw malformed('A name key requires a secret of at least 32 characters')
   if (typeof first !== 'string' || typeof last !== 'string') throw malformed('A name requires `first` and `last` as strings')
-  const name = [normalizeName(first), normalizeName(last)]
+  const name = nameParts(first, last)
   // A single letter is an initial, except where a letter is a word of its own.
-  if (name.some((part) => !part || /^[a-z]$/.test(part) || NOBODYS.has(part)) || NOBODYS.has(name.join(' ')) || SAMPLES.has(name.join(' '))) return []
-  const key = (by: string, value: string): Identifier => `name:${createHmac('sha256', secret).update(JSON.stringify([...name, by, value])).digest('hex')}`
+  if (!name || name.some((part) => !part || /^[a-z]$/.test(part))) return []
+  const whole = [normalizeName(first, true), normalizeName(last, true)]
+  const mac = (parts: string[]) => createHmac('sha256', secret).update(JSON.stringify(parts)).digest('hex')
+  const key = (by: string, value: string): Identifier => {
+    const base = 'name:' + mac([...name, by, value])
+    return whole.some((part, i) => part !== name[i]) ? base + CHECKED_NAME + '.' + mac([...whole, by, value]) : base
+  }
   const keys: Identifier[] = []
   const zip = /^(\d{5})(-?\d{4})?$/.exec(known.zip5?.trim() ?? '')?.[1]
   if (zip && zip !== '00000' && zip !== '99999') keys.push(key('zip', zip))

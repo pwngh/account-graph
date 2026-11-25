@@ -26,7 +26,8 @@ import { normalizePhone } from './core/identifiers.ts'
 import { ladderProblems } from './core/ladder.ts'
 import type { Ladder } from './core/ladder.ts'
 import { createRangeLookup } from './core/lookups.ts'
-import { defaultPolicy, policyProblems } from './core/policy.ts'
+import { defaultPolicy, policyProblems, REBUILD_NOTICE } from './core/policy.ts'
+import { RECEIPT_RETENTION } from './core/receipts.ts'
 import { staffLink } from './core/sign.ts'
 import { checkTags } from './core/tags.ts'
 import { createEdge } from './edge/index.ts'
@@ -147,6 +148,7 @@ export function readEnvironment(env: Env) {
     poolNumbers: (env.POOL_NUMBERS ?? '').split(',').map((each) => each.trim()).filter(Boolean),
     poolMinutes: number('POOL_MINUTES', 15),
     poolGrace: number('POOL_GRACE_MINUTES', 120),
+    poolRequireTapAfterReassignment: env.POOL_REQUIRE_TAP_AFTER_REASSIGNMENT === 'true',
     // One Twilio token serves two things, each switched on by its second variable: call reports and line lookups.
     twilio: env.TWILIO_AUTH_TOKEN && env.TWILIO_WEBHOOK_URL ? { authToken: env.TWILIO_AUTH_TOKEN, url: env.TWILIO_WEBHOOK_URL } : undefined,
     lineType: env.TWILIO_AUTH_TOKEN && env.TWILIO_ACCOUNT_SID ? { accountSid: env.TWILIO_ACCOUNT_SID, authToken: env.TWILIO_AUTH_TOKEN } : undefined,
@@ -279,7 +281,7 @@ export function configFrom(env: Env): { graph: LocalOptions; edge: EdgeOptions; 
     phones: {
       ...(config.callNumbers && { numbers: config.callNumbers }), exclude: config.callExclude, minimumSeconds: config.callMinimum, tapSeconds: config.callTapSeconds, returnHours: config.returnHours,
       ...(config.callResults === 'expected' && { resultsExpectedWithinMinutes: config.callResultWait }),
-      ...(config.poolNumbers.length > 0 && { pool: { numbers: config.poolNumbers, minutes: config.poolMinutes, graceMinutes: config.poolGrace } }),
+      ...(config.poolNumbers.length > 0 && { pool: { numbers: config.poolNumbers, minutes: config.poolMinutes, graceMinutes: config.poolGrace, requireTapAfterReassignment: config.poolRequireTapAfterReassignment } }),
     },
     ads: {
       retractOnForget: config.forgetAds, delayMs: config.outboxDelay,
@@ -345,7 +347,8 @@ export async function serve(env: Env, log: (line: string) => void = console.log)
   if (stages) log(`steps: ${Object.entries(stages).map(([name, stage]) => `${name}${stage.value === undefined ? '' : ` ${stage.value}`}`).join(', ')}`)
   log(`page events: ${(edging.events ?? []).join(', ') || 'none (set EVENTS)'}; calls from twilio ${edging.twilio?.calls ? 'on' : 'off'}; texts from twilio ${edging.twilio?.texts ? 'on' : 'off'}; text codes ${edging.textCodes ? 'on' : 'off'}; number pool ${phones?.pool ? `of ${phones.pool.numbers.length}` : 'off'}`)
   log(`cost sources: ${Object.keys(costs ?? {}).join(', ') || 'none (record cost)'}`)
-  log(`policy ${hash.slice(0, 12)} ${options.policy ? '(configured)' : '(default)'}${due ? '; run account-graph rebuild' : ''}`)
+  log(`policy ${hash.slice(0, 12)} ${options.policy ? '(configured)' : '(default)'}`)
+  if (due) log(REBUILD_NOTICE)
 
   return {
     port,
@@ -386,7 +389,7 @@ export async function command(env: Env, args: readonly string[], log: (line: str
         if (!/^\d{4}-\d{2}-\d{2}$/.test(day ?? '') || Number.isNaN(before)) usage('prune --before YYYY-MM-DD')
         const pruned = await engine.graph.prune(before, { by: 'command line' })
         // A key may be sent again for as long as its receipt is kept, so those stay a year whatever is asked.
-        const year = Math.min(before, engine.now() - 365 * 86_400_000)
+        const year = Math.min(before, engine.now() - RECEIPT_RETENTION)
         const { events, receipts } = await engine.store.write(async (tx) => ({ events: await tx.pruneEvents(before), receipts: await tx.pruneReceipts(year) }))
         return show({ pruned, events, receipts })
       }

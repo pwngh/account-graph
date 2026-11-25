@@ -4,6 +4,10 @@
 
 ### The six calls
 
+- `call_update` records who one call concerned, who said so and when. A statement may arrive before the call and a later statement can correct it. See the [call roles](docs/calls.md#recording-who-was-on-one-call).
+- `lookup` reads a journey, person, caller or call record and its supporting details from one snapshot.
+- `forget` erases a call when its original line or current owner is deleted. A call since confirmed for another record keeps its conversion and value history, and the former party’s statements and receipt fields are erased.
+- `FORGOTTEN` protects erased keys before provider checks. A returning record can be named on a recorded call that started after its deletion. See [deletion](docs/privacy.md#deletion).
 - `accountGraph({ url, token })`, `accountGraph({ databaseUrl, workers, receiptSecrets })` and `accountGraph({ memory: true })` return one interface: `record`, `decide`, `forget`, `lookup`, `report`, `events` and `close`.
 - `POST /v1/<call>` takes the argument of the call and answers with its value, in process and over HTTP alike.
 - `record` takes up to 100 entries of twelve types, one transaction each, and answers for each.
@@ -17,6 +21,12 @@
 
 ### People
 
+- `split` cuts guessed links before staff merges and restores each merge it can keep while all separations hold.
+- `call_update` withdraws identity evidence for that call while its original holders still count toward shared identifiers. See the [matching rules](docs/matching.md).
+- `name` keeps letters and script marks that distinguish people and recognizes missing-name and newborn labels. Equal birthdays cannot confirm two placeholders. See [confirmed records](docs/matching.md#records-that-have-to-be-confirmed).
+- `given` recognizes additional spellings and short forms in the [first-name table](docs/matching.md#facts-that-keep-people-apart).
+- `match` includes a proposed holder in shared counts and checks the candidate’s own facts, including a caller’s date of birth.
+- `speaker` preserves a muted mark when the same browser reports under another visitor ID.
 - `record` `profile` takes a device, email, phone, address, IP, name, date of birth and identifiers of your own, then normalizes, checks and hashes them.
 - Each link has a score and its evidence. A policy sets a weight, cap and half-life for each kind (`POLICY`, `POLICY_FILE`, `policy.kinds`, `policy.customKinds`).
 - A link below `policy.bridge` (default 0.97) cannot join two groups by itself. `Rule.group` counts grouped kinds once, and `Rule.corroborates` marks kinds that confirm a link.
@@ -35,6 +45,9 @@
 
 ### Calls and texts
 
+- `caller` shows both records as possible when staff linked a line to two people they keep apart.
+- `phones.pool.requireTapAfterReassignment` lets an operator require a tap or code from an untied caller on a reassigned number. The option is off by default. See [number pools](docs/calls.md#number-pools).
+- `call` recognizes a duplicate from before call details were kept when the line has since been excluded.
 - `record` `call` and `text`, and the Twilio webhooks, record calls and texts without their content. Two reports of one call are one call.
 - `call_update` reports a result, or that a caller was reached. The newest `at` stands, whatever order they arrive in.
 - A call is linked to the visitor who tapped the number or was shown it (`phones.pool`), or attributed to the channel of its number.
@@ -46,6 +59,8 @@
 
 ### Attribution and reporting
 
+- `report` assigns confirmed calls, callbacks and call values to their stated owner and counts that owner with explicitly merged duplicate records.
+- `campaignCredit` identifies the campaign when an eligible visitor’s tap, code or pool number credits a confirmed call. The visitor’s private arrival details stay off that callback or pipeline row.
 - `record` `conversion`, `payment` and `restatement` count outcomes. A refund or a write-off is an amount, and `reverse` takes one back.
 - What an outcome is worth does not depend on the order things arrive in.
 - `not_lead` and `lead` exclude an outcome, a call or a text from every count, and return it.
@@ -60,18 +75,25 @@
 
 ### Conversions and consent
 
+- `call_update` stops new ad sends for a stated call. Adjustments to a conversion already sent use its original platform identifiers.
 - Conversions go to Google, Meta, Microsoft and TikTok, with leases, backoff and retries. `report` `deliveries` lists them by state.
 - `record` `consent` keeps every answer about advertising, and the newest stands. Global Privacy Control is an answer.
 - `FORGET_ADS`, or `platforms: 'retract'` for one deletion, asks platforms that support it to retract conversions.
 
 ### Events
 
+- `callback.overdue` follows the current missed call, attempts and paid arrival. Reassignment or deletion removes superseded notices before retry.
+- `conversion.failed` events and queued failure alerts that rely on a corrected call are removed. A batch already posted can still arrive.
+- `WEBHOOK_URL` receives a newly signed batch when a correction changes its events during signing.
 - `events` pages through everything that happened, in order. A cursor of another history is refused with `CURSOR_LOST`.
 - `WEBHOOK_URL` and `WEBHOOK_SECRET` post the same events, signed, in order and at least once. `verifyWebhook` and `parseWebhook` read them.
 - `ALERT_WEBHOOK` receives the events that need a person, as sentences.
 
 ### Edge and operations
 
+- `GET /health`, startup and the reviewer Health view give the rebuild command when stored groups need updating. Earlier name hashes need a rebuild and fresh profiles. See [upgrades](docs/operations.md#upgrades).
+- `PostgreSQL` resumes interrupted upgrades and uses indexed calls to identify the sources of older callback notices.
+- `/collect` checks a personal link’s recipient group for a speaker in one read.
 - `createEdge` serves the six calls, `POST /collect`, the Twilio webhooks, the reviewer screen and `/health`.
 - `POST /collect` takes every kind of browser request by its `kind`. `/event`, `/carry`, `/number` and `/text-code` still answer.
 - A page event is an outcome with an id of `page:`, and no caller may use one.
@@ -90,6 +112,8 @@
 
 ### Reviewer screen
 
+- `Accounts` flags groups where too many conflicting call histories leave some matches unresolved.
+- `Matches` checks the speaker marks of both clusters before offering a pair. An active staff merge broken by a separation remains visible in Links.
 - Accounts shows linked IDs as an interactive graph and as a table with evidence.
 - Journey shows one person's events on a timeline.
 - Board shows people by step, with overdue people marked.

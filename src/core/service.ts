@@ -2,7 +2,7 @@ import { malformed } from '../contract/fault.ts'
 import type { Change, Identifier, Outcome, Subject } from '../contract/types.ts'
 import type { CallOptions } from './calls.ts'
 import type { Graph } from './graph.ts'
-import { birthKeys, email, hashPhone, identifier, ip, nameKeys, normalizePhone, phoneOfType } from './identifiers.ts'
+import { birthKeys, email, hashPhone, identifier, ip, nameKeys, nameParts, normalizePhone, phoneOfType } from './identifiers.ts'
 import { withStage } from './ladder.ts'
 import type { Ladder } from './ladder.ts'
 import { fakePhone, placeholderEmail, sharedMailbox } from './lookups.ts'
@@ -22,7 +22,7 @@ export interface ServiceOptions {
   stages?: Ladder
   calls?: CallOptions
   texts?: TextOptions
-  pool?: { numbers: readonly string[]; minutes: number; grace: number }
+  pool?: { numbers: readonly string[]; minutes: number; grace: number; requireTapAfterReassignment?: boolean }
   identifierSecret?: string
   address?: AddressVerifier
   lineType?: LineTypeLookup
@@ -50,9 +50,10 @@ export function createService(graph: Graph, options: ServiceOptions) {
     return {
       ...options.calls,
       ...(options.texts?.codeLife !== undefined && { codeLife: options.texts.codeLife }),
-      ...(pool.length > 0 && { pool: { numbers: pool, grace: options.pool!.grace * 60_000 } }),
+      ...(pool.length > 0 && { pool: { numbers: pool, grace: options.pool!.grace * 60_000, requireTapAfterReassignment: options.pool!.requireTapAfterReassignment === true } }),
       now,
       convert,
+      count: (outcome) => graph.outcome(staged(outcome)),
       release: options.calls?.release ?? convert,
       ...(outbox && {
         hold: async (outcome: Outcome) => (sends(outcome) ? outbox.hold(staged(outcome)) : []),
@@ -218,7 +219,10 @@ export function createService(graph: Graph, options: ServiceOptions) {
     // Kept only under a policy that keeps people apart by them. They say who somebody is not, and not who they are, so by themselves they find nobody.
     const apart = options.identifierSecret && (typeof body.dob === 'string' || typeof body.name?.first === 'string') ? ((await graph.policy()).rules.apart ?? []) : []
     const born = apart.length > 0 && typeof body.dob === 'string' ? birthKeys(options.identifierSecret!, body.dob) : []
-    const facts = [...born, ...(apart.includes('given') && typeof body.name?.first === 'string' ? givenKeys(options.identifierSecret!, body.name.first) : []),
+    const placeholder = apart.length > 0 && typeof body.name?.first === 'string' && typeof body.name.last === 'string' && !nameParts(body.name.first, body.name.last)
+    const missing = placeholder && nameParts(body.name.first, body.name.last, true) ? '~missing' : '~placeholder'
+    // A placeholder's date can contradict another date but cannot by itself confirm a second placeholder.
+    const facts = [...born.map((id) => placeholder && id.startsWith('birth:') ? id + missing : id), ...(apart.includes('given') && typeof body.name?.first === 'string' ? givenKeys(options.identifierSecret!, body.name.first, placeholder ? body.subject ?? '' : undefined) : []),
       // Whether a name has several words is kept only where it can tell two records apart, and says no more than that.
       ...((await graph.policy()).rules.records && typeof body.name?.first === 'string' && body.name.first.trim().split(/\s+/).length > 1 ? (['compound:yes'] as Identifier[]) : [])]
     if (identifiers.length === 0 && !(saving && (facts.length > 0 || none)) && notes.phone !== PLACEHOLDER && notes.email === undefined) throw malformed('At least one identifying field is required')

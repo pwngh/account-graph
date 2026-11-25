@@ -5,6 +5,8 @@ import { canonical } from '../contract/json.ts'
 import { callerNumber, numberOrSelf } from './calls.ts'
 import { normalizeEmail } from './identifiers.ts'
 
+export const RECEIPT_RETENTION = 365 * 86_400_000
+
 /** What is written of a key that was used. Neither the key nor what came with it is in here: each is a hash only the secret can make. */
 export interface Receipt {
   type: string

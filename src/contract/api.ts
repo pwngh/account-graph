@@ -1,7 +1,7 @@
 import type { Decided, Outcome } from './outcome.ts'
-import type { CallState, CallSummary, Change, Conflict, Consent, Followed, FollowUp, Level, Report, Ring, TextReply, Tie } from './types.ts'
+import type { CallParty, PartyStatement, CallState, CallSummary, Change, Conflict, Consent, Followed, FollowUp, Level, Report, Ring, TextReply, Tie } from './types.ts'
 
-export type { CallState, CallSummary, Change, Conflict, Consent, Decided, Followed, FollowUp, Level, Outcome, Report, Ring, TextReply, Tie }
+export type { CallParty, PartyStatement, CallState, CallSummary, Change, Conflict, Consent, Decided, Followed, FollowUp, Level, Outcome, Report, Ring, TextReply, Tie }
 
 // ── The interface. Local and remote implement exactly this. ──────────────────
 export interface AccountGraph {
@@ -158,7 +158,7 @@ export interface CallResult {
 /** May come before its call. `at` is when it was said. The newest by (`at`, `key`) stands, whatever order they arrive in. */
 export interface CallUpdateEntry extends Keyed<'call_update'> {
   readonly call: string
-  readonly change: { readonly kind: 'result'; readonly result: CallResult } | { readonly kind: 'returned'; /** When they were reached, which is not when it was said. */ readonly reachedAt: At } | { readonly kind: 'not_returned' }
+  readonly change: { readonly kind: 'result'; readonly result: CallResult } | { readonly kind: 'returned'; /** When they were reached, which is not when it was said. */ readonly reachedAt: At } | { readonly kind: 'not_returned' } | (CallParty & { readonly kind: 'party'; readonly by: string })
 }
 
 export interface TextEntry extends Keyed<'text'> {
@@ -351,7 +351,7 @@ export interface Tied {
 export type JourneyEntry = { readonly at: At; readonly subject: string } & (
   | { readonly kind: 'visit'; readonly arrival: Arrival }
   | { readonly kind: 'sighting'; readonly event: string; readonly kinds: readonly string[] }
-  | { readonly kind: 'call'; readonly call: string; readonly direction: 'inbound' | 'outbound'; readonly state: CallState; readonly followUp: FollowUp | null; readonly notLead: 'spam' | 'other' | null }
+  | { readonly kind: 'call'; readonly call: string; readonly party?: PartyStatement; readonly direction: 'inbound' | 'outbound'; readonly state: CallState; readonly followUp: FollowUp | null; readonly notLead: 'spam' | 'other' | null }
   | { readonly kind: 'text'; readonly text: string; readonly direction: 'inbound' | 'outbound'; readonly reply: TextReply | null; readonly notLead: 'spam' | 'other' | null }
   | { readonly kind: 'link'; readonly link: string; readonly purpose: string | null; readonly opened: At | null; readonly openings: number }
   | { readonly kind: 'conversion'; readonly conversion: string; readonly stage: string; readonly value: number; readonly currency: string; readonly deliveries: readonly Delivery[]; readonly notLead: 'spam' | 'other' | null }
@@ -381,9 +381,12 @@ export interface Arrival {
   readonly confidence: number
   readonly how: Tie['how']
 }
+/** A visitor known only through a call can supply its campaign. Their arrival stays private. */
+export type CampaignCredit = Pick<Arrival, 'source' | 'campaign' | 'campaignId'>
+
 export type RecordView =
   | { readonly type: 'conversion'; readonly subject: string; readonly at: At; readonly stage: string; readonly values: readonly { readonly value: number; readonly currency: string; readonly at: At; readonly kind?: 'refund' | 'write_off' }[]; readonly notLead: 'spam' | 'other' | null; readonly deliveries: readonly Delivery[] }
-  | { readonly type: 'call'; readonly subject: string; readonly at: At; readonly direction: 'inbound' | 'outbound'; readonly state: CallState; readonly followUp: FollowUp | null; readonly notLead: 'spam' | 'other' | null }
+  | { readonly type: 'call'; readonly subject: string; readonly party?: PartyStatement; readonly partyHistory?: readonly (PartyStatement & { readonly key: string })[]; readonly at: At; readonly direction: 'inbound' | 'outbound'; readonly state: CallState; readonly followUp: FollowUp | null; readonly notLead: 'spam' | 'other' | null }
   | { readonly type: 'text'; readonly subject: string; readonly at: At; readonly direction: 'inbound' | 'outbound'; readonly flags: readonly string[]; readonly reply: TextReply | null; readonly notLead: 'spam' | 'other' | null }
 
 // ── report ───────────────────────────────────────────────────────────────────
@@ -406,7 +409,7 @@ export interface ReportValue {
   campaigns: Report & { readonly timeZone: string; readonly steps: readonly string[] }
   pipeline: { readonly at: At; readonly day: string; readonly from: string; readonly unplaced: number; readonly columns: readonly PipelineColumn[] }
   calls: CallSummary
-  callbacks: Page<{ readonly call: string; readonly subject: string; readonly at: At; readonly state: CallState; readonly attempts: number; readonly arrival: Arrival | null }>
+  callbacks: Page<{ readonly call: string; readonly subject: string; readonly at: At; readonly state: CallState; readonly attempts: number; readonly arrival: Arrival | null; readonly campaignCredit?: CampaignCredit }>
   texts: Page<{ readonly text: string; readonly subject: string; readonly at: At; readonly unanswered: number; readonly arrival: Arrival | null }>
   after_calls: Followed
   deliveries: { readonly deliveries: readonly Delivery[] }
@@ -431,6 +434,7 @@ export interface PipelineRow {
   readonly language: string | null
   readonly call: { readonly state: CallState; readonly direction: 'inbound' | 'outbound' } | null
   readonly arrival: Arrival | null
+  readonly campaignCredit?: CampaignCredit
 }
 export interface Page<T> {
   readonly rows: readonly T[]
@@ -523,7 +527,7 @@ export interface LocalSettings extends Common {
     /** How long before a call a tap on its number may be. Defaults to 180. */
     readonly tapSeconds?: number
     /** Numbers shown to one visitor at a time. */
-    readonly pool?: { readonly numbers: readonly string[]; readonly minutes: number; readonly graceMinutes: number }
+    readonly pool?: { readonly numbers: readonly string[]; readonly minutes: number; readonly graceMinutes: number; readonly requireTapAfterReassignment?: boolean }
   }
   readonly ads?: {
     readonly google?: { readonly customerId: string; readonly loginCustomerId?: string; readonly serviceAccount: GoogleServiceAccount }

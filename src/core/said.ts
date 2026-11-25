@@ -1,4 +1,4 @@
-import type { Loss } from '../contract/types.ts'
+import type { CallParty, Loss } from '../contract/types.ts'
 
 /**
  * What was said of something, kept as it was said. What it comes to is worked
@@ -9,6 +9,7 @@ export type Said = { about: string; key: string; at: number } & (
   | { topic: 'worth'; data: WorthSaid }
   | { topic: 'lead'; data: { kind: 'spam' | 'other' | null } }
   | { topic: 'result'; data: { answered: boolean; voicemail?: boolean; waited?: number } }
+  | { topic: 'party'; data: CallParty & { by: string } }
   | { topic: 'return'; data: { reachedAt: number | null } }
 )
 export type Topic = Said['topic']

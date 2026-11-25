@@ -1,9 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { NewEvent } from './events.ts'
-import { followUp } from './calls.ts'
+import { firstOpen } from './calls.ts'
 import { keepableText } from './identifiers.ts'
 import type { Graph } from './graph.ts'
-import type { OutboxStore } from './outbox.ts'
+import type { Job, OutboxStore } from './outbox.ts'
+import type { Store } from './store.ts'
 import { longAgo } from './hours.ts'
 import type { Hours } from './hours.ts'
 import { dayIn, paid, sourceOf } from './report.ts'
@@ -55,14 +56,16 @@ export interface OpsStore {
   /** Notes that a run ended. Only the run it names, whatever else of that name is running. */
   jobEnded(run: string, name: string, at: number, error?: string): Promise<void>
   jobs(): Promise<JobRun[]>
-  /** Keeps an alert unless its key is already kept. Resolves to whether it was new. */
-  addAlert(alert: KeptAlert): Promise<boolean>
+  /** Keeps an alert unless its key is already kept. A fresh failure batch can reopen an earlier notice. */
+  addAlert(alert: KeptAlert, again?: boolean, calls?: readonly string[]): Promise<boolean>
+  /** Starts the request while this alert is still current. Its response is awaited after releasing the row. */
+  pendingAlert(alert: KeptAlert, start?: () => void): Promise<boolean>
   /** Keeps an alert as not delivered. One with its key that is still waiting stays as it is; one that was delivered waits again. */
   keepAlert(alert: KeptAlert): Promise<void>
   /** Hands out the undelivered alert tried longest ago, if not since `before`, and notes that it is tried now, so no two servers deliver one. */
   claimAlert(now: number, before: number): Promise<KeptAlert | undefined>
-  alertDelivered(key: string, at: number): Promise<void>
-  alertFailed(key: string, error: string): Promise<void>
+  alertDelivered(key: string, at: number, expected?: KeptAlert): Promise<void>
+  alertFailed(key: string, error: string, expected?: KeptAlert): Promise<void>
   /** Alerts not delivered yet, oldest first. */
   undelivered(): Promise<KeptAlert[]>
 }
@@ -104,6 +107,8 @@ export interface Ops {
   run<T>(name: string, work: () => Promise<T>): Promise<T>
   /** Posts an alert, at most one about the same thing in ten minutes. One that cannot be delivered is kept and tried again. */
   alert: (about: string, text: string, event?: NewEvent) => Promise<boolean>
+  /** Keeps and posts the failures that still stand when the batch finishes. */
+  failed(jobs: readonly Job[], graphStore: Store): Promise<void>
   /** Posts an alert the first time its key is seen, and never again. */
   once(key: string, text: string, subject?: string, event?: NewEvent): Promise<void>
   /** Looks for quiet feeds and callers nobody has rung back, and tries again to deliver what was not. */
@@ -111,6 +116,13 @@ export interface Ops {
   state(): Promise<OpsState>
   /** Posts a test alert and says whether it arrived. */
   test(): Promise<{ delivered: boolean; error?: string }>
+}
+
+/** What people are told when conversions fail for good. */
+function failedText(jobs: readonly Job[]): string {
+  const lines = jobs.slice(0, 10).map((job) => `• ${job.transactionId} to ${job.target}: ${job.note ?? 'no reason given'}`)
+  const more = jobs.length > 10 ? `\n…and ${jobs.length - 10} more` : ''
+  return `account-graph: ${jobs.length} ${jobs.length === 1 ? 'conversion' : 'conversions'} rejected.\n${lines.join('\n')}${more}\nRetry them from the Health view.`
 }
 
 const HOUR = 3_600_000
@@ -149,10 +161,16 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
   const onError = options.onError ?? console.error
 
   /** Delivers a kept alert, and writes down whether it arrived. */
-  async function post({ key, text }: { key: string; text: string }): Promise<boolean> {
-    const error = await deliver(text)
-    if (error === undefined) await store.alertDelivered(key, now())
-    else await store.alertFailed(key, error)
+  async function post(alert: KeptAlert): Promise<boolean> {
+    const expected = alert.key.startsWith('unreturned:') || alert.key.startsWith('alert:conversions:') ? alert : undefined
+    let posting: Promise<string | undefined> | undefined
+    if (expected) {
+      await store.pendingAlert(expected, () => { posting = deliver(alert.text) })
+      if (!posting) return true
+    } else posting = deliver(alert.text)
+    const error = await posting
+    if (error === undefined) await store.alertDelivered(alert.key, now(), expected)
+    else await store.alertFailed(alert.key, error, expected)
     return error === undefined
   }
   // When each kind was last sent, so it is not repeated within ten minutes.
@@ -192,10 +210,43 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
       return error === undefined
     },
 
+    async failed(jobs, graphStore) {
+      const at = now()
+      let claimed = false
+      const alert = await graphStore.write(async tx => {
+        const failed: Job[] = []
+        for (const job of jobs) {
+          const current = (await tx.outbox.get(job.transactionId)).find(each => each.target === job.target)
+          if (current?.state === 'failed' && current.rev === job.rev && current.subject === job.subject) failed.push(current)
+        }
+        if (!failed.length) return
+        const events = failed.map(job => ({ type: 'conversion.failed' as const, at, subject: job.subject, data: { conversion: job.transactionId, platform: job.target, note: job.note ?? '' } }))
+        let alert: KeptAlert | undefined
+        if (at - (sent.get('conversions') ?? -Infinity) >= 10 * 60_000) {
+          const text = failedText(failed)
+          alert = { key: `alert:conversions:${createHash('sha256').update(text).digest('hex').slice(0, 16)}`, text, at }
+          sent.set('conversions', at)
+          claimed = true
+          await tx.addAlert(alert, true, [...new Set(failed.flatMap(job => job.transactionId.startsWith('call:') ? [job.transactionId.slice(5)] : []))])
+        }
+        await tx.emit(events)
+        return alert
+      }).catch(error => {
+        if (claimed && sent.get('conversions') === at) sent.delete('conversions')
+        throw error
+      })
+      if (!alert) return
+      if (!await post(alert) && sent.get('conversions') === at) sent.delete('conversions')
+    },
+
     async once(key, text, subject, event) {
-      // Whoever was deleted since is spoken of no more.
-      if (event && options.emit && (await options.emit({ ...event, once: key, ...(subject && { subject }) } as NewEvent).catch(onError)) === 'gone') return
-      if (await store.addAlert({ key, text, at: now(), ...(subject && { subject }) })) await post({ key, text })
+      const alert = { key, text, at: now(), ...(subject && { subject }) }
+      if (event?.type === 'callback.overdue') {
+        if (await graph.queueCallback(alert, event, options.emit !== undefined)) await post(alert)
+        return
+      }
+      if (event) await options.emit?.({ ...event, once: key, ...(subject && { subject }) } as NewEvent).catch(onError)
+      if (await store.addAlert(alert)) await post(alert)
     },
 
     async check() {
@@ -238,7 +289,7 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
             const all = await graph.callsOf([call.subject])
             const not = await graph.notLeads(all.map((each) => `call:${each.id}`))
             const calls = all.filter((each) => !not.has(`call:${each.id}`))
-            const first = calls.find((each) => each.direction === 'inbound' && each.result?.answered === false && followUp(each, calls).state === 'open') ?? call
+            const first = firstOpen(calls) ?? call
             const tries = attempts === 0 ? 'No callback attempts.' : attempts === 1 ? '1 callback attempt.' : `${attempts} callback attempts.`
             await ops.once(`unreturned:${call.subject}:${first.id}`, `account-graph: a caller from ${sourceOf(touch)}${touch.campaign || touch.campaignId ? `, ${touch.campaign || touch.campaignId}` : ''} has waited over ${hours} ${options.hours ? 'open ' : ''}${hours === 1 ? 'hour' : 'hours'} for a callback. Missed ${when(call.at)} (${timeZone}). ${tries} ${call.subject}`, call.subject, { type: 'callback.overdue', at, data: { call: call.id, subject: call.subject, missedAt: call.at, attempts, source: sourceOf(touch), campaign: touch.campaign ?? null, campaignId: touch.campaignId ?? null } })
           }
@@ -289,18 +340,38 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
 }
 
 /** Where a memory store keeps what runs by itself. `fed` is how its writes say what they fed, and `forget` how it loses a subject. */
-export function createMemoryOps(): OpsStore & { fed(feed: Feed, at: number): void; forget(subject: string): void; unname(keys: readonly string[]): void; kept: Record<'feeds' | 'jobs' | 'runs' | 'alerts', Map<string, unknown>> } {
+export function createMemoryOps(): OpsStore & { fed(feed: Feed, at: number): void; forget(subject: string): void; unname(keys: readonly string[]): void; dropFailureAlerts(ids: ReadonlySet<string>): void; callbacksThrough(sources: ReadonlySet<string>): Map<string, readonly string[]>; dropCallbacks(keys: readonly string[]): void; dropCallbackAlerts(subjects: readonly string[], calls: ReadonlySet<string>, misses: ReadonlySet<string>, knownAt?: number, changedOwner?: string): string[]; kept: Record<'feeds' | 'jobs' | 'runs' | 'alerts', Map<string, unknown>> } {
   const feeds = new Map<Feed, FeedNote>()
   const jobs = new Map<string, Omit<JobRun, 'open'> & { run?: string }>()
   const runs = new Map<string, { name: string; at: number }>()
-  const alerts = new Map<string, KeptAlert & { delivered?: number; tried: number }>()
+  const alerts = new Map<string, KeptAlert & { delivered?: number; tried: number; calls?: readonly string[] }>()
   const open = () => [...alerts.values()].filter((alert) => alert.delivered === undefined).sort((x, y) => x.at - y.at)
-  const bare = ({ delivered: _, tried: __, ...alert }: KeptAlert & { delivered?: number; tried: number }): KeptAlert => alert
+  const bare = ({ delivered: _, tried: __, calls: ___, ...alert }: KeptAlert & { delivered?: number; tried: number; calls?: readonly string[] }): KeptAlert => alert
   return {
     kept: { feeds, jobs, runs, alerts },
     fed: (feed, at) => void feeds.set(feed, { ...feeds.get(feed), last: Math.max(at, feeds.get(feed)?.last ?? 0) }),
     unname(keys) {
       for (const [key, alert] of alerts) if (alert.delivered === undefined && keys.some((each) => alert.text.includes(each))) alerts.delete(key)
+    },
+    dropFailureAlerts(ids) {
+      for (const [key, alert] of alerts) if (key.startsWith('alert:conversions:')) {
+        // An older truncated notice cannot tell which calls supplied its remaining count.
+        if (alert.calls ? alert.calls.some(id => ids.has(id)) : alert.text.includes('\n…and ') || [...ids].some(id => alert.text.includes(`• call:${id} to `))) alerts.delete(key)
+      }
+    },
+    callbacksThrough(sources) {
+      return new Map([...alerts].flatMap(([key, alert]) => key.startsWith('unreturned:') && alert.calls?.some(id => sources.has(id)) ? [[key, alert.calls] as const] : []))
+    },
+    dropCallbacks(keys) {
+      for (const key of keys) alerts.delete(key)
+    },
+    dropCallbackAlerts(subjects, ids, misses, knownAt, changedOwner) {
+      const gone: string[] = []
+      for (const [key, alert] of alerts) if (key.startsWith('unreturned:') && (alert.calls ? alert.calls.some(id => ids.has(id)) || (alert.delivered === undefined && misses.has(alert.calls[0]!)) : alert.delivered === undefined && alert.subject !== undefined && subjects.includes(alert.subject) && (knownAt === undefined || alert.at >= knownAt || alert.subject === changedOwner))) {
+        alerts.delete(key)
+        gone.push(key)
+      }
+      return gone
     },
     forget(subject) {
       for (const [key, alert] of alerts) if (alert.subject === subject) alerts.delete(key)
@@ -326,10 +397,16 @@ export function createMemoryOps(): OpsStore & { fed(feed: Feed, at: number): voi
       const began = (name: string) => [...runs.values()].filter((run) => run.name === name).map((run) => run.at).sort((x, y) => y - x)
       return [...jobs.values()].sort((x, y) => (x.name < y.name ? -1 : 1)).map(({ run: _, ...job }) => ({ ...job, open: began(job.name) }))
     },
-    async addAlert(alert) {
-      if (alerts.has(alert.key)) return false
+    async addAlert(alert, again = false, calls) {
+      if (!again && alerts.has(alert.key)) return false
       // Whoever adds it has just tried it, or is about to.
-      alerts.set(alert.key, { ...alert, tried: alert.at })
+      alerts.set(alert.key, { ...alert, tried: alert.at, ...(calls && { calls: [...calls] }) })
+      return true
+    },
+    async pendingAlert({ key, text, at }, start) {
+      const alert = alerts.get(key)
+      if (!alert || alert.text !== text || alert.at !== at || alert.delivered !== undefined) return false
+      start?.()
       return true
     },
     async keepAlert(alert) {
@@ -341,13 +418,15 @@ export function createMemoryOps(): OpsStore & { fed(feed: Feed, at: number): voi
       if (due) due.tried = now
       return due && bare(due)
     },
-    async alertDelivered(key, at) {
+    async alertDelivered(key, at, expected) {
       const alert = alerts.get(key)
-      if (alert) alert.delivered = at
+      if (!alert || (expected && (alert.text !== expected.text || alert.at !== expected.at))) return
+      if (expected && key.startsWith('alert:conversions:')) alerts.delete(key)
+      else alert.delivered = at
     },
-    async alertFailed(key, error) {
+    async alertFailed(key, error, expected) {
       const alert = alerts.get(key)
-      if (alert) alert.error = error
+      if (alert && (!expected || (alert.text === expected.text && alert.at === expected.at))) alert.error = error
     },
     async undelivered() {
       return open().map(bare)

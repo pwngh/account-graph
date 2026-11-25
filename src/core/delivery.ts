@@ -24,11 +24,21 @@ export function createWebhook(store: Store, options: WebhookOptions) {
   const now = options.now ?? Date.now
   const fetcher = options.fetch ?? fetch
   const backoff = (attempts: number) => Math.min(3_600_000, 30_000 * 2 ** (attempts - 1))
+  async function post(body: string, signature: string): Promise<string | undefined> {
+    try {
+      const response = await fetcher(options.url, { method: 'POST', headers: { 'content-type': 'application/json', [SIGNATURE]: signature }, body, redirect: 'error', signal: AbortSignal.timeout(10_000) })
+      if (!response.ok) return `it answered ${response.status}`
+    } catch (error) {
+      return String((error as Error)?.message ?? error)
+    }
+  }
+
   /** Posts what there is. Resolves to how many events were delivered. */
   async function run(): Promise<number> {
     let delivered = 0
     for (;;) {
-      const turn = await store.write((tx) => tx.claimDelivery('webhook', now(), LEASE))
+      const began = now()
+      const turn = await store.write((tx) => tx.claimDelivery('webhook', began, LEASE))
       if (!turn) return delivered
       const { events, head } = await store.read(async (tx) => ({ events: await tx.eventsAfter(turn.seq, MOST + 1), head: await tx.eventHead() }))
       // One at a time once it was refused, so that one it will not have holds up only itself.
@@ -41,8 +51,21 @@ export function createWebhook(store: Store, options: WebhookOptions) {
       const body = JSON.stringify({ schemaVersion: 1, cursor: cursorOf(head, last.seq), more: events.length > page.length, events: page })
       let reason: string | undefined
       try {
-        const response = await fetcher(options.url, { method: 'POST', headers: { 'content-type': 'application/json', [SIGNATURE]: await signWebhook(options.secret, now(), body) }, body, redirect: 'error', signal: AbortSignal.timeout(10_000) })
-        if (!response.ok) reason = `it answered ${response.status}`
+        const signature = await signWebhook(options.secret, now(), body)
+        const dispatch = await store.write(async tx => {
+          if (now() - began >= LEASE) return 'expired'
+          const current = await tx.eventsAfter(turn.seq, page.length)
+          if ((await tx.eventHead()).epoch !== head.epoch || JSON.stringify(current) !== JSON.stringify(page)) {
+            // A correction can remove a notice or redact a cluster name while its old body is being signed.
+            await tx.setDelivery(turn)
+            return 'changed'
+          }
+          // Start the request while the events are current. Release the graph before waiting for the receiver.
+          return { posted: post(body, signature) }
+        })
+        if (dispatch === 'expired') return delivered
+        if (dispatch === 'changed') continue
+        reason = await dispatch.posted
       } catch (error) {
         reason = String((error as Error)?.message ?? error)
       }

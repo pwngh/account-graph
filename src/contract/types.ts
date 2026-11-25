@@ -88,6 +88,8 @@ export interface Cluster {
   members: Subject[]
   /** Larger than the policy's `review` size. A cluster this big is more often a bad identifier than one person. */
   oversized: boolean
+  /** Set in the reviewer profile when the number of private call readings limits the matches shown. */
+  limitedByCalls?: true
 }
 
 /** Where a subject sits: the component it can reach over `same` links, and its cluster inside it. */
@@ -304,6 +306,8 @@ export interface Touch {
 }
 
 export interface AttributedTouch extends Touch {
+  /** A privately tied visit supplies only source and campaign to a confirmed call's reports. */
+  campaignOnly?: true
   /** Strength of the best chain of links from the converting subject to the touch's subject. */
   confidence: number
   /** The two are one cluster, so a visit can be credited however weak the chain between them. A call's own line cannot. */
@@ -403,12 +407,16 @@ export interface ValueChange {
   zeroed: number
 }
 
+export type CallParty = { readonly role: 'self' | 'representative' | 'excluded'; readonly subject: Subject } | { readonly role: 'unknown' }
+export type PartyStatement = CallParty & { readonly by: string; readonly at: number }
+
 /** A phone call as it is kept, with its result once one is known. */
 export interface KeptCall {
   id: string
   /** `inbound` someone rang you. `outbound` you rang them. */
   direction: 'inbound' | 'outbound'
-  /** The other side: `caller:` and a hash of their number, or `call:` and the call's id when they hid it. */
+  /** The confirmed record, the caller, or a subject private to this call. */
+  party?: PartyStatement
   subject: Subject
   /** When it began, in epoch milliseconds. */
   at: number
@@ -477,7 +485,7 @@ export interface SentLink {
 }
 
 /** What of a kept call says when it was and whether anyone was reached. */
-export type CallTime = Pick<KeptCall, 'id' | 'direction' | 'subject' | 'at'> & { result?: Pick<CallResult, 'answered' | 'returned' | 'waited'> }
+export type CallTime = Pick<KeptCall, 'id' | 'direction' | 'subject' | 'at' | 'party'> & { result?: Pick<CallResult, 'answered' | 'returned' | 'waited'> }
 
 /** How a call went, as whoever runs the phones reports it. */
 export interface CallResult {

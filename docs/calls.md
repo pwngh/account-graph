@@ -32,6 +32,34 @@ phone provider ──▶ record a call ──▶ caller ──▶ linked to the 
                                            └──▶ otherwise filed under the number's own channel
 ```
 
+## Recording who was on one call
+
+Two people can use the same line. When staff know who an individual call concerned, send a `call_update` for its provider ID. For example, someone at the desk took a call from a parent about their child.
+
+```json
+{ "entries": [{ "type": "call_update", "key": "desk-017", "at": 1795460200000, "call": "C17",
+  "change": { "kind": "party", "role": "representative", "subject": "record:child", "by": "intake" } }] }
+```
+
+| Role | What staff learned | Who sees the call |
+| --- | --- | --- |
+| `self` | Staff spoke to the named record's person. | That record. |
+| `representative` | Someone spoke for the named record's person. | That record. |
+| `excluded` | Staff know the call did not concern the named record. | It stays under its call ID until someone identifies the person. |
+| `unknown` | Staff take back the earlier identification. Omit `subject`. | It stays under its call ID. |
+
+The newest statement wins, by `at` and then by key in byte order. It can arrive before the call. Use a new key for a correction. Results and reported returns have their own order. The call lookup keeps the statements and who made each one. After a deletion, a new statement can name the returning record once it has a fresh observation, such as a profile, and the call is on file with a start time after the deletion. A staff merge alone cannot establish a return. For an earlier or missing call the statement receives `FORGOTTEN`. A refused new key can be retried after the call arrives.
+
+Forgetting a former party removes their statements. A call since confirmed for another record stays with that record, along with its outcome and value. Forgetting the original line of a recorded call still deletes it. If the phone report has yet to arrive, the current party statement determines whether the pending call stays.
+
+After a recorded call has a party statement, a later phone report or a competing tap leaves its details intact. Staff can still update its result, return or party. The call also loses the channel visit supplied by its tracking number. Visits from other calls at the same instant keep their sources.
+
+When an older server tries to file the call under its line again, PostgreSQL refuses that report. Send it to an upgraded server. A rolling upgrade and the repair of earlier reports are described in the [operations guide](operations.md).
+
+The call, its outcome and its value history belong to the exact record staff named, even when another record shares its cluster. Its callback is closed by a return for the same record. Reports credit the newest qualifying arrival on that record or on the visitor tied to this particular call by its tap, code or pool number. A valid code reported later can supply that visitor or replace an earlier tap for the same call. A visitor grouped with another named record cannot supply that credit. An unassigned call earns no person's ad credit. When only the private call tie connects the visitor and the record, the callback and pipeline rows give the campaign and leave the arrival empty. The visitor’s arrival appears in the record’s journey only if the graph links them independently. Grouping a visitor with another record or muting the call tie revises cached campaign reports and removes callback notices that depended on that credit. For a call confirmed before the upgrade, the old visitor cannot be recovered. A valid code supplied later can still identify a visitor for that call’s credit. The next call on the line needs its own confirmation. A call without a statement follows the usual rules.
+
+A party statement stops new ad conversions for this call. A platform that already received the conversion can still receive a corrected value, a refund or a withdrawal where it supports these. Those adjustments use only the matching details sent for the original conversion. A representative's number and consent belong to the representative. Each batch and each single-job retry checks the current job as it starts the request. If a correction or deletion changes the graph while a worker is finding credit, the worker checks credit and consent again for the affected batch before sending. A request already in flight can still reach the platform.
+
 ## Page events
 
 A page reports events without the service token, in one of three ways.
@@ -61,6 +89,8 @@ The server processes a reported call in four steps.
 Each visitor is linked to one caller. Visitors already linked to another caller, or separated from this caller by a reviewer, are skipped.
 
 `key` is the provider's id. Recording it again answers `"duplicate": true`. A result in the second report counts by its `at`, as a [result](#call-results) reported by itself would. A [code](#a-code-read-out) the call did not have yet counts too. The rest is ignored. See [idempotency](http.md#idempotency).
+
+A retry of a call recorded before call details were kept still answers `duplicate` if its line was later excluded.
 
 | Flag | Meaning | Effect |
 | --- | --- | --- |
@@ -137,6 +167,8 @@ POST /v1/lookup
 | `visitor` | The one visitor who was shown the number or tapped it just before |
 | `arrival` | What brought them, where it can be credited already |
 | `waiting` | Their missed calls and texts nobody has returned |
+
+When staff join a line to two records they have kept apart, both are `related` possibilities while it rings. Each keeps its own evidence and score.
 
 ### Busy numbers
 
@@ -239,6 +271,8 @@ Mark the numbers to replace on your pages, and add `pool=1` to the script tag:
 | A call reaches a pool number | It is linked at 0.90 to the visitor holding the number when the call began. For `POOL_GRACE_MINUTES` after a lease ends, the last holder still gets the call unless someone has held the number since. Where somebody else held it less than `POOL_GRACE_MINUTES` before, either may be dialing it, so the call is the holder's only if they tapped the number just before. One caller per visitor still applies, as do separations. |
 | The number has no holder | A tap decides, as for any other number |
 
+Set `POOL_REQUIRE_TAP_AFTER_REASSIGNMENT=true` or `phones.pool.requireTapAfterReassignment: true` if callers may save the number. When the lease history shows an earlier holder, a caller with no tie to a visitor needs a tap or a code to identify their visit, however long the number rested. This applies when the call rings and when it is recorded. Renewals by the same visitor still count as one holder. Pruning removes expired leases from this history. The option is off by default.
+
 A number is held by one visitor at a time, across all servers. One network gets numbers for three browsers in ten minutes. [Privacy](privacy.md#deletion) says what `forget` and `prune` do with leases, calls and results.
 
 The page's own number also stays for staff, declared bots, visitors who opted out of advertising, and those without a visit in the last 90 days.
@@ -305,6 +339,8 @@ curl -X POST https://graph.example.org/v1/lookup -H "authorization: Bearer $GRAP
 
 The `callbacks` [report](http.md#report) lists the missed calls nobody has returned, oldest first.
 
+Correcting an earlier call leaves a later callback alert and its event in place when the later miss, callback attempts and paid visit are independent. If the corrected or erased call had closed an earlier wait, that earlier miss can become due again. Its new alert replaces the later wait’s notice.
+
 | State of a missed call | Meaning |
 | --- | --- |
 | `open` | The caller has not been reached since. `attempts` counts the calls you placed without a known answer. |
@@ -314,7 +350,7 @@ The `callbacks` [report](http.md#report) lists the missed calls nobody has retur
 
 For an outbound call, `from` is your number and `to` is theirs, kept as its hash. Outbound calls are excluded from outcomes, and record no identifier about the person called.
 
-Calls after the missed one decide its state, whatever order they are reported in. One answered call closes every earlier missed call of that number.
+Calls after the missed one decide its state, whatever order they are reported in. One answered call closes earlier misses assigned to the same subject. For a call staff identified, that subject is its stated record.
 
 ### Reported returns
 
@@ -367,6 +403,8 @@ CALL_NUMBERS='{
 ```
 
 ## Text messages
+
+A text reported through both `record` and the Twilio route uses the same message ID as its key. If the reports arrive together, the graph writes the message, its tie and each sighting once.
 
 A text from your site arrives with a code that says which visit it came from. The graph ties the text to that visit and its ad, lists the texts nobody has answered, and keeps nothing that was said.
 
@@ -470,7 +508,7 @@ Callers are stored as a hash of their number, so the view shows an ID. To find t
 | Forged taps | A program can send taps. With `CALL_NUMBERS` set, the server keeps taps on tracking numbers only. It trusts three browsers per network in ten minutes, and links one caller per visitor. A forged tap can still make a call `ambiguous`. |
 | One caller per visitor | The rule is permanent. Each hidden call is its own caller, so a visitor linked to one is skipped for the next. |
 | Calls counted by length | Without [call results](#call-results), a call is counted by its length, which time in a queue can reach. |
-| Saved pool numbers | A call after the grace period is not linked to the visitor who saved the number, and one during another visitor's lease is linked to that visitor in error, unless the caller dialed that number before, when it was not that visitor's, or is tied to somebody already and the lease has ended, or the number was shown to that visitor within the grace and they did not tap it. More numbers mean longer rests and fewer errors. |
+| Saved pool numbers | By default a call after the grace period is not linked to the visitor who saved the number, and one during another visitor's lease is linked to that visitor in error, unless the caller dialed that number before, when it was not that visitor's, or is tied to somebody already and the lease has ended, or the number was shown to that visitor within the grace and they did not tap it. `POOL_REQUIRE_TAP_AFTER_REASSIGNMENT` keeps an untied caller from being linked by the reassigned number alone. |
 | Copied pages | A saved or printed page keeps showing a pool number. |
 | Pool numbers | People behind one address, such as an office, share the three-browser limit. Carriers may label a number that many strangers are called back from. |
 | Conversions | A counted call goes to an ad platform only when the `call` step in `STAGES` has an action. The caller's hashed number is sent as a match key. |

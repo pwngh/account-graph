@@ -154,6 +154,30 @@ everywhere('an entry written another way is the same, and one changed anywhere t
   return (await graph.lookup({ kind: 'record', type: 'call', key: 'CA1', at: NOW }))
 })
 
+test('the pool option applies when a call rings and when it is recorded', async () => {
+  const to = '+15550100175'
+  const from = '+15550100176'
+  for (const options of [{}, { requireTapAfterReassignment: true }]) {
+    const { graph, local, close } = await memory({ phones: { pool: { numbers: [to], minutes: 15, graceMinutes: 120, ...options } } })
+    try {
+      const { engine } = await internalsOf(local)!()
+      for (const [subject, at] of [['visitor:past', AT - 86_400_000], ['visitor:present', AT]] as const) {
+        await one(graph, { type: 'profile', key: subject, subject, at, facts: { device: subject.slice('visitor:'.length) } })
+        await engine.graph.lease(subject, { numbers: [to], minutes: 15, at })
+      }
+      const at = AT + 60_000
+      const ring = await graph.lookup({ kind: 'caller', from, to, at })
+      const call = await one(graph, { type: 'call', key: 'saved', direction: 'inbound', from, to, at })
+      const expected = 'requireTapAfterReassignment' in options ? null : 'visitor:present'
+      assert.equal(ring.visitor, expected)
+      assert.ok(call.ok && call.type === 'call')
+      assert.equal(call.value.visitor ?? null, expected)
+    } finally {
+      await close()
+    }
+  }
+})
+
 everywhere('two that come at once are one', async ({ graph }) => {
   for (const entry of EVERY) {
     const results = await Promise.all([one(graph, entry), one(graph, entry), one(graph, entry)])
@@ -608,3 +632,486 @@ if (url) {
     }
   })
 }
+
+for (const report of ['callbacks', 'pipeline', 'campaigns'] as const) everywhere(`a private call tie supplies only campaign credit to the ${report} report`, async ({ graph, local, base }) => {
+  const owner = 'record:owner'
+  const visitor = 'visitor:private'
+  const credit = { source: 'google', campaign: 'Example', campaignId: 'campaign-one' }
+  const arrived = AT - 2 * 86_400_000 + 4567
+  const landing = 'https://example.org/private-visit'
+  const { engine } = await internalsOf(local)!()
+  await engine.graph.observe({ subject: visitor, identifiers: [codeNote('K7Q2MX')], at: AT - 100 })
+  const entries: RecordEntry[] = [
+    { type: 'arrival', key: 'private-arrival', at: arrived, subject: visitor, ...credit, landing, clicks: { gclid: 'private-click' }, custom: { private_field: 'private-content', language: 'private-language' } },
+    { type: 'call', key: 'one', direction: 'inbound', from: '+12025550102', to: '+12025550109', duration: 70, at: AT, code: 'K7Q2MX', result: { answered: report === 'campaigns' } },
+    { type: 'call_update', key: 'party', at: AT + 1, call: 'one', change: { kind: 'party', role: 'representative', subject: owner, by: 'desk' } },
+  ]
+  assert.ok((await graph.record({ entries })).results.every(row => row.ok))
+  if (report === 'campaigns') {
+    const answer = (await graph.report({ kind: report, window, by: 'touch.private_field' })).value
+    const row = answer.rows.find(row => row.campaignId === credit.campaignId)!
+    assert.equal(row.outcomes, 1)
+    assert.equal(row.stages.call?.delay, undefined)
+    assert.deepEqual(row.breakdown?.map(part => [part.name, part.outcomes]), [['(not set)', 1]])
+    assert.doesNotMatch(JSON.stringify(answer), /private-content|private-language|private-visit|private-click/)
+    assert.ok(!answer.dimensions.includes('touch.private_field'))
+    return row.breakdown
+  }
+  const read = async () => report === 'callbacks' ? (await graph.report({ kind: report, window, at: NOW })).value.rows[0]! : (await graph.report({ kind: report, at: NOW, days: 3 })).value.columns[0]!.rows[0]!
+  const privateRow = await read()
+  assert.equal(privateRow.arrival, null)
+  assert.deepEqual('campaignCredit' in privateRow ? privateRow.campaignCredit : null, credit)
+  assert.doesNotMatch(JSON.stringify(privateRow), new RegExp([visitor, String(arrived), 'private-visit', 'private_field', 'private-content', 'private-language', 'private-click'].join('|')))
+  if (base && report === 'pipeline') {
+    const board = await fetch(base + '/review/api/board', { headers: { authorization: 'Bearer reviewer' } })
+    assert.equal(board.status, 200)
+    assert.doesNotMatch(await board.text(), /private-language|private-visit|private_field|private-content/)
+  }
+  await engine.graph.join(visitor, owner)
+  assert.equal((await read()).arrival?.landing, landing)
+  await engine.graph.separate(visitor, owner)
+  const direct = await one(graph, { type: 'arrival', key: 'own', at: AT - 1, subject: owner, source: 'own', landing: 'https://example.org/own' })
+  assert.ok(direct.ok)
+  assert.equal((await read()).arrival?.landing, 'https://example.org/own')
+  return credit
+})
+
+everywhere('private call campaign credit keeps the paid status of an earlier click', async ({ graph, local }) => {
+  const { engine } = await internalsOf(local)!()
+  const visitor = 'visitor:earlier'
+  await engine.graph.observe({ subject: visitor, identifiers: [codeNote('K7Q2MX')], at: AT - 50 })
+  const results = await graph.record({ entries: [
+    { type: 'arrival', key: 'earlier', at: AT - 2 * 86_400_000, subject: visitor, campaign: 'Example', clicks: { gclid: 'private-click' } },
+    { type: 'call', key: 'missed', direction: 'inbound', at: AT, from: '+12025550102', to: '+12025550109', code: 'K7Q2MX', result: { answered: false } },
+    { type: 'call_update', key: 'party', at: AT + 1, call: 'missed', change: { kind: 'party', role: 'self', subject: 'record:owner', by: 'desk' } },
+  ] })
+  assert.ok(results.results.every(row => row.ok))
+  const row = (await graph.report({ kind: 'campaigns', window })).value.rows.find(row => row.missed)!
+  assert.deepEqual([row.source, row.campaign, row.insufficientData], ['google', 'Example', true])
+  return row
+})
+
+everywhere('a keyed call party belongs to one record and survives out-of-order reports', async ({ graph }) => {
+  const a = 'record:first'
+  const b = 'record:second'
+  const call = { type: 'call', key: 'desk-01', direction: 'inbound', from: '+12025550101', to: '+12025550102', duration: 70, at: AT, result: { answered: true } } as const
+  const named = { type: 'call_update', key: 'winner', at: AT + 20, call: call.key, change: { kind: 'party', role: 'representative', subject: b, by: 'desk' } } as const
+  const older = { ...named, key: 'before', change: { ...named.change, role: 'self', subject: a } } as const
+  const write = async (entry: RecordEntry) => (await graph.record({ entries: [entry] })).results[0]!
+  const saved = await write(named)
+  assert.ok(saved.ok && saved.value.stands)
+  const late = await write(older)
+  assert.ok(late.ok && !late.value.stands)
+  const retry = await write(older)
+  assert.ok(retry.ok && retry.value.duplicate && !retry.value.stands)
+  assert.deepEqual(await write({ ...named, change: { ...named.change, by: 'desk2' } }), { type: 'call_update', key: 'winner', ok: false, reason: 'KEY_REUSED', fields: ['change'] })
+  await write({ type: 'profile', key: 'p', at: AT - 100, subject: a, facts: { phone: call.from } })
+  await write(call)
+  const checked = () => graph.lookup({ kind: 'record', type: 'call', key: call.key, at: NOW })
+  const kept = await checked()
+  assert.ok(kept?.type === 'call')
+  assert.equal(kept.subject, b)
+  assert.deepEqual(kept.party, { role: 'representative', subject: b, by: 'desk', at: named.at })
+  assert.deepEqual(kept.partyHistory?.map(({ key, by }) => [key, by]), [['before', 'desk'], ['winner', 'desk']])
+  const journeys = async () => Promise.all([a, b].map(async (subject) => (await graph.lookup({ kind: 'journey', subject })).entries.filter((e) => e.kind === 'call' || e.kind === 'conversion').map((e) => e.kind)))
+  assert.deepEqual(await journeys(), [[], ['call', 'conversion']])
+  await graph.decide({ key: 'merge-records', at: AT, by: 'desk', action: 'merge', pairs: [{ a, b }] })
+  assert.deepEqual(await journeys(), [[], ['call', 'conversion']])
+  await graph.decide({ key: 'split-records', at: AT + 1, by: 'desk', action: 'split', pairs: [{ a, b }] })
+  assert.deepEqual(await journeys(), [[], ['call', 'conversion']])
+  for (const change of [{ kind: 'party', role: 'excluded', by: 'desk', subject: b }, { kind: 'party', role: 'unknown', by: 'desk' }] as const) {
+    await write({ ...named, key: change.role, at: AT + (change.role === 'excluded' ? 30 : 40), change })
+    assert.deepEqual(await journeys(), [[], []])
+    assert.equal((await checked())?.subject, 'call:desk-01')
+  }
+  await write({ ...named, key: 'direct', at: AT + 50, change: { ...named.change, role: 'self', subject: a } })
+  assert.deepEqual(await journeys(), [['call', 'conversion'], []])
+  assert.equal((await write(call)).ok, true)
+  return (await checked())?.subject
+})
+
+everywhere('forgetting a party or the original line erases call statements, including pending ones', async ({ graph, schema }) => {
+  for (const side of ['pending', 'party', 'line', 'former'] as const) {
+    const subject = 'record:' + side
+    const call = { type: 'call', key: 'erase-' + side, at: AT, direction: 'inbound', to: '+12025550104', from: '+12025550105', duration: 60 } as const
+    const assertion = { type: 'call_update', key: 'said-' + side, at: AT + 1, call: call.key, change: { kind: 'party', role: 'self', by: 'desk', subject } } as const
+    let whom = subject
+    if (side !== 'pending') {
+      const heard = (await graph.record({ entries: [call] })).results[0]!
+      assert.ok(heard.type === 'call' && heard.ok)
+      if (side === 'line') whom = heard.value.subject
+    }
+    await graph.record({ entries: [assertion] })
+    if (side === 'former') await graph.record({ entries: [{ ...assertion, key: 'now-someone-else', at: AT + 2, change: { ...assertion.change, subject: 'record:another' } }] })
+    await graph.forget({ key: 'delete-' + side, by: 'desk', at: NOW, subjects: [whom], platforms: 'report' })
+    const rows = (await graph.record({ entries: [call, assertion, { ...assertion, key: 'correction-' + side }] })).results
+    if (side === 'former') {
+      assert.ok(rows[0]?.ok && rows[0].type === 'call' && rows[0].value.duplicate && rows[0].value.subject === 'record:another')
+      assert.deepEqual(rows.slice(1).map(row => !row.ok && row.reason), ['FORGOTTEN', 'FORGOTTEN'])
+      const kept = await graph.lookup({ kind: 'record', type: 'call', key: call.key, at: NOW })
+      assert.ok(kept?.type === 'call')
+      assert.deepEqual(kept.partyHistory?.map(each => each.key), ['now-someone-else'])
+      if (schema) {
+        assert.deepEqual((await pool!.query(`select type from ${schema}.receipt_subject where subject = $1`, [whom])).rows, [])
+        assert.deepEqual((await pool!.query(`select data from ${schema}.said where topic = 'party' and data->>'subject' = $1`, [whom])).rows, [])
+        assert.deepEqual((await pool!.query(`select action from ${schema}.decision where about ? $1`, [whom])).rows, [{ action: 'forget' }])
+      }
+      assert.equal((await graph.lookup({ kind: 'record', type: 'conversion', key: 'call:' + call.key, at: NOW }))?.subject, 'record:another')
+      continue
+    }
+    assert.deepEqual(rows.map((row) => !row.ok && row.reason), ['FORGOTTEN', 'FORGOTTEN', 'FORGOTTEN'])
+    assert.equal(await graph.lookup({ kind: 'record', type: 'call', key: call.key, at: NOW }), null)
+    assert.equal(await graph.lookup({ kind: 'record', type: 'conversion', key: 'call:' + call.key, at: NOW }), null)
+  }
+})
+
+test('a reviewer can sign who a call concerned under their own name', async () => {
+  const { base, close } = await http()
+  const write = async (changes: object[], token: string) => (await fetch(base + '/v1/record', {
+    method: 'POST', headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
+    body: JSON.stringify({ entries: changes.map((change, n) => ({ type: 'call_update', key: 'party-' + n, at: AT, call: 'c1', change })) }),
+  })).status
+  const party = { kind: 'party', role: 'self', by: 'dana', subject: 'record:1' }
+  try {
+    assert.equal(await write([party], 'reviewer'), 200)
+    assert.equal(await write([{ ...party, by: 'other' }], 'reviewer'), 403)
+    assert.equal(await write([party, { kind: 'not_returned' }], 'reviewer'), 403)
+    for (const change of [{ ...party, role: 'unknown' }, { ...party, by: '  ' }, { ...party, role: 'maybe' }, { ...party, subject: 'caller:line' }, { ...party, subject: undefined }]) assert.equal(await write([change], 'service'), 400)
+  } finally {
+    await close()
+  }
+})
+
+test('a confirmed call cannot send the line’s ad keys on a retry or a change of value', async () => {
+  const { createMemoryStore } = await import('../src/core/memory.ts')
+  const { createEngine } = await import('../src/core/engine.ts')
+  const { createSix } = await import('../src/core/six.ts')
+  const { createReceipts } = await import('../src/core/receipts.ts')
+  let sends = 0
+  const target = { name: 'ads', restates: true, batch: 5, keys: () => ({ phone: 'phone-hash' }), click: () => undefined, retryable: () => false, deliver: async () => ({ requestId: String(++sends) }) }
+  const engine = createEngine(createMemoryStore(), { stages: { call: { value: 12, action: { ads: 'Call' } } }, delivery: { targets: [target] }, now: () => NOW })
+  const six = createSix(engine, { receipts: createReceipts([SECRET]) })
+  const call = { type: 'call', direction: 'inbound', key: 'sale-call', at: AT, to: '+12025550104', from: '+12025550105', duration: 60 } as const
+  const who = { type: 'call_update', key: 'identify-call', at: NOW, call: call.key, change: { kind: 'party', role: 'self', subject: 'record:j', by: 'desk' } } as const
+  const id = 'call:' + call.key
+  await six.record({ entries: [call] })
+  assert.equal((await engine.outbox!.get(id))[0]?.state, 'pending')
+  await six.record({ entries: [who, { type: 'restatement', key: 'new-worth', at: NOW, of: { type: 'call', key: call.key }, change: { kind: 'correct', value: 25 } }] })
+  await engine.outbox!.retry(id, 'ads')
+  await engine.outbox!.run()
+  assert.equal(sends, 0)
+  const [job] = await engine.outbox!.get(id)
+  assert.deepEqual([job?.subject, job?.state, job?.keys], [who.change.subject, 'skipped', {}])
+  assert.equal((await engine.graph.outcomeOf(id))?.value, 25)
+  const next = { ...call, key: 'after-confirmation' }
+  await six.record({ entries: [{ ...who, call: next.key, key: 'identify-next' }, next] })
+  assert.equal((await engine.graph.outcomeOf('call:' + next.key))?.value, 12)
+  assert.deepEqual(await engine.outbox!.get('call:' + next.key), [])
+})
+
+test('delivery failure batches keep the ten-minute alert interval and reopen it after a failed post', async () => {
+  let now = NOW
+  let status = 200
+  const posts: string[] = []
+  const local = accountGraph({ memory: true, now: () => now, ads: { meta: { pixelId: 'test', accessToken: 'test', siteUrl: 'https://example.org' } },
+    alerts: { url: 'https://example.org/alerts' },
+    fetch: async (_url, init) => {
+      posts.push(String(init?.body))
+      return new Response(null, { status })
+    },
+  })
+  try {
+    const { engine } = await internalsOf(local)!()
+    for (const [i, minutes] of [0, 5, 10, 20, 20].entries()) {
+      now = NOW + minutes * 60_000
+      status = i === 3 ? 503 : 200
+      await engine.store.outbox.add({ transactionId: `sale-${i}`, at: AT, due: AT, subject: 'record:a', target: 'missing', action: 'test', state: 'pending', attempts: 0, keys: {} })
+      await engine.outbox!.run()
+      await engine.store.write(async () => {})
+    }
+    assert.deepEqual(posts.map(text => text.match(/sale-\d+/)?.[0]), ['sale-0', 'sale-2', 'sale-3', 'sale-4'])
+    assert.equal((await engine.store.read(tx => tx.eventsAfter(0, 20))).filter(event => event.type === 'conversion.failed').length, 5)
+  } finally {
+    await local.close()
+  }
+})
+
+test('a failed conversion corrected before the worker reports it creates no alert or event', async () => {
+  const posted: string[] = []
+  const local = accountGraph({ memory: true, now: () => NOW, ads: { meta: { pixelId: 'test', accessToken: 'test', siteUrl: 'https://example.org' } },
+    alerts: { url: 'https://example.org/alerts' },
+    fetch: async (_url, init) => {
+      posted.push(String(init?.body))
+      return new Response(null, { status: 200 })
+    },
+  })
+  try {
+    const { engine } = await internalsOf(local)!()
+    await engine.graph.keepCall({ id: 'late', subject: 'caller:line', direction: 'inbound', at: AT, to: '+12025550101', flags: [] })
+    const queue = engine.store.outbox
+    for (const id of ['late', 'other']) await queue.add({ transactionId: `call:${id}`, subject: 'caller:line', at: AT, due: AT, target: 'missing', action: 'test', state: 'pending', attempts: 0, keys: {} })
+    // Ownership changes after the failure was stored and before the batch announces it.
+    const swap = queue.swap.bind(queue)
+    queue.swap = async (before, after) => {
+      const wrote = await swap(before, after)
+      if (wrote && after.state === 'failed' && after.transactionId === 'call:late') await engine.graph.sayParty({ call: 'late', key: 'confirmed', at: NOW, party: { role: 'self', subject: 'record:a', by: 'desk' } })
+      return wrote
+    }
+    assert.equal((await engine.outbox!.run()).failed, 2)
+    await engine.store.write(async () => {})
+    assert.equal(posted.length, 1)
+    assert.ok(posted[0]!.includes('call:other'))
+    assert.ok(!posted[0]!.includes('call:late'))
+    const failed = (await engine.store.read(tx => tx.eventsAfter(0, 20))).filter(event => event.type === 'conversion.failed')
+    assert.deepEqual(failed.map(event => event.data.conversion), ['call:other'])
+  } finally {
+    await local.close()
+  }
+})
+
+test('the reviewer journey reads its delivery details at the same time as the call', async () => {
+  const { local, base, close } = await http({ ads: { meta: { pixelId: 'test', accessToken: 'test', siteUrl: 'https://example.org' } } })
+  try {
+    const { engine } = await internalsOf(local)!()
+    const { graph, store } = engine
+    await graph.keepCall({ id: 'one', direction: 'inbound', subject: 'caller:line', to: '+12025550101', at: AT, flags: [] })
+    await graph.outcome({ transactionId: 'call:one', subject: 'caller:line', at: AT })
+    await store.outbox.add({ transactionId: 'call:one', target: 'test', action: 'sale', subject: 'caller:line', state: 'pending', attempts: 0, at: AT, due: NOW, keys: {} })
+    const read = store.read.bind(store)
+    let corrected = false
+    store.read = async work => {
+      const value = await read(work)
+      if (!corrected && value && typeof value === 'object' && 'entries' in value && 'subjects' in value) {
+        corrected = true
+        await graph.sayParty({ call: 'one', key: 'signed', at: NOW, party: { role: 'self', subject: 'record:b', by: 'desk' } })
+      }
+      return value
+    }
+    const journey = async (subject: string) => {
+      const response = await fetch(`${base}/review/api/journey?subject=${subject}`, { headers: { authorization: 'Bearer reviewer' } })
+      assert.equal(response.status, 200)
+      return await response.json() as { entries: { kind: string; sent?: { note?: string; state: string }[] }[] }
+    }
+    const before = await journey('caller:line')
+    assert.ok(corrected)
+    assert.deepEqual(before.entries.find(entry => entry.kind === 'outcome')?.sent?.map(job => job.state), ['pending'])
+    assert.ok(!(await journey('caller:line')).entries.some(entry => entry.kind === 'call' || entry.kind === 'outcome'))
+    assert.deepEqual((await journey('record:b')).entries.find(entry => entry.kind === 'outcome')?.sent?.map(job => job.note), ['call_party'])
+  } finally {
+    await close()
+  }
+})
+
+test('call and journey lookups read a correction and its delivery details at one point in time', async () => {
+  const local = accountGraph({ memory: true, now: () => NOW, ads: { meta: { pixelId: 'test', accessToken: 'test', siteUrl: 'https://example.org' } } })
+  try {
+    const { engine } = await internalsOf(local)!()
+    const { graph, store } = engine
+    await graph.keepCall({ id: 'one', direction: 'inbound', subject: 'caller:line', to: '+12025550101', at: AT, flags: [] })
+    await graph.outcome({ transactionId: 'call:one', subject: 'caller:line', at: AT })
+    await store.outbox.add({ transactionId: 'call:one', target: 'test', action: 'sale', subject: 'caller:line', state: 'pending', attempts: 0, keys: {}, at: AT, due: NOW })
+    const read = store.read.bind(store)
+    let correction: string | undefined = 'record:a'
+    store.read = async work => {
+      const value = await read(work)
+      if (correction && !(value instanceof Map)) {
+        const subject = correction
+        correction = undefined
+        await graph.sayParty({ call: 'one', key: subject, at: subject === 'record:a' ? AT : NOW, party: { role: 'self', subject, by: 'desk' } })
+      }
+      return value
+    }
+    const journey = await local.lookup({ kind: 'journey', subject: 'caller:line' })
+    const conversion = journey.entries.find(row => row.kind === 'conversion')
+    correction = 'record:b'
+    const call = await local.lookup({ kind: 'record', type: 'call', key: 'one', at: NOW })
+    assert.ok(call?.type === 'call')
+    const latest = call.partyHistory?.at(-1)
+    assert.equal(correction, undefined)
+    assert.deepEqual([!conversion || conversion.deliveries.every(job => job.note !== 'call_party'), latest && latest.role !== 'unknown' && call.subject === latest.subject], [true, true])
+  } finally {
+    await local.close()
+  }
+})
+
+test('caller and person lookups agree on what was still known of a confirmed call', async () => {
+  const from = '+12025550102'
+  const to = '+12025550101'
+  const coherent: boolean[] = []
+  for (const kind of ['caller', 'person'] as const) {
+    const local = accountGraph({ memory: true, now: () => NOW, phones: { numbers: { [to]: { source: 'directory' } } } })
+    try {
+      const { engine } = await internalsOf(local)!()
+      const { graph, store } = engine
+      const [call] = (await local.record({ entries: [{ type: 'call', key: 'one', at: AT, direction: 'inbound', from, to, result: { answered: false } }] })).results
+      assert.ok(call?.ok && call.type === 'call')
+      const subject = call.value.subject
+      const ask = async () => kind === 'caller' ? local.lookup({ kind, from, to, at: NOW }) : (await local.lookup({ kind, subjects: [subject], at: NOW })).people[0]!
+      const before = await ask()
+      assert.deepEqual([before.known, before.arrival?.source], [true, 'directory'])
+      const read = store.read.bind(store)
+      let corrected = false
+      store.read = async work => {
+        const value = await read(work)
+        const hasCall = Array.isArray(value) && value.some(row => row?.id === 'one' || row?.touch?.source === 'directory')
+        if (!corrected && (hasCall || (value && typeof value === 'object' && ('waiting' in value || 'people' in value)))) {
+          corrected = true
+          await graph.sayParty({ call: 'one', key: 'who', at: NOW, party: { role: 'self', subject: 'record:a', by: 'desk' } })
+        }
+        return value
+      }
+      const person = await ask()
+      assert.equal(corrected, true)
+      coherent.push(person.known === (person.arrival?.source === 'directory'))
+      const after = await ask()
+      assert.deepEqual([after.known, after.arrival], [false, null])
+    } finally {
+      await local.close()
+    }
+  }
+  assert.deepEqual(coherent, [true, true])
+})
+
+test('a cached report loses a forgotten conversion during its last check and across instances', async () => {
+  const { createEngine } = await import('../src/core/engine.ts')
+  const { createMemoryStore } = await import('../src/core/memory.ts')
+  const { createSix } = await import('../src/core/six.ts')
+  const { createReceipts } = await import('../src/core/receipts.ts')
+  const coherent: boolean[] = []
+  for (const other of [false, true]) {
+    let at = NOW
+    const store = createMemoryStore()
+    const engine = createEngine(store, { now: () => at })
+    const options = { receipts: createReceipts([SECRET]) }
+    const reader = createSix(engine, options)
+    const writer = other ? createSix(createEngine(store, { now: () => at }), options) : reader
+    const run = engine.graph.report
+    engine.graph.report = async request => {
+      at += 500
+      return run(request)
+    }
+    const ask = async () => (await reader.report({ kind: 'campaigns', window })).value
+    const erase = async () => assert.ok((await writer.forget({ key: 'gone', at, by: 'desk', subjects: ['record:a'], platforms: 'report' })).ok)
+    await writer.record({ entries: [{ type: 'conversion', key: 'one', at: AT, subject: 'record:a', stage: 'intake', value: 17, currency: 'USD' }] })
+    const before = await ask()
+    if (other) await erase()
+    else {
+      const read = engine.graph.partyRevision
+      let reads = 0
+      engine.graph.partyRevision = async () => {
+        const revision = await read()
+        if (++reads === 2) await erase()
+        return revision
+      }
+    }
+    const during = await ask()
+    at += 60_001
+    const after = await ask()
+    assert.notDeepEqual(before, after)
+    coherent.push(JSON.stringify(during) === JSON.stringify(after))
+  }
+  assert.deepEqual(coherent, [true, true])
+})
+
+test('a call party written by another instance ends a cached report during its grace', async () => {
+  const { createEngine } = await import('../src/core/engine.ts')
+  const { createMemoryStore } = await import('../src/core/memory.ts')
+  const { createSix } = await import('../src/core/six.ts')
+  const { createReceipts } = await import('../src/core/receipts.ts')
+  let time = NOW
+  const store = createMemoryStore()
+  const engine = createEngine(store, { now: () => time })
+  const options = { receipts: createReceipts([SECRET]) }
+  const reader = createSix(engine, options)
+  const writer = createSix(createEngine(store, { now: () => time }), options)
+  let runs = 0
+  const report = engine.graph.report
+  engine.graph.report = async (...args) => {
+    runs++
+    time += 500
+    return report(...args)
+  }
+  const ask = () => reader.report({ kind: 'campaigns', window })
+  await writer.record({ entries: [{ type: 'call', key: 'line', at: AT, direction: 'inbound', to: '+12025550101', from: '+12025550102', duration: 70 }] })
+  await ask()
+  await ask()
+  assert.equal(runs, 1)
+  await writer.record({ entries: [{ type: 'call_update', key: 'signed', at: NOW, call: 'line', change: { kind: 'party', role: 'self', by: 'desk', subject: 'record:1' } }] })
+  await ask()
+  assert.equal(runs, 2)
+})
+
+test('a forgotten profile never sends its phone or address to a check on retry', async () => {
+  const { createEngine } = await import('../src/core/engine.ts')
+  const { createMemoryStore } = await import('../src/core/memory.ts')
+  const { createSix } = await import('../src/core/six.ts')
+  const { createReceipts } = await import('../src/core/receipts.ts')
+  const checks = { phone: 0, postal: 0 }
+  const engine = createEngine(createMemoryStore(), {
+    lineType: async () => {
+      checks.phone++
+      return { type: 'mobile', carrier: undefined }
+    },
+    address: async () => {
+      checks.postal++
+      return undefined
+    },
+  })
+  const six = createSix(engine, { receipts: createReceipts([SECRET]) })
+  const fact = { type: 'profile', key: 'checked', subject: 'record:gone', at: AT, facts: { email: 'desk@example.org', phone: '202-555-0100', address: { street: '1 Example St' } } } as const
+  assert.ok((await six.record({ entries: [fact] })).results[0]!.ok)
+  assert.ok((await six.forget({ key: 'erase', at: NOW, by: 'desk', subjects: [fact.subject], platforms: 'report' })).ok)
+  assert.deepEqual(checks, { phone: 1, postal: 1 })
+  const retry = (await six.record({ entries: [fact] })).results[0]!
+  assert.ok(!retry.ok && retry.reason === 'FORGOTTEN')
+  assert.deepEqual(checks, { phone: 1, postal: 1 })
+})
+
+everywhere('a duplicate result or callback says whether that statement still stands', async ({ graph }) => {
+  for (const kind of ['result', 'not_returned'] as const) {
+    const change = kind === 'result' ? { kind, result: { answered: false } } as const : { kind } as const
+    const old = { type: 'call_update', call: 'late-call', at: AT, key: kind + '-a', change } as const
+    const newest: RecordEntry = { ...old, key: kind + '-b', change: kind === 'result' ? { kind, result: { answered: true } } : { kind: 'returned', reachedAt: AT } } as const
+    const got = (await graph.record({ entries: [newest, old, old, newest] })).results
+    assert.deepEqual(got.map((row) => row.ok && [row.value.duplicate, row.value.stands]), [[false, true], [false, false], [true, false], [true, true]])
+  }
+  await one(graph, { type: 'call', direction: 'outbound', at: AT, key: 'placed', from: '+12025550103', to: '+12025550104' })
+  const entry = { type: 'call_update', key: 'did-return', at: NOW, call: 'placed', change: { kind: 'returned', reachedAt: NOW } } as const
+  const got = (await graph.record({ entries: [entry, entry] })).results
+  assert.deepEqual(got.map((row) => row.ok && row.value.stands), [false, false])
+})
+
+for (const [name, open] of Object.entries({ memory, ...(url && { postgres }) })) test(`one text arriving through record and Twilio together writes its tie and sightings once, ${name}`, async () => {
+  const { twilioSignature } = await import('../src/providers/twilio.ts')
+  const { graph, close } = await open()
+  const { engine } = await internalsOf(graph)!()
+  const address = 'https://example.org/texts/twilio'
+  const server = createServer(createEdge(graph, { token: 'service', origins: [], twilio: { authToken: 'secret', texts: address } })).listen(0, '127.0.0.1')
+  try {
+    await new Promise((resolve) => server.once('listening', resolve))
+    const base = 'http://127.0.0.1:' + (server.address() as AddressInfo).port
+    const code = 'K7Q2MX'
+    const visitor = 'visitor:site'
+    await engine.graph.observe({ subject: visitor, identifiers: ['device:site', codeNote(code)], at: AT, event: 'text_code' })
+    const fields = { MessageSid: 'same-message', From: '+12025550105', To: '+12025550106', Body: 'Ref ' + code }
+    const entry = { type: 'text', key: fields.MessageSid, at: NOW, direction: 'inbound', from: fields.From, to: fields.To, text: fields.Body } as const
+    const [received, reported] = await Promise.all([
+      fetch(base + '/texts/twilio', { method: 'POST', headers: { 'x-twilio-signature': twilioSignature('secret', address, fields) }, body: new URLSearchParams(fields) }),
+      fetch(base + '/v1/record', { method: 'POST', headers: { authorization: 'Bearer service' }, body: JSON.stringify({ entries: [entry] }) }),
+    ])
+    assert.deepEqual([received.status, reported.status], [200, 200])
+    assert.equal((await reported.json() as { results: RecordResult[] }).results[0]!.ok, true)
+    const saved = await engine.graph.keptText(entry.key)
+    assert.equal(saved?.visitor, visitor)
+    assert.equal((await engine.graph.textsOf([saved!.subject])).length, 1)
+    assert.equal((await engine.graph.outcomeOf('text:' + entry.key))?.subject, saved!.subject)
+    assert.deepEqual((await engine.graph.holders(['text:' + entry.key])).map((edge) => edge.count), [1, 1])
+    const seen = [...await engine.graph.history(visitor), ...await engine.graph.history(saved!.subject)]
+    assert.equal(seen.length, 5)
+    assert.equal(seen.filter((row) => row.identifier.startsWith('phone:')).length, 1)
+  } finally {
+    server.closeAllConnections()
+    server.close()
+    await close()
+  }
+})

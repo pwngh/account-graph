@@ -6,12 +6,14 @@ import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { birthKeys, components, conversionEvent, createAlerter, createGraph, createHours, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, hoursProblems, ingestRequest, ip, knownLink, ladderProblems, measure, meta, metaEvent, nameKeys, normalizeEmail, normalizePhone, phoneOfType, codeIn, policyFrom, policyHash, policyProblems, plainPolicy, readToken, scorePairs, signToken, sourceOf, textCode, withStage } from '../tools/internals.ts'
+import { birthKeys, components, conversionEvent, createAlerter, createGraph, createHours, createMemoryStore, dayStart, defaultPolicy, fit, fold, googleClick, hashEmail, hashPhone, hoursProblems, ingestRequest, ip, knownLink, ladderProblems, measure, meta, metaEvent, nameKeys, normalizeEmail, partition, normalizePhone, phoneOfType, codeIn, policyFrom, policyHash, policyProblems, plainPolicy, readToken, scorePairs, signToken, sourceOf, textCode, withStage } from '../tools/internals.ts'
 import { summarizeCalls } from '../src/core/callreport.ts'
 import { followed } from '../src/core/followed.ts'
 import type { Caller, Followed } from '../src/core/followed.ts'
 import { dayIn, paid } from '../src/core/report.ts'
 import { weigh } from '../src/core/policy.ts'
+import type { Known } from '../src/core/resolve.ts'
+import type { Pair } from '../src/contract/types.ts'
 import type { Edge, IdentifierState, KeptCall, Reason } from '../tools/internals.ts'
 import { signWebhook } from '../src/contract/webhook.ts'
 import { readEnvironment as configFrom } from '../src/bin.ts'
@@ -35,6 +37,75 @@ test('an IPv6 address keeps its /64 prefix and an IPv4 address stays whole', () 
   assert.equal(ip('2001:db8:85a3::8a2e:370:7334'), 'ip:2001:db8:85a3:0::/64')
   assert.equal(ip('::ffff:203.0.113.9'), 'ip:203.0.113.9')
   assert.equal(ip('203.0.113.9'), 'ip:203.0.113.9')
+})
+
+test('separations in one component share their link strengths', (t) => {
+  const subjects = Array.from({ length: 24 }, (_, i) => `record:${i}`)
+  const known = new Map<string, Known>(subjects.map((subject) => [subject, { facts: new Map(), joins: new Set(), things: new Set() }]))
+  const links: Pair[] = []
+  const apart: [string, string][] = []
+  for (const [i, a] of subjects.entries()) {
+    for (const step of [1, 2, 3]) {
+      const b = subjects[(i + step) % subjects.length]!
+      if (step === 1) for (const end of [a, b]) known.get(end)!.joins.add(`review:${i}`)
+      links.push({ a, b, score: 0.99, level: 'same', reasons: [] })
+    }
+    if (i < 8) apart.push([a, subjects[i + 12]!])
+  }
+  const log = t.mock.method(Math, 'log')
+  const labels = partition(subjects, links, apart, defaultPolicy, known)
+  for (const [a, b] of apart) assert.notEqual(labels.get(a)!.cluster, labels.get(b)!.cluster)
+  // Count strength calculations so the regression does not depend on how fast the machine is.
+  assert.ok(log.mock.callCount() <= links.length * 2, `${log.mock.callCount()} strengths for ${links.length} links`)
+})
+
+for (const [births, records] of [[2, 40], [100, 1]] as const) test(`birth cuts on a shared line skip pairs already apart (${births} by ${records})`, () => {
+  let reads = 0
+  const known = new class extends Map<string, Known> {
+    override get(subject: string) {
+      reads++
+      return super.get(subject)
+    }
+  }()
+  const line = 'caller:line'
+  known.set(line, { facts: new Map(), joins: new Set(), things: new Set() })
+  const links: Pair[] = []
+  const since = new Map<string, number>()
+  for (let birth = 0; birth < births; birth++) {
+    let before = line
+    for (let record = 0; record < records; record++) {
+      const subject = `record:${birth}-${record}`
+      const mark = `review:${subject}`
+      known.set(subject, { facts: new Map([['birth', new Set([`birth:${birth}`])]]), joins: new Set([mark]), things: new Set() })
+      known.get(before)!.joins.add(mark)
+      links.push({ a: before, b: subject, score: 1, level: 'same', reasons: [] })
+      since.set(subject, since.size + 1)
+      before = subject
+    }
+  }
+  reads = 0
+  const labels = partition(known.keys(), links, [], policyFrom({ apart: ['birth'] }), known, undefined, [], since)
+  assert.equal(new Set([...labels.values()].map(({ cluster }) => cluster)).size, births)
+  assert.equal(labels.get(line)!.cluster, labels.get('record:0-0')!.cluster)
+  // Count reads of facts instead of milliseconds: the machine running the suite does not set the limit.
+  assert.ok(reads < known.size ** 2, `${reads} reads of ${known.size} subjects' facts`)
+})
+
+test('a restored staff join keeps the evidence between its two sides for later birth cuts', () => {
+  const known = new Map<string, Known>()
+  for (const subject of ['a', 'b', 'c', 'd', 'e', 'f']) {
+    const birth = ['e', 'f'].includes(subject) ? 'birth:two' : 'birth:one'
+    known.set(subject, { facts: new Map([['birth', new Set([birth])]]), joins: new Set(), things: new Set() })
+  }
+  const pair = (a: string, b: string, score: number, joined = false): Pair => {
+    if (joined) for (const subject of [a, b]) known.get(subject)!.joins.add(`review:${a}-${b}`)
+    return { a, b, score, level: 'same', reasons: [] }
+  }
+  const links = [pair('a', 'b', 0.98, true), pair('b', 'c', 0.9999, true), pair('c', 'd', 1, true), pair('a', 'e', 0.99), pair('b', 'f', 0.99), pair('e', 'f', 0.9)]
+  const cuts: string[] = []
+  const labels = partition(known.keys(), links, [['a', 'd'], ['b', 'd']], policyFrom({ apart: ['birth'] }), known, (a, b) => cuts.push([a, b].sort().join('-')))
+  assert.deepEqual([...labels.keys()].sort().map((subject) => labels.get(subject)!.cluster), ['a', 'a', 'c', 'c', 'e', 'e'])
+  assert.deepEqual(cuts.sort(), ['a-e', 'b-c', 'b-f'])
 })
 
 test('scoring ignores the order of its input', () => {
@@ -107,6 +178,22 @@ test('names fold to one key, and placeholders to none', () => {
   assert.notDeepEqual(nameKeys('another-secret-of-thirty-two-chars!', 'Ana', 'Lima', { zip5: '62701' }), key('Ana', 'Lima'))
   assert.throws(() => nameKeys('short', 'Ana', 'Lima', { zip5: '62701' }), TypeError)
   assert.throws(() => nameKeys(secret, 'Ana', 5 as never, {}), TypeError)
+})
+
+test('missing name labels catch no given name or short form in either field', async () => {
+  const { readFileSync } = await import('node:fs')
+  const { nameParts } = await import('../src/core/identifiers.ts')
+  const source = readFileSync(new URL('../src/core/names.ts', import.meta.url), 'utf8')
+  const forms = /const FORMS = `([\s\S]+?)`/.exec(source)![1]!.trim().split(/[\n:,]+/).filter(Boolean)
+  assert.ok(new Set(forms).size > 1500)
+  for (const name of new Set(forms)) for (const [first, last] of [[name, 'Lima'], ['Ana', name]] as const) assert.ok(nameParts(first, last), first + ' ' + last)
+  for (const missing of ['Desconocido', 'Desconocida', 'Sin Nombre', 'No Proporcionado', 'No proporcionada', 'Inconnu', 'Inconnue', 'Inconnu(e)', 'Неизвестно', 'غير معروف', 'अज्ञात', '姓名不详', '氏名不詳']) {
+    assert.equal(nameParts(missing, 'Lima'), undefined, missing)
+    assert.equal(nameParts('Ana', missing), undefined, missing)
+  }
+  assert.equal(nameParts('Baby', 'Lima'), undefined)
+  assert.ok(nameParts('Ana', 'Baby'))
+  assert.ok(nameParts('Babylon', 'Lima'))
 })
 
 test('records that have to be confirmed need the facts that confirm them, and are part of a policy', () => {
@@ -871,6 +958,8 @@ test('IDENTIFIER_SECRET is checked', () => {
 test('the number pool is off until numbers are given, and its settings are checked', () => {
   const env = { DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', ALERT_WEBHOOK: 'https://hooks.example/x' }
   assert.deepEqual(configFrom(env).poolNumbers, [])
+  assert.equal(configFrom(env).poolRequireTapAfterReassignment, false)
+  assert.equal(configFrom({ ...env, POOL_REQUIRE_TAP_AFTER_REASSIGNMENT: 'true' }).poolRequireTapAfterReassignment, true)
   const { poolNumbers, poolMinutes, poolGrace } = configFrom({ ...env, POOL_NUMBERS: '+15550100001, (555) 010-0002', POOL_MINUTES: '20', POOL_GRACE_MINUTES: '0' })
   assert.deepEqual([poolNumbers, poolMinutes, poolGrace], [['+15550100001', '(555) 010-0002'], 20, 0])
   assert.deepEqual(configFrom({ ...env, CALL_EXCLUDE: '+15550100001, (555) 010-0002' }).callExclude, ['+15550100001', '(555) 010-0002'])

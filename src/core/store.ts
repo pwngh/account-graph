@@ -1,4 +1,4 @@
-import type { Feed, OpsStore } from './ops.ts'
+import type { Feed, KeptAlert, OpsStore } from './ops.ts'
 import type { GraphEvent } from '../contract/api.ts'
 import type { Delivery, EventHead, NewEvent } from './events.ts'
 import type { Receipt } from './receipts.ts'
@@ -6,6 +6,16 @@ import type { Said, SaidOf, Topic } from './said.ts'
 import { byKey } from './said.ts'
 import type { Job, OutboxStore } from './outbox.ts'
 import type { CallResult, CallTime, Change, Consent, ConsentAnswer, CostRow, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, NumberedChange, SentLink, OutcomeValue, Payment, Sighting, Subject, Touch } from '../contract/types.ts'
+
+export interface CallEvidence {
+  call: string
+  subject: Subject
+  identifier: Identifier
+  at: number
+  recorded: number
+}
+
+export type CallLineKind = 'phone' | 'voip' | 'none'
 
 /**
  * Where the graph lives. Sightings and touches are the record; edges and
@@ -44,7 +54,19 @@ export interface Tx {
   /** Logs sightings and folds them into edges. Returns how many new edges each identifier gained. */
   addSightings(sightings: readonly Sighting[]): Promise<Map<Identifier, number>>
   /** Deletes a subject with its sightings, edges, touches, outcomes, calls, leases, flows, consent, alerts, conversions, and reviewer decisions. */
-  removeSubject(subject: Subject): Promise<Job[]>
+  removeSubject(subject: Subject, only?: readonly string[]): Promise<Job[]>
+  /** A removed call sighting counts its holder and bounds which cuts can change, but gives no positive evidence. */
+  callEvidence(filter?: { subjects?: readonly Subject[]; identifiers?: readonly Identifier[]; calls?: readonly string[]; before?: number }): Promise<CallEvidence[]>
+  hasCallEvidence(): Promise<boolean>
+  /** Private original lines and route flags used only to decide whether two calls competed for a tap or a number. */
+  rivalCalls(number: string, first: number, last: number, line?: Subject): Promise<KeptCall[]>
+  reserveCall(rows: readonly CallEvidence[]): Promise<void>
+  /** Remembers which original code won when the public call already has a party. */
+  markPartyCode(id: string, visitor?: Subject): Promise<void>
+  /** The visitor previously tied by this call, kept privately for its credit. */
+  callVisitors(ids: readonly string[]): Promise<Map<string, Subject>>
+  /** Active edges and whether a withdrawn edge touches any of these subjects or identifiers. */
+  matchingEdges(subjects: readonly Subject[]): Promise<{ active: Edge[]; reserved: boolean }>
   edgesOf(subjects: readonly Subject[]): Promise<Edge[]>
   edgesOn(identifiers: readonly Identifier[]): Promise<Edge[]>
   /**
@@ -82,6 +104,12 @@ export interface Tx {
    * is seen before a lower one. Call it last: that row is held from here on. Resolves to how many were new.
    */
   emit(events: readonly NewEvent[]): Promise<number>
+  /** Keeps an alert with the event it names. A fresh failure batch may reopen the same message. */
+  addAlert(alert: KeptAlert, again?: boolean, calls?: readonly string[]): Promise<boolean>
+  pendingAlert: OpsStore['pendingAlert']
+  /** Private sources of callback notices whose credited paths touched these subjects. */
+  callbacksThrough(sources: readonly string[]): Promise<Map<string, readonly string[]>>
+  dropCallbacks(keys: readonly string[]): Promise<void>
   eventHead(): Promise<EventHead>
   eventsAfter(seq: number, limit: number): Promise<GraphEvent[]>
   /** Begins another history, as after a restored backup. Every cursor is lost. */
@@ -122,11 +150,14 @@ export interface Tx {
   consentHistory(subject: Subject, limit?: number): Promise<ConsentAnswer[]>
   /** Deletes answers written down before a time, except each subject's standing one. Returns how many went. */
   pruneConsent(before: number): Promise<number>
-  addTouch(touch: Touch): Promise<void>
-  /** Takes back one arrival that turned out to be none: that of a call filed under its number, by the landing it was filed with. */
-  dropTouch(subject: Subject, at: number, landing: string): Promise<void>
+  /** The call whose number supplied this arrival, an empty string for another source, or absent for an older row. */
+  addTouch(touch: Touch, call?: string): Promise<void>
+  /** A confirmation removes every indistinguishable old arrival if the call predates source tracking. */
+  dropTouch(subject: Subject, at: number, landing: string, call: string, confirmed?: boolean): Promise<void>
   /** Touches on the given subjects with `from <= at <= to`. */
   touchesOf(subjects: readonly Subject[], from: number, to: number): Promise<Touch[]>
+  /** Which calls supplied this number-channel visit. Older visits may have several possible sources. */
+  callsBehind(touch: Touch): Promise<string[]>
   /** The subjects with a touch that carries this ad click id, whole, in order. */
   clicked(id: string, limit: number): Promise<Subject[]>
   /** Every touch with `from <= at < to`, whoever it belongs to. */
@@ -149,7 +180,13 @@ export interface Tx {
   /** Deletes what was said before a time about outcomes and calls that never came. Returns how many went. */
   pruneNotLeads(before: number): Promise<number>
   /** Keeps a call, replacing one with the same id. Its result is kept apart, and may arrive first. */
-  setCall(call: Omit<KeptCall, 'result'>): Promise<void>
+  setCall(call: Omit<KeptCall, 'result'>, lineKind?: CallLineKind, pendingParty?: boolean): Promise<void>
+  /** The physical line of a recorded call, for deleting either side of a staff confirmation. */
+  callLine(id: string): Promise<Subject | undefined>
+  /** Applies the standing assertion to this call. A call arriving after its assertion left no guesses to take back. */
+  applyCallParty(id: string, arriving?: boolean, overwritten?: boolean): Promise<Subject[]>
+  /** Calls whose reported owner disagrees with the standing staff statement after an older writer ran. */
+  overwrittenCalls(limit: number): Promise<string[]>
   setCallResult(id: string, result: CallResult): Promise<void>
   removeCallResult(id: string): Promise<void>
   /** A call with its result, or undefined for an id no call was kept for. */
@@ -216,12 +253,14 @@ export interface Tx {
   /** Takes subjects out of what is said of others, and drops undelivered alerts that name any of these keys. */
   unname(subjects: readonly Subject[], keys: readonly string[]): Promise<void>
   /** The keys of what is recorded of subjects: conversions, calls, texts, payments, transfers and links. */
-  keysOf(subjects: readonly Subject[]): Promise<{ type: string; key: string }[]>
+  keysOf(subjects: readonly Subject[], only?: readonly string[]): Promise<{ type: string; key: string }[]>
+  /** Calls that mentioned an erased record but now belong to another record, including pending calls. */
+  retainedPartyCalls(subjects: readonly Subject[], only?: readonly string[]): Promise<string[]>
   /**
    * Empties every receipt of the subjects, of the keys, and of what is about either, and leaves an empty one for a key
    * that has none. Read before the subjects are removed.
    */
-  forgetReceipts(subjects: readonly Subject[], keys: readonly { type: string; mac: string; secretId: string; all: readonly string[] }[], at: number): Promise<void>
+  forgetReceipts(subjects: readonly Subject[], keys: readonly { type: string; mac: string; secretId: string; all: readonly string[] }[], at: number, retainedCalls?: readonly string[], only?: readonly string[]): Promise<void>
   /** Which secrets made the receipts that are kept. */
   receiptSecrets(): Promise<string[]>
   /** Something this database was set up with, which every process must share. */
@@ -243,6 +282,12 @@ export interface Tx {
   lastDecision(): Promise<Decision | undefined>
   /** The newest decision after a sequence number that names any of the given subjects or identifiers. A prune names none. */
   newestNaming(names: readonly string[], after: number, among?: readonly Decision['action'][]): Promise<Decision | undefined>
+  /** Every unproved statement on up to this many calls, so a batch includes all candidates for the standing owner. */
+  unprovenParties(limit: number): Promise<{ subject: Subject; call: string; key: string; deletion: number; erasedAt: number; ready?: number; retryFrom?: number }[]>
+  /** The latest deletion, if any. A returned record can be named only for a call that followed that deletion. */
+  partyReturn(subject: Subject, call: string): Promise<number | 'forgotten' | undefined>
+  confirmPartyReturn(call: string, key: string, deletion: number): Promise<void>
+  removePartyStatements(call: string, keys: string[]): Promise<void>
   /** Every decision, oldest first. */
   decisions(): Promise<Decision[]>
   /** One page of decisions, newest first: those before a sequence number, by people, by systems, or by one author. */
