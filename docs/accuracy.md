@@ -487,7 +487,7 @@ The held seeds 20270601-20, once, at `b96207d`, in all five settings and arms. *
 
 **The price is joins that somebody has to make.** In self4 91.46% of the pairs of records that are one person are joined by themselves under `new`, and 62.79% under `records`. Most of the rest are shown: 663 pairs over 20 worlds of 2,000 people, of which nine in ten are one person. Until somebody joins them, that person's history is in two.
 
-Each safety the reviews added took some of these joins: 76.24% in base3 at the first look, 58.24% here. The marks ask for joined or shown, so they do not see it.
+Each safety the reviews added took some of these joins: on 20270501-08, base3 joined 76.24% at look 1 and 60.31% at look 3. The marks ask for joined or shown, so they do not see it.
 
 All that was printed is in [accuracy-fourth-held.txt](accuracy-fourth-held.txt). The worlds and the rules are by one author's hands, the marks were set after looks, and nobody here is real.
 
