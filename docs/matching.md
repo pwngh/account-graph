@@ -2,6 +2,22 @@
 
 account-graph links subjects that share identifiers, scores each pair, and groups strong links into clusters. A subject is anything with an identity, such as `account:42` or `visitor:9f3c`. An identifier is `kind:value`, and each subject-identifier edge keeps a first and last sighting.
 
+## Terms
+
+| Term | Definition |
+| --- | --- |
+| Subject | A person, account or device that has an ID in one of your systems |
+| Identifier | A value that helps recognize a subject, such as an email or device ID |
+| Sighting | An observation of a subject with an identifier at a point in time |
+| Link | Two subjects that share identifiers, with a match score and evidence |
+| Cluster | The linked subjects that are resolved to one person |
+| Visit | A marketing touchpoint: an arrival from an ad click or a campaign |
+| Outcome | A business event that is counted, such as an inquiry or a sale |
+| Conversion | An outcome reported to an ad platform |
+| Decision | A recorded choice to merge, split or mute, kept in the audit log |
+
+A match score is from 0 to 1. The reviewer screen calls a subject an ID, a merge a join, and a split a separation. The calls name a visit an `arrival`, and an outcome a `conversion`. Links, clusters and scores are computed from sightings.
+
 ## Scoring
 
 Two subjects that share an identifier get evidence from it:
@@ -24,7 +40,16 @@ Evidence that counts combines as a noisy-OR, `1 − Π(1 − evidence)`. Each id
 
 Scores depend only on stored data. The current time and the order of arrival leave them unchanged.
 
-The default policy has no groups, and one corroborating kind, `named`. [Presets](presets.md) has both: [the preset for contacts entered by staff](presets.md#contacts-entered-by-staff) defines a corroborating `name` kind.
+| Two records share | Evidence | Score | Result |
+| --- | --- | --- | --- |
+| A browser, by its device id | 0.98 | 0.98 | Can join |
+| A mobile or landline number | 0.90 | 0.90 | Can join |
+| A postal address and an IP address | 0.60, 0.30 | 0.72 | Related |
+| An address, an IP address and a browser hash | 0.60, 0.30, 0.50 | 0.86 | Related |
+
+The last two could be one person or one household. With only this evidence, they are related and do not join on their own. These rows use the default weights, with two records per identifier and no time between sightings. A strong pair can still be [held apart](#clusters): by a separation, or as a single weak link between two groups.
+
+The default policy has no groups, and one corroborating kind, `named`. [Presets](#presets) has both: [the preset for contacts entered by staff](#contacts-entered-by-staff) defines a corroborating `name` kind.
 
 ### Kinds
 
@@ -78,6 +103,78 @@ A cluster above 50 members (`review`) is flagged `oversized`. Clusters that larg
 
 A component of tens of thousands indicates a shared identifier to cap or mute.
 
+## Presets
+
+A preset is a policy for a common situation. Set `POLICY_FILE` and the server applies it over the default.
+
+```sh
+POLICY_FILE=examples/household.json npm start
+```
+
+Rebuild after switching to or from a preset. See [the policy](operations.md#policy). The preset's weights are priors chosen for the situation. [Checked pairs](#checked-pairs-from-a-file) give values of your own.
+
+### Contacts entered by staff
+
+Use `examples/household.json` for a list that staff type in, where a parent, a child and a former spouse share one phone on file. The default policy suits people who contact you themselves, where the caller usually owns the number.
+
+```json
+{
+  "kinds": {
+    "phone": { "weight": 0.85, "dilution": 1, "cap": 10, "halfLife": 63072000000, "group": "household" },
+    "voip": { "group": "household" },
+    "address": { "group": "household" },
+    "ip": { "group": "household" },
+    "name": { "weight": 0.6, "dilution": 1, "cap": 5, "halfLife": "none", "group": "name", "corroborates": true }
+  }
+}
+```
+
+Under the preset, a phone alone relates two people without joining them. A phone, an address and an internet connection count once between them, because a household shares all three.
+
+| Two subjects share | Default | Preset |
+| --- | --- | --- |
+| A phone | 0.90, joined | 0.85, related |
+| A phone and a confirmed address | 0.96, joined | 0.85, related |
+| A phone and an email | joined | joined |
+| An IP and a confirmed address | 0.72, related | 0.60, related |
+| A phone and a name | 0.90, joined | 0.94, joined |
+| A name | kind absent | no link |
+
+A name confirms a link that a phone, email or address already made. The two must be related without it, and share a first and last name with the same zip code or date of birth. See [Names](identify.md#names).
+
+> **Names repeat in families.** A father and son, or mother and daughter, with one name at one address are joined once they also share a phone. `split` them when you know they are two people.
+
+Phone evidence halves for each two years between the two sightings, because numbers change hands.
+
+#### Caller attribution
+
+A caller becomes a `caller:` subject with their number. Under the preset, the contact on file with that number is only related to the caller. A later step of the contact is then not credited to the caller's ad click.
+
+To close the gap, have your backend join the two when staff open the contact a call is about. Leave out a call by somebody who speaks for another, such as a parent about a child: that is another person, and joining the two mixes their records.
+
+```bash
+curl -X POST https://graph.example.org/v1/decide -H "authorization: Bearer $GRAPH_TOKEN" -d '{
+  "key": "desk-CA1", "at": 1795460000000, "by": "system:desk", "action": "merge",
+  "pairs": [{ "a": "caller:96f2c503…", "b": "contact:7", "reason": "answered by staff" }] }'
+```
+
+The `caller:` subject is in the answer to the `call` entry. Take the merge back with [`unmerge`](#taking-a-merge-back).
+
+#### Shared phones
+
+Keep a shared phone on each person, and record what you know about the two. Removing the number also removes the link to every call it made.
+
+| What you know | Action |
+| --- | --- |
+| They are one person | `merge` the two. |
+| They are two people, and the distinction has no consequence | Leave them related. |
+| They are two people and must stay distinct | `split` them. |
+| The number belongs to a front desk, a shelter or a school | `mute` that number. |
+
+### Custom presets
+
+Write a policy the same way, rebuild, and start the server with it. A group is any name you choose, and kinds with the same group count once between them.
+
 ## Facts that keep people apart
 
 Two records can share an email and a phone and still be two people. A policy can keep them apart by a date of birth, a first name, or both:
@@ -94,7 +191,7 @@ contact:2 { email, born 1984-07-01 } ──┘
 
 With `IDENTIFIER_SECRET` set, the server then keeps a keyed `birth` of each `dob` in a [`profile`](identify.md), as a note that links nothing. Two subjects that would be in one group, both have a `birth`, and share no value of it are kept apart, whatever path joins them.
 
-With `given` it keeps keyed notes of the names a first name may stand for, from the table in `src/names.ts`: `Bob` stands for `Robert`, and `Lupe` for `Guadalupe`.
+With `given` it keeps keyed notes of the names a first name may stand for, from the table in `src/core/names.ts`: `Bob` stands for `Robert`, and `Lupe` for `Guadalupe`.
 
 | Two records | Come to |
 | --- | --- |
@@ -114,7 +211,7 @@ With `given` it keeps keyed notes of the names a first name may stand for, from 
 | Shared browsers and callers | They go with one of the two, as after a separation. |
 | Turning it on, or a new version of it | Rebuild once. Dates and names sent before are not known, or not all that is now kept of them: send them again. |
 
-It is off unless a policy lists it, and no preset does. On made-up people at the middle rates it kept one mixed record in five apart, and split 0.9% of the true pairs of records, or 1.3% where staff join callers to records. See [Accuracy](accuracy.md#the-second-run), where it is still far from its bar, and [the third run](accuracy.md#results-of-the-third-run), where eight of fifty marks came out bad.
+It is off unless a policy lists it, and no preset does. [Accuracy](accuracy.md#the-second-run) says what it did on made-up people, where it was still far from its bar, and in [the third run](accuracy.md#results-of-the-third-run) eight of fifty marks came out bad.
 
 ## Model assumptions
 
@@ -124,7 +221,7 @@ The result is a model score, uncalibrated as a probability. Correlated evidence 
 | --- | --- |
 | Coincidences are independent. | A household shares its phone, address and connection for one reason. Kinds in one `group` count once. Correlated kinds outside a group count twice. |
 | Evidence only adds. | Shared and differing facts cannot lower a score. Two different dates of birth have no effect. Record the difference with `split`. |
-| One weight fits a kind. | A phone typed by staff is weaker than one a caller dialed from. Use [presets](presets.md). |
+| One weight fits a kind. | A phone typed by staff is weaker than one a caller dialed from. Use [presets](#presets). |
 | Evidence fades with the gap. | Sightings that overlap do not fade, however old. A kind without a half-life keeps full evidence. |
 
 ## Asking about conflicts
@@ -148,7 +245,7 @@ Your systems hold facts the graph cannot infer. Report them with [`decide`](http
 | Fact | Owner | What to send |
 | --- | --- | --- |
 | Who is on the other side of a matter | Your case system. People who share a phone, a child or a case may be on one side or on two. | The pair, as a `split`. |
-| Which contact a call was about | Staff, when they take the call. | The caller and contact, as a `merge`, when they are one person. A parent calling about a child is a separate person. [Caller attribution](presets.md#caller-attribution) depends on it. |
+| Which contact a call was about | Staff, when they take the call. | The caller and contact, as a `merge`, when they are one person. A parent calling about a child is a separate person. [Caller attribution](#caller-attribution) depends on it. |
 | Whether a person may be contacted | The system that sends messages. Consent here covers advertising only. | Message consent, opt-outs, quiet hours and contact frequency stay there. |
 
 | Action | Behavior |
@@ -156,8 +253,6 @@ Your systems hold facts the graph cannot infer. Report them with [`decide`](http
 | `split` | Holds whatever the two share later. Withdraw it with `unsplit`. It can be recorded before either account exists. |
 | `merge` | The strongest link. A split still wins: merging an account with one side of a split pair pulls it away from the other. Take it back with `unmerge`. |
 | `mute` | Stops linking through one email, phone, IP address or identifier. Give it back with `unmute`. |
-
-The reviewer screen calls a merge a join, and a split a separation.
 
 ### Split
 
@@ -191,16 +286,7 @@ Send `unmerge` with the same pair. There is nothing to keep from the merge.
 { "key": "undo-ticket-88", "at": 1795463600000, "by": "dana", "action": "unmerge", "pairs": [{ "a": "contact:7", "b": "contact:12" }] }
 ```
 
-| Answer | Meaning |
-| --- | --- |
-| `"ok": true`, `notAsAsked` empty | The pair is apart |
-| `"ok": true`, the pair in `notAsAsked` with `evidence` | The merge is taken back, and what the two share still joins them |
-| `"ok": true`, the pair in `notAsAsked` with `other_merges` | The merge is taken back, and merges with others still join them |
-| `NOT_JOINED` with `apart` | Nobody merged the pair, and they are not together |
-| `NOT_JOINED` with `evidence` | Nobody merged the pair. What they share joins them. |
-| `NOT_JOINED` with `other_merges` | Nobody merged the pair. Merges with others join them. |
-
-`NOT_JOINED` for one pair refuses all of the list. To keep two apart whatever they share, use `split`.
+[`decide`](http.md#decide) lists the answers. To keep two apart whatever they share, use `split`.
 
 The audit log keeps the merge and its undoing.
 

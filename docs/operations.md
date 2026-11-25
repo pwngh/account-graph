@@ -143,7 +143,7 @@ The server runs the default weights, caps and half-lives. `POLICY` overrides onl
 POLICY='{"kinds":{"phone":{"weight":0.85,"halfLife":63072000000}}}' npm start
 ```
 
-For a longer policy, set `POLICY_FILE` to the path of a JSON file. [Matching](deciding.md) describes each part of a rule, and [Presets](presets.md) has a policy for contacts entered by staff. A new kind needs its weight, dilution, cap and half-life. Write `"none"` for an unlimited half-life.
+For a longer policy, set `POLICY_FILE` to the path of a JSON file. [Matching](matching.md) describes each part of a rule, and [Presets](matching.md#presets) has a policy for contacts entered by staff. A new kind needs its weight, dilution, cap and half-life. Write `"none"` for an unlimited half-life.
 
 > **A changed policy needs a rebuild.** The database keeps the policy it was built with. A server started with another one stops with `The policy differs from the one this database was built with. Run account-graph rebuild.`
 

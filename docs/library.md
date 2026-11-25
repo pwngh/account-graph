@@ -394,7 +394,7 @@ const graph = accountGraph({
 })
 ```
 
-Left out, the policy is the one the database was built with. One that differs throws `CONFIG.MISMATCH` until [`account-graph rebuild`](operations.md#policy). [Matching](deciding.md) describes each part of a rule.
+Left out, the policy is the one the database was built with. One that differs throws `CONFIG.MISMATCH` until [`account-graph rebuild`](operations.md#policy). [Matching](matching.md) describes each part of a rule.
 
 ## Money flows
 

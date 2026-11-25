@@ -11,7 +11,7 @@ made-up people ──▶ what a site, a telephone system and a front desk report
        └─────────────── who is who ───────────────▶ score ◀── who was joined ──────────┘
 ```
 
-Made-up people are no firm's customers. The figures say how the default settings do under the rates below, and not how they will do on yours. To measure your own, check pairs by hand and use [`tools/labels.ts`](deciding.md).
+Made-up people are no firm's customers. The figures say how the default settings do under the rates below, and not how they will do on yours. To measure your own, check pairs by hand and use [`tools/labels.ts`](matching.md).
 
 > **Scores are weights.** A link shown at 92% has a weight of 0.92 in the policy. It does not say that 92 of 100 such links are right.
 
@@ -157,7 +157,7 @@ Of records and callers alone, records mixed, then without those one spoke for, t
 | High | 4.54%, 2.34%, 90.71%, 53.45% | 4.52%, 2.34%, 79.86%, 12.34% | 5.72%, 1.91%, 90.37%, 69.59% |
 | Busy | 2.28%, 1.36%, 93.10%, 74.38% | 2.25%, 1.36%, 81.64%, 16.30% | 2.27%, 1.01%, 94.95%, 87.51% |
 
-The plain rule finds more true pairs of records and callers than account-graph does everywhere, and without those one spoke for mixes fewer records everywhere. The household preset only relates a phone, and this run has no staff who join a caller to a record as [the preset asks](presets.md#caller-attribution). Nothing of the plain rule ties a visit to a call or credits an ad.
+The plain rule finds more true pairs of records and callers than account-graph does everywhere, and without those one spoke for mixes fewer records everywhere. The household preset only relates a phone, and this run has no staff who join a caller to a record as [the preset asks](matching.md#caller-attribution). Nothing of the plain rule ties a visit to a call or credits an ad.
 
 ### After the run
 

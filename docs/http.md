@@ -168,8 +168,6 @@ The reserved kinds are `review`, `link`, `carry`, `opened`, `lease`, `dial`, `te
 
 Entries not begun when nine tenths of the time are out answer `NOT_ATTEMPTED`. The time is 30 seconds. Send those again.
 
-Every entry is checked before the first is written. One that cannot be ends the request with a fault, and nothing is written.
-
 If a fault ends a `record` part way, send the whole list again. The entries that stand answer `duplicate: true`.
 
 Put a `profile` before its `conversion`. The other way round, a conversion can be sent in between, without the click.
@@ -217,7 +215,7 @@ A conversion without payments is worth the newest `correct`, or else its first v
 
 ## decide
 
-Merges, splits and mutes, with the author and the reason. [Matching](deciding.md#decisions-from-your-own-systems) says when to use which.
+Merges, splits and mutes, with the author and the reason. [Matching](matching.md#decisions-from-your-own-systems) says when to use which.
 
 ```http
 POST /v1/decide
@@ -258,6 +256,8 @@ POST /v1/decide
 | `STALE` | A decision newer than `seen` names one of them | `decision`, `by`, `at` |
 | `NOT_JOINED` | `unmerge` of a pair with no merge to take back. None of the pairs is unmerged. | `pairs`: `{ a, b, because }`, where `because` is `apart`, `evidence` or `other_merges` |
 | `KEY_REUSED`, `KIND_NOT_IN_POLICY`, `FORGOTTEN` | As for `record` | |
+
+In `NOT_JOINED`, `apart` means the two are not together, `evidence` that what they share joins them, and `other_merges` that merges with others do.
 
 `seen` is the `decisions` number of the `person` lookup you decided by. Left out, nothing is checked. `unmute` is not checked.
 
@@ -305,7 +305,7 @@ POST /v1/lookup
 | `find` | `text` | `by`, `subjects`: a full email or phone, the start of a subject's id, or a full ad click id. At most 20. |
 | `match` | `facts`, `at` | `candidates`, `notes`: who somebody may be, before you save them |
 | `caller` | `from?`, `to`, `at` | Who is calling, [while the phone rings](calls.md#while-the-phone-rings) |
-| `conflicts` | `subjects`, 1 to 50 | `conflicts`: who of them is [kept apart](deciding.md#asking-about-conflicts) |
+| `conflicts` | `subjects`, 1 to 50 | `conflicts`: who of them is [kept apart](matching.md#asking-about-conflicts) |
 | `record` | `type`, `key`, `at` | One conversion, call or text, or `null` |
 | `transfers` | `subject`, `tiedOnly?` | `counterparties`, `rings` |
 
