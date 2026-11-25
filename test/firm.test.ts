@@ -2,14 +2,14 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { startFirm } from '../examples/firm.ts'
 import { PRACTICES } from '../examples/practice.ts'
-import { createMemoryStore, hashPhone } from '../tools/internals.ts'
+import { hashPhone } from '../tools/internals.ts'
 import { browse, chrome, until, without } from './chrome.ts'
 
 // The demo, scene by scene, in a real browser: what the stage says, and what the reviewer screen then shows.
 for (const practice of ['family', 'injury'] as const) test(`every scene of the ${practice} demo runs, says what came of it within a second, and can be seen`, { skip: without, timeout: 180_000 }, async (t) => {
   assert.ok(chrome, 'CI needs a browser')
   let restarts = 0
-  const firm = await startFirm(createMemoryStore(), { quick: true, practice, restart: () => void (restarts += 1) })
+  const firm = await startFirm({}, { quick: true, practice, restart: () => void (restarts += 1) })
   t.after(() => firm.close())
   const { run, press, close } = await browse(`${firm.graph}/stage`)
   t.after(close)

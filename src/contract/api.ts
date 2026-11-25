@@ -349,6 +349,8 @@ export interface Person {
   readonly members: readonly string[]
   readonly oversized: boolean
   readonly arrival: Arrival | null
+  /** The strongest arrival, where none is strong enough to credit. */
+  readonly possible: Arrival | null
   readonly consent: Consent | null
   readonly textsOptedOut: boolean
 }
@@ -358,6 +360,8 @@ export interface Arrival {
   readonly campaign: string | null
   readonly campaignId: string | null
   readonly landing: string | null
+  /** Parameters of your own that the landing address carried. */
+  readonly custom: Readonly<Record<string, string>>
   readonly confidence: number
   readonly how: Tie['how']
 }
@@ -526,6 +530,8 @@ export interface LocalSettings extends Common {
   /** A Slack-style `{ text }` address. The same events, written as sentences. */
   readonly alerts?: { readonly url: string }
   readonly now?: () => At
+  /** Asks ad platforms, checks and webhooks in place of the global one: for tests and demos. */
+  readonly fetch?: typeof fetch
 }
 
 export interface GoogleServiceAccount {

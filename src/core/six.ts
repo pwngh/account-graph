@@ -51,7 +51,7 @@ const ofKey = (type: 'conversion' | 'call' | 'text', key: string) => (type === '
 
 function arrival(touch: AttributedTouch | undefined, subject: Subject): Arrival | null {
   if (!touch) return null
-  return { at: touch.at, source: sourceOf(touch), campaign: touch.campaign ?? null, campaignId: touch.campaignId ?? null, landing: touch.landing ?? null, confidence: touch.confidence, how: touch.subject === subject ? 'self' : touch.joined ? 'cluster' : 'linked' }
+  return { at: touch.at, source: sourceOf(touch), campaign: touch.campaign ?? null, campaignId: touch.campaignId ?? null, landing: touch.landing ?? null, custom: touch.custom ?? {}, confidence: touch.confidence, how: touch.subject === subject ? 'self' : touch.joined ? 'cluster' : 'linked' }
 }
 const match = ({ subject, members, score, level, reasons, conflict }: Candidate): Match => ({ subject, members, score, level, kinds: kinds(reasons), ...(conflict && { conflict }) })
 const tied = ({ reasons, ...rest }: Counterparty): Tied => ({ ...rest, kinds: kinds(reasons) })
@@ -441,7 +441,8 @@ export function createSix(engine: Engine, options: SixOptions) {
     const consents = await graph.consentOf(subjects)
     return Promise.all(people.map(async ({ subject, members, touch, optedOut }) => {
       const cluster = await graph.cluster(subject)
-      return { subject, known: cluster !== undefined, members, oversized: cluster?.oversized ?? false, arrival: arrival(touch, subject), consent: consents.get(subject) ?? null, textsOptedOut: optedOut }
+      const possible = touch ? undefined : (await graph.attribute(subject, { at })).touches.reduce<AttributedTouch | undefined>((best, each) => (best && best.confidence >= each.confidence ? best : each), undefined)
+      return { subject, known: cluster !== undefined, members, oversized: cluster?.oversized ?? false, arrival: arrival(touch, subject), possible: arrival(possible, subject), consent: consents.get(subject) ?? null, textsOptedOut: optedOut }
     }))
   }
 
@@ -453,7 +454,7 @@ export function createSix(engine: Engine, options: SixOptions) {
       switch (entry.kind) {
         case 'visit': {
           const tie = subjects[on]
-          return { at, subject: on, kind: 'visit', arrival: { at, source: sourceOf(entry.touch), campaign: entry.touch.campaign ?? null, campaignId: entry.touch.campaignId ?? null, landing: entry.touch.landing ?? null, confidence: tie?.score ?? 1, how: tie?.how ?? 'self' } }
+          return { at, subject: on, kind: 'visit', arrival: { at, source: sourceOf(entry.touch), campaign: entry.touch.campaign ?? null, campaignId: entry.touch.campaignId ?? null, landing: entry.touch.landing ?? null, custom: entry.touch.custom ?? {}, confidence: tie?.score ?? 1, how: tie?.how ?? 'self' } }
         }
         case 'sighting':
           return { at, subject: on, kind: 'sighting', event: entry.event, kinds: [...new Set(entry.identifiers.map((each) => each.slice(0, each.indexOf(':'))))] }

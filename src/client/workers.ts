@@ -60,7 +60,7 @@ export function createWorkers(engine: Engine, ops: Ops, options: LocalOptions, l
   }
   jobs.push({ name: 'checks', every: 5 * MINUTE, lease: 4 * MINUTE, work: () => ops.check(), failed: (reason) => log(`checks: ${reason}`) })
   if (options.webhook) {
-    const webhook = createWebhook(store, { ...options.webhook, now, onSkipped: ({ seq, reason }) => void ops.alert('webhook', `account-graph: the webhook refused events for a day, up to ${seq}, and they were passed over. ${reason}`) })
+    const webhook = createWebhook(store, { ...options.webhook, now, ...(options.fetch && { fetch: options.fetch }), onSkipped: ({ seq, reason }) => void ops.alert('webhook', `account-graph: the webhook refused events for a day, up to ${seq}, and they were passed over. ${reason}`) })
     jobs.push({ name: 'webhook', every: 5_000, lease: 0, work: () => webhook.run(), failed: (reason) => log(`webhook: ${reason}`) })
   }
 
