@@ -71,36 +71,31 @@ export function localProblems(options: LocalOptions): string[] {
       wrong.push(`phones.numbers: ${(error as Error).message}`)
     }
   }
-  for (const number of options.phones?.exclude ?? []) {
-    try {
-      normalizePhone(number)
-    } catch {
-      wrong.push(`phones.exclude: "${number}" is not a phone number`)
+  for (const [name, list] of [['exclude', options.phones?.exclude], ['pool.numbers', options.phones?.pool?.numbers]] as const) {
+    for (const number of list ?? []) {
+      try {
+        normalizePhone(number)
+      } catch {
+        wrong.push(`phones.${name}: "${number}" is not a phone number`)
+      }
     }
   }
+  if (options.phones?.pool && !(options.phones.pool.minutes >= 1)) wrong.push('phones.pool.minutes must be at least 1')
+  if (options.phones?.tapSeconds !== undefined && !(options.phones.tapSeconds >= 0 && options.phones.tapSeconds <= 3600)) wrong.push('phones.tapSeconds must be from 0 to 3600')
   if (options.webhook && !(options.webhook.url && options.webhook.secret)) wrong.push('`webhook` requires its url and its secret')
   return wrong
 }
 
-/** Extras the edge gives the engine: what it knows of calls that a caller need not. */
-export interface EngineExtras {
-  pool?: { numbers: readonly string[]; minutes: number; grace: number }
-  clickWindow?: number
-  outboxDelay?: number
-}
-
-export function localGraph(options: LocalOptions, keeping: Keeping & { extras?: EngineExtras; store?: Store } = {}): AccountGraph {
+export function localGraph(options: LocalOptions, keeping: Keeping = {}): AccountGraph {
   const wrong = localProblems(options)
   if (wrong.length > 0) throw fault(FAULT_CODES.CONFIG.INVALID, wrong.join('\n'), { detail: { problems: wrong } })
   const log = keeping.log ?? (() => {})
   const gate = createGate()
   const timeout = options.timeoutMs ?? 30_000
-  const extras = keeping.extras ?? {}
   let pool: { end(): Promise<void> } | undefined
   let workers: Workers | undefined
 
   async function openStore(): Promise<Store> {
-    if (keeping.store) return keeping.store
     if (options.databaseUrl === undefined) return createMemoryStore()
     const { default: pg } = await import('pg')
     const made = new pg.Pool({ connectionString: options.databaseUrl, connectionTimeoutMillis: timeout })
@@ -141,7 +136,7 @@ export function localGraph(options: LocalOptions, keeping: Keeping & { extras?: 
     receipts.covers(options.databaseUrl === undefined ? [] : await store.read((tx) => tx.receiptSecrets()))
     const policy = await settle(store)
     const hours = options.openHours && createHours(options.openHours, options.timeZone)
-    const { numbers, exclude, minimumSeconds, resultsExpectedWithinMinutes } = options.phones ?? {}
+    const { numbers, exclude, minimumSeconds, resultsExpectedWithinMinutes, country, tapSeconds, pool: shown } = options.phones ?? {}
     let tell: (jobs: Parameters<typeof failedText>[0]) => void = () => {}
     const now = options.now ?? Date.now
     const targets = targetsOf(options)
@@ -151,9 +146,9 @@ export function localGraph(options: LocalOptions, keeping: Keeping & { extras?: 
       ...checksOf(options),
       ...(options.stages && { stages: options.stages }),
       ...(options.identifierSecret && { identifierSecret: options.identifierSecret }),
-      ...(extras.pool && { pool: extras.pool }),
+      ...(shown && { pool: { numbers: shown.numbers, minutes: shown.minutes, grace: shown.graceMinutes } }),
       calls: {
-        ...(numbers && { numbers }), ...(exclude && { exclude }), ...(minimumSeconds !== undefined && { minimumSeconds }), ...(extras.clickWindow !== undefined && { clickWindow: extras.clickWindow }),
+        ...(numbers && { numbers }), ...(exclude && { exclude }), ...(minimumSeconds !== undefined && { minimumSeconds }), ...(country && { country }), ...(tapSeconds !== undefined && { clickWindow: tapSeconds * 1000 }),
         ...(resultsExpectedWithinMinutes !== undefined && { results: 'expected' as const, resultWait: resultsExpectedWithinMinutes * 60_000 }),
       },
       ...(targets.length > 0 && { delivery: { targets, retractOnForget: options.ads?.retractOnForget ?? false, ...(options.ads?.delayMs !== undefined && { delay: options.ads.delayMs }), onFailed: (jobs) => tell(jobs) } }),

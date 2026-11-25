@@ -17,7 +17,7 @@ const ALLOWED: Record<Ring, readonly Ring[]> = {
   client: ['client', 'store', 'providers', 'core', 'contract'],
   edge: ['edge', 'client', 'store', 'providers', 'core', 'contract'],
   testing: ['testing', 'client', 'core', 'contract'],
-  root: ['client', 'contract', 'edge'],
+  root: ['client', 'contract'],
 }
 /** `pg` is loaded where a pool is made, and nowhere else. */
 const OUTSIDE: Record<Ring, RegExp> = {
@@ -40,14 +40,14 @@ describe('every import points inward', () => {
         }
         const target = relative(SRC, resolve(dirname(file), specifier))
         assert.ok(existsSync(join(SRC, target)), `${name} imports '${specifier}', which is not there`)
-        assert.ok(ALLOWED[ring].includes(ringOf(target)), `${name} (${ring}) must not import ${target} (${ringOf(target)})`)
+        assert.ok(name === 'bin.ts' || ALLOWED[ring].includes(ringOf(target)), `${name} (${ring}) must not import ${target} (${ringOf(target)})`)
       }
     })
   }
 })
 
 /** The programs. Everything else is given what it needs. */
-const READS_ENVIRONMENT = new Set(['edge/serve.ts'])
+const READS_ENVIRONMENT = new Set(['bin.ts'])
 test('only a program reads the environment', () => {
   for (const file of files(SRC)) {
     const name = relative(SRC, file).split(sep).join('/')

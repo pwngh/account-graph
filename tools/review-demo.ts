@@ -5,7 +5,7 @@
  */
 import { createServer } from 'node:http'
 import { createGraph, createHours, createMemoryStore, createOps, createOutbox, dialed, hashPhone, recordCall, recordCallResult, recordNotLead, recordReturn, recordText } from './internals.ts'
-import { createHandler } from '../src/edge/server.ts'
+import { createHandler } from '../test/harness.ts'
 
 // What is recorded below is written down at the time it happened, so the months of first record are real ones.
 let writing: number | undefined

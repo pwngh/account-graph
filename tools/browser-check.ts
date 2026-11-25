@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs'
 import pg from 'pg'
 import { createGraph, createOutbox, email, googleAds } from './internals.ts'
 import { createPostgresStore } from '../src/store/postgres.ts'
-import { createHandler } from '../src/edge/server.ts'
+import { createHandler } from '../test/harness.ts'
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
 const store = createPostgresStore(pool, 'ag_browser')

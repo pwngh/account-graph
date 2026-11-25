@@ -3,7 +3,7 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
 import { createGraph, createMemoryStore, email, hashPhone, phone, recordCall, recordNotLead, recordReturn, recordText } from '../tools/internals.ts'
-import { createHandler } from '../src/edge/server.ts'
+import { createHandler } from './harness.ts'
 import { browse, chrome, pause, until, without } from './chrome.ts'
 
 // The reviewer screen in a real browser.
@@ -112,7 +112,7 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
     const real = fetch
     globalThis.fetch = async (path, ...rest) => {
       const answer = await real(path, ...rest)
-      return path === '/pulse' ? answer : new Response(await answer.text(), { status: answer.status, headers: { age: '1' } })
+      return path === '/review/api/pulse' ? answer : new Response(await answer.text(), { status: answer.status, headers: { age: '1' } })
     }
     await load()
     const dated = beat
@@ -262,7 +262,7 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   await until('it to open', () => run(`opening === 0`))
   assert.equal(await run(`document.getElementById('subject').value`), 'typed meanwhile')
   // An answer that comes after something else was opened is too late, and opens nothing.
-  await run(`(() => { const real = window.fetch; window.fetch = async (...all) => { if (all[0] !== '/find') return real(...all); window.fetch = real; await new Promise((resolve) => (window.answer = resolve)); const response = await real(...all); const body = await response.json(); return { ok: true, status: 200, headers: response.headers, json: async () => { setTimeout(() => (window.answered = true), 0); return body } } }; const s = document.getElementById('subject'); s.value = 'person:2'; document.getElementById('find').requestSubmit(); location.hash = '#/accounts/person%3A1' })()`)
+  await run(`(() => { const real = window.fetch; window.fetch = async (...all) => { if (all[0] !== '/review/api/find') return real(...all); window.fetch = real; await new Promise((resolve) => (window.answer = resolve)); const response = await real(...all); const body = await response.json(); return { ok: true, status: 200, headers: response.headers, json: async () => { setTimeout(() => (window.answered = true), 0); return body } } }; const s = document.getElementById('subject'); s.value = 'person:2'; document.getElementById('find').requestSubmit(); location.hash = '#/accounts/person%3A1' })()`)
   await until('what was opened', async () => (await text('#detail h3')) === 'person:1' && (await run(`document.getElementById('subject').value`)) === 'person:1')
   await run(`window.answer()`)
   // Set in a task after the one that handles the answer.

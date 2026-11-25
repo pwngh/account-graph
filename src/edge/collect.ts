@@ -210,6 +210,7 @@ export async function event(options: CollectOptions, name: string, detail: Event
   const page = new URL(location.href)
   const staff = staffMark()
   const body = JSON.stringify({
+    kind: 'event',
     device: deviceId(),
     event: name,
     url: page.origin + page.pathname,
@@ -217,7 +218,7 @@ export async function event(options: CollectOptions, name: string, detail: Event
     ...(detail.number && { number: detail.number }),
     ...(staff && { staff }),
   })
-  await post(new URL('event', options.endpoint).href, body)
+  await post(options.endpoint, body)
 }
 
 /**
@@ -293,9 +294,9 @@ export function carry(options: CollectOptions): () => void {
     if (asking) return
     asking = true
     try {
-      const response = await fetch(new URL('carry', options.endpoint).href, {
+      const response = await fetch(options.endpoint, {
         method: 'POST',
-        body: JSON.stringify({ device: deviceId() }),
+        body: JSON.stringify({ kind: 'carry', device: deviceId() }),
         headers: { 'content-type': 'text/plain' },
         credentials: 'include',
       })
@@ -423,9 +424,9 @@ export function texts(options: CollectOptions): () => void {
     const gpc = (navigator as { globalPrivacyControl?: boolean }).globalPrivacyControl === true
     const staff = staffMark()
     try {
-      const response = await fetch(new URL('text-code', options.endpoint).href, {
+      const response = await fetch(options.endpoint, {
         method: 'POST',
-        body: JSON.stringify({ device: deviceId(), ...(gpc && { gpc }), ...(options.consent && { consent: options.consent }), ...(staff && { staff }) }),
+        body: JSON.stringify({ kind: 'text_code', device: deviceId(), ...(gpc && { gpc }), ...(options.consent && { consent: options.consent }), ...(staff && { staff }) }),
         headers: { 'content-type': 'text/plain' },
         credentials: 'include',
       })
@@ -521,9 +522,9 @@ export function pool(options: CollectOptions): () => void {
     // The server counts from before it answered, so the page counts from before it asked: never longer than the server does.
     const began = Date.now()
     try {
-      const response = await fetch(new URL('number', options.endpoint).href, {
+      const response = await fetch(options.endpoint, {
         method: 'POST',
-        body: JSON.stringify({ device: deviceId(), ...(gpc && { gpc }), ...(options.consent && { consent: options.consent }), ...(staff && { staff }) }),
+        body: JSON.stringify({ kind: 'number', device: deviceId(), ...(gpc && { gpc }), ...(options.consent && { consent: options.consent }), ...(staff && { staff }) }),
         headers: { 'content-type': 'text/plain' },
         credentials: 'include',
       })

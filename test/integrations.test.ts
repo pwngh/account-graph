@@ -11,7 +11,7 @@ import { promisify } from 'node:util'
 import { test } from 'node:test'
 import { createGraph, createMemoryStore, createOps, createOutbox, googleAds, hashPhone, knownLink, policyFrom, staffLink, email, phone, phoneOfType } from '../tools/internals.ts'
 import type { IngestRequest } from '../tools/internals.ts'
-import { configFrom } from '../src/edge/serve.ts'
+import { readEnvironment as configFrom } from '../src/bin.ts'
 import { CostError, costsFromCsv, googleCosts, metaCosts } from '../src/providers/costs.ts'
 import { createFingerprintVerifier, trusted } from '../src/providers/fingerprint.ts'
 import type { VerifiedFingerprint } from '../src/providers/fingerprint.ts'
@@ -21,7 +21,7 @@ import { hardwareId, machineId } from '../src/edge/hardware.ts'
 import { createDatabaseLookup, createMaxMindLookup, placeOf, shared } from '../src/providers/maxmind.ts'
 import { addressIdentifier, createAddressVerifier } from '../src/providers/smarty.ts'
 import { createLineTypeLookup, fromTwilio, twilioCall, twilioSignature } from '../src/providers/twilio.ts'
-import { createHandler } from '../src/edge/server.ts'
+import { createHandler } from './harness.ts'
 import { counts } from './suite.ts'
 
 const T0 = 1_708_102_555_327
@@ -771,7 +771,7 @@ test('what a platform says it brought is read only when it is asked for', async 
   assert.equal('conversions' in (await metaCosts(ads)('2026-03-01', '2026-03-01'))[0]!, false)
   assert.deepEqual(meta.calls.map((call) => new URL(call.url).searchParams.get('fields')!.endsWith(',account_currency,actions,action_values')), [true, false])
 
-  const env = { DATABASE_URL: 'x', GRAPH_TOKEN: 'y', GOOGLE_ADS_DEVELOPER_TOKEN: 'd', GOOGLE_ADS_CUSTOMER_ID: '1', GOOGLE_SERVICE_ACCOUNT_FILE: 'f', META_AD_ACCOUNT_ID: '2', META_ADS_TOKEN: 't' }
+  const env = { DATABASE_URL: 'x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'y', GOOGLE_ADS_DEVELOPER_TOKEN: 'd', GOOGLE_ADS_CUSTOMER_ID: '1', GOOGLE_SERVICE_ACCOUNT_FILE: 'f', META_AD_ACCOUNT_ID: '2', META_ADS_TOKEN: 't' }
   assert.deepEqual([configFrom(env).googleCosts!.conversions, configFrom(env).metaCosts!.conversions], [false, undefined])
   const asked = configFrom({ ...env, GOOGLE_ADS_CONVERSIONS: 'true', META_ADS_CONVERSIONS: 'lead' })
   assert.deepEqual([asked.googleCosts!.conversions, asked.metaCosts!.conversions], [true, 'lead'])
@@ -881,7 +881,7 @@ test('the server takes page events and phone calls, and ties a call to the visit
   const plain = createServer(createHandler(graph, { token: 'service', origins: [] })).listen(0, '127.0.0.1')
   await new Promise((resolve) => plain.once('listening', resolve))
   try {
-    assert.equal((await fetch(`http://127.0.0.1:${(plain.address() as AddressInfo).port}/calls/twilio`, { method: 'POST', body: 'CallSid=CA1' })).status, 401)
+    assert.equal((await fetch(`http://127.0.0.1:${(plain.address() as AddressInfo).port}/calls/twilio`, { method: 'POST', body: 'CallSid=CA1' })).status, 404)
   } finally {
     plain.close()
   }
@@ -1020,7 +1020,7 @@ test('a link sent to one person ties the browser that opens it, and a visitor is
   try {
     const address = `http://127.0.0.1:${(plain.address() as AddressInfo).port}`
     assert.equal((await fetch(`${address}/link`, { method: 'POST', headers: { authorization: 'Bearer service' }, body: '{}' })).status, 404)
-    assert.equal((await fetch(`${address}/carry`, { method: 'POST', headers: { origin: 'https://site.example' }, body: '{}' })).status, 401)
+    assert.equal((await fetch(`${address}/carry`, { method: 'POST', headers: { origin: 'https://site.example' }, body: '{}' })).status, 404)
   } finally {
     plain.close()
   }
@@ -1617,7 +1617,7 @@ test('a visitor with an arrival is shown a number of their own, and nobody else 
 
   // Off, there is no such route.
   const off = await listen({})
-  assert.equal((await fetch(`${off}/number`, { method: 'POST', body: '{"device":"a"}', headers: { origin: 'https://site.example' } })).status, 401)
+  assert.equal((await fetch(`${off}/number`, { method: 'POST', body: '{"device":"a"}', headers: { origin: 'https://site.example' } })).status, 404)
   assert.throws(() => createHandler(graph, { ...options, pool: { numbers: ['nonsense'], minutes: 15, grace: 0 } }), TypeError)
 })
 

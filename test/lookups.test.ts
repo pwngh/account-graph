@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { createGraph, createMemoryStore, ringing } from '../tools/internals.ts'
-import { configFrom } from '../src/edge/serve.ts'
+import { readEnvironment as configFrom } from '../src/bin.ts'
 import { recordText } from '../src/core/texts.ts'
 import { checkTags } from '../src/core/tags.ts'
 import { shared } from '../src/providers/maxmind.ts'
@@ -99,11 +99,11 @@ test('the server reads ranges from a file, and says what is wrong with it', asyn
   const folder = mkdtempSync(join(tmpdir(), 'ranges-'))
   t.after(() => rmSync(folder, { recursive: true }))
   const file = join(folder, 'ranges.json')
-  const env = { DATABASE_URL: 'postgres://localhost/x', GRAPH_TOKEN: 'a-service-token-of-some-length', ORIGINS: 'https://example.org', SERVER_RANGES_FILE: file }
+  const env = { DATABASE_URL: 'postgres://localhost/x', RECEIPT_SECRETS: 'r'.repeat(32), GRAPH_TOKEN: 'a-service-token-of-some-length', ORIGINS: 'https://example.org', SERVER_RANGES_FILE: file }
   assert.throws(() => configFrom(env), /SERVER_RANGES_FILE: ".*ranges.json" cannot be read/)
   writeFileSync(file, '{}')
   assert.throws(() => configFrom(env), /SERVER_RANGES_FILE: No address range/)
   writeFileSync(file, '["192.0.2.0/24"]')
-  assert.equal((await configFrom(env).serverRanges!('192.0.2.9'))!.hosting, true)
+  assert.equal((await createRangeLookup(configFrom(env).serverRanges!)('192.0.2.9'))!.hosting, true)
   assert.equal(configFrom({ ...env, SERVER_RANGES_FILE: '' }).serverRanges, undefined)
 })

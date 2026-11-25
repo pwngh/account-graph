@@ -237,7 +237,7 @@ let dated = 0
 async function api(method, path, body) {
   const asked = loading
   const token = $('token').value
-  const response = await fetch(path, {
+  const response = await fetch(`/review/api${path}`, {
     method,
     headers: { authorization: `Bearer ${token}`, ...(body && { 'content-type': 'application/json' }) },
     ...(body && { body: JSON.stringify(body) }),
@@ -587,7 +587,7 @@ let browsing = false
 /** The tag of what the server holds now, or undefined when it is the one already seen. */
 async function pulse() {
   const token = $('token').value
-  const response = await fetch('/pulse', { cache: 'no-store', headers: { authorization: `Bearer ${token}`, ...(beat && { 'if-none-match': beat }) } })
+  const response = await fetch('/review/api/pulse', { cache: 'no-store', headers: { authorization: `Bearer ${token}`, ...(beat && { 'if-none-match': beat }) } })
   if (response.status === 304) return undefined
   if (response.status === 401) {
     if ($('token').value === token) signedIn(undefined)

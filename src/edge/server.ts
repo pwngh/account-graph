@@ -1,37 +1,56 @@
-import { isFault, malformed } from '../contract/fault.ts'
+import { FAULT_CODES, fault, isFault, malformed } from '../contract/fault.ts'
+import { CALLS } from '../contract/validate.ts'
+import type { CallName } from '../contract/validate.ts'
+import { STATUS, asFault, faultBody } from '../client/faults.ts'
+import type { Service } from '../core/service.ts'
+import type { Call } from '../core/calls.ts'
+import type { Text } from '../core/texts.ts'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { BlockList, isIP } from 'node:net'
-import { callState, dialed, followUp, numberOrSelf, ringing, recordCall, recordCallResult, recordNotLead, recordReturn } from '../core/calls.ts'
+import { callState, dialed, followUp, numberOrSelf } from '../core/calls.ts'
 import type { CallOptions } from '../core/calls.ts'
 import { Outdated } from '../core/graph.ts'
-import type { Graph, PolicyState } from '../core/graph.ts'
+import type { Graph } from '../core/graph.ts'
 import type { Hours } from '../core/hours.ts'
 import { identifier, ip, UNSTORABLE } from '../core/identifiers.ts'
 import { trusted } from '../providers/fingerprint.ts'
 import type { FingerprintVerifier } from '../providers/fingerprint.ts'
 import { placeOf, shared } from '../providers/maxmind.ts'
-import type { AddressVerifier } from '../providers/smarty.ts'
 import { fromTwilio, twilioCall, twilioText } from '../providers/twilio.ts'
-import type { LineTypeLookup } from '../providers/twilio.ts'
-import { asks, beginnings, codeNote, recordText, replyTo, textCode, texted } from '../core/texts.ts'
+import { asks, codeNote, textCode, texted } from '../core/texts.ts'
 import type { TextOptions } from '../core/texts.ts'
 import type { IpLookup } from '../providers/maxmind.ts'
 import type { Ops } from '../core/ops.ts'
-import { sentOf } from '../core/outbox.ts'
 import type { Job, JobState, Outbox } from '../core/outbox.ts'
-import { createService } from '../core/service.ts'
 import { dayIn, dayStart, sourceOf } from '../core/report.ts'
 import type { Ladder } from '../core/ladder.ts'
 import { defaultPolicy, plainPolicy } from '../core/policy.ts'
 import { reviewPage } from './review.ts'
-import { browserMark, knownLink, readToken, signToken, staffLink } from '../core/sign.ts'
+import { browserMark, readToken, signToken } from '../core/sign.ts'
 import { browserScripts, scriptHeaders } from './tag.ts'
 import { TOUCH_FIELDS } from '../core/touch.ts'
-import type { Deciding, Identifier, Level, Observation, Subject, Told, Touch, Why } from '../contract/types.ts'
+import type { Change, Deciding, Identifier, Level, Observation, Subject, Touch } from '../contract/types.ts'
 
 /** Each reviewer's name, and the token or tokens that are theirs. */
 export type Reviewers = Readonly<Record<string, string | readonly string[]>>
+
+/** What the edge is made on: the graph behind it, and what it is told of calls, texts and deletions. */
+export interface Core {
+  graph: Graph
+  service: Service
+  outbox?: Outbox | undefined
+  ops?: Ops | undefined
+  called(call: Call): Promise<unknown>
+  texted(text: Text): Promise<unknown>
+  forget(subjects: readonly Subject[], why: Deciding, retract: boolean): Promise<{ changes: Change[]; sent: unknown[] }>
+  /** The six calls. Without it, `/v1` is not served. */
+  v1?(name: CallName, request: unknown, signal: AbortSignal): Promise<unknown>
+}
+
+/** What a page may ask for, and the routes each had before there was one. */
+const BROWSER = new Map([['/collect', 'visit'], ['/event', 'event'], ['/carry', 'carry'], ['/number', 'number'], ['/text-code', 'text_code']])
+const KINDS = new Set(BROWSER.values())
 
 export interface HandlerOptions {
   /**
@@ -64,10 +83,6 @@ export interface HandlerOptions {
   fingerprint?: FingerprintVerifier
   /** Classifies the visitor's address. A shared address is recorded but links nothing. When it gives a place, the visit is noted with it. */
   ipInfo?: IpLookup
-  /** Checks a postal address posted to `/identify`. Without it, addresses are not used. */
-  address?: AddressVerifier
-  /** Says what kind of line a phone number posted to `/identify` is, so a throwaway number counts for less. */
-  lineType?: LineTypeLookup
   /**
    * Have `/collect` keep the device id in a cookie the server sets. Safari
    * deletes a cookie set by script after seven days; one set by the server
@@ -89,8 +104,6 @@ export interface HandlerOptions {
    * from them are dropped and counted.
    */
   staffNetworks?: readonly string[]
-  /** Sends outcomes posted to `/convert` to ad platforms. Without it, they are only counted for the report. */
-  outbox?: Outbox
   /**
    * The events a page may report to `/event`, by name: `inquiry`,
    * `phone_click`. Each is counted as an outcome of that name, once a day
@@ -103,7 +116,7 @@ export interface HandlerOptions {
    * that route's public address exactly as entered in Twilio, which the
    * signature is checked against.
    */
-  calls?: CallOptions & { twilio?: { authToken: string; url: string } }
+  calls?: Pick<CallOptions, 'numbers' | 'country' | 'results' | 'resultWait'> & { twilio?: { authToken: string; url: string } }
   /**
    * How text messages posted to `/text` are recorded. With `codes`, the script tag asks `/text-code` for the code it puts in
    * text links. With `twilio`, the server also takes Twilio's incoming messages at `/texts/twilio`.
@@ -129,16 +142,12 @@ export interface HandlerOptions {
    * as theirs when nobody has had the number since. Off by default.
    */
   pool?: { numbers: readonly string[]; minutes: number; grace: number }
-  /** Makes the keys of names sent to `/identify`. Without it, names are not used. At least 32 characters; changing it makes every key new. */
-  identifierSecret?: string
   /** How many hours a missed call may wait before `/board` says it has waited too long. Left out or 0, it never does. */
   returnHours?: number
     /** When you are open. With it, the board counts waiting, and the call summary calls that came while you were closed. */
   hours?: Hours
   /** The time zone `/report` reads its days in when the request names none. Use the ad account's. Defaults to UTC. */
   timeZone?: string
-  /** What runs by itself and who is told about it, for `/ops` and `/alerts/test`. */
-  ops?: Ops
   /** The clock, for tests. */
   now?: () => number
 }
@@ -146,18 +155,11 @@ export interface HandlerOptions {
 const ID = /^[\w.-]{1,128}$/
 const NAME = /^[\w.-]{1,64}$/
 
-/** What a reviewer's token opens: what the reviewer screen reads, and the decisions a reviewer makes. */
-const REVIEW_ROUTES = new Set([
-  'GET /me', 'GET /subject', 'GET /clusters', 'GET /search', 'GET /recent', 'GET /links', 'GET /cluster', 'GET /history', 'GET /journey', 'GET /board', 'GET /flows', 'GET /collusion', 'GET /rings',
-  'GET /decisions', 'GET /disputes', 'GET /consent', 'GET /outcome', 'GET /followed', 'GET /call', 'GET /calls', 'GET /calls/summary', 'POST /match', 'POST /people', 'POST /conflicts', 'POST /call/ringing', 'GET /text', 'GET /texts', 'GET /texting', 'GET /audit', 'GET /report', 'GET /pulse', 'GET /policy', 'GET /ops', 'POST /find', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /forget',
-  'GET /undecided', 'GET /between', 'GET /conversions', 'POST /retry', 'POST /foresee',
-])
-
 /** What takes long to work out, and changes little in a few seconds. */
 const SLOW_ROUTES = new Set(['GET /board', 'GET /report', 'GET /followed', 'GET /calls/summary'])
 
 /** What changes who is who, or takes someone out, and is seen in every answer from then on. */
-const DECISIONS = new Set(['POST /forget', 'POST /separate', 'POST /join', 'POST /ignore', 'POST /rebuild', 'POST /not-lead', 'POST /call/returned'])
+const DECISIONS = new Set(['POST /forget', 'POST /separate', 'POST /join', 'POST /ignore'])
 
 /** Answers hold people's data, so nothing keeps a copy of one. */
 const JSON_HEADERS = { 'content-type': 'application/json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }
@@ -182,7 +184,8 @@ class Refusal extends Error {
  * reviewer screen, `/health` says the database answers, and every other
  * route needs a bearer token.
  */
-export function createHandler(graph: Graph, options: HandlerOptions) {
+export function createHandler(core: Core, options: HandlerOptions) {
+  const { graph, service } = core
   const now = options.now ?? Date.now
   const token = Buffer.from(options.token)
 
@@ -198,23 +201,10 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     return reviewers.filter((each) => matches(sent, each.token))[0]?.name
   }
 
-  /** Refuses the request unless it carries the service token, or a reviewer's on a route reviewers may use. */
-  const authorize = (request: IncomingMessage, path: string) => {
-    if (matches(sentToken(request), token)) return
-    if (reviewerOf(request) === undefined) throw new Refusal(401, 'Missing or invalid token')
-    if (!REVIEW_ROUTES.has(path)) throw new Refusal(403, 'This route requires a service token')
-  }
-
-  /** A list of pairs from one of your systems, and who it is from. Only a service may speak for a system. */
-  const listed = (request: IncomingMessage, body: any, withdrawals: boolean): [Told[], Why] => {
-    if (reviewerOf(request) !== undefined) throw new Refusal(403, 'The list form of this route requires a service token')
-    if (!Array.isArray(body.pairs) || body.pairs.length > 1000) throw new Refusal(400, '`pairs` must be a list of at most 1000')
-    if (typeof body.source !== 'string' || !NAME.test(body.source)) throw new Refusal(400, 'A list requires its `source`: the name of the system it is from')
-    for (const each of body.pairs) {
-      if (!each || typeof each !== 'object') throw new Refusal(400, 'Each pair must be written { a, b }')
-      if (withdrawals && each.separated !== undefined && typeof each.separated !== 'boolean') throw new Refusal(400, '`separated` must be true or false')
-    }
-    return [body.pairs.map(({ a, b, separated, reason }: any) => ({ a, b, ...(withdrawals && separated !== undefined && { separated }), ...(typeof reason === 'string' && reason && { reason: reason.slice(0, 1000) }) })), why({ ...body, by: `system:${body.source}` })]
+  const isService = (request: IncomingMessage) => matches(sentToken(request), token)
+  /** Refuses the request unless it carries the service token or a reviewer's. */
+  const authorize = (request: IncomingMessage) => {
+    if (!isService(request) && reviewerOf(request) === undefined) throw new Refusal(401, 'Missing or invalid token')
   }
 
   /** Who one decision is by, why, and what they had seen. A reviewer's name is the one their token belongs to, whatever the body says. */
@@ -235,8 +225,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     return Boolean(options.linkSecret && readToken(options.linkSecret, 'staff', body?.staff, now()))
   }
 
-  const service = createService(graph, { ...options, now })
-  const { pool, convert, calling, textOptions, identify, factsIn, find, lineOf } = service
+  const { pool, convert, find } = service
 
   /** What this process has done since it started, for `/stats`. */
   const tally = { since: now(), leased: 0, exhausted: 0, collected: 0, limited: 0, bots: 0, staff: 0, errors: 0 }
@@ -307,8 +296,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
   }
 
   /** Records something a visitor did on a page. Only names the server was told to accept are kept. */
-  async function happened(request: IncomingMessage, response: ServerResponse) {
-    const body = await json(request)
+  async function happened(request: IncomingMessage, response: ServerResponse, body: any) {
     if (typeof body.event !== 'string' || !events.has(body.event)) throw new Refusal(400, 'Event is not listed in EVENTS')
     if (fromStaff(request, body)) return void (tally.staff += 1)
     const device = deviceOf(request, response, body)
@@ -341,7 +329,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     // Filed where no backend's own id can be, so a page cannot take one before the backend uses it.
     const transactionId = `page:${body.event}:${device}:${occurrence}`
     // The same occurrence reported again is already on its way; recording it twice with a new time would be refused.
-    if (options.outbox && (await options.outbox.get(transactionId)).length > 0) return
+    if (core.outbox && (await core.outbox.get(transactionId)).length > 0) return
     await convert({ transactionId, subject, at, stage: body.event })
   }
 
@@ -349,8 +337,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
    * A number of their own for a visitor an arrival is on record for, or nothing: then the page keeps the number it has.
    * A visitor who opted out of advertising is not followed to the phone either.
    */
-  async function number(request: IncomingMessage, response: ServerResponse) {
-    const body = await json(request)
+  async function number(request: IncomingMessage, response: ServerResponse, body: any) {
     if (fromStaff(request, body)) return void (tally.staff += 1)
     const device = deviceOf(request, response, body)
     const subject = `visitor:${device}`
@@ -367,8 +354,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
   }
 
   /** The code this visitor's text links carry: the one they were given in the last week, or a new one. */
-  async function textCodeFor(request: IncomingMessage, response: ServerResponse) {
-    const body = await json(request)
+  async function textCodeFor(request: IncomingMessage, response: ServerResponse, body: any) {
     if (fromStaff(request, body)) return void (tally.staff += 1)
     const device = deviceOf(request, response, body)
     const subject = `visitor:${device}`
@@ -499,9 +485,6 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
   }
   let running: string | undefined
 
-  /** Which policy runs, which one the stored clusters were built with, and whether a rebuild is due. */
-  const brief = ({ hash, builtWith, due }: PolicyState) => ({ hash, builtWith: builtWith ?? null, due })
-
   /** Everything the reviewer screen shows about one subject, in one answer. */
   async function profile(subject: Subject) {
     const cluster = await graph.cluster(subject)
@@ -547,13 +530,6 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     const to = url.searchParams.get('to') || dayIn(now(), timeZone)
     const from = url.searchParams.get('from') || new Date(dayStart(to) - 29 * 86_400_000).toISOString().slice(0, 10)
     return { from, to, timeZone }
-  }
-
-  /** A subject's calls, without those that were no lead. */
-  const spokenWith = async (of: Subject) => {
-    const calls = await graph.callsOf([of])
-    const not = await graph.notLeads(calls.map((call) => `call:${call.id}`))
-    return calls.filter((call) => !not.has(`call:${call.id}`))
   }
 
   /** Where a page of a list begins, from the `next` of the page before. */
@@ -606,12 +582,52 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
     }
   }
 
+  const available = (kind: string): boolean => (kind === 'carry' ? Boolean(options.linkSecret) : kind === 'number' ? pool.length > 0 : kind === 'text_code' ? Boolean(options.texts?.codes) : true)
+
+  /** One of the six calls. The service token opens each; a reviewer's opens the decisions it may sign, and what the screen reads. */
+  async function six(request: IncomingMessage, response: ServerResponse, name: string): Promise<unknown> {
+    const answer = (status: number, body: unknown) => {
+      response.writeHead(status, { ...JSON_HEADERS, ...(request.headers['x-request-id'] && /^[\x21-\x7e]{1,200}$/.test(String(request.headers['x-request-id'])) && { 'x-request-id': String(request.headers['x-request-id']) }) }).end(JSON.stringify(body))
+      return SENT
+    }
+    const gone = new AbortController()
+    response.once('close', () => response.writableFinished || gone.abort())
+    try {
+      if (!core.v1 || !(CALLS as string[]).includes(name)) throw new Refusal(404, 'No such call')
+      if (request.method !== 'POST') throw new Refusal(405, 'Use POST')
+      const reviewer = reviewerOf(request)
+      if (!isService(request) && reviewer === undefined) throw fault(FAULT_CODES.AUTH.REJECTED, 'Missing or invalid token')
+      const given = await text(request)
+      let body: any
+      try {
+        body = JSON.parse(given)
+      } catch (error) {
+        throw malformed((error as Error).message)
+      }
+      if (!isService(request)) {
+        const opens = name === 'report' || ((name === 'decide' || name === 'forget') && body?.by === reviewer) || (name === 'lookup' && (body?.kind === 'journey' || body?.kind === 'find'))
+        if (!opens) throw fault(FAULT_CODES.AUTH.FORBIDDEN, name === 'decide' || name === 'forget' ? '`by` must match the owner of the token' : 'The token does not open this call')
+      }
+      return answer(200, await core.v1(name as CallName, body, gone.signal))
+    } catch (error) {
+      if (error instanceof Refusal && error.status === 413) return answer(413, faultBody(fault(FAULT_CODES.INPUT.TOO_LARGE, error.message)))
+      if (error instanceof Refusal && error.status >= 404) throw error
+      const known = asFault(error)
+      if (known.code === FAULT_CODES.GRAPH.INTERNAL) {
+        tally.errors += 1
+        console.error(known.cause ?? error)
+      }
+      return answer(STATUS[known.code] ?? 500, faultBody(known))
+    }
+  }
+
   async function route(request: IncomingMessage, response: ServerResponse, remember = true): Promise<unknown> {
     const url = new URL(request.url ?? '/', 'http://localhost')
-    const path = `${request.method} ${url.pathname}`
+    let path = `${request.method} ${url.pathname}`
     const origin = request.headers.origin
 
-    if (url.pathname === '/collect' || url.pathname === '/event' || (url.pathname === '/carry' && options.linkSecret) || (url.pathname === '/number' && pool.length > 0) || (url.pathname === '/text-code' && options.texts?.codes)) {
+    const asked = BROWSER.get(url.pathname)
+    if (asked && available(asked)) {
       if (!origin || !options.origins.includes(origin)) throw new Refusal(403, 'Origin is not allowed')
       response.setHeader('access-control-allow-origin', origin)
       response.setHeader('vary', 'origin')
@@ -622,10 +638,15 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         response.setHeader('retry-after', String(Math.ceil(60 / perMinute)))
         throw new Refusal(429, 'Too many visits from this address')
       }
-      if (url.pathname === '/carry') {
-        // The page reads this answer, and may send the server's own cookie with the request.
-        response.setHeader('access-control-allow-credentials', 'true')
-        const device = deviceOf(request, response, await json(request))
+      const body = await json(request)
+      // Each was a route of its own, and a page that keeps an old script still asks there.
+      const kind = asked === 'visit' && body.kind !== undefined ? body.kind : asked
+      if (typeof kind !== 'string' || !KINDS.has(kind)) throw new Refusal(400, '`kind` must be visit, event, carry, number or text_code')
+      if (!available(kind)) throw new Refusal(404, `Nothing is set up for "${kind}"`)
+      // The page reads these answers, and may send the server's own cookie with the request.
+      if (kind === 'carry' || kind === 'number' || kind === 'text_code') response.setHeader('access-control-allow-credentials', 'true')
+      if (kind === 'carry') {
+        const device = deviceOf(request, response, body)
         const made = `${device}\n${browserMark(request.headers['user-agent'], addressOf(request))}`
         return { token: signToken(options.linkSecret!, 'carry', made, now() + 3_600_000) }
       }
@@ -633,24 +654,13 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         tally.bots += 1
         return undefined
       }
-      if (url.pathname === '/number') {
-        // The page reads this answer, and may send the server's own cookie with the request.
-        response.setHeader('access-control-allow-credentials', 'true')
-        return number(request, response)
-      }
-      if (url.pathname === '/text-code') {
-        // The page reads this answer, and may send the server's own cookie with the request.
-        response.setHeader('access-control-allow-credentials', 'true')
-        return textCodeFor(request, response)
-      }
-      if (url.pathname === '/event') await happened(request, response)
+      if (kind === 'number') return number(request, response, body)
+      if (kind === 'text_code') return textCodeFor(request, response, body)
+      if (kind === 'event') await happened(request, response, body)
+      else if (fromStaff(request, body)) tally.staff += 1
       else {
-        const body = await json(request)
-        if (fromStaff(request, body)) tally.staff += 1
-        else {
-          await collect(request, response, body)
-          tally.collected += 1
-        }
+        await collect(request, response, body)
+        tally.collected += 1
       }
       return undefined
     }
@@ -662,7 +672,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       if (!fromTwilio(authToken, address, fields, String(request.headers['x-twilio-signature'] ?? ''))) throw new Refusal(403, 'Invalid signature')
       storable(fields)
       const call = twilioCall(fields, now())
-      if (call) await recordCall(graph, call, calling())
+      if (call) await core.called(call)
       return undefined
     }
 
@@ -673,7 +683,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       const { Body: _, ...rest } = fields
       storable(rest)
       const message = twilioText(fields, now())
-      if (message) await recordText(graph, message, textOptions())
+      if (message) await core.texted(message)
       // Twilio sends the sender whatever the answer says, so it says nothing.
       response.writeHead(200, { 'content-type': 'text/xml' }).end('<Response/>')
       return SENT
@@ -699,7 +709,11 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       return SENT
     }
 
-    authorize(request, path)
+    if (url.pathname.startsWith('/v1/')) return six(request, response, url.pathname.slice('/v1/'.length))
+
+    if (!url.pathname.startsWith('/review/api/')) throw new Refusal(404, 'No such route')
+    path = `${request.method} ${url.pathname.slice('/review/api'.length)}`
+    authorize(request)
     storable([...url.searchParams.values()])
     const subject = url.searchParams.get('subject') ?? ''
     if (remember && SLOW_ROUTES.has(path)) return remembered(url, response, () => route(request, response, false))
@@ -715,26 +729,6 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       }
     }
     switch (path) {
-      case 'POST /observe':
-        return graph.observe(await json(request))
-      case 'POST /identify':
-        return identify(await json(request))
-      case 'POST /match': {
-        const { identifiers, notes, at } = await factsIn(await json(request), false)
-        return { candidates: await graph.match(identifiers, { at }), notes }
-      }
-      case 'POST /conflicts': {
-        const { subjects } = await json(request)
-        if (!Array.isArray(subjects) || subjects.length === 0 || subjects.length > 50 || !subjects.every((each) => typeof each === 'string' && each)) throw new Refusal(400, '`subjects` must be a list of 1 to 50 ids')
-        return { conflicts: await graph.conflicts(subjects) }
-      }
-      case 'POST /call/ringing': {
-        const body = await json(request)
-        const { touch, ...rest } = await ringing(graph, { ...body, at: body.at ?? now() }, calling())
-        return { ...rest, ...(touch && { source: sourceOf(touch), campaign: touch.campaign ?? null, campaignId: touch.campaignId ?? null, landing: touch.landing ?? null }) }
-      }
-      case 'POST /touch':
-        return graph.touch(await json(request))
       case 'POST /ignore': {
         const body = await json(request)
         return graph.ignore(body.identifier, body.ignored ?? true, signed(request, body))
@@ -743,41 +737,28 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         const body = await json(request)
         for (const name of ['ads', 'retract']) if (body[name] !== undefined && typeof body[name] !== 'boolean') throw new Refusal(400, `\`${name}\` must be true or false`)
         // Before anything is deleted: what is sent to nobody must not look asked for.
-        if (body.retract && !options.outbox?.retraction.targets.length) throw new Refusal(400, 'No configured ad platform accepts retractions')
+        if (body.retract && !core.outbox?.retraction.targets.length) throw new Refusal(400, 'No configured ad platform accepts retractions')
         // A person's ids are named one by one, so nobody is deleted for being in a cluster.
         if (body.subjects !== undefined && (body.subject !== undefined || !Array.isArray(body.subjects) || body.subjects.length === 0 || body.subjects.length > 50 || !body.subjects.every((each: unknown) => typeof each === 'string' && each))) throw new Refusal(400, '`subjects` must be a list of 1 to 50 ids, without `subject`')
         if (body.subjects === undefined && typeof body.subject !== 'string') throw new Refusal(400, 'forget requires a subject')
         const whom: Subject | Subject[] = body.subjects ?? body.subject
-        // With no platform set up now, what was sent when one was is still said.
-        let jobs: Job[] = []
-        const { changes, sent } = options.outbox
-          ? await options.outbox.forget(whom, signed(request, body), { retract: body.retract ?? false })
-          : { changes: await graph.forget(whom, signed(request, body), (gone) => void (jobs = gone)), sent: sentOf(jobs) }
+        const { changes, sent } = await core.forget(typeof whom === 'string' ? [whom] : whom, signed(request, body), body.retract ?? false)
         return body.ads || body.retract ? { changes, sent } : changes
-      }
-      case 'POST /consent': {
-        const body = await json(request)
-        await graph.consent(body.subject, body.consent, { ...(body.at !== undefined && { at: body.at }), ...(body.source !== undefined && { source: body.source }) })
-        return undefined
       }
       case 'POST /join': {
         const body = await json(request)
-        if (body.pairs !== undefined) return graph.joinAll(...listed(request, body, false))
         if (body.mark !== true) return graph.join(body.a, body.b, signed(request, body))
         let mark: Identifier | undefined
         const moved = await graph.join(body.a, body.b, signed(request, body), (left) => (mark = left))
         return { moved, mark }
       }
       case 'GET /me':
-        return { reviewer: reviewerOf(request) ?? null, retraction: options.outbox?.retraction ?? { targets: [], always: false } }
+        return { reviewer: reviewerOf(request) ?? null, retraction: core.outbox?.retraction ?? { targets: [], always: false } }
       case 'GET /subject':
         return profile(subject)
       case 'GET /ops':
-        if (!options.ops) break
-        return { ...(await options.ops.state()), pool: pool.length > 0 ? { numbers: pool.length, held: await graph.leasesAt(pool, now()), since: tally.since, leased: tally.leased, exhausted: tally.exhausted, minutes: options.pool!.minutes } : null, outbox: options.outbox ? await options.outbox.counts() : null }
-      case 'POST /alerts/test':
-        if (!options.ops) break
-        return options.ops.test()
+        if (!core.ops) break
+        return { ...(await core.ops.state()), pool: pool.length > 0 ? { numbers: pool.length, held: await graph.leasesAt(pool, now()), since: tally.since, leased: tally.leased, exhausted: tally.exhausted, minutes: options.pool!.minutes } : null, outbox: core.outbox ? await core.outbox.counts() : null }
       case 'GET /pulse': {
         // One small row: a screen asks this often, and reads the rest only when the answer differs.
         const version = await graph.version()
@@ -791,46 +772,27 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       }
       case 'GET /clusters':
         return graph.clusters(50, Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.floor(Number(url.searchParams.get('offset')) || 0))))
-      case 'GET /search':
-        return graph.search(url.searchParams.get('q') ?? '')
       case 'POST /find':
         return find((await json(request)).text)
       case 'POST /foresee':
         return graph.foresee(await json(request))
-      case 'GET /changes': {
-        const [after, limit] = [url.searchParams.get('after') ?? '0', url.searchParams.get('limit') ?? '500']
-        return graph.changes({ after: /^\d+$/.test(after) ? Number(after) : NaN, limit: /^\d+$/.test(limit) ? Math.min(Number(limit), 1_000) : NaN })
-      }
       case 'GET /recent':
         return graph.recent()
       case 'POST /separate': {
         const body = await json(request)
-        if (body.pairs !== undefined) return graph.separateAll(...listed(request, body, true))
         return graph.separate(body.a, body.b, body.separated ?? true, signed(request, body))
       }
-      case 'POST /transfer':
-        return graph.transfer(await json(request))
-      case 'GET /flows':
-        return graph.flows(subject)
-      case 'GET /collusion':
-        return graph.collusion(subject)
-      case 'GET /rings':
-        return graph.rings(subject)
-      case 'GET /links':
-        return graph.links(subject)
-      case 'GET /cluster':
-        return (await graph.cluster(subject)) ?? null
       case 'GET /journey': {
         const before = url.searchParams.has('before') ? Number(url.searchParams.get('before')) : undefined
         if (before !== undefined && !Number.isSafeInteger(before)) throw new Refusal(400, '`before` must be a `next` value from a page')
         const journey = await graph.journey(subject, before === undefined ? {} : { before })
         // What became of each step at the ad platforms. A job keeps how it stands, and not when it got there.
         const jobs = new Map<string, { target: string; state: JobState; note?: string; value?: number }[]>()
-        if (options.outbox) {
+        if (core.outbox) {
           for (const entry of journey.entries) {
             if (entry.kind !== 'outcome') continue
             const { transactionId } = entry.outcome
-            jobs.set(transactionId, (await options.outbox.get(transactionId)).map(({ target, state, note, value }) => ({ target, state, ...(note && { note }), ...(value !== undefined && { value }) })))
+            jobs.set(transactionId, (await core.outbox.get(transactionId)).map(({ target, state, note, value }) => ({ target, state, ...(note && { note }), ...(value !== undefined && { value }) })))
           }
         }
         return {
@@ -848,32 +810,10 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
           }),
         }
       }
-      case 'GET /history':
-        return graph.history(subject)
-      case 'GET /attribute': {
-        const at = Number(url.searchParams.get('at') ?? now())
-        if (!Number.isSafeInteger(at)) throw new Refusal(400, '`at` must be an integer in epoch milliseconds')
-        return graph.attribute(subject, { at })
-      }
       case 'GET /policy': {
         const { builtWith, ...state } = await graph.policy()
         const standard = plainPolicy(defaultPolicy)
         return { ...state, builtWith: builtWith ?? null, changed: Object.keys(state.rules.kinds).filter((kind) => JSON.stringify(state.rules.kinds[kind]) !== JSON.stringify(standard.kinds[kind])) }
-      }
-      case 'POST /rebuild': {
-        // Nothing in the body is needed, so none has to be sent.
-        const sent = await text(request)
-        return graph.rebuild(why(sent.trim() ? parsed(sent) : {}))
-      }
-      case 'GET /verify': {
-        const { changes, policy } = await graph.check()
-        return { changes, policy: brief(policy) }
-      }
-      case 'GET /stats':
-        return { ...tally, policy: brief(await graph.policy()), graph: await graph.counts(), ...(options.outbox && { outbox: await options.outbox.counts() }) }
-      case 'POST /prune': {
-        const body = await json(request)
-        return { pruned: await graph.prune(body.before, why(body)) }
       }
       case 'GET /decisions': {
         const limit = Math.min(500, Math.max(1, Math.floor(Number(url.searchParams.get('limit')) || 50)))
@@ -885,52 +825,10 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         const decisions = found.slice(0, limit)
         return { decisions, next: found.length > limit ? decisions.at(-1)!.seq : null, total: (await graph.decisionPage({ limit: 1 }))[0]?.seq ?? 0 }
       }
-      case 'GET /consent':
-        return graph.consentHistory(subject)
       case 'GET /disputes':
         return graph.disputes()
       case 'GET /audit':
         return graph.audit()
-      case 'POST /convert': {
-        const body = await json(request)
-        if (/^(call|text|page):/.test(String(body?.transactionId ?? ''))) throw new Refusal(400, 'A `transactionId` cannot begin with call:, text: or page:')
-        return (await convert(body)).map(shownJob)
-      }
-      case 'POST /link': {
-        if (!options.linkSecret) break
-        const body = await json(request)
-        if (body.days !== undefined && typeof body.days !== 'number') throw new Refusal(400, '`days` must be a number')
-        const { url, purpose, days = 30 } = body
-        if (purpose !== undefined && !(typeof purpose === 'string' && NAME.test(purpose))) throw new Refusal(400, '`purpose` must be a short word, such as "form"')
-        const id = randomUUID()
-        const made = now()
-        // A token ends on a whole second, and so does what is kept of it.
-        const expires = Math.floor((made + days * 86_400_000) / 1000) * 1000
-        const address = knownLink(String(url), body.subject, { secret: options.linkSecret, id, now: () => made, lasts: expires - made })
-        await graph.keepLink({ id, subject: body.subject, ...(purpose !== undefined && { purpose }), at: made, expires })
-        return { url: address, id }
-      }
-      case 'GET /sent':
-        return graph.linksSent(subject)
-      case 'POST /staff-link': {
-        if (!options.linkSecret) break
-        const body = await json(request)
-        if (body.days !== undefined && typeof body.days !== 'number') throw new Refusal(400, '`days` must be a number')
-        return { url: staffLink(String(body.url), { secret: options.linkSecret, now, ...(body.days !== undefined && { lasts: body.days * 86_400_000 }) }) }
-      }
-      case 'POST /call':
-        return recordCall(graph, await json(request), calling())
-      case 'POST /text':
-        return recordText(graph, await json(request), textOptions())
-      case 'GET /text': {
-        const kept = await graph.keptText(url.searchParams.get('id') ?? '')
-        if (!kept) return null
-        const said = (await graph.notLeads([`text:${kept.id}`])).get(`text:${kept.id}`)
-        const own = await graph.textsOf([kept.subject])
-        return { ...kept, flags: [...(beginnings(own).has(kept.id) ? ['first'] : []), ...kept.flags], ...(said && { notLead: said.kind }), ...(asks(kept) && { reply: replyTo(kept, own, await spokenWith(kept.subject)) }) }
-      }
-      case 'GET /texting':
-        return (await graph.texting(subject)) ?? null
       case 'GET /texts': {
         const days = period(url)
         const after = afterOf(url)
@@ -963,12 +861,6 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         const days = period(url)
         return { ...days, expected: options.calls?.results === 'expected', ...(await graph.callSummary({ ...days, at: now(), ...(options.calls?.results && { results: options.calls.results }), ...(options.calls?.resultWait !== undefined && { resultWait: options.calls.resultWait }), ...(options.hours && { hours: options.hours }) })) }
       }
-      case 'GET /outcome': {
-        const id = url.searchParams.get('id') ?? ''
-        const outcome = await graph.outcomeOf(id)
-        const said = (await graph.notLeads([id])).get(id)
-        return outcome ? { ...outcome, values: await graph.values(id), ...(said && { notLead: said.kind }) } : null
-      }
       case 'GET /between':
         return graph.between(url.searchParams.get('a') ?? '', url.searchParams.get('b') ?? '')
       case 'GET /undecided': {
@@ -1000,45 +892,6 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         const within = url.searchParams.has('days') ? Number(url.searchParams.get('days')) : 30
         return { ...days, ...(await graph.followed({ ...days, at: now(), step: url.searchParams.get('step') ?? '', days: within })) }
       }
-      case 'GET /call': {
-        const call = await graph.keptCall(url.searchParams.get('id') ?? '')
-        if (!call) return null
-        const missed = call.direction === 'inbound' && call.result?.answered === false
-        const said = (await graph.notLeads([`call:${call.id}`])).get(`call:${call.id}`)
-        return { ...call, ...(said && { notLead: said.kind }), state: callState(call, now(), options.calls), ...(missed && { followUp: followUp(call, await graph.callsOf([call.subject])) }) }
-      }
-      case 'POST /call/result':
-        return (await recordCallResult(graph, await json(request), calling())) ?? { state: 'waiting', counted: false }
-      case 'POST /not-lead':
-        return recordNotLead(graph, await json(request), calling())
-      case 'POST /call/returned':
-        return { followUp: (await recordReturn(graph, await json(request), calling())) ?? null }
-      case 'POST /restate': {
-        const body = await json(request)
-        if (options.outbox) return (await options.outbox.restate(body.transactionId, body.value, body.currency, body.kind)).map(shownJob)
-        await graph.restate(body.transactionId, body.value, body.currency, body.kind)
-        return []
-      }
-      case 'POST /payment': {
-        const body = await json(request)
-        if (options.outbox) {
-          const paid = await options.outbox.pay(body)
-          return { ...paid, jobs: paid.jobs.map(shownJob) }
-        }
-        return { ...(await graph.pay(body)), jobs: [] }
-      }
-      case 'POST /people': {
-        const { subjects } = await json(request)
-        if (!Array.isArray(subjects) || subjects.length === 0 || subjects.length > 100 || !subjects.every((each) => typeof each === 'string' && each)) throw new Refusal(400, '`subjects` must be a list of 1 to 100 ids')
-        return { people: (await graph.people(subjects)).map(({ touch, ...person }) => ({ ...person, ...(touch && { source: sourceOf(touch), campaign: touch.campaign ?? null, campaignId: touch.campaignId ?? null }) })) }
-      }
-      case 'POST /costs': {
-        const body = await json(request)
-        const costs = Array.isArray(body) ? body : body.costs
-        if (!Array.isArray(costs)) throw new Refusal(400, 'Body requires a list of costs')
-        await graph.spend(costs)
-        return { recorded: costs.length }
-      }
       case 'GET /report': {
         const days = period(url)
         const { timeZone } = days
@@ -1051,25 +904,22 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         return { ...report, timeZone, steps: [...named, ...others] }
       }
       case 'GET /conversions': {
-        if (!options.outbox) break
+        if (!core.outbox) break
         const state = url.searchParams.get('state') ?? 'failed'
         if (!['held', 'pending', 'sent', 'skipped', 'failed'].includes(state)) throw new Refusal(400, 'state must be held, pending, sent, skipped, or failed')
-        return (await options.outbox.list(state as JobState)).map(shownJob)
+        return (await core.outbox.list(state as JobState)).map(shownJob)
       }
       case 'POST /retry': {
-        if (!options.outbox) break
+        if (!core.outbox) break
         const { transactionId, target } = await json(request)
         if (typeof transactionId !== 'string' || (target !== undefined && typeof target !== 'string')) throw new Refusal(400, 'transactionId and target must be a string')
-        return (await options.outbox.retry(transactionId, target)).map(shownJob)
+        return (await core.outbox.retry(transactionId, target)).map(shownJob)
       }
-      case 'GET /conversion':
-        if (!options.outbox) break
-        return (await options.outbox.get(url.searchParams.get('id') ?? '')).map(shownJob)
     }
     throw new Refusal(404, 'No such route')
   }
 
-  return async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+  return Object.assign(async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     try {
       const result = await route(request, response)
       if (result === SENT) return
@@ -1089,7 +939,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       }
       response.writeHead(status, JSON_HEADERS).end(JSON.stringify({ error: message }))
     }
-  }
+  }, { tally, /** What was worked out before a decision made elsewhere is worked out again. */ forgetAnswers: () => void ((decided += 1), answers.clear()) })
 }
 
 /** A list of addresses and ranges, to ask whether an address is in it. Throws for one that is neither. */
