@@ -1625,7 +1625,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await call('P4', '+15550100073', 72).then((each) => [each.visitor, each.flags]), ['visitor:b', []])
       // Shown to them again, it is still not long since it was another's.
       await graph.lease('visitor:b', { numbers: ['+15550100001'], minutes: 5, at: T0 + 90 * MIN })
-      assert.equal((await call('P4b', '+15550100069', 91)).visitor, undefined)
+      assert.equal((await call('P4b', '+15550100073', 91)).visitor, undefined)
       assert.equal((await call('P5', '+15550100074', 85 + 121)).visitor, undefined)
       // Two callers reported at once on one holder's number: one of them is the visitor's caller, and never both.
       await graph.observe({ subject: 'visitor:d', identifiers: ['device:d'], at: T0, event: 'visit' })
@@ -2807,6 +2807,8 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await graph.speak({ subject: 'contact:b', identifiers: [...givenKeys(secret, 'Bob'), ...namedKeys(secret, ['phone:1'], 'Bob', 'Lima')] }, [{ subject: 'caller:1', identifiers: ['phone:1'] }], T0)
       assert.deepEqual(await members(graph, 'contact:a'), ['contact:a', 'contact:b'])
       assert.deepEqual(await graph.verify(), [])
+      // An initial typed as a first name is no full name.
+      assert.ok(namedKeys(secret, ['phone:1'], 'J.', 'Lima').every((each) => each.startsWith('named:i-')))
       // His brother of another name is not him, and neither is a father of his name.
       await graph.speak({ subject: 'contact:c', identifiers: [...givenKeys(secret, 'Luis'), ...namedKeys(secret, ['phone:1'], 'Luis', 'Lima')] }, [{ subject: 'caller:1', identifiers: ['phone:1'] }], T0)
       assert.equal((await members(graph, 'contact:c')).length, 1)
