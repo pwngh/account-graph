@@ -4,7 +4,7 @@
  * suit a result. The run at 17b7a53 had those here then; what is new since is
  * for the second run.
  */
-import type { Dirt, Rates, Third } from './world.ts'
+import type { Dirt, Intake, Rates, Third } from './world.ts'
 
 interface Setting {
   rates: Rates
@@ -80,6 +80,9 @@ function third(at: 0 | 1 | 2): Third {
     formAgain: of(0.1, 0.15, 0.2), otherBrowser: of(0.05, 0.1, 0.2), otherLine: of(0.05, 0.1, 0.2), quick: of(0.85, 0.75, 0.6), middle: of(0.1, 0.15, 0.2), late: of(0.05, 0.1, 0.2), oldNumber: of(0.02, 0.04, 0.08), lateDial: of(0.05, 0.1, 0.2),
   }
 }
+
+/** Assumed, and set before it was run. Staff ask four of five, believe what they are told, and are right about a record all but one time in a hundred. */
+export const INTAKE: Intake = { asks: 0.8, says: 0.7, saysWrongly: 0.02, opened: 0.85, openedWrong: 0.01, merged: 0.5, mergedWrong: 0.01 }
 
 export const SETTINGS: Record<string, Setting> = {
   /** The middle of every range. */

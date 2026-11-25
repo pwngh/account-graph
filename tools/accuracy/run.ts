@@ -91,6 +91,7 @@ export interface Switches {
   staff?: boolean
   pool?: boolean
   speaker?: boolean
+  intake?: boolean
 }
 const HERE: Code = { createGraph, createMemoryStore, policyFrom, createHandler }
 
@@ -148,8 +149,9 @@ export async function play(world: World, set: Switches, pool: number, { createGr
       else if (event.kind === 'tap') await post('/event', { device: event.device, event: 'phone_click', number: await shown(event) }, page(event.address, event.agent))
       else if (event.kind === 'join') {
         const caller = callerOf.get(event.call)
-        if (set.staff && caller !== undefined) await post('/join', { source: 'desk', pairs: [{ a: caller, b: event.subject, reason: 'answered by staff' }] }, service)
+        if ((event.intake ? set.intake : set.staff) && caller !== undefined) await post('/join', { source: 'desk', pairs: [{ a: caller, b: event.subject, reason: 'answered by staff' }] }, service)
       }
+      else if (event.kind === 'merge') await post('/join', { source: 'desk', pairs: [{ a: event.a, b: event.b, reason: 'one person, entered twice' }] }, service)
       else if (event.kind === 'record') {
         // A firm that asks who speaks says whose each is. One that does not sends what was given as the subject's.
         const { device, email, phone } = event
@@ -190,14 +192,16 @@ export async function play(world: World, set: Switches, pool: number, { createGr
       const key = [...new Set(link.reasons.map(({ identifier }) => identifier.slice(0, identifier.indexOf(':'))))].sort().join(' + ')
       const row = links.get(key) ?? { links: 0, wrong: 0 }
       links.set(key, row)
-      const wrong = !people.some((each) => other.includes(each))
+      const tied = link.reasons.filter(({ identifier }) => /^(dial|lease):/.test(identifier))
+      const browser = [subject, link.subject].find((each) => each.startsWith('visitor:'))
+      // A caller may be a whole home's landline, so a tie is held to who made the call it rests on, and one wrong call makes a wrong link.
+      const astray = browser !== undefined && tied.some(({ identifier }) => !world.calls.get(identifier.slice(identifier.indexOf(':') + 1))!.people.some((each) => peopleOf.get(browser)!.includes(each)))
+      const wrong = astray || !people.some((each) => other.includes(each))
       row.links += 1
       if (wrong) row.wrong += 1
-      const tied = link.reasons.filter(({ identifier }) => /^(dial|lease):/.test(identifier))
       if (tied.length === 0) continue
       tapLinks.links += 1
       if (wrong) tapLinks.wrong += 1
-      const browser = [subject, link.subject].find((each) => each.startsWith('visitor:'))
       if (browser) for (const { identifier } of tied) ties.set(identifier.slice(identifier.indexOf(':') + 1), [...(ties.get(identifier.slice(identifier.indexOf(':') + 1)) ?? []), browser])
     }
   }

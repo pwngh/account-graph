@@ -1,9 +1,11 @@
 /**
  * The third run. Reports the same worlds to two codes, the one it started from and this one, and judges the marks that
  * `docs/accuracy.md` wrote beforehand.
- *   node tools/accuracy/third.ts --pinned <a checkout of b9bba69> --names <list> --seed 20270301 [base3 low3 high3 busy3 dirty3]
+ *   node tools/accuracy/third.ts --pinned <a checkout of b9bba69> --names <list> --seed 20270301 [setting …]
+ * With no setting it runs all that the page promises. It refuses a checkout with changes not committed, and a pinned one that is another commit.
  *   … --dry prints what the worlds hold, and scores nothing
  */
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -12,9 +14,9 @@ import { createGraph, createMemoryStore, namesOf, policyFrom } from '../../src/i
 import { createHandler } from '../../src/server.ts'
 import { play } from './run.ts'
 import type { Code, Outcome, Switches } from './run.ts'
-import { SETTINGS } from './rates.ts'
-import { score } from './score.ts'
-import { dirtied, makeWorld } from './world.ts'
+import { INTAKE, SETTINGS } from './rates.ts'
+import { interval, score } from './score.ts'
+import { asked, dirtied, makeWorld } from './world.ts'
 import type { Names, World } from './world.ts'
 
 const HERE: Code = { createGraph, createMemoryStore, policyFrom, createHandler }
@@ -25,6 +27,8 @@ const ARMS: Record<string, Switches & { pinned?: true }> = {
   new: CONFIG,
   'today pool': { pinned: true, pool: true },
   'new pool': { ...CONFIG, pool: true },
+  /** Beside `new`, with what staff do at intake. Judged by no mark, and saves none. */
+  'new intake': { ...CONFIG, intake: true },
 }
 const START = Date.parse('2026-03-02T15:00:00Z')
 
@@ -69,12 +73,24 @@ function pairsOf(items: readonly Item[]): { found: Set<string>; chained: Set<str
 const { values, positionals } = parseArgs({ allowPositionals: true, options: { pinned: { type: 'string' }, names: { type: 'string' }, worlds: { type: 'string', default: '20' }, seed: { type: 'string' }, dry: { type: 'boolean', default: false }, arms: { type: 'string' } } })
 // For a look at fewer arms. Marks of arms left out have nothing to count.
 if (values.arms) for (const arm of Object.keys(ARMS)) if (!values.arms.split(',').includes(arm)) delete ARMS[arm]
-const settings = positionals.length > 0 ? positionals : ['base3', 'low3', 'high3', 'busy3', 'dirty3']
+const settings = positionals.length > 0 ? positionals : ['base3', 'low3', 'high3', 'busy3', 'dirty3', 'gaps3', 'busygaps3', 'base', 'low', 'high', 'busy']
 for (const name of settings) if (!SETTINGS[name]) throw new Error(`"${name}" is not a setting`)
 if (!values.names || !values.seed || (!values.pinned && !values.dry)) throw new Error('--names, --seed and --pinned are required')
 const list = readFileSync(values.names, 'utf8')
 const names: Names = JSON.parse(list)
 const [worlds, seed] = [Number(values.worlds), Number(values.seed)]
+const PINNED = 'b9bba69'
+/** The commit of a checkout, with nothing changed in what it runs. */
+const commitOf = (root: string) => {
+  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim()
+  if (git('status', '--porcelain', '--', 'src', 'tools', 'examples') !== '') throw new Error(`${root} has changes that are not committed`)
+  return git('rev-parse', 'HEAD')
+}
+if (!values.dry) {
+  const [here, there] = [commitOf(join(import.meta.dirname, '../..')), commitOf(values.pinned!)]
+  if (!there.startsWith(PINNED)) throw new Error(`--pinned is ${there}, and not ${PINNED}`)
+  console.log(`code ${here}, today ${there}`)
+}
 console.log(`Node ${process.version}, names ${createHash('sha256').update(list).digest('hex')}, seeds ${seed} to ${seed + worlds - 1}`)
 
 const pinned: Code | undefined = values.pinned ? { ...(await import(join(values.pinned, 'src/index.ts'))), ...(await import(join(values.pinned, 'src/server.ts'))) } : undefined
@@ -107,16 +123,18 @@ for (const name of settings) {
     console.log(name, JSON.stringify(t), 'names written as they are, in a form the table knows, and in one it does not', JSON.stringify(covered))
     continue
   }
-  const total = new Map(Object.keys(ARMS).map((arm) => [arm, { mixed: 0, mixedApart: 0, recorded: 0, right: 0, wrongPairs: 0, tap: 0, tapWrong: 0, creditRight: 0, creditWrong: 0, links: new Map<string, { links: number; wrong: number }>(), kinds: new Map<string, number>(), wrongBy: new Map<string, number>() }]))
+  const total = new Map(Object.keys(ARMS).map((arm) => [arm, { mixed: 0, mixedApart: 0, recorded: 0, right: 0, wrongPairs: 0, tap: 0, tapWrong: 0, creditRight: 0, creditWrong: 0, spread: [] as { mixed: number; right: number }[], links: new Map<string, { links: number; wrong: number }>(), kinds: new Map<string, number>(), wrongBy: new Map<string, number>() }]))
   const kept = new Map(Object.keys(ARMS).map((arm) => [arm, { chained: [0, 0], recordPairs: [0, 0], credit: [0, 0], ties: [0, 0], same: [0, 0], covered: [0, 0], not: [0, 0] } as Record<string, [number, number]>]))
   for (let w = 0; w < worlds; w++) {
     const world = made(w)
     const saidOf = new Set(world.events.flatMap((event) => (event.kind === 'record' && event.speaker) || event.kind === 'speaks' ? [event.subject] : []))
+    const taken = asked(world, INTAKE, seed + w)
     const before = new Map<string, { found: Set<string>; chained: Set<string>; credit: Set<string>; ties: Set<string> }>()
     for (const [arm, { pinned: old, ...set }] of Object.entries(ARMS)) {
-      const outcome = await play(world, set, setting.pool, old ? pinned! : HERE)
+      const outcome = await play(set.intake ? taken : world, set, setting.pool, old ? pinned! : HERE)
       const result = score(outcome.truths, outcome.clusterOf, world.spoke)
       const row = total.get(arm)!
+      row.spread.push({ mixed: result.mixedRecords / result.recorded, right: result.all.found / (result.all.found + result.all.wrong) })
       row.mixed += result.mixedRecords
       row.mixedApart += result.mixedApart
       row.recorded += result.recorded
@@ -179,6 +197,10 @@ for (const name of settings) {
   for (const [arm, row] of total) {
     const keep = kept.get(arm)!
     console.log(`${arm}: people whose record is with another's ${part(row.mixed, row.recorded)}, and without those one spoke for ${part(row.mixedApart, row.recorded)}; joined pairs right ${part(row.right, row.right + row.wrongPairs)}; links by a tap or a number shown wrong ${part(row.tapWrong, row.tap)}; credited records to the wrong ad ${part(row.creditWrong, row.creditRight + row.creditWrong)}`)
+    if (row.spread.length > 1) {
+      const over = (key: 'mixed' | 'right') => { const all = row.spread.map((each) => each[key]); const { low, high } = interval(all); const of = (share: number) => `${(share * 100).toFixed(2)}%`; return `${of(Math.min(...all))} to ${of(Math.max(...all))}, its mean within ${of(low)} to ${of(high)}` }
+      console.log(`  over the worlds: people whose record is with another's ${over('mixed')}; joined pairs right ${over('right')}`)
+    }
     console.log(`  of what today found, kept: pairs with a chain ${part(...keep.chained!)}; pairs of records ${part(...keep.recordPairs!)}, of them written the same ${part(...keep.same!)}, in forms the table knows ${part(...keep.covered!)}, and in forms it does not ${part(...keep.not!)}; records credited to their ad ${part(...keep.credit!)}; calls tied to a browser of their caller's ${part(...keep.ties!)}`)
     console.log(`  wrong pairs: ${[...row.wrongBy].map(([kind, n]) => `${kind} ${n}`).join('; ')}; by kind ${[...row.kinds].filter(([, n]) => n > 0).map(([kind, n]) => `${kind} ${n}`).join(', ')}`)
     for (const [kind, { links, wrong }] of [...row.links].sort((x, y) => y[1].links - x[1].links)) console.log(`    links by ${kind}: ${links}, ${wrong} between two people`)
@@ -192,8 +214,13 @@ for (const name of settings) {
   if (as === 'base3') {
     mark('people whose record is with another\'s, at most 1%', now.row.mixed, now.row.recorded, (share) => share <= 0.01)
     mark('joined pairs right, at least 98%', now.row.right, now.row.right + now.row.wrongPairs, (share) => share >= 0.98)
-    for (const [kind, { links, wrong }] of now.row.links) if ((total.get('today')!.links.get(kind)?.links ?? 0) >= 200 || links >= 200) mark(`links by ${kind} wrong, at most 5%`, wrong, links, (share) => share <= 0.05)
+    const then = total.get('today')?.links ?? new Map<string, { links: number; wrong: number }>()
+    for (const kind of new Set([...then.keys(), ...now.row.links.keys()])) {
+      const { links, wrong } = now.row.links.get(kind) ?? { links: 0, wrong: 0 }
+      if ((then.get(kind)?.links ?? 0) >= 200 || links >= 200) mark(`links by ${kind} wrong, at most 5%`, wrong, links, (share) => share <= 0.05)
+    }
     mark('credited records to the wrong ad, at most 2%', now.row.creditWrong, now.row.creditRight + now.row.creditWrong, (share) => share <= 0.02)
+    mark('links by a tap wrong, at most 5%', now.row.tapWrong, now.row.tap, (share) => share <= 0.05)
     mark('with a pool, links by a tap or a number shown wrong, at most 5%', judged('new pool').row.tapWrong, judged('new pool').row.tap, (share) => share <= 0.05)
     mark('kept of pairs with a chain, at least 90%', ...now.keep.chained!, (share) => share >= 0.9)
     mark('kept of calls tied, at least 90%', ...now.keep.ties!, (share) => share >= 0.9)

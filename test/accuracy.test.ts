@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { SETTINGS } from '../tools/accuracy/rates.ts'
-import { PLAIN, report } from '../tools/accuracy/run.ts'
+import { INTAKE, SETTINGS } from '../tools/accuracy/rates.ts'
+import { PLAIN, play, report } from '../tools/accuracy/run.ts'
 import { interval, score } from '../tools/accuracy/score.ts'
-import { makeWorld } from '../tools/accuracy/world.ts'
+import { asked, makeWorld } from '../tools/accuracy/world.ts'
 
 const contact = (n: number, people: string[], ...facts: string[]) => ({ subject: `contact:${n}`, people, facts })
 
@@ -82,6 +82,7 @@ test('a world is the same for the same seed, and every subject of it has an owne
     else if (event.kind === 'call') assert.ok(calls.has(event.id))
     else if (event.kind === 'join') assert.ok(calls.has(event.call) && told.has(event.subject))
     else if (event.kind === 'speaks') assert.ok(told.has(event.subject))
+    else if (event.kind === 'merge') assert.ok(told.has(event.a) && told.has(event.b))
     else assert.ok(told.has(`visitor:${event.device}`))
   }
 })
@@ -123,4 +124,20 @@ test('the third world adds to the others without changing them, and says whose f
   const world = makeWorld(SETTINGS.base3!.rates, { ...size, people: 60, days: 30 }, names)
   const { clusterOf } = await report(world)
   for (const { subject } of world.truths) assert.ok(clusterOf.has(subject), subject)
+})
+
+test('what staff do at intake adds to a world, names its people and is reported', async () => {
+  const size = { people: 300, days: 60, start: Date.parse('2026-03-02T15:00:00Z'), seed: 7 }
+  const world = makeWorld(SETTINGS.high!.rates, size)
+  const taken = asked(world, INTAKE, 7)
+  assert.deepEqual(asked(world, INTAKE, 7), taken)
+  assert.deepEqual(asked(world, { asks: 0, says: 0, saysWrongly: 0, opened: 0, openedWrong: 0, merged: 0, mergedWrong: 0 }, 7), world)
+  // What was there stays, in its order.
+  const kept = new Set(world.events)
+  assert.deepEqual(taken.events.filter((event) => kept.has(event)), world.events)
+  for (const kind of ['join', 'merge', 'speaks'] as const) assert.ok(taken.events.some((event) => event.kind === kind && !kept.has(event)), kind)
+  const peopleOf = new Map(taken.truths.map(({ subject, people }) => [subject, people]))
+  for (const event of taken.events) if (event.kind === 'join' && event.intake) assert.ok(peopleOf.has(event.subject))
+  const { clusterOf } = await play(taken, { intake: true }, 10, await import('../src/index.ts').then(async (index) => ({ ...index, ...(await import('../src/server.ts')) })))
+  for (const { subject } of taken.truths) assert.ok(clusterOf.has(subject), subject)
 })
