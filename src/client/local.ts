@@ -201,7 +201,9 @@ export function localGraph(options: LocalOptions, keeping: Keeping = {}): Accoun
     let timer: NodeJS.Timeout | undefined
     let heard: (() => void) | undefined
     try {
-      const work = opened().then(({ six }) => (six[name] as (request: unknown, asked: Asked) => Promise<unknown>)(given, { ...asked, until: now() + timeout * 0.9 }))
+      // Counted from here, as the limit is: opening the database takes its part of the time.
+      const until = now() + timeout * 0.9
+      const work = opened().then(({ six }) => (six[name] as (request: unknown, asked: Asked) => Promise<unknown>)(given, { ...asked, until }))
       const limit = new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(fault(FAULT_CODES.TRANSPORT.INDETERMINATE, 'The call took too long', { retryable: true })), timeout)
         heard = () => reject(fault(FAULT_CODES.TRANSPORT.ABORTED, 'The call was aborted'))

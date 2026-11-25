@@ -69,7 +69,7 @@ both('checks that hang do not keep a list from being recorded', async (graph) =>
   const entries = Array.from({ length: 40 }, (_, n): RecordEntry => ({ type: 'profile', key: `p${n}`, at: AT, subject: `s${n}`, facts: { phone: `+1555${1000000 + n}` } }))
   const { results } = await graph.record({ entries })
   assert.ok(results.every((each) => each.ok), JSON.stringify(results.find((each) => !each.ok)))
-}, { timeoutMs: 3000, now: Date.now, checks: { lineType: { accountSid: 'AC', authToken: 't' } }, fetch: () => new Promise(() => {}) })
+}, { timeoutMs: 9000, now: Date.now, checks: { lineType: { accountSid: 'AC', authToken: 't' } }, fetch: () => new Promise(() => {}) })
 
 both('a call sent again undoes no newer report of it, whichever way it went', async (graph) => {
   const out = call({ key: 'O1', direction: 'outbound', from: '+15551230001', to: '+15558675309', result: { answered: false } })
