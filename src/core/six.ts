@@ -281,12 +281,16 @@ export function createSix(engine: Engine, options: SixOptions) {
         const recorded = await recordCall(graph, call, { ...service.calling(), said: { key: `call ${entry.at} ${canonical(result ?? null)}`, at: entry.at } })
         // Of two reports at one time, the same one stands whichever came first.
         const stands = !result || newest(await inside.tx.saidOf('result', key))?.key === `call ${entry.at} ${canonical(result)}`
-        return { value: { subject: recorded.subject, state: recorded.state, counted: recorded.counted, flags: recorded.flags, ...(recorded.visitor && { visitor: recorded.visitor }) }, subjects: [recorded.subject], existed: recorded.duplicate, stands }
+        const line = !again && await inside.tx.callLine(key)
+        return { value: { subject: recorded.subject, state: recorded.state, counted: recorded.counted, flags: recorded.flags, ...(recorded.visitor && { visitor: recorded.visitor }) }, subjects: line && line !== recorded.subject ? [recorded.subject, line] : [recorded.subject], existed: recorded.duplicate, stands }
       }
       case 'call_update': {
         const { change } = entry
         let stands = true
-        if (!again) {
+        if (change.kind === 'party') {
+          const { kind: _, ...party } = change
+          stands = again ? newest(await inside.tx.saidOf('party', entry.call))?.key === entry.key : (await graph.sayParty({ call: entry.call, key: entry.key, at: entry.at, party })).stands
+        } else if (!again) {
           if (change.kind === 'result') {
             const { result } = change
             stands = (await graph.sayResult({ call: entry.call, key: entry.key, at: entry.at, result: { answered: result.answered, ...(result.voicemail !== undefined && { voicemail: result.voicemail }), ...(result.waited !== undefined && { waited: result.waited }) } })).stands
@@ -304,7 +308,7 @@ export function createSix(engine: Engine, options: SixOptions) {
             counted: (await graph.outcomeOf(`call:${entry.call}`)) !== undefined,
             followUp: kept?.direction === 'inbound' && kept.result?.answered === false ? followUp(kept, await graph.callsOf([kept.subject])) : null,
           },
-          subjects: kept ? [kept.subject] : [],
+          subjects: [...(kept ? [kept.subject] : []), ...(change.kind === 'party' && change.role !== 'unknown' ? [change.subject] : [])],
           stands,
         }
       }
@@ -505,7 +509,7 @@ export function createSix(engine: Engine, options: SixOptions) {
         case 'sighting':
           return { at, subject: on, kind: 'sighting', event: entry.event, kinds: [...new Set(entry.identifiers.map((each) => each.slice(0, each.indexOf(':'))))] }
         case 'call':
-          return { at, subject: on, kind: 'call', call: entry.call.id, direction: entry.call.direction, state: callState(entry.call, now(), options), followUp: entry.followUp ?? null, notLead: entry.notLead ?? null }
+          return { at, subject: on, kind: 'call', call: entry.call.id, ...(entry.call.party && { party: entry.call.party }), direction: entry.call.direction, state: callState(entry.call, now(), options), followUp: entry.followUp ?? null, notLead: entry.notLead ?? null }
         case 'text':
           return { at, subject: on, kind: 'text', text: entry.text.id, direction: entry.text.direction, reply: entry.reply ?? null, notLead: entry.notLead ?? null }
         case 'link':
@@ -540,7 +544,7 @@ export function createSix(engine: Engine, options: SixOptions) {
     if (type === 'call') {
       const call = await graph.keptCall(key)
       if (!call) return null
-      return { type, subject: call.subject, at: call.at, direction: call.direction, state: callState(call, at, callOptions()), followUp: call.direction === 'inbound' && call.result?.answered === false ? followUp(call, await graph.callsOf([call.subject])) : null, notLead }
+      return { type, subject: call.subject, ...(call.party && { party: call.party, partyHistory: await graph.partyHistory(key) }), at: call.at, direction: call.direction, state: callState(call, at, callOptions()), followUp: call.direction === 'inbound' && call.result?.answered === false ? followUp(call, await graph.callsOf([call.subject])) : null, notLead }
     }
     const text = await graph.keptText(key)
     if (!text) return null
@@ -646,7 +650,7 @@ export function createSix(engine: Engine, options: SixOptions) {
 
   // What takes long to work out is worked out once for everybody who asks at the same time, and is good until something is
   // written, or while things are written all the time, for a few times as long as it took and a minute at most.
-  const answers = new Map<string, { version: number; at: number; until: number; made: boolean; answer: Promise<ReportValue[ReportRequest['kind']]> }>()
+  const answers = new Map<string, { party: string | undefined; version: number; at: number; until: number; made: boolean; answer: Promise<ReportValue[ReportRequest['kind']]> }>()
   let decided = 0
   let deciding = 0
   /** A decision is done: what was being worked out meanwhile is worked out again. */
@@ -665,17 +669,19 @@ export function createSix(engine: Engine, options: SixOptions) {
     if (request.kind === 'deliveries' || request.kind === 'callbacks' || request.kind === 'texts') return { asOf: at ?? asked, value: await work(request) }
     for (;;) {
       const since = decided
+      const party = await graph.partyRevision()
       if (deciding > 0) {
         const value = await work(request)
-        if (decided !== since) continue
+        if (decided !== since || party !== await graph.partyRevision()) continue
         return { asOf: at ?? asked, value }
       }
       const version = await graph.version()
       let known = answers.get(key)
+      if (known?.party !== party) known = undefined
       if (known?.made && !(now() - known.at < MINUTE && (known.version === version || now() < known.until))) known = undefined
       if (!known) {
         const begun = now()
-        const next = (known = { version, at: begun, until: Infinity, made: false, answer: work(request) })
+        const next = (known = { party, version, at: begun, until: Infinity, made: false, answer: work(request) })
         for (const [old, { made }] of answers) if (answers.size >= 200 && made) answers.delete(old)
         answers.set(key, next)
         next.answer.then(
@@ -684,7 +690,7 @@ export function createSix(engine: Engine, options: SixOptions) {
         )
       }
       const value = await known.answer
-      if (decided !== since || deciding > 0) continue
+      if (decided !== since || deciding > 0 || party !== await graph.partyRevision()) continue
       return { asOf: lately || at === undefined ? known.at : at, value }
     }
   }

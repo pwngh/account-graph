@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { malformed, refused } from '../contract/fault.ts'
-import { newest, worthOf } from './said.ts'
+import { later, newest, worthOf } from './said.ts'
 import { brokenAt, seal } from './audit.ts'
 import { board } from './board.ts'
 import type { BoardColumn, BoardPlace } from './board.ts'
@@ -27,6 +27,8 @@ import type { DecisionPage, Store, Tx } from './store.ts'
 import type {
   Attribution,
   AttributedTouch,
+  CallParty,
+  PartyStatement,
   CallResult,
   Change,
   Cluster,
@@ -172,6 +174,10 @@ export interface Graph {
   sayLead(said: { id: string; key: string; at: number; kind?: NotLead['kind'] | undefined }): Promise<{ stands: boolean; lead: boolean }>
   /** `keepCallResult`, by when it was said. The result that stands counts whole. */
   sayResult(said: { call: string; key: string; at: number; result: { answered: boolean; voicemail?: boolean; waited?: number } }): Promise<{ stands: boolean }>
+  /** Identifies one call independently of the line or the call result. */
+  sayParty(said: { call: string; key: string; at: number; party: CallParty & { by: string } }): Promise<{ stands: boolean }>
+  partyHistory(id: string): Promise<(PartyStatement & { key: string })[]>
+  partyRevision(): Promise<string | undefined>
   /** `keepReturn`, by when it was said, which is not when they were reached. */
   sayReturn(said: { call: string; key: string; at: number; reachedAt?: number | undefined }): Promise<{ stands: boolean }>
   /** Every value a recorded outcome has had, oldest first. */
@@ -937,7 +943,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
   }
 
   /** The same credit as `credit` for many conversions of about one time, read together. `reached` keeps the searches for the next such read. */
-  async function creditAll(tx: Tx, asked: readonly { subject: Subject; at: number }[], window: number, hops: number, reached = new Map<Subject, Reached>()): Promise<(subject: Subject, at: number) => Attribution> {
+  async function creditAll(tx: Tx, asked: readonly { subject: Subject; at: number }[], window: number, hops: number, reached = new Map<Subject, Reached>()): Promise<(subject: Subject, at: number, party?: KeptCall['party']) => Attribution> {
     const subjects = unique(asked.map(({ subject }) => subject))
     for (const [subject, found] of await asOne(tx, await reachEach(tx, subjects.filter((subject) => !reached.has(subject)), hops))) reached.set(subject, found)
     const touches = new Map<Subject, Touch[]>()
@@ -953,7 +959,12 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         }
       }
     }
-    return (subject, at) => {
+    return (subject, at, party) => {
+      if (party) {
+        // Staff named this call's record. Only an arrival on that record can earn it.
+        const own = party.role === 'self' || party.role === 'representative' ? (touches.get(subject) ?? []).filter((touch) => !byLine(touch) && touch.at >= at - window && touch.at <= at) : []
+        return credited(subject, at, new Map([[subject, { confidence: 1, via: [] }]]), own)
+      }
       const within = reached.get(subject)!
       return credited(subject, at, within, [...within.keys()].flatMap((each) => (touches.get(each) ?? []).filter((touch) => touch.at >= at - window && touch.at <= at)))
     }
@@ -997,6 +1008,11 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
   /** A text with the flag that says it began a conversation, which is worked out and not kept. */
   const withFirst = (text: KeptText, own: readonly KeptText[]): KeptText => (beginnings(own).has(text.id) ? { ...text, flags: ['first', ...text.flags] } : text)
   const callId = (call: KeptCall) => `call:${call.id}`
+  // A call claimed for a record may share a line, or even a guessed cluster, with a call for another record.
+  const personWithCalls = (calls: readonly Pick<KeptCall, 'subject' | 'party'>[], cluster: (subject: Subject) => Subject) => {
+    const exact = new Set(calls.filter((call) => call.party).map((call) => call.subject))
+    return (subject: Subject) => exact.has(subject) ? `subject:${subject}` : `cluster:${cluster(subject)}`
+  }
 
   const followable = async (tx: Tx, subject: Subject, since: number, at: number) => (await tx.touchesOf([subject], since, at)).length > 0 && (await tx.consentOf([subject])).get(subject)?.adUserData !== false
 
@@ -1489,6 +1505,27 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       })
     },
 
+    async sayParty({ call, key, at, party }) {
+      keepable(key, call, party.by, ...(party.role === 'unknown' ? [] : [party.subject]))
+      let stands = false
+      await changing(async (tx) => {
+        const added = await tx.addSaid({ topic: 'party', about: call, key, at, data: party })
+        stands = newest(await tx.saidOf('party', call))!.key === key
+        if (!added || !stands) return []
+        await tx.setSetting('callParty', randomUUID())
+        return settle(tx, new Set(await tx.applyCallParty(call)))
+      })
+      return { stands }
+    },
+
+    partyHistory(id) {
+      return store.read(async (tx) => (await tx.saidOf('party', id)).sort(later).map(({ key, at, data }) => ({ key, at, ...data })))
+    },
+
+    partyRevision() {
+      return store.read((tx) => tx.settingOf('callParty'))
+    },
+
     async sayReturn({ call, key, at, reachedAt }) {
       keepable(key, call)
       return store.write(async (tx) => {
@@ -1530,8 +1567,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const doubted = (await tx.states([`dial:${call.id}`])).get(`dial:${call.id}`)?.ignored === true
         const tied = visitor !== undefined && (await tx.edgesOn([...(doubted ? [] : [`dial:${call.id}`]), `lease:${call.id}`, codeTie(call.id)])).some((edge) => edge.subject === visitor)
         // What was said of it meanwhile stays said.
-        const said = (await tx.callOf(call.id))?.flags.includes('ambiguous') && doubted && !call.flags.includes('pool') && !byCode(call)
+        const before = await tx.callOf(call.id)
+        const said = before?.flags.includes('ambiguous') && doubted && !call.flags.includes('pool') && !byCode(call)
         await tx.setCall({ ...rest, ...(said && { flags: [...new Set([...call.flags, 'ambiguous'])] }), ...(tied && { visitor }), recorded: now() })
+        if ((await tx.saidOf('party', call.id)).length > 0) await settle(tx, new Set(await tx.applyCallParty(call.id, !before)))
         await tx.fed('calls', now())
       })
     },
@@ -1637,7 +1676,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       await changing(async (tx) => {
         const call = await tx.callOf(id)
         const guesses = [`dial:${id}`, `lease:${id}`]
-        if (!call || byCode(call) || (await tx.newestNaming(guesses, 0, ['ignore', 'restore']))?.action === 'restore') return []
+        if (!call || call.party || byCode(call) || (await tx.newestNaming(guesses, 0, ['ignore', 'restore']))?.action === 'restore') return []
         // Forgotten since the code was looked up, whoever it named is named by nothing.
         if (!(await tx.edgesOn([note])).some((edge) => edge.subject === visitor)) return []
         // Left beside the code's, a tie by a tap would count twice what is known once.
@@ -1793,7 +1832,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const out: OpenCall[] = []
         const creditOf = await creditAll(tx, open, 90 * DAY, 2)
         for (const call of open) {
-          const { credited } = creditOf(call.subject, call.at)
+          const { credited } = creditOf(call.subject, call.at, call.party)
           out.push({ call, followUp: followUp(call, later), ...(credited && { touch: credited }) })
         }
         return out
@@ -1822,11 +1861,15 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const outcomes = await leadsOf(tx, await tx.outcomesBetween(from, at + 1), outcomeId)
         const found = unique([...outcomes.map((each) => each.subject), ...(await tx.calledBetween(from, at + 1))])
         const everyone = await tx.aroundOf(found)
-        const person = (subject: Subject) => everyone.get(subject)?.cluster ?? subject
+        const cluster = (subject: Subject) => everyone.get(subject)?.cluster ?? subject
+        const groups = new Set(found.map(cluster))
+        const theirs = unique([...found, ...everyone.keys()]).filter((subject) => groups.has(cluster(subject)))
+        const times = await tx.callTimes(theirs)
+        const parties = new Map(times.filter((call) => call.party).map((call) => [`call:${call.id}`, call.party]))
+        const person = personWithCalls(times, cluster)
         const people = new Map(found.map((subject) => [person(subject), { outcomes: [] as Counted[], calls: [] as CallTime[] }]))
-        const theirs = unique([...found, ...everyone.keys()]).filter((subject) => people.has(person(subject)))
-        for (const outcome of await leadsOf(tx, await tx.outcomesOf(theirs), outcomeId)) people.get(person(outcome.subject))!.outcomes.push(outcome)
-        for (const call of await tx.callTimes(theirs)) people.get(person(call.subject))!.calls.push(call)
+        for (const outcome of await leadsOf(tx, await tx.outcomesOf(theirs), outcomeId)) people.get(person(outcome.subject))?.outcomes.push(outcome)
+        for (const call of times) people.get(person(call.subject))?.calls.push(call)
         const { columns, unplaced } = board([...people.values()], { steps: steps.map(({ name, wait }) => ({ name, ...(wait && { wait: wait * HOUR }) })), at, today, ...(returnHours > 0 && { returnWait: returnHours * HOUR }), ...(hours && { hours }) })
         // Only those shown are traced to an ad: it is the slow part.
         const shown: BoardColumn<BoardRow>[] = []
@@ -1836,8 +1879,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         for (const column of columns) {
           const rows: BoardRow[] = []
           for (const place of column.rows.slice(0, limit)) {
-            const { credited } = creditOf(place.subject, place.at)
-            const { call: newest, ...rest } = place
+            const { call: newest, miss, ...rest } = place
+            const { credited } = creditOf(place.subject, place.at, miss ? miss.party : parties.get(place.outcome?.transactionId ?? ''))
             const call = newest && calls.get(newest.id)
             const language = place.outcome?.tags?.language ?? call?.tags?.language ?? touchTag(credited, 'language')
             rows.push({ ...rest, ...(call && { call }), ...(credited && { touch: credited }), ...(language !== undefined && { language }) })
@@ -1859,14 +1902,15 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const clusterOf = (subject: Subject) => labels.get(subject)?.cluster ?? subject
         const everyone = await tx.membersOf(unique([...labels.values()].map((label) => label.component)))
         const subjects = unique([...inPeriod.map((call) => call.subject), ...everyone.keys()])
-        const person = (subject: Subject) => everyone.get(subject)?.cluster ?? clusterOf(subject)
+        const all = await leadsOf(tx, await tx.callsOf(subjects), callId)
+        const person = personWithCalls(all, (subject) => everyone.get(subject)?.cluster ?? clusterOf(subject))
         const group = <T extends { subject: Subject }>(list: readonly T[]) => {
           const out = new Map<Subject, T[]>()
           for (const each of list) out.set(person(each.subject), [...(out.get(person(each.subject)) ?? []), each])
           return out
         }
         const called = group(inPeriod)
-        const calls = group(await leadsOf(tx, await tx.callsOf(subjects), callId))
+        const calls = group(all)
         const reached = group(await leadsOf(tx, (await tx.outcomesOf(subjects)).filter((outcome) => outcome.stage === options.step), outcomeId))
         return followed([...called].map(([who, mine]) => ({ called: mine, calls: calls.get(who) ?? [], reached: (reached.get(who) ?? []).map((outcome) => outcome.at) })), { ...options, at })
       })
@@ -1928,6 +1972,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         // How long steps take is read from the last half year and not from the days asked about: the newest days hold
         // few outcomes, which is what it has to say. Some of each step, so a common quick one does not hide a slow one.
         const newest = await leadsOf(tx, await tx.newestOutcomes(now() - 180 * DAY, now(), 200), outcomeId)
+        const ids = unique([...recorded, ...newest].map(outcomeId).filter((id) => id.startsWith('call:')).map((id) => id.slice(5)))
+        const calls = await tx.callsWith(ids)
+        const parties = new Map(calls.map((call) => [callId(call), call.party]))
         const inbound = await tx.missesBetween(start, end)
         const spurned = await tx.notLeads(inbound.map(callId))
         // A call that was counted is an outcome, and is counted once.
@@ -1938,14 +1985,16 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const ofOutcome = await creditAll(tx, recorded, year, hops, reached)
         const ofCall = await creditAll(tx, uncounted, window, hops, reached)
         const ofNewest = await creditAll(tx, newest, window, hops, reached)
-        const creditOf = ({ subject, at }: { subject: Subject; at: number }, find = ofOutcome) => {
-          const { touches } = find(subject, at)
+        const creditOf = (entry: Counted | KeptCall, find = ofOutcome) => {
+          const { subject, at } = entry
+          const { touches } = find(subject, at, 'transactionId' in entry ? parties.get(entry.transactionId) : entry.party)
           // An ad outside the window takes nothing from what is inside it.
           const touch = earning(touches.filter((each) => each.at >= at - window)) ?? own(touches)[0]
           const inside = touch !== undefined && touch.at >= at - window
           return { touch: inside ? touch : undefined, delay: touch && at - touch.at, inside }
         }
-        const credited: Credited[] = outcomes.map((outcome) => ({ outcome, first: first.get(outcome.transactionId), person: labels.get(outcome.subject)?.cluster ?? outcome.subject, ...creditOf(outcome) }))
+        const person = personWithCalls([...calls, ...uncounted], (subject) => labels.get(subject)?.cluster ?? subject)
+        const credited: Credited[] = outcomes.map((outcome) => ({ outcome, first: first.get(outcome.transactionId), person: person(outcome.subject), ...creditOf(outcome) }))
         const history: Credited[] = newest.map((outcome) => ({ outcome, ...creditOf(outcome, ofNewest) }))
         // What was no lead is counted apart, where it would have been credited.
         const notLeads: { at: number; touch: Touch | undefined; tags: Record<string, string> | undefined }[] = []
@@ -2328,6 +2377,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
       const changes = await changing(async (tx) => {
         await current(tx, subjects, why)
         jobs = []
+        if (await tx.settingOf('callParty')) await tx.setSetting('callParty', randomUUID())
         const keys = (await tx.keysOf(subjects)).map(({ key }) => key).filter((key) => key.length > 3)
         for (const each of subjects) await decideAll(tx, [{ action: 'forget', about: [each], why }])
         const edges = await tx.edgesOf(subjects)
@@ -2400,8 +2450,12 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
           const { visitor: _, ...rest } = each
           return rest as T
         }
-        const calls = (await tx.callsOf(people)).map(namingOwn)
-        const outcomes = await tx.outcomesOf(people)
+        const recorded = await tx.callsOf(people)
+        // A guessed link may still put two records in one cluster. A staff statement is for the exact record it names.
+        const visible = (call: KeptCall) => !call.party || ((call.party.role === 'self' || call.party.role === 'representative') && call.party.subject === subject)
+        const hidden = new Set(recorded.filter((call) => !visible(call)).map(callId))
+        const calls = recorded.filter(visible).map(namingOwn)
+        const outcomes = (await tx.outcomesOf(people)).filter((outcome) => !hidden.has(outcome.transactionId))
         const not = await tx.notLeads([...calls.map(callId), ...outcomes.map(outcomeId)])
         const spurned = (id: string) => (not.has(id) ? { notLead: not.get(id)!.kind } : {})
         for (const call of calls) entries.push({ at: call.at, subject: call.subject, kind: 'call', call, ...spurned(callId(call)), ...(call.direction === 'inbound' && call.result?.answered === false && { followUp: followUp(call, calls.filter((each) => !not.has(callId(each)))) }) })

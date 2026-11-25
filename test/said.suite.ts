@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { isRefused } from '../src/contract/fault.ts'
 import { createGraph } from '../src/core/graph.ts'
+import { createReceipts } from '../src/core/receipts.ts'
 import type { Graph } from '../src/core/graph.ts'
 import type { Opened } from './suite.ts'
 
@@ -28,6 +29,141 @@ async function inOrder(steps: readonly (() => Promise<unknown>)[]) {
 }
 
 export function saidSuite(name: string, open: () => Promise<Opened>) {
+  test(`${name}: confirming one call moves its history and erases only that call's guesses`, async () => {
+    const { store, close } = await open()
+    const line = 'caller:line'
+    const owner = 'record:a'
+    const phone = 'phone:line'
+    const to = '+12025550101'
+    const calls = ['old', 'new']
+    try {
+      await store.write(async (tx) => {
+        for (const [i, id] of calls.entries()) {
+          const at = AT + i
+          await tx.setCall({ id, direction: 'inbound', subject: line, at, to, flags: [], recorded: at })
+          await tx.addSightings([phone, `dialed:call-${id}`].map(identifier => ({ subject: line, identifier, at, recorded: at, event: 'call' })))
+        }
+        for (const subject of [line, 'visitor:web']) await tx.addSightings([{ subject, identifier: 'dial:old', at: AT, recorded: AT, event: 'call' }])
+        await tx.addTouch({ subject: line, at: AT, source: 'line', landing: `tel:${to}` })
+        await tx.setOutcome({ transactionId: 'call:old', subject: line, at: AT, stage: 'call', value: 0, currency: '' })
+        await tx.addValue('call:old', line, { value: 0, currency: '', at: AT })
+        await tx.outbox.add({ transactionId: 'call:old', target: 'test', subject: line, action: 'sale', at: AT, keys: { phone: 'line' }, due: AT, state: 'pending', attempts: 0 })
+        await tx.addSaid({ topic: 'party', about: 'old', key: 'who', at: AT + 2, data: { role: 'representative', subject: owner, by: 'desk' } })
+        const affected = await tx.applyCallParty('old')
+        assert.ok(affected.includes(line))
+        assert.equal((await tx.callOf('old'))?.subject, owner)
+        assert.equal(await tx.callLine('old'), line)
+        assert.deepEqual((await tx.callsOf([line])).map(call => call.id), ['new'])
+        assert.deepEqual((await tx.callsOf([owner])).map(call => call.id), ['old'])
+        assert.equal((await tx.outcomeOf('call:old'))?.subject, owner)
+        assert.equal((await tx.valuesOf('call:old', owner)).length, 1)
+        assert.equal((await tx.valuesOf('call:old', line)).length, 0)
+        const [job] = await tx.outbox.get('call:old')
+        assert.deepEqual([job?.state, job?.note, job?.keys], ['skipped', 'call_party', {}])
+        assert.deepEqual(await tx.edgesOn(['dial:old', 'dialed:call-old']), [])
+        assert.deepEqual(await tx.history('visitor:web'), [])
+        assert.deepEqual(await tx.edgesOn([phone]), [{ subject: line, identifier: phone, first: AT + 1, last: AT + 1, count: 1 }])
+        assert.deepEqual(await tx.touchesOf([line], AT, AT), [])
+        const keys = await tx.keysOf([owner])
+        assert.ok(keys.some(k => k.type === 'call' && k.key === 'old'))
+        await tx.removeSubject(owner)
+        assert.equal(await tx.callOf('old'), undefined)
+        assert.equal(await tx.outcomeOf('call:old'), undefined)
+        assert.deepEqual(await tx.saidOf('party', 'old'), [])
+        assert.deepEqual(await tx.outbox.get('call:old'), [])
+        assert.ok(await tx.callOf('new'))
+      })
+    } finally {
+      await close()
+    }
+  })
+
+  test(`${name}: a party named before a call can be forgotten before or after the call`, async () => {
+    const { store, close } = await open()
+    try {
+      await store.write(async (tx) => {
+        for (const id of ['arrived', 'pending']) {
+          await tx.addSaid({ topic: 'party', about: id, key: id, at: AT, data: { role: 'self', subject: 'record:a', by: 'desk' } })
+          assert.deepEqual(await tx.applyCallParty(id), [])
+        }
+        await tx.setCall({ id: 'arrived', direction: 'outbound', subject: 'caller:line', at: AT, to: '+12025550101', recorded: AT, flags: [] })
+        await tx.applyCallParty('arrived', true)
+        assert.equal((await tx.callOf('arrived'))?.subject, 'record:a')
+        assert.equal(await tx.callLine('arrived'), 'caller:line')
+        await tx.addSaid({ topic: 'party', about: 'arrived', key: 'later', at: AT + 1, data: { role: 'unknown', by: 'desk' } })
+        await tx.applyCallParty('arrived')
+        await tx.pruneCallResults(AT + 1_000)
+        await tx.pruneSightings(AT + 1_000)
+        await tx.pruneReceipts(AT + 1_000)
+        assert.equal((await tx.saidOf('party', 'pending')).length, 1)
+        assert.equal(await tx.callLine('arrived'), 'caller:line')
+        assert.equal((await tx.callOf('arrived'))?.subject, 'call:arrived')
+        assert.deepEqual((await tx.keysOf(['record:a'])).filter(k => k.type === 'call').map(k => k.key).sort(), ['arrived', 'pending'])
+        assert.deepEqual((await tx.keysOf(['record:a'])).filter(k => k.type === 'call_update').map(k => k.key).sort(), ['arrived', 'later', 'pending'])
+        await tx.removeSubject('record:a')
+        assert.deepEqual(await tx.saidOf('party', 'pending'), [])
+        assert.equal(await tx.callOf('arrived'), undefined)
+      })
+    } finally {
+      await close()
+    }
+  })
+
+  test(`${name}: confirming a call keeps a simultaneous text tie and other sightings of the line, even after pruning`, async () => {
+    const { store, close } = await open()
+    try {
+      for (const pruned of [false, true]) await store.write(async tx => {
+        const text = `message-${Number(pruned)}`
+        const id = `text-${text}`
+        const line = `caller:line-${text}`
+        const visitor = `visitor:v-${text}`
+        const phone = `phone:line-${text}`
+        const dial = `dial:${id}`
+        const to = '+12025550101'
+        await tx.setCall({ id, subject: line, visitor, at: AT, to, direction: 'inbound', flags: [], recorded: AT })
+        await tx.setText({ id: text, subject: line, visitor, at: AT, to, direction: 'inbound', flags: [], recorded: AT })
+        await tx.addSightings([AT, AT, AT + 1].map(at => ({ subject: line, identifier: phone, at, recorded: at, event: 'call' })))
+        for (const subject of [line, visitor]) await tx.addSightings([dial, dial].map(identifier => ({ subject, identifier, at: AT, recorded: AT, event: 'call' })))
+        if (pruned) await tx.pruneSightings(AT + 1)
+        await tx.addSaid({ topic: 'party', about: id, key: id, at: AT + 3, data: { role: 'self', subject: 'record:a', by: 'desk' } })
+        await tx.applyCallParty(id)
+        const after = await tx.edgesOn([phone, dial])
+        assert.deepEqual(after.map(edge => [edge.identifier, edge.count]).sort(), [[dial, 1], [dial, 1], [phone, 2]].sort())
+        assert.equal((await tx.textOf(text))?.visitor, visitor)
+        assert.deepEqual((await tx.history(visitor)).map(row => row.identifier), pruned ? [] : [dial])
+      })
+    } finally {
+      await close()
+    }
+  })
+
+  test(`${name}: deleting the physical line tombstones updates made with another receipt secret`, async () => {
+    const { store, close } = await open()
+    const first = createReceipts(['a'.repeat(32)])
+    const rotated = createReceipts(['b'.repeat(32), 'a'.repeat(32)])
+    try {
+      await store.write(async tx => {
+        const line = 'caller:line'
+        const call = { type: 'call' as const, key: 'shared', at: AT, direction: 'inbound' as const, from: '+12025550100', to: '+12025550101' }
+        const reference = { type: 'call', key: call.key }
+        const result = { type: 'call_update' as const, key: 'report', call: call.key, at: AT, change: { kind: 'result' as const, result: { answered: true } } }
+        await tx.addReceipt(first.make(call, AT), [line])
+        await tx.addReceipt(rotated.make(result, AT + 1, reference), [])
+        await tx.setCall({ id: call.key, direction: call.direction, subject: line, at: call.at, to: call.to, flags: [], recorded: AT })
+        await tx.addSaid({ topic: 'party', about: call.key, key: 'named', at: AT + 2, data: { role: 'self', subject: 'record:a', by: 'desk' } })
+        await tx.applyCallParty(call.key)
+        const keys = (await tx.keysOf([line])).map(({ type, key }) => ({ type, ...rotated.mac(type, key) }))
+        await tx.forgetReceipts([line], keys, AT + 3)
+        await tx.removeSubject(line)
+        for (const entry of [call, result]) assert.equal((await tx.receiptOf(entry.type, rotated.mac(entry.type, entry.key).all))?.forgotten, AT + 3)
+        assert.deepEqual(await tx.saidOf('party', call.key), [])
+        assert.equal(await tx.callOf(call.key), undefined)
+      })
+    } finally {
+      await close()
+    }
+  })
+
   const sameInEveryOrder = (what: string, build: (graph: Graph, n: number) => (() => Promise<unknown>)[], read: (graph: Graph, n: number) => Promise<unknown>, expected: unknown) =>
     test(`${name}: ${what}, whatever order it is said in`, async () => {
       const { store, close } = await open()

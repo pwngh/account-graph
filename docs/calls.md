@@ -32,6 +32,28 @@ phone provider ──▶ record a call ──▶ caller ──▶ linked to the 
                                            └──▶ otherwise filed under the number's own channel
 ```
 
+## Recording who was on one call
+
+Two people can use the same line. When staff know who an individual call concerned, send a `call_update` for its provider ID. For example, someone at the desk took a call from a parent about their child.
+
+```json
+{ "entries": [{ "type": "call_update", "key": "desk-017", "at": 1795460200000, "call": "C17",
+  "change": { "kind": "party", "role": "representative", "subject": "record:child", "by": "intake" } }] }
+```
+
+| Role | What staff learned | Who sees the call |
+| --- | --- | --- |
+| `self` | Staff spoke to the named record's person. | That record. |
+| `representative` | Someone spoke for the named record's person. | That record. |
+| `excluded` | Staff know the call did not concern the named record. | It stays under its call ID until someone identifies the person. |
+| `unknown` | Staff take back the earlier identification. Omit `subject`. | It stays under its call ID. |
+
+The newest statement wins, by `at` and then by key in byte order. It can arrive before the call. Use a new key for a correction. Results and reported returns have their own order. The call lookup keeps the statements and who made each one.
+
+The call, its outcome and value history belong to the exact record staff named, even when another record shares its cluster. Its callback is closed by a return for the same record. Reports use that record's own arrival for credit. An unassigned call earns no person's ad credit. A statement removes earlier guesses for that call, including a tap, code or leased number. The next call on the line needs its own confirmation. A call without a statement follows the usual rules.
+
+A party statement stops further ad deliveries for this call. A representative's number and consent belong to the representative. A delivery already sent or in flight can still reach the platform.
+
 ## Page events
 
 A page reports events without the service token, in one of three ways.

@@ -55,10 +55,10 @@ export interface BoardColumn<Row = BoardPlace> {
 export function board(
   people: readonly BoardPerson[],
   options: { steps: readonly BoardStep[]; at: number; today: number; returnWait?: number; hours?: Hours },
-): { columns: BoardColumn<BoardPlace<CallTime>>[]; unplaced: number } {
+): { columns: BoardColumn<BoardPlace<CallTime> & { miss?: CallTime }>[]; unplaced: number } {
   const { steps, at, today, returnWait, hours } = options
   const rank = new Map(steps.map((step, i) => [step.name, i]))
-  const column = (step: string | null, wait: number | undefined, last: boolean): BoardColumn<BoardPlace<CallTime>> => ({ step, wait: wait ?? null, people: 0, fresh: 0, late: wait === undefined ? null : 0, done: last ? null : 0, rows: [] })
+  const column = (step: string | null, wait: number | undefined, last: boolean): BoardColumn<BoardPlace<CallTime> & { miss?: CallTime }> => ({ step, wait: wait ?? null, people: 0, fresh: 0, late: wait === undefined ? null : 0, done: last ? null : 0, rows: [] })
   const missed = column(null, returnWait, false)
   const columns = steps.map(({ name, wait }, i) => column(name, wait, i === steps.length - 1))
   // Waited longer than the limit: since this or before. Counted in the time you were open, where that is known.
@@ -99,7 +99,7 @@ export function board(
     here.people += 1
     here.fresh += Number(began >= today)
     if (late) here.late! += 1
-    here.rows.push({ subject: open[0]?.subject ?? outcome!.subject, at: began, late, step, ...(outcome && { outcome }), ...(call && { call }) })
+    here.rows.push({ subject: open[0]?.subject ?? outcome!.subject, at: began, late, step, ...(outcome && { outcome }), ...(call && { call }), ...(open[0] && { miss: open[0] }) })
   }
   for (const { rows } of [missed, ...columns]) rows.sort((x, y) => x.at - y.at || (x.subject < y.subject ? -1 : 1))
   return { columns: [missed, ...columns], unplaced }

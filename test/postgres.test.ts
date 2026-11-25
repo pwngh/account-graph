@@ -63,6 +63,24 @@ if (!url) {
     return createPostgresStore(pool, schema)
   }
 
+  test('calls recorded before staff could name a party keep their line and result after upgrading', async () => {
+    const schema = `ag_test_${process.pid}_party`
+    try {
+      const store = await madeBefore(schema, 29)
+      await pool.query(`insert into ${schema}.call (id, subject, at, dialed, flags, recorded_at) values ('old', 'caller:line', 1, '+12025550101', '{}', 1);
+        insert into ${schema}.call_result (id, answered, recorded_at) values ('old', false, 1)`)
+      assert.ok((await store.migrate()).includes('staff confirmation of a call'))
+      await store.write(async tx => {
+        assert.deepEqual([(await tx.callOf('old'))?.party, await tx.callLine('old'), (await tx.callResultOf('old'))?.answered], [undefined, 'caller:line', false])
+        await tx.addSaid({ topic: 'party', about: 'old', key: 'confirmed', at: 2, data: { role: 'self', subject: 'record:a', by: 'desk' } })
+        await tx.applyCallParty('old')
+        assert.deepEqual([(await tx.callOf('old'))?.subject, await tx.callLine('old'), (await tx.callResultOf('old'))?.answered], ['record:a', 'caller:line', false])
+      })
+    } finally {
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
+
   test('a database made before writes were counted starts counting', async () => {
     const schema = `ag_test_${process.pid}_pulse`
     try {

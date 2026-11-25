@@ -150,6 +150,10 @@ export interface Tx {
   pruneNotLeads(before: number): Promise<number>
   /** Keeps a call, replacing one with the same id. Its result is kept apart, and may arrive first. */
   setCall(call: Omit<KeptCall, 'result'>): Promise<void>
+  /** The physical line of a recorded call, for deleting either side of a staff confirmation. */
+  callLine(id: string): Promise<Subject | undefined>
+  /** Applies the standing assertion to this call. A call arriving after its assertion left no guesses to take back. */
+  applyCallParty(id: string, arriving?: boolean): Promise<Subject[]>
   setCallResult(id: string, result: CallResult): Promise<void>
   removeCallResult(id: string): Promise<void>
   /** A call with its result, or undefined for an id no call was kept for. */

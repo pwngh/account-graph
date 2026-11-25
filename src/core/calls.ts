@@ -96,6 +96,8 @@ export interface CallOptions {
   /** How long to wait for a result before a call reads as unknown, in milliseconds. Defaults to 30 minutes. A later result still settles it. */
   resultWait?: number
   /** Records the outcome of a counted call. Defaults to `graph.outcome`; pass the outbox's `record` to send it too. */
+  /** Counts a staff-owned call locally, with the configured stage value. */
+  count?: (outcome: Outcome) => Promise<unknown>
   convert?: (outcome: Outcome) => Promise<unknown>
   /** Keeps the outcome of a call whose result is awaited. Defaults to nothing; pass the outbox's `hold`. */
   hold?: (outcome: Outcome) => Promise<unknown>
@@ -189,6 +191,21 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   const tollFree = from !== undefined && TOLL_FREE.test(from)
   const subject = from ? `caller:${hashPhone(from)}` : `call:${id}`
 
+  const saved = await graph.keptCall(id)
+  if (saved?.direction === 'outbound') throw refused(`Call "${id}" is already recorded as outbound`, { reason: 'KEY_REUSED', fields: ['direction'] })
+  if (!saved && from !== undefined && leftOut(from, options)) return { subject, flags: ['left_out'], counted: false, state: 'unknown', duplicate: false }
+  // An assertion may have arrived before the phone report. That call supplies no evidence about the line or a visitor.
+  if (saved?.party || (!saved && (await graph.partyHistory(id)).length > 0)) {
+    if (result) await keepResult(graph, id, result, options)
+    if (!saved) {
+      const flags: CallFlag[] = [...(!from ? ['blocked' as const] : []), ...(tollFree ? ['toll_free' as const] : []), ...(tooShort(call, options) ? ['short' as const] : [])]
+      await graph.keepCall({ id, direction: 'inbound', subject, at, to, flags, ...(call.duration !== undefined && { duration: call.duration }), ...(tags && { tags }) })
+    }
+    const kept = (await graph.keptCall(id))!
+    const counted = await settle(graph, id, options)
+    return { subject: kept.subject, flags: kept.flags as CallFlag[], counted, state: callState(kept, (options.now ?? Date.now)(), options), duplicate: saved !== undefined }
+  }
+
   // The note is written last, so a call that was cut off half-recorded is recorded again in full.
   const note = `dialed:call-${id}`
   const [before] = await graph.holders([note])
@@ -201,9 +218,6 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
     const kept = await graph.keptCall(id)
     return { subject: before.subject, flags: [], ...(first && kept && { flags: kept.flags as CallFlag[], ...(kept.visitor && { visitor: kept.visitor }) }), counted: settled?.counted ?? false, state: kept ? callState(kept, (options.now ?? Date.now)(), options) : 'unknown', duplicate: true }
   }
-  const saved = await graph.keptCall(id)
-  if (saved?.direction === 'outbound') throw refused(`Call "${id}" is already recorded as outbound`, { reason: 'KEY_REUSED', fields: ['direction'] })
-  if (!saved && from !== undefined && leftOut(from, options)) return { subject, flags: ['left_out'], counted: false, state: 'unknown', duplicate: false }
   if (result) await keepResult(graph, id, result, options)
 
   const flags: CallFlag[] = []
@@ -267,7 +281,7 @@ const lineOf = (channel: Channel, custom: Record<string, string> | undefined, to
 
 /** Takes the code of a call that was recorded without one, by when the call was. The first code that named somebody stands. */
 async function tellCode(graph: Graph, call: KeptCall, given: string | undefined, options: CallOptions, line: Omit<Touch, 'subject' | 'at'> | undefined): Promise<void> {
-  if (byCode(call)) return
+  if (call.party || byCode(call)) return
   const named = await namedBy(graph, given, call.at, options.codeLife)
   if (named) await graph.nameCall(call.id, named.visitor, named.note, line)
 }
@@ -352,7 +366,7 @@ async function visitorFor(graph: Graph, call: Heard, options: CallOptions): Prom
   for (let bucket = Math.floor((first - Math.max(QUIET, window)) / BUCKET); bucket <= Math.floor((last + SLACK) / BUCKET); bucket++) notes.push(`dialed:${to}@${bucket}`)
   // Of what a note says only its first tap and its last are known to have happened.
   const taps: Tap[] = (await graph.holders(notes)).flatMap((edge) => [...new Set([edge.first, edge.last])].map((when) => ({ visitor: edge.subject, note: edge.identifier, when, ...(edge.count > 2 && { span: { first: edge.first, last: edge.last } }) })))
-  const kept = (await graph.callsTo(to, first - QUIET, last + SLACK + claim + 1)).filter((each) => each.direction === 'inbound' && each.id !== call.id)
+  const kept = (await graph.callsTo(to, first - QUIET, last + SLACK + claim + 1)).filter((each) => each.direction === 'inbound' && !each.party && each.id !== call.id)
   const heard: Heard[] = [...kept, call].sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1))
   const redone = new Set(heard.filter((each) => each.at >= first && each.at <= last).map((each) => each.id))
 
@@ -531,7 +545,9 @@ async function settle(graph: Graph, id: string, options: CallOptions, phone?: st
     // Said to be no lead, it is not sent or counted anew. What was counted stays on record, and counts nowhere.
     if (counts && (await graph.notLeads([outcome.transactionId])).size > 0) return false
     // Each of these does nothing where it is already done, so one that was cut off half way is finished by the next.
-    if (counts && options.release) await options.release(outcome)
+    if (call.party && counts) await (options.count ?? graph.outcome)(outcome)
+    else if (call.party && answered === false) await graph.withdraw(outcome.transactionId)
+    else if (counts && options.release) await options.release(outcome)
     // Without one, a result has no number to give, so it only counts the call.
     else if (counts) await (phone !== undefined && options.convert ? options.convert : graph.outcome)(outcome)
     else if (answered === false) await (options.withdraw ?? graph.withdraw)(outcome.transactionId)

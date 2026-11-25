@@ -32,7 +32,8 @@ Send a token in the `authorization` header as `Bearer …`.
 
 | Call | Service token (`GRAPH_TOKEN`) | Reviewer token (`REVIEW_TOKENS`) |
 | --- | --- | --- |
-| `record`, `events` | Yes | 403 |
+| `record` | Every entry | Only call party statements signed with the owner’s name |
+| `events` | Yes | 403 |
 | `decide`, `forget` | Any `by` | `by` must be the owner of the token |
 | `lookup` | Every kind | `journey` and `find` |
 | `report` | Every kind | Every kind |
@@ -138,6 +139,15 @@ A refund and a write-off are amounts, and not what is left. `of.type` is `conver
 | `result` | `result: { answered, voicemail?, waited? }` | How the call went |
 | `returned` | `reachedAt` | Somebody reached the caller then |
 | `not_returned` | none | Nobody did |
+| `party` | `role`, `by`, `subject` for every role except `unknown` | Who was on this call |
+
+`role` is `self`, `representative`, `excluded` or `unknown`. The subject names one of your records. A reviewer can sign only their own name. A later party statement can name a different record or undo identification with `unknown`. Results, returns and parties each have their own newest statement, ordered by time and then key. A statement may precede the call.
+
+```json
+{"type":"call_update","key":"desk-14","at":1790000000000,"call":"incoming-4","change":{"kind":"party","role":"representative","subject":"record:17","by":"intake"}}
+```
+
+A call record lookup includes the current `party` and ordered `partyHistory` with the time, key and signer of each statement. A journey shows only the current statement on a visible call. Before the phone report arrives, the call lookup returns `null`.
 
 A `delivery` is `{ conversion, platform, state, note? }`. `state` is `held`, `pending`, `sent`, `skipped` or `failed`. `held` waits for a call's result. No answer holds a hashed email or phone.
 
@@ -343,7 +353,7 @@ POST /v1/report
 
 `window` is two days and a time zone. `callbacks` and `texts` answer `{ rows, next }`, 50 rows at a time. Pass `next` as `after`.
 
-`asOf` is the moment the answer is of. `campaigns`, `pipeline`, `calls` and `after_calls` are worked out once for everybody who asks at the same time, and shared until something is written. While data is being written, an answer is shared for four times as long as it took, and a minute at most. A `decide` or `forget` through the same process ends that at once. An `at` within a minute of now is answered from the shared answer.
+`asOf` is the moment the answer is of. `campaigns`, `pipeline`, `calls` and `after_calls` are worked out once for everybody who asks at the same time, and shared until something is written. While data is being written, an answer is shared for four times as long as it took, and a minute at most. A `decide` or `forget` through the same process ends that at once. A change of call party invalidates report answers across processes. An `at` within a minute of now is answered from the shared answer.
 
 ## events
 

@@ -223,7 +223,7 @@ export function sentOf(jobs: readonly Job[]): Sent[] {
   return jobs
     .map((job): [Job, boolean] => [job, reached(job)])
     // One that was picked up may have arrived with no answer. Telling a platform of it could be the first it hears.
-    .filter(([job, arrived]) => arrived || (job.attempts > 0 && job.state !== 'skipped' && job.note !== 'unknown_target'))
+    .filter(([job, arrived]) => arrived || (job.attempts > 0 && (job.state !== 'skipped' || job.note === 'call_party') && job.note !== 'unknown_target'))
     .map(([{ transactionId, target, action, at }, arrived]): Sent => ({ transactionId, target, action, at, state: 'not_requested', ...(!arrived && { note: 'may not have arrived' }) }))
     .sort((x, y) => (x.transactionId < y.transactionId ? -1 : x.transactionId > y.transactionId ? 1 : x.target < y.target ? -1 : 1))
 }
@@ -259,12 +259,15 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
   }
 
   /** Changes a stored job, starting again from what is stored whenever something else changed it first. */
-  async function change(job: Job, make: (current: Job) => Job | undefined | Promise<Job | undefined>): Promise<Job> {
+  async function change(job: Job, make: (current: Job) => Job | undefined | Promise<Job | undefined>, arrived = false): Promise<Job> {
     for (;;) {
       const current = (await store.get(job.transactionId)).find((each) => each.target === job.target)
       // Forgotten meanwhile, or nothing to change.
-      const next = current && (await make(current))
-      if (!current || !next) return current ?? job
+      if (!current) return job
+      // A send already in flight may land after a correction. Remember its arrival for deletion without restoring its keys or sending again.
+      if (current.note === 'call_party' && (!arrived || current.delivered)) return current
+      const next: Job | undefined = current.note === 'call_party' ? { ...current, delivered: true, state: 'sent' } : await make(current)
+      if (!next) return current
       if (await store.swap(current, next)) return { ...next, rev: (current.rev ?? 0) + 1 }
     }
   }
@@ -317,7 +320,7 @@ export function createOutbox(graph: Graph, store: OutboxStore, options: OutboxOp
       const { requestId } = await target.deliver(action, items)
       for (const { job } of items) {
         const sent: Job = { ...job, state: 'sent', delivered: true, ...(requestId && { requestId }) }
-        if (!(await store.swap(job, sent))) await change(job, (current) => landed(job, current, target))
+        if (!(await store.swap(job, sent))) await change(job, (current) => landed(job, current, target), true)
         pass.sent += 1
       }
     } catch (error) {

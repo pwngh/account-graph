@@ -36,7 +36,7 @@ function told(entry) {
       facts(after && `${after}${followUp.attempts > 0 ? ` · ${amount(followUp.attempts)} ${followUp.attempts === 1 ? 'attempt' : 'attempts'}` : ''}`,
         call.duration === undefined ? '' : `Duration ${amount(Math.round(call.duration))} s`,
         call.result?.waited === undefined ? '' : `Wait ${amount(Math.round(call.result.waited))} s`,
-        call.visitor && (call.flags.includes('code') ? 'Code' : call.flags.includes('pool') ? 'Tracking number' : 'Tap to call')),
+        call.party ? `${call.party.role === 'representative' ? 'Representative' : 'Record holder'} confirmed by ${call.party.by}` : call.visitor && (call.flags.includes('code') ? 'Code' : call.flags.includes('pool') ? 'Tracking number' : 'Tap to call')),
       tags(call.tags, words)]
   }
   if (entry.kind === 'text') {

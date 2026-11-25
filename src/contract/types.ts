@@ -403,12 +403,16 @@ export interface ValueChange {
   zeroed: number
 }
 
+export type CallParty = { readonly role: 'self' | 'representative' | 'excluded'; readonly subject: Subject } | { readonly role: 'unknown' }
+export type PartyStatement = CallParty & { readonly by: string; readonly at: number }
+
 /** A phone call as it is kept, with its result once one is known. */
 export interface KeptCall {
   id: string
   /** `inbound` someone rang you. `outbound` you rang them. */
   direction: 'inbound' | 'outbound'
-  /** The other side: `caller:` and a hash of their number, or `call:` and the call's id when they hid it. */
+  /** The confirmed record, the caller, or a subject private to this call. */
+  party?: PartyStatement
   subject: Subject
   /** When it began, in epoch milliseconds. */
   at: number
@@ -477,7 +481,7 @@ export interface SentLink {
 }
 
 /** What of a kept call says when it was and whether anyone was reached. */
-export type CallTime = Pick<KeptCall, 'id' | 'direction' | 'subject' | 'at'> & { result?: Pick<CallResult, 'answered' | 'returned' | 'waited'> }
+export type CallTime = Pick<KeptCall, 'id' | 'direction' | 'subject' | 'at' | 'party'> & { result?: Pick<CallResult, 'answered' | 'returned' | 'waited'> }
 
 /** How a call went, as whoever runs the phones reports it. */
 export interface CallResult {

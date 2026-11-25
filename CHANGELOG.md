@@ -4,6 +4,10 @@
 
 ### The six calls
 
+- `call_update` accepts a signed statement of who one call concerned and keeps its ordered history.
+- `journey`, callback reports and conversion credit follow the record staff named on a call.
+- `forget` erases a confirmed call when the line or any named party is forgotten.
+
 - `accountGraph({ url, token })`, `accountGraph({ databaseUrl, workers, receiptSecrets })` and `accountGraph({ memory: true })` return one interface: `record`, `decide`, `forget`, `lookup`, `report`, `events` and `close`.
 - `POST /v1/<call>` takes the argument of the call and answers with its value, in process and over HTTP alike.
 - `record` takes up to 100 entries of twelve types, one transaction each, and answers for each.

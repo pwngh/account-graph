@@ -1926,6 +1926,51 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await graph.callSummary({ from: '2023-11-10', to: '2023-11-14', at: T0, ...options })).closed, null)
     })
 
+    test('one call belongs to the exact record staff named in the journey, callbacks and credit', async () => {
+      const { graph } = await fresh(undefined, { now: () => T0 + DAY })
+      const [a, b] = ['contact:a', 'contact:b'] as const
+      const [from, to] = ['+12025550113', '+12025550114'] as const
+      const days = { from: '2023-11-14', to: '2023-11-15' }
+      await graph.join(a, b, { by: 'desk' })
+      await graph.touch({ subject: a, at: T0, source: 'ads', campaignId: 'A' })
+      await graph.touch({ subject: b, at: T0 + 100, source: 'ads', campaignId: 'B' })
+      const call = (id: string, at: number, answered: boolean) => recordCall(graph, { id, from, to, at, duration: 45, answered }, { numbers: { [to]: { source: 'line', campaignId: 'LINE' } } })
+      await call('miss-A', T0 + 500, false)
+      await call('talk-B', T0 + 1000, true)
+      await graph.restate('call:talk-B', 12, 'USD')
+      await graph.sayParty({ call: 'miss-A', key: 'who-missed', at: T0 + 3000, party: { role: 'self', subject: a, by: 'desk' } })
+      await graph.sayParty({ call: 'talk-B', key: 'who-talked', at: T0 + 3000, party: { role: 'representative', subject: b, by: 'desk' } })
+      const check = async () => {
+        const ours = await graph.journey(a)
+        assert.deepEqual(ours.entries.flatMap((entry) => entry.kind === 'call' ? [entry.call.id] : []), ['miss-A'])
+        assert.ok(!JSON.stringify(ours).includes('talk-B'))
+        const theirs = await graph.journey(b)
+        assert.ok(!JSON.stringify(theirs).includes('miss-A'))
+        assert.deepEqual(theirs.entries.flatMap((entry) => entry.kind === 'value' ? [entry.to.value] : []), [12])
+        for (const who of [a, b, `caller:${hashPhone(from)}`]) {
+          const { entries } = await graph.journey(who)
+          assert.deepEqual(entries.filter((entry) => (entry.kind === 'sighting' && entry.event === 'call') || (entry.kind === 'visit' && entry.touch.landing === `tel:${to}`)), [])
+        }
+        const open = await graph.openCalls(days)
+        assert.deepEqual(open.map(({ call, followUp, touch }) => [call.id, call.subject, followUp.state, touch?.campaignId]), [['miss-A', a, 'open', 'A']])
+        const summary = await graph.callSummary(days)
+        assert.deepEqual([summary.total.missed, summary.total.calledAgain], [1, 0])
+        const { columns } = await graph.board({ steps: [{ name: 'call' }], at: T0 + DAY })
+        assert.deepEqual(columns.map((column) => column.rows.map((row) => [row.subject, row.touch?.campaignId, row.call?.id])), [[[a, 'A', 'miss-A']], [[b, 'B', 'talk-B']]])
+        const report = await graph.report(days)
+        assert.deepEqual(report.rows.filter((row) => row.missed || row.outcomes).map((row) => [row.campaignId, row.missed, row.outcomes]).sort(), [['A', 1, 0], ['B', 0, 1]])
+        const followed = await graph.followed({ ...days, step: 'intake', days: 1, at: T0 + 3 * DAY, least: 1 })
+        assert.equal(followed.groups[0]!.rows.reduce((sum, row) => sum + row.people, 0), 2)
+      }
+      await check()
+      await graph.separate(a, b)
+      await check()
+      await graph.sayParty({ call: 'talk-B', key: 'corrected', at: T0 + 4000, party: { role: 'self', subject: a, by: 'desk' } })
+      assert.deepEqual(await graph.openCalls(days), [])
+      assert.ok(!JSON.stringify(await graph.journey(b)).includes('talk-B'))
+      assert.deepEqual(await graph.verify(), [])
+    })
+
     test('what was no lead stays on record, is counted apart, and counts nowhere else until that is taken back', async () => {
       const { graph } = await fresh(undefined, { now: () => T0 + DAY })
       const options = { results: 'expected' as const, now: () => T0 + DAY }

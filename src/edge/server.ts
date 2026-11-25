@@ -549,7 +549,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
   // What takes long to work out is worked out once for everybody who asks at the same time, and is good until something is
   // written. While things are being written all the time, it is good for a few times as long as it took, so a screen left
   // open costs a small share of the server however many are.
-  const answers = new Map<string, { version: number; at: number; until: number; made: boolean; answer: Promise<unknown> }>()
+  const answers = new Map<string, { party: string | undefined; version: number; at: number; until: number; made: boolean; answer: Promise<unknown> }>()
   // Goes up with each decision and deletion: an answer that was being worked out meanwhile is worked out again.
   let decided = 0
   // While one is under way nothing is shared: it can be done already, and waiting for what follows it.
@@ -558,18 +558,20 @@ export function createHandler(core: Core, options: HandlerOptions) {
     const key = url.pathname + url.search
     for (;;) {
       const since = decided
+      const party = await graph.partyRevision()
       if (deciding > 0) {
         const answer = await work()
-        if (decided !== since) continue
+        if (decided !== since || party !== await graph.partyRevision()) continue
         return answer
       }
       const version = await graph.version()
       let known = answers.get(key)
+      if (known?.party !== party) known = undefined
       // Who has waited too long changes with the clock, so nothing is good for more than a minute.
       if (known?.made && !(now() - known.at < 60_000 && (known.version === version || now() < known.until))) known = undefined
       if (!known) {
         const at = now()
-        const next = (known = { version, at, until: Infinity, made: false, answer: work() })
+        const next = (known = { party, version, at, until: Infinity, made: false, answer: work() })
         for (const [old, { made }] of answers) if (answers.size >= 200 && made) answers.delete(old)
         answers.set(key, next)
         next.answer.then(
@@ -581,7 +583,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
       const answer = await known.answer
       const newest = waited ? await graph.version() : version
       // Nothing is awaited between this and the answer being given.
-      if (decided !== since || deciding > 0) continue
+      if (decided !== since || deciding > 0 || party !== await graph.partyRevision()) continue
       // Made before the newest write: the screen that gets it asks again.
       if (known.version !== newest) response.setHeader('age', String(Math.max(1, Math.ceil((now() - known.at) / 1000))))
       return answer
@@ -611,7 +613,8 @@ export function createHandler(core: Core, options: HandlerOptions) {
         throw malformed((error as Error).message)
       }
       if (!isService(request)) {
-        const opens = name === 'report' || ((name === 'decide' || name === 'forget') && body?.by === reviewer) || (name === 'lookup' && (body?.kind === 'journey' || body?.kind === 'find'))
+        const party = name === 'record' && Array.isArray(body?.entries) && body.entries.length > 0 && body.entries.every((entry: any) => entry?.type === 'call_update' && entry.change?.kind === 'party' && entry.change.by === reviewer)
+        const opens = party || name === 'report' || ((name === 'decide' || name === 'forget') && body?.by === reviewer) || (name === 'lookup' && (body?.kind === 'journey' || body?.kind === 'find'))
         if (!opens) throw fault(FAULT_CODES.AUTH.FORBIDDEN, name === 'decide' || name === 'forget' ? '`by` must match the owner of the token' : 'The token does not open this call')
       }
       return answer(200, await core.v1(name as CallName, body, gone.signal))

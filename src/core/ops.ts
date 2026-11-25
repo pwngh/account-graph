@@ -289,7 +289,7 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
 }
 
 /** Where a memory store keeps what runs by itself. `fed` is how its writes say what they fed, and `forget` how it loses a subject. */
-export function createMemoryOps(): OpsStore & { fed(feed: Feed, at: number): void; forget(subject: string): void; unname(keys: readonly string[]): void; kept: Record<'feeds' | 'jobs' | 'runs' | 'alerts', Map<string, unknown>> } {
+export function createMemoryOps(): OpsStore & { fed(feed: Feed, at: number): void; forget(subject: string): void; unname(keys: readonly string[]): void; dropCallbackAlerts(subjects: readonly string[]): void; kept: Record<'feeds' | 'jobs' | 'runs' | 'alerts', Map<string, unknown>> } {
   const feeds = new Map<Feed, FeedNote>()
   const jobs = new Map<string, Omit<JobRun, 'open'> & { run?: string }>()
   const runs = new Map<string, { name: string; at: number }>()
@@ -301,6 +301,9 @@ export function createMemoryOps(): OpsStore & { fed(feed: Feed, at: number): voi
     fed: (feed, at) => void feeds.set(feed, { ...feeds.get(feed), last: Math.max(at, feeds.get(feed)?.last ?? 0) }),
     unname(keys) {
       for (const [key, alert] of alerts) if (alert.delivered === undefined && keys.some((each) => alert.text.includes(each))) alerts.delete(key)
+    },
+    dropCallbackAlerts(subjects) {
+      for (const [key, alert] of alerts) if (alert.delivered === undefined && key.startsWith('unreturned:') && alert.subject !== undefined && subjects.includes(alert.subject)) alerts.delete(key)
     },
     forget(subject) {
       for (const [key, alert] of alerts) if (alert.subject === subject) alerts.delete(key)

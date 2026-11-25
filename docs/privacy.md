@@ -37,6 +37,9 @@ Data goes to these recipients only.
 
 ## Deletion
 
+An identification made for a single call belongs to that call. The original line stays private. Forgetting the line or any record named by a party statement erases the call, its statements, its conversion and value changes. This includes a former or excluded party and a statement that arrived before the call. A tombstone covers the call and associated keys, so a late retry receives `FORGOTTEN`. A platform that had already received a conversion can still appear in the deletion report.
+
+
 `forget` deletes the subjects you name and leaves the person's others in place. To delete a person, read their `members` with the `person` [lookup](http.md#lookup), check them, and send all of them as `subjects`, 50 at most: all are deleted, or none. A payment whose outcome was never recorded names no person and stays.
 
 | Action | Deletes | Keeps |

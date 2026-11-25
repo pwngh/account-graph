@@ -95,6 +95,24 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       assert.deepEqual((await ops.state()).feeds.map((feed) => feed.last), [clock.now, clock.now, clock.now, clock.now])
     })
 
+    test('a statement about the caller removes a pending callback alert that names the line', async () => {
+      const { graph, ops, clock, posted, hook, store } = await fresh({ returnHours: 1 })
+      const to = '+12025550116'
+      const owner = 'contact:owner'
+      await graph.touch({ subject: owner, at: T0, source: 'google', gclid: 'own', campaignId: 'own' })
+      await recordCall(graph, { id: 'miss', from: '+12025550115', to, at: T0 + 1, answered: false }, { numbers: { [to]: { source: 'google', campaignId: 'line' } } })
+      clock.now += 2 * HOUR
+      hook.status = 503
+      await ops.check()
+      assert.match((await store.ops.undelivered())[0]!.key, /^unreturned:caller:/)
+      await graph.sayParty({ call: 'miss', key: 'heard', at: clock.now, party: { role: 'self', subject: owner, by: 'desk' } })
+      assert.deepEqual(await store.ops.undelivered(), [])
+      hook.status = 200
+      await ops.check()
+      assert.equal(posted.length, 1)
+      assert.match(posted[0]!, /own.*contact:owner/)
+    })
+
     test('a missed caller from a paid arrival is told once, when they have waited long enough', async () => {
       const { graph, ops, make, clock, posted } = await fresh({ returnHours: 24 })
       const numbers = { '+15550100001': { source: 'google', campaignId: '111', campaign: 'Search' }, '+15550100002': { source: 'mailer', campaign: 'postcard' } }

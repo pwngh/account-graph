@@ -53,6 +53,7 @@ export function createService(graph: Graph, options: ServiceOptions) {
       ...(pool.length > 0 && { pool: { numbers: pool, grace: options.pool!.grace * 60_000 } }),
       now,
       convert,
+      count: (outcome) => graph.outcome(staged(outcome)),
       release: options.calls?.release ?? convert,
       ...(outbox && {
         hold: async (outcome: Outcome) => (sends(outcome) ? outbox.hold(staged(outcome)) : []),
