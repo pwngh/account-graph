@@ -3046,6 +3046,44 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       for (const hops of [1, 2]) assert.deepEqual((await graph.attribute('account:a', { at: T0 + HOUR, hops })).touches, [])
     })
 
+    test('records are one person only where something confirms it, and credit goes by the link all the same', async () => {
+      const secret = 'a secret of more than thirty-two characters'
+      const policy = policyFrom({ apart: ['birth', 'given'], records: 'confirmed' })
+      const { graph } = await fresh(policy)
+      await graph.observe([
+        { subject: 'contact:wife', identifiers: ['email:home', 'device:pc', 'phone:l'], at: T0 },
+        { subject: 'contact:husband', identifiers: ['email:home', 'device:pc'], at: T0 + 1 },
+        { subject: 'visitor:pc', identifiers: ['device:pc'], at: T0 },
+        { subject: 'caller:l', identifiers: ['phone:l'], at: T0 },
+      ])
+      await graph.touch({ subject: 'visitor:pc', at: T0, gclid: 'G' })
+      // A shared browser goes with whoever was first seen, and a caller with whoever it is tied to.
+      assert.deepEqual(await members(graph, 'contact:wife'), ['caller:l', 'contact:wife', 'visitor:pc'])
+      assert.deepEqual(await members(graph, 'contact:husband'), ['contact:husband'])
+      // The husband came by the same browser, so its click is his too. He is nobody's record but his own.
+      for (const each of ['contact:wife', 'contact:husband']) assert.equal((await graph.attribute(each, { at: T0 + HOUR })).credited?.gclid, 'G', each)
+      const [link] = (await graph.links('contact:husband')).filter((each) => each.subject === 'contact:wife')
+      assert.deepEqual([link!.level, link!.unconfirmed], ['related', true])
+      assert.deepEqual((await graph.undecided()).pairs.map(({ a, b, unconfirmed }) => [a, b, unconfirmed]), [['contact:husband', 'contact:wife', true], ['contact:husband', 'visitor:pc', undefined]])
+      assert.equal((await graph.match(['email:home'])).every((each) => each.level === 'related' && each.unconfirmed), true)
+      assert.equal((await graph.journey('contact:husband')).entries.some((entry) => entry.subject === 'contact:wife'), false)
+      // Any of a decision, a name and a date of birth confirms it.
+      await graph.join('contact:wife', 'contact:husband', { by: 'dana' })
+      assert.ok((await members(graph, 'contact:wife')).includes('contact:husband'))
+      for (const more of [givenKeys(secret, 'Maria'), birthKeys(secret, '1980-01-02')]) {
+        const { graph } = await fresh(policy)
+        await graph.observe([{ subject: 'contact:1', identifiers: ['email:m', ...more], at: T0 }, { subject: 'contact:2', identifiers: ['email:m'], at: T0 }])
+        assert.deepEqual(await members(graph, 'contact:1'), ['contact:1'])
+        await graph.observe({ subject: 'contact:2', identifiers: more, at: T0 + 1 })
+        assert.deepEqual(await members(graph, 'contact:1'), ['contact:1', 'contact:2'])
+        assert.deepEqual(await graph.verify(), [])
+      }
+      // One date of birth and two names are twins, or a couple.
+      const { graph: twins } = await fresh(policy)
+      for (const [n, name] of [[1, 'Maria'], [2, 'Robert']] as const) await twins.observe({ subject: `contact:${n}`, identifiers: ['email:m', ...birthKeys(secret, '1980-01-02'), ...givenKeys(secret, name)], at: T0 })
+      assert.deepEqual(await members(twins, 'contact:1'), ['contact:1'])
+    })
+
     test('a telephone stays where the fewest joins are left out, and then with whoever was first seen', async () => {
       const { graph } = await fresh(policyFrom({ apart: ['birth'] }))
       await graph.observe([

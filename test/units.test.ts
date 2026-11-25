@@ -109,6 +109,13 @@ test('names fold to one key, and placeholders to none', () => {
   assert.throws(() => nameKeys(secret, 'Ana', 5 as never, {}), TypeError)
 })
 
+test('records that have to be confirmed need the facts that confirm them, and are part of a policy', () => {
+  assert.deepEqual(policyProblems({ apart: ['birth'], records: 'confirmed' }), [])
+  assert.deepEqual(policyProblems({ records: 'confirmed' }), ['"records" requires "apart", such as ["birth", "given"], because it goes by those facts'])
+  assert.deepEqual(policyProblems({ apart: ['birth'], records: 'all' }), ['"records" must be "confirmed", or left out'])
+  assert.notEqual(policyHash(policyFrom({ apart: ['birth'], records: 'confirmed' })), policyHash(policyFrom({ apart: ['birth'] })))
+})
+
 test('a kind that only confirms is a sound rule, names its policy, and fit gives it no more than it confirms', () => {
   const name = { weight: 0.6, dilution: 1, cap: 5, halfLife: 'none', corroborates: true }
   assert.deepEqual(policyProblems({ kinds: { name } }), [])

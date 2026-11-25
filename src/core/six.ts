@@ -55,7 +55,7 @@ function arrival(touch: AttributedTouch | undefined, subject: Subject): Arrival 
   if (!touch) return null
   return { at: touch.at, source: sourceOf(touch), campaign: touch.campaign ?? null, campaignId: touch.campaignId ?? null, landing: touch.landing ?? null, custom: touch.custom ?? {}, confidence: touch.confidence, how: touch.subject === subject ? 'self' : touch.joined ? 'cluster' : 'linked' }
 }
-const match = ({ subject, members, score, level, reasons, conflict }: Candidate): Match => ({ subject, members, score, level, kinds: kinds(reasons), ...(conflict && { conflict }) })
+const match = ({ subject, members, score, level, reasons, conflict, unconfirmed }: Candidate): Match => ({ subject, members, score, level, kinds: kinds(reasons), ...(conflict && { conflict }), ...(unconfirmed && { unconfirmed }) })
 const tied = ({ reasons, ...rest }: Counterparty): Tied => ({ ...rest, kinds: kinds(reasons) })
 
 /** What was checked for one entry before its transaction, so that nothing is waited for inside it. */

@@ -20,7 +20,7 @@ import { UNNAMED, defaultPolicy, evidence, joins, plainPolicy, policyHash, ruleF
 import type { Policy } from './policy.ts'
 import { dayIn, dayStart, dimension, fold, nextDay } from './report.ts'
 import type { Credited } from './report.ts'
-import { conflict, knownOf, partition, scorePairs } from './resolve.ts'
+import { confirmed, conflict, knownOf, partition, scorePairs } from './resolve.ts'
 import type { Known } from './resolve.ts'
 import { checkTags, touchTag } from './tags.ts'
 import type { DecisionPage, Store, Tx } from './store.ts'
@@ -604,7 +604,8 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     const separated = (await tx.separatedOf(subjects)).filter(([a, b]) => joined.has(a) && joined.has(b))
     const said = two.filter(([a, b]) => joined.has(a) && joined.has(b))
     const facts = await known(tx, subjects, said.length > 0)
-    const kept = unique([...separated.flat(), ...said.flat(), ...[...facts].filter(([, own]) => own.facts.size > 0).map(([subject]) => subject)])
+    // Where records have to be confirmed, when each was first seen can say whose a browser is.
+    const kept = unique([...(policy.records ? subjects : []), ...separated.flat(), ...said.flat(), ...[...facts].filter(([, own]) => own.facts.size > 0).map(([subject]) => subject)])
     const since = new Map<Subject, number>()
     for (let i = 0; i < kept.length; i += TOGETHER) for (const [subject, at] of sinceOf(await tx.edgesOf(kept.slice(i, i + TOGETHER)))) since.set(subject, at)
     return partition(subjects, pairs, separated, policy, facts, undefined, said, since)
@@ -625,7 +626,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     const out = new Map<Subject, Known>()
     if (!policy.apart?.length && !joins) return out
     for (let i = 0; i < subjects.length; i += TOGETHER) {
-      const edges = (await tx.edgesOf(subjects.slice(i, i + TOGETHER))).filter(({ identifier }) => /^(birth|given|initial|dated|review|named|ward):/.test(identifier))
+      const edges = (await tx.edgesOf(subjects.slice(i, i + TOGETHER))).filter(({ identifier }) => /^(birth|given|initial|dated|review|named|ward|name|passkey):/.test(identifier))
       const states = await tx.states(unique(edges.map((edge) => edge.identifier)))
       for (const [subject, facts] of knownOf(policy, edges, silent(states), joins)) out.set(subject, facts)
     }
@@ -645,6 +646,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     return out.sort((x, y) => (x.subject < y.subject ? -1 : 1))
   }
 
+  /** Whether two records are joined by what they share alone, where the policy asks for more. */
+  const unsure = (a: Subject, b: Subject, labels: ReadonlyMap<Subject, Labels>, facts: ReadonlyMap<Subject, Known>) =>
+    policy.records === 'confirmed' && names(a) && names(b) && labels.get(a)?.cluster !== labels.get(b)?.cluster && !confirmed(facts.get(a), facts.get(b))
+
   /** Links of each given subject, scored from edges. A pair a reviewer separated is not a link. */
   async function neighbors(tx: Tx, subjects: readonly Subject[]): Promise<Map<Subject, Link[]>> {
     const states = await tx.shared(subjects)
@@ -660,13 +665,14 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     }
     const found = scorePairs(policy, await tx.edgesOn(open), states, from)
     const facts = await known(tx, unique(found.flatMap(({ a, b }) => [a, b])))
-    const homes = facts.size > 0 ? await tx.labelsOf([...facts.keys()]) : new Map<Subject, Labels>()
+    const homes = policy.records ? await tx.labelsOf(unique(found.flatMap(({ a, b }) => [a, b]))) : facts.size > 0 ? await tx.labelsOf([...facts.keys()]) : new Map<Subject, Labels>()
     for (const { a, b, score, level, reasons } of found) {
       if (apart.has(pairKey(a, b))) continue
       // In one group in spite of a fact, decisions hold them there, and the fact is overruled.
       const between = homes.get(a) && homes.get(a)!.cluster === homes.get(b)?.cluster ? undefined : conflict(policy, facts.get(a), facts.get(b))
       // However strong what they share is, they are two people, and are shown as related.
-      const link = { score, level: between ? ('related' as const) : level, reasons, ...(between && { conflict: between }) }
+      const possibly = !between && level === 'same' && unsure(a, b, homes, facts)
+      const link = { score, level: between || possibly ? ('related' as const) : level, reasons, ...(between && { conflict: between }), ...(possibly && { unconfirmed: true as const }) }
       add(a, { subject: b, ...link })
       add(b, { subject: a, ...link })
     }
@@ -1199,7 +1205,9 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const own = knownOf(policy, given.map((identifier): Edge => ({ subject: nobody, identifier, first: at, last: at, count: 1 })), (identifier) => states.get(identifier)?.ignored ?? false).get(nobody)
         for (const { b: subject, score, level, reasons } of some) {
           const between = conflict(policy, own, facts.get(subject))
-          out.push({ subject, score, level: between ? 'related' : level, reasons, ...(between && { conflict: between }), members: (await tx.clusterOf(labels.get(subject)!.cluster)).sort() })
+          // Asked about before they are on record, they are a record to be.
+          const possibly = !between && level === 'same' && policy.records === 'confirmed' && names(subject) && !confirmed(own, facts.get(subject))
+          out.push({ subject, score, level: between || possibly ? 'related' : level, reasons, ...(between && { conflict: between }), ...(possibly && { unconfirmed: true as const }), members: (await tx.clusterOf(labels.get(subject)!.cluster)).sort() })
         }
         return out
       })
@@ -2107,7 +2115,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
               joined.push([subject, link.subject])
             }
             const [a, b] = subject < link.subject ? [subject, link.subject] : [link.subject, subject]
-            pairs.set(pairKey(a, b), { a, b, score: link.score, level: link.level, reasons: link.reasons, ...(link.conflict && { conflict: link.conflict }) })
+            pairs.set(pairKey(a, b), { a, b, score: link.score, level: link.level, reasons: link.reasons, ...(link.conflict && { conflict: link.conflict }), ...(link.unconfirmed && { unconfirmed: true as const }) })
           }
         }
         const labels = await tx.labelsOf(unique([...[...pairs.values()].flatMap(({ a, b }) => [a, b]), ...two.flat()]))
