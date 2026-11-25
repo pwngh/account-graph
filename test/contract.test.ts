@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net'
 import { after, test } from 'node:test'
 import pg from 'pg'
 import { internalsOf } from '../src/client/internals.ts'
+import { codeNote } from '../tools/internals.ts'
 import { createEdge } from '../src/edge/index.ts'
 import { FAULT_CODES, accountGraph, hasCode, isFault } from '../src/index.ts'
 import type { AccountGraph, DecideRequest, LocalOptions, RecordEntry, RecordResult } from '../src/index.ts'
@@ -159,6 +160,38 @@ everywhere('two that come at once are one', async ({ graph }) => {
     assert.deepEqual(results.map((result) => result.ok && result.value.duplicate).sort(), [false, true, true], entry.type)
   }
   return (await graph.report({ kind: 'campaigns', window })).value.total.visits
+})
+
+everywhere('a call is the visitor\'s whose code it carries, once, whichever of its reports has the code', async ({ graph, local }) => {
+  const { engine } = await internalsOf(local)!()
+  for (const [n, code] of [[1, 'K7Q2MX'], [2, 'K7Q2MY']] as const) {
+    await engine.graph.observe({ subject: `visitor:c${n}`, identifiers: [`device:c${n}`, codeNote(code)], at: AT, event: 'text_code' })
+    await one(graph, { type: 'arrival', key: `c${n}`, at: AT, subject: `visitor:c${n}`, source: `site${n}` })
+  }
+  const call = (key: string, from: string, more: object = {}): RecordEntry => ({ type: 'call', key, at: AT + 60_000, direction: 'inbound', from, to: '+15551230001', duration: 60, ...more })
+  const told = [
+    await one(graph, call('K1', '+15550100261', { code: ' k7q2mx' })), await one(graph, call('K1', '+15550100261')),
+    await one(graph, call('K2', '+15550100262')), await one(graph, call('K2', '+15550100262', { at: AT + 61_000, code: 'K7Q2MY' })),
+    // Another code later is not compared, and changes nothing. One that is somebody's already ties nobody.
+    await one(graph, call('K2', '+15550100262', { code: 'K7Q2MX' })), await one(graph, call('K3', '+15550100263', { code: 'K7Q2MX' })), await one(graph, call('K4', '+15550100264', { code: 'none' })),
+  ]
+  assert.deepEqual(told.map((each) => each.ok && each.type === 'call' && [each.value.duplicate, each.value.flags, each.value.visitor]), [
+    [false, ['code'], 'visitor:c1'], [true, [], undefined], [false, [], undefined], [true, ['code'], 'visitor:c2'], [true, ['code'], 'visitor:c2'], [false, ['taken'], undefined], [false, [], undefined],
+  ])
+  const arrivals = []
+  for (const each of told) if (each.ok && each.type === 'call') arrivals.push((await graph.lookup({ kind: 'person', subjects: [each.value.subject], at: NOW })).people[0]!.arrival)
+  assert.deepEqual(arrivals.map((each) => each?.source), ['site1', 'site1', 'site2', 'site2', 'site2', 'google', 'google'])
+  for (const code of ['', 7, 'x'.repeat(65)]) assert.deepEqual(await codeOf(graph.record({ entries: [call('K5', '+15550100265', { code })] })), { code: 'INPUT.MALFORMED', retryable: false })
+  // At once, one of two callers has the visitor, and two reports of one call are one call with its code.
+  await engine.graph.observe({ subject: 'visitor:c3', identifiers: ['device:c3', codeNote('K7Q2MZ')], at: AT })
+  const both = await Promise.all(['+15550100266', '+15550100267'].map((from, i) => one(graph, call(`B${i}`, from, { code: 'K7Q2MZ' }))))
+  assert.deepEqual(both.map((each) => each.ok && each.type === 'call' && each.value.flags[0]).sort(), ['code', 'taken'])
+  await engine.graph.observe({ subject: 'visitor:c4', identifiers: ['device:c4', codeNote('K7Q2N2')], at: AT })
+  await Promise.all([{}, { code: 'K7Q2N2' }, {}].map((more) => one(graph, call('B2', '+15550100268', more))))
+  assert.equal((await engine.graph.keptCall('B2'))!.visitor, 'visitor:c4')
+  // It is not kept, and no answer has it.
+  assert.doesNotMatch(JSON.stringify([told, await graph.lookup({ kind: 'journey', subject: 'visitor:c1' }), await graph.lookup({ kind: 'record', type: 'call', key: 'K1', at: NOW })]), /K7Q2M/i)
+  return [told, arrivals]
 })
 
 everywhere('what is refused can be put right and sent again with its key', async ({ graph }) => {

@@ -412,6 +412,45 @@ test('a form about somebody else sends the device as the speaker\'s and never as
   assert.deepEqual(await submit('box'), [[], [device], ['']])
 })
 
+test('an element marked data-ag-code shows the code, and a page with no use for one asks for none, in a real browser', { skip: without }, async (t) => {
+  const page = (body: string) => `<!doctype html><meta charset="utf-8">${body}<script type="module" src="/collect.js?text=1"></script>`
+  const asked: any[] = []
+  const server = createServer(async (request, response) => {
+    const body = await new Response(request as unknown as ReadableStream).text()
+    if (request.url === '/collect') {
+      const sent = JSON.parse(body)
+      if (sent.kind !== 'text_code') return void response.writeHead(204).end()
+      asked.push(sent)
+      return void (sent.gpc ? response.writeHead(204).end() : response.writeHead(200, { 'content-type': 'application/json' }).end('{"code":"K7Q2MX"}'))
+    }
+    const script = request.url!.startsWith('/collect.js')
+    const words = `<p id="p">Your code is <b data-ag-code></b></p>${request.url === '/both' ? '<a href="sms:+15550100101?body=Hi">Text</a>' : ''}`
+    response.writeHead(200, { 'content-type': script ? 'text/javascript' : 'text/html' }).end(script ? browserScripts().collect : page(request.url === '/none' ? '' : words))
+  }).listen(0, '127.0.0.1')
+  t.after(() => (server.closeAllConnections(), server.close()))
+  await new Promise((resolve) => server.once('listening', resolve))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const { run, close } = await browse(`${base}/none`)
+  t.after(close)
+  await until('the script', () => run(`Boolean(globalThis.accountGraph)`))
+  assert.equal(asked.length, 0)
+  // An element that comes later is asked for when the page is touched, and one after that is filled from what is known.
+  for (const id of ['one', 'two']) {
+    await run(`document.body.insertAdjacentHTML('beforeend', '<i id="${id}" data-ag-code></i>'); document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))`)
+    await until(id, () => run(`document.getElementById('${id}').textContent === 'K7Q2MX'`))
+  }
+  assert.equal(asked.length, 1)
+  await run(`location.href = '/both'`)
+  await until('the code', () => run(`document.getElementById('p')?.textContent === 'Your code is K7Q2MX'`).catch(() => false))
+  // The text link is as it was.
+  assert.deepEqual(await run(`{
+    const link = document.querySelector('a'), seen = []
+    addEventListener('click', (event) => { seen.push(link.getAttribute('href')); event.preventDefault() })
+    link.click()
+    new Promise((done) => setTimeout(() => done([...seen, link.getAttribute('href')]), 50))
+  }`), ['sms:+15550100101?body=Hi%20Ref%20K7Q2MX', 'sms:+15550100101?body=Hi'])
+})
+
 test('a marked element shows the visitor a number of their own while it is theirs, and then its own again', async (t) => {
   const page = browser('https://site.example/')
   const realFetch = globalThis.fetch
@@ -509,6 +548,7 @@ test('the page asks for a code when it has a text link, and puts it in as the li
   const link = { getAttribute: () => href, setAttribute: (_: string, value: string) => void (href = value) }
   Object.assign(globalThis.document, {
     querySelector: () => (there ? link : null),
+    querySelectorAll: () => [],
     addEventListener: (name: string, listener: (event: any) => void) => listeners.set(name, listener),
     removeEventListener: (name: string) => listeners.delete(name),
   })

@@ -123,6 +123,8 @@ export interface Tx {
   /** Deletes answers written down before a time, except each subject's standing one. Returns how many went. */
   pruneConsent(before: number): Promise<number>
   addTouch(touch: Touch): Promise<void>
+  /** Takes back one arrival that turned out to be none: that of a call filed under its number, by the landing it was filed with. */
+  dropTouch(subject: Subject, at: number, landing: string): Promise<void>
   /** Touches on the given subjects with `from <= at <= to`. */
   touchesOf(subjects: readonly Subject[], from: number, to: number): Promise<Touch[]>
   /** The subjects with a touch that carries this ad click id, whole, in order. */

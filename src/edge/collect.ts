@@ -436,13 +436,17 @@ export function withCode(href: string, code: string): string {
 
 /**
  * Puts this visitor's code in the message a text link fills in, at the moment it is followed, so the text that arrives says
- * whose it is. Asks the server for the code when the page has such a link. Returns a function that stops.
+ * whose it is, and shows it in every element marked `data-ag-code`, for a caller to read out. Asks the server for the code
+ * when the page has either. Returns a function that stops.
  */
 export function texts(options: CollectOptions): () => void {
   let code: string | undefined
   let asked = false
+  const show = () => {
+    for (const marked of Array.from(document.querySelectorAll('[data-ag-code]'))) if (code && marked.textContent !== code) marked.textContent = code
+  }
   const ask = async () => {
-    if (asked || !document.querySelector('a[href^="sms:"]')) return
+    if (asked || !document.querySelector('a[href^="sms:"], [data-ag-code]')) return
     asked = true
     const gpc = (navigator as { globalPrivacyControl?: boolean }).globalPrivacyControl === true
     const staff = staffMark()
@@ -453,7 +457,10 @@ export function texts(options: CollectOptions): () => void {
         headers: { 'content-type': 'text/plain' },
         credentials: 'include',
       })
-      if (response.status === 200) code = (await response.json()).code
+      if (response.status === 200) {
+        code = (await response.json()).code
+        show()
+      }
       // Nothing is given to a visitor who refused. Anything else is worth asking again.
       else if (response.status !== 204) asked = false
     } catch {
@@ -472,7 +479,11 @@ export function texts(options: CollectOptions): () => void {
     // The page is put back as it was once the link has been followed.
     setTimeout(() => link.getAttribute('href') === marked && link.setAttribute('href', written), 0)
   }
-  const touched = () => void ask()
+  const touched = () => {
+    // One that came to the page later.
+    show()
+    void ask()
+  }
   void ask()
   document.addEventListener('click', followed, true)
   document.addEventListener('pointerdown', touched, true)

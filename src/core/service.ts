@@ -49,6 +49,7 @@ export function createService(graph: Graph, options: ServiceOptions) {
     const sends = (outcome: Outcome) => Boolean(outbox && staged(outcome).action)
     return {
       ...options.calls,
+      ...(options.texts?.codeLife !== undefined && { codeLife: options.texts.codeLife }),
       ...(pool.length > 0 && { pool: { numbers: pool, grace: options.pool!.grace * 60_000 } }),
       now,
       convert,

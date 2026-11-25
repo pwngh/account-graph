@@ -3418,6 +3418,126 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await store.read((tx) => tx.textsOf([first.subject])), [])
     })
 
+    test('a call is tied by the code its caller gave, in place of a tap, whichever of two reports has the code', async () => {
+      const line = '+15550100101'
+      const numbers = { [line]: { source: 'listing' } }
+      const codes = ['K7Q2MX', 'K7Q2MY', 'K7Q2MZ']
+      const [ana, ben] = ['+15550100251', '+15550100252']
+      /** Three browsers that came from ads, each with a code. The second and third tapped the number before the call. */
+      const ready = async (taps: number[] = [2]) => {
+        const { graph } = await fresh()
+        for (const [i, code] of codes.entries()) {
+          const subject = `visitor:${i + 1}`
+          await graph.observe({ subject, identifiers: [`device:${i + 1}`, codeNote(code)], at: T0, event: 'text_code' })
+          // An arrival without a campaign, so the number's own channel would be credited before it if it were left there.
+          await graph.touch({ subject, at: T0, source: `site${i + 1}`, landing: 'https://example.org/' })
+        }
+        for (const n of taps) await graph.observe({ subject: `visitor:${n}`, identifiers: [`device:${n}`, dialed(line, T0 + DAY - 20_000)], at: T0 + DAY - 20_000, event: 'phone_click' })
+        return graph
+      }
+      const call = { id: 'K1', from: ana, to: line, at: T0 + DAY, duration: 60 }
+      /** Everything of a call that does not say when or how it came to be so. */
+      const standing = async (graph: Graph, id = 'K1') => {
+        const { recorded: _, ...kept } = (await graph.keptCall(id))!
+        const { credited, touches } = await graph.attribute(kept.subject, { at: T0 + DAY + 1 })
+        return { kept, source: credited?.source, confidence: credited?.confidence, touches: touches.length, members: (await graph.cluster(kept.subject))!.members, links: (await graph.links(kept.subject)).map(({ subject, score }) => [subject, score]) }
+      }
+      const stood: unknown[] = []
+      for (const [taps, code, flag, visitor] of [
+        // The code names whoever did not tap, whoever did, and one of two who did.
+        [[2], 'k7q2mx ', 'code', 'visitor:1'], [[2], codes[1]!, 'code', 'visitor:2'], [[2, 3], codes[2]!, 'code', 'visitor:3'], [[], codes[0]!, 'code', 'visitor:1'],
+        // It names a browser that is another caller's.
+        [[2], codes[2]!, 'taken', undefined],
+      ] as const) {
+        const views = []
+        for (const reports of [[{ ...call, code }], [call, { ...call, code }], [{ ...call, code }, call], [call, { ...call, at: call.at + 9_000, code }, { ...call, code: codes[0]! }, call]]) {
+          const graph = await ready([...taps])
+          if (flag === 'taken') await recordCall(graph, { ...call, id: 'K0', from: ben, at: T0 + HOUR, code }, { numbers })
+          let answer
+          for (const report of reports) {
+            const told = await recordCall(graph, report, { numbers })
+            if ('code' in report) answer = told
+          }
+          assert.deepEqual([answer!.visitor, answer!.flags.filter((each) => each !== 'repeat')], [visitor, [flag]], JSON.stringify([taps, code, reports]))
+          views.push(await standing(graph))
+          assert.deepEqual(await graph.verify(), [])
+        }
+        for (const view of views) assert.deepEqual(view, views[0])
+        stood.push([views[0]!.source, views[0]!.touches])
+      }
+      assert.deepEqual(stood, [['site1', 1], ['site2', 1], ['site3', 1], ['site1', 1], ['listing', 1]])
+      // A code nobody has, or one that is too old, or not yet given, is no code: the tap decides.
+      const graph = await ready()
+      assert.deepEqual((await recordCall(graph, { ...call, code: 'ZZZZZZ' }, { numbers })).flags, [])
+      assert.equal((await graph.keptCall('K1'))!.visitor, 'visitor:2')
+      for (const [id, at] of [['K2', T0 + 31 * DAY], ['K3', T0 - HOUR]] as const) assert.equal((await recordCall(graph, { ...call, id, from: ben, at, code: codes[0]! }, { numbers })).visitor, undefined)
+      // Or one two browsers hold.
+      await graph.observe({ subject: 'visitor:3', identifiers: [codeNote(codes[0]!)], at: T0 + HOUR })
+      assert.equal((await recordCall(graph, { ...call, id: 'K4', from: ben, at: T0 + 2 * DAY, code: codes[0]! }, { numbers })).visitor, undefined)
+      // A caller keeps their own code from call to call, and a text with it is theirs too.
+      const own = await ready([])
+      assert.deepEqual((await recordCall(own, { ...call, code: codes[0]! })).flags, ['code'])
+      assert.deepEqual((await recordCall(own, { ...call, id: 'K5', at: T0 + 2 * DAY, code: codes[0]! })).flags, ['repeat', 'code'])
+      assert.deepEqual((await recordText(own, { id: 'T1', from: ana, to: line, at: T0 + 2 * DAY, code: codes[0]! })).flags, ['first', 'code'])
+      assert.deepEqual((await recordText(own, { id: 'T2', from: ben, to: line, at: T0 + 2 * DAY, code: codes[0]! })).flags, ['first', 'taken'])
+      // One kept apart from the caller is not tied. A caller who hid their number is, and a call you placed is nobody's by a code.
+      await own.separate(`caller:${hashPhone(ben)}`, 'visitor:2')
+      for (const reports of [[{ ...call, id: 'K6', from: ben, code: codes[1]! }], [{ ...call, id: 'K7', from: ben }, { ...call, id: 'K7', from: ben, code: codes[1]! }]]) for (const report of reports) assert.equal((await recordCall(own, report)).visitor, undefined)
+      const { from: _, ...hidden } = call
+      assert.deepEqual((await recordCall(own, { ...hidden, id: 'K8', code: codes[2]! })).flags, ['blocked', 'code'])
+      const placed = await recordCall(own, { id: 'K9', direction: 'outbound', from: line, to: ana, at: T0 + DAY, code: codes[1]! })
+      assert.deepEqual([placed.visitor, placed.flags], [undefined, []])
+      await assert.rejects(recordCall(own, { ...call, id: 'K10', code: 7 as never }), TypeError)
+      assert.deepEqual(await own.verify(), [])
+      // Forgotten, the visitor is on no call.
+      await own.forget('visitor:1')
+      assert.equal((await own.keptCall('K1'))!.visitor, undefined)
+      assert.deepEqual((await recordCall(own, { ...call, id: 'K11', code: codes[0]! })).flags, ['repeat'])
+    })
+
+    test('a call with a code is no rival for a tap, stands over a number shown, and leaves a tie a person restored', async () => {
+      const line = '+15550100101'
+      const [ana, ben] = ['+15550100253', '+15550100254']
+      const call = { to: line, duration: 60 }
+      for (const coded of ['first', 'last', 'late']) {
+        const { graph } = await fresh()
+        for (const [n, code] of [[1, 'K7Q2MX'], [2, 'K7Q2MY']] as const) await graph.observe({ subject: `visitor:${n}`, identifiers: [`device:${n}`, codeNote(code)], at: T0 })
+        await graph.observe({ subject: 'visitor:2', identifiers: ['device:2', dialed(line, T0 + HOUR)], at: T0 + HOUR })
+        const [a, b] = [{ ...call, id: 'A', from: ana, at: T0 + HOUR + 12_000 }, { ...call, id: 'B', from: ben, at: T0 + HOUR + 18_000 }]
+        // Either could have made the tap, until the code says one of them made none.
+        for (const report of coded === 'first' ? [{ ...a, code: 'K7Q2MX' }, b] : coded === 'last' ? [b, { ...a, code: 'K7Q2MX' }] : [a, b, { ...a, code: 'K7Q2MX' }]) await recordCall(graph, report)
+        // A tie undone is never added late, so a code that comes after it does not give another call back what it lost.
+        assert.deepEqual([(await graph.keptCall('A'))!.visitor, (await graph.keptCall('B'))!.visitor], ['visitor:1', coded === 'late' ? undefined : 'visitor:2'], coded)
+        assert.deepEqual((await graph.keptCall('A'))!.flags, ['code'])
+        assert.deepEqual(await graph.verify(), [])
+      }
+      const { graph } = await fresh()
+      const pool = { numbers: [line], grace: 60_000 }
+      for (const [n, code] of [[1, 'K7Q2MX'], [2, 'K7Q2MY']] as const) await graph.observe({ subject: `visitor:${n}`, identifiers: [`device:${n}`, codeNote(code)], at: T0 })
+      assert.equal((await graph.lease('visitor:2', { numbers: [line], minutes: 10, at: T0 }))!.number, line)
+      const shown = { ...call, id: 'P', from: ana, at: T0 + 60_000 }
+      assert.deepEqual((await recordCall(graph, shown, { pool })).flags, ['pool'])
+      const named = await recordCall(graph, { ...shown, code: 'K7Q2MX' }, { pool })
+      assert.deepEqual([named.visitor, named.flags, named.duplicate], ['visitor:1', ['code'], true])
+      assert.deepEqual((await graph.cluster(named.subject))!.members, [named.subject, 'visitor:1'])
+      const other = await recordCall(graph, { ...call, id: 'Q', from: ben, at: T0 + 90_000, code: 'K7Q2MY' }, { pool })
+      assert.deepEqual([other.visitor, other.flags], ['visitor:2', ['code']])
+      // What a person has looked at and restored stays.
+      await graph.observe({ subject: 'visitor:3', identifiers: ['device:3', dialed('+15550100102', T0 + DAY)], at: T0 + DAY })
+      await graph.observe({ subject: 'visitor:4', identifiers: ['device:4', codeNote('K7Q2MZ')], at: T0 + DAY })
+      const tapped = { ...call, id: 'R', to: '+15550100102', from: '+15550100255', at: T0 + DAY + 10_000 }
+      await recordCall(graph, tapped)
+      await graph.ignore('dial:R')
+      await graph.ignore('dial:R', false, { by: 'dana' })
+      assert.deepEqual((await recordCall(graph, { ...tapped, code: 'K7Q2MZ' })).visitor, 'visitor:3')
+      // Cut off before it was recorded to the end, what its code said stands, and another is not taken.
+      await graph.keepCall({ id: 'S', direction: 'inbound', subject: `caller:${hashPhone('+15550100256')}`, at: T0 + DAY, to: line, flags: ['taken'] })
+      assert.deepEqual((await recordCall(graph, { ...call, id: 'S', from: '+15550100256', at: T0 + DAY, code: 'K7Q2MZ' })).flags, ['repeat', 'taken'].filter((each) => each !== 'repeat'))
+      await graph.keepCall({ id: 'U', direction: 'inbound', subject: `caller:${hashPhone('+15550100257')}`, at: T0 + DAY, to: line, flags: [] })
+      assert.deepEqual((await recordCall(graph, { ...call, id: 'U', from: '+15550100257', at: T0 + DAY, code: 'K7Q2MZ' })).flags, ['code'])
+      assert.deepEqual(await graph.verify(), [])
+    })
+
     test('what begins a conversation does not depend on the order texts are reported in, nor on being reported twice at once', async () => {
       const days = [0, 10, 25, 50, 85, 90]
       for (const order of [days, [...days].reverse(), [50, 0, 25, 90, 10, 85], [0, 50, 25, 85, 90, 10]]) {
