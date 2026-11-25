@@ -755,6 +755,10 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
     let met = false
     /** The groups of two a reviewer keeps apart, looked for wherever one speaks for another: a decision comes before what was said. */
     const kept = new Set<string>()
+    const checked = new Set<Subject>()
+    const far = new Set<Subject>()
+    const groupOf = new Map<Subject, Subject>()
+    const apartPairs: [Subject, Subject][] = []
     return {
       /** Whether a reviewer keeps somebody of the one's group apart from somebody of the other's. */
       kept: (a: Subject, b: Subject) => kept.has(pairKey(labels.get(a)?.cluster ?? a, labels.get(b)?.cluster ?? b)),
@@ -771,10 +775,27 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const unread = unique([...subjects].filter((subject) => !labels.has(subject)))
         for (let i = 0; i < unread.length; i += TOGETHER) for (const [subject, own] of await tx.labelsOf(unread.slice(i, i + TOGETHER))) labels.set(subject, own)
         for (const [a, b] of said) if (labels.get(a)?.cluster !== labels.get(b)?.cluster) spoken.add(pairKey(labels.get(a)!.cluster, labels.get(b)!.cluster))
-        for (const key of new Set(said.map(([a, b]) => pairKey(labels.get(a)?.cluster ?? a, labels.get(b)?.cluster ?? b)))) {
-          const [x, y] = key.split('\u0000') as [Subject, Subject]
-          const [one, other] = [new Set([x, ...(await tx.clusterOf(x))]), new Set([y, ...(await tx.clusterOf(y))])]
-          if ((await tx.separatedOf([...one])).some(([a, b]) => (one.has(a) && other.has(b)) || (one.has(b) && other.has(a)))) kept.add(key)
+        // Everybody of the groups of those, and who of them a reviewer keeps apart, read together and once.
+        const asked = unique(said.flat()).filter((each) => !checked.has(each))
+        if (asked.length > 0) {
+          const ofGroup = new Map<Subject, Subject>()
+          const ids = unique(asked.flatMap((each) => labels.get(each)?.component ?? []))
+          const groups = new Set(asked.map((each) => labels.get(each)?.cluster ?? each))
+          for (let i = 0; i < ids.length; i += TOGETHER) for (const [subject, own] of await tx.membersOf(ids.slice(i, i + TOGETHER))) if (groups.has(own.cluster)) ofGroup.set(subject, own.cluster)
+          for (const each of asked) {
+            checked.add(each)
+            if (!ofGroup.has(each)) ofGroup.set(each, labels.get(each)?.cluster ?? each)
+          }
+          const all = [...ofGroup.keys()]
+          for (let i = 0; i < all.length; i += TOGETHER) for (const [a, b] of await tx.separatedOf(all.slice(i, i + TOGETHER))) {
+            for (const each of [a, b]) if (!ofGroup.has(each)) far.add(each)
+            apartPairs.push([a, b])
+          }
+          // The other end may be of a group not asked about until now.
+          for (const [subject, group] of ofGroup) groupOf.set(subject, group)
+          const ends = [...far].filter((each) => !groupOf.has(each))
+          for (let i = 0; i < ends.length; i += TOGETHER) for (const [subject, own] of await tx.labelsOf(ends.slice(i, i + TOGETHER))) groupOf.set(subject, own.cluster)
+          for (const [a, b] of apartPairs) kept.add(pairKey(groupOf.get(a) ?? a, groupOf.get(b) ?? b))
         }
         const over = [...links].flatMap(([near, list]) => list.filter((link) => link.level === 'same' && labels.get(near)?.cluster !== labels.get(link.subject)?.cluster).map(() => labels.get(near)?.component ?? near))
         const cutUps = unique(over).filter((id) => !marked.has(id))
@@ -2145,7 +2166,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
         const entries: Entry[] = []
         for (const touch of await tx.touchesOf(people, 0, before - 1)) entries.push({ at: touch.at, subject: touch.subject, kind: 'visit', touch })
         // A call or a text names the browser it was tied to, where that is this person's.
-        const theirOwn = new Set(people)
+        const theirOwn = new Set(everyone)
         const namingOwn = <T extends { visitor?: Subject }>(each: T): T => {
           if (each.visitor === undefined || theirOwn.has(each.visitor)) return each
           const { visitor: _, ...rest } = each
