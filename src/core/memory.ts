@@ -1,8 +1,11 @@
+import { randomUUID } from 'node:crypto'
 import { malformed } from '../contract/fault.ts'
 import { createMemoryOps } from './ops.ts'
 import { createMemoryOutbox } from './outbox.ts'
 import type { OutboxStore } from './outbox.ts'
 import { standingFirst } from './store.ts'
+import type { GraphEvent } from '../contract/api.ts'
+import type { Delivery } from './events.ts'
 import type { Receipt } from './receipts.ts'
 import type { Said, SaidOf, Topic } from './said.ts'
 import { byKey } from './said.ts'
@@ -47,8 +50,12 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
   const receipts = new Map<string, Receipt>()
   const receiptSubjects = new Map<string, Set<Subject>>()
   const settings = new Map<string, string>()
-  const moves: NumberedChange[] = []
-  let lastMove = 0
+  const events: (GraphEvent & { subject?: Subject })[] = []
+  const once = new Map<string, Subject | undefined>()
+  const deliveries = new Map<string, Delivery & { lease: number }>()
+  const pruned = { seq: 0 }
+  let lastEvent = 0
+  let epoch = randomUUID().slice(0, 8)
   let writes = 0
   const ops = createMemoryOps()
   let built: string | undefined
@@ -162,7 +169,8 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
       for (const held of leases.values()) for (const lease of held) if (lease.subject === subject) lease.subject = ''
       consents.delete(subject)
       ops.forget(subject)
-      for (let i = moves.length - 1; i >= 0; i--) if (moves[i]!.subject === subject) moves.splice(i, 1)
+      for (const [name, about] of once) if (about === subject) once.delete(name)
+      for (let i = events.length - 1; i >= 0; i--) if (events[i]!.subject === subject) events.splice(i, 1)
       // Last, so a job added meanwhile has no outcome to be added for.
       return outbox.remove(subject)
     },
@@ -269,15 +277,67 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
     },
 
     async addChanges(at, changes) {
-      for (const change of changes) moves.push({ ...change, at, seq: ++lastMove })
+      await tx.emit(changes.map(({ subject, from, to }) => ({ type: 'cluster.changed', at, subject, data: { subject, from: from ?? null, to: to ?? null } })))
+    },
+
+    async emit(given) {
+      let made = 0
+      for (const { once: name, subject, ...event } of given) {
+        if (name !== undefined && once.has(name)) continue
+        if (name !== undefined) once.set(name, subject)
+        events.push({ schemaVersion: 1, seq: ++lastEvent, ...structuredClone(event), ...(subject && { subject }) } as GraphEvent)
+        made += 1
+      }
+      return made
+    },
+
+    async eventHead() {
+      return { seq: lastEvent, epoch, oldest: pruned.seq + 1 }
+    },
+
+    async eventsAfter(seq, limit) {
+      return events.filter((each) => each.seq > seq).slice(0, limit).map(({ subject: _, ...event }) => structuredClone(event) as GraphEvent)
+    },
+
+    async newEpoch() {
+      return (epoch = randomUUID().slice(0, 8))
+    },
+
+    async pruneEvents(before) {
+      const keep = events.findIndex((each) => each.at >= before)
+      const gone = events.splice(0, keep < 0 ? events.length : keep)
+      if (gone.length > 0) pruned.seq = Math.max(pruned.seq, gone.at(-1)!.seq)
+      return gone.length
+    },
+
+    async pruneReceipts(before) {
+      let gone = 0
+      for (const [id, receipt] of receipts) {
+        if (receipt.forgotten !== undefined || receipt.recorded >= before) continue
+        receiptSubjects.delete(id)
+        gone += Number(receipts.delete(id))
+      }
+      return gone
+    },
+
+    async claimDelivery(sink, now, lease) {
+      const held = deliveries.get(sink) ?? { sink, seq: lastEvent, due: 0, attempts: 0, lease: 0 }
+      if (held.lease > now || held.due > now) return undefined
+      deliveries.set(sink, { ...held, lease: now + lease })
+      const { lease: _, ...delivery } = held
+      return delivery
+    },
+
+    async setDelivery(delivery) {
+      deliveries.set(delivery.sink, { ...delivery, lease: 0 })
     },
 
     async recentChanges(limit) {
-      return moves.slice(Math.max(0, moves.length - limit)).reverse().map(({ seq: _, ...move }) => move)
+      return changed(events).slice(-limit).reverse().map(({ seq: _, ...move }) => move)
     },
 
     async changesAfter(seq, limit) {
-      return moves.filter((move) => move.seq > seq).slice(0, limit).map((move) => ({ ...move }))
+      return changed(events.filter((each) => each.seq > seq)).slice(0, limit)
     },
 
     async fed(feed, at) {
@@ -836,8 +896,8 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
   }
 
   /** Every collection, copied together, so what two of them share stays shared. */
-  const collections = { bySubject, byIdentifier, ignored, labels, byComponent, byCluster, sightings, touches, separated, flows, flowsBy, flowIds, consents, decisions, outcomes, values, calls, texts, sent, payments, results, spurned, leases, costs, reads, said, receipts, receiptSubjects, settings, moves }
-  const snapshot = () => structuredClone({ ...collections, lastMove, writes, built, jobs: outbox.jobs, ops: ops.kept })
+  const collections = { bySubject, byIdentifier, ignored, labels, byComponent, byCluster, sightings, touches, separated, flows, flowsBy, flowIds, consents, decisions, outcomes, values, calls, texts, sent, payments, results, spurned, leases, costs, reads, said, receipts, receiptSubjects, settings, events, once, deliveries }
+  const snapshot = () => structuredClone({ ...collections, lastEvent, epoch, writes, built, jobs: outbox.jobs, ops: ops.kept })
   const restore = (kept: ReturnType<typeof snapshot>) => {
     const refill = (now: any, then: any) => {
       if (Array.isArray(now)) now.splice(0, Infinity, ...then)
@@ -849,7 +909,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
     for (const name of Object.keys(collections) as (keyof typeof collections)[]) refill(collections[name], kept[name])
     refill(outbox.jobs, kept.jobs)
     for (const name of Object.keys(ops.kept) as (keyof typeof ops.kept)[]) refill(ops.kept[name], kept.ops[name])
-    ;({ lastMove, writes, built } = kept)
+    ;({ lastEvent, epoch, writes, built } = kept)
   }
 
   let tail: Promise<unknown> = Promise.resolve()
@@ -874,6 +934,10 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
   const jobs: OutboxStore = { add: queued(outbox.add), claim: queued(outbox.claim), swap: queued(outbox.swap), standing: queued(outbox.standing), get: queued(outbox.get), list: queued(outbox.list), counts: queued(outbox.counts), oldestDue: queued(outbox.oldestDue) }
   return { write, read: queue, outbox: jobs, ops, snapshot }
 }
+
+/** The cluster changes among events, as they were before there were others. */
+const changed = (events: readonly GraphEvent[]): NumberedChange[] =>
+  events.flatMap((each) => (each.type === 'cluster.changed' ? [{ seq: each.seq, at: each.at, subject: each.data.subject, from: each.data.from ?? undefined, to: each.data.to ?? undefined }] : []))
 
 const copied = (decision: Decision): Decision => ({ ...decision, about: [...decision.about] })
 const bySystem = (decision: Decision) => decision.by?.startsWith('system:') ?? false

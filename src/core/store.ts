@@ -1,4 +1,6 @@
 import type { Feed, OpsStore } from './ops.ts'
+import type { GraphEvent } from '../contract/api.ts'
+import type { Delivery, EventHead, NewEvent } from './events.ts'
 import type { Receipt } from './receipts.ts'
 import type { Said, SaidOf, Topic } from './said.ts'
 import { byKey } from './said.ts'
@@ -75,6 +77,20 @@ export interface Tx {
   subjectsStarting(text: string, limit: number): Promise<Subject[]>
   /** Writes down cluster changes as they happen. */
   addChanges(at: number, changes: readonly Change[]): Promise<void>
+  /**
+   * Numbers events and keeps them. The number comes from a row that is held until the write commits, so no higher number
+   * is seen before a lower one. Call it last: that row is held from here on. Resolves to how many were new.
+   */
+  emit(events: readonly NewEvent[]): Promise<number>
+  eventHead(): Promise<EventHead>
+  eventsAfter(seq: number, limit: number): Promise<GraphEvent[]>
+  /** Begins another history, as after a restored backup. Every cursor is lost. */
+  newEpoch(): Promise<string>
+  pruneEvents(before: number): Promise<number>
+  pruneReceipts(before: number): Promise<number>
+  /** Takes the turn to deliver to a receiver, for as long as the lease. Undefined while another has it or it is not due. */
+  claimDelivery(sink: string, now: number, lease: number): Promise<Delivery | undefined>
+  setDelivery(delivery: Delivery): Promise<void>
   /** The newest cluster changes, newest first. */
   recentChanges(limit: number): Promise<Moved[]>
   /** Cluster changes numbered above `seq`, oldest first. */

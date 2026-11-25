@@ -1,6 +1,7 @@
 import { malformed } from '../contract/fault.ts'
 import type { Feed, KeptAlert, OpsStore } from '../core/ops.ts'
 import type { Job, JobState, OutboxStore } from '../core/outbox.ts'
+import type { GraphEvent } from '../contract/api.ts'
 import type { Receipt } from '../core/receipts.ts'
 import type { SaidOf, Topic } from '../core/said.ts'
 import type { Store, Tx } from '../core/store.ts'
@@ -162,7 +163,8 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       // Who held a number is forgotten. That somebody did stays, or a call in that time would go to whoever held it before.
       await db.query(`update ${t('lease')} set subject = '' where subject = $1`, [subject])
       await db.query(`delete from ${t('alert')} where subject = $1`, [subject])
-      await db.query(`delete from ${t('change')} where subject = $1`, [subject])
+      await db.query(`delete from ${t('event')} where subject = $1`, [subject])
+      await db.query(`delete from ${t('event_once')} where subject = $1`, [subject])
       return jobs.map(toJob)
     },
 
@@ -303,21 +305,77 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     },
 
     async addChanges(at, changes) {
-      if (changes.length === 0) return
+      await this.emit(changes.map(({ subject, from, to }) => ({ type: 'cluster.changed', at, subject, data: { subject, from: from ?? null, to: to ?? null } })))
+    },
+
+    async emit(given) {
+      // One said already, or twice here, is left out before numbers are given.
+      const names = given.flatMap(({ once }) => (once === undefined ? [] : [once]))
+      const said = new Set(names.length > 0 ? (await db.query(`select said_once as name from ${t('event_once')} where said_once = any($1::text[])`, [names])).rows.map((row) => row.name) : [])
+      const events = given.filter(({ once }) => once === undefined || (!said.has(once) && said.add(once)))
+      if (events.length === 0) return 0
+      const fresh = events.filter(({ once }) => once !== undefined)
+      if (fresh.length > 0) await db.query(`insert into ${t('event_once')} (said_once, subject) select * from unnest($1::text[], $2::text[])`, [fresh.map(({ once }) => once), fresh.map(({ subject }) => subject ?? null)])
       await db.query(
-        `insert into ${t('change')} (at, subject, from_cluster, to_cluster) select $1, * from unnest($2::text[], $3::text[], $4::text[])`,
-        [at, changes.map((change) => change.subject), changes.map((change) => change.from ?? null), changes.map((change) => change.to ?? null)],
+        `with numbered as (update ${t('event_head')} set seq = seq + jsonb_array_length($1::jsonb) returning seq)
+         insert into ${t('event')} (seq, type, at, data, subject)
+         select numbered.seq - jsonb_array_length($1::jsonb) + e.nth, e.v->>'type', (e.v->>'at')::bigint, e.v->'data', e.v->>'subject'
+         from numbered, jsonb_array_elements($1::jsonb) with ordinality as e (v, nth)`,
+        [JSON.stringify(events)],
       )
+      return events.length
+    },
+
+    async eventHead() {
+      const { rows } = await db.query(`select * from ${t('event_head')}`)
+      return { seq: Number(rows[0].seq), epoch: rows[0].epoch, oldest: Number(rows[0].pruned) + 1 }
+    },
+
+    async eventsAfter(seq, limit) {
+      const { rows } = await db.query(`select * from ${t('event')} where seq > $1 order by seq limit $2`, [seq, limit])
+      return rows.map(toEvent)
+    },
+
+    async newEpoch() {
+      return (await db.query(`update ${t('event_head')} set epoch = substr(md5(random()::text || clock_timestamp()::text), 1, 8) returning epoch`)).rows[0].epoch
+    },
+
+    async pruneEvents(before) {
+      const { rows } = await db.query(
+        `with upto as (select coalesce((select min(seq) from ${t('event')} where at >= $1), (select seq + 1 from ${t('event_head')})) as seq),
+           gone as (delete from ${t('event')} where seq < (select seq from upto) returning seq),
+           noted as (update ${t('event_head')} set pruned = greatest(pruned, coalesce((select max(seq) from gone), 0)))
+         select count(*)::int as n from gone`,
+        [before],
+      )
+      return rows[0].n
+    },
+
+    async pruneReceipts(before) {
+      return (await db.query(`with gone as (delete from ${t('receipt')} where forgotten_at is null and recorded_at < $1 returning 1) select count(*)::int as n from gone`, [before])).rows[0].n
+    },
+
+    async claimDelivery(sink, now, lease) {
+      const { rows } = await db.query(
+        `insert into ${t('event_delivery')} as d (sink, seq, due, attempts, lease_until) select $1, seq, 0, 0, $2::bigint + $3::bigint from ${t('event_head')}
+         on conflict (sink) do update set lease_until = $2::bigint + $3::bigint where d.lease_until <= $2 and d.due <= $2 returning *`,
+        [sink, now, lease],
+      )
+      return rows[0] && { sink, seq: Number(rows[0].seq), due: Number(rows[0].due), attempts: rows[0].attempts, ...(rows[0].since !== null && { since: Number(rows[0].since) }) }
+    },
+
+    async setDelivery({ sink, seq, due, attempts, since }) {
+      await db.query(`update ${t('event_delivery')} set seq = $2, due = $3, attempts = $4, since = $5, lease_until = 0 where sink = $1`, [sink, seq, due, attempts, since ?? null])
     },
 
     async recentChanges(limit) {
-      const { rows } = await db.query(`select * from ${t('change')} order by id desc limit $1`, [limit])
+      const { rows } = await db.query(`select * from ${t('event')} where type = 'cluster.changed' order by seq desc limit $1`, [limit])
       return rows.map(moved)
     },
 
     async changesAfter(seq, limit) {
-      const { rows } = await db.query(`select * from ${t('change')} where id > $1 order by id limit $2`, [seq, limit])
-      return rows.map((row) => ({ ...moved(row), seq: Number(row.id) }))
+      const { rows } = await db.query(`select * from ${t('event')} where type = 'cluster.changed' and seq > $1 order by seq limit $2`, [seq, limit])
+      return rows.map((row) => ({ ...moved(row), seq: Number(row.seq) }))
     },
 
     async fed(feed, at) {
@@ -1131,7 +1189,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
   }
 }
 
-const moved = (row: any): Moved => ({ subject: row.subject, from: row.from_cluster ?? undefined, to: row.to_cluster ?? undefined, at: Number(row.at) })
+const moved = (row: any): Moved => ({ subject: row.data.subject, from: row.data.from ?? undefined, to: row.data.to ?? undefined, at: Number(row.at) })
 
 function toSighting(row: any): Sighting {
   const sighting = { subject: row.subject, identifier: row.identifier, at: Number(row.at), recorded: Number(row.recorded_at) }
@@ -1140,6 +1198,10 @@ function toSighting(row: any): Sighting {
 
 function toCounted(row: any): Counted {
   return { transactionId: row.transaction_id, subject: row.subject, at: Number(row.at), stage: row.stage, value: row.value, currency: row.currency, ...(row.tags !== null && { tags: row.tags }) }
+}
+
+function toEvent(row: any): GraphEvent {
+  return { schemaVersion: 1, seq: Number(row.seq), type: row.type, at: Number(row.at), data: row.data }
 }
 
 function toReceipt(row: any): Receipt {
@@ -1572,6 +1634,22 @@ export function upgrades(schema = 'account_graph'): { id: number; name: string; 
             );
             create index if not exists receipt_subject_subject on ${schema}.receipt_subject (subject);
             create table if not exists ${schema}.setting (name text primary key, value text not null);`,
+    },
+    {
+      id: 26,
+      name: 'events',
+      // Cluster changes become events, in the order they were numbered, beside what people are told of.
+      sql: `create table if not exists ${schema}.event_head (one boolean primary key default true check (one), seq bigint not null, epoch text not null, pruned bigint not null default 0);
+            create table if not exists ${schema}.event (seq bigint primary key, type text not null, at bigint not null, data jsonb not null, subject text);
+            create index if not exists event_subject on ${schema}.event (subject);
+            create index if not exists event_at on ${schema}.event (at);
+            create table if not exists ${schema}.event_once (said_once text primary key, subject text);
+            create table if not exists ${schema}.event_delivery (sink text primary key, seq bigint not null, due bigint not null, attempts integer not null, since bigint, lease_until bigint not null);
+            insert into ${schema}.event (seq, type, at, data, subject)
+              select row_number() over (order by id), 'cluster.changed', at, jsonb_build_object('subject', subject, 'from', from_cluster, 'to', to_cluster), subject from ${schema}.change
+              on conflict do nothing;
+            insert into ${schema}.event_head (seq, epoch) select coalesce(max(seq), 0), substr(md5(random()::text || clock_timestamp()::text), 1, 8) from ${schema}.event on conflict do nothing;
+            drop table ${schema}.change;`,
     },
   ]
 }
