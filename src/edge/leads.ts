@@ -15,7 +15,7 @@ export class LeadConflict extends Error {}
 
 export async function leadBody(request: IncomingMessage): Promise<Buffer> {
   const limit = 65_536
-  // The rest is never read: the 413 is written, then the connection is closed.
+  // The rest is never read. The 413 is written, then the connection is closed.
   const tooLarge = () => fault(FAULT_CODES.INPUT.TOO_LARGE, 'Body exceeds 64 KiB')
   if (Number(request.headers['content-length']) > limit) throw tooLarge()
   let size = 0
@@ -47,7 +47,7 @@ export function signedLead(request: IncomingMessage, raw: Buffer, { auth, secret
   }
   const mac = createHmac('sha256', secret).update(raw).digest()
   // Senders write the same digest as `sha256=<hex>`, in either case, in base64url, or without base64 padding.
-  // The whole text is compared: Buffer's hex and base64 decoders can silently discard trailing bytes.
+  // The whole text is compared, because Buffer's hex and base64 decoders can silently discard trailing bytes.
   const given = value.replace(/^sha256=/i, '')
   const [supplied, expected] = (auth.encoding === 'hex' ? [given.toLowerCase(), mac.toString('hex')] : [given.replace(/-/g, '+').replace(/_/g, '/').replace(/=+$/, ''), mac.toString('base64').replace(/=+$/, '')]).map(text => Buffer.from(text)) as [Buffer, Buffer]
   return supplied.length === expected.length && timingSafeEqual(supplied, expected)
@@ -158,7 +158,7 @@ function mapLead(name: string, source: LeadSource, get: (path: string) => unknow
     }
     const facts = { ...(/^[\w.-]+$/.test(device) && { device }), ...(/^[^\s@]+@[^\s@]+$/.test(email) && { email }), ...(phone && { phone }), ...(first && last && { name: { first, last } }) }
     // With updates, each set of details is a profile of its own, so an update adds facts and a retry is a duplicate.
-    // Without them, the ID names one profile, and other details under it are refused: whoever can choose an ID could otherwise add to another person's lead.
+    // Without them, the ID names one profile, and other details under it are refused, because whoever can choose an ID could otherwise add to another person's lead.
     const details = source.updates ? createHmac('sha256', source.secret).update(`${id}\u0000${canonical(facts)}`).digest('base64url').slice(0, 22) : id
     if (Object.keys(facts).length) entries.push({ type: 'profile', key: `lead:${name}:${details}`, at, subject, facts }, { type: 'conversion', key, at, subject, stage: source.stage ?? 'inquiry' })
   }
@@ -167,7 +167,7 @@ function mapLead(name: string, source: LeadSource, get: (path: string) => unknow
 
 export async function acceptLead(name: string, source: LeadSource, raw: Buffer, media: string | undefined, received: number, country: string | undefined, record: RecordLead) {
   const entries = mapLead(name, source, fields(raw, media), received, country)
-  // Nothing would be written, so the answer does not wait for the graph: a 503 would only bring the same post back.
+  // Nothing would be written, so the answer does not wait for the graph. A 503 would only bring the same post back.
   if (!entries.length) return { recorded: [], note: 'NO_FACT_USED' }
   const unavailable = () => fault(FAULT_CODES.GRAPH.UNAVAILABLE, 'The graph is not ready', { retryable: true })
   let response: RecordResponse

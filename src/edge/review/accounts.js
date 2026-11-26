@@ -150,7 +150,7 @@ async function clusterList() {
   const list = el('ul', { id: 'queue' }, ...(clusters.length > 0 ? clusters.map(queued) : [el('li', { class: 'muted' }, 'None')]))
   // The list comes 50 at a time. A full page means there may be more.
   const more = el('button', { on: { click: async () => {
-    // Something else is being opened: this list is about to go.
+    // Something else is being opened, so this list is about to go.
     if (opening) return
     // A refresh under way would replace the list this page is added to, so it gives way.
     loading += 1
@@ -222,13 +222,13 @@ view('accounts', 'Accounts', async (box, subject) => {
   const left = el('div', { class: 'account-rail' })
   const detail = el('div', { id: 'detail' })
   box.append(el('div', { class: `split${subject ? ' opened' : ''}` }, left, detail))
-  // The record first: a decision that lands while the rest is read is then newer than what is shown, and refuses one made on it.
+  // The record first, so a decision that lands while the rest is read is then newer than what is shown, and refuses one made on it.
   const audit = await api('GET', '/audit')
   box.dataset.seen = audit.head?.seq ?? 0
   const read = (each) => api('GET', `/subject?subject=${encodeURIComponent(each)}`)
   // Whoever was opened out on the graph is read again with it.
   const [queue, recent] = await Promise.all([clusterList(), api('GET', '/recent')])
-  // With nobody opened, the largest cluster is drawn: where a reviewer should look first.
+  // With nobody opened, the largest cluster is drawn, because that is where a reviewer should look first.
   const about = subject || queue.largest?.id
   const spread = drawn.subject === about ? [...drawn.more.keys()] : []
   const [profile, ...more] = await Promise.all([about ? read(about) : undefined, ...spread.map(read)])

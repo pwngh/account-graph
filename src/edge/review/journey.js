@@ -408,7 +408,7 @@ function chart(entries, shown, ties, subject, show, partial) {
     card.hidden = entry === undefined
     const opened = root.classList.contains('picked') !== (entry !== undefined)
     root.classList.toggle('picked', entry !== undefined)
-    // The card beside the chart takes its room, or gives it back: drawn again for that width at once, not a moment after, so no mark moves from under a pointer and one is brought into view where it now stands.
+    // The card beside the chart takes its room, or gives it back. The chart is drawn again for that width at once, not a moment after. Then no mark moves from under a pointer and one is brought into view where it now stands.
     if (opened && drawnAt > 0 && track.clientWidth > 0 && track.clientWidth !== drawnAt) {
       draw()
       if (focus) marks.get(entry)?.focus({ preventScroll: true })
@@ -452,7 +452,7 @@ function chart(entries, shown, ties, subject, show, partial) {
       ruler.append(el('span', { class: 'tick edge' }, el('b', {}, before.over || before.text)))
       over = before.over
     }
-    // Kept whole at the right edge, and given room: no number is drawn under it.
+    // Kept whole at the right edge, and given room, and no number is drawn under it.
     const pin = now >= from && now <= to ? Math.min((now - from) * perMs, (to - from) * perMs - 26) : NaN
     for (const rule of inside) {
       const left = (rule.at - from) * perMs
@@ -488,7 +488,7 @@ function chart(entries, shown, ties, subject, show, partial) {
       for (const entry of order) if (entry.kind === kind) {
         const x = (entry.at - from) * perMs
         const long = spanOf(entry) * perMs
-        // Too near the one before to press either: they are one mark with how many, and a press comes closer.
+        // Too near the one before to press either. They are one mark with how many, and a press comes closer.
         if (heap && x - heap.x < 18 && charted.zoom !== 'Day') {
           heap.list.push(entry)
           heap.mark.classList.add('heap')

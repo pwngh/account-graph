@@ -1,10 +1,10 @@
 // What each campaign cost and brought in.
-/** A dimension in words: which side it is from matters as much as its name. */
+/** A dimension in words. Which side it is from matters as much as its name. */
 const dimensionName = (by) => (by === 'hour' ? 'Hour' : by === 'weekday' ? 'Weekday' : by.startsWith('touch.') ? `Visit: ${by.slice(6).replaceAll('_', ' ')}` : `Outcome: ${by.slice(8).replaceAll('_', ' ')}`)
 
 const GROUPS = { answer: 'Call result', talk: 'Talk time', language: 'Language', returned: 'Callback' }
 
-/** What followed calls: who reached a step within some days. Asked for only once a step is chosen. */
+/** What followed calls, which is who reached a step within some days. Asked for only once a step is chosen. */
 async function whatFollowed(box, report, address, step, within) {
   const days = Number(within) || 30
   const steps = [...new Set([...report.steps, ...(step ? [step] : [])])]
@@ -63,7 +63,7 @@ view('channels', 'Channels', async (box, first, last, by = '', step = '', within
     if (row.source === '(none)') return [td('num', none()), td('num', none())]
     return row.costDays === 0 && row.cost === 0 && row.clicks === 0 ? [td('num', unknown()), td('num', unknown())] : [td('num', cash(row.cost), row !== report.total && row.missingDays > 0 && (row.costDays > 0 || row.insufficientData) ? el('span', { class: 'reason', title: `${amount(row.missingDays)} of ${amount(report.days)} days have no cost data` }, `${amount(row.missingDays)} ${row.missingDays === 1 ? 'day' : 'days'} missing`) : ''), td('num', amount(row.clicks))]
   }
-  // How many people, where that is not how many outcomes: a renewal is a second outcome and not a second person.
+  // How many people, where that is not how many outcomes, because a renewal is a second outcome and not a second person.
   const counted = (step) => (step ? [amount(step.count), step.people === step.count ? '' : el('span', { class: 'reason' }, `${amount(step.people)} ${step.people === 1 ? 'person' : 'people'}`)] : [tally(0)])
   const reached = (row) => edge([...stages.map((stage) => td('num', ...counted(row.stages[stage]))), td('num', tally(row.people)), ...(report.total.missed > 0 ? [td('num', tally(row.missed))] : [])])
   const cells = (row) => [...edge([...spent(row), td('num', tally(row.visits))]), ...reached(row), ...edge([td('num', cash(row.value)), td('num', each(row)), td('num', back(row))])]

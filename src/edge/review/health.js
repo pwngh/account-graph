@@ -130,7 +130,7 @@ view('health', 'Health', async (box) => {
         await navigator.clipboard.writeText(`${audit.head.seq} ${audit.head.hash}`)
         copied.textContent = 'Copied'
       } catch {
-        // A page without permission, or not served securely, cannot copy: leave it selected for the keyboard.
+        // A page without permission, or not served securely, cannot copy. Leave it selected for the keyboard.
         hash.focus()
         copied.textContent = 'Press Ctrl+C or ⌘C to copy'
       }

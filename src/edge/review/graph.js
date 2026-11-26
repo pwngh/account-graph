@@ -43,7 +43,7 @@ function gathered(profile) {
     edges.set(`${a}\n${b}`, { a, b, reasons: [], ...edges.get(`${a}\n${b}`), ...more })
   }
   for (const each of all) {
-    // A strong tie that a cut left out of the cluster is drawn like a related one: tied, not joined.
+    // A strong tie that a cut left out of the cluster is drawn like a related one, as tied and not joined.
     for (const tie of each.edges) edge(tie.a, tie.b, { score: tie.score, kind: tie.level === 'same' && cluster.has(tie.a) && cluster.get(tie.a) === cluster.get(tie.b) ? 'joined' : 'related' })
     for (const link of each.links) edge(each.subject, link.subject, { reasons: link.reasons.filter((reason) => reason.counted !== false) })
   }
@@ -363,7 +363,7 @@ function outline(points) {
   }
   return [...half(sorted), ...half(sorted.reverse())]
 }
-/** How far a point is outside a shape: nothing when it is in it. */
+/** How far a point is outside a shape, or nothing when it is in it. */
 function beyond(p, shape) {
   const sides = shape.map((a, i) => [a, shape[(i + 1) % shape.length]])
   if (shape.length > 2 && sides.every(([a, b]) => (b.x - a.x) * (p.y - a.y) >= (b.y - a.y) * (p.x - a.x))) return 0
@@ -568,7 +568,7 @@ function graphOf(profile, more) {
           else for (const edge of edges) edge.bend = 0
         }
         heat *= 0.97
-        // Let go of and at rest: whatever is still too near is moved apart, for all to see.
+        // Once let go of and at rest, whatever is still too near is moved apart in view.
         if (heat <= 0.02 && loose && !nodes.some((node) => node.held)) rest()
       }
       const moving = place(true)
@@ -692,7 +692,7 @@ function graphOf(profile, more) {
       const shown = el('span', {}, drawn.least > 0 ? `Score ≥ ${drawn.least}%` : 'All scores')
       legend.append(el('label', { class: 'least' }, least, shown))
     }
-    // Places of those no longer drawn are not kept: a long day opens many.
+    // Places of those no longer drawn are not kept, because a long day opens many.
     for (const id of drawn.spots.keys()) if (!byId.has(id)) drawn.spots.delete(id)
     hide()
     if (!byId.has(drawn.chosen)) drawn.chosen = undefined

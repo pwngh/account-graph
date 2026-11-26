@@ -94,7 +94,7 @@ const reviewDisplay = {
   callTone: (state) => ({ answered: 'same', missed: 'apart', voicemail: 'related', waiting: 'related' })[state] ?? '',
   compare: (label, fraction) => el('span', { class: 'compare' }, meter(fraction), el('span', {}, label)),
 }
-/** Columns that belong together: the first carries the line that sets them apart, and a heading spans them. */
+/** Columns that belong together. The first carries the line that sets them apart, and a heading spans them. */
 const edge = ([cell, ...rest]) => (cell.classList.add('edge'), [cell, ...rest])
 const group = (text, columns, first) => el('th', { scope: 'col', colspan: columns, class: first ? 'group' : 'edge group' }, text)
 /** A share drawn as a bar beside its number. The number says it; the bar only lets rows be compared. */
@@ -119,7 +119,7 @@ function daysBefore({ from, to }) {
 /**
  * How a number stands to what it was in the days before, in words as well as
  * color. `good` says which way is better, and undefined that neither is.
- * A share changes by points: a percent of a percent says something else.
+ * A share changes by points, because a percent of a percent says something else.
  * Nothing is said where either is not known.
  */
 function changed(now, then, words, before, good, points = false) {
@@ -295,7 +295,7 @@ async function api(method, path, body) {
 /** How long a button that cannot be undone is held before it does anything. */
 const HOLD = 1200
 /**
- * Makes a button one to hold: pressed for a while, by pointer or key, it does
+ * Makes a button one to hold. Pressed for a while, by pointer or key, it does
  * what it does, and let go of sooner it does not. A press with no hold, as
  * some assistive tools make it, is asked for a second time. Returns what
  * makes it an ordinary button again.
@@ -415,13 +415,13 @@ function ask(title, text, confirm, wantsOther, save, hold = false, option = unde
  * happened. `otherKey` names the body field for a second subject to ask for.
  * A decision says which was the newest when the view was read, so one made on
  * an outdated view is refused. The question then shows the newer one and can be
- * answered again, knowing it. An undo is not refused: it is about a decision already made.
+ * answered again, knowing it. An undo is not refused, because it is about a decision already made.
  * `done` is told the answer, before the reload.
  */
 async function act(title, text, path, body, confirm, { otherKey, undo = false, done, hold = false, option } = {}) {
   foretell(path, body, otherKey)
   const shown = undo ? undefined : $('view').firstElementChild?.dataset.seen
-  // The newer decisions this question has shown, by the other subject it named at the time: one seen says nothing of another.
+  // The newer decisions this question has shown, by the other subject it named at the time. One seen says nothing of another.
   const told = new Map()
   let refused = false
   const saved = await ask(title, text, confirm, Boolean(otherKey), async ({ reason, other, chosen }) => {
@@ -539,7 +539,7 @@ let pending = 0
 let opening = 0
 /**
  * Fills the view the address names. Resolves to whether it loaded. `tag` is
- * what a look just found: the reload is one nobody asked for, so it gives
+ * what a look just found. The reload is one nobody asked for, so it gives
  * way to a reviewer who has started typing, and keeps their place.
  */
 async function load(tag) {
@@ -550,7 +550,7 @@ async function load(tag) {
   for (const link of $('views').children) {
     if (link.dataset.view === name) {
       link.setAttribute('aria-current', 'page')
-      // On a phone the views are a row that scrolls: the one that is open is brought into it.
+      // On a phone the views are a row that scrolls, and the open one is scrolled into view.
       $('views').scrollLeft = link.offsetLeft - ($('views').clientWidth - link.offsetWidth) / 2
     } else link.removeAttribute('aria-current')
   }
@@ -568,7 +568,7 @@ async function load(tag) {
   pending += 1
   if (!quiet) opening += 1
   try {
-    // Read the tag before the view: a change that lands while the view loads is then noticed on the next look.
+    // Read the tag before the view, so a change that lands while the view loads is then noticed on the next look.
     const seen = tag ?? (await pulse())
     if (me === undefined) {
       const answer = await api('GET', '/me')
@@ -646,7 +646,7 @@ function fresh(problem) {
   const at = loadedAt ? `Updated ${new Date(loadedAt).toLocaleTimeString()}` : ''
   $('fresh').textContent = problem ? `Refresh failed: ${problem}${at && ` · ${at}`}` : at && `${at}${document.hidden || busy() || browsing ? ' · Auto-refresh paused' : ''}`
 }
-/** Typing or answering a question is not interrupted: the next look finds the change again. */
+/** Typing or answering a question is not interrupted. The next look finds the change again. */
 const busy = () => $('ask').open || palette.open || ($('view').contains(document.activeElement) && document.activeElement.matches('input:not([readonly]), select, textarea'))
 const interrupting = () => document.hidden || busy() || browsing || holding()
 let looking = false
@@ -656,7 +656,7 @@ async function look() {
   const turn = loading
   try {
     const tag = await pulse()
-    // Opened something else meanwhile, or began to type: the tag is not taken, so the next look finds the change again.
+    // Opened something else meanwhile, or began to type. The tag is not taken, so the next look finds the change again.
     if (turn !== loading || pending || interrupting()) fresh()
     else if (tag) await load(tag)
     // Nothing was written, but ages and deadlines have moved on.
@@ -693,7 +693,7 @@ function period(name, first, last, ...rest) {
     resolved: (range) => {
       from.value = range.from
       to.value = range.to
-      // Counted from today in the server's zone, which is the one its days are in, and worked out when pressed: a screen may be open past midnight.
+      // Counted from today in the server's zone, which is the one its days are in, and worked out when pressed, because a screen may be open past midnight.
       const spans = () => {
         const part = Object.fromEntries(new Intl.DateTimeFormat('en', { timeZone: range.timeZone, calendar: 'gregory', numberingSystem: 'latn', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(Date.now()).map(({ type, value }) => [type, value]))
         const today = `${part.year}-${part.month}-${part.day}`
@@ -751,8 +751,8 @@ const behind = (row, part) => {
 const measured = new Map()
 /**
  * Rows ranked by a measure, each with a bar of its share behind its name, and
- * a tab a measure. `measures` gives a name, what a row is worth (null when it
- * is not known), the words for it, and false when one thing may be counted
+ * a tab a measure. `measures` gives a name, what a row is worth or null when it
+ * is not known, the words for it, and false when one thing may be counted
  * under two rows, so that a share would say what is not so. The bar only repeats the number.
  */
 function ranked(label, rows, named, measures, most = 8) {
@@ -778,7 +778,7 @@ function ranked(label, rows, named, measures, most = 8) {
   draw()
   return el('div', { class: 'ranked-box' }, tabs, list, foot)
 }
-/** A color of its own for a name, the same wherever it is shown. It only helps the eye: the name is always there. */
+/** A color of its own for a name, the same wherever it is shown. It only helps the eye, because the name is always there. */
 const toneOf = (name) => `tone${[...name].reduce((sum, letter) => (sum * 31 + letter.codePointAt(0)) >>> 0, 7) % 6}`
 /** Where something came from: a letter in its color, which is drawn and not text, and its name. */
 const sourced = (name) => el('span', { class: 'sourced' }, el('i', { class: `letter ${toneOf(name)}`, 'aria-hidden': 'true', 'data-letter': name.slice(0, 1).toUpperCase() }), name)

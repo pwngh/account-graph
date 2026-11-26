@@ -15,7 +15,7 @@ function actions() {
     ...(name === 'accounts' ? [['Join with…', () => act('Join IDs', `${subject} and the other ID will be treated as one person.`, '/join', { a: subject }, 'Join', { otherKey: 'b' })]] : []),
   ].map(([text, run]) => ({ group: subject, text, run, mark: '>' }))
 }
-/** Whether every letter typed is in a text, in order, and how well: at the start of words and together is better. */
+/** Whether every letter typed is in a text, in order, and how well. Letters at the start of words and together score better. */
 function matched(text, typed) {
   const [whole, part] = [text.toLowerCase(), typed.toLowerCase()]
   let at = -1
@@ -97,7 +97,7 @@ const palette = el('dialog', { id: 'palette', 'aria-label': 'Search' })
     if (text && token) waiting = setTimeout(async () => {
       try {
         let { by, subjects } = await find(text)
-        // A name is enough, without the kind before it: the kinds of subject there are known to be are tried.
+        // A name is enough, without the kind before it. The kinds of subject there are known to be are tried.
         if (subjects.length === 0 && by === 'subject' && !text.includes(':')) subjects = (await Promise.all(KNOWN_KINDS.map((kind) => find(`${kind}:${text}`)))).flatMap((each) => each.subjects)
         if (asked !== turn || !palette.open || $('token').value !== token) return
         people = subjects.slice(0, 8).map((subject) => ({ group: 'IDs', text: subject, subject, found: true, note: by === 'subject' ? '' : `by ${by === 'click' ? 'ad click' : by}`, run: () => go(subjectHash(subject)) }))

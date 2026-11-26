@@ -1,7 +1,7 @@
-// What this screen passed over and what it decided, until it is closed. Neither is stored: a skip says nothing about the pair.
+// What this screen passed over and what it decided, until it is closed. Neither is stored, because a skip says nothing about the pair.
 const skipped = new Set()
 const decided = []
-/** The pair on screen, which is what the keys act on and what a refresh keeps. Read from the screen: a load that gives way changes nothing. */
+/** The pair on screen, which is what the keys act on and what a refresh keeps. Read from the screen, so a load that gives way changes nothing. */
 const facing = () => $('view').querySelector('section.pair')?.pair
 /** The name of a pair picked from the list. */
 let picked
@@ -40,7 +40,7 @@ const choices = {
   skip: (pair) => { skipped.add(pairName(pair)); load() },
 }
 
-/** Takes a decision back with a new one: a separation is withdrawn, and the mark a join left links no longer. Nothing is erased: the record shows both. */
+/** Takes a decision back with a new one: a separation is withdrawn, and the mark a join left links no longer. Nothing is erased, and the record shows both. */
 function undo(entry) {
   if (!entry) return
   const gone = () => decided.splice(decided.indexOf(entry), 1)

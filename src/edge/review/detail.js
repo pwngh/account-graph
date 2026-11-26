@@ -4,7 +4,7 @@
  * What each card says, by what it is of. `now` is made from what the page
  * already holds, and `more`, where there is one, from what is asked for when
  * the card opens. Either may leave anything out, and what is not known is
- * left out: a row of nothing is not shown. `rows` are a name and a value,
+ * left out, so a row of nothing is not shown. `rows` are a name and a value,
  * `sum` is a line of arithmetic, `say` is sentences, the first of a pair in
  * bold, and `links` are words with an address or with what to do here.
  */
@@ -28,7 +28,7 @@ const counted = (n) => (typeof n === 'number' && Number.isFinite(n) ? amount(n) 
 const both = (a, b) => (counted(a) !== undefined && counted(b) !== undefined ? `${amount(a)} · ${amount(b)}` : undefined)
 /** How long between two times, where both are known. */
 const between = (from, to) => (typeof from === 'number' && typeof to === 'number' ? lasted(Math.max(0, to - from)) : undefined)
-/** When something was, as a card says it. To the second, it names the zone too: the hours of a report may be in another. */
+/** When something was, as a card says it. To the second, it names the zone too, because the hours of a report may be in another. */
 const moment = (at, seconds = false) => (typeof at === 'number' && at > 0 ? new Date(at).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', ...(seconds && { second: '2-digit', timeZoneName: 'short' }), ...(new Date(at).getFullYear() !== new Date().getFullYear() && { year: 'numeric' }) }) : undefined)
 /** Where an arrival came from, in words. */
 const cameFrom = (row) => (row?.source ? `${row.source}${row.campaign || row.campaignId ? ` · ${row.campaign ?? row.campaignId}` : ''}` : undefined)
@@ -56,7 +56,7 @@ function recent(path) {
   setTimeout(drop, 60_000)
   return asked.answer
 }
-/** Puts away everything a card shows or holds: whoever signs in next is shown what they ask for themselves. */
+/** Puts away everything a card shows or holds, so whoever signs in next is shown what they ask for themselves. */
 function forgetCards() {
   cards.close()
   lapse()
@@ -74,7 +74,7 @@ function detail(key, { label, id = '', of }) {
  * Fills a box with what a card says, and goes on to ask for the rest. Filled
  * again, what was fetched stays until it has been fetched anew, or for half a
  * second where it was read before something changed. Boxes that are one box
- * share `turns`: an answer is drawn only while its turn is the newest.
+ * share `turns`. An answer is drawn only while its turn is the newest.
  */
 function telling(box, settled = () => {}, most = 10, turns = { now: 0 }) {
   let last
@@ -229,7 +229,7 @@ const cards = (() => {
     hide()
   }
 
-  /** The short card of a mark: shown while it is pointed at or has the keyboard. `unless` says when it would only repeat what is open. */
+  /** The short card of a mark, shown while it is pointed at or has the keyboard. `unless` says when it would only repeat what is open. */
   function hintable(mark, key, of, unless = () => false) {
     const begin = () => {
       clearTimeout(timer)
@@ -248,7 +248,7 @@ const cards = (() => {
         stand(hint, mark)
       }, 180)
     }
-    // Only a pointer that moves points at something: a mark may also move under one that rests.
+    // Only a pointer that moves points at something, because a mark may also move under one that rests.
     mark.addEventListener('pointermove', (event) => {
       if (event.pointerType !== 'mouse' || (event.clientX === resting.x && event.clientY === resting.y) || aimed === mark) return
       aimed = mark
@@ -277,7 +277,7 @@ const cards = (() => {
   hint.addEventListener('pointerenter', () => clearTimeout(timer))
   hint.addEventListener('pointerleave', leave)
 
-  // Read again, the view has other nodes: the card finds its icon by its key and is made again from what that holds.
+  // Read again, the view has other nodes. The card finds its icon by its key and is made again from what that holds.
   new MutationObserver(() => {
     if (hinted && !hinted.isConnected) hide()
     if (!from || from.isConnected) return
@@ -289,7 +289,7 @@ const cards = (() => {
     from.setAttribute('aria-expanded', 'true')
     if (!show()) close()
   }).observe($('view'), { childList: true, subtree: true })
-  // Read again between a press on an icon and its release, the view has a new icon under the pointer, and the browser sends no click: the press began on a node that is gone. It was meant for the new one.
+  // Read again between a press on an icon and its release, the view has a new icon under the pointer, and the browser sends no click, because the press began on a node that is gone. It was meant for the new one.
   let pressed
   let took
   addEventListener('pointerdown', (event) => (pressed = event.button === 0 ? event.target.closest?.('button.detail') : undefined), true)
