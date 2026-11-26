@@ -6,9 +6,41 @@ import { runtime } from './runtime.server'
 export async function events(request: Request) {
   const session = await requireReviewer(request)
   const config = runtime()
-  if (!config.eventsToken) return new Response(null, { status: 204 })
   const cancel = new AbortController()
   const signal = AbortSignal.any([request.signal, cancel.signal, session.controller.signal, config.stopped.signal, AbortSignal.timeout(Math.max(1, session.expires - Date.now()))])
+  const headers = {'content-type': 'text/event-stream', 'cache-control': 'no-store', 'x-accel-buffering': 'no'}
+  if (new URL(request.url).searchParams.has('stage') && config.stage) {
+    const stage = config.stage
+    const encode = new TextEncoder()
+    let stop = () => {}
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const send = (text: string) => controller.enqueue(encode.encode(text + '\n\n'))
+        const snapshot = () => {
+          const { scenes: _, practice: __, ...state } = stage.state()
+          send('id: ' + state.boot + '.' + state.revision + '\nevent: stage\ndata: ' + JSON.stringify(state))
+        }
+        const unsubscribe = stage.subscribe(snapshot)
+        const beat = setInterval(() => send(': heartbeat'), 15000)
+        stop = () => {
+          unsubscribe()
+          clearInterval(beat)
+          signal.removeEventListener('abort', finish)
+        }
+        function finish() {
+          stop()
+          if (!request.signal.aborted && !config.stopped.signal.aborted) send('event: signout\ndata: {}')
+          controller.close()
+        }
+        signal.addEventListener('abort', finish, {once: true})
+        if (signal.aborted) finish()
+        else snapshot()
+      },
+      cancel() { stop(); cancel.abort() },
+    })
+    return new Response(body, {headers})
+  }
+  if (!config.eventsToken) return new Response(null, { status: 204 })
   const graph = accountGraph({ url: config.graphUrl, token: config.eventsToken, timeoutMs: 8000 })
   let cursor = request.headers.get('last-event-id') || null
   const body = new ReadableStream<Uint8Array>({
@@ -61,5 +93,5 @@ export async function events(request: Request) {
     },
     cancel() { cancel.abort() },
   })
-  return new Response(body, { headers: {'content-type': 'text/event-stream', 'cache-control': 'no-store', 'x-accel-buffering': 'no'} })
+  return new Response(body, {headers})
 }

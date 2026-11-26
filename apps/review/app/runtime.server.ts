@@ -10,7 +10,10 @@ export interface Reviewer {
   expires: number
 }
 
+import type { Stage } from '../../../examples/firm/stage-state'
+
 interface Settings {
+  stage?: Stage
   graphUrl?: string
   eventsToken?: string
   secret?: string
@@ -23,7 +26,7 @@ export function configure(settings: Settings = {}) {
   const graphUrl = new URL(settings.graphUrl ?? process.env.REVIEW_GRAPH_URL ?? 'http://127.0.0.1:8080').origin
   const origin = settings.origin ?? process.env.REVIEW_ORIGIN
   const eventsToken = settings.eventsToken ?? process.env.REVIEW_EVENTS_TOKEN
-  return { graphUrl, origin, secret, eventsToken, sessions: new Map<string, Reviewer>(), stopped: new AbortController() }
+  return { graphUrl, stage: settings.stage, origin, secret, eventsToken, sessions: new Map<string, Reviewer>(), stopped: new AbortController() }
 }
 type Runtime = ReturnType<typeof configure>
 const scope = new AsyncLocalStorage<Runtime>()

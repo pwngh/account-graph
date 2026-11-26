@@ -6,8 +6,7 @@
  *   npm run firm
  *   npm run firm -- injury
  *
- * It starts a throwaway PostgreSQL in Docker (or keeps everything in memory
- * where there is no Docker, or with MEMORY=1), the graph server with its reviewer screen, the
+ * It uses PostgreSQL (or memory with MEMORY=1), the graph server with its reviewer screen, the
  * firm's site and a stage to present it on, and fills them. docs/demo.md has the
  * scenes. Ctrl-C stops and deletes all of it.
  */
@@ -15,7 +14,9 @@ import { execFileSync } from 'node:child_process'
 import { createHash, generateKeyPairSync, randomUUID } from 'node:crypto'
 import { once } from 'node:events'
 import { readFileSync } from 'node:fs'
-import { createServer } from 'node:http'
+import { createServer, type RequestListener } from 'node:http'
+import { reviewListener } from '../../apps/review/server.mjs'
+import type { Stage, StageState, SceneResult } from './stage-state.ts'
 import type { AddressInfo } from 'node:net'
 import { accountGraph } from '../../src/index.ts'
 import type { CallValue, LocalOptions, RecordEntry, RecordValue } from '../../src/index.ts'
@@ -24,45 +25,13 @@ import { reviewPage } from '../../src/edge/review.ts'
 import { runWorkers } from '../../src/testing/index.ts'
 // The months before the story are written straight into the graph, as a program of this repository may. The story itself only uses what the package ships.
 import { internalsOf } from '../../src/client/internals.ts'
-import { hashPhone, nameKeys, recordCall } from '../../tools/internals.ts'
+import { hashPhone } from '../../tools/internals.ts'
 import { clockScript, landing } from './firm-page.ts'
 import { PRACTICES } from './practice.ts'
-import type { Practice } from './practice.ts'
+import { ADDRESS, DAY, HOUR, SECRET, campaignsOf, firmHistory, linesOf, stepsOf } from './history.ts'
+import { loadFirmHistory } from './load-history.ts'
 
-const HOUR = 3_600_000
-const DAY = 24 * HOUR
-const SECRET = 'a-demo-secret-that-protects-nothing'
-
-/** Where the firm's site is, as its visits are recorded. The site of the demo itself runs on this machine. */
-const ADDRESS = 'https://www.firm.example.org'
-/** The firm's campaigns, named as an agency would: the office, the area of law, and what kind of campaign it is. */
-export const campaignsOf = ({ area }: Pick<Practice, 'area'>) => ({
-  north: `North | ${area} | Search`, river: `River | ${area} | Search`, spanish: `North | ${area} | Búsqueda`, online: `Online | ${area} | Consultations`, listing: `River | ${area} | Map listing`,
-})
-/** The firm's own numbers, each with where it is published. */
-const linesOf = (names: ReturnType<typeof campaignsOf>) => ({
-  '+15550100101': { source: 'google', campaignId: '30111', campaign: names.north, tags: { office_advertised: 'north', language: 'en' } },
-  '+15550100102': { source: 'google', campaignId: '30222', campaign: names.river, tags: { office_advertised: 'river', language: 'en' } },
-  '+15550100103': { source: 'google', campaignId: '30333', campaign: names.spanish, tags: { office_advertised: 'north', language: 'es' } },
-  '+15550100104': { source: 'listing', medium: 'map', campaign: names.listing, tags: { office_advertised: 'river', language: 'es' } },
-  '+15550100105': { source: 'meta', campaignId: '40444', campaign: names.online, tags: { office_advertised: 'online', language: 'en' } },
-})
-const adsOf = (names: ReturnType<typeof campaignsOf>) => [
-  { source: 'google', campaignId: '30111', campaign: names.north, office: 'north', lang: 'en', line: '+15550100101', daily: 84, share: 0.34, client: 0.16 },
-  { source: 'google', campaignId: '30222', campaign: names.river, office: 'river', lang: 'en', line: '+15550100102', daily: 61, share: 0.24, client: 0.11 },
-  { source: 'google', campaignId: '30333', campaign: names.spanish, office: 'north', lang: 'es', line: '+15550100103', daily: 38, share: 0.24, client: 0.2 },
-  { source: 'meta', campaignId: '40444', campaign: names.online, office: 'online', lang: 'en', line: '+15550100105', daily: 45, share: 0.18, client: 0.06 },
-] as const
-const stepsOf = ({ papers, won, value }: Practice): Record<string, { value: number; currency: string; wait?: number; action?: { google: string } }> => ({
-  call: { value: 5, currency: 'USD', action: { google: '222' } },
-  inquiry: { value: 10, currency: 'USD', wait: 48, action: { google: '111' } },
-  intake: { value: 20, currency: 'USD' },
-  [papers]: { value: 40, currency: 'USD' },
-  scheduled: { value: 60, currency: 'USD' },
-  [won]: { value, currency: 'USD', action: { google: '333' } },
-})
-const FIRST = ['Ana', 'Luis', 'Maria', 'Jorge', 'Elena', 'Pat', 'Sam', 'Robin', 'Lee', 'Dana', 'Alex', 'Noor']
-const LAST = ['Rivera', 'Santos', 'Moreno', 'Hill', 'Stone', 'Brook', 'Vale', 'Cruz', 'Marsh', 'Field']
+export { campaignsOf } from './history.ts'
 
 export interface Firm {
   /** The graph server with its reviewer screen and the stage, and the firm's site. */
@@ -76,13 +45,20 @@ export interface Kept {
   databaseUrl?: string
 }
 
-/** Starts the firm. With `quick`, it has a tenth of its history, for tests. `restart` is asked for from the stage, and starts over. */
-export async function startFirm({ databaseUrl }: Kept, { ports = [0, 0], quick = false, practice = 'family', say = () => {}, restart }: { ports?: [number, number]; quick?: boolean; practice?: keyof typeof PRACTICES; say?: (line: string) => void; restart?: () => void } = {}): Promise<Firm> {
+interface Options {
+  ports?: [number, number]
+  quick?: boolean
+  practice?: keyof typeof PRACTICES
+  say?: (line: string) => void | Promise<void>
+  restart?: () => void
+}
+
+async function round(databaseUrl: string | undefined, graphAt: string, sitePort: number, changed: () => void, { quick = false, practice = 'family', say }: Options) {
+  const schema = 'firm_' + randomUUID().replaceAll('-', '')
   const kind = PRACTICES[practice]
   const STEPS = stepsOf(kind)
   const names = campaignsOf(kind)
   const LINES = linesOf(names)
-  const CAMPAIGNS = adsOf(names)
   // What is seeded is written down when it happened. The story takes a Monday to a Thursday that have passed, and each scene moves the clock on to when it happens.
   let writing: number | undefined
   const monday = new Date()
@@ -96,7 +72,7 @@ export async function startFirm({ databaseUrl }: Kept, { ports = [0, 0], quick =
   const sent: { id: string; value: number | undefined }[] = []
   const wasSent = (id: string) => sent.some((each) => each.id === id)
   const site = createServer((request, response) => void answer(request, response))
-  await once(site.listen(ports[1], '127.0.0.1'), 'listening')
+  await once(site.listen(sitePort, '127.0.0.1'), 'listening')
   const siteAt = `http://localhost:${(site.address() as AddressInfo).port}`
 
   // An ad platform that takes everything and is not there. The key is made here and opens nothing.
@@ -116,29 +92,13 @@ export async function startFirm({ databaseUrl }: Kept, { ports = [0, 0], quick =
     ads: { google: { customerId: '000-000-0000', serviceAccount: { client_email: 'demo@example.org', private_key: privateKey } } },
     alerts: { url: `${siteAt}/hook` }, targets: { answered: 0.9, returned: 0.8, callbackHours: 4 }, monitor: { quietHours: { touches: 24, calls: 12, results: 24, costs: 48 } },
   }
-  const firm = accountGraph(databaseUrl ? { ...settings, databaseUrl, receiptSecrets: [SECRET] } : { ...settings, memory: true })
+  const firm = accountGraph(databaseUrl ? { ...settings, databaseUrl, schema, receiptSecrets: [SECRET] } : { ...settings, memory: true })
   const { engine, ops } = await internalsOf(firm)!()
   const { graph } = engine
-  const calls = { numbers: LINES, results: 'expected' as const }
   const handler = createEdge(firm, { token: 'service-demo', reviewers: { dana: 'demo' }, origins: [siteAt], limit: false, events: ['phone_click', 'text_click'] })
-  // The reviewer screen goes by the demo's clock: the page is served with it, and every answer carries it. The stage is the same page with the caller's phone and the scenes.
-  const { html, headers } = reviewPage()
-  const hash = (text: string) => `'sha256-${createHash('sha256').update(text).digest('base64')}'`
-  const beside = (file: string) => readFileSync(new URL(`./${file}`, import.meta.url), 'utf8').replace(/\r\n?/g, '\n')
-  const stage = { style: beside('stage.css'), script: `const STAGE = ${JSON.stringify({ phone: `${siteAt}/es?phone=1`, won: kind.won, campaign: names.spanish, ...kind.stage })}\n${beside('stage.js')}` }
-  const server = createServer((request, response) => {
+  const edge: RequestListener = (request, response) => {
     response.setHeader('x-demo-ahead', ahead)
-    const path = `${request.method} ${new URL(request.url ?? '/', 'http://localhost').pathname}`
-    const json = (status: number, body: object) => void response.writeHead(status, { 'content-type': 'application/json', 'x-demo-ahead': ahead }).end(JSON.stringify(body))
-    if (path === 'GET /stage/scenes') return json(200, { boot, ready, next, scenes: scenes.map(({ run, ...scene }) => scene) })
-    // A page elsewhere cannot send the header, so only the stage moves the story on.
-    if (path === 'POST /stage/run') return void (request.headers['x-stage'] ? runScene().then(([status, body]) => json(status, body)) : json(403, { error: 'Only the stage runs scenes' }))
-    if (path === 'POST /stage/restart') {
-      if (!request.headers['x-stage']) return json(403, { error: 'Only the stage starts over' })
-      if (!restart || running || !ready) return json(409, { error: !restart ? 'This demo cannot start over by itself' : ready ? 'A scene is running' : 'The sample data is still loading' })
-      json(202, {})
-      return restart()
-    }
+    const path = request.method + ' ' + new URL(request.url ?? '/', graphAt).pathname
     // A visit to the demo's own site is recorded at the firm's address, as the seeded ones are.
     if (path === 'POST /collect') {
       const read = request[Symbol.asyncIterator].bind(request)
@@ -148,20 +108,13 @@ export async function startFirm({ databaseUrl }: Kept, { ports = [0, 0], quick =
         yield Buffer.from(Buffer.concat(chunks).toString().replace(`"landing":"${siteAt}`, `"landing":"${ADDRESS}`))
       }
     }
-    if (path !== 'GET /review' && path !== 'GET /stage') return handler(request, response)
-    const staged = path === 'GET /stage'
-    const first = `${clockScript(ahead)}${staged ? `\nsessionStorage.getItem('token') ?? sessionStorage.setItem('token', 'demo')` : ''}`
-    let policy = headers['content-security-policy']!.replace('script-src ', () => `script-src ${hash(first)}${staged ? ` ${hash(stage.script)}` : ''} `)
-    if (staged) policy = policy.replace('style-src ', () => `style-src ${hash(stage.style)} `) + `; frame-src ${siteAt}`
-    let text = html.replace('<style>', () => `<script>${first}</script>\n<style>`)
-    if (staged) text = text.replace('</head>', () => `<style>${stage.style}</style></head>`).replace('</body>', () => `<script>${stage.script}</script></body>`)
-    response.writeHead(200, { ...headers, 'content-security-policy': policy }).end(text)
-  })
-  await once(server.listen(ports[0], '127.0.0.1'), 'listening').catch((error) => {
-    site.close()
-    throw error
-  })
-  const graphAt = `http://localhost:${(server.address() as AddressInfo).port}`
+    if (path !== 'GET /legacy') return handler(request, response)
+    const { html, headers } = reviewPage()
+    const script = clockScript(ahead)
+    const hash = createHash('sha256').update(script).digest('base64')
+    const policy = headers['content-security-policy']!.replace('script-src ', "script-src 'sha256-" + hash + "' ")
+    response.writeHead(200, { ...headers, 'content-security-policy': policy }).end(html.replace('<style>', () => '<script>' + script + '</script><style>'))
+  }
   const asked = async (path: string, init: RequestInit): Promise<any> => {
     const response = await fetch(graphAt + path, { ...init, headers: { 'user-agent': 'Mozilla/5.0 (the demo)', ...init.headers } })
     const told = response.status === 204 ? undefined : await response.json()
@@ -184,146 +137,30 @@ export async function startFirm({ databaseUrl }: Kept, { ports = [0, 0], quick =
 
   /** Which start this is, so the stage sees when another has begun. */
   const boot = randomUUID()
-  let seed = 20261124
-  const chance = () => (seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff) / 0x7fffffff
-  const pick = <T>(list: readonly T[]): T => list[Math.floor(chance() * list.length)]!
-  const phoneOf = (n: number) => `+1555010${String(1000 + n).slice(-4)}`
-
-  const spentOn = new Set<string>()
-  /** What every campaign cost on a day. The one for online consultations has a week with no costs recorded. */
-  async function spend(at: number, ago = 0) {
-    const day = new Date(at).toISOString().slice(0, 10)
-    if (spentOn.has(day)) return
-    spentOn.add(day)
-    await graph.spend(CAMPAIGNS.filter(({ campaignId }) => !(campaignId === '40444' && ago >= 10 && ago < 17)).map(({ source, campaignId, campaign, daily }) => {
-      const amount = Math.round(daily * kind.cost * (0.8 + chance() * 0.4) * 100) / 100
-      return { day, source, campaignId, campaign, amount, currency: 'USD', clicks: Math.round(amount / 4), impressions: Math.round(amount * 12) }
-    }))
+  let progress = '0 of ' + (quick ? 40 : 320) + ' people'
+  const historyProgress = async (line: string) => {
+    progress = line
+    changed()
+    await say?.(line)
   }
-  let others = 0
-  /** Somebody else arrives from an ad, rings and is answered, so the feeds are as alive as they would be. */
-  async function other(rang: number) {
-    const { lang, line, office, source, campaignId, campaign } = pick(CAMPAIGNS)
-    writing = rang
-    await graph.touch({ subject: `visitor:d${others}`, at: rang, source, medium: 'cpc', campaignId, campaign, [source === 'google' ? 'gclid' : 'fbclid']: `d${others}`, landing: `${ADDRESS}${lang === 'es' ? '/es' : '/'}`, custom: { office, lang } })
-    await recordCall(graph, { id: `day-${rang}`, from: phoneOf(2000 + ++others), to: line, at: rang, duration: 120 + Math.floor(chance() * 600), answered: true, tags: { language: lang } }, { ...calls, now: clock, convert: (outcome) => graph.outcome({ ...outcome, value: STEPS.call!.value, currency: 'USD' }) })
-  }
+  const history = firmHistory(kind, clock, at => { writing = at }, quick, historyProgress)
+  const loadHistory = () => loadFirmHistory(engine, history.fill, historyProgress)
   /** Moves the clock on to a moment of the story. It never goes back. */
   async function at(days: number, hour: number, minute: number) {
     const now = clock()
     const then = Math.max(now + 1000, when(days, hour, minute))
-    for (let day = now + DAY; day < then + DAY; day += DAY) await spend(Math.min(day, then))
+    for (let day = now + DAY; day < then + DAY; day += DAY) await history.spend(graph, Math.min(day, then))
     // Others go on arriving and ringing in between, by day, and are answered.
     for (let rang = now + 2 * HOUR; rang < then; rang += 2 * HOUR) {
       if (new Date(rang).getHours() < 9 || new Date(rang).getHours() > 17) continue
-      await other(rang)
+      await history.other(graph, rang)
     }
     writing = undefined
     ahead = then - Date.now()
   }
-  const known = new Set<string>()
-  /** A contact called after a made-up person, and a number where there are several. */
-  const contactOf = (first: string, last: string) => {
-    const name = `contact:${first}-${last}`.toLowerCase()
-    let id = name
-    for (let n = 2; known.has(id); n++) id = `${name}-${n}`
-    known.add(id)
-    return id
-  }
-
-  /** Two months of a firm's life. */
-  async function fill() {
-    const start = clock()
-    for (let ago = 59; ago >= 0; ago--) await spend(start - ago * DAY, ago)
-    const people = quick ? 40 : 320
-    for (let n = 0; n < people; n++) {
-      if (n % 80 === 79) say(`  ${n + 1} of ${people} people`)
-      let roll = chance()
-      const campaign = CAMPAIGNS.find(({ share }) => (roll -= share) < 0) ?? CAMPAIGNS[0]
-      const { source, campaignId, office, lang, line } = campaign
-      // Most come by day, on weekdays a little more.
-      const at = Math.min(start - Math.floor((1 + chance() * 3) * HOUR), Math.floor((start - chance() * 58 * DAY) / DAY) * DAY + Math.floor((14 + chance() * 11) * HOUR))
-      const visitor = `visitor:s${n}`
-      const from = phoneOf(n)
-      writing = at
-      await graph.observe({ subject: visitor, identifiers: [`device:s${n}`, `ip:198.51.100.${n % 200}`], at, event: 'visit' })
-      await graph.touch({ subject: visitor, at, source, medium: 'cpc', campaignId, campaign: campaign.campaign, [source === 'google' ? 'gclid' : 'fbclid']: `s${n}`, landing: `${ADDRESS}${lang === 'es' ? '/es' : '/'}`, custom: { office, ...(chance() < 0.85 && { lang }) } })
-      const called = chance() < 0.62
-      let reached = !called
-      let met = at
-      if (called) {
-        const rang = at + Math.floor(1 + chance() * 40) * 60_000
-        const roll = chance()
-        const answered = roll < 0.74
-        const call = { from, to: line, duration: answered ? 120 + Math.floor(chance() * 900) : 20 + Math.floor(chance() * 80), waited: Math.floor(chance() * 60), ...(chance() < 0.8 && { tags: { language: lang } }) }
-        writing = rang
-        await recordCall(graph, { id: `s${n}`, at: rang, answered, ...(roll > 0.9 && { voicemail: true }), ...call }, { ...calls, now: clock, convert: (outcome) => graph.outcome({ ...outcome, value: STEPS.call!.value, currency: 'USD' }) })
-        reached = answered
-        met = rang + (call.duration + call.waited) * 1000
-        // Staff call back the same day, and again on the next ones until somebody picks up.
-        for (let tries = 0, back = rang; !reached && tries < 4; tries++) {
-          back += Math.floor(1 + chance() * (tries === 0 ? 5 : 7)) * HOUR
-          if (back >= start) break
-          writing = back
-          reached = tries === 2 || chance() < 0.75
-          met = back + 300_000
-          await recordCall(graph, { id: `b${n}-${tries}`, direction: 'outbound', from: line, to: from, at: back, duration: reached ? 300 : 25, answered: reached }, { ...calls, now: clock })
-        }
-      }
-      if (!reached || chance() > 0.55) continue
-      // They left their number, with staff or in a form, and staff opened a contact for them.
-      const asked = met + Math.floor(chance() * 20) * HOUR
-      if (asked > start) continue
-      const name = [pick(FIRST), pick(LAST)] as const
-      const contact = contactOf(...name)
-      writing = asked
-      await graph.observe({ subject: contact, identifiers: [...(called ? [] : [`device:s${n}`]), `phone:${hashPhone(from)}`, `email:made-up-${n}`, ...nameKeys(SECRET, ...name, { dob: `19${60 + (n % 40)}-0${1 + (n % 9)}-1${n % 9}` })], at: asked, event: 'inquiry' })
-      if (called) await graph.joinAll([{ a: `caller:${hashPhone(from)}`, b: contact, reason: 'answered by staff' }], { by: 'system:desk' })
-      if (called) await graph.observe({ subject: contact, identifiers: [`device:s${n}`], at: asked, event: 'inquiry' })
-      const step = async (stage: string, moment: number, value: number = STEPS[stage]!.value) => {
-        const when = Math.floor(moment)
-        if (when > start) return false
-        writing = when
-        // Some go to the office that is nearest, whatever the ad said.
-        const office_served = chance() < 0.18 ? pick(['north', 'river', 'online']) : office
-        await graph.outcome({ transactionId: `${stage}-${n}`, subject: contact, at: when, stage, value, currency: 'USD', tags: { office_served, ...(chance() < 0.8 && { language: lang }) } })
-        return true
-      }
-      if (!(await step('inquiry', asked)) || (chance() > 0.6 && start - asked < 30 * HOUR)) continue
-      // They fill in the form, sign, and are scheduled, some not as far.
-      let moment = asked
-      let reachedAll = true
-      for (const [stage, least, most, share] of [['intake', 0.02, 0.5, 1], [kind.papers, 0.02, 0.4, 0.92], ['scheduled', 0.05, 0.6, 0.95]] as const) {
-        moment += (least + chance() * (most - least)) * DAY
-        if (chance() > share || !(await step(stage, moment))) {
-          reachedAll = false
-          break
-        }
-      }
-      if (!reachedAll || chance() > campaign.client * 2.2) continue
-      const signed = Math.floor(moment + (2 + chance() * 24) * DAY)
-      if (!(await step(kind.won, signed))) continue
-      // What was collected came later: less from some, more from others, nothing from a few.
-      const settled = signed + (4 + chance() * 12) * DAY
-      if (settled < start) {
-        writing = Math.floor(settled)
-        await graph.restate(`${kind.won}-${n}`, chance() < 0.15 ? 0 : Math.round((250 + chance() * 1400) * (kind.value / 400)))
-      }
-    }
-    // Somebody has rung this morning too.
-    await other(start - 40 * 60_000)
-    writing = undefined
-    // Households: a phone on two contacts of two names, which the preset only relates.
-    for (let n = 0; n < (quick ? 3 : 9); n++) {
-      const phone = `phone:${hashPhone(phoneOf(900 + n))}`
-      const [one, other] = [0, 1].map((side) => ({ subject: contactOf(FIRST[(n + side * 5) % FIRST.length]!, LAST[n % LAST.length]!), identifiers: [phone, `email:home-${n}-${side}`, ...nameKeys(SECRET, FIRST[(n + side * 5) % FIRST.length]!, LAST[n % LAST.length]!, { dob: `19${70 + n}-03-1${side}` })], at: start - (n + 2) * HOUR, event: 'staff entry' }))
-      await graph.observe([one!, other!])
-    }
-  }
-
   const demo = { phone: '+15550100042', contact: 'contact:ines-vega', other: 'contact:tomas-vega', line: '+15550100103' }
   const caller = `caller:${hashPhone(demo.phone)}`
-  const review = (view: string) => `${graphAt}/review#/${view}`
+  const review = (view: string) => `${graphAt}/${view}`
   /** The scenes, in order. Each does over HTTP what the site, the phone system or the office would, and says what came of it. */
   /** What a scene says came of it, and for some: how sure the credit of the contact's ad is, and what the firm's own screens and the phone show. */
   interface Told { lines: string[]; credit?: { share: number; campaign: string | null }; link?: string; card?: { title: string; path: string; fields: [string, string][] }; checked?: string }
@@ -634,21 +471,33 @@ export async function startFirm({ databaseUrl }: Kept, { ports = [0, 0], quick =
   let ready = false
   let next = 0
   let running = false
+  let last: SceneResult = {lines: []}
+  let ms = 0
+  let problem = ''
+  const state = (): StageState => ({revision: 0, boot, ready, running, next, ms, error: problem, progress, site: siteAt, told: last, clock: clock(), practice: kind.stage, scenes: scenes.map(({run, ...scene}) => scene)})
   /** Runs the next scene: what to answer with. */
   async function runScene(): Promise<[number, object]> {
     const scene = scenes[next]
     if (!ready) return [409, { error: 'The sample data is still loading' }]
     if (!scene || running) return [409, { error: 'There is no next scene to run' }]
     running = true
+    problem = ''
+    changed()
     const began = performance.now()
     try {
       const told = await scene.run()
+      // A signed form link belongs to the scene runner. Only the presentation fields go on stage.
+      const {link: _privateLink, ...shown} = told
+      last = shown
       next += 1
-      return [200, { ...told, ms: Math.round(performance.now() - began) }]
+      ms = Math.round(performance.now() - began)
+      return [200, last]
     } catch (error) {
-      return [500, { error: String((error as Error).message) }]
+      problem = String((error as Error).message)
+      return [500, {error: problem}]
     } finally {
       running = false
+      changed()
     }
   }
   async function answer(request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse) {
@@ -693,23 +542,89 @@ export async function startFirm({ databaseUrl }: Kept, { ports = [0, 0], quick =
     response.writeHead(303, { location: `${form.get('lang') === 'es' ? '/es' : '/'}?sent=1#write` }).end()
   }
 
-  await fill()
-  // Whoever has waited since before the show is told of now, so that what is told during it is about it.
-  await ops.check()
-  ready = true
+  const seeded = new Promise<void>(resolve => setImmediate(resolve)).then(async () => {
+    await loadHistory()
+    await ops.check()
+    ready = true
+  }).catch(() => { problem = 'Sample history could not be loaded. Restart to try again.' }).finally(changed)
   return {
-    graph: graphAt,
-    site: siteAt,
+    state, edge, runScene, site: siteAt,
     async close() {
-      for (const each of [server, site]) {
-        each.closeAllConnections()
-        await new Promise((resolve) => each.close(resolve))
-      }
+      await seeded
+      site.closeAllConnections()
+      await new Promise(resolve => site.close(resolve))
       await office.close()
       await handler.drain()
       await firm.close()
+      if (databaseUrl) {
+        const {default: pg} = await import('pg')
+        const pool = new pg.Pool({connectionString: databaseUrl})
+        try { await pool.query('drop schema if exists ' + schema + ' cascade') } finally { await pool.end() }
+      }
     },
   }
+}
+
+/** Keep the public listener and stage sessions alive while a restart replaces the graph. */
+export async function startFirm({databaseUrl}: Kept, options: Options = {}): Promise<Firm> {
+  const ports = options.ports ?? [0, 0]
+  let active: Awaited<ReturnType<typeof round>> | undefined
+  let app: Awaited<ReturnType<typeof reviewListener>> | undefined
+  let restarting: Promise<void> | undefined
+  let restartError = ''
+  const watchers = new Set<() => void>()
+  let revision = 0
+  const changed = () => { revision += 1; for (const notify of watchers) notify() }
+  const server = createServer((req,res) => {
+    const host = req.headers.host?.split(':')[0]
+    if (host !== '127.0.0.1' && host !== 'localhost') return void res.writeHead(403).end()
+    const path = (req.url ?? '/').split('?')[0]!
+    if (!active || !app) return void res.writeHead(503).end('Starting the firm.')
+    if (/^\/(v1\/|review\/api\/|collect(?:[/.]|$)|legacy$|calls\/twilio|texts\/twilio)/.test(path)) return active.edge(req,res)
+    return app(req,res)
+  })
+  await once(server.listen(ports[0], '127.0.0.1'), 'listening')
+  const address = 'http://localhost:' + (server.address() as AddressInfo).port
+  const stage: Stage = {
+    state() {
+      const state = {...active!.state(), revision}
+      return restarting || restartError ? {...state, ready: false, running: !!restarting, progress: 'Starting over…', error: restartError} : state
+    },
+    subscribe(notify) { watchers.add(notify); return () => watchers.delete(notify) },
+    async change(intent, boot, expected) {
+      const state = stage.state()
+      if (boot !== state.boot || expected !== state.next || state.running) return 'The scene has changed. Use the current controls.'
+      if (intent === 'run') {
+        if (!state.ready) return 'The sample data is still loading.'
+        const [status, body] = await active!.runScene()
+        return status === 200 ? undefined : (body as {error: string}).error
+      }
+      if (intent !== 'restart' || !(state.ready || state.error)) return 'The scene cannot be started over yet.'
+      options.restart?.()
+      const sitePort = Number(new URL(active!.site).port)
+      restarting = (async () => {
+        if (!restartError) await active!.close()
+        active = await round(databaseUrl, address, sitePort, changed, options)
+        restartError = ''
+      })().catch(() => { restartError = 'The firm could not restart. Try again.' }).finally(() => { restarting = undefined; changed() })
+      changed()
+    },
+  }
+  try {
+    active = await round(databaseUrl, address, ports[1], changed, options)
+    app = await reviewListener({graphUrl: address, secret: randomUUID() + randomUUID(), eventsToken: 'service-demo', stage})
+  } catch (error) {
+    server.close()
+    await active?.close()
+    throw error
+  }
+  return {graph: address, site: active.site, async close() {
+    await restarting
+    app?.stop()
+    await active?.close()
+    server.closeAllConnections()
+    await new Promise(resolve => server.close(resolve))
+  }}
 }
 
 /** A throwaway PostgreSQL in Docker, or undefined where there is none. */
@@ -722,7 +637,7 @@ function throwaway(): { address: string; stop(): void } | undefined {
     } catch {}
   }
   try {
-    execFileSync('docker', ['run', '--rm', '-d', '--name', name, '-e', 'POSTGRES_PASSWORD=demo', '-p', '127.0.0.1::5432', 'postgres:16'], { stdio: 'ignore' })
+    execFileSync('docker', ['run', '--pull=never', '--rm', '-d', '--name', name, '-e', 'POSTGRES_PASSWORD=demo', '-p', '127.0.0.1::5432', 'postgres:16'], { stdio: 'ignore' })
     const port = execFileSync('docker', ['port', name, '5432'], { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim().split('\n')[0]!.split(':').at(-1)
     return { address: `postgres://postgres:demo@127.0.0.1:${port}/postgres`, stop }
   } catch {
@@ -748,49 +663,27 @@ if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).
   process.once('SIGINT', () => void stop(0))
   process.once('SIGTERM', () => void stop(0))
   try {
-    made = process.env.MEMORY ? undefined : throwaway()
-    let fresh = async (): Promise<Kept> => ({})
+    const memory = process.env.MEMORY === '1'
+    made = !memory && !process.env.DATABASE_URL ? throwaway() : undefined
+    const databaseUrl = memory ? undefined : process.env.DATABASE_URL || made?.address
+    if (!memory && !databaseUrl) throw new Error('Set DATABASE_URL, start local Docker with postgres:16 available, or set MEMORY=1.')
     if (made) {
-      const { default: pg } = await import('pg')
-      const pool = new pg.Pool({ connectionString: made.address })
-      pool.on('error', () => {})
+      const {default: pg} = await import('pg')
+      const pool = new pg.Pool({connectionString: databaseUrl})
       end = () => pool.end()
       for (let tries = 0; ; tries++) {
-        try {
-          await pool.query('select 1')
-          break
-        } catch (error) {
-          if (tries > 100) throw error
-          await new Promise((resolve) => setTimeout(resolve, 200))
+        try { await pool.query('select 1'); break } catch (error) {
+          if (tries >= 100) throw error
+          await new Promise(resolve => setTimeout(resolve, 200))
         }
       }
-      // The database was made for this demo alone, so starting over empties it.
-      fresh = async () => {
-        await pool.query('drop schema if exists account_graph cascade')
-        return { databaseUrl: made!.address }
-      }
     }
-    console.log(made ? 'Loading sample data into PostgreSQL. This takes about a minute.' : 'Loading sample data into memory.')
     const ports: [number, number] = [Number(process.env.PORT ?? 8790), Number(process.env.SITE_PORT ?? 8791)]
     const practice = process.argv[2] === 'injury' ? 'injury' : 'family'
-    const begin = async () => {
-      firm = await startFirm(await fresh(), {
-        ports, practice, say: console.log,
-        restart: () => void (async () => {
-          console.log('Starting over.')
-          await firm?.close()
-          await begin()
-        })().catch((error) => {
-          if (!stopping) console.error(error)
-          void stop(1)
-        }),
-      })
-      return firm
-    }
-    firm = await begin()
+    firm = await startFirm(databaseUrl ? {databaseUrl} : {}, {ports, practice, say: console.log})
     console.log(`
   Stage            ${firm.graph}/stage
-  Reviewer screen  ${firm.graph}/review        sign in with the token: demo
+  Reviewer screen  ${firm.graph}/accounts      sign in with the token: demo
   Sample site      ${firm.site}/?gclid=you&utm_id=30111   and ${firm.site}/es?gclid=you&utm_id=30333
 
   See docs/demo.md for the scenes. Press Ctrl-C to stop and delete the data.`)

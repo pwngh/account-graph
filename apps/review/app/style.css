@@ -13,3 +13,15 @@ summary:focus-visible, a:focus-visible, button:focus-visible, input:focus-visibl
   svg line, svg path { stroke: CanvasText }
   a { color: LinkText }
 }
+#stage-view .spot { outline: 3px solid var(--related, Highlight); outline-offset: -3px }
+#stage button[hidden] { display: none }
+@media (min-width: 1121px) {
+  body:has(main .with-phone) { grid-template-columns: 340px minmax(0, 1fr) }
+  body:has(main .with-phone) > header { visibility: hidden }
+  main .with-phone #stage-phone { visibility: visible; opacity: 1; transform: none }
+}
+@media (max-width: 600px) {
+  #stage .keys { flex-wrap: wrap }
+  #stage > b { white-space: normal }
+  #stage-desk.on { position: static; width: 100% }
+}

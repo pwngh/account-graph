@@ -49,7 +49,7 @@ export function Layout({children}: {children: React.ReactNode}) {
     <Form id="find" className="row" method="post" action="/search"><label>Search <input name="text" placeholder="Search" autoComplete="off" required /></label><button>Open</button></Form>
     <Form method="post" action="/signout" reloadDocument>{data.name} <button>Sign out</button></Form></>}</header>
     <div id="notice" role="status">{navigation.state === 'loading' ? 'Opening view…' : navigation.state === 'submitting' ? 'Saving…' : ''}</div>
-    <main id="view" tabIndex={-1}>{children}</main><footer>{data?.name && <Live path={location.pathname}/>}</footer><ScrollRestoration/><Scripts/></body></html>
+    <main id="view" tabIndex={-1}>{children}</main><footer>{data?.name && location.pathname !== '/stage' && <Live path={location.pathname}/>}</footer><ScrollRestoration/><Scripts/></body></html>
 }
 export default function App() { return <Outlet/> }
 export function ErrorBoundary() {

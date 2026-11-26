@@ -55,6 +55,7 @@
     "check": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json && rm -rf dist/edge/review && cp -R src/edge/review dist/edge/review",
     "demo": "node examples/six-calls.ts",
+    "prefirm": "npm run review:build",
     "firm": "node examples/firm/firm.ts",
     "bench": "node tools/bench.ts",
     "prepublishOnly": "npm run check && npm test && npm run build",

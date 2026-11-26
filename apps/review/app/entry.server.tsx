@@ -1,10 +1,13 @@
 import { randomBytes } from 'node:crypto'
 import { renderToReadableStream } from 'react-dom/server'
 import { ServerRouter, type EntryContext } from 'react-router'
+import { runtime } from './runtime.server'
 export { configure, serveWith } from './runtime.server'
 export default async function document(request: Request, status: number, headers: Headers, context: EntryContext) {
   const nonce = randomBytes(18).toString('base64')
   const policy = ["default-src 'none'", "script-src 'nonce-" + nonce + "' 'strict-dynamic'", "style-src 'self'", "connect-src 'self'", "img-src 'self' data:", "font-src 'self'", "base-uri 'none'", "form-action 'self'", "frame-ancestors 'none'"]
+  const stage = runtime().stage
+  if (stage && new URL(request.url).pathname === '/stage') policy.push('frame-src ' + new URL(stage.state().site).origin)
   headers.set('content-security-policy', policy.join('; '))
   headers.set('cache-control', 'no-store')
   headers.set('referrer-policy', 'no-referrer')
