@@ -43,6 +43,8 @@ For a named service, the credential determines the author. Send `by: "system:int
 
 An unknown token gets 401. A known token without the requested call, decision action, lookup or report kind gets 403. Within an authorized `record` batch, a disallowed entry gets `{type, key, ok: false, reason: "FORBIDDEN"}`. Other entries run in order. The check precedes receipt and provider lookups, including on retries. The ordinary envelope and entry shape checks still apply to the whole batch.
 
+Each record entry type has its own key space. Forget keys and decision keys each have one too. When an allowed decision uses a key occupied by a different action, every caller gets `KEY_REUSED` with just `["action"]`. The answer reveals no signer, action value or other field differences.
+
 An `x-request-id` header of 1 to 200 printable characters comes back with the answer of a call.
 
 ## Requests
@@ -165,6 +167,7 @@ A refusal is an answer, with status 200 and `"ok": false`. None is kept with the
 | `reason` | Meaning | With it |
 | --- | --- | --- |
 | `KEY_REUSED` | The key was used for something else | `fields`: the names of what differs |
+| `FORBIDDEN` | The token cannot send this entry or a page address in it is refused | The original entry type and key |
 | `STALE` | The standing party statement differs from `change.seen` | `decision` is the current statement key, `by` its signer and `at` its time. All three are `null` when no statement stands. |
 | `UNKNOWN_REFERENCE` | What it is about is not recorded | `of` |
 | `KIND_NOT_IN_POLICY` | An identifier has a kind the policy lacks | `kind` |

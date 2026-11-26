@@ -87,6 +87,25 @@ export async function tokenRoutes(local: AccountGraph) {
     const profile = { type: 'profile', at, key: 'owned', subject, facts: { device: 'guard' } }
     const mixed = await ask('intake-key', '/v1/record', 'POST', { entries: [conversion, profile, { ...conversion, key: 'fresh' }, party, profile] })
     assert.deepEqual(mixed.value.results.map((row: any) => row.ok ? row.value.duplicate : row.reason), ['FORBIDDEN', false, 'FORBIDDEN', 'FORBIDDEN', true])
+    const merge = { action: 'merge', key: 'merge-9', at, by: 'dana', pairs: [{ a: subject, b: 'contact:other' }] }
+    assert.equal((await ask('root-key', '/v1/decide', 'POST', merge)).value.ok, true)
+    const refused = async (name: string, body: object, key: string) => {
+      const request = (key: string) => ask('intake-key', '/v1/' + name, 'POST', { ...body, key })
+      const known = await request(key)
+      assert.equal(known.status, 403)
+      assert.deepEqual(known, await request('unused'))
+    }
+    await refused('decide', { ...merge, by: 'system:intake' }, 'merge-9')
+    await refused('lookup', { kind: 'record', type: 'conversion', at }, 'exists')
+    for (const token of ['root-key', 'intake-key']) {
+      const conflict = await ask(token, '/v1/decide', 'POST', { ...merge, action: 'split', at: at + 1, by: 'system:intake' })
+      assert.deepEqual(conflict.value, { ok: false, reason: 'KEY_REUSED', fields: ['action'] })
+    }
+    const otherType = await ask('intake-key', '/v1/record', 'POST', { entries: [{ ...profile, key: 'exists' }] })
+    assert.equal(otherType.value.results[0].value.duplicate, false)
+    const forget = { at, key: 'merge-9', by: 'system:full', subjects: ['contact:absent'], platforms: 'report' }
+    assert.equal((await ask('full-key', '/v1/forget', 'POST', forget)).value.ok, true)
+    await refused('forget', { ...forget, by: 'system:intake' }, 'merge-9')
     for (const name of ['decide', 'forget']) assert.equal((await ask('full-key', '/v1/' + name, 'POST', { by: 'dana' })).status, 403)
     assert.ok(log.includes('service intake requested record'))
     assert.doesNotMatch(log.join('\n'), /intake-key|full-key|closed-key/)

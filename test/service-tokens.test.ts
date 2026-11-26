@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { configFrom } from '../src/bin.ts'
-import { credentials } from '../src/edge/tokens.ts'
+import { credentials, limitedCall } from '../src/edge/tokens.ts'
 import { createEdge } from '../src/edge/index.ts'
 import { accountGraph } from '../src/index.ts'
 
@@ -57,5 +57,21 @@ test('each request compares every fixed-size token digest regardless of which cr
   } finally {
     compare.mock.restore()
     syncBuiltinESMExports()
+  }
+})
+
+test('forbidden keyed requests never dispatch a receipt lookup', async () => {
+  const owner = { role: 'limited', name: 'intake', calls: { record: ['profile', 'call_update'], decide: ['split'], forget: true } } as const
+  const at = 1_790_000_000_000
+  const dispatch = async () => assert.fail('the request reached the graph')
+  for (const key of ['previously-used', 'fresh']) {
+    const split = { at, key, action: 'split', by: 'system:intake', pairs: [{ a: 'contact:one', b: 'contact:two' }] }
+    await assert.rejects(limitedCall(owner, 'decide', { ...split, action: 'merge' }, dispatch), { code: 'AUTH.FORBIDDEN' })
+    await assert.rejects(limitedCall(owner, 'decide', { ...split, by: 'dana' }, dispatch), { code: 'AUTH.FORBIDDEN' })
+    const forget = { at, key, by: 'dana', subjects: ['contact:one'], platforms: 'report' }
+    await assert.rejects(limitedCall(owner, 'forget', forget, dispatch), { code: 'AUTH.FORBIDDEN' })
+    const entries = [{ type: 'conversion', at, key, subject: 'contact:one', stage: 'sale' },
+      { type: 'call_update', at, key, call: 'ring', change: { kind: 'party', role: 'unknown', by: 'dana' } }]
+    assert.deepEqual(await limitedCall(owner, 'record', { entries }, dispatch), { results: entries.map(({ type }) => ({ type, key, ok: false, reason: 'FORBIDDEN' })) })
   }
 })

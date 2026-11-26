@@ -15,6 +15,7 @@
 
 ### The six calls
 
+- `decide` reports only the action field when an allowed decision collides with a different action’s key, preserving the earlier signer’s privacy across service tokens.
 - `serviceTokens` gives each integration its own credential and limits which calls, record entries, decisions and reads it may make under its own name.
 
 - `profile.createdAt` records when your system created a subject. The Accounts heading and Links table show it alongside the earliest activity the graph still holds for each record.
