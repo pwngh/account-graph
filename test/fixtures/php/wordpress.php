@@ -158,6 +158,15 @@ if ($command === 'pages' || $command === 'all-pages') {
 }
 if ($command === 'expire-window') {
     $GLOBALS['wpdb']->sqlite->exec("UPDATE wp_options SET option_value = '000000000001' || SUBSTR(option_value, 13) WHERE option_name GLOB 'account_graph_recent_*'");
+} elseif ($command === 'age-receipts') {
+    $db = $GLOBALS['wpdb']->sqlite;
+    $change = $db->prepare('UPDATE wp_options SET option_value = ? WHERE option_name = ?');
+    foreach ($input['ages'] as $id => $days) {
+        $receipt = array('state' => 'sent');
+        if ($days !== null) $receipt['sent_at'] = time() - $days * 86400;
+        $name = 'account_graph_job_' . sha1('wp:example-site:1:gravity:17:' . $id);
+        $change->execute(array(json_encode($receipt), $name));
+    }
 } elseif ($command === 'age') {
     $stmt = $GLOBALS['wpdb']->sqlite->query("SELECT option_id, option_value FROM wp_options WHERE option_name GLOB 'account_graph_job_*' AND option_value LIKE '%\"state\":\"pending\"%' ORDER BY option_id LIMIT 1");
     $first = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -194,4 +203,5 @@ if ($command === 'expire-window') {
 $db = $GLOBALS['wpdb']->sqlite;
 $rows = $db->query("SELECT option_value,autoload FROM wp_options WHERE option_name GLOB 'account_graph_job_*' AND option_value NOT LIKE '{\"state\":\"alias\",%' ORDER BY option_id")->fetchAll(PDO::FETCH_ASSOC);
 $deadlines = $db->query("SELECT CAST(SUBSTR(option_value, 1, 12) AS INTEGER) FROM wp_options WHERE option_name GLOB 'account_graph_recent_*'")->fetchAll(PDO::FETCH_COLUMN);
-echo json_encode(array('rows' => $rows, 'deadlines' => $deadlines, 'reads' => WPCF7_Submission::$reads, 'singles' => $GLOBALS['singles']));
+$aliases = $db->query("SELECT option_name FROM wp_options WHERE option_name GLOB 'account_graph_job_*' AND option_value LIKE '{\"state\":\"alias\",%' ORDER BY option_id")->fetchAll(PDO::FETCH_COLUMN);
+echo json_encode(array('rows' => $rows, 'deadlines' => $deadlines, 'aliases' => $aliases, 'reads' => WPCF7_Submission::$reads, 'singles' => $GLOBALS['singles']));

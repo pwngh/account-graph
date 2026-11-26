@@ -14,6 +14,7 @@ final class account_graph_wordpress
     const RECENT = 'account_graph_recent_';
     const HOOK = 'account_graph_deliver';
     private const BACKLOG = 'account_graph_backlog_notice';
+    private const RECEIPT_DAYS = 30;
 
     /** @var object WordPress database connection for this site. */
     private $db;
@@ -406,6 +407,59 @@ final class account_graph_wordpress
     }
 
     /**
+     * Give untimed receipts a full retention period and remove completed jobs with their aliases.
+     *
+     * @param string $lock Current site's delivery lock.
+     *        (e.g. 'ag_wp_abc')
+     * @return void
+     */
+    private function expire_receipts(string $lock): void
+    {
+        $wpdb = $this->db;
+        $now = time();
+        $legacy = account_graph_lib::json(['state' => 'sent']);
+        $prefix = $wpdb->esc_like(self::PREFIX) . '%';
+        // The compact receipt has one numeric field. Older databases can compare it without JSON functions.
+        $dated = '{"state":"sent","sent_at":';
+        $start = strlen($dated) + 1;
+        $sql = $wpdb->prepare("SELECT option_id, option_name, option_value FROM {$wpdb->options} WHERE option_name LIKE %s AND (option_value = %s OR (option_value LIKE %s AND CAST(SUBSTR(option_value, %d, LENGTH(option_value) - %d) AS DECIMAL(20,0)) <= %d)) ORDER BY option_id LIMIT 100",
+            $prefix, $legacy, $dated . '%', $start, $start, $now - self::RECEIPT_DAYS * 86400);
+        $rows = $wpdb->get_results($sql, ARRAY_A);
+        if (!is_array($rows) || !empty($wpdb->last_error)) {
+            throw new RuntimeException('Form receipt read failed.');
+        }
+        $untimed = [];
+        $expired = [];
+        $aliases = [];
+        foreach ($rows as $row) {
+            if ($row['option_value'] === $legacy) {
+                $untimed[] = $row['option_id'];
+            } else {
+                $expired[] = $row['option_id'];
+                $aliases[] = account_graph_lib::json(['state' => 'alias', 'job' => $row['option_name']]);
+            }
+        }
+        if ($untimed) {
+            $ids = implode(', ', array_fill(0, count($untimed), '%s'));
+            $args = array_merge([account_graph_lib::json(['state' => 'sent', 'sent_at' => $now]), $legacy, $lock], $untimed);
+            $this->write($wpdb->prepare("UPDATE {$wpdb->options} SET option_value = %s WHERE option_value = %s AND IS_USED_LOCK(%s) = CONNECTION_ID() AND option_id IN ($ids)", $args));
+        }
+        if ($expired) {
+            $slots = implode(', ', array_fill(0, count($expired), '%s'));
+            // Keep the canonical receipt until all of its aliases have been removed, including after a crash.
+            $sql = $wpdb->prepare("DELETE FROM {$wpdb->options} WHERE option_name LIKE %s AND IS_USED_LOCK(%s) = CONNECTION_ID() AND option_value IN ($slots) LIMIT 250", array_merge([$prefix, $lock], $aliases));
+            if ($this->write($sql) === 250) {
+                $this->wake();
+                return;
+            }
+            $this->write($wpdb->prepare("DELETE FROM {$wpdb->options} WHERE option_id IN ($slots) AND option_value LIKE %s AND IS_USED_LOCK(%s) = CONNECTION_ID()", array_merge($expired, [$dated . '%', $lock])));
+        }
+        if (count($rows) === 100) {
+            $this->wake();
+        }
+    }
+
+    /**
      * Schedule a regular pass even if the previous PHP worker died during a send.
      *
      * @return void
@@ -452,6 +506,7 @@ final class account_graph_wordpress
             $this->observe_backlog();
             $this->with_lock('ag_wp_', function (string $lock): void {
                 $this->expire_fingerprints();
+                $this->expire_receipts($lock);
                 $graph = new account_graph_lib(['Base_Url' => defined('ACCOUNT_GRAPH_URL') ? ACCOUNT_GRAPH_URL : '', 'Token' => defined('ACCOUNT_GRAPH_TOKEN') ? ACCOUNT_GRAPH_TOKEN : '', 'Attempts' => 1]);
                 $this->drain($graph, $lock);
             });
@@ -625,7 +680,7 @@ final class account_graph_wordpress
                     $job['phase'] = 'inquiry';
                     $job['retry_at'] = 0;
                 } elseif ($item['ok']) {
-                    $job = ['state' => 'sent'];
+                    $job = ['state' => 'sent', 'sent_at' => time()];
                 } elseif ($item['reason'] === 'NOT_ATTEMPTED') {
                     return true;
                 } else {
@@ -680,7 +735,7 @@ final class account_graph_wordpress
      * @param string $old Previously read JSON.
      *        (e.g. the pending job)
      * @param string $json Replacement JSON.
-     *        (e.g. '{"state":"sent"}')
+     *        (e.g. '{"state":"sent","sent_at":1700000000}')
      * @return bool Whether this worker successfully updated the option.
      */
     private function replace(string $lock, string $name, string $old, string $json): bool

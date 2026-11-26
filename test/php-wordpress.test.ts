@@ -304,6 +304,27 @@ test('WordPress logs a parked job once with its reason and keeps submitted value
   }
 })
 
+test('cron expires sent receipts and their aliases after 30 days, giving undated receipts a full grace period', { skip }, async t => {
+  const run = await wordpress(t)
+  const { url } = await localGraph(t)
+  for (const [id, email] of [[123, 'first'], [124, 'first'], [125, 'second'], [126, 'second'], [127, 'old-format']] as const) {
+    await run(url, 'gravity', { id, email: email + '@example.org' })
+  }
+  const start = Math.floor(Date.now() / 1000)
+  const sent = await run(url, 'cron')
+  assert.equal(sent.aliases.length, 2)
+  assert.equal(sent.rows.length, 3)
+  assert.ok(sent.rows.every((row: any) => JSON.parse(row.option_value).sent_at >= start))
+  await run(url, 'age-receipts', { ages: { 123: 31, 125: 29, 127: null } })
+  const cleaned = await run(url, 'cron')
+  const times = cleaned.rows.map((row: any) => JSON.parse(row.option_value).sent_at)
+  assert.equal(times.length, 2)
+  assert.ok(times[0] >= start - 29 * 86400 && times[0] < start - 28 * 86400)
+  assert.ok(times[1] >= start && times[1] <= Math.ceil(Date.now() / 1000))
+  assert.deepEqual(cleaned.aliases, sent.aliases.slice(1))
+  assert.deepEqual((await run(url, 'cron')).rows, cleaned.rows)
+})
+
 test('the device mapping respects representatives, mismatched form IDs and forms without a device mapping', { skip }, async t => {
   const run = await wordpress(t)
   const { url } = await localGraph(t)
