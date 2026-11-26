@@ -1,7 +1,7 @@
 /**
  * Takes the webhook a call tracking service sends after each call, and
  * reports the call to the graph server. Written from CallRail's published
- * API and never run against a live account: check the body and the signature
+ * API and never run against a live account. Check the body and the signature
  * yours sends before relying on it.
  *
  *   GRAPH_TOKEN=… SIGNING_KEY=… node examples/call-tracking.ts
@@ -9,7 +9,7 @@
  * Point the service's post-call webhook at POST /calls here, over HTTPS.
  * Each call is written to a folder before it is answered for, because the
  * service does not send it again, and is taken out once the server has it.
- * The folder holds telephone numbers: keep it where only this can read it.
+ * The folder holds telephone numbers, so keep it where only this can read it.
  */
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
@@ -68,7 +68,7 @@ export function createForwarder({ folder, graph, token, fetch: fetcher }: { fold
     let refused = 0
     for (const name of kept()) {
       const at = join(folder, name)
-      // The same call would be refused again: it is set aside for somebody to look at.
+      // The same call would be refused again, so it is set aside for somebody to look at.
       const aside = () => {
         renameSync(at, `${at}.refused`)
         refused += 1
@@ -94,7 +94,7 @@ export function createForwarder({ folder, graph, token, fetch: fetcher }: { fold
       writeFileSync(join(folder, `${name}.part`), JSON.stringify(made), { mode: 0o600, flush: true })
       renameSync(join(folder, `${name}.part`), join(folder, name))
     },
-    // One at a time: the same call is not sent twice at once.
+    // One at a time, so the same call is not sent twice at once.
     flush: () => (running ??= run().finally(() => (running = undefined))),
   }
 }

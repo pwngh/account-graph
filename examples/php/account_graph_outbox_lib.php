@@ -15,7 +15,7 @@ class account_graph_outbox_lib
      * Create the shared outbox library. Pass the host connection to enqueue or run.
      *
      * @param array $config Library settings. This stateless library has no configuration keys.
-     *        (e.g. [])
+     *        (for example [])
      * @return void
      */
     public function __construct(array $config = [])
@@ -27,15 +27,15 @@ class account_graph_outbox_lib
      * Build one pending row on the host connection and screen profile fields before storage.
      *
      * @param string $record_id Ordering group in the host.
-     *        (e.g. 'contact:42')
+     *        (for example 'contact:42')
      * @param string $call Graph write method.
-     *        (e.g. 'record')
+     *        (for example 'record')
      * @param array $request Original write, including its time and stable key.
-     *        (e.g. ['entries' => [['type' => 'arrival', 'key' => 'visit-42', 'subject' => 'contact:42', 'at' => 1000]]])
+     *        (for example ['entries' => [['type' => 'arrival', 'key' => 'visit-42', 'subject' => 'contact:42', 'at' => 1000]]])
      * @param int|string|null $depends_on Earlier outbox ID that must succeed first.
-     *        (e.g. '17')
+     *        (for example '17')
      * @param array|null $dropped Receives omitted field paths and reasons, without their values.
-     *        (e.g. ['facts.email' => 'Expected an email address.'])
+     *        (for example ['facts.email' => 'Expected an email address.'])
      * @return array|null Database columns or null for an unusable profile.
      */
     public static function row(string $record_id, string $call, array $request, $depends_on = null, ?array &$dropped = null): ?array
@@ -77,9 +77,9 @@ class account_graph_outbox_lib
      * Keep useful profile or speaker facts and report dropped fields to the caller.
      *
      * @param array $write Profile entry to prepare.
-     *        (e.g. ['type' => 'profile', 'facts' => ['device' => 'desk-42']])
+     *        (for example ['type' => 'profile', 'facts' => ['device' => 'desk-42']])
      * @param array $dropped Receives omitted field paths and reasons, without their values.
-     *        (e.g. ['facts.email' => 'Expected an email address.'])
+     *        (for example ['facts.email' => 'Expected an email address.'])
      * @return array|null Screened entry or null when nothing remains.
      */
     private static function profile_entry(array $write, array &$dropped): ?array
@@ -105,9 +105,9 @@ class account_graph_outbox_lib
      * Check the wire length before storing a string.
      *
      * @param mixed $value Value received from host data.
-     *        (e.g. 'contact:42')
+     *        (for example 'contact:42')
      * @param int $limit Maximum length in UTF-16 units.
-     *        (e.g. 100)
+     *        (for example 100)
      * @return bool
      */
     private static function text($value, int $limit): bool
@@ -124,15 +124,15 @@ class account_graph_outbox_lib
      * Record field paths that the host can show to staff.
      *
      * @param array $input Fields the host supplied.
-     *        (e.g. ['device' => 'desk-42'])
+     *        (for example ['device' => 'desk-42'])
      * @param array $kept Fields that passed screening.
-     *        (e.g. ['device' => 'desk-42'])
+     *        (for example ['device' => 'desk-42'])
      * @param array $reasons Safe descriptions for known fields.
-     *        (e.g. ['device' => 'Expected a device identifier.'])
+     *        (for example ['device' => 'Expected a device identifier.'])
      * @param string $path Field path in diagnostics.
-     *        (e.g. 'facts')
+     *        (for example 'facts')
      * @param array $dropped Receives omitted field paths and reasons, without their values.
-     *        (e.g. ['facts.email' => 'Expected an email address.'])
+     *        (for example ['facts.email' => 'Expected an email address.'])
      * @return void
      */
     private static function dropped_fields(array $input, array $kept, array $reasons, string $path, array &$dropped): void
@@ -151,11 +151,11 @@ class account_graph_outbox_lib
      * Screen the fields accepted on a profile or its speaker.
      *
      * @param mixed $given Submitted facts or speaker.
-     *        (e.g. ['phone' => '+12025550100'])
+     *        (for example ['phone' => '+12025550100'])
      * @param bool $speaker Whether these fields describe a speaker.
-     *        (e.g. false)
+     *        (for example false)
      * @param array $dropped Receives omitted field paths and reasons, without their values.
-     *        (e.g. ['facts.email' => 'Expected an email address.'])
+     *        (for example ['facts.email' => 'Expected an email address.'])
      * @return array Accepted facts.
      */
     private static function facts($given, bool $speaker, array &$dropped): array
@@ -205,7 +205,7 @@ class account_graph_outbox_lib
      * Keep usable email, phone and device identifiers with their original spelling.
      *
      * @param array $fields Host-supplied fields.
-     *        (e.g. ['device' => 'desk-42'])
+     *        (for example ['device' => 'desk-42'])
      * @return array Accepted contact facts.
      */
     private static function contact_facts(array $fields): array
@@ -233,11 +233,11 @@ class account_graph_outbox_lib
      * Keep complete names and record problems with their parts.
      *
      * @param array $fields Host-supplied fields.
-     *        (e.g. ['device' => 'desk-42'])
+     *        (for example ['device' => 'desk-42'])
      * @param array $facts Accepted facts collected so far.
-     *        (e.g. ['device' => 'desk-42'])
+     *        (for example ['device' => 'desk-42'])
      * @param array $dropped Receives omitted field paths and reasons, without their values.
-     *        (e.g. ['facts.email' => 'Expected an email address.'])
+     *        (for example ['facts.email' => 'Expected an email address.'])
      * @return void
      */
     private static function name_fields(array $fields, array &$facts, array &$dropped): void
@@ -262,11 +262,11 @@ class account_graph_outbox_lib
      * Keep addresses with a usable street and record problems in nested fields.
      *
      * @param array $fields Host-supplied fields.
-     *        (e.g. ['device' => 'desk-42'])
+     *        (for example ['device' => 'desk-42'])
      * @param array $facts Accepted facts collected so far.
-     *        (e.g. ['device' => 'desk-42'])
+     *        (for example ['device' => 'desk-42'])
      * @param array $dropped Receives omitted field paths and reasons, without their values.
-     *        (e.g. ['facts.email' => 'Expected an email address.'])
+     *        (for example ['facts.email' => 'Expected an email address.'])
      * @return void
      */
     private static function address_fields(array $fields, array &$facts, array &$dropped): void
@@ -292,11 +292,11 @@ class account_graph_outbox_lib
      * Keep the first 100 usable custom identifiers.
      *
      * @param array $fields Host-supplied fields.
-     *        (e.g. ['device' => 'desk-42'])
+     *        (for example ['device' => 'desk-42'])
      * @param array $facts Accepted facts collected so far.
-     *        (e.g. ['device' => 'desk-42'])
+     *        (for example ['device' => 'desk-42'])
      * @param array $dropped Receives omitted field paths and reasons, without their values.
-     *        (e.g. ['facts.email' => 'Expected an email address.'])
+     *        (for example ['facts.email' => 'Expected an email address.'])
      * @return void
      */
     private static function identifier_fields(array $fields, array &$facts, array &$dropped): void
@@ -320,7 +320,7 @@ class account_graph_outbox_lib
      * Check the length of a phone line without counting an extension.
      *
      * @param string $phone Phone exactly as the host received it.
-     *        (e.g. '+1 (202) 555-0100 ext 12')
+     *        (for example '+1 (202) 555-0100 ext 12')
      * @return bool
      */
     private static function phone(string $phone): bool
@@ -346,17 +346,17 @@ class account_graph_outbox_lib
      * Insert one write in the same PDO transaction as the host change.
      *
      * @param PDO $db The host database connection.
-     *        (e.g. new PDO('sqlite::memory:'))
+     *        (for example new PDO('sqlite::memory:'))
      * @param string $record_id Ordering group in the host.
-     *        (e.g. 'contact:42')
+     *        (for example 'contact:42')
      * @param string $call Graph write method.
-     *        (e.g. 'record')
+     *        (for example 'record')
      * @param array $request Original write, including its time and stable key.
-     *        (e.g. ['entries' => [['type' => 'arrival', 'key' => 'visit-42', 'subject' => 'contact:42', 'at' => 1000]]])
+     *        (for example ['entries' => [['type' => 'arrival', 'key' => 'visit-42', 'subject' => 'contact:42', 'at' => 1000]]])
      * @param int|string|null $depends_on Earlier outbox ID that must succeed first.
-     *        (e.g. '17')
+     *        (for example '17')
      * @param array|null $dropped Receives omitted field paths and reasons, without their values.
-     *        (e.g. ['facts.email' => 'Expected an email address.'])
+     *        (for example ['facts.email' => 'Expected an email address.'])
      * @return string|false Saved row ID or false for a screened-out profile.
      */
     public static function enqueue(PDO $db, string $record_id, string $call, array $request, $depends_on = null, ?array &$dropped = null)
@@ -385,11 +385,11 @@ class account_graph_outbox_lib
      * Send a bounded pass on an idle PDO connection.
      *
      * @param PDO $db The host database connection.
-     *        (e.g. new PDO('sqlite::memory:'))
+     *        (for example new PDO('sqlite::memory:'))
      * @param account_graph_lib $graph Client configured for this graph.
-     *        (e.g. new account_graph_lib(['Base_Url' => 'https://graph.example.org', 'Token' => $token]))
+     *        (for example new account_graph_lib(['Base_Url' => 'https://graph.example.org', 'Token' => $token]))
      * @param int $limit Maximum rows to process during this pass.
-     *        (e.g. 100)
+     *        (for example 100)
      * @return array Counts by resulting state.
      */
     public static function run(PDO $db, account_graph_lib $graph, int $limit = 100): array
@@ -404,11 +404,11 @@ class account_graph_outbox_lib
      * Claim rows in order on the host adapter and save each answer before releasing its claim.
      *
      * @param object $store Adapter providing one, execute, begin, commit and rollback.
-     *        (e.g. new account_graph_outbox_pdo(['Db' => $db]))
+     *        (for example new account_graph_outbox_pdo(['Db' => $db]))
      * @param account_graph_lib $graph Client configured for this graph.
-     *        (e.g. new account_graph_lib(['Base_Url' => 'https://graph.example.org', 'Token' => $token]))
+     *        (for example new account_graph_lib(['Base_Url' => 'https://graph.example.org', 'Token' => $token]))
      * @param int $limit Maximum rows to process during this pass.
-     *        (e.g. 100)
+     *        (for example 100)
      * @return array Counts by resulting state.
      */
     public static function work(object $store, account_graph_lib $graph, int $limit = 100): array
@@ -462,7 +462,7 @@ class account_graph_outbox_lib
      * Select eligible rows and recheck order after claiming one.
      *
      * @param string $table Fixed host outbox table name.
-     *        (e.g. 'account_graph_outbox')
+     *        (for example 'account_graph_outbox')
      * @return array Selection and claim queries.
      */
     private static function selection_queries(string $table): array
@@ -483,9 +483,9 @@ class account_graph_outbox_lib
      * Keep blocked or deferred writes in order and spend the pass budget on eligible work.
      *
      * @param account_graph_lib $graph Client configured for this graph.
-     *        (e.g. new account_graph_lib(['Base_Url' => 'https://graph.example.org', 'Token' => $token]))
+     *        (for example new account_graph_lib(['Base_Url' => 'https://graph.example.org', 'Token' => $token]))
      * @param array $job Row claimed in this worker transaction.
-     *        (e.g. ['call_name' => 'decide', 'request' => $json, 'parent_state' => null, 'answer' => null])
+     *        (for example ['call_name' => 'decide', 'request' => $json, 'parent_state' => null, 'answer' => null])
      * @return array State, answer, whether to stop and whether this used a slot.
      */
     private static function dispatch(account_graph_lib $graph, array $job): array
@@ -511,9 +511,9 @@ class account_graph_outbox_lib
      * Post the stored request and classify its answer for the next worker or staff.
      *
      * @param account_graph_lib $graph Client configured for this graph.
-     *        (e.g. new account_graph_lib(['Base_Url' => 'https://graph.example.org', 'Token' => $token]))
+     *        (for example new account_graph_lib(['Base_Url' => 'https://graph.example.org', 'Token' => $token]))
      * @param array $job Row claimed in this worker transaction.
-     *        (e.g. ['call_name' => 'decide', 'request' => $json, 'parent_state' => null, 'answer' => null])
+     *        (for example ['call_name' => 'decide', 'request' => $json, 'parent_state' => null, 'answer' => null])
      * @return array State, answer and whether to end the pass.
      */
     private static function send(account_graph_lib $graph, array $job): array

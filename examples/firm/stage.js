@@ -48,7 +48,7 @@
   let running = false
   let boot
   const hide = () => bar.classList.toggle('away')
-  /** Starts the demo over, and comes back once it has: the story is at its beginning. */
+  /** Starts the demo over, and comes back once it has, when the story is at its beginning. */
   async function restart() {
     if (running || starting) return
     stop()
@@ -117,7 +117,7 @@
       // The campaign's name stays at left, and what it cost and brought in is at the far end.
       if (row.closest('.campaign-report')) row.closest('.wide').scrollLeft = 1e6
       rect = row.getBoundingClientRect()
-      // As much of it as can be seen: a wide table is panned within its own frame.
+      // As much of it as can be seen, because a wide table is panned within its own frame.
       const frame = (row.closest('.wide, .scroll') ?? $('view')).getBoundingClientRect()
       const [left, right] = [Math.max(rect.left, frame.left), Math.min(rect.right, frame.right)]
       Object.assign(light.style, { left: `${left + scrollX - 8}px`, top: `${rect.top + scrollY - 4}px`, width: `${right - left + 16}px`, height: `${rect.height + 8}px` })

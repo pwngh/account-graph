@@ -25,7 +25,7 @@ await new Promise((resolve) => receiver.once('listening', resolve))
 const graph = accountGraph({
   memory: true,
   now: () => noon + 60 * HOUR,
-  // An ad platform that takes everything: what would be sent is printed.
+  // An ad platform that takes everything. What would be sent is printed.
   ads: { meta: { pixelId: '555', accessToken: 'made-up', siteUrl: 'https://site.example/' } },
   fetch: async (address, init) => {
     if (String(address).startsWith('http://127.0.0.1')) return fetch(address, init)

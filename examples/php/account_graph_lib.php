@@ -37,7 +37,7 @@ class account_graph_lib
      * 'Attempts' => 3, // optional, int, total attempts from one to five, including the first.
      *
      * @param array $config Connection settings.
-     *        (e.g. ['Base_Url' => 'https://graph.example.org', 'Token' => getenv('GRAPH_TOKEN')])
+     *        (for example ['Base_Url' => 'https://graph.example.org', 'Token' => getenv('GRAPH_TOKEN')])
      * @return void
      */
     public function __construct(
@@ -70,7 +70,7 @@ class account_graph_lib
      * Validate the endpoint and select its protocol, host, port and path.
      *
      * @param string $base_url Graph server base URL.
-     *        (e.g. 'https://graph.example.org')
+     *        (for example 'https://graph.example.org')
      * @return void
      */
     private function configure_url(string $base_url): void
@@ -99,11 +99,11 @@ class account_graph_lib
      * Derive a stable write key from a host operation, row ID and revision.
      *
      * @param string $source Host and operation prefix.
-     *        (e.g. 'contacts.profile')
+     *        (for example 'contacts.profile')
      * @param int|string $row_id Original host row ID.
-     *        (e.g. 42)
+     *        (for example 42)
      * @param int|string $revision Revision of the host change.
-     *        (e.g. 7)
+     *        (for example 7)
      * @return string The graph key to save with this revision.
      */
     public static function key(string $source, $row_id, $revision): string
@@ -124,7 +124,7 @@ class account_graph_lib
      * Validate and return a provider's original call or text ID.
      *
      * @param string $id Provider ID.
-     *        (e.g. 'text-21')
+     *        (for example 'text-21')
      * @return string The unchanged provider ID.
      */
     public static function provider_key(string $id): string
@@ -139,7 +139,7 @@ class account_graph_lib
      * Encode a request or answer, preserving numeric and JSON object types.
      *
      * @param mixed $value JSON-encodable value.
-     *        (e.g. ['subjects' => ['contact:42']])
+     *        (for example ['subjects' => ['contact:42']])
      * @return string JSON representation.
      */
     public static function json($value): string
@@ -155,7 +155,7 @@ class account_graph_lib
      * Record a batch of entries in order.
      *
      * @param array $request Call argument.
-     *        (e.g. ['entries' => [['type' => 'arrival', 'key' => 'visit-42', 'at' => 1790000000000, 'subject' => 'contact:42']]])
+     *        (for example ['entries' => [['type' => 'arrival', 'key' => 'visit-42', 'at' => 1790000000000, 'subject' => 'contact:42']]])
      * @return array The accepted or refused result for each entry.
      */
     public function record(array $request): array
@@ -167,7 +167,7 @@ class account_graph_lib
      * Submit a reviewed decision about records or a fact.
      *
      * @param array $request Call argument.
-     *        (e.g. ['key' => 'merge-42', 'at' => 1790000000000, 'by' => 'staff', 'action' => 'merge', 'pairs' => [['a' => 'contact:42', 'b' => 'contact:43']]])
+     *        (for example ['key' => 'merge-42', 'at' => 1790000000000, 'by' => 'staff', 'action' => 'merge', 'pairs' => [['a' => 'contact:42', 'b' => 'contact:43']]])
      * @return array The accepted decision or its refusal.
      */
     public function decide(array $request): array
@@ -179,7 +179,7 @@ class account_graph_lib
      * Submit an approved erasure for the selected subjects.
      *
      * @param array $request Call argument.
-     *        (e.g. ['key' => 'erase-42', 'at' => 1790000000000, 'by' => 'staff', 'subjects' => ['contact:42'], 'platforms' => 'report'])
+     *        (for example ['key' => 'erase-42', 'at' => 1790000000000, 'by' => 'staff', 'subjects' => ['contact:42'], 'platforms' => 'report'])
      * @return array The erasure result or its refusal.
      */
     public function forget(array $request): array
@@ -191,7 +191,7 @@ class account_graph_lib
      * Read the information requested for a lookup kind.
      *
      * @param array $request Call argument.
-     *        (e.g. ['kind' => 'party', 'call' => 'call-42'])
+     *        (for example ['kind' => 'party', 'call' => 'call-42'])
      * @return array|null The lookup value, or null for an absent party or record.
      */
     public function lookup(array $request): ?array
@@ -203,7 +203,7 @@ class account_graph_lib
      * Read one page of a reporting view.
      *
      * @param array $request Call argument.
-     *        (e.g. ['kind' => 'deliveries', 'state' => 'pending'])
+     *        (for example ['kind' => 'deliveries', 'state' => 'pending'])
      * @return array The report value and its asOf time.
      */
     public function report(array $request): array
@@ -215,7 +215,7 @@ class account_graph_lib
      * Read one event page while retaining future event types for the caller.
      *
      * @param array $request Call argument.
-     *        (e.g. ['after' => null, 'limit' => 50])
+     *        (for example ['after' => null, 'limit' => 50])
      * @return array The page of events or a cursor refusal.
      */
     public function events(array $request): array
@@ -242,7 +242,7 @@ class account_graph_lib
      * Check whether a decoded JSON number is an exact graph integer.
      *
      * @param mixed $number Decoded JSON value.
-     *        (e.g. 1790000000000)
+     *        (for example 1790000000000)
      * @return bool Whether the value is a safe integer.
      */
     private function safe_integer($number): bool
@@ -255,7 +255,7 @@ class account_graph_lib
      * Follow the event cursor until caught up or the server refuses the cursor.
      *
      * @param array $request Call argument.
-     *        (e.g. ['after' => null, 'limit' => 50])
+     *        (for example ['after' => null, 'limit' => 50])
      * @return Generator The full answer for each page.
      */
     public function event_pages(array $request): Generator
@@ -275,7 +275,7 @@ class account_graph_lib
      * Follow report cursors while retaining the original report filters.
      *
      * @param array $request Call argument.
-     *        (e.g. ['kind' => 'callbacks', 'at' => 1790000000000, 'window' => ['from' => '2026-09-01', 'to' => '2026-09-30', 'timeZone' => 'UTC']])
+     *        (for example ['kind' => 'callbacks', 'at' => 1790000000000, 'window' => ['from' => '2026-09-01', 'to' => '2026-09-30', 'timeZone' => 'UTC']])
      * @return Generator Each report page including its asOf time.
      */
     public function report_pages(array $request): Generator
@@ -295,7 +295,7 @@ class account_graph_lib
      * Follow a journey backwards from the most recent page.
      *
      * @param array $request Call argument.
-     *        (e.g. ['kind' => 'journey', 'subject' => 'contact:42'])
+     *        (for example ['kind' => 'journey', 'subject' => 'contact:42'])
      * @return Generator Each journey page including its entries.
      */
     public function journey_pages(array $request): Generator
@@ -318,9 +318,9 @@ class account_graph_lib
      * Fail when the server promises another page without advancing its cursor.
      *
      * @param int|float|string|null $next Cursor returned by the graph.
-     *        (e.g. 'epoch.100')
+     *        (for example 'epoch.100')
      * @param int|float|string|null $previous Cursor used for the current page.
-     *        (e.g. null)
+     *        (for example null)
      * @return void
      */
     private function check_cursor($next, $previous): void
@@ -334,9 +334,9 @@ class account_graph_lib
      * Send a call with bounded retries and preserve the order of partially completed batches.
      *
      * @param string $name Graph call name.
-     *        (e.g. 'lookup')
+     *        (for example 'lookup')
      * @param array $request Call argument.
-     *        (e.g. ['kind' => 'party', 'call' => 'call-42'])
+     *        (for example ['kind' => 'party', 'call' => 'call-42'])
      * @return array|null The decoded graph answer.
      */
     private function call(string $name, array $request): ?array
@@ -378,13 +378,13 @@ class account_graph_lib
      * Collect the results in their original positions and find entries awaiting another attempt.
      *
      * @param array|null $answer Decoded record response.
-     *        (e.g. ['results' => [['type' => 'arrival', 'key' => 'visit-42', 'ok' => false, 'reason' => 'NOT_ATTEMPTED']]])
+     *        (for example ['results' => [['type' => 'arrival', 'key' => 'visit-42', 'ok' => false, 'reason' => 'NOT_ATTEMPTED']]])
      * @param array|null $entries Original record entries.
-     *        (e.g. [(object) ['type' => 'arrival', 'key' => 'visit-42']])
+     *        (for example [(object) ['type' => 'arrival', 'key' => 'visit-42']])
      * @param array $positions Original indices sent in this attempt.
-     *        (e.g. [0])
+     *        (for example [0])
      * @param array $results Results accumulated across attempts.
-     *        (e.g. [])
+     *        (for example [])
      * @return array Original indices of unattempted entries.
      */
     private function record_results(?array $answer, ?array $entries, array $positions, array &$results): array
@@ -411,13 +411,13 @@ class account_graph_lib
      * Decide whether to retry in this process and how long to wait.
      *
      * @param account_graph_fault $fault Fault from the last attempt.
-     *        (e.g. new account_graph_fault(['Code' => 'GRAPH.UNAVAILABLE', 'Retryable' => true]))
+     *        (for example new account_graph_fault(['Code' => 'GRAPH.UNAVAILABLE', 'Retryable' => true]))
      * @param int $attempt Attempt number starting at one.
-     *        (e.g. 1)
+     *        (for example 1)
      * @param int $delay_ms Backoff for this attempt in milliseconds.
-     *        (e.g. 50)
+     *        (for example 50)
      * @param array|null $response Transport status, body and Retry-After header, if received.
-     *        (e.g. [503, '', '1'])
+     *        (for example [503, '', '1'])
      * @return int Milliseconds until the next attempt.
      */
     private function retry_delay(account_graph_fault $fault, int $attempt, int $delay_ms, ?array $response): int
@@ -445,7 +445,7 @@ class account_graph_lib
      * Wait until the backoff period has elapsed.
      *
      * @param int $delay_ms Delay in milliseconds.
-     *        (e.g. 50)
+     *        (for example 50)
      * @return void
      */
     private function sleep_ms(int $delay_ms): void
@@ -461,7 +461,7 @@ class account_graph_lib
      * Convert a Retry-After header into an absolute Unix time capped at fifteen minutes.
      *
      * @param string|null $hint Header value or null when absent.
-     *        (e.g. '120')
+     *        (for example '120')
      * @return float|null Unix timestamp in seconds, or null for an invalid header.
      */
     public static function retry_at(?string $hint): ?float
@@ -492,7 +492,7 @@ class account_graph_lib
      * Recognize an accepted item or a refusal with a reason.
      *
      * @param array $item Decoded JSON result.
-     *        (e.g. ['ok' => false, 'reason' => 'STALE'])
+     *        (for example ['ok' => false, 'reason' => 'STALE'])
      * @return bool Whether the item has the decision shape.
      */
     private function is_decision(array $item): bool
@@ -504,9 +504,9 @@ class account_graph_lib
      * Decode a graph response or report its fault.
      *
      * @param string $name Graph call that received the response.
-     *        (e.g. 'lookup')
+     *        (for example 'lookup')
      * @param array $response Transport status, body and Retry-After header.
-     *        (e.g. [200, 'null', ''])
+     *        (for example [200, 'null', ''])
      * @return array|null The graph value or refusal.
      */
     private function answer(string $name, array $response): ?array
@@ -551,9 +551,9 @@ class account_graph_lib
      * Send a JSON request using cURL with connect and total deadlines.
      *
      * @param string $name Graph call name.
-     *        (e.g. 'events')
+     *        (for example 'events')
      * @param string $body Encoded request.
-     *        (e.g. '{"after":null,"limit":50}')
+     *        (for example '{"after":null,"limit":50}')
      * @return array Status, response body and Retry-After header.
      */
     private function curl_post(string $name, string $body): array
@@ -603,9 +603,9 @@ class account_graph_lib
      * Send a JSON request using a socket stream with the same deadlines.
      *
      * @param string $name Graph call name.
-     *        (e.g. 'events')
+     *        (for example 'events')
      * @param string $body Encoded request.
-     *        (e.g. '{"after":null,"limit":50}')
+     *        (for example '{"after":null,"limit":50}')
      * @return array Status, response body and Retry-After header.
      */
     private function stream_post(string $name, string $body): array
@@ -659,13 +659,13 @@ class account_graph_lib
      * Write the entire HTTP request before its deadline.
      *
      * @param resource $stream Connected socket.
-     *        (e.g. $this->connect_stream())
+     *        (for example $this->connect_stream())
      * @param float $deadline Absolute Unix time in seconds.
-     *        (e.g. microtime(true) + 1)
+     *        (for example microtime(true) + 1)
      * @param string $name Graph call name.
-     *        (e.g. 'events')
+     *        (for example 'events')
      * @param string $body Encoded request.
-     *        (e.g. '{"after":null,"limit":50}')
+     *        (for example '{"after":null,"limit":50}')
      * @return void
      */
     private function write_request($stream, float $deadline, string $name, string $body): void
@@ -690,9 +690,9 @@ class account_graph_lib
      * Read the HTTP status, headers and framed or close-delimited body.
      *
      * @param resource $stream Connected socket.
-     *        (e.g. $this->connect_stream())
+     *        (for example $this->connect_stream())
      * @param float $deadline Absolute Unix time in seconds.
-     *        (e.g. microtime(true) + 1)
+     *        (for example microtime(true) + 1)
      * @return array Status, response body and Retry-After header.
      */
     private function read_reply($stream, float $deadline): array
@@ -729,9 +729,9 @@ class account_graph_lib
      * Read the next available bytes before the request deadline.
      *
      * @param resource $stream Connected socket.
-     *        (e.g. $this->connect_stream())
+     *        (for example $this->connect_stream())
      * @param float $deadline Absolute Unix time in seconds.
-     *        (e.g. microtime(true) + 1)
+     *        (for example microtime(true) + 1)
      * @return string Bytes read from the socket.
      */
     private function read_chunk($stream, float $deadline): string
@@ -748,11 +748,11 @@ class account_graph_lib
      * Wait for the socket to become readable or writable within the request deadline.
      *
      * @param resource $stream Connected socket.
-     *        (e.g. $this->connect_stream())
+     *        (for example $this->connect_stream())
      * @param float $deadline Absolute Unix time in seconds.
-     *        (e.g. microtime(true) + 1)
+     *        (for example microtime(true) + 1)
      * @param bool $writing Whether to wait for a writable socket.
-     *        (e.g. true)
+     *        (for example true)
      * @return void
      */
     private function wait($stream, float $deadline, bool $writing): void

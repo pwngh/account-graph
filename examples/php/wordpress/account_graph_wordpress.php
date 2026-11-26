@@ -27,7 +27,7 @@ final class account_graph_wordpress
      * 'Database' => null, // required, object, the site's wpdb connection.
      *
      * @param array $config WordPress dependencies.
-     *        (e.g. ['Database' => $GLOBALS['wpdb']])
+     *        (for example ['Database' => $GLOBALS['wpdb']])
      * @return void
      */
     public function __construct(array $config)
@@ -65,11 +65,11 @@ final class account_graph_wordpress
      * Read the collector's hidden input while the form submission is still available.
      *
      * @param string $provider Form provider.
-     *        (e.g. 'gravity')
+     *        (for example 'gravity')
      * @param string $form_id Form whose entry is being accepted.
-     *        (e.g. '17')
+     *        (for example '17')
      * @param object|null $submission Current CF7 submission, when available.
-     *        (e.g. WPCF7_Submission::get_instance())
+     *        (for example WPCF7_Submission::get_instance())
      * @return array Subject or speaker device, with null for an unusable submitted ID.
      */
     private function browser_device(string $provider, string $form_id, ?object $submission = null): array
@@ -104,9 +104,9 @@ final class account_graph_wordpress
      * Save the submitted Gravity Forms entry locally, after validation and persistence.
      *
      * @param array $entry Entry fields.
-     *        (e.g. ['id' => '82', '1' => 'row@example.org'])
+     *        (for example ['id' => '82', '1' => 'row@example.org'])
      * @param array $form Form definition.
-     *        (e.g. ['id' => 17])
+     *        (for example ['id' => 17])
      * @return void
      */
     public function gravity(array $entry, array $form): void
@@ -128,9 +128,9 @@ final class account_graph_wordpress
      * Queue an accepted CF7 inquiry once validation and the mail attempt have finished.
      *
      * @param object $form The WPCF7_ContactForm supplied by wpcf7_submit.
-     *        (e.g. form 23)
+     *        (for example form 23)
      * @param array $result Final CF7 submission result.
-     *        (e.g. ['status' => 'mail_failed'])
+     *        (for example ['status' => 'mail_failed'])
      * @return void
      */
     public function cf7(object $form, array $result): void
@@ -172,7 +172,7 @@ final class account_graph_wordpress
      * A 'blog:form' key applies to that blog. A plain form key applies to blog 1 only.
      *
      * @return array Configured fields by plugin and this blog's form ID.
-     *        (e.g. ['gravity' => [17 => ['email' => '1']]])
+     *        (for example ['gravity' => [17 => ['email' => '1']]])
      */
     private function forms(): array
     {
@@ -210,19 +210,19 @@ final class account_graph_wordpress
      * Keep only supported, explicitly mapped identifiers. Unmapped forms produce no job.
      *
      * @param string $provider Form provider.
-     *        (e.g. 'gravity')
+     *        (for example 'gravity')
      * @param string $form Form ID.
-     *        (e.g. '17')
+     *        (for example '17')
      * @param string $id Source entry ID.
-     *        (e.g. '82')
+     *        (for example '82')
      * @param int $seconds Submission time in Unix seconds.
-     *        (e.g. 1700000000)
+     *        (for example 1700000000)
      * @param callable $get Read one configured field.
-     *        (e.g. a callback reading entry field '1')
+     *        (for example a callback reading entry field '1')
      * @param array $browser_device Device supplied by the collector for the subject or speaker.
-     *        (e.g. ['subject' => 'desk-42'])
+     *        (for example ['subject' => 'desk-42'])
      * @param bool $saved Whether the form plugin can replay this entry ID in a later request.
-     *        (e.g. true for Gravity Forms)
+     *        (for example true for Gravity Forms)
      * @return void
      */
     private function enqueue(string $provider, string $form, string $id, int $seconds, callable $get, array $browser_device, bool $saved): void
@@ -279,9 +279,9 @@ final class account_graph_wordpress
      * Recognize a saved entry across retries and the move to site-scoped subjects.
      *
      * @param string $subject Site-scoped submission identity.
-     *        (e.g. 'wp:example-site:2:gravity:17:82')
+     *        (for example 'wp:example-site:2:gravity:17:82')
      * @param string $legacy Identity used by the original integration.
-     *        (e.g. 'wp:example-site:gravity:17:82')
+     *        (for example 'wp:example-site:gravity:17:82')
      * @return bool Whether this blog already has a job or receipt for this entry.
      */
     private function known_entry(string $subject, string $legacy): bool
@@ -302,13 +302,13 @@ final class account_graph_wordpress
      * Read only configured identifying fields, including any explicitly mapped browser device.
      *
      * @param array $map Configured graph fields and their form inputs.
-     *        (e.g. ['email' => '1'])
+     *        (for example ['email' => '1'])
      * @param string $provider Form provider.
-     *        (e.g. 'gravity')
+     *        (for example 'gravity')
      * @param callable $get Read one configured field.
-     *        (e.g. a callback reading entry field '1')
+     *        (for example a callback reading entry field '1')
      * @param array $browser_device Device submitted by the collector for the subject or speaker.
-     *        (e.g. ['subject' => 'desk-42'])
+     *        (for example ['subject' => 'desk-42'])
      * @return array Identifying fields to screen with the outbox.
      */
     private function mapped_facts(array $map, string $provider, callable $get, array $browser_device): array
@@ -350,13 +350,13 @@ final class account_graph_wordpress
      * Store the job and its trusted source entry alias together, including on a concurrent replay.
      *
      * @param string $subject Canonical site-scoped submission identity.
-     *        (e.g. 'wp:example-site:2:gravity:17:82')
+     *        (for example 'wp:example-site:2:gravity:17:82')
      * @param string $entry_hash Hash of this callback's original source identity.
-     *        (e.g. sha1('wp:example-site:2:gravity:17:83'))
+     *        (for example sha1('wp:example-site:2:gravity:17:83'))
      * @param bool $saved Whether the form plugin can replay this entry ID in a later request.
-     *        (e.g. true for Gravity Forms)
+     *        (for example true for Gravity Forms)
      * @param array $job Pending job to insert if its receipt is absent.
-     *        (e.g. a queued profile and inquiry)
+     *        (for example a queued profile and inquiry)
      * @return void
      */
     private function save_job(string $subject, string $entry_hash, bool $saved, array $job): void
@@ -380,13 +380,13 @@ final class account_graph_wordpress
      * Keep the first entry ID and graph timestamp for ten minutes across independent submissions.
      *
      * @param string $scope Site, provider and form namespace.
-     *        (e.g. 'wp:example-site:1:gravity:17:')
+     *        (for example 'wp:example-site:1:gravity:17:')
      * @param array $profile Screened identifying fields for this submission.
-     *        (e.g. ['facts' => ['email' => 'row@example.org']])
+     *        (for example ['facts' => ['email' => 'row@example.org']])
      * @param string $id Source entry ID.
-     *        (e.g. '82')
+     *        (for example '82')
      * @param int $seconds Original submission time in Unix seconds.
-     *        (e.g. 1700000000)
+     *        (for example 1700000000)
      * @return array Canonical entry ID and submission time.
      */
     private function claim_fingerprint(string $scope, array $profile, string $id, int $seconds): array
@@ -432,7 +432,7 @@ final class account_graph_wordpress
      * Give untimed receipts a full retention period and remove completed jobs with their aliases.
      *
      * @param string $lock Current site's delivery lock.
-     *        (e.g. 'ag_wp_abc')
+     *        (for example 'ag_wp_abc')
      * @return void
      */
     private function expire_receipts(string $lock): void
@@ -503,7 +503,7 @@ final class account_graph_wordpress
      * Request delivery on a cron pass without delaying the form response.
      *
      * @param int $delay Seconds to wait before the pass.
-     *        (e.g. 60 when another worker holds the lock)
+     *        (for example 60 when another worker holds the lock)
      * @return void
      */
     private function wake(int $delay = 0): void
@@ -550,9 +550,9 @@ final class account_graph_wordpress
      * Serialize one site's workers or observers without waiting on a busy connection.
      *
      * @param string $prefix Lock purpose.
-     *        (e.g. 'ag_wp_')
+     *        (for example 'ag_wp_')
      * @param callable $run Work to perform under the site's lock.
-     *        (e.g. a worker pass)
+     *        (for example a worker pass)
      * @return bool Whether this request held the lock and ran the work.
      */
     private function with_lock(string $prefix, callable $run): bool
@@ -574,7 +574,7 @@ final class account_graph_wordpress
      * Log one value-free warning for a continuous backlog older than an hour.
      *
      * @param bool $visitor Limit option-table scans from ordinary page visits to once per minute.
-     *        (e.g. true on init)
+     *        (for example true on init)
      * @return void
      */
     private function observe_backlog(bool $visitor = false): void
@@ -646,9 +646,9 @@ final class account_graph_wordpress
      * Scan past deferred jobs to find ready submissions. Release the database between sends.
      *
      * @param account_graph_lib $graph Client configured from wp-config.php.
-     *        (e.g. the cron client)
+     *        (for example the cron client)
      * @param string $lock Site-specific MySQL advisory lock name.
-     *        (e.g. 'ag_wp_abc')
+     *        (for example 'ag_wp_abc')
      * @return void
      */
     private function drain(account_graph_lib $graph, string $lock): void
@@ -681,15 +681,15 @@ final class account_graph_wordpress
      * Finish a profile before its dependent inquiry. Each acknowledgment advances only the saved phase.
      *
      * @param account_graph_lib $graph Cron's authenticated graph client.
-     *        (e.g. one client per delivery pass)
+     *        (for example one client per delivery pass)
      * @param string $lock Site lock name.
-     *        (e.g. 'ag_wp_abc')
+     *        (for example 'ag_wp_abc')
      * @param string $name Queue option name.
-     *        (e.g. 'account_graph_job_abc')
+     *        (for example 'account_graph_job_abc')
      * @param string $old Exact saved JSON used to detect a competing update.
-     *        (e.g. the originally loaded job)
+     *        (for example the originally loaded job)
      * @param array $job Saved entries and phase.
-     *        (e.g. ['phase' => 'inquiry', 'inquiry' => $entry])
+     *        (for example ['phase' => 'inquiry', 'inquiry' => $entry])
      * @return bool Whether this worker may continue with other submissions.
      */
     private function send(account_graph_lib $graph, string $lock, string $name, string $old, array $job): bool
@@ -745,7 +745,7 @@ final class account_graph_wordpress
      * Keep a known record refusal for staff without persisting or logging arbitrary remote text.
      *
      * @param string $reason Refusal from the record response.
-     *        (e.g. 'KEY_REUSED')
+     *        (for example 'KEY_REUSED')
      * @return string Safe code for the parked job and its log notice.
      */
     private function refusal_code(string $reason): string
@@ -758,13 +758,13 @@ final class account_graph_wordpress
      * Check the prior option bytes and lock ownership before advancing the phase.
      *
      * @param string $lock Site lock name.
-     *        (e.g. 'ag_wp_abc')
+     *        (for example 'ag_wp_abc')
      * @param string $name Queue option name.
-     *        (e.g. 'account_graph_job_abc')
+     *        (for example 'account_graph_job_abc')
      * @param string $old Previously read JSON.
-     *        (e.g. the pending job)
+     *        (for example the pending job)
      * @param string $json Replacement JSON.
-     *        (e.g. '{"state":"sent","sent_at":1700000000}')
+     *        (for example '{"state":"sent","sent_at":1700000000}')
      * @return bool Whether this worker successfully updated the option.
      */
     private function replace(string $lock, string $name, string $old, string $json): bool
@@ -778,7 +778,7 @@ final class account_graph_wordpress
      * Suppress database error output because WordPress's expanded write SQL contains mapped fields.
      *
      * @param string $sql Prepared job insert or update.
-     *        (e.g. an UPDATE of one private option)
+     *        (for example an UPDATE of one private option)
      * @return int Number of affected rows, zero on a replay or a lost worker lock.
      */
     private function write(string $sql): int

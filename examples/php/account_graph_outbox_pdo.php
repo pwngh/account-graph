@@ -16,7 +16,7 @@ class account_graph_outbox_pdo
      * 'Db' => null, // required, PDO, the same connection used for the host change.
      *
      * @param array $config Host connection settings.
-     *        (e.g. ['Db' => $db])
+     *        (for example ['Db' => $db])
      * @return void
      */
     public function __construct(array $config)
@@ -31,9 +31,9 @@ class account_graph_outbox_pdo
      * Prepare the statement and surface a database failure without including SQL values.
      *
      * @param string $sql Parameterized outbox statement.
-     *        (e.g. 'SELECT state FROM account_graph_outbox WHERE id = ?')
+     *        (for example 'SELECT state FROM account_graph_outbox WHERE id = ?')
      * @param array $args Bound statement values.
-     *        (e.g. ['17'])
+     *        (for example ['17'])
      * @return PDOStatement
      */
     private function query(string $sql, array $args): PDOStatement
@@ -55,9 +55,9 @@ class account_graph_outbox_pdo
      * Read the first matching row and release the statement cursor.
      *
      * @param string $sql Parameterized outbox statement.
-     *        (e.g. 'SELECT state FROM account_graph_outbox WHERE id = ?')
+     *        (for example 'SELECT state FROM account_graph_outbox WHERE id = ?')
      * @param array $args Bound statement values.
-     *        (e.g. ['17'])
+     *        (for example ['17'])
      * @return array|null
      */
     public function one(string $sql, array $args = []): ?array
@@ -72,9 +72,9 @@ class account_graph_outbox_pdo
      * Execute a statement and return its affected row count.
      *
      * @param string $sql Parameterized outbox statement.
-     *        (e.g. "UPDATE account_graph_outbox SET state = 'sent' WHERE id = ?")
+     *        (for example "UPDATE account_graph_outbox SET state = 'sent' WHERE id = ?")
      * @param array $args Bound statement values.
-     *        (e.g. ['17'])
+     *        (for example ['17'])
      * @return int
      */
     public function execute(string $sql, array $args = []): int

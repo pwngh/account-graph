@@ -27,7 +27,7 @@ class account_graph_fault extends RuntimeException
      * 'Message' => '', // optional, string, local diagnostic text. Defaults to Code.
      *
      * @param array $config Fault fields.
-     *        (e.g. ['Code' => 'AUTH.REJECTED'])
+     *        (for example ['Code' => 'AUTH.REJECTED'])
      * @return void
      */
     public function __construct(array $config = [])
