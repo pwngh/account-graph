@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>AccountGraph</RootNamespace>
+    <PackageId>AccountGraph</PackageId>
+    <Description>A client for the six account-graph HTTP calls.</Description>
+  </PropertyGroup>
+
+</Project>
