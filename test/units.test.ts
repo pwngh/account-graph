@@ -132,7 +132,7 @@ for (const [births, records] of [[2, 40], [100, 1]] as const) test(`birth cuts o
   const labels = partition(known.keys(), links, [], policyFrom({ apart: ['birth'] }), known, undefined, [], since)
   assert.equal(new Set([...labels.values()].map(({ cluster }) => cluster)).size, births)
   assert.equal(labels.get(line)!.cluster, labels.get('record:0-0')!.cluster)
-  // Count reads of facts instead of milliseconds: the machine running the suite does not set the limit.
+  // Count reads of facts instead of milliseconds, so the machine running the suite does not set the limit.
   assert.ok(reads < known.size ** 2, `${reads} reads of ${known.size} subjects' facts`)
 })
 
@@ -420,7 +420,7 @@ test('fit recovers the true weights from checked pairs', () => {
   assert.ok(fitted.loss.after < fitted.loss.before)
   assert.equal(fitted.policy.kinds.fingerprint!.weight, fitted.kinds.fingerprint!.after)
   assert.equal(fitted.policy.kinds.email!.weight, defaultPolicy.kinds.email!.weight)
-  // Scores the fitted policy gives should match how often such pairs were truly one person.
+  // Scores the fitted policy gives should match how often such pairs were one person.
   for (const bucket of fitted.calibration) assert.ok(Math.abs(bucket.predicted - bucket.actual) < 0.06, JSON.stringify(bucket))
   // With no data, nothing moves.
   assert.deepEqual(fit([], defaultPolicy).policy, defaultPolicy)
@@ -622,7 +622,7 @@ test('what followed a call starts the clock at a landmark, and leaves out whoeve
 
   // Signing up already: they signed the same evening, and somebody rang them about it. The call looks like the cause and is not, so they are left out.
   const signing = person([call(T, false)], [back(T + 3_600_000)], [T + 2 * 3_600_000])
-  // And one who rang again and got through: whether they were rung back says nothing.
+  // And one who rang again and got through. Whether they were rung back says nothing.
   const through = person([call(T, false)], [call(T + 1_800_000, true)], [T + 4 * DAY])
   const biased = run([returned, left, signing, through])
   assert.deepEqual(group(biased, 'returned'), [['returned within a day', 1, 1], ['not returned within a day', 1, 0]])
@@ -705,7 +705,7 @@ test('the report is the same whatever order its rows arrive in', () => {
     touch(4, { ttclid: 'd', campaign: '9001' }),
     touch(5, { ttclid: 'e', campaignId: '9001', campaign: 'Beta' }),
     touch(6, { ttclid: 'f', campaignId: '9001', campaign: 'Alpha' }),
-    // An id no cost knows, under a name a costed campaign with another id has: a different campaign.
+    // An id no cost knows, under a name a costed campaign with another id has, is a different campaign.
     touch(9, { fbclid: 'g', campaignId: '799', campaign: 'Retarget' }),
     // A campaign nobody paid for, spelled two ways.
     touch(10, { source: 'newsletter', campaign: 'march' }),
@@ -788,7 +788,7 @@ test('what an outcome cost uses the outcomes of that campaign, on the days whose
   // The total covers the campaigns whose cost is known: 130 over six sales. Not the 337 spent over the twelve there were.
   assert.deepEqual([report.total.costPerOutcome, report.total.returnOnCost, report.excluded, report.days], [21.666667, 4.615385, 3, 10])
   assert.equal(report.total.cost, 337)
-  // A campaign known only by its name may be a newsletter, and spend on no campaign is nobody's: neither is withheld for want of days.
+  // A campaign known only by its name may be a newsletter, and spend on no campaign is nobody's. Neither is withheld for want of days.
   const unnumbered = fold('2026-03-01', '2026-03-10', [cost('2026-03-01', '', 5)], [{ subject: 's', at: 0, source: 'newsletter', campaign: 'march' }], [])
   assert.deepEqual(unnumbered.rows.map((each) => [each.source, each.insufficientData]), [['google', false], ['newsletter', false]])
   assert.equal(unnumbered.excluded, 0)
@@ -812,7 +812,7 @@ test('what an outcome cost uses the outcomes of that campaign, on the days whose
   // Spend on no campaign in particular is in the total's cost, and is nobody's cost per outcome.
   const loose = fold('2026-03-01', '2026-03-01', [cost('2026-03-01', '', 500), cost('2026-03-01', 'paid', 30)], [], [{ ...sale('2026-03-01', undefined), touch: { subject: 's', at: 0, gclid: 'G' } }, sale('2026-03-01', 'paid')])
   assert.deepEqual([loose.rows.find((each) => each.campaignId === '')!.costPerOutcome, loose.total.costPerOutcome, loose.total.cost], [null, 30, 530])
-  // Two campaigns each known on half the days they need: between them every day, and still nothing can be said.
+  // Two campaigns each known on half the days they need. Between them they cover every day, and still nothing can be said.
   const halves = fold('2026-03-01', '2026-03-10', [...days(4).map((day) => cost(day, 'a', 10)), ...days(10).slice(6).map((day) => cost(day, 'b', 10))], [], [sale('2026-03-01', 'a'), sale('2026-03-08', 'b')])
   assert.deepEqual([halves.total.insufficientData, halves.total.costPerOutcome, halves.excluded, halves.total.costDays], [true, null, 2, 8])
 })
@@ -885,7 +885,7 @@ test('a signed token reads back until it expires, and not after any change', () 
   assert.equal(readToken('a-long-secret-value', 'known', `${Buffer.from('contact:43').toString('base64url')}.${until}.${signed}`, now), undefined)
   assert.equal(readToken('a-long-secret-value', 'known', `${body}.${(Number.parseInt(until!, 36) + 9999).toString(36)}.${signed}`, now), undefined)
   for (const bad of [undefined, 42, '', 'a.b', 'a.b.c.d', `${body}.${until}.`, 'x'.repeat(2000)]) assert.equal(readToken('a-long-secret-value', 'known', bad, now), undefined)
-  // One token has one spelling: the same bytes written another way do not read.
+  // One token has one spelling. The same bytes written another way do not read.
   for (const respelled of [`${body}=.${until}.${signed}`, `${body}.+${until}.${signed}`, `${body}. ${until}.${signed}`, `${body}.${until!.toUpperCase()}.${signed}`, `${body}.${until}!x.${signed}`]) {
     assert.equal(readToken('a-long-secret-value', 'known', respelled, now), undefined, respelled)
   }
@@ -1029,7 +1029,7 @@ test('Meta gets its browser id only as Meta writes it, and only beside its click
   // One that is not keeps nothing from a good one on another arrival of that browser.
   assert.deepEqual(sent([touch({ fbclid: 'F', fbp: 'x' }), touch({ fbp: 'y' }), touch({ fbp })]), { fbc: `fb.1.${at}.F`, fbp })
   assert.deepEqual((metaEvent('Lead', { job: { transactionId: 't', subject: 'v', at, keys: {} }, touch: touch({ fbp }) } as never, 'https://site.example/') as any).user_data, {})
-  // No Meta click, no browser id: it is a key that goes along, and not one to send a conversion by.
+  // With no Meta click and no browser id, it is a key that goes along, and not one to send a conversion by.
   assert.equal(sent([touch({ source: 'newsletter', fbp })]), undefined)
 })
 

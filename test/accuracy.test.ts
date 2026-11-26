@@ -30,7 +30,7 @@ test('two people who truly share a browser are not a wrong join by it, and are o
   // The browser belongs with both. The two contacts do not belong together.
   assert.deepEqual(all, { same: 2, joinable: 2, found: 2, foundJoinable: 2, wrong: 1 })
   assert.equal(mixed, 2)
-  // Both share two things: one pair, counted once.
+  // Both share two things. They are one pair, counted once.
   const telephone = { subject: 'caller:1', people: ['lee', 'pat'], facts: ['phone 1'] }
   assert.deepEqual(score([browser, telephone], new Map()).all, { same: 1, joinable: 0, found: 0, foundJoinable: 0, wrong: 0 })
 })

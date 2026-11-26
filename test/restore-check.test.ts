@@ -115,7 +115,7 @@ test('restores every graph table and the latest audit decision from a PostgreSQL
 })
 
 test('a pg_restore newer than the target server is refused before anything is dumped', { skip: !url ? 'set DATABASE_URL to run the restore rehearsal' : false }, async () => {
-  // A stand-in that only says its version: the check must stop before it is asked to do more.
+  // A stand-in that only says its version. The check must stop before it is asked to do more.
   const bin = await mkdtemp(join(tmpdir(), 'ag-pg-bin-'))
   try {
     for (const program of ['pg_dump', 'pg_restore']) {

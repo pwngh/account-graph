@@ -266,7 +266,7 @@ test('a card opens, closes, stays through a refresh, and says when something is 
   await page.click(`[...document.querySelectorAll('#card a')].find((a) => a.textContent === 'Calls by Hour')`)
   await until('the hours', async () => (await focused()) === 'calls-hours')
   await page.go('#/journey/contact%3Aada')
-  // The view read again under a pointer that rests on an icon, before the press or between the press and its release, as a late change of address does: the press still opens its card. A pulse right after it reads the view again, and the card stays with the new icon.
+  // The view read again under a pointer that rests on an icon, before the press or between the press and its release, as a late change of address does. The press still opens its card. A pulse right after it reads the view again, and the card stays with the new icon.
   const icon = find('call ada-1 timeline')
   await run(`(() => { const real = window.fetch; window.up = () => (window.fetch = real); window.fetch = async (...all) => { if (String(all[0]).includes('/journey')) await new Promise((done) => (window.release = done)); return real(...all) } })()`)
   const reread = async (start: string) => {
@@ -282,7 +282,7 @@ test('a card opens, closes, stays through a refresh, and says when something is 
     await page.mouse('mouseMoved', x, y)
     if (!pressed) {
       await reread(late)
-      // The view read again may lay out a pixel or two apart (scrollbars and fonts differ by system), so the pointer goes to where the icon now is.
+      // The view read again may lay out a pixel or two apart, because scrollbars and fonts differ by system. The pointer goes to where the icon now is.
       const [nx, ny] = await page.middle(icon)
       if (nx !== x || ny !== y) console.error(`the icon moved from ${x},${y} to ${nx},${ny} when the view was read again`)
       ;[x, y] = [nx, ny]

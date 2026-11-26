@@ -1,4 +1,4 @@
-/** What must compile, and what must not. `npm run check` is its test: nothing here is run. */
+/** What must compile, and what must not. `npm run check` is its test, and nothing here is run. */
 import { accountGraph, isFault } from '../src/index.ts'
 import type { AccountGraph, GraphEvent, ReportRequest } from '../src/index.ts'
 export async function calls() {

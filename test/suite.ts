@@ -617,7 +617,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await graph.observe(chain('hardware', 'a', 'b', 'c', 'd'))
       assert.deepEqual(await members(graph, 'a'), ['a', 'b'])
       assert.deepEqual(await members(graph, 'd'), ['c', 'd'])
-      // The two groups are still linked; they are just not one cluster.
+      // The two groups are still linked, but they are not one cluster.
       assert.equal((await graph.links('b')).find((link) => link.subject === 'c')!.level, 'same')
 
       const joined = await graph.observe([
@@ -838,7 +838,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await assert.rejects(graph.join('solo', 'solo'), TypeError)
       await assert.rejects(graph.join('solo', 7 as unknown as string), TypeError)
 
-      // Ids that contain a plus sign must not be confused: these two joins involve four different subjects.
+      // Ids that contain a plus sign must not be confused. These two joins involve four different subjects.
       await graph.join('p', 'q+r')
       await graph.join('p+q', 'r')
       assert.deepEqual(await members(graph, 'p'), ['p', 'q+r'])
@@ -1153,11 +1153,11 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(rung.flags, ['left_out'])
       assert.deepEqual([await graph.keptCall('X1'), await graph.keptCall('X2'), await graph.cluster(left.subject)].map((each) => each ?? null), [null, null, null])
       assert.equal((await recordCall(graph, { id: 'X3', ...call, from: '+15550100022' }, options)).flags.includes('left_out'), false)
-      // Kept and then cut off before its note was written: the report of it that comes again finishes it.
+      // Kept and then cut off before its note was written. The report of it that comes again finishes it.
       await graph.keepCall({ id: 'X5', direction: 'inbound', subject: left.subject, at: T0, to: '+15550100001', flags: [] })
       const again = await recordCall(graph, { id: 'X5', ...call, answered: true }, options)
       assert.deepEqual([again.flags.includes('left_out'), again.state], [false, 'answered'])
-      // Recorded before the number was left out: what is known of it can still be made right.
+      // Recorded before the number was left out. What is known of it can still be corrected.
       await recordCall(graph, { id: 'X4', ...call }, { results: 'expected' })
       assert.deepEqual([(await recordCall(graph, { id: 'X4', ...call, answered: true }, options)).counted, (await graph.keptCall('X4'))!.subject], [true, left.subject])
     })
@@ -1195,7 +1195,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
         await call(graph, 'TWO', three, T0 + 45 * SECOND)
         assert.deepEqual(await tied(graph, one), [])
       }
-      // The provider's clock may be behind ours: a call dated a few seconds before the tap counts too, whichever comes first.
+      // The provider's clock may be behind ours, so a call dated a few seconds before the tap counts too, whichever comes first.
       for (const order of [[0, 1], [1, 0]]) {
         const { graph } = await fresh()
         await click(graph, 'a', T0)
@@ -1369,7 +1369,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       for (const who of ['a', 'b', 'c']) await graph.observe({ subject: `visitor:${who}`, identifiers: [`device:${who}`], at: T0, event: 'visit' })
       await show('a', T0)
       assert.equal((await ring('P1', '+15550100172', T0 + 60_000)).visitor, 'visitor:a')
-      // Days later it is somebody else's, and their turn has just ended: a new caller is theirs, and the one who saved it is not.
+      // Days later it is somebody else's, and their turn has just ended. A new caller is theirs, and the one who saved it is not.
       await show('b', T0 + 3 * DAY)
       assert.equal((await ring('P2', '+15550100172', T0 + 3 * DAY + HOUR)).visitor, undefined)
       assert.equal((await ring('P3', '+15550100173', T0 + 3 * DAY + HOUR)).visitor, 'visitor:b')
@@ -1408,7 +1408,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const credited = (await graph.attribute(tied.subject, { at: T0 + 2 * MINUTE })).credited!
       assert.deepEqual([credited.gclid, credited.subject], ['G-a', 'visitor:a'])
 
-      // The provider reports the same call again: nothing is written twice.
+      // The provider reports the same call again, and nothing is written twice.
       const sightings = (await graph.counts()).sightings
       assert.deepEqual(await recordCall(graph, { id: 'CA1', from: '555-867-5309', to: '+15551230001', at: T0 + MINUTE + 20_000, duration: 95 }, { numbers }), {
         subject: tied.subject, flags: [], counted: false, state: 'unknown', duplicate: true,
@@ -1446,12 +1446,12 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await graph.links(switchboard.subject), [])
       assert.deepEqual((await graph.history(switchboard.subject)).map((sighting) => sighting.identifier), ['dialed:call-CA5'])
 
-      // One visitor, one caller, for good: tapping again later does not earn a browser a second stranger's call.
+      // One visitor, one caller, for good. Tapping again later does not earn a browser a second stranger's call.
       await graph.observe({ subject: 'visitor:a', identifiers: ['device:a', dialed('+15551230001', T0 + 20 * HOUR)], at: T0 + 20 * HOUR, event: 'phone_click' })
       assert.equal((await recordCall(graph, { id: 'CA1d', from: '+15553334444', to: '+15551230001', at: T0 + 20 * HOUR + 5000, duration: 5 }, { numbers })).visitor, undefined)
       assert.equal((await recordCall(graph, { id: 'CA1e', from: '+15558675309', to: '+15551230001', at: T0 + 20 * HOUR + 9000, duration: 5 }, { numbers })).visitor, 'visitor:a')
 
-      // Two visitors tap the same number in the same minute: the call cannot say which, so it is tied to neither.
+      // Two visitors tap the same number in the same minute. The call cannot say which, so it is tied to neither.
       for (const who of ['b', 'c']) await graph.observe({ subject: `visitor:${who}`, identifiers: [`device:${who}`, dialed('+15551230001', T0 + 5 * HOUR)], at: T0 + 5 * HOUR, event: 'phone_click' })
       const unsure = await recordCall(graph, { id: 'CA6', from: '+15552223333', to: '+15551230001', at: T0 + 5 * HOUR + 10_000, duration: 60 }, { numbers })
       assert.deepEqual([unsure.flags, unsure.visitor], [['ambiguous'], undefined])
@@ -1475,7 +1475,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const filed = await recordCall(graph, { id: 'CA9', from: '+15556667777', to: '+15551230003', at: T0 + 6 * HOUR, duration: 60 }, { numbers: odd })
       const touch = (await graph.attribute(filed.subject, { at: T0 + 6 * HOUR })).credited!
       assert.deepEqual([touch.subject, touch.at, touch.source], [filed.subject, T0 + 6 * HOUR, 'radio'])
-      // If counting the call fails, nothing lasting was written: reported again, it is recorded once.
+      // If counting the call fails, nothing lasting was written. Reported again, it is recorded once.
       await assert.rejects(recordCall(graph, { id: 'CA10', from: '+15557778888', to: '+15551230002', at: T0 + 7 * HOUR, duration: 60 }, { numbers, convert: () => Promise.reject(new Error('down')) }), /down/)
       const retried = await recordCall(graph, { id: 'CA10', from: '+15557778888', to: '+15551230002', at: T0 + 7 * HOUR, duration: 60 }, { numbers })
       assert.equal(retried.duplicate, false)
@@ -1517,7 +1517,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       // It is filed under the number it rang, like any call: missed, credited, and never an outcome.
       assert.deepEqual((await graph.report({ from: '2023-11-14', to: '2023-11-14' })).rows.map((row) => [row.source, row.campaignId, row.missed, row.outcomes]), [['google', '111', 1, 0]])
 
-      // A result may come before its call, and come again: it is taken once.
+      // A result may come before its call, and come again. It is taken once.
       assert.equal(await recordCallResult(graph, { id: 'Q2', answered: true, waited: 8 }, options), undefined)
       const answered = await recordCall(graph, call('Q2', { at: T0 + 1000, duration: 120 }), options)
       assert.deepEqual([answered.state, answered.counted], ['answered', true])
@@ -1544,7 +1544,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await recordCallResult(graph, { id: 'P1', answered: true }))!.counted, true)
       assert.deepEqual([(await count()).stages.call!.count, (await count()).missed], [3, 3])
 
-      // A result and its call arriving at once, in both orders: however they cross, the call ends up counted once.
+      // A result and its call arriving at once, in both orders. However they cross, the call ends up counted once.
       await Promise.all(Array.from({ length: 12 }, (_, i) => [() => recordCall(graph, call(`R${i}`, { at: T0 + 6000 + i, from: `+155501001${String(i).padStart(2, '0')}` }), options), () => recordCallResult(graph, { id: `R${i}`, answered: i % 2 === 0 }, options)]).flat().map((each) => each()))
       for (let i = 0; i < 12; i++) assert.equal(Boolean(await graph.outcomeOf(`call:R${i}`)), i % 2 === 0, `R${i}`)
 
@@ -1579,7 +1579,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await miss('M3', T0 + 5 * HOUR)
       await recordCall(graph, { id: 'O1', direction: 'outbound', from: '+15550100001', to: from, at: T0 + 2 * HOUR, answered: false }, { now })
       assert.deepEqual(await open(), ['M1', 'M2', 'M3'])
-      // Reached at three hours: that closes the misses before, and not the one after.
+      // Reached at three hours, which closes the misses before, and not the one after.
       assert.deepEqual(await recordReturn(graph, { id: 'M1', at: T0 + 3 * HOUR }, { now }), { state: 'returned', by: 'M1', delay: 3 * HOUR, reported: true, attempts: 1 })
       assert.deepEqual(await became('M2'), { state: 'returned', by: 'M1', delay: 2 * HOUR, reported: true, attempts: 1 })
       assert.deepEqual([(await became('M3')).state, await open()], ['open', ['M3']])
@@ -1646,7 +1646,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
         const miss = (await graph.keptCall(id))!
         return followUp(miss, await graph.callsOf([miss.subject]))
       }
-      // Rung before the miss: it says nothing about it, even when reported after. Rung twice with no answer, then answered.
+      // A call before the miss says nothing about it, even when reported after. Rung twice with no answer, then answered.
       await inbound('M1', 10, false)
       await outbound('O0', 9, true)
       assert.deepEqual(await became('M1'), { state: 'open', attempts: 0 })
@@ -1661,7 +1661,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual(await became('M1'), { state: 'returned', by: 'O2', delay: 2 * HOUR, attempts: 1 })
       assert.deepEqual([await graph.outcomeOf('call:O2'), await graph.outcomeOf('call:O3')], [undefined, undefined])
 
-      // Missed twice more, then the caller gets through: one answer closes every miss before it.
+      // Missed twice more, then the caller gets through. One answer closes every miss before it.
       await inbound('M2', 20, false)
       await inbound('M3', 21, false)
       await inbound('A1', 23, true)
@@ -1713,7 +1713,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await sale('a', 'account:1', 10)
       await sale('b', 'account:1b', 9)
       await sale('c', 'account:1', 2, 'renewal')
-      // Someone else, whose newest arrival is 100 days before their sale: outside the window, so credited to nothing and still counted as late.
+      // Someone else, whose newest arrival is 100 days before their sale. That is outside the window, so it is credited to nothing and still counted as late.
       await graph.observe([{ subject: 'visitor:2', identifiers: ['device:2'], at: T0 }, { subject: 'account:2', identifiers: ['device:2'], at: T0 }])
       await visit(2, 105)
       await sale('d', 'account:2', 5)
@@ -1723,7 +1723,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const google = report.rows.find((row) => row.campaignId === '111')!
       assert.deepEqual([google.outcomes, google.people, google.stages.sale!.count, google.stages.sale!.people], [3, 1, 2, 1])
       assert.deepEqual([report.total.outcomes, report.total.people, report.total.stages.sale!.people], [5, 3, 3])
-      // Two and three days after the arrival, and a hundred: the step takes a median of three, and two in three came inside the window.
+      // Two and three days after the arrival, and a hundred. The step takes a median of three, and two in three came inside the window.
       assert.deepEqual(report.total.stages.sale!.delay, { count: 3, median: 3, p95: 100, inside: 0.666667 })
       assert.deepEqual(google.stages.sale!.delay, { count: 2, median: 2.5, p95: 3, inside: 1 })
       // Keep the two accounts apart and they are two people again.
@@ -1740,7 +1740,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       // 95 in 100 sign-ups come within four days, so arrivals of the last four have not had theirs.
       assert.deepEqual(await filling('2026-03-12', '2026-03-30'), { after: '2026-03-27', days: 4 })
       assert.equal(await filling('2026-03-12', '2026-03-27'), undefined)
-      // Asked about a day with an arrival and no outcomes yet, it still says so: that is the day it is for.
+      // Asked about a day with an arrival and no outcomes yet, it still says so, because that is the day it is for.
       await graph.touch({ subject: 'visitor:late', at: NOW - DAY, gclid: 'L', campaignId: '222' })
       assert.equal((await graph.report({ from: '2026-03-30', to: '2026-03-30' })).total.visits, 1)
       assert.deepEqual(await filling('2026-03-30', '2026-03-30'), { after: '2026-03-27', days: 4 })
@@ -1792,7 +1792,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await graph.forget('lead:9')
       assert.deepEqual(await read('s3'), [])
       await graph.outcome({ transactionId: 's3', subject: 'lead:2', at: clock.now, stage: 'client', value: 100, currency: 'USD' })
-      // Recorded at nothing, raised, and back at nothing: restated to zero, whatever it was at first.
+      // Recorded at nothing, raised, and back at nothing. It is restated to zero, whatever it was at first.
       await graph.outcome({ transactionId: 's5', subject: 'lead:2', at: day('2026-03-20'), stage: 'client', value: 0, currency: 'USD' })
       await graph.outcome({ transactionId: 's6', subject: 'lead:2', at: day('2026-03-20'), stage: 'client', value: 0, currency: 'USD' })
       await graph.restate('s5', 90)
@@ -1866,7 +1866,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await graph.restate('s2', 0, undefined, 'refund')
       assert.equal((await worth()).refunded, 250.1)
       assert.deepEqual((await graph.journey('lead:1')).entries.flatMap((entry) => (entry.kind === 'value' && entry.transactionId === 's2' ? [entry.to.kind] : [])), ['refund'])
-      // One said by mistake is taken back, and no more than was said: the rest was no refund.
+      // One said by mistake is taken back, and no more than was said. The rest was no refund.
       await assert.rejects(graph.restate('s3', 160, undefined, 'refund'), /cannot reverse more than was refunded/)
       await assert.rejects(graph.restate('s1', 301, undefined, 'write_off'), /cannot reverse more than was written off/)
       await assert.rejects(graph.restate('s3', 100, 'CAD', 'refund'), /currency/)
@@ -2086,7 +2086,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const who = (minutes: number, grace = 0) => graph.leaseholder('+15550100001', T0 + minutes * MIN, grace)
       assert.deepEqual([await who(-1, 1e9), await who(0), await who(19), await who(20), await who(34), await who(35)], [undefined, 'visitor:a', 'visitor:a', 'visitor:c', 'visitor:c', undefined])
       assert.deepEqual([await who(40, 5 * MIN), await who(41, 5 * MIN)], ['visitor:c', undefined])
-      // Forgotten, nobody held it, and it does not go back to whoever did before: somebody has held it since.
+      // Forgotten, nobody held it, and it does not go back to whoever did before, because somebody has held it since.
       assert.equal(await who(25, 120 * MIN), 'visitor:c')
       await graph.forget('visitor:c')
       assert.equal(await who(25, 120 * MIN), undefined)
@@ -2128,9 +2128,9 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await graph.attribute(during.subject, { at: T0 + 5 * MIN })).credited?.gclid, 'click-a')
       // Reported again, it is the same call.
       assert.equal((await call('P1', '+15550100071', 5)).duplicate, true)
-      // After it ended and before anyone else has it, it is still theirs: they wrote the number down.
+      // After it ended and before anyone else has it, it is still theirs, because they wrote the number down.
       assert.equal((await call('P2', '+15550100071', 60)).visitor, 'visitor:a')
-      // Another caller on it is somebody else: a visitor is tied to one caller.
+      // Another caller on it is somebody else, because a visitor is tied to one caller.
       assert.equal((await call('P3', '+15550100072', 61)).visitor, undefined)
       // Shown to another soon after, either may be dialing it, so only a tap makes a call the new holder's. Past the grace it is nobody's.
       assert.equal((await graph.lease('visitor:b', { numbers: ['+15550100001'], minutes: 15, at: T0 + 70 * MIN }))!.start, T0 + 70 * MIN)
@@ -2141,7 +2141,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await graph.lease('visitor:b', { numbers: ['+15550100001'], minutes: 5, at: T0 + 90 * MIN })
       assert.equal((await call('P4b', '+15550100073', 91)).visitor, undefined)
       assert.equal((await call('P5', '+15550100074', 85 + 121)).visitor, undefined)
-      // Two callers reported at once on one holder's number: one of them is the visitor's caller, and never both.
+      // Two callers reported at once on one holder's number. One of them is the visitor's caller, and never both.
       await graph.observe({ subject: 'visitor:d', identifiers: ['device:d'], at: T0, event: 'visit' })
       await graph.lease('visitor:d', { numbers: ['+15550100001'], minutes: 15, at: T0 + 300 * MIN })
       const both = await Promise.all(['+15550100078', '+15550100079'].map((from, i) => call(`Q${i}`, from, 301)))
@@ -2161,7 +2161,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await call('P6', '+15550100075', 1, '+15550100002')).visitor, undefined)
       // A number not in the pool is tied by a tap alone, whoever once held it.
       assert.equal((await recordCall(graph, { id: 'P7', from: '+15550100076', to: '+15550100001', at: T0 + 72 * MIN, duration: 60 })).visitor, undefined)
-      // Nobody holds it: a tap says whose it is, as on any other number.
+      // Nobody holds it, so a tap says whose it is, as on any other number.
       await graph.observe({ subject: 'visitor:c', identifiers: [dialed('+15550100001', T0 + 500 * MIN)], at: T0 + 500 * MIN, event: 'phone_click' })
       const tapped = await call('P8', '+15550100077', 500)
       assert.deepEqual([tapped.visitor, tapped.flags], ['visitor:c', []])
@@ -2308,7 +2308,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await graph.ignore(first, true, { by: 'dana' })
       assert.deepEqual((await graph.reviewed()).map((pair) => pair.same), [true])
       assert.deepEqual(await names(), ['b:1 b:2'])
-      // A join made in bulk where a mark stands makes no other: muting that one takes it back too.
+      // A join made in bulk where a mark stands makes no other, so muting that one takes it back too.
       await see('k:1', 'canvas:k')
       await see('k:2', 'canvas:k')
       await graph.join('k:1', 'k:2')
@@ -2331,7 +2331,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await graph.reviewed({ exclude: 'system:' })).length, before - 1)
       assert.equal((await graph.reviewed()).length, before)
       for (const each of ['s:1', 's:2']) await graph.forget(each)
-      // Joined but held apart by a separation through a third: it was decided, so it is not asked about again.
+      // Joined but held apart by a separation through a third. It was decided, so it is not asked about again.
       await graph.separate('a:1', 'b:1', true, { by: 'dana' })
       await graph.join('a:2', 'b:1', { by: 'dana' })
       assert.deepEqual(await names(), ['b:1 b:2'])
@@ -2556,7 +2556,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const rang = (await graph.journey(`caller:${hashPhone('+15550100072')}`)).entries.find((entry) => entry.kind === 'call') as any
       assert.equal(rang.notLead, 'other')
       assert.equal((await graph.notLeads(['call:C1', 'nothing'])).size, 1)
-      // An answered call that was no lead is no conversation with them: the miss before it is still waiting, everywhere.
+      // An answered call that was no lead is no conversation with them, so the miss before it is still waiting everywhere.
       await recordCall(graph, { id: 'C6', from: '+15550100075', to: '+15550100001', at: T0 + 2400, duration: 20, answered: false }, options)
       await recordCall(graph, { id: 'C5', from: '+15550100075', to: '+15550100001', at: T0 + 2500, duration: 60, answered: true }, options)
       assert.deepEqual((await graph.openCalls(days)).map((each) => each.call.id), ['C3'])
@@ -2662,7 +2662,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
     test('a journey is the whole cluster\'s, whoever of it is asked about, and none of what was cut off with somebody kept apart', async () => {
       const { graph } = await fresh()
       const see = (subject: string, ...identifiers: string[]) => graph.observe({ subject, identifiers, at: T0, event: 'visit' })
-      // A chain of four: each shares a device with the next, so the ends are three links apart.
+      // A chain of four, where each shares a device with the next, so the ends are three links apart.
       await see('w:1', 'device:12')
       await see('w:2', 'device:12', 'device:23')
       await see('w:3', 'device:23', 'device:34')
@@ -2681,7 +2681,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await graph.separate('a:2', 'visitor:y', true)
       assert.notEqual((await graph.cluster('a:1'))!.id, (await graph.cluster('visitor:z'))!.id)
       const people = async (subject: string) => Object.keys((await graph.journey(subject)).subjects).sort()
-      // What was cut off with y is y's: x and z are tied to the four, and are on the other side of what a reviewer said.
+      // What was cut off with y is y's, while x and z are tied to the four, and are on the other side of what a reviewer said.
       for (const each of ['a:1', 'a:2', 'a:3', 'a:4']) assert.deepEqual(await people(each), ['a:1', 'a:2', 'a:3', 'a:4'])
       await graph.separate('a:2', 'visitor:y', false)
       assert.ok((await people('a:3')).includes('visitor:x'))
@@ -2754,7 +2754,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const all = await read(0)
       assert.deepEqual(all.out.slice(-4).reverse().map(({ seq: _, ...move }) => move), recent.slice(0, 4))
       assert.deepEqual([...all.out].sort((x, y) => x.seq - y.seq), all.out)
-      // Followed from the start, the changes say where everyone is: whoever they never named is on their own.
+      // Followed from the start, the changes say where everyone is. Whoever they never named is on their own.
       const followed = new Map(all.out.map((move) => [move.subject, move.to]))
       for (const name of ['team', 'duo', 'pair', 'solo']) for (const subject of await graph.search(`${name}:`)) assert.equal(followed.get(subject) ?? subject, (await graph.cluster(subject))?.id ?? subject)
       assert.deepEqual(await graph.changes({ after: all.next }), { changes: [], next: all.next, more: false })
@@ -2826,7 +2826,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       await assert.rejects(graph.separateAll([{ a: 'contact:x', b: 'contact:p' }, { a: 'contact:x', b: 'contact:x' }]), TypeError)
       assert.equal((await graph.decisions()).length, before)
 
-      // Named twice, a pair is taken in order from how it stood: already apart, so the first says nothing new.
+      // Named twice, a pair is taken in order from how it stood. The pair is already apart, so the first says nothing new.
       await graph.separateAll([{ a: 'contact:x', b: 'contact:y' }, { a: 'contact:y', b: 'contact:x', separated: false }, { a: 'contact:x', b: 'contact:y' }, { a: 'contact:x', b: 'contact:y' }], { by: 'system:cases' })
       assert.deepEqual((await graph.decisionPage({ limit: 3 })).map((d) => d.action), ['separate', 'rejoin', 'separate'])
       const twice = await graph.separateAll([{ a: 'contact:x', b: 'contact:y' }, { a: 'contact:x', b: 'contact:y', separated: false }], { by: 'system:cases' })
@@ -2970,7 +2970,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       ])
       let paid = 0
       const pay = (from: string, to: string, amount: number, asset?: string) => graph.transfer({ id: `p${paid++}`, from, to, amount, at: T0, ...(asset && { asset }) })
-      // a -> b -> c -> a, and a second, smaller ring a -> d -> a.
+      // a pays b, b pays c and c pays a, and a second, smaller ring where a pays d and d pays a.
       await pay('a', 'b', 900)
       await pay('b', 'c', 700)
       await pay('c', 'a', 800)
@@ -3630,7 +3630,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const credit = async (subject: string) => (await graph.attribute(subject, { at: T0 + HOUR })).credited?.gclid
       assert.equal((await members(graph, 'contact:2')).includes('visitor:1'), true)
       assert.deepEqual([await credit('contact:1'), await credit('contact:2')], [undefined, 'two'])
-      // Nor through it: a site it walked on to, and what is tied to that, are in a group of their own.
+      // Nor through it. A site it walked on to, and what is tied to that, are in a group of their own.
       await graph.observe([{ subject: 'visitor:1', identifiers: ['carry:c'], at: T0 }, { subject: 'visitor:8', identifiers: ['carry:c', 'email:w'], at: T0 }, { subject: 'account:9', identifiers: ['email:w'], at: T0 }])
       await graph.touch({ subject: 'visitor:8', at: T0 + 1, gclid: 'eight' })
       assert.equal(await credit('contact:1'), undefined)
@@ -4279,7 +4279,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       const found = async (...subjects: string[]) => (await graph.conflicts(subjects)).map(({ a, b, how }) => [a, b, how])
       assert.deepEqual(await found('contact:ana', 'contact:ben'), [['contact:ana', 'contact:ben', 'recorded'], ['contact:ben', 'contact:ana', 'recorded']])
       assert.deepEqual(await found('contact:ana-2', 'contact:ben'), [['contact:ana-2', 'contact:ben', 'same'], ['contact:ben', 'contact:ana-2', 'same']])
-      // Nobody else was asked about: it is with the one on record.
+      // Nobody else was asked about, so it is with the one on record.
       assert.deepEqual(await found('contact:ana-2'), [['contact:ana-2', 'contact:ben', 'same']])
       assert.deepEqual(await found('contact:ana-2', 'contact:maybe'), [['contact:ana-2', 'contact:ben', 'same'], ['contact:ana-2', 'contact:maybe', 'possible'], ['contact:maybe', 'contact:ana-2', 'possible']])
       assert.deepEqual(await found('contact:cy', 'contact:nobody'), [])
@@ -4467,7 +4467,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
         stood.push([views[0]!.source, views[0]!.touches])
       }
       assert.deepEqual(stood, [['site1', 1], ['site2', 1], ['site3', 1], ['site1', 1], ['listing', 1]])
-      // A code nobody has, or one that is too old, or not yet given, is no code: the tap decides.
+      // A code nobody has, or one that is too old, or not yet given, is no code, so the tap decides.
       const graph = await ready()
       assert.deepEqual((await recordCall(graph, { ...call, code: 'ZZZZZZ' }, { numbers })).flags, [])
       assert.equal((await graph.keptCall('K1'))!.visitor, 'visitor:2')
@@ -4683,7 +4683,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual([before.builtWith, before.due], [before.hash, false])
       assert.deepEqual(await graph.verify(), [])
 
-      // The same database under another policy: scores follow it at once, stored clusters do not.
+      // The same database under another policy. Scores follow it at once, and stored clusters do not.
       const other: Policy = { ...defaultPolicy, kinds: { ...defaultPolicy.kinds, phone: { ...defaultPolicy.kinds.phone!, weight: 0.6 }, hardware: { ...defaultPolicy.kinds.hardware!, weight: 0.7 } } }
       const changed = createGraph(store, other)
       const state = await changed.policy()
@@ -4699,7 +4699,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.deepEqual([after.builtWith, after.due], [after.hash, false])
       assert.deepEqual(await changed.verify(), [])
       assert.equal((await graph.policy()).due, true)
-      // A server still running the first policy writes after the rebuild: the clusters are no longer all of one policy.
+      // A server still running the first policy writes after the rebuild. The clusters are no longer all of one policy.
       await graph.observe({ subject: 'account:2', identifiers: ['phone:2'], at: T0 })
       assert.equal((await changed.policy()).due, true)
       await changed.rebuild()
@@ -4840,7 +4840,7 @@ export function suite(name: string, open: () => Promise<Opened>, fuzzSteps: numb
       assert.equal((await graph.cluster('contact:child'))!.members.includes('caller:1'), false)
       assert.equal((await graph.attribute('caller:1', { at: T0 + DAY })).touches.some((touch) => touch.msclkid === 'click-child'), false)
       assert.deepEqual(await graph.verify(), [])
-      // Nor is a second record of the child's, that has the caller's number, the caller's: neither has the other's credit by it.
+      // Nor is a second record of the child's, that has the caller's number, the caller's. Neither has the other's credit by it.
       await graph.observe({ subject: 'contact:again', identifiers: ['email:child', 'phone:1'], at: T0 + 6500 })
       assert.equal((await graph.attribute('caller:1', { at: T0 + DAY })).touches.some((touch) => touch.msclkid === 'click-child'), false)
       // Nor from an alias of the caller's that nothing is said of.

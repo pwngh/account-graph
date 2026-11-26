@@ -6,7 +6,7 @@ import { carry, collect, event, fields, fill, pool, read, texts, watch, withCode
 import { browserScripts } from '../src/edge/tag.ts'
 import { browse, until, without } from './chrome.ts'
 
-/** Just enough of a browser for the collector: a URL, cookies, storage, and a beacon. */
+/** The parts of a browser the collector needs: a URL, cookies, storage, and a beacon. */
 function browser(href: string, cookies: Record<string, string> = {}, gpc = false) {
   const jar = new Map(Object.entries(cookies))
   const storage = new Map<string, string>()
@@ -176,7 +176,7 @@ test('page events are reported by name, from code and from marked elements', asy
   listeners.get('click')!({ target: element({ '[data-ag-event]': form }) })
   listeners.get('submit')!({ target: element({ 'form[data-ag-event]': form }) })
   listeners.get('click')!({ target: element({}) })
-  // A phone link that is not properly escaped is reported as written, and does not stop the marked element around it.
+  // A phone link with broken escaping is reported as written, and does not stop the marked element around it.
   listeners.get('click')!({ target: element({ 'a[href^="tel:"]': node('A', { href: 'tel:%' }), '[data-ag-event]': node('DIV', { 'data-ag-event': 'footer' }) }) })
   await settle()
 
@@ -284,7 +284,7 @@ test('links to your other sites carry the visitor along, and no other link is to
     assert.equal(follow('https://bücher.example/'), 'https://xn--bcher-kva.example/?ag_from=token-1')
     // The right button opens a menu that can copy the address, so it gets no token.
     assert.equal(follow('https://shop.example/cart', 2), 'https://shop.example/cart')
-    // A long press, or a click with a key held, opens the same menu after the press: the token comes off again.
+    // A long press, or a click with a key held, opens the same menu after the press, and the token comes off again.
     const pressed = { href: 'https://shop.example/cart?x=1' }
     listeners.get('pointerdown')!({ button: 0, target: { closest: () => pressed } })
     assert.equal(pressed.href, 'https://shop.example/cart?x=1&ag_from=token-1')
@@ -343,7 +343,7 @@ test('a form carries the device id and the landing page to whatever receives it'
   const submit = (target: object) => listeners.get('submit')!({ target })
 
   const stop = fill()
-  // A form sent by a script fires no submit event: its gathered data gets the same fields, and a stale device is replaced.
+  // A form sent by a script fires no submit event. Its gathered data gets the same fields, and a stale device is replaced.
   const scripted = form(true)
   const pairs = (data: FormData) => {
     const out: [string, string][] = []
@@ -375,7 +375,7 @@ test('a form carries the device id and the landing page to whatever receives it'
   const stopAll = fill({ all: true })
   submit(plain)
   assert.equal(plain.inputs.length, 2)
-  // A form that sends its fields in the address is filled only when marked: an address is seen by more than its receiver.
+  // A form that sends its fields in the address is filled only when marked, because an address is seen by more than its receiver.
   const search = form(false, [], null)
   submit(search)
   assert.equal(search.inputs.length, 0)

@@ -106,7 +106,7 @@ export async function screen(base: string) {
     assert.equal(await run(`$('notice').textContent`), '')
   }
   const find = (key: string) => `document.querySelector('[data-key^=${JSON.stringify(`detail ${key}`)}]')`
-  // A point of a node that nothing else lies over, nearest its middle: a mark of the chart may stand on a wait, and where depends on the fonts.
+  // A point of a node that nothing else lies over, nearest its middle, because a mark of the chart may stand on a wait, and where depends on the fonts.
   const middle = (node: string) => run(`(() => {
     const n = ${node}
     n.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' })
