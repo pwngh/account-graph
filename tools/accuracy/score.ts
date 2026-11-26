@@ -3,11 +3,11 @@
  * clusters, and nothing of identifiers, weights or scores.
  */
 
-/** One subject the graph knows, and who it truly is. A browser or a telephone can be more than one person's. */
+/** One subject the graph knows, and which person it is. A browser or a telephone can be more than one person's. */
 export interface Truth {
   subject: string
   people: readonly string[]
-  /** What was told of it, as told: two subjects with none in common could not be joined by anybody. */
+  /** What was told of it, as told. Two subjects with none in common could not be joined by anybody. */
   facts: readonly string[]
 }
 

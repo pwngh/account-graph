@@ -4,7 +4,7 @@
  *   GRAPH_URL=http://localhost:8080 GRAPH_TOKEN=… npm run labels -- pairs.csv
  *
  * The first line names the columns: a, b and label. A label is `same` or
- * `different`. A reviewer's token is enough: nothing is written. The file
+ * `different`. A reviewer's token is enough, because nothing is written. The file
  * names your people, so keep it outside the repository. Only counts are printed.
  */
 import { readFileSync } from 'node:fs'
@@ -31,7 +31,7 @@ const pairs = new Map<string, { a: string; b: string; said: Set<boolean> }>()
 let rows = 0
 for (const [i, cells] of lines.entries()) {
   if (i === 0 || cells.every((cell) => !cell.trim())) continue
-  // A subject is used as it is written: a space may be part of it.
+  // A subject is used as it is written, because a space may be part of it.
   const [a = '', b = '', said = ''] = ['a', 'b', 'label'].map((name) => cells[head.indexOf(name)])
   const label = said.trim()
   if (!a || !b || a === b) throw new Error(`Line ${i + 1} needs two different subjects`)

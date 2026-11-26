@@ -30,7 +30,7 @@ const HOUSEHOLD = JSON.parse(readFileSync(new URL('../../examples/household.json
 const SECRET = 'a made-up secret for made-up people'
 
 /**
- * What the server is set to. Every arm is told the same: names and birth dates are sent to all of them. `staff` joins the
+ * What the server is set to. Every arm is told the same. Names and birth dates are sent to all of them. `staff` joins the
  * caller to the record a call is about, and `pool` shows each visitor a number of their own.
  */
 export const ARMS = {
@@ -332,7 +332,7 @@ async function main() {
     for (const arm of arms) if (!ARMS[arm]) throw new Error(`Say arms of: ${Object.keys(ARMS).join(', ')}`)
     const kept = new Map(arms.map((arm) => [arm, { lines: new Map<string, ReturnType<typeof figures>[]>(LINES.map((label) => [label, []])), credits: [] as ReturnType<typeof creditFigures>[], kinds: new Map<string, { same: number; found: number; wrong: number }>(), links: new Map<string, { links: number; wrong: number }>(), credited: { right: 0, wrong: 0, none: 0, reachable: 0, reachableRight: 0, cold: 0, coldWrong: 0 } as Credit, total: { wrong: 0, found: 0, mixed: 0, people: 0, mixedRecords: 0, mixedApart: 0, recorded: 0, wrongClusters: 0, exhausted: 0 } }]))
     const differ = new Map<Arm, Record<string, number[]>>()
-    /** Pooled over the worlds: of what the arm beside found, what is lost. */
+    /** Pooled over the worlds, what is lost of what the arm beside found. */
     const lostIn = new Map<Arm, Record<'pairs' | 'recordPairs' | 'credit', [lost: number, of: number]>>()
     for (let world = 0; world < worlds; world++) {
       const made = makeWorld(setting.rates, size(world), list)

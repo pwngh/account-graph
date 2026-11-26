@@ -47,7 +47,7 @@ export interface Rates {
   tapsComputer: number
   /** Of people who become contacts, those another adult of the household speaks for: their number, or their email, is on the record. */
   spokenFor: number
-  /** Records made twice: staff enter somebody who is there already. */
+  /** Records made twice, when staff enter somebody who is there already. */
   duplicate: number
   /** A name, and a date of birth, written wrongly by its owner, and by staff who heard it. Who is asked for a date of birth. */
   nameTypo: number
@@ -292,7 +292,7 @@ export function makeWorld(rates: Rates, { people: count, days, start, seed }: Si
     emailsOf.push(made)
     return made
   }
-  // A few names are many people's and most are few people's, as names are: how common one is goes by its place on the list.
+  // A few names are many people's and most are few people's, as names are. How common one is goes by its place on the list.
   // First names begin with a few letters far more often than with the rest, so two people of one home often share theirs.
   const INITIALS = { a: 10, j: 14, m: 11, c: 8, s: 7, d: 7, r: 6, l: 6, k: 6, t: 5, e: 5, b: 4, g: 3, p: 3, n: 3, h: 2, w: 2, v: 2, f: 1, i: 1, o: 1, z: 1 }
   const initial = () => Object.keys(INITIALS)[r.weighted(Object.values(INITIALS))]!
@@ -467,7 +467,7 @@ export function makeWorld(rates: Rates, { people: count, days, start, seed }: Si
     const filling = acts && (r.chance(rates.form) || !calling)
     const visits = r.more(rates.visits)
     const actsOn = r.under(visits + 1)
-    // Another adult of the household may speak for them: theirs are the hands, most often on their own telephone or computer.
+    // Another adult of the household may speak for them. That adult does the typing, most often on their own telephone or computer.
     const speaker = person.partners.length > 0 && r.chance(rates.spokenFor) ? byId.get(r.one(person.partners))! : person
     if (acts && speaker !== person) spoke.add(`${speaker.id} ${person.id}`)
     const theirs = speaker !== person && r.chance(rates.speakerVisits)
@@ -617,14 +617,14 @@ export function dirtied(world: World, dirt: Dirt, seed: number): World {
 /**
  * A made world where staff do three things at intake, from a seed of its own: they ask who is calling, ask whether it is for somebody else and
  * make a record of who is, and make one of records that look like one person's. Nothing else changes. Who is who is used for what people
- * answer, and for nothing staff do: they find records by the name they are told and what is written, and take the latest. A caller who says
+ * answer, and for nothing staff do. They find records by the name they are told and what is written, and take the latest. A caller who says
  * they call for another is put down to a record of their own; one who does not say so gives the name of whoever the call is about.
  */
 export function asked(world: World, rates: Intake, seed: number): World {
   const r = randomly(seed ^ 0x3c6ef372)
   const truths = [...world.truths]
   const events = [...world.events]
-  // What is written on a record is the subject's: what was said to be the speaker's is not, and what was given beside is.
+  // What is written on a record is the subject's. What was said to be the speaker's is not, and what was given beside is.
   type Filed = { subject: string; at: number; phone?: string; email?: string; name: { first: string; last: string } }
   const onFile = world.events.flatMap((event): Filed[] => (event.kind === 'record' ? [{
     subject: event.subject, at: event.at, name: event.name,
