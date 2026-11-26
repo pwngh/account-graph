@@ -6,7 +6,7 @@ import { affectsPage, oldBookmark, subjectAddress, subjectPath } from './navigat
 import original from '../../../src/edge/review/style.css?url'
 import additions from './style.css?url'
 export const links = () => [{rel: 'icon', type: 'image/svg+xml', href: '/favicon.ico'}, {rel: 'stylesheet', href: original}, {rel: 'stylesheet', href: additions}]
-export async function loader({request}: LoaderFunctionArgs) { return {name: (await current(request))?.name, legacy: runtime().stage ? '/legacy' : runtime().graphUrl + '/review'} }
+export async function loader({request}: LoaderFunctionArgs) { return {name: (await current(request))?.name, legacy: runtime().stage ? '/legacy' : runtime().graphUrl + '/review', live: Boolean(runtime().eventsToken)} }
 const menu = [['accounts','Accounts'], ['journey','Journey'], ['board/90','Board'], ['decide','Matches'], ['calls','Calls'], ['channels','Channels'], ['health','Health']]
 
 function Live({path}: {path: string}) {
@@ -64,7 +64,7 @@ export function Layout({children}: {children: React.ReactNode}) {
     <Form id="find" className="row" method="post" action="/search"><label>Search <input name="text" aria-keyshortcuts="Control+K Meta+K" placeholder="Search" autoComplete="off" required /></label><button>Open</button></Form>
     <Form method="post" action="/signout" reloadDocument>{data.name} <button>Sign out</button></Form></>}</header>
     <div id="notice" role="status">{navigation.state === 'loading' ? 'Opening view…' : navigation.state === 'submitting' ? 'Saving…' : ''}</div>
-    <main id="view" tabIndex={-1}>{children}</main><footer>{data?.name && location.pathname !== '/stage' && <Live path={location.pathname}/>}</footer><ScrollRestoration/><Scripts/></body></html>
+    <main id="view" tabIndex={-1}>{children}</main><footer>{data?.name && location.pathname !== '/stage' && (data.live ? <Live path={location.pathname}/> : <p className="meta">Live updates are off. Reload to see changes.</p>)}</footer><ScrollRestoration/><Scripts/></body></html>
 }
 export default function App() { return <Outlet/> }
 export function ErrorBoundary() {

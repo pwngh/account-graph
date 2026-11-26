@@ -40,7 +40,7 @@ npm --prefix apps/review start
 | `REVIEW_GRAPH_URL` | Graph server origin, default `http://127.0.0.1:8080`. The Node process must be able to reach it. |
 | `REVIEW_SESSION_SECRET` | Secret for signing session IDs. Outside development the app requires it at startup. In development an omitted secret is generated for the process. |
 | `REVIEW_ORIGIN` | Public origin used to check form submissions and set secure cookies. Defaults to the request origin. Set this explicitly behind a reverse proxy. |
-| `REVIEW_EVENTS_TOKEN` | Server-only graph service token for the `events` call. Without it, opening or reloading a page still reads the graph. |
+| `REVIEW_EVENTS_TOKEN` | Server-only graph service token for the `events` call. Without it, pages open no event stream and say that live updates are off. Opening or reloading a page still reads the graph. |
 | `HOST`, `PORT` | Production listener address and port, default `127.0.0.1` and `3000`. |
 
 ## Sign-in and updates

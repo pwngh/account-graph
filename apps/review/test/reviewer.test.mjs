@@ -348,10 +348,37 @@ test('without a service events token authenticated HTML still works', async () =
     const answer = await fetch(url + '/events', { headers })
     assert.equal(answer.status, 204)
     assert.equal(await answer.text(), '')
-    assert.equal((await fetch(url + path, { headers })).status, 200)
+    const page = await fetch(url + path, { headers })
+    assert.equal(page.status, 200)
+    assert.match(await page.text(), /Live updates are off\. Reload to see changes\./)
   } finally {
     await close(standalone)
   }
+})
+
+test('Chrome without a service events token opens no stream and never reports an interruption', { skip: !process.env.CHROME && 'set CHROME to check live updates in a browser', timeout: 40000 }, async t => {
+  const { reviewServer } = await import('../server.mjs')
+  const standalone = await reviewServer({ port: 0, host: '127.0.0.1', eventsToken: '' })
+  t.after(() => close(standalone))
+  const seen = []
+  standalone.on('request', request => seen.push(request.url))
+  const { browse, until } = await import('../../../test/chrome.ts')
+  const { run, close: closeBrowser } = await browse(address(standalone) + path)
+  t.after(closeBrowser)
+  await until('the sign-in form', () => run("Boolean(document.querySelector('input[name=token]'))").catch(() => false))
+  await run(`{
+    const input = document.querySelector('input[name=token]')
+    input.value = ${JSON.stringify(reviewer)}
+    input.form.requestSubmit()
+  }`)
+  await until('the enhanced account', () => run("Boolean(document.querySelector('input[type=range]'))").catch(() => false))
+  // Effects that would open a stream have run. A later request from the page arrives after any request they made.
+  assert.equal(await run("fetch('/favicon.ico').then(answer => answer.status)"), 200)
+  await until('the later request', () => seen.includes('/favicon.ico'))
+  assert.deepEqual(seen.filter(url => url.startsWith('/events')), [])
+  const footer = await run("document.querySelector('footer').innerText")
+  assert.match(footer, /Live updates are off/)
+  assert.doesNotMatch(footer, /interrupted/i)
 })
 
 test('the server bounds a large graph drawing and keeps every link reachable by ordinary pagination', async () => {
