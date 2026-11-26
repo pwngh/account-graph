@@ -34,8 +34,8 @@ const sqlState = (error: unknown) => error instanceof Error && 'code' in error ?
 
 const watched = new WeakSet<Pool>()
 /**
- * A connection the database ends is heard of as an event, and an event nobody listens for ends the process. The pool
- * tells of one at rest. One in use tells only its own client, whose next statement then fails.
+ * When the database ends a connection, it arrives as an event, and an event with no listener ends the process. The pool
+ * emits it for an idle connection. A connection in use emits it only on its own client, whose next statement then fails.
  */
 function watch(pool: Pool): void {
   if (!pool.on || watched.has(pool)) return
@@ -202,7 +202,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       }
     },
     async addSightings(rows) {
-      // Fold repeats first: one statement cannot upsert the same edge twice.
+      // Fold repeats first, because one statement cannot upsert the same edge twice.
       const folded = new Map<string, Folded>()
       for (const { subject, identifier, at, profileKey, fact } of rows) {
         const edge: Folded = { subject, identifier, first: at, last: at, count: 1, ...(profileKey !== undefined && { profile: { at, key: profileKey, ...(fact && { fact }) } }) }
@@ -334,7 +334,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
          update ${t('identifier')} set fanout = fanout - 1 where id in (select identifier from gone) returning id, fanout`,
         [subject],
       )
-      // What nobody holds any more goes too, unless it is muted: that is a decision, and stands for whoever holds it next.
+      // What nobody holds any more goes too, unless it is muted, because a mute is a decision and stands for whoever holds it next.
       await db.query(`delete from ${t('identifier')} where id = any($1::text[]) and fanout <= 0 and not ignored`, [left.filter((row) => row.fanout <= 0).map((row) => row.id)])
       await db.query(`delete from ${t('not_lead')} where id in (select transaction_id from ${t('outcome')} where subject = $1 union all select 'call:' || id from ${t('call')} where subject = $1 union all select 'text:' || id from ${t('message')} where subject = $1)`, [subject])
       await db.query(
@@ -1233,7 +1233,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     },
 
     async addCosts(costs, read) {
-      // Fold repeats first, keeping the last: one statement cannot upsert the same row twice.
+      // Fold repeats first, keeping the last, because one statement cannot upsert the same row twice.
       const last = [...new Map(costs.map((cost) => [[cost.day, cost.source, cost.campaignId].join('\u0000'), cost])).values()]
       if (last.length === 0) return 0
       const { rows } = await db.query(
@@ -1524,7 +1524,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       try {
         await client.query(lock === 'exclusive' ? `update ${t('pulse')} set writes = writes + 1; commit` : 'commit')
       } catch (error) {
-        // The answer to a commit was lost: it may have been made.
+        // The answer to a commit was lost, so it may have been made.
         if (lock === 'exclusive' && error instanceof Error && !('severity' in error)) Object.assign(error, { committing: true })
         throw error
       }
@@ -2016,7 +2016,7 @@ export function upgrades(schema = 'account_graph'): Upgrade[] {
     {
       id: 6,
       name: 'policy of the stored clusters',
-      // One row at most: the hash of the policy the clusters were built with. A database from before has none, and it is not known.
+      // One row at most, holding the hash of the policy the clusters were built with. A database from before has none, and it is not known.
       sql: `create table if not exists ${schema}.built (
               one boolean primary key default true check (one),
               policy text not null
@@ -2031,7 +2031,7 @@ export function upgrades(schema = 'account_graph'): Upgrade[] {
     {
       id: 8,
       name: 'consent history',
-      // Every answer, where only the latest was kept. What was kept is carried over: when it was given is not known, so any
+      // Every answer, where only the latest was kept. What was kept is carried over. When it was given is not known, so any
       // dated answer stands over it. The old table goes, so nothing can go on writing where nothing reads.
       sql: `create table if not exists ${schema}.consent_log (
               id bigint generated always as identity primary key,
@@ -2136,7 +2136,7 @@ export function upgrades(schema = 'account_graph'): Upgrade[] {
     {
       id: 14,
       name: 'values of outcomes over time',
-      // Every value an outcome has had. What an outcome is worth today starts its history, with no time: it may have been restated before.
+      // Every value an outcome has had. What an outcome is worth today starts its history, with no time, because it may have been restated before.
       sql: `create table if not exists ${schema}.outcome_value (
               id bigint generated always as identity primary key,
               transaction_id text not null,
