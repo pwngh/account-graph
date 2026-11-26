@@ -124,14 +124,19 @@ final class account_graph_wordpress
     }
 
     /**
-     * Queue one accepted CF7 submission after mail succeeds.
+     * Queue an accepted CF7 inquiry once validation and the mail attempt have finished.
      *
-     * @param object $form The WPCF7_ContactForm passed by wpcf7_mail_sent.
+     * @param object $form The WPCF7_ContactForm supplied by wpcf7_submit.
      *        (e.g. form 23)
+     * @param array $result Final CF7 submission result.
+     *        (e.g. ['status' => 'mail_failed'])
      * @return void
      */
-    public function cf7(object $form): void
+    public function cf7(object $form, array $result): void
     {
+        if (!in_array($result['status'] ?? null, ['mail_sent', 'mail_failed'], true)) {
+            return;
+        }
         try {
             $form_id = (string) $form->id();
             if (!isset($this->forms()['cf7'][$form_id])) {

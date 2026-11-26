@@ -76,6 +76,26 @@ test('the WordPress module tag honors both page lists and keeps the bearer token
   assert.deepEqual(Object.keys((await run(url, 'all-pages')).shown), ['contact', 'private', 'news'])
 })
 
+test('CF7 queues valid inquiries on mail failure and a successful mail retry counts once', { skip }, async t => {
+  const run = await wordpress(t)
+  const { graph, url } = await localGraph(t)
+  for (const status of ['validation_failed', 'acceptance_missing', 'spam', 'aborted']) {
+    const ignored = await run(url, 'cf7', { status })
+    assert.equal(ignored.rows.length, 0)
+    assert.deepEqual(ignored.reads, [])
+  }
+  const queued = await run(url, 'cf7', { status: 'mail_failed', saved_id: 123 })
+  assert.equal(queued.rows.length, 1)
+  const subject = JSON.parse(queued.rows[0].option_value).inquiry.subject
+  assert.match(subject, /:cf7:23:123$/)
+  const sent = await run(url, 'cron')
+  const retry = await run(url, 'cf7', { status: 'mail_sent', saved_id: 124 })
+  assert.deepEqual(retry.rows, sent.rows)
+  await run(url, 'cron')
+  const journey = await graph.lookup({ kind: 'journey', subject })
+  assert.deepEqual(journey.entries.filter(e => e.kind === 'conversion').map(e => e.stage), ['inquiry'])
+})
+
 test('WordPress form hooks queue mapped facts and cron replays an acknowledged graph write with the original key', { skip }, async t => {
   const run = await wordpress(t)
   const { graph, url: graphUrl } = await localGraph(t)

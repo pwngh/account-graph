@@ -19,7 +19,7 @@ if ($argv[4] !== 'all-pages') {
 if ($argv[4] === 'saved-cf7' || isset($input['saved_id'])) {
     define('ACCOUNT_GRAPH_CF7_ENTRY_ID', 'fixture_cf7_id');
 }
-function fixture_cf7_id($form, $submission) { return $GLOBALS['input']['saved_id'] ?? 123; }
+function fixture_cf7_id($form, $submission) { return $GLOBALS['published_cf7_id'] ?? null; }
 function get_current_blog_id() { return $GLOBALS['input']['blog'] ?? 1; }
 function wp_salt($scheme) { return 'synthetic-wordpress-site-secret'; }
 function wp_unslash($value) { return stripslashes($value); }
@@ -88,12 +88,19 @@ $GLOBALS['scripts'] = array();
 $GLOBALS['schedule'] = array();
 $GLOBALS['singles'] = array();
 $GLOBALS['page'] = 'contact';
-function add_action($name, $callback, $priority = 10, $argc = 1) { $GLOBALS['hooks'][$name] = array($callback, $argc); }
+function add_action($name, $callback, $priority = 10, $argc = 1) { $GLOBALS['hooks'][$name][$priority][] = array($callback, $argc); }
 function add_filter($name, $callback, $priority = 10, $argc = 1) { add_action($name, $callback, $priority, $argc); }
 function invoke_hook($name, ...$args)
 {
-    list($callback, $count) = $GLOBALS['hooks'][$name];
-    return $callback(...array_slice($args, 0, $count));
+    if (!isset($GLOBALS['hooks'][$name])) return null;
+    ksort($GLOBALS['hooks'][$name]);
+    $result = null;
+    foreach ($GLOBALS['hooks'][$name] as $listeners) {
+        foreach ($listeners as list($callback, $count)) {
+            $result = $callback(...array_slice($args, 0, $count));
+        }
+    }
+    return $result;
 }
 function wp_enqueue_script($handle, $src, $deps = array(), $version = false, $footer = false) { $GLOBALS['scripts'][] = array('classic', $src); }
 function wp_enqueue_script_module($id, $src, $deps = array(), $version = false) { $GLOBALS['scripts'][] = array('module', $src); }
@@ -134,6 +141,8 @@ class WPCF7_Submission
 }
 
 require ABSPATH . 'account-graph.php';
+// A normal-priority entry store publishes its ID after CF7 finishes processing the submission.
+add_action('wpcf7_submit', function () { $GLOBALS['published_cf7_id'] = $GLOBALS['input']['saved_id'] ?? 123; }, 10, 2);
 $command = $argv[4];
 if ($command === 'pages' || $command === 'all-pages') {
     $shown = array();
@@ -177,8 +186,9 @@ if ($command === 'expire-window') {
         $_POST = ($input['post'] ?? array()) + array('_wpcf7' => '23');
         WPCF7_Submission::$active = new WPCF7_Submission();
         $form = new WPCF7_ContactForm();
-        invoke_hook('wpcf7_mail_sent', $form);
-        invoke_hook('wpcf7_mail_sent', $form);
+        $result = array('contact_form_id' => 23, 'status' => $input['status'] ?? 'mail_sent', 'message' => 'private message');
+        invoke_hook('wpcf7_submit', $form, $result);
+        invoke_hook('wpcf7_submit', $form, $result);
     }
 }
 $db = $GLOBALS['wpdb']->sqlite;
