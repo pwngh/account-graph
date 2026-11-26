@@ -17,6 +17,7 @@
 ### The six calls
 
 - The `Authorization` header's `Bearer` scheme is read in any case and with any spaces before the token, as HTTP allows.
+- `fill` also sets its fields on a form a script sends with `form.submit()`, which fires no submit event, so such inquiries keep their device and ad.
 - `serviceTokens` gives each integration a credential of its own, limited to the calls, entry types, decisions and reads it lists, signing only as `system:<name>`.
 - `decide` answers a key used for another action with `KEY_REUSED` naming only `action`, for every caller.
 - `allowPages` and `refusePages` keep a firm's private pages out of the collector and the server on every host; only a referrer from another site passes, as origin and path. A refused entry is refused alone.

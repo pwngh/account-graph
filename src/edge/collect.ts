@@ -548,13 +548,22 @@ export function fill(options: PageOptions & { all?: boolean } = {}): () => void 
     const { disabled, value } = input
     restore.set(input, () => Object.assign(input, { value, disabled }))
   }
-  const submitted = (happened: Event) => {
-    if (!ready(options)) return
+  /** The fields a form that is being sent should carry, or nothing where it is not one of ours. */
+  const chosen = (happened: Event) => {
+    if (!ready(options)) return undefined
     const form = (happened.target as Element | null)?.closest?.('form')
-    if (!form) return
+    if (!form) return undefined
     const posts = (form.getAttribute('method') ?? 'get').toLowerCase() === 'post'
-    if (!(form.hasAttribute('data-ag-fields') || (options.all && posts))) return
-    const filled = fields(options.requireConsent ? bannerAnswer() ?? options.consent : options.consent, form, options)
+    if (!(form.hasAttribute('data-ag-fields') || (options.all && posts))) return undefined
+    return { form, filled: fields(options.requireConsent ? bannerAnswer() ?? options.consent : options.consent, form, options) }
+  }
+  // The forms whose fields were just set by their submit event, so their gathered data needs nothing more.
+  const handled = new WeakSet<HTMLFormElement>()
+  const submitted = (happened: Event) => {
+    const found = chosen(happened)
+    if (!found) return
+    const { form, filled } = found
+    handled.add(form)
     // A form filled before the visitor opted out gives up the landing page it was holding.
     const held = form.querySelector('input[name="ag_landing"]') as HTMLInputElement | null
     if (held) before(held)
@@ -584,9 +593,23 @@ export function fill(options: PageOptions & { all?: boolean } = {}): () => void 
       input.value = value
     }
   }
+  // A form sent by a script's form.submit() fires no submit event, but its data is still gathered, and the same fields go into that.
+  const gathered = (happened: Event) => {
+    const data = (happened as Event & { formData?: FormData }).formData
+    const form = (happened.target as Element | null)?.closest?.('form')
+    if (form && handled.delete(form)) return
+    const found = data && chosen(happened)
+    if (!found) return
+    // As the submit path does: a device it would not send is left out, and a landing page it holds is sent empty.
+    for (const name of ['ag_device', 'ag_speaker_device']) if (!(name in found.filled)) data.delete(name)
+    if (!('ag_landing' in found.filled) && data.has('ag_landing')) data.set('ag_landing', '')
+    for (const [name, value] of Object.entries(found.filled)) data.set(name, value)
+  }
   document.addEventListener('submit', submitted, true)
+  document.addEventListener('formdata', gathered, true)
   return () => {
     document.removeEventListener('submit', submitted, true)
+    document.removeEventListener('formdata', gathered, true)
     for (const undo of restore.values()) undo()
     restore.clear()
   }
