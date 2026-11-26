@@ -32,6 +32,8 @@ The site is live. Open it with `?gclid=you&utm_id=30333` and its number becomes 
 2. Once loading finishes, use Next to run a scene. The phone shows what the caller does and the stage tells what happened. Each scene has a link to its reviewer view.
 3. To start over, use Restart. The stage keeps its address. With JavaScript off, use the buttons to submit forms and reload to read newer progress.
 
+With JavaScript, press Space for the next scene, P to play the main story, R to start over, or H to hide the controls.
+
 The story runs from a Monday to a Thursday that have passed. Each scene moves the demo's clock on, and the screens served by the demo go by that clock.
 
 ## Scenes

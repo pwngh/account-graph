@@ -45,7 +45,7 @@ npm --prefix apps/review start
 
 Open `/signin` and enter the token issued to your reviewer name. The server checks it at `/review/api/me` and keeps it in process memory. The browser gets a signed, eight-hour session ID in an HttpOnly, SameSite=Strict cookie. The cookie is Secure except with HTTP on loopback. Sign out to revoke the session for all tabs that share it. A graph authorization failure also ends the session. Restarting the process clears sessions. Run a single app process or route a session’s requests to the same instance.
 
-With JavaScript, a server-sent event tells the open page when to read the graph again. The server follows the graph cursor and checks its write count because some ordinary observations produce no public event. A reconnect carries the browser’s last event ID. Pages and forms work after an ordinary reload if streaming is unavailable.
+With JavaScript, one event stream stays open as the reviewer moves between reports. The server follows the graph cursor and checks its write count because some ordinary observations produce no public event. It catches up on history at a fresh connection and asks for one refresh of the open view. A reconnect carries the browser’s last event ID. Pages and forms work after an ordinary reload if streaming is unavailable.
 
 ## Views
 
@@ -59,7 +59,7 @@ With JavaScript, a server-sent event tells the open page when to read the graph 
 | `/channels` | Campaign attribution table. The original screen has the full channel breakdown and date controls. |
 | `/health` | Feed status. The original screen has jobs, alerts, conversions, the audit chain and policy details. |
 
-The existing screen remains at `/review` on the graph server and at `/legacy` in the firm demo. It uses its own sign-in. Opening an old `/review#/…` bookmark on the new app converts the fragment to a path when JavaScript runs. With scripts off the browser sends only `/review`. Use the Accounts link and navigation.
+The existing screen remains at `/review` on the graph server and at `/legacy` in the firm demo. It uses its own sign-in. Opening an old `/review#/…` bookmark on the new app converts the fragment to a path when JavaScript runs. Call date ranges and links to a call on a journey keep their targets. Filtered Channels bookmarks open the original screen with their settings. With scripts off the browser sends only `/review`. Use the Accounts link and navigation.
 
 ## Tests
 

@@ -1,31 +1,34 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { Form, Links, NavLink, Outlet, Scripts, ScrollRestoration, isRouteErrorResponse, useLocation, useNavigation, useRouteError, useRevalidator, useRouteLoaderData, type LoaderFunctionArgs } from 'react-router'
 import { current } from './auth.server'
+import { runtime } from './runtime.server'
+import { affectsPage, oldBookmark } from './navigation'
 import original from '../../../src/edge/review/style.css?url'
 import additions from './style.css?url'
 export const links = () => [{rel: 'stylesheet', href: original}, {rel: 'stylesheet', href: additions}]
-export async function loader({request}: LoaderFunctionArgs) { return {name: (await current(request))?.name} }
+export async function loader({request}: LoaderFunctionArgs) { return {name: (await current(request))?.name, legacy: runtime().stage ? '/legacy' : runtime().graphUrl + '/review'} }
 const menu = [['accounts','Accounts'], ['journey','Journey'], ['board/90','Board'], ['decide','Matches'], ['calls','Calls'], ['channels','Channels'], ['health','Health']]
 
 function Live({path}: {path: string}) {
   const {revalidate} = useRevalidator()
   const [status, setStatus] = useState('')
+  const report = useRouteLoaderData('journey')
+  const receive = useEffectEvent((event: MessageEvent) => {
+    const subjects = report?.journey ? [report.which, ...Object.keys(report.journey.subjects)] : []
+    if (affectsPage(JSON.parse(event.data), path, subjects)) void revalidate()
+  })
   useEffect(() => {
     if (!window.EventSource) return
     const stream = new EventSource('/events')
     let connected = false
-    const view = path.split('/')[1]
     stream.onopen = () => { if (connected) void revalidate(); connected = true; setStatus('') }
-    stream.addEventListener('change', event => {
-      const {views} = JSON.parse(event.data)
-      if (views.includes('*') || views.includes(view)) void revalidate()
-    })
+    stream.addEventListener('change', receive)
     stream.addEventListener('signout', () => { stream.close(); location.replace('/signin') })
     const unavailable = () => setStatus('Live updates interrupted. Reload for the latest data.')
     stream.onerror = unavailable
     stream.addEventListener('unavailable', unavailable)
     return () => stream.close()
-  }, [path, revalidate])
+  }, [revalidate])
   return <span role="status">{status}</span>
 }
 
@@ -35,13 +38,13 @@ export function Layout({children}: {children: React.ReactNode}) {
   const navigation = useNavigation()
   useEffect(() => {
     function bookmark() {
-      const path = window.location.hash.slice(1)
-      if (/^\/(accounts|journey|board|decide|calls|channels|health)(\/[^?#\\]*)?$/.test(path)) window.location.replace(path)
+      const path = oldBookmark(window.location.hash, window.location.pathname, data?.legacy ?? '/review')
+      if (path) window.location.replace(!data?.name && path.startsWith('/') && !path.startsWith('/legacy') ? '/signin?next=' + encodeURIComponent(path) : path)
     }
     bookmark()
     window.addEventListener('hashchange', bookmark)
     return () => window.removeEventListener('hashchange', bookmark)
-  }, [])
+  }, [data?.legacy, data?.name])
   const subject = /^\/(?:accounts|journey)\/(.+?)\/?$/.exec(location.pathname)?.[1]
   return <html lang="en"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><meta name="robots" content="noindex, nofollow"/><title>Account review</title><Links/></head><body>
     <a className="skip" href="#view">Skip to content</a><header><h1>Account review</h1>{data?.name && <>
