@@ -20,6 +20,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # The restore check needs client tools no newer than the database service, which is PostgreSQL 16.
+      - name: postgresql 16 client tools
+        run: |
+          if [ ! -x /usr/lib/postgresql/16/bin/pg_restore ]; then sudo apt-get update -q && sudo apt-get install -yq postgresql-client-16; fi
+          echo "PG_BIN=/usr/lib/postgresql/16/bin" >> "$GITHUB_ENV"
       - run: npm run check
       - run: npm test
       - run: npm run build

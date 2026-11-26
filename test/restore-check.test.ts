@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import test from 'node:test'
 import pg from 'pg'
 import { accountGraph } from '../src/index.ts'
@@ -53,7 +55,7 @@ test('the backup runbook runs both recovery commands on the restored database fr
 test('restores every graph table and the latest audit decision from a PostgreSQL snapshot', { skip: !url ? 'set DATABASE_URL to run the restore rehearsal' : (spawnSync('pg_dump', ['--version']).error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT' ? 'pg_dump is missing from PATH' : false }, async () => {
   const schema = 'ag_restore_' + randomBytes(10).toString('hex')
   const original = schema + '_source'
-  const env = { DATABASE_URL: url!, NEW_DATABASE_URL: url!, GRAPH_SCHEMA: schema, RECEIPT_SECRETS: secret, GRAPH_TOKEN: 'fixture', LINK_SECRET: secret }
+  const env = { DATABASE_URL: url!, NEW_DATABASE_URL: url!, GRAPH_SCHEMA: schema, RECEIPT_SECRETS: secret, GRAPH_TOKEN: 'fixture', LINK_SECRET: secret, PG_BIN: process.env.PG_BIN }
   const db = new pg.Client({ connectionString: url! })
   const lines: string[] = []
   const log = (line: string) => { lines.push(line) }
@@ -109,5 +111,22 @@ test('restores every graph table and the latest audit decision from a PostgreSQL
     } finally {
       await db.end()
     }
+  }
+})
+
+test('a pg_restore newer than the target server is refused before anything is dumped', { skip: !url ? 'set DATABASE_URL to run the restore rehearsal' : false }, async () => {
+  // A stand-in that only says its version: the check must stop before it is asked to do more.
+  const bin = await mkdtemp(join(tmpdir(), 'ag-pg-bin-'))
+  try {
+    for (const program of ['pg_dump', 'pg_restore']) {
+      await writeFile(join(bin, program), '#!/bin/sh\n[ "$1" = --version ] && echo "' + program + ' (PostgreSQL) 99.0" && exit 0\nexit 3\n')
+      await chmod(join(bin, program), 0o755)
+    }
+    const schema = 'ag_restore_newer_' + randomBytes(4).toString('hex')
+    const lines: string[] = []
+    await assert.rejects(restoreCheck({ DATABASE_URL: url!, NEW_DATABASE_URL: url!, GRAPH_SCHEMA: schema, RECEIPT_SECRETS: secret, GRAPH_TOKEN: 'fixture', LINK_SECRET: secret, PG_BIN: bin }, (line) => void lines.push(line)), /pg_restore 99 is newer than PostgreSQL \d+ on the target\. Use the version \d+ tools: set PG_BIN/)
+    assert.ok(!lines.some((line) => line.startsWith('pg_dump')), lines.join('\n'))
+  } finally {
+    await rm(bin, { recursive: true, force: true })
   }
 })

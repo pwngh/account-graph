@@ -214,7 +214,7 @@ All data lives in one PostgreSQL schema, `account_graph` or the value of `GRAPH_
 pg_dump --format=custom --schema=account_graph "$DATABASE_URL" > graph.dump
 ```
 
-Rehearse from a checkout with `pg_dump` and `pg_restore` on the path.
+Rehearse from a checkout with `pg_dump` and `pg_restore` on the path, no newer than the target server. A newer `pg_restore` sets parameters an older server does not know, so the check refuses it. Where several versions are installed, set `PG_BIN` to the folder of the right ones, such as `/usr/lib/postgresql/16/bin`.
 
 ```sh
 node tools/restore-check.ts

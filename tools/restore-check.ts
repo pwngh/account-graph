@@ -44,7 +44,7 @@ function databaseUrl(value: string | undefined, name: string): URL {
   return url
 }
 
-async function postgresTool(program: 'pg_dump' | 'pg_restore', url: URL, archive: string, args: string[]) {
+async function postgresTool(program: 'pg_dump' | 'pg_restore', url: URL, archive: string, args: string[], bin?: string) {
   // A private libpq service file keeps the address and any SSL credentials out of the process list.
   const service = join(dirname(archive), program + '.conf')
   const settings = new Map(url.searchParams)
@@ -66,7 +66,7 @@ async function postgresTool(program: 'pg_dump' | 'pg_restore', url: URL, archive
   }
   await writeFile(service, lines.join('\n') + '\n', { flag: 'wx', mode: 0o600 })
   try {
-    await run(program, ['--no-password', '--dbname=service=rehearsal', ...args], { env })
+    await run(bin ? join(bin, program) : program, ['--no-password', '--dbname=service=rehearsal', ...args], { env })
   } catch (error) {
     // A failed COPY can put a row in stderr, so only its error lines are told, with anything quoted left out and no detail or context lines.
     const said = String((error as { stderr?: unknown }).stderr ?? '').split('\n').filter((line) => / error: /.test(line) && !/COPY|DETAIL|CONTEXT/.test(line))
@@ -109,22 +109,22 @@ async function requireEmpty(db: pg.Client) {
   if (row.occupied) throw new Error('The target database is not empty')
 }
 
-async function capture(source: URL, schema: string, archive: string, log: Log): Promise<Manifest> {
+async function capture(source: URL, schema: string, archive: string, log: Log, bin?: string): Promise<Manifest> {
   if (!/^[a-z_][a-z0-9_]{0,62}$/.test(schema)) throw new Error('GRAPH_SCHEMA must be a plain lowercase PostgreSQL name')
   return withClient(source.href, async db => {
     await db.query('begin isolation level repeatable read read only')
     const { rows: [snapshot] } = await db.query('select pg_catalog.pg_export_snapshot() as id')
     const before = await timed('source counts and audit hash', log, () => manifest(db, schema))
-    await timed('pg_dump', log, () => postgresTool('pg_dump', source, archive, ['--format=custom', `--schema=${schema}`, `--snapshot=${snapshot.id}`, `--file=${archive}`]))
+    await timed('pg_dump', log, () => postgresTool('pg_dump', source, archive, ['--format=custom', `--schema=${schema}`, `--snapshot=${snapshot.id}`, `--file=${archive}`], bin))
     await db.query('commit')
     return before
   })
 }
 
-async function restoreAndVerify(env: Env, archive: string, before: Manifest, log: Log) {
+async function restoreAndVerify(env: Env, archive: string, before: Manifest, log: Log, bin?: string) {
   const target = databaseUrl(env.DATABASE_URL, 'target')
   if (env.GRAPH_SCHEMA !== before.schema) throw new Error('The target schema must match the schema in the archive')
-  await timed('pg_restore', log, () => postgresTool('pg_restore', target, archive, ['--no-owner', '--no-acl', '--single-transaction', '--exit-on-error', archive]))
+  await timed('pg_restore', log, () => postgresTool('pg_restore', target, archive, ['--no-owner', '--no-acl', '--single-transaction', '--exit-on-error', archive], bin))
   await timed('verify', log, () => command(env, ['verify'], line => {
     const { changes, policy } = JSON.parse(line)
     if (changes.length || policy.due) throw new Error(`verify found ${changes.length} cluster changes, policy due: ${policy.due}`)
@@ -151,7 +151,17 @@ async function checkTarget(db: pg.Client, vacant: string | undefined) {
   if (rowCount) throw new Error('The target graph schema already exists')
 }
 
+/** The major version of a PostgreSQL client program, from its --version line. */
+async function clientMajor(program: 'pg_dump' | 'pg_restore', bin?: string): Promise<number> {
+  const { stdout } = await run(bin ? join(bin, program) : program, ['--version'])
+  const major = Number(/(\d+)(?:\.\d+)?/.exec(stdout)?.[1])
+  if (!Number.isInteger(major)) throw new Error(`${program} --version did not give a version`)
+  return major
+}
+
 export async function restoreCheck(env: Env, log: Log = console.log, fixture?: SchemaFixture) {
+  // Which PostgreSQL client programs to run, where more than one version is installed.
+  const bin = env.PG_BIN || undefined
   const source = databaseUrl(env.DATABASE_URL, 'DATABASE_URL')
   const target = databaseUrl(env.NEW_DATABASE_URL, 'NEW_DATABASE_URL')
   const schema = env.GRAPH_SCHEMA || 'account_graph'
@@ -164,16 +174,20 @@ export async function restoreCheck(env: Env, log: Log = console.log, fixture?: S
       // Reserve the target against another rehearsal until this session closes, including while the source is being dumped.
       const { rows: [lock] } = await db.query("select pg_catalog.pg_try_advisory_lock(0, pg_catalog.hashtext('account-graph restore-check')) as held")
       if (!lock.held) throw new Error('Another restore rehearsal holds the target database')
+      // A newer pg_restore sets parameters an older server does not know, such as transaction_timeout from version 17 on 16, and fails half way.
+      const { rows: [server] } = await db.query("select pg_catalog.current_setting('server_version_num')::int / 10000 as major")
+      const client = await clientMajor('pg_restore', bin)
+      if (client > server.major) throw new Error(`pg_restore ${client} is newer than PostgreSQL ${server.major} on the target. Use the version ${server.major} tools: set PG_BIN to their folder, such as /usr/lib/postgresql/${server.major}/bin`)
       await checkTarget(db, fixture?.vacant)
     })
     const dir = await mkdtemp(join(tmpdir(), 'ag-restore-'))
     try {
       const archive = join(dir, 'graph.dump')
-      const before = await capture(source, schema, archive, log)
+      const before = await capture(source, schema, archive, log, bin)
       await fixture?.archiveReady()
       // A long dump gives another operator time to have picked the same target.
       await timed('recheck empty target', log, () => checkTarget(db, fixture && schema))
-      await restoreAndVerify(verify, archive, before, log)
+      await restoreAndVerify(verify, archive, before, log, bin)
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
