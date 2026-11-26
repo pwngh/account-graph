@@ -164,14 +164,32 @@ final class account_graph_wordpress
     }
 
     /**
-     * Read the per-plugin and per-form mappings from wp-config.php.
+     * Read the current blog's per-plugin and per-form mappings from wp-config.php.
+     * A 'blog:form' key applies to that blog. A plain form key applies to blog 1 only.
      *
-     * @return array Configured fields.
+     * @return array Configured fields by plugin and this blog's form ID.
      *        (e.g. ['gravity' => [17 => ['email' => '1']]])
      */
     private function forms(): array
     {
-        return defined('ACCOUNT_GRAPH_FORMS') && is_array(ACCOUNT_GRAPH_FORMS) ? ACCOUNT_GRAPH_FORMS : [];
+        $config = defined('ACCOUNT_GRAPH_FORMS') && is_array(ACCOUNT_GRAPH_FORMS) ? ACCOUNT_GRAPH_FORMS : [];
+        $blog = (string) get_current_blog_id();
+        $forms = [];
+        foreach ($config as $provider => $maps) {
+            if (!is_array($maps)) {
+                continue;
+            }
+            $forms[$provider] = [];
+            foreach ($maps as $key => $map) {
+                // Every blog numbers its forms from 1. The blog's own mapping wins over a plain one on blog 1.
+                if (preg_match('/^([1-9][0-9]*):([1-9][0-9]*)$/D', (string) $key, $match) && $match[1] === $blog) {
+                    $forms[$provider][$match[2]] = $map;
+                } elseif ($blog === '1' && preg_match('/^[1-9][0-9]*$/D', (string) $key) && !isset($forms[$provider][$key])) {
+                    $forms[$provider][$key] = $map;
+                }
+            }
+        }
+        return $forms;
     }
 
     /**

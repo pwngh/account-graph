@@ -29,6 +29,8 @@ define('ACCOUNT_GRAPH_FORMS', [
     ],
     'cf7' => [
         23 => ['email' => 'your-email', 'phone' => 'your-tel', 'device' => 'ag_device'],
+        // Multisite: form 4 on blog 3 only.
+        '3:4' => ['email' => 'your-email', 'device' => 'ag_device'],
     ],
 ]);
 
@@ -36,6 +38,8 @@ define('ACCOUNT_GRAPH_FORMS', [
 define('ACCOUNT_GRAPH_INCLUDE_PAGES', ['contact', 'request-information']);
 define('ACCOUNT_GRAPH_EXCLUDE_PAGES', ['private-contact']);
 ```
+
+Each blog in a multisite network numbers its forms from 1, so the same form ID names unrelated forms on different blogs. A plain form ID key such as `17` applies only to blog 1, which is the only blog of a single site. Map a form on another blog with a quoted `'blog_id:form_id'` key, such as `'3:17'`. A `'1:17'` key takes precedence over a plain `17`. A form without a mapping for the current blog queues nothing and its fields are not read. A multisite network that used plain keys for forms on other blogs must add blog-qualified keys for them.
 
 On `wp_enqueue_scripts`, WordPress 6.5 loads the public module `/collect.js?forms=all` through `wp_enqueue_script_module`. An empty or absent inclusion list allows all public pages. Configure the site’s origin in the graph’s `ORIGINS` and permit the graph under the site’s `script-src` and `connect-src` policies. Supply the visitor’s consent before the tag runs where required. The URL must use HTTPS except on loopback, and the browser never receives the token. [Browser tag and consent](operations.md#script-tag)
 

@@ -227,6 +227,18 @@ test('multisite scopes the same saved entry ID separately for both plugins', { s
   assert.equal(keys.size, 8)
 })
 
+test('a multisite form map applies plain form IDs to blog 1 and blog-qualified IDs to their own blog', { skip }, async t => {
+  const run = await wordpress(t)
+  const { url } = await localGraph(t)
+  const post = { ag_device: 'other-blog-visitor' }
+  const unmapped = await run(url, 'submit', { blog: 4, post })
+  assert.deepEqual([unmapped.rows.length, unmapped.reads, unmapped.singles.length], [0, [], 0])
+  for (const blog of [1, 3]) {
+    const { rows } = await run(url, 'submit', { blog, post })
+    assert.deepEqual(rows.map((row: any) => JSON.parse(row.option_value).inquiry.subject.split(':').slice(2, 5).join(':')), [blog + ':gravity:17', blog + ':cf7:23'])
+  }
+})
+
 test('repeated visitor submissions across requests share an inquiry within ten minutes for both plugins', { skip }, async t => {
   const run = await wordpress(t)
   const url = await listen(t, (_req, res) => res.end())

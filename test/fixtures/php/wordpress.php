@@ -8,9 +8,12 @@ define('ACCOUNT_GRAPH_TOKEN', 'synthetic-wordpress');
 define('ACCOUNT_GRAPH_SOURCE', 'example-site');
 $input = json_decode($argv[5] ?? '{}', true);
 $configured_device = empty($input['no_device']) ? array('device' => 'ag_device') : array();
+$gravity_form = array('email' => '1', 'phone' => '2') + $configured_device;
+$cf7_form = array('email' => 'your-email', 'phone' => 'your-phone') + $configured_device;
+// Plain form IDs belong to blog 1. Blog 4 reuses both form numbers for unrelated forms.
 define('ACCOUNT_GRAPH_FORMS', array(
-    'gravity' => array(17 => array('email' => '1', 'phone' => '2') + $configured_device),
-    'cf7' => array(23 => array('email' => 'your-email', 'phone' => 'your-phone') + $configured_device)
+    'gravity' => array(17 => $gravity_form, '2:17' => $gravity_form, '3:17' => $gravity_form),
+    'cf7' => array(23 => $cf7_form, '2:23' => $cf7_form, '3:23' => $cf7_form)
 ));
 if ($argv[4] !== 'all-pages') {
     define('ACCOUNT_GRAPH_INCLUDE_PAGES', array('contact', 'private'));
