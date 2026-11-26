@@ -16,12 +16,12 @@ export function Time({ at }: { at?: number }) {
 
 // As on the original screen, a long ID such as a caller's hash is shortened in a link and given in full in its title.
 export function Subject({ id, journey = false }: { id: string, journey?: boolean }) {
-  return <Link className="subject" title={id} to={subjectPath(id, journey ? 'journey' : 'accounts')}>{idText(id)}</Link>
+  return <Link className="subject" title={id} to={subjectPath(id, journey ? 'journey' : 'accounts')}><bdi>{idText(id)}</bdi></Link>
 }
 
 // Another system's decisions are signed system:<name>. The original screen says system <name>.
 export function Author({ by }: { by?: string | null }) {
-  return by?.startsWith('system:') ? <span className="chip" title="Sent by another system">system {by.slice(7)}</span> : <span>{by || 'Unknown'}</span>
+  return by?.startsWith('system:') ? <span className="chip" title="Sent by another system">system <bdi>{by.slice(7)}</bdi></span> : by ? <bdi>{by}</bdi> : <span>Unknown</span>
 }
 
 export function Badge({ id }: { id: string }) {

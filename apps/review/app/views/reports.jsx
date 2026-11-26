@@ -82,7 +82,7 @@ function Journey({ data }) {
   // The server supplies a complete timeline. Its type checkboxes appear after React can act on them.
   useEffect(() => setEnhanced(true), [])
   if (!which) return <section><h2>Journey</h2><p>Select an ID</p><a href="#find">Search</a></section>
-  if (!journey?.entries.length) return <section><h2>{which}</h2><Subject id={which}/><p>No events</p></section>
+  if (!journey?.entries.length) return <section><h2><bdi>{which}</bdi></h2><Subject id={which}/><p>No events</p></section>
   const visible = data.events.filter(event => !hidden.includes(event.entry.kind))
   const dates = data.events.map(event => event.entry.at).filter(at => at > 0)
   const days = new Map()
@@ -91,7 +91,7 @@ function Journey({ data }) {
     if (!days.has(day)) days.set(day, [])
     days.get(day).push(event)
   }
-  return <><section><div className="page-head"><h2>{which}</h2><Link className="button" to={subjectHash(which)}>Account</Link></div>
+  return <><section><div className="page-head"><h2><bdi>{which}</bdi></h2><Link className="button" to={subjectHash(which)}>Account</Link></div>
     <Tiles items={[[ 'Events', amount(data.events.length) + (journey.next === null ? '' : '+')], ['IDs', amount(Object.keys(journey.subjects).length)], dates.length > 0 && ['First event', <Time at={dates[0]}/>], dates.length > 0 && ['Last event', <Time at={dates.at(-1)}/>, dates.at(-1) > dates[0] && lasted(dates.at(-1) - dates[0]) + ' later'] ]}/>{journey.more > 0 && <p>{amount(journey.more)} more IDs are not shown.</p>}</section>
     <Chart events={visible} groups={data.groups} cards={cards}/><section><h2>Timeline</h2>
     {enhanced && <div className="row filters" role="group" aria-label="Show">{kinds.filter(kind => data.events.some(e => e.entry.kind === kind)).map(kind => <label key={kind}><input type="checkbox" checked={!hidden.includes(kind)} onChange={() => setHidden(hidden.includes(kind) ? hidden.filter(k => k !== kind) : [...hidden,kind])}/>{WHAT[kind]}</label>)}</div>}

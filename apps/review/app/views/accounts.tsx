@@ -109,7 +109,7 @@ function ProfileView({ profile, data, context }: { profile: Profile, data: Accou
   const { subject, dates } = profile
   const [query] = useSearchParams()
   const { pathname } = useLocation()
-  if (!profile.known) return <section><h2>{subject}</h2><DatesOf id={subject} dates={dates}/><p>No records</p></section>
+  if (!profile.known) return <section><h2><bdi>{subject}</bdi></h2><DatesOf id={subject} dates={dates}/><p>No records</p></section>
   const members = new Set(profile.listedMembers)
   const consent = profile.consent[0]
   const verdicts = new Map(profile.verdicts.map(v => [v.a === subject ? v.b : v.a, v]))
@@ -117,7 +117,7 @@ function ProfileView({ profile, data, context }: { profile: Profile, data: Accou
   const start = profile.start
   const pageHref = (offset: number) => { const q = new URLSearchParams(query); q.set('links', String(offset / 50)); return pathname + '?' + q + '#links' }
   const indices = Array.from({ length: Math.min(50, count - start) }, (_, i) => i)
-  return <><section><div className="page-head"><h2 className="page-title"><Badge id={subject}/>{subject}</h2><div className="row"><Link className="button" to={subjectPath(subject, 'journey')}>Journey</Link><DecisionForm context={context} subject={subject} intent="join" label="Join with…"/><DecisionForm context={context} subject={subject} intent="forget" label="Delete…" targets={data.retraction?.always ? undefined : data.retraction?.targets}/></div></div>
+  return <><section><div className="page-head"><h2 className="page-title"><Badge id={subject}/><bdi>{subject}</bdi></h2><div className="row"><Link className="button" to={subjectPath(subject, 'journey')}>Journey</Link><DecisionForm context={context} subject={subject} intent="join" label="Join with…"/><DecisionForm context={context} subject={subject} intent="forget" label="Delete…" targets={data.retraction?.always ? undefined : data.retraction?.targets}/></div></div>
     <DatesOf id={subject} dates={dates}/><Tiles items={[
       ['Linked IDs', amount(profile.memberCount), profile.cluster.oversized && 'Above review limit'],
       profile.linkCount > 0 && ['Strongest link', percent(profile.strongest), amount(profile.linkCount) + (profile.linkCount === 1 ? ' link' : ' links')],
@@ -152,7 +152,7 @@ export default function Accounts({ data }: { data: AccountsData }) {
   <section><h2>Audit log</h2><Form action={pathname} method="get"><label>Author <select name="author" defaultValue={data.author ?? ''}><option value="">All</option><option value="people">People</option><option value="system">Systems</option></select></label> <button>Show</button></Form><p className="meta">{audit.sound ? amount(decisions.total) + (decisions.total === 1 ? ' entry' : ' entries') + ' · Verified' : 'Altered at entry ' + audit.brokenAt}</p><ul id="decisions">{decisions.decisions.length ? decisions.decisions.map(d => {
     const first = !data.author && !latest.has(d.about[0])
     if (d.action === 'restore' || d.action === 'ignore') latest.add(d.about[0])
-    return <li key={d.seq}><b>{ACTIONS[d.action] || d.action}</b><span className="reason">{d.about.join(' · ')}</span><div className="meta"><Author by={d.by}/> · <Time at={d.at}/> {d.reason}</div>{first && d.action === 'ignore' && <DecisionForm context={context} subject={subject ?? ''} intent="restore" identifier={d.about[0]} label="Undo"/>}</li>
+    return <li key={d.seq}><b>{ACTIONS[d.action] || d.action}</b><span className="reason">{d.about.map((id: string, i: number) => <Fragment key={i}>{i > 0 && ' · '}<bdi>{id}</bdi></Fragment>)}</span><div className="meta"><Author by={d.by}/> · <Time at={d.at}/> {d.reason}</div>{first && d.action === 'ignore' && <DecisionForm context={context} subject={subject ?? ''} intent="restore" identifier={d.about[0]} label="Undo"/>}</li>
   }) : <li>None</li>}</ul>{decisions.next != null && <Link to={pathname + '?before=' + decisions.next + (data.author ? '&author=' + encodeURIComponent(data.author) : '')}>Show older</Link>}</section></aside>
   <div id="detail">{subject && profile ? <ProfileView key={subject} profile={profile} data={data} context={context}/> : <><section><h2>Accounts</h2><Tiles items={[[ 'Largest group', first ? amount(first.size) + ' IDs' : 'None', first?.oversized && 'Above review limit'], recent.length > 0 && ['Last change', <Time at={recent[0].at}/>], ['Audit log', audit.sound ? 'Verified' : 'Altered', amount(context.seen) + (context.seen === 1 ? ' entry' : ' entries')]]}/></section>{first && data.layout && <section><h2>Largest group</h2><Subject id={first.id}/><ClusterGraph key={first.id} layout={data.layout}/></section>}</>}</div></div></DecisionScope>
 }

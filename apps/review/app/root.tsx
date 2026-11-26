@@ -63,7 +63,7 @@ export function Layout({children}: {children: React.ReactNode}) {
     <a className="skip" href="#view">Skip to content</a><header><h1>Account review</h1>{data?.name && <>
     <nav id="views" aria-label="Views">{menu.map(([path,title]) => <Link aria-current={location.pathname.split('/')[1] === path.split('/')[0] ? 'page' : undefined} key={path} to={path === 'journey' && subject ? subjectPath(subject, 'journey') : '/' + path}>{title}</Link>)}</nav>
     <Form id="find" className="row" method="post" action="/search"><label>Search <input name="text" aria-keyshortcuts="Control+K Meta+K" placeholder="Search" autoComplete="off" required /></label><button>Open</button></Form>
-    <Form method="post" action="/signout" reloadDocument>{data.name} <button>Sign out</button></Form></>}</header>
+    <Form method="post" action="/signout" reloadDocument><bdi>{data.name}</bdi> <button>Sign out</button></Form></>}</header>
     <div id="notice" role="status">{navigation.state === 'loading' ? 'Opening view…' : navigation.state === 'submitting' ? 'Saving…' : ''}</div>
     <main id="view" tabIndex={-1}>{children}</main><footer>{data?.name && location.pathname !== '/stage' && (data.live ? <Live path={location.pathname}/> : <p className="meta">Live updates are off. Reload to see changes.</p>)}</footer><ScrollRestoration/><Scripts/></body></html>
 }

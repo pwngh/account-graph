@@ -321,7 +321,7 @@ test('pasted and linked subjects reopen the same record with their ID preserved'
   }
   const search = await fetch(origin + '/search', post({text: 'sample'}, cookie))
   assert.equal(search.status, 200)
-  const matches = [...(await search.text()).split('<script')[0].matchAll(/<a\b[^>]*\bhref="(\/accounts\/[^"]+)"[^>]*>([^<]+)<\/a>/g)]
+  const matches = [...(await search.text()).split('<script')[0].matchAll(/<a\b[^>]*\bhref="(\/accounts\/[^"]+)"[^>]*><bdi>([^<]+)<\/bdi><\/a>/g)]
   assert.equal(matches.length, specialSubjects.length)
   assert.equal(new Set(matches.map(([, href]) => href)).size, specialSubjects.length)
   for (const id of specialSubjects) {
@@ -330,7 +330,7 @@ test('pasted and linked subjects reopen the same record with their ID preserved'
     for (let read = 0; read < 2; read++) {
       const linked = await fetch(new URL(href, search.url), { headers, redirect: 'manual' })
       assert.equal(linked.status, 200)
-      assert.ok((await linked.text()).split('<script')[0].includes('<h2>' + id + '</h2>'), id)
+      assert.ok((await linked.text()).split('<script')[0].includes('<h2><bdi>' + id + '</bdi></h2>'), id)
       assert.equal(requests.findLast(call => call.path === '/review/api/subject').query.get('subject'), id)
     }
   }
@@ -511,7 +511,7 @@ test('a caller hash is shortened in its link as on the original screen, with the
     account.links = [...original.links, { ...original.links[0], subject: caller }]
     account.cluster = { ...original.cluster, members: [...original.cluster.members, caller] }
     const html = (await (await fetch(origin + path, { headers: { cookie } })).text()).replaceAll('<!-- -->', '')
-    const link = new RegExp('<a class="subject" title="' + caller + '" href="/accounts/caller%3A3ea1d013bd8f00c1a7e4b2d9c6f5a8e7"[^>]*>(?:<bdi>)?caller:3ea1d013bd8…(?:</bdi>)?</a>')
+    const link = new RegExp('<a class="subject" title="' + caller + '" href="/accounts/caller%3A3ea1d013bd8f00c1a7e4b2d9c6f5a8e7"[^>]*><bdi>caller:3ea1d013bd8…</bdi></a>')
     assert.match(html, link)
   } finally {
     Object.assign(account, original)
@@ -523,9 +523,28 @@ test('a decision by another system names its author as the original screen does'
   audited.push({ seq: 7, action: 'join', about: [subject, other], by: 'system:desk', at: observed, reason: 'answered by staff' })
   try {
     const html = (await (await fetch(origin + path, { headers: { cookie } })).text()).replaceAll('<!-- -->', '')
-    assert.match(html, /<span class="chip" title="Sent by another system">system desk<\/span>/)
+    assert.match(html, /<span class="chip" title="Sent by another system">system <bdi>desk<\/bdi><\/span>/)
     assert.doesNotMatch(html.replace(/<script[^]*?<\/script>/g, ''), /system:desk/)
   } finally {
+    audited.length = 0
+  }
+})
+
+test('right-to-left names and IDs are isolated from the text around them', async () => {
+  const cookie = await signin()
+  const hebrew = 'contact:\u05e9\u05dc\u05d5\u05dd-7'
+  const original = { ...account }
+  try {
+    account.links = [...original.links, { ...original.links[0], subject: hebrew }]
+    audited.push({ seq: 8, action: 'separate', about: [subject, hebrew], by: '\u05d3\u05e0\u05d4', at: observed, reason: '' })
+    const html = (await (await fetch(origin + path, { headers: { cookie } })).text()).split('<script')[0].replaceAll('<!-- -->', '')
+    assert.ok(html.includes('<bdi>' + hebrew + '</bdi></a>'), 'a linked ID')
+    assert.ok(html.includes('<bdi>' + subject + '</bdi> · <bdi>' + hebrew + '</bdi>'), 'IDs in the audit log')
+    assert.ok(html.includes('<bdi>\u05d3\u05e0\u05d4</bdi> · '), 'a decision author')
+    assert.ok(html.includes('<bdi>dana</bdi> <button>Sign out</button>'), 'the signed-in reviewer')
+    assert.ok(html.includes('<bdi>' + subject + '</bdi></h2>'), 'the account heading')
+  } finally {
+    Object.assign(account, original)
     audited.length = 0
   }
 })
@@ -667,7 +686,7 @@ test('Chrome with scripts disabled signs in, posts a native form, follows an acc
     const detail = await node('#detail').catch(() => 0)
     if (!detail) return false
     const { outerHTML } = await cdp('DOM.getOuterHTML', { nodeId: detail })
-    return outerHTML.includes('<h2>' + other + '</h2>') && outerHTML.includes('No records') && active.loaderId
+    return outerHTML.includes('<h2><bdi>' + other + '</bdi></h2>') && outerHTML.includes('No records') && active.loaderId
   }
   const followed = await until('the linked account without scripts', linkedAccount)
   await cdp('Page.reload')
