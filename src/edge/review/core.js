@@ -932,7 +932,8 @@ function paged(table, next, more, fetchPage) {
       next = page.next
       button.hidden = next === null
     } catch (error) {
-      notice(error.message, true)
+      // A view opened since owns the notice, so the error of a page asked for before it is not shown.
+      if (turn === loading) notice(error.message, true)
     } finally {
       pending -= 1
       button.disabled = false
