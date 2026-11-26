@@ -1,6 +1,6 @@
 # PHP and CodeIgniter 3
 
-Copy the lowercase PHP files at the top of [examples/php](../examples/php/) into one directory. Require `account_graph_lib.php` for the six calls or `account_graph_outbox_lib.php` for the outbox and client together. The client targets PHP 7.2 and later. It was syntax-checked and exercised on PHP 8.5.6, including its stream transport and SQLite outbox. PHP 7.2 compatibility was checked by source review. It uses JSON and cURL, with PHP streams when cURL is absent. HTTPS needs the host's trusted CA certificates and, for streams, OpenSSL. Only loopback may use plain HTTP. The standalone outbox uses PDO. The CodeIgniter model uses the host’s existing query builder and connection.
+Copy the lowercase PHP files at the top of [examples/php](../examples/php/) into one directory. Require `account_graph_lib.php` for the six calls or `account_graph_outbox_lib.php` for the outbox and client together. WordPress sites can use the [must-use integration](wordpress.md). The client targets PHP 7.2 and later. It was syntax-checked and exercised on PHP 8.5.6, including its stream transport and SQLite outbox. PHP 7.2 compatibility was checked by source review. It uses JSON and cURL, with PHP streams when cURL is absent. HTTPS needs the host's trusted CA certificates and, for streams, OpenSSL. Only loopback may use plain HTTP. The standalone outbox uses PDO. The CodeIgniter model uses the host’s existing query builder and connection.
 
 ```php
 require_once __DIR__ . '/account_graph_lib.php';

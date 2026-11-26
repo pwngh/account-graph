@@ -15,6 +15,7 @@ One page for each concept.
 11. [Privacy](privacy.md): what is kept, sent and deleted.
 12. [Demo](demo.md): the made-up firm.
 13. [PHP](php.md) covers the six calls, a transactional outbox and a CodeIgniter 3 integration.
+14. [WordPress](wordpress.md) covers the browser tag, form field mapping and background inquiry delivery.
 
 ## Who each page is for
 
