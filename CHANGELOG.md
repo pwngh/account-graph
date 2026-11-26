@@ -130,6 +130,7 @@
 
 ### Edge and operations
 
+- `restore-check.ts` rehearses a PostgreSQL restore into an empty database, times each step and checks stored clusters, every table's row count and the newest audit hash.
 - `GET /health`, startup and the reviewer Health view give the rebuild command when stored groups need updating. Earlier name hashes need a rebuild and fresh profiles. See [upgrades](docs/operations.md#upgrades).
 - `PostgreSQL` resumes interrupted upgrades and uses indexed calls to identify the sources of older callback notices.
 - `/collect` checks a personal link’s recipient group for a speaker in one read.

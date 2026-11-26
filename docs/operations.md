@@ -214,17 +214,47 @@ All data lives in one PostgreSQL schema, `account_graph` or the value of `GRAPH_
 pg_dump --format=custom --schema=account_graph "$DATABASE_URL" > graph.dump
 ```
 
-Restore into a new, empty database, then start the server on it:
+Rehearse from a checkout with `pg_dump` and `pg_restore` on the path, no newer than the target server. A newer `pg_restore` sets parameters an older server does not know, so the check refuses it. Where several versions are installed, set `PG_BIN` to the folder of the right ones, such as `/usr/lib/postgresql/16/bin`.
+
+```sh
+node tools/restore-check.ts
+```
+
+1. Set `DATABASE_URL` to the source using a role with read access. Set `NEW_DATABASE_URL` to a new, empty database reserved for this run. Keep other connections that can create objects or write data off the target.
+2. Supply the source's `GRAPH_SCHEMA`, `RECEIPT_SECRETS` and matching graph settings, including policy, identifier and link secrets where configured. Keep provider workers off throughout the rehearsal.
+3. Run the command. It counts every graph table and reads the newest audit hash from the same snapshot that it dumps. It restores the archive into the target and runs the graph's own `verify` there.
+4. Check the exit status. Success requires matching table names, row counts and audit head, zero cluster changes, and a current policy. Save the timings alongside your recovery-time objective. Compare the audit head with your independent copy from the same point in history. Treat the temporary database as a copy of the original data.
+
+A successful rehearsal looks like this. Times, table count and hash here are illustrative. The tool prints the full hash, or `none` for an empty audit log.
+
+```text
+check empty target: 9 ms
+source counts and audit hash: 74 ms
+pg_dump: 380 ms
+recheck empty target: 7 ms
+pg_restore: 510 ms
+verify: 0 cluster changes, policy current
+verify: 183 ms
+compare counts and audit hash: 68 ms
+51 table counts match, newest audit hash: 9c1f…
+```
+
+For an actual recovery from a saved archive, restore into a fresh database and verify it with the same server settings. Set the command's database URL explicitly before changing the event history.
 
 ```sh
 pg_restore --no-owner --single-transaction --exit-on-error --dbname="$NEW_DATABASE_URL" graph.dump
-account-graph verify             # no changes
-account-graph events new-epoch   # every cursor is lost, and must be
+DATABASE_URL="$NEW_DATABASE_URL" account-graph verify
+DATABASE_URL="$NEW_DATABASE_URL" account-graph events new-epoch
 ```
 
-Run the commands with the new database's address, before the server starts on it.
+From a source checkout, run the same commands with Node.
 
-> **A restore takes the event numbers back.** Without `events new-epoch`, a follower that is ahead of the dump misses what happens next. After it, each follower gets `CURSOR_LOST` and reads everything again.
+```sh
+DATABASE_URL="$NEW_DATABASE_URL" node src/bin.ts verify
+DATABASE_URL="$NEW_DATABASE_URL" node src/bin.ts events new-epoch
+```
+
+`events new-epoch` changes the restored event history's identifier. Existing events stay available. A follower with a cursor from before the restore gets `{"ok":false,"reason":"CURSOR_LOST"}` and resumes from `after: null`. This prevents a follower whose cursor was ahead of the backup from missing subsequent events. Run it on the recovered database before reconnecting followers. Reapply erasures and reconcile outgoing conversions before starting workers.
 
 A dump cut short restores nothing. The server upgrades an older dump when it starts.
 

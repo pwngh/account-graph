@@ -20,6 +20,15 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # The restore check needs client tools no newer than the database service, so it runs those of the same image.
+      - name: postgresql 16 client tools
+        run: |
+          mkdir -p "$RUNNER_TEMP/pg16"
+          for program in pg_dump pg_restore; do
+            printf '#!/bin/sh\nexec docker run --rm --network host -v /tmp:/tmp -e PGSERVICEFILE -e PGPASSWORD postgres:16 %s "$@"\n' "$program" > "$RUNNER_TEMP/pg16/$program"
+            chmod +x "$RUNNER_TEMP/pg16/$program"
+          done
+          echo "PG_BIN=$RUNNER_TEMP/pg16" >> "$GITHUB_ENV"
       - run: npm run check
       - run: npm test
       - run: npm run build
