@@ -8,6 +8,7 @@
  *   account-graph prune --before DAY delete old sightings, events and receipts
  *   account-graph retry ID [PLATFORM] put a conversion that failed back in line
  *   account-graph stats | alerts test | staff-link URL | events new-epoch
+ *   account-graph sends [pause REASON | resume]   stop sends to ad platforms in every process, or let them go again
  *   account-graph sample-joins [--size N] [--seed TEXT] > joins.csv, then score-joins joins.csv once staff have checked it
  *
  *   DATABASE_URL=postgres://… RECEIPT_SECRETS=… GRAPH_TOKEN=… ORIGINS=https://example.org npm start
@@ -23,6 +24,7 @@ import { localGraph } from './client/local.ts'
 import type { AccountGraph, LeadSources, LocalOptions } from './contract/api.ts'
 import { hoursProblems } from './core/hours.ts'
 import { checkSheet, readChecks, sampleJoins, scoreChecks } from './core/join-check.ts'
+import { pauseSends, resumeSends, sendsPaused } from './core/pause.ts'
 import type { OpenHours } from './core/hours.ts'
 import { normalizePhone } from './core/identifiers.ts'
 import { ladderProblems } from './core/ladder.ts'
@@ -496,6 +498,19 @@ export async function command(env: Env, args: readonly string[], log: (line: str
       case 'staff-link':
         if (!rest[0] || !options.linkSecret) usage('staff-link URL, with LINK_SECRET set')
         return log(staffLink(rest[0]!, { secret: options.linkSecret! }))
+      case 'sends': {
+        const [what, ...words] = rest
+        if (what === 'pause') {
+          const reason = words.join(' ').trim()
+          if (!reason) usage('sends pause REASON')
+          const at = engine.now()
+          await pauseSends(engine.store, reason, at)
+          await ops.alert('sends', `account-graph: sends to ad platforms are paused. ${reason}`, { type: 'delivery.paused', at, data: { reason } })
+        } else if (what === 'resume') await resumeSends(engine.store)
+        else if (what !== undefined) usage('sends [pause REASON | resume]')
+        const paused = await sendsPaused(engine.store)
+        return show(paused ? { paused: true, since: new Date(paused.at).toISOString(), reason: paused.reason } : { paused: false })
+      }
       case 'sample-joins': {
         const size = rest.includes('--size') ? Number(rest[rest.indexOf('--size') + 1]) : 300
         const seed = rest.includes('--seed') ? rest[rest.indexOf('--seed') + 1] : new Date(engine.now()).toISOString().slice(0, 7)
@@ -505,7 +520,7 @@ export async function command(env: Env, args: readonly string[], log: (line: str
       case 'events':
         return rest[0] === 'new-epoch' ? log(`history ${await engine.store.write((tx) => tx.newEpoch())} begins: every cursor is lost`) : usage('events new-epoch')
       default:
-        usage('[rebuild | verify | prune | retry | stats | alerts test | staff-link | events new-epoch | sample-joins | score-joins]')
+        usage('[rebuild | verify | prune | retry | stats | alerts test | staff-link | events new-epoch | sends | sample-joins | score-joins]')
     }
   } finally {
     await graph.close()
