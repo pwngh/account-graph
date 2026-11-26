@@ -110,7 +110,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
       } catch (error) {
         throw malformed((error as Error).message)
       }
-      if (typeof body !== 'object' || body === null) throw malformed('Body must be a JSON object')
+      if (typeof body !== 'object' || body === null) throw malformed('The body must be a JSON object')
       storable(body)
       return body
     }
@@ -325,7 +325,7 @@ export function createHandler(graph: Graph, options: HandlerOptions) {
         try {
           return new TextDecoder('utf-8', { fatal: true }).decode(body)
         } catch {
-          throw malformed('Body must be UTF-8')
+          throw malformed('The body must be UTF-8')
         }
       })
       if (DECIDES.has(path)) edge.forgetAnswers()

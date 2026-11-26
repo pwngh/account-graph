@@ -29,7 +29,7 @@ export async function leadBody(request: IncomingMessage): Promise<Buffer> {
     }
   } catch (error) {
     if (isFault(error)) throw error
-    throw malformed('Cannot read lead body')
+    throw malformed('Cannot read the lead body')
   }
   return Buffer.concat(chunks)
 }
@@ -91,7 +91,7 @@ function fields(raw: Buffer, media: string | undefined): (path: string) => unkno
   } catch {
     // Parser errors may quote the sender's transcript.
   }
-  throw malformed('Expected a UTF-8 JSON object or URL-encoded form')
+  throw malformed('The lead body must be a UTF-8 JSON object or a URL-encoded form')
 }
 
 const empty = (value: unknown) => value === undefined || value === null || value === ''
@@ -111,7 +111,7 @@ function timeOf(value: unknown, received: number): number {
     const midnight = Date.parse(day + 'T00:00:00Z')
     if (Number.isFinite(midnight) && new Date(midnight).toISOString().startsWith(day)) at = Date.parse(value)
   }
-  if (!Number.isSafeInteger(at) || at <= 0 || at > received + 86_400_000) throw malformed('Invalid lead time')
+  if (!Number.isSafeInteger(at) || at <= 0 || at > received + 86_400_000) throw malformed('The lead time must be milliseconds since 1970 and at most one day ahead')
   return at
 }
 
@@ -119,7 +119,7 @@ function mapLead(name: string, source: LeadSource, get: (path: string) => unknow
   const read = (field: keyof LeadSource['mapping']) => source.mapping[field] === undefined ? undefined : get(source.mapping[field])
   const vendorId = read('id')
   const id = Number.isSafeInteger(vendorId) ? String(vendorId) : vendorId
-  if (typeof id !== 'string' || !/^[\w.-]{1,128}$/.test(id)) throw malformed('A vendor ID is required')
+  if (typeof id !== 'string' || !/^[\w.-]{1,128}$/.test(id)) throw malformed('A vendor ID of 1 to 128 letters, digits, dots, dashes or underscores is required')
   const key = `lead:${name}:${id}`
   const time = read('at')
   const at = empty(time) ? received : timeOf(time, received)
@@ -130,14 +130,14 @@ function mapLead(name: string, source: LeadSource, get: (path: string) => unknow
     const conversion = read('conversion')
     const currency = read('currency')
     // A payment source sets values, so it pays only the conversions it was given and only up to its own cap.
-    if (!(amount >= 1e-5 && amount <= source.maxAmount!) || typeof conversion !== 'string' || !source.conversions!.some(prefix => conversion.startsWith(prefix + ':') && conversion.length > prefix.length + 1) || (source.mapping.currency !== undefined && (typeof currency !== 'string' || !/^[a-z]{3}$/i.test(currency)))) throw malformed('Invalid payment fields')
+    if (!(amount >= 1e-5 && amount <= source.maxAmount!) || typeof conversion !== 'string' || !source.conversions!.some(prefix => conversion.startsWith(prefix + ':') && conversion.length > prefix.length + 1) || (source.mapping.currency !== undefined && (typeof currency !== 'string' || !/^[a-z]{3}$/i.test(currency)))) throw malformed('A payment needs an amount up to maxAmount, a conversion this source may pay, and a three-letter currency when the source maps one')
     entries.push({ type: 'payment', key, at, direction: 'received', amount, conversion, ...(typeof currency === 'string' && { currency }) })
   } else {
     const given = read('subject')
     const prefix = leadPrefix(name, source)
     // A form field can be edited by whoever fills it in, so by default a mapped subject stays among this source's own.
     const subject = empty(given) ? `${prefix}:${id}` : given
-    if (typeof subject !== 'string' || !subject.trim() || subject.length > 200) throw malformed('Invalid lead subject')
+    if (typeof subject !== 'string' || !subject.trim() || subject.length > 200) throw malformed('The lead subject must be text of 1 to 200 characters')
     if (!source.trustSubjects && !(subject.startsWith(prefix + ':') && /^[\w.:-]+$/.test(subject.slice(prefix.length + 1)))) throw malformed('The lead subject is outside this source')
     const text = (field: keyof LeadSource['mapping'], max: number) => {
       const value = read(field)
@@ -175,7 +175,7 @@ export async function acceptLead(name: string, source: LeadSource, raw: Buffer, 
     response = await record(entries, source.kind === 'payment' ? { prefix: `lead:${name}:`, amount: source.maxAmount! } : undefined)
   } catch (error) {
     const known = asFault(error)
-    if (known.code === FAULT_CODES.INPUT.MALFORMED) throw malformed('Invalid mapped lead fields')
+    if (known.code === FAULT_CODES.INPUT.MALFORMED) throw malformed('The mapped lead fields do not form a valid record')
     // A driver error can quote the row. A retry with the same ID is safe even after a lost commit.
     throw unavailable()
   }
