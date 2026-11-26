@@ -405,9 +405,16 @@ function chart(entries, shown, ties, subject, show, partial) {
 
   function pick(entry, focus) {
     charted.at = entry && order.indexOf(entry)
-    for (const [each, mark] of marks) mark.setAttribute('aria-pressed', String(each === entry))
     card.hidden = entry === undefined
+    const opened = root.classList.contains('picked') !== (entry !== undefined)
     root.classList.toggle('picked', entry !== undefined)
+    // The card beside the chart takes its room, or gives it back: drawn again for that width at once, not a moment after, so no mark moves from under a pointer and one is brought into view where it now stands.
+    if (opened && drawnAt > 0 && track.clientWidth > 0 && track.clientWidth !== drawnAt) {
+      draw()
+      if (focus) marks.get(entry)?.focus({ preventScroll: true })
+      return
+    }
+    for (const [each, mark] of marks) mark.setAttribute('aria-pressed', String(each === entry))
     if (!entry) return
     const i = order.indexOf(entry)
     const turn = (step, text, label) => el('button', { type: 'button', 'aria-label': label, 'data-key': label, ...((order[i + step] === undefined) && { disabled: '' }), on: { click: () => { pick(order[i + step]); reach(order[i + step]) } } }, text)
