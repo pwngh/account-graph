@@ -109,18 +109,20 @@ function sandbox(fields: Record<string, unknown> = {}, options: StubOptions = {}
     if (name === options.denyPermission) return false
     if (name === 'inject_script') return action.startsWith(origin + '/collect.js?gtm=1&')
     if (name === 'access_globals') return action === 'execute' && key === setter
-    if (name === 'access_consent') return action === 'read' && allowed.has(key!)
+    // Tag Manager reads consent permissions as (consent type, then action).
+    if (name === 'access_consent') return allowed.has(action) && key === 'read'
     return assert.fail('unexpected permission ' + name)
   }
   const apis: Record<string, unknown> = {
     queryPermission: permission,
     ...urlApis,
+    // Tag Manager throws when a template reads consent it was not given.
     isConsentGranted: (type: string) => {
-      assert.ok(permission('access_consent', 'read', type))
+      if (!permission('access_consent', type, 'read')) throw new Error('access_consent not granted for ' + type)
       return allowed.get(type)
     },
     addConsentListener: (type: string, listener: (type: string, granted: boolean) => void) => {
-      assert.ok(permission('access_consent', 'read', type))
+      if (!permission('access_consent', type, 'read')) throw new Error('access_consent not granted for ' + type)
       listeners.set(type, listener)
     },
     callInWindow: (key: string, granted: boolean) => {
@@ -208,11 +210,13 @@ test('bad graph addresses and a denied script permission fail before injection',
     assert.deepEqual(tag.injections, [], graphOrigin)
     assert.deepEqual(tag.outcomes, ['failure'], graphOrigin)
   }
-  for (const denyPermission of ['inject_script', 'access_consent', 'access_globals']) {
+  for (const denyPermission of ['inject_script', 'access_globals']) {
     const refused = sandbox({}, { denyPermission })
     assert.deepEqual(refused.injections, [], denyPermission)
     assert.deepEqual(refused.outcomes, ['failure'], denyPermission)
   }
+  // Without the consent permission, reading consent throws before anything is injected, which Tag Manager reports as a failure.
+  assert.throws(() => sandbox({}, { denyPermission: 'access_consent' }), /access_consent not granted/)
 })
 
 test('invalid resolved fields cannot broaden a page list or silently disable consent', () => {

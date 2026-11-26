@@ -57,7 +57,6 @@ const encode = require('encodeUriComponent')
 const injectScript = require('injectScript')
 const callInWindow = require('callInWindow')
 
-if (!queryPermission('access_consent', 'read', 'ad_storage') || !queryPermission('access_consent', 'read', 'analytics_storage')) return data.gtmOnFailure()
 const storageGranted = () => isConsentGranted('ad_storage') && isConsentGranted('analytics_storage')
 if (!storageGranted()) return data.gtmOnSuccess()
 
