@@ -33,13 +33,13 @@ To ask who somebody may be without recording it, use the `match` [lookup](http.m
 | --- | --- | --- |
 | `device` | `device:…`, the `ag_device` cookie the script tag set. | - |
 | `email` | `email:` and a hash. Gmail's dots and `+tags` are folded first. | - |
-| `ip` | `ip:…`; an IPv6 address as its /64. | - |
+| `ip` | `ip:…`. An IPv6 address is kept as its /64. | - |
 | `phone` | `phone:` and a hash. With a line check, `voip:` for an internet calling app, and no identifier for a switchboard, premium line or pager. | Optional: Twilio, for the line check. |
 | `address` | `address:` and a hash of the postal service's delivery point, so two spellings of one address match. | Smarty. Otherwise addresses are ignored. |
 | `name`, `dob` | `name:` and a keyed hash. See [Names](#names). | `IDENTIFIER_SECRET`, and a policy with a `name` kind. |
 | `identifiers` | Identifiers you already hold, as written: `hardware:…`, `payment:tok_…`, `passkey:…`. At most 100. | A kind in the policy, and not one [the graph writes itself](http.md#refusals). |
 
-Beside `facts`, `at` is when it happened, `event` is what the person was doing, up to 200 characters, and `speaker` is the [person who speaks for](#speaking-for-somebody-else) the subject: their `device`, `phone` and `email`.
+Beside `facts`, `at` is when it happened, and `event` is what the person was doing, up to 200 characters. `speaker` holds the `device`, `phone` and `email` of the [person who speaks for](#speaking-for-somebody-else) the subject.
 
 Phone keys use the line before the extension. An extension is written with `ext`, `extn`, `extension`, `extensión`, `anexo`, `int`, `interno`, `;ext=`, `;postd=`, `x`, `#`, a comma or a dialing pause. For example, `+1 (202) 555-0123 ext. 42` and `+1 (202) 555-0123;ext=42` both match `+12025550123`. An `x` or `#` between the digits of one number is not an extension. Older keys that included extension digits stop matching the corrected number. Those hashes hold no record of where an extension began, so a rebuild cannot find or repair them. Use your original records to identify affected contacts and supply their corrected numbers under new entry keys. Review any old links those keys created.
 
@@ -89,10 +89,10 @@ A mother calls about her son. Without being told, the server takes her number an
 | `speaker.device`, `speaker.phone` | At least one is needed. The browser and the caller are related to the subject at 0.92 and never joined to them. |
 | `speaker.email` | Written on the caller, or on the browser where there is no number. |
 | A fact both in `speaker` and beside it | Not used for the subject, with a note. |
-| A fact of the speaker's that is on the subject's record already | Left there, with a note. Nothing written before is undone: mute it, or forget the record. |
+| A fact of the speaker's that is on the subject's record already | Left there, with a note. Nothing written before is undone. Mute it, or forget the record. |
 | Neither device nor phone | The subject is recorded, with a note. |
 
-What brought the speaker's browser earns the credit for the subject. It is not passed on to anybody else they speak for, or back. The two are never offered for review as one person, and a number written on both later does not join them. A reviewer who joins them has the last word. To take it back, mute the `behalf:` mark of the browser and that of the caller on the reviewer screen. The mark stays muted when the same browser reports under another visitor ID. The subject is a record of yours, not a browser or a caller.
+What brought the speaker's browser earns the credit for the subject. It is not passed on to anybody else they speak for, or back. The two are never offered for review as one person, and a number written on both later does not join them. A reviewer can still join them, and that join stands. To take it back, mute the `behalf:` mark of the browser and that of the caller on the reviewer screen. The mark stays muted when the same browser reports under another visitor ID. The subject is a record of yours, not a browser or a caller.
 
 ### On a form
 
@@ -124,7 +124,7 @@ Only a marked control counts. The answer is read as the form is submitted, so it
 
 ### At intake
 
-Make it a required question with no answer chosen beforehand, on the form and in the script staff read: "Is this for you, or for somebody else?" Two radio buttons can be `required`. A box cannot, and one left alone says the client wrote. Then ask whose the number and the email are.
+Make it a required question with no answer chosen beforehand, on the form and in the script staff read: "Is this for you, or for somebody else?" Two radio buttons can be `required`. A checkbox cannot, and an unticked one says the client wrote. Then ask whose the number and the email are.
 
 On a call, the caller's number is the speaker's `phone`, and the client's own number, if they gave one, goes in `facts`. Record the call itself as usual.
 
@@ -157,7 +157,7 @@ the other system ──▶ your backend, later ──▶ record a profile with f
 | Visitor opted out of advertising | `ag_device` only, because the landing page holds the ad click. |
 | [About somebody else](#on-a-form) | The same, with `ag_speaker_device` in place of `ag_device`. Never both. |
 
-When your backend can read the `ag_device` cookie, prefer it to the field, and use it as the field would be used: for whoever wrote. With `COOKIE=true` the server's cookie outlives the page's stored id. The id a page reports is kept on the same visitor, so either one finds them.
+When your backend can read the `ag_device` cookie, prefer it to the field, and use it as the field would be used: for whoever wrote. With `COOKIE=true` the server's cookie lasts longer than the page's stored id. The id a page reports is kept on the same visitor, so either one finds them.
 
 ## Chat
 
@@ -297,11 +297,11 @@ Put the tag, with its own `domains`, on each site, and list each site in `ORIGIN
 
 A carried visitor is linked at 0.95, which joins two visitors and cannot merge two groups on its own. It is recorded per receiving site, so one visitor carried to three sites is joined on each. When look-alike browsers on a shared network use one token, a third holder ends the join and a fifth ends the link.
 
-A referrer listed in `ORIGINS` records no new visit, so the original ad click keeps the credit. Subdomains of one site can share a cookie instead with `COOKIE=example.org`; see [Operations](operations.md#behind-a-proxy).
+A referrer listed in `ORIGINS` records no new visit, so the original ad click keeps the credit. Subdomains of one site can share a cookie instead with `COOKIE=example.org`. See [Operations](operations.md#behind-a-proxy).
 
 ## Limitations
 
-- **Addresses.** United States only, through Smarty's US Street API.
+- **Addresses.** The server checks United States addresses only, through Smarty's US Street API.
 - **Reassigned numbers.** A number identified as VoIP stays muted as a `phone`, even if a later check reports a mobile. Restore it with [`decide`](http.md#decide) `unmute` and the phone.
 - **Undeclared bots.** User agents identify only bots that name themselves. One that imitates a browser needs Fingerprint.
 - **Names.** Under `apart: ["given"]`, the table recognizes some short forms and spellings, including Gerald and Jerry, and Catherine and Katherine. An exact name key requires the same normalized first and last names, so a nickname or a married surname can give a different key.
@@ -311,5 +311,5 @@ A referrer listed in `ORIGINS` records no new visit, so the original ad click ke
 | Browser without an account | A forwarded link links a stranger's browser to the person it identifies. If the stranger later signs up there, the two share a cluster until a reviewer separates them. |
 | Person of another kind | `contact:alice`'s link in a browser signed in as `account:bob` joins the two, because only subjects of the same kind are compared. Lower `link` in the policy below 0.9 to relate a browser to its person without joining. |
 | Look-alike browser | Someone on your visitor's network with the same browser version could hand them a link that joins the two visits. That lone visitor joins the other's cluster, and their ad click can be credited with the other's sign-up. The link cannot merge two groups of accounts by itself, and a reviewer can separate them. |
-| Not carried across sites | A visitor who types the second site's address. A confirmed fingerprint or a sign-in still links them.<br>A visitor whose network changes between the sites, such as on leaving wifi.<br>A link opened from its menu (right-click, long press), because the menu can also copy the address. This relies on the browser announcing the menu, which was not checked for long press on every phone browser.<br>A link followed while the token is renewed. A token lasts an hour, and is renewed after thirty minutes, or when a tab returns to view. |
+| Not carried across sites | A visitor who types the second site's address. A confirmed fingerprint or a sign-in still links them.<br>A visitor whose network changes between the sites, such as on leaving wifi.<br>A link opened from its menu, by right-click or long press, because the menu can also copy the address. This relies on the browser announcing the menu, which was not checked for long press on every phone browser.<br>A link followed while the token is renewed. A token lasts an hour, and is renewed after thirty minutes, or when a tab returns to view. |
 | Proxies | The network comes from `x-forwarded-for`, so `TRUST_PROXY` must state how many proxies you run. See [Operations](operations.md#behind-a-proxy). |
