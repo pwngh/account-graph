@@ -1,6 +1,6 @@
 # PHP and CodeIgniter 3
 
-Copy the lowercase PHP files at the top of [examples/php](../examples/php/) into one directory. Require `account_graph_lib.php` for the six calls or `account_graph_outbox_lib.php` for the outbox and client together. WordPress sites can use the [must-use integration](wordpress.md). The client targets PHP 7.2 and later. It was syntax-checked and exercised on PHP 8.5.6, including its stream transport and SQLite outbox. PHP 7.2 compatibility was checked by source review. It uses JSON and cURL, with PHP streams when cURL is absent. HTTPS needs the host's trusted CA certificates and, for streams, OpenSSL. Only loopback may use plain HTTP. The standalone outbox uses PDO. The CodeIgniter model uses the host’s existing query builder and connection.
+Copy the lowercase PHP files at the top of [examples/php](../examples/php/) into one directory. Require `account_graph_lib.php` for the six calls or `account_graph_outbox_lib.php` for the outbox and client together. WordPress sites can use the [must-use integration](wordpress.md). The client targets PHP 7.2 and later. It was syntax-checked and exercised on PHP 8.5.6, including its stream transport and SQLite outbox. PHP 7.2 compatibility was checked by source review. It uses JSON and cURL, with PHP streams when cURL is absent. HTTPS needs the host's trusted CA certificates and, for streams, OpenSSL. Only loopback may use plain HTTP. The standalone outbox uses PDO. The CodeIgniter model uses the host's existing query builder and connection.
 
 ```php
 require_once __DIR__ . '/account_graph_lib.php';
@@ -14,7 +14,7 @@ $config = array(
 $graph = new account_graph_lib($config);
 ```
 
-Supply `Base_Url` (such as `https://graph.example.org`) and a service or reviewer `Token`. The other settings are optional. The example shows their defaults. `Connect_Timeout_Ms` limits connection setup, `Timeout_Ms` covers the whole attempt, and `Attempts` includes the first send. On a retryable fault the client resends the request with its original keys. In a completed batch it retries only entries marked `NOT_ATTEMPTED`. The default attempt allows 35 seconds because the graph has a 30-second record budget and the reply must travel back.
+Supply `Base_Url`, such as `https://graph.example.org`, and a service or reviewer `Token`. The other settings are optional. The example shows their defaults. `Connect_Timeout_Ms` limits connection setup, `Timeout_Ms` covers the whole attempt, and `Attempts` includes the first send. On a retryable fault the client resends the request with its original keys. In a completed batch it retries only entries marked `NOT_ATTEMPTED`. The default attempt allows 35 seconds because the graph has a 30-second record budget and the reply must travel back.
 
 The wait starts at 50 ms and doubles on each retry. `Retry-After` can extend it by up to 15 minutes. A zero, negative or past value leaves the normal backoff in effect. For a wait over five seconds the client returns the fault so a worker can schedule the retry. A standalone caller can pass `$fault->detail['retryAfter'] ?? null` to `account_graph_lib::retry_at()` for the capped Unix timestamp in seconds. A TLS verification or handshake failure reports `CONFIG.INVALID` with a TLS detail. A timeout reports `TRANSPORT.INDETERMINATE` because a write may already have committed. Keep the bearer token in the server environment. Keep request bodies, contact details, SQL parameters and exception traces out of application logs.
 
@@ -33,19 +33,19 @@ No graph write belongs in a page's critical path. A phone screen opens from loca
 
 ## What to queue
 
-Use an opaque subject such as `contact:42`. On every write, save the original occurrence time as integer epoch milliseconds. For host changes, derive the key once from the source system, operation, host row ID and revision. For example, `account_graph_lib::key('desk.profile', 42, 7)` identifies revision 7 of contact 42 in this host. For a call or text, `account_graph_lib::provider_key($id)` checks the provider's original ID and returns it unchanged. It accepts 1–128 letters, digits, dots, dashes or underscores. A retry uses the saved request, including the same `key` and `at`. A later host edit has its own revision. On 32-bit PHP, use a whole-valued number such as `round(microtime(true) * 1000)` when capturing the time. Casting it to a PHP integer would overflow.
+Use an opaque subject such as `contact:42`. On every write, save the original occurrence time as integer epoch milliseconds. For host changes, derive the key once from the source system, operation, host row ID and revision. For example, `account_graph_lib::key('desk.profile', 42, 7)` identifies revision 7 of contact 42 in this host. For a call or text, `account_graph_lib::provider_key($id)` checks the provider's original ID and returns it unchanged. It accepts 1 to 128 letters, digits, dots, dashes or underscores. A retry uses the saved request, including the same `key` and `at`. A later host edit has its own revision. On 32-bit PHP, use a whole-valued number such as `round(microtime(true) * 1000)` when capturing the time. Casting it to a PHP integer would overflow.
 
 | Host change | Graph request |
 | --- | --- |
 | Contact saved | Record a `profile` with `subject` and permitted `facts`, such as an email or phone. Include `createdAt` when the host knows the original creation time. Put a representative's own details in `speaker`. |
 | Contacts merged | Decide with `action: "merge"`, `pairs: [{"a":"contact:42","b":"contact:57"}]`, `by`, `key`, `at` and the `seen` from a person lookup. Keep both stable host IDs. |
 | Merge undone | Decide with `action: "unmerge"`, the original pair, a new decision key, operator and time. On `STALE` or `NOT_JOINED`, show staff the current records. On success inspect `stands` and `notAsAsked`. Sharing other evidence can still join the pair. |
-| Call reported | Record a `call` keyed by the provider's call ID. Supply `direction`, `to`, `from` when known (required outbound), start time and known duration in seconds. Include `result.answered` only when known. Send later results as `call_update` referencing that call key. |
+| Call reported | Record a `call` keyed by the provider's call ID. Supply `direction`, `to`, `from` when known, which an outbound call requires, start time and known duration in seconds. Include `result.answered` only when known. Send later results as `call_update` referencing that call key. |
 | Text reported | Record a `text` keyed by the provider's message ID with `direction`, `from`, `to` and message time. When relevant, extract and send the attribution `code`. Omit ordinary message content. |
 | Step reached | Record a `conversion` with a stable transaction key, subject and configured `stage`. Include value and currency if known. Queue its profile first. |
 | Payment received or refunded | Record a `payment` for that ledger row, with `conversion` set to the original conversion key, `direction` of `received` or `refunded`, positive `amount` and currency. Send the amount of this payment. |
 | Opt-out | Enforce the host's own suppression immediately. For an inbound SMS opt-out, queue the original text ID and time with the recognized opt-out word as its entire `text`. For withdrawn advertising permissions, record a `consent` entry on the subject with the actual booleans for `adUserData` and `adPersonalization`. |
-| Erasure approved | Read and confirm the IDs in scope. Send `forget` with `key`, `at`, `by`, `subjects` (1–50) and `platforms: "report"`, or `"retract"` if supported and requested. Keep the returned `sent` list for follow-up. Clean up local copies and outbox payloads under the host's erasure policy. |
+| Erasure approved | Read and confirm the IDs in scope. Send `forget` with `key`, `at`, `by`, `subjects`, 1 to 50 of them, and `platforms: "report"`, or `"retract"` if supported and requested. Keep the returned `sent` list for follow-up. Clean up local copies and outbox payloads under the host's erasure policy. |
 
 Never send case notes, medical or other health information, income, government identification numbers, transcripts or free-text descriptions. Choose allowed fields explicitly. Keep keys, tags, reviewer IDs and reasons free of those details too. PHP encodes an empty array as a JSON list. Where an empty object is allowed, such as `facts` with a speaker, use `(object) array()`. Exact fields, refusal reasons and token permissions are in the [HTTP contract](http.md).
 
@@ -74,7 +74,7 @@ try {
 }
 ```
 
-Show only candidate records the operator can already open. Label each suggestion with its host record, `level` and evidence `kinds`, such as “shared phone”. Surface any `unconfirmed` or `conflict` flag and let the operator inspect the pair. A suggestion never merges records automatically. Before confirming, use `lookup(array('kind' => 'person', 'subjects' => $pairIds, 'at' => $at))` and keep the returned `decisions` as `seen`.
+Show only candidate records the operator can already open. Label each suggestion with its host record, `level` and evidence `kinds`, such as "shared phone". Show any `unconfirmed` or `conflict` flag and let the operator inspect the pair. A suggestion never merges records automatically. Before confirming, use `lookup(array('kind' => 'person', 'subjects' => $pairIds, 'at' => $at))` and keep the returned `decisions` as `seen`.
 
 ## Host outbox
 
@@ -156,7 +156,7 @@ In the example, `$dropped` receives a fresh map of field paths to reasons. When 
 
 Use one `record_id` per record to preserve send order. A shared group also works for edits spanning multiple records, provided producers lock a common host row before allocating outbox IDs. A commit that arrives late can otherwise become visible after its successor. Each queued `record` carries one entry.
 
-On insert, `enqueue` returns the outbox ID as a decimal string. Pass that ID as the optional fourth argument to the CI model (fifth to standalone `enqueue`) when a later write requires that **specific earlier write** to succeed. For example, a restatement that corrects a conversion can depend on the conversion row. The writer declares this dependency when it knows the business relationship. Sharing a contact or ordering group alone does not declare a dependency. If a proposed prerequisite was screened out, handle that case at the host before enqueueing a dependent write.
+On insert, `enqueue` returns the outbox ID as a decimal string. Pass that ID as the optional fourth argument to the CI model, or the fifth to standalone `enqueue`, when a later write requires that **specific earlier write** to succeed. For example, a restatement that corrects a conversion can depend on the conversion row. The writer declares this dependency when it knows the business relationship. Sharing a contact or ordering group alone does not declare a dependency. If a proposed prerequisite was screened out, handle that case at the host before enqueueing a dependent write.
 
 **Link successive `decide` entries for the same pair with `depends_on`.** A merge followed by an unmerge, or a split followed by an unsplit, must reach the graph in that order. After a repair, the worker can send an older row after a newer one. A late profile is safe in this respect because its sightings carry the original event time (`at`), and its standing `createdAt` is ordered by `at`, then `key`. Replaying paired decisions out of order can change which decision stands.
 
