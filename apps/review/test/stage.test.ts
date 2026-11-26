@@ -7,7 +7,7 @@ import { browse, pageCommands, until } from '../../../test/chrome.ts'
 
 type Practice = keyof typeof PRACTICES
 type Scene = { title: string, see: [string, string], spot?: string[] }
-const without = process.env.CHROME ? false : 'set CHROME to run the stage in a browser'
+const without = process.env.CHROME || process.env.CI ? false : 'set CHROME to run the stage in a browser'
 
 function story(practice: Practice) {
   const kind = PRACTICES[practice]

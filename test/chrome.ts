@@ -6,8 +6,8 @@ import { join } from 'node:path'
 /** A real browser, driven over Chrome's own debugging port. Undefined where there is none. */
 export const chrome = process.env.CHROME
 
-/** Only launch the browser chosen by the caller. */
-export const without = !chrome ? 'set CHROME to a Chrome or Chromium to run it' : false
+/** Only launch the browser chosen by the caller. In CI a test fails without one instead of being skipped. */
+export const without = !chrome && !process.env.CI ? 'set CHROME to a Chrome or Chromium to run it' : false
 
 export const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 export async function until<T>(what: string, look: () => Promise<T> | T, seconds = 10): Promise<NonNullable<T>> {
