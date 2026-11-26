@@ -282,4 +282,17 @@ test('a card stays open through what a slow machine delivers late, and fills', {
   assert.deepEqual([await page.shown(), await text('#card-title'), (await page.says())['Next step']], [true, 'contact:ada', 'client'])
   await key('Escape')
   await run(`window.fetch = window.real`)
+
+  // On the chart, a mark may stand on a dashed wait: the short card is that of whatever is under the pointer, and the rest of the wait still has its own.
+  await page.go('#/journey/contact%3Aada')
+  const wait = `document.querySelector('.chart .wait')`
+  await run(`(() => { const w = ${wait}, m = document.querySelector('.chart .lane.call .mark:not(.heap)'); m.style.left = (parseFloat(w.style.left) + parseFloat(w.style.width) / 2) + 'px' })()`)
+  const [cx, cy] = (await run(`(() => { const r = ${wait}.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2] })()`)) as [number, number]
+  assert.equal(await run(`${wait}.contains(document.elementFromPoint(${cx}, ${cy}))`), false)
+  const [x, y] = await page.middle(wait)
+  await page.mouse('mouseMoved', 600, 20)
+  await until('nothing shown', async () => !(await page.hinted()))
+  await page.mouse('mouseMoved', x, y)
+  await until('the short card', page.hinted)
+  assert.equal(await text('#hint b'), 'Returned after 4 h 20 min')
 })

@@ -105,7 +105,16 @@ export async function screen(base: string) {
     assert.equal(await run(`$('notice').textContent`), '')
   }
   const find = (key: string) => `document.querySelector('[data-key^=${JSON.stringify(`detail ${key}`)}]')`
-  const middle = (node: string) => run(`(() => { const n = ${node}; n.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' }); const r = n.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2] })()`) as Promise<[number, number]>
+  // A point of a node that nothing else lies over, nearest its middle: a mark of the chart may stand on a wait, and where depends on the fonts.
+  const middle = (node: string) => run(`(() => {
+    const n = ${node}
+    n.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' })
+    const r = n.getBoundingClientRect()
+    const [x, y] = [r.x + r.width / 2, r.y + r.height / 2]
+    const mine = (dx) => n.contains(document.elementFromPoint(x + dx, y))
+    for (let dx = 0; dx <= r.width / 2; dx += 1) for (const side of [dx, -dx]) if (mine(side)) return [x + side, y]
+    throw new Error('Nothing of it can be pointed at')
+  })()`) as Promise<[number, number]>
   const mouse = (type: string, x: number, y: number) => send('Input.dispatchMouseEvent', { type, x, y, ...(type === 'mouseMoved' ? {} : { button: 'left', clickCount: 1 }) })
   const click = async (node: string) => {
     const [x, y] = await middle(node)
