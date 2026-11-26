@@ -35,8 +35,17 @@ class AccountGraph
     private $timeoutMs;
     private $attempts;
 
-    public function __construct($baseUrl, $token, $connectMs = 1000, $timeoutMs = 5000, $attempts = 3)
-    {
+    public function __construct(
+        $baseUrl,
+        #[\SensitiveParameter]
+        $token,
+        $connectMs = 1000,
+        $timeoutMs = 35000,
+        $attempts = 3
+    ) {
+        // PHP 7 treats the attribute as a comment. Clear the argument before validation can throw.
+        $this->token = $token;
+        unset($token);
         $url = is_string($baseUrl) && !preg_match('/[\x00-\x20\x7f\\\\]/', $baseUrl) ? parse_url($baseUrl) : false;
         if (!isset($url['scheme'], $url['host']) || isset($url['user']) || isset($url['pass']) || isset($url['query']) || isset($url['fragment'])) {
             throw new AccountGraphFault('CONFIG.INVALID');
@@ -51,14 +60,13 @@ class AccountGraph
         if (!$this->https && ($scheme !== 'http' || !$this->loopback)) {
             throw new AccountGraphFault('CONFIG.INVALID');
         }
-        if (!is_string($token) || !preg_match('/^[\x21-\x7e]+$/D', $token) || !is_int($connectMs) || $connectMs < 1 || !is_int($timeoutMs) || $timeoutMs < 1 || !is_int($attempts) || $attempts < 1 || $attempts > 5) {
+        if (!is_string($this->token) || !preg_match('/^[\x21-\x7e]+$/D', $this->token) || !is_int($connectMs) || $connectMs < 1 || !is_int($timeoutMs) || $timeoutMs < 1 || !is_int($attempts) || $attempts < 1 || $attempts > 5) {
             throw new AccountGraphFault('CONFIG.INVALID');
         }
         $this->host = !$this->https && $host === 'localhost' ? '127.0.0.1' : $host;
         $this->port = isset($url['port']) ? $url['port'] : ($this->https ? 443 : 80);
         $this->origin = $scheme . '://' . $this->host . ':' . $this->port;
         $this->path = rtrim(isset($url['path']) ? $url['path'] : '', '/') . '/v1/';
-        $this->token = $token;
         $this->connectMs = min($connectMs, $timeoutMs);
         $this->timeoutMs = $timeoutMs;
         $this->attempts = $attempts;
@@ -181,6 +189,8 @@ class AccountGraph
         $positions = is_array($entries) ? array_keys($entries) : array();
         $results = array();
         for ($attempt = 1; ; $attempt++) {
+            $delayMs = 50 * (1 << ($attempt - 1));
+            $response = null;
             try {
                 $response = function_exists('curl_init') ? $this->curlPost($name, $body) : $this->streamPost($name, $body);
                 $answer = $this->answer($name, $response);
@@ -213,12 +223,52 @@ class AccountGraph
                 }
                 $body = self::json(array('entries' => $remaining));
             } catch (AccountGraphFault $fault) {
+                if ($fault->retryable && isset($response[2]) && $response[2] !== '') {
+                    $fault->detail['retryAfter'] = $response[2];
+                }
                 if (!$fault->retryable || $attempt === $this->attempts) {
                     throw $fault;
                 }
+                $until = self::retryAt($fault->detail['retryAfter'] ?? null);
+                if ($until !== null) {
+                    $requestedMs = ceil(($until - microtime(true)) * 1000);
+                    // A later worker pass can honor a long wait without tying up a PHP process.
+                    if ($requestedMs > 5000) {
+                        throw $fault;
+                    }
+                    $delayMs = max($delayMs, (int) max(0, $requestedMs));
+                }
             }
-            usleep(50000 * (1 << ($attempt - 1)));
+            // Some older platforms accept only sub-second arguments to usleep.
+            $wake = microtime(true) + $delayMs / 1000;
+            while (($remaining = $wake - microtime(true)) > 0) {
+                usleep((int) min(999999, ceil($remaining * 1000000)));
+            }
         }
+    }
+
+    public static function retryAt($hint)
+    {
+        if (!is_string($hint) || $hint === '') {
+            return null;
+        }
+        if (preg_match('/^[0-9]+$/D', $hint)) {
+            // Keep arbitrarily large delta-seconds representable in a host queue.
+            return min(253402300799.0, microtime(true) + (float) $hint);
+        }
+        if (strlen($hint) > 40 || preg_match('/[^\x20-\x7e]/', $hint)) {
+            return null;
+        }
+        $utc = new DateTimeZone('UTC');
+        foreach (array('D, d M Y H:i:s \G\M\T', 'l, d-M-y H:i:s \G\M\T', 'D M j H:i:s Y') as $format) {
+            $date = DateTimeImmutable::createFromFormat('!' . $format, $hint, $utc);
+            $errors = DateTimeImmutable::getLastErrors();
+            if ($date && (!$errors || (!$errors['warning_count'] && !$errors['error_count']))) {
+                // format('U') works beyond the signed integer range on 32-bit PHP.
+                return (float) $date->format('U');
+            }
+        }
+        return null;
     }
 
     private function isDecision($item)
@@ -275,6 +325,7 @@ class AccountGraph
                 CURLOPT_HTTPHEADER => array('Content-Type: application/json', 'Authorization: Bearer ' . $this->token, 'Expect:'),
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_FOLLOWLOCATION => false,
+                CURLOPT_NOSIGNAL => true,
                 CURLOPT_CONNECTTIMEOUT_MS => $this->connectMs,
                 CURLOPT_TIMEOUT_MS => $this->timeoutMs,
                 CURLOPT_HEADERFUNCTION => function ($handle, $line) use (&$retryAfter) {
@@ -290,6 +341,11 @@ class AccountGraph
             curl_setopt_array($curl, $options);
             $text = curl_exec($curl);
             if ($text === false) {
+                $error = curl_errno($curl);
+                if (in_array($error, array(CURLE_SSL_CONNECT_ERROR, CURLE_SSL_PEER_CERTIFICATE, CURLE_SSL_CACERT, CURLE_SSL_CERTPROBLEM, CURLE_SSL_CIPHER), true)
+                    || (defined('CURLE_SSL_CACERT_BADFILE') && $error === CURLE_SSL_CACERT_BADFILE)) {
+                    throw new AccountGraphFault('CONFIG.INVALID', false, array('stage' => 'tls'));
+                }
                 throw new AccountGraphFault('TRANSPORT.INDETERMINATE', true);
             }
             return array(curl_getinfo($curl, CURLINFO_HTTP_CODE), $text, $retryAfter);
@@ -310,8 +366,27 @@ class AccountGraph
         $context = stream_context_create(array('ssl' => array('verify_peer' => true, 'verify_peer_name' => true, 'peer_name' => trim($this->host, '[]'))));
         $deadline = microtime(true) + $this->timeoutMs / 1000;
         $address = ($this->https ? 'tls://' : 'tcp://') . $this->host . ':' . $this->port;
-        $stream = @stream_socket_client($address, $errno, $error, $this->connectMs / 1000, STREAM_CLIENT_CONNECT, $context);
+        $tlsFailure = false;
+        if ($this->https) {
+            // PHP streams expose certificate and protocol failures as warnings, with the same errno as a handshake timeout.
+            set_error_handler(function ($severity, $warning) use (&$tlsFailure) {
+                if (preg_match('/^stream_socket_client\(\): (?:SSL operation failed|Peer certificate|Could not verify peer|failed loading cafile|Unable to set verify locations)/i', $warning)) {
+                    $tlsFailure = true;
+                }
+                return true;
+            }, E_WARNING);
+        }
+        try {
+            $stream = @stream_socket_client($address, $errno, $error, $this->connectMs / 1000, STREAM_CLIENT_CONNECT, $context);
+        } finally {
+            if ($this->https) {
+                restore_error_handler();
+            }
+        }
         if (!$stream) {
+            if ($tlsFailure || ($this->https && !in_array('tls', stream_get_transports(), true))) {
+                throw new AccountGraphFault('CONFIG.INVALID', false, array('stage' => 'tls'));
+            }
             throw new AccountGraphFault('TRANSPORT.INDETERMINATE', true);
         }
         try {
