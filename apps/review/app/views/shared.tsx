@@ -19,6 +19,11 @@ export function Subject({ id, journey = false }: { id: string, journey?: boolean
   return <Link className="subject" title={id} to={subjectPath(id, journey ? 'journey' : 'accounts')}>{idText(id)}</Link>
 }
 
+// Another system's decisions are signed system:<name>. The original screen says system <name>.
+export function Author({ by }: { by?: string | null }) {
+  return by?.startsWith('system:') ? <span className="chip" title="Sent by another system">system {by.slice(7)}</span> : <span>{by || 'Unknown'}</span>
+}
+
 export function Badge({ id }: { id: string }) {
   const kind = typeOf(id)
   return <svg className={'badge ' + (['account', 'visitor', 'lead', 'caller', 'contact', 'person'].includes(kind) ? kind : '')} viewBox="-11 -11 22 22" aria-hidden="true"><circle r="10"/><path className={ICONS[kind] ? 'line' : ''} d={ICONS[kind] || PERSON} transform="scale(.82)"/></svg>

@@ -22,6 +22,7 @@ const account = {
 const requests = []
 const changes = []
 const decisions = new Map()
+const audited = []
 let eventsRevoked = false, interrupted, beforeDecision, app, graph, origin, routes, revoked = false, failure = 0
 async function handler(req, res) {
   const url = new URL(req.url, 'http://localhost')
@@ -49,7 +50,7 @@ async function handler(req, res) {
     case '/review/api/journey': return send(200, { entries: [], subjects: {}, next: null, more: 0 })
     case '/review/api/clusters': return send(200, [{ id: subject, size: account.cluster.members.length, oversized: false }])
     case '/review/api/recent': return send(200, [])
-    case '/review/api/decisions': return send(200, { decisions: [], next: null, total: 0 })
+    case '/review/api/decisions': return send(200, { decisions: audited, next: null, total: audited.length })
     case '/review/api/audit': return send(200, { sound: true, head: null })
     case '/review/api/pulse': return send(200, { version: changes.length })
     case '/review/api/ops': return send(200, { feeds: [] })
@@ -514,6 +515,18 @@ test('a caller hash is shortened in its link as on the original screen, with the
     assert.match(html, link)
   } finally {
     Object.assign(account, original)
+  }
+})
+
+test('a decision by another system names its author as the original screen does', async () => {
+  const cookie = await signin()
+  audited.push({ seq: 7, action: 'join', about: [subject, other], by: 'system:desk', at: observed, reason: 'answered by staff' })
+  try {
+    const html = (await (await fetch(origin + path, { headers: { cookie } })).text()).replaceAll('<!-- -->', '')
+    assert.match(html, /<span class="chip" title="Sent by another system">system desk<\/span>/)
+    assert.doesNotMatch(html.replace(/<script[^]*?<\/script>/g, ''), /system:desk/)
+  } finally {
+    audited.length = 0
   }
 })
 
