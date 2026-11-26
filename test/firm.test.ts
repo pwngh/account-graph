@@ -16,7 +16,8 @@ for (const practice of ['family', 'injury'] as const) test(`every scene of the $
   const bar = async (name: string) => (await run(`document.getElementById('stage')?.dataset.${name} ?? ''`).catch(() => '')) as string
   // Signed in, with the phone beside the screen.
   await until('the stage', async () => (await bar('running')) === 'false' && (await run(`typeof loadedAt === 'number'`).catch(() => false)))
-  assert.equal(await run(`document.body.classList.contains('with-phone') && document.querySelector('.device').dataset.state`), 'ad')
+  // The bar is idle before the scenes have arrived, and the phone is shown once they have.
+  assert.equal(await until('the phone', () => run(`document.body.classList.contains('with-phone') && document.querySelector('.device').dataset.state`)), 'ad')
   const { scenes } = (await run(`fetch('/stage/scenes').then((answer) => answer.json())`)) as { scenes: { title: string; see: [string, string]; spot?: string[] }[] }
   assert.equal(scenes.length, 21)
   const links = scenes.map(({ see }) => see[1])
