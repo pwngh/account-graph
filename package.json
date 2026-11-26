@@ -62,7 +62,9 @@
     "start": "node src/bin.ts",
     "live-check": "node tools/live-check.ts",
     "costs": "node tools/costs.ts",
-    "labels": "node tools/labels.ts"
+    "labels": "node tools/labels.ts",
+    "review:build": "npm run build && npm --prefix apps/review run build",
+    "review:test": "npm run review:build && node --test apps/review/test/*.test.*"
   },
   "peerDependencies": {
     "pg": "^8.11.0"

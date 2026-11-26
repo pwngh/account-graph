@@ -1,0 +1,15 @@
+#views a[aria-current=page] { font-weight: bold; text-decoration: underline }
+details > summary { cursor: pointer }
+details form { display: grid; gap: .6rem; margin-block: .75rem }
+summary:focus-visible, a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid currentColor; outline-offset: 2px }
+#view { min-width: 0; overflow-wrap: anywhere }
+@media (max-width: 600px) {
+  header, #views, #find { flex-wrap: wrap; max-width: 100% }
+  #view .split, #view .deck { display: block }
+  form input { max-width: 100%; min-width: 0 }
+}
+@media (forced-colors: active) {
+  svg text { fill: CanvasText }
+  svg line, svg path { stroke: CanvasText }
+  a { color: LinkText }
+}

@@ -2,11 +2,13 @@
   "name": "account-graph-review",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22.22.0" },
+  "engines": {
+    "node": ">=22.22.0"
+  },
   "scripts": {
     "dev": "react-router dev",
     "build": "react-router build",
-    "start": "react-router-serve ./build/server/index.js",
+    "start": "node server.mjs",
     "typecheck": "react-router typegen && tsc --noEmit"
   },
   "dependencies": {
