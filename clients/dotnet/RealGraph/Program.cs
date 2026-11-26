@@ -76,4 +76,34 @@ Check(events.Count > 0 && events.All(each => (string?)each!["type"] != "Unrecogn
 var lost = await graph.EventsAsync(Json("""{"after":"another-history.1","limit":1}"""));
 Check((bool)lost["ok"]! == false && (string?)lost["reason"] == "CURSOR_LOST", "a cursor from another history");
 
+// Pages: 201 visits are two journey pages, 51 texts and 51 missed calls are two report pages each, and events one at a time are every event.
+var visits = Enumerable.Range(0, 201).Select(i => (JsonNode)Json($$"""{"type":"arrival","key":"visit-{{i}}","subject":"visitor:pages","source":"website","at":{{At + i}}}""")).ToList();
+var texts = Enumerable.Range(0, 51).Select(i => (JsonNode)Json($$"""{"type":"text","direction":"inbound","from":"+120255501{{i:00}}","to":"+12025550199","at":{{At + i}},"key":"text-{{i}}"}""")).ToList();
+var calls = Enumerable.Range(0, 51).Select(i => (JsonNode)Json($$$"""{"type":"call","direction":"inbound","from":"+120255501{{{i:00}}}","to":"+12025550199","at":{{{At + i}}},"key":"missed-{{{i}}}","result":{"answered":false}}""")).ToList();
+foreach (var batch in new[] { visits.Take(100), visits.Skip(100).Take(100), visits.Skip(200), texts, calls })
+{
+    var results = (await graph.RecordAsync(new JsonObject { ["entries"] = new JsonArray(batch.Select(each => each.DeepClone()).ToArray()) }))["results"]!.AsArray();
+    Check(results.All(each => (bool)each!["ok"]!), "a batch for the pages is recorded");
+}
+var journeys = await graph.JourneyPagesAsync(Json("""{"kind":"journey","subject":"visitor:pages"}""")).ToListAsync();
+Check(journeys.Select(page => page["entries"]!.AsArray().Count).SequenceEqual(new[] { 200, 1 }) && journeys[^1]["next"] is null, "a journey in two pages");
+Check(journeys.SelectMany(page => page["entries"]!.AsArray().Select(entry => (long)entry!["at"]!)).Order().SequenceEqual(Enumerable.Range(0, 201).Select(i => At + i)), "every visit once");
+var report = Json($$"""{"window":{"from":"2026-01-01","to":"2026-01-01","timeZone":"UTC"},"at":{{At + 60_000}}}""");
+foreach (var (kind, field, entries) in new[] { ("texts", "text", texts), ("callbacks", "call", calls) })
+{
+    var query = report.DeepClone().AsObject();
+    query["kind"] = kind;
+    var pages = await graph.ReportPagesAsync(query).ToListAsync();
+    Check(pages.Select(page => page["value"]!["rows"]!.AsArray().Count).SequenceEqual(new[] { 50, 1 }) && pages[^1]["value"]!["next"] is null, $"{kind} in two pages");
+    Check(pages.SelectMany(page => page["value"]!["rows"]!.AsArray().Select(row => (string?)row![field])).SequenceEqual(entries.Select(entry => (string?)entry["key"])), $"every {kind} row once, in order");
+}
+var malformedKind = await Refused(async () => await graph.ReportPagesAsync(Json("""{"kind":"pipeline"}""")).ToListAsync());
+Check(malformedKind.Code == "INPUT.MALFORMED" && (string)malformedKind.Detail["path"] == "request.kind", "only texts and callbacks are paged");
+var everything = (await graph.EventsAsync(Json("""{"after":null,"limit":500}""")))["value"]!["events"]!.AsArray().Select(each => each!.ToJsonString()).ToList();
+var eventPages = await graph.EventPagesAsync(Json("""{"after":null,"limit":1}""")).ToListAsync();
+Check(eventPages.SkipLast(1).All(page => (bool)page["value"]!["more"]!) && !(bool)eventPages[^1]["value"]!["more"]!, "every page but the last says more");
+Check(eventPages.SelectMany(page => page["value"]!["events"]!.AsArray().Select(each => each!.ToJsonString())).SequenceEqual(everything), "events one at a time are every event");
+var lostPages = await graph.EventPagesAsync(Json("""{"after":"another-history.1","limit":1}""")).ToListAsync();
+Check(lostPages.Count == 1 && (string?)lostPages[0]["reason"] == "CURSOR_LOST", "a lost cursor is one page");
+
 Console.WriteLine("ok");

@@ -6,4 +6,4 @@ Use `AccountGraph.Client` to call a running graph from .NET 10. Reference the pr
 
 `Client.StableKey(source, rowId, revision)` gives the same key as the Python client's `stable_key`, so a row sent from either gets one key.
 
-The client has no outbox and no page helpers yet. Follow `next` and `cursor` yourself.
+`EventPagesAsync`, `ReportPagesAsync` and `JourneyPagesAsync` follow each cursor to the last page, and stop with `GRAPH.INTERNAL` if the server hands back a cursor already followed. The client has no outbox yet.
