@@ -11,7 +11,7 @@ export function browserPage(body: any, rules: PageRules, referer: string | undef
     body.touch.landing = landing
   }
   if (body.touch?.referrer !== undefined) {
-    const referrer = pageAddress(body.touch.referrer, rules)
+    const referrer = pageAddress(body.touch.referrer, rules, [body.url, body.touch.landing, referer])
     if (referrer) body.touch.referrer = referrer
     else delete body.touch.referrer
   }
@@ -27,7 +27,7 @@ export function recordPages(input: unknown, rules: PageRules, dispatch: (input: 
     if (entry.type !== 'arrival') return entry
     const arrival = { ...entry }
     for (const field of ['landing', 'referrer'] as const) if (entry[field] !== undefined) {
-      const clean = pageAddress(entry[field], rules)
+      const clean = pageAddress(entry[field], rules, field === 'referrer' ? [entry.landing] : undefined)
       if (!clean) return undefined
       arrival[field] = clean
     }

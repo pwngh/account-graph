@@ -5,7 +5,7 @@
  */
 
 export interface PageRules {
-  /** Other site origins whose paths the page lists cover. In a browser its own origin is always included. */
+  /** Other site origins to recognize in previous-page referrers. The current page's origin is always included. */
   origins?: readonly string[]
   /** Literal paths, or subtrees ending in /*. With an allow list, a page must match one of its entries. */
   allowPages?: readonly string[]
@@ -95,7 +95,7 @@ export function validPageRules(rules: PageRules): boolean {
 }
 
 /** The part of a permitted address that may leave the page. A relative path stays relative. */
-export function pageAddress(raw: unknown, rules: PageRules, site?: string): string | undefined {
+export function pageAddress(raw: unknown, rules: PageRules, referrerOf?: readonly unknown[]): string | undefined {
   if (typeof raw !== 'string') return undefined
   const bare = raw.split(/[?#]/, 1)[0]!
   const relative = bare.startsWith('/')
@@ -104,8 +104,11 @@ export function pageAddress(raw: unknown, rules: PageRules, site?: string): stri
   try {
     const url = new URL(bare, 'https://example.org')
     if (url.protocol !== 'https:' && url.protocol !== 'http:') return undefined
-    // The firm cannot decide which paths a search engine or a newspaper may use.
-    if (!relative && (rules.origins || site) && url.origin !== site && !rules.origins?.some(origin => origin === url.origin || URL.canParse(origin) && new URL(origin).origin === url.origin)) return url.origin + url.pathname
+    // Only a previous page can belong to another site. Without a known site origin, check its path too.
+    if (!relative && referrerOf) {
+      const sites = [...(rules.origins ?? []), ...referrerOf].filter((page): page is string => typeof page === 'string' && URL.canParse(page))
+      if (sites.length && sites.every(page => new URL(page).origin !== url.origin)) return url.origin + url.pathname
+    }
     if (url.username || url.password || /[\\\x00-\x20\x7f]/.test(bare)) return undefined
     const rawPath = relative ? bare : bare.replace(/^https?:\/\/[^/]+/i, '') || '/'
     const path = pathName(rawPath)
@@ -128,9 +131,9 @@ export function pageAddress(raw: unknown, rules: PageRules, site?: string): stri
 
 const bannerAnswer = () => (globalThis as { accountGraphConsent?: PageOptions['consent'] }).accountGraphConsent
 const ready = (options: PageOptions) => !options.signal?.aborted && (!options.requireConsent || (bannerAnswer() ?? options.consent)?.adUserData === true) &&
-  (!hasPageRules(options) || Boolean(pageAddress(location.href, options, location.origin)))
+  (!hasPageRules(options) || Boolean(pageAddress(location.href, options)))
 
-const pageOf = (options: PageOptions) => hasPageRules(options) ? { url: pageAddress(location.href, options, location.origin) } : {}
+const pageOf = (options: PageOptions) => hasPageRules(options) ? { url: pageAddress(location.href, options) } : {}
 const guardedFetch = (options: PageOptions): RequestInit => hasPageRules(options) ? { referrerPolicy: 'no-referrer' } : {}
 
 function cookie(name: string): string | undefined {
@@ -201,7 +204,7 @@ export function read(params: readonly string[] = [], options: PageOptions = {}):
   const stored = cookie('_gcl_aw')?.split('.')[2]
   if (!touch.gclid && stored && stored !== remembered('ag_click')) touch.gclid = stored
   if (document.referrer) {
-    const referrer = hasPageRules(options) ? pageAddress(document.referrer, options, location.origin) : document.referrer
+    const referrer = hasPageRules(options) ? pageAddress(document.referrer, options, [location.origin]) : document.referrer
     if (referrer && new URL(referrer, url).origin !== location.origin) touch.referrer = referrer
   }
   const arrived = Object.keys(touch).length > 0
@@ -257,7 +260,7 @@ export async function collect(options: CollectOptions): Promise<void> {
   const active = () => !guarded || ready(options) && location.href === began
   // A vendor running on the page can read both addresses before the collector strips their query and fragment.
   const canIdentify = () => active() && (!hasPageRules(options) || !/[?#]/.test(location.href) && !/[?#]/.test(document.referrer) &&
-    (!document.referrer || Boolean(pageAddress(document.referrer, options, location.origin))))
+    (!document.referrer || Boolean(pageAddress(document.referrer, options, [location.origin]))))
   const resolve = async (value: CollectOptions['canvas']) => {
     try {
       if (!canIdentify()) {
@@ -290,7 +293,7 @@ export async function collect(options: CollectOptions): Promise<void> {
   try {
     const kept = sessionStorage.getItem('ag_landing')
     if (hasPageRules(options)) {
-      const clean = pageAddress(kept, options, location.origin) ?? visit.url
+      const clean = pageAddress(kept, options) ?? visit.url
       if (clean !== kept) sessionStorage.setItem('ag_landing', clean)
     } else if (!kept) sessionStorage.setItem('ag_landing', location.href)
   } catch {}
@@ -456,7 +459,7 @@ export function carry(options: CollectOptions): () => void {
     } catch {
       return
     }
-    if (hasPageRules(options) && !pageAddress(url.href, options, location.origin)) return
+    if (hasPageRules(options) && !pageAddress(url.href, options)) return
     if (!domains.has(url.hostname.toLowerCase()) || url.hostname === location.hostname) return
     // A token lasts an hour. Past half of that, ask for the next one; it will be there for the next link.
     if (!token || Date.now() - token.at > 30 * 60_000) void ask()
@@ -512,7 +515,7 @@ export function fields(consent?: CollectOptions['consent'], form?: HTMLFormEleme
     landing = sessionStorage.getItem('ag_landing')
   } catch {}
   if (hasPageRules(options)) {
-    const safe = pageAddress(landing ?? location.href, options, location.origin)
+    const safe = pageAddress(landing ?? location.href, options)
     return safe ? { ...device, ag_landing: safe } : device
   }
   return { ...device, ag_landing: landing ?? location.href }

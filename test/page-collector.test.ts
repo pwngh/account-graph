@@ -20,7 +20,7 @@ test('page patterns cover only the named path or subtree, including when a route
     assert.equal(pageAddress(path, rules), undefined, path)
   }
   assert.equal(pageAddress('https://intake.example.org/private', { allowPages: ['/public'], origins: ['HTTPS://INTAKE.EXAMPLE.ORG:443'] }), undefined)
-  assert.equal(pageAddress('https://outside.example.org/report;view/%2F?q=key#private', { allowPages: [], origins: [origin] }), 'https://outside.example.org/report;view/%2F')
+  assert.equal(pageAddress('https://outside.example.org/report;view/%2F?q=key#private', { allowPages: [], origins: [origin] }), undefined)
   assert.equal(pageAddress('/public', { allowPages: [] }), undefined)
   assert.equal(pageAddress('/public', { refusePages: [] }), '/public')
   for (const setting of ['not a list', null, [''], [42], ['/x*y'], ['/x?private'], ['//x'], ['/a/..']]) assert.equal(validPageRules({ allowPages: setting } as never), false)
@@ -210,6 +210,7 @@ test('the served tag keeps arrivals from other sites and drops a private previou
   const search = 'https://search.example.org'
   for (const [rules, path, referrer, expected] of [
     [allow, '/pricing', search + '/', search + '/'],
+    [allow, '/pricing', news + '/report;view/%2F?q=' + key + '#private', news + '/report;view/%2F'],
     [allow, '/services/consult', news + '/story/42?q=' + key + '#' + key, news + '/story/42'],
     [allow, '/pricing', origin + '/services/consult', undefined],
     [refuse, '/pricing', news + '/files/article?q=' + key, news + '/files/article'],
@@ -228,5 +229,35 @@ test('the served tag keeps arrivals from other sites and drops a private previou
     runInNewContext(script, env)
     await new Promise<void>(resolve => setImmediate(resolve))
     assert.deepEqual(sent.map(body => [body.url, body.touch.gclid, body.touch.referrer]), [[origin + path, 'G1', expected]])
+  }
+})
+
+test('the served tag checks form landings and carry destinations on every site alias', async () => {
+  const www = 'https://www.example.org'
+  const aliases = ['https://alias.example.org', 'https://example.org']
+  for (const origins of [[], [www]]) {
+    const location = new URL(www + '/pricing?gclid=G1')
+    const storage = new Map([['ag_landing', aliases[0] + '/files/' + key]])
+    const store = { getItem: (name: string) => storage.get(name), setItem: (name: string, value: string) => storage.set(name, value) }
+    const listeners = new Map<string, (event: unknown) => void>()
+    const env: any = { URL, AbortController, location, localStorage: store, sessionStorage: store, navigator: {},
+      crypto: { randomUUID: () => 'browser' }, history: { pushState() {}, replaceState() {} }, addEventListener() {},
+      document: { referrer: '', cookie: '', addEventListener: (name: string, fn: (event: unknown) => void) => listeners.set(name, fn), removeEventListener() {} },
+      fetch: async () => ({ ok: true, json: async () => ({ token: 'carry' }) }),
+    }
+    const script = browserScripts({ allowPages: ['/pricing'], refusePages: ['/files/*'], origins }).collect.replace(/^export /gm, '').replace('import.meta.url', JSON.stringify(www + '/collect.js?domains=alias.example.org,example.org'))
+    runInNewContext(script, env)
+    await new Promise<void>(resolve => setImmediate(resolve))
+    assert.equal(storage.get('ag_landing'), www + '/pricing')
+    for (const site of aliases) {
+      for (const [path, allowed] of [['/files/' + key, false], ['/pricing', true]] as const) {
+        const href = site + path + '?q=' + key
+        const link = { href }
+        storage.set('ag_landing', href)
+        assert.equal(env.accountGraph.fields().ag_landing, allowed ? site + path : undefined)
+        listeners.get('pointerdown')!({ target: { closest: () => link } })
+        assert.equal(new URL(link.href).searchParams.get('ag_from'), allowed ? 'carry' : null)
+      }
+    }
   }
 })
