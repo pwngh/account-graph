@@ -579,7 +579,7 @@ export interface LocalSettings extends Common {
     readonly address?: { readonly authId: string; readonly authToken: string; readonly license?: string }
     readonly lineType?: { readonly accountSid: string; readonly authToken: string }
   }
-  readonly monitor?: { readonly quietHours?: Partial<Record<'touches' | 'calls' | 'results' | 'costs', number>>; readonly lateHours?: number; readonly auditHours?: number }
+  readonly monitor?: { readonly quietHours?: Partial<Record<'touches' | 'calls' | 'results' | 'costs', number>>; readonly lateHours?: number; readonly auditHours?: number; /** Alerts once a day while more pairs than this wait in the recent review queue. 0 or left out is never. */ readonly reviewPending?: number }
   readonly webhook?: { readonly url: string; readonly secret: string }
   /** A Slack-style `{ text }` address. The same events, written as sentences. */
   readonly alerts?: { readonly url: string }

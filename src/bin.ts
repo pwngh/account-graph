@@ -189,6 +189,7 @@ export function readEnvironment(env: Env) {
     returnHours: number('RETURN_HOURS', 24),
     openHours: parsed('OPEN_HOURS') as OpenHours | undefined,
     lateHours: number('LATE_HOURS', 6),
+    reviewPending: number('REVIEW_PENDING_LIMIT', 0),
     targets: parsed('TARGETS') as LocalOptions['targets'],
     stages: parsed('STAGES') as Ladder | undefined,
     policy,
@@ -378,7 +379,7 @@ export function configFrom(env: Env): { graph: LocalOptions; edge: EdgeOptions; 
       ...(config.metaCosts && { meta: config.metaCosts }),
     },
     checks: { ...(config.smarty && { address: config.smarty }), ...(config.lineType && { lineType: config.lineType }) },
-    monitor: { quietHours: config.quiet, lateHours: config.lateHours, auditHours: config.auditHours },
+    monitor: { quietHours: config.quiet, lateHours: config.lateHours, auditHours: config.auditHours, reviewPending: config.reviewPending },
     ...(config.webhookUrl && { webhook: { url: config.webhookUrl, secret: config.webhookSecret! } }),
     ...(config.alertWebhook && { alerts: { url: config.alertWebhook } }),
   } satisfies LocalOptions

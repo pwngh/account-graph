@@ -9,6 +9,7 @@ import { countFailures } from './pause.ts'
 import { longAgo } from './hours.ts'
 import type { Hours } from './hours.ts'
 import { dayIn, paid, sourceOf } from './report.ts'
+import { RECENT_SIGHTINGS } from './undecided.ts'
 
 /** What the graph is fed with. A feed's time is when its last record was written down. */
 export const FEEDS = ['touches', 'calls', 'results', 'costs'] as const
@@ -93,6 +94,8 @@ export interface OpsOptions {
   emit?: (event: NewEvent) => Promise<unknown>
   /** Stops sends once this many conversions fail for good within an hour, counted across processes. 0 is never. */
   pauseAfterFailures?: number
+  /** Alerts once a day while more pairs than this wait in the recent review queue. 0 is never. */
+  reviewPending?: number
 }
 
 export interface OpsState {
@@ -280,6 +283,13 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
       }
       // Once a day while it lasts, because a backlog that drains slowly has a new oldest job at every look.
       if (due !== undefined && at - due >= late * HOUR) await ops.once(`late:${dayIn(at, timeZone)}`, `account-graph: conversions are overdue. The oldest was due ${when(due)} (${timeZone}).`, undefined, { type: 'delivery.late', at, data: { oldestDue: due } })
+
+      const pending = options.reviewPending ?? 0
+      if (pending > 0) {
+        const { total } = await graph.undecided({ limit: 1, sightings: RECENT_SIGHTINGS })
+        // Once a day while it lasts, as overdue conversions are, since the count changes at every decision.
+        if (total > pending) await ops.once(`pending:${dayIn(at, timeZone)}`, `account-graph: ${total} pairs wait for review in Matches, more than REVIEW_PENDING_LIMIT of ${pending}.`)
+      }
 
       const hours = options.returnHours ?? 0
       if (hours > 0) {

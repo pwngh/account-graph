@@ -162,10 +162,10 @@ export function localGraph(options: LocalOptions, keeping: Keeping = {}): Accoun
       ...(targets.length > 0 && { delivery: { targets, retractOnForget: options.ads?.retractOnForget ?? false, ...(options.ads?.delayMs !== undefined && { delay: options.ads.delayMs }), onFailed: (jobs) => tell(jobs) } }),
     })
     const emit = (event: NewEvent) => store.write((tx) => tx.emit([event]))
-    const { quietHours, lateHours } = options.monitor ?? {}
+    const { quietHours, lateHours, reviewPending } = options.monitor ?? {}
     const ops = createOps(engine.graph, store.ops, {
       ...(options.alerts && { url: options.alerts.url }), ...(quietHours && { quiet: quietHours }), returnHours: options.phones?.returnHours ?? 24, ...(hours && { hours }),
-      outbox: store.outbox, lateHours: lateHours ?? 6, pauseAfterFailures: options.ads?.pauseAfterFailures ?? 0, timeZone: options.timeZone ?? 'UTC', now, emit, ...(options.fetch && { fetch: options.fetch }), onError: (error) => log(`alert: ${String((error as Error)?.message ?? error)}`),
+      outbox: store.outbox, lateHours: lateHours ?? 6, reviewPending: reviewPending ?? 0, pauseAfterFailures: options.ads?.pauseAfterFailures ?? 0, timeZone: options.timeZone ?? 'UTC', now, emit, ...(options.fetch && { fetch: options.fetch }), onError: (error) => log(`alert: ${String((error as Error)?.message ?? error)}`),
     })
     tell = jobs => ops.failed(jobs, store).catch(error => log(String(error)))
     const six = createSix(engine, { receipts, returnHours: options.phones?.returnHours ?? 24, ...(options.linkSecret && { linkSecret: options.linkSecret }), ...(hours && { hours }), ...(options.timeZone && { timeZone: options.timeZone }) })

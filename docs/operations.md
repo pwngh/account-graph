@@ -478,6 +478,7 @@ Set `ALERT_WEBHOOK` to a private receiver, such as a Slack incoming webhook, tha
 | Campaign costs cannot be read, so the report's costs become stale | Platform and reason | At most once in ten minutes per platform |
 | A feed is stale | Feed and time of its last record | Once per stale period |
 | Conversions are `LATE_HOURS` overdue | Due time of the oldest | Once a day while it lasts |
+| More pairs than `REVIEW_PENDING_LIMIT` wait in the recent review queue | How many wait | Once a day while it lasts |
 | A missed caller from a paid visit has waited `RETURN_HOURS` | Campaign, time, and number of callback attempts | Once per wait |
 
 The server logs and stores an alert that fails to deliver, retries it every five minutes, and shows it on the Health view. The work it reports on continues. Without a webhook, alerts are stored and shown there. Delivery to a live alert webhook is untested.
@@ -644,6 +645,7 @@ A partially set group stops the server at startup, with a message naming the mis
 | `AUDIT_HEAD_HOURS` | `0` | Posts the newest audit hash to `ALERT_WEBHOOK` at this interval, at least one hour. Requires `ALERT_WEBHOOK`. `0` disables it. |
 | `QUIET_TOUCHES_HOURS`, `QUIET_CALLS_HOURS`, `QUIET_RESULTS_HOURS`, `QUIET_COSTS_HOURS` | `0` | Hours before a feed is [stale](#stale-feeds). `0` disables the check. |
 | `LATE_HOURS` | `6` | Hours past its due time before a queued conversion raises an alert. `0` disables it. |
+| `REVIEW_PENDING_LIMIT` | `0` | Alerts once a day while more pairs than this wait in the recent review queue. `0` never alerts. Each check asks for the queue once, every five minutes. |
 | `RETURN_HOURS` | `24` | Hours before a missed caller from a paid visit raises an alert, and before the board marks any missed caller overdue. `0` disables both. |
 
 ### Providers
