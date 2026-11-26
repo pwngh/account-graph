@@ -243,6 +243,13 @@ For an actual recovery from a saved archive, restore into a fresh database and v
 
 ```sh
 pg_restore --no-owner --single-transaction --exit-on-error --dbname="$NEW_DATABASE_URL" graph.dump
+DATABASE_URL="$NEW_DATABASE_URL" account-graph verify
+DATABASE_URL="$NEW_DATABASE_URL" account-graph events new-epoch
+```
+
+From a source checkout, run the same commands with Node.
+
+```sh
 DATABASE_URL="$NEW_DATABASE_URL" node src/bin.ts verify
 DATABASE_URL="$NEW_DATABASE_URL" node src/bin.ts events new-epoch
 ```

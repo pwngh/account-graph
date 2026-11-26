@@ -107,7 +107,7 @@ async function requireEmpty(db: pg.Client) {
   if (row.occupied) throw new Error('The target database is not empty')
 }
 
-export async function capture(source: URL, schema: string, archive: string, log: Log): Promise<Manifest> {
+async function capture(source: URL, schema: string, archive: string, log: Log): Promise<Manifest> {
   if (!/^[a-z_][a-z0-9_]{0,62}$/.test(schema)) throw new Error('GRAPH_SCHEMA must be a plain lowercase PostgreSQL name')
   return withClient(source.href, async db => {
     await db.query('begin isolation level repeatable read read only')
@@ -119,17 +119,9 @@ export async function capture(source: URL, schema: string, archive: string, log:
   })
 }
 
-export async function restoreAndVerify(env: Env, archive: string, before: Manifest, log: Log) {
+async function restoreAndVerify(env: Env, archive: string, before: Manifest, log: Log) {
   const target = databaseUrl(env.DATABASE_URL, 'target')
   if (env.GRAPH_SCHEMA !== before.schema) throw new Error('The target schema must match the schema in the archive')
-  if (env.GRAPH_SCHEMA === 'public') {
-    await withClient(target.href, requireEmpty)
-  } else {
-    await withClient(target.href, async db => {
-      const { rowCount } = await db.query('select from pg_catalog.pg_namespace where nspname = $1', [env.GRAPH_SCHEMA])
-      if (rowCount) throw new Error('The target graph schema already exists')
-    })
-  }
   await timed('pg_restore', log, () => postgresTool('pg_restore', target, archive, ['--no-owner', '--no-acl', '--single-transaction', '--exit-on-error', archive]))
   await timed('verify', log, () => command(env, ['verify'], line => {
     const { changes, policy } = JSON.parse(line)
@@ -148,10 +140,20 @@ export async function restoreAndVerify(env: Env, archive: string, before: Manife
   log(`${before.counts.size} table counts match, newest audit hash: ${before.auditHash ?? 'none'}`)
 }
 
-export async function restoreCheck(env: Env, log: Log = console.log) {
+// pg_restore keeps schema names. A test sharing one database moves its own schema after the archive closes.
+type SchemaFixture = { vacant: string; archiveReady(): Promise<void> }
+
+async function checkTarget(db: pg.Client, vacant: string | undefined) {
+  if (vacant === undefined) return requireEmpty(db)
+  const { rowCount } = await db.query('select from pg_catalog.pg_namespace where nspname = $1', [vacant])
+  if (rowCount) throw new Error('The target graph schema already exists')
+}
+
+export async function restoreCheck(env: Env, log: Log = console.log, fixture?: SchemaFixture) {
   const source = databaseUrl(env.DATABASE_URL, 'DATABASE_URL')
   const target = databaseUrl(env.NEW_DATABASE_URL, 'NEW_DATABASE_URL')
   const schema = env.GRAPH_SCHEMA || 'account_graph'
+  if (fixture && (source.href !== target.href || fixture.vacant === schema || !/^ag_restore_[a-z0-9_]{1,52}$/.test(schema) || !/^ag_restore_[a-z0-9_]{1,52}$/.test(fixture.vacant))) throw new Error('A shared test database requires two private restore fixture schemas')
   // The command opens the graph without workers. Its edge token is required by the server config but never served.
   const verify = { DATABASE_URL: target.href, GRAPH_SCHEMA: schema, GRAPH_TOKEN: 'local-restore-check', RECEIPT_SECRETS: env.RECEIPT_SECRETS, LINK_SECRET: env.LINK_SECRET, IDENTIFIER_SECRET: env.IDENTIFIER_SECRET, POLICY: env.POLICY, POLICY_FILE: env.POLICY_FILE }
   configFrom(verify)
@@ -160,14 +162,15 @@ export async function restoreCheck(env: Env, log: Log = console.log) {
       // Reserve the target against another rehearsal until this session closes, including while the source is being dumped.
       const { rows: [lock] } = await db.query("select pg_catalog.pg_try_advisory_lock(0, pg_catalog.hashtext('account-graph restore-check')) as held")
       if (!lock.held) throw new Error('Another restore rehearsal holds the target database')
-      await requireEmpty(db)
+      await checkTarget(db, fixture?.vacant)
     })
     const dir = await mkdtemp(join(tmpdir(), 'ag-restore-'))
     try {
       const archive = join(dir, 'graph.dump')
       const before = await capture(source, schema, archive, log)
+      await fixture?.archiveReady()
       // A long dump gives another operator time to have picked the same target.
-      await timed('recheck empty target', log, () => requireEmpty(db))
+      await timed('recheck empty target', log, () => checkTarget(db, fixture && schema))
       await restoreAndVerify(verify, archive, before, log)
     } finally {
       await rm(dir, { recursive: true, force: true })
