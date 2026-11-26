@@ -14,6 +14,7 @@ One page for each concept.
 10. [Providers](providers.md): where each key comes from, and what is sent to ad platforms.
 11. [Privacy](privacy.md): what is kept, sent and deleted.
 12. [Demo](demo.md): the made-up firm.
+13. [PHP](php.md) covers the six calls, a transactional outbox and a CodeIgniter 3 integration.
 
 ## Who each page is for
 
