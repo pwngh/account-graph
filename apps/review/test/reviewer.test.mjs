@@ -449,9 +449,12 @@ test('Chrome with scripts disabled signs in, posts a native form, follows an acc
     const found = await cdp('DOM.querySelector', { nodeId: root.nodeId, selector })
     return found.nodeId
   }
+  // A control inside a <details> exists before the summary's Enter has opened it, and is focusable only once it renders.
   async function focus(selector) {
-    const nodeId = await until(selector, () => node(selector).catch(() => 0))
-    await cdp('DOM.focus', { nodeId })
+    await until(selector + ' to accept focus', async () => {
+      const nodeId = await node(selector).catch(() => 0)
+      return nodeId && !(await browser.send('DOM.focus', { nodeId }).catch(error => ({ error }))).error
+    })
   }
   const frame = async () => (await cdp('Page.getFrameTree')).frameTree.frame
   const loadedAccount = async () => {
