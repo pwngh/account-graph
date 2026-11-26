@@ -6,7 +6,7 @@ import { affectsPage, oldBookmark, subjectAddress, subjectPath } from './navigat
 import original from '../../../src/edge/review/style.css?url'
 import additions from './style.css?url'
 export const links = () => [{rel: 'icon', type: 'image/svg+xml', href: '/favicon.ico'}, {rel: 'stylesheet', href: original}, {rel: 'stylesheet', href: additions}]
-export async function loader({request}: LoaderFunctionArgs) { return {name: (await current(request))?.name, legacy: runtime().stage ? '/legacy' : runtime().graphUrl + '/review', live: Boolean(runtime().eventsToken)} }
+export async function loader({request}: LoaderFunctionArgs) { return {name: (await current(request))?.name, legacy: runtime().legacy, live: Boolean(runtime().eventsToken)} }
 const menu = [['accounts','Accounts'], ['journey','Journey'], ['board/90','Board'], ['decide','Matches'], ['calls','Calls'], ['channels','Channels'], ['health','Health']]
 
 function Live({path}: {path: string}) {
@@ -39,7 +39,7 @@ export function Layout({children}: {children: React.ReactNode}) {
   const navigation = useNavigation()
   useEffect(() => {
     function bookmark() {
-      const path = oldBookmark(window.location.hash, window.location.pathname, data?.legacy ?? '/review')
+      const path = oldBookmark(window.location.hash, window.location.pathname, data?.legacy)
       if (path) window.location.replace(!data?.name && path.startsWith('/') && !path.startsWith('/legacy') ? '/signin?next=' + encodeURIComponent(path) : path)
     }
     bookmark()

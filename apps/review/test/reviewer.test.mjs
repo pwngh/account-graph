@@ -52,6 +52,8 @@ async function handler(req, res) {
     case '/review/api/decisions': return send(200, { decisions: [], next: null, total: 0 })
     case '/review/api/audit': return send(200, { sound: true, head: null })
     case '/review/api/pulse': return send(200, { version: changes.length })
+    case '/review/api/ops': return send(200, { feeds: [] })
+    case '/review/api/report': return send(200, { rows: [] })
     case '/v1/lookup': return send(200, { by: 'subject', subjects: specialSubjects })
     case '/v1/decide': {
       if (beforeDecision) await beforeDecision
@@ -244,6 +246,29 @@ test('a GET to /signout answers 405 without logging a server error', async () =>
   }
   assert.deepEqual(logged, [])
   assert.equal((await fetch(origin + path, { headers: { cookie } })).status, 200, 'a GET leaves the session signed in')
+})
+
+test('the original screen is linked only at REVIEW_LEGACY_URL, never at the graph address', async () => {
+  const { reviewServer } = await import('../server.mjs')
+  const pages = async settings => {
+    const standalone = await reviewServer({ port: 0, host: '127.0.0.1', ...settings })
+    try {
+      const url = address(standalone)
+      const headers = { cookie: cookieFrom(await fetch(url + '/signin', post({ token: reviewer }, undefined, url))) }
+      return (await Promise.all(['/health', '/channels'].map(async view => (await fetch(url + view, { headers })).text()))).join('')
+    } finally {
+      await close(standalone)
+    }
+  }
+  const unset = await pages({})
+  assert.ok(!unset.includes(process.env.REVIEW_GRAPH_URL), 'the graph address is not in the page')
+  assert.doesNotMatch(unset, /href="[^"]*#\/(health|channels)"/)
+  assert.match(unset, /The original reviewer screen has the full Health view\./)
+  const set = await pages({ legacyUrl: 'https://graph.example.org/review' })
+  assert.ok(set.includes('href="https://graph.example.org/review#/health"'))
+  assert.ok(set.includes('href="https://graph.example.org/review#/channels"'))
+  assert.ok(!set.includes(process.env.REVIEW_GRAPH_URL))
+  await assert.rejects(reviewServer({ port: 0, host: '127.0.0.1', legacyUrl: 'javascript:alert(1)' }), /REVIEW_LEGACY_URL/)
 })
 
 test('pasted and linked subjects reopen the same record with their ID preserved', async () => {

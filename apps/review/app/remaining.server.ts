@@ -4,8 +4,8 @@ import { reviewGet, withGraph } from './auth.server'
 
 export function remaining(request: Request, view: string) {
   return withGraph(request, async session => {
-    const legacy = runtime().stage ? '/legacy' : runtime().graphUrl + '/review'
-    const base = { view, legacy: legacy + '#/' + view }
+    const legacy = runtime().legacy
+    const base = { view, legacy: legacy && legacy + '#/' + view }
     if (view === 'decide') {
       const audit = await reviewGet(request, session, 'decisions', {limit: '1'})
       const queue = await reviewGet(request, session, 'undecided')

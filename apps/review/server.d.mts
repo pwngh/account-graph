@@ -5,6 +5,7 @@ interface Settings {
   graphUrl?: string
   eventsToken?: string
   secret?: string
+  legacyUrl?: string
   stage?: Stage
 }
 export function reviewListener(settings?: Settings): Promise<RequestListener & {stop(): void}>

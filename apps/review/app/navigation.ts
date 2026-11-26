@@ -25,7 +25,7 @@ export function readSubject(url: URL) {
 }
 
 // Fragments reach the browser only. Keep the old screen's date ranges and its links to a particular call.
-export function oldBookmark(hash: string, pathname: string, legacy: string) {
+export function oldBookmark(hash: string, pathname: string, legacy?: string) {
   if (!hash.startsWith('#') || hash === '#') return
   let raw = hash.slice(1)
   if (raw === '!channels') raw = '/channels'
@@ -42,7 +42,7 @@ export function oldBookmark(hash: string, pathname: string, legacy: string) {
     return view === 'journey' && last ? path + '#call-' + encodeURIComponent(encodeURIComponent(last)) : path
   }
   if (view === 'calls' && first && last && [first, last].every(day => /^\d{4}-\d{2}-\d{2}$/.test(day))) return '/calls?' + new URLSearchParams({from: first, to: last})
-  if (view === 'channels' && parts.length) return legacy + '#/channels/' + parts.map(encodeURIComponent).join('/')
+  if (view === 'channels' && parts.length && legacy) return legacy + '#/channels/' + parts.map(encodeURIComponent).join('/')
   if (view === 'board') return '/board/' + (first && /^\d+$/.test(first) ? first : '90')
   if (view && ['decide', 'calls', 'channels', 'health'].includes(view)) return '/' + view
 }

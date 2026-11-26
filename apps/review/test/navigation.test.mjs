@@ -13,6 +13,8 @@ test('old bookmarks keep subjects, call anchors, date ranges and original channe
   assert.equal(convert('#contact:one/two'), '/accounts/contact%3Aone%2Ftwo')
   assert.equal(convert('#view'), undefined)
   assert.equal(oldBookmark('#call-a', '/journey/contact:one', '/legacy'), undefined)
+  // Without an address for the original screen, a filtered Channels bookmark opens Channels here.
+  assert.equal(oldBookmark('#/channels/2026-10-01/2026-10-31/campaign', '/review'), '/channels')
 })
 
 test('live changes refresh the visible report, its details and journeys of related subjects', () => {

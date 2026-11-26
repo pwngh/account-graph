@@ -18,6 +18,7 @@ interface Settings {
   eventsToken?: string
   secret?: string
   origin?: string
+  legacyUrl?: string
 }
 
 export function configure(settings: Settings = {}) {
@@ -26,7 +27,10 @@ export function configure(settings: Settings = {}) {
   const graphUrl = new URL(settings.graphUrl ?? process.env.REVIEW_GRAPH_URL ?? 'http://127.0.0.1:8080').origin
   const origin = settings.origin ?? process.env.REVIEW_ORIGIN
   const eventsToken = settings.eventsToken ?? process.env.REVIEW_EVENTS_TOKEN
-  return { graphUrl, stage: settings.stage, origin, secret, eventsToken, sessions: new Map<string, Reviewer>(), stopped: new AbortController() }
+  // The graph's address can be internal. Link to the original screen only where the operator says reviewers can reach it.
+  const legacyUrl = settings.stage ? '/legacy' : settings.legacyUrl ?? process.env.REVIEW_LEGACY_URL
+  if (legacyUrl && !legacyUrl.startsWith('/') && !/^https?:$/.test(new URL(legacyUrl).protocol)) throw new Error('Set REVIEW_LEGACY_URL to an http or https address')
+  return { graphUrl, stage: settings.stage, origin, secret, eventsToken, legacy: legacyUrl || undefined, sessions: new Map<string, Reviewer>(), stopped: new AbortController() }
 }
 type Runtime = ReturnType<typeof configure>
 const scope = new AsyncLocalStorage<Runtime>()
