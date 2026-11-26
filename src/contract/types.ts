@@ -155,7 +155,7 @@ export interface Ring {
   /** The subjects in the order value moved, starting with the one asked about. The last pays the first. */
   subjects: Subject[]
   asset: string
-  /** The least that moved along any step: the most that could have gone all the way round. */
+  /** The least that moved along any step, which is the most that could have gone all the way round. */
   amount: number
   /** How many of the others are in the same cluster as the first. A ring among one person's accounts is the clearest sign. */
   tied: number
@@ -183,7 +183,7 @@ export interface Consent {
 
 /** One answer about advertising, as it was given. Answers are added to and never changed. */
 export interface ConsentAnswer extends Consent {
-  /** When it was given, in epoch milliseconds. 0 when it is not known: an answer kept from before there was a history. */
+  /** When it was given, in epoch milliseconds. 0 when it is not known, as for an answer kept from before there was a history. */
   at: number
   /** Where it was given: `banner`, `browser signal`, or a name of your own. */
   source?: string
@@ -387,7 +387,7 @@ export interface NotLead {
 export interface OutcomeValue {
   value: number
   currency: string
-  /** When it was written down, in epoch milliseconds. 0 when that is not known: a value kept from before there was a history. */
+  /** When it was written down, in epoch milliseconds. 0 when that is not known, as for a value kept from before there was a history. */
   at: number
   /** Why it changed, where that was said: money given back, or money that will not come. Without it, what was known was corrected. */
   kind?: Loss
@@ -404,7 +404,7 @@ export interface ValueChange {
   /** Of outcomes whose first value is known. `firstUnknown` counts the others, which are in none of this sum. */
   first: number
   firstUnknown: number
-  /** What all of them are worth now: net of the two below. */
+  /** What all of them are worth now, net of the two below. */
   now: number
   /** Of what they were worth, how much was given back, and how much will not come, where a change of value said so. */
   refunded: number
@@ -656,7 +656,7 @@ export type CostRow = Required<Omit<Cost, 'conversions' | 'conversionValue'>> & 
 
 /**
  * What a platform says it brought, beside what is credited to it here, over
- * the days it said so. The two need not agree: a platform counts by its own
+ * the days it said so. The two need not agree. A platform counts by its own
  * rules, often on the day of the click, and two may claim the same one.
  */
 export interface Reported {
@@ -729,7 +729,7 @@ export interface ReportRow {
   returnOnCost: number | null
   /** What the platform says it brought. Absent where it said nothing. On the total, over the rows that have one. */
   reported?: Reported
-  /** The same outcomes by the dimension asked for. Costs are not split: a campaign is charged whole. */
+  /** The same outcomes by the dimension asked for. Costs are not split. A campaign is charged whole. */
   breakdown?: Breakdown
 }
 
@@ -742,7 +742,7 @@ export interface Report {
   /** Highest cost first, then highest value. */
   rows: ReportRow[]
   total: Omit<ReportRow, 'source' | 'campaignId' | 'campaign'>
-  /** Over how many days of the period costs could have been recorded: those up to today. */
+  /** Over how many days of the period costs could have been recorded, which are those up to today. */
   days: number
   /**
    * Set when part of the period is too recent for its arrivals to have done
@@ -830,10 +830,10 @@ export interface FollowedGroup {
 export interface Followed {
   step: string
   days: number
-  /** A row of fewer people than this is not shown: one person more or less would move it too far. */
+  /** A row of fewer people than this is not shown, because one person more or less would move it too far. */
   least: number
   groups: FollowedGroup[]
-  /** People left out, and why, apart for the two questions: someone may count for one and not for the other. */
+  /** People left out, and why, apart for the two questions, because someone may count for one and not for the other. */
   excluded: {
     /** Of the groups by what their first call was like. */
     first: { already: number; running: number }
