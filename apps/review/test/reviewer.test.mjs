@@ -21,7 +21,7 @@ const account = {
 const requests = []
 const changes = []
 const decisions = new Map()
-let app, graph, origin, routes, revoked = false, failure = 0
+let beforeDecision, app, graph, origin, routes, revoked = false, failure = 0
 async function handler(req, res) {
   const url = new URL(req.url, 'http://localhost')
   const send = (status, body) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body))
@@ -46,6 +46,7 @@ async function handler(req, res) {
     case '/review/api/audit': return send(200, { sound: true, head: null })
     case '/review/api/pulse': return send(200, { version: changes.length })
     case '/v1/decide': {
+      if (beforeDecision) await beforeDecision
       const previous = decisions.get(input.key)
       if (previous) assert.deepEqual(input, previous, 'reposting the same form must preserve its decision key and timestamp')
       decisions.set(input.key, input)
@@ -123,6 +124,19 @@ test('loaders and actions check the graph token and submit a decision as the sig
   assert.equal(decisions.get(form.key)?.by, 'dana')
 })
 
+test('production and non-loopback sessions require Secure and do not expose their credential', async () => {
+  for (const address of ['https://review.example.org', 'http://review.example.org', 'https://localhost']) {
+    // The hostname is used as input to the route handler. Its graph is the same loopback stub.
+    const response = await invoke(routeModule('signin').action, new Request(address + '/signin', post({ token: reviewer }, undefined, address)))
+    const header = response.headers.get('set-cookie')
+    assert.match(header, /; Secure/i)
+    const encoded = cookieFrom(response).split('=')[1]
+    const value = JSON.parse(Buffer.from(decodeURIComponent(encoded).split('.')[0], 'base64').toString('utf8'))
+    assert.deepEqual(Object.keys(value), ['id'])
+    assert.notEqual(value.id, reviewer)
+  }
+})
+
 function fieldsOf(form) {
   const result = new URLSearchParams()
   for (const [, attrs] of form.matchAll(/<(?:input|button)\b([^>]+)>/gi)) {
@@ -170,6 +184,11 @@ test('a plain HTML client signs in, reads an account, posts its form twice and s
     assert.ok([400, 403].includes(refused.status), 'the framework or the action rejects the Origin')
     assert.equal(requests.filter(call => call.path === '/v1/decide').length, previous)
   }
+  const invalid = new URLSearchParams(fields)
+  invalid.set('other', subject)
+  const rejected = await fetch(action, post(invalid, cookie))
+  assert.equal(rejected.status, 400)
+  assert.match((await rejected.text()).replace(/<script\b[^>]*>[^]*?<\/script>/gi, ''), /Choose two different IDs/)
   for (let i = 0; i < 2; i++) {
     const response = await fetch(action, post(fields, cookie))
     assert.ok([200, 302, 303].includes(response.status), 'a valid join succeeds')
@@ -227,5 +246,86 @@ test('events resume at Last-Event-ID and sign-out ends the other tab’s stream'
     while (!(await stream.read()).done) {}
   } finally {
     controller.abort()
+  }
+})
+
+test('without a service events token authenticated HTML still works', async () => {
+  const { reviewServer } = await import('../server.mjs')
+  const standalone = await reviewServer({ port: 0, host: '127.0.0.1', eventsToken: '' })
+  try {
+    const url = address(standalone)
+    const logged = await fetch(url + '/signin', post({ token: reviewer }, undefined, url))
+    const headers = { cookie: cookieFrom(logged) }
+    const answer = await fetch(url + '/events', { headers })
+    assert.equal(answer.status, 204)
+    assert.equal(await answer.text(), '')
+    assert.equal((await fetch(url + path, { headers })).status, 200)
+  } finally {
+    await close(standalone)
+  }
+})
+
+test('the server bounds a large graph drawing and keeps every link reachable by ordinary pagination', async () => {
+  const cookie = await signin()
+  const original = { ...account }
+  try {
+    account.links = Array.from({ length: 700 }, (_, i) => ({ ...original.links[0], subject: 'contact:volume-' + i }))
+    account.cluster = { ...original.cluster, members: [subject, ...account.links.map(link => link.subject)], oversized: true }
+    account.edges = account.links.map(link => ({ ...original.edges[0], b: link.subject }))
+    const page = async query => {
+      const response = await fetch(origin + path + query, { headers: { cookie } })
+      assert.equal(response.status, 200)
+      return (await response.text()).replace(/<script\b[^>]*>[^]*?<\/script>/gi, '').replaceAll('<!-- -->', '')
+    }
+    const first = await page('')
+    assert.match(first, /Showing 24 of 700/)
+    assert.doesNotMatch(first, /contact:volume-699/)
+    assert.ok(first.includes('?links=1#links"'), 'SSR offers the next page of links')
+    assert.match(await page('?links=13'), /contact:volume-699/)
+  } finally {
+    Object.assign(account, original)
+  }
+})
+
+test('keyboard navigation, narrow forced colors, pending form and history keep the visible account correct', { skip: !process.env.CHROME && 'set CHROME to run keyboard and layout checks', timeout: 40000 }, async t => {
+  const { browse, until } = await import('../../../test/chrome.ts')
+  const { run, send, close: closeBrowser } = await browse(origin + path)
+  t.after(closeBrowser)
+  await send('Emulation.setDeviceMetricsOverride', { width: 320, height: 720, mobile: false, deviceScaleFactor: 1 })
+  await send('Emulation.setEmulatedMedia', { features: [{ name: 'forced-colors', value: 'active' }] })
+  await until('the sign-in form', () => run("Boolean(document.querySelector('input[name=token]'))").catch(() => false))
+  await run(`{
+    const input = document.querySelector('input[name=token]')
+    input.value = ${JSON.stringify(reviewer)}
+    input.form.requestSubmit()
+  }`)
+  await until('enhanced account', () => run("Boolean(document.querySelector('input[type=range]'))").catch(() => false))
+  assert.equal(await run(`document.documentElement.scrollWidth <= 320`), true)
+  assert.equal(await run(`matchMedia('(forced-colors: active)').matches`), true)
+  await run(`document.activeElement.blur()`)
+  for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 })
+  assert.ok(await run(`document.activeElement.matches('a,button,input,summary,select')`))
+  let release
+  beforeDecision = new Promise(resolve => { release = resolve })
+  try {
+    await run(`{
+      const form = document.querySelector('input[name=intent][value=join]').form
+      form.closest('details').open = true
+      form.elements.other.value = 'contact:another'
+      form.requestSubmit()
+    }`)
+    await until('the pending button', () => run(`Boolean(document.querySelector('.decision-form button:disabled'))`))
+    await run(`document.querySelector('a.subject[href$="contact%3A72"]').click()`)
+    await until('the next account', () => run(`location.pathname.endsWith('contact%3A72') && document.body.innerText.includes('No records')`))
+    release()
+    await until('the finished action', () => !beforeDecision || [...decisions.values()].some(d => d.pairs?.[0]?.b === 'contact:another'))
+    assert.doesNotMatch(await run(`document.body.innerText`), /Decision saved/)
+    await run('history.back()')
+    await until('back to the first account', () => run(`document.body.innerText.includes('Created in your system')`))
+    await run('history.forward()')
+    await until('forward to the second account', () => run(`document.body.innerText.includes('No records')`))
+  } finally {
+    release()
+    beforeDecision = undefined
   }
 })

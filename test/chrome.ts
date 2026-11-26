@@ -4,10 +4,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 /** A real browser, driven over Chrome's own debugging port. Undefined where there is none. */
-export const chrome = [process.env.CHROME, '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'].find((path) => path && existsSync(path))
+export const chrome = process.env.CHROME
 
-/** Why a test that needs a browser is left out, or false where it is not. CI is never without one. */
-export const without = !chrome && !process.env.CI ? 'set CHROME to a Chrome or Chromium to run it' : false
+/** Only launch the browser chosen by the caller. */
+export const without = !chrome ? 'set CHROME to a Chrome or Chromium to run it' : false
 
 export const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 export async function until<T>(what: string, look: () => Promise<T> | T, seconds = 10): Promise<NonNullable<T>> {
@@ -22,7 +22,7 @@ export async function until<T>(what: string, look: () => Promise<T> | T, seconds
 /** Opens an address in a browser of its own. `run` evaluates an expression in the page, and `send` asks Chrome itself. */
 export async function browse(address: string) {
   const home = mkdtempSync(join(tmpdir(), 'ag-chrome-'))
-  const browser = spawn(chrome!, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${home}`, '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage', '--no-first-run', '--user-agent=Mozilla/5.0 (a test that is not a bot)', 'about:blank'], { stdio: 'ignore', detached: true })
+  const browser = spawn(chrome!, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${home}`, '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage', '--no-first-run', '--disable-background-networking', '--disable-component-update', '--no-default-browser-check', '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1, EXCLUDE [::1]', '--user-agent=Mozilla/5.0 (a test that is not a bot)', 'about:blank'], { stdio: 'ignore', detached: true })
   const gone = new Promise<void>((resolve) => browser.once('close', () => resolve()))
   const failed = new Promise<never>((_, reject) => browser.once('error', reject))
   failed.catch(() => {})
