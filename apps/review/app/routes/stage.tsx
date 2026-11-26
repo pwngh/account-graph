@@ -28,12 +28,12 @@ function Phone({state, phone}: {state: StageState, phone: string}) {
       : page === 'site' ? <div className="page site"><iframe src={state.site + '/es?phone=1'} title="The sample firm on the caller’s phone"/></div>
       : page === 'ringing' ? <div className="page ringing"><span className="face">T</span><b>{p.firm}</b><span className="how">{phone === 'missed' ? 'Missed call' : phone === 'calling' ? 'Calling…' : 'Answered'}</span><span className="clock">{shown?.seconds} s</span></div>
       : page === 'texts' ? <div className="page texts"><div className="with">{p.firm}</div><div className="thread"><p className="bubble">{text}</p></div></div>
-      : <div className="page paper"><div className="sheet"><small>{p.firm}</small><b>{words[0]}</b><p>{words[1]}</p>{phone === 'form' && <Fields rows={p.form}/ >}{phone === 'pay' && <Fields rows={p.last.fields}/>}</div></div>}
+      : <div className="page paper"><div className="sheet"><small>{p.firm}</small><b>{words[0]}</b><p>{words[1]}</p>{phone === 'form' && <Fields rows={p.form}/>}{phone === 'pay' && <Fields rows={p.last.fields}/>}</div></div>}
   </div></div><small><b>The caller’s phone</b> {shown?.caption || p.captions[phone] || ''}</small></aside>
 }
 
 export default function StagePage() {
-  const {state: loaded, content, path} = useLoaderData<typeof loader>()
+  const {state: loaded, content, path, viewError} = useLoaderData<typeof loader>()
   const actionData = useActionData<ActionResult>()
   const [live, setLive] = useState(loaded)
   const state = live.revision > loaded.revision ? live : loaded
@@ -75,10 +75,6 @@ export default function StagePage() {
   }, [phone])
   useEffect(() => {
     if (!currentView || !scene) return
-    if (scene.open) {
-      const details = document.querySelector<HTMLDetailsElement>('details[data-card="' + scene.open + '"]')
-      if (details) details.open = true
-    }
     if (!scene.spot) return
     const rows = [...document.querySelectorAll<HTMLElement>('#stage-view tr, #stage-view .timeline-entry, #stage-view li, #stage-view .inbox-call')]
     let index = -1
@@ -120,13 +116,13 @@ export default function StagePage() {
       {state.error && <p role="alert">{state.error}</p>}{state.ready && <Link to={path}>Open reviewer view</Link>}
     </section>
     {(card || desk) && <aside id="stage-desk" className="on"><strong>{card?.title || desk?.name}</strong><Fields rows={card?.fields || desk?.fields || []}/>{desk?.done} {state.told.checked && <small>{state.told.checked} POST /match</small>} {card?.path}</aside>}
-    <div id="stage-view" key={state.boot + state.next}>{currentView && content &&
-      ('accounts' in content ? <Accounts data={content.accounts!}/> : 'report' in content ? <Report data={content.report}/> : <Remaining model={content.other!}/>)}</div>
+    <div id="stage-view" key={state.boot + state.next}>{currentView && viewError && <p role="alert">{viewError} <a href="/stage">Retry view</a></p>}{currentView && content &&
+      ('accounts' in content ? <Accounts data={content.accounts!}/> : 'report' in content ? <Report data={content.report!} openCard={scene?.open}/> : <Remaining model={content.other!}/>)}</div>
     {state.told.credit && <section className="stage-credit">Ad credit of contact:ines-vega <b>{Math.round(100 * state.told.credit.share)}%</b>{state.told.credit.campaign ? 'Credited to ' + state.told.credit.campaign : 'Not credited. It takes 90%.'}</section>}
     <div id="stage" role="group" aria-label="Demo scenes" className={hidden ? 'away' : undefined} data-at={state.next} data-ms={state.ms} data-ready={state.ready} data-running={busy}>
       <span className="where">{state.next} of {state.scenes.length}</span><b>{scene?.title ?? 'Scenes'}</b><span className="told" role="status">{status || (state.ready ? state.told.lines.join(' ') : state.progress)}</span>
       <fetcher.Form method="post" action="/stage" className="keys" preventScrollReset>
-        <input type="hidden" name="boot" value={state.boot}/><input type="hidden" name="expected" value={state.next}/>
+        {enhanced && <input type="hidden" name="_enhanced" value="1"/>}<input type="hidden" name="boot" value={state.boot}/><input type="hidden" name="expected" value={state.next}/>
         <button ref={run} name="intent" value="run" className="primary" hidden={finished} disabled={!state.ready || busy || finished}>Next <kbd>Space</kbd></button>
         {enhanced && <button type="button" onClick={play} disabled={!state.ready}>{playing ? 'Pause' : 'Play'} <kbd>P</kbd></button>}
         <button ref={restart} name="intent" value="restart" className={finished ? 'primary' : ''} disabled={busy || (!state.ready && !state.error)} onClick={() => setPlaying(false)}>Restart <kbd>R</kbd></button>

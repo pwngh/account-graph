@@ -1,3 +1,4 @@
+import { fieldsOf } from './forms.server'
 import { randomUUID } from 'node:crypto'
 import { createCookieSessionStorage, data, redirect } from 'react-router'
 import { accountGraph } from 'account-graph'
@@ -43,18 +44,39 @@ export async function requireReviewer(request: Request) {
   const session = await current(request)
   if (session) return session
   // Only a local review path can be a destination after signing in.
-  const path = new URL(request.url).pathname.replace(/\.data$/, '')
+  const url = new URL(request.url)
+  const path = url.pathname.replace(/\.data$/, '') + url.search
   throw redirect('/signin?next=' + encodeURIComponent(safePath(path)))
 }
 
 function safePath(path: unknown) {
-  return typeof path === 'string' && /^\/(accounts|journey|board|calls|decide|channels|health)(\/[^?#\\]*)?$/.test(path) ? path : '/accounts'
+  if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('//') || path.includes('\\')) return '/accounts'
+  const base = 'https://review.example.org'
+  const url = new URL(path, base)
+  if (url.origin !== base || !/^\/(accounts|journey|board|calls|decide|channels|health)(\/[^?#]*)?$/.test(url.pathname)) return '/accounts'
+  const clean = new URLSearchParams()
+  const filters: Record<string,RegExp> = {from: /^\d{4}-\d{2}-\d{2}$/, to: /^\d{4}-\d{2}-\d{2}$/, page: /^\d+$/, measure: /^(calls|answered|missed|voicemail|unknown|waiting|returned)$/, before: /^\d+$/, offset: /^\d+$/, links: /^\d+$/, author: /^(people|system)$/}
+  for (const [key, allowed] of Object.entries(filters)) {
+    const value = url.searchParams.get(key)
+    if (value && allowed.test(value)) clean.set(key, value)
+  }
+  return url.pathname + (clean.size ? '?' + clean : '') + (url.pathname.startsWith('/journey/') && url.hash.startsWith('#call-') ? url.hash : '')
 }
 
-export async function reviewGet(request: Request, session: Pick<Reviewer, 'token'>, path: string, query: Record<string, string> = {}) {
+// A board can make several successive reads for its details. They share one deadline.
+const deadlines = new WeakMap<Request, AbortSignal>()
+function deadline(request: Request) {
+  const existing = deadlines.get(request)
+  if (existing) return existing
+  const signal = AbortSignal.timeout(8000)
+  deadlines.set(request, signal)
+  return signal
+}
+
+export async function reviewGet(request: Request, session: Pick<Reviewer, 'token'> & Partial<Pick<Reviewer, 'controller' | 'id'>>, path: string, query: Record<string, string> = {}) {
   const address = new URL('/review/api/' + path, runtime().graphUrl)
   address.search = new URLSearchParams(query).toString()
-  const response = await fetch(address, { headers: { authorization: 'Bearer ' + session.token }, redirect: 'error', signal: AbortSignal.any([request.signal, AbortSignal.timeout(8000)]) })
+  const response = await fetch(address, { headers: { authorization: 'Bearer ' + session.token }, redirect: 'error', signal: AbortSignal.any([request.signal, ...(session.controller ? [session.controller.signal] : []), deadline(request)]) })
   if (response.status === 401) throw await signedOut(request, 'id' in session ? session as Reviewer : undefined)
   if (!response.ok) throw new Response('The graph could not answer. Reload to try again.', { status: response.status >= 500 ? 503 : response.status })
   return response.json()
@@ -64,12 +86,15 @@ export async function withGraph<T>(request: Request, work: (session: Reviewer, g
   const session = await requireReviewer(request)
   const graph = accountGraph({ url: runtime().graphUrl, token: session.token, timeoutMs: 8000 })
   try {
-    return await work(session, graph)
+    const answer = await work(session, graph)
+    if (session.controller.signal.aborted) throw await signedOut(request, session)
+    return answer
   } catch (error) {
+    if (session.controller.signal.aborted) throw await signedOut(request, session)
     if (error instanceof Response) throw error
     const fault = error as { code?: string, message?: string }
     if (fault.code === 'AUTH.REJECTED') throw await signedOut(request, session)
-    if (fault.code?.startsWith('INPUT.')) throw new Response('Check the values in the form and try again.', { status: 400 })
+    if (typeof fault.code === 'string' && fault.code.startsWith('INPUT.')) throw new Response('Check the values in the form and try again.', { status: 400 })
     throw new Response('The graph is unavailable. Reload to try again.', { status: 503 })
   } finally {
     await graph.close()
@@ -81,7 +106,14 @@ export async function openSession(request: Request, token: string, name: string,
   for (const prior of sessions.values()) if (prior.expires <= Date.now()) revoke(prior)
   revoke(await current(request))
   const id = randomUUID()
-  sessions.set(id, { id, name, token, retraction, controller: new AbortController(), expires: Date.now() + lifetime * 1000 })
+  const controller = new AbortController()
+  const expires = Date.now() + lifetime * 1000
+  sessions.set(id, { id, name, token, retraction, controller, expires })
+  const expiry = setTimeout(() => {
+    sessions.delete(id)
+    controller.abort()
+  }, lifetime * 1000).unref()
+  controller.signal.addEventListener('abort', () => clearTimeout(expiry), {once: true})
   const jar = storage(request)
   const cookie = await jar.getSession()
   cookie.set('id', id)
@@ -90,7 +122,7 @@ export async function openSession(request: Request, token: string, name: string,
 
 export async function signIn(request: Request) {
   checkOrigin(request)
-  const form = await request.formData()
+  const form = await fieldsOf(request)
   const token = String(form.get('token') ?? '')
   if (!/^[!-~]{1,2048}$/.test(token)) return data({ error: 'Enter your reviewer token.' }, { status: 400 })
   try {

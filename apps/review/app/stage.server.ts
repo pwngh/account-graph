@@ -1,3 +1,4 @@
+import { fieldsOf } from './forms.server'
 import { data, redirect } from 'react-router'
 import { runtime } from './runtime.server'
 import { checkOrigin, current, requireReviewer, openSession, reviewGet } from './auth.server'
@@ -25,23 +26,29 @@ export async function loadStage(request: Request) {
   const [, view, parameter] = path.split('/')
   const which = parameter && decodeURIComponent(parameter)
   let content
+  let viewError = ''
   if (state.ready && !state.running) {
-    if (view === 'accounts') content = {accounts: await loadAccounts(request, which)}
-    else if (view === 'board' || view === 'journey' || view === 'calls') content = {report: await loadReport(request, view, which)}
-    else content = {other: await remaining(request, view)}
+    try {
+      if (view === 'accounts') content = {accounts: await loadAccounts(request, which)}
+      else if (view === 'board' || view === 'journey' || view === 'calls') content = {report: await loadReport(request, view, which)}
+      else content = {other: await remaining(request, view)}
+    } catch (error) {
+      if (error instanceof Response && error.status < 400) throw error
+      viewError = 'The graph could not open this view. The scene controls are available.'
+    }
   }
-  return {state, path, content}
+  return {state, path, content, viewError}
 }
 
 export async function changeStage(request: Request) {
   const demo = stage()
   checkOrigin(request)
   await requireReviewer(request)
-  const form = await request.clone().formData()
+  const form = await fieldsOf(request)
   const intent = String(form.get('intent') ?? '')
-  if (!['run','restart'].includes(intent)) return changeAccounts(request)
+  if (!['run','restart'].includes(intent)) return changeAccounts(request, undefined, form)
   if (!/^\d+$/.test(String(form.get('expected')))) return data({error: 'Reopen the current scene.'}, {status: 400})
   const problem = await demo.change(intent, String(form.get('boot')), Number(form.get('expected')))
   if (problem) return data({error: problem}, {status: 409})
-  return {saved: ''}
+  return form.get('_enhanced') === '1' ? {saved: ''} : redirect('/stage', 303)
 }

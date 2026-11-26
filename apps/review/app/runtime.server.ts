@@ -33,3 +33,5 @@ const scope = new AsyncLocalStorage<Runtime>()
 let development: Runtime | undefined
 export const runtime = () => scope.getStore() ?? (development ??= configure())
 export const serveWith = (value: Runtime, work: () => void) => scope.run(value, work)
+
+export const graphTime = () => runtime().stage?.state().clock ?? Date.now()

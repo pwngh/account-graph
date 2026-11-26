@@ -93,7 +93,12 @@ async function round(databaseUrl: string | undefined, graphAt: string, sitePort:
     alerts: { url: `${siteAt}/hook` }, targets: { answered: 0.9, returned: 0.8, callbackHours: 4 }, monitor: { quietHours: { touches: 24, calls: 12, results: 24, costs: 48 } },
   }
   const firm = accountGraph(databaseUrl ? { ...settings, databaseUrl, schema, receiptSecrets: [SECRET] } : { ...settings, memory: true })
-  const { engine, ops } = await internalsOf(firm)!()
+  const { engine, ops } = await internalsOf(firm)!().catch(async error => {
+    site.closeAllConnections()
+    await new Promise(resolve => site.close(resolve))
+    await firm.close()
+    throw error
+  })
   const { graph } = engine
   const handler = createEdge(firm, { token: 'service-demo', reviewers: { dana: 'demo' }, origins: [siteAt], limit: false, events: ['phone_click', 'text_click'] })
   const edge: RequestListener = (request, response) => {
@@ -575,11 +580,14 @@ export async function startFirm({databaseUrl}: Kept, options: Options = {}): Pro
   const watchers = new Set<() => void>()
   let revision = 0
   const changed = () => { revision += 1; for (const notify of watchers) notify() }
-  const server = createServer((req,res) => {
+  let initialized!: () => void
+  const listening = new Promise<void>(resolve => { initialized = resolve })
+  const server = createServer(async (req,res) => {
     const host = req.headers.host?.split(':')[0]
     if (host !== '127.0.0.1' && host !== 'localhost') return void res.writeHead(403).end()
     const path = (req.url ?? '/').split('?')[0]!
-    if (!active || !app) return void res.writeHead(503).end('Starting the firm.')
+    if (!app) await listening
+    if (!active || !app) return void res.writeHead(503).end('The firm could not start. Check its terminal and reload.')
     if (/^\/(v1\/|review\/api\/|collect(?:[/.]|$)|legacy$|calls\/twilio|texts\/twilio)/.test(path)) return active.edge(req,res)
     return app(req,res)
   })
@@ -617,6 +625,8 @@ export async function startFirm({databaseUrl}: Kept, options: Options = {}): Pro
     server.close()
     await active?.close()
     throw error
+  } finally {
+    initialized()
   }
   return {graph: address, site: active.site, async close() {
     await restarting

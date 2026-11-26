@@ -1,3 +1,4 @@
+import { graphTime } from './runtime.server'
 import { randomUUID } from 'node:crypto'
 import { data, redirect } from 'react-router'
 import { fieldsOf } from './forms.server'
@@ -34,7 +35,7 @@ export function loadAccounts(request: Request, subject?: string) {
     const selected = subject ?? clusters[0]?.id
     const profile = selected ? await get('subject', {subject: selected}) : undefined
     const wanted = Math.max(0, Math.floor(Number(query.get('links')) || 0))
-    return { subject, profile: !subject ? undefined : profile?.known ? pageOf(profile, wanted) : profile, layout: profile?.known ? clusterLayout(profile) : undefined, audit, clusters, recent, decisions, retraction: session.retraction, key: randomUUID(), at: Date.now(), offset, author }
+    return { subject, profile: !subject ? undefined : profile?.known ? pageOf(profile, wanted) : profile, layout: profile?.known ? clusterLayout(profile) : undefined, audit, clusters, recent, decisions, retraction: session.retraction, key: randomUUID(), at: graphTime(), offset, author }
   })
 }
 

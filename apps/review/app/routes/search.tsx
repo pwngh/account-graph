@@ -1,10 +1,11 @@
+import { fieldsOf } from '../forms.server'
 import { Link, redirect, useActionData, type ActionFunctionArgs, type LoaderFunctionArgs } from 'react-router'
 import { checkOrigin, requireReviewer, withGraph } from '../auth.server'
 export async function loader({request}: LoaderFunctionArgs) { await requireReviewer(request); return null }
 export async function action({request}: ActionFunctionArgs) {
   checkOrigin(request)
   return withGraph(request, async (_, graph) => {
-    const text = String((await request.formData()).get('text') ?? '').trim()
+    const text = String((await fieldsOf(request)).get('text') ?? '').trim()
     const result = await graph.lookup({kind: 'find', text}, {signal: request.signal})
     const exact = result.subjects.length === 1 ? result.subjects[0] : result.by === 'subject' && result.subjects.find(id => id === text)
     if (exact) throw redirect('/accounts/' + encodeURIComponent(exact), 303)

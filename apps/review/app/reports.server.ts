@@ -1,3 +1,4 @@
+import { graphTime } from './runtime.server'
 import { createHash } from 'node:crypto'
 import { reviewGet, withGraph } from './auth.server'
 import { cardModels, daysBefore } from './cards.server.js'
@@ -47,7 +48,7 @@ export async function prepareReport(kind: ReportKind, which: string | undefined,
       const before = query.get('before')
       if (before && /^\d+$/.test(before)) qs.set('before', before)
       const journey = report.journey = await get('journey', { ...args, ...Object.fromEntries(qs) })
-      const at = Date.now()
+      const at = graphTime()
       const { entries, subjects, next } = journey
       const atOf = (e: Row) => [e.subject,e.kind,e.at,e.call?.id,e.text?.id,e.outcome?.transactionId,e.decision?.seq,e.event]
       const facts = { entries, ties: subjects, subject: which, at, limits, partial: next !== null, here: true }

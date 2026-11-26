@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { runtime } from './runtime.server'
+import { graphTime, runtime } from './runtime.server'
 import { reviewGet, withGraph } from './auth.server'
 
 export function remaining(request: Request, view: string) {
@@ -9,7 +9,7 @@ export function remaining(request: Request, view: string) {
     if (view === 'decide') {
       const audit = await reviewGet(request, session, 'decisions', {limit: '1'})
       const queue = await reviewGet(request, session, 'undecided')
-      return {...base, queue, context: {seen: audit.decisions[0]?.seq ?? 0, key: randomUUID(), at: Date.now()}}
+      return {...base, queue, context: {seen: audit.decisions[0]?.seq ?? 0, key: randomUUID(), at: graphTime()}}
     }
     if (view === 'channels') {
       const {rows} = await reviewGet(request, session, 'report')
