@@ -12,6 +12,13 @@ export function loadReport(request: Request, kind: ReportKind, which?: string, s
   return withGraph(request, session => prepareReport(kind, which, new URL(request.url).searchParams, (path, query) => reviewGet(request, session, path, query), selected))
 }
 
+export async function loadCard(request: Request, kind?: string, which?: string) {
+  const item = new URL(request.url).searchParams.get('item')
+  if (!item || !/^[a-z.]+\.[\w-]{24}$/.test(item) || (kind !== 'calls' && kind !== 'journey' && kind !== 'board')) throw missing()
+  const { cards, canonical } = await loadReport(request, kind, which, item)
+  return { card: cards[item], canonical }
+}
+
 export async function prepareReport(kind: ReportKind, which: string | undefined, query: URLSearchParams, read: Read, selected?: string) {
   const cache = new Map<string, Promise<any>>()
   const get = (path: string, query: Record<string, string> = {}) => {
@@ -105,11 +112,17 @@ export async function prepareReport(kind: ReportKind, which: string | undefined,
       const model = models[spec.type]
       const card = model.now(spec.data)
       if (!card) continue
-      const extra = await model.more?.(spec.data)
+      let extra, error
+      try {
+        extra = await model.more?.(spec.data)
+      } catch (failure) {
+        if (failure instanceof Response && failure.headers.has('location')) throw failure
+        error = 'Some details are unavailable. Read current details to try again.'
+      }
       const params = new URLSearchParams(qs)
       params.set('item', spec.id)
       cards[spec.id] = {
-        type: spec.type, title: card.title, value: card.value, sum: extra?.sum ?? card.sum,
+        type: spec.type, error, title: card.title, value: card.value, sum: extra?.sum ?? card.sum,
         rows: [...(card.rows ?? []), ...(extra?.rows ?? [])].filter(([, value]) => value != null && value !== '' && value !== false),
         say: [...(card.say ?? []), ...(extra?.say ?? [])].filter(Boolean),
         links: [...(card.links ?? []), ...(extra?.links ?? [])].filter(link => link?.href),

@@ -1,26 +1,30 @@
-import "./reports.css"
-import { Fragment, useEffect, useState } from 'react'
+import './reports.css'
+import { createContext, Fragment, useContext, useEffect, useState } from 'react'
 import { Form, Link, useFetcher } from 'react-router'
 import { Table, Tiles, Time, Subject } from './shared'
 import { amount, cameFrom, dayOf, idText, lasted, percent, subjectHash, tieWords, WHAT } from './report-words'
 import { told } from './story'
 
 export function CardBody({ card }) {
-  return <div className="detail-body">{card.rows.length > 0 && <dl className="detail-rows">{card.rows.map(([label, value], i) => <div key={i}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>}
+  return <div className="detail-body">{card.error && <p role="alert">{card.error}</p>}{card.rows.length > 0 && <dl className="detail-rows">{card.rows.map(([label, value], i) => <div key={i}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>}
     {card.sum && <code className="detail-sum">{card.sum}</code>}{card.say?.length > 0 && <p className="detail-say">{card.say.map((say, i) => <Fragment key={i}>{i > 0 && ' '}{Array.isArray(say) ? <><strong>{say[0]}</strong>{say[1]}</> : say}</Fragment>)}</p>}
     {card.links?.length > 0 && <p className="detail-links">{card.links.map(({ text, href }, i) => <a key={i} href={href} rel="noreferrer">{text}</a>)}</p>}</div>
 }
 
+/** @type {import('react').Context<string | undefined>} */
+const presentedCard = createContext(undefined)
+
 function Detail({ card, title = 'Details', id }) {
   const fetcher = useFetcher()
+  const openCard = useContext(presentedCard)
   if (!card) return null
   const current = fetcher.data?.card?.href === card.href ? fetcher.data.card : card
-  return <details className="report-detail" data-card={card.type} id={id}><summary aria-label={'Details of ' + card.title}>{title}</summary>
+  return <details className="report-detail" data-card={card.type} id={id} open={openCard === card.type || undefined}><summary aria-label={'Details of ' + card.title}>{title}</summary>
     <h4>{current.title} {current.value}</h4><CardBody card={current}/>
-    <Link to={card.href} onClick={event => {
+    {fetcher.data?.error && <p role="alert">{fetcher.data.error}</p>}<Link to={card.href} onClick={event => {
       if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
       event.preventDefault()
-      void fetcher.load(card.href)
+      void fetcher.load(card.href.replace('/details/', '/card/'))
     }}>{fetcher.state === 'idle' ? 'Read current details' : 'Reading…'}</Link></details>
 }
 
@@ -120,8 +124,8 @@ function Calls({ data }) {
   {total.hidden > 0 && <p>{amount(total.hidden)} more with a withheld number</p>}</section>{total.calls > 0 && <><div className="panel-grid call-grid"><section><h2>Call results</h2><Table title="Call results" headers={['Result','Calls','Share','Detail']}>{results.map(([name,n,all,note]) => <tr key={name}><th scope="row">{name}</th><td>{amount(n)}</td><td>{all ? percent(n / all) : '—'}</td><td>{note}</td></tr>)}</Table></section><section><h2>Call attribution</h2><dl>{[['Visitor',coverage.visitor],['Phone number',coverage.channel],['Unmatched',coverage.neither]].map(([name,n]) => <div key={name}><dt>{name}</dt><dd>{amount(n)}</dd></div>)}</dl>{coverage.noResult > 0 && <p>{amount(coverage.noResult)} without a result</p>}</section></div><Hours data={data}/></>}</>
 }
 
-export function Report({ data }) {
-  if (data.kind === 'journey') return <Journey key={data.which} data={data}/>
-  if (data.kind === 'board') return <Board data={data}/>
-  return <Calls data={data}/>
+/** @param {{ data: Record<string, any>, openCard?: string }} props */
+export function Report({ data, openCard }) {
+  const view = data.kind === 'journey' ? <Journey key={data.which} data={data}/> : data.kind === 'board' ? <Board data={data}/> : <Calls data={data}/>
+  return <presentedCard.Provider value={openCard}>{view}</presentedCard.Provider>
 }
