@@ -629,7 +629,7 @@ final class account_graph_wordpress
                 } elseif ($item['reason'] === 'NOT_ATTEMPTED') {
                     return true;
                 } else {
-                    $job = ['state' => 'refused', 'phase' => $phase, 'key' => $job[$phase]['key'], 'reason' => $item['reason']];
+                    $job = ['state' => 'refused', 'phase' => $phase, 'key' => $job[$phase]['key'], 'reason' => $this->refusal_code($item['reason'])];
                 }
             } catch (account_graph_fault $fault) {
                 if (in_array($fault->fault_code, ['INPUT.MALFORMED', 'INPUT.TOO_LARGE'], true)) {
@@ -650,7 +650,24 @@ final class account_graph_wordpress
                 return false;
             }
         } while ($job['state'] === 'pending');
+        // Only the worker that committed the terminal state may log it. Retries skip this job.
+        if ($job['state'] === 'refused' || $job['state'] === 'failed') {
+            error_log('Account graph form job ' . $job['state'] . ' (' . ($job['reason'] ?? $job['code']) . ').');
+        }
         return true;
+    }
+
+    /**
+     * Keep a known record refusal for staff without persisting or logging arbitrary remote text.
+     *
+     * @param string $reason Refusal from the record response.
+     *        (e.g. 'KEY_REUSED')
+     * @return string Safe code for the parked job and its log notice.
+     */
+    private function refusal_code(string $reason): string
+    {
+        $codes = ['STALE', 'KEY_REUSED', 'UNKNOWN_REFERENCE', 'KIND_NOT_IN_POLICY', 'KIND_RESERVED', 'NO_FACT_USED', 'CURRENCY_MISMATCH', 'PAID', 'FORGOTTEN'];
+        return in_array($reason, $codes, true) ? $reason : 'UNKNOWN_REFUSAL';
     }
 
     /**

@@ -30,6 +30,7 @@
 - `AccountGraph.php` brings the six calls to PHP hosts, with stable keys, cursor paging and a transactional outbox that keeps each record's changes in order.
 - `account_graph_lib` loads directly in CodeIgniter or plain PHP, accepts named settings, and exposes the same six calls and cursor paging through documented methods.
 - `gform_after_submission` and `wpcf7_submit` queue inquiries with the visitor’s mapped device, preserve separate identities across WordPress sites, and count a repeated submission or mail retry once.
+- `account_graph_wordpress` logs a refused or failed form job once, by reason code and without submitted values.
 - `account_graph_outbox_lib` caps retry deadlines at 15 minutes and continues sending independent groups while a row waits. Profile screening reports which fields were dropped and why.
 - `account_graph_outbox_lib` stops a pass on service faults, holds explicit dependents for refused or malformed writes, and clears the saved request after each successful send.
 - `account_graph_lib.php` allows a record batch time to finish, honors the server’s retry delay across worker runs and distinguishes TLS setup failures from indeterminate timeouts.

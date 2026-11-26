@@ -59,7 +59,7 @@ async function wordpress(t: TestContext) {
     if (command === 'storage-fault') {
       const lines = stderr.trim().split('\n')
       assert.ok(lines.every(line => line === 'Account graph could not persist or update a form job.'))
-    } else if (command !== 'inspect') assert.equal(stderr, '')
+    } else if (command !== 'inspect' && !input.expect_log) assert.equal(stderr, '')
     return { ...JSON.parse(stdout), stderr }
   }
 }
@@ -279,6 +279,29 @@ test('an hour-old backlog warns once across WordPress requests and resets after 
   await run(url, 'gravity', { id: 777, email: 'new@example.org' })
   await run(url, 'age')
   assert.equal((await run(url, 'inspect')).stderr.trim(), warn)
+})
+
+test('WordPress logs a parked job once with its reason and keeps submitted values out of the log', { skip }, async t => {
+  const run = await wordpress(t)
+  const privateDetail = 'private@example.org\nsynthetic-wordpress'
+  for (const [index, code] of ['KEY_REUSED', 'INPUT.MALFORMED', privateDetail].entries()) {
+    const blog = index + 1
+    const url = await listen(t, async (req, res) => {
+      const [{ type, key }] = JSON.parse(await text(req)).entries
+      const malformed = code === 'INPUT.MALFORMED'
+      const fault = { code, message: privateDetail, retryable: false, detail: { path: privateDetail } }
+      const results = [{ type, key, ok: false, reason: code, fields: [privateDetail] }]
+      res.writeHead(malformed ? 400 : 200, { 'content-type': 'application/json' }).end(JSON.stringify(malformed ? { fault } : { results }))
+    })
+    await run(url, 'gravity', { blog })
+    const parked = await run(url, 'cron', { blog, expect_log: true })
+    const { state } = JSON.parse(parked.rows[0].option_value)
+    const reason = code === privateDetail ? 'UNKNOWN_REFUSAL' : code
+    assert.equal(state, code === 'INPUT.MALFORMED' ? 'failed' : 'refused')
+    assert.equal(parked.stderr.trim(), 'Account graph form job ' + state + ' (' + reason + ').')
+    assert.doesNotMatch(parked.rows[0].option_value, /example\.org|synthetic-wordpress|5550142/)
+    assert.deepEqual((await run(url, 'cron', { blog })).rows, parked.rows)
+  }
 })
 
 test('the device mapping respects representatives, mismatched form IDs and forms without a device mapping', { skip }, async t => {
