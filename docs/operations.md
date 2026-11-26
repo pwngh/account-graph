@@ -33,7 +33,7 @@ GRAPH_TOKEN=a-long-random-string REVIEW_TOKENS='{"dana":"another-one"}' RECEIPT_
 
 Compose also reads a `.env` file in the same directory. Use `.env.example` for synthetic local settings. For a credentialed run, inject secrets privately into the selected process. Keep them out of the checkout, shell history and command arguments. Container administrators can inspect the environment. Set `GRAPH_PORT` to publish a different port.
 
-Compose passes the variables in [Environment variables](#environment-variables) through to the server, except `GRAPH_SCHEMA`, `HOST`, `PORT`, `POLICY_FILE`, `CALL_NUMBERS_FILE`, `LEADS_FILE`, `SERVICE_TOKENS_FILE` and `SERVER_RANGES_FILE`. It sets `DATABASE_URL` itself. Compose passes the Google key file path but does not mount the file. Supply a separate read-only secret mount and use its path inside the container. A shell running the checker does not read Compose’s .env.
+Compose passes the variables in [Environment variables](#environment-variables) through to the server, except `GRAPH_SCHEMA`, `HOST`, `PORT`, `POLICY_FILE`, `CALL_NUMBERS_FILE`, `LEADS_FILE`, `SERVICE_TOKENS_FILE` and `SERVER_RANGES_FILE`. It sets `DATABASE_URL` itself. Compose passes the Google key file path but does not mount the file. Supply a separate read-only secret mount and use its path inside the container. A shell running the checker does not read Compose's .env.
 
 > **Use the compose file for evaluation.** It has a local volume, a fixed database password, the example site's features and placeholders for `LINK_SECRET` and `RECEIPT_SECRETS`. Replace these before production use. Values in `compose.yaml` that start with `change-me` are public, and the server refuses to start with one when `ORIGINS` contains a site outside your own machine.
 
@@ -98,7 +98,7 @@ List the site in `ORIGINS`, or `/collect` answers 403. A site with a content sec
 
 The script also reports taps on phone links and clicks on elements marked `data-ag-event`. List the event names to accept in `EVENTS`. See [calls and texts](calls.md).
 
-A firm with keyed file addresses should set `ALLOW_PAGES` to the public pages. The server passes its page lists to the tag. A banner that obtains consent before making identifiers can use `collect.js?consent=required`. [Page and consent settings](privacy.md#pages-a-site-may-record)
+A firm with keyed file addresses should set `ALLOW_PAGES` to the public pages. The server passes its page lists to the tag. A banner that obtains consent before making identifiers can use `collect.js?consent=required`. See [Page and consent settings](privacy.md#pages-a-site-may-record).
 
 To pass the answer from a consent banner, set `window.accountGraphConsent = { adUserData: true, adPersonalization: false }` before the tag.
 
@@ -106,7 +106,7 @@ To pass the answer from a consent banner, set `window.accountGraphConsent = { ad
 
 The script stores the visitor's device id in a cookie named `ag_device`, marked `Secure`. The cookie requires HTTPS, except on `localhost`.
 
-Set `COOKIE=true` to have the server set the cookie instead. Safari deletes a cookie set by script after seven days; a cookie set by the server lasts, and page script can neither read nor change it. This works when the server answers on the site's own domain, or on a subdomain with `COOKIE=example.org`. The server-set cookie is untested in Safari.
+Set `COOKIE=true` to have the server set the cookie instead. Safari deletes a cookie set by script after seven days. A cookie set by the server lasts, and page script can neither read nor change it. This works when the server answers on the site's own domain, or on a subdomain with `COOKIE=example.org`. The server-set cookie is untested in Safari.
 
 ### Multiple sites
 
@@ -122,7 +122,7 @@ REVIEW_TOKENS='{"dana":"…","lee":"…"}'
 
 The audit log signs each decision with the name its token belongs to. Issue one token per person, because the signature identifies the token used.
 
-To replace a token, list both, `{"dana":["new","old"]}`, and restart. Remove the old token once it is out of use. Removing a name ends that person's access; their decisions stay in the audit log.
+To replace a token, list both, `{"dana":["new","old"]}`, and restart. Remove the old token once it is out of use. Removing a name ends that person's access. Their decisions stay in the audit log.
 
 [Routes for browsers](http.md#routes-for-browsers), `/collect.js`, `/review` and `/health` need no token. `/review` serves a page whose data requires one.
 
@@ -135,7 +135,7 @@ Give each integration its own token in `serviceTokens` when calling `createEdge`
 [{"name":"intake","token":"replace-with-a-random-secret","calls":{"record":["profile"],"report":["campaigns"]}}]
 ```
 
-Omit a call to close it. Use an array of entry types for `record`, actions for `decide`, and kinds for `lookup` or `report`. An empty array accepts none. Use `true` for every kind of a listed call or to grant `forget` or `events`. An empty `calls` object grants nothing. Names must be unique across people and services. Every credential must be nonempty and unique, including the main token and reviewers’ replacement tokens. Restart the process after updating the list.
+Omit a call to close it. Use an array of entry types for `record`, actions for `decide`, and kinds for `lookup` or `report`. An empty array accepts none. Use `true` for every kind of a listed call or to grant `forget` or `events`. An empty `calls` object grants nothing. Names must be unique across people and services. Every credential must be nonempty and unique, including the main token and reviewers' replacement tokens. Restart the process after updating the list.
 
 ## Reviewer screen
 
@@ -144,7 +144,7 @@ Open `/review` and enter a token. Each view has its own address, so you can link
 | Address | View | Shows |
 | --- | --- | --- |
 | `/review#/accounts` | Accounts | The largest clusters, recent changes, and decisions. |
-| `/review#/accounts/account:42` | Accounts | The subject, its cluster, links and their reasons, transfers, and sightings. The heading and Links table show “First seen here” and “Created in your system” for your records when known. Hover over a time for the exact timestamp. |
+| `/review#/accounts/account:42` | Accounts | The subject, its cluster, links and their reasons, transfers, and sightings. The heading and Links table show "First seen here" and "Created in your system" for your records when known. Hover over a time for the exact timestamp. |
 | `/review#/journey/contact:42` | Journey | One person's timeline across all their subjects: visits, page activity, calls, steps and their values, consent, and decisions. A call's id may follow, to bring that call into view. |
 | `/review#/board/90` | Board | People by the furthest step they reached. Unreturned missed calls come first. |
 | `/review#/decide` | Matches | Related pairs in different clusters, one at a time, to join or separate. Keys: J, K, S to skip, U to undo. |
@@ -186,7 +186,7 @@ For a longer policy, set `POLICY_FILE` to the path of a JSON file. [Matching](ma
 
 Without `POLICY` and `POLICY_FILE`, the server takes the policy the database keeps. Removing the variable does not bring the default back. Set `POLICY='{}'` and rebuild for that.
 
-A database from before the policy was kept takes the one that is set, where its clusters were built with it, and the default where none is set. Startup, `GET /health` and the reviewer Health view say “Groups are due a rebuild. Run account-graph rebuild.” The service keeps answering. A successful rebuild clears the warning.
+A database from before the policy was kept takes the one that is set, where its clusters were built with it, and the default where none is set. Startup, `GET /health` and the reviewer Health view say "Groups are due a rebuild. Run account-graph rebuild." The service keeps answering. A successful rebuild clears the warning.
 
 Startup fails with one line per problem when a setting is invalid. It also fails when the policy omits the kind of a stored identifier.
 
@@ -268,7 +268,7 @@ A dump cut short restores nothing. The server upgrades an older dump when it sta
 | Audit hash | Store the newest hash apart from the dumps. After a restore, the Health view verifies the chain, and the stored hash confirms it is the same log. |
 | Secrets | A dump holds receipts and keyed hashes. Keep `RECEIPT_SECRETS`, `IDENTIFIER_SECRET` and `LINK_SECRET` as long as the dump, and apart from it. |
 | Deleted people | Older dumps still contain them. Keep dumps only as long as you need them, and run `forget` again after a restore, with new keys. |
-| Conversions | Conversions sent since the dump may be sent again with the same id. Reconcile with the provider before restarting workers. Meta deduplication depends on the event name, ID and timing. Google value changes require the original transaction, destination and action. A zero value can leave the count. [Meta deduplication](https://developers.facebook.com/docs/marketing-api/conversions-api/deduplicate-pixel-and-server-events/) · [Google adjustments](https://developers.google.com/data-manager/api/devguides/events/google-ads/conversion-adjustments) |
+| Conversions | Conversions sent since the dump may be sent again with the same id. Reconcile with the provider before restarting workers. Meta deduplication depends on the event name, ID and timing. Google value changes require the original transaction, destination and action. A zero value can leave the count. See [Meta deduplication](https://developers.facebook.com/docs/marketing-api/conversions-api/deduplicate-pixel-and-server-events/) and [Google adjustments](https://developers.google.com/data-manager/api/devguides/events/google-ads/conversion-adjustments). |
 
 ## Behind a proxy
 
@@ -310,7 +310,7 @@ The mark is signed with `LINK_SECRET`. The server records a visit with any other
 | --- | --- |
 | Proxies | Set `TRUST_PROXY`. Otherwise every visit has the proxy's address, and all visits are dropped if that address is in a staff network. |
 | Sites | The cookie covers one site. Open the link on each of yours. |
-| Duration | The 90 days count from the link's creation. Some browsers delete a script-set cookie sooner: Safari after seven days without a visit. Open the link again. |
+| Duration | The 90 days count from the link's creation. Some browsers delete a script-set cookie sooner. Safari deletes it after seven days without a visit. Open the link again. |
 | HTTPS | The link must lead to an `https` address, because the cookie is marked `Secure`. `localhost` is the exception. |
 | Sharing | Anyone who opens the link is marked. A published link hides real visitors until it expires. A new `LINK_SECRET` ends every mark and every other link. |
 | Earlier visits | Visits from before the mark stay recorded. Run `forget` on the browser's `visitor:` subject to delete them. |
@@ -334,7 +334,7 @@ Upgrade 36 creates an empty table for standing creation dates. First-seen times 
 
 Upgrade 37 takes the same write lock as a running server before changing the edge or sighting table. An older writer can finish its observation before the upgrade locks either table. The upgrade adds nullable columns for profile ordering and creates empty tables for withdrawals and their matching evidence. It requires no backfill. If the upgrade stops before committing, restart it. Older servers can keep recording while a withdrawal is in force. Send profiles that restore facts to an upgraded server, and use that version for historical snapshots, rebuild and verification. See [withdrawing a matching fact](matching.md#withdrawing-a-matching-fact).
 
-Upgrade 38 creates empty tables for STOPs kept after a group changes and for pruned profile dates of withdrawn numbers. Existing text and sighting rows can be read in place. A STOP previously lost solely through a group split on version 37 can only be recovered if the earlier association is still known. During a rolling upgrade an older server can answer `textsOptedOut: false` for a record whose STOP the upgraded server retains. Route opt-out lookups to an upgraded server first, then send withdrawals there. Older servers can still record, prune and forget.
+Upgrade 38 creates empty tables for STOPs kept after a group changes and for pruned profile dates of withdrawn numbers. Existing text and sighting rows can be read in place. A STOP previously lost solely through a group split on version 37 can only be recovered if the earlier association is still known. During a rolling upgrade an older server can answer `textsOptedOut: false` for a record whose STOP the upgraded server keeps. Route opt-out lookups to an upgraded server first, then send withdrawals there. Older servers can still record, prune and forget.
 
 ## Settings that must match
 
@@ -361,10 +361,10 @@ RECEIPT_SECRETS=the-new-one…,the-old-one…
 | Receipt | Kept |
 | --- | --- |
 | Of a key | A year at least. `account-graph prune` deletes those that are older than a year and than its day. |
-| Of a key whose person was deleted | For good, as a tombstone: a type, a keyed hash and times. A late retry then brings nobody back. |
-| Of a deleted subject | For good, as a tombstone, until your own services `record` a profile under that subject. Until then a [lead webhook](leads.md) cannot file under it. |
+| Of a key whose person was deleted | Permanently, as a tombstone of a type, a keyed hash and times. A late retry then brings nobody back. |
+| Of a deleted subject | Permanently, as a tombstone, until your own services `record` a profile under that subject. Until then a [lead webhook](leads.md) cannot file under it. |
 
-> **Keep an old secret while receipts made with it are kept.** A server without it does not start. Tombstones stay, so a secret under which anybody was deleted is kept for good.
+> **Keep an old secret while receipts made with it are kept.** A server without it does not start. Tombstones stay, so a secret under which anybody was deleted is kept permanently.
 
 After its receipt is pruned, a key is new again. A conversion, call, text, payment or transfer that is still on record stays one. A profile, an arrival or a consent answer is written a second time.
 
@@ -395,15 +395,15 @@ If you stop between acting and keeping the cursor, the same events come again, s
 
 > **A deletion takes its events with it.** A subject you delete with `forget` is gone from the events. Delete your own copy when you ask for the deletion.
 
-A callback notice keeps track of its missed calls, outgoing attempts, number-channel visits and the identity links that earned its credit. Assigning one of those calls to another record or forgetting it removes the notice and its retained event. After a correction changes a component, a notice that used an identity link keeps its event if the same route still credits the same arrival. A later check can issue a corrected notice for a miss that is still open. A message already received outside the graph stays with its recipient.
+A callback notice keeps track of its missed calls, outgoing attempts, number-channel visits and the identity links that earned its credit. Assigning one of those calls to another record or forgetting it removes the notice and its kept event. After a correction changes a component, a notice that used an identity link keeps its event if the same route still credits the same arrival. A later check can issue a corrected notice for a miss that is still open. A message already received outside the graph stays with its recipient.
 
 PostgreSQL upgrade 31 reads calls, their former lines and their named parties once into a temporary list indexed by owner, direction and time. Each old event finds its named call by primary key, its possible misses and attempts by that index, and a qualifying visit by subject and time. Alerts share one summary per notice and one per owner. The backfill holds the graph write lock and pauses changes to the alert and event tables. Ordinary reads can continue after the new columns commit. The temporary lists disappear when the backfill finishes or rolls back.
 
-PostgreSQL upgrade 31 checks old callback events by the owner and times they contain. Only misses and attempts reported by the time the notice was queued can have supplied it. An attempt also has to fall between the missed call and the notice. Assigning a later attempt to another record can change that record’s pending callback. An independent earlier notice on the former line stays. An old event that may have counted another record’s call is removed. Older notices could draw credit through links that have since disappeared. After a correction to an inbound call, an old notice keeps its campaign where the call’s confirmed record or a paid arrival on the exact subject accounts for it. Where old alerts for one owner cannot be told apart, their possible source calls are kept together for later corrections.
+PostgreSQL upgrade 31 checks old callback events by the owner and times they contain. Only misses and attempts reported by the time the notice was queued can have supplied it. An attempt also has to fall between the missed call and the notice. Assigning a later attempt to another record can change that record's pending callback. An independent earlier notice on the former line stays. An old event that may have counted another record's call is removed. Older notices could draw credit through links that have since disappeared. After a correction to an inbound call, an old notice keeps its campaign where the call's confirmed record or a paid arrival on the exact subject accounts for it. Where old alerts for one owner cannot be told apart, their possible source calls are kept together for later corrections.
 
-Retire older servers and workers before enabling call confirmations. Upgrade 34 refuses an older server’s raw report for a call that staff already assigned, including a statement made before the first report. Retry the report on an upgraded server. Before serving or starting workers, startup repairs earlier reports whose stored owner disagrees with the statement, in batches of 50. A blocked call may still have the right owner. Its dated completed-call note also shows that an old writer reported it again. It applies the standing statement to the call, its matching evidence, value history, pending deliveries and callbacks. It drops the overwritten visitor and tags. The original time, duration and dialed number cannot be recovered from an overwritten report.
+Retire older servers and workers before enabling call confirmations. Upgrade 34 refuses an older server's raw report for a call that staff already assigned, including a statement made before the first report. Retry the report on an upgraded server. Before serving or starting workers, startup repairs earlier reports whose stored owner disagrees with the statement, in batches of 50. A blocked call may still have the right owner. Its dated completed-call note also shows that an old writer reported it again. It applies the standing statement to the call, its matching evidence, value history, pending deliveries and callbacks. It drops the overwritten visitor and tags. The original time, duration and dialed number cannot be recovered from an overwritten report.
 
-Upgrade 35 rechecks statements about previously deleted records even if an older server already completed its repair. Startup checks each old statement against the receipt and sighting times before it serves requests. A confirmed call can stay with a returning record while an earlier statement about that same call is erased. [Call statement privacy](privacy.md)
+Upgrade 35 rechecks statements about previously deleted records even if an older server already completed its repair. Startup checks each old statement against the receipt and sighting times before it serves requests. A confirmed call can stay with a returning record while an earlier statement about that same call is erased. See [Call statement privacy](privacy.md).
 
 If the corrected call was already forgotten, an old receipt can be all that survives. A call and a party update erased together can still be recognised after receipt pruning. For older receipts that could also describe an ordinary result or return, the upgrade looks for a saved revision from a party correction. Where both are present it removes older notices whose missed call, attempts or campaign can no longer be accounted for. A matching notice for another miss can stay, even on the same line.
 
@@ -474,7 +474,7 @@ The check uses the time the server stored the record. Choose hours longer than y
 
 The server alerts once, after `RETURN_HOURS`, about a missed caller from a paid visit who has not been reached. Another call from the same person during the wait adds no alert. Being reached and then missed again starts a new wait.
 
-The server checks the call's owner, missed status and paid arrival in the same write that queues its alert and event. Changing the owner or forgetting the call clears the waiting alert. Each sender checks the waiting message again just before posting it. A send that has already passed that check can still arrive.
+The server checks the call's owner, missed status and paid arrival in the same write that queues its alert and event. Changing the owner or forgetting the call clears the waiting alert. Each sender checks the waiting message again right before posting it. A send that has already passed that check can still arrive.
 
 A visit is paid when it carries an ad click id, a campaign id, or a medium such as `cpc`. Meta's click id alone is insufficient, because unpaid links also carry it.
 
@@ -528,13 +528,13 @@ Each is optional, and a name or value that is not one of these stops the server 
 
 The ordinary server starts workers. The outbox can deliver older pending jobs on startup. Use a fresh database and empty stage actions for an offline run. A delay postpones new jobs and `retry` can requeue old ones. For a single credentialed probe, the named checker runs without starting a graph or a worker.
 
-Each cost worker requests seven UTC days ago through today, inclusively, every six hours. The one-day check only reads the report. Compare dates in the ad account’s reporting time zone, currency and conversion definition before reconciling spend.
+Each cost worker requests seven UTC days ago through today, inclusively, every six hours. The one-day check only reads the report. Compare dates in the ad account's reporting time zone, currency and conversion definition before reconciling spend.
 
 The Health view lists the background jobs: the outbox, each cost import, the audit hash post, and the alert checks. Each shows its last start, success and failure. A run that started and never finished is shown for a month.
 
 ## Shutdown
 
-On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes in progress, and closes its database connections. If a conversion's send is interrupted, the next start sends it again. Check the receiving platform’s deduplication rules and reconcile ambiguous deliveries.
+On `SIGTERM` or `SIGINT` the server stops taking requests, finishes the writes in progress, and closes its database connections. If a conversion's send is interrupted, the next start sends it again. Check the receiving platform's deduplication rules and reconcile ambiguous deliveries.
 
 ## Environment variables
 
@@ -553,7 +553,7 @@ A partially set group stops the server at startup, with a message naming the mis
 | `ORIGINS` | none | Site addresses that may post visits, separated by commas. |
 | `PORT`, `HOST` | `8080`, `0.0.0.0` | Listening port and address. |
 | `GRAPH_SCHEMA` | `account_graph` | Database schema that holds the tables. |
-| `TRUST_PROXY` | `false` | `true`, or the number of proxies in front: read visitor addresses from `x-forwarded-for`. |
+| `TRUST_PROXY` | `false` | `true`, or the number of proxies in front. The server then reads visitor addresses from `x-forwarded-for`. |
 | `COOKIE` | `false` | `true`, or a domain, to keep the device id in a server-set cookie. |
 | `RATE_PER_MINUTE`, `RATE_BURST` | `120`, `60` | Rate limit per address. |
 | `RATE_LIMIT` | on | `off` removes the rate limit. |
@@ -569,7 +569,7 @@ A partially set group stops the server at startup, with a message naming the mis
 | --- | --- | --- |
 | `STAGES` | none | Your steps in order, as JSON, each with a `value`, `currency`, `action` and `wait`. See [the report](report.md#steps). |
 | `EVENTS` | none | Page events to record, separated by commas: `inquiry,phone_click`. |
-| `LEADS`, `LEADS_FILE` | none | Named lead webhook sources as a JSON object or a path to a private file containing that object. Set at most one. Empty is the same as unset. [Mappings and setup](leads.md) |
+| `LEADS`, `LEADS_FILE` | none | Named lead webhook sources as a JSON object or a path to a private file containing that object. Set at most one. Empty is the same as unset. See [Mappings and setup](leads.md). |
 | `CALL_NUMBERS` | none | Tracking numbers and the channel of each, as JSON: `{"+15551230001":{"source":"google","campaignId":"20222"}}`. Each may carry `tags`. |
 | `CALL_NUMBERS_FILE` | none | A file with the same JSON, for a long list. Set one of the two. |
 | `CALL_EXCLUDE` | none | Staff and test phone numbers, separated by commas. Calls from or to them are not recorded. |
@@ -604,25 +604,25 @@ A partially set group stops the server at startup, with a message naming the mis
 | `FINGERPRINT_SECRET`, `FINGERPRINT_REGION` | none, `us` | Reads Fingerprint events. Regions are `us`, `eu` and `ap`. Choose the same region on the browser. |
 | `MAXMIND_ACCOUNT_ID`, `MAXMIND_LICENSE_KEY` | none | Classifies addresses with MaxMind. Set both. |
 | `SERVER_RANGES_FILE` | none | A file with the address ranges of data centers, written as `192.0.2.0/24` or `2001:db8::/32` in any text: what [AWS](https://ip-ranges.amazonaws.com/ip-ranges.json) and [Google Cloud](https://www.gstatic.com/ipranges/cloud.json) publish, one after the other. An address in them is recorded and is no evidence. Read when the server starts, so fetch it again now and then. |
-| `MAXMIND_SERVICE`, `MAXMIND_HOST` | `insights`, `geoip.maxmind.com` | Use `country`, `city` or `insights`. Use `geolite.info` for the appropriate GeoLite service, or `sandbox.maxmind.com` with its own eligible account, key and published inputs. Other hosts are refused. [Sandbox](https://dev.maxmind.com/geoip/docs/web-services/sandbox-environment/) |
+| `MAXMIND_SERVICE`, `MAXMIND_HOST` | `insights`, `geoip.maxmind.com` | Use `country`, `city` or `insights`. Use `geolite.info` for the appropriate GeoLite service, or `sandbox.maxmind.com` with its own eligible account, key and published inputs. Other hosts are refused. See [Sandbox](https://dev.maxmind.com/geoip/docs/web-services/sandbox-environment/). |
 | `TWILIO_AUTH_TOKEN`, `TWILIO_WEBHOOK_URL` | none | Accepts Twilio's call reports at `/calls/twilio`. Set both. |
 | `TEXT_CODES` | off | `true` gives each browser a code for your [text links](calls.md#text-messages) and for [callers to read out](calls.md#a-code-read-out). |
-| `TWILIO_TEXT_WEBHOOK_URL` | none | With `TWILIO_AUTH_TOKEN`: accepts Twilio's incoming texts at `/texts/twilio`. |
-| `TWILIO_ACCOUNT_SID` | none | With `TWILIO_AUTH_TOKEN`: looks up the line type of phones in a `profile`, a `call` or a `text`. |
+| `TWILIO_TEXT_WEBHOOK_URL` | none | With `TWILIO_AUTH_TOKEN`, accepts Twilio's incoming texts at `/texts/twilio`. |
+| `TWILIO_ACCOUNT_SID` | none | With `TWILIO_AUTH_TOKEN`, looks up the line type of phones in a `profile`, a `call` or a `text`. |
 | `SMARTY_AUTH_ID`, `SMARTY_AUTH_TOKEN` | none | Checks postal addresses in a `profile`. Set both. |
-| `SMARTY_LICENSE` | none | If multiple subscriptions cover US Street, set the license value from the account’s Subscriptions page to choose which allowance is used. [License selection](https://www.smarty.com/docs/account/license-selection) |
+| `SMARTY_LICENSE` | none | If multiple subscriptions cover US Street, set the license value from the account's Subscriptions page to choose which allowance is used. See [License selection](https://www.smarty.com/docs/account/license-selection). |
 | `GOOGLE_ADS_CUSTOMER_ID`, `GOOGLE_SERVICE_ACCOUNT_FILE` | none | Sends conversions to Google Ads. Set both. |
 | `GOOGLE_ADS_LOGIN_CUSTOMER_ID` | none | The manager account, when the service account belongs to one. |
 | `META_PIXEL_ID`, `META_ACCESS_TOKEN`, `META_SITE_URL` | none | Sends conversions to Meta. Set all three. |
-| `META_CLIENT_USER_AGENT` | `false` | With `true`, keep the converting browser’s real user agent in the Meta website job only with explicit ad-user-data consent. Pending jobs can keep it for retry. Holding, withdrawal, successful delivery, a skip or terminal failure clears it. |
-| `META_TEST_EVENT_CODE` | none | Adds the dataset’s Test Events code. These events may still affect targeting and measurement. [Meta Test Events](https://developers.facebook.com/documentation/ads-commerce/conversions-api/using-the-api) |
+| `META_CLIENT_USER_AGENT` | `false` | With `true`, keep the converting browser's real user agent in the Meta website job only with explicit ad-user-data consent. Pending jobs can keep it for retry. Holding, withdrawal, successful delivery, a skip or terminal failure clears it. |
+| `META_TEST_EVENT_CODE` | none | Adds the dataset's Test Events code. These events may still affect targeting and measurement. See [Meta Test Events](https://developers.facebook.com/documentation/ads-commerce/conversions-api/using-the-api). |
 | `MICROSOFT_CLIENT_ID`, `MICROSOFT_REFRESH_TOKEN`, `MICROSOFT_DEVELOPER_TOKEN`, `MICROSOFT_CUSTOMER_ID`, `MICROSOFT_ACCOUNT_ID` | none | Sends conversions to Microsoft Advertising. Set all five. |
 | `MICROSOFT_SANDBOX` | `false` | Set `true` to direct Microsoft conversion uploads and adjustments to the sandbox. Use its own account and goal. |
 | `MICROSOFT_CLIENT_SECRET` | none | Required only for a web app registration. |
 | `TIKTOK_PIXEL_CODE`, `TIKTOK_ACCESS_TOKEN`, `TIKTOK_SITE_URL` | none | Sends conversions to TikTok. Set all three. |
-| `TIKTOK_TEST_EVENT_CODE` | none | Includes the QA pixel’s test event code in TikTok uploads. |
+| `TIKTOK_TEST_EVENT_CODE` | none | Includes the QA pixel's test event code in TikTok uploads. |
 | `GOOGLE_ADS_COSTS` | off unless legacy token set | Set `true` to read Google Ads costs with the customer and service-account file. This pair also configures the Google conversion target in the server. Set `false` to disable the cost worker. |
-| `GOOGLE_ADS_DEVELOPER_TOKEN` | none | Optional for existing configurations. Google retired developer tokens on September 9, 2026. [Google Ads access](https://developers.google.com/google-ads/api/docs/api-policy/developer-token) |
+| `GOOGLE_ADS_DEVELOPER_TOKEN` | none | Optional for existing configurations. Google retired developer tokens on September 9, 2026. See [Google Ads access](https://developers.google.com/google-ads/api/docs/api-policy/developer-token). |
 | `META_AD_ACCOUNT_ID`, `META_ADS_TOKEN` | none | Reads campaign costs from Meta. Set both. |
 | `GOOGLE_ADS_CONVERSIONS` | none | `true` also reads Google's conversion count for each campaign. |
 | `META_ADS_CONVERSIONS` | none | The action to read from Meta with its costs, such as `offsite_conversion.fb_pixel_lead`. |
