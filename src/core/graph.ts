@@ -619,6 +619,10 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       if (supposing.separated ?? true) separated.push([supposing.a, supposing.b])
     }
 
+    return grouped(subjects, active, withdrawn, states, separated, onCut, onLimited)
+  }
+
+  function grouped(subjects: readonly Subject[], active: Edge[], withdrawn: readonly CallEvidence[], states: Map<Identifier, IdentifierState>, separated: [Subject, Subject][], onCut?: (a: Subject, b: Subject) => void, onLimited?: (subjects: Subject[]) => void) {
     return callGroups(policy, [...subjects], active, withdrawn, states, separated, group, onCut, onLimited)
 
     function group(subjects: Subject[], edges: Edge[], states: Map<Identifier, IdentifierState>) {
@@ -1307,10 +1311,80 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
    */
   type TextWord = { line: Subject; at: number; key: string; optedOut: boolean }
 
-  async function textWords(tx: Tx, subjects: readonly Subject[]) {
-    const numbers = await tx.textNumbers(unique([...subjects]))
+  type PhoneStamp = NonNullable<TextNumber['held']>[number]
+  const byPhoneStamp = (a: PhoneStamp, b: PhoneStamp) => later(a, b) || Number(b.held) - Number(a.held)
+
+  function formerPhoneCuts(row: TextNumber) {
+    const cuts: PhoneStamp[] = []
+    let held = false
+    for (const stamp of [...(row.held ?? [])].sort(byPhoneStamp)) {
+      if (!stamp.held && held) cuts.push(stamp)
+      held = stamp.held
+    }
+    return cuts
+  }
+
+  async function formerPhoneGroup(tx: Tx, line: Subject, cut: PhoneStamp) {
+    const ids = ['phone:' + line.slice(7), 'voip:' + line.slice(7)]
+    const holders = await tx.phoneHoldersBefore(ids, cut.at)
+    const subjects = unique(holders.map(edge => edge.subject))
+    if (subjects.length < 2) return new Map<Subject, Labels>()
+    const numbers = await tx.textNumbers(subjects)
+    const present = new Set(numbers.filter(row => {
+      if (row.line !== line) return false
+      if (!row.held) return row.active
+      const earlier = row.held.filter(s => later(s, cut) < 0 || s.held && later(s, cut) === 0)
+      return earlier.sort(byPhoneStamp).at(-1)?.held
+    }).map(row => row.subject))
+    const shared = holders.filter(edge => present.has(edge.subject))
+    if (present.size < 2) return new Map<Subject, Labels>()
+    const reserved = (await tx.callEvidence({ identifiers: ids })).filter(row => row.at <= cut.at)
+    const counts = new Map(ids.map(id => [id, new Set([...shared, ...reserved].filter(edge => edge.identifier === id).map(edge => edge.subject)).size]))
+    if (![...counts].some(([id, count]) => count >= 2 && count <= ruleFor(policy, id).cap)) return new Map<Subject, Labels>()
+    const peers = [...present]
+    const edges = [...(await tx.edgesOf(peers)).filter(e => !ids.includes(e.identifier)), ...shared].filter(e => e.first <= cut.at).map(e => ({ ...e, last: Math.min(cut.at, e.last) }))
+    const withheld = (await tx.callEvidence({ subjects: peers })).filter(row => row.at <= cut.at)
+    const states = await tx.states(unique([...edges, ...withheld].map(e => e.identifier)))
+    // People who first gave the number after the cut cannot dilute an earlier link and remove its STOP.
+    for (const [id, fanout] of counts) states.set(id, { fanout, ignored: states.get(id)?.ignored ?? false })
+    const separated = (await tx.separatedOf(peers)).filter(([a, b]) => present.has(a) && present.has(b))
+    return grouped(peers, edges, withheld, states, separated)
+  }
+
+  async function textWords(tx: Tx, subjects: readonly Subject[], through?: number, recover = true) {
+    const numbers = (await tx.textNumbers(unique([...subjects]))).filter(row => through === undefined || row.first === undefined || row.first <= through)
+    const inheritedThrough = new Map<TextNumber, number>()
+    if (through === undefined && recover) {
+      // A STOP or a profile can arrive after the records came apart. Only a member with an actual phone withdrawal needs its former group.
+      const groups = new Map<string, Map<Subject, Labels>>()
+      const formerWords = new Map<string, TextWord | undefined>()
+      for (const owner of [...numbers]) for (const cut of formerPhoneCuts(owner)) {
+        const key = JSON.stringify([owner.line, cut.at, cut.key])
+        const group = groups.get(key) ?? await formerPhoneGroup(tx, owner.line, cut)
+        groups.set(key, group)
+        const home = group.get(owner.subject)?.cluster
+        const members = [...group].filter(([, labels]) => labels.cluster === home).map(([subject]) => subject)
+        if (members.length < 2) continue
+        const groupKey = JSON.stringify([key, home])
+        if (!formerWords.has(groupKey)) formerWords.set(groupKey, (await textWords(tx, members, cut.at))(members))
+        const word = formerWords.get(groupKey)
+        if (!word?.optedOut) continue
+        let row = numbers.find(r => r.subject === owner.subject && r.line === word.line)
+        if (!row) {
+          row = { subject: owner.subject, line: word.line, active: false }
+          numbers.push(row)
+        }
+        if (row.stop === undefined || later(word, { at: row.stop, key: row.stopKey! }) > 0) {
+          row.stop = word.at
+          row.stopKey = word.key
+        }
+        inheritedThrough.set(row, Math.max(inheritedThrough.get(row) ?? -Infinity, cut.at))
+        if (!row.held && row.first !== undefined) row.held = [{ at: row.first, key: '', held: true }]
+      }
+    }
     const lines = new Map<Subject, TextWord[]>()
     for (const text of await tx.textsOf(unique([...subjects, ...numbers.map(row => row.line)]))) {
+      if (through !== undefined && text.at > through) continue
       if (!text.flags.includes('opt_out') && !text.flags.includes('opt_in')) continue
       const words = lines.get(text.subject) ?? []
       words.push({ line: text.subject, at: text.at, key: text.id, optedOut: text.flags.includes('opt_out') })
@@ -1321,7 +1395,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       const words = lines.get(row.line) ?? []
       if (!row.held) return row.active ? words.at(-1) : undefined
       // A START in a gap cannot cancel a STOP from when this record had the number, even after a later profile gives it back.
-      const history = [...row.held].sort((a, b) => later(a, b) || Number(b.held) - Number(a.held))
+      const history = [...row.held].sort(byPhoneStamp)
       let i = 0
       let held = false
       let last: TextWord | undefined
@@ -1333,10 +1407,10 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
     }
     const bySubject = new Map<Subject, { row: TextNumber; word: TextWord | undefined }[]>()
     for (const row of numbers) {
-      const retained = row.stop !== undefined && row.stopKey !== undefined ? { line: row.line, at: row.stop, key: row.stopKey, optedOut: true } : undefined
+      const retained = row.stop !== undefined && row.stopKey !== undefined && (through === undefined || row.stop <= through) ? { line: row.line, at: row.stop, key: row.stopKey, optedOut: true } : undefined
       const word = eligible(row)
       const all = bySubject.get(row.subject) ?? []
-      const blocked = row.through && word && !word.optedOut && later(word, row.through) <= 0
+      const blocked = word && !word.optedOut && (row.through && later(word, row.through) <= 0 || word.at <= (inheritedThrough.get(row) ?? -Infinity))
       all.push({ row, word: retained && (!word || blocked || later(retained, word) > 0) ? retained : word })
       bySubject.set(row.subject, all)
     }
@@ -1359,7 +1433,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
     }
   }
 
-  async function stoppedBeforeCut(tx: Tx, subjects: readonly Subject[]): Promise<TextStop[]> {
+  async function stoppedBeforeCut(tx: Tx, subjects: readonly Subject[], recover = true): Promise<TextStop[]> {
     const labels = await tx.aroundOf(subjects)
     const groups = new Map<Subject, Subject[]>()
     for (const [id, { cluster }] of labels) {
@@ -1367,7 +1441,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       members.push(id)
       groups.set(cluster, members)
     }
-    const saidOf = await textWords(tx, [...labels.keys()])
+    const saidOf = await textWords(tx, [...labels.keys()], undefined, recover)
     const stops: TextStop[] = []
     for (const group of groups.values()) {
       const word = saidOf(group)
@@ -2592,7 +2666,8 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         const before = await stoppedBeforeCut(tx, unique([subject, ...others.map(edge => edge.subject)]))
         const preserveStops = async () => {
           if (!before.length) return
-          const still = new Set((await stoppedBeforeCut(tx, before.map(row => row.subject))).map(row => row.subject))
+          // A STOP witnessed before the split must survive even if the evidence for late recovery is later lost.
+          const still = new Set((await stoppedBeforeCut(tx, before.map(row => row.subject), false)).map(row => row.subject))
           const lost = before.filter(row => !still.has(row.subject))
           if (!lost.length) return
           // A START the line had already sent could not clear this STOP before the split. Carry both words so the split alone cannot clear it.

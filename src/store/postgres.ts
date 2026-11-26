@@ -443,7 +443,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     async textNumbers(subjects) {
       if (!subjects.length) return []
       if (!textSchema) return (await this.edgesOf(subjects)).filter(e => /^(phone|voip):/.test(e.identifier)).map(e => ({
-        subject: e.subject, line: 'caller:' + e.identifier.slice(e.identifier.indexOf(':') + 1), active: true,
+        subject: e.subject, line: 'caller:' + e.identifier.slice(e.identifier.indexOf(':') + 1), active: true, first: e.first,
       }))
       // Only a number with a withdrawal needs the dated statements. Ordinary numbers still use their line's last word.
       const line = (id: string) => `'caller:' || substr(${id}, strpos(${id}, ':') + 1)`
@@ -473,9 +473,17 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       return rows.map(r => {
         const first = Number(r.first_at)
         const held = r.held ?? (r.at !== null && r.active ? [{ at: first, key: '', held: true }] : undefined)
-        return { subject: r.subject, line: r.line, active: r.active, ...(held && { held }), ...(r.incomplete && { uncertain: { first, last: Number(r.last_at) } }),
+        return { subject: r.subject, line: r.line, active: r.active, ...(r.first_at != null && { first }), ...(held && { held }), ...(r.incomplete && { uncertain: { first, last: Number(r.last_at) } }),
           ...(r.at !== null && { stop: Number(r.at), stopKey: r.key }), ...(r.through_at != null && { through: { at: Number(r.through_at), key: r.through_key } }) }
       })
+    },
+
+    async phoneHoldersBefore(identifiers, at) {
+      if (!identifiers.length) return []
+      const holders = (table: string) => `select subject, identifier, first_at, last_at, sightings
+        from ${t(table)} where identifier = any($1::text[]) and first_at <= $2`
+      const { rows } = await db.query(`${holders('edge')} union all ${holders('withdrawn_edge')}`, [identifiers, at])
+      return rows.map(toEdge)
     },
 
     async keepTextStops(stops) {

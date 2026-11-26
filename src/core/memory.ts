@@ -457,6 +457,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
           const cuts = (statements ?? []).filter(s => s.identifiers.some(id => contactFact(id) === fact)).map(({ at, key }) => ({ at, key, held: false }))
           const dates = times.get(row.line)
           const at = dates?.first
+          if (at !== undefined) row.first = at
           if (!cuts.length) {
             if (row.stop !== undefined && at !== undefined) row.held = [{ at, key: '', held: true }]
             continue
@@ -473,6 +474,18 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
           row.held = [...cuts, ...claims.map(({ at, key }) => ({ at, key, held: true }))]
         }
         rows.push(...numbers.values())
+      }
+      return rows
+    },
+
+    async phoneHoldersBefore(identifiers, at) {
+      const rows: Edge[] = []
+      for (const id of identifiers) {
+        for (const edge of byIdentifier.get(id)?.values() ?? []) if (edge.first <= at) rows.push(copy(edge))
+        for (const own of hidden.values()) {
+          const edge = own.get(id)
+          if (edge && edge.first <= at) rows.push(copy(edge))
+        }
       }
       return rows
     },

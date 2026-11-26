@@ -13,6 +13,7 @@ export interface TextNumber {
   subject: Subject
   line: Subject
   active: boolean
+  first?: number
   held?: { at: number; key: string; held: boolean }[]
   uncertain?: { first: number; last: number }
   stop?: number
@@ -104,6 +105,8 @@ export interface Tx {
   createdAtStands(subject: Subject, createdAt: number, at: number, key: string): Promise<boolean>
   /** Which lines can speak about texts for these subjects, including an earlier STOP from a withdrawn line. */
   textNumbers(subjects: readonly Subject[]): Promise<TextNumber[]>
+  /** Both visible and withdrawn edges can establish who shared a phone before a withdrawal. */
+  phoneHoldersBefore(identifiers: readonly Identifier[], at: number): Promise<Edge[]>
   keepTextStops(rows: readonly TextStop[]): Promise<void>
   edgesOf(subjects: readonly Subject[]): Promise<Edge[]>
   edgesOn(identifiers: readonly Identifier[]): Promise<Edge[]>
