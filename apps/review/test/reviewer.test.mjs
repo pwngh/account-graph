@@ -372,3 +372,57 @@ test('keyboard navigation, narrow forced colors, pending form and history keep t
     beforeDecision = undefined
   }
 })
+
+test('Chrome with scripts disabled signs in, posts a native form and returns to the account', { skip: !process.env.CHROME && 'set CHROME to verify native browser forms with scripts disabled', timeout: 40000 }, async t => {
+  const { browse, until } = await import('../../../test/chrome.ts')
+  const browser = await browse('about:blank')
+  t.after(browser.close)
+  const posts = []
+  const observe = request => {
+    if (request.method === 'POST') posts.push({ path: new URL(request.url, origin).pathname, from: request.headers.origin })
+  }
+  app.on('request', observe)
+  t.after(() => app.off('request', observe))
+
+  async function cdp(method, params = {}) {
+    const reply = await browser.send(method, params)
+    assert.ok(!reply.error, reply.error?.message)
+    return reply.result
+  }
+  async function node(selector) {
+    const { root } = await cdp('DOM.getDocument', { depth: 0 })
+    const found = await cdp('DOM.querySelector', { nodeId: root.nodeId, selector })
+    return found.nodeId
+  }
+  async function focus(selector) {
+    const nodeId = await until(selector, () => node(selector).catch(() => 0))
+    await cdp('DOM.focus', { nodeId })
+  }
+  const frame = async () => (await cdp('Page.getFrameTree')).frameTree.frame
+  const loadedAccount = async () => {
+    const active = await frame()
+    if (decodeURIComponent(new URL(active.url).pathname) !== '/accounts/' + subject) return false
+    return (await node('.page-title').catch(() => 0)) && active.loaderId
+  }
+  await cdp('Emulation.setScriptExecutionDisabled', { value: true })
+  await cdp('Page.navigate', { url: origin + path })
+  await focus('input[name=token]')
+  await cdp('Input.insertText', { text: reviewer })
+  await focus('form:has(input[name=token]) button')
+  await browser.press('Enter')
+  const signedIn = await until('server-rendered account after native sign-in', loadedAccount)
+  assert.equal(await node('button[aria-label="Zoom in"]'), 0)
+
+  const join = 'details:has(input[name=intent][value=join])'
+  await focus(join + ' > summary')
+  await browser.press('Enter')
+  await focus(join + ' input[name=other]')
+  await cdp('Input.insertText', { text: 'contact:browser-native' })
+  await focus(join + ' button[type=submit]')
+  await browser.press('Enter')
+  await until('native decision and the redirected document', async () => {
+    const loader = await loadedAccount()
+    return loader && loader !== signedIn && [...decisions.values()].some(input => input.pairs?.[0]?.b === 'contact:browser-native')
+  })
+  assert.deepEqual(posts, [{ path: '/signin', from: origin }, { path, from: origin }])
+})
