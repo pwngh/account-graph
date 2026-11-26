@@ -14,7 +14,7 @@ for (const line of lines) {
   const of = areas.get(line[zip]!) ?? new Map<string, string>()
   areas.set(line[zip]!, of.set(line[county]!, line[name]!.replace(/ County$/, '')))
 }
-// Only where all of its land is in one county, of any state: elsewhere a ZIP does not say which.
+// Only where all of its land is in one county, of any state. Elsewhere a ZIP does not say which.
 const zips = new Map<string, string[]>()
 for (const [code, of] of [...areas].sort()) {
   const [[id, named]] = [...of] as [[string, string]]

@@ -1,6 +1,6 @@
 /**
  * Writes the graph as CSV for an analytics engine, such as DuckDB, where
- * whole-graph questions (communities, rings) are cheaper to ask.
+ * whole-graph questions, such as communities and rings, are cheaper to ask.
  *   DATABASE_URL=postgres://... node tools/export.ts edges > edges.csv
  *   DATABASE_URL=postgres://... node tools/export.ts flows > flows.csv
  *   DATABASE_URL=postgres://... node tools/export.ts subjects > subjects.csv

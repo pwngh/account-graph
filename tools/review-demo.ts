@@ -110,7 +110,7 @@ await graph.outcome({ transactionId: 'enrolled-walk-in', subject: 'lead:walk-in'
 let seed = 11
 const chance = () => (seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff) / 0x7fffffff
 const numbers = { '+15550100001': { source: 'google', campaignId: '20222' }, '+15550100002': { source: 'mailer', campaign: 'postcard' } }
-/** Who was spoken to, and when each number last rang: texts come from some of them. */
+/** Who was spoken to, and when each number last rang. Texts come from some of them. */
 const spoken = new Set<string>()
 const rang = new Map<string, number>()
 for (let i = 0; i < 120; i++) {

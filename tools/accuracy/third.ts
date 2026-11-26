@@ -176,7 +176,7 @@ for (const name of settings) {
       const peopleOf = new Map(items.map(({ id, people }) => [id, people]))
       const ties = new Set([...outcome.ties].filter(([call, browsers]) => browsers.some((browser) => peopleOf.get(browser)?.some((each) => world.calls.get(call)?.people.includes(each)))).map(([call]) => call))
       before.set(arm, { found, chained, credit: outcome.creditedRight, ties })
-      // Each arm is held to the code it would replace, with no pool: a pool is judged against today without one.
+      // Each arm is held to the code it would replace, with no pool, because a pool is judged against today without one.
       const then = before.get('today')!
       const keep = kept.get(arm)!
       const count = (key: string, all: Iterable<string>, now: ReadonlySet<string>) => {
