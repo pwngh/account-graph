@@ -33,9 +33,9 @@ function browserModule(name: string): string {
  * `accountGraph.event('inquiry')`, and taps on phone links and on elements
  * marked `data-ag-event` are reported without any code.
  */
-const run = (server: PageRules) => `
+const run = (server: PageRules, classic: boolean) => `
 {
-  const self = new URL(import.meta.url)
+  const self = new URL(${classic ? 'document.currentScript.src' : 'import.meta.url'})
   const list = name => self.searchParams.getAll(name).flatMap(value => value.split(',').filter(Boolean))
   const rules = ${JSON.stringify({ ...(server.origins?.length && { origins: server.origins }), ...(server.allowPages && { allowPages: server.allowPages }), ...(server.refusePages && { refusePages: server.refusePages }) })}
   if (!hasPageRules(rules)) {
@@ -45,6 +45,7 @@ const run = (server: PageRules) => `
   const initialConsent = globalThis.accountGraphConsent
   const answer = () => requireConsent ? globalThis.accountGraphConsent : initialConsent
   const options = { ...rules, endpoint: new URL('collect', self).href, requireConsent,
+    ...(self.searchParams.has('events') && { events: list('events') }),
     params: list('params'), domains: list('domains'), get consent() { return answer() } }
   const helper = () => import(new URL('fingerprint.js', self).href)
   const key = self.searchParams.get('fingerprint')
@@ -54,16 +55,18 @@ const run = (server: PageRules) => `
   if (self.searchParams.get('canvas') === 'open') options.canvas = active => helper().then(m => active() ? m.openFingerprint(active) : undefined)
 
   let path
+  let visit = options
   let stop = () => {}
   const refresh = () => {
     const here = ready(options) ? new URL(location.href).pathname : undefined
     if (here === path) return
     path = here
     stop()
+    visit = options
     if (here === undefined) return
     // A reply that crosses a navigation belongs to the page that asked.
     const controller = new AbortController()
-    const visit = { ...options, signal: controller.signal, get consent() { return answer() } }
+    visit = { ...options, signal: controller.signal, get consent() { return answer() } }
     collect(visit).catch(() => undefined)
     const stops = [watch(visit), fill({ ...visit, all: self.searchParams.get('forms') === 'all', get consent() { return answer() } })]
     if (self.searchParams.get('pool')) stops.push(pool(visit))
@@ -74,9 +77,16 @@ const run = (server: PageRules) => `
       for (const end of stops) end()
     }
   }
-  globalThis.accountGraph = { event: (name, detail) => event(options, name, detail).catch(() => undefined),
+  globalThis.accountGraph = { event: (name, detail) => event(visit, name, detail).catch(() => undefined),
     fields: form => fields(options.consent, form, options), refresh }
-  if (hasPageRules(options) || options.requireConsent) {
+  ${classic ? `let storageGranted = false
+  options.storageGranted = () => storageGranted
+  globalThis.accountGraph.setStorageGranted = granted => {
+    storageGranted = granted === true
+    refresh()
+    return true
+  }` : ''}
+  if (canStop(options)) {
     for (const name of ['pushState', 'replaceState']) {
       const original = history[name]
       history[name] = function (...args) {
@@ -94,9 +104,13 @@ const run = (server: PageRules) => `
 let scripts: { collect: string; fingerprint: string } | undefined
 
 /** Only the public page patterns go in the script served to a site. */
-export function browserScripts(rules: PageRules = {}): { collect: string; fingerprint: string } {
+export function browserScripts(rules: PageRules = {}, format: 'module' | 'classic' = 'module'): { collect: string; fingerprint: string } {
   scripts ??= { collect: browserModule('collect'), fingerprint: browserModule('fingerprint-browser') }
-  return { collect: scripts.collect + run(rules), fingerprint: scripts.fingerprint }
+  // Tag Manager injects a classic script. Keep its functions private as they are in the module.
+  const classic = format === 'classic'
+  const start = run(rules, classic)
+  const collect = classic ? `(() => {\n'use strict'\n${scripts.collect.replace(/^export /gm, '')}${start}\n})()` : scripts.collect + start
+  return { collect, fingerprint: scripts.fingerprint }
 }
 
 /** Headers for a script any site may load. */

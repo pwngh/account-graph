@@ -69,6 +69,8 @@ With compose, run `docker compose exec graph node dist/bin.js verify`.
 
 ## Script tag
 
+Sites with a Tag Manager web container can install the [browser tag template](gtm.md).
+
 Add one line to each page of your site. The script reports every page view to the server it was loaded from.
 
 ```html
@@ -91,6 +93,7 @@ List the site in `ORIGINS`, or `/collect` answers 403. A site with a content sec
 | `collect.js?pool=1` | Shows each visitor a separate phone number in elements marked `data-ag-pool`. Requires `POOL_NUMBERS`. See [number pools](calls.md#number-pools). |
 | `collect.js?text=1` | Puts the visitor's code in text links and in elements marked `data-ag-code`. Requires `TEXT_CODES`. See [text messages](calls.md#text-messages) and [a code read out](calls.md#a-code-read-out). |
 | `collect.js?forms=all` | Adds the device id and landing page to every form that posts, on submit. By default, only to forms marked `data-ag-fields`. |
+| `collect.js?events=phone_click,inquiry` | Sends only the listed page events. An empty value suppresses page events. Visits and form fields work independently. |
 
 The script also reports taps on phone links and clicks on elements marked `data-ag-event`. List the event names to accept in `EVENTS`. See [calls and texts](calls.md).
 

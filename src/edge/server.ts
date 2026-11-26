@@ -203,7 +203,7 @@ class Refusal extends Error {
 export function createHandler(core: Core, options: HandlerOptions) {
   if (!validPageRules(options)) throw malformed('Page lists require literal paths or subtrees ending in /*')
   const guarded = hasPageRules(options)
-  let scripts: ReturnType<typeof browserScripts> | undefined
+  const scripts: Partial<Record<'module' | 'classic', ReturnType<typeof browserScripts>>> = {}
   const { graph, service } = core
   const now = options.now ?? Date.now
   if (typeof options.token !== 'string' || !options.token.trim()) throw malformed('`token` is required')
@@ -734,7 +734,8 @@ export function createHandler(core: Core, options: HandlerOptions) {
 
     if (path === 'GET /collect.js' || path === 'GET /fingerprint.js') {
       // The script tag for your sites. Public, like the pages that load it.
-      const served = scripts ??= browserScripts(options)
+      const format = path === 'GET /collect.js' && url.searchParams.get('gtm') === '1' ? 'classic' : 'module'
+      const served = scripts[format] ??= browserScripts(options, format)
       response.writeHead(200, scriptHeaders).end(path === 'GET /collect.js' ? served.collect : served.fingerprint)
       return SENT
     }

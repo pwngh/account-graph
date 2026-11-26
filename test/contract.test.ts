@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { pageServer } from './page-server.suite.ts'
+import { gtmCollector } from './gtm-collector.suite.ts'
 import { after, test } from 'node:test'
 import pg from 'pg'
 import { internalsOf } from '../src/client/internals.ts'
@@ -73,6 +74,14 @@ function everywhere(name: string, work: (opened: Opened) => Promise<unknown>) {
 }
 
 for (const [kind, open] of Object.entries({ memory, ...(url && { postgres }) })) {
+  test(`a Tag Manager script controls storage, forms and page events on its own graph, ${kind}`, async () => {
+    const opened = await open()
+    try {
+      await gtmCollector(opened.local)
+    } finally {
+      await opened.close()
+    }
+  })
   test(`service tokens open only the listed calls and kinds, ${kind}`, async () => {
     const opened = await open({ phones: { pool: { numbers: ['+12025550124'], minutes: 10, graceMinutes: 5 } } })
     try {
