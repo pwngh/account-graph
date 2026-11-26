@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { contactFact, factActive, type FactProfile, type FactStamp } from '../core/fact-fold.ts'
 import { later } from '../core/said.ts'
 import { affectedMisses, callTraces, creditSubject, ownerOf, partyOf, reopenWaits, stopCallJob, withoutGuesses } from '../core/call-party.ts'
-import { malformed } from '../contract/fault.ts'
+import { FAULT_CODES, fault, malformed } from '../contract/fault.ts'
 import type { Feed, KeptAlert, OpsStore } from '../core/ops.ts'
 import type { Job, JobState, OutboxStore } from '../core/outbox.ts'
 import type { GraphEvent } from '../contract/api.ts'
@@ -29,6 +29,8 @@ export interface Pool extends Queryable {
 
 /** Whether an error says that the connection is of no more use, and not that the database refused something. */
 const silent = (error: unknown): boolean => error instanceof Error && !('severity' in error) && /^(Query read timeout|Connection terminated|Client has encountered a connection error)/.test(error.message)
+
+const sqlState = (error: unknown) => error instanceof Error && 'code' in error ? error.code : undefined
 
 const watched = new WeakSet<Pool>()
 /**
@@ -1475,6 +1477,12 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
     return mine
   }
 
+  async function pendingUpgrades(db: Queryable) {
+    const { rows } = await db.query(`select id from ${t('upgrade')}`)
+    const done = new Set(rows.map(row => row.id as number))
+    return upgrades(schema).filter(upgrade => !done.has(upgrade.id))
+  }
+
   async function run<T>(begin: string, lock: 'none' | 'shared' | 'exclusive', work: (tx: Tx) => Promise<T>): Promise<T> {
     const client = await pool.connect()
     let lost = false
@@ -1501,6 +1509,16 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       // A statement nobody answered leaves a connection that answers nothing. It is given up, and not asked to roll back.
       lost = silent(error)
       if (!lost) await client.query('rollback').catch((again) => void (lost = silent(again)))
+      const code = sqlState(error)
+      // A fresh reader learns the schema is old only if its query needs a missing column or table.
+      if (!lost && begin === READ_ONLY && (code === '42703' || code === '42P01' || code === '3F000')) {
+        const [next] = await pendingUpgrades(client).catch((check: unknown) => {
+          if (sqlState(check) === '42P01' || sqlState(check) === '3F000') return upgrades(schema)
+          lost = silent(check)
+          throw check
+        })
+        if (next) throw fault(FAULT_CODES.CONFIG.MISMATCH, `Database upgrade ${next.id} (${next.name}) must run before this read. Start the upgraded server or call store.migrate().`)
+      }
       throw error
     } finally {
       client.release(lost)
@@ -1672,11 +1690,8 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
         await client.query('begin')
         await client.query(`create schema if not exists ${schema};
           create table if not exists ${t('upgrade')} (id int primary key, name text not null, applied_at bigint not null)`)
-        const { rows } = await client.query(`select id from ${t('upgrade')}`)
-        const done = new Set(rows.map((row) => row.id as number))
         const applied: string[] = []
-        for (const upgrade of upgrades(schema)) {
-          if (done.has(upgrade.id)) continue
+        for (const upgrade of await pendingUpgrades(client)) {
           for (const [i, sql] of (upgrade.phases ?? [upgrade.sql]).entries()) {
             // 29 and 30 together establish call ownership and remove the old owner's channel visits.
             if (i > 0 || (applied.length && upgrade.id !== 30)) {

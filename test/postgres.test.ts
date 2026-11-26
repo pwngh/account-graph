@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
 import pg from 'pg'
 import { accountGraph } from '../src/index.ts'
+import { FAULT_CODES, hasCode } from '../src/contract/fault.ts'
 import { seal } from '../src/core/audit.ts'
 import { createGraph, defaultPolicy, policyHash, recordCall, recordReturn } from '../tools/internals.ts'
 import { createPostgresStore, upgrades } from '../src/store/postgres.ts'
@@ -52,6 +53,30 @@ test('ordinary observations and link reads keep their SQL statement counts acros
 })
 
 const url = process.env.DATABASE_URL
+
+test('a fresh store reports pending upgrades on a failed read and preserves SQL errors on an up-to-date database', async () => {
+  const schema = 'stub'
+  const ledger = 'select id from stub.upgrade'
+  for (const [missing, code] of [[37, '42703'], [38, '42P01'], [1, '42P01'], [0, '42703'], [37, '42501']] as const) {
+    const statements: string[] = []
+    const cause = Object.assign(new Error(code === '42703' ? 'column "profile_at" does not exist' : 'unavailable relation'), { code })
+    const query = async (sql: string) => {
+      statements.push(sql)
+      if (sql.startsWith('with edges as')) throw cause
+      if (sql === ledger) {
+        if (missing === 1) throw Object.assign(new Error('missing upgrade ledger'), { code: '42P01' })
+        return { rows: upgrades(schema).filter(u => !missing || u.id < missing) }
+      }
+      return { rows: [] }
+    }
+    const store = createPostgresStore({ query, connect: async () => ({ query, release() {} }) }, schema)
+    const diagnose = missing > 0 && code !== '42501'
+    await assert.rejects(store.read(tx => tx.textNumbers(['contact:one'])), error => diagnose
+      ? hasCode(error, FAULT_CODES.CONFIG.MISMATCH) && error.message.includes('upgrade ' + missing) && error.message.includes('migrate()')
+      : error === cause)
+    assert.deepEqual(statements.slice(2), code === '42501' ? ['rollback'] : ['rollback', ledger])
+  }
+})
 
 test('checking an ordinary text opt-out reads the cluster, holdings and messages in the same six statements', async () => {
   const subject = 'contact:one'
@@ -224,6 +249,19 @@ if (!url) {
     }
     return createPostgresStore(pool, schema)
   }
+
+  for (const next of [37, 38]) test(`a fresh store read names pending upgrade ${next} and succeeds after it runs`, async () => {
+    const schema = `ag_test_${process.pid}_pending_${next}`
+    try {
+      const store = await madeBefore(schema, next)
+      const numbers = () => store.read(tx => tx.textNumbers(['contact:one']))
+      await assert.rejects(numbers(), error => hasCode(error, FAULT_CODES.CONFIG.MISMATCH) && error.message.includes('upgrade ' + next))
+      await store.migrate()
+      assert.deepEqual(await numbers(), [])
+    } finally {
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
 
   // The previous server logged a decision and changed the report revision on every full forget.
   const oldForgetDecision = (store: ReturnType<typeof createPostgresStore>, subject: string, at: number) => store.write(async tx => {
