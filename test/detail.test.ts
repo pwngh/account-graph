@@ -278,9 +278,16 @@ test('a card opens, closes, stays through a refresh, and says when something is 
   const late = `dispatchEvent(new HashChangeEvent('hashchange'))`
   const expanded = async () => [await shown(), await text('#card-title'), await run(`${icon}.getAttribute('aria-expanded')`)]
   for (const pressed of [false, true]) {
-    const [x, y] = await page.middle(icon)
+    let [x, y] = await page.middle(icon)
     await page.mouse('mouseMoved', x, y)
-    if (!pressed) await reread(late)
+    if (!pressed) {
+      await reread(late)
+      // The view read again may lay out a pixel or two apart (scrollbars and fonts differ by system), so the pointer goes to where the icon now is.
+      const [nx, ny] = await page.middle(icon)
+      if (nx !== x || ny !== y) console.error(`the icon moved from ${x},${y} to ${nx},${ny} when the view was read again`)
+      ;[x, y] = [nx, ny]
+      await page.mouse('mouseMoved', x, y)
+    }
     await page.mouse('mousePressed', x, y)
     if (pressed) await reread(late)
     await page.mouse('mouseReleased', x, y)
