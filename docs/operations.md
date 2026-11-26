@@ -619,7 +619,7 @@ A partially set group stops the server at startup, with a message naming the mis
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `OUTBOX_DELAY_MS` | `0` | Delay before the first send of a new outcome. |
+| `OUTBOX_DELAY_MS` | `0` | Delay before the first send of a new outcome. The click is chosen when it is sent, so a tie a reviewer undoes during the delay never reaches the platform. |
 | `FORGET_ADS` | none | `true` requests the supported adjustment when a person is [deleted](privacy.md#data-at-ad-platforms). Google can reduce value to zero while the count remains. |
 | `WEBHOOK_URL`, `WEBHOOK_SECRET` | none | URL that receives [events](#webhook), and the secret that signs each post. Set both. |
 | `ALERT_WEBHOOK` | none | URL that receives alerts, as `{"text": "…"}`. |

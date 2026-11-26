@@ -592,6 +592,22 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       assert.equal(remote.requests.length, 1)
     })
 
+    test('a tie a reviewer undoes while the send is held does not reach the platform', async () => {
+      const { graph, outbox, remote, clock } = await fresh({ delay: 6 * HOUR })
+      for (const n of [1, 2]) {
+        await enroll(graph, n)
+        await outbox.record(outcome(n, { email: `pat${n}@example.org` }))
+      }
+      // The visitor who clicked is not the person who enrolled, and a reviewer says so before the hold is over.
+      await graph.separate('contact:1', 'visitor:v1', true, { by: 'dana', reason: 'shared office computer' })
+      assert.equal(remote.requests.length, 0)
+      clock.now += 6 * HOUR
+      await outbox.run()
+      const sent = new Map(remote.requests.flatMap((request) => request.events.map((event: any) => [event.transactionId, event.adIdentifiers?.gclid])))
+      // It still goes, by its email alone, and the other enrollment keeps its click.
+      assert.deepEqual([sent.has('enroll-1'), sent.get('enroll-1'), sent.get('enroll-2')], [true, undefined, 'G2'])
+    })
+
     test('workers running at once send each job exactly once', async () => {
       const { graph, outbox, remote } = await fresh({ batch: 40 })
       await graph.observe(Array.from({ length: 150 }, (_, n) => ({ subject: `visitor:v${n}`, identifiers: [`device:v${n}`], at: T0 })))
