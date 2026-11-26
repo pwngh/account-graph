@@ -131,7 +131,13 @@ function wp_schedule_event($time, $interval, $hook) { $GLOBALS['schedule'][$hook
 function wp_generate_uuid4() { return '00000000-0000-4000-8000-' . bin2hex(random_bytes(6)); }
 function get_transient($key) { return $GLOBALS['transients'][$key] ?? false; }
 function set_transient($key, $value, $ttl) { $GLOBALS['transients'][$key] = $value; return true; }
-class WPCF7_ContactForm { public function id() { return 23; } }
+class WPCF7_ContactForm
+{
+    public function id() { return 23; }
+    // Additional settings such as do_not_store: true, as CF7 5.9 reads them.
+    public function is_true($name) { return in_array($name, $GLOBALS['input']['cf7_settings'] ?? array(), true); }
+    public function in_demo_mode() { return $this->is_true('demo_mode'); }
+}
 class WPCF7_Submission
 {
     public static $active;

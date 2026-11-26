@@ -143,6 +143,10 @@ final class account_graph_wordpress
             if (!isset($this->forms()['cf7'][$form_id])) {
                 return;
             }
+            // A form set to keep no copy of a submission, or to only demonstrate itself, sends nothing.
+            if ($form->is_true('do_not_store') || $form->in_demo_mode()) {
+                return;
+            }
             $submission = WPCF7_Submission::get_instance();
             if (!$submission) {
                 return;

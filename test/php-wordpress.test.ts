@@ -76,13 +76,17 @@ test('the WordPress module tag honors both page lists and keeps the bearer token
   assert.deepEqual(Object.keys((await run(url, 'all-pages')).shown), ['contact', 'private', 'news'])
 })
 
-test('CF7 queues valid inquiries on mail failure and a successful mail retry counts once', { skip }, async t => {
+test('CF7 queues valid inquiries on mail failure, never for a form that stores nothing, and a successful mail retry counts once', { skip }, async t => {
   const run = await wordpress(t)
   const { graph, url } = await localGraph(t)
   for (const status of ['validation_failed', 'acceptance_missing', 'spam', 'aborted']) {
     const ignored = await run(url, 'cf7', { status })
     assert.equal(ignored.rows.length, 0)
     assert.deepEqual(ignored.reads, [])
+  }
+  for (const setting of ['do_not_store', 'demo_mode']) {
+    const unstored = await run(url, 'cf7', { cf7_settings: [setting], saved_id: 120 })
+    assert.deepEqual([unstored.rows.length, unstored.reads, unstored.singles.length], [0, [], 0], setting)
   }
   const queued = await run(url, 'cf7', { status: 'mail_failed', saved_id: 123 })
   assert.equal(queued.rows.length, 1)
