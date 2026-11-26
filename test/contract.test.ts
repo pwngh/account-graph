@@ -783,11 +783,17 @@ if (url) {
     }
   })
 
-  test('a call that waits too long for the lock ends', async () => {
-    // The first write of a new schema takes a few hundred milliseconds alone, and more beside other suites, so the limit leaves room for it.
-    const { graph, schema, close } = await postgres({ timeoutMs: 2000 })
+  /** `opening` ms is how long the database takes to open, held up by the upgrade lock. */
+  const waitsForTheLock = async (opening: number) => {
+    const { graph, local, schema, close } = await postgres({ timeoutMs: 2000 })
     const holder = await pool!.connect()
     try {
+      await holder.query('select pg_advisory_lock(hashtext($1))', [`account-graph:${schema}:upgrade`])
+      // The first call would open the database within its limit, and a busy machine takes longer than that over a new schema. It is opened before any call is timed.
+      const opened = internalsOf(local)!()
+      await new Promise((resolve) => setTimeout(resolve, opening))
+      await holder.query('select pg_advisory_unlock(hashtext($1))', [`account-graph:${schema}:upgrade`])
+      await opened
       await one(graph, EVERY[1]!)
       await holder.query('begin')
       await holder.query('select pg_advisory_xact_lock(hashtext($1))', [`account-graph:${schema}`])
@@ -798,7 +804,9 @@ if (url) {
       holder.release()
       await close()
     }
-  })
+  }
+  test('a call that waits too long for the lock ends', () => waitsForTheLock(0))
+  test('a call that waits too long for the lock ends after the database took longer than the limit to open', () => waitsForTheLock(2500))
 }
 
 for (const report of ['callbacks', 'pipeline', 'campaigns'] as const) everywhere(`a private call tie supplies only campaign credit to the ${report} report`, async ({ graph, local, base }) => {
