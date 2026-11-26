@@ -1,0 +1,19 @@
+.report-chart { width: 100%; min-height: 8rem; color: var(--ink); }
+.report-chart text { fill: currentColor; font-size: 13px; }
+.report-chart line { stroke: var(--line); }
+.report-chart .wait { stroke: var(--related); stroke-dasharray: 5 4; stroke-width: 4; }
+.report-chart circle { fill: var(--accent); stroke: currentColor; }
+.report-chart a:focus-visible circle { stroke-width: 4; }
+.report-chart .group-count { fill: var(--on-accent); font-size: 10px; }
+.report-detail { font-size: .875rem; }
+.report-detail summary { cursor: pointer; color: var(--accent); text-decoration: underline; width: fit-content; }
+.report-detail[open] { border: 1px solid var(--line); padding: .75rem; border-radius: .5rem; min-width: min(14rem,100%); }
+.report-detail dd, .report-detail p, .report-detail code { white-space: normal; overflow-wrap: anywhere; }
+.report-detail h4 { margin: .5rem 0; }
+.report-detail .detail-links { display: flex; flex-wrap: wrap; gap: .5rem; }
+.report-detail:target { outline: 2px solid var(--accent); }
+@media (forced-colors: active) {
+  .report-chart circle, .graph .node .disc { fill: Canvas; stroke: CanvasText; }
+  .report-chart .group-count { fill: CanvasText; }
+  .report-chart line, .graph .edge .line { stroke: CanvasText; }
+}
