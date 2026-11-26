@@ -1,10 +1,10 @@
 # account_graph for Python
 
-Call a running account-graph server from Python 3.9 or later. The client uses the standard library. The optional outbox also needs Python’s `sqlite3` module.
+Call a running account-graph server from Python 3.9 or later. The client uses the standard library. The optional outbox also needs Python's `sqlite3` module.
 
 ## Install
 
-From the repository root, install the Python package into your application’s virtual environment.
+From the repository root, install the Python package into your application's virtual environment.
 
 ```sh
 python3 -m pip install ./clients/python
@@ -41,19 +41,19 @@ else:
         print(result["reason"])
 ```
 
-`record` returns one result per entry in order. A refusal can sit beside an accepted entry. `decide` and `forget` return a single result with `ok`. `lookup` returns the value for its requested kind. `report` returns `asOf` and `value`. `events` returns a page or a `CURSOR_LOST` refusal. Request and response fields keep their HTTP names, including `timeZone` and `asOf`. The package supplies their types in `account_graph.types`. [HTTP contract](../../docs/http.md)
+`record` returns one result per entry in order. A batch can hold both refused and accepted entries. `decide` and `forget` return a single result with `ok`. `lookup` returns the value for its requested kind. `report` returns `asOf` and `value`. `events` returns a page or a `CURSOR_LOST` refusal. Request and response fields keep their HTTP names, including `timeZone` and `asOf`. The package supplies their types in `account_graph.types`. See [HTTP contract](../../docs/http.md).
 
 ## Connection and retries
 
 | Argument | Default | Meaning |
 | --- | --- | --- |
-| `url` | Required | Base URL before `/v1`. HTTPS verifies the certificate chain and hostname using Python’s trust store. HTTP is available for localhost and loopback IP addresses. |
+| `url` | Required | Base URL before `/v1`. HTTPS verifies the certificate chain and hostname using Python's trust store. HTTP is available for localhost and loopback IP addresses. |
 | `token` | Required | Service or reviewer token sent in the Authorization header. |
 | `connect_timeout` | 5 seconds | Maximum time to establish one connection, including DNS and TLS. |
 | `total_timeout` | 30 seconds | Budget for the call, including connection attempts, response reads and retry waits. |
 | `retries` | 2 | Maximum additional attempts. Zero sends once. |
 
-Calls connect directly to the configured origin and reject redirects. Every call accepts an optional `correlation_id` keyword. One to 200 printable ASCII characters without spaces travel as `x-request-id`.
+Calls connect directly to the configured origin and reject redirects. Every call accepts an optional `correlation_id` keyword. One to 200 printable ASCII characters without spaces are sent as `x-request-id`.
 
 Only `GRAPH.UNAVAILABLE` and `TRANSPORT.INDETERMINATE` can trigger a retry. A structured fault must also set `retryable` to true. The client reuses the serialized bytes, including every original key and timestamp. The first wait is between a quarter and half a second. The range doubles on each retry, up to 15 minutes. A longer `Retry-After` in seconds or as an HTTP date takes precedence, capped at 15 minutes. If the wait would exhaust the call budget, the client raises the last fault immediately.
 
@@ -61,7 +61,7 @@ Only `GRAPH.UNAVAILABLE` and `TRANSPORT.INDETERMINATE` can trigger a retry. A st
 
 ## Read all pages
 
-Each iterator yields complete responses, starting with the supplied request. Save an event cursor after processing its page. If the server returns `CURSOR_LOST`, the iterator yields that refusal and stops. Rebuild your view from the oldest retained event with `after=None`.
+Each iterator yields complete responses, starting with the supplied request. Save an event cursor after processing its page. If the server returns `CURSOR_LOST`, the iterator yields that refusal and stops. Rebuild your view from the oldest kept event with `after=None`.
 
 ```python
 from account_graph.types import Window
@@ -84,7 +84,7 @@ for report in graph.report_pages({"kind": "callbacks", "window": window, "at": 1
         print(row["call"], row["attempts"])
 ```
 
-`report_pages` accepts `callbacks` and `texts`. Other report kinds return their full result from `report`. Resume a report with `after` or a journey with `before` set to the previous page’s `next`.
+`report_pages` accepts `callbacks` and `texts`. Other report kinds return their full result from `report`. Resume a report with `after` or a journey with `before` set to the previous page's `next`.
 
 ## SQLite outbox
 
@@ -116,7 +116,7 @@ with Outbox("graph-outbox.sqlite") as box:
 
 The `record_id` is an ordering group, usually one host record. Rows for one record are sent in the order they were enqueued. Rows for other records do not wait for them. Pass `depends_on` with an earlier row ID when a write needs that particular write to succeed first, such as a restatement after its conversion. The two rows can belong to different records.
 
-`flush` claims one row at a time in a short SQLite transaction, then sends it with no transaction open. `enqueue` and other workers carry on during the send. The claim lasts `lease` seconds, by default the client’s `total_timeout` plus a minute. A worker that dies mid-send leaves the row pending. Once the claim expires, another worker sends the same key again and the graph answers `duplicate`. Until then, later rows for that record and rows depending on it wait.
+`flush` claims one row at a time in a short SQLite transaction, then sends it with no transaction open. `enqueue` and other workers carry on during the send. The claim lasts `lease` seconds, by default the client's `total_timeout` plus a minute. A worker that dies mid-send leaves the row pending. Once the claim expires, another worker sends the same key again and the graph answers `duplicate`. Until then, later rows for that record and rows depending on it wait.
 
 | Status | Meaning |
 | --- | --- |
@@ -130,7 +130,7 @@ A refused, failed or blocked row keeps its entry for inspection and holds back o
 
 ## Google Cloud Function
 
-This HTTP function accepts events from an authenticated host application. Configure the function with entry point `record_activity`, grant its caller permission to invoke it, and supply `GRAPH_URL` and `GRAPH_TOKEN` through its environment. Include the Git requirement above, pinned to your revision, in the function’s `requirements.txt` alongside the Functions Framework.
+This HTTP function accepts events from an authenticated host application. Configure the function with entry point `record_activity`, grant its caller permission to invoke it, and supply `GRAPH_URL` and `GRAPH_TOKEN` through its environment. Include the Git requirement above, pinned to your revision, in the function's `requirements.txt` alongside the Functions Framework.
 
 The host sends one immutable event per invocation. Keep the original sale revision with the transaction. To correct the value later, send a restatement referencing its conversion key. A new conversion key counts another sale. For a visit it supplies the landing URL. For an offline sale it supplies the value and currency. Both carry the host row ID, revision, timestamp and subject. The host retries a 503 with the same event and sets aside a 409 for review.
 
