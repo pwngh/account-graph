@@ -3,11 +3,16 @@
  *   node tools/bench.ts                      memory store
  *   DATABASE_URL=postgres://... node tools/bench.ts   PostgreSQL too
  *   DATABASE_URL=postgres://... node tools/bench.ts scale 1000000 5000000
+ *   DATABASE_URL=postgres://... node tools/bench.ts import 20000
  *
  * The last makes a graph of that many edges in PostgreSQL, in a schema of its
  * own that is dropped after, and measures what reads all of it: a rebuild, a
  * check and the graph as of a time. Each runs in a process of its own, so its
  * peak memory is its own.
+ *
+ * `import` records that many inbound calls through `record`, 100 to a request as a
+ * history import sends them. It gives the rate of each quarter of the run, since a
+ * rate that falls as the history grows cannot be carried forward to a larger import.
  */
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -153,7 +158,61 @@ async function scale(sizes: readonly number[]) {
   }
 }
 
+/** A caller of a pool of fictional numbers, 555-0100 to 555-0199 in 700 area codes, so a year of calls repeats some. */
+const caller = (i: number) => `+1${200 + (i % 700)}55501${String(Math.floor(i / 700) % 100).padStart(2, '0')}`
+
+async function importCalls(count: number) {
+  const { accountGraph } = await import('../src/index.ts')
+  const stores: [string, () => ReturnType<typeof accountGraph>, (() => Promise<void>)?][] = [['memory', () => accountGraph({ memory: true, workers: false })]]
+  if (process.env.DATABASE_URL) {
+    const schema = `ag_import_${process.pid}`
+    const drop = async () => {
+      const { default: pg } = await import('pg')
+      const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
+      await pool.query(`drop schema if exists ${schema} cascade`)
+      await pool.end()
+    }
+    stores.push(['postgres', () => accountGraph({ databaseUrl: process.env.DATABASE_URL!, schema, receiptSecrets: ['bench-receipts-'.padEnd(32, 'x')], workers: false }), drop])
+  }
+  // Three calls in four come from somebody who called before, and seven in ten are answered.
+  const callers = Math.max(1, Math.floor(count / 4))
+  for (const [name, open, after] of stores) {
+    const graph = open()
+    try {
+      const start = performance.now()
+      const quarters: number[] = []
+      let mark = start
+      for (let from = 0; from < count; from += 100) {
+        const entries = Array.from({ length: Math.min(100, count - from) }, (_, j) => {
+          const i = from + j
+          return { type: 'call' as const, key: `bench-call-${i}`, at: T0 + i * 60_000, direction: 'inbound' as const, from: caller(pick(callers)), to: '+12025550100', duration: 30 + pick(600), result: { answered: next() < 0.7 } }
+        })
+        const { results } = await graph.record({ entries })
+        if (!results.every((result) => result.ok)) throw new Error(`A call was refused: ${JSON.stringify(results.find((result) => !result.ok))}`)
+        const done = Math.min(count, from + 100)
+        if (quarters.length < 4 && done >= (count * (quarters.length + 1)) / 4) {
+          const now = performance.now()
+          quarters.push(count / 4 / ((now - mark) / 1000))
+          mark = now
+        }
+      }
+      const seconds = (performance.now() - start) / 1000
+      const rates = quarters.map((rate) => Math.round(rate).toLocaleString('en-US')).join(', ')
+      console.log(`${name}: ${count.toLocaleString('en-US')} calls in ${seconds.toFixed(1)} s. Calls/s by quarter of the run: ${rates}.`)
+    } finally {
+      await graph.close()
+      await after?.()
+    }
+  }
+}
+
 const [mode, ...given] = process.argv.slice(2)
+if (mode === 'import') {
+  const count = Number(given[0] ?? 10_000)
+  if (!(Number.isSafeInteger(count) && count > 0)) throw new Error('Usage: node tools/bench.ts import COUNT')
+  await importCalls(count)
+  process.exit(0)
+}
 if (mode === 'measure') {
   await measure(given[0]!, given[1]!)
   process.exit(0)

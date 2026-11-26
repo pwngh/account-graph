@@ -695,6 +695,15 @@ Before regrouping, the stores check whether a stated call supplied an edge to th
 
 The figures are of observations written by the engine. An entry of `record` is a transaction of its own and also writes a receipt, which these figures leave out.
 
+A history import of calls, with `npm run bench -- import 2000`, records inbound calls through `record`, 100 to a request:
+
+| Store | Calls/s by quarter of 2,000 calls |
+| --- | --- |
+| Memory | 340, 123, 70, 53 |
+| PostgreSQL | 19, 23, 21, 23 |
+
+PostgreSQL keeps its rate, so 100,000 calls take about 80 minutes. The memory store slows as the history grows, so its first rate does not hold for a larger import.
+
 Large graphs, five edges per account, with `DATABASE_URL=postgres://… npm run bench -- scale 1000000 5000000 10000000`. Cells show time and peak memory:
 
 | Edges | On disk | `rebuild` | `verify` | Observation, one subject's links |

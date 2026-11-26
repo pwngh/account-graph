@@ -137,6 +137,7 @@
 
 ### Edge and operations
 
+- `npm run bench -- import COUNT` records that many inbound calls through `record` in batches of 100 and gives the rate of each quarter of the run, on memory and, with `DATABASE_URL`, on PostgreSQL.
 - `PAUSE_AFTER_FAILURES` stops sends by itself once that many conversions fail for good within an hour, counted across processes in the database. `account-graph sends resume` starts the count again.
 - `account-graph sends pause REASON` stops sends to ad platforms in every process until `account-graph sends resume`, and alerts with a `delivery.paused` event. Jobs wait as they were.
 - `account-graph sample-joins` writes a seeded random sample of the pairs the graph joined without a reviewer as CSV, and `account-graph score-joins` reads the checked sample back as the share of right joins with its 95% Wilson interval.
