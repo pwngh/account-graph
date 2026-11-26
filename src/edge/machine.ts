@@ -27,6 +27,6 @@ export async function machineId(platform: NodeJS.Platform = process.platform, wi
       if (id) break
     }
   }
-  if (!id) throw new Error(`Cannot read a machine id on ${platform}`)
+  if (!id) throw new Error(`Cannot read a machine ID on ${platform}`)
   return id.toLowerCase()
 }

@@ -1116,7 +1116,7 @@ function parsed(sent: string, guarded = false): any {
   } catch (error) {
     throw malformed(guarded ? 'Body must be JSON' : (error as Error).message)
   }
-  if (typeof body !== 'object' || body === null) throw malformed('Body must be a JSON object')
+  if (typeof body !== 'object' || body === null) throw malformed('The body must be a JSON object')
   storable(body)
   return body
 }
@@ -1149,6 +1149,6 @@ async function text(request: IncomingMessage): Promise<string> {
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))
   } catch {
-    throw malformed('Body must be UTF-8')
+    throw malformed('The body must be UTF-8')
   }
 }
