@@ -93,18 +93,30 @@ export function phoneOfType(value: string, type?: string, country?: string): Ide
   return `${type === 'nonFixedVoip' ? 'voip' : 'phone'}:${hashPhone(value, country)}`
 }
 
+const IPV4 = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/
+const HEXTET = /^[0-9a-f]{1,4}$/
+
 /**
  * An IP identifier. An IPv6 address keeps its /64 prefix, because one device
  * rotates through many addresses inside it.
  */
 export function ip(address: string): Identifier {
   const clean = address.trim().toLowerCase().replace(/^::ffff:(?=\d+\.)/, '')
-  if (!clean.includes(':')) return `ip:${clean}`
-  const [head = '', tail = ''] = clean.split('::')
+  // Anything else would be a key nobody else can share, or one many share by mistake.
+  if (!clean.includes(':')) {
+    if (!IPV4.test(clean)) throw malformed(`"${address}" is not an IP address`)
+    return `ip:${clean.split('.').map(Number).join('.')}`
+  }
+  // An IPv6 address may end in the dotted form of its last 32 bits.
+  const dotted = /(?<=:)\d+(\.\d+)+$/.exec(clean)?.[0]
+  if (dotted !== undefined && !IPV4.test(dotted)) throw malformed(`"${address}" is not an IP address`)
+  const [a = 0, b = 0, c = 0, d = 0] = dotted?.split('.').map(Number) ?? []
+  const halves = (dotted === undefined ? clean : `${clean.slice(0, -dotted.length)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`).split('::')
+  const [head = '', tail = ''] = halves
   const left = head ? head.split(':') : []
   const right = tail ? tail.split(':') : []
-  const groups = clean.includes('::') ? [...left, ...Array(8 - left.length - right.length).fill('0'), ...right] : left
-  if (groups.length !== 8) throw malformed(`"${address}" is not an IP address`)
+  const groups = halves.length === 2 ? [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill('0'), ...right] : left
+  if (halves.length > 2 || groups.length !== 8 || (halves.length === 2 && left.length + right.length > 7) || !groups.every((group) => HEXTET.test(group))) throw malformed(`"${address}" is not an IP address`)
   return `ip:${groups.slice(0, 4).map((group) => group.replace(/^0+(?=.)/, '')).join(':')}::/64`
 }
 

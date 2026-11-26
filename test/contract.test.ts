@@ -88,6 +88,14 @@ everywhere('a guarded page cannot leave an address, trace or receipt through the
 const one = async (graph: AccountGraph, entry: RecordEntry): Promise<RecordResult> => (await graph.record({ entries: [entry] })).results[0]!
 const codeOf = (work: Promise<unknown>) => work.then((value) => ({ value }), (error) => (isFault(error) ? { code: error.code, retryable: error.retryable } : { raw: String(error) }))
 
+everywhere('a profile with an IP that is not an address is refused and leaves nothing behind', async ({ graph }) => {
+  const profile = (ip: string, key: string): RecordEntry => ({ type: 'profile', key, at: AT, subject: 'contact:ip', facts: { ip, email: 'ip@example.org' }, event: 'form' } as RecordEntry)
+  const bad = await codeOf(graph.record({ entries: [profile('not-an-ip', 'ip-bad')] }))
+  const good = await one(graph, profile('203.0.113.9', 'ip-bad'))
+  assert.deepEqual([bad, good.ok], [{ code: 'INPUT.MALFORMED', retryable: false }, true])
+  return [bad, good.ok]
+})
+
 everywhere('a creation date belongs to the exact record and the newest dated profile stands in either arrival order', async ({ graph, local }) => {
   const { engine } = await internalsOf(local)!()
   const records = ['contact:one', 'contact:two']
