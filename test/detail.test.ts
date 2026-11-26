@@ -266,8 +266,32 @@ test('a card opens, closes, stays through a refresh, and says when something is 
   await page.click(`[...document.querySelectorAll('#card a')].find((a) => a.textContent === 'Calls by Hour')`)
   await until('the hours', async () => (await focused()) === 'calls-hours')
   await page.go('#/journey/contact%3Aada')
-  await page.click(find('call ada-1 timeline'))
+  // The view read again under a pointer that rests on an icon, before the press or between the press and its release, as a late change of address does: the press still opens its card. A pulse right after it reads the view again, and the card stays with the new icon.
+  const icon = find('call ada-1 timeline')
+  await run(`(() => { const real = window.fetch; window.up = () => (window.fetch = real); window.fetch = async (...all) => { if (String(all[0]).includes('/journey')) await new Promise((done) => (window.release = done)); return real(...all) } })()`)
+  const reread = async (start: string) => {
+    await run(`window.old = ${icon}; window.release = undefined; ${start}`)
+    await until('the journey to be asked', () => run(`typeof window.release === 'function'`))
+    await run(`window.release()`)
+    await until('the view read again', () => run(`!old.isConnected && pending === 0`))
+  }
+  const late = `dispatchEvent(new HashChangeEvent('hashchange'))`
+  const expanded = async () => [await shown(), await text('#card-title'), await run(`${icon}.getAttribute('aria-expanded')`)]
+  for (const pressed of [false, true]) {
+    const [x, y] = await page.middle(icon)
+    await page.mouse('mouseMoved', x, y)
+    if (!pressed) await reread(late)
+    await page.mouse('mousePressed', x, y)
+    if (pressed) await reread(late)
+    await page.mouse('mouseReleased', x, y)
+    await page.settled()
+    assert.deepEqual(await expanded(), [true, 'Missed call', 'true'], pressed ? 'pressed' : 'resting')
+    if (!pressed) await key('Escape')
+  }
+  await reread(`beat = undefined; void look()`)
   await page.settled()
+  assert.deepEqual(await expanded(), [true, 'Missed call', 'true'])
+  await run(`void window.up()`)
   await page.click(`[...document.querySelectorAll('#card a')].find((a) => a.textContent === 'Show Return Call')`)
   await until('the return call', () => run(`location.hash.endsWith('/ada-3') && document.querySelector('.timeline-entry.found')?.textContent.includes('410 s')`))
 

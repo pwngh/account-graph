@@ -96,6 +96,7 @@ export async function screen(base: string) {
   const { run, send } = browser
   await until('the page', () => run(`typeof load === 'function' && typeof palette !== 'undefined'`).catch(() => false))
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false })
+  if (process.env.THROTTLE) await send('Emulation.setCPUThrottlingRate', { rate: Number(process.env.THROTTLE) })
   await run(`(() => { const t = document.getElementById('token'); t.value = 'dana-token'; t.dispatchEvent(new Event('change')) })()`)
   await until('the sign in', () => run(`me === 'dana' && opening === 0`))
   const go = async (hash: string) => {
