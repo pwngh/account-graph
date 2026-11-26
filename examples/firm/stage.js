@@ -398,6 +398,7 @@
       if (!quiet) {
         await open(scene.stage ?? `#${scene.see[1].split('#')[1]}`, began)
         spot(scene.spot)
+        if (scene.open) document.querySelector(`#view [data-key^="detail ${scene.open} "]`)?.click()
       }
       showCredit(sure)
     } catch (error) {

@@ -41,7 +41,7 @@ git clone https://github.com/pwngh/account-graph && cd account-graph
 npm ci && npm run firm
 ```
 
-A made-up law firm with two months of data, a site, and 21 scenes to play. Node 22.18 or later. Docker is optional. To set up your own, see [Getting started](docs/getting-started.md).
+A made-up law firm with two months of data, a site, and 27 scenes to play. Node 22.18 or later. Docker is optional. To set up your own, see [Getting started](docs/getting-started.md).
 
 ## Reviewer screen
 
