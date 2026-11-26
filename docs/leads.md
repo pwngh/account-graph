@@ -2,7 +2,7 @@
 
 A chat service, intake widget or payment relay can post directly to `https://graph.example.org/leads/<name>`. Each source has its own secret and a mapping from its fields to graph entries.
 
-**Capture one real test post first.** These vendors do not publish a fixed format for these posts. Submit synthetic contact details through your own test integration and inspect the request privately. Find the stable lead or payment ID, the content type, and where the contact or payment fields actually appear. Every vendor field name and signature header in the examples below is a made-up placeholder. Replace each with what your vendor sends.
+**Capture one real test post first.** These vendors do not publish a fixed format for these posts. Submit synthetic contact details through your own test integration and inspect the request privately. Find the stable lead or payment ID, the content type, and where the contact or payment fields appear. Every vendor field name and signature header in the examples below is a made-up placeholder. Replace each with what your vendor sends.
 
 Set `LEADS_FILE` to a private JSON file containing the named sources you use, or supply the same object in `LEADS`. Each example shows the entire file for one source. To use several, put their names in the same object. Replace every example secret with a different random secret shared only with that sender. Keep credentials in headers and use HTTPS. Graph service tokens belong to your own services.
 
@@ -23,7 +23,7 @@ Suppose the test post to `/leads/chat` has content type `application/json` and t
 }
 ```
 
-Configure the source to read the first contact. A dot moves down one field and a numeric index picks one item, starting at zero. Both `contacts.0.reply_to` and `contacts[0].reply_to` select the same field. Map `device` when the service returns the visitor's hidden `ag_device` field. The graph drops the unmapped conversation and other extra fields before recording, and does not log their contents. [Passing the browser ID to a chat service](identify.md#chat)
+Configure the source to read the first contact. A dot moves down one field and a numeric index picks one item, starting at zero. Both `contacts.0.reply_to` and `contacts[0].reply_to` select the same field. Map `device` when the service returns the visitor's hidden `ag_device` field. The graph drops the unmapped conversation and other extra fields before recording, and does not log their contents. See [Passing the browser ID to a chat service](identify.md#chat).
 
 <!-- schema config -->
 ```json
@@ -88,7 +88,7 @@ Add a **Webhooks by Zapier** action after your app's trigger. Choose **POST**, e
 }
 ```
 
-A test trigger might send `{"item_ref":"R31","reply_address":"relay31@example.org"}`. Choose just the fields the graph needs when building the action. The same JSON and bearer header work with an HTTP request step in Make.
+A test trigger might send `{"item_ref":"R31","reply_address":"relay31@example.org"}`. Choose only the fields the graph needs when building the action. The same JSON and bearer header work with an HTTP request step in Make.
 
 To sign the post instead, set the source's `auth` to `{"header":"X-Relay-Proof","encoding":"hex"}`. In a **Code by Zapier** JavaScript step, provide `item_ref`, `reply_address` and the source secret as inputs.
 
@@ -125,18 +125,18 @@ For the intake above, carry its conversion key as a reference when starting the 
 { "payment_ref": "P42", "outcome_ref": "lead:intake:I28", "total_paid": 25.50, "unit_code": "USD" }
 ```
 
-The 200 answer is `{"recorded":["payment"],"duplicate":false}`. It records one received payment under `lead:settlements:P42`. A second payment against the same conversion needs its own payment ID. A payment can arrive before its conversion, as any payment entry can, and counts toward `maxAmount` from the start. [Payment entries](http.md#entry-types)
+The 200 answer is `{"recorded":["payment"],"duplicate":false}`. It records one received payment under `lead:settlements:P42`. A second payment against the same conversion needs its own payment ID. A payment can arrive before its conversion, as any payment entry can, and counts toward `maxAmount` from the start. See [Payment entries](http.md#entry-types).
 
 ## Checking delivery
 
-Send the same test post twice. The second 200 answer is `{"recorded":[],"duplicate":true}`. The graph uses its ordinary record receipts. Retry a lost answer with the same source and ID. [Receipt retention](operations.md#receipts)
+Send the same test post twice. The second 200 answer is `{"recorded":[],"duplicate":true}`. The graph uses its ordinary record receipts. Retry a lost answer with the same source and ID. See [Receipt retention](operations.md#receipts).
 
 A source takes no updates unless it has `"updates": true`. Without it, a later post with the same ID and other mapped details is refused with 409 and adds nothing. A post that differs only in its time or in unmapped fields is a duplicate.
 
 Many vendors post a lead again as they learn more, under the same ID. With `"updates": true`, a later post with the same ID and new mapped details adds those details to the same subject and answers `{"recorded":["profile"],"duplicate":false}`. It adds facts and never removes earlier ones. The conversion keeps the subject and time of the first post, even if a later post gives another time. **Turn updates on only when the vendor assigns the ID.** If the ID comes from anything a visitor can edit, such as a form field or a page address, a visitor can post under somebody else's ID and attach their own details to that person's lead.
 
-A later post that maps the same ID to another subject is refused with 409, with or without updates. A payment is not updated: a second payment with the same ID and a different amount, currency or conversion is refused with 409.
+A later post that maps the same ID to another subject is refused with 409, with or without updates. A payment is not updated. A second payment with the same ID and a different amount, currency or conversion is refused with 409.
 
 A lead without a usable identifying fact answers `{"recorded":[],"note":"NO_FACT_USED"}`, even while the graph is unavailable, since nothing would be recorded. Errors are answered as `{"error":"…"}` with the status codes listed in the HTTP reference.
 
-**A forgotten subject stays forgotten.** After `forget`, a post with the same vendor ID answers `FORGOTTEN`. So does a post with a new vendor ID that would file the lead under a forgotten subject, such as a mapped `subject` naming it. The graph knows this from a tombstone `forget` leaves for each subject. `account-graph prune` keeps tombstones. A subject forgotten before this version has none, and a new vendor ID can bring it back. A new vendor ID with no mapped subject makes a new subject, which is a new record of that person. To bring a forgotten subject back on purpose, `record` a profile under that exact subject from your own services. This removes its tombstone, and lead posts may file under it again. A record the graph refuses as forgotten answers `{"recorded":[],"note":"FORGOTTEN"}`. Neither note calls for another delivery. [HTTP status codes and retry behavior](http.md#lead-webhooks)
+**A forgotten subject stays forgotten.** After `forget`, a post with the same vendor ID answers `FORGOTTEN`. So does a post with a new vendor ID that would file the lead under a forgotten subject, such as a mapped `subject` naming it. The graph knows this from a tombstone `forget` leaves for each subject. `account-graph prune` keeps tombstones. A subject forgotten before this version has none, and a new vendor ID can bring it back. A new vendor ID with no mapped subject makes a new subject, which is a new record of that person. To bring a forgotten subject back on purpose, `record` a profile under that exact subject from your own services. This removes its tombstone, and lead posts may file under it again. A record the graph refuses as forgotten answers `{"recorded":[],"note":"FORGOTTEN"}`. Neither note calls for another delivery. See [HTTP status codes and retry behavior](http.md#lead-webhooks).
