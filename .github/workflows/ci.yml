@@ -22,6 +22,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
       # The restore check needs client tools no newer than the database service, so it runs those of the same image.
       - name: postgresql 16 client tools
         run: |

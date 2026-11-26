@@ -39,6 +39,7 @@
 - `account_graph_lib` brings the six calls to PHP 7.2+ hosts, plain or CodeIgniter (`$this->load->library('account_graph_lib', $config)`), with retries under the same key, cursor paging and Retry-After capped at 15 minutes. See [PHP](docs/php.md).
 - `account_graph_outbox_lib` sends each record's changes in order from the host's own transaction; a service fault pauses the pass, a refused row waits for a person, and a sent row keeps no personal data.
 - `docs/openapi.json` describes the six calls and browser collector, with checked examples for firms recording web inquiries through Zapier, Make or Power Automate.
+- `AccountGraph.Client` calls the graph from .NET 10 with the base class library only, retries under the same key, and makes the same stable keys as the Python client. See [.NET](docs/dotnet.md).
 - `account_graph` calls the graph from Python, follows event, report and journey cursors, and preserves keyed writes across retries and restarts with an optional SQLite outbox.
 - `profile.createdAt` records when your system created a subject. The Accounts heading and Links table show it alongside the earliest activity the graph still holds for each record.
 - `textsOptedOut` covers a STOP from any phone number the subject’s cluster has, including one only related to it under `records`. A START from inside the cluster does not undo it.
