@@ -91,7 +91,7 @@ export function readEnvironment(env: Env) {
     return void wrong.push('SERVICE_TOKENS must be a JSON list, given directly or in a readable SERVICE_TOKENS_FILE')
   }
   const leadSources = (): LeadSources | undefined => {
-    // Empty is unset, as for STAGES: Compose passes an empty LEADS when the host has none.
+    // Empty is unset, as for STAGES, because Compose passes an empty LEADS when the host has none.
     const given = env.LEADS || undefined
     const file = env.LEADS_FILE || undefined
     if (given === undefined && file === undefined) return undefined
@@ -204,7 +204,7 @@ export function readEnvironment(env: Env) {
     poolMinutes: number('POOL_MINUTES', 15),
     poolGrace: number('POOL_GRACE_MINUTES', 120),
     poolRequireTapAfterReassignment: env.POOL_REQUIRE_TAP_AFTER_REASSIGNMENT === 'true',
-    // One Twilio token serves two things, each switched on by its second variable: call reports and line lookups.
+    // One Twilio token covers two things, each switched on by its second variable: call reports and line lookups.
     twilio: env.TWILIO_AUTH_TOKEN && env.TWILIO_WEBHOOK_URL ? { authToken: env.TWILIO_AUTH_TOKEN, url: env.TWILIO_WEBHOOK_URL } : undefined,
     lineType: env.TWILIO_AUTH_TOKEN && env.TWILIO_ACCOUNT_SID ? { accountSid: env.TWILIO_ACCOUNT_SID, authToken: env.TWILIO_AUTH_TOKEN } : undefined,
     smarty: group(['SMARTY_AUTH_ID', 'SMARTY_AUTH_TOKEN']) ? { authId: env.SMARTY_AUTH_ID!, authToken: env.SMARTY_AUTH_TOKEN!, ...(env.SMARTY_LICENSE && { license: env.SMARTY_LICENSE }) } : undefined,
