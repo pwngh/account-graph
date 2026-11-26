@@ -17,12 +17,16 @@ interface PageOptions extends PageRules {
   /** Wait for an affirmative banner answer before making an identifier or collecting anything. */
   requireConsent?: boolean
   consent?: { adUserData: boolean; adPersonalization: boolean }
+  /** A tag manager can withdraw storage permission while the page stays open. */
+  storageGranted?: () => boolean
   signal?: AbortSignal
 }
 
 export interface CollectOptions extends PageOptions {
   /** The full URL of the `/collect` route. */
   endpoint: string
+  /** Page events this tag may send. An empty list suppresses them all. */
+  events?: readonly string[]
   /** The event id from `fingerprintEvent`. The server confirms it with Fingerprint. */
   fingerprintEvent?: string | Promise<string | undefined> | ((active: () => boolean) => Promise<string | undefined>)
   /** A hash computed in the browser, such as the one from `openFingerprint`. Nothing confirms it. */
@@ -130,11 +134,15 @@ export function pageAddress(raw: unknown, rules: PageRules, referrerOf?: readonl
 }
 
 const bannerAnswer = () => (globalThis as { accountGraphConsent?: PageOptions['consent'] }).accountGraphConsent
-const ready = (options: PageOptions) => !options.signal?.aborted && (!options.requireConsent || (bannerAnswer() ?? options.consent)?.adUserData === true) &&
+const canStop = (options: PageOptions) => hasPageRules(options) || options.requireConsent || options.storageGranted !== undefined
+const ready = (options: PageOptions) => !options.signal?.aborted && (!options.storageGranted || options.storageGranted()) && (!options.requireConsent || (bannerAnswer() ?? options.consent)?.adUserData === true) &&
   (!hasPageRules(options) || Boolean(pageAddress(location.href, options)))
 
 const pageOf = (options: PageOptions) => hasPageRules(options) ? { url: pageAddress(location.href, options) } : {}
-const guardedFetch = (options: PageOptions): RequestInit => hasPageRules(options) ? { referrerPolicy: 'no-referrer' } : {}
+const guardedFetch = (options: PageOptions): RequestInit => ({
+  ...(hasPageRules(options) && { referrerPolicy: 'no-referrer' }),
+  ...(options.storageGranted && options.signal && { signal: options.signal }),
+})
 
 function cookie(name: string): string | undefined {
   const found = document.cookie.split('; ').find((part) => part.startsWith(`${name}=`))
@@ -256,7 +264,7 @@ export async function collect(options: CollectOptions): Promise<void> {
   if (!ready(options)) return
   const began = location.href
   // A bundled site can supply a function so even starting the vendor is behind the page and consent checks.
-  const guarded = hasPageRules(options) || options.requireConsent
+  const guarded = canStop(options)
   const active = () => !guarded || ready(options) && location.href === began
   // A vendor running on the page can read both addresses before the collector strips their query and fragment.
   const canIdentify = () => active() && (!hasPageRules(options) || !/[?#]/.test(location.href) && !/[?#]/.test(document.referrer) &&
@@ -307,7 +315,8 @@ export async function collect(options: CollectOptions): Promise<void> {
 }
 
 async function post(options: CollectOptions, body: string): Promise<void> {
-  if (!hasPageRules(options) && navigator.sendBeacon?.(options.endpoint, new Blob([body], { type: 'text/plain' }))) return
+  // A pending beacon cannot be cancelled when storage consent is withdrawn.
+  if (!options.storageGranted && !hasPageRules(options) && navigator.sendBeacon?.(options.endpoint, new Blob([body], { type: 'text/plain' }))) return
   await fetch(options.endpoint, { ...guardedFetch(options), method: 'POST', body, keepalive: true, headers: { 'content-type': 'text/plain' } })
 }
 
@@ -323,7 +332,7 @@ export interface EventDetail {
  * the phone number. The server keeps only the names it was told to accept.
  */
 export async function event(options: CollectOptions, name: string, detail: EventDetail = {}): Promise<void> {
-  if (!ready(options)) return
+  if (!ready(options) || options.events && !options.events.includes(name)) return
   const page = new URL(location.href)
   const staff = staffMark()
   // The page can replace its banner answer after the tag has loaded.
@@ -466,7 +475,7 @@ export function carry(options: CollectOptions): () => void {
     if (!token || Date.now() - token.at > 55 * 60_000) return
     const written = decorated.get(link)?.written ?? link.href
     url.searchParams.set('ag_from', token.value)
-    if (hasPageRules(options) || options.requireConsent) decorated.set(link, { written, marked: url.href })
+    if (canStop(options)) decorated.set(link, { written, marked: url.href })
     link.href = url.href
   }
   if (domains.size === 0) return () => {}
@@ -533,7 +542,7 @@ export function fill(options: PageOptions & { all?: boolean } = {}): () => void 
   if (!ready(options)) return () => {}
   const off = new WeakSet<HTMLInputElement>()
   const restore = new Map<HTMLInputElement, () => void>()
-  const keepFields = hasPageRules(options) || options.requireConsent
+  const keepFields = canStop(options)
   const before = (input: HTMLInputElement) => {
     if (!keepFields || restore.has(input)) return
     const { disabled, value } = input
@@ -601,7 +610,7 @@ export function texts(options: CollectOptions): () => void {
   if (!ready(options)) return () => {}
   const labels = new Map<Element, string | null>()
   const markedLinks = new Map<Element, () => void>()
-  const guarded = hasPageRules(options) || options.requireConsent
+  const guarded = canStop(options)
   let code: string | undefined
   let asked = false
   const show = () => {

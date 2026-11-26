@@ -4,6 +4,7 @@
 
 ### Providers
 
+- `account-graph.tpl` installs the browser collector through Tag Manager with form, page and event settings and stops collection when either storage consent is withdrawn.
 - The tests replay Twilio’s published signature and response examples for the ad and lookup providers. A loopback receiver checks the graph’s event signature and unsigned alert.
 - `live-check` runs one named check, lists the data it sends and exits unsuccessfully on missing credentials or an inconclusive result. Dummy credentials require an explicit flag.
 - Meta website events can include the converting browser’s user agent with explicit advertising consent and an opt-in setting. Meta sends its token in the Authorization header and fails a batch whose receipt counts fewer events. `SYSTEM_GENERATED` is a channel.
