@@ -52,6 +52,8 @@ Compose passes the variables in [Environment variables](#environment-variables) 
 | `account-graph alerts test` | Posts a test alert |
 | `account-graph staff-link https://example.org/team` | Makes an address that marks a browser as [staff](#staff-traffic) |
 | `account-graph events new-epoch` | Begins a new history of events, after a [restore](#backups) |
+| `account-graph sample-joins --size 300 --seed 2026-11` | Writes a random sample of the graph's own joins as CSV, for [checking by hand](#checking-joins-by-hand) |
+| `account-graph score-joins checked.csv` | Scores a checked sample. Needs no database. |
 
 Each command reads the server's environment variables, upgrades the database as a server does, and ends. The workers stay off.
 
@@ -167,6 +169,35 @@ The screen checks for new writes every ten seconds and reloads the view when the
 The reviewer endpoint `GET /review/api/undecided` returns up to 50 pairs by default. Set `limit` from 1 to 500. Pairs involving a subject from the newest 10,000 sightings come first by score, with ties ordered by the two subject ids. The `window` gives the number of sightings examined, the earliest recording time in epoch milliseconds (`oldest`, or null for an empty history), and whether older sightings were left out (`older`). Pass `next` back as `cursor` while `more` is true to see the rest of this queue.
 
 Start with `?full=true` to review all subjects, including those whose sighting history has been pruned. Each request reads up to 100 subjects in id order and offers each pair under its first subject. Within that subject, pairs are ordered by the other id. The window names the first and last subjects examined. An empty page can still have a next cursor. In both modes, `seen` counts subjects examined and `total` counts qualifying pairs in this window. Each request starts a fresh read, so decisions made between pages take effect. A new or changed pair behind the cursor can be found on the next sweep.
+
+## Checking joins by hand
+
+A sample of joins, checked by a person each month, gives the share of joins that were right. Nothing else measures wrong joins on your own records.
+
+1. Write the sample. It holds pairs of records in one cluster that a `same` link joins directly. Pairs a reviewer joined are left out, since a join by hand does not test the matching.
+
+   ```sh
+   account-graph sample-joins --size 300 --seed 2026-11 > joins.csv
+   ```
+
+   The columns are `a`, `b`, `score`, `reasons` and an empty `same`. `reasons` lists the identifiers that joined the pair. The same seed on the same graph gives the same pairs, so a sample can be written again. The seed defaults to the current month, and the size to 300.
+
+2. For each row, look up both records in your own system and write `yes` or `no` in `same`. Leave a row empty when you cannot tell. Empty rows are counted apart and left out of the share.
+
+3. Score it.
+
+   ```sh
+   account-graph score-joins joins.csv
+   ```
+
+   <!-- schema cli -->
+   ```json
+   { "checked": 300, "same": 285, "different": 15, "unanswered": 0, "share": 0.95, "low": 0.919, "high": 0.969 }
+   ```
+
+   `share` is the share of checked rows that were one person. `low` and `high` are its 95% Wilson interval. With 300 rows checked, the interval is about 5 points wide.
+
+For each `no`, keep the two records apart in the [reviewer screen](#reviewer-screen), so the decision and its reason are recorded.
 
 ## Policy
 
