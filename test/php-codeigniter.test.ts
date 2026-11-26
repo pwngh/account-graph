@@ -28,6 +28,7 @@ test('a restarted CI3 worker sends merge before unmerge and split before unsplit
   t.after(() => rmSync(app, { recursive: true, force: true }))
   mkdirSync(join(app, 'application'))
   symlinkSync(join(root, 'examples/php'), join(app, 'application/third_party'))
+  for (const dir of ['libraries', 'config']) symlinkSync(join(root, 'examples/php/codeigniter', dir), join(app, 'application', dir))
   const graph = accountGraph({ memory: true })
   const edge = createEdge(graph, { token: 'synthetic-test', limit: false })
   const server = createServer(edge).listen(0, '127.0.0.1')
@@ -67,6 +68,7 @@ test('the CI3 model uses the host transaction and query builder with mysqli and 
   try {
     mkdirSync(join(app, 'application'))
     symlinkSync(join(root, 'examples/php'), join(app, 'application/third_party'))
+    for (const dir of ['libraries', 'config']) symlinkSync(join(root, 'examples/php/codeigniter', dir), join(app, 'application', dir))
     const fixture = join(root, 'test/fixtures/php/codeigniter.php')
     for (const driver of ['mysqli', 'pdo_mysql', 'pdo_pgsql']) {
       const result = spawnSync('php', ['-d', 'zend.exception_ignore_args=0', '-d', 'zend.exception_string_param_max_len=1024', fixture, app, driver], { encoding: 'utf8' })

@@ -17,7 +17,7 @@ const [version, openssl, curl] = (installed.stdout ?? '').split(' ').map(Number)
 const skip = (installed.error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT' && 'php is not on the PATH'
 
 async function php(code: string, args: string[] = [], ini: string[] = []) {
-  const { stdout, stderr } = await run('php', [...ini.flatMap(value => ['-d', value]), '-r', "require 'examples/php/AccountGraph.php';\n" + code, ...args], { cwd: root, timeout: 8000, env: { ...process.env, NO_PROXY: '*', no_proxy: '*' } })
+  const { stdout, stderr } = await run('php', [...ini.flatMap(value => ['-d', value]), '-r', "require 'examples/php/account_graph_lib.php';\n" + code, ...args], { cwd: root, timeout: 8000, env: { ...process.env, NO_PROXY: '*', no_proxy: '*' } })
   assert.equal(stderr, '')
   return JSON.parse(stdout)
 }
@@ -41,30 +41,61 @@ async function serve(t: TestContext, server: Server) {
 
 const read = `
 try {
-    $client = new AccountGraph($argv[1], 'synthetic-transport', 500, 700, 2);
+    $client = new account_graph_lib(array('Base_Url' => $argv[1], 'Token' => 'synthetic-transport', 'Connect_Timeout_Ms' => 500, 'Timeout_Ms' => 700, 'Attempts' => 2));
     echo json_encode($client->lookup(array('kind' => 'party', 'call' => 'missing')));
-} catch (AccountGraphFault $fault) {
-    echo json_encode(array('code' => $fault->faultCode, 'retryable' => $fault->retryable, 'detail' => $fault->detail));
+} catch (account_graph_fault $fault) {
+    echo json_encode(array('code' => $fault->fault_code, 'retryable' => $fault->retryable, 'detail' => $fault->detail));
 }`
 const transports = () => curl ? [[], ['disable_functions=curl_init']] : [[]]
 
+test('the standalone PHP entry points load by filename and take named configuration', { skip }, async () => {
+  const result = await php(`
+require_once 'examples/php/account_graph_outbox_lib.php';
+$classes = array();
+foreach (array('account_graph_lib', 'account_graph_outbox_lib', 'account_graph_fault') as $name) {
+    $class = new ReflectionClass($name);
+    $classes[] = array($class->getName(), basename($class->getFileName()), (string) $class->getConstructor()->getParameters()[0]->getType());
+}
+$config = array('Base_Url' => 'http://127.0.0.1', 'Token' => 'synthetic-only');
+$missing = array();
+foreach (array_keys($config) as $key) {
+    try {
+        new account_graph_lib(array_diff_key($config, array($key => true)));
+    } catch (account_graph_fault $fault) {
+        $missing[$key] = $fault->fault_code === 'CONFIG.INVALID' && strpos($fault->getMessage(), $key) !== false;
+    }
+}
+$invalid = array();
+foreach (array('Detail' => 'invalid', 'Retryable' => 'false', 'Message' => array()) as $key => $value) {
+    try {
+        new account_graph_fault(array('Code' => 'GRAPH.CLOSED', $key => $value));
+    } catch (InvalidArgumentException $error) {
+        $invalid[] = $key;
+    }
+}
+echo json_encode(array('classes' => $classes, 'missing' => $missing, 'invalid' => $invalid));`)
+  assert.deepEqual(result.classes, ['account_graph_lib', 'account_graph_outbox_lib', 'account_graph_fault'].map(name => [name, name + '.php', 'array']))
+  assert.deepEqual(result.missing, { Base_Url: true, Token: true })
+  assert.deepEqual(result.invalid, ['Detail', 'Retryable', 'Message'])
+})
+
 test('PHP gives the graph time to finish a batch and redacts the constructor token in exception traces', { skip }, async () => {
   const answer = await php(`
-$constructor = new ReflectionMethod('AccountGraph', '__construct');
+$constructor = new ReflectionMethod('account_graph_lib', '__construct');
 $params = $constructor->getParameters();
 $token = 'synthetic-token-for-trace';
 try {
-    new AccountGraph('invalid', $token);
-} catch (AccountGraphFault $fault) {
+    new account_graph_lib(array('Base_Url' => 'invalid', 'Token' => $token));
+} catch (account_graph_fault $fault) {
     echo json_encode(array(
         'redacted' => strpos($fault->getTraceAsString(), $token) === false,
-        'attribute' => PHP_VERSION_ID < 80200 || count($params[1]->getAttributes('SensitiveParameter')) === 1,
-        'timeout' => $params[3]->getDefaultValue()
+        'attribute' => PHP_VERSION_ID < 80200 || count($params[0]->getAttributes('SensitiveParameter')) === 1,
+        'configuration' => count($params) === 1 && (string) $params[0]->getType() === 'array'
     ));
 }`, [], ['zend.exception_ignore_args=0', 'zend.exception_string_param_max_len=1024'])
   assert.equal(answer.redacted, true)
   assert.equal(answer.attribute, true)
-  assert.ok(answer.timeout > 30000)
+  assert.equal(answer.configuration, true)
 })
 
 test('PHP waits for Retry-After seconds or dates and returns longer waits to the worker', { skip }, async t => {
@@ -102,7 +133,7 @@ test('PHP waits for Retry-After seconds or dates and returns longer waits to the
 test('PHP caps Retry-After dates and delta-seconds at fifteen minutes', { skip }, async () => {
   const { start, deadlines, end } = await php(`
 $start = microtime(true);
-$deadlines = array_map(array('AccountGraph', 'retryAt'), array('86400', 'Fri, 31 Dec 9999 23:59:59 GMT', '99999999999999999999999'));
+$deadlines = array_map(array('account_graph_lib', 'retry_at'), array('86400', 'Fri, 31 Dec 9999 23:59:59 GMT', '99999999999999999999999'));
 echo json_encode(array('start' => $start, 'deadlines' => $deadlines, 'end' => microtime(true)));`)
   for (const until of deadlines) assert.ok(until >= start + 900 && until <= end + 900)
 })
@@ -137,13 +168,17 @@ test('PHP disables cURL signals for sub-second deadlines', { skip: skip || (!cur
   const noSignals = await php(`
 function curl_setopt_array($handle, $options) {
     $GLOBALS['no_signals'] = $options[CURLOPT_NOSIGNAL] ?? false;
+    $GLOBALS['timeout'] = $options[CURLOPT_TIMEOUT_MS];
     foreach ($options as $name => $value) {
         if (!curl_setopt($handle, $name, $value)) return false;
     }
     return true;
 }
-$client = new AccountGraph($argv[1], 'synthetic-transport', 100, 200, 1);
+$client = new account_graph_lib(array('Base_Url' => $argv[1], 'Token' => 'synthetic-transport', 'Connect_Timeout_Ms' => 100, 'Timeout_Ms' => 200, 'Attempts' => 1));
 $client->lookup(array('kind' => 'party', 'call' => 'missing'));
-echo json_encode($GLOBALS['no_signals']);`, [url], ['disable_functions=curl_setopt_array'])
-  assert.equal(noSignals, true)
+$short = array($GLOBALS['no_signals'], $GLOBALS['timeout']);
+$client = new account_graph_lib(array('Base_Url' => $argv[1], 'Token' => 'synthetic-transport'));
+$client->lookup(array('kind' => 'party', 'call' => 'missing'));
+echo json_encode(array($short, $GLOBALS['timeout']));`, [url], ['disable_functions=curl_setopt_array'])
+  assert.deepEqual(noSignals, [[true, 200], 35000])
 })

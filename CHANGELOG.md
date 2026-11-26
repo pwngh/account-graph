@@ -26,6 +26,11 @@
 - `profile` refuses an `ip` fact that is not an IPv4 or IPv6 address with `INPUT.MALFORMED`. Valid addresses keep the keys they had.
 - `AccountGraph.php` allows a record batch time to finish, honors the server’s retry delay across worker runs and distinguishes TLS setup failures from indeterminate timeouts.
 - `AccountGraph.php` brings the six calls to PHP hosts, with stable keys, cursor paging and a transactional outbox that keeps each record's changes in order.
+- `account_graph_lib` loads directly in CodeIgniter or plain PHP, accepts named settings, and exposes the same six calls and cursor paging through documented methods.
+- `account_graph_outbox_lib` caps retry deadlines at 15 minutes and continues sending independent groups while a row waits. Profile screening reports which fields were dropped and why.
+- `account_graph_outbox_lib` stops a pass on service faults, holds explicit dependents for refused or malformed writes, and clears the saved request after each successful send.
+- `account_graph_lib.php` allows a record batch time to finish, honors the server’s retry delay across worker runs and distinguishes TLS setup failures from indeterminate timeouts.
+- `account_graph_lib.php` brings the six calls to PHP hosts, with stable keys, cursor paging and a transactional outbox that keeps each record's changes in order.
 - `profile.createdAt` records when your system created a subject. The Accounts heading and Links table show it alongside the earliest activity the graph still holds for each record.
 - `textsOptedOut` covers a STOP from any phone number the subject’s cluster has, including one only related to it under `records`. A START from inside the cluster does not undo it.
 - `record` applies an inbound opt-out first supplied on a text retry at the original message time and answers `optOutAdded: true` once.

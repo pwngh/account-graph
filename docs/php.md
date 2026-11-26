@@ -1,15 +1,22 @@
 # PHP and CodeIgniter 3
 
-Copy [AccountGraph.php](../examples/php/AccountGraph.php) into your application. The client targets PHP 7.2 and later. It was syntax-checked and exercised on PHP 8.5.6, including its stream transport and SQLite outbox. PHP 7.2 compatibility was checked by source review. It uses JSON and cURL, with PHP streams when cURL is absent. HTTPS needs the host's trusted CA certificates and, for streams, OpenSSL. Only loopback may use plain HTTP. The standalone outbox uses PDO. The CodeIgniter model uses the host’s existing query builder and connection.
+Copy the lowercase PHP files at the top of [examples/php](../examples/php/) into one directory. Require `account_graph_lib.php` for the six calls or `account_graph_outbox_lib.php` for the outbox and client together. The client targets PHP 7.2 and later. It was syntax-checked and exercised on PHP 8.5.6, including its stream transport and SQLite outbox. PHP 7.2 compatibility was checked by source review. It uses JSON and cURL, with PHP streams when cURL is absent. HTTPS needs the host's trusted CA certificates and, for streams, OpenSSL. Only loopback may use plain HTTP. The standalone outbox uses PDO. The CodeIgniter model uses the host’s existing query builder and connection.
 
 ```php
-require_once __DIR__ . '/AccountGraph.php';
-$graph = new AccountGraph(getenv('GRAPH_URL'), getenv('GRAPH_TOKEN'), 1000, 35000, 3);
+require_once __DIR__ . '/account_graph_lib.php';
+$config = array(
+    'Base_Url' => getenv('GRAPH_URL'),
+    'Token' => getenv('GRAPH_TOKEN'),
+    'Connect_Timeout_Ms' => 1000,
+    'Timeout_Ms' => 35000,
+    'Attempts' => 3
+);
+$graph = new account_graph_lib($config);
 ```
 
-Give the server's base URL, such as `https://graph.example.org`. The last three arguments are the connect timeout in milliseconds, the timeout for the entire request in milliseconds per attempt, and the maximum number of attempts. On a retryable fault the client resends the request with its original keys. In a completed batch it retries only entries marked `NOT_ATTEMPTED`. The default attempt allows 35 seconds because the graph has a 30-second record budget and the reply must travel back.
+Supply `Base_Url` (such as `https://graph.example.org`) and a service or reviewer `Token`. The other settings are optional. The example shows their defaults. `Connect_Timeout_Ms` limits connection setup, `Timeout_Ms` covers the whole attempt, and `Attempts` includes the first send. On a retryable fault the client resends the request with its original keys. In a completed batch it retries only entries marked `NOT_ATTEMPTED`. The default attempt allows 35 seconds because the graph has a 30-second record budget and the reply must travel back.
 
-The wait starts at 50 ms and doubles on each retry. `Retry-After` can extend it by up to 15 minutes. A zero, negative or past value leaves the normal backoff in effect. For a wait over five seconds the client returns the fault so a worker can schedule the retry. A standalone caller can pass `$fault->detail['retryAfter'] ?? null` to `AccountGraph::retryAt()` for the capped Unix timestamp in seconds. A TLS verification or handshake failure reports `CONFIG.INVALID` with a TLS detail. A timeout reports `TRANSPORT.INDETERMINATE` because a write may already have committed. Keep the bearer token in the server environment. Keep request bodies, contact details, SQL parameters and exception traces out of application logs.
+The wait starts at 50 ms and doubles on each retry. `Retry-After` can extend it by up to 15 minutes. A zero, negative or past value leaves the normal backoff in effect. For a wait over five seconds the client returns the fault so a worker can schedule the retry. A standalone caller can pass `$fault->detail['retryAfter'] ?? null` to `account_graph_lib::retry_at()` for the capped Unix timestamp in seconds. A TLS verification or handshake failure reports `CONFIG.INVALID` with a TLS detail. A timeout reports `TRANSPORT.INDETERMINATE` because a write may already have committed. Keep the bearer token in the server environment. Keep request bodies, contact details, SQL parameters and exception traces out of application logs.
 
 ## Where the calls belong
 
@@ -26,7 +33,7 @@ No graph write belongs in a page's critical path. A phone screen opens from loca
 
 ## What to queue
 
-Use an opaque subject such as `contact:42`. On every write, save the original occurrence time as integer epoch milliseconds. For host changes, derive the key once from the source system, operation, host row ID and revision. For example, `AccountGraph::key('desk.profile', 42, 7)` identifies revision 7 of contact 42 in this host. For a call or text, `AccountGraph::providerKey($id)` checks the provider's original ID and returns it unchanged. It accepts 1–128 letters, digits, dots, dashes or underscores. A retry uses the saved request, including the same `key` and `at`. A later host edit has its own revision. On 32-bit PHP, use a whole-valued number such as `round(microtime(true) * 1000)` when capturing the time. Casting it to a PHP integer would overflow.
+Use an opaque subject such as `contact:42`. On every write, save the original occurrence time as integer epoch milliseconds. For host changes, derive the key once from the source system, operation, host row ID and revision. For example, `account_graph_lib::key('desk.profile', 42, 7)` identifies revision 7 of contact 42 in this host. For a call or text, `account_graph_lib::provider_key($id)` checks the provider's original ID and returns it unchanged. It accepts 1–128 letters, digits, dots, dashes or underscores. A retry uses the saved request, including the same `key` and `at`. A later host edit has its own revision. On 32-bit PHP, use a whole-valued number such as `round(microtime(true) * 1000)` when capturing the time. Casting it to a PHP integer would overflow.
 
 | Host change | Graph request |
 | --- | --- |
@@ -44,20 +51,25 @@ Never send case notes, medical or other health information, income, government i
 
 ## Install the CodeIgniter example
 
-Copy the four directories in [codeigniter/](../examples/php/codeigniter/) into the matching directories under `application/`. Place the client in `application/third_party/AccountGraph.php`. Set `GRAPH_URL` and `GRAPH_TOKEN` for the server process and cron. The library loads its timeouts from `application/config/graph_client.php`. Use your existing mysqli or PDO connection and transaction. The model checks failed writes with the host’s error mode in place. It submits builder-escaped writes through the driver directly so CI3’s query history and SQL error log do not capture the payload. Keep the token in the environment so the loader never receives it in its config array. Treat the CI profiler, saved queries, SQL error output and database logs as sensitive because they can contain bound values.
+Copy the lowercase library files to `application/third_party/`. Copy the directories in [codeigniter/](../examples/php/codeigniter/) into the matching directories under `application/`. CI3 looks for an initial capital in a library filename. The files under `application/libraries/` let its loader find the shared classes on a case-sensitive host. Set `GRAPH_URL` and `GRAPH_TOKEN` in the server and cron environments. The supplied `application/config/account_graph_lib.php` reads them when CI3 constructs the client. Keep exception traces, the profiler and saved SQL queries out of logs containing contact data or credentials.
 
 ```php
-$this->load->library('graph_client');
+$this->load->library('account_graph_lib');
 $this->load->model('graph_outbox');
 ```
 
-The library exposes the six methods of the standalone client. For a suggestion at contact creation, have the form make a separate authenticated request to a host endpoint. This call allows 80 ms to connect and 200 ms overall, with one attempt. A synchronous DNS resolver on an older host can exceed the socket deadline, so keep the form independent of the suggestion request.
+When the host already has the settings array, it can call `$this->load->library('account_graph_lib', $config)` directly. The model queues changes on the host's existing mysqli or PDO transaction and uses its configured error mode. It submits builder-escaped writes through the driver so CI3's query history and SQL error log omit the payload.
+
+For a suggestion at contact creation, have the form make a separate authenticated request to a host endpoint. Load a client for that endpoint with an 80 ms connect timeout, a 200 ms overall deadline and one attempt. A synchronous DNS resolver on an older host can exceed the socket deadline, so keep the form independent of the suggestion request.
 
 ```php
 try {
-    $answer = $this->graph_client->suggest(array('phone' => '+12025550142'), $at);
+    $config = array('Base_Url' => getenv('GRAPH_URL'), 'Token' => getenv('GRAPH_TOKEN'),
+        'Connect_Timeout_Ms' => 80, 'Timeout_Ms' => 200, 'Attempts' => 1);
+    $this->load->library('account_graph_lib', $config, 'suggestions');
+    $answer = $this->suggestions->lookup(array('kind' => 'match', 'facts' => array('phone' => '+12025550142'), 'at' => $at));
     $candidates = $answer['candidates'];
-} catch (AccountGraphFault $fault) {
+} catch (account_graph_fault $fault) {
     $candidates = array();
 }
 ```
@@ -125,7 +137,7 @@ try {
     }
     $subject = 'contact:' . $id;
     $entry = array(
-        'type' => 'profile', 'key' => AccountGraph::key('desk.profile', $id, $revision + 1),
+        'type' => 'profile', 'key' => account_graph_lib::key('desk.profile', $id, $revision + 1),
         'at' => $at, 'subject' => $subject, 'facts' => array('email' => $email)
     );
     $outboxId = $this->graph_outbox->enqueue($subject, 'record', array('entries' => array($entry)), null, $dropped);
@@ -140,7 +152,7 @@ try {
 
 The producer screens profile facts before storing the JSON. It drops unknown fields, malformed email addresses, unusable phone formats, invalid devices and IP addresses, incomplete names and addresses, invalid calendar dates or dates outside the required format, and malformed identifier strings. It keeps usable fields from the same profile. With only a name or no facts and no usable speaker, `enqueue` returns `false` and the host can still commit its contact. A valid speaker permits empty subject facts. The graph applies its policy, country rules and provider checks to what remains.
 
-In the example, `$dropped` receives a fresh map of field paths to reasons. When `$outboxId === false`, use those reasons to tell staff why the profile was skipped. A partially accepted profile can also have entries in `$dropped`. Known fields have paths such as `facts.email`. Unknown names are grouped under a path such as `facts.*`, since a form can put contact details in a field name. Reasons omit the submitted values. With standalone PDO, pass the same final argument to `AccountGraphOutbox::enqueue($db, $subject, 'record', $request, null, $dropped)`.
+In the example, `$dropped` receives a fresh map of field paths to reasons. When `$outboxId === false`, use those reasons to tell staff why the profile was skipped. A partially accepted profile can also have entries in `$dropped`. Known fields have paths such as `facts.email`. Unknown names are grouped under a path such as `facts.*`, since a form can put contact details in a field name. Reasons omit the submitted values. With standalone PDO, pass the same final argument to `account_graph_outbox_lib::enqueue($db, $subject, 'record', $request, null, $dropped)`.
 
 Use one `record_id` per record to preserve send order. A shared group also works for edits spanning multiple records, provided producers lock a common host row before allocating outbox IDs. A commit that arrives late can otherwise become visible after its successor. Each queued `record` carries one entry.
 
@@ -209,15 +221,15 @@ COMMIT;
 
 ## Read to the end
 
-Each of the six methods returns the call's answer as PHP data. For an absent party or record, a lookup can return `null`. A fault throws `AccountGraphFault` with `faultCode`, `retryable` and `detail`. A refusal arrives as data with `ok` false, including when a different entry in the batch was accepted.
+Each of the six methods returns the call's answer as PHP data. For an absent party or record, a lookup can return `null`. A fault throws `account_graph_fault` with `fault_code`, `retryable` and `detail`. A refusal arrives as data with `ok` false, including when a different entry in the batch was accepted.
 
 ```php
-foreach ($graph->reportPages(array('kind' => 'callbacks', 'window' => $window, 'at' => $at)) as $page) {
+foreach ($graph->report_pages(array('kind' => 'callbacks', 'window' => $window, 'at' => $at)) as $page) {
     foreach ($page['value']['rows'] as $row) {
         saveCallbackForStaff($row);
     }
 }
-foreach ($graph->eventPages(array('after' => $savedCursor, 'limit' => 100)) as $page) {
+foreach ($graph->event_pages(array('after' => $savedCursor, 'limit' => 100)) as $page) {
     if (!$page['ok']) {
         // CURSOR_LOST means the next pass must start at the oldest retained event.
         scheduleReplayFromTheBeginning();
@@ -227,4 +239,4 @@ foreach ($graph->eventPages(array('after' => $savedCursor, 'limit' => 100)) as $
 }
 ```
 
-The host supplies the functions that save rows and cursors. Apply event effects and save the cursor together, with effects safe to repeat on restart. On `CURSOR_LOST`, clear the checkpoint, reconcile the host view and replay from `null`. The report helper follows `value.next` for `callbacks` and `texts`. Use `journeyPages` for the `next` cursor of a journey lookup.
+The host supplies the functions that save rows and cursors. Apply event effects and save the cursor together, with effects safe to repeat on restart. On `CURSOR_LOST`, clear the checkpoint, reconcile the host view and replay from `null`. The report helper follows `value.next` for `callbacks` and `texts`. Use `journey_pages` for the `next` cursor of a journey lookup.

@@ -130,7 +130,7 @@ for (const store of ['memory', 'postgres']) {
       assert.equal((await php(base, 'decide', { by: 'operator', action: 'unmerge', at: at + 1, key: 'undo17', pairs })).ok, true)
       const events = await graph.events({ after: null, limit: 1000 })
       assert.ok(events.ok && events.value.events.length >= 2)
-      const pages = await php(base, 'eventPages', { after: null, limit: 1 })
+      const pages = await php(base, 'event_pages', { after: null, limit: 1 })
       assert.deepEqual(pages.flatMap((page: any) => page.value.events), events.value.events)
       assert.equal(pages.at(-1).value.more, false)
       assert.deepEqual(await php(base, 'events', { after: 'another.1', limit: 1 }), { ok: false, reason: 'CURSOR_LOST' })
@@ -150,13 +150,13 @@ for (const store of ['memory', 'postgres']) {
     await t.test('reports and journeys follow the last page', async () => {
       const calls = Array.from({ length: 51 }, (_, i) => ({ type: 'call', key: 'miss-' + i, at: at + i, direction: 'inbound', from: '+120255501' + String(i).padStart(2, '0'), to: '+12025550199', result: { answered: false } }))
       assert.ok((await php(base, 'record', { entries: calls })).results.every((r: any) => r.ok))
-      const pages = await php(base, 'reportPages', { kind: 'callbacks', at: at + 60000, window: { from: '2026-11-01', to: '2026-11-01', timeZone: 'UTC' } })
+      const pages = await php(base, 'report_pages', { kind: 'callbacks', at: at + 60000, window: { from: '2026-11-01', to: '2026-11-01', timeZone: 'UTC' } })
       assert.deepEqual(pages.map((p: any) => p.value.rows.length), [50, 1])
       assert.equal(pages[1].value.next, null)
       assert.deepEqual(pages.flatMap((p: any) => p.value.rows.map((r: any) => r.call)), calls.map(c => c.key))
       const visits = Array.from({ length: 201 }, (_, i) => ({ type: 'arrival', key: 'visit-' + i, at: at + i, subject: 'contact:visits', source: 'direct' }))
       for (let i = 0; i < visits.length; i += 100) assert.ok((await php(base, 'record', { entries: visits.slice(i, i + 100) })).results.every((r: any) => r.ok))
-      const journey = await php(base, 'journeyPages', { kind: 'journey', subject: 'contact:visits' })
+      const journey = await php(base, 'journey_pages', { kind: 'journey', subject: 'contact:visits' })
       assert.deepEqual(journey.map((p: any) => p.entries.length), [200, 1])
       assert.equal(journey[1].next, null)
       assert.deepEqual(journey.flatMap((p: any) => p.entries.map((e: any) => e.at)).sort((a: number, b: number) => a - b), visits.map(v => v.at))
@@ -314,6 +314,7 @@ test('one call fault stops its pass and the delayed retry leaves other groups fr
     keys.push(entry.key)
     if (reply === '401') return res.writeHead(401).end()
     if (reply === 'closed') return res.writeHead(503).end(JSON.stringify({ fault: { code: 'GRAPH.CLOSED', retryable: false, detail: {} } }))
+    if (reply === 'bad hint') return res.writeHead(503).end(JSON.stringify({ fault: { code: 'GRAPH.UNAVAILABLE', retryable: true, detail: { retryAfter: [] } } }))
     if (reply === 'html') return res.writeHead(500).end('<html>error</html>')
     if (reply === '503') return res.writeHead(503, { 'retry-after': '86400' }).end()
     res.end(JSON.stringify({ results: [{ type: entry.type, key: entry.key, ok: true, value: { duplicate: false, stands: true, subject: entry.subject } }] }))
@@ -355,6 +356,9 @@ test('one call fault stops its pass and the delayed retry leaves other groups fr
 
   const linked = { database: join(dir, 'dependent.sqlite'), attempts: 1 }
   await php(base, 'seed', [entries[0], { ...entries[1], _depends: 0 }, entries[2]], linked)
+  reply = 'bad hint'
+  const malformedHint = await php(base, 'work', {}, linked)
+  assert.deepEqual(malformedHint[0].answer, { fault: { code: 'GRAPH.UNAVAILABLE', retryable: true, detail: { retryAfter: [] } } })
   reply = '503'
   await php(base, 'work', {}, linked)
   reply = 'ok'

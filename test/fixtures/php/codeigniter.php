@@ -8,6 +8,9 @@ class CI_Model
     public $db;
 }
 
+// CI3 builds the discovery filename with an initial capital and the config filename in lowercase.
+$library = 'account_graph_lib';
+require APPPATH . 'libraries/' . ucfirst($library) . '.php';
 require __DIR__ . '/../../../examples/php/codeigniter/models/Graph_outbox.php';
 
 function check($condition)
@@ -27,6 +30,8 @@ class FixtureDatabase
     public $inserts = 0;
     public $failFinish = false;
     public $queries = array();
+    public $cache = array();
+    public $openResults = 0;
     private $affected = 0;
     private $fields;
 
@@ -73,17 +78,33 @@ class FixtureDatabase
         $stmt = $this->sqlite->query($sql);
         if (!$stmt) return false;
         $this->affected = $stmt->rowCount();
-        return $this->dbdriver === 'mysqli' && !$stmt->columnCount() ? true : $stmt;
+        if ($this->dbdriver !== 'mysqli') return $stmt;
+        if (!$stmt->columnCount()) return true;
+        ++$this->openResults;
+        return new class($stmt, $this) {
+            private $stmt;
+            private $db;
+            public function __construct($stmt, $db) { $this->stmt = $stmt; $this->db = $db; }
+            public function fetch_assoc() { return $this->stmt->fetch(PDO::FETCH_ASSOC) ?: null; }
+            public function free() { $this->stmt->closeCursor(); --$this->db->openResults; }
+        };
     }
     public function query($sql, $args = array(), $returnObject = null)
     {
         $compiled = $this->compile_binds($sql, $args ?: array());
         $this->queries[] = $compiled;
+        if (isset($this->cache[$compiled])) return $this->cache[$compiled];
         $stmt = $this->simple_query($compiled);
         if ($stmt === true || $stmt === false) return $stmt;
-        if (!$stmt->columnCount() || (stripos($sql, 'INSERT ') === 0 && $returnObject !== true)) return true;
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        return new class($row) {
+        if ($stmt instanceof PDOStatement) {
+            if (!$stmt->columnCount() || (stripos($sql, 'INSERT ') === 0 && $returnObject !== true)) return true;
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            $stmt->closeCursor();
+        } else {
+            $row = $stmt->fetch_assoc();
+            $stmt->free();
+        }
+        return $this->cache[$compiled] = new class($row) {
             private $row;
             public function __construct($row) { $this->row = $row; }
             public function row_array() { return $this->row ?: null; }
@@ -91,24 +112,23 @@ class FixtureDatabase
     }
 }
 
-class FixtureGraph extends AccountGraph
+class FixtureGraph extends account_graph_lib
 {
-    public function record(array $request)
+    public function record(array $request): array
     {
         return array('results' => array(array('ok' => true, 'value' => array('duplicate' => false))));
     }
 }
 
 putenv('GRAPH_TOKEN=synthetic-trace-secret');
-require __DIR__ . '/../../../examples/php/codeigniter/config/graph_client.php';
-require __DIR__ . '/../../../examples/php/codeigniter/libraries/Graph_client.php';
-check(!in_array(getenv('GRAPH_TOKEN'), $config, true));
-check($config['timeout_ms'] > 30000);
+require APPPATH . 'config/' . $library . '.php';
+check($config['Token'] === getenv('GRAPH_TOKEN'));
+check($config['Timeout_Ms'] > 30000);
 try {
-    $config['url'] = 'invalid';
-    new Graph_client($config);
+    $config['Base_Url'] = 'invalid';
+    new account_graph_lib($config);
     throw new LogicException('Expected a configuration fault');
-} catch (AccountGraphFault $fault) {
+} catch (account_graph_fault $fault) {
     check(strpos($fault->getTraceAsString(), getenv('GRAPH_TOKEN')) === false);
 }
 
@@ -142,12 +162,12 @@ if (isset($argv[3])) {
         }
         check($db->trans_commit());
     }
-    $model->run(new AccountGraph($argv[5], 'synthetic-test'));
+    $model->run(new account_graph_lib(array('Base_Url' => $argv[5], 'Token' => 'synthetic-test')));
     $rows = $db->sqlite->query('SELECT id, item_key, depends_on, state, answer FROM host_account_graph_outbox ORDER BY id')->fetchAll(PDO::FETCH_ASSOC);
     echo json_encode($rows);
     exit(0);
 }
-$graph = new FixtureGraph('http://127.0.0.1', 'synthetic-test');
+$graph = new FixtureGraph(array('Base_Url' => 'http://127.0.0.1', 'Token' => 'synthetic-test'));
 $entry = array('type' => 'profile', 'key' => 'key-17', 'subject' => 'contact:17', 'at' => 1700000000000, 'facts' => array('email' => 'row17@example.org'));
 $request = array('entries' => array($entry));
 $db->trans_begin();
@@ -165,6 +185,15 @@ try {
 $db->trans_rollback();
 check($db->inserts === 2);
 check(strpos(implode(' ', $db->queries), 'row17@example.org') === false);
+// CI3 can cache the pending request and keep returning it after a direct update.
+$read = 'SELECT state, request FROM account_graph_outbox WHERE id = ?';
+$prefixed = str_replace('account_graph_outbox', '"host_account_graph_outbox"', $read);
+check(strpos($db->query($prefixed, array('1'))->row_array()['request'], 'row17@example.org') !== false);
+$db->trans_begin();
+$db->sqlite->exec("UPDATE host_account_graph_outbox SET state = 'sent', request = NULL WHERE id = 1");
+check($model->one($read, array('1')) === array('state' => 'sent', 'request' => null));
+$db->trans_rollback();
+$db->cache = array();
 $db->failFinish = true;
 try {
     $model->run($graph);
@@ -176,6 +205,7 @@ $db->failFinish = false;
 check($model->run($graph)['sent'] === 1);
 $row = $db->sqlite->query('SELECT * FROM host_account_graph_outbox')->fetch(PDO::FETCH_ASSOC);
 check($row['request'] === null && $row['item_kind'] === 'profile' && $row['item_key'] === 'key-17' && $row['created_at']);
+check($db->cache === array() && $db->openResults === 0);
 check($db->sqlite->getAttribute(PDO::ATTR_ERRMODE) === PDO::ERRMODE_SILENT);
 
 function checkDroppedFacts($enqueue, $entry)
@@ -226,7 +256,18 @@ $db->trans_rollback();
 $db->sqlite->exec('ALTER TABLE host_account_graph_outbox RENAME TO account_graph_outbox');
 $db->trans_begin();
 checkDroppedFacts(function ($profile, &$dropped) use ($db) {
-    return AccountGraphOutbox::enqueue($db->sqlite, 'contact:17', 'record', array('entries' => array($profile)), null, $dropped);
+    return account_graph_outbox_lib::enqueue($db->sqlite, 'contact:17', 'record', array('entries' => array($profile)), null, $dropped);
 }, $entry);
+$db->trans_rollback();
+// An exception-mode PDO driver can include the bound request in its error detail.
+$db->sqlite->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+$db->sqlite->exec("CREATE TRIGGER reject_request BEFORE INSERT ON account_graph_outbox BEGIN SELECT RAISE(ABORT, 'row17@example.org'); END");
+$db->trans_begin();
+try {
+    account_graph_outbox_lib::enqueue($db->sqlite, 'contact:17', 'record', $request);
+    throw new LogicException('Expected the driver to reject the request');
+} catch (RuntimeException $error) {
+    check(get_class($error) === 'RuntimeException' && $error->getMessage() === 'Outbox query failed' && $error->getPrevious() === null);
+}
 $db->trans_rollback();
 echo 'ok';
