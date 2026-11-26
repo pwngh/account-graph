@@ -42,7 +42,7 @@ export function sized<T>(value: T): T {
   return copy
 }
 
-/** One text for one value: keys in order, and no others ways to write it. Takes what `plain` gives. */
+/** One text for one value: keys in order, and no other ways to write it. Takes what `plain` gives. */
 export function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
   if (value !== null && typeof value === 'object') {

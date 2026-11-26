@@ -68,7 +68,7 @@ export interface Facts {
   readonly address?: { readonly street: string; readonly street2?: string; readonly secondary?: string; readonly city?: string; readonly state?: string; readonly zipcode?: string }
   readonly name?: { readonly first: string; readonly last: string }
   readonly dob?: string
-  /** Already `kind:value`: `hardware:…`, `passkey:…`, `payment:…`. Kinds the graph writes itself are refused: see KIND_RESERVED. */
+  /** Already `kind:value`: `hardware:…`, `passkey:…`, `payment:…`. Kinds the graph writes itself are refused. See KIND_RESERVED. */
   readonly identifiers?: readonly string[]
 }
 
@@ -250,7 +250,7 @@ export interface Delivery {
   readonly note?: string
 }
 
-/** None of these is kept with the key: put right what was wrong and send the same key again. */
+/** None of these is kept with the key. Fix what was wrong and send the same key again. */
 export type RecordRefusal =
   | { readonly reason: 'FORBIDDEN' }
   /** The party statement that stands. All three fields are null when there is none. */
@@ -260,7 +260,7 @@ export type RecordRefusal =
   | { readonly reason: 'UNKNOWN_REFERENCE'; readonly of: { readonly type: 'conversion' | 'call' | 'text' | 'restatement'; readonly key: string } }
   | { readonly reason: 'KIND_NOT_IN_POLICY'; readonly kind: string }
   | { readonly reason: 'KIND_RESERVED'; readonly kind: string }
-  /** None of the facts says who somebody is: `notes` says why of each. */
+  /** None of the facts says who somebody is. `notes` says why of each. */
   | { readonly reason: 'NO_FACT_USED'; readonly notes: Readonly<Record<string, string>> }
   | { readonly reason: 'CURRENCY_MISMATCH'; readonly expected: string }
   /** It has payments, so it is worth what was paid. */
@@ -360,7 +360,7 @@ export interface Match {
   readonly level: Level
   readonly kinds: readonly string[]
   readonly conflict?: 'birth' | 'given'
-  /** What they share would join them, and nothing confirms that they are one person: see the policy's `records`. */
+  /** What they share would join them, and nothing confirms that they are one person. See the policy's `records`. */
   readonly unconfirmed?: true
 }
 export interface Tied {
@@ -471,7 +471,7 @@ export interface Page<T> {
 
 // ── events ───────────────────────────────────────────────────────────────────
 export interface EventsRequest {
-  /** `cursor` of the last page you acted on. Null to start. Opaque: it names this database's history as well as a place in it. */
+  /** `cursor` of the last page you acted on. Null to start. It is opaque, because it names this database's history as well as a place in it. */
   readonly after: string | null
   /** 1 to 1,000. */
   readonly limit: number
@@ -523,7 +523,7 @@ export type LocalOptions = LocalSettings & (InPostgres | InMemory)
 export interface InPostgres {
   readonly databaseUrl: string
   readonly schema?: string
-  /** Whether this process sends conversions, pulls costs and delivers events. Said, not defaulted: either default is a trap. */
+  /** Whether this process sends conversions, pulls costs and delivers events. It must be set and has no default, because neither default is safe to assume. */
   readonly workers: boolean
   /** Keys the receipts. The first signs and all are tried. At least 32 characters each. One that rows still name may not be dropped. */
   readonly receiptSecrets: readonly [string, ...string[]]
@@ -582,7 +582,7 @@ export interface LocalSettings extends Common {
   /** A Slack-style `{ text }` address. The same events, written as sentences. */
   readonly alerts?: { readonly url: string }
   readonly now?: () => At
-  /** Asks ad platforms, checks and webhooks in place of the global one: for tests and demos. */
+  /** Asks ad platforms, checks and webhooks in place of the global one, for tests and demos. */
   readonly fetch?: typeof fetch
 }
 

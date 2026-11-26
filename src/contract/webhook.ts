@@ -24,7 +24,7 @@ function same(x: string, y: string): boolean {
   return different === 0
 }
 
-/** Whether a webhook came from a server that holds the secret, and lately. Never throws on what was sent: on false, reject the request. */
+/** Whether a webhook came from a server that holds the secret, and lately. Never throws on what was sent. On false, reject the request. */
 export async function verifyWebhook(webhook: RawWebhook, options: { readonly secret: string; readonly now: At; readonly maxAgeMs: number }): Promise<boolean> {
   const header = Object.entries(webhook.headers ?? {}).find(([name]) => name.toLowerCase() === SIGNATURE)?.[1]
   const match = /^t=(\d{1,15}),v1=([0-9a-f]{64})$/.exec(typeof header === 'string' ? header : '')
