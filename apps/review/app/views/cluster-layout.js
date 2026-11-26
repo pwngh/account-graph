@@ -294,7 +294,7 @@ function outline(points) {
   }
   return [...half(sorted), ...half(sorted.reverse())]
 }
-/** How far a point is outside a shape: nothing when it is in it. */
+/** How far a point is outside a shape, or nothing when it is in it. */
 function beyond(p, shape) {
   const sides = shape.map((a, i) => [a, shape[(i + 1) % shape.length]])
   if (shape.length > 2 && sides.every(([a, b]) => (b.x - a.x) * (p.y - a.y) >= (b.y - a.y) * (p.x - a.x))) return 0
