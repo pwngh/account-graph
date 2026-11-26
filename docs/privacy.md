@@ -15,13 +15,13 @@ Hashed data here is **pseudonymous**: anyone who holds the original value can id
 | Your own ids, such as `contact:7` | As written | By you. |
 | Your record's creation date | The standing timestamp in milliseconds, with the reporting profile's time and key | Yes. Keep personal details out of the key. |
 | Browser | The id in its first-party cookie | It identifies a browser, and a person once something links the two. |
-| IP address | As written; IPv6 as its /64 | Yes. |
+| IP address | As written. IPv6 is kept as its /64 | Yes. |
 | Ad clicks, campaign ids, the parameters you named, landing pages without their query | As received | They identify what was clicked. |
 | Calls | Time, duration, result, your number, and the caller as a hash. Call content is not stored. | As a phone number. |
 | Texts | Time, direction, your number, flags such as `opt_out`, and the other side as a hash. What was said is not stored. | As a phone number. |
 | Steps and their values | With the ids you gave | By you. |
 | Decisions | Author, time, ids concerned, and the reason as typed | Yes. |
-| Matching fact statements on records | Profile ordering keys on matching facts and withdrawal keys, in their original form so simultaneous statements can be ordered by bytes. Use opaque keys. The folded fact retains its latest profile key after sighting history is pruned. | Yes, to a database reader. Phone and email values are stored as their usual hashes. |
+| Matching fact statements on records | Profile ordering keys on matching facts and withdrawal keys, in their original form so simultaneous statements can be ordered by bytes. Use opaque keys. The folded fact keeps its latest profile key after sighting history is pruned. | Yes, to a database reader. Phone and email values are stored as their usual hashes. |
 | Receipts of the keys you send | A keyed hash of the key, and keyed hashes of what came with it. See [receipts](operations.md#receipts). | Only with `RECEIPT_SECRETS`, and by guessing. |
 | Keys of conversions, calls, texts, payments, links, transfers and restatements | As written, with the record, until it is deleted | By you. Keep names, phones and emails out of them. |
 
@@ -51,11 +51,11 @@ A platform that had already received a conversion can still appear in the deleti
 
 When staff identify a call, the graph erases earlier delivery failure events for that call and any stored failure notices that count it, including calls beyond the first ten shown. An older truncated batch without stored call IDs is discarded when a call is corrected or erased. Forgetting someone with no calls preserves that batch. A pending notice that also names other failures is discarded as a whole. The events for those other failures stay. A notice already delivered to a webhook may still be held by its recipient.
 
-An inbound call keeps which phone identifier it added until staff name its party. This lets the graph remove just that sighting, even after pruning. Calls stored before upgrade 29 have no such record. The graph uses the remaining sightings and the first and last times on each link. If both phone and VoIP could have supplied a pruned sighting, it weakens both possible links to avoid keeping evidence from the confirmed call.
+An inbound call keeps which phone identifier it added until staff name its party. This lets the graph remove only that sighting, even after pruning. Calls stored before upgrade 29 have no such record. The graph uses the remaining sightings and the first and last times on each link. If both phone and VoIP could have supplied a pruned sighting, it weakens both possible links to avoid keeping evidence from the confirmed call.
 
-Upgrade 30 records which call supplied a channel visit. Older visits only have the line, dialed number and time. If several old visits fit a confirmed call, all of those visits are removed to keep that call out of another record’s journey. The upgrade also clears these visits for calls that were already confirmed.
+Upgrade 30 records which call supplied a channel visit. Older visits only have the line, dialed number and time. If several old visits fit a confirmed call, all of those visits are removed to keep that call out of another record's journey. The upgrade also clears these visits for calls that were already confirmed.
 
-`forget` deletes the subjects you name and leaves the person's others in place. To delete a person, read their `members` with the `person` [lookup](http.md#lookup), check them, and send all of them as `subjects`, 50 at most: all are deleted, or none. A payment whose outcome was never recorded names no person and stays.
+`forget` deletes the subjects you name and leaves the person's others in place. To delete a person, read their `members` with the `person` [lookup](http.md#lookup), check them, and send all of them as `subjects`, 50 at most. All are deleted, or none. A payment whose outcome was never recorded names no person and stays.
 
 | Action | Deletes | Keeps |
 | --- | --- | --- |
@@ -74,7 +74,7 @@ Upgrade 30 records which call supplied a channel visit. Older visits only have t
 - A tombstone of each key still known to be about the subject. It keeps the type, a keyed hash and times. The key is answered `FORGOTTEN` from then on. For a profile with or without `createdAt`, `forget` makes this tombstone if the receipt still exists. If the receipt had already been pruned, the key is new again and a retry can bring the subject back. The same subject may also be written again with new keys.
 - A tombstone of each forgotten subject, with the same keyed hash and times. A [lead webhook](leads.md) refuses with `FORGOTTEN` any post that would file a lead under that subject, even with a new vendor ID. Pruning keeps it. `record` itself may still write the subject again with new keys, and a `record` profile under that exact subject removes the tombstone, so leads may file under it again. A deletion made before this tombstone existed leaves nothing to check, and a lead under a new vendor ID can bring the subject back.
 
-When a withdrawal would clear a person’s opt-out, the record retains the hashed sending line, the message time and its opaque key. If it had already seen a later START on that line, it also keeps that message’s time and key so a split cannot make the earlier START count again. Dated profile keys for a withdrawn number survive sighting pruning so an older START cannot cancel the wrong STOP. Forgetting the record erases its retained STOPs and profile keys. Forgetting the caller line clears retained STOPs that name it.
+When a withdrawal would clear a person's opt-out, the record keeps the hashed sending line, the message time and its opaque key. If it had already seen a later START on that line, it also keeps that message's time and key so a split cannot make the earlier START count again. Dated profile keys for a withdrawn number survive sighting pruning so an older START cannot cancel the wrong STOP. Forgetting the record erases its kept STOPs and profile keys. Forgetting the caller line clears kept STOPs that name it.
 
 Every matching fact withdrawal receipt survives pruning. Forget removes the original withdrawal keys, their facts and profile ordering keys, and keeps a tombstone for each withdrawal. Retrying that decision returns `FORGOTTEN`. Ordinary profile receipts keep their existing one-year retention. A profile retried after its receipt was pruned and its record forgotten can create that record again.
 
@@ -97,7 +97,7 @@ The alert sender checks an overdue or rejected-conversion notice and starts its 
 
 | `state` | Meaning |
 | --- | --- |
-| `pending` | The platform is being asked. An answer that was cut off stays so, and the request cannot be made again: the hashes it needs are gone. |
+| `pending` | The platform is being asked. An answer that was cut off stays so, and the request cannot be made again. The hashes it needs are gone. |
 | `accepted` | The platform was asked to take it back and rejected nothing. |
 | `rejected` | The platform rejected the request. `note` has the reason. |
 | `not_requested` | No request was made. Ask with the platform's own tools. The note `may not have arrived` means the job was picked up, and its delivery was never confirmed. |
@@ -123,7 +123,7 @@ To answer a person's request, write to the platform yourself and name the conver
 
 ## Consent
 
-Two answers are stored separately: measuring ads (`adUserData`) and personalizing them (`adPersonalization`).
+Two answers are stored separately. `adUserData` is about measuring ads, and `adPersonalization` is about personalizing them.
 
 | Point | Effect |
 | --- | --- |
@@ -160,7 +160,7 @@ A firm whose pages have keys in their paths should set an allow list of public p
 
 Give `createEdge` an `allowPages` array, a `refusePages` array, or both. The command line reads comma-separated paths from `ALLOW_PAGES` and `REFUSE_PAGES`. An empty allow list closes every firm page, including pages on unlisted hosts. A literal allow entry matches the exact URL pathname, including its case and trailing slash. List both `/pricing` and `/pricing/` if both serve a public page. The subtree `/help/*` includes `/help` and its descendants. A refusal wins, including case variants, Unicode compatibility forms and a trailing slash. On a firm page, ambiguous paths such as encoded slashes, double encoding, dot segments, backslashes and matrix parameters are refused. The browser can remove dot segments when it parses the navigation, before the tag sees it. The server checks incoming addresses before parsing away those segments.
 
-The lists cover the current page, the HTTP `Referer` on collector posts, landing pages (including a saved form landing), carry link destinations and backend `link.url` on every host. A firm may use its apex domain, an alias or several sites. These fields always name its pages.
+The lists cover the current page, the HTTP `Referer` on collector posts, landing pages, including a saved form landing, carry link destinations and backend `link.url` on every host. A firm may use its apex domain, an alias or several sites. These fields always name its pages.
 
 Only a previous page can belong to another site. The collector reads it from `document.referrer`, a browser post from `touch.referrer`, and a backend arrival from `arrival.referrer`. Relative referrers and referrers on configured `origins` use the lists. So do referrers on the origin of the current page, its HTTP `Referer` or the supplied landing. An external referrer keeps only its origin and path. Configure every firm origin to recognize referrals between sites. A server with empty `origins` accepts no browser posts and can still screen backend entries. If an entry provides no absolute landing and the server knows no site origin, it screens the referrer path too.
 
@@ -170,7 +170,7 @@ A refused current page suppresses the entire browser operation. The visitor gets
 
 With either list set, browser posts must give the page in `url`, including phone taps and requests for a number, a text code or a carry token. A disallowed or missing page, disallowed landing, or a disallowed path in the browser's HTTP referrer drops the whole post with 204. The server writes no cookie, sighting, consent, event or credit, and skips visitor checks. The `Referer` header describes the page making the POST. An origin alone in that header counts as its root path. The `touch.referrer` field describes the previous page. The server discards that field if its address is refused and keeps the rest of the post. Older tags that omit the page on a request must be refreshed. The page is supplied by the sender. A backend that omits the true page can never prove where a visit took place.
 
-A backend `arrival` checks its landing and previous-page referrer. A `link` checks its destination. A well-formed entry with a disallowed address returns `ok: false` and `reason: "FORBIDDEN"` in its original position. Its key can be reused for a permitted entry because the refused one writes no receipt. Other permitted entries run in order. A malformed request still receives the contract's 400 for the whole batch, including when an address exceeds the accepted length. Neither refusal echoes the address. Allowed addresses retain only origin and path, or the path alone if supplied that way. This includes the first page kept for a form, journeys, provider conversion pages and the destination of a newly signed link. Named campaign fields are still read separately. Only name custom parameters whose contents the site intends to collect.
+A backend `arrival` checks its landing and previous-page referrer. A `link` checks its destination. A well-formed entry with a disallowed address returns `ok: false` and `reason: "FORBIDDEN"` in its original position. Its key can be reused for a permitted entry because the refused one writes no receipt. Other permitted entries run in order. A malformed request still receives the contract's 400 for the whole batch, including when an address exceeds the accepted length. Neither refusal echoes the address. Allowed addresses keep only origin and path, or the path alone if supplied that way. This includes the first page kept for a form, journeys, provider conversion pages and the destination of a newly signed link. Named campaign fields are still read separately. Only name custom parameters whose contents the site intends to collect.
 
 With either page list set, the tag skips both Fingerprint and the open-source canvas helper whenever the current URL or the document referrer has a query or fragment, or the referrer is a refused page on one of the site's origins. Those vendors run in the page and could read the full addresses. Named campaign fields and the permitted visit are still recorded. A bundled collector also skips its fingerprint functions and omits precomputed fingerprint values on these pages. Pass deferred functions to prevent outside code from starting a vendor before the check.
 
