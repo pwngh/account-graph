@@ -343,6 +343,21 @@ test('a form carries the device id and the landing page to whatever receives it'
   const submit = (target: object) => listeners.get('submit')!({ target })
 
   const stop = fill()
+  // A form sent by a script fires no submit event: its gathered data gets the same fields, and a stale device is replaced.
+  const scripted = form(true)
+  const pairs = (data: FormData) => {
+    const out: [string, string][] = []
+    data.forEach((value, name) => void out.push([name, String(value)]))
+    return out
+  }
+  const gathered = new FormData()
+  gathered.set('name', 'Pat')
+  gathered.set('ag_device', 'stale')
+  listeners.get('formdata')!({ target: scripted, formData: gathered })
+  assert.deepEqual(pairs(gathered), [['name', 'Pat'], ['ag_device', device], ['ag_landing', 'https://site.example/landing?gclid=G1']])
+  const unmarked = new FormData()
+  listeners.get('formdata')!({ target: form(false), formData: unmarked })
+  assert.deepEqual(pairs(unmarked), [])
   const marked = form(true)
   submit(marked)
   assert.deepEqual(marked.inputs, [{ type: 'hidden', name: 'ag_device', value: device }, { type: 'hidden', name: 'ag_landing', value: 'https://site.example/landing?gclid=G1' }])
@@ -403,13 +418,17 @@ test('a form about somebody else sends the device as the speaker\'s and never as
   await until('the script', () => run(`Boolean(globalThis.accountGraph?.fields)`))
   const device = await run(`localStorage.getItem('ag_device')`)
   const landing = await run(`location.href`)
-  const submit = async (id: string, before = '') => {
-    await run(`{ const form = document.getElementById('${id}'); ${before}; form.requestSubmit() }`)
+  const submit = async (id: string, before = '', how = 'requestSubmit') => {
+    await run(`{ const form = document.getElementById('${id}'); ${before}; form.${how}() }`)
     const body = await until(`${id} to be sent`, () => posted.pop())
     return [body.getAll('ag_device'), body.getAll('ag_speaker_device'), body.getAll('ag_landing')]
   }
   const [mine, theirs] = [[[device], [], [landing]], [[], [device], [landing]]]
   assert.deepEqual(await submit('box'), mine)
+  // A script's form.submit() fires no submit event, as some form plugins send, and still carries the same fields.
+  assert.deepEqual(await submit('box', '', 'submit'), mine)
+  assert.deepEqual(await submit('box', `form.elements.other.checked = true`, 'submit'), theirs)
+  await run(`document.getElementById('box').elements.other.checked = false`)
   // Ticked, unticked and ticked again: one name each time, also where the page wrote the field itself.
   assert.deepEqual(await submit('box', `form.elements.other.checked = true`), theirs)
   assert.deepEqual(await submit('box'), theirs)
