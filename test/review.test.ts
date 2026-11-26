@@ -403,3 +403,40 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   await enter('service')
   await until('the service note', async () => (await text('#name')) === 'Service token')
 })
+
+test('a further page that fails is told on its own view and not on the next', { skip: without, timeout: 120_000 }, async (t) => {
+  assert.ok(chrome, 'CI needs a browser')
+  const graph = createGraph(createMemoryStore())
+  await graph.observe([1, 2].map((n) => ({ subject: `account:${n}`, identifiers: [`email:${n}`], at: T0 })))
+  const handler = createHandler(graph, { token: 'service', origins: [] })
+  const server = createServer((request, response) => void handler(request, response)).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  t.after(() => (server.closeAllConnections(), void server.close()))
+  const { run, close } = await browse(`http://127.0.0.1:${(server.address() as AddressInfo).port}/review#/accounts/account%3A1`)
+  t.after(close)
+  const text = (selector: string) => run(`document.querySelector(${JSON.stringify(selector)})?.textContent ?? ''`) as Promise<string>
+  await until('the page', () => run(`typeof paged === 'function'`).catch(() => false))
+  await run(`(() => { const t = document.getElementById('token'); t.value = 'service'; t.dispatchEvent(new Event('change')) })()`)
+  await until('the account', async () => (await text('#detail h3')) === 'account:1')
+  // A page asked for here, which fails only when the test says so.
+  const ask = () => run(`(() => {
+    const more = paged(document.createElement('table'), 'after', 'More', () => new Promise((_, fail) => { window.failPage = fail }))
+    document.getElementById('view').append(more)
+    more.querySelector('button').click()
+  })()`)
+  const fail = (message: string) => run(`window.failPage(new Error(${JSON.stringify(message)}))`)
+
+  await ask()
+  await until('the request', () => run(`typeof window.failPage === 'function'`))
+  await fail('page one failed')
+  await until('the problem', async () => (await text('#notice')).includes('page one failed'))
+
+  await run(`window.failPage = undefined`)
+  await ask()
+  await until('the second request', () => run(`typeof window.failPage === 'function'`))
+  await run(`location.hash = '#/accounts/account%3A2'`)
+  await until('the other account', async () => (await text('#detail h3')) === 'account:2')
+  await fail('page two failed')
+  await pause(500)
+  assert.equal((await text('#notice')).includes('page two failed'), false)
+})
