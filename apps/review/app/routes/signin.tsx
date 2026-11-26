@@ -2,6 +2,8 @@ import { Form, useActionData, useSearchParams, type ActionFunctionArgs, type Loa
 import { signIn, signInPage } from '../auth.server'
 export const loader = ({request}: LoaderFunctionArgs) => signInPage(request)
 export const action = ({request}: ActionFunctionArgs) => signIn(request)
+// A refused attempt says when the address may try again.
+export const headers = ({actionHeaders}: {actionHeaders: Headers}) => actionHeaders.has('retry-after') ? {'retry-after': actionHeaders.get('retry-after')!} : new Headers()
 export default function SignIn() {
   const answer = useActionData<typeof action>()
   const [query] = useSearchParams()

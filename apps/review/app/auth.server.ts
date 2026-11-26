@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { createCookieSessionStorage, data, redirect } from 'react-router'
 import { accountGraph } from 'account-graph'
 import { subjectAddress } from './navigation'
-import { runtime, type Reviewer } from './runtime.server'
+import { clientAddress, runtime, type Reviewer } from './runtime.server'
 
 const lifetime = 8 * 3600
 export const publicOrigin = (request: Request) => runtime().origin ?? new URL(request.url).origin
@@ -130,14 +130,31 @@ export async function openSession(request: Request, token: string, name: string,
   return jar.commitSession(cookie)
 }
 
+// Each address gets a few guesses at a reviewer token in a window. Signing in clears its count.
+const attemptsAllowed = 10, attemptWindow = 15 * 60_000
+function tooManyAttempts(address: string | undefined) {
+  if (!address) return 0
+  const attempts = runtime().attempts
+  const now = Date.now()
+  if (attempts.size > 10_000) for (const [key, entry] of attempts) if (now - entry.since > attemptWindow) attempts.delete(key)
+  let entry = attempts.get(address)
+  if (!entry || now - entry.since > attemptWindow) attempts.set(address, entry = { count: 0, since: now })
+  entry.count++
+  return entry.count > attemptsAllowed ? Math.ceil((entry.since + attemptWindow - now) / 1000) : 0
+}
+
 export async function signIn(request: Request) {
   checkOrigin(request)
+  const address = clientAddress()
+  const wait = tooManyAttempts(address)
+  if (wait) return data({ error: 'Too many sign-in attempts from this address. Try again in ' + Math.ceil(wait / 60) + (wait > 60 ? ' minutes.' : ' minute.') }, { status: 429, headers: { 'retry-after': String(wait) } })
   const form = await fieldsOf(request)
   const token = String(form.get('token') ?? '')
   if (!/^[!-~]{1,2048}$/.test(token)) return data({ error: 'Enter your reviewer token.' }, { status: 400 })
   try {
     const me = await reviewGet(request, { token }, 'me')
     if (!me.reviewer) return data({ error: 'Use a token issued to a reviewer.' }, { status: 403 })
+    if (address) runtime().attempts.delete(address)
     return redirect(safePath(form.get('next')), { status: 303, headers: { 'set-cookie': await openSession(request, token, me.reviewer, me.retraction) } })
   } catch (error) {
     if (error instanceof Response && error.status === 303) return data({ error: 'The graph did not accept this reviewer token.' }, { status: 401, headers: { 'set-cookie': (await signedOut(request, await current(request))).headers.get('set-cookie')! } })

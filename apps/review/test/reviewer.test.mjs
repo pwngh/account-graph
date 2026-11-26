@@ -125,6 +125,26 @@ test('the app refuses a session secret shorter than 32 characters', async () => 
   await close(accepted)
 })
 
+test('sign-in attempts are limited per address and a success clears the count', async () => {
+  const { reviewServer } = await import('../server.mjs')
+  const standalone = await reviewServer({ port: 0, host: '127.0.0.1' })
+  try {
+    const url = address(standalone)
+    const attempt = token => fetch(url + '/signin', post({ token }, undefined, url))
+    for (let i = 0; i < 9; i++) assert.equal((await attempt('a-wrong-token')).status, 401)
+    assert.equal((await attempt(reviewer)).status, 303)
+    for (let i = 0; i < 10; i++) assert.equal((await attempt('a-wrong-token')).status, 401)
+    const asked = requests.filter(call => call.path === '/review/api/me').length
+    const refused = await attempt(reviewer)
+    assert.equal(refused.status, 429)
+    assert.ok(Number(refused.headers.get('retry-after')) > 0)
+    assert.match(await refused.text(), /Too many sign-in attempts from this address/)
+    assert.equal(requests.filter(call => call.path === '/review/api/me').length, asked, 'a refused attempt does not reach the graph')
+  } finally {
+    await close(standalone)
+  }
+})
+
 test('the sign-in page serves its favicon before a reviewer signs in', async () => {
   const html = await (await fetch(origin + '/signin')).text()
   const icon = /<link\b[^>]*\brel="icon"[^>]*>/.exec(html)?.[0]

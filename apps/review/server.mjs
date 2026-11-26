@@ -21,7 +21,7 @@ export async function reviewListener(settings = {}) {
       readFile(new URL('./build/client/assets/' + asset[1], import.meta.url)).then(body => {
         response.writeHead(200, {'content-type': {js:'text/javascript',css:'text/css',woff2:'font/woff2'}[asset[2]], 'cache-control':'public, max-age=31536000, immutable'}).end(request.method === 'HEAD' ? undefined : body)
       }, () => response.writeHead(404).end())
-    } else serveWith(config, () => router(request,response))
+    } else serveWith(config, () => router(request,response), request.socket.remoteAddress)
   }
   listener.stop = () => { config.stopped.abort(); for (const session of config.sessions.values()) session.controller.abort(); config.sessions.clear() }
   return listener

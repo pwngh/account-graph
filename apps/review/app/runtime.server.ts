@@ -32,12 +32,15 @@ export function configure(settings: Settings = {}) {
   // The graph's address can be internal. Link to the original screen only where the operator says reviewers can reach it.
   const legacyUrl = settings.stage ? '/legacy' : settings.legacyUrl ?? process.env.REVIEW_LEGACY_URL
   if (legacyUrl && !legacyUrl.startsWith('/') && !/^https?:$/.test(new URL(legacyUrl).protocol)) throw new Error('Set REVIEW_LEGACY_URL to an http or https address')
-  return { graphUrl, stage: settings.stage, origin, secret, eventsToken, legacy: legacyUrl || undefined, sessions: new Map<string, Reviewer>(), stopped: new AbortController() }
+  return { graphUrl, stage: settings.stage, origin, secret, eventsToken, legacy: legacyUrl || undefined, sessions: new Map<string, Reviewer>(), attempts: new Map<string, { count: number, since: number }>(), stopped: new AbortController() }
 }
 type Runtime = ReturnType<typeof configure>
 const scope = new AsyncLocalStorage<Runtime>()
+const clients = new AsyncLocalStorage<string>()
 let development: Runtime | undefined
 export const runtime = () => scope.getStore() ?? (development ??= configure())
-export const serveWith = (value: Runtime, work: () => void) => scope.run(value, work)
+/** The production server passes the connection's address. Behind a proxy every reviewer shares the proxy's. */
+export const serveWith = (value: Runtime, work: () => void, address?: string) => scope.run(value, () => address ? clients.run(address, work) : work())
+export const clientAddress = () => clients.getStore()
 
 export const graphTime = () => runtime().stage?.state().clock ?? Date.now()
