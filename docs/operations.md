@@ -408,7 +408,7 @@ After its receipt is pruned, a key is new again. A conversion, call, text, payme
 | Where | Answers |
 | --- | --- |
 | `GET /health` | `{"ok":true}` once the database answers. Needs no token. Use it for load balancer checks. |
-| `/review#/health` | Feeds and the time of each one's last record, job runs, undelivered alerts, pool usage, deliveries by state, and whether a rebuild is due |
+| `/review#/health` | Feeds and the time of each one's last record, job runs, undelivered alerts, pool usage, deliveries by state, whether a rebuild is due, and a [stop on sends](#stopping-sends) with its reason and time |
 
 ## Events
 

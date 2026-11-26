@@ -606,12 +606,19 @@ test('how the server runs is read by a reviewer, and a test alert is sent by a s
   const { server, ask } = await start({ ops })
   try {
     const state = (await (await ask('GET', '/ops', 'review')).json()) as any
-    assert.deepEqual([state.feeds.length, state.jobs, state.undelivered, state.alerts, state.outbox, state.at], [4, [], [], true, null, T0])
+    assert.deepEqual([state.feeds.length, state.jobs, state.undelivered, state.alerts, state.outbox, state.paused, state.at], [4, [], [], true, null, null, T0])
     assert.equal((await ask('POST', '/alerts/test', 'review')).status, 403)
     assert.deepEqual(await (await ask('POST', '/alerts/test', 'service')).json(), { delivered: true })
     assert.deepEqual(posted.map((body) => JSON.parse(body).text), ['account-graph: test alert.'])
   } finally {
     server.close()
+  }
+  // A stop on sends is read with the rest.
+  const stopped = await start({ ops, sendsPaused: async () => ({ at: T0 - 60_000, reason: 'checking a wrong tie' }) })
+  try {
+    assert.deepEqual(((await (await stopped.ask('GET', '/ops', 'review')).json()) as any).paused, { at: T0 - 60_000, reason: 'checking a wrong tie' })
+  } finally {
+    stopped.server.close()
   }
   const bare = await start({})
   try {

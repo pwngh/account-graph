@@ -3,6 +3,7 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
 import { createGraph, createMemoryStore, defaultPolicy, email, hashPhone, phone, recordCall, recordNotLead, recordReturn, recordText } from '../tools/internals.ts'
+import { createOps } from '../src/core/ops.ts'
 import { createHandler } from './harness.ts'
 import { browse, chrome, pause, until, without } from './chrome.ts'
 
@@ -476,4 +477,22 @@ test('pairs among older sightings are reached from Matches, a page of records at
   assert.match(await text('#older'), /^Checking every record, account:new-1 to account:old-2\. These are the last\.Back to recent$/)
   await press('Back to recent')
   await until('the recent queue again', async () => (await text('#older')).startsWith('Pairs among sightings before'))
+})
+
+test('Health says when sends are stopped, why, since when, and how to resume', { skip: without, timeout: 120_000 }, async (t) => {
+  assert.ok(chrome, 'CI needs a browser')
+  const store = createMemoryStore()
+  const graph = createGraph(store)
+  const ops = createOps(graph, store.ops, {})
+  const handler = createHandler(graph, { token: 'service', origins: [], ops, sendsPaused: async () => ({ at: Date.now() - 120_000, reason: 'checking a wrong tie' }) })
+  const server = createServer((request, response) => void handler(request, response)).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  t.after(() => (server.closeAllConnections(), void server.close()))
+  const { run, close } = await browse(`http://127.0.0.1:${(server.address() as AddressInfo).port}/review#/health`)
+  t.after(close)
+  await until('the page', () => run(`typeof load === 'function'`).catch(() => false))
+  await run(`(() => { const t = document.getElementById('token'); t.value = 'service'; t.dispatchEvent(new Event('change')) })()`)
+  await until('the stop', () => run(`document.getElementById('view').textContent.includes('Sends to ad platforms are paused.')`))
+  const said = (await run(`document.getElementById('view').textContent`)) as string
+  assert.match(said, /checking a wrong tie\. Since .+\. Run account-graph sends resume once the cause is fixed\./)
 })
