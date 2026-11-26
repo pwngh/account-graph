@@ -289,6 +289,20 @@ test('enqueues schedule immediate delivery even when the hourly worker is due so
   assert.ok(queued.singles[0].due >= before && queued.singles[0].due <= Math.ceil(Date.now() / 1000))
 })
 
+test('a worker that finds delivery locked retries in a minute instead of waiting for the hourly pass', { skip }, async t => {
+  const run = await wordpress(t)
+  const { url } = await localGraph(t)
+  await run(url, 'gravity')
+  const before = Math.floor(Date.now() / 1000)
+  const busy = await run(url, 'cron', { lock_busy: true })
+  assert.equal(JSON.parse(busy.rows[0].option_value).state, 'pending')
+  assert.deepEqual(busy.singles.map((event: any) => [event.hook, event.args]), [['account_graph_deliver', ['retry']]])
+  assert.ok(busy.singles[0].due >= before + 60 && busy.singles[0].due <= Math.ceil(Date.now() / 1000) + 60)
+  const free = await run(url, 'cron')
+  assert.equal(JSON.parse(free.rows[0].option_value).state, 'sent')
+  assert.deepEqual(free.singles, [])
+})
+
 test('an hour-old backlog warns once across WordPress requests and resets after recovery', { skip }, async t => {
   const run = await wordpress(t)
   const { url } = await localGraph(t)

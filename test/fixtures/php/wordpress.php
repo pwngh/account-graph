@@ -39,7 +39,8 @@ class FixtureWpdb
         $this->sqlite = new $class('sqlite:' . $file, null, null, array(PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION));
         $register = method_exists($this->sqlite, 'createFunction') ? 'createFunction' : 'sqliteCreateFunction';
         $this->sqlite->exec('CREATE TABLE IF NOT EXISTS wp_options (option_id INTEGER PRIMARY KEY, option_name TEXT UNIQUE, option_value TEXT NOT NULL, autoload TEXT NOT NULL)');
-        $this->sqlite->$register('GET_LOCK', function () { return 1; }, 2);
+        // Another worker holds every lock while the input says so.
+        $this->sqlite->$register('GET_LOCK', function () { return empty($GLOBALS['input']['lock_busy']) ? 1 : 0; }, 2);
         $this->sqlite->$register('RELEASE_LOCK', function () { return 1; }, 1);
         $this->sqlite->$register('IS_USED_LOCK', function () { return 17; }, 1);
         $this->sqlite->$register('CONNECTION_ID', function () { return 17; }, 0);

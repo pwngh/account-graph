@@ -496,16 +496,18 @@ final class account_graph_wordpress
     }
 
     /**
-     * Request delivery on the next cron pass without delaying the form response.
+     * Request delivery on a cron pass without delaying the form response.
      *
+     * @param int $delay Seconds to wait before the pass.
+     *        (e.g. 60 when another worker holds the lock)
      * @return void
      */
-    private function wake(): void
+    private function wake(int $delay = 0): void
     {
-        // WordPress coalesces identical events. Distinct arguments keep the hourly event independent.
-        $args = ['wake'];
+        // WordPress coalesces identical events. Distinct arguments keep the hourly event and an immediate wake independent.
+        $args = $delay ? ['retry'] : ['wake'];
         try {
-            if (!wp_schedule_single_event(time(), self::HOOK, $args) && !wp_next_scheduled(self::HOOK, $args)) {
+            if (!wp_schedule_single_event(time() + $delay, self::HOOK, $args) && !wp_next_scheduled(self::HOOK, $args)) {
                 error_log('Account graph could not schedule its form worker.');
             }
         } catch (Throwable $error) {
@@ -522,12 +524,16 @@ final class account_graph_wordpress
     {
         try {
             $this->observe_backlog();
-            $this->with_lock('ag_wp_', function (string $lock): void {
+            $locked = $this->with_lock('ag_wp_', function (string $lock): void {
                 $this->expire_fingerprints();
                 $this->expire_receipts($lock);
                 $graph = new account_graph_lib(['Base_Url' => defined('ACCOUNT_GRAPH_URL') ? ACCOUNT_GRAPH_URL : '', 'Token' => defined('ACCOUNT_GRAPH_TOKEN') ? ACCOUNT_GRAPH_TOKEN : '', 'Attempts' => 1]);
                 $this->drain($graph, $lock);
             });
+            if (!$locked) {
+                // The running worker may finish its scan before a job queued during it.
+                $this->wake(60);
+            }
             $this->observe_backlog();
         } catch (account_graph_fault $fault) {
             error_log('Account graph form worker could not start (' . $fault->fault_code . ').');
@@ -543,20 +549,21 @@ final class account_graph_wordpress
      *        (e.g. 'ag_wp_')
      * @param callable $run Work to perform under the site's lock.
      *        (e.g. a worker pass)
-     * @return void
+     * @return bool Whether this request held the lock and ran the work.
      */
-    private function with_lock(string $prefix, callable $run): void
+    private function with_lock(string $prefix, callable $run): bool
     {
         $wpdb = $this->db;
         $lock = $prefix . sha1((defined('DB_NAME') ? DB_NAME : '') . '/' . $wpdb->options);
         if ((string) $wpdb->get_var($wpdb->prepare('SELECT GET_LOCK(%s, 0)', $lock)) !== '1') {
-            return;
+            return false;
         }
         try {
             $run($lock);
         } finally {
             $wpdb->get_var($wpdb->prepare('SELECT RELEASE_LOCK(%s)', $lock));
         }
+        return true;
     }
 
     /**
