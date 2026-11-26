@@ -30,7 +30,7 @@ async function handler(req, res) {
   for await (const chunk of req) bytes.push(chunk)
   const input = bytes.length ? JSON.parse(Buffer.concat(bytes)) : null
   const authorization = req.headers.authorization
-  requests.push({ path: url.pathname, query: url.searchParams, authorization, input })
+  requests.push({ path: url.pathname, query: url.searchParams, authorization, input, time: performance.now() })
   if (url.pathname === '/review/api/audit' && interrupted === 'slow') return
   if (url.pathname === '/review/api/audit' && interrupted === 'down') return req.socket.destroy()
   if (failure) return send(failure, { error: 'The sample graph is unavailable' })
@@ -40,6 +40,8 @@ async function handler(req, res) {
     const from = input.after === null ? 0 : Number(input.after.split('.').at(-1))
     return send(200, { ok: true, value: { schemaVersion: 1, events: changes.slice(from), cursor: 'sample.' + changes.length, more: false } })
   }
+  // The graph accepts its service token on the reviewer routes too.
+  if (url.pathname === '/review/api/pulse' && authorization === 'Bearer ' + service) return eventsRevoked ? send(401, { error: 'Token revoked' }) : send(200, { version: changes.length })
   if (revoked || authorization !== 'Bearer ' + reviewer) return send(401, { error: 'The token was not accepted' })
   switch (url.pathname) {
     case '/review/api/me': return send(200, { reviewer: 'dana', retraction: { targets: [], always: false }, targets: {}, limits: { returnHours: null, openHours: false } })
@@ -326,16 +328,45 @@ test('events resume at Last-Event-ID and sign-out ends the other tab’s stream'
   }
 })
 
-test('a graph 401 during the event stream signs the reviewer out', async () => {
+test('a graph 401 to the events token ends live updates and keeps the reviewer signed in', async () => {
   const cookie = await signin()
   eventsRevoked = true
   try {
     const stream = await fetch(origin + '/events', { headers: { cookie }, signal: AbortSignal.timeout(4000) })
-    assert.match(await stream.text(), /event: signout/)
+    const text = await stream.text()
+    assert.match(text, /event: unavailable/)
+    assert.doesNotMatch(text, /event: signout/)
   } finally {
     eventsRevoked = false
   }
-  redirectToLogin(await fetch(origin + path, { headers: { cookie }, redirect: 'manual' }))
+  assert.equal((await fetch(origin + path, { headers: { cookie }, redirect: 'manual' })).status, 200)
+})
+
+test('open tabs share one follower of the graph that starts with the first tab and stops with the last', { timeout: 30000 }, async () => {
+  const tabs = []
+  const reads = () => requests.filter(call => call.path === '/v1/events' || (call.path === '/review/api/pulse' && call.authorization === 'Bearer ' + service))
+  try {
+    for (let i = 0; i < 6; i++) {
+      const controller = new AbortController()
+      const response = await fetch(origin + '/events', { signal: controller.signal, headers: { cookie: await signin() } })
+      const reader = response.body.pipeThrough(new TextDecoderStream()).getReader()
+      assert.match((await reader.read()).value, /connected/)
+      tabs.push({ controller, reader })
+    }
+    const from = reads().length
+    const times = () => requests.filter(call => call.path === '/v1/events').map(call => call.time)
+    const start = times().length
+    while (times().length < start + 3) await new Promise(resolve => setTimeout(resolve, 50))
+    const gaps = times().slice(start).map((time, i, all) => i ? time - all[i - 1] : Infinity)
+    assert.ok(Math.min(...gaps) >= 1000, 'one follower polls at its own interval, not once per tab: ' + gaps.join(', '))
+    assert.ok(reads().length - from <= 8, 'six tabs make one pulse and one events read per interval')
+  } finally {
+    for (const tab of tabs) tab.controller.abort()
+  }
+  await new Promise(resolve => setTimeout(resolve, 200))
+  const after = reads().length
+  await new Promise(resolve => setTimeout(resolve, 2500))
+  assert.equal(reads().length, after, 'the follower stops with the last tab')
 })
 
 test('without a service events token authenticated HTML still works', async () => {
