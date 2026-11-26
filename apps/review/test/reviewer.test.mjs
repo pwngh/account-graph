@@ -502,6 +502,21 @@ test('Chrome without a service events token opens no stream and never reports an
   assert.doesNotMatch(footer, /interrupted/i)
 })
 
+test('a caller hash is shortened in its link as on the original screen, with the full ID in its title', async () => {
+  const cookie = await signin()
+  const caller = 'caller:3ea1d013bd8f00c1a7e4b2d9c6f5a8e7'
+  const original = { ...account }
+  try {
+    account.links = [...original.links, { ...original.links[0], subject: caller }]
+    account.cluster = { ...original.cluster, members: [...original.cluster.members, caller] }
+    const html = (await (await fetch(origin + path, { headers: { cookie } })).text()).replaceAll('<!-- -->', '')
+    const link = new RegExp('<a class="subject" title="' + caller + '" href="/accounts/caller%3A3ea1d013bd8f00c1a7e4b2d9c6f5a8e7"[^>]*>(?:<bdi>)?caller:3ea1d013bd8…(?:</bdi>)?</a>')
+    assert.match(html, link)
+  } finally {
+    Object.assign(account, original)
+  }
+})
+
 test('the server bounds a large graph drawing and keeps every link reachable by ordinary pagination', async () => {
   const cookie = await signin()
   const original = { ...account }

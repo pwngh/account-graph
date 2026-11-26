@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useId, useRef, useState, type Rea
 import { Link, useFetcher, useLocation } from 'react-router'
 import { subjectPath } from '../navigation'
 import { ICONS, PERSON, typeOf } from './cluster-layout.js'
+import { idText } from './report-words.js'
 
 export const amount = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 2 })
 export const percent = (n: number) => Math.round(n * 100) + '%'
@@ -13,8 +14,9 @@ export function Time({ at }: { at?: number }) {
   return <time dateTime={exact} title={exact}>{stamp(at)}</time>
 }
 
+// As on the original screen, a long ID such as a caller's hash is shortened in a link and given in full in its title.
 export function Subject({ id, journey = false }: { id: string, journey?: boolean }) {
-  return <Link className="subject" to={subjectPath(id, journey ? 'journey' : 'accounts')}>{id}</Link>
+  return <Link className="subject" title={id} to={subjectPath(id, journey ? 'journey' : 'accounts')}>{idText(id)}</Link>
 }
 
 export function Badge({ id }: { id: string }) {
