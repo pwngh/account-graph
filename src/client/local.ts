@@ -106,7 +106,7 @@ export function localGraph(options: LocalOptions, keeping: Keeping = {}): Accoun
     const made = new pg.Pool({ connectionString: options.databaseUrl, connectionTimeoutMillis: timeout, keepAlive: true, query_timeout: 2 * timeout })
     pool = made
     const store: PostgresStore = createPostgresStore(made as unknown as Pool, options.schema, { lockTimeout: timeout })
-    // An upgrade takes as long as it takes.
+    // The statements of an upgrade have no time limit.
     const patient = new pg.Pool({ connectionString: options.databaseUrl, connectionTimeoutMillis: timeout, max: 1 })
     const applied = await createPostgresStore(patient as unknown as Pool, options.schema).migrate().finally(() => patient.end())
     log(applied.length > 0 ? `database upgraded: ${applied.join(', ')}` : 'database is up to date')
@@ -184,7 +184,7 @@ export function localGraph(options: LocalOptions, keeping: Keeping = {}): Accoun
   }
 
   let opening: Promise<Internals> | undefined
-  // One that failed is tried again by the next call: a database that was down comes back.
+  // One that failed is tried again by the next call, because a database that was down comes back.
   const opened = (): Promise<Internals> => (opening ??= open().catch(async (error) => {
     opening = undefined
     await pool?.end().catch(() => undefined)
@@ -199,7 +199,7 @@ export function localGraph(options: LocalOptions, keeping: Keeping = {}): Accoun
     let timer: NodeJS.Timeout | undefined
     let heard: (() => void) | undefined
     try {
-      // Counted from here, as the limit is: opening the database takes its part of the time.
+      // Counted from here, as the limit is, so opening the database takes its part of the time.
       const until = now() + timeout * 0.9
       const work = opened().then(({ six }) => (six[name] as (request: unknown, asked: Asked) => Promise<unknown>)(given, { ...asked, until }))
       const limit = new Promise<never>((_, reject) => {

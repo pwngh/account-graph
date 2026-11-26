@@ -17,7 +17,7 @@ export function createGate() {
       under.add(held)
       return mine
     },
-    /** Resolves once nothing is under way, or patience is out. */
+    /** Resolves once nothing is under way, or `PATIENCE` has passed. */
     async end(): Promise<void> {
       ended = true
       let timer: NodeJS.Timeout | undefined
