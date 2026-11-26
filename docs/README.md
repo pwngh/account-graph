@@ -16,6 +16,7 @@ One page for each concept.
 12. [Demo](demo.md): the made-up firm.
 13. [PHP](php.md) covers the six calls, a transactional outbox and a CodeIgniter 3 integration.
 14. [WordPress](wordpress.md) covers the browser tag, form field mapping and background inquiry delivery.
+15. [Connect an intake form](no-code.md) with Zapier, Make or Power Automate using the [OpenAPI description](openapi.json).
 
 ## Who each page is for
 
@@ -41,5 +42,6 @@ One page for each concept.
 | `npm run labels` | Measures matching against a CSV of checked pairs (`tools/labels.ts`) |
 | `npm run costs` | Sends a CSV of campaign costs to a server (`tools/costs.ts`) |
 | `npm run bench` | Measures write and read speed (`tools/bench.ts`) |
+| `node tools/openapi.ts` | Regenerates `openapi.json` from the TypeScript contract, HTTP route descriptions and examples in `http.md` |
 | `tools/export.ts` | Writes edges, flows or cluster labels as CSV |
 | `tools/accuracy/run.ts` | Measures matching on made-up people |

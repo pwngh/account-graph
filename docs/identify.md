@@ -49,7 +49,7 @@ Phone keys use the line before the extension. An extension is written with `ext`
 | `passkey` | A passkey's credential id, after your server verified the sign-in |
 | `payment` | A card or bank token from your payment provider, in place of the number |
 
-Facts that come to no identifier, such as an address without Smarty or a placeholder, are refused with `NO_FACT_USED` and the notes. With a `speaker`, `facts` may come to none, or be `{}`.
+Facts that come to no identifier, such as an address without Smarty or a placeholder, are refused with `NO_FACT_USED` and the notes. With a `speaker`, `facts` may come to none, or be `{}`<!-- schema Facts -->.
 
 The email, number, address, name and date of birth are stored only as hashes.
 
@@ -77,6 +77,7 @@ A number identified as VoIP also stops counting as a `phone` wherever it was sto
 
 A mother calls about her son. Without being told, the server takes her number and her browser for his. Send what is hers as `speaker`, from [a box on the form](#on-a-form) or a mark your staff make:
 
+<!-- schema RecordEntry -->
 ```json
 { "type": "profile", "key": "intake-9", "at": 1795460000000, "subject": "contact:son",
   "facts": { "email": "son@example.org" },
@@ -110,6 +111,7 @@ Mark the box that says so with `data-ag-for-other`. When it is ticked, the scrip
 
 Send the field back as `speaker.device`, whatever number and email are the speaker's own beside it, and the client's own details as `facts`:
 
+<!-- schema RecordEntry -->
 ```json
 { "type": "profile", "key": "form-31", "at": 1795460000000, "subject": "contact:son",
   "facts": { "name": { "first": "Dario", "last": "Ferrer" }, "dob": "2008-07-08" },
@@ -182,6 +184,7 @@ With MaxMind, each visit also gets a location note, such as `place:US/FL/Miami`.
 
 A name confirms that two people who share a phone are one. It creates no link by itself.
 
+<!-- schema RecordEntry -->
 ```json
 { "type": "profile", "key": "intake-7", "at": 1795460000000, "subject": "contact:7",
   "facts": { "phone": "(555) 010-0007", "name": { "first": "José", "last": "Muñoz" }, "dob": "1990-02-03" } }
@@ -209,10 +212,12 @@ Each new number is one paid Twilio lookup. Answers are kept for thirty days.
 
 A signed link identifies the person it was sent to. Opening it links their browser to them without a sign-in. The same signing carries one visitor across your sites.
 
+<!-- schema RecordEntry -->
 ```json
 { "type": "link", "key": "offer-42", "at": 1795460000000, "subject": "contact:42", "url": "https://example.org/offer", "expires": 1798052000000 }
 ```
 
+<!-- schema /v1/record 200 -->
 ```json
 { "results": [{ "type": "link", "key": "offer-42", "ok": true, "value": { "duplicate": false, "stands": true, "url": "https://example.org/offer?ag=b2ZmZXItNDIK…" } }] }
 ```
@@ -255,6 +260,7 @@ Each opening is a note on the visitor for reviewers: `opened:contact:42`, or `op
 
 Say what a link is for with `purpose`, a short word of your own: `form`, `documents`, `payment`. The person's `journey` [lookup](http.md#lookup) has each link and whether it was opened.
 
+<!-- schema JourneyEntry -->
 ```json
 { "at": 1795460000000, "subject": "contact:42", "kind": "link", "link": "offer-42", "purpose": "payment", "opened": 1795460060000, "openings": 1 }
 ```

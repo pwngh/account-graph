@@ -89,6 +89,7 @@ The alert sender checks an overdue or rejected-conversion notice and starts its 
 
 `forget` deletes data here and leaves sent conversions at the platforms. Its answer lists them:
 
+<!-- schema /v1/forget 200 -->
 ```json
 { "ok": true, "value": { "duplicate": false, "changes": [], "sent": [{ "conversion": "client-42", "platform": "google", "action": "333", "at": 1795460000000, "state": "not_requested" }] } }
 ```

@@ -93,6 +93,7 @@ STAGES='{
 }'
 ```
 
+<!-- schema RecordEntry -->
 ```json
 { "type": "conversion", "key": "client-1001", "at": 1795460000000, "subject": "account:42", "stage": "client" }
 ```
@@ -115,6 +116,7 @@ A step in both `EVENTS` and `STAGES` can be forged from a browser. See [Page eve
 
 Record each payment as it happens, and the outcome's value follows.
 
+<!-- schema RecordEntry -->
 ```json
 { "type": "payment", "key": "pay-771", "at": 1795460000000, "conversion": "client-1001", "direction": "received", "amount": 300 }
 ```
@@ -141,11 +143,15 @@ POST /v1/report
 { "kind": "campaigns", "window": { "from": "2026-11-01", "to": "2026-11-14", "timeZone": "America/Chicago" }, "by": "outcome.office_served" }
 ```
 
+The response's `value.total.breakdown` splits nine enrollments by the office that served them.
+
+<!-- schema Breakdown -->
 ```json
-{ "by": "outcome.office_served", "total": { "outcomes": 9, "breakdown": [
-  { "name": "north", "outcomes": 5, "value": 1000, "missed": 0, "stages": { "enrolled": { "count": 5, "value": 1000 } } },
-  { "name": "river", "outcomes": 3, "value": 600, "missed": 0, "stages": { "enrolled": { "count": 3, "value": 600 } } },
-  { "name": "(not set)", "outcomes": 1, "value": 200, "missed": 0, "stages": { "enrolled": { "count": 1, "value": 200 } } } ] } }
+[
+  { "name": "north", "outcomes": 5, "value": 1000, "people": 5, "missed": 0, "notLeads": 0, "stages": { "enrolled": { "count": 5, "value": 1000, "people": 5 } } },
+  { "name": "river", "outcomes": 3, "value": 600, "people": 3, "missed": 0, "notLeads": 0, "stages": { "enrolled": { "count": 3, "value": 600, "people": 3 } } },
+  { "name": "(not set)", "outcomes": 1, "value": 200, "people": 1, "missed": 0, "notLeads": 0, "stages": { "enrolled": { "count": 1, "value": 200, "people": 1 } } }
+]
 ```
 
 | `by` | Splits by | Source |
@@ -176,6 +182,7 @@ A tag `zip` with a Texas ZIP code adds the tag `county`, where all of the ZIP li
 
 Mark a call or outcome that is spam, a wrong number, a supplier or an existing client:
 
+<!-- schema RecordEntry -->
 ```json
 { "type": "restatement", "key": "spam-CA1", "at": 1795460000000, "of": { "type": "call", "key": "CA1" }, "change": { "kind": "not_lead", "why": "spam" } }
 ```
@@ -228,6 +235,9 @@ POST /v1/report
 { "kind": "after_calls", "window": { "from": "2026-09-01", "to": "2026-09-30", "timeZone": "America/Chicago" }, "at": 1795460000000, "step": "client", "days": 30 }
 ```
 
+In the response's `value`, 16 of 64 people whose calls were returned within a day became clients.
+
+<!-- schema Followed -->
 ```json
 { "step": "client", "days": 30, "least": 20, "excluded": { "first": { "already": 4, "running": 0 }, "returned": { "already": 9, "running": 0, "through": 31 } }, "groups": [
   { "by": "returned", "suppressed": 0, "rows": [
@@ -242,7 +252,7 @@ POST /v1/report
 | `language` | The `language` tag of that call | When that call ended |
 | `returned` | Whether their first missed call was returned within a day | A day after the missed call, for everyone |
 
-A person is a cluster, so calls from two numbers and outcomes under an account count once. People who reached the step before the clock started, or whose days are still running, are excluded and counted under `excluded`. Rows of fewer than 20 people are hidden, and `insufficientData` counts the people in them.
+A person is a cluster, so calls from two numbers and outcomes under an account count once. People who reached the step before the clock started, or whose days are still running, are excluded and counted under `excluded`. Rows of fewer than 20 people are hidden, and `suppressed` counts the people in them.
 
 The one-day delay in `returned` removes one bias: people already signing up are often called about it. Anyone who signed up or got through on their own before the clock started is excluded. Other biases remain.
 
@@ -312,6 +322,7 @@ curl -X POST https://graph.example.org/v1/record -H "authorization: Bearer $GRAP
 
 When money is returned or will not be paid, say how much with a [`refund` or a `write_off`](http.md#entry-types). `reverse` takes one back.
 
+<!-- schema RecordEntry -->
 ```json
 { "type": "restatement", "key": "refund-42", "at": 1796100000000, "of": { "type": "conversion", "key": "client-42" }, "change": { "kind": "refund", "amount": 120.50 } }
 ```
@@ -352,6 +363,7 @@ A day without a row is missing, even if the campaign was paused. Record a row of
 
 Ad platforms count conversions by their own rules. Send their number with the cost to see it beside what is credited here:
 
+<!-- schema RecordEntry -->
 ```json
 { "type": "cost", "key": "microsoft-2026-11-14", "at": 1795460000000, "rows": [{ "day": "2026-11-14", "source": "microsoft", "campaignId": "55", "amount": 300, "currency": "USD", "conversions": 7.5, "conversionValue": 900 }] }
 ```

@@ -59,6 +59,7 @@ Each command reads the server's environment variables, upgrades the database as 
 account-graph verify
 ```
 
+<!-- schema cli -->
 ```json
 { "changes": [], "policy": { "hash": "d852bb513c02…", "builtWith": "d852bb513c02…", "due": false } }
 ```
@@ -129,6 +130,7 @@ To replace a token, list both, `{"dana":["new","old"]}`, and restart. Remove the
 
 Give each integration its own token in `serviceTokens` when calling `createEdge`. The command line reads the same JSON list from `SERVICE_TOKENS` or a private file named by `SERVICE_TOKENS_FILE`. Supply one of the two variables. For example, the file for a service that imports profiles and reads campaign reports would contain the following list.
 
+<!-- schema config -->
 ```json
 [{"name":"intake","token":"replace-with-a-random-secret","calls":{"record":["profile"],"report":["campaigns"]}}]
 ```
@@ -196,6 +198,7 @@ Each decision is hashed together with the one before it. The Health view verifie
 curl -s https://graph.example.org/review/api/audit --header @/private/graph/reviewer-header | tee -a /somewhere/else/heads.log
 ```
 
+<!-- schema reviewer -->
 ```json
 { "sound": true, "head": { "seq": 418, "hash": "9c1f…" } }
 ```
@@ -446,6 +449,7 @@ The following CLI command sends a fixed test message to the configured receiver 
 account-graph alerts test
 ```
 
+<!-- schema cli -->
 ```json
 { "delivered": true }
 ```
