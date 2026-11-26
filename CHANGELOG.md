@@ -172,6 +172,7 @@
 
 ### Reviewer screen
 
+- Matches says when pairs among older sightings are not in its queue. "Check older records" goes through every record, a page at a time, until "Back to recent".
 - A separate React Router app renders Accounts, Journey, Board and Calls on the server. It checks a reviewer token at sign-in, keeps it on the server and follows graph changes for the open page. See the [review app](docs/review-app.md).
 - The review app links to the original screen only at `REVIEW_LEGACY_URL`, refuses a `REVIEW_SESSION_SECRET` shorter than 32 characters and allows ten sign-in attempts per address in fifteen minutes.
 - One process follows the graph once for all open tabs. Without `REVIEW_EVENTS_TOKEN` the pages say live updates are off, and a server restart ends event streams without signing anyone out.
