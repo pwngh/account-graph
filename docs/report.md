@@ -156,11 +156,11 @@ The response's `value.total.breakdown` splits nine enrollments by the office tha
 
 | `by` | Splits by | Source |
 | --- | --- | --- |
-| `touch.<name>` | The credited visit | A parameter of your own on the landing address (`collect.js?params=office,lang`), or the `tags` of the number dialed |
+| `touch.<name>` | The credited visit | A parameter of your own on the landing address, as in `collect.js?params=office,lang`, or the `tags` of the number dialed |
 | `outcome.<name>` | The outcome | `tags` of the `conversion`, or of the `call` it came from |
 | `hour`, `weekday` | When it happened | The window's time zone |
 
-The response lists the `dimensions` recorded in the period; the Channels view offers them in **Breakdown**. Outcomes without a value have their own line, `(not set)`, so the parts add up to the total, rounding aside.
+The response lists the `dimensions` recorded in the period. The Channels view offers them in **Breakdown**. Outcomes without a value have their own line, `(not set)`, so the parts add up to the total, rounding aside.
 
 > **Costs stay on the campaign.** Cost, clicks and visits apply to the whole campaign and are excluded from breakdowns.
 
@@ -196,15 +196,15 @@ Mark a call or outcome that is spam, a wrong number, a supplier or an existing c
 | The Calls view, the Board and alerts | A missed call no longer waits for a callback |
 | Outcomes after a call | Excluded |
 | A journey, and the `record` lookup | Still shown, marked `notLead` |
-| Ad platforms | Not sent if queued. Restated to zero where the platform supports it; kept by the others. |
+| Ad platforms | Not sent if queued. Restated to zero where the platform supports it. Kept by the others. |
 
-A mark can precede its outcome; a call marked before its result is not counted when the result arrives. `"change": { "kind": "lead" }` removes the mark: everything counts again, and a conversion is sent at its current value. [Order](http.md#order) says which of the two stands, and [Privacy](privacy.md#deletion) when a mark is deleted.
+A mark can precede its outcome. A call marked before its result is not counted when the result arrives. `"change": { "kind": "lead" }` removes the mark. Everything counts again, and a conversion is sent at its current value. [Order](http.md#order) says which of the two stands, and [Privacy](privacy.md#deletion) when a mark is deleted.
 
 > **Marks are not checked.** A campaign looks cheaper per lead when its poor leads are marked. Mark by a fixed rule, and read `notLeads` beside the cost.
 
 ## Board
 
-The Board puts each person in one column. It normally groups the subjects of one cluster. Two records with calls confirmed for different owners keep separate rows, even when the records share a cluster. Each row shows the call details, values and times belonging to its owner. The `pipeline` report uses the same rows. [Reports](http.md#report)
+The Board puts each person in one column. It normally groups the subjects of one cluster. Two records with calls confirmed for different owners keep separate rows, even when the records share a cluster. Each row shows the call details, values and times belonging to its owner. The `pipeline` report uses the same rows. See [Reports](http.md#report).
 
 | Column | Who is in it |
 | --- | --- |
@@ -223,7 +223,7 @@ Each column counts its `people`, and three values for today in `REPORT_TIME_ZONE
 STAGES='{"inquiry":{"value":5,"wait":48},"client":{"value":200}}'
 ```
 
-The Board reads people with a step or a call, inbound or outbound, in the period: 90 days by default. The list of periods begins with Today, which is the people active today in `REPORT_TIME_ZONE`, and Overdue then counts only them. Rows list the longest waiting first, at most 50 per column; counts include everyone. The Board makes no assignments.
+The Board reads people with a step or a call, inbound or outbound, in the period: 90 days by default. The list of periods begins with Today, which is the people active today in `REPORT_TIME_ZONE`, and Overdue then counts only them. Rows list the longest waiting first, at most 50 per column. Counts include everyone. The Board makes no assignments.
 
 ## Outcomes after a call
 
@@ -254,7 +254,7 @@ In the response's `value`, 16 of 64 people whose calls were returned within a da
 
 A person is a cluster, so calls from two numbers and outcomes under an account count once. People who reached the step before the clock started, or whose days are still running, are excluded and counted under `excluded`. Rows of fewer than 20 people are hidden, and `suppressed` counts the people in them.
 
-The one-day delay in `returned` removes one bias: people already signing up are often called about it. Anyone who signed up or got through on their own before the clock started is excluded. Other biases remain.
+The one-day delay in `returned` removes one bias. People already signing up are often called about it. Anyone who signed up or got through on their own before the clock started is excluded. Other biases remain.
 
 ### Correlation and effect
 
@@ -271,7 +271,7 @@ To measure the effect, choose at random whom to call back, keep the list, and co
 
 ## Attribution
 
-The report uses the same attribution as the `arrival` of a `person` [lookup](http.md#lookup). From the account, it follows links to the visitors that are the same person, and credits the newest visit within 90 days that is one person with it: in the same cluster, or linked at 0.9 or higher, or at the policy's [`credit`](matching.md#a-bar-of-its-own-for-credit). A call or text filed under its number's channel has to be linked at 0.9, and gives way to an ad click or a campaign visit of the person's in the same window: the number is where they called, and the ad is what brought them.
+The report uses the same attribution as the `arrival` of a `person` [lookup](http.md#lookup). From the account, it follows links to the visitors that are the same person, and credits the newest visit within 90 days that is one person with it: in the same cluster, or linked at 0.9 or higher, or at the policy's [`credit`](matching.md#a-bar-of-its-own-for-credit). A call or text filed under its number's channel has to be linked at 0.9, and gives way to an ad click or a campaign visit of the person's in the same window. The number is where they called, and the ad is what brought them.
 
 An outcome without such a visit goes on the `(none)` line, so totals add up. An outcome counts on the day it happened: an October click that enrolls in November is in November's report, under October's campaign.
 
@@ -308,7 +308,7 @@ Each step counts people as well as outcomes. A person is a cluster: two accounts
 | `median`, `p95` | Median and 95th percentile, in days |
 | `inside` | The share within the attribution window, and so eligible for credit |
 
-Costs are recorded the day they are spent and outcomes later, so the end of a period is missing outcomes. When the period reaches into those days, the report has `incomplete`, with `after` as the last complete day, and the Channels view says so. The slowest step's 95th percentile sets the length, from the newest 200 outcomes per step in the last half year; a step needs at least 20 that could be credited.
+Costs are recorded the day they are spent and outcomes later, so the end of a period is missing outcomes. When the period reaches into those days, the report has `incomplete`, with `after` as the last complete day, and the Channels view says so. The slowest step's 95th percentile sets the length, from the newest 200 outcomes per step in the last half year. A step needs at least 20 that could be credited.
 
 ### Value changes
 
@@ -329,7 +329,7 @@ When money is returned or will not be paid, say how much with a [`refund` or a `
 
 The outcome is then worth 300. An amount is what was lost and not what is left, so the order the entries arrive in does not matter. [Order](http.md#order) has the rule of the value.
 
-The `record` [lookup](http.md#lookup) of the conversion lists every value it has had, under `values`. The report gives these figures for each campaign (`valueChange`) and for each month outcomes were first recorded in (`months`):
+The `record` [lookup](http.md#lookup) of the conversion lists every value it has had, under `values`. The report gives these figures for each campaign, under `valueChange`, and for each month outcomes were first recorded in, under `months`:
 
 | Figure | Meaning |
 | --- | --- |
@@ -342,7 +342,7 @@ The `record` [lookup](http.md#lookup) of the conversion lists every value it has
 
 | Platform | When a value is restated |
 | --- | --- |
-| Google Ads | The value is sent again under the same id and overwrites the old one. It is sent without the reason for it. Google cannot retract a conversion: at zero it still counts as one. |
+| Google Ads | The value is sent again under the same id and overwrites the old one. It is sent without the reason for it. Google cannot retract a conversion. At zero it still counts as one. |
 | Meta, Microsoft, TikTok | They keep the first value. Only the report changes. |
 
 ### Cost per outcome
@@ -368,7 +368,7 @@ Ad platforms count conversions by their own rules. Send their number with the co
 { "type": "cost", "key": "microsoft-2026-11-14", "at": 1795460000000, "rows": [{ "day": "2026-11-14", "source": "microsoft", "campaignId": "55", "amount": 300, "currency": "USD", "conversions": 7.5, "conversionValue": 900 }] }
 ```
 
-A `conversionValue` requires `conversions`. CSV columns use the same names. The server can read both from Google Ads and Meta along with the costs; this is off by default.
+A `conversionValue` requires `conversions`. CSV columns use the same names. The server can read both from Google Ads and Meta along with the costs. This is off by default.
 
 | Setting | Reads |
 | --- | --- |
@@ -385,7 +385,7 @@ Campaigns with a number, and the total, have `reported`:
 
 The two counts can differ for several reasons:
 
-- A platform may count on the day of the click; the report counts on the day of the outcome. Compare weeks.
+- A platform may count on the day of the click. The report counts on the day of the outcome. Compare weeks.
 - Two platforms may both report one client. The report credits one campaign at most.
 - A platform counts visitors it recognizes and estimates some it does not, so its number may be a fraction.
 - A platform counts the actions you set up there. Set `per` to the matching step.
@@ -397,7 +397,7 @@ Platforms add to a day for weeks, and the server reads the last seven days again
 | Area | Detail |
 | --- | --- |
 | Credit | The newest strong visit gets all of it. Earlier visits are in the journey only. |
-| Currency | Amounts are summed as given. `currencies` lists every currency seen; more than one means the sums mix them. |
+| Currency | Amounts are summed as given. `currencies` lists every currency seen. More than one means the sums mix them. |
 | Days | A day runs midnight to midnight in the window's `timeZone`. The Channels view uses `REPORT_TIME_ZONE`. Use the ad account's time zone so the days match the costs. |
 | Work | The report is computed on request. It reads every outcome and missed call in the range, and follows their links fifty thousand people at a time. |
 | Platforms read automatically | Google Ads and Meta. Costs from Microsoft, TikTok and others are recorded as `cost`. |
