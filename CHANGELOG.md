@@ -171,6 +171,8 @@
 
 ### Reviewer screen
 
+- A separate React Router app renders Accounts, Journey, Board and Calls on the server. It checks a reviewer token at sign-in, keeps it on the server and follows graph changes for the open page. See the [review app](docs/review-app.md).
+- The firm stage serves its current scene, loading progress and last result from the server. Scenes submit as forms, and open stages receive updates over a server-sent event stream. PostgreSQL loads the sample history in a batched transaction. See the [demo](docs/demo.md).
 - `undecided` pages through ranked pairs from recent sightings and can sweep every subject, including those with pruned sightings.
 - Detail cards open from an icon beside a number or a row on Calls, Board, Journey and Health. Each holds what is behind it, names how it is known and leaves out what is not. See the [reviewer screen](docs/operations.md#reviewer-screen).
 - A mark, a number or a dashed wait on the Journey chart shows a short card when it is pointed at or focused. The panel beside the chart has every row.

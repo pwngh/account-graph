@@ -38,12 +38,14 @@ A click, a phone call and a sale often land in different systems, under differen
 
 ```sh
 git clone https://github.com/pwngh/account-graph && cd account-graph
-npm ci && npm run firm
+npm ci && npm --prefix apps/review ci && npm run firm
 ```
 
-A made-up law firm with two months of data, a site, and 27 scenes to play. Node 22.18 or later. Docker is optional. To set up your own, see [Getting started](docs/getting-started.md).
+A made-up law firm with two months of data, a site, and 27 scenes to play. The review app needs Node 22.22 or later. Set `DATABASE_URL`, use Docker with a local `postgres:16` image, or run `MEMORY=1 npm run firm` for an in-memory demo. See the [demo](docs/demo.md) and [Getting started](docs/getting-started.md).
 
 ## Reviewer screen
+
+The new reviewer app serves Accounts, Journey, Board and Calls as HTML. The original screen remains available on the graph server. See the [review app guide](docs/review-app.md).
 
 Reviewers see the evidence behind every match, missed calls awaiting a callback, and the return on each campaign. These are four of its seven views. Accounts is the picture at the top, and the others are Matches and Calls.
 
