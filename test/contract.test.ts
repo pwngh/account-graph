@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { pageServer } from './page-server.suite.ts'
 import { after, test } from 'node:test'
 import pg from 'pg'
 import { internalsOf } from '../src/client/internals.ts'
@@ -81,6 +82,8 @@ for (const [kind, open] of Object.entries({ memory, ...(url && { postgres }) }))
     }
   })
 }
+
+everywhere('a guarded page cannot leave an address, trace or receipt through the edge', ({ local }) => pageServer(local))
 
 const one = async (graph: AccountGraph, entry: RecordEntry): Promise<RecordResult> => (await graph.record({ entries: [entry] })).results[0]!
 const codeOf = (work: Promise<unknown>) => work.then((value) => ({ value }), (error) => (isFault(error) ? { code: error.code, retryable: error.retryable } : { raw: String(error) }))

@@ -1,3 +1,4 @@
+import type { PageRules } from './collect.ts'
 import { existsSync, readFileSync } from 'node:fs'
 import * as nodeModule from 'node:module'
 import { fileURLToPath } from 'node:url'
@@ -32,36 +33,70 @@ function browserModule(name: string): string {
  * `accountGraph.event('inquiry')`, and taps on phone links and on elements
  * marked `data-ag-event` are reported without any code.
  */
-const RUN = `
+const run = (server: PageRules) => `
 {
   const self = new URL(import.meta.url)
-  const options = { endpoint: new URL('collect', self).href }
+  const list = name => self.searchParams.getAll(name).flatMap(value => value.split(',').filter(Boolean))
+  const rules = ${JSON.stringify({ ...(server.origins?.length && { origins: server.origins }), ...(server.allowPages && { allowPages: server.allowPages }), ...(server.refusePages && { refusePages: server.refusePages }) })}
+  if (!hasPageRules(rules)) {
+    for (const name of ['allowPages', 'refusePages']) if (self.searchParams.has(name)) rules[name] = list(name)
+  }
+  const requireConsent = self.searchParams.get('consent') === 'required'
+  const initialConsent = globalThis.accountGraphConsent
+  const answer = () => requireConsent ? globalThis.accountGraphConsent : initialConsent
+  const options = { ...rules, endpoint: new URL('collect', self).href, requireConsent,
+    params: list('params'), domains: list('domains'), get consent() { return answer() } }
   const helper = () => import(new URL('fingerprint.js', self).href)
   const key = self.searchParams.get('fingerprint')
   const region = self.searchParams.get('region')
   const endpoints = self.searchParams.get('endpoints')
-  if (key) options.fingerprintEvent = helper().then((m) => m.fingerprintEvent({ apiKey: key, ...(region && { region }), ...(endpoints && { endpoints }) })).catch(() => undefined)
-  if (self.searchParams.get('canvas') === 'open') options.canvas = helper().then((m) => m.openFingerprint()).catch(() => undefined)
-  const params = self.searchParams.get('params')
-  if (params) options.params = params.split(',').filter(Boolean)
-  if (globalThis.accountGraphConsent) options.consent = globalThis.accountGraphConsent
-  collect(options).catch(() => undefined)
-  globalThis.accountGraph = { event: (name, detail) => event(options, name, detail).catch(() => undefined) }
-  watch(options)
-  globalThis.accountGraph.fields = (form) => fields(options.consent, form)
-  fill({ all: self.searchParams.get('forms') === 'all', consent: options.consent })
-  if (self.searchParams.get('pool')) pool(options)
-  if (self.searchParams.get('text')) texts(options)
-  const domains = self.searchParams.get('domains')
-  if (domains) carry({ ...options, domains: domains.split(',').filter(Boolean) })
+  if (key) options.fingerprintEvent = active => helper().then(m => active() ? m.fingerprintEvent({ apiKey: key, ...(region && { region }), ...(endpoints && { endpoints }) }, active) : undefined)
+  if (self.searchParams.get('canvas') === 'open') options.canvas = active => helper().then(m => active() ? m.openFingerprint(active) : undefined)
+
+  let path
+  let stop = () => {}
+  const refresh = () => {
+    const here = ready(options) ? new URL(location.href).pathname : undefined
+    if (here === path) return
+    path = here
+    stop()
+    if (here === undefined) return
+    // A reply that crosses a navigation belongs to the page that asked.
+    const controller = new AbortController()
+    const visit = { ...options, signal: controller.signal, get consent() { return answer() } }
+    collect(visit).catch(() => undefined)
+    const stops = [watch(visit), fill({ ...visit, all: self.searchParams.get('forms') === 'all', get consent() { return answer() } })]
+    if (self.searchParams.get('pool')) stops.push(pool(visit))
+    if (self.searchParams.get('text')) stops.push(texts(visit))
+    if (options.domains.length) stops.push(carry(visit))
+    stop = () => {
+      controller.abort()
+      for (const end of stops) end()
+    }
+  }
+  globalThis.accountGraph = { event: (name, detail) => event(options, name, detail).catch(() => undefined),
+    fields: form => fields(options.consent, form, options), refresh }
+  if (hasPageRules(options) || options.requireConsent) {
+    for (const name of ['pushState', 'replaceState']) {
+      const original = history[name]
+      history[name] = function (...args) {
+        const answer = original.apply(this, args)
+        refresh()
+        return answer
+      }
+    }
+    for (const name of ['popstate', 'hashchange', 'pageshow']) globalThis.addEventListener(name, refresh)
+  }
+  refresh()
 }
 `
 
 let scripts: { collect: string; fingerprint: string } | undefined
 
-/** The two scripts the server hands to browsers: the collector, run on load, and the fingerprint helpers it loads on request. */
-export function browserScripts(): { collect: string; fingerprint: string } {
-  return (scripts ??= { collect: browserModule('collect') + RUN, fingerprint: browserModule('fingerprint-browser') })
+/** Only the public page patterns go in the script served to a site. */
+export function browserScripts(rules: PageRules = {}): { collect: string; fingerprint: string } {
+  scripts ??= { collect: browserModule('collect'), fingerprint: browserModule('fingerprint-browser') }
+  return { collect: scripts.collect + run(rules), fingerprint: scripts.fingerprint }
 }
 
 /** Headers for a script any site may load. */

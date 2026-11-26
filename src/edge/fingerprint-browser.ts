@@ -16,13 +16,17 @@ export interface FingerprintAgentOptions {
  * event id to the server, which confirms it and reads the visitor id there.
  * Resolves to undefined when the agent is blocked or fails.
  */
-export async function fingerprintEvent(options: FingerprintAgentOptions): Promise<string | undefined> {
+export async function fingerprintEvent(options: FingerprintAgentOptions, active = () => true): Promise<string | undefined> {
   try {
+    if (!active()) return undefined
     const url = `https://fpjscdn.net/v4/${encodeURIComponent(options.apiKey)}`
-    const agent = await (await import(/* @vite-ignore */ url)).start({
+    const vendor = await import(/* @vite-ignore */ url)
+    if (!active()) return undefined
+    const agent = await vendor.start({
       ...(options.region && { region: options.region }),
       ...(options.endpoints && { endpoints: options.endpoints }),
     })
+    if (!active()) return undefined
     const result = await agent.get()
     return typeof result?.event_id === 'string' ? result.event_id : undefined
   } catch {
@@ -34,10 +38,14 @@ export async function fingerprintEvent(options: FingerprintAgentOptions): Promis
  * Computes the open-source FingerprintJS visitor id. Nothing confirms it, and
  * devices of one model often share it, so pass it to `collect` as `canvas`.
  */
-export async function openFingerprint(): Promise<string | undefined> {
+export async function openFingerprint(active = () => true): Promise<string | undefined> {
   try {
+    if (!active()) return undefined
     const url = 'https://openfpcdn.io/fingerprintjs/v5'
-    const agent = await (await import(/* @vite-ignore */ url)).load()
+    const vendor = await import(/* @vite-ignore */ url)
+    if (!active()) return undefined
+    const agent = await vendor.load()
+    if (!active()) return undefined
     const result = await agent.get()
     return typeof result?.visitorId === 'string' ? result.visitorId : undefined
   } catch {

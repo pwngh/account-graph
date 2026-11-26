@@ -33,6 +33,8 @@ services:
       POLICY: ${POLICY:-}
       # The sites whose pages may report visits. The example site answers on these two.
       ORIGINS: ${ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      ALLOW_PAGES:
+      REFUSE_PAGES:
       # What the example site needs to show page events, a call tied to a tap, and signed links.
       EVENTS: ${EVENTS:-brochure,phone_click}
       CALL_NUMBERS: ${CALL_NUMBERS:-{"+15551230001":{"source":"google","campaignId":"20222"}}}

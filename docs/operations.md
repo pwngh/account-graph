@@ -33,7 +33,7 @@ GRAPH_TOKEN=a-long-random-string REVIEW_TOKENS='{"dana":"another-one"}' RECEIPT_
 
 Compose also reads a `.env` file in the same directory. Use `.env.example` for synthetic local settings. For a credentialed run, inject secrets privately into the selected process. Keep them out of the checkout, shell history and command arguments. Container administrators can inspect the environment. Set `GRAPH_PORT` to publish a different port.
 
-Compose passes the variables in [Environment variables](#environment-variables) through to the server, except `GRAPH_SCHEMA`, `HOST`, `PORT`, `POLICY_FILE`, `CALL_NUMBERS_FILE` and `SERVER_RANGES_FILE`. It sets `DATABASE_URL` itself. Compose passes the Google key file path but does not mount the file. Supply a separate read-only secret mount and use its path inside the container. A shell running the checker does not read Compose’s .env.
+Compose passes the variables in [Environment variables](#environment-variables) through to the server, except `GRAPH_SCHEMA`, `HOST`, `PORT`, `POLICY_FILE`, `CALL_NUMBERS_FILE`, `SERVICE_TOKENS_FILE` and `SERVER_RANGES_FILE`. It sets `DATABASE_URL` itself. Compose passes the Google key file path but does not mount the file. Supply a separate read-only secret mount and use its path inside the container. A shell running the checker does not read Compose’s .env.
 
 > **Use the compose file for evaluation.** It has a local volume, a fixed database password, the example site's features and placeholders for `LINK_SECRET` and `RECEIPT_SECRETS`. Replace these before production use. Values in `compose.yaml` that start with `change-me` are public, and the server refuses to start with one when `ORIGINS` contains a site outside your own machine.
 
@@ -93,6 +93,8 @@ List the site in `ORIGINS`, or `/collect` answers 403. A site with a content sec
 | `collect.js?forms=all` | Adds the device id and landing page to every form that posts, on submit. By default, only to forms marked `data-ag-fields`. |
 
 The script also reports taps on phone links and clicks on elements marked `data-ag-event`. List the event names to accept in `EVENTS`. See [calls and texts](calls.md).
+
+A firm with keyed file addresses should set `ALLOW_PAGES` to the public pages. The server passes its page lists to the tag. A banner that obtains consent before making identifiers can use `collect.js?consent=required`. [Page and consent settings](privacy.md#pages-a-site-may-record)
 
 To pass the answer from a consent banner, set `window.accountGraphConsent = { adUserData: true, adPersonalization: false }` before the tag.
 
@@ -476,6 +478,7 @@ A partially set group stops the server at startup, with a message naming the mis
 | `RECEIPT_SECRETS` | required | Keys the [receipts](#receipts). Separated by commas, at least 32 characters each. The first signs, and all are tried. |
 | `SERVICE_TOKENS`, `SERVICE_TOKENS_FILE` | none | Named service credentials and their allowed calls, supplied as a JSON list or a path to that list. |
 | `REVIEW_TOKENS` | none | Reviewers, as JSON: each name with its token or a list of tokens. Each token must be unique and differ from `GRAPH_TOKEN`. |
+| `ALLOW_PAGES`, `REFUSE_PAGES` | unset | Comma-separated literal page paths or subtrees ending in `/*`. A refusal takes precedence. |
 | `ORIGINS` | none | Site addresses that may post visits, separated by commas. |
 | `PORT`, `HOST` | `8080`, `0.0.0.0` | Listening port and address. |
 | `GRAPH_SCHEMA` | `account_graph` | Database schema that holds the tables. |

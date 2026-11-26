@@ -76,18 +76,27 @@ export function credentials(service: string, reviewers: Reviewers | undefined, l
 
 const forbidden = () => fault(FAULT_CODES.AUTH.FORBIDDEN, 'The token does not open this call')
 
+/** Shape errors apply to the whole batch. Refused items never reach the receipt or write path, and keep their place in the answer. */
+export async function filterRecord(body: unknown, allow: (entry: RecordEntry) => RecordEntry | undefined, dispatch: (input: unknown) => Promise<unknown>) {
+  const { entries } = checked('record', body)
+  const screened = entries.map(allow)
+  const accepted = screened.filter((entry): entry is RecordEntry => entry !== undefined)
+  const results = accepted.length ? (await dispatch({ entries: accepted }) as RecordResponse).results : []
+  let index = 0
+  return { results: entries.map(({ type, key }, i) => screened[i] ? results[index++] : { type, key, ok: false, reason: 'FORBIDDEN' }) }
+}
+
 export async function limitedCall(owner: Extract<Owner, { role: 'limited' }>, name: CallName, body: any, dispatch: (input: unknown) => Promise<unknown>) {
   const grant = owner.calls[name]
   if (grant === undefined) throw forbidden()
   const kinds: true | readonly string[] = grant
   const author = `system:${owner.name}`
   if (name === 'record') {
-    const { entries } = checked('record', body)
-    const opens = entries.map(entry => (kinds === true || kinds.includes(entry.type)) && (entry.type !== 'call_update' || entry.change.kind !== 'party' || entry.change.by === author))
-    const accepted = entries.filter((_, i) => opens[i])
-    const results = accepted.length ? (await dispatch({ entries: accepted }) as RecordResponse).results : []
-    let index = 0
-    return { results: entries.map(({ type, key }, i) => opens[i] ? results[index++] : { type, key, ok: false, reason: 'FORBIDDEN' }) }
+    return filterRecord(body, entry => {
+      if (kinds !== true && !kinds.includes(entry.type)) return undefined
+      if (entry.type === 'call_update' && entry.change.kind === 'party' && entry.change.by !== author) return undefined
+      return entry
+    }, dispatch)
   }
   if (kinds !== true && !kinds.includes(name === 'decide' ? body?.action : body?.kind)) throw forbidden()
   if ((name === 'decide' || name === 'forget') && body?.by !== author) throw fault(FAULT_CODES.AUTH.FORBIDDEN, '`by` must match the service token owner')

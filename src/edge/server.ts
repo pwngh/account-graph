@@ -1,3 +1,6 @@
+import { hasPageRules, validPageRules } from './collect.ts'
+import type { PageRules } from './collect.ts'
+import { browserPage, recordPages } from './pages.ts'
 import { FAULT_CODES, fault, malformed } from '../contract/fault.ts'
 import { CALLS } from '../contract/validate.ts'
 import type { CallName } from '../contract/validate.ts'
@@ -56,7 +59,7 @@ export interface Core {
 const BROWSER = new Map([['/collect', 'visit'], ['/event', 'event'], ['/carry', 'carry'], ['/number', 'number'], ['/text-code', 'text_code']])
 const KINDS = new Set(BROWSER.values())
 
-export interface HandlerOptions {
+export interface HandlerOptions extends PageRules {
   /**
    * The bearer token your own services send. It opens every route. Visitors'
    * browsers never hold it. Give people who review a token in `reviewers`.
@@ -195,6 +198,9 @@ class Refusal extends Error {
  * route needs a bearer token.
  */
 export function createHandler(core: Core, options: HandlerOptions) {
+  if (!validPageRules(options)) throw malformed('Page lists require literal paths or subtrees ending in /*')
+  const guarded = hasPageRules(options)
+  let scripts: ReturnType<typeof browserScripts> | undefined
   const { graph, service } = core
   const now = options.now ?? Date.now
   if (typeof options.token !== 'string' || !options.token.trim()) throw malformed('`token` is required')
@@ -620,7 +626,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
       try {
         body = JSON.parse(given)
       } catch (error) {
-        throw malformed((error as Error).message)
+        throw malformed(guarded ? 'Body must be JSON' : (error as Error).message)
       }
       if (owner.role === 'reviewer') {
         const reviewer = owner.name
@@ -628,7 +634,8 @@ export function createHandler(core: Core, options: HandlerOptions) {
         const opens = party || name === 'report' || ((name === 'decide' || name === 'forget') && body?.by === reviewer) || (name === 'lookup' && (body?.kind === 'journey' || body?.kind === 'find' || body?.kind === 'party'))
         if (!opens) throw fault(FAULT_CODES.AUTH.FORBIDDEN, name === 'decide' || name === 'forget' ? '`by` must match the owner of the token' : 'The token does not open this call')
       }
-      const dispatch = (input: unknown) => core.v1!(name as CallName, input, gone.signal)
+      const run = (input: unknown) => core.v1!(name as CallName, input, gone.signal)
+      const dispatch = guarded && name === 'record' ? (input: unknown) => recordPages(input, options, run) : run
       const said = owner.role === 'limited' ? await limitedCall(owner, name as CallName, body, dispatch) : await dispatch(body)
       // No journey says whom a call was not with, so a reviewer is not told it here.
       if (owner.role === 'reviewer' && name === 'lookup' && body?.kind === 'party' && (said as any)?.role === 'excluded') {
@@ -665,7 +672,8 @@ export function createHandler(core: Core, options: HandlerOptions) {
         response.setHeader('retry-after', String(Math.ceil(60 / perMinute)))
         throw new Refusal(429, 'Too many visits from this address')
       }
-      const body = await json(request)
+      const body = guarded ? parsed(await text(request), true) : await json(request)
+      if (guarded && !browserPage(body, options, request.headers.referer)) return undefined
       // Each was a route of its own, and a page that keeps an old script still asks there.
       const kind = asked === 'visit' && body.kind !== undefined ? body.kind : asked
       if (typeof kind !== 'string' || !KINDS.has(kind)) throw new Refusal(400, '`kind` must be visit, event, carry, number or text_code')
@@ -723,8 +731,8 @@ export function createHandler(core: Core, options: HandlerOptions) {
 
     if (path === 'GET /collect.js' || path === 'GET /fingerprint.js') {
       // The script tag for your sites. Public, like the pages that load it.
-      const scripts = browserScripts()
-      response.writeHead(200, scriptHeaders).end(path === 'GET /collect.js' ? scripts.collect : scripts.fingerprint)
+      const served = scripts ??= browserScripts(options)
+      response.writeHead(200, scriptHeaders).end(path === 'GET /collect.js' ? served.collect : served.fingerprint)
       return SENT
     }
 
@@ -1011,12 +1019,12 @@ async function json(request: IncomingMessage): Promise<any> {
   return parsed(await text(request))
 }
 
-function parsed(sent: string): any {
+function parsed(sent: string, guarded = false): any {
   let body: unknown
   try {
     body = JSON.parse(sent)
   } catch (error) {
-    throw malformed((error as Error).message)
+    throw malformed(guarded ? 'Body must be JSON' : (error as Error).message)
   }
   if (typeof body !== 'object' || body === null) throw malformed('Body must be a JSON object')
   storable(body)
