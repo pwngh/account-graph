@@ -169,6 +169,18 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
         (excluded.first_at, excluded.last_at, excluded.sightings, excluded.profile_at, excluded.profile_key, excluded.source_fact)`, fieldsOf(edges))
   }
   const bind = (db: Queryable, readOnly: boolean, factSchema: boolean, textSchema: boolean, snapshot = evidenceIn(db, readOnly)): Tx => ({
+    async insertActivity(rows) {
+      // PostgreSQL decodes these arrays against the destination column types. Generated ids keep their defaults.
+      const insert = async (table: string, columns: string, values: readonly object[]) => {
+        if (values.length) await db.query(`insert into ${t(table)} (${columns}) select ${columns} from jsonb_populate_recordset(null::${t(table)}, $1::jsonb)`, [JSON.stringify(values)])
+      }
+      await insert('touch', 'subject, at, detail, source_call', rows.touches.map(({ touch: { subject, at, ...detail }, call }) => ({ subject, at, detail, source_call: call })))
+      await insert('outcome', 'transaction_id, subject, at, stage, value, currency, tags', rows.outcomes.map(({ transactionId, ...rest }) => ({ transaction_id: transactionId, ...rest })))
+      await insert('outcome_value', 'transaction_id, subject, value, currency, at, kind, why', rows.values.map(({ transactionId, subject, value }) => ({ transaction_id: transactionId, subject, ...value })))
+      await insert('call', 'id, subject, at, dialed, duration, flags, visitor, recorded_at, direction, tags, line_kind', rows.calls.map(({ call: { to, recorded, ...rest }, lineKind }) => ({ ...rest, dialed: to, recorded_at: recorded, line_kind: lineKind })))
+      await insert('call_result', 'id, answered, voicemail, waited, returned_at, recorded_at', rows.results.map(([id, { returned, recorded, ...rest }]) => ({ id, ...rest, returned_at: returned, recorded_at: recorded })))
+      await insert('decision', 'seq, at, action, about, actor, reason, hash', rows.decisions.map(({ by, ...rest }) => ({ ...rest, actor: by })))
+    },
     addAlert: (alert, again, calls) => addAlert(db, alert, again, calls),
     async pendingAlert({ key, text, at }, start) {
       const { rows } = await db.query(`select 1 from ${t('alert')} where key = $1 and text = $2 and at = $3 and delivered_at is null for share`, [key, text, at])

@@ -21,7 +21,7 @@ import type { CallResult, Consent, ConsentAnswer, CostRow, Counted, Decision, Ed
  * Writes run one at a time. A write that throws is undone only where it was
  * asked to be whole, by a copy of everything made before it.
  */
-export function createMemoryStore(): Store & { snapshot(): unknown } {
+export function createMemoryStore() {
   const outbox = createMemoryOutbox((job) => outcomes.get(job.transactionId)?.subject === job.subject, () => settings.get('callParty'), (subjects) => {
     const refusals = new Map<Subject, number>()
     for (const subject of subjects) {
@@ -172,6 +172,14 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
   }
 
   const tx: Tx = {
+    async insertActivity(rows) {
+      for (const { touch, call } of rows.touches) await tx.addTouch(touch, call)
+      for (const outcome of rows.outcomes) await tx.setOutcome(outcome)
+      for (const { transactionId, subject, value } of rows.values) await tx.addValue(transactionId, subject, value)
+      for (const { call, lineKind } of rows.calls) await tx.setCall(call, lineKind)
+      for (const [id, result] of rows.results) await tx.setCallResult(id, result)
+      for (const decision of rows.decisions) await tx.addDecision(decision)
+    },
     addAlert: ops.addAlert,
     pendingAlert: ops.pendingAlert,
     outbox,
@@ -1497,7 +1505,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
   // Asked for from outside a write, a job is changed in a turn of its own, so a write undone takes nothing of it along.
   const queued = <A extends unknown[], R>(call: (...given: A) => Promise<R>) => (...given: A) => queue(() => call(...given))
   const jobs: OutboxStore = { add: queued(outbox.add), claim: queued(outbox.claim), swap: queued(outbox.swap), standing: queued(outbox.standing), start: queued(outbox.start), get: queued(outbox.get), list: queued(outbox.list), counts: queued(outbox.counts), oldestDue: queued(outbox.oldestDue) }
-  return { write, read: queue, outbox: jobs, ops: { ...ops, pendingAlert: queued(ops.pendingAlert) }, snapshot }
+  return { write, read: queue, outbox: jobs, ops: { ...ops, pendingAlert: queued(ops.pendingAlert) }, snapshot } satisfies Store & { snapshot(): unknown }
 }
 
 /** The cluster changes among events, as they were before there were others. */

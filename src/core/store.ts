@@ -60,6 +60,16 @@ export interface Store {
   ops: OpsStore
 }
 
+// Immutable input rows for a new store. Keys are unique within each batch.
+export interface ActivityRows {
+  touches: { touch: Touch; call: string | undefined }[]
+  outcomes: Counted[]
+  values: { transactionId: string; subject: Subject; value: OutcomeValue }[]
+  calls: { call: Omit<KeptCall, 'result'>; lineKind: CallLineKind | undefined }[]
+  results: [string, CallResult][]
+  decisions: Decision[]
+}
+
 export interface WriteOptions {
   /** Several writes are made in this one, so what a failed one left must go with it. A store that cannot undo a write otherwise must here. */
   whole?: boolean
@@ -74,6 +84,8 @@ export interface DecisionPage {
 }
 
 export interface Tx {
+  /** Loads visits, calls, outcomes and their history together into a new store. */
+  insertActivity(rows: ActivityRows): Promise<void>
   /** The jobs of conversions, written and read in this transaction. */
   outbox: OutboxStore
   /** Runs `work` as a write inside this one: where it throws, what it wrote is gone and the rest stands. */

@@ -51,10 +51,11 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "test": "node --test",
+    "test": "node --test test/*.test.ts",
     "check": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json && rm -rf dist/edge/review && cp -R src/edge/review dist/edge/review",
     "demo": "node examples/six-calls.ts",
+    "prefirm": "npm run review:build",
     "firm": "node examples/firm/firm.ts",
     "bench": "node tools/bench.ts",
     "prepublishOnly": "npm run check && npm test && npm run build",
@@ -62,7 +63,9 @@
     "start": "node src/bin.ts",
     "live-check": "node tools/live-check.ts",
     "costs": "node tools/costs.ts",
-    "labels": "node tools/labels.ts"
+    "labels": "node tools/labels.ts",
+    "review:build": "npm run build && npm --prefix apps/review run build",
+    "review:test": "npm run review:build && npm --prefix apps/review test"
   },
   "peerDependencies": {
     "pg": "^8.11.0"

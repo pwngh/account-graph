@@ -4,20 +4,23 @@ The demo runs a fictional law firm with three offices, North, River and Online, 
 
 ```sh
 npm ci
+npm --prefix apps/review ci
 npm run firm
 ```
 
 | Component | Location |
 | --- | --- |
-| PostgreSQL, in Docker | Deleted on stop. Without Docker, or with `MEMORY=1`, all data is in memory. |
-| Stage: the reviewer screen with a caller's phone and the scenes | `http://localhost:8790/stage`. Signed in already. |
-| Graph server and reviewer screen | `http://localhost:8790/review`. Sign in with the token `demo`. |
+| PostgreSQL | Set `DATABASE_URL` to a database that permits creating schemas, or supply Docker with a local `postgres:16` image. Each run uses its own schema. |
+| Stage with the caller’s phone and scenes | `http://localhost:8790/stage`. Signs anyone who opens it in as the demo reviewer, with no token. This is for the demo only. |
+| Graph server and review app | `http://localhost:8790/accounts`. Sign in with the reviewer token `demo`. The previous screen is at `/legacy`. |
 | Firm site, in English and Spanish | `http://localhost:8791/?gclid=you&utm_id=30111` and `/es` |
-| Two months of seeded history | Filled in a few seconds in memory, about a minute in PostgreSQL. |
+| Two months of seeded history | The stage shows the number of people prepared, then reports when the history is saved. |
 
 `npm run firm -- injury` shows an injury firm in place of a family firm. See [Injury firm](#injury-firm).
 
-Docker downloads the database image once. After that the demo runs offline without keys, and includes its own ad platform and alert receiver. Every name, number, amount and address is fictional.
+`npm run firm` builds the graph package and review app before starting. With neither a database nor a local Docker image available, run `MEMORY=1 npm run firm` to keep the same graph in memory. Use `PORT` for the graph and stage and `SITE_PORT` for the firm’s site if the default ports are occupied. The demo runs on loopback, includes its own ad platform and alert receiver, and uses fictional names, numbers, amounts and addresses.
+
+The generator makes its usual observations, call results and decisions against the same graph policy in memory. The store writes the resulting evidence, history and cluster labels to PostgreSQL in batches, in one transaction. Restart uses a fresh schema and loads the same history. Run `npm run review:test` with `DATABASE_URL` to time the original writes, the batched start and the restart, compare their counts, and verify the clusters. The two batched loads must each finish in under ten seconds.
 
 Campaigns are named as an agency would name them, such as `North | Family law | Search` and `North | Family law | Búsqueda`. A visit is recorded at `https://www.firm.example.org`, while the site of the demo runs on this machine.
 
@@ -25,11 +28,11 @@ The site is live. Open it with `?gclid=you&utm_id=30333` and its number becomes 
 
 ## Setup
 
-1. Open the stage. The caller's phone is at left, and the reviewer screen at right.
-2. Press Space to run each scene. The phone shows what the caller does, and the screen opens the view that changed.
-3. Press P to play the main story by itself in ninety seconds, R to start over, or H to hide the bar.
+1. Open the stage. It shows the loading progress or current scene held by the server. With JavaScript enabled, the page receives changes over a server-sent event stream.
+2. Once loading finishes, use Next to run a scene. The phone shows what the caller does and the stage tells what happened. Each scene has a link to its reviewer view.
+3. To start over, use Restart. The stage keeps its address. With JavaScript off, use the buttons to submit forms and reload to read newer progress.
 
-The phone is shown in a window at least 1,121 pixels wide. A narrower one shows the reviewer screen and the bar.
+With JavaScript, press Space for the next scene, P to play the main story, R to start over, or H to hide the controls.
 
 The story runs from a Monday to a Thursday that have passed. Each scene moves the demo's clock on, and the screens served by the demo go by that clock.
 

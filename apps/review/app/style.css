@@ -1,0 +1,28 @@
+#views a[aria-current=page] { font-weight: bold; text-decoration: underline }
+details > summary { cursor: pointer }
+details form { display: grid; gap: .6rem; margin-block: .75rem }
+summary:focus-visible, a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid currentColor; outline-offset: 2px }
+#view { min-width: 0; overflow-wrap: anywhere }
+@media (max-width: 600px) {
+  header, #views, #find { flex-wrap: wrap; max-width: 100% }
+  #view .split, #view .deck { display: block }
+  form input { max-width: 100%; min-width: 0 }
+}
+@media (forced-colors: active) {
+  svg text { fill: CanvasText }
+  svg line, svg path { stroke: CanvasText }
+  a { color: LinkText }
+}
+#stage-view .spot { outline: 3px solid var(--related, Highlight); outline-offset: -3px }
+#stage button[hidden] { display: none }
+@media (min-width: 1121px) {
+  body:has(main .with-phone) { grid-template-columns: 340px minmax(0, 1fr) }
+  body:has(main .with-phone) > header { visibility: hidden }
+  main .with-phone #stage-phone { visibility: visible; opacity: 1; transform: none }
+}
+@media (max-width: 600px) {
+  #stage .keys { flex-wrap: wrap }
+  #stage > b { white-space: normal }
+  #stage-desk.on { position: static; width: 100% }
+}
+.manual { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.55 }

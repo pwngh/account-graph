@@ -32,6 +32,10 @@ jobs:
       - run: npm run check
       - run: npm test
       - run: npm run build
+      # The review app has its own packages and tests, the demo stage's among them.
+      - run: npm ci --prefix apps/review
+      - run: npm --prefix apps/review run typecheck
+      - run: npm run review:test
       - run: docker build -t account-graph .
 
   # Looks for keys and tokens in every commit this one is built on. What it finds is not printed: the log is public.
