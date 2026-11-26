@@ -5,6 +5,7 @@ import { keepableText } from './identifiers.ts'
 import type { Graph } from './graph.ts'
 import type { Job, OutboxStore } from './outbox.ts'
 import type { Store } from './store.ts'
+import { countFailures } from './pause.ts'
 import { longAgo } from './hours.ts'
 import type { Hours } from './hours.ts'
 import { dayIn, paid, sourceOf } from './report.ts'
@@ -90,6 +91,8 @@ export interface OpsOptions {
   onError?: (error: unknown) => void
   /** Keeps what people are told of as an event too. */
   emit?: (event: NewEvent) => Promise<unknown>
+  /** Stops sends once this many conversions fail for good within an hour, counted across processes. 0 is never. */
+  pauseAfterFailures?: number
 }
 
 export interface OpsState {
@@ -213,6 +216,7 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
     async failed(jobs, graphStore) {
       const at = now()
       let claimed = false
+      let paused: string | undefined
       const alert = await graphStore.write(async tx => {
         const failed: Job[] = []
         for (const job of jobs) {
@@ -220,7 +224,9 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
           if (current?.state === 'failed' && current.rev === job.rev && current.subject === job.subject) failed.push(current)
         }
         if (!failed.length) return
-        const events = failed.map(job => ({ type: 'conversion.failed' as const, at, subject: job.subject, data: { conversion: job.transactionId, platform: job.target, note: job.note ?? '' } }))
+        const events: NewEvent[] = failed.map(job => ({ type: 'conversion.failed' as const, at, subject: job.subject, data: { conversion: job.transactionId, platform: job.target, note: job.note ?? '' } }))
+        paused = await countFailures(tx, failed.length, at, options.pauseAfterFailures ?? 0)
+        if (paused) events.push({ type: 'delivery.paused', at, data: { reason: paused } })
         let alert: KeptAlert | undefined
         if (at - (sent.get('conversions') ?? -Infinity) >= 10 * 60_000) {
           const text = failedText(failed)
@@ -235,6 +241,8 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
         if (claimed && sent.get('conversions') === at) sent.delete('conversions')
         throw error
       })
+      // The stop is told apart from the failures, and is never held back by their ten minutes.
+      if (paused) await deliver(`account-graph: sends to ad platforms are paused. ${paused}. Run account-graph sends resume once the cause is fixed.`).catch(onError)
       if (!alert) return
       if (!await post(alert) && sent.get('conversions') === at) sent.delete('conversions')
     },

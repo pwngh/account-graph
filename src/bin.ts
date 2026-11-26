@@ -179,6 +179,7 @@ export function readEnvironment(env: Env) {
     cookie: env.COOKIE === 'true' ? true : env.COOKIE && env.COOKIE !== 'false' ? { domain: env.COOKIE } : false,
     limit: env.RATE_LIMIT === 'off' ? (false as const) : { perMinute: number('RATE_PER_MINUTE', 120), burst: number('RATE_BURST', 60) },
     outboxDelay: number('OUTBOX_DELAY_MS', 0),
+    pauseAfterFailures: number('PAUSE_AFTER_FAILURES', 0),
     forgetAds: env.FORGET_ADS === 'true',
     linkSecret: env.LINK_SECRET || undefined,
     identifierSecret: env.IDENTIFIER_SECRET || undefined,
@@ -366,7 +367,7 @@ export function configFrom(env: Env): { graph: LocalOptions; edge: EdgeOptions; 
       ...(config.poolNumbers.length > 0 && { pool: { numbers: config.poolNumbers, minutes: config.poolMinutes, graceMinutes: config.poolGrace, requireTapAfterReassignment: config.poolRequireTapAfterReassignment } }),
     },
     ads: {
-      retractOnForget: config.forgetAds, delayMs: config.outboxDelay,
+      retractOnForget: config.forgetAds, delayMs: config.outboxDelay, pauseAfterFailures: config.pauseAfterFailures,
       ...(google && { google }),
       ...(config.meta && { meta: { pixelId: config.meta.pixelId, accessToken: config.meta.accessToken, siteUrl: config.meta.url, clientUserAgent: config.meta.clientUserAgent, ...(config.meta.testEventCode && { testEventCode: config.meta.testEventCode }) } }),
       ...(config.tiktok && { tiktok: { pixelCode: config.tiktok.pixelCode, accessToken: config.tiktok.accessToken, siteUrl: config.tiktok.url, ...(config.tiktok.testEventCode && { testEventCode: config.tiktok.testEventCode }) } }),

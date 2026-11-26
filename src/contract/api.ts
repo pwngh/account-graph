@@ -568,6 +568,8 @@ export interface LocalSettings extends Common {
     readonly tiktok?: { readonly pixelCode: string; readonly accessToken: string; readonly siteUrl: string; readonly testEventCode?: string }
     readonly retractOnForget?: boolean
     readonly delayMs?: number
+    /** Stops sends once this many conversions fail for good within an hour, counted across processes, until `account-graph sends resume`. 0 or left out is never. */
+    readonly pauseAfterFailures?: number
   }
   readonly costs?: {
     readonly google?: { readonly customerId: string; readonly developerToken?: string; readonly loginCustomerId?: string; readonly serviceAccount: GoogleServiceAccount; readonly conversions?: boolean }
