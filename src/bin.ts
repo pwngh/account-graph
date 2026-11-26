@@ -8,6 +8,7 @@
  *   account-graph prune --before DAY delete old sightings, events and receipts
  *   account-graph retry ID [PLATFORM] put a conversion that failed back in line
  *   account-graph stats | alerts test | staff-link URL | events new-epoch
+ *   account-graph sample-joins [--size N] [--seed TEXT] > joins.csv, then score-joins joins.csv once staff have checked it
  *
  *   DATABASE_URL=postgres://… RECEIPT_SECRETS=… GRAPH_TOKEN=… ORIGINS=https://example.org npm start
  *
@@ -21,6 +22,7 @@ import { internalsOf } from './client/internals.ts'
 import { localGraph } from './client/local.ts'
 import type { AccountGraph, LeadSources, LocalOptions } from './contract/api.ts'
 import { hoursProblems } from './core/hours.ts'
+import { checkSheet, readChecks, sampleJoins, scoreChecks } from './core/join-check.ts'
 import type { OpenHours } from './core/hours.ts'
 import { normalizePhone } from './core/identifiers.ts'
 import { ladderProblems } from './core/ladder.ts'
@@ -449,12 +451,19 @@ export async function serve(env: Env, log: (line: string) => void = console.log)
 /** Runs one command and says what came of it. */
 export async function command(env: Env, args: readonly string[], log: (line: string) => void = console.log): Promise<void> {
   const [name, ...rest] = args
-  const { graph: options } = configFrom(env)
-  const graph = localGraph({ ...options, workers: false, timeoutMs: 24 * 3_600_000 }, { adopt: name === 'rebuild' })
   const show = (value: unknown) => log(JSON.stringify(value, null, 2))
   const usage = (text: string): never => {
     throw new Error(`Usage: account-graph ${text}`)
   }
+  // A checked sheet is scored where it is, with no database.
+  if (name === 'score-joins') {
+    if (!rest[0]) usage('score-joins FILE')
+    const { share, low, high, ...counts } = scoreChecks(readChecks(readFileSync(rest[0]!, 'utf8')))
+    const round = (value: number | null) => (value === null ? null : Math.round(value * 1000) / 1000)
+    return show({ ...counts, share: round(share), low: round(low), high: round(high) })
+  }
+  const { graph: options } = configFrom(env)
+  const graph = localGraph({ ...options, workers: false, timeoutMs: 24 * 3_600_000 }, { adopt: name === 'rebuild' })
   try {
     const { engine, ops } = await internalsOf(graph)!()
     switch (name) {
@@ -487,10 +496,16 @@ export async function command(env: Env, args: readonly string[], log: (line: str
       case 'staff-link':
         if (!rest[0] || !options.linkSecret) usage('staff-link URL, with LINK_SECRET set')
         return log(staffLink(rest[0]!, { secret: options.linkSecret! }))
+      case 'sample-joins': {
+        const size = rest.includes('--size') ? Number(rest[rest.indexOf('--size') + 1]) : 300
+        const seed = rest.includes('--seed') ? rest[rest.indexOf('--seed') + 1] : new Date(engine.now()).toISOString().slice(0, 7)
+        if (!(Number.isSafeInteger(size) && size > 0) || !seed) usage('sample-joins [--size N] [--seed TEXT]')
+        return log(checkSheet(await sampleJoins(engine.graph, engine.store, { size, seed: seed! })).trimEnd())
+      }
       case 'events':
         return rest[0] === 'new-epoch' ? log(`history ${await engine.store.write((tx) => tx.newEpoch())} begins: every cursor is lost`) : usage('events new-epoch')
       default:
-        usage('[rebuild | verify | prune | retry | stats | alerts test | staff-link | events new-epoch]')
+        usage('[rebuild | verify | prune | retry | stats | alerts test | staff-link | events new-epoch | sample-joins | score-joins]')
     }
   } finally {
     await graph.close()
