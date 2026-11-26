@@ -1,6 +1,6 @@
 /**
  * Reads the calls Twilio reports to a status callback, and checks that a
- * request really came from Twilio.
+ * request came from Twilio.
  * https://www.twilio.com/docs/usage/webhooks/webhooks-security
  * https://www.twilio.com/docs/voice/twiml#request-parameters
  */
@@ -93,7 +93,7 @@ export function createLineTypeLookup(options: LookupOptions): LineTypeLookup {
     if (response.ok) {
       const body = await response.json()
       const found = body?.line_type_intelligence
-      // An error inside the answer, such as a country that needs approval, may clear up: it is not remembered.
+      // An error inside the answer, such as a country that needs approval, may clear up, so it is not remembered.
       // A line Twilio knows no type of is an answer, and one that is asked again each time is paid for each time.
       settled = body?.valid !== false && found !== null && typeof found === 'object' && !found.error_code && 'type' in found
       line = { type: settled && typeof found.type === 'string' && found.type.trim() ? found.type : 'unknown', carrier: found?.carrier_name ?? undefined }

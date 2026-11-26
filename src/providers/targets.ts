@@ -156,7 +156,7 @@ export function meta(options: MetaOptions): Target {
       try {
         receipt = JSON.parse(body)
       } catch {
-        // It may have been taken: it is sent again, and Meta keeps the first event of an id.
+        // It may have been taken, so it is sent again, and Meta keeps the first event of an id.
         throw new Error('Meta answered with a receipt that cannot be read')
       }
       if (typeof receipt?.events_received === 'number' && receipt.events_received !== items.length) throw new MetaError(response.status, 'events_received does not match the submitted batch')
