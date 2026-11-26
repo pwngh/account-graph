@@ -44,6 +44,18 @@ catch (Fault fault) when (fault.Retryable)
 
 `DecideAsync`, `ForgetAsync`, `LookupAsync`, `ReportAsync` and `EventsAsync` take the request object the [HTTP API](../../docs/http.md) describes. `LookupAsync` answers null where a party or record lookup finds nothing.
 
+## Pages
+
+`EventPagesAsync` follows the events cursor until `more` is false, or until the cursor is lost. `ReportPagesAsync` pages a `texts` or `callbacks` report. `JourneyPagesAsync` pages a journey by `before`. Each is an `IAsyncEnumerable<JsonObject>`.
+
+```csharp
+await foreach (var page in graph.EventPagesAsync(new JsonObject { ["after"] = savedCursor, ["limit"] = 100 }))
+{
+    if (!(bool)page["ok"]!) break; // CURSOR_LOST: start again from the beginning.
+    // Handle page["value"]["events"], then save page["value"]["cursor"].
+}
+```
+
 ## Rules the client keeps
 
 - Plain `http` is allowed only to this machine, checked again on the connected address before the token is sent.

@@ -6,6 +6,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -110,6 +111,67 @@ public sealed class Client : IDisposable
 
     /// <summary>The answer, or null where a party or record lookup finds nothing.</summary>
     public Task<JsonNode?> LookupAsync(JsonObject request, string? correlationId = null, CancellationToken cancel = default) => Call("lookup", request, correlationId, cancel);
+
+    /// <summary>
+    /// Every page of events from <c>after</c> on. The last page has <c>more</c> false, or is a <c>CURSOR_LOST</c> refusal.
+    /// A cursor seen twice is a <see cref="Fault"/> with <c>GRAPH.INTERNAL</c>, so a server fault never loops forever.
+    /// </summary>
+    public async IAsyncEnumerable<JsonObject> EventPagesAsync(JsonObject request, [EnumeratorCancellation] CancellationToken cancel = default)
+    {
+        var next = (JsonObject)request.DeepClone();
+        var seen = new HashSet<string?> { Text(next["after"]) };
+        while (true)
+        {
+            var answer = await EventsAsync(next, null, cancel);
+            if (answer["ok"]!.GetValueKind() == JsonValueKind.False || answer["value"]!["more"]!.GetValueKind() == JsonValueKind.False)
+            {
+                yield return answer;
+                yield break;
+            }
+            var cursor = (string?)answer["value"]!["cursor"];
+            if (!seen.Add(cursor)) throw new Fault("GRAPH.INTERNAL");
+            yield return answer;
+            next["after"] = cursor;
+        }
+    }
+
+    /// <summary>Every page of a <c>texts</c> or <c>callbacks</c> report, following <c>next</c> until it is null.</summary>
+    public async IAsyncEnumerable<JsonObject> ReportPagesAsync(JsonObject request, [EnumeratorCancellation] CancellationToken cancel = default)
+    {
+        if (Text(request["kind"]) is not ("texts" or "callbacks"))
+            throw new Fault("INPUT.MALFORMED", false, new Dictionary<string, object> { ["path"] = "request.kind" });
+        var next = (JsonObject)request.DeepClone();
+        var seen = new HashSet<string?> { Text(next["after"]) };
+        while (true)
+        {
+            var answer = await ReportAsync(next, null, cancel);
+            var cursor = Text(answer["value"]!["next"]);
+            if (cursor is not null && !seen.Add(cursor)) throw new Fault("GRAPH.INTERNAL");
+            yield return answer;
+            if (cursor is null) yield break;
+            next["after"] = cursor;
+        }
+    }
+
+    /// <summary>Every page of a journey, following <c>next</c> as <c>before</c> until it is null.</summary>
+    public async IAsyncEnumerable<JsonObject> JourneyPagesAsync(JsonObject request, [EnumeratorCancellation] CancellationToken cancel = default)
+    {
+        if (Text(request["kind"]) != "journey")
+            throw new Fault("INPUT.MALFORMED", false, new Dictionary<string, object> { ["path"] = "request.kind" });
+        var next = (JsonObject)request.DeepClone();
+        while (true)
+        {
+            var answer = (JsonObject)(await LookupAsync(next, null, cancel))!;
+            var cursor = answer["next"];
+            // Each page must reach further back than the one before it.
+            if (cursor is not null && next["before"] is JsonNode before && (long)cursor >= (long)before) throw new Fault("GRAPH.INTERNAL");
+            yield return answer;
+            if (cursor is null) yield break;
+            next["before"] = (long)cursor;
+        }
+    }
+
+    static string? Text(JsonNode? node) => node?.GetValueKind() == JsonValueKind.String ? (string?)node : null;
 
     /// <summary>One graph key for one revision of a row in a host table or feed. The Python client's stable_key gives the same key.</summary>
     public static string StableKey(string source, object rowId, object revision)
