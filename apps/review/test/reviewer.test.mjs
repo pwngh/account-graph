@@ -21,7 +21,7 @@ const account = {
 const requests = []
 const changes = []
 const decisions = new Map()
-let beforeDecision, app, graph, origin, routes, revoked = false, failure = 0
+let eventsRevoked = false, interrupted, beforeDecision, app, graph, origin, routes, revoked = false, failure = 0
 async function handler(req, res) {
   const url = new URL(req.url, 'http://localhost')
   const send = (status, body) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body))
@@ -30,8 +30,11 @@ async function handler(req, res) {
   const input = bytes.length ? JSON.parse(Buffer.concat(bytes)) : null
   const authorization = req.headers.authorization
   requests.push({ path: url.pathname, query: url.searchParams, authorization, input })
+  if (url.pathname === '/review/api/audit' && interrupted === 'slow') return
+  if (url.pathname === '/review/api/audit' && interrupted === 'down') return req.socket.destroy()
   if (failure) return send(failure, { error: 'The sample graph is unavailable' })
   if (url.pathname === '/v1/events') {
+    if (eventsRevoked) return send(401, { error: 'Token revoked' })
     if (authorization !== 'Bearer ' + service) return send(403, { error: 'Only the service reads events' })
     const from = input.after === null ? 0 : Number(input.after.split('.').at(-1))
     return send(200, { ok: true, value: { schemaVersion: 1, events: changes.slice(from), cursor: 'sample.' + changes.length, more: false } })
@@ -191,7 +194,7 @@ test('a plain HTML client signs in, reads an account, posts its form twice and s
   assert.match((await rejected.text()).replace(/<script\b[^>]*>[^]*?<\/script>/gi, ''), /Choose two different IDs/)
   for (let i = 0; i < 2; i++) {
     const response = await fetch(action, post(fields, cookie))
-    assert.ok([200, 302, 303].includes(response.status), 'a valid join succeeds')
+    assert.equal(response.status, 303, 'a native submission redirects to its current account')
   }
   const input = decisions.get(fields.get('key'))
   assert.deepEqual(input?.pairs, [{ a: subject, b: 'contact:73' }])
@@ -223,6 +226,24 @@ test('a graph refusal clears the session, a temporary outage renders an actionab
   redirectToLogin(await fetch(origin + path, { redirect: 'manual', headers: { cookie } }))
 })
 
+test('a graph that drops the connection or never answers gives the reviewer a bounded recovery page', { timeout: 18000 }, async () => {
+  const cookie = await signin()
+  try {
+    for (const issue of ['down', 'slow']) {
+      interrupted = issue
+      const query = await fetch(origin + path, { headers: { cookie }, signal: AbortSignal.timeout(13000) })
+      assert.equal(query.status, 503)
+      const visible = (await query.text()).replace(/<script\b[^>]*>[^]*?<\/script>/gi, '')
+      assert.match(visible, /graph is unavailable/i)
+      assert.match(visible, /Try again/i)
+    }
+  } finally {
+    interrupted = undefined
+  }
+  const recovered = await fetch(origin + path, { headers: { cookie } })
+  assert.match(await recovered.text(), /Created in your system/)
+})
+
 test('events resume at Last-Event-ID and sign-out ends the other tab’s stream', { timeout: 20000 }, async () => {
   const cookie = await signin()
   changes.push({ schemaVersion: 1, type: 'cluster.changed', seq: 1, at: observed, data: { subject, from: null, to: subject } })
@@ -247,6 +268,18 @@ test('events resume at Last-Event-ID and sign-out ends the other tab’s stream'
   } finally {
     controller.abort()
   }
+})
+
+test('a graph 401 during the event stream signs the reviewer out', async () => {
+  const cookie = await signin()
+  eventsRevoked = true
+  try {
+    const stream = await fetch(origin + '/events', { headers: { cookie }, signal: AbortSignal.timeout(4000) })
+    assert.match(await stream.text(), /event: signout/)
+  } finally {
+    eventsRevoked = false
+  }
+  redirectToLogin(await fetch(origin + path, { headers: { cookie }, redirect: 'manual' }))
 })
 
 test('without a service events token authenticated HTML still works', async () => {
@@ -275,8 +308,9 @@ test('the server bounds a large graph drawing and keeps every link reachable by 
     const page = async query => {
       const response = await fetch(origin + path + query, { headers: { cookie } })
       assert.equal(response.status, 200)
-      return (await response.text()).replace(/<script\b[^>]*>[^]*?<\/script>/gi, '').replaceAll('<!-- -->', '')
+      return (await response.text()).replaceAll('<!-- -->', '')
     }
+    // The same bound applies to the server-rendered table and its hydration payload.
     const first = await page('')
     assert.match(first, /Showing 24 of 700/)
     assert.doesNotMatch(first, /contact:volume-699/)
@@ -300,6 +334,14 @@ test('keyboard navigation, narrow forced colors, pending form and history keep t
     input.form.requestSubmit()
   }`)
   await until('enhanced account', () => run("Boolean(document.querySelector('input[type=range]'))").catch(() => false))
+  const camera = await run(`document.querySelector('svg[aria-label="Cluster graph"]').getAttribute('viewBox')`)
+  await run(`document.querySelector('button[aria-label="Zoom in"]').click()`)
+  await until('the graph zoom', () => run(`document.querySelector('svg[aria-label="Cluster graph"]').getAttribute('viewBox') !== ${JSON.stringify(camera)}`))
+  await run(`document.querySelector('.graph a.node').focus()`)
+  for (const type of ['keyDown','keyUp']) await send('Input.dispatchKeyEvent', {type, key:'Enter', code:'Enter', windowsVirtualKeyCode:13})
+  await until('the selected node', () => run(`document.activeElement.matches('.graph .card .shut')`))
+  for (const type of ['keyDown','keyUp']) await send('Input.dispatchKeyEvent', {type, key:'Escape', code:'Escape', windowsVirtualKeyCode:27})
+  assert.equal(await run(`document.activeElement.matches('.graph a.node')`), true)
   assert.equal(await run(`document.documentElement.scrollWidth <= 320`), true)
   assert.equal(await run(`matchMedia('(forced-colors: active)').matches`), true)
   await run(`document.activeElement.blur()`)
