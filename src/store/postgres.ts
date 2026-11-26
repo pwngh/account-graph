@@ -76,6 +76,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
   const t = (table: string) => `${schema}.${table}`
   watch(pool)
   let factSchema = true
+  let textSchema = true
 
   const callRows = `select c.*, r.answered, r.voicemail, r.waited, r.returned_at, r.recorded_at as result_at from ${t('call')} c left join ${t('call_result')} r on r.id = c.id`
 
@@ -165,7 +166,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       on conflict (subject, identifier) do update set (first_at, last_at, sightings, profile_at, profile_key, source_fact) =
         (excluded.first_at, excluded.last_at, excluded.sightings, excluded.profile_at, excluded.profile_key, excluded.source_fact)`, fieldsOf(edges))
   }
-  const bind = (db: Queryable, readOnly: boolean, factSchema: boolean, snapshot = evidenceIn(db, readOnly)): Tx => ({
+  const bind = (db: Queryable, readOnly: boolean, factSchema: boolean, textSchema: boolean, snapshot = evidenceIn(db, readOnly)): Tx => ({
     addAlert: (alert, again, calls) => addAlert(db, alert, again, calls),
     async pendingAlert({ key, text, at }, start) {
       const { rows } = await db.query(`select 1 from ${t('alert')} where key = $1 and text = $2 and at = $3 and delivered_at is null for share`, [key, text, at])
@@ -311,7 +312,8 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       await db.query(`delete from ${t('said')} where topic = 'party' and data->>'subject' = $1 and ($2::text[] is null or about = any($2))`, [subject, only ?? null])
       if (only) return callJobs
       await db.query(`with created as (delete from ${t('profile_created')} where subject = $1)
-        ${factSchema ? `, facts as (delete from ${t('fact_withdrawal')} where subject = $1), hidden as (delete from ${t('withdrawn_edge')} where subject = $1)` : ''} delete from ${t('call_evidence')} where subject = $1`, [subject])
+        ${factSchema ? `, facts as (delete from ${t('fact_withdrawal')} where subject = $1), hidden as (delete from ${t('withdrawn_edge')} where subject = $1)` : ''}
+        ${textSchema ? `, stops as (delete from ${t('text_stop')} where subject = $1 or line = $1), phones as (delete from ${t('text_phone_profile')} where subject = $1)` : ''} delete from ${t('call_evidence')} where subject = $1`, [subject])
       if (!ids.length) await dropCallNotices(db, ids, [subject], [], [creditSubject(subject)])
       const { rows: left } = await db.query(
         `with gone as (delete from ${t('edge')} where subject = $1 returning identifier)
@@ -434,6 +436,58 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       return new Map(rows.filter(row => row.first_seen !== null || row.created_at !== null).map(row => [row.subject, {
         ...(row.first_seen !== null && { firstSeen: Number(row.first_seen) }), ...(row.created_at !== null && { createdAt: Number(row.created_at) }),
       }]))
+    },
+
+    async textNumbers(subjects) {
+      if (!subjects.length) return []
+      if (!textSchema) return (await this.edgesOf(subjects)).filter(e => /^(phone|voip):/.test(e.identifier)).map(e => ({
+        subject: e.subject, line: 'caller:' + e.identifier.slice(e.identifier.indexOf(':') + 1), active: true,
+      }))
+      // Only a number with a withdrawal needs the dated statements. Ordinary numbers still use their line's last word.
+      const line = (id: string) => `'caller:' || substr(${id}, strpos(${id}, ':') + 1)`
+      const phone = (id: string) => `(starts_with(${id}, 'phone:') or starts_with(${id}, 'voip:'))`
+      const edges = (table: string, active: boolean) => `select subject, ${line('identifier')} as line, ${active} as active, first_at, last_at, sightings, profile_at, profile_key
+        from ${t(table)} where subject = any($1::text[]) and ${phone('identifier')}`
+      const { rows } = await db.query(`with edges as (${edges('edge', true)} union all ${edges('withdrawn_edge', false)}),
+        numbers as (select subject, line, bool_or(active) as active, min(first_at) as first_at, max(last_at) as last_at, sum(sightings) as sightings from edges group by subject, line),
+        cuts as (select subject, ${line('identifier')} as line, at, key from ${t('fact_withdrawal')} where subject = any($1::text[]) and ${phone('identifier')}),
+        changed as (select subject, line, min(at) as first_cut from cuts group by subject, line),
+        observations as (
+          select c.subject, c.line, s.at, s.profile_key as key from changed c join ${t('sighting')} s on s.subject = c.subject
+            and s.identifier in ('phone:' || substr(c.line, 8), 'voip:' || substr(c.line, 8))
+          union all select p.subject, p.line, p.at, p.key from ${t('text_phone_profile')} p join changed c using (subject, line)
+        ), known as (select subject, line, count(*) as sightings from observations group by subject, line),
+        statements as (
+          select subject, line, at, key, false as held from cuts
+          union select n.subject, n.line, n.first_at, '', true from numbers n join changed c using (subject, line) where n.first_at <= c.first_cut
+          union select e.subject, e.line, e.profile_at, e.profile_key, true from edges e join changed c using (subject, line) where e.profile_key is not null
+          union select subject, line, at, key, true from observations where key is not null
+        ), history as (select subject, line, jsonb_agg(jsonb_build_object('at', at, 'key', key, 'held', held) order by at, key collate "C", held desc) as held
+          from statements group by subject, line)
+        select subject, line, coalesce(n.active, false) as active, n.first_at, n.last_at, h.held, p.at, p.key, p.through_at, p.through_key,
+          h.held is not null and n.sightings > coalesce(k.sightings, 0) as incomplete from numbers n
+          full join (select * from ${t('text_stop')} where subject = any($1::text[])) p using (subject, line)
+          left join history h using (subject, line) left join known k using (subject, line)`, [subjects])
+      return rows.map(r => {
+        const first = Number(r.first_at)
+        const held = r.held ?? (r.at !== null && r.active ? [{ at: first, key: '', held: true }] : undefined)
+        return { subject: r.subject, line: r.line, active: r.active, ...(held && { held }), ...(r.incomplete && { uncertain: { first, last: Number(r.last_at) } }),
+          ...(r.at !== null && { stop: Number(r.at), stopKey: r.key }), ...(r.through_at != null && { through: { at: Number(r.through_at), key: r.through_key } }) }
+      })
+    },
+
+    async keepTextStops(stops) {
+      if (!stops.length) return
+      // Keep the latest STOP and the latest overridden START independently. They can come from different withdrawals.
+      await db.query(`insert into ${t('text_stop')} as kept (subject, line, at, key, through_at, through_key)
+        select subject, line, max(at), (array_agg(key order by at desc, key collate "C" desc))[1],
+          max(through_at), (array_agg(through_key order by through_at desc nulls last, through_key collate "C" desc nulls last))[1]
+        from unnest($1::text[], $2::text[], $3::bigint[], $4::text[], $5::bigint[], $6::text[]) as asked(subject, line, at, key, through_at, through_key)
+        group by subject, line on conflict (subject, line) do update set at = greatest(kept.at, excluded.at),
+          key = case when (kept.at, kept.key) < (excluded.at, excluded.key) then excluded.key else kept.key end,
+          through_at = greatest(kept.through_at, excluded.through_at),
+          through_key = case when kept.through_at is null or (kept.through_at, kept.through_key) < (excluded.through_at, excluded.through_key) then excluded.through_key else kept.through_key end`,
+        [stops.map(r => r.subject), stops.map(r => r.line), stops.map(r => r.at), stops.map(r => r.key), stops.map(r => r.through?.at ?? null), stops.map(r => r.through?.key ?? null)])
     },
 
     async edgesOf(subjects) {
@@ -1429,9 +1483,11 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       if (lock !== 'none' && lockTimeout > 0) await client.query(`set local lock_timeout = ${Math.ceil(lockTimeout)}`)
       // A writer on the preceding schema can still fold sightings while the migration is waiting for its DDL lock.
       const locked = lock === 'none' ? undefined : await client.query(`select pg_advisory_xact_lock${lock === 'shared' ? '_shared' : ''}(hashtext($1)),
-        set_config('account_graph.fact_writer', case when fact_schema then 'on' else 'off' end, true), fact_schema from (select to_regclass($2) is not null as fact_schema) schema_version`, [`account-graph:${schema}`, t('fact_withdrawal')])
+        set_config('account_graph.fact_writer', case when fact_schema then 'on' else 'off' end, true), fact_schema, to_regclass($3) is not null as text_schema
+        from (select to_regclass($2) is not null as fact_schema) schema_version`, [`account-graph:${schema}`, t('fact_withdrawal'), t('text_stop')])
       if (typeof locked?.rows[0]?.fact_schema === 'boolean') factSchema = locked.rows[0].fact_schema
-      const result = await work(bind(client, begin === READ_ONLY, factSchema))
+      if (typeof locked?.rows[0]?.text_schema === 'boolean') textSchema = locked.rows[0].text_schema
+      const result = await work(bind(client, begin === READ_ONLY, factSchema, factSchema && textSchema))
       // A write is counted as it commits, in the same trip to the database.
       try {
         await client.query(lock === 'exclusive' ? `update ${t('pulse')} set writes = writes + 1; commit` : 'commit')
@@ -1634,6 +1690,7 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
         }
         await client.query('commit')
         factSchema = true
+        textSchema = true
         return applied
       } catch (error) {
         await client.query('rollback').catch(() => undefined)
@@ -2295,8 +2352,9 @@ export function upgrades(schema = 'account_graph'): Upgrade[] {
     {
       id: 37,
       name: 'withdrawn matching facts on one record',
-      // Nullable columns need no backfill. The first withdrawal for a subject reads only its indexed folded edges.
-      sql: `alter table ${schema}.edge add column profile_at bigint, add column profile_key text collate "C", add column source_fact text;
+      // A writer locks sightings before folding their edges. Wait for its whole transaction before taking either table lock.
+      sql: `select pg_advisory_xact_lock(hashtext('account-graph:${schema}'));
+            alter table ${schema}.edge add column profile_at bigint, add column profile_key text collate "C", add column source_fact text;
             alter table ${schema}.sighting add column profile_key text, add column source_fact text;
             create table ${schema}.withdrawn_edge (like ${schema}.edge including constraints, primary key (subject, identifier));
             create table ${schema}.fact_withdrawal (subject text not null, identifier text not null, at bigint not null, key text collate "C" not null,
@@ -2352,6 +2410,37 @@ export function upgrades(schema = 'account_graph'): Upgrade[] {
             begin
               with hidden as (delete from ${schema}.withdrawn_edge where subject = new.about->>0),
                 facts as (delete from ${schema}.fact_withdrawal where subject = new.about->>0)
+              delete from ${schema}.profile_created where subject = new.about->>0;
+              return new;
+            end; $forget$;`,
+    },
+    {
+      id: 38,
+      name: 'text stops on records that lose a number',
+      // Keep pruned profile times only for numbers whose holder statements are needed to interpret STOP and START.
+      sql: `select pg_advisory_xact_lock(hashtext('account-graph:${schema}'));
+            create table ${schema}.text_stop (subject text not null, line text not null, at bigint not null, key text collate "C" not null,
+              through_at bigint, through_key text collate "C", primary key (subject, line), check ((through_at is null) = (through_key is null)));
+            create index text_stop_line on ${schema}.text_stop (line);
+            create table ${schema}.text_phone_profile (subject text not null, line text not null, at bigint not null, key text collate "C" not null, primary key (subject, line, at, key));
+            create function ${schema}.keep_pruned_phone_profiles() returns trigger language plpgsql as $keep$
+            begin
+              insert into ${schema}.text_phone_profile (subject, line, at, key)
+                select s.subject, 'caller:' || substr(s.identifier, strpos(s.identifier, ':') + 1), s.at, s.profile_key from gone s
+                where s.profile_key is not null and (starts_with(s.identifier, 'phone:') or starts_with(s.identifier, 'voip:'))
+                  and exists (select from ${schema}.fact_withdrawal f where f.subject = s.subject
+                    and f.identifier in ('phone:' || substr(s.identifier, strpos(s.identifier, ':') + 1), 'voip:' || substr(s.identifier, strpos(s.identifier, ':') + 1)))
+                on conflict do nothing;
+              return null;
+            end; $keep$;
+            create trigger keep_pruned_phone_profiles after delete on ${schema}.sighting referencing old table as gone for each statement
+              execute function ${schema}.keep_pruned_phone_profiles();
+            create or replace function ${schema}.forget_profile_created() returns trigger language plpgsql as $forget$
+            begin
+              with hidden as (delete from ${schema}.withdrawn_edge where subject = new.about->>0),
+                facts as (delete from ${schema}.fact_withdrawal where subject = new.about->>0),
+                stops as (delete from ${schema}.text_stop where subject = new.about->>0 or line = new.about->>0),
+                phones as (delete from ${schema}.text_phone_profile where subject = new.about->>0)
               delete from ${schema}.profile_created where subject = new.about->>0;
               return new;
             end; $forget$;`,

@@ -30,7 +30,7 @@ import type { Credited } from './report.ts'
 import { commonClusters, components, confirmed, conflict, knownOf, partition, scorePairs } from './resolve.ts'
 import type { Known } from './resolve.ts'
 import { checkTags, touchTag } from './tags.ts'
-import type { CallEvidence, CallLineKind, DecisionPage, Store, Tx } from './store.ts'
+import type { CallEvidence, CallLineKind, DecisionPage, Store, TextNumber, TextStop, Tx } from './store.ts'
 import type {
   Attribution,
   AttributedTouch,
@@ -790,8 +790,8 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
   }
 
   /** A skipped carrier check leaves two possible kinds for one line. Either kind may still be below its cap. */
-  async function withinCaps(tx: Tx, identifiers: Identifier[], states: ReadonlyMap<Identifier, IdentifierState>) {
-    const open = new Set(identifiers.filter(id => states.has(id) && states.get(id)!.fanout <= ruleFor(policy, id).cap))
+  async function withinCaps(tx: Tx, identifiers: Identifier[], states: ReadonlyMap<Identifier, IdentifierState>, losing = 0) {
+    const open = new Set(identifiers.filter(id => states.has(id) && states.get(id)!.fanout <= ruleFor(policy, id).cap + losing))
     const over = identifiers.filter(id => !open.has(id) && states.has(id) && /^(phone|voip):/.test(id))
     if (!over.length) return open
     const rows = await tx.callEvidence({ identifiers: unique(over.flatMap(id => [id, otherLineKind(id)!])) })
@@ -800,7 +800,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       if (!uncertain.has(row.identifier)) uncertain.set(row.identifier, new Set())
       uncertain.get(row.identifier)!.add(row.subject)
     }
-    for (const id of over) if (states.get(id)!.fanout - (uncertain.get(id)?.size ?? 0) <= ruleFor(policy, id).cap) open.add(id)
+    for (const id of over) if (states.get(id)!.fanout - (uncertain.get(id)?.size ?? 0) <= ruleFor(policy, id).cap + losing) open.add(id)
     return open
   }
 
@@ -1305,25 +1305,75 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
    * is only related to a contact, as under a policy that confirms records, must still be seen on that contact. A number outside the
    * cluster can only add a STOP. Its START says nothing of the others.
    */
+  type TextWord = { line: Subject; at: number; key: string; optedOut: boolean }
+
   async function textWords(tx: Tx, subjects: readonly Subject[]) {
-    const numbers = new Map<Subject, Set<Subject>>()
-    for (const { subject, identifier } of subjects.length ? await tx.edgesOf(unique([...subjects])) : []) {
-      // A number is either kind, by what a line check said of it.
-      const number = /^(?:phone|voip):(.*)$/.exec(identifier)?.[1]
-      if (number === undefined) continue
-      const held = numbers.get(subject) ?? new Set()
-      numbers.set(subject, held.add(`caller:${number}`))
+    const numbers = await tx.textNumbers(unique([...subjects]))
+    const lines = new Map<Subject, TextWord[]>()
+    for (const text of await tx.textsOf(unique([...subjects, ...numbers.map(row => row.line)]))) {
+      if (!text.flags.includes('opt_out') && !text.flags.includes('opt_in')) continue
+      const words = lines.get(text.subject) ?? []
+      words.push({ line: text.subject, at: text.at, key: text.id, optedOut: text.flags.includes('opt_out') })
+      lines.set(text.subject, words)
     }
-    const words = (await tx.textsOf(unique([...subjects, ...[...numbers.values()].flatMap((held) => [...held])]))).filter((text) => text.flags.includes('opt_out') || text.flags.includes('opt_in'))
-    const last = new Map(words.map((text, i) => [text.subject, i]))
-    return (members: readonly Subject[]): { optedOut: boolean; at: number } | undefined => {
+    for (const words of lines.values()) words.sort(later)
+    const eligible = (row: TextNumber) => {
+      const words = lines.get(row.line) ?? []
+      if (!row.held) return row.active ? words.at(-1) : undefined
+      // A START in a gap cannot cancel a STOP from when this record had the number, even after a later profile gives it back.
+      const history = [...row.held].sort((a, b) => later(a, b) || Number(b.held) - Number(a.held))
+      let i = 0
+      let held = false
+      let last: TextWord | undefined
+      for (const word of words) {
+        while (i < history.length && history[i]!.at <= word.at) held = history[i++]!.held
+        if (held || word.optedOut && row.uncertain && row.uncertain.first <= word.at && word.at <= row.uncertain.last) last = word
+      }
+      return last
+    }
+    const bySubject = new Map<Subject, { row: TextNumber; word: TextWord | undefined }[]>()
+    for (const row of numbers) {
+      const retained = row.stop !== undefined && row.stopKey !== undefined ? { line: row.line, at: row.stop, key: row.stopKey, optedOut: true } : undefined
+      const word = eligible(row)
+      const all = bySubject.get(row.subject) ?? []
+      const blocked = row.through && word && !word.optedOut && later(word, row.through) <= 0
+      all.push({ row, word: retained && (!word || blocked || later(retained, word) > 0) ? retained : word })
+      bySubject.set(row.subject, all)
+    }
+    return (members: readonly Subject[]): TextWord | undefined => {
       const inside = new Set(members)
-      const own = words.findLast((text) => inside.has(text.subject))
-      const stopped = members.flatMap((member) => [...(numbers.get(member) ?? [])]).filter((number) => !inside.has(number))
-        .flatMap((number) => words[last.get(number) ?? -1] ?? []).filter((text) => text.flags.includes('opt_out'))
-      const said = own?.flags.includes('opt_out') ? own : stopped.sort((x, y) => x.at - y.at).at(-1) ?? own
-      return said && { optedOut: said.flags.includes('opt_out'), at: said.at }
+      const records = members.flatMap(member => bySubject.get(member) ?? [])
+      const constrained = new Set(records.filter(({ row }) => row.subject !== row.line && (row.held || row.stop !== undefined)).map(({ row }) => row.line))
+      const own = newest(members.flatMap(member => {
+        const words = lines.get(member)
+        if (!constrained.has(member)) return words?.at(-1) ?? []
+        // A staff join can keep the caller inside the cluster after withdrawal. Their START still needs a holder.
+        const holders = records.filter(({ row }) => row.subject !== member && row.line === member)
+        const stop = words?.findLast(word => word.optedOut)
+        return [...holders.flatMap(({ word }) => word ?? []), ...(stop ? [stop] : [])]
+      }))
+      if (own?.optedOut) return own
+      const stopped = records.flatMap(({ row, word }) =>
+        word?.optedOut && (!inside.has(row.line) || row.held || row.stop !== undefined) ? [word] : [])
+      return newest(stopped) ?? own
     }
+  }
+
+  async function stoppedBeforeCut(tx: Tx, subjects: readonly Subject[]): Promise<TextStop[]> {
+    const labels = await tx.aroundOf(subjects)
+    const groups = new Map<Subject, Subject[]>()
+    for (const [id, { cluster }] of labels) {
+      const members = groups.get(cluster) ?? []
+      members.push(id)
+      groups.set(cluster, members)
+    }
+    const saidOf = await textWords(tx, [...labels.keys()])
+    const stops: TextStop[] = []
+    for (const group of groups.values()) {
+      const word = saidOf(group)
+      if (word?.optedOut) for (const subject of group) stops.push({ subject, line: word.line, at: word.at, key: word.key })
+    }
+    return stops
   }
 
   /** Whether a caller may be tied to a visitor: no reviewer keeps the two apart, and the visitor is no other caller's. */
@@ -2307,7 +2357,8 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       return store.read(async (tx) => {
         const own = (await tx.labelsOf([subject])).get(subject)
         const members = own ? await tx.clusterOf(own.cluster) : [subject]
-        return (await textWords(tx, members))(members)
+        const word = (await textWords(tx, members))(members)
+        return word && { optedOut: word.optedOut, at: word.at }
       })
     },
 
@@ -2532,8 +2583,37 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         await current(tx, [subject], why)
         const recorded = now()
         const [decision] = await decideAll(tx, [{ action: 'withdraw', about: [subject], why, at: recorded }])
+        // Losing a name-and-contact hash can split a different cluster, and falling below a cap can bring its other holders together.
+        const dependent = (await tx.edgesOf([subject])).filter(edge => edge.identifier.startsWith('named:')).map(edge => edge.identifier)
+        const ids = unique([...identifiers, ...dependent])
+        const writable = await tx.states(ids)
+        const peers = [...await withinCaps(tx, ids, writable, 1)].filter(id => !writable.get(id)?.ignored)
+        const others = [...await tx.edgesOn(peers), ...await tx.callEvidence({ identifiers: peers })]
+        const before = await stoppedBeforeCut(tx, unique([subject, ...others.map(edge => edge.subject)]))
+        const preserveStops = async () => {
+          if (!before.length) return
+          const still = new Set((await stoppedBeforeCut(tx, before.map(row => row.subject))).map(row => row.subject))
+          const lost = before.filter(row => !still.has(row.subject))
+          if (!lost.length) return
+          // A START the line had already sent could not clear this STOP before the split. Carry both words so the split alone cannot clear it.
+          const starts = new Map<Subject, { at: number; key: string }>()
+          for (const text of await tx.textsOf(unique(lost.map(row => row.line)))) {
+            if (!text.flags.includes('opt_in') || text.flags.includes('opt_out')) continue
+            const start = { at: text.at, key: text.id }
+            const prior = starts.get(text.subject)
+            if (!prior || later(start, prior) > 0) starts.set(text.subject, start)
+          }
+          for (const row of lost) {
+            const start = starts.get(row.line)
+            if (start && later(start, row) > 0) row.through = start
+          }
+          await tx.keepTextStops(lost)
+        }
         const changed = await tx.withdrawFact(subject, identifiers, at, key, recorded, decision)
-        if (!changed.length) return []
+        if (!changed.length) {
+          await preserveStops()
+          return []
+        }
         await mark(tx)
         await tx.setSetting('callParty', randomUUID())
         const states = await tx.states(changed)
@@ -2542,6 +2622,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         const affected = new Set([subject, ...holders.map(row => row.subject)])
         const former = [...(await tx.aroundOf([...affected])).keys()]
         const moved = await settle(tx, affected)
+        await preserveStops()
         await recheckCallbacks(tx, former)
         await recheckCallbacks(tx, former, true)
         return moved

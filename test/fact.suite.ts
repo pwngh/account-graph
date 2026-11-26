@@ -10,6 +10,7 @@ import { createMemoryStore } from '../src/core/memory.ts'
 import { createReceipts } from '../src/core/receipts.ts'
 import { createSix } from '../src/core/six.ts'
 import type { Opened } from './suite.ts'
+import { factOrderSuite } from './fact-order.suite.ts'
 
 const at = 1_790_000_000_000
 const by = 'intake'
@@ -22,6 +23,8 @@ const profile = (key: string, subject: string, facts: { email?: string; phone?: 
 const remove = (key: string, fact: { email: string } | { phone: string } | { device: string } | { identifier: string }, when = at) => ({ action: 'withdraw' as const, key, at: when, by, subject, fact })
 
 export function factSuite(name: string, open: () => Promise<Opened>) {
+  factOrderSuite(name, open)
+
   test(name + ' withdraws exactly one fact across ordering, alias, merge, separation, prune and forget', async () => {
     const { store, close } = await open()
     try {
@@ -95,6 +98,169 @@ export function factSuite(name: string, open: () => Promise<Opened>) {
       assert.deepEqual(await engine.graph.holders([email(address)]), [])
       await six.forget({ key: 'deleted-again', subjects: [subject], at: ++clock, by, platforms: 'report' })
       assert.deepEqual((await six.record({ entries: [confirm] })).results[0], { key: confirm.key, type: 'call_update', ok: false, reason: 'FORGOTTEN' })
+    } finally {
+      await close()
+    }
+  })
+
+  test(name + ' keeps an earlier STOP on the record after withdrawing either kind of phone, including when the text arrives late', async () => {
+    const { store, close } = await open()
+    try {
+      const engine = createEngine(store, { now: () => at + 100 })
+      const six = createSix(engine, { receipts: createReceipts(['r'.repeat(40)]) })
+      const word = (key: string, when: number, text: string) => ({ type: 'text' as const, key, at: at + when, direction: 'inbound' as const, from: phone, to, text })
+      const cut = remove('returned', { phone }, at + 10)
+      const opted = async () => (await engine.graph.people([subject]))[0]!.optedOut
+      await six.record({ entries: [profile('held', subject, { phone }), profile('else', subject, { phone: '+12025550115' })] })
+      await six.decide(cut)
+      await six.record({ entries: [word('late-stop', 5, 'STOP'), word('gap-start', 12, 'START')] })
+      assert.equal(await opted(), true)
+      assert.deepEqual(await engine.graph.texting(subject), { at: at + 5, optedOut: true })
+      const again = await six.decide(cut)
+      assert.ok(again.ok && again.value.duplicate)
+      await six.record({ entries: [{ type: 'profile', key: 'again', at: at + 20, subject, facts: { identifiers: ['voip:' + hashPhone(phone)] } }] })
+      assert.equal(await opted(), true)
+      await engine.graph.prune(at + 101)
+      assert.equal(await opted(), true)
+      await six.record({ entries: [word('held-start', 21, 'START')] })
+      assert.equal(await opted(), false)
+      await six.decide(remove('again-returned', { identifier: 'voip:' + hashPhone(phone) }, at + 30))
+      assert.equal(await opted(), false)
+    } finally {
+      await close()
+    }
+  })
+
+  test(name + ' keeps a STOP on both records after their only link is withdrawn and erases the retained stop with its owner', async () => {
+    const { store, close } = await open()
+    try {
+      const engine = createEngine(store, { now: () => at + 100 })
+      const six = createSix(engine, { receipts: createReceipts(['r'.repeat(40)]) })
+      const tell = async (key: string, when: number, text: string) => {
+        const r = await six.record({ entries: [{ type: 'text', key, at: at + when, direction: 'inbound', from: phone, to, text }] })
+        assert.ok(r.results[0]?.ok)
+      }
+      const opted = async () => (await six.lookup({ kind: 'person', subjects: [subject, other], at: at + 100 }) as { readonly people: readonly { readonly textsOptedOut: boolean }[] }).people.map(row => row.textsOptedOut)
+      await six.record({ entries: [profile('held', subject, { phone, email: address }), profile('related', other, { email: address })] })
+      await tell('initial', 5, 'STOP')
+      assert.deepEqual(await opted(), [true, true])
+      assert.ok((await six.decide({ ...remove('split', { email: address }, at + 10), subject: other })).ok)
+      await tell('gap', 12, 'START')
+      assert.deepEqual(await opted(), [false, true])
+      await six.record({ entries: [profile('own-line', other, { phone }, at + 20)] })
+      assert.equal((await engine.graph.texting(other))?.optedOut, true)
+      await tell('a', 22, 'STOP')
+      await tell('z', 22, 'START')
+      assert.deepEqual(await opted(), [false, false])
+      await tell('stop-again', 23, 'STOP')
+      await six.decide({ ...remove('line-gone', { phone }, at + 30), subject: other })
+      assert.deepEqual(await opted(), [true, true])
+      assert.ok((await six.forget({ key: 'erase', at: at + 40, subjects: [other], by, platforms: 'report' })).ok)
+      assert.equal(await engine.graph.texting(other), undefined)
+      assert.equal((await engine.graph.texting(subject))?.optedOut, true)
+    } finally {
+      await close()
+    }
+  })
+
+  test(name + ' ignores a START from a withdrawn number even when a staff join keeps that caller in the cluster', async () => {
+    const { store, close } = await open()
+    try {
+      const engine = createEngine(store, { now: () => at + 100 })
+      const six = createSix(engine, { receipts: createReceipts(['r'.repeat(40)]) })
+      const otherLine = '+12025550115'
+      const text = (key: string, from: string, word: string, when: number) => ({ type: 'text' as const, direction: 'inbound' as const, key, from, to, at: at + when, text: word })
+      await six.record({ entries: [profile('one', subject, { phone }), profile('two', subject, { phone: otherLine }), text('hello', phone, 'hello', 2), text('second-stop', otherLine, 'STOP', 5)] })
+      await engine.graph.join(subject, 'caller:' + hashPhone(phone), { by })
+      await six.decide(remove('old-number', { phone }, at + 10))
+      const before = await engine.graph.texting(subject)
+      await six.record({ entries: [text('first-start', phone, 'START', 12)] })
+      assert.deepEqual(await engine.graph.texting(subject), before)
+      assert.equal(before?.optedOut, true)
+    } finally {
+      await close()
+    }
+  })
+
+  test(name + ' carries an inherited STOP through a split even if the other record already saw a later START on the same line', async () => {
+    const { store, close } = await open()
+    try {
+      const engine = createEngine(store, { now: () => at + 100 })
+      const six = createSix(engine, { receipts: createReceipts(['r'.repeat(40)]) })
+      const word = (key: string, when: number, text: string) => ({ type: 'text' as const, direction: 'inbound' as const, key, from: phone, to, at: at + when, text })
+      await six.record({ entries: [profile('one', subject, { phone, email: address }), word('stop', 5, 'STOP')] })
+      await six.decide(remove('phone-returned', { phone }, at + 10))
+      await six.record({ entries: [word('gap-start', 15, 'START'), profile('two', other, { phone, email: address }, at + 12)] })
+      assert.equal((await engine.graph.texting(other))?.optedOut, true)
+      await six.decide({ ...remove('split', { email: address }, at + 20), subject: other })
+      assert.deepEqual(await engine.graph.texting(other), { optedOut: true, at: at + 5 })
+      await six.record({ entries: [word('fresh-start', 25, 'START')] })
+      assert.equal((await engine.graph.texting(other))?.optedOut, false)
+      assert.equal((await engine.graph.texting(subject))?.optedOut, true)
+    } finally {
+      await close()
+    }
+  })
+
+  test(name + ' retains a late STOP when pruning preceded the first backdated withdrawal and a START cannot prove the line was held', async () => {
+    const { store, close } = await open()
+    try {
+      const engine = createEngine(store, { now: () => at + 100 })
+      const six = createSix(engine, { receipts: createReceipts(['r'.repeat(40)]) })
+      await six.record({ entries: [1, 10, 30].map(t => profile('profile-' + t, subject, { phone }, at + t)) })
+      await engine.graph.prune(at + 101)
+      await six.decide(remove('cut-5', { phone }, at + 5))
+      await six.decide(remove('cut-20', { phone }, at + 20))
+      const word = (key: string, time: number, text: string) => ({ type: 'text' as const, direction: 'inbound' as const, key, from: phone, to, at: at + time, text })
+      await six.record({ entries: [word('earlier-stop', 12, 'STOP'), word('gap-start', 22, 'START')] })
+      assert.equal((await engine.graph.texting(subject))?.optedOut, true)
+      await six.record({ entries: [word('sure-start', 31, 'START')] })
+      assert.equal((await engine.graph.texting(subject))?.optedOut, false)
+    } finally {
+      await close()
+    }
+  })
+
+  test(name + ' never clears a person’s opt-out on a withdrawal across shuffled messages, restores, shared numbers and links', async () => {
+    const { store, close } = await open()
+    try {
+      const engine = createEngine(store, { now: () => at + 500 })
+      const six = createSix(engine, { receipts: createReceipts(['r'.repeat(40)]) })
+      let seed = 32199
+      const pick = (n: number) => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) >>> 8) % n
+      const owners = [subject, other, 'contact:third', 'contact:fourth']
+      const lines = [phone, '+12025550111', '+12025550112']
+      const opted = async () => (await engine.graph.people(owners)).map(row => row.optedOut)
+      let checked = 0
+      await six.record({ entries: owners.map((s, i) => profile('initial-' + i, s, { phone: lines[i % lines.length]!, email: address })) })
+      for (let i = 0; i < 160; i++) {
+        const owner = owners[pick(owners.length)]!
+        const number = lines[pick(lines.length)]!
+        const when = at + pick(i + 2)
+        const key = 'said-' + i
+        const choice = pick(6)
+        if (choice < 2) {
+          const before = await opted()
+          const fact = pick(2) ? { phone: number } : { email: address }
+          const cut = await six.decide({ ...remove(key, fact, when), subject: owner })
+          assert.ok(cut.ok)
+          const after = await opted()
+          before.forEach((stopped, j) => {
+            if (stopped) {
+              checked++
+              assert.equal(after[j], true, owners[j] + ' lost its STOP on ' + key)
+            }
+          })
+        } else if (choice < 4) {
+          const result = await six.record({ entries: [profile(key, owner, pick(2) ? { phone: number } : { email: address }, when)] })
+          assert.ok(result.results[0]?.ok)
+        } else {
+          const result = await six.record({ entries: [{ type: 'text', key, at: when, direction: 'inbound', from: number, to, text: choice === 4 ? 'START' : 'STOP' }] })
+          assert.ok(result.results[0]?.ok)
+        }
+      }
+      assert.ok(checked > 40, 'the histories must exercise withdrawals on opted-out records')
+      assert.deepEqual(await engine.graph.verify(), [])
     } finally {
       await close()
     }

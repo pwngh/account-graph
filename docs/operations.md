@@ -285,7 +285,9 @@ Each change has a number and runs once. When several servers start together, one
 
 Upgrade 36 creates an empty table for standing creation dates. First-seen times are read from existing records, so the upgrade needs no backfill. Older servers can keep writing profiles without dates, pruning and forgetting subjects during the rollout. Send profiles with `createdAt` to an upgraded server.
 
-Upgrade 37 adds nullable columns for profile ordering and creates empty tables for withdrawals and their matching evidence. It requires no backfill. If the upgrade stops before committing, restart it. Older servers can keep recording while a withdrawal is in force. Send withdrawals and profiles that restore facts to an upgraded server, and use that version for historical snapshots, rebuild and verification. See [withdrawing a matching fact](matching.md#withdrawing-a-matching-fact).
+Upgrade 37 takes the same write lock as a running server before changing the edge or sighting table. An older writer can finish its observation before the upgrade locks either table. The upgrade adds nullable columns for profile ordering and creates empty tables for withdrawals and their matching evidence. It requires no backfill. If the upgrade stops before committing, restart it. Older servers can keep recording while a withdrawal is in force. Send profiles that restore facts to an upgraded server, and use that version for historical snapshots, rebuild and verification. See [withdrawing a matching fact](matching.md#withdrawing-a-matching-fact).
+
+Upgrade 38 creates empty tables for STOPs kept after a group changes and for pruned profile dates of withdrawn numbers. Existing text and sighting rows can be read in place. A STOP previously lost solely through a group split on version 37 can only be recovered if the earlier association is still known. During a rolling upgrade, send withdrawals and opt-out lookups to a server on version 38. An older server can still record, prune and forget.
 
 ## Settings that must match
 

@@ -53,6 +53,30 @@ test('ordinary observations and link reads keep their SQL statement counts acros
 
 const url = process.env.DATABASE_URL
 
+test('checking an ordinary text opt-out reads the cluster, holdings and messages in the same six statements', async () => {
+  const subject = 'contact:one'
+  const line = 'caller:one'
+  for (const upgraded of [false, true]) {
+    const queries: string[] = []
+    const query = async (sql: string) => {
+      queries.push(sql)
+      if (sql.includes('pg_advisory_xact_lock')) return { rows: [{ fact_schema: true, text_schema: upgraded }] }
+      if (sql.includes('from stub.subject')) return { rows: [{ id: subject, component: subject, cluster: subject }] }
+      if (sql.startsWith('select * from stub.edge')) return { rows: [{ subject, identifier: 'phone:one', first_at: 1, last_at: 1, sightings: 1 }] }
+      if (sql.startsWith('with edges as')) return { rows: [{ subject, line, active: true, first_at: 1, last_at: 1, held: null, at: null }] }
+      if (sql.startsWith('select * from stub.message')) return { rows: [{ id: 'sms', direction: 'inbound', subject: line, at: 2, ours: '+12025550115', flags: ['opt_out'] }] }
+      return { rows: [] }
+    }
+    const store = createPostgresStore({ query, connect: async () => ({ query, release() {} }) }, 'stub')
+    await store.write(async () => {})
+    queries.length = 0
+    assert.deepEqual(await createGraph(store).texting(subject), { at: 2, optedOut: true })
+    assert.equal(queries.length, 6)
+    assert.equal(queries.reduce((n, sql) => n + sql.split(';').filter(s => s.trim()).length, 0), 6)
+    assert.equal(queries.some(sql => sql.includes('stub.text_stop')), upgraded)
+  }
+})
+
 test('the reviewer reads dates for the whole table in one SQL query', async () => {
   const subjects = ['record:a', 'visitor:b', 'record:c']
   const requests: unknown[][] = []
@@ -209,7 +233,7 @@ if (!url) {
     await tx.addDecision({ ...decision, hash: seal(before?.hash ?? '', decision) })
   })
 
-  for (const [stopped, start, committed, relation] of [[30, 29, 28, 'said_party_subject'], [31, 29, 30, 'callback_event_calls'], [36, 36, 35, 'profile_created'], [37, 37, 36, 'withdrawn_edge']] as const) test(`upgrade ${stopped} whose session ends before commit rolls back and can run again`, async () => {
+  for (const [stopped, start, committed, relation] of [[30, 29, 28, 'said_party_subject'], [31, 29, 30, 'callback_event_calls'], [36, 36, 35, 'profile_created'], [37, 37, 36, 'withdrawn_edge'], [38, 38, 37, 'text_stop']] as const) test(`upgrade ${stopped} whose session ends before commit rolls back and can run again`, async () => {
     const schema = `ag_test_${process.pid}_interrupted_${stopped}`
     try {
       const store = await madeBefore(schema, start)
@@ -288,6 +312,78 @@ if (!url) {
     }
   })
 
+  test('upgrade 37 waits for an older observation before it locks either table', async () => {
+    const schema = `ag_test_${process.pid}_fact_lock`
+    await madeBefore(schema, 37)
+    const writer = await pool.connect()
+    const migrator = await pool.connect()
+    let applying: Promise<unknown> | undefined
+    try {
+      await writer.query('begin')
+      await writer.query('select pg_advisory_xact_lock(hashtext($1))', ['account-graph:' + schema])
+      await writer.query(`insert into ${schema}.sighting (subject, identifier, at, recorded_at) values ('record:old', 'email:a@example.org', 10, 10)`)
+      const { rows: [{ pid }] } = await migrator.query('select pg_backend_pid() as pid')
+      applying = migrator.query(upgrades(schema).find(u => u.id === 37)!.sql)
+      // The old writer holds a sighting table lock and still needs an edge table lock to finish.
+      let blocked: string | undefined
+      const until = Date.now() + 5_000
+      while (!blocked && Date.now() < until) {
+        blocked = (await pool.query('select locktype from pg_locks where pid = $1 and not granted', [pid])).rows[0]?.locktype
+        if (!blocked) await new Promise(resolve => setTimeout(resolve, 10))
+      }
+      assert.equal(blocked, 'advisory')
+      await writer.query(`lock table ${schema}.edge in row exclusive mode nowait`)
+      await writer.query(`insert into ${schema}.edge (subject, identifier, first_at, last_at, sightings) values ('record:old', 'email:a@example.org', 10, 10, 1)`)
+      await writer.query('commit')
+      await applying
+    } finally {
+      await writer.query('rollback')
+      await applying?.catch(() => undefined)
+      writer.release()
+      migrator.release()
+      await pool.query(`drop schema ${schema} cascade`)
+    }
+  })
+
+  test('upgrade 38 reads existing holdings, keeps them on an older prune and erases them on an older forget', async () => {
+    const schema = `ag_test_${process.pid}_text_holdings`
+    const subject = 'contact:withdrawn'
+    const other = 'contact:other'
+    const line = 'caller:line'
+    const phone = 'phone:line'
+    const alias = 'voip:line'
+    try {
+      const store = await madeBefore(schema, 38)
+      await store.write(async tx => {
+        await tx.addSightings([{ subject, identifier: phone, at: 1, profileKey: 'first' }, { subject: other, identifier: phone, at: 2, profileKey: 'other' }])
+        await tx.withdrawFact(subject, [phone, alias], 4, 'first-cut', 4)
+        await tx.addSightings([{ subject, identifier: alias, at: 6, profileKey: 'back' }, { subject, identifier: alias, at: 8, profileKey: 'still' }])
+        await tx.withdrawFact(subject, [phone, alias], 10, 'last-cut', 10)
+      })
+      assert.deepEqual(await store.migrate(), ['text stops on records that lose a number'])
+      const stop = { subject, line, at: 7, key: 'word' }
+      await store.write(tx => tx.keepTextStops([stop, { ...stop, at: 3, through: { at: 11, key: 'old-start' } }]))
+      const numbers = () => store.read(tx => tx.textNumbers([subject, other]))
+      assert.deepEqual((await numbers()).find(row => row.subject === subject)?.through, { at: 11, key: 'old-start' })
+      await store.write(tx => tx.keepTextStops([{ ...stop, at: 3, through: { at: 11, key: 'second-start' } }, { ...stop, at: 3, through: { at: 10, key: 'third-start' } }]))
+      await store.write(tx => tx.keepTextStops([{ ...stop, at: 4 }]))
+      const before = await numbers()
+      assert.deepEqual(before.find(row => row.subject === other), { subject: other, line, active: true })
+      const found = before.find(row => row.subject === subject)
+      assert.equal(found?.stopKey, 'word')
+      assert.equal(found?.stop, 7)
+      assert.deepEqual(found?.through, { at: 11, key: 'second-start' })
+      assert.ok(found?.held?.some(row => row.held && row.at === 6 && row.key === 'back'))
+      await pool.query(`delete from ${schema}.sighting where recorded_at < 100`)
+      assert.deepEqual((await numbers()).sort((a, b) => a.subject.localeCompare(b.subject)), before.sort((a, b) => a.subject.localeCompare(b.subject)))
+      assert.deepEqual((await pool.query(`select subject, key from ${schema}.text_phone_profile order by at`)).rows, ['first', 'back', 'still'].map(key => ({ subject, key })))
+      await oldForgetDecision(store, subject, 100)
+      for (const table of ['text_phone_profile', 'text_stop']) assert.deepEqual((await pool.query(`select * from ${schema}.${table}`)).rows, [])
+    } finally {
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
+
   test('upgrade 37 preserves older observations and protects withdrawn facts and receipts alongside an older writer', async () => {
     const schema = `ag_test_${process.pid}_fact`
     const subject = 'record:shared'
@@ -312,7 +408,7 @@ if (!url) {
       await store.write(tx => tx.addSightings([{ subject, identifier: email, at: 5 }]))
       assert.deepEqual(await store.read(tx => tx.subjectDates([subject])), new Map([[subject, { firstSeen: 5 }]]))
       assert.deepEqual(await createGraph(store).verify(), [])
-      assert.deepEqual((await Promise.all([store.migrate(), createPostgresStore(pool, schema).migrate()])).flat(), ['withdrawn matching facts on one record'])
+      assert.deepEqual((await Promise.all([store.migrate(), createPostgresStore(pool, schema).migrate()])).flat(), upgrades(schema).filter(upgrade => upgrade.id >= 37).map(upgrade => upgrade.name))
       const oldGraph = createGraph(old, defaultPolicy, { now: () => 10 })
       const graph = createGraph(store, defaultPolicy, { now: () => 12 })
       await oldGraph.observe({ subject, identifiers: [email], at: 10 })

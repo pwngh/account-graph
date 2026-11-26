@@ -12,7 +12,7 @@ import type { Delivery } from './events.ts'
 import type { Receipt } from './receipts.ts'
 import type { Said, SaidOf, Topic } from './said.ts'
 import { byKey, later, newest } from './said.ts'
-import type { AddedSightings, CallEvidence, CallLineKind, Store, SubjectDates, Tx } from './store.ts'
+import type { AddedSightings, CallEvidence, CallLineKind, Store, SubjectDates, TextNumber, Tx } from './store.ts'
 import { CLICK_IDS } from './touch.ts'
 import type { CallResult, Consent, ConsentAnswer, CostRow, Counted, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, NumberedChange, OutcomeValue, Payment, SentLink, Sighting, Subject, Touch } from '../contract/types.ts'
 
@@ -59,6 +59,8 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
   const callLines = new Map<string, Subject>()
   const lineKinds = new Map<string, CallLineKind>()
   const texts = new Map<string, KeptText>()
+  const textStops = new Map<Subject, Map<Subject, FactStamp & { through?: FactStamp }>>()
+  const phoneProfiles = new Map<Subject, Map<Identifier, Map<string, FactStamp>>>()
   const sent = new Map<string, SentLink>()
   const payments = new Map<string, Required<Payment>>()
   const results = new Map<string, CallResult>()
@@ -280,6 +282,9 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
         if (holders.size === 0) byIdentifier.delete(identifier)
       }
       bySubject.delete(subject)
+      textStops.delete(subject)
+      for (const lines of textStops.values()) lines.delete(subject)
+      phoneProfiles.delete(subject)
       profiles.delete(subject)
       hidden.delete(subject)
       withdrawals.delete(subject)
@@ -425,6 +430,61 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
         for (const row of collection.values()) if (wanted.has(row.subject)) seen(row.subject, row.at)
       }
       return dates
+    },
+
+    async textNumbers(subjects) {
+      const rows: TextNumber[] = []
+      for (const subject of new Set(subjects)) {
+        const numbers = new Map<Subject, TextNumber>()
+        const numberOf = (line: Subject) => {
+          const row = numbers.get(line) ?? { subject, line, active: false }
+          numbers.set(line, row)
+          return row
+        }
+        const times = new Map<Subject, { first: number; last: number; count: number }>()
+        for (const edges of [bySubject.get(subject), hidden.get(subject)]) for (const edge of edges?.values() ?? []) {
+          if (!/^(phone|voip):/.test(edge.identifier)) continue
+          const line = 'caller:' + edge.identifier.slice(edge.identifier.indexOf(':') + 1)
+          if (edges === bySubject.get(subject)) numberOf(line).active = true
+          else numberOf(line)
+          const prior = times.get(line)
+          times.set(line, { first: Math.min(prior?.first ?? Infinity, edge.first), last: Math.max(prior?.last ?? -Infinity, edge.last), count: (prior?.count ?? 0) + edge.count })
+        }
+        for (const [line, stop] of textStops.get(subject) ?? []) Object.assign(numberOf(line), { stop: stop.at, stopKey: stop.key, ...(stop.through && { through: stop.through }) })
+        const statements = factStatements.get(subject)
+        for (const row of numbers.values()) {
+          const fact = 'phone:' + row.line.slice(7)
+          const cuts = (statements ?? []).filter(s => s.identifiers.some(id => contactFact(id) === fact)).map(({ at, key }) => ({ at, key, held: false }))
+          const dates = times.get(row.line)
+          const at = dates?.first
+          if (!cuts.length) {
+            if (row.stop !== undefined && at !== undefined) row.held = [{ at, key: '', held: true }]
+            continue
+          }
+          const archived = [...(phoneProfiles.get(subject)?.get(fact)?.values() ?? [])]
+          const seen = (sightings.get(subject) ?? []).filter(s => contactFact(s.identifier) === fact)
+          const claims = [...archived, ...seen.flatMap(s => s.profileKey === undefined ? [] : [{ at: s.at, key: s.profileKey }])]
+          if (dates && dates.count > seen.length + archived.length) row.uncertain = { first: dates.first, last: dates.last }
+          for (const id of [fact, 'voip:' + fact.slice(6)]) {
+            const last = profiles.get(subject)?.get(id)
+            if (last) claims.push(last)
+          }
+          if (at !== undefined && cuts.every(c => at <= c.at)) claims.push({ at, key: '' })
+          row.held = [...cuts, ...claims.map(({ at, key }) => ({ at, key, held: true }))]
+        }
+        rows.push(...numbers.values())
+      }
+      return rows
+    },
+
+    async keepTextStops(rows) {
+      for (const { subject, line, at, key, through } of rows) {
+        const lines = valuesFor(textStops, subject)
+        const prior = lines.get(line)
+        const stop = prior && later(prior, { at, key }) > 0 ? prior : { at, key }
+        const lastStart = prior?.through && (!through || later(prior.through, through) > 0) ? prior.through : through
+        lines.set(line, { at: stop.at, key: stop.key, ...(lastStart && { through: lastStart }) })
+      }
     },
 
     async edgesOf(subjects) {
@@ -1277,6 +1337,14 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
       let gone = 0
       for (const [subject, log] of sightings) {
         const kept = log.filter((sighting) => (sighting.recorded ?? sighting.at) >= before)
+        const cuts = withdrawals.get(subject)
+        if (cuts) for (const row of log) {
+          if ((row.recorded ?? row.at) >= before || row.profileKey === undefined || !/^(phone|voip):/.test(row.identifier)) continue
+          const fact = contactFact(row.identifier)
+          if (!cuts.has(fact)) continue
+          const held = valuesFor(valuesFor(phoneProfiles, subject), fact)
+          held.set(row.at + ':' + row.profileKey, { at: row.at, key: row.profileKey })
+        }
         gone += log.length - kept.length
         if (kept.length > 0) sightings.set(subject, kept)
         else sightings.delete(subject)
@@ -1373,7 +1441,7 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
   }
 
   /** Every collection, copied together, so what two of them share stays shared. */
-  const collections = { bySubject, byIdentifier, profiles, hidden, withdrawals, factStatements, ignored, labels, byComponent, byCluster, sightings, created, touches, separated, flows, flowsBy, flowIds, consents, decisions, outcomes, values, calls, withheld, reservedBySubject, reservedByIdentifier, callLines, lineKinds, texts, sent, payments, results, spurned, leases, costs, reads, said, receipts, receiptSubjects, settings, events, once, deliveries }
+  const collections = { bySubject, byIdentifier, profiles, hidden, withdrawals, factStatements, ignored, labels, byComponent, byCluster, sightings, created, touches, separated, flows, flowsBy, flowIds, consents, decisions, outcomes, values, calls, withheld, reservedBySubject, reservedByIdentifier, callLines, lineKinds, texts, textStops, phoneProfiles, sent, payments, results, spurned, leases, costs, reads, said, receipts, receiptSubjects, settings, events, once, deliveries }
   const snapshot = () => structuredClone({ ...collections, lastEvent, epoch, writes, built, jobs: outbox.jobs, ops: ops.kept })
   const restore = (kept: ReturnType<typeof snapshot>) => {
     const refill = (now: any, then: any) => {

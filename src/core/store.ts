@@ -9,6 +9,25 @@ import type { CallResult, CallTime, Change, Consent, ConsentAnswer, CostRow, Cou
 
 export type AddedSightings = Map<Identifier, number> & { restored?: Set<Subject> }
 
+export interface TextNumber {
+  subject: Subject
+  line: Subject
+  active: boolean
+  held?: { at: number; key: string; held: boolean }[]
+  uncertain?: { first: number; last: number }
+  stop?: number
+  stopKey?: string
+  through?: { at: number; key: string }
+}
+
+export interface TextStop {
+  subject: Subject
+  line: Subject
+  at: number
+  key: string
+  through?: { at: number; key: string }
+}
+
 export interface CallEvidence {
   call: string
   subject: Subject
@@ -83,6 +102,9 @@ export interface Tx {
   /** Keeps the newest creation statement by time and then key. */
   setCreatedAt(subject: Subject, createdAt: number, at: number, key: string): Promise<boolean>
   createdAtStands(subject: Subject, createdAt: number, at: number, key: string): Promise<boolean>
+  /** Which lines can speak about texts for these subjects, including an earlier STOP from a withdrawn line. */
+  textNumbers(subjects: readonly Subject[]): Promise<TextNumber[]>
+  keepTextStops(rows: readonly TextStop[]): Promise<void>
   edgesOf(subjects: readonly Subject[]): Promise<Edge[]>
   edgesOn(identifiers: readonly Identifier[]): Promise<Edge[]>
   /**
