@@ -137,6 +137,7 @@
 
 ### Edge and operations
 
+- `npm run bench -- load RATE SECONDS` sends one call to a request at a set rate and gives the median, p95 and p99 time to answer and the reasons for refusals.
 - `npm run bench -- import COUNT` records that many inbound calls through `record` in batches of 100 and gives the rate of each quarter of the run, on memory and, with `DATABASE_URL`, on PostgreSQL.
 - `PAUSE_AFTER_FAILURES` stops sends by itself once that many conversions fail for good within an hour, counted across processes in the database. `account-graph sends resume` starts the count again.
 - `account-graph sends pause REASON` stops sends to ad platforms in every process until `account-graph sends resume`, and alerts with a `delivery.paused` event. Jobs wait as they were.
