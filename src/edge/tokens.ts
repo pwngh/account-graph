@@ -66,7 +66,7 @@ export function credentials(service: string, reviewers: Reviewers | undefined, l
   }
   for (const { name, token, calls } of limited) rows.push({ hash: digest(token), owner: { role: 'limited', name, calls: structuredClone(calls) } })
   return (authorization: string | undefined): Owner | undefined => {
-    const sent = digest(authorization?.replace(/^Bearer /, '') ?? '')
+    const sent = digest(authorization?.replace(/^bearer[ \t]+/i, '') ?? '')
     let owner: Owner | undefined
     // Compare every fixed-size digest, including after a match and for an absent header.
     for (const row of rows) if (timingSafeEqual(sent, row.hash)) owner = row.owner

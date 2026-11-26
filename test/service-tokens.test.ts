@@ -75,3 +75,10 @@ test('forbidden keyed requests never dispatch a receipt lookup', async () => {
     assert.deepEqual(await limitedCall(owner, 'record', { entries }, dispatch), { results: entries.map(({ type }) => ({ type, key, ok: false, reason: 'FORBIDDEN' })) })
   }
 })
+
+test('the bearer scheme is read in any case and with any spacing, as HTTP allows', () => {
+  const owner = credentials('s'.repeat(32), { ann: 'r'.repeat(32) })
+  for (const header of [`Bearer ${'s'.repeat(32)}`, `bearer ${'s'.repeat(32)}`, `BEARER ${'s'.repeat(32)}`, `Bearer  ${'s'.repeat(32)}`, `Bearer\t${'s'.repeat(32)}`]) assert.deepEqual(owner(header), { role: 'service' }, header)
+  assert.deepEqual(owner(`bearer ${'r'.repeat(32)}`), { role: 'reviewer', name: 'ann' })
+  for (const header of [`Basic ${'s'.repeat(32)}`, `Bearer${'s'.repeat(32)}`, `Bearer ${'s'.repeat(31)}`, '', undefined]) assert.equal(owner(header), undefined, String(header))
+})
