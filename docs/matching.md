@@ -11,7 +11,7 @@ account-graph links subjects that share identifiers, scores each pair, and group
 | Sighting | An observation of a subject with an identifier at a point in time |
 | Link | Two subjects that share identifiers, with a match score and evidence |
 | Cluster | The linked subjects that are resolved to one person |
-| Visit | A marketing touchpoint: an arrival from an ad click or a campaign |
+| Visit | An arrival from an ad click or a campaign |
 | Outcome | A business event that is counted, such as an inquiry or a sale |
 | Conversion | An outcome reported to an ad platform |
 | Decision | A recorded choice to merge, split or mute, kept in the audit log |
@@ -57,7 +57,7 @@ The last two could be one person or one household. With only this evidence, they
 
 Under the default policy, a shared phone alone can make `lookup` with `kind: "match"` return `same` for someone else, including an opposing party. Treat `match` as a suggestion for staff to check. Never use it to block intake. Where a wrong join matters, use the [intake preset](#an-intake-desk) and load known separations with [`split`](#split) before entering the first contact.
 
-The default policy has no groups, and one corroborating kind, `named`. [Presets](#presets) has both: [the preset for contacts entered by staff](#contacts-entered-by-staff) defines a corroborating `name` kind.
+The default policy has no groups, and one corroborating kind, `named`. [Presets](#presets) has both. For example, [the preset for contacts entered by staff](#contacts-entered-by-staff) defines a corroborating `name` kind.
 
 ### Kinds
 
@@ -96,19 +96,19 @@ Every subject reachable over `same` links forms a component. When checking a nam
 
 1. **Separated pairs.** The direct link of each separated pair is removed, and of each pair whose [facts differ](#facts-that-keep-people-apart).
 2. **Paths between separated pairs.** If a pair that staff separated is still connected through others, the graph cuts guessed links wherever that keeps every active merge. If a path consists entirely of merges, the separation stands and the cut breaks as few merged links as possible. Among cuts that break the same number, it takes the weakest set of links. After all separations hold, the graph reconsiders the merges it cut, in order of the two subject IDs. It restores a merge if the two groups can come together while every separated pair stays apart. Guessed links inside the reunited group count again when applying the [rules for conflicting facts](#facts-that-keep-people-apart).
-3. **Weak bridges.** A link below 0.97 (`bridge`) cannot be the sole connection between two groups of two or more subjects. The weakest is cut first, until none remains. It may still add a single subject to a group. A group that names nobody, made only of browsers and phone numbers that called (`visitor:`, `caller:` and `call:`), then goes back to the named group it was cut from, if there is exactly one. With none or several, it stays apart.
+3. **Weak bridges.** A link below 0.97 (`bridge`) cannot be the sole connection between two groups of two or more subjects. The weakest is cut first, until none remains. It may still add a single subject to a group. A group that names nobody is made only of browsers and phone numbers that called, under `visitor:`, `caller:` and `call:`. Such a group then goes back to the named group it was cut from, if there is exactly one. With none or several, it stays apart.
 
 For example, a chain of four accounts, each sharing one machine with the next, becomes two pairs. If the outer two also share a phone, all four form one cluster, because the groups are then connected twice.
 
 A cluster above 50 members (`review`) is flagged `oversized`. Clusters that large come more often from one bad identifier than from one person.
 
-When a separation keeps an active staff join out of the cluster, open either subject’s Links to see its join evidence. Decisions shows the original join and the separation. Matches lists undecided pairs, so it does not offer that join again.
+When a separation keeps an active staff join out of the cluster, open either subject's Links to see its join evidence. Decisions shows the original join and the separation. Matches lists undecided pairs, so it does not offer that join again.
 
 ### Cut algorithms
 
 | Cut | Method | Cost and behavior |
 | --- | --- | --- |
-| Separated pairs | All direct links between separated pairs are removed. Each pair still connected is processed in order of ID by a maximum flow using shortest paths (Edmonds–Karp). After preserving as many merges as possible, the cut minimizes total strength. Strength is `−log(1 − score)`, capped and rounded. If several cuts tie, the one nearest the subject with the later first sighting wins. Equal times favor the cut nearest the smaller ID. | The flows for staff separations share one index of the component’s links and their strengths. Each flow takes at worst `O(V·E²)` time and `O(V+E)` space for `V` subjects and `E` links. |
+| Separated pairs | All direct links between separated pairs are removed. Each pair still connected is processed in order of ID by a maximum flow using shortest paths, the Edmonds-Karp method. After preserving as many merges as possible, the cut minimizes total strength. Strength is `−log(1 − score)`, capped and rounded. If several cuts tie, the one nearest the subject with the later first sighting wins. Equal times favor the cut nearest the smaller ID. | The flows for staff separations share one index of the component's links and their strengths. Each flow takes at worst `O(V·E²)` time and `O(V+E)` space for `V` subjects and `E` links. |
 | Weak bridges | Links below `bridge` are removed as described above. | The rule is off when `bridge` is at or below `same`. |
 
 With no `apart` facts, a full verification or rebuild rereads edges for staff joins only in components containing both ends of a separation or a link that says two people are different.
@@ -163,7 +163,7 @@ Phone evidence halves for each two years between the two sightings, because numb
 
 #### Caller attribution
 
-Under the household preset, a contact who gave the caller’s number is usually related to the line. Staff who know which record a particular call concerned can identify that call by its provider ID.
+Under the household preset, a contact who gave the caller's number is usually related to the line. Staff who know which record a particular call concerned can identify that call by its provider ID.
 
 <!-- schema RecordEntry -->
 ```json
@@ -171,7 +171,7 @@ Under the household preset, a contact who gave the caller’s number is usually 
   "change": { "kind": "party", "role": "self", "subject": "contact:7", "by": "desk" } }
 ```
 
-Use `representative` when someone called on the contact’s behalf. Each later call can concern a different person. See [recording who was on one call](calls.md#recording-who-was-on-one-call).
+Use `representative` when someone called on the contact's behalf. Each later call can concern a different person. See [recording who was on one call](calls.md#recording-who-was-on-one-call).
 
 #### Shared phones
 
@@ -237,13 +237,13 @@ With `given` it keeps keyed notes of the names a first name may stand for, from 
 | --- | --- |
 | One of them has no date | Nothing is said. |
 | A merge, by a reviewer or from your own systems | Overrules it, whichever came first. Taking the merge back gives the fact back. The exception is a caller or a browser joined to two people of two dates of birth: it goes where the fewest such joins are left out, then with whoever was seen first, and the others are in Matches. Same changes nothing there: `split` the caller from the one it is not. |
-| Where it shows | The `match` lookup counts the proposed record when applying caps to evidence and confirming facts. It checks facts on the candidate itself, including a caller or browser, and on the records it stands for. Withdrawing a call tie cannot turn a possible match into a definite one. A browser’s former record can still rule out the proposed match. Its id and facts stay private. The lookup, Accounts and Matches show a conflict as related with `conflict: "birth"` or `"given"`, however high the score. Credit does not cross it. |
+| Where it shows | The `match` lookup counts the proposed record when applying caps to evidence and confirming facts. It checks facts on the candidate itself, including a caller or browser, and on the records it stands for. Withdrawing a call tie cannot turn a possible match into a definite one. A browser's former record can still rule out the proposed match. Its id and facts stay private. The lookup, Accounts and Matches show a conflict as related with `conflict: "birth"` or `"given"`, however high the score. Credit does not cross it. |
 | Where it does not | The `conflicts` lookup, kept-apart lists, disputes and the audit log. Nobody decided it. |
 | A corrected date | The record keeps both values, so it is kept apart from neither, until it is forgotten. |
 | Shared browsers and callers | They go with one of the two, as after a separation. |
-| Turning it on, or a new version of it | Rebuild once. Dates and names sent before are not known, or not all that is now kept of them: send them again. |
+| Turning it on, or a new version of it | Rebuild once. Dates and names sent before are not known, or not all that is now kept of them. Send them again. |
 
-It is off unless a policy lists it, as [the preset for an intake desk](#an-intake-desk) does. [Accuracy](accuracy.md#the-second-run) says what it did on made-up people, where it was still far from its bar, and in [the third run](accuracy.md#results-of-the-third-run) eight of fifty marks came out bad.
+It is off unless a policy lists it, as [the preset for an intake desk](#an-intake-desk) does. [Accuracy](accuracy.md#the-second-run) says what it did on made-up people, where it was still far from its bar. In [the third run](accuracy.md#results-of-the-third-run), eight of fifty marks came out bad.
 
 ## Records that have to be confirmed
 
@@ -265,16 +265,16 @@ What two records share, such as a mailbox, a number or a computer, may be a hous
 | Limit | Detail |
 | --- | --- |
 | Names no table has | A date of birth confirms two records with such names only where a number or an email is under one name. Twins who share only a device and have no detail of their own can be joined by their date, where the policy has no `name` kind. |
-| Two words | That a name has several words is noted from the day the rule is on. One sent before counts as one word: send it again. Two second words in no table that begin with one letter look alike. |
+| Two words | That a name has several words is noted from the day the rule is on. One sent before counts as one word. Send it again. Two second words in no table that begin with one letter look alike. |
 | More than 300 records in one component | Nothing but a decision joins them. The 301st takes back what facts had joined there, so find what they all share and `mute` it. |
 | Names not in Latin letters | The Latin short-form table supplies no `person` or `perhaps` key. An exact `name` key with a date or verified zip code still works in these scripts. |
 | A father and a son | Of one name with no dates, they are one person by it, as two records of one man would be. |
 
-For a phone or email given under a name, or by someone speaking for its owner, a placeholder such as Unknown / Not Provided gives no name evidence. The Spanish labels Desconocido, Desconocida, Sin Nombre and No Proporcionado, and the French Inconnu and Inconnue, are also missing names. The whole-field labels Неизвестно, غير معروف, अज्ञात, 姓名不详 and 氏名不詳 mean the name is unknown. Baby, Baby Boy and Baby Girl in the first-name field stand for an unnamed newborn. Baby in the surname field keeps its usual spelling. An equal birthday cannot confirm two such placeholders. A different birthday can still keep them apart. Recognizing a missing-name label also preserves the disagreement that its former spelling had with another named record. Where the name table could use part of a spelling, any letters it would lose must agree too. Thus María文 and Maria文 can agree, and Maria李 is a different name. The exact name key with a date or confirmed zip code works in other scripts. It keeps marks that distinguish letters, including Devanagari vowel signs and nukta, Thai tone marks, Greek iota subscript and diaeresis, and Japanese voicing marks. Composed and decomposed forms give the same key. Latin accents, Greek stress and optional Arabic and Hebrew points retain their earlier comparison.
+For a phone or email given under a name, or by someone speaking for its owner, a placeholder such as Unknown / Not Provided gives no name evidence. The Spanish labels Desconocido, Desconocida, Sin Nombre and No Proporcionado, and the French Inconnu and Inconnue, are also missing names. The whole-field labels Неизвестно, غير معروف, अज्ञात, 姓名不详 and 氏名不詳 mean the name is unknown. Baby, Baby Boy and Baby Girl in the first-name field stand for an unnamed newborn. Baby in the surname field keeps its usual spelling. An equal birthday cannot confirm two such placeholders. A different birthday can still keep them apart. Recognizing a missing-name label also preserves the disagreement that its former spelling had with another named record. Where the name table could use part of a spelling, any letters it would lose must agree too. So María文 and Maria文 can agree, and Maria李 is a different name. The exact name key with a date or confirmed zip code works in other scripts. It keeps marks that distinguish letters, including Devanagari vowel signs and nukta, Thai tone marks, Greek iota subscript and diaeresis, and Japanese voicing marks. Composed and decomposed forms give the same key. Latin accents, Greek stress and optional Arabic and Hebrew points keep their earlier comparison.
 
 When upgrading from the earlier name rules, stop the servers and run `account-graph rebuild`. The old hashes do not reveal which names lost letters or were placeholders. The rebuild drops those hashes as evidence for a join. They still count how many people share a spelling and carry its mutes. Different old names can still keep records apart, including while only one of the two profiles has been sent again. Where a spelling changes the weight of a link or what a name says about a person, two people stay together only if both the earlier and the checked spelling put them together. Losing one match cannot give that person to another record. Re-send named profiles from their original source with new report keys before serving the graph again. Recreate exact name keys with a date or zip code from the original names as well. The same rebuild warning covers spelling marks, newborns and the additional missing-name labels. A cached hash cannot recover a missing mark. Old dates can still disagree. A shared date on two older records cannot confirm them by itself until at least one is reported again without a placeholder. Staff decisions keep working through the upgrade.
 
-A record is a subject that names somebody, such as `contact:7` or `account:42`. A browser or a caller is none: it goes with the records it is tied to most strongly, and of two as strong, with whoever was seen first.
+A record is a subject that names somebody, such as `contact:7` or `account:42`. A browser or a caller is not a record. It goes with the records it is tied to most strongly, and of two as strong, with whoever was seen first.
 
 > **Credit is another question.** An ad click on a browser two people share can be credited to both, whichever of them the browser goes with. It is not credited across a split, or between two whose dates of birth or names differ, because whoever is on the other side of a matter must not be shown there.
 
@@ -323,18 +323,18 @@ When loading opposing parties, ask for both subject IDs and look for their exact
 
 ## Decisions from your own systems
 
-Use `decide` to tell the graph which people to keep apart. Use `record` to say who a call concerned. [Six calls](http.md)
+Use `decide` to tell the graph which people to keep apart. Use `record` to say who a call concerned. See [Six calls](http.md).
 
 | Fact | Owner | What to send |
 | --- | --- | --- |
 | Who is on the other side of a matter | Your case system. People who share a phone, a child or a case may be on one side or on two. | The pair, as a `split`. |
-| Which contact a call was about | Staff, when they take the call. | The call ID and the contact in a [party statement](calls.md#recording-who-was-on-one-call). A parent calling about a child can name the child’s record with the representative role. |
+| Which contact a call was about | Staff, when they take the call. | The call ID and the contact in a [party statement](calls.md#recording-who-was-on-one-call). A parent calling about a child can name the child's record with the representative role. |
 | Whether a person may be contacted | The system that sends messages. Consent here covers advertising only. | Message consent, opt-outs, quiet hours and contact frequency stay there. |
 
 | Action | Behavior |
 | --- | --- |
 | `split` | Holds whatever the two share later. Withdraw it with `unsplit`. It can be recorded before either account exists. |
-| `merge` | The strongest link. A split still wins: merging an account with one side of a split pair pulls it away from the other. Take it back with `unmerge`. |
+| `merge` | The strongest link. A split still wins. Merging an account with one side of a split pair pulls it away from the other. Take it back with `unmerge`. |
 | `mute` | Stops linking through one email, phone, IP address or identifier. Give it back with `unmute`. |
 
 ### Split
@@ -353,7 +353,7 @@ curl -X POST https://graph.example.org/v1/decide -H "authorization: Bearer $GRAP
 
 Load known pairs before entering the first contact. Send newly discovered pairs as soon as your conflict check identifies them. Until the split arrives, an outcome of one side can be credited to the other's ad click. Once it stands, neither is reached from the other, directly or through a third subject.
 
-A list is written in one transaction, with one decision per pair. A pair whose last report agrees and still holds is left alone and counted under `already`, so a system can send its whole list again, with a new key. Sign a system's decisions `system:` and its name, so people's and systems' are told apart.
+A list is written in one transaction, with one decision per pair. A pair whose last report agrees and still holds is left alone and counted under `already`, so a system can send its whole list again, with a new key. Sign a system's decisions `system:` and its name, so the audit log tells people's decisions from systems'.
 
 > **Reasons are permanent.** A reason stays in the audit log after its subjects are deleted. Name the kind of matter and leave out the matter itself.
 
@@ -389,8 +389,8 @@ The `fingerprint`, `canvas` and `ip` rows are set from these figures.
 
 | Identifier | Values that belonged to one person only | Same person on the next sighting, by days since the last |
 | --- | --- | --- |
-| Vendor fingerprint | 98% | 98% up to 30 days, 95% at 31–90, 86% past 90 |
-| Home-made canvas and user-agent hash | 53% | about 55% up to 7 days, 23% at 31–90, 7% past 90 |
+| Vendor fingerprint | 98% | 98% up to 30 days, 95% at 31 to 90, 86% past 90 |
+| Home-made canvas and user-agent hash | 53% | about 55% up to 7 days, 23% at 31 to 90, 7% past 90 |
 | IP address | 46% | 89% next day, 73% in a week, 37% in a month, 5% past 90 |
 
 The defaults follow from these measurements:
@@ -438,26 +438,26 @@ A pair labelled both ways is left out and counted.
 ## Limitations
 
 - **Conflict checks.** account-graph runs none. A `split` acts on pairs you already know, and whom you may serve stays your decision.
-- **Splits from your own systems.** They are applied as received.
+- **Splits from your own systems.** The graph applies them as received.
 - **Shared browsers.** A browser that both sides and a third person used can still be reached from each side.
 - **Many separations in one component.** Each merge left out by the separations would reconnect a separated pair. A different choice of cuts could still keep more merges overall. The exact multicut or multiway cut is hard to compute.
 - **Three dates of birth on two lines.** Where staff joined two lines to people of three or more dates, more of those joins can be left out than need be, and which ones can depend on ids. One review met it in 3 of 15,000 random graphs.
 - **Score calibration.** Clusters come from the cuts above and carry no probability.
-- **Matches.** It covers subjects in the newest 10,000 sightings. A speaker mark on any member of either person’s cluster keeps the pair out of Matches, even when the mark is older.
-- **Staff labels.** Staff find pairs that already look alike. A kind they search by looks better than it is, and strangers who share it are hardly in the file.
+- **Matches.** It covers subjects in the newest 10,000 sightings. A speaker mark on any member of either person's cluster keeps the pair out of Matches, even when the mark is older.
+- **Staff labels.** Staff find pairs that already look alike. A kind they search by looks better than it is, and few strangers who share it are in the file.
 - **Deleted evidence.** A merged-away record whose evidence was deleted cannot be used as a checked pair. The tool counts these, which were often the surest pairs.
 
 ## Withdrawing a matching fact
 
-When someone gives up a number, send a `decide` request with `action: "withdraw"`, their exact record ID in `subject`, one `fact`, and the statement’s `key`, `at` and `by`. The statement can arrive before the profile. It applies to the record named even when several records have been merged. A phone, email, device, IP address, or an identifying key your backend can supply in a profile can be withdrawn. For a verified address, use its matching identifier. A phone covers both its phone and VoIP hashes. Server-made speaker, review, name and call marks have their own meaning and cannot be withdrawn this way.
+When someone gives up a number, send a `decide` request with `action: "withdraw"`, their exact record ID in `subject`, one `fact`, and the statement's `key`, `at` and `by`. The statement can arrive before the profile. It applies to the record named even when several records have been merged. A phone, email, device, IP address, or an identifying key your backend can supply in a profile can be withdrawn. For a verified address, use its matching identifier. A phone covers both its phone and VoIP hashes. Server-made speaker, review, name and call marks have their own meaning and cannot be withdrawn this way.
 
-For each fact, the newest statement time wins. Ties go to the larger key in UTF-8 byte order. When a profile and a withdrawal have identical times and keys, the withdrawal wins. A newer keyed profile that gives this record the fact again restores its matching evidence, including its earlier sightings. A profile that gives only another fact, or gives this one to a speaker, leaves the withdrawal in force. A replay of the withdrawal says whether that exact statement stands now. Older builds did not retain profile keys or distinguish a profile from an ordinary sighting. A withdrawal sets that evidence aside even if the old sighting has a later time. Send a newer profile through an upgraded server to restore it.
+For each fact, the newest statement time wins. Ties go to the larger key in UTF-8 byte order. When a profile and a withdrawal have identical times and keys, the withdrawal wins. A newer keyed profile that gives this record the fact again restores its matching evidence, including its earlier sightings. A profile that gives only another fact, or gives this one to a speaker, leaves the withdrawal in force. A replay of the withdrawal says whether that exact statement stands now. Older builds did not keep profile keys or distinguish a profile from an ordinary sighting. A withdrawal sets that evidence aside even if the old sighting has a later time. Send a newer profile through an upgraded server to restore it.
 
-The fact stops contributing to this record’s links, scores, candidate lookups, duplicates, and inferred campaign credit. Its name-and-contact hashes also stop counting. With older hashes whose source contact cannot be recovered, withdrawing a contact sets those name-and-contact hashes aside until another keyed profile establishes them. Other holders still count. The graph recalculates holder counts and groups, including groups that can now match because a fact fell below its cap. Independent evidence, staff joins, separations, and a muted speaker mark continue to apply.
+The fact stops contributing to this record's links, scores, candidate lookups, duplicates, and inferred campaign credit. Its name-and-contact hashes also stop counting. With older hashes whose source contact cannot be recovered, withdrawing a contact sets those name-and-contact hashes aside until another keyed profile establishes them. Other holders still count. The graph recalculates holder counts and groups, including groups that can now match because a fact fell below its cap. Independent evidence, staff joins, separations, and a muted speaker mark continue to apply.
 
-Every call still rang, and every visit remains on the subject that made it. Before and after withdrawal, an unconfirmed call belongs to its line. Earlier and later calls and visits that reached this record solely through the withdrawn fact disappear from its journey and credit. A call that staff confirmed for a particular record keeps that owner. A STOP on the number remains in the line’s texting history and continues to apply there. Forgetting this record removes its withdrawals and matching evidence and tombstones its withdrawal keys, including after pruning. Pruning sightings alone preserves the standing decision and the evidence it takes out of matching.
+Every call still rang, and every visit remains on the subject that made it. Before and after withdrawal, an unconfirmed call belongs to its line. Earlier and later calls and visits that reached this record solely through the withdrawn fact disappear from its journey and credit. A call that staff confirmed for a particular record keeps that owner. A STOP on the number remains in the line's texting history and continues to apply there. Forgetting this record removes its withdrawals and matching evidence and tombstones its withdrawal keys, including after pruning. Pruning sightings alone preserves the standing decision and the evidence it takes out of matching.
 
-A withdrawal can only move `textsOptedOut` toward fewer texts. A STOP sent while the record held a phone or VoIP number still applies to that record after withdrawal, even if the message arrives late. A START sent while the number was withdrawn cannot clear it. A later profile can give the line back, and a START sent while the record holds it again can clear that line’s STOP. Other lines can still keep the person opted out. If a group comes apart, each member that would lose its opt-out keeps the STOP from the line that supplied it. A START already seen on that line cannot clear the inherited STOP just because the group split. A later START can clear it while the record holds the number. A staff join does not make a START from a withdrawn line count. If pruning has erased the profile that would establish who held a number at the time of a message, a possible STOP counts and a START requires surviving evidence.
+A withdrawal can only move `textsOptedOut` toward fewer texts. A STOP sent while the record held a phone or VoIP number still applies to that record after withdrawal, even if the message arrives late. A START sent while the number was withdrawn cannot clear it. A later profile can give the line back, and a START sent while the record holds it again can clear that line's STOP. Other lines can still keep the person opted out. If a group comes apart, each member that would lose its opt-out keeps the STOP from the line that supplied it. A START already seen on that line cannot clear the inherited STOP only because the group split. A later START can clear it while the record holds the number. A staff join does not make a START from a withdrawn line count. If pruning has erased the profile that would establish who held a number at the time of a message, a possible STOP counts and a START requires surviving evidence.
 
 Suppose two contacts shared a phone and the first also had a second number. A STOP from the second number at 96 counts for the contact who withdrew the shared phone at 104, even if the STOP or either profile arrived last. The graph checks the direct holders at the withdrawal time, applies the matching policy and staff separations, and reads their text history through that time. Someone who first acquired the shared phone at 105 cannot dilute the earlier link. A START dated after the withdrawal can clear that inherited STOP only while the contact holds the second number.
 
@@ -465,12 +465,12 @@ An opt-out already visible when the withdrawal splits the group is retained. Thi
 
 Late recovery uses the surviving claims of direct holders of the withdrawn phone. It needs both records and the evidence that joined them. A later mute, separation or erasure can remove that evidence. For a record that withdrew another kind of fact, a former member that never withdrew the shared phone itself, or a link through a third record, only an opt-out already visible when the withdrawal splits the group is retained. An ordinary staff split uses the members who remain together. Reconstructing all former groups would require examining history even for records that have never withdrawn a fact.
 
-Cluster changes produce the usual events. The decision history identifies the record and author. The event stream carries no new fact payload. A cached campaign report or a pending conversion uses the revised graph. As with an undone call tie, a conversion already sent stays on the platform. A withdrawal alone sends no refund or retraction. Ordinary corrected values and refunds still use the platform’s existing adjustment rules. A call with a confirmed party keeps its existing restrictions on delivery and adjustment.
+Cluster changes produce the usual events. The decision history identifies the record and author. The event stream carries no new fact payload. A cached campaign report or a pending conversion uses the revised graph. As with an undone call tie, a conversion already sent stays on the platform. A withdrawal alone sends no refund or retraction. Ordinary corrected values and refunds still use the platform's existing adjustment rules. A call with a confirmed party keeps its existing restrictions on delivery and adjustment.
 
 ### Earlier dates after a withdrawal
 
 The live graph applies a withdrawal when it receives it. In `attribute` and a `person` lookup, `at` limits the touches eligible for credit. Membership and paths to those touches come from the current graph. The `before` cursor of a journey selects earlier activity using today's membership. A report for a past day keeps the original visit and conversion dates and values, and assigns their credit using today's links. If a withdrawn number was the only connection, an earlier call can leave that record's journey, an earlier conversion can lose its campaign, and the same person lookup can return fewer members. Restoring the fact can change those answers again.
 
-An explicit identity snapshot (`graph.asOf(t)` in the graph tools) rebuilds membership from the retained sightings and decisions recorded by that time. A withdrawal and a profile that restores the fact also have to have reached their effective time. Forgetting and pruning limit what a snapshot can reconstruct. For example, a pruned email edge retains its first and last observations and their count. Two records can have identical folded observations even if one regained its email during an interval and the other regained it afterward.
+An explicit identity snapshot, `graph.asOf(t)` in the graph tools, rebuilds membership from the retained sightings and decisions recorded by that time. A withdrawal and a profile that restores the fact also have to have reached their effective time. Forgetting and pruning limit what a snapshot can reconstruct. For example, a pruned email edge keeps its first and last observations and their count. Two records can have identical folded observations even if one regained its email during an interval and the other regained it afterward.
 
-Even on a database with no withdrawals, a historical credit calculation would need to consult additional evidence. Checking for withdrawals first would itself read withdrawal state in the same database snapshot. In the SQL driver fixture with 1,000 single-holder sightings and one credited touch, the ordinary calculation issued nine statements and read no sightings. Replaying identity and loading the same touch in one transaction issued ten statements and read all 1,000 sightings. Reports can include outcomes on both sides of a withdrawal and need the identity applicable to each outcome.
+Even on a database with no withdrawals, a historical credit calculation would need to read more evidence. Checking for withdrawals first would itself read withdrawal state in the same database snapshot. In the SQL driver fixture with 1,000 single-holder sightings and one credited touch, the ordinary calculation issued nine statements and read no sightings. Replaying identity and loading the same touch in one transaction issued ten statements and read all 1,000 sightings. Reports can include outcomes on both sides of a withdrawal and need the identity applicable to each outcome.
