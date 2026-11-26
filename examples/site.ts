@@ -54,7 +54,7 @@ createServer(async (request, response) => {
       const form = new URLSearchParams(await new Response(request as unknown as ReadableStream).text())
       // The cookie names the visitor. Where there is none, the script tag added the same id to the form as it was
       // submitted, which is how a form posted to another system, one that never sees this site's cookie, carries it.
-      // Ticked as about somebody else, the field has another name, and the cookie is that browser's too: it is whoever wrote, and not the account.
+      // Ticked as about somebody else, the field has another name, and the cookie is that browser's too, because it is whoever wrote, and not the account.
       const other = form.has('other')
       const filled = device ?? form.get(other ? 'ag_speaker_device' : 'ag_device')
       const subject = `account:${++accounts}`
@@ -89,7 +89,7 @@ createServer(async (request, response) => {
         : '<p>No data for this browser. Open the <a href="/">landing page</a> first.</p>'))
     }
     if (url.pathname === '/reset') {
-      // Start over as a new visitor: forget the device id the collector kept in this browser.
+      // Start over as a new visitor by forgetting the device id the collector kept in this browser.
       return response
         .writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'set-cookie': ['ag_device=; Max-Age=0; Path=/', 'ag_device=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax'] })
         .end('<!doctype html><title>Reset</title><p id="out"></p><script>localStorage.removeItem("ag_device"); localStorage.removeItem("ag_click"); out.textContent = "Visitor reset. Device cookie present: " + /(^|; )ag_device=/.test(document.cookie)</script><a href="/">Back</a>')

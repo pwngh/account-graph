@@ -15,15 +15,15 @@ class Graph_outbox extends CI_Model
      * Queue a single write on the CI3 connection that is saving the host change.
      *
      * @param string $record_id Ordering group in the host.
-     *        (e.g. 'contact:42')
+     *        (for example 'contact:42')
      * @param string $call Graph write method.
-     *        (e.g. 'record')
+     *        (for example 'record')
      * @param array $request Original write, including its time and stable key.
-     *        (e.g. ['entries' => [['type' => 'arrival', 'key' => 'visit-42', 'at' => 1000, 'subject' => 'contact:42']]])
+     *        (for example ['entries' => [['type' => 'arrival', 'key' => 'visit-42', 'at' => 1000, 'subject' => 'contact:42']]])
      * @param int|string|null $depends_on Earlier outbox ID that must succeed first.
-     *        (e.g. '17')
+     *        (for example '17')
      * @param array|null $dropped Receives the paths and reasons for fields the model omits.
-     *        (e.g. ['facts.email' => 'Expected an email address.'])
+     *        (for example ['facts.email' => 'Expected an email address.'])
      * @return string|false Outbox ID or false for a screened-out profile.
      */
     public function enqueue(string $record_id, string $call, array $request, $depends_on = null, ?array &$dropped = null)
@@ -49,7 +49,7 @@ class Graph_outbox extends CI_Model
      * Insert the builder-escaped row and read its generated ID on the same connection.
      *
      * @param string $sql Outbox SQL.
-     *        (e.g. $this->db->get_compiled_insert('account_graph_outbox'))
+     *        (for example $this->db->get_compiled_insert('account_graph_outbox'))
      * @return string Outbox ID.
      */
     private function insert_id(string $sql): string
@@ -71,9 +71,9 @@ class Graph_outbox extends CI_Model
      * Send a bounded worker pass from its own idle CI3 connection.
      *
      * @param account_graph_lib $client The client loaded by CI3.
-     *        (e.g. $this->account_graph_lib)
+     *        (for example $this->account_graph_lib)
      * @param int $limit Maximum rows to process in this pass.
-     *        (e.g. 100)
+     *        (for example 100)
      * @return array Counts by resulting state.
      */
     public function run(account_graph_lib $client, int $limit = 100): array
@@ -106,7 +106,7 @@ class Graph_outbox extends CI_Model
      * Apply the host table prefix to worker statements.
      *
      * @param string $sql Outbox SQL.
-     *        (e.g. 'SELECT state FROM account_graph_outbox WHERE id = ?')
+     *        (for example 'SELECT state FROM account_graph_outbox WHERE id = ?')
      * @return string
      */
     private function table_sql(string $sql): string
@@ -119,9 +119,9 @@ class Graph_outbox extends CI_Model
      * Execute escaped SQL on the host connection without caching rows or logging values in CI3.
      *
      * @param string $sql Outbox SQL.
-     *        (e.g. $this->db->get_compiled_insert('account_graph_outbox'))
+     *        (for example $this->db->get_compiled_insert('account_graph_outbox'))
      * @param string $message Message to return on failure.
-     *        (e.g. 'Graph outbox read failed.')
+     *        (for example 'Graph outbox read failed.')
      * @return PDOStatement|resource|object|bool Driver result.
      */
     private function driver_query(string $sql, string $message)
@@ -143,9 +143,9 @@ class Graph_outbox extends CI_Model
      * Read the first matching outbox row.
      *
      * @param string $sql Outbox SQL.
-     *        (e.g. 'SELECT state FROM account_graph_outbox WHERE id = ?')
+     *        (for example 'SELECT state FROM account_graph_outbox WHERE id = ?')
      * @param array $args Bound statement values.
-     *        (e.g. ['17'])
+     *        (for example ['17'])
      * @return array|null
      */
     public function one(string $sql, array $args = []): ?array
@@ -177,9 +177,9 @@ class Graph_outbox extends CI_Model
      * Run a worker update and return the number of claimed or changed rows.
      *
      * @param string $sql Outbox SQL.
-     *        (e.g. "UPDATE account_graph_outbox SET state = 'sending' WHERE id = ?")
+     *        (for example "UPDATE account_graph_outbox SET state = 'sending' WHERE id = ?")
      * @param array $args Bound statement values.
-     *        (e.g. ['17'])
+     *        (for example ['17'])
      * @return int
      */
     public function execute(string $sql, array $args = []): int

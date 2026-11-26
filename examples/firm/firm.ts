@@ -1,12 +1,12 @@
 /**
  * A made-up law firm with three offices and two languages, to show the whole
- * thing running. Nobody in it is real: the names, numbers and amounts come
+ * thing running. Nobody in it is real. The names, numbers and amounts come
  * from a seeded generator, and nothing leaves this machine.
  *
  *   npm run firm
  *   npm run firm -- injury
  *
- * It uses PostgreSQL (or memory with MEMORY=1), the graph server with its reviewer screen, the
+ * It uses PostgreSQL, or memory with MEMORY=1, the graph server with its reviewer screen, the
  * firm's site and a stage to present it on, and fills them. docs/demo.md has the
  * scenes. Ctrl-C stops and deletes all of it.
  */
@@ -384,7 +384,7 @@ async function round(databaseUrl: string | undefined, graphAt: string, sitePort:
       title: 'Two at one call', text: 'Somebody else at the firm has the same call open, and saves another answer. They are told of the first.', see: ['Journey', review(`journey/${encodeURIComponent(demo.other)}`)], spot: ['Record holder confirmed'],
       async run() {
         await at(3, 16, 36)
-        // Sent as their own program would: they saw a call nobody had said anything of.
+        // Sent as their own program would, because they saw a call nobody had said anything of.
         const { results: [second] } = await office.record({ entries: [{ type: 'call_update', key: `demo-party-2-${boot}`, at: clock(), call: 'demo-5', change: { kind: 'party', role: 'self', subject: demo.contact, by: 'lee', seen: null } }] })
         const stands = await office.lookup({ kind: 'party', call: 'demo-5' })
         const refused = second && !second.ok && second.reason === 'STALE' ? `Refused: ${second.by} answered first` : 'Taken'

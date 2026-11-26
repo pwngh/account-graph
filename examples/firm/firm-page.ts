@@ -117,7 +117,7 @@ ${list('grid', help)}${phone ? '' : asked}${list('steps', then, 'ol')}${list('gr
 ${phone ? `<script>addEventListener('click', (event) => { const link = event.target.closest('a'); if (!link) return; event.preventDefault(); if (link.matches('.call')) parent.postMessage('call', ${JSON.stringify(graph)}) })</script>` : `<script type="module" src="${graph}/collect.js?pool=1&params=office,lang"></script>`}</body></html>`
 }
 
-/** Runs first in the reviewer screen of the demo: its time is the demo's, which the server says with every answer. */
+/** Runs first in the reviewer screen of the demo. Its time is the demo's, which the server says with every answer. */
 export const clockScript = (ahead: number): string => `(() => {
   let ahead = ${ahead}
   const Real = Date, real = fetch
