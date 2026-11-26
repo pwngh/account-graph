@@ -282,7 +282,7 @@ export function cardModels(recent) {
     more: ({ row, board } = {}) => row && recent(`/journey?subject=${encodeURIComponent(row.subject)}`).then((journey) => {
       const { entries, subjects } = journey
       const partial = journey.next !== null
-      // A journey reads further than the board, which is of one group: what is only linked to it has no part in the column.
+      // A journey reads further than the board, which is of one group. What is only linked to it has no part in the column.
       const of = (kind) => entries.filter((entry) => entry.kind === kind && subjects?.[entry.subject]?.how !== 'linked')
       const ladder = (board?.columns ?? []).map(({ step }) => step).filter((step) => step !== null)
       // When each step was first reached, in the order of the board.
@@ -417,7 +417,7 @@ export function cardModels(recent) {
     now({ open, goals, limits } = {}) {
       const calls = open?.calls ?? []
       const more = open?.next !== null && open?.next !== undefined
-      // The list is oldest first. Where there is another page, a count is of those listed, unless the last of them is not counted: then none after it is either.
+      // The list is oldest first. Where there is another page, a count is of those listed, unless the last of them is not counted. Then none after it is either.
       const some = (holds, first = false) => (open ? `${amount(calls.filter(holds).length)}${more && !(first && calls.length > 0 && !holds(calls.at(-1))) ? ` of the first ${amount(calls.length)}` : ''}` : undefined)
       const over = (hours) => (call) => open.at - call.at > hours * 3600000
       const target = goals?.callbackHours
