@@ -120,6 +120,16 @@ To replace a token, list both, `{"dana":["new","old"]}`, and restart. Remove the
 
 [Routes for browsers](http.md#routes-for-browsers), `/collect.js`, `/review` and `/health` need no token. `/review` serves a page whose data requires one.
 
+### Named service tokens
+
+Give each integration its own token in `serviceTokens` when calling `createEdge`. The command line reads the same JSON list from `SERVICE_TOKENS` or a private file named by `SERVICE_TOKENS_FILE`. Supply one of the two variables. For example, the file for a service that imports profiles and reads campaign reports would contain the following list.
+
+```json
+[{"name":"intake","token":"replace-with-a-random-secret","calls":{"record":["profile"],"report":["campaigns"]}}]
+```
+
+Omit a call to close it. Use an array of entry types for `record`, actions for `decide`, and kinds for `lookup` or `report`. An empty array accepts none. Use `true` for every kind of a listed call or to grant `forget` or `events`. An empty `calls` object grants nothing. Names must be unique across people and services. Every credential must be nonempty and unique, including the main token and reviewers’ replacement tokens. Restart the process after updating the list.
+
 ## Reviewer screen
 
 Open `/review` and enter a token. Each view has its own address, so you can link to it, reload it and go back to it.
@@ -464,6 +474,7 @@ A partially set group stops the server at startup, with a message naming the mis
 | `DATABASE_URL` | required | PostgreSQL address. |
 | `GRAPH_TOKEN` | required | Service token. |
 | `RECEIPT_SECRETS` | required | Keys the [receipts](#receipts). Separated by commas, at least 32 characters each. The first signs, and all are tried. |
+| `SERVICE_TOKENS`, `SERVICE_TOKENS_FILE` | none | Named service credentials and their allowed calls, supplied as a JSON list or a path to that list. |
 | `REVIEW_TOKENS` | none | Reviewers, as JSON: each name with its token or a list of tokens. Each token must be unique and differ from `GRAPH_TOKEN`. |
 | `ORIGINS` | none | Site addresses that may post visits, separated by commas. |
 | `PORT`, `HOST` | `8080`, `0.0.0.0` | Listening port and address. |

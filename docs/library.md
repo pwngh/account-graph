@@ -271,6 +271,7 @@ async function stop() {
 | Option | Variable | Meaning |
 | --- | --- | --- |
 | `token` | `GRAPH_TOKEN` | The service token |
+| `serviceTokens` | `SERVICE_TOKENS`, `SERVICE_TOKENS_FILE` | Named service credentials and the calls, entry types, actions or kinds each opens |
 | `reviewers` | `REVIEW_TOKENS` | Each reviewer's name, with a token or a list of tokens |
 | `origins` | `ORIGINS` | Sites whose pages may post |
 | `trustProxy` | `TRUST_PROXY` | `true`, or how many proxies stand in front |

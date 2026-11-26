@@ -252,6 +252,7 @@ export interface Delivery {
 
 /** None of these is kept with the key: put right what was wrong and send the same key again. */
 export type RecordRefusal =
+  | { readonly reason: 'FORBIDDEN' }
   /** The party statement that stands. All three fields are null when there is none. */
   | { readonly reason: 'STALE'; readonly decision: string | null; readonly by: string | null; readonly at: At | null }
   /** The key was used for something else. `fields` names what differs, never its value. */

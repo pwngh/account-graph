@@ -412,6 +412,8 @@ export function createSix(engine: Engine, options: SixOptions) {
         const before = await tx.receiptOf('decide', receipts.mac('decide', request.key).all)
         if (before?.forgotten !== undefined) return no({ reason: 'FORGOTTEN' as const })
         const fields = before && receipts.differs(before, entry)
+        // Actions share a key space. A collision with another action reveals only that the key is occupied.
+        if (fields?.includes('action')) return no({ reason: 'KEY_REUSED' as const, fields: ['action'] })
         if (fields && fields.length > 0) return no({ reason: 'KEY_REUSED' as const, fields })
         let recorded = 0
         let already = 0

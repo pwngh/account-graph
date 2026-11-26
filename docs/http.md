@@ -30,15 +30,20 @@ curl -X POST https://graph.example.org/v1/record \
 
 Send a token in the `authorization` header as `Bearer …`.
 
-| Call | Service token (`GRAPH_TOKEN`) | Reviewer token (`REVIEW_TOKENS`) |
-| --- | --- | --- |
-| `record` | Every entry | Only call party statements signed with the owner’s name |
-| `events` | Yes | 403 |
-| `decide`, `forget` | Any `by` | `by` must be the owner of the token |
-| `lookup` | Every kind | `journey`, `find` and `party` |
-| `report` | Every kind | Every kind |
+| Call | Main service token | Reviewer token | Named service token |
+| --- | --- | --- | --- |
+| `record` | Every entry | A batch consisting entirely of call party statements signed with the reviewer’s name | Listed entry types. Party statements require the service’s own signature. |
+| `decide` | Any action and author | Own signature | Listed actions and own signature |
+| `forget` | Any author | Own signature, including platform retraction | Explicit grant and own signature |
+| `lookup` | Every kind | `journey`, `find` and `party`. An excluded party’s subject is hidden. | Listed kinds |
+| `report` | Every kind | Every kind, including deliveries | Listed kinds |
+| `events` | Yes | No | Explicit grant |
 
-A missing or wrong token gets 401. A name that begins with `system:` is a system's. No reviewer can have one, so `"by": "system:cases"` needs the service token.
+For a named service, the credential determines the author. Send `by: "system:intake"` for the service named `intake`. Another signature is refused, including a reviewer’s. The HTTP log gives the service name and the call. The decision history keeps the signature.
+
+An unknown token gets 401. A known token without the requested call, decision action, lookup or report kind gets 403. Within an authorized `record` batch, a disallowed entry gets `{type, key, ok: false, reason: "FORBIDDEN"}`. Other entries run in order. The check precedes receipt and provider lookups, including on retries. The ordinary envelope and entry shape checks still apply to the whole batch.
+
+Each record entry type has its own key space. Forget keys and decision keys each have one too. When an allowed decision uses a key occupied by a different action, every caller gets `KEY_REUSED` with just `["action"]`. The answer reveals no signer, action value or other field differences.
 
 An `x-request-id` header of 1 to 200 printable characters comes back with the answer of a call.
 
@@ -162,6 +167,7 @@ A refusal is an answer, with status 200 and `"ok": false`. None is kept with the
 | `reason` | Meaning | With it |
 | --- | --- | --- |
 | `KEY_REUSED` | The key was used for something else | `fields`: the names of what differs |
+| `FORBIDDEN` | The token cannot send this entry or a page address in it is refused | The original entry type and key |
 | `STALE` | The standing party statement differs from `change.seen` | `decision` is the current statement key, `by` its signer and `at` its time. All three are `null` when no statement stands. |
 | `UNKNOWN_REFERENCE` | What it is about is not recorded | `of` |
 | `KIND_NOT_IN_POLICY` | An identifier has a kind the policy lacks | `kind` |
@@ -473,11 +479,11 @@ Browsers post to `/collect` without a token. The [script tag](operations.md#scri
 | `GET /collect.js` | The script tag |
 | `GET /fingerprint.js` | Fingerprint helpers, loaded by the script on request |
 | `GET /review` | The [reviewer screen](operations.md#reviewer-screen). Its data requires a token. |
-| `/review/api/*` | The routes the screen calls, with a service or reviewer token. They serve the screen and are not part of the six calls. |
+| `/review/api/*` | The routes the screen calls, with the main service token or a reviewer token. They serve the screen and are not part of the six calls. |
 | `GET /health` | `{"ok":true}` once the database answers. While stored groups are due a rebuild, `warning` gives the command. |
 
 A Twilio request with a missing or wrong signature gets 403. A call or text that is already known, or whose person was deleted, gets the usual answer, so Twilio does not send it again.
 
-`GET /review/api/subject?subject=contact:7` returns a `dates` object keyed by the requested ID and the IDs in `links` and `separated`. For example, `"contact:7": {"firstSeen":1795460000000,"createdAt":1795300000000}`. Each date is omitted when unknown. An unknown ID with no dates keeps its usual `known: false` answer. The route requires a service or reviewer token.
+`GET /review/api/subject?subject=contact:7` returns a `dates` object keyed by the requested ID and the IDs in `links` and `separated`. For example, `"contact:7": {"firstSeen":1795460000000,"createdAt":1795300000000}`. Each date is omitted when unknown. An unknown ID with no dates keeps its usual `known: false` answer. The route requires the main service token or a reviewer token.
 
 `firstSeen` is the earliest retained event time on that exact ID. It includes identifier sightings, visits, outcomes, calls and texts filed under the ID, dated consent answers, links sent and transfers in either direction. Each identifier edge keeps its first sighting time even after the individual sighting is pruned. Staff join marks, audit decisions, receipt times and the reported creation date are excluded. An earlier event reported later can move this date earlier. Other members of the group keep their own dates.
