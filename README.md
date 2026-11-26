@@ -25,7 +25,7 @@ It runs as a server beside your site, phones and backend, on PostgreSQL or in me
 
 ## Why it matters
 
-A click, a phone call and a sale often land in different systems, under different IDs. Counted apart, they cannot answer simple questions.
+A click, a phone call and a sale often land in different systems, under different IDs. Counted apart, they cannot say which ad led to a sale.
 
 | You ask | You get |
 | --- | --- |
@@ -41,11 +41,11 @@ git clone https://github.com/pwngh/account-graph && cd account-graph
 npm ci && npm --prefix apps/review ci && npm run firm
 ```
 
-A made-up law firm with two months of data, a site, and 27 scenes to play. The review app needs Node 22.22 or later. Set `DATABASE_URL`, use Docker with a local `postgres:16` image, or run `MEMORY=1 npm run firm` for an in-memory demo. See the [demo](docs/demo.md) and [Getting started](docs/getting-started.md).
+This starts a made-up law firm with two months of data, a site and 27 scenes to play. The review app needs Node 22.22 or later. Set `DATABASE_URL`, use Docker with a local `postgres:16` image, or run `MEMORY=1 npm run firm` for an in-memory demo. See the [demo](docs/demo.md) and [Getting started](docs/getting-started.md).
 
 ## Reviewer screen
 
-The new reviewer app serves Accounts, Journey, Board and Calls as HTML. The original screen remains available on the graph server. See the [review app guide](docs/review-app.md).
+The new reviewer app serves Accounts, Journey, Board and Calls as HTML. The original screen is still available on the graph server. See the [review app guide](docs/review-app.md).
 
 Reviewers see the evidence behind every match, missed calls awaiting a callback, and the return on each campaign. These are four of its seven views. Accounts is the picture at the top, and the others are Matches and Calls.
 
@@ -72,7 +72,7 @@ flowchart LR
 
 ### Six calls
 
-Six calls, the same from Node and at `POST /v1/<call>`. Every write has a key of yours, so sending it again is safe.
+The six calls work the same from Node and at `POST /v1/<call>`. Every write has a key of yours, so sending it again is safe.
 
 | Call | Does |
 | --- | --- |
@@ -103,7 +103,7 @@ See the [HTTP API](docs/http.md) and the [library](docs/library.md).
 
 ### How a match is scored
 
-A shared device is strong evidence and a shared IP address is weak. Clues add up, and each counts for less when more people share it. By default, 0.9 can join two records and 0.5 only relates them. See [Matching](docs/matching.md).
+A shared device is strong evidence and a shared IP address is weak. Clues add together, and each counts for less when more people share it. By default, 0.9 can join two records and 0.5 only relates them. See [Matching](docs/matching.md).
 
 ## Documentation
 
@@ -112,7 +112,7 @@ Guides are in [docs/](docs/README.md): getting started, identifying people, call
 ## Limitations
 
 - No live provider account has been tried. Each endpoint tried refused an invalid key as expected. See [Providers](docs/providers.md).
-- A score is a weight and not a probability, and is unmeasured on real people. On made-up people, five runs missed five, four, eight, three and one of the marks set for them. See [Accuracy](docs/accuracy.md).
+- A score is a weight and not a probability. Nobody has measured it on real people. On made-up people, five runs missed five, four, eight, three and one of the marks set for them. See [Accuracy](docs/accuracy.md).
 - The newest qualifying visit gets all of the credit.
 - `forget` leaves data at ad platforms. See [Privacy](docs/privacy.md).
 - It runs no conflict check, and it keeps no consent to be called or texted.
