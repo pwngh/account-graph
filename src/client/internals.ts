@@ -17,7 +17,9 @@ export interface Internals {
   pass(): Promise<void>
 }
 
-const behind = new WeakMap<AccountGraph, () => Promise<Internals>>()
-export const keep = (graph: AccountGraph, open: () => Promise<Internals>): void => void behind.set(graph, open)
+const behind = new WeakMap<AccountGraph, { options: LocalOptions, open: () => Promise<Internals> }>()
+export const keep = (graph: AccountGraph, options: LocalOptions, open: () => Promise<Internals>): void => void behind.set(graph, { options, open })
+/** The edge checks its credentials against local settings before it opens the database. */
+export const localOptionsOf = (graph: AccountGraph): LocalOptions | undefined => behind.get(graph)?.options
 /** Undefined for a remote instance. */
-export const internalsOf = (graph: AccountGraph): (() => Promise<Internals>) | undefined => behind.get(graph)
+export const internalsOf = (graph: AccountGraph): (() => Promise<Internals>) | undefined => behind.get(graph)?.open

@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
 import type { DecideRequest, LookupRequest, RecordEntry, RecordResponse, ReportRequest } from '../contract/api.ts'
 import { FAULT_CODES, fault } from '../contract/fault.ts'
+import { leadProblems } from '../contract/lead-settings.ts'
 import { CALLS, checked } from '../contract/validate.ts'
 import type { CallName } from '../contract/validate.ts'
 
@@ -27,6 +28,14 @@ export interface ServiceToken {
 }
 
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
+
+/** `secrets` are the graph's own, such as the receipt, link and identifier secrets, which a lead secret must not repeat. */
+export function edgeLeadProblems(options: { leads?: unknown, token: string, reviewers?: Reviewers | undefined, serviceTokens?: readonly ServiceToken[] | undefined, twilio?: { authToken?: string } | undefined, fingerprint?: { secretKey?: string } | undefined, maxmind?: { licenseKey?: string } | undefined }, secrets: readonly (string | undefined)[] = []): string[] {
+  if (options.leads === undefined) return []
+  const services = Array.isArray(options.serviceTokens) ? options.serviceTokens : []
+  const held = [options.token, ...Object.values(options.reviewers ?? {}).flat(), ...services.map(entry => entry?.token), options.twilio?.authToken, options.fingerprint?.secretKey, options.maxmind?.licenseKey, ...secrets].filter((each): each is string => typeof each === 'string')
+  return leadProblems(options.leads, held, [...Object.keys(options.reviewers ?? {}), ...services.map(entry => entry?.name)])
+}
 
 export function serviceTokenProblems(tokens: unknown, reviewers: Reviewers | undefined, service: string): string[] {
   if (tokens === undefined) return []

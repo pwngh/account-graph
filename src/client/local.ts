@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import type { AccountGraph, CallOptions, LocalOptions } from '../contract/api.ts'
 import { FAULT_CODES, fault } from '../contract/fault.ts'
+import { graphSecrets, leadProblems } from '../contract/lead-settings.ts'
 import { plain } from '../contract/json.ts'
 import { checked } from '../contract/validate.ts'
 import type { CallName } from '../contract/validate.ts'
@@ -41,7 +42,7 @@ const policyOf = (given: NonNullable<LocalOptions['policy']>) => ({ ...given, ki
 
 /** Everything wrong with the options, one line each. */
 export function localProblems(options: LocalOptions): string[] {
-  const wrong: string[] = []
+  const wrong = leadProblems(options.leads, graphSecrets(options))
   const given = options as unknown as Record<string, unknown>
   if (['url', 'databaseUrl', 'memory'].filter((name) => given[name] !== undefined).length !== 1) wrong.push('Exactly one of `url`, `databaseUrl` and `memory` must be given')
   if (given.databaseUrl !== undefined) {
@@ -237,7 +238,7 @@ export function localGraph(options: LocalOptions, keeping: Keeping = {}): Accoun
     },
   }
   let closing: Promise<void> | undefined
-  keep(graph, () => {
+  keep(graph, options, () => {
     if (gate.ended) return Promise.reject(fault(FAULT_CODES.GRAPH.CLOSED, 'This instance is closed'))
     return opened()
   })

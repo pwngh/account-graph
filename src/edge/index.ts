@@ -2,10 +2,11 @@ import { validPageRules } from './collect.ts'
 import type { PageRules } from './collect.ts'
 import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { internalsOf } from '../client/internals.ts'
+import { internalsOf, localOptionsOf } from '../client/internals.ts'
 import type { Internals } from '../client/internals.ts'
 import { FAULT_CODES, fault, isFault } from '../contract/fault.ts'
-import type { AccountGraph, ForgetValue, RecordEntry, RecordResponse } from '../contract/api.ts'
+import { graphSecrets } from '../contract/lead-settings.ts'
+import type { AccountGraph, ForgetValue, LeadSources, RecordEntry, RecordResponse } from '../contract/api.ts'
 import { createBatcher } from '../core/batch.ts'
 import { Outdated } from '../core/graph.ts'
 import type { Graph } from '../core/graph.ts'
@@ -16,10 +17,10 @@ import { createFingerprintVerifier } from '../providers/fingerprint.ts'
 import type { FingerprintOptions } from '../providers/fingerprint.ts'
 import { createMaxMindLookup } from '../providers/maxmind.ts'
 import type { MaxMindOptions } from '../providers/maxmind.ts'
-import { createHandler, networks, reviewerProblems } from './server.ts'
+import { createHandler, createLeadHandler, networks, reviewerProblems } from './server.ts'
 import type { Core, HandlerOptions, Reviewers } from './server.ts'
 
-import { serviceTokenProblems } from './tokens.ts'
+import { edgeLeadProblems, serviceTokenProblems } from './tokens.ts'
 import type { ServiceToken } from './tokens.ts'
 export type { ServiceToken } from './tokens.ts'
 
@@ -28,6 +29,8 @@ export interface EdgeOptions extends PageRules {
   token: string
   reviewers?: Reviewers
   serviceTokens?: readonly ServiceToken[]
+  /** Sources served here, overriding any set on the local graph. */
+  leads?: LeadSources
   /** Site origins a browser may post from, such as `https://example.org`. */
   origins?: readonly string[]
   trustProxy?: boolean | number
@@ -77,7 +80,14 @@ export function createEdge(graph: AccountGraph, options: EdgeOptions): Edge {
   const open = internalsOf(graph)
   if (!open) throw fault(FAULT_CODES.CONFIG.UNSUPPORTED, 'The edge requires a local instance')
   const wrong = problems(options)
+  const local = localOptionsOf(graph)
+  const sources = options?.leads === undefined ? local?.leads : options.leads
+  if (sources !== undefined) wrong.push(...edgeLeadProblems({ ...options, leads: sources }, graphSecrets(local)))
   if (wrong.length > 0) throw fault(FAULT_CODES.CONFIG.INVALID, wrong.join('\n'), { detail: { problems: wrong } })
+  const leads = sources && createLeadHandler(sources, async (entries, paidUpTo) => {
+    const { call } = await open()
+    return entries.length ? await call('record', { entries }, { lead: true, ...(paidUpTo && { paidUpTo }) }) as RecordResponse : { results: [] }
+  }, local?.now ?? Date.now, local?.phones?.country, options.trustProxy)
   let made: Promise<{ handler: ReturnType<typeof createHandler>; drain(): Promise<void> }> | undefined
 
   function make(internals: Internals) {
@@ -157,6 +167,7 @@ export function createEdge(graph: AccountGraph, options: EdgeOptions): Edge {
   }
 
   const edge = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+    if (leads && request.url?.startsWith('/leads/')) return leads(request, response)
     let ready: Awaited<NonNullable<typeof made>>
     try {
       ready = await (made ??= open().then(make))

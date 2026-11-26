@@ -1,6 +1,6 @@
 # HTTP API
 
-Six calls over plain HTTP, in JSON. Your services authenticate with a token. Browsers and Twilio have routes of their own. The [OpenAPI 3.1 description](openapi.json) covers the six calls and the browser tag. Follow the [no-code guide](no-code.md) to connect a form.
+Six calls over plain HTTP, in JSON. Your services authenticate with a token. Browsers, Twilio and lead sources have routes of their own. The [OpenAPI 3.1 description](openapi.json) covers the six calls and the browser tag. Follow the [no-code guide](no-code.md) to connect a form.
 
 > **One rule.** `POST /v1/<call>` takes the call's argument as its body, and the 200 body is the call's answer. The [library](library.md) makes the same calls with the same shapes.
 
@@ -481,6 +481,22 @@ Browsers post to `/collect` without a token. The [script tag](operations.md#scri
 | 429 | Too many requests from one address. `retry-after` gives the wait. |
 
 > **Old paths.** `/event`, `/carry`, `/number` and `/text-code` were routes of their own. They still answer for one release, for pages that keep an old script.
+
+## Lead webhooks
+
+`POST /leads/<name>` accepts `application/json` and `application/x-www-form-urlencoded` from a configured source. Its header holds the configured HMAC-SHA256 signature over the exact body bytes, or `Authorization: Bearer <source-secret>` for a bearer source. Query parameters supply no credentials. Responses contain entry types or a reason and omit posted values. An error is answered as `{ "error": "…" }`, as on every route outside `/v1`, never as a [fault](#faults). [Source settings and example posts](leads.md)
+
+| Status | Meaning |
+| --- | --- |
+| 200 | `recorded` lists the new entries. An identical retry returns `{"recorded":[],"duplicate":true}`. A lead without a usable fact or an entry refused as forgotten returns an empty list and a `NO_FACT_USED` or `FORGOTTEN` note. A post whose mapped fields hold no usable fact gets `NO_FACT_USED` even while the graph is unavailable. |
+| 400 | The body or its mapped fields could not be read, or a payment is outside the source's `conversions` or `maxAmount`. |
+| 401 | The configured signature or bearer credential is missing or wrong. Nothing was recorded. |
+| 404 | There is no configured source with this name. |
+| 405 | Use POST for a configured source. |
+| 409 | The ID was already posted with other mapped details or for another subject, or the payment ID for another payment. Nothing was recorded. A source with `updates` adds a lead's new details instead. |
+| 413 | The body exceeds 65,536 bytes. The server stops reading, answers with `Connection: close`, and closes the connection two seconds after the answer, giving a sender still streaming time to read it. |
+| 429 | The source has reached its rate limit, or a post with a missing or wrong signature came after 10 such posts from the sender's address to this source within a minute. A correct signature is not refused for the wrong ones. `Retry-After` gives the wait in seconds before sending the same post again. |
+| 503 | The graph is unavailable. Retry the same post when it is ready. |
 
 ## Other routes
 

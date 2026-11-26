@@ -537,6 +537,8 @@ export interface InMemory {
   readonly url?: never
 }
 export interface LocalSettings extends Common {
+  /** Sources accepted by the HTTP edge at /leads/<name>. */
+  readonly leads?: LeadSources
   /** Left out, the policy the database was built with. One that differs throws CONFIG.MISMATCH until `account-graph rebuild`. */
   readonly policy?: PolicyOptions
   readonly identifierSecret?: string
@@ -582,6 +584,39 @@ export interface LocalSettings extends Common {
   readonly now?: () => At
   /** Asks ad platforms, checks and webhooks in place of the global one: for tests and demos. */
   readonly fetch?: typeof fetch
+}
+
+export type LeadSources = Readonly<Record<string, LeadSource>>
+export interface LeadSource {
+  readonly kind: 'lead' | 'payment'
+  readonly secret: string
+  readonly auth: 'bearer' | { readonly header: string, readonly encoding: 'hex' | 'base64' }
+  readonly stage?: string
+  /** Subjects this source writes start with it and a colon. Defaults to `lead:<name>`. */
+  readonly prefix?: string
+  /** Lets the mapped `subject` name any record, not only one under the prefix. Only for a sender trusted with every record. */
+  readonly trustSubjects?: boolean
+  /** Adds the new details of a lead posted again under its ID. Only safe when the vendor assigns the ID, never when a visitor can edit it. */
+  readonly updates?: boolean
+  readonly perMinute?: number
+  /** For a payment source, required: the conversion key prefixes it may pay, such as `lead:intake` for `lead:intake:I28`. */
+  readonly conversions?: readonly string[]
+  /** For a payment source, required: the most it may pay one conversion, over all its payments together. */
+  readonly maxAmount?: number
+  /** Literal paths into the vendor post. Numeric segments index arrays. */
+  readonly mapping: {
+    readonly id: string
+    readonly at?: string
+    readonly subject?: string
+    readonly first?: string
+    readonly last?: string
+    readonly email?: string
+    readonly phone?: string
+    readonly device?: string
+    readonly amount?: string
+    readonly currency?: string
+    readonly conversion?: string
+  }
 }
 
 export interface GoogleServiceAccount {

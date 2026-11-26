@@ -3,10 +3,13 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { pageServer } from './page-server.suite.ts'
 import { gtmCollector } from './gtm-collector.suite.ts'
+import { leadForgotten, leadGuesses, leadOversize, leadPayments, leadSpellings, leadTimes, leadUpdates, leadRoutes, leadSources, leadSubjects } from './leads.suite.ts'
+import { leadSettings } from './lead-settings.suite.ts'
 import { after, test } from 'node:test'
 import pg from 'pg'
 import { internalsOf } from '../src/client/internals.ts'
 import { hashPhone } from '../src/core/identifiers.ts'
+import type { createMemoryStore } from '../src/core/memory.ts'
 import { codeNote } from '../tools/internals.ts'
 import { createEdge } from '../src/edge/index.ts'
 import { FAULT_CODES, accountGraph, hasCode, isFault } from '../src/index.ts'
@@ -78,10 +81,49 @@ for (const [kind, open] of Object.entries({ memory, ...(url && { postgres }) }))
     const opened = await open()
     try {
       await gtmCollector(opened.local)
+      } finally {
+        await opened.close()
+      }
+    })
+
+  test(`lead webhooks authenticate, map and record through receipts, ${kind}`, async t => {
+    const clock = { at: NOW }
+    const opened = await open({ leads: leadSources, now: () => clock.at, policy: { apart: ['given'] } })
+    const dump = async () => {
+      if (!opened.schema) {
+        const { engine } = await internalsOf(opened.local)!()
+        const store = engine.store as ReturnType<typeof createMemoryStore>
+        return JSON.stringify(store.snapshot(), (_, value) => value instanceof Map || value instanceof Set ? [...value] : value)
+      }
+      const tables = await pool!.query("select table_name from information_schema.tables where table_schema = $1 and table_type = 'BASE TABLE'", [opened.schema])
+      const rows = await Promise.all(tables.rows.map(({ table_name }) => pool!.query(`select to_jsonb(r) as row from ${opened.schema}.${table_name} r`)))
+      return JSON.stringify(rows.map(result => result.rows))
+    }
+    try {
+      await leadSettings(opened.local)
+      await leadRoutes(t, opened.local, clock, dump)
     } finally {
       await opened.close()
     }
   })
+
+  test(`lead sources keep to their own records, ${kind}`, async () => {
+    const clock = { at: NOW }
+    const opened = await open({ now: () => clock.at })
+    try {
+      await leadSubjects(opened.local, AT)
+      await leadOversize(opened.local)
+      await leadGuesses(opened.local, clock)
+      await leadTimes(opened.local, clock)
+      await leadSpellings(opened.local)
+      await leadUpdates(opened.local, clock)
+      await leadPayments(opened.local, AT)
+      await leadForgotten(opened.local, clock)
+    } finally {
+      await opened.close()
+    }
+  })
+
   test(`service tokens open only the listed calls and kinds, ${kind}`, async () => {
     const opened = await open({ phones: { pool: { numbers: ['+12025550124'], minutes: 10, graceMinutes: 5 } } })
     try {

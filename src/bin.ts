@@ -19,7 +19,7 @@ import type { AddressInfo } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import { internalsOf } from './client/internals.ts'
 import { localGraph } from './client/local.ts'
-import type { AccountGraph, LocalOptions } from './contract/api.ts'
+import type { AccountGraph, LeadSources, LocalOptions } from './contract/api.ts'
 import { hoursProblems } from './core/hours.ts'
 import type { OpenHours } from './core/hours.ts'
 import { normalizePhone } from './core/identifiers.ts'
@@ -36,7 +36,8 @@ import { createEdge } from './edge/index.ts'
 import type { EdgeOptions } from './edge/index.ts'
 import { networks, reviewerProblems } from './edge/server.ts'
 import type { Reviewers } from './edge/server.ts'
-import { serviceTokenProblems } from './edge/tokens.ts'
+import { edgeLeadProblems, serviceTokenProblems } from './edge/tokens.ts'
+import { repeatsName } from './contract/lead-settings.ts'
 import type { ServiceToken } from './edge/tokens.ts'
 import { isMaxMindHost, isMaxMindService } from './providers/maxmind.ts'
 
@@ -88,6 +89,21 @@ export function readEnvironment(env: Env) {
       if (Array.isArray(value)) return value
     } catch {}
     return void wrong.push('SERVICE_TOKENS must be a JSON list, given directly or in a readable SERVICE_TOKENS_FILE')
+  }
+  const leadSources = (): LeadSources | undefined => {
+    // Empty is unset, as for STAGES: Compose passes an empty LEADS when the host has none.
+    const given = env.LEADS || undefined
+    const file = env.LEADS_FILE || undefined
+    if (given === undefined && file === undefined) return undefined
+    if (given !== undefined && file !== undefined) return void wrong.push('LEADS and LEADS_FILE must not both be set')
+    try {
+      const text = given ?? readFileSync(file!, 'utf8')
+      const value = parsed('LEADS', text) as LeadSources | undefined
+      if (value && repeatsName(text)) wrong.push('LEADS requires unique source names')
+      return value
+    } catch {
+      return void wrong.push('LEADS_FILE cannot be read')
+    }
   }
   const serverRanges = (): string | undefined => {
     if (!env.SERVER_RANGES_FILE) return undefined
@@ -150,6 +166,7 @@ export function readEnvironment(env: Env) {
     schema: env.GRAPH_SCHEMA || 'account_graph',
     token: need('GRAPH_TOKEN'),
     serviceTokens: serviceTokens(),
+    leads: leadSources(),
     reviewers: parsed('REVIEW_TOKENS') as Reviewers | undefined,
     origins: (env.ORIGINS ?? '').split(',').map((origin) => origin.trim().replace(/\/$/, '')).filter(Boolean),
     port: number('PORT', 8080),
@@ -293,6 +310,7 @@ export function readEnvironment(env: Env) {
   if (config.token && !config.token.trim()) wrong.push('GRAPH_TOKEN requires a nonempty token')
   for (const problem of reviewerProblems(config.reviewers, config.token)) wrong.push(`REVIEW_TOKENS: ${problem}`)
   for (const problem of serviceTokenProblems(config.serviceTokens, config.reviewers, config.token)) wrong.push(`SERVICE_TOKENS: ${problem}`)
+  for (const problem of edgeLeadProblems(config, secretSettings(env))) wrong.push(`LEADS: ${problem}`)
   // The secrets in compose.yaml are in the repository for anyone to read, so they are only for trying it out.
   const far = config.origins.find((origin) => !/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|[^/]+\.localhost)(:\d+)?$/.test(origin))
   const secrets = { SERVICE_TOKENS: (config.serviceTokens ?? []).map(entry => entry?.token), GRAPH_TOKEN: [config.token], REVIEW_TOKENS: Object.values(config.reviewers ?? {}).flat(), LINK_SECRET: [config.linkSecret], RECEIPT_SECRETS: config.receiptSecrets }
@@ -300,6 +318,21 @@ export function readEnvironment(env: Env) {
   if (config.auditHours > 0 && !config.alertWebhook) wrong.push('ALERT_WEBHOOK is required with AUDIT_HEAD_HOURS')
   if (wrong.length > 0) throw new Error(`Cannot start:\n  ${wrong.join('\n  ')}`)
   return config
+}
+
+/** Settings that hold a secret, which a lead source's secret must not repeat. REVIEW_TOKENS and SERVICE_TOKENS are checked as read. */
+const SECRET_SETTINGS = [
+  'GRAPH_TOKEN', 'LINK_SECRET', 'IDENTIFIER_SECRET', 'WEBHOOK_SECRET', 'FINGERPRINT_SECRET', 'TWILIO_AUTH_TOKEN', 'SMARTY_AUTH_TOKEN', 'MAXMIND_LICENSE_KEY', 'GOOGLE_ADS_DEVELOPER_TOKEN',
+  'META_ADS_TOKEN', 'META_ACCESS_TOKEN', 'TIKTOK_ACCESS_TOKEN', 'MICROSOFT_REFRESH_TOKEN', 'MICROSOFT_CLIENT_SECRET', 'MICROSOFT_DEVELOPER_TOKEN',
+] as const
+
+function secretSettings(env: Env): string[] {
+  let password = ''
+  try {
+    password = decodeURIComponent(new URL(env.DATABASE_URL ?? '').password)
+  } catch {}
+  const receipts = (env.RECEIPT_SECRETS ?? '').split(',').map((each) => each.trim())
+  return [...SECRET_SETTINGS.map((name) => env[name]), ...receipts, password].filter((each): each is string => Boolean(each))
 }
 
 /** What the program is asked to be, from the environment. Throws one error that names everything wrong. */
@@ -315,6 +348,7 @@ export function configFrom(env: Env): { graph: LocalOptions; edge: EdgeOptions; 
     schema: config.schema,
     workers: true,
     receiptSecrets: config.receiptSecrets as [string, ...string[]],
+    ...(config.leads && { leads: config.leads }),
     timeZone: config.timeZone,
     ...(config.policy !== undefined && { policy: { ...(config.policy as object), kinds: own(true), customKinds: own(false) } as NonNullable<LocalOptions['policy']> }),
     ...(config.identifierSecret && { identifierSecret: config.identifierSecret }),

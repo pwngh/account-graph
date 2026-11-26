@@ -8937,6 +8937,152 @@
           }
         ]
       },
+      "LeadSources": {
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/components/schemas/LeadSource"
+        }
+      },
+      "LeadSource": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "payment",
+              "lead"
+            ]
+          },
+          "secret": {
+            "type": "string"
+          },
+          "auth": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "header": {
+                    "type": "string"
+                  },
+                  "encoding": {
+                    "type": "string",
+                    "enum": [
+                      "hex",
+                      "base64"
+                    ]
+                  }
+                },
+                "required": [
+                  "header",
+                  "encoding"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "string",
+                "const": "bearer"
+              }
+            ]
+          },
+          "stage": {
+            "type": "string"
+          },
+          "prefix": {
+            "type": "string",
+            "description": "Subjects this source writes start with it and a colon. Defaults to `lead:<name>`."
+          },
+          "trustSubjects": {
+            "anyOf": [
+              {
+                "type": "boolean",
+                "const": false
+              },
+              {
+                "type": "boolean",
+                "const": true
+              }
+            ],
+            "description": "Lets the mapped `subject` name any record, not only one under the prefix. Only for a sender trusted with every record."
+          },
+          "updates": {
+            "anyOf": [
+              {
+                "type": "boolean",
+                "const": false
+              },
+              {
+                "type": "boolean",
+                "const": true
+              }
+            ],
+            "description": "Adds the new details of a lead posted again under its ID. Only safe when the vendor assigns the ID, never when a visitor can edit it."
+          },
+          "perMinute": {
+            "type": "number"
+          },
+          "conversions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "For a payment source, required: the conversion key prefixes it may pay, such as `lead:intake` for `lead:intake:I28`."
+          },
+          "maxAmount": {
+            "type": "number",
+            "description": "For a payment source, required: the most it may pay one conversion, over all its payments together."
+          },
+          "mapping": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "subject": {
+                "type": "string"
+              },
+              "first": {
+                "type": "string"
+              },
+              "last": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "phone": {
+                "type": "string"
+              },
+              "device": {
+                "type": "string"
+              },
+              "amount": {
+                "type": "string"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "conversion": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false,
+            "description": "Literal paths into the vendor post. Numeric segments index arrays."
+          }
+        },
+        "required": [
+          "kind",
+          "secret",
+          "auth",
+          "mapping"
+        ],
+        "additionalProperties": false
+      },
       "LookupPersonValue": {
         "type": "object",
         "properties": {

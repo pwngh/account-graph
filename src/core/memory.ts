@@ -1232,6 +1232,13 @@ export function createMemoryStore(): Store & { snapshot(): unknown } {
       }
     },
 
+    async dropReceipt(type, macs) {
+      for (const mac of macs) {
+        receipts.delete(`${type}\u0000${mac}`)
+        receiptSubjects.delete(`${type}\u0000${mac}`)
+      }
+    },
+
     async unname(subjects, keys) {
       const gone = new Set(subjects)
       for (const event of events) {
