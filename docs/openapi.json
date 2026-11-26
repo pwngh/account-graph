@@ -2093,7 +2093,7 @@
           },
           "least": {
             "type": "number",
-            "description": "A row of fewer people than this is not shown: one person more or less would move it too far."
+            "description": "A row of fewer people than this is not shown, because one person more or less would move it too far."
           },
           "groups": {
             "type": "array",
@@ -2148,7 +2148,7 @@
               "returned"
             ],
             "additionalProperties": false,
-            "description": "People left out, and why, apart for the two questions: someone may count for one and not for the other."
+            "description": "People left out, and why, apart for the two questions, because someone may count for one and not for the other."
           }
         },
         "required": [
@@ -2341,7 +2341,7 @@
               },
               "breakdown": {
                 "$ref": "#/components/schemas/Breakdown",
-                "description": "The same outcomes by the dimension asked for. Costs are not split: a campaign is charged whole."
+                "description": "The same outcomes by the dimension asked for. Costs are not split. A campaign is charged whole."
               }
             },
             "required": [
@@ -2366,7 +2366,7 @@
           },
           "days": {
             "type": "number",
-            "description": "Over how many days of the period costs could have been recorded: those up to today."
+            "description": "Over how many days of the period costs could have been recorded, which are those up to today."
           },
           "incomplete": {
             "type": "object",
@@ -2402,7 +2402,7 @@
                 },
                 "now": {
                   "type": "number",
-                  "description": "What all of them are worth now: net of the two below."
+                  "description": "What all of them are worth now, net of the two below."
                 },
                 "refunded": {
                   "type": "number",
@@ -2488,7 +2488,7 @@
           },
           "amount": {
             "type": "number",
-            "description": "The least that moved along any step: the most that could have gone all the way round."
+            "description": "The least that moved along any step, which is the most that could have gone all the way round."
           },
           "tied": {
             "type": "number",
@@ -2816,7 +2816,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Already `kind:value`: `hardware:…`, `passkey:…`, `payment:…`. Kinds the graph writes itself are refused: see KIND_RESERVED."
+            "description": "Already `kind:value`: `hardware:…`, `passkey:…`, `payment:…`. Kinds the graph writes itself are refused. See KIND_RESERVED."
           }
         },
         "additionalProperties": false,
@@ -5467,7 +5467,7 @@
             "additionalProperties": false
           }
         ],
-        "description": "None of these is kept with the key: put right what was wrong and send the same key again."
+        "description": "None of these is kept with the key. Fix what was wrong and send the same key again."
       },
       "Deciding": {
         "type": "object",
@@ -6474,7 +6474,7 @@
           "unconfirmed": {
             "type": "boolean",
             "const": true,
-            "description": "What they share would join them, and nothing confirms that they are one person: see the policy's `records`."
+            "description": "What they share would join them, and nothing confirms that they are one person. See the policy's `records`."
           }
         },
         "required": [
@@ -7986,7 +7986,7 @@
                 "type": "string"
               }
             ],
-            "description": "`cursor` of the last page you acted on. Null to start. Opaque: it names this database's history as well as a place in it."
+            "description": "`cursor` of the last page you acted on. Null to start. It is opaque, because it names this database's history as well as a place in it."
           },
           "limit": {
             "type": "integer",
@@ -9822,7 +9822,7 @@
               },
               "breakdown": {
                 "$ref": "#/components/schemas/Breakdown",
-                "description": "The same outcomes by the dimension asked for. Costs are not split: a campaign is charged whole."
+                "description": "The same outcomes by the dimension asked for. Costs are not split. A campaign is charged whole."
               }
             },
             "required": [
@@ -9847,7 +9847,7 @@
           },
           "days": {
             "type": "number",
-            "description": "Over how many days of the period costs could have been recorded: those up to today."
+            "description": "Over how many days of the period costs could have been recorded, which are those up to today."
           },
           "incomplete": {
             "type": "object",
@@ -9883,7 +9883,7 @@
                 },
                 "now": {
                   "type": "number",
-                  "description": "What all of them are worth now: net of the two below."
+                  "description": "What all of them are worth now, net of the two below."
                 },
                 "refunded": {
                   "type": "number",
@@ -10316,7 +10316,7 @@
           },
           "breakdown": {
             "$ref": "#/components/schemas/Breakdown",
-            "description": "The same outcomes by the dimension asked for. Costs are not split: a campaign is charged whole."
+            "description": "The same outcomes by the dimension asked for. Costs are not split. A campaign is charged whole."
           }
         },
         "required": [
@@ -10381,7 +10381,7 @@
           },
           "now": {
             "type": "number",
-            "description": "What all of them are worth now: net of the two below."
+            "description": "What all of them are worth now, net of the two below."
           },
           "refunded": {
             "type": "number",
