@@ -117,6 +117,14 @@ async function invoke(fn, request, params = {}) {
   }
 }
 
+test('the app refuses a session secret shorter than 32 characters', async () => {
+  const { reviewServer } = await import('../server.mjs')
+  // A server that starts anyway is closed, so the failure does not keep the test process open.
+  await assert.rejects(reviewServer({ port: 0, host: '127.0.0.1', secret: 'x'.repeat(31) }).then(async server => { await close(server); return server }), /at least 32/)
+  const accepted = await reviewServer({ port: 0, host: '127.0.0.1', secret: 'x'.repeat(32) })
+  await close(accepted)
+})
+
 test('the sign-in page serves its favicon before a reviewer signs in', async () => {
   const html = await (await fetch(origin + '/signin')).text()
   const icon = /<link\b[^>]*\brel="icon"[^>]*>/.exec(html)?.[0]
@@ -268,7 +276,7 @@ test('the original screen is linked only at REVIEW_LEGACY_URL, never at the grap
   assert.ok(set.includes('href="https://graph.example.org/review#/health"'))
   assert.ok(set.includes('href="https://graph.example.org/review#/channels"'))
   assert.ok(!set.includes(process.env.REVIEW_GRAPH_URL))
-  await assert.rejects(reviewServer({ port: 0, host: '127.0.0.1', legacyUrl: 'javascript:alert(1)' }), /REVIEW_LEGACY_URL/)
+  await assert.rejects(reviewServer({ port: 0, host: '127.0.0.1', legacyUrl: 'javascript:alert(1)' }).then(async server => { await close(server); return server }), /REVIEW_LEGACY_URL/)
 })
 
 test('pasted and linked subjects reopen the same record with their ID preserved', async () => {

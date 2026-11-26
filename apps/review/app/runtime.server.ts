@@ -24,6 +24,8 @@ interface Settings {
 export function configure(settings: Settings = {}) {
   const secret = settings.secret || process.env.REVIEW_SESSION_SECRET || (process.env.NODE_ENV === 'development' && randomBytes(32).toString('base64url'))
   if (!secret) throw new Error('Set REVIEW_SESSION_SECRET before starting the review app')
+  // The secret signs every session cookie. A short one can be guessed offline from a single cookie.
+  if (secret.length < 32) throw new Error('Set REVIEW_SESSION_SECRET to at least 32 random characters')
   const graphUrl = new URL(settings.graphUrl ?? process.env.REVIEW_GRAPH_URL ?? 'http://127.0.0.1:8080').origin
   const origin = settings.origin ?? process.env.REVIEW_ORIGIN
   const eventsToken = settings.eventsToken ?? process.env.REVIEW_EVENTS_TOKEN
