@@ -4,7 +4,7 @@ Call account-graph from a Node program. `accountGraph` gives six calls and `clos
 
 ## Installation
 
-Run the TypeScript source from a checkout with Node 22.18 or later. The package is unpublished on npm.
+Run the TypeScript source from a checkout with Node 22.18 or later. The package is not published on npm.
 
 ```sh
 npm install
@@ -38,11 +38,11 @@ const local = accountGraph({
 const memory = accountGraph({ memory: true })
 ```
 
-Exactly one of `url`, `databaseUrl` and `memory` is given. Two of them do not compile. The three answer alike: a local call is checked by the same code and goes through the same JSON as a remote one, and each answer is a value of its own.
+Exactly one of `url`, `databaseUrl` and `memory` is given. Two of them do not compile. The three answer alike. A local call is checked by the same code and goes through the same JSON as a remote one, and each answer is a value of its own.
 
 Where there is no Node, the package has the remote graph only. A local one throws `CONFIG.UNSUPPORTED`.
 
-`accountGraph` does no I/O. It throws `CONFIG.INVALID` with everything that is wrong at once. The first call connects to the database and upgrades it. A database that was away is tried again by the next call.
+`accountGraph` does no I/O. It throws `CONFIG.INVALID` with everything that is wrong at once. The first call connects to the database and upgrades it. A database that was unavailable is tried again by the next call.
 
 A server has the settings as [environment variables](operations.md#environment-variables).
 
@@ -56,7 +56,7 @@ A server has the settings as [environment variables](operations.md#environment-v
 | `policy` | a local graph | `POLICY` | What differs from the default [policy](#policy) |
 | `identifierSecret`, `linkSecret` | a local graph | `IDENTIFIER_SECRET`, `LINK_SECRET` | 32 characters or more each |
 | `stages` | a local graph | `STAGES` | Your [steps](report.md#steps) |
-| `leads` | a local graph | `LEADS`, `LEADS_FILE` | Sources whose webhooks the edge accepts, keyed by the name in the URL. [Mappings and example posts](leads.md) |
+| `leads` | a local graph | `LEADS`, `LEADS_FILE` | Sources whose webhooks the edge accepts, keyed by the name in the URL. See [Mappings and example posts](leads.md). |
 | `openHours`, `timeZone` | a local graph | `OPEN_HOURS`, `REPORT_TIME_ZONE` | When you are open, and the zone |
 | `targets` | a local graph | `TARGETS` | Numbers you set yourself to meet. See [targets](operations.md#targets). |
 | `phones` | a local graph | `CALL_*`, `POOL_*`, `RETURN_HOURS` | `numbers`, `exclude`, `minimumSeconds`, `resultsExpectedWithinMinutes`, `returnHours`, `country`, `tapSeconds`, `pool` |
@@ -129,7 +129,7 @@ for (const result of results) {
 }
 ```
 
-A "no" is a value and never thrown. `changes` lists the subjects that moved, so you can hold a login or a trade before it settles.
+A "no" is a value and never thrown. `changes` lists the subjects whose cluster changed, so you can hold a login or a trade before it settles.
 
 Use `createdAt` when you know when your system created the record. Reviewers see it beside the first time the graph saw activity on that ID. To correct it, send a new profile for the same ID with a new key, a later `at` and the corrected date. Profiles that omit it leave the standing date alone. The [profile fields and ordering rules](http.md#entry-types) also apply to the library.
 
@@ -200,7 +200,7 @@ for (;;) {
 }
 ```
 
-An event from a newer server has the type `Unrecognized` and the raw value. Keep it and move on. [Operations](operations.md#events) has the rules of following along.
+An event from a newer server has the type `Unrecognized` and the raw value. Keep it and read on. [Operations](operations.md#events) has the rules of following along.
 
 ## Faults
 
@@ -230,7 +230,7 @@ async function send(request: RecordRequest) {
 | --- | --- | --- |
 | `INPUT.MALFORMED`, `INPUT.TOO_LARGE` | Before anything is written, or with the entry that cannot be | Before sending, or from the server |
 | `AUTH.REJECTED`, `AUTH.FORBIDDEN` | Never | From the server |
-| `CONFIG.INVALID` | By `accountGraph` | By `accountGraph`, and for a 404, a 405 or a redirect, because `url` is then no server |
+| `CONFIG.INVALID` | By `accountGraph` | By `accountGraph`, and for a 404, a 405 or a redirect, because `url` is then not a server |
 | `CONFIG.UNSUPPORTED` | A `link` without `linkSecret`, or `retract` where no platform can | From the server |
 | `GRAPH.UNAVAILABLE` | The database is not available | Also for 429 or 503 of a proxy |
 | `GRAPH.INTERNAL` | Everything else. The cause is kept as `cause`, and is not in the message. | Also for a read whose answer cannot be read |
@@ -283,7 +283,7 @@ async function stop() {
 | `staffNetworks` | `STAFF_NETWORKS` | Networks whose visits are dropped |
 | `events` | `EVENTS` | Page events to record |
 | `twilio` | `TWILIO_*` | `{ authToken, calls?, texts? }`, each the address entered in Twilio |
-| `leads` | `LEADS`, `LEADS_FILE` | Uses the local graph's lead sources when omitted. Supplying a map here replaces the graph's map for this edge. [Lead webhooks](leads.md) |
+| `leads` | `LEADS`, `LEADS_FILE` | Uses the local graph's lead sources when omitted. Supplying a map here replaces the graph's map for this edge. See [Lead webhooks](leads.md). |
 | `textCodes` | `TEXT_CODES` | Puts a code in text links, and on pages that show it to callers |
 | `fingerprint`, `maxmind`, `serverRanges` | `FINGERPRINT_*`, `MAXMIND_*`, `SERVER_RANGES_FILE` | See [providers](providers.md). `serverRanges` is the text of the file. |
 
@@ -291,7 +291,7 @@ async function stop() {
 
 ## Workers
 
-With `workers: true`, a local graph sends due conversions every 30 seconds, posts events every 5 seconds, looks for what is late every 5 minutes, and reads costs every 6 hours. Several processes may have it on: each kind of work but sending takes a lease, and sending claims its own conversions.
+With `workers: true`, a local graph sends due conversions every 30 seconds, posts events every 5 seconds, looks for what is late every 5 minutes, and reads costs every 6 hours. Several processes may have it on. Each kind of work except sending takes a lease, and sending claims its own conversions.
 
 [Providers](providers.md#what-sending-does) says what sending does. In a test, run one pass of every worker by hand:
 
