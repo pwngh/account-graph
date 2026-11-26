@@ -46,3 +46,9 @@ export const dayOf = at => at > 0 ? new Date(at).toLocaleDateString('en-US', { t
 export const subjectHash = subject => '/accounts/' + encodeURIComponent(subject)
 export const journeyHash = (subject, call) => '/journey/' + encodeURIComponent(subject) + (call ? '#call-' + encodeURIComponent(call) : '')
 export const ACTIONS = { ignore: 'Ignored identifier', restore: 'Restored identifier', separate: 'Separated', rejoin: 'Removed separation', join: 'Joined', unjoin: 'Removed join', forget: 'Deleted data', rebuild: 'Rebuilt all groups', prune: 'Deleted sightings before' }
+
+// One fetcher can outlive a revalidation at the same URL. The answer belongs to the render it was requested from.
+export function detailReply(card, snapshot, reply) {
+  if (!reply || reply.snapshot !== snapshot || (reply.card && reply.card.href !== card.href)) return undefined
+  return reply
+}

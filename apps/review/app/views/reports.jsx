@@ -2,7 +2,8 @@ import './reports.css'
 import { createContext, Fragment, useContext, useEffect, useState } from 'react'
 import { Form, Link, useFetcher } from 'react-router'
 import { Table, Tiles, Time, Subject } from './shared'
-import { amount, cameFrom, dayOf, idText, lasted, percent, subjectHash, tieWords, WHAT } from './report-words'
+import { amount, cameFrom, dayOf, detailReply, lasted, percent, subjectHash, tieWords, WHAT } from './report-words'
+import { Bars, CallInbox, Change, Coverage } from './call-panels'
 import { told } from './story'
 
 export function CardBody({ card }) {
@@ -13,18 +14,21 @@ export function CardBody({ card }) {
 
 /** @type {import('react').Context<string | undefined>} */
 const presentedCard = createContext(undefined)
+const reportSnapshot = createContext('')
 
 function Detail({ card, title = 'Details', id }) {
   const fetcher = useFetcher()
   const openCard = useContext(presentedCard)
+  const snapshot = useContext(reportSnapshot)
   if (!card) return null
-  const current = fetcher.data?.card?.href === card.href ? fetcher.data.card : card
-  return <details className="report-detail" data-card={card.type} id={id} open={openCard === card.type || undefined}><summary aria-label={'Details of ' + card.title}>{title}</summary>
-    <h4>{current.title} {current.value}</h4><CardBody card={current}/>
-    {fetcher.data?.error && <p role="alert">{fetcher.data.error}</p>}<Link to={card.href} onClick={event => {
+  const fresh = detailReply(card, snapshot, fetcher.data)
+  const current = fresh?.card ?? card
+  return <details className="report-detail" data-card={card.type} open={openCard === card.type || undefined}><summary aria-label={'Details of ' + card.title}>{title}</summary>
+    <h4 id={id} tabIndex={id ? -1 : undefined}>{current.title} {current.value}</h4><CardBody card={current}/>
+    {fresh?.error && <p role="alert">{fresh.error}</p>}<Link to={card.href} onClick={event => {
       if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
       event.preventDefault()
-      void fetcher.load(card.href.replace('/details/', '/card/'))
+      void fetcher.load(card.href.replace('/details/', '/card/') + '&snapshot=' + encodeURIComponent(snapshot))
     }}>{fetcher.state === 'idle' ? 'Read current details' : 'Reading…'}</Link></details>
 }
 
@@ -32,8 +36,8 @@ function Range({ from, to, timeZone }) {
   return <p className="meta">{from} – {to} · {timeZone}</p>
 }
 
-function Metric({ card, note }) {
-  return card && <div><dt>{card.title}</dt><dd><b>{card.value ?? '—'}</b>{note && <span className="reason">{note}</span>}<Detail card={card}/></dd></div>
+function Metric({ card, note, change, bars }) {
+  return card && <div><dt>{card.title}</dt><dd><span className="tile-line"><b>{card.value ?? '—'}</b>{change}</span>{note && <span className="reason">{note}</span>}<Detail card={card}/>{bars}</dd></div>
 }
 
 function Board({ data }) {
@@ -112,20 +116,21 @@ function Calls({ data }) {
   const { summary, open, cards, then } = data
   const { total, coverage } = summary
   const lost = total.missed + total.voicemail
-  const notes = [then.calls > 0 && 'Previous period ' + amount(then.calls), amount(total.answered) + ' of ' + amount(total.calls), total.calls > 0 && percent(lost / total.calls) + (summary.closed ? ' · ' + amount(summary.closed.missed + summary.closed.voicemail) + ' after hours' : ''), amount(total.returned) + ' of ' + amount(lost), open.calls[0] && <>Oldest <Time at={open.calls[0].at}/></>]
+  const hourly = key => Array.from({length: 24}, (_, h) => summary.cells.filter(c => c.hour === h).reduce((a,c) => a + c[key], 0))
+  const notes = [undefined, amount(total.answered) + ' of ' + amount(total.calls), total.calls > 0 && percent(lost / total.calls) + (summary.closed ? ' · ' + amount(summary.closed.missed + summary.closed.voicemail) + ' after hours' : ''), amount(total.returned) + ' of ' + amount(lost) + (summary.returnedWithin == null ? '' : ' · median ' + lasted(summary.returnedWithin)), data.oldest && <>Oldest <Time at={data.oldest}/></>]
+  const changes = then.calls > 0 ? [<Change now={total.calls} was={then.calls} before={data.before}/>, <Change now={total.answered / total.calls} was={then.answered / then.calls} before={data.before} good="up" points/>, <Change now={lost} was={then.missed + then.voicemail} before={data.before} good="down"/>] : []
+  const missed = hourly('missed')
+  const bars = [<Bars values={hourly('calls')} title="Calls by starting hour"/>, undefined, <Bars values={hourly('voicemail').map((n,i) => n + missed[i])} title="Missed calls by starting hour"/>]
   const results = [['Answered',total.answered,total.calls,''],['Missed',total.missed,total.calls,''],['Voicemail',total.voicemail,total.calls,''],['Waiting',total.waiting,total.calls,'Result not received yet'],['Unknown',total.unknown,total.calls,'Result unavailable'],['Returned',total.returned,lost,[summary.returnedWithin != null && 'Median ' + lasted(summary.returnedWithin),total.reported > 0 && amount(total.reported) + ' reported by another system'].filter(Boolean).join(' · ')],['Called again',total.calledAgain,lost,'Caller got through later']]
   if (total.notLeads > 0) results.push(['Not a lead',total.notLeads,0,'Excluded from other counts'])
-  const url = (page, who) => '/calls?' + new URLSearchParams({ from: summary.from, to: summary.to, page, measure:data.measure, ...(who && {who}) })
   return <><section><div className="page-head"><h2>Calls</h2><Form className="row" action="/calls" method="get"><label>From <input type="date" name="from" required defaultValue={summary.from}/></label><label>To <input type="date" name="to" required defaultValue={summary.to}/></label><button>Show</button></Form></div><Range {...summary}/>
-  {total.calls > 0 && <dl className="tiles">{data.metrics.map((key,i) => (i !== 3 || lost > 0) && <Metric key={key} card={cards[key]} note={notes[i]}/>)}</dl>}</section><section id="calls-missed"><h2>Missed calls</h2>
-  {open.calls.length ? <><ol>{open.calls.map((call,i) => <li key={call.id}><Link to={url(data.page,call.subject) + '#call-history'}>{idText(call.subject)}</Link> · {call.state === 'voicemail' ? 'Voicemail' : 'Missed'} · {cameFrom(call) || 'Unattributed'} · <Time at={call.at}/> {call.attempts > 0 && (amount(call.attempts) + (call.attempts === 1 ? ' attempt' : ' attempts'))}<Detail card={cards[data.calls[i]]}/></li>)}</ol>
-  {data.page > 0 && <Link to={url(data.page - 1)}>Previous calls</Link>} {open.next != null && <Link to={url(data.page + 1)}>Show more</Link>}
-  {data.story && <div id="call-history"><h3>History · {data.selectedSubject}</h3><Subject id={data.selectedSubject} journey/> · <Link to={subjectHash(data.selectedSubject)}>Account</Link><ol className="story">{[...data.story.entries].reverse().slice(0,14).map((entry,i) => <li key={i}><span className="what"><Story entry={entry}/></span> <Time at={entry.at || undefined}/></li>)}</ol>{data.story.entries.length > 14 && <p>{amount(data.story.entries.length - 14)} more in the journey</p>}</div>}</> : <p>{total.calls === 0 ? 'No inbound calls' : lost > 0 ? 'All missed callers have been reached.' : 'No missed calls'}</p>}
-  {total.hidden > 0 && <p>{amount(total.hidden)} more with a withheld number</p>}</section>{total.calls > 0 && <><div className="panel-grid call-grid"><section><h2>Call results</h2><Table title="Call results" headers={['Result','Calls','Share','Detail']}>{results.map(([name,n,all,note]) => <tr key={name}><th scope="row">{name}</th><td>{amount(n)}</td><td>{all ? percent(n / all) : '—'}</td><td>{note}</td></tr>)}</Table></section><section><h2>Call attribution</h2><dl>{[['Visitor',coverage.visitor],['Phone number',coverage.channel],['Unmatched',coverage.neither]].map(([name,n]) => <div key={name}><dt>{name}</dt><dd>{amount(n)}</dd></div>)}</dl>{coverage.noResult > 0 && <p>{amount(coverage.noResult)} without a result</p>}</section></div><Hours data={data}/></>}</>
+  {total.calls > 0 && <dl className="tiles">{data.metrics.map((key,i) => (i !== 3 || lost > 0) && <Metric key={key} card={cards[key]} note={notes[i]} change={changes[i]} bars={bars[i]}/>)}</dl>}</section><section id="calls-missed"><h2>Missed calls</h2>
+  {open.calls.length ? <CallInbox data={data} Detail={Detail} Story={Story}/> : <p>{total.calls === 0 ? 'No inbound calls' : lost > 0 ? 'All missed callers have been reached.' : 'No missed calls'}</p>}
+  {total.hidden > 0 && <p>{amount(total.hidden)} more with a withheld number</p>}</section>{total.calls > 0 && <><div className="panel-grid call-grid"><section><h2>Call results</h2><Table title="Call results" headers={['Result','Calls','Share','Detail']}>{results.map(([name,n,all,note]) => <tr key={name}><th scope="row">{name}</th><td>{amount(n)}</td><td>{all ? percent(n / all) : '—'}</td><td>{note}</td></tr>)}</Table></section><section><h2>Call attribution</h2><Coverage coverage={coverage}/></section></div><Hours data={data}/></>}</>
 }
 
 /** @param {{ data: Record<string, any>, openCard?: string }} props */
 export function Report({ data, openCard }) {
   const view = data.kind === 'journey' ? <Journey key={data.which} data={data}/> : data.kind === 'board' ? <Board data={data}/> : <Calls data={data}/>
-  return <presentedCard.Provider value={openCard}>{view}</presentedCard.Provider>
+  return <reportSnapshot.Provider value={data.snapshot}><presentedCard.Provider value={openCard}>{view}</presentedCard.Provider></reportSnapshot.Provider>
 }

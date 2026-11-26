@@ -17,3 +17,10 @@
   .report-chart .group-count { fill: CanvasText; }
   .report-chart line, .graph .edge .line { stroke: CanvasText; }
 }
+.coverage-bar { display: block; width: 100%; height: 14px; border-radius: 4px; overflow: hidden; }
+.coverage-bar .part0 { fill: var(--accent); }
+.coverage-bar .part1 { fill: var(--same); }
+.coverage-bar .part2 { fill: var(--related); }
+.inbox-side .segments a { padding: 4px 8px; }
+.inbox-side .segments a[aria-current=page] { text-decoration: underline; }
+.inbox-facts dd { overflow-wrap: anywhere; }
