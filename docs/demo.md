@@ -11,7 +11,7 @@ npm run firm
 | Component | Location |
 | --- | --- |
 | PostgreSQL | Set `DATABASE_URL` to a database that permits creating schemas, or supply Docker with a local `postgres:16` image. Each run uses its own schema. |
-| Stage with the caller’s phone and scenes | `http://localhost:8790/stage`. Signs in to the synthetic demo. |
+| Stage with the caller’s phone and scenes | `http://localhost:8790/stage`. Signs anyone who opens it in as the demo reviewer, with no token. This is for the demo only. |
 | Graph server and review app | `http://localhost:8790/accounts`. Sign in with the reviewer token `demo`. The previous screen is at `/legacy`. |
 | Firm site, in English and Spanish | `http://localhost:8791/?gclid=you&utm_id=30111` and `/es` |
 | Two months of seeded history | The stage shows the number of people prepared, then reports when the history is saved. |
