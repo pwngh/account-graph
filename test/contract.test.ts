@@ -1389,3 +1389,40 @@ everywhere('a withdrawal requires one identifying fact of a named record and a s
   assert.deepEqual(await graph.decide({ ...entry, fact: { identifier: 'unknown:example' } }), { ok: false, reason: 'KIND_NOT_IN_POLICY', kind: 'unknown' })
   assert.ok((await graph.decide(entry)).ok)
 })
+
+everywhere('a withdrawal changes live ownership of earlier activity while an identity snapshot respects its effective time', async ({ graph, local }) => {
+  const { engine } = await internalsOf(local)!()
+  const subject = 'contact:historical'
+  const phone = '+12025550116'
+  const line = 'caller:' + hashPhone(phone)
+  const first = NOW - 3 * 86_400_000
+  const at = first + 4
+  const day = new Date(first).toISOString().slice(0, 10)
+  const entries: RecordEntry[] = [
+    { type: 'profile', key: 'held', subject, at: first, facts: { phone } },
+    { type: 'arrival', key: 'visit', subject, source: 'search', campaign: 'spring', at: first },
+    { type: 'call', key: 'rang', at: first + 1, direction: 'inbound', from: phone, to: '+12025550132', duration: 60 },
+    { type: 'conversion', key: 'sale', subject: line, stage: 'sale', at: first + 2, value: 100 },
+  ]
+  const saved = await graph.record({ entries })
+  assert.ok(saved.results.every(row => row.ok))
+  const view = async () => {
+    const credit = await engine.graph.attribute(line, { at })
+    const person = await graph.lookup({ kind: 'person', subjects: [subject], at })
+    const journey = await graph.lookup({ kind: 'journey', subject, before: at })
+    const report = await graph.report({ kind: 'campaigns', window: { from: day, to: day, timeZone: 'UTC' } })
+    return [credit.credited?.campaign, person.people[0]!.members.length, journey.entries.some(row => row.kind === 'call'),
+      report.value.rows.find(row => row.campaign === 'spring')?.stages.sale?.value ?? 0]
+  }
+  assert.deepEqual(await view(), ['spring', 2, true, 100])
+  const cut = NOW + 5
+  const result = await graph.decide({ action: 'withdraw', key: 'returned', at: cut, by: 'desk', subject, fact: { phone } })
+  assert.ok(result.ok)
+  assert.deepEqual(await view(), [undefined, 1, false, 0])
+  const snapshot = async (when: number) => (await (await engine.graph.asOf(when)).cluster(subject))?.members
+  assert.deepEqual(await snapshot(cut - 1), [line, subject].sort())
+  assert.deepEqual(await snapshot(cut), [subject])
+  assert.ok((await graph.record({ entries: [{ ...entries[0]!, key: 'held-again', at: cut + 2 }] })).results[0]?.ok)
+  assert.deepEqual(await snapshot(cut + 1), [subject])
+  assert.deepEqual(await snapshot(cut + 2), [line, subject].sort())
+})

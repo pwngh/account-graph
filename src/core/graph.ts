@@ -3233,7 +3233,9 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         let batch: Sighting[] = []
         for await (const sightings of tx.sightingsUntil(at)) {
           for (const sighting of sightings) {
-            batch.push({ ...sighting, recorded: at })
+            // A profile written early is a sighting, but its future assertion cannot yet restore a withdrawn fact.
+            const { profileKey, ...fields } = sighting
+            batch.push({ ...fields, ...(profileKey !== undefined && sighting.at <= at && { profileKey }), recorded: at })
             if (batch.length < 1000) continue
             await copy.write((tx) => past.record(tx, batch))
             batch = []
@@ -3242,7 +3244,9 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         if (batch.length > 0) await copy.write((tx) => past.record(tx, batch))
         const decisions = (await tx.decisions()).filter((decision) => decision.at <= at)
         if (decisions.some(row => row.action === 'withdraw')) {
-          for (const row of await tx.factHistory(at)) await past.graph.withdrawFact(row.subject, row.identifiers, row.at, row.key, {})
+          for (const row of await tx.factHistory(at)) {
+            if (row.at <= at) await past.graph.withdrawFact(row.subject, row.identifiers, row.at, row.key, {})
+          }
         }
         return decisions
       })
