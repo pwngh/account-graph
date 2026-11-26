@@ -61,7 +61,7 @@ const { results } = await graph.record({ entries: [{
 }] })
 ```
 
-If the entry returns `STALE`, show the current statement and let the reviewer decide whether to retry the edit. Its entry key is still available. Taking back an identification with `role: "unknown"` creates a statement, so the next editor sends that statement’s key. While its receipt is retained, a retry of an accepted entry answers `duplicate: true` and reports whether it still stands. Deletion takes precedence and can return `FORGOTTEN`.
+If the entry returns `STALE`, show the current statement and let the reviewer decide whether to retry the edit. Its entry key is still available. Taking back an identification with `role: "unknown"` creates a statement, so the next editor sends that statement's key. While its receipt is kept, a retry of an accepted entry answers `duplicate: true` and reports whether it still stands. Deletion takes precedence and can return `FORGOTTEN`.
 
 Forgetting a former party removes their statements. A call since confirmed for another record stays with that record, along with its outcome and value. Forgetting the original line of a recorded call still deletes it. If the phone report has yet to arrive, the current party statement determines whether the pending call stays.
 
@@ -69,7 +69,7 @@ After a recorded call has a party statement, a later phone report or a competing
 
 When an older server tries to file the call under its line again, PostgreSQL refuses that report. Send it to an upgraded server. A rolling upgrade and the repair of earlier reports are described in the [operations guide](operations.md).
 
-The call, its outcome and its value history belong to the exact record staff named, even when another record shares its cluster. Its callback is closed by a return for the same record. Reports credit the newest qualifying arrival on that record or on the visitor tied to this particular call by its tap, code or pool number. A valid code reported later can supply that visitor or replace an earlier tap for the same call. A visitor grouped with another named record cannot supply that credit. An unassigned call earns no person's ad credit. When only the private call tie connects the visitor and the record, the callback and pipeline rows give the campaign and leave the arrival empty. The visitor’s arrival appears in the record’s journey only if the graph links them independently. Grouping a visitor with another record or muting the call tie revises cached campaign reports and removes callback notices that depended on that credit. For a call confirmed before the upgrade, the old visitor cannot be recovered. A valid code supplied later can still identify a visitor for that call’s credit. The next call on the line needs its own confirmation. A call without a statement follows the usual rules.
+The call, its outcome and its value history belong to the exact record staff named, even when another record shares its cluster. Its callback is closed by a return for the same record. Reports credit the newest qualifying arrival on that record or on the visitor tied to this particular call by its tap, code or pool number. A valid code reported later can supply that visitor or replace an earlier tap for the same call. A visitor grouped with another named record cannot supply that credit. An unassigned call earns no person's ad credit. When only the private call tie connects the visitor and the record, the callback and pipeline rows give the campaign and leave the arrival empty. The visitor's arrival appears in the record's journey only if the graph links them independently. Grouping a visitor with another record or muting the call tie revises cached campaign reports and removes callback notices that depended on that credit. For a call confirmed before the upgrade, the old visitor cannot be recovered. A valid code supplied later can still identify a visitor for that call's credit. The next call on the line needs its own confirmation. A call without a statement follows the usual rules.
 
 A party statement stops new ad conversions for this call. A platform that already received the conversion can still receive a corrected value, a refund or a withdrawal where it supports these. Those adjustments use only the matching details sent for the original conversion. A representative's number and consent belong to the representative. Each batch and each single-job retry checks the current job as it starts the request. If a correction or deletion changes the graph while a worker is finding credit, the worker checks credit and consent again for the affected batch before sending. A request already in flight can still reach the platform.
 
@@ -81,10 +81,10 @@ A page reports events without the service token, in one of three ways.
 | --- | --- |
 | A link whose address starts with `tel:` | `phone_click`, with the number |
 | A link whose address starts with `sms:` | `text_click`, with the number. See [text messages](#text-messages). |
-| Any element with `data-ag-event="name"` | `name`, when clicked; on a form, when submitted |
+| Any element with `data-ag-event="name"` | `name`, when clicked, or on a form when submitted |
 | `accountGraph.event('name', { id })` from your own script | `name` |
 
-The server keeps the names listed in `EVENTS` and answers 400 to any other. Each event is an outcome of the step with its name. A step in `STAGES` adds its value and the ad platforms it names; see [Steps](report.md#steps).
+The server keeps the names listed in `EVENTS` and answers 400 to any other. Each event is an outcome of the step with its name. A step in `STAGES` adds its value and the ad platforms it names. See [Steps](report.md#steps).
 
 An event counts once a day per browser, as a conversion whose key begins with `page:`. To count each occurrence, such as each form submission, pass an id in `data-ag-id` or the `id` argument. The id is ignored for a step with a value or an action in `STAGES`.
 
@@ -95,7 +95,7 @@ An event counts once a day per browser, as a conversion whose key begins with `p
 The server processes a reported call in four steps.
 
 1. **Caller.** The caller becomes a subject carrying their phone number. An account that later gives the same number is linked to the call.
-2. **Visitor.** If exactly one visitor tapped the number within the tap window (three minutes by default, thirty seconds on a [busy number](#busy-numbers)) before the call, and no other caller could have made the same tap, the two are linked at 0.92, which joins them. For a [pool](#number-pools) number, the visitor it was shown to takes precedence over a tap. A [code](#a-code-read-out) the caller gave takes precedence over both.
+2. **Visitor.** If exactly one visitor tapped the number within the tap window before the call, and no other caller could have made the same tap, the two are linked at 0.92, which joins them. The tap window is three minutes by default, and thirty seconds on a [busy number](#busy-numbers). For a [pool](#number-pools) number, the visitor it was shown to takes precedence over a tap. A [code](#a-code-read-out) the caller gave takes precedence over both.
 3. **Channel.** A call without a visitor is filed under the channel `CALL_NUMBERS` gives the number, with the medium `call`.
 4. **Outcome.** A call of 30 seconds or more counts as an outcome of the step `call`. Where [results are expected](#call-results), a person must also have answered.
 
@@ -143,7 +143,7 @@ Set `TEXT_CODES=true` on the server, or `textCodes` in the library. Without it n
 | A call you placed | Its code is not used. |
 | Kept | The code is not stored with the call, and is in no answer. |
 
-Staff often type the code after the phone system has reported the call. Send the same `call` again with the `code`, and no `call_update`: the call then stands as if the first report had it. What it was linked to by a tap or a pool number is undone, and the caller's visit to the number's channel is taken back. Four things depend on when it arrives, because they were decided before it did:
+Staff often type the code after the phone system has reported the call. Send the same `call` again with the `code`, and no `call_update`. The call then stands as if the first report had it. What it was linked to by a tap or a pool number is undone, and the caller's visit to the number's channel is taken back. Four things depend on when it arrives, because they were decided before it did:
 
 | Already decided | Stays |
 | --- | --- |
@@ -186,7 +186,7 @@ When staff join a line to two records they have kept apart, both are `related` p
 
 ### Busy numbers
 
-A call is linked to a tap by time, so on a number that rings often, some calls follow a stranger's tap by chance. Four rules keep those few:
+A call is linked to a tap by time, so on a number that rings often, some calls follow a stranger's tap by chance. Four rules keep those ties few:
 
 | Rule | Effect |
 | --- | --- |
@@ -201,19 +201,19 @@ CALL_TAP_SECONDS=180
 
 `CALL_TAP_SECONDS`, or `phones.tapSeconds` in the library, changes the three minutes. Thirty seconds are allowed for clock differences.
 
-A shorter window loses callers who took longer to dial. A number that is always busy needs a [pool](#number-pools): no window tells two callers apart who tap and call together.
+A shorter window loses callers who took longer to dial. A number that is always busy needs a [pool](#number-pools). No window tells apart two callers who tap and call together.
 
-Choose it from your own calls. Count the ties at each length, then move every tap by several amounts, such as a day and a week, to times as busy on the same number, and count again. The second counts estimate chance.
+Choose it from your own calls. Count the ties at each length, then move every tap by several amounts, such as a day and a week, to times as busy on the same number, and count again. The second counts estimate the ties made by chance.
 
-The Twilio adapter estimates when a call began from the callback timestamp (or receipt time) minus connected seconds. Ring time and delivery delay can move a missed call outside the tap window. [Twilio status callbacks](https://www.twilio.com/docs/voice/twiml#statuscallback-request-parameters)
+The Twilio adapter estimates when a call began from the callback timestamp, or the receipt time, minus connected seconds. Ring time and delivery delay can move a missed call outside the tap window. See [Twilio status callbacks](https://www.twilio.com/docs/voice/twiml#statuscallback-request-parameters).
 
 ### Twilio
 
-Replay the public Twilio signature with `node --test test/provider-fixtures.test.ts`. This runs locally and needs no account. A live callback also exercises the number's routing and the public receiver. Twilio's legacy test credentials do not generate these callbacks. [Signed example](https://github.com/twilio/twilio-go#validating-requests) · [Test credentials](https://www.twilio.com/docs/iam/test-credentials)
+Replay the public Twilio signature with `node --test test/provider-fixtures.test.ts`. This runs locally and needs no account. A live callback also exercises the number's routing and the public receiver. Twilio's legacy test credentials do not generate these callbacks. See [Signed example](https://github.com/twilio/twilio-go#validating-requests) and [Test credentials](https://www.twilio.com/docs/iam/test-credentials).
 
-1. For voice on a dedicated configurable number, open **Active Numbers**, select the number, and set **Voice → Call status changes** to your public HTTPS `/calls/twilio` route. Choose POST and save. Leave the voice instructions URL in place. The shared trial's **Try out Voice → Inbound** offers scenarios. A final status callback there is **not verified**. Skip the voice check if this setting is absent. [Number settings](https://www.twilio.com/docs/phone-numbers/api/incomingphonenumber-resource) · [Trial voice](https://www.twilio.com/docs/usage/trials/try-out-voice)
-2. For incoming SMS on a dedicated SMS-capable number, set **Messaging → A message comes in → Webhook** to your HTTPS `/texts/twilio` route, choose POST and save. On the shared trial, open **Try out SMS → Inbound → Auto-Reply settings → Custom**. The trial sender must use their verified handset. If you already have an SMS responder, have it record incoming texts. [Incoming messages](https://www.twilio.com/docs/messaging/guides/webhook-request) · [Trial SMS](https://www.twilio.com/docs/usage/trials/try-out-sms)
-3. The owner supplies the account's **Auth Token** privately and the external URLs exactly as configured. The receiver verifies the default form signature in `X-Twilio-Signature` with that token. A separate shared-key signing configuration needs a different verifier. [Webhook security](https://www.twilio.com/docs/usage/webhooks/webhooks-security) · [Shared-key settings](https://www.twilio.com/docs/usage/webhooks/webhook-shared-keys)
+1. For voice on a dedicated configurable number, open **Active Numbers**, select the number, and under **Voice** set **Call status changes** to your public HTTPS `/calls/twilio` route. Choose POST and save. Leave the voice instructions URL in place. On the shared trial, **Inbound** under **Try out Voice** offers scenarios. A final status callback there is **not verified**. Skip the voice check if this setting is absent. See [Number settings](https://www.twilio.com/docs/phone-numbers/api/incomingphonenumber-resource) and [Trial voice](https://www.twilio.com/docs/usage/trials/try-out-voice).
+2. For incoming SMS on a dedicated SMS-capable number, under **Messaging** set **A message comes in** to **Webhook** with your HTTPS `/texts/twilio` route, choose POST and save. On the shared trial, open **Try out SMS**, then **Inbound**, then **Auto-Reply settings**, and choose **Custom**. The trial sender must use their verified handset. If you already have an SMS responder, have it record incoming texts. See [Incoming messages](https://www.twilio.com/docs/messaging/guides/webhook-request) and [Trial SMS](https://www.twilio.com/docs/usage/trials/try-out-sms).
+3. The owner supplies the account's **Auth Token** privately and the external URLs exactly as configured. The receiver verifies the default form signature in `X-Twilio-Signature` with that token. A separate shared-key signing configuration needs a different verifier. See [Webhook security](https://www.twilio.com/docs/usage/webhooks/webhooks-security) and [Shared-key settings](https://www.twilio.com/docs/usage/webhooks/webhook-shared-keys).
 
 ```sh
 TWILIO_AUTH_TOKEN=…
@@ -223,7 +223,7 @@ TWILIO_TEXT_WEBHOOK_URL=https://graph.example.org/texts/twilio   # for texts, th
 
 The signature covers that address, so the two must match to the character. A request that fails the check gets 403.
 
-An incoming text receives HTTP 200 with empty TwiML (`<Response/>`), so the graph sends no reply. Delivery reports for outbound texts are ignored. Have the sending system record its own texts with `"direction": "outbound"`. A final voice callback receives HTTP 204. After testing, restore the QA number's prior settings. [Messaging status callbacks](https://www.twilio.com/docs/messaging/guides/track-outbound-message-status)
+An incoming text receives HTTP 200 with empty TwiML, `<Response/>`, so the graph sends no reply. Delivery reports for outbound texts are ignored. Have the sending system record its own texts with `"direction": "outbound"`. A final voice callback receives HTTP 204. After testing, restore the QA number's prior settings. See [Messaging status callbacks](https://www.twilio.com/docs/messaging/guides/track-outbound-message-status).
 
 | Reported by Twilio | Recorded as |
 | --- | --- |
@@ -261,19 +261,19 @@ visitor taps the number it put there ──▶ POST /collect, kind event: that n
 the service's webhook ──▶ your backend ──▶ record a call { key, from, to, at, duration, … }
 ```
 
-For CallRail, first run `node --test test/provider-fixtures.test.ts test/call-tracking.test.ts`. A signed made-up post exercises the receiver's verifier and call mapping offline. CallRail's own sample payload, key and signature can be tried the same way. Fixture tests for taps and call mapping need no number-swapping script. On a QA site using CallRail's own script, disable form capture unless it is part of the test. [Signature and sample](https://apidocs.callrail.com/#validating-payloads) · [Form capture](https://apidocs.callrail.com/#form-capture)
+For CallRail, first run `node --test test/provider-fixtures.test.ts test/call-tracking.test.ts`. A signed made-up post exercises the receiver's verifier and call mapping offline. CallRail's own sample payload, key and signature can be tried the same way. Fixture tests for taps and call mapping need no number-swapping script. On a QA site using CallRail's own script, disable form capture unless it is part of the test. See [Signature and sample](https://apidocs.callrail.com/#validating-payloads) and [Form capture](https://apidocs.callrail.com/#form-capture).
 
-1. Run [the forwarder](../examples/call-tracking.ts) with `node examples/call-tracking.ts`. Give it a private `SPOOL` directory, the graph's `GRAPH_URL` and `GRAPH_TOKEN`, and the QA company's webhook `SIGNING_KEY` through its private process settings. The key is on that company's Webhooks configuration page. Forward only HTTPS `POST /calls` to the forwarder (port 3001 by default). [CallRail signing](https://apidocs.callrail.com/#validating-payloads)
-2. In the QA company's **Integrations → Webhooks**, enter the receiver's URL under **Post-call** for inbound calls and save. **Outbound post-call** is a separate subscription. Only enable the direction under test. CallRail can deliver an inbound report up to 20 minutes after hangup and does not retry failed deliveries. [Console setup](https://support.callrail.com/hc/en-us/articles/5711246459149-Webhooks) · [Timing and delivery](https://apidocs.callrail.com/#post-call-webhook)
-3. The receiver checks the `Signature` header against the exact request bytes before parsing. A bad signature gets 401. A valid call is spooled before the 204 response and forwarded under `callrail-<id>` so a repeat is counted once. Compare direction, dialed number, zoned start and duration with your call log. Review any refused files privately and remove the test webhook afterward. [Post-call fields](https://apidocs.callrail.com/#post-call-webhook)
+1. Run [the forwarder](../examples/call-tracking.ts) with `node examples/call-tracking.ts`. Give it a private `SPOOL` directory, the graph's `GRAPH_URL` and `GRAPH_TOKEN`, and the QA company's webhook `SIGNING_KEY` through its private process settings. The key is on that company's Webhooks configuration page. Forward only HTTPS `POST /calls` to the forwarder, on port 3001 by default. See [CallRail signing](https://apidocs.callrail.com/#validating-payloads).
+2. In the QA company's **Integrations**, open **Webhooks**, enter the receiver's URL under **Post-call** for inbound calls and save. **Outbound post-call** is a separate subscription. Only enable the direction under test. CallRail can deliver an inbound report up to 20 minutes after hangup and does not retry failed deliveries. See [Console setup](https://support.callrail.com/hc/en-us/articles/5711246459149-Webhooks) and [Timing and delivery](https://apidocs.callrail.com/#post-call-webhook).
+3. The receiver checks the `Signature` header against the exact request bytes before parsing. A bad signature gets 401. A valid call is spooled before the 204 response and forwarded under `callrail-<id>` so a repeat is counted once. Compare direction, dialed number, zoned start and duration with your call log. Review any refused files privately and remove the test webhook afterward. See [Post-call fields](https://apidocs.callrail.com/#post-call-webhook).
 
-CallRail can report `answered: true` for a phone menu or answering system. The forwarder maps an explicit voicemail or miss and leaves a bare positive answer unknown in either direction. So an answered call no longer closes a missed one or counts under `CALL_RESULTS=expected` until staff report it. Where only people answer these numbers, start the forwarder with `ANSWERED_BY=person`. An outbound attempt alone cannot close an earlier missed call. Have staff report a confirmed conversation with a [call result](#call-results), and set `CALL_RESULTS=expected` to hold inbound outcomes until that confirmation. [CallRail answer definition](https://support.callrail.com/hc/en-us/articles/5712132142605-Unanswered-calls-report)
+CallRail can report `answered: true` for a phone menu or answering system. The forwarder maps an explicit voicemail or miss and leaves a bare positive answer unknown in either direction. So an answered call no longer closes a missed one or counts under `CALL_RESULTS=expected` until staff report it. Where only people answer these numbers, start the forwarder with `ANSWERED_BY=person`. An outbound attempt alone cannot close an earlier missed call. Have staff report a confirmed conversation with a [call result](#call-results), and set `CALL_RESULTS=expected` to hold inbound outcomes until that confirmation. See [CallRail answer definition](https://support.callrail.com/hc/en-us/articles/5712132142605-Unanswered-calls-report).
 
 > **List its numbers or none.** With `CALL_NUMBERS` set, a tap on a number that is neither in it nor in the pool leaves no note to match a call by. Add each number the service shows, or leave `CALL_NUMBERS` unset.
 
 ## Number pools
 
-A number pool shows each visitor a number of their own for a while, so a call dialed by hand can be linked without a tap. The graph leases numbers already in its list. To receive actual calls, provision each line separately with your phone provider and configure its call routing and callbacks. For a local test, use fictional numbers, intercept taps and replay call records. [Twilio number configuration](https://www.twilio.com/docs/phone-numbers/api/incomingphonenumber-resource)
+A number pool shows each visitor a number of their own for a while, so a call dialed by hand can be linked without a tap. The graph leases numbers already in its list. To receive actual calls, provision each line separately with your phone provider and configure its call routing and callbacks. For a local test, use fictional numbers, intercept taps and replay call records. See [Twilio number configuration](https://www.twilio.com/docs/phone-numbers/api/incomingphonenumber-resource).
 
 ```sh
 POOL_NUMBERS=+12025550101,+12025550102,+12025550103
@@ -328,7 +328,7 @@ curl -q --noproxy 127.0.0.1 -X POST http://127.0.0.1:8080/v1/record -H "@${GRAPH
 
 ### Held calls
 
-With `CALL_RESULTS=expected`, a call is held until its result arrives: it is left out of outcomes and conversions.
+With `CALL_RESULTS=expected`, a call is held until its result arrives. Until then, it is left out of outcomes and conversions.
 
 ```text
 call reported ──▶ waiting ──▶ result: answered ──▶ counted, and sent
@@ -337,7 +337,7 @@ call reported ──▶ waiting ──▶ result: answered ──▶ counted, an
                                                     (a later result settles it)
 ```
 
-`CALL_RESULT_WAIT` sets the 30 minutes, counted from the end of the call. Set `CALL_RESULTS` only if a system posts results; otherwise every call stays unknown and uncounted.
+`CALL_RESULT_WAIT` sets the 30 minutes, counted from the end of the call. Set `CALL_RESULTS` only if a system posts results. Otherwise, every call stays unknown and uncounted.
 
 Without the setting, a call is counted by its length when it is reported. If a later result says it was missed, it leaves the report as an outcome, and its conversion changes too.
 
@@ -363,7 +363,7 @@ curl -q --noproxy 127.0.0.1 -X POST http://127.0.0.1:8080/v1/lookup -H "@${GRAPH
 
 The `callbacks` [report](http.md#report) lists the missed calls nobody has returned, oldest first.
 
-Correcting an earlier call leaves a later callback alert and its event in place when the later miss, callback attempts and paid visit are independent. If the corrected or erased call had closed an earlier wait, that earlier miss can become due again. Its new alert replaces the later wait’s notice.
+Correcting an earlier call leaves a later callback alert and its event in place when the later miss, callback attempts and paid visit are independent. If the corrected or erased call had closed an earlier wait, that earlier miss can become due again. Its new alert replaces the later wait's notice.
 
 | State of a missed call | Meaning |
 | --- | --- |
@@ -414,7 +414,7 @@ CALL_NUMBERS='{"+13125550101":{"source":"listing","tags":{"office_advertised":"n
 { "type": "call", "key": "CA1", "at": 1795460000000, "direction": "inbound", "from": "+13125550141", "to": "+13125550101", "duration": 140, "tags": { "language": "es" } }
 ```
 
-A call's tags are copied to its outcome. A number's tags go on the visit recorded for a call filed under that number; a call linked to a visitor uses the visitor's own visit instead. The report [breaks down](report.md#breakdowns) by either.
+A call's tags are copied to its outcome. A number's tags go on the visit recorded for a call filed under that number. A call linked to a visitor uses the visitor's own visit instead. The report [breaks down](report.md#breakdowns) by either.
 
 ### Listing numbers
 
@@ -463,7 +463,7 @@ curl -q --noproxy 127.0.0.1 -X POST http://127.0.0.1:8080/v1/record -H "@${GRAPH
 
 1. **Sender.** The sender is the same subject as a caller from that number, so their calls, their texts and a contact with that number are tied.
 2. **Visitor.** The code links the text to the one visitor it was given to, at 0.95. Without a code, the one visitor who tapped your text link within the [tap window](#busy-numbers) is linked, at 0.92. Either joins the two.
-3. **Lead.** The first text of a conversation is an outcome of the step `text`. A conversation ends after 30 days of silence. It is the same whatever order texts are reported in: one that arrives late can take a lead counted from a later text back. Add `text` to `STAGES` to give it a value and a column on the Board.
+3. **Lead.** The first text of a conversation is an outcome of the step `text`. A conversation ends after 30 days of silence. It is the same whatever order texts are reported in. One that arrives late can take back a lead counted from a later text. Add `text` to `STAGES` to give it a value and a column on the Board.
 4. **Channel.** A text without a visitor is filed under the channel `CALL_NUMBERS` gives its number, with the medium `text`.
 
 > **What a text says is never stored.** It is read for the code and for a word such as STOP, and dropped. To keep it from reaching the server at all, read the code yourself and send `code` in place of `text`.
@@ -507,7 +507,7 @@ Mark a sender as [no lead](report.md#not-a-lead) with a `restatement` of the tex
 
 ### Asking for no more texts
 
-The `person` [lookup](http.md#lookup) answers `"textsOptedOut": true` when the last such word from anyone in the subject's cluster, or from a phone number that somebody in it has, was STOP, STOPALL, UNSUBSCRIBE, CANCEL, END, QUIT, REVOKE or OPTOUT, or in Spanish ALTO, PARE, PARAR, DETENER, CANCELAR, BAJA, SALIR, TERMINAR or FIN, and `false` after START or UNSTOP, or when nobody has said either. A STOP is seen on everybody whose record has that number, whether or not the policy joins them to it. Within one cluster the last word stands, whichever of its numbers it came from. A START takes back nothing said from a number outside the cluster. The word counts only as the whole text. No fluent speaker has read the Spanish words, so have one read them before you rely on them.
+The `person` [lookup](http.md#lookup) answers `"textsOptedOut": true` when the last such word from anyone in the subject's cluster, or from a phone number that somebody in it has, was an opt-out word. The opt-out words are STOP, STOPALL, UNSUBSCRIBE, CANCEL, END, QUIT, REVOKE and OPTOUT, and in Spanish ALTO, PARE, PARAR, DETENER, CANCELAR, BAJA, SALIR, TERMINAR and FIN. It answers `false` after START or UNSTOP, or when nobody has said either. A STOP is seen on everybody whose record has that number, whether or not the policy joins them to it. Within one cluster the last word stands, whichever of its numbers it came from. A START takes back nothing said from a number outside the cluster. The word counts only as the whole text. No fluent speaker has read the Spanish words, so have one read them before you rely on them.
 
 It is kept apart from [consent](privacy.md), which is about advertising. Your own system sends the texts, so it must check its own list as well.
 
@@ -539,7 +539,7 @@ Callers are stored as a hash of their number, so the view shows an ID. To find t
 | Conversions | A counted call goes to an ad platform only when the `call` step in `STAGES` has an action. The caller's hashed number is sent as a match key. |
 | Returns by number | A caller reached on a different number leaves the missed call open, unless you [report the return](#reported-returns). |
 | Older calls | A call recorded before calls were stored has no state, and a result for it finds no call. Its outcome stays counted. |
-| Codes read out | Whoever reads out a code is tied to the browser it was shown in, whoever's it is. Letters misheard are no code, or with bad luck somebody else's. |
+| Codes read out | Whoever reads out a code is tied to the browser it was shown in, whoever's it is. Misheard letters name no code, or by chance somebody else's. |
 | Deleted codes | Someone who deletes the code from the message is tied by their tap, or not at all. |
 | Forwarded texts | Whoever sends a message with the code is tied to the browser it was given to. One visitor is tied to one sender. |
 | Computers | A code opened on one device and sent from another ties the two, which is usually right. |
@@ -547,4 +547,4 @@ Callers are stored as a hash of their number, so the view shows an ID. To find t
 | Pictures and groups | A picture is recorded as a text. Group messages are not told apart. |
 | Delivery of texts | Whether a text you sent was delivered is not read. A text you report as sent counts as a reply. |
 | Twilio's time | Twilio sends no time with an incoming text, so it is the time the report arrived. |
-| Verification | Local tests reproduce the published Twilio and CallRail signatures and reject altered inputs. Real voice/SMS delivery, proxy configuration and phone routing still require a dedicated account and a controlled line. [Fixture sources](../test/fixtures/providers/README.md) |
+| Verification | Local tests reproduce the published Twilio and CallRail signatures and reject altered inputs. Real voice and SMS delivery, proxy configuration and phone routing still require a dedicated account and a controlled line. See [Fixture sources](../test/fixtures/providers/README.md). |
