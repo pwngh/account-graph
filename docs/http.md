@@ -1,12 +1,13 @@
 # HTTP API
 
-Six calls over plain HTTP, in JSON. Your services authenticate with a token. Browsers and Twilio have routes of their own. Long answers on this page are shortened.
+Six calls over plain HTTP, in JSON. Your services authenticate with a token. Browsers and Twilio have routes of their own. The [OpenAPI 3.1 description](openapi.json) covers the six calls and the browser tag. Follow the [no-code guide](no-code.md) to connect a form.
 
 > **One rule.** `POST /v1/<call>` takes the call's argument as its body, and the 200 body is the call's answer. The [library](library.md) makes the same calls with the same shapes.
 
 ```bash
 curl -X POST https://graph.example.org/v1/record \
   -H "authorization: Bearer $GRAPH_TOKEN" \
+  -H 'content-type: application/json' \
   -d '{"entries":[{"type":"profile","key":"login-9001","at":1795460000000,"subject":"account:42","event":"login","facts":{"device":"9f3c"}}]}'
 ```
 
@@ -45,7 +46,7 @@ An unknown token gets 401. A known token without the requested call, decision ac
 
 Each record entry type has its own key space. Forget keys and decision keys each have one too. When an allowed decision uses a key occupied by a different action, every caller gets `KEY_REUSED` with just `["action"]`. The answer reveals no signer, action value or other field differences.
 
-An `x-request-id` header of 1 to 200 printable characters comes back with the answer of a call.
+An `x-request-id` header of 1 to 200 visible ASCII characters without spaces comes back with the answer of a call.
 
 ## Requests
 
@@ -113,7 +114,7 @@ Each entry has `type`, `key` and `at`. A field with `?` may be left out.
 | Profile `createdAt` | When your system created this exact record, in whole epoch milliseconds above zero and at most one day after the profile's own `at`. A subject starting with `visitor:`, `caller:` or `call:` cannot have this field. |
 | `clicks` | `gclid`, `gbraid`, `wbraid`, `fbclid`, `fbp`, `msclkid`, `ttclid` |
 | `custom` | At most 10 names of your own, each with text up to 256 characters |
-| `actions` | What it counts as on each platform, `{ "google": "987654321" }`. Left out, the stage's own. |
+| `actions` | What it counts as on each platform, `{ "google": "987654321" }`<!-- schema ConversionEntry/actions -->. Left out, the stage's own. |
 | `channel` | `WEB`, `APP`, `IN_STORE`, `PHONE`, `MESSAGE`, `OTHER` or `SYSTEM_GENERATED` |
 | `userAgent` | The real user agent on the converting web request, when known. Meta can use it with `META_CLIENT_USER_AGENT=true` and explicit ad-user-data consent. Omit it when the converting browser is unknown. |
 | `tags` | At most 8. A name is lowercase letters and underscores, up to 32. A value is up to 64 characters. |
@@ -150,11 +151,12 @@ A refund and a write-off are amounts, and not what is left. `of.type` is `conver
 
 `role` is `self`, `representative`, `excluded` or `unknown`. The subject names one of your records. A reviewer can sign only their own name. A later party statement can name a different record or undo identification with `unknown`. Results, returns and parties each have their own newest statement, ordered by time and then key. On a retry, `stands` says whether that statement still stands. A return statement on an outbound call always answers `false`. A statement may precede the call for a record that has never been deleted. For a returning record, first record its new profile and the call. Its start time must be after the most recent deletion. Earlier or missing calls receive `FORGOTTEN`.
 
+<!-- schema RecordEntry -->
 ```json
 {"type":"call_update","key":"desk-14","at":1790000000000,"call":"incoming-4","change":{"kind":"party","role":"representative","subject":"record:17","by":"intake","seen":null}}
 ```
 
-Read `{"kind":"party","call":"incoming-4"}` with `lookup` before editing. Pass the returned `key` as `change.seen`, or pass `null` if the lookup returned `null`. An `unknown` statement has its own key. Each entry checks its expectation when it is written, including in a batch. On `STALE`, read the current statement, review the correction and retry with the same entry key. Omitting `seen` keeps the usual time and key order without checking an expectation.
+Read `{"kind":"party","call":"incoming-4"}`<!-- schema LookupRequest --> with `lookup` before editing. Pass the returned `key` as `change.seen`, or pass `null` if the lookup returned `null`. An `unknown` statement has its own key. Each entry checks its expectation when it is written, including in a batch. On `STALE`, read the current statement, review the correction and retry with the same entry key. Omitting `seen` keeps the usual time and key order without checking an expectation.
 
 A call record lookup includes the current `party` and ordered `partyHistory`. The last item has the standing statement and its key. A journey shows only the current statement on a visible call. Before the phone report arrives, the record lookup returns `null` and the party lookup can already return a statement.
 
@@ -351,7 +353,7 @@ POST /v1/lookup
 
 A person lookup shows `possible` only when no arrival earns credit. For example, correcting a call can remove its credited tap and leave an independent visit at 0.59. That visit now appears as a suggestion with its existing score. It earns no campaign credit.
 
-`match`, `transfers`, `caller` and `journey` say why by `kinds`, such as `["phone", "device"]`. No identifier leaves the graph, because most are hashes of an email or a phone. A candidate with `unconfirmed` shares what would join it, and [nothing confirms](matching.md#records-that-have-to-be-confirmed) that the two are one person.
+`match`, `transfers`, `caller` and `journey` say why by `kinds`, such as `["phone", "device"]`<!-- schema Match/kinds -->. No identifier leaves the graph, because most are hashes of an email or a phone. A candidate with `unconfirmed` shares what would join it, and [nothing confirms](matching.md#records-that-have-to-be-confirmed) that the two are one person.
 
 A `find` by id matches the start of it and reads the subject table. The person of a journey is the subject's cluster, plus any subject linked strongly enough that its visits would be credited. A subject split from any of them is left out. `subjects` gives the reason and score for each. A `journey` reads up to 60 subjects of one person, and keeps the state of a conversion without the time it was sent.
 
@@ -368,7 +370,13 @@ POST /v1/report
 ```
 
 ```json
-{ "asOf": 1795460000000, "value": { "from": "2026-11-01", "to": "2026-11-14", "timeZone": "America/Chicago", "steps": ["inquiry", "enrolled"], "rows": [], "total": { "cost": 0, "outcomes": 0, "value": 0 } } }
+{ "asOf": 1795460000000, "value": {
+  "from": "2026-11-01", "to": "2026-11-14", "timeZone": "America/Chicago", "steps": ["inquiry", "enrolled"], "per": "enrolled",
+  "rows": [], "days": 14, "excluded": 0, "months": [], "dimensions": ["hour", "weekday"], "currencies": [],
+  "total": { "cost": 0, "clicks": 0, "impressions": 0, "visits": 0, "missed": 0, "notLeads": 0, "outcomes": 0, "value": 0, "people": 0,
+    "costDays": 0, "missingDays": 14, "insufficientData": false, "costPerOutcome": null, "returnOnCost": null, "stages": {},
+    "valueChange": { "outcomes": 0, "first": 0, "now": 0, "refunded": 0, "writtenOff": 0, "zeroed": 0, "firstUnknown": 0 } }
+} }
 ```
 
 | `kind` | Asks | Answers |
@@ -408,7 +416,7 @@ POST /v1/events
 | `limit` | 1 to 1,000 |
 | `more` | Another page is there already |
 
-A cursor is opaque. It names the history of the database as well as a place in it. A cursor of another history, or older than what is kept, answers `{ "ok": false, "reason": "CURSOR_LOST" }`. Read everything again from `null`.
+A cursor is opaque. It names the history of the database as well as a place in it. A cursor of another history, or older than what is kept, answers `{ "ok": false, "reason": "CURSOR_LOST" }`<!-- schema /v1/events -->. Read everything again from `null`.
 
 `seq` only grows. Some numbers are missing, because a deletion takes a person's events with it. A hole is not a loss.
 
@@ -427,6 +435,7 @@ A cursor is opaque. It names the history of the database as well as a place in i
 
 A fault is any answer that is not 200. The library throws it as a `Fault` with the same code.
 
+<!-- schema FaultResponse -->
 ```json
 { "fault": { "code": "INPUT.MALFORMED", "message": "request.entries[0].at is required", "retryable": false, "detail": { "path": "request.entries[0].at" } } }
 ```
@@ -448,7 +457,7 @@ A fault is any answer that is not 200. The library throws it as a `Fault` with t
 
 `retryable` says whether the same call, with the same key, may succeed. Tell a fault by its code, never by its message.
 
-Every other route answers an error as `{ "error": "…" }`. So do two answers under `/v1`: 404 for a call that does not exist, and 405 for a method other than `POST`.
+Every other route answers an error as `{ "error": "…" }`<!-- schema RouteError -->. So do two answers under `/v1`: 404 for a call that does not exist, and 405 for a method other than `POST`.
 
 ## Routes for browsers
 
@@ -482,7 +491,7 @@ Browsers post to `/collect` without a token. The [script tag](operations.md#scri
 | `GET /collect.js` | The script tag |
 | `GET /fingerprint.js` | Fingerprint helpers, loaded by the script on request |
 | `GET /review` | The [reviewer screen](operations.md#reviewer-screen). Its data requires a token. |
-| `/review/api/*` | The routes the screen calls, with the main service token or a reviewer token. They serve the screen and are not part of the six calls. |
+| `/review/api/*` | The routes the screen calls, with the main service token or a reviewer token. They change with the bundled screen and are not part of the six calls: use the versioned calls for integrations. |
 | `GET /health` | `{"ok":true}` once the database answers. While stored groups are due a rebuild, `warning` gives the command. |
 
 A Twilio request with a missing or wrong signature gets 403. A call or text that is already known, or whose person was deleted, gets the usual answer, so Twilio does not send it again.

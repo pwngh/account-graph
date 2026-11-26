@@ -131,6 +131,7 @@ Rebuild after switching to or from a preset. See [the policy](operations.md#poli
 
 Use `examples/household.json` for a list that staff type in, where a parent, a child and a former spouse share one phone on file. The default policy suits people who contact you themselves, where the caller usually owns the number.
 
+<!-- schema config -->
 ```json
 {
   "kinds": {
@@ -164,6 +165,7 @@ Phone evidence halves for each two years between the two sightings, because numb
 
 Under the household preset, a contact who gave the caller’s number is usually related to the line. Staff who know which record a particular call concerned can identify that call by its provider ID.
 
+<!-- schema RecordEntry -->
 ```json
 { "type": "call_update", "key": "desk-CA1", "at": 1795460000000, "call": "CA1",
   "change": { "kind": "party", "role": "self", "subject": "contact:7", "by": "desk" } }
@@ -186,6 +188,7 @@ Keep a shared phone on each person, and record what you know about the two. Remo
 
 Use `examples/intake.json` where mixing two people's records is worse than leaving one person with two, such as a law firm or a clinic. It is the preset above, and:
 
+<!-- schema config -->
 ```json
 { "apart": ["birth", "given"], "records": "confirmed", "credit": 0.75 }
 ```
@@ -207,6 +210,7 @@ Write a policy the same way, rebuild, and start the server with it. A group is a
 
 Two records can share an email and a phone and still be two people. A policy can keep them apart by a date of birth, a first name, or both:
 
+<!-- schema config -->
 ```json
 { "apart": ["birth", "given"] }
 ```
@@ -361,6 +365,7 @@ Report a record merge in another system as a `merge`. Calling `forget` on the me
 
 Send `unmerge` with the same pair. There is nothing to keep from the merge.
 
+<!-- schema DecideRequest -->
 ```json
 { "key": "undo-ticket-88", "at": 1795463600000, "by": "dana", "action": "unmerge", "pairs": [{ "a": "contact:7", "b": "contact:12" }] }
 ```

@@ -36,6 +36,7 @@ phone provider ──▶ record a call ──▶ caller ──▶ linked to the 
 
 Two people can use the same line. When staff know who an individual call concerned, send a `call_update` for its provider ID. For example, someone at the desk took a call from a parent about their child.
 
+<!-- schema RecordRequest -->
 ```json
 { "entries": [{ "type": "call_update", "key": "desk-017", "at": 1795460200000, "call": "C17",
   "change": { "kind": "party", "role": "representative", "subject": "record:child", "by": "intake" } }] }
@@ -127,6 +128,7 @@ A caller who sees a code on the page can read it to whoever answers. It says whi
 
 Set `TEXT_CODES=true` on the server, or `textCodes` in the library. Without it no page is given a code, and a `code` you send names nobody. The code is the one [text links](#text-messages) carry. The script puts it in every element marked `data-ag-code`, and leaves them as you wrote them for a visitor who is given none. To hide the sentence then, use `p:has([data-ag-code]:empty) { display: none }`.
 
+<!-- schema RecordEntry -->
 ```json
 { "type": "call", "key": "CA1", "at": 1795460000000, "direction": "inbound", "from": "+12025550141", "to": "+12025550101", "duration": 140, "code": "K7Q2MX" }
 ```
@@ -407,6 +409,7 @@ Tags attach facts to a call, such as the language chosen at the prompt. A tracki
 CALL_NUMBERS='{"+13125550101":{"source":"listing","tags":{"office_advertised":"north","language":"es"}}}'
 ```
 
+<!-- schema RecordEntry -->
 ```json
 { "type": "call", "key": "CA1", "at": 1795460000000, "direction": "inbound", "from": "+13125550141", "to": "+13125550101", "duration": 140, "tags": { "language": "es" } }
 ```
