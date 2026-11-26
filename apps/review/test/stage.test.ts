@@ -169,8 +169,7 @@ for (const practice of ['family', 'injury'] as const) test('the ' + practice + '
   for (const [i, [tells, seen]] of expected.entries()) {
     const see = new URL(scenes[i]!.see[1], firm.graph)
     const path = see.hash.slice(1) || see.pathname
-    const modern = !/^\/(channels|decide|health)(?:\/|$)/.test(path)
-    const before = modern && seen(await reportText(page, path))
+    const before = seen(await reportText(page, path))
     const fields = sceneForm(html)
     assert.equal(fields.get('expected'), String(i))
     const start = performance.now()
@@ -184,11 +183,9 @@ for (const practice of ['family', 'injury'] as const) test('the ' + practice + '
     }
     assert.match(html, new RegExp('data-at="' + (i + 1) + '"'))
     assert.match(visibleText(html), tells)
-    if (modern) {
-      const after = seen(await reportText(page, path))
-      if (['Form texted', 'Two at one call', 'What is behind a number'].includes(scenes[i]!.title)) assert.equal(after, before)
-      else assert.ok(after && after !== before, 'scene ' + (i + 1) + ' affects ' + path + ' (' + JSON.stringify([before, after]).slice(0, 180) + ')')
-    }
+    const after = seen(await reportText(page, path))
+    if (['Form texted', 'Two at one call', 'What is behind a number'].includes(scenes[i]!.title)) assert.equal(after, before)
+    else assert.ok(after && after !== before, 'scene ' + (i + 1) + ' affects ' + path + ' (' + JSON.stringify([before, after]).slice(0, 180) + ')')
     const ms = Number(/data-ms="([0-9]+)"/.exec(html)?.[1])
     if (ms > longestScene) {
       longestScene = ms
@@ -229,21 +226,11 @@ for (const practice of ['family', 'injury'] as const) test('the ' + practice + '
   t.after(screen.close)
   const view = async (href: string) => {
     const modernPath = new URL(href, firm.graph).hash.slice(1) || new URL(href, firm.graph).pathname
-    const legacy = /^\/(channels|decide|health)(?:\/|$)/.test(modernPath)
-    const url = firm.graph + (legacy ? '/legacy#' + modernPath : modernPath)
+    const url = firm.graph + modernPath
     await screen.send('Page.navigate', { url: 'about:blank' })
     await until('a fresh document', () => screen.run("location.href === 'about:blank'").catch(() => false))
     await screen.send('Page.navigate', { url })
     await until('document for ' + href, () => screen.run(`document.readyState !== 'loading' && location.href === ${JSON.stringify(url)}`).catch(() => false))
-    if (legacy) {
-      await until('the retained reviewer screen', () => screen.run(`typeof load === 'function'`))
-      if (!(await screen.run(`sessionStorage.getItem('token')`))) await screen.run(`{
-        const input = document.querySelector('#token')
-        input.value = 'demo'
-        input.dispatchEvent(new Event('change'))
-      }`)
-      await until('legacy ' + modernPath, () => screen.run(`typeof loadedAt === 'number' && document.querySelector('#view')?.childElementCount > 0`))
-    }
     const text = (await screen.run(`document.getElementById('view').innerText`)) as string
     return text.includes('\nAttribution') ? text.slice(text.indexOf('\nAttribution')) : text
   }
