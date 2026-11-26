@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { campaignsOf, startFirm } from '../../../examples/firm/firm.ts'
 import { PRACTICES } from '../../../examples/firm/practice.ts'
 import { hashPhone } from '../../../tools/internals.ts'
-import { browse, until } from '../../../test/chrome.ts'
+import { browse, pageCommands, until } from '../../../test/chrome.ts'
 
 type Practice = keyof typeof PRACTICES
 type Scene = { title: string, see: [string, string], spot?: string[] }
@@ -98,6 +98,42 @@ async function reportText(client: ReturnType<typeof stageClient>, path: string) 
   const html = (await page.text()).match(/<main\b[^>]*>([^]*?)<\/main>/)?.[1] ?? ''
   return visibleText(html.replace(/<details\b[^>]*>[^]*?<\/details>/g, '').replace(/<\/?(?:h[1-6]|li|div|section|p|td|tr)\b[^>]*>/g, '\n')).replace(/\n+/g, '\n')
 }
+
+test('the browser helper preserves DevTools protocol and page errors and matches each pending reply', async () => {
+  const events = new EventTarget()
+  const commands: { id: number, method: string, params: {returnByValue?: boolean} }[] = []
+  const page = pageCommands({
+    readyState: WebSocket.OPEN,
+    addEventListener: events.addEventListener.bind(events),
+    send(message) { commands.push(JSON.parse(String(message))) },
+  })
+  function reply(id: number, fields: object) {
+    events.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ id, ...fields }) }))
+  }
+  // Runtime.evaluate can refuse a value before it supplies a JavaScript result.
+  const document = page.run('document')
+  const ready = page.run('true')
+  assert.ok(commands.every(command => command.method === 'Runtime.evaluate' && command.params.returnByValue))
+  reply(commands[1]!.id, { result: { result: { type: 'boolean', value: true } } })
+  reply(commands[0]!.id, { error: { code: -32000, message: 'Object reference chain is too long' } })
+  assert.equal(await ready, true)
+  await assert.rejects(document, { message: 'Runtime.evaluate: Object reference chain is too long (-32000)' })
+  const threw = page.run('missing()')
+  reply(commands[2]!.id, { result: { exceptionDetails: { text: 'Uncaught', exception: { description: 'ReferenceError: missing is not defined' } } } })
+  await assert.rejects(threw, { message: 'ReferenceError: missing is not defined' })
+  const missing = page.run('42')
+  reply(commands[3]!.id, {})
+  await assert.rejects(missing, { message: 'Runtime.evaluate: DevTools returned no result' })
+  const empty = page.run('42')
+  reply(commands[4]!.id, { result: {} })
+  await assert.rejects(empty, { message: 'Runtime.evaluate returned no evaluated value' })
+  const unset = page.run('undefined')
+  reply(commands[5]!.id, { result: { result: { type: 'undefined' } } })
+  assert.equal(await unset, undefined)
+  const interrupted = page.send('Page.getFrameTree', {})
+  events.dispatchEvent(new Event('close'))
+  await assert.rejects(interrupted, { message: 'Chrome closed the debugging connection' })
+})
 
 test('the stage publishes intermediate progress, completion and scene results to the waiting client', { timeout: 15000 }, async t => {
   let release!: () => void
@@ -213,10 +249,13 @@ for (const practice of ['family', 'injury'] as const) test('the ' + practice + '
   const bar = async (name: string) => String(await run(`document.querySelector('#stage')?.dataset.${name} ?? ''`).catch(() => ''))
   await until('server progress on first load', async () => await bar('ready') === 'false' && await run(`/\\d+ of \\d+ people/i.test(document.body.innerText)`))
   assert.equal(await run(`document.querySelector('#stage button[value=run]').disabled`), true)
-  await run(`window.firstDocument = document`)
+  const frame = async () => (await send('Page.getFrameTree', {})).result.frameTree.frame.loaderId
+  const firstDocument = await frame()
+  assert.ok(firstDocument)
   release()
   await until('live completion on the same page', async () => await bar('ready') === 'true')
-  assert.equal(await run(`document === window.firstDocument && !(sessionStorage.getItem('token') || localStorage.getItem('token'))`), true)
+  assert.equal(await frame(), firstDocument, 'loading completes in the same document')
+  assert.equal(await run(`!(sessionStorage.getItem('token') || localStorage.getItem('token'))`), true)
   assert.equal(await run(`document.querySelector('.with-phone .device')?.dataset.state`), 'ad')
   const { scenes } = await run("fetch('/stage/scenes').then(response => response.json())") as { scenes: Scene[] }
   assert.equal(scenes.length, 27)
@@ -224,14 +263,21 @@ for (const practice of ['family', 'injury'] as const) test('the ' + practice + '
   const links = scenes.map(({ see }) => see[1])
   const screen = await browse(firm.graph + '/stage')
   t.after(screen.close)
+  // This browser has its own cookies. Let its stage sign-in finish before navigating away.
+  await until('second screen signed in', () => screen.run(`Boolean(document.querySelector('#stage[data-ready="true"]'))`).catch(() => false))
   const view = async (href: string) => {
     const modernPath = new URL(href, firm.graph).hash.slice(1) || new URL(href, firm.graph).pathname
     const url = firm.graph + modernPath
     await screen.send('Page.navigate', { url: 'about:blank' })
     await until('a fresh document', () => screen.run("location.href === 'about:blank'").catch(() => false))
     await screen.send('Page.navigate', { url })
-    await until('document for ' + href, () => screen.run(`document.readyState !== 'loading' && location.href === ${JSON.stringify(url)}`).catch(() => false))
-    const text = (await screen.run(`document.getElementById('view').innerText`)) as string
+    const shown = await until('document for ' + href, () => screen.run(`document.readyState !== 'loading' && document.getElementById('view') && { href: location.href, text: document.getElementById('view').innerText }`).catch(() => false))
+    const actual = new URL(shown.href)
+    const requested = new URL(url)
+    assert.equal(actual.origin, requested.origin)
+    assert.deepEqual(actual.pathname.split('/').map(decodeURIComponent), requested.pathname.split('/').map(decodeURIComponent))
+    assert.equal(actual.search, requested.search)
+    const text = shown.text as string
     return text.includes('\nAttribution') ? text.slice(text.indexOf('\nAttribution')) : text
   }
   const { names, said, expected } = story(practice)
@@ -241,8 +287,14 @@ for (const practice of ['family', 'injury'] as const) test('the ' + practice + '
     const before = seen(await view(links[i]!))
     const began = performance.now()
     await press('Space')
-    await until(`scene ${i + 1}`, async () => (await bar('at')) === String(i + 1) && (await bar('running')) === 'false')
+    // The bar can receive the event before the loader finishes drawing the matching reviewer view.
+    await until(`scene ${i + 1} and its reviewer view`, () => run(`
+      document.querySelector('#stage[data-at="${i + 1}"][data-running="false"]') !== null &&
+      document.querySelector('#stage-view')?.childElementCount > 0 &&
+      Boolean(document.querySelector('#stage-view .spot')) === ${Boolean(scenes[i]!.spot)}
+    `))
     assert.ok(performance.now() - began < 1000, 'scene ' + (i + 1) + ' reaches the presenter in under one second')
+    assert.equal(await frame(), firstDocument, 'scene ' + (i + 1) + ' updates the original stage document')
     assert.match((await run(`document.querySelector('#stage .told').textContent`)) as string, tells)
     assert.ok(Number(await bar('ms')) < 1000, `scene ${i + 1} took ${await bar('ms')} ms`)
     // The stage opens what the scene changed, without a problem, and the phone goes once the call is over.
@@ -276,6 +328,7 @@ for (const practice of ['family', 'injury'] as const) test('the ' + practice + '
   await run(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', bubbles: true }))`)
   await until('the restart', () => restarts === 1)
   await until('the new round after restart', async () => (await bar('at')) === '0' && (await bar('ready')) === 'true')
+  assert.equal(await frame(), firstDocument, 'restart updates the original stage document')
   // The site shows a visitor from an ad a number of their own, in their language.
   await screen.run(`location.href = ${JSON.stringify(`${firm.site}/es?gclid=you&utm_id=30333`)}`)
   await until('a pool number', async () => ((await screen.run(`document.querySelector('.call')?.textContent ?? ''`).catch(() => '')) as string).includes('(555) 010-011'))

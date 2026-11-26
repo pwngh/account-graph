@@ -40,25 +40,56 @@ export async function browse(address: string) {
     const page = (await (await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(address)}`, { method: 'PUT' })).json()) as { webSocketDebuggerUrl: string }
     const socket = new WebSocket(page.webSocketDebuggerUrl)
     await new Promise((resolve, reject) => ((socket.onopen = resolve), (socket.onerror = reject)))
-    const waiting = new Map<number, (answer: any) => void>()
-    socket.onmessage = ({ data }) => {
-      const answer = JSON.parse(String(data))
-      waiting.get(answer.id)?.(answer)
-    }
-    let id = 0
-    socket.onclose = () => waiting.forEach((answer) => answer({ result: { exceptionDetails: { text: 'Chrome went away' } } }))
-    const send = (method: string, params: object) => new Promise<any>((resolve) => (waiting.set(++id, resolve), socket.send(JSON.stringify({ id, method, params }))))
-    const run = async (expression: string) => {
-      const { result } = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
-      if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text)
-      return result.result.value
-    }
-    const press = async (key: string) => {
-      for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key, code: key, windowsVirtualKeyCode: key === 'Escape' ? 27 : 13, ...(type === 'keyDown' && key === 'Enter' && { text: '\r' }) })
-    }
-    return { run, press, send, close }
+    return { ...pageCommands(socket), close }
   } catch (error) {
     await close()
     throw error
   }
+}
+
+/** Run commands on an open DevTools connection. Each reply belongs to one pending request. */
+export function pageCommands(socket: Pick<WebSocket, 'addEventListener' | 'send' | 'readyState'>) {
+  const waiting = new Map<number, { resolve: (reply: any) => void, reject: (error: Error) => void }>()
+  socket.addEventListener('message', event => {
+    const reply = JSON.parse(String(event.data))
+    const request = waiting.get(reply.id)
+    if (!request) return
+    waiting.delete(reply.id)
+    request.resolve(reply)
+  })
+  socket.addEventListener('close', () => {
+    for (const request of waiting.values()) request.reject(new Error('Chrome closed the debugging connection'))
+    waiting.clear()
+  })
+  let sequence = 0
+  async function send(method: string, params: object) {
+    if (socket.readyState !== WebSocket.OPEN) throw new Error('Chrome closed the debugging connection')
+    const id = ++sequence
+    const reply = await new Promise<any>((resolve, reject) => {
+      waiting.set(id, { resolve, reject })
+      try {
+        socket.send(JSON.stringify({ id, method, params }))
+      } catch (error) {
+        waiting.delete(id)
+        reject(error)
+      }
+    })
+    if (reply.error) throw new Error(`${method}: ${reply.error.message} (${reply.error.code})`)
+    if (!reply.result || typeof reply.result !== 'object') throw new Error(method + ': DevTools returned no result')
+    return reply
+  }
+  async function run(expression: string) {
+    const { result } = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
+    if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text)
+    if (!result.result) throw new Error('Runtime.evaluate returned no evaluated value')
+    return result.result.value
+  }
+  async function press(key: string) {
+    const space = key === 'Space' || key === ' '
+    const code = space ? 'Space' : key
+    const text = space ? ' ' : key === 'Enter' ? '\r' : undefined
+    const virtual = space ? 32 : key === 'Escape' ? 27 : 13
+    for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: space ? ' ' : key, code, windowsVirtualKeyCode: virtual, ...(type === 'keyDown' && text && { text }) })
+  }
+  return { run, send, press }
 }
