@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from 'react'
 import { Form, Link, useLocation, useSearchParams } from 'react-router'
-import { amount, Badge, DecisionForm, percent, Subject, subjectPath, Table, Tiles, Time, type WriteContext } from './shared'
+import { amount, Badge, DecisionForm, DecisionScope, percent, Subject, subjectPath, Table, Tiles, Time, type WriteContext } from './shared'
 import { ICONS, nameOf, PERSON, typeOf, type ClusterLayout } from './cluster-layout.js'
 
 type Dates = Record<string, { firstSeen?: number, createdAt?: number }>
@@ -17,7 +17,11 @@ export interface KnownProfile {
   consent: { at: number, adUserData: boolean, adPersonalization: boolean, source?: string, recorded: number }[]
   history: { at: number, identifier: string, event?: string }[]
 }
-export type Profile = KnownProfile | { subject: string, known: false, dates?: Dates }
+export type ProfilePage = Omit<KnownProfile, 'cluster' | 'apart' | 'edges'> & {
+  cluster: { oversized: boolean, limitedByCalls?: boolean }
+  memberCount: number, linkCount: number, separatedCount: number, strongest: number, listedMembers: string[], start: number
+}
+export type Profile = ProfilePage | { subject: string, known: false, dates?: Dates }
 export interface AccountsData {
   subject?: string, profile?: Profile, layout?: ClusterLayout, key: string, at: number, offset?: number, author?: string
   clusters: { id: string, size: number, oversized?: boolean }[]
@@ -54,24 +58,23 @@ function DatesOf({ id, dates }: { id: string, dates?: Dates }) {
 function ProfileView({ profile, data, context }: { profile: Profile, data: AccountsData, context: WriteContext }) {
   const { subject, dates } = profile
   const [query] = useSearchParams()
-  const page = Math.max(0, Math.floor(Number(query.get('links')) || 0))
   if (!profile.known) return <section><h2>{subject}</h2><DatesOf id={subject} dates={dates}/><p>No records</p></section>
-  const members = new Set(profile.cluster.members)
+  const members = new Set(profile.listedMembers)
   const consent = profile.consent[0]
   const verdicts = new Map(profile.verdicts.map(v => [v.a === subject ? v.b : v.a, v]))
-  const count = profile.links.length + profile.separated.length
-  const start = Math.min(Math.max(0, Math.ceil(count / 50) - 1), page) * 50
+  const count = profile.linkCount + profile.separatedCount
+  const start = profile.start
   const pageHref = (offset: number) => { const q = new URLSearchParams(query); q.set('links', String(offset / 50)); return '?' + q + '#links' }
-  const indices = Array.from({ length: Math.min(50, count - start) }, (_, i) => start + i)
+  const indices = Array.from({ length: Math.min(50, count - start) }, (_, i) => i)
   return <><section><div className="page-head"><h2 className="page-title"><Badge id={subject}/>{subject}</h2><div className="row"><Link className="button" to={subjectPath(subject, 'journey')}>Journey</Link><DecisionForm context={context} subject={subject} intent="join" label="Join with…"/><DecisionForm context={context} subject={subject} intent="forget" label="Delete…" targets={data.retraction?.always ? undefined : data.retraction?.targets}/></div></div>
     <DatesOf id={subject} dates={dates}/><Tiles items={[
-      ['Linked IDs', amount(members.size), profile.cluster.oversized && 'Above review limit'],
-      profile.links.length > 0 && ['Strongest link', percent(profile.links.reduce((top, link) => Math.max(top, link.score), 0)), amount(profile.links.length) + (profile.links.length === 1 ? ' link' : ' links')],
-      profile.separated.length > 0 && ['Separated', amount(profile.separated.length)],
+      ['Linked IDs', amount(profile.memberCount), profile.cluster.oversized && 'Above review limit'],
+      profile.linkCount > 0 && ['Strongest link', percent(profile.strongest), amount(profile.linkCount) + (profile.linkCount === 1 ? ' link' : ' links')],
+      profile.separatedCount > 0 && ['Separated', amount(profile.separatedCount)],
       profile.history.length > 0 && ['Last seen', <Time at={profile.history.reduce((top, row) => Math.max(top, row.at), 0)}/>],
       !!consent && ['Ad consent', consent.adUserData && consent.adPersonalization ? 'Granted' : consent.adUserData || consent.adPersonalization ? 'Partial' : 'Denied', consent.source]
     ]}/>{profile.cluster.limitedByCalls && <p className="banner">Several call histories fit this group. Some possible matches have been kept apart.</p>}{profile.cluster.oversized && <p className="banner"><b>Large group.</b> A widely shared identifier may be joining different people. Review the links below.</p>}
-  </section>{data.layout && (profile.edges.length > 0 || profile.separated.length > 0) && <section><h2>Graph</h2><ClusterGraph key={subject} layout={data.layout}/></section>}
+  </section>{data.layout && (data.layout.paths.length > 0 || profile.separatedCount > 0) && <section><h2>Graph</h2><ClusterGraph key={subject} layout={data.layout}/></section>}
   <section id="links"><h2>Links</h2>{count ? <Table title="Links" headers={['ID', 'Status', 'Score', 'Evidence', 'Action']}>{indices.map(i => {
     const link = profile.links[i]
     const id = link?.subject ?? profile.separated[i - profile.links.length]
@@ -93,12 +96,12 @@ export default function Accounts({ data }: { data: AccountsData }) {
   const { pathname } = useLocation()
   const offset = data.offset || 0
   const latest = new Set<string>()
-  return <div className={'split' + (subject ? ' opened' : '')}><aside className="account-rail"><section><h2>Largest groups</h2><ul id="queue">{clusters.length ? clusters.map(cluster => <li className="line" key={cluster.id}><Badge id={cluster.id}/><Subject id={cluster.id}/> <span className="muted">{amount(cluster.size)} IDs</span>{cluster.oversized && <span className="chip apart">Review</span>}</li>) : <li>None</li>}</ul>{offset > 0 && <Link to={'?offset=' + Math.max(0, offset - 50)}>Previous groups</Link>} {clusters.length === 50 && <Link to={'?offset=' + (offset + 50)}>Show more</Link>}</section>
+  return <DecisionScope key={subject || 'list'}><div className={'split' + (subject ? ' opened' : '')}><aside className="account-rail"><section><h2>Largest groups</h2><ul id="queue">{clusters.length ? clusters.map(cluster => <li className="line" key={cluster.id}><Badge id={cluster.id}/><Subject id={cluster.id}/> <span className="muted">{amount(cluster.size)} IDs</span>{cluster.oversized && <span className="chip apart">Review</span>}</li>) : <li>None</li>}</ul>{offset > 0 && <Link to={'?offset=' + Math.max(0, offset - 50)}>Previous groups</Link>} {clusters.length === 50 && <Link to={'?offset=' + (offset + 50)}>Show more</Link>}</section>
   <section><h2>Recent changes</h2><ul id="recent">{recent.length ? recent.slice(0, 30).map((row, i) => <li className="move" key={i}><Badge id={row.subject}/><Subject id={row.subject}/> <span className="meta move-time"><Time at={row.at}/></span><span className="move-to">{row.to === undefined ? 'removed' : row.to === row.subject ? 'ungrouped' : <>joined <Subject id={row.to}/></>}</span></li>) : <li>None</li>}</ul></section>
   <section><h2>Audit log</h2><Form action={pathname} method="get"><label>Author <select name="author" defaultValue={data.author ?? ''}><option value="">All</option><option value="people">People</option><option value="system">Systems</option></select></label> <button>Show</button></Form><p className="meta">{audit.sound ? amount(decisions.total) + (decisions.total === 1 ? ' entry' : ' entries') + ' · Verified' : 'Altered at entry ' + audit.brokenAt}</p><ul id="decisions">{decisions.decisions.length ? decisions.decisions.map(d => {
     const first = !data.author && !latest.has(d.about[0])
     if (d.action === 'restore' || d.action === 'ignore') latest.add(d.about[0])
     return <li key={d.seq}><b>{ACTIONS[d.action] || d.action}</b><span className="reason">{d.about.join(' · ')}</span><div className="meta">{d.by || 'Unknown'} · <Time at={d.at}/> {d.reason}</div>{first && d.action === 'ignore' && <DecisionForm context={context} subject={subject ?? ''} intent="restore" identifier={d.about[0]} label="Undo"/>}</li>
   }) : <li>None</li>}</ul>{decisions.next != null && <Link to={'?before=' + decisions.next + (data.author ? '&author=' + encodeURIComponent(data.author) : '')}>Show older</Link>}</section></aside>
-  <div id="detail">{subject && profile ? <ProfileView key={subject} profile={profile} data={data} context={context}/> : <><section><h2>Accounts</h2><Tiles items={[[ 'Largest group', first ? amount(first.size) + ' IDs' : 'None', first?.oversized && 'Above review limit'], recent.length > 0 && ['Last change', <Time at={recent[0].at}/>], ['Audit log', audit.sound ? 'Verified' : 'Altered', amount(context.seen) + (context.seen === 1 ? ' entry' : ' entries')]]}/></section>{profile?.known && data.layout && <section><h2>Largest group</h2><Subject id={profile.subject}/><ClusterGraph key={profile.subject} layout={data.layout}/></section>}</>}</div></div>
+  <div id="detail">{subject && profile ? <ProfileView key={subject} profile={profile} data={data} context={context}/> : <><section><h2>Accounts</h2><Tiles items={[[ 'Largest group', first ? amount(first.size) + ' IDs' : 'None', first?.oversized && 'Above review limit'], recent.length > 0 && ['Last change', <Time at={recent[0].at}/>], ['Audit log', audit.sound ? 'Verified' : 'Altered', amount(context.seen) + (context.seen === 1 ? ' entry' : ' entries')]]}/></section>{first && data.layout && <section><h2>Largest group</h2><Subject id={first.id}/><ClusterGraph key={first.id} layout={data.layout}/></section>}</>}</div></div></DecisionScope>
 }
