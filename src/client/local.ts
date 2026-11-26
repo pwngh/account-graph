@@ -165,7 +165,7 @@ export function localGraph(options: LocalOptions, keeping: Keeping = {}): Accoun
     const { quietHours, lateHours } = options.monitor ?? {}
     const ops = createOps(engine.graph, store.ops, {
       ...(options.alerts && { url: options.alerts.url }), ...(quietHours && { quiet: quietHours }), returnHours: options.phones?.returnHours ?? 24, ...(hours && { hours }),
-      outbox: store.outbox, lateHours: lateHours ?? 6, timeZone: options.timeZone ?? 'UTC', now, emit, ...(options.fetch && { fetch: options.fetch }), onError: (error) => log(`alert: ${String((error as Error)?.message ?? error)}`),
+      outbox: store.outbox, lateHours: lateHours ?? 6, pauseAfterFailures: options.ads?.pauseAfterFailures ?? 0, timeZone: options.timeZone ?? 'UTC', now, emit, ...(options.fetch && { fetch: options.fetch }), onError: (error) => log(`alert: ${String((error as Error)?.message ?? error)}`),
     })
     tell = jobs => ops.failed(jobs, store).catch(error => log(String(error)))
     const six = createSix(engine, { receipts, returnHours: options.phones?.returnHours ?? 24, ...(options.linkSecret && { linkSecret: options.linkSecret }), ...(hours && { hours }), ...(options.timeZone && { timeZone: options.timeZone }) })

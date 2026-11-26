@@ -503,6 +503,8 @@ account-graph sends pause checking a wrong tie
 
 The stop is kept in the database, so every process holds to it, and a restart keeps it. Conversions are still recorded, and their jobs wait as they were. No retry is used up while sends are stopped. Time still counts: the `LATE_HOURS` alert counts the wait, and an outcome waiting for a click, email or phone still has seven days from when it happened. Deletions asked for when someone is forgotten still go. `account-graph sends resume` lets the jobs go on the next pass. With [`OUTBOX_DELAY_MS`](#outcomes-and-calls) set, a tie undone while sends are stopped is not sent.
 
+Set `PAUSE_AFTER_FAILURES` to put the stop on by itself once that many conversions fail for good within an hour. Every process adds to one count, kept in the database. The count starts again an hour after its first failure, and when sends resume. The stop posts its own alert and a `delivery.paused` event.
+
 ### Stale feeds
 
 Set how many hours without a record raise an alert. All four settings are off by default.
@@ -634,6 +636,7 @@ A partially set group stops the server at startup, with a message naming the mis
 
 | Variable | Default | Description |
 | --- | --- | --- |
+| `PAUSE_AFTER_FAILURES` | `0` | Conversions that fail for good within an hour before [sends stop](#stopping-sends) by themselves. `0` never stops them. |
 | `OUTBOX_DELAY_MS` | `0` | Delay before the first send of a new outcome. The click is chosen when it is sent, so a tie a reviewer undoes during the delay never reaches the platform. |
 | `FORGET_ADS` | none | `true` requests the supported adjustment when a person is [deleted](privacy.md#data-at-ad-platforms). Google can reduce value to zero while the count remains. |
 | `WEBHOOK_URL`, `WEBHOOK_SECRET` | none | URL that receives [events](#webhook), and the secret that signs each post. Set both. |
