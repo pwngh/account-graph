@@ -47,7 +47,7 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   await until('the name', async () => (await text('#name')) === 'dana')
   assert.deepEqual([await shown('#token'), await run(`document.getElementById('by') === null`)], [false, true])
 
-  // The connection drops while a decision is being saved: the question and the reason stay.
+  // The connection drops while a decision is being saved, and the question and the reason stay.
   await keepApart('account:2')
   await until('what it would do', async () => (await text('#ask-effect')).includes('Details'))
   assert.equal(await text('#ask-effect'), 'Before: 1 person (3 IDs). After: 2 people (2, 1 IDs).DetailsBefore account:1 (3)After account:2 (2), account:1 (1)')
@@ -195,7 +195,7 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   await key('account:3', 'Escape')
   assert.equal(await shown('.graph .card'), false)
 
-  // What cannot be undone is held: pressed for a moment, or Enter in a field, it does nothing.
+  // What cannot be undone is held. Pressed for a moment, or with Enter in a field, it does nothing.
   await run(`[...document.querySelectorAll('button')].find((b) => b.textContent === 'Delete…').click()`)
   await run(`document.getElementById('ask-reason').focus()`)
   for (let i = 0; i < 2; i++) await press('Enter')

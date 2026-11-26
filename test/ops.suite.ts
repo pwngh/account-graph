@@ -806,7 +806,7 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       clock.now += 60_000
       await ops.check()
       assert.deepEqual([posted.at(-1), (await ops.state()).undelivered], ['stale', []])
-      // The very same words, not delivered again after they once were: they wait again.
+      // The same words, not delivered again after they once were. They wait again.
       hook.status = 500
       clock.now += HOUR
       await ops.alert('costs:google', 'stale')
@@ -882,7 +882,7 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       let jobs = await read()
       assert.deepEqual(jobs.costs, { name: 'costs', started: T0 + 1000, succeeded: T0, failed: T0 + 1000, error: 'refused with 401', outcome: 'failed', open: [], state: 'failed' })
       assert.equal(jobs.outbox!.state, 'running')
-      // Restarted a minute later and run again: the run that never finished stays on record as its own.
+      // Restarted a minute later and run again. The run that never finished stays on record as its own.
       clock.now += 60_000
       await make().run('outbox', async () => undefined)
       assert.deepEqual([(await read()).outbox!.state, (await read()).outbox!.open], ['done', []])
@@ -901,7 +901,7 @@ export function opsSuite(name: string, open: () => Promise<Opened>) {
       assert.deepEqual([jobs.outbox!.state, jobs.outbox!.open], ['stuck', [began]])
       finishNewer()
       await newer
-      // The newer run succeeds, then an older one fails: the state is still the newer one's, and the failure is on record.
+      // The newer run succeeds, then an older one fails. The state is still the newer one's, and the failure is on record.
       let failOlder: (error: Error) => void = undefined!
       const older = ops.run('outbox', () => new Promise<void>((_, reject) => (failOlder = reject)))
       await until(() => failOlder)

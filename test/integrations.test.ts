@@ -865,7 +865,7 @@ test('the server takes page events and phone calls, and ties a call to the visit
     const noted = async (device: string) => (await graph.history(`visitor:${device}`)).some((sighting) => sighting.identifier.startsWith('dialed:'))
     assert.deepEqual([await noted('d-2'), await noted('d-3'), await noted('d-4')], [true, true, false])
 
-    // Two inquiries (one a day, plus the one with its own id), one tap, one counted call, all on the campaign of the ad click.
+    // Two inquiries, one tap and one counted call, all on the campaign of the ad click. The inquiries are one a day, plus the one with its own id.
     const report = await graph.report({ from: '2026-03-02', to: '2026-03-02' })
     assert.deepEqual(report.rows.map((row) => [row.source, row.campaignId, counts(row.stages)]), [
       ['google', '111', { inquiry: { count: 2, value: 0 }, phone_click: { count: 1, value: 0 }, call: { count: 1, value: 0 } }],
@@ -874,7 +874,7 @@ test('the server takes page events and phone calls, and ties a call to the visit
     ])
     assert.deepEqual((await graph.history('visitor:d-1')).map((sighting) => sighting.event), ['visit', 'visit', 'inquiry', 'inquiry', 'inquiry', 'phone_click', 'phone_click', 'call'])
 
-    // Being turned away cost the first three nothing: d-1 taps again and is still believed.
+    // Being turned away cost the first three nothing, so d-1 taps again and is still believed.
     clock += 6 * 60_000
     await page('/event', { device: 'd-1', event: 'phone_click', number: '+15551230001' })
     assert.equal((await graph.history('visitor:d-1')).filter((sighting) => sighting.identifier.startsWith('dialed:')).length, 2)
@@ -947,7 +947,7 @@ test('a link sent to one person ties the browser that opens it, and a visitor is
       assert.equal((await service('/link', bad)).status, 400, JSON.stringify(bad).slice(0, 60))
     }
 
-    // They open it: the browser is tied to them. A forged token ties nobody.
+    // They open it, and the browser is tied to them. A forged token ties nobody.
     assert.equal((await page('/collect', { device: 'phone-1', known })).status, 204)
     assert.equal((await page('/collect', { device: 'phone-2', known: known.slice(0, -2) + 'xx' })).status, 204)
     assert.deepEqual(await members('contact:1'), ['contact:1', 'visitor:phone-1'])
@@ -970,7 +970,7 @@ test('a link sent to one person ties the browser that opens it, and a visitor is
     assert.equal((await page('/collect', { device: 'his', known: his })).status, 204)
     assert.deepEqual(await members('contact:son'), ['contact:son', 'contact:son-again', 'visitor:his'])
 
-    // A second person's link opened in the same browser. Both are there by a link alone, so neither wins: each thins, and the browser is joined to nobody.
+    // A second person's link opened in the same browser. Both are there by a link alone, so neither wins. Each thins, and the browser is joined to nobody.
     const linkFor = async (subject: string) => new URL(((await (await service('/link', { url: 'https://site.example/offer', subject })).json()) as { url: string }).url).searchParams.get('ag')!
     // The opening is noted on the link, whichever of its two names the token comes under.
     assert.equal((await page('/collect', { device: 'phone-1', link: known })).status, 204)
@@ -1000,7 +1000,7 @@ test('a link sent to one person ties the browser that opens it, and a visitor is
     assert.deepEqual(await members('contact:bob'), ['contact:bob', 'visitor:bob-phone'])
     assert.equal(await members('contact:alice'), undefined)
     assert.ok((await graph.history('visitor:bob-phone')).some((sighting) => sighting.identifier === 'opened:contact:alice (not tied)'))
-    // Openings that did not tie do not use up the person's three browsers: her own phone still ties.
+    // Openings that did not tie do not use up the person's three browsers, so her own phone still ties.
     for (const device of ['x-1', 'x-2', 'x-3']) {
       await graph.observe({ subject: `contact:${device}`, identifiers: [`device:${device}`], at: clock })
       await page('/collect', { device })
@@ -1030,7 +1030,7 @@ test('a link sent to one person ties the browser that opens it, and a visitor is
     const { token } = (await asked.json()) as { token: string }
     assert.equal((await page('/collect', { device: 'shop-device', carried: token }, 'https://shop.example')).status, 204)
     assert.deepEqual(await members('visitor:shop-device'), ['visitor:shop-device', 'visitor:site-device'])
-    // Walking between your own sites is not an arrival: the first site as referrer leaves no touch, though a campaign tag still does.
+    // Walking between your own sites is not an arrival. The first site as referrer leaves no touch, though a campaign tag still does.
     await page('/collect', { device: 'shop-device', touch: { referrer: 'https://site.example/pricing', landing: 'https://shop.example/' } }, 'https://shop.example')
     assert.equal((await graph.counts()).touches, 1)
     await page('/collect', { device: 'elsewhere', touch: { referrer: 'https://news.example/story', landing: 'https://shop.example/' } }, 'https://shop.example')
@@ -1045,7 +1045,7 @@ test('a link sent to one person ties the browser that opens it, and a visitor is
     const kept = async (device: string) => (await graph.attribute(`visitor:${device}`, { at: clock + 1 })).touches.map((touch) => touch.fbp)
     assert.deepEqual([await kept('fb-yes'), await kept('fb-no')], [['fb.1.1700000000000.1'], [undefined]])
     for (const device of ['fb-yes', 'fb-no']) await graph.forget(`visitor:${device}`)
-    // Nor does Meta's browser id by itself: it says which browser, and not from where.
+    // Nor does Meta's browser id by itself, because it says which browser, and not from where.
     await page('/collect', { device: 'elsewhere', touch: { fbp: 'fb.1.1700000000000.1', landing: 'https://shop.example/' } }, 'https://shop.example')
     assert.equal((await graph.counts()).touches, 3)
     // So a sign-up on the second site is credited to the ad click that landed on the first.
@@ -1055,7 +1055,7 @@ test('a link sent to one person ties the browser that opens it, and a visitor is
     // Passed to another browser, or used after an hour, the same token ties nobody.
     await page('/collect', { device: 'stranger', carried: token }, 'https://shop.example', 'Other/2.0')
     assert.deepEqual(await members('visitor:stranger'), ['visitor:stranger'])
-    // Handed around a shared network, where the browsers look alike, it thins: a third holder ends the join, a fifth ends the tie.
+    // Handed around a shared network, where the browsers look alike, it thins. A third holder ends the join, and a fifth ends the tie.
     await page('/collect', { device: 'lookalike-1', carried: token }, 'https://shop.example')
     assert.deepEqual(await members('visitor:shop-device'), ['account:7', 'visitor:shop-device'])
     assert.deepEqual((await graph.links('visitor:lookalike-1')).map((link) => link.level), ['related', 'related'])
@@ -1070,7 +1070,7 @@ test('a link sent to one person ties the browser that opens it, and a visitor is
     server.close()
   }
 
-  // With no secret set, there is nothing to sign with: the routes do not exist and tokens are ignored.
+  // With no secret set, there is nothing to sign with, so the routes do not exist and tokens are ignored.
   const plain = createServer(createHandler(graph, { token: 'service', origins: ['https://site.example'] })).listen(0, '127.0.0.1')
   await new Promise((resolve) => plain.once('listening', resolve))
   try {
@@ -1349,7 +1349,7 @@ test('steps give page events, calls and outcomes their value and their ad platfo
   const post = (path: string, body: object, headers: Record<string, string> = { authorization: 'Bearer service' }) => fetch(`${base}${path}`, { method: 'POST', headers, body: JSON.stringify(body) })
   try {
     await post('/collect', { device: 'd-1', touch: { gclid: 'G1', campaignId: '111' } }, { origin: 'https://site.example' })
-    // A page event needs only its name: the step says what it is worth and where it goes.
+    // A page event needs only its name, because the step says what it is worth and where it goes.
     assert.equal((await post('/event', { device: 'd-1', event: 'inquiry' }, { origin: 'https://site.example' })).status, 204)
     assert.deepEqual((await outbox.get(`page:inquiry:d-1:2026-03-02`)).map((job) => [job.target, job.action, job.value, job.currency]), [['google', '111', 5, 'USD']])
     // A step worth something counts once a day per browser, whatever id the page gives and however often it reports.
@@ -1498,7 +1498,7 @@ test('the server identifies a subject from plain facts, drops declared bots, and
     assert.equal(first.identifiers![1], `email:${createHash('sha256').update('patlee@gmail.com').digest('hex')}`)
     assert.deepEqual((await graph.history('account:1')).map((sighting) => [sighting.event, sighting.at]), Array(5).fill(['signup', at]))
 
-    // The same address written another way is the same delivery point: a household, so related and not joined.
+    // The same address written another way is the same delivery point. It is a household, so related and not joined.
     const second = await identify({ subject: 'account:2', address: { street: '1 Main St Apt 2' } })
     assert.deepEqual(second.identifiers, [first.identifiers![4]])
     assert.deepEqual((await graph.links('account:2')).map((link) => [link.subject, link.level, Math.round(link.score * 100)]), [['account:1', 'related', 60]])
@@ -1510,10 +1510,10 @@ test('the server identifies a subject from plain facts, drops declared bots, and
     assert.deepEqual([kinds(fourth.identifiers), fourth.notes], [['device'], { phone: 'tollFree: not used', address: 'not confirmed to the apartment: not used' }])
     const fifth = await identify({ subject: 'account:5', device: 'd-5', address: { street: 'unknown' } })
     assert.deepEqual(fifth.notes, { address: 'not found' })
-    // A lookup that is down does not lose the sighting: the number is kept as a plain phone.
+    // A lookup that is down does not lose the sighting. The number is kept as a plain phone.
     const sixth = await identify({ subject: 'account:6', phone: '+15550009999' })
     assert.deepEqual([kinds(sixth.identifiers), sixth.notes], [['phone'], {}])
-    // The address service cannot be reached: the rest of the sighting is recorded and the note says why the address is not.
+    // The address service cannot be reached. The rest of the sighting is recorded and the note says why the address is not.
     const offline = await identify({ subject: 'account:6b', device: 'd-6b', address: { street: 'offline' } })
     assert.deepEqual([offline.status, kinds(offline.identifiers), offline.notes], [200, ['device'], { address: 'not checked: the address service did not answer' }])
     // A number found to be a throwaway stops counting as a phone wherever it was written before, calls included,
@@ -1821,7 +1821,7 @@ test('the labels tool resolves a file of checked pairs against a running server,
   // Muted, a phone links nobody, and the pair that shares it is counted apart.
   for (const side of ['a', 'b']) await see(`s7${side}`, 'phone:muted')
   await graph.ignore('phone:muted')
-  // A reviewer joined the two who share nothing: it is the answer, and not evidence for it.
+  // A reviewer joined the two who share nothing. The decision is the answer, and not evidence for it.
   await graph.join('s6a', 's6b')
   const server = createServer(createHandler(graph, { token: 'service', reviewers: { dana: 'dana-token' }, origins: [] })).listen(0, '127.0.0.1')
   await new Promise((resolve) => server.once('listening', resolve))
@@ -1943,7 +1943,7 @@ test('a slow answer is worked out once for everybody, shared for a moment while 
     assert.equal((await read('?days=7')).people, 1)
     for (const _ of [1, 2]) assert.equal((await read('?days=0')).status, 400)
     assert.equal(worked, 4)
-    // Something is written: the answer stands for four times as long as it took, and says it is from before.
+    // Something is written. The answer stands for four times as long as it took, and says it is from before.
     await sign(2)
     assert.deepEqual(await read(), { age: '4', people: 1, status: 200 })
     clock.now += 8_000

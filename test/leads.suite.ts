@@ -413,7 +413,7 @@ export async function leadUpdates(graph: AccountGraph, clock: { at: number }) {
     assert.deepEqual((await send({ id: 'K1', phone: '+12025550150' })).body, newLead)
     const first = (await engine.graph.outcomeOf('lead:vendor:K1'))?.at
     clock.at += 1000
-    // The vendor posts the same lead again once it knows more: the new details join the same record.
+    // The vendor posts the same lead again once it knows more, and the new details join the same record.
     assert.deepEqual((await send({ id: 'K1', phone: '+12025550150', mail: 'k1@example.org' })).body, added)
     assert.ok((await idsOf('lead:vendor:K1')).includes(email('k1@example.org')))
     assert.equal((await engine.graph.outcomeOf('lead:vendor:K1'))?.at, first)

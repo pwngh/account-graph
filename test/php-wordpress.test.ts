@@ -153,7 +153,7 @@ test('WordPress form hooks queue mapped facts and cron replays an acknowledged g
   assert.deepEqual((await run(url, 'submit')).rows, sent.rows)
 })
 
-// Exercise the collector's submit listener with the module options WordPress actually enqueued.
+// Exercise the collector's submit listener with the module options WordPress enqueued.
 function submitAdForm(tag: string, device: string, campaign: string) {
   const inputs: Pick<HTMLInputElement, 'name' | 'value'>[] = []
   const doc = new EventTarget()

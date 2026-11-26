@@ -1097,14 +1097,14 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       let refuse: Error | undefined
       const { graph, outbox, remote, clock, store } = await fresh({ patience: 0 })
       const values = () => remote.requests.flatMap((request) => request.events.map((event: any) => [event.transactionId, event.conversionValue]))
-      // Skipped for want of a key, then taken back: putting skipped jobs in line again does not send it.
+      // Skipped for want of a key, then taken back. Putting skipped jobs in line again does not send it.
       await graph.observe({ subject: 'contact:9', identifiers: ['email:none'], at: T0 })
       await outbox.record({ transactionId: 'enroll-9', subject: 'contact:9', at: T0 + HOUR, action: '900', value: 5 })
       assert.equal((await outbox.run()).skipped, 1)
       await outbox.withdraw('enroll-9')
       assert.deepEqual([await outbox.retry('enroll-9'), (await outbox.get('enroll-9'))[0]!.state], [[], 'held'])
 
-      // Taken back while a request that will be refused is on its way: the pass does not put it back in line.
+      // Taken back while a request that will be refused is on its way. The pass does not put it back in line.
       const slow = createOutbox(graph, store.outbox, { targets: [googleAds({ customerId: '1', send: async (request) => { await during?.(); if (refuse) throw refuse; return remote.send(request) } })], now: () => clock.now, random: () => 1 })
       await enroll(graph, 1)
       await slow.record(outcome(1))
@@ -1123,7 +1123,7 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       await createOutbox(graph, early, { targets: [googleAds({ customerId: '1', send: remote.send })], now: () => clock.now }).run()
       assert.deepEqual(values(), [])
 
-      // Sent, then no, yes and no again before the next pass: the last word stands on the platform.
+      // Sent, then no, yes and no again before the next pass. The last value stands on the platform.
       await enroll(graph, 3)
       await slow.record(outcome(3))
       await slow.run()
@@ -1133,7 +1133,7 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       await slow.run()
       assert.deepEqual(values(), [['enroll-3', 200], ['enroll-3', 0]])
 
-      // A nothing on its way while the value is given back and sent by another worker: whichever arrived last, the value is sent once more.
+      // A nothing on its way while the value is given back and sent by another worker. Whichever arrived last, the value is sent once more.
       await slow.release(outcome(3))
       await slow.run()
       await slow.withdraw('enroll-3')
@@ -1202,7 +1202,7 @@ export function outboxSuite(name: string, open: () => Promise<Opened>) {
       const values = () => remote.requests.flatMap((request) => request.events.map((event) => [event.transactionId, event.conversionValue]))
       const options = { takeBack: outbox.takeBack, giveBack: outbox.giveBack }
       const job = async (n: number) => (await outbox.get(`enroll-${n}`))[0]!
-      // Not sent yet: it waits, and the outcome is still on record.
+      // Not sent yet, so it waits, and the outcome is still on record.
       await enroll(graph, 1)
       await outbox.record(outcome(1))
       await recordNotLead(graph, { transactionId: 'enroll-1', kind: 'spam' }, options)

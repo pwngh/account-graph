@@ -428,7 +428,7 @@ if (url) {
     const through = new URL(url)
     through.port = String((proxy.address() as AddressInfo).port)
     through.hostname = '127.0.0.1'
-    // Room for a first write while other suites run: what is tested is that a silent connection costs one call, not how fast.
+    // Room for a first write while other suites run, because what is tested is that a silent connection costs one call, not how fast.
     const graph = accountGraph({ databaseUrl: through.href, schema, workers: false, receiptSecrets: [SECRET], timeoutMs: 2000 })
     try {
       assert.ok((await one(graph, conversion())).ok)
@@ -564,7 +564,7 @@ for (const [label, keys, confirmed] of [
   assert.deepEqual(await memberships(), subjects.map((subject) => [subject]))
   await engine.graph.rebuild()
   assert.deepEqual(await memberships(), subjects.map((subject) => [subject]))
-  // A new report on just one side must still respect the facts on the other.
+  // A new report on only one side must still respect the facts on the other.
   await engine.graph.observe({ subject: subjects[0]!, at: AT + 1, identifiers: keys[0].map((identifier) => identifier + '~1') })
   assert.deepEqual(await memberships(), subjects.map((subject) => [subject]))
   assert.deepEqual(await engine.graph.verify(), [])

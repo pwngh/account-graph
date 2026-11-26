@@ -29,7 +29,7 @@ test('an answer is drawn only in the card that asked for it, and only for whoeve
   const bea = `board.person ${caller(12)}`
   const only = async () => [await text('#card-title'), Object.keys(await page.says()), (await page.links()).map(([words]) => words)]
 
-  // Asked for one, closed, and another opened: the answer of the first is not drawn in the second.
+  // Asked for one, closed, and another opened. The answer of the first is not drawn in the second.
   await page.go('#/board/90')
   await run(holding('contact%3Aada'))
   await page.click(find('board.person contact:ada'))
@@ -89,14 +89,14 @@ test('what a card was told is let go of when anything is written, decided or a m
   t.after(page.close)
   const { run, key, find } = page
   const ada = 'board.person contact:ada'
-  // Written by another system while the card is open: the card says what the row says.
+  // Written by another system while the card is open. The card says what the row says.
   assert.match((await page.card('#/board/90', ada))['Last call']!, /^Outbound, answered/)
   made.at(0.01)
   await made.call('ada-9', 11, { duration: 33, result: { answered: true } })
   await run(`look()`)
   await until('the call in the card', async () => (await page.says())['Last call']?.startsWith('Inbound, answered'))
   await key('Escape')
-  // Decided here: the visit of someone deleted is in no card, within the minute too.
+  // Decided here. The visit of someone deleted is in no card, within the minute too.
   assert.match((await page.card('#/board/90', ada))['First visit']!, /North \| Family law \| Search/)
   await key('Escape')
   await run(`api('POST', '/forget', { subjects: ['visitor:v1'], reason: 'asked to' })`)
@@ -255,7 +255,7 @@ test('a card stays open through what a slow machine delivers late, and fills', {
   await run(`location.hash = '#/board/7'`)
   await until('it to close', async () => !(await page.shown()))
 
-  // While a card waits for its answer: its minute runs out, a pulse says something was written, the page writes a decision, and the view is read again. The answer is drawn all the same.
+  // While a card waits for its answer, its minute runs out, a pulse says something was written, the page writes a decision, and the view is read again. The answer is drawn all the same.
   await page.go('#/board/90')
   await run(`(() => {
     lately.clear()
@@ -283,7 +283,7 @@ test('a card stays open through what a slow machine delivers late, and fills', {
   await key('Escape')
   await run(`window.fetch = window.real`)
 
-  // On the chart, a mark may stand on a dashed wait: the short card is that of whatever is under the pointer, and the rest of the wait still has its own.
+  // On the chart, a mark may stand on a dashed wait. The short card is that of whatever is under the pointer, and the rest of the wait still has its own.
   await page.go('#/journey/contact%3Aada')
   const wait = `document.querySelector('.chart .wait')`
   await run(`(() => { const w = ${wait}, m = document.querySelector('.chart .lane.call .mark:not(.heap)'); m.style.left = (parseFloat(w.style.left) + parseFloat(w.style.width) / 2) + 'px' })()`)
