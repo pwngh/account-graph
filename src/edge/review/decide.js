@@ -48,11 +48,29 @@ function undo(entry) {
   return act('Undo join', `${entry.a} and ${entry.b} will no longer be joined by this decision.`, '/ignore', { identifier: entry.mark }, 'Undo', { undo: true, done: gone })
 }
 
+/**
+ * A check of every record, a page at a time in id order, in place of the newest sightings. `cursor` is the page
+ * after the first, or null for the first. Undefined while the queue is the recent one.
+ */
+let sweep
+/** What the queue covers, and the way to the pairs it leaves out. */
+function coverage(found) {
+  const button = (text, then) => el('button', { type: 'button', class: 'link', on: { click: () => { sweep = then; load() } } }, text)
+  if (found.window.kind === 'recent') {
+    return found.window.older ? el('p', { id: 'older', class: 'meta' }, `Pairs among sightings before ${when(found.window.oldest)} are not in this queue.`, button('Check older records', { cursor: null })) : ''
+  }
+  const { first, last } = found.window
+  return el('p', { id: 'older', class: 'meta' }, first === null ? 'Checking every record.' : `Checking every record, ${first} to ${last}.`,
+    found.more ? button('Next records', { cursor: found.next }) : ' These are the last.', button('Back to recent', undefined))
+}
+
 // Pairs that share something and were not joined, one at a time, strongest first.
 view('decide', 'Matches', async (box) => {
   // The record first, so a decision that lands while the rest is read refuses one made on it.
   box.dataset.seen = (await api('GET', '/decisions?limit=1')).decisions[0]?.seq ?? 0
-  const found = await api('GET', `/undecided?limit=${Math.min(500, 50 + skipped.size)}`)
+  const limit = Math.min(500, 50 + skipped.size)
+  // A page after the first is asked for by its cursor alone, which already says it is part of a full check.
+  const found = await api('GET', !sweep ? `/undecided?limit=${limit}` : sweep.cursor === null ? `/undecided?full=true&limit=${limit}` : `/undecided?cursor=${encodeURIComponent(sweep.cursor)}&limit=${limit}`)
   const queue = found.pairs.filter((pair) => !skipped.has(pairName(pair)))
   const kept = picked ?? (facing() && pairName(facing()))
   const pair = queue.find((each) => pairName(each) === kept) ?? queue[0]
@@ -64,7 +82,7 @@ view('decide', 'Matches', async (box) => {
   box.append(el('section', {}, reviewDisplay.heading('Matches',
     passed > 0 ? el('button', { on: { click: reset } }, 'Restore skipped') : ''),
   tiles([term('Pending', 'pending'), amount(found.total)], [term('IDs checked', 'checked'), amount(found.seen)],
-    passed > 0 && ['Skipped', amount(passed), 'This session'])))
+    passed > 0 && ['Skipped', amount(passed), 'This session']), coverage(found)))
 
   const rail = el('div', { class: 'queue-rail scroll', tabindex: 0, role: 'region', 'aria-label': 'Queue' })
   const kindsIn = (each) => [...new Set(each.reasons.filter((reason) => reason.counted !== false).map((reason) => reason.identifier.split(':')[0]))].join(', ')
@@ -95,7 +113,7 @@ view('decide', 'Matches', async (box) => {
       const now = rail.querySelector('[aria-current]')
       if (now && (now.offsetTop < rail.scrollTop || now.offsetTop + now.offsetHeight > rail.scrollTop + rail.clientHeight)) rail.scrollTop = now.offsetTop - rail.clientHeight / 2
     })
-  } else box.append(el('section', {}, el('p', { class: 'muted' }, found.total === 0 ? 'No pending matches' : 'All pending matches were skipped.')))
+  } else box.append(el('section', {}, el('p', { class: 'muted' }, found.total > 0 ? 'All pending matches were skipped.' : sweep ? 'No pending matches in these records' : 'No pending matches')))
 
   if (decided.length > 0) box.append(el('section', {}, el('h2', {}, 'This session'), el('ul', { class: 'decided' }, ...decided.map((entry) => el('li', {}, reviewDisplay.chip(entry.what === 'join' ? 'Joined' : 'Separated', entry.what === 'join' ? 'same' : 'apart'), open(entry.a), ' and ', open(entry.b), ' ',
     el('button', { class: 'link', 'data-key': `undo-${entry.what}-${pairName(entry)}`, on: { click: () => undo(entry) } }, 'Undo'))))))

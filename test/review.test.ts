@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
-import { createGraph, createMemoryStore, email, hashPhone, phone, recordCall, recordNotLead, recordReturn, recordText } from '../tools/internals.ts'
+import { createGraph, createMemoryStore, defaultPolicy, email, hashPhone, phone, recordCall, recordNotLead, recordReturn, recordText } from '../tools/internals.ts'
 import { createHandler } from './harness.ts'
 import { browse, chrome, pause, until, without } from './chrome.ts'
 
@@ -220,9 +220,9 @@ test('the reviewer screen signs with the token, keeps what was typed, and refuse
   await press('Escape')
   await until('it to close', () => run(`!document.getElementById('ask').open`))
   assert.equal((await decisions()).length, taken)
-  await run(`decided.push({ a: 'x', b: 'y', what: 'apart' }); skipped.add('x y')`)
+  await run(`decided.push({ a: 'x', b: 'y', what: 'apart' }); skipped.add('x y'); sweep = { cursor: null }`)
   await run(`document.getElementById('leave').click()`)
-  assert.deepEqual(await run(`[decided.length, skipped.size, drawn.spots.size, drawn.more.size]`), [0, 0, 0, 0])
+  assert.deepEqual(await run(`[decided.length, skipped.size, drawn.spots.size, drawn.more.size, sweep === undefined]`), [0, 0, 0, 0, true])
   await until('the token field', () => shown('#token'))
   assert.deepEqual([await run(`sessionStorage.getItem('token')`), (await text('#view')).includes('account:1'), await shown('#who')], ['', false, false])
   await enter('dana-token')
@@ -439,4 +439,41 @@ test('a further page that fails is told on its own view and not on the next', { 
   await fail('page two failed')
   await pause(500)
   assert.equal((await text('#notice')).includes('page two failed'), false)
+})
+
+test('pairs among older sightings are reached from Matches, a page of records at a time', { skip: without, timeout: 120_000 }, async (t) => {
+  assert.ok(chrome, 'CI needs a browser')
+  let now = T0
+  const store = createMemoryStore()
+  const graph = createGraph(store, defaultPolicy, { now: () => now })
+  await graph.observe(['account:old-1', 'account:old-2'].map((subject) => ({ subject, at: T0, identifiers: ['canvas:old'] })))
+  // Ten thousand newer sightings, on a hundred records with nothing in common, push the old pair out of the recent queue.
+  now++
+  await store.write((tx) => tx.addSightings(Array.from({ length: 10_000 }, (_, i) => ({ subject: `a:${i % 100}`, identifier: `canvas:alone-${i % 100}`, at: T0, recorded: now }))))
+  now++
+  await graph.observe(['account:new-1', 'account:new-2'].map((subject) => ({ subject, at: T0, identifiers: ['canvas:new'] })))
+  const handler = createHandler(graph, { token: 'service', origins: [] })
+  const server = createServer((request, response) => void handler(request, response)).listen(0, '127.0.0.1')
+  await new Promise((resolve) => server.once('listening', resolve))
+  t.after(() => (server.closeAllConnections(), void server.close()))
+  const { run, close } = await browse(`http://127.0.0.1:${(server.address() as AddressInfo).port}/review#/decide`)
+  t.after(close)
+  const text = (selector: string) => run(`document.querySelector(${JSON.stringify(selector)})?.textContent ?? ''`) as Promise<string>
+  const inQueue = () => run(`[...document.querySelectorAll('.queue-pair .queue-names')].map((each) => each.textContent)`) as Promise<string[]>
+  const press = (label: string) => run(`[...document.querySelectorAll('#view button')].find((each) => each.textContent === ${JSON.stringify(label)}).click()`)
+  await until('the page', () => run(`typeof load === 'function'`).catch(() => false))
+  await run(`(() => { const t = document.getElementById('token'); t.value = 'service'; t.dispatchEvent(new Event('change')) })()`)
+  await until('the recent pair', async () => (await inQueue()).some((names) => names.includes('new-1')))
+  assert.ok(!(await inQueue()).some((names) => names.includes('old-1')))
+  assert.match(await text('#older'), /^Pairs among sightings before .+ are not in this queue\.Check older records$/)
+
+  // The first hundred records have no pending pair. The next page has both.
+  await press('Check older records')
+  await until('the first records', async () => (await text('#older')).startsWith('Checking every record, a:0 to a:99.'))
+  assert.equal(await text('#view .muted'), 'No pending matches in these records')
+  await press('Next records')
+  await until('the old pair', async () => (await inQueue()).some((names) => names.includes('old-1')))
+  assert.match(await text('#older'), /^Checking every record, account:new-1 to account:old-2\. These are the last\.Back to recent$/)
+  await press('Back to recent')
+  await until('the recent queue again', async () => (await text('#older')).startsWith('Pairs among sightings before'))
 })
