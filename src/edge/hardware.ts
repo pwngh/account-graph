@@ -9,7 +9,7 @@ import type { Identifier } from '../contract/types.ts'
 
 /**
  * The hardware identifier to send with a login. The raw machine id never
- * leaves the machine: it is hashed with `salt`, a constant of your app, so
+ * leaves the machine. It is hashed with `salt`, a constant of your app, so
  * the value is useless to any other app that reads the same machine id.
  */
 export async function hardwareId(salt: string, platform?: NodeJS.Platform, windows?: string): Promise<Identifier> {

@@ -19,8 +19,8 @@ function browserModule(name: string): string {
 
 /**
  * Appended to the collector when it is served as a script tag. The script
- * finds its own address, so the tag needs no configuration: it reports to the
- * server it was loaded from. Options ride on the address:
+ * finds its own address, so the tag needs no configuration. It reports to the
+ * server it was loaded from. Options go in the address:
  *   collect.js?fingerprint=PUBLIC_KEY&region=eu    confirm visitors with Fingerprint
  *   collect.js?canvas=open                         add the open-source FingerprintJS id
  *   collect.js?params=mailing,placement            keep address parameters of your own

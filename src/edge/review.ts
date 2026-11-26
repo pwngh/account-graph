@@ -13,7 +13,7 @@ const read = (file: string) => readFileSync(new URL(`./review/${file}`, import.m
 let page: { html: string; headers: Record<string, string> } | undefined
 
 /**
- * The reviewer screen: one page with no outside assets. It holds no data and
+ * The reviewer screen, which is one page with no outside assets. It holds no data and
  * no secret; the reviewer types the access token, and the page calls the
  * server's own routes with it. The policy lets the page run only the script
  * and style it shipped with, and talk only to the server it came from. Its one

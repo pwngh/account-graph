@@ -124,7 +124,7 @@ export interface HandlerOptions extends PageRules {
   events?: readonly string[]
   /**
    * How phone calls are read. With `twilio`, the
-   * server also takes Twilio's status callbacks at `/calls/twilio`: `url` is
+   * server also takes Twilio's status callbacks at `/calls/twilio`. `url` is
    * that route's public address exactly as entered in Twilio, which the
    * signature is checked against.
    */
@@ -178,7 +178,7 @@ const DECISIONS = new Set(['POST /forget', 'POST /separate', 'POST /join', 'POST
 /** Answers hold people's data, so nothing keeps a copy of one. */
 const JSON_HEADERS = { 'content-type': 'application/json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }
 
-/** A job as an answer shows it: the hashed email and phone are for its platform only. */
+/** A job as an answer shows it. The hashed email and phone are for its platform only. */
 const shownJob = ({ keys, metaUserAgent, ...job }: Job) => {
   if (job.note !== 'call_party') return job
   // The click and consent used for the original send belonged to the line.
@@ -214,7 +214,7 @@ const LINGER_MS = 2000
  * Instead the answer is followed by a half-close, and the socket is destroyed when the time is up, or sooner if it closes.
  */
 function closeAfter(request: IncomingMessage, response: ServerResponse): void {
-  // Paused, and marked as consumed so that Node does not drain the rest after the answer: at most the stream's buffer is read.
+  // Paused, and marked as consumed so that Node does not drain the rest after the answer, so at most the stream's buffer is read.
   request.pause()
   request.read(0)
   response.setHeader('connection', 'close')
@@ -249,7 +249,7 @@ export function createLeadHandler(leads: LeadSources, record: RecordLead, now: (
       const raw = await leadBody(request)
       const current = now()
       if (!signedLead(request, raw, source)) {
-        // Guessing a secret costs a minute's wait after a few tries. Only further failures wait: an address can be shared, and a correct post from it still goes through.
+        // Guessing a secret costs a minute's wait after a few tries. Only further failures wait, because an address can be shared, and a correct post from it still goes through.
         const tried = `${name}\u0000${addressThrough(request, trustProxy)}`
         const failed = failures.get(tried)
         const row = failed && current < failed.start + 60_000 ? failed : { start: current, count: 0 }
@@ -327,10 +327,10 @@ export function createHandler(core: Core, options: HandlerOptions) {
   const tally = { since: now(), leased: 0, exhausted: 0, collected: 0, limited: 0, bots: 0, staff: 0, errors: 0 }
 
   /** A program that says what it is: a search crawler, a link previewer, an uptime check. Its visits are nobody's. */
-  // "bot/" and not just "bot": phones are sold under names like Cubot, and their browsers are people.
+  // "bot/" and not only "bot", because phones are sold under names like Cubot, and their browsers are people.
   const BOT = /bot\/|adsbot|googlebot|storebot|petalbot|duckduckbot|telegrambot|slackbot|seznambot|spider|crawl|slurp|facebookexternalhit|whatsapp\/|bingpreview|google-inspectiontool|headlesschrome|lighthouse|pagespeed|gtmetrix|pingdom|uptimerobot|datadogsynthetics|^curl\/|^wget\/|python-requests/i
 
-  // A token bucket per address: it refills steadily and a visit spends one token.
+  // A token bucket per address. It refills over time and a visit spends one token.
   const perMinute = options.limit === false ? Infinity : (options.limit?.perMinute ?? 120)
   const burst = options.limit === false ? Infinity : (options.limit?.burst ?? 60)
   const buckets = new Map<string, { tokens: number; at: number }>()
@@ -370,7 +370,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
   // A household has a few devices; a program inventing visitors has as many as it likes.
   const tappers = new Map<string, { devices: Set<string>; since: number }>()
   const tapsFrom = (address: string, device: string, at: number): boolean => {
-    // One network, not one address: a single machine holds a whole range of IPv6 addresses.
+    // One network, not one address, because a single machine holds a whole range of IPv6 addresses.
     let network = address
     try {
       network = ip(address)
@@ -427,7 +427,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
   }
 
   /**
-   * A number of their own for a visitor an arrival is on record for, or nothing: then the page keeps the number it has.
+   * A number of their own for a visitor an arrival is on record for, or nothing. With nothing, the page keeps the number it has.
    * A visitor who opted out of advertising is not followed to the phone either.
    */
   async function number(request: IncomingMessage, response: ServerResponse, body: any) {
@@ -468,7 +468,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
     const device = deviceOf(request, response, body)
     const subject = `visitor:${device}`
     const identifiers: Identifier[] = [identifier('device', device)]
-    // With the server's cookie on, the page may hold a different id: storage was cleared and the cookie was not.
+    // With the server's cookie on, the page may hold a different id if storage was cleared and the cookie was not.
     // The page's id is what forms and your backend will quote, so it is kept on the same visitor.
     if (typeof body.device === 'string' && ID.test(body.device) && body.device !== device) identifiers.push(identifier('device', body.device))
 
@@ -485,7 +485,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
     }
 
     if (options.fingerprint && typeof body.fingerprintEvent === 'string') {
-      // A vendor outage must not lose the visit: record it without the fingerprint.
+      // A vendor outage must not lose the visit. Record it without the fingerprint.
       const verified = await options.fingerprint(body.fingerprintEvent).catch((error) => void console.error(error))
       if (verified?.bot === 'bad') return
       if (verified && trusted(verified, { now: at })) identifiers.push(identifier('fingerprint', verified.visitorId))
@@ -497,7 +497,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
       identifiers.push(seen)
       if (options.ipInfo && !ignoredAddresses.has(seen)) {
         // The lookup keeps its own answers for a day, so asking on every visit costs one query a day per address.
-        // An address already found to be shared is not asked about again: it has no place worth noting.
+        // An address already found to be shared is not asked about again, because it has no place worth noting.
         const info = (await options.ipInfo(address.replace(/^::ffff:/, '')).catch((error) => void console.error(error))) ?? undefined
         const place = shared(info) ? undefined : placeOf(info)
         if (place) identifiers.push(identifier('place', place.slice(0, 120)))
@@ -512,7 +512,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
     const also: Observation[] = []
     if (options.linkSecret) {
       const token = body.link ?? body.known
-      // A link that is kept names its person while it is: one whose person was forgotten is nobody's.
+      // A link that is kept names its person while it is kept. One whose person was forgotten is nobody's.
       const [id, ...rest] = readToken(options.linkSecret, 'sent', token, at)?.split('\n') ?? []
       const opened = id !== undefined && (await graph.linkOpened(id, rest.join('\n'), at))
       const named = opened ? rest.join('\n') : readToken(options.linkSecret, 'known', token, at)
@@ -554,7 +554,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
         const value = body.touch[field]
         if (typeof value === 'string' && value && Buffer.byteLength(value) <= 2048) touch[field] = value
       }
-      // Parameters of the site's own: a few short ones, so a page cannot fill the table.
+      // Parameters of the site's own, only a few short ones, so a page cannot fill the table.
       const custom = Object.entries(body.touch.custom && typeof body.touch.custom === 'object' ? body.touch.custom : {})
         .filter(([name, value]) => NAME.test(name) && typeof value === 'string' && value && value.length <= 256)
         .slice(0, 10)
@@ -648,9 +648,9 @@ export function createHandler(core: Core, options: HandlerOptions) {
   // written. While things are being written all the time, it is good for a few times as long as it took, so a screen left
   // open costs a small share of the server however many are.
   const answers = new Map<string, { party: string | undefined; version: number; at: number; until: number; made: boolean; answer: Promise<unknown> }>()
-  // Goes up with each decision and deletion: an answer that was being worked out meanwhile is worked out again.
+  // Goes up with each decision and deletion, so an answer that was being worked out meanwhile is worked out again.
   let decided = 0
-  // While one is under way nothing is shared: it can be done already, and waiting for what follows it.
+  // While one is under way nothing is shared, because it can be done already and waiting for what follows it.
   let deciding = 0
   const remembered = async (url: URL, response: ServerResponse, work: () => Promise<unknown>): Promise<unknown> => {
     const key = url.pathname + url.search
@@ -682,7 +682,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
       const newest = waited ? await graph.version() : version
       // Nothing is awaited between this and the answer being given.
       if (party !== await graph.partyRevision() || decided !== since || deciding > 0) continue
-      // Made before the newest write: the screen that gets it asks again.
+      // Made before the newest write, so the screen that gets it asks again.
       if (known.version !== newest) response.setHeader('age', String(Math.max(1, Math.ceil((now() - known.at) / 1000))))
       return answer
     }
@@ -860,7 +860,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
       case 'POST /forget': {
         const body = await json(request)
         for (const name of ['ads', 'retract']) if (body[name] !== undefined && typeof body[name] !== 'boolean') throw new Refusal(400, `\`${name}\` must be true or false`)
-        // Before anything is deleted: what is sent to nobody must not look asked for.
+        // Done before anything is deleted, because what is sent to nobody must not look asked for.
         if (body.retract && !core.outbox?.retraction.targets.length) throw new Refusal(400, 'No configured ad platform accepts retractions')
         // A person's ids are named one by one, so nobody is deleted for being in a cluster.
         if (body.subjects !== undefined && (body.subject !== undefined || !Array.isArray(body.subjects) || body.subjects.length === 0 || body.subjects.length > 50 || !body.subjects.every((each: unknown) => typeof each === 'string' && each))) throw new Refusal(400, '`subjects` must be a list of 1 to 50 ids, without `subject`')
@@ -887,7 +887,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
         if (!core.ops) break
         return { ...(await core.ops.state()), visits: tally, pool: pool.length > 0 ? { numbers: pool.length, held: await graph.leasesAt(pool, now()), since: tally.since, leased: tally.leased, exhausted: tally.exhausted, minutes: options.pool!.minutes } : null, outbox: core.outbox ? await core.outbox.counts() : null }
       case 'GET /pulse': {
-        // One small row: a screen asks this often, and reads the rest only when the answer differs.
+        // One small row, because a screen asks this often, and reads the rest only when the answer differs.
         const version = await graph.version()
         const tag = `"${version}-${(running ??= await runningPolicy())}"`
         response.setHeader('etag', tag)
@@ -1057,7 +1057,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
         tally.errors += 1
         console.error(known.cause ?? error)
       }
-      // What may pass is asked for again by whoever sent it: a provider sends a webhook again for a 503, and not for a 400.
+      // What may pass is asked for again by whoever sent it. A provider sends a webhook again for a 503, and not for a 400.
       response.writeHead(STATUS[known.code] ?? 500, { ...JSON_HEADERS, ...(known.retryable && { 'retry-after': '5' }) }).end(JSON.stringify({ error: known.message }))
     }
   }, { tally, /** What was worked out before a decision made elsewhere is worked out again. */ forgetAnswers: () => void ((decided += 1), answers.clear()) })
@@ -1126,7 +1126,7 @@ const LEVELS = 32
 
 /** Refuses a value that holds text the database cannot keep, or that is nested so deep that reading it as text would fail. */
 function storable(value: unknown): void {
-  // A list and not recursion: a body can be nested deeper than the stack.
+  // A list and not recursion, because a body can be nested deeper than the stack.
   const left: [unknown, number][] = [[value, 0]]
   while (left.length > 0) {
     const [each, level] = left.pop()!
@@ -1145,7 +1145,7 @@ async function text(request: IncomingMessage): Promise<string> {
     if (size > 1_000_000) throw new Refusal(413, 'Body exceeds 1 MB')
     chunks.push(chunk)
   }
-  // Bytes that are not UTF-8 are refused: read leniently, different ones would all become the same text.
+  // Bytes that are not UTF-8 are refused, because read leniently, different ones would all become the same text.
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))
   } catch {

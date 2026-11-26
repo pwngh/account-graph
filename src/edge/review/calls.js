@@ -227,7 +227,7 @@ DETAILS['calls.awaiting'] = {
   now({ open, goals, limits } = {}) {
     const calls = open?.calls ?? []
     const more = open?.next !== null && open?.next !== undefined
-    // The list is oldest first. Where there is another page, a count is of those listed, unless the last of them is not counted: then none after it is either.
+    // The list is oldest first. Where there is another page, a count is of those listed, unless the last of them is not counted. Then none after it is either.
     const some = (holds, first = false) => (open ? `${amount(calls.filter(holds).length)}${more && !(first && calls.length > 0 && !holds(calls.at(-1))) ? ` of the first ${amount(calls.length)}` : ''}` : undefined)
     const over = (hours) => (call) => open.at - call.at > hours * 3600000
     const target = goals?.callbackHours
@@ -250,7 +250,7 @@ view('calls', 'Calls', async (box, first, last) => {
   const [open, summary] = await Promise.all([api('GET', `/calls?${asked}`), api('GET', `/calls/summary?${asked}`)])
   const before = daysBefore(summary)
   const then = (await api('GET', `/calls/summary?from=${before.from}&to=${before.to}`)).total
-  // With no calls in the days before there is nothing to compare with: it may be before any were kept.
+  // With no calls in the days before there is nothing to compare with, because it may be before any were kept.
   const against = (now, was, words, good, points) => (then.calls > 0 ? changed(now, was, words, before, good, points) : '')
   const byHour = (kind) => Array.from({ length: 24 }, (_, hour) => summary.cells.filter((cell) => cell.hour === hour).reduce((sum, cell) => sum + cell[kind], 0))
   const query = resolved(summary)
@@ -258,7 +258,7 @@ view('calls', 'Calls', async (box, first, last) => {
   top.append(reviewDisplay.range(summary))
 
   const lost = total.missed + total.voicemail
-  // Returns are not compared: the newest callers have had less time to be rung back.
+  // Returns are not compared, because the newest callers have had less time to be rung back.
   const lostThen = then.missed + then.voicemail
   const part = (n, whole) => (whole > 0 ? n / whole : null)
   const facts = { summary, then, open, goals, limits }

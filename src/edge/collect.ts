@@ -240,7 +240,7 @@ export function read(params: readonly string[] = [], options: PageOptions = {}):
  * The mark of a staff browser, kept in a cookie of this site. A staff link
  * sets it with its `ag_staff` parameter, and `ag_staff=off` on any page
  * removes it. The mark is signed, and only the server can say whether it is
- * good: a browser that makes one up is counted like any other.
+ * good, so a browser that makes one up is counted like any other.
  */
 function staffMark(): string | undefined {
   const given = new URL(location.href).searchParams.get('ag_staff')
@@ -509,7 +509,7 @@ const aboutOther = (form: HTMLFormElement): boolean =>
  * filled it in: the device id, and the page this browser session began on.
  * The landing page holds the ad click, so it is left out for a visitor who
  * opted out of advertising. With a form whose answer is that it is about
- * somebody else, the device goes by another name: it is not theirs, and
+ * somebody else, the device goes by another name, because it is not theirs, and
  * whoever copies `ag_device` must not write it on them.
  */
 export function fields(consent?: CollectOptions['consent']): { ag_device: string; ag_landing?: string }
@@ -600,7 +600,7 @@ export function fill(options: PageOptions & { all?: boolean } = {}): () => void 
     if (form && handled.delete(form)) return
     const found = data && chosen(happened)
     if (!found) return
-    // As the submit path does: a device it would not send is left out, and a landing page it holds is sent empty.
+    // As the submit path does, a device it would not send is left out, and a landing page it holds is sent empty.
     for (const name of ['ag_device', 'ag_speaker_device']) if (!(name in found.filled)) data.delete(name)
     if (!('ag_landing' in found.filled) && data.has('ag_landing')) data.set('ag_landing', '')
     for (const [name, value] of Object.entries(found.filled)) data.set(name, value)
@@ -726,7 +726,7 @@ export function pool(options: CollectOptions): () => void {
   let asking = false
   let stopped = false
   let tries = 0
-  /** Takes back every change, the last first: a marked element inside another is changed twice. */
+  /** Takes back every change, the last first, because a marked element inside another is changed twice. */
   const undo = () => {
     for (const put of original.reverse()) put()
     original = []
@@ -763,7 +763,7 @@ export function pool(options: CollectOptions): () => void {
     const gpc = (navigator as { globalPrivacyControl?: boolean }).globalPrivacyControl === true
     const staff = staffMark()
     let given: { number: string; lasts: number } | undefined
-    // The server counts from before it answered, so the page counts from before it asked: never longer than the server does.
+    // The server counts from before it answered, so the page counts from before it asked, so it never counts longer than the server does.
     const began = Date.now()
     try {
       const response = await fetch(options.endpoint, {
@@ -774,7 +774,7 @@ export function pool(options: CollectOptions): () => void {
         ...guardedFetch(options),
       })
       if (response.status === 200) given = await response.json()
-      // Nothing to give: what is shown stands until it runs out, and the next time of asking is soon enough.
+      // Nothing to give. What is shown stands until it runs out, and the next time of asking is soon enough.
     } catch {
     } finally {
       asking = false
@@ -791,7 +791,7 @@ export function pool(options: CollectOptions): () => void {
     tries += 1
     again(left > 0 ? Math.min(5 * 60_000, left / 2) : tries < 3 ? 3_000 : 5 * 60_000)
   }
-  // Hidden, a page neither renews nor counts on its timers: back in view, it looks at the clock first.
+  // Hidden, a page neither renews nor counts on its timers. Back in view, it looks at the clock first.
   const seen = () => {
     if (!ready(options)) return
     if (document.visibilityState !== 'visible') return

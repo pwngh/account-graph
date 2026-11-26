@@ -81,7 +81,7 @@ DETAILS['board.person'] = {
   more: ({ row, board } = {}) => row && recent(`/journey?subject=${encodeURIComponent(row.subject)}`).then((journey) => {
     const { entries, subjects } = journey
     const partial = journey.next !== null
-    // A journey reads further than the board, which is of one group: what is only linked to it has no part in the column.
+    // A journey reads further than the board, which is of one group. What is only linked to it has no part in the column.
     const of = (kind) => entries.filter((entry) => entry.kind === kind && subjects?.[entry.subject]?.how !== 'linked')
     const ladder = (board?.columns ?? []).map(({ step }) => step).filter((step) => step !== null)
     // When each step was first reached, in the order of the board.
