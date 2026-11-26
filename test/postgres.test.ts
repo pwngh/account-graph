@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
 import pg from 'pg'
 import { accountGraph } from '../src/index.ts'
+import { FAULT_CODES, hasCode } from '../src/contract/fault.ts'
 import { seal } from '../src/core/audit.ts'
 import { createGraph, defaultPolicy, policyHash, recordCall, recordReturn } from '../tools/internals.ts'
 import { createPostgresStore, upgrades } from '../src/store/postgres.ts'
@@ -11,20 +12,22 @@ import { opsSuite } from './ops.suite.ts'
 import { outboxSuite } from './outbox.suite.ts'
 import { eventsSuite } from './events.suite.ts'
 import { unjoinSuite } from './unjoin.suite.ts'
+import { factSuite } from './fact.suite.ts'
 import { saidSuite } from './said.suite.ts'
 import { counts, suite } from './suite.ts'
 import { unitSuite } from './unit.suite.ts'
 import { readHistorySuite } from './read-history.suite.ts'
 
 // Keep the ordinary write budget observable on machines without PostgreSQL. The shared suite checks the resulting groups on a real store.
-test('plain observations use the same SQL trips with an unrelated stated call', async () => {
-  for (const paired of [false, true]) for (const elsewhere of [false, true]) {
+test('ordinary observations and link reads keep their SQL statement counts across the fact upgrade', async () => {
+  for (const upgraded of [false, true]) for (const paired of [false, true]) for (const elsewhere of [false, true]) {
     const subjects = paired ? ['account:b', 'account:a'] : ['account:a']
     const identifier = 'email:desk@example.org'
     const edges = subjects.map(subject => ({ subject, identifier, first_at: 1, last_at: 1, sightings: 1 }))
     const queries: string[] = []
     const query = async (sql: string) => {
       queries.push(sql)
+      if (sql.includes('pg_advisory_xact_lock')) return { rows: [{ fact_schema: upgraded }] }
       if (sql.includes('from stub.built')) return { rows: [{ policy: policyHash(defaultPolicy), reserved: elsewhere }] }
       if (sql.startsWith('with upserted')) return { rows: [{ identifier, added: 1 }] }
       if (sql.includes('select id, fanout, ignored')) return { rows: [{ id: identifier, fanout: subjects.length, ignored: false }] }
@@ -36,11 +39,68 @@ test('plain observations use the same SQL trips with an unrelated stated call', 
     const store = createPostgresStore({ query, connect: async () => ({ query, release() {} }) }, 'stub')
     const changes = await createGraph(store).observe({ subject: 'account:a', identifiers: [identifier], at: 1 })
     assert.equal(changes.length, Number(paired))
-    assert.ok(queries.length <= (paired ? 15 : 10), `${queries.length} trips for ${subjects.length} subjects: ${queries.map(sql => sql.split('\n')[0]).join(', ')}`)
+    assert.equal(queries.length, paired ? 15 : 10, `${queries.length} trips for ${subjects.length} subjects: ${queries.map(sql => sql.split('\n')[0]).join(', ')}`)
+    const statements = () => queries.reduce((count, sql) => count + sql.split(';').filter(part => part.trim()).length, 0)
+    assert.equal(statements(), paired ? 16 : 11)
+    assert.equal(queries.filter(sql => sql.includes('from stub.fact_withdrawal')).length, Number(upgraded))
+    assert.ok(!queries.some(sql => sql.includes('from stub.withdrawn_edge')))
+    queries.length = 0
+    await createGraph(store).links('account:a')
+    assert.equal(queries.length, paired ? 7 : 6)
+    assert.equal(statements(), paired ? 7 : 6)
+    assert.ok(!queries.some(sql => sql.includes('fact_withdrawal') || sql.includes('withdrawn_edge')))
   }
 })
 
 const url = process.env.DATABASE_URL
+
+test('a fresh store reports pending upgrades on a failed read and preserves SQL errors on an up-to-date database', async () => {
+  const schema = 'stub'
+  const ledger = 'select id from stub.upgrade'
+  for (const [missing, code] of [[37, '42703'], [38, '42P01'], [1, '42P01'], [0, '42703'], [37, '42501']] as const) {
+    const statements: string[] = []
+    const cause = Object.assign(new Error(code === '42703' ? 'column "profile_at" does not exist' : 'unavailable relation'), { code })
+    const query = async (sql: string) => {
+      statements.push(sql)
+      if (sql.startsWith('with edges as')) throw cause
+      if (sql === ledger) {
+        if (missing === 1) throw Object.assign(new Error('missing upgrade ledger'), { code: '42P01' })
+        return { rows: upgrades(schema).filter(u => !missing || u.id < missing) }
+      }
+      return { rows: [] }
+    }
+    const store = createPostgresStore({ query, connect: async () => ({ query, release() {} }) }, schema)
+    const diagnose = missing > 0 && code !== '42501'
+    await assert.rejects(store.read(tx => tx.textNumbers(['contact:one'])), error => diagnose
+      ? hasCode(error, FAULT_CODES.CONFIG.MISMATCH) && error.message.includes('upgrade ' + missing) && error.message.includes('migrate()')
+      : error === cause)
+    assert.deepEqual(statements.slice(2), code === '42501' ? ['rollback'] : ['rollback', ledger])
+  }
+})
+
+test('checking an ordinary text opt-out reads the cluster, holdings and messages in the same six statements', async () => {
+  const subject = 'contact:one'
+  const line = 'caller:one'
+  for (const upgraded of [false, true]) {
+    const queries: string[] = []
+    const query = async (sql: string) => {
+      queries.push(sql)
+      if (sql.includes('pg_advisory_xact_lock')) return { rows: [{ fact_schema: true, text_schema: upgraded }] }
+      if (sql.includes('from stub.subject')) return { rows: [{ id: subject, component: subject, cluster: subject }] }
+      if (sql.startsWith('select * from stub.edge')) return { rows: [{ subject, identifier: 'phone:one', first_at: 1, last_at: 1, sightings: 1 }] }
+      if (sql.startsWith('with edges as')) return { rows: [{ subject, line, active: true, first_at: 1, last_at: 1, held: null, at: null }] }
+      if (sql.startsWith('select * from stub.message')) return { rows: [{ id: 'sms', direction: 'inbound', subject: line, at: 2, ours: '+12025550115', flags: ['opt_out'] }] }
+      return { rows: [] }
+    }
+    const store = createPostgresStore({ query, connect: async () => ({ query, release() {} }) }, 'stub')
+    await store.write(async () => {})
+    queries.length = 0
+    assert.deepEqual(await createGraph(store).texting(subject), { at: 2, optedOut: true })
+    assert.equal(queries.length, 6)
+    assert.equal(queries.reduce((n, sql) => n + sql.split(';').filter(s => s.trim()).length, 0), 6)
+    assert.equal(queries.some(sql => sql.includes('stub.text_stop')), upgraded)
+  }
+})
 
 test('the reviewer reads dates for the whole table in one SQL query', async () => {
   const subjects = ['record:a', 'visitor:b', 'record:c']
@@ -190,6 +250,19 @@ if (!url) {
     return createPostgresStore(pool, schema)
   }
 
+  for (const next of [37, 38]) test(`a fresh store read names pending upgrade ${next} and succeeds after it runs`, async () => {
+    const schema = `ag_test_${process.pid}_pending_${next}`
+    try {
+      const store = await madeBefore(schema, next)
+      const numbers = () => store.read(tx => tx.textNumbers(['contact:one']))
+      await assert.rejects(numbers(), error => hasCode(error, FAULT_CODES.CONFIG.MISMATCH) && error.message.includes('upgrade ' + next))
+      await store.migrate()
+      assert.deepEqual(await numbers(), [])
+    } finally {
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
+
   // The previous server logged a decision and changed the report revision on every full forget.
   const oldForgetDecision = (store: ReturnType<typeof createPostgresStore>, subject: string, at: number) => store.write(async tx => {
     const before = await tx.lastDecision()
@@ -198,7 +271,7 @@ if (!url) {
     await tx.addDecision({ ...decision, hash: seal(before?.hash ?? '', decision) })
   })
 
-  for (const [stopped, start, committed, relation] of [[30, 29, 28, 'said_party_subject'], [31, 29, 30, 'callback_event_calls'], [36, 36, 35, 'profile_created']] as const) test(`upgrade ${stopped} whose session ends before commit rolls back and can run again`, async () => {
+  for (const [stopped, start, committed, relation] of [[30, 29, 28, 'said_party_subject'], [31, 29, 30, 'callback_event_calls'], [36, 36, 35, 'profile_created'], [37, 37, 36, 'withdrawn_edge'], [38, 38, 37, 'text_stop']] as const) test(`upgrade ${stopped} whose session ends before commit rolls back and can run again`, async () => {
     const schema = `ag_test_${process.pid}_interrupted_${stopped}`
     try {
       const store = await madeBefore(schema, start)
@@ -239,7 +312,7 @@ if (!url) {
       const store = await madeBefore(schema, 36)
       await store.write(tx => tx.addSightings([{ subject: 'record:a', identifier: 'email:first@example.org', at: 10, recorded: 90 }]))
       const other = createPostgresStore(pool, schema)
-      assert.deepEqual((await Promise.all([store.migrate(), other.migrate()])).flat(), ['record creation dates'])
+      assert.deepEqual((await Promise.all([store.migrate(), other.migrate()])).flat(), upgrades(schema).filter(u => u.id >= 36).map(u => u.name))
       const entry = { key: 'signup', type: 'profile' as const, subject: 'record:a', at: 20, createdAt: 8, facts: { email: 'first@example.org' } }
       const second = { ...entry, key: 'signup-b', subject: 'record:b', createdAt: 9 }
       const kept = { ...entry, key: 'signup-c', subject: 'record:c', createdAt: 12 }
@@ -273,6 +346,163 @@ if (!url) {
       ]))
     } finally {
       await app?.close()
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
+
+  test('upgrade 37 waits for an older observation before it locks either table', async () => {
+    const schema = `ag_test_${process.pid}_fact_lock`
+    await madeBefore(schema, 37)
+    const writer = await pool.connect()
+    const migrator = await pool.connect()
+    let applying: Promise<unknown> | undefined
+    try {
+      await writer.query('begin')
+      await writer.query('select pg_advisory_xact_lock(hashtext($1))', ['account-graph:' + schema])
+      await writer.query(`insert into ${schema}.sighting (subject, identifier, at, recorded_at) values ('record:old', 'email:a@example.org', 10, 10)`)
+      const { rows: [{ pid }] } = await migrator.query('select pg_backend_pid() as pid')
+      applying = migrator.query(upgrades(schema).find(u => u.id === 37)!.sql)
+      // The old writer holds a sighting table lock and still needs an edge table lock to finish.
+      let blocked: string | undefined
+      const until = Date.now() + 5_000
+      while (!blocked && Date.now() < until) {
+        blocked = (await pool.query('select locktype from pg_locks where pid = $1 and not granted', [pid])).rows[0]?.locktype
+        if (!blocked) await new Promise(resolve => setTimeout(resolve, 10))
+      }
+      assert.equal(blocked, 'advisory')
+      await writer.query(`lock table ${schema}.edge in row exclusive mode nowait`)
+      await writer.query(`insert into ${schema}.edge (subject, identifier, first_at, last_at, sightings) values ('record:old', 'email:a@example.org', 10, 10, 1)`)
+      await writer.query('commit')
+      await applying
+    } finally {
+      await writer.query('rollback')
+      await applying?.catch(() => undefined)
+      writer.release()
+      migrator.release()
+      await pool.query(`drop schema ${schema} cascade`)
+    }
+  })
+
+  test('upgrade 38 reads existing holdings, keeps them on an older prune and erases them on an older forget', async () => {
+    const schema = `ag_test_${process.pid}_text_holdings`
+    const subject = 'contact:withdrawn'
+    const other = 'contact:other'
+    const line = 'caller:line'
+    const phone = 'phone:line'
+    const alias = 'voip:line'
+    try {
+      const store = await madeBefore(schema, 38)
+      await store.write(async tx => {
+        await tx.addSightings([{ subject, identifier: phone, at: 1, profileKey: 'first' }, { subject: other, identifier: phone, at: 2, profileKey: 'other' }])
+        await tx.withdrawFact(subject, [phone, alias], 4, 'first-cut', 4)
+        await tx.addSightings([{ subject, identifier: alias, at: 6, profileKey: 'back' }, { subject, identifier: alias, at: 8, profileKey: 'still' }])
+        await tx.withdrawFact(subject, [phone, alias], 10, 'last-cut', 10)
+      })
+      assert.deepEqual(await store.migrate(), ['text stops on records that lose a number'])
+      const stop = { subject, line, at: 7, key: 'word' }
+      await store.write(tx => tx.keepTextStops([stop, { ...stop, at: 3, through: { at: 11, key: 'old-start' } }]))
+      const numbers = () => store.read(tx => tx.textNumbers([subject, other]))
+      assert.deepEqual((await numbers()).find(row => row.subject === subject)?.through, { at: 11, key: 'old-start' })
+      await store.write(tx => tx.keepTextStops([{ ...stop, at: 3, through: { at: 11, key: 'second-start' } }, { ...stop, at: 3, through: { at: 10, key: 'third-start' } }]))
+      await store.write(tx => tx.keepTextStops([{ ...stop, at: 4 }]))
+      const before = await numbers()
+      assert.deepEqual(before.find(row => row.subject === other), { subject: other, line, active: true, first: 2 })
+      const holders = (at: number) => store.read(tx => tx.phoneHoldersBefore([phone, alias], at))
+      assert.deepEqual((await holders(1)).map(e => [e.subject, e.identifier]), [[subject, phone]])
+      assert.deepEqual((await holders(6)).map(e => [e.subject, e.identifier]).sort(), [[other, phone], [subject, phone], [subject, alias]].sort())
+      const found = before.find(row => row.subject === subject)
+      assert.equal(found?.stopKey, 'word')
+      assert.equal(found?.stop, 7)
+      assert.deepEqual(found?.through, { at: 11, key: 'second-start' })
+      assert.ok(found?.held?.some(row => row.held && row.at === 6 && row.key === 'back'))
+      await pool.query(`delete from ${schema}.sighting where recorded_at < 100`)
+      assert.deepEqual((await numbers()).sort((a, b) => a.subject.localeCompare(b.subject)), before.sort((a, b) => a.subject.localeCompare(b.subject)))
+      assert.deepEqual((await pool.query(`select subject, key from ${schema}.text_phone_profile order by at`)).rows, ['first', 'back', 'still'].map(key => ({ subject, key })))
+      await oldForgetDecision(store, subject, 100)
+      for (const table of ['text_phone_profile', 'text_stop']) assert.deepEqual((await pool.query(`select * from ${schema}.${table}`)).rows, [])
+    } finally {
+      await pool.query(`drop schema if exists ${schema} cascade`)
+    }
+  })
+
+  test('upgrade 37 preserves older observations and protects withdrawn facts and receipts alongside an older writer', async () => {
+    const schema = `ag_test_${process.pid}_fact`
+    const subject = 'record:shared'
+    // The old writer takes the same lock, omits the new columns and counts only edges its upsert returned.
+    const old = createPostgresStore({
+      query: pool.query.bind(pool),
+      async connect() {
+        const client = await pool.connect()
+        return {
+          release: () => client.release(),
+          async query(sql, values) {
+            if (!sql.includes('account_graph.fact_writer')) return client.query(sql, values)
+            await client.query('select pg_advisory_xact_lock(hashtext($1))', values!.slice(0, 1))
+            return { rows: [{ fact_schema: false }] }
+          },
+        }
+      },
+    }, schema)
+    const email = 'email:desk@example.org'
+    try {
+      const store = await madeBefore(schema, 37)
+      await store.write(tx => tx.addSightings([{ subject, identifier: email, at: 5 }]))
+      assert.deepEqual(await store.read(tx => tx.subjectDates([subject])), new Map([[subject, { firstSeen: 5 }]]))
+      assert.deepEqual(await createGraph(store).verify(), [])
+      assert.deepEqual((await Promise.all([store.migrate(), createPostgresStore(pool, schema).migrate()])).flat(), upgrades(schema).filter(upgrade => upgrade.id >= 37).map(upgrade => upgrade.name))
+      const oldGraph = createGraph(old, defaultPolicy, { now: () => 10 })
+      const graph = createGraph(store, defaultPolicy, { now: () => 12 })
+      await oldGraph.observe({ subject, identifiers: [email], at: 10 })
+      await graph.withdrawFact(subject, [email], 9, 'before', { by: 'desk' })
+      assert.deepEqual(await (await graph.asOf(12)).holders([email]), [])
+      assert.deepEqual(await graph.holders([email]), [])
+      await graph.withdrawFact(subject, [email], 10, 'same-time', { by: 'desk' })
+      assert.deepEqual(await (await graph.asOf(12)).holders([email]), [])
+      await store.write(async tx => {
+        await tx.pruneSightings(11)
+        await tx.addReceipt({ type: 'decide', mac: 'sample', digest: {}, secretId: 'sample', version: 1, at: 10, recorded: 12, ref: { type: 'withdraw', mac: 'sample' } }, [subject])
+      })
+      await old.write(async tx => {
+        await tx.addSightings([{ subject, identifier: email, at: 14 }])
+        // The old graph reads this row even when there is no remaining positive holder.
+        assert.deepEqual((await tx.states([email])).get(email), { ignored: true, fanout: 0 })
+      })
+      assert.deepEqual(await (await graph.asOf(14)).holders([email]), [])
+      assert.deepEqual(await store.read(tx => tx.states([email])), new Map())
+      assert.deepEqual((await pool.query(`select id from ${schema}.identifier where id = $1`, [email])).rows, [])
+      assert.deepEqual(await store.read(tx => tx.edgesOf([subject])), [])
+      assert.deepEqual(await store.read(tx => tx.subjectDates([subject])), new Map([[subject, { firstSeen: 5 }]]))
+      const other = 'record:other'
+      await oldGraph.observe([{ subject, identifiers: [email, 'device:still-here'], at: 15 }, { subject: other, identifiers: [email], at: 15 }])
+      assert.deepEqual((await store.read(tx => tx.edgesOn([email]))).map(e => e.subject), [other])
+      assert.deepEqual((await store.read(tx => tx.states([email]))).get(email), { ignored: false, fanout: 1 })
+      assert.deepEqual((await store.read(tx => tx.edgesOf([subject]))).map(e => e.identifier), ['device:still-here'])
+      assert.deepEqual(await oldGraph.rebuild(), [])
+      await graph.observe({ subject, identifiers: [email], at: 16 }, { key: 'restored', sources: new Map() })
+      assert.deepEqual((await graph.holders([email])).map(row => row.subject).sort(), [other, subject])
+      await graph.withdrawFact(subject, [email], 17, 'again', { by: 'desk' })
+      assert.deepEqual((await graph.holders([email])).map(row => row.subject), [other])
+      assert.deepEqual(await createGraph(store).verify(), [])
+      const lone = 'email:lone@example.org'
+      const muted = 'email:muted@example.org'
+      await oldGraph.observe({ subject, identifiers: [lone, muted], at: 15 })
+      await store.write(async tx => {
+        await tx.setIgnored(muted, true)
+        await tx.withdrawFact(subject, [lone, muted], 16, 'two', 16)
+      })
+      await oldGraph.observe({ subject, identifiers: [lone, muted], at: 15 })
+      // The preceding server prunes every live receipt. It can still erase and tombstone this decision.
+      await pool.query(`delete from ${schema}.receipt where forgotten_at is null and recorded_at < 100`)
+      assert.ok(await store.read(tx => tx.receiptOf('decide', ['sample'])))
+      await old.write(tx => tx.forgetReceipts([subject], [], 16))
+      await oldGraph.forget(subject)
+      assert.equal((await store.read(tx => tx.receiptOf('decide', ['sample'])))?.forgotten, 16)
+      assert.deepEqual(await store.read(tx => tx.factHistory(100)), [])
+      assert.deepEqual((await pool.query(`select * from ${schema}.withdrawn_edge`)).rows, [])
+      assert.deepEqual((await pool.query(`select id, fanout, ignored from ${schema}.identifier where id = any($1::text[])`, [[lone, muted]])).rows, [{ id: muted, fanout: 0, ignored: true }])
+      await oldGraph.observe({ subject, identifiers: [email], at: 17 })
+      assert.deepEqual((await store.read(tx => tx.edgesOn([email]))).map(e => e.subject).sort(), [other, subject])
+    } finally {
       await pool.query(`drop schema if exists ${schema} cascade`)
     }
   })
@@ -941,6 +1171,7 @@ if (!url) {
   outboxSuite('postgres store', open)
   opsSuite('postgres store', open)
   malformedSuite('postgres store', open)
+  factSuite('postgres store', open)
   saidSuite('postgres store', open)
   unjoinSuite('postgres store', open)
   eventsSuite('postgres store', open)

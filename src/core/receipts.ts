@@ -56,7 +56,7 @@ export function compared(entry: RecordEntry | ({ type: 'decide' } & DecideReques
   }
   if (type === 'text') return { direction: fields.direction, from: phone(fields.from), to: phone(fields.to) }
   if (type === 'cost') return { at: fields.at, rows: sorted(fields.rows.map((row: any) => ({ ...row, currency: row.currency.toUpperCase() }))) }
-  if (type === 'decide') return { at: fields.at, by: fields.by, action: fields.action, ...(fields.pairs ? { pairs: sorted(fields.pairs.map(pair)) } : { fact: facts(fields.fact, phone) }) }
+  if (type === 'decide') return { at: fields.at, by: fields.by, action: fields.action, ...(fields.subject && { subject: fields.subject }), ...(fields.pairs ? { pairs: sorted(fields.pairs.map(pair)) } : { fact: facts(fields.fact, phone) }) }
   if (type === 'forget') return { at: fields.at, by: fields.by, subjects: [...new Set(fields.subjects)].sort(), platforms: fields.platforms }
   return {
     ...fields,

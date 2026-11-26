@@ -17,7 +17,7 @@ import type { Undecided, UndecidedOptions } from './undecided.ts'
 export type { Undecided } from './undecided.ts'
 import type { Followed } from './followed.ts'
 import type { Hours } from './hours.ts'
-import { UNSTORABLE, nameEvidence } from './identifiers.ts'
+import { UNSTORABLE, nameEvidence, withdrawable } from './identifiers.ts'
 import { CLICK_IDS, checkTouch } from './touch.ts'
 import { createMemoryStore } from './memory.ts'
 import type { Job } from './outbox.ts'
@@ -30,7 +30,7 @@ import type { Credited } from './report.ts'
 import { commonClusters, components, confirmed, conflict, knownOf, partition, scorePairs } from './resolve.ts'
 import type { Known } from './resolve.ts'
 import { checkTags, touchTag } from './tags.ts'
-import type { CallEvidence, CallLineKind, DecisionPage, Store, Tx } from './store.ts'
+import type { CallEvidence, CallLineKind, DecisionPage, Store, TextNumber, TextStop, Tx } from './store.ts'
 import type {
   Attribution,
   AttributedTouch,
@@ -140,9 +140,21 @@ export interface Foreseen {
   after: { id: Subject; size: number }[]
 }
 
+interface ProfileSource {
+  key: string
+  sources: ReadonlyMap<Identifier, Identifier>
+}
+
+function ownership(subject: Subject, identifier: Identifier, profile?: ProfileSource) {
+  if (!profile || /^(visitor|caller|call):/.test(subject)) return {}
+  const fact = profile.sources.get(identifier)
+  if (!fact && !withdrawable(identifier)) return {}
+  return { profileKey: profile.key, ...(fact && { fact }) }
+}
+
 export interface Graph {
   /** Records observations and returns every subject whose cluster moved. */
-  observe(input: Observation | readonly Observation[]): Promise<Change[]>
+  observe(input: Observation | readonly Observation[], profile?: ProfileSource): Promise<Change[]>
   /** Every subject linked to this one, strongest first, with the reasons. Computed from edges on each call. */
   links(subject: Subject): Promise<Link[]>
   /** Whether any of these subjects speaks for a member of the person's cluster. */
@@ -257,7 +269,7 @@ export interface Graph {
    * subject by a mark of its own, and not joined to it. Said again, it is the mark there is. `identifiers` are what the subject was given of
    * its own, and the marks.
    */
-  speak(who: { subject: Subject; identifiers: readonly Identifier[] }, by: readonly { subject: Subject; identifiers: readonly Identifier[] }[], at: number, event?: string): Promise<{ marks: Identifier[]; identifiers: Identifier[]; changes: Change[] }>
+  speak(who: { subject: Subject; identifiers: readonly Identifier[] }, by: readonly { subject: Subject; identifiers: readonly Identifier[] }[], at: number, event?: string, profile?: ProfileSource): Promise<{ marks: Identifier[]; identifiers: Identifier[]; changes: Change[] }>
   /** Keeps a link made for one person. `POST /link` does this. */
   keepLink(link: { id: string; subject: Subject; purpose?: string; at: number; expires: number }): Promise<void>
   /** Notes that a link made for a subject was opened. Resolves to false when no such link is kept. */
@@ -305,6 +317,8 @@ export interface Graph {
    * the same touch `attribute` credits, on the day the outcome happened.
    */
   report(options: ReportOptions): Promise<Report>
+  /** Withdraws matching evidence on the exact subject that owned it. */
+  withdrawFact(subject: Subject, identifiers: readonly Identifier[], at: number, key: string, why: Deciding): Promise<Change[]>
   /** Stops, or with `false` resumes, linking through one identifier. */
   ignore(identifier: Identifier, ignored?: boolean, why?: Deciding): Promise<Change[]>
   /**
@@ -605,6 +619,10 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       if (supposing.separated ?? true) separated.push([supposing.a, supposing.b])
     }
 
+    return grouped(subjects, active, withdrawn, states, separated, onCut, onLimited)
+  }
+
+  function grouped(subjects: readonly Subject[], active: Edge[], withdrawn: readonly CallEvidence[], states: Map<Identifier, IdentifierState>, separated: [Subject, Subject][], onCut?: (a: Subject, b: Subject) => void, onLimited?: (subjects: Subject[]) => void) {
     return callGroups(policy, [...subjects], active, withdrawn, states, separated, group, onCut, onLimited)
 
     function group(subjects: Subject[], edges: Edge[], states: Map<Identifier, IdentifierState>) {
@@ -643,6 +661,8 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       if (labels?.component === subject && labels.cluster === subject) return []
     }
     const next = await compute(tx, subjects, undefined, undefined, undefined, local)
+    // A record with its last fact withdrawn still exists. A withheld call alone never creates a person.
+    if (local.reserved) for (const subject of stored.keys()) if (!next.has(subject) && !/^(visitor|caller|call):/.test(subject)) next.set(subject, { component: subject, cluster: subject })
     if (!local.reserved) return apply(tx, stored, next)
     const more = [...next.keys()].filter(subject => !stored.has(subject))
     if (more.length) for (const [subject, labels] of await tx.labelsOf(more)) stored.set(subject, labels)
@@ -774,8 +794,8 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
   }
 
   /** A skipped carrier check leaves two possible kinds for one line. Either kind may still be below its cap. */
-  async function withinCaps(tx: Tx, identifiers: Identifier[], states: ReadonlyMap<Identifier, IdentifierState>) {
-    const open = new Set(identifiers.filter(id => states.has(id) && states.get(id)!.fanout <= ruleFor(policy, id).cap))
+  async function withinCaps(tx: Tx, identifiers: Identifier[], states: ReadonlyMap<Identifier, IdentifierState>, losing = 0) {
+    const open = new Set(identifiers.filter(id => states.has(id) && states.get(id)!.fanout <= ruleFor(policy, id).cap + losing))
     const over = identifiers.filter(id => !open.has(id) && states.has(id) && /^(phone|voip):/.test(id))
     if (!over.length) return open
     const rows = await tx.callEvidence({ identifiers: unique(over.flatMap(id => [id, otherLineKind(id)!])) })
@@ -784,7 +804,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       if (!uncertain.has(row.identifier)) uncertain.set(row.identifier, new Set())
       uncertain.get(row.identifier)!.add(row.subject)
     }
-    for (const id of over) if (states.get(id)!.fanout - (uncertain.get(id)?.size ?? 0) <= ruleFor(policy, id).cap) open.add(id)
+    for (const id of over) if (states.get(id)!.fanout - (uncertain.get(id)?.size ?? 0) <= ruleFor(policy, id).cap + losing) open.add(id)
     return open
   }
 
@@ -1289,25 +1309,145 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
    * is only related to a contact, as under a policy that confirms records, must still be seen on that contact. A number outside the
    * cluster can only add a STOP. Its START says nothing of the others.
    */
-  async function textWords(tx: Tx, subjects: readonly Subject[]) {
-    const numbers = new Map<Subject, Set<Subject>>()
-    for (const { subject, identifier } of subjects.length ? await tx.edgesOf(unique([...subjects])) : []) {
-      // A number is either kind, by what a line check said of it.
-      const number = /^(?:phone|voip):(.*)$/.exec(identifier)?.[1]
-      if (number === undefined) continue
-      const held = numbers.get(subject) ?? new Set()
-      numbers.set(subject, held.add(`caller:${number}`))
+  type TextWord = { line: Subject; at: number; key: string; optedOut: boolean }
+
+  type PhoneStamp = NonNullable<TextNumber['held']>[number]
+  const byPhoneStamp = (a: PhoneStamp, b: PhoneStamp) => later(a, b) || Number(b.held) - Number(a.held)
+
+  function formerPhoneCuts(row: TextNumber) {
+    const cuts: PhoneStamp[] = []
+    let held = false
+    for (const stamp of [...(row.held ?? [])].sort(byPhoneStamp)) {
+      if (!stamp.held && held) cuts.push(stamp)
+      held = stamp.held
     }
-    const words = (await tx.textsOf(unique([...subjects, ...[...numbers.values()].flatMap((held) => [...held])]))).filter((text) => text.flags.includes('opt_out') || text.flags.includes('opt_in'))
-    const last = new Map(words.map((text, i) => [text.subject, i]))
-    return (members: readonly Subject[]): { optedOut: boolean; at: number } | undefined => {
+    return cuts
+  }
+
+  async function formerPhoneGroup(tx: Tx, line: Subject, cut: PhoneStamp) {
+    const ids = ['phone:' + line.slice(7), 'voip:' + line.slice(7)]
+    const holders = await tx.phoneHoldersBefore(ids, cut.at)
+    const subjects = unique(holders.map(edge => edge.subject))
+    if (subjects.length < 2) return new Map<Subject, Labels>()
+    const numbers = await tx.textNumbers(subjects)
+    const present = new Set(numbers.filter(row => {
+      if (row.line !== line) return false
+      if (!row.held) return row.active
+      const earlier = row.held.filter(s => later(s, cut) < 0 || s.held && later(s, cut) === 0)
+      return earlier.sort(byPhoneStamp).at(-1)?.held
+    }).map(row => row.subject))
+    const shared = holders.filter(edge => present.has(edge.subject))
+    if (present.size < 2) return new Map<Subject, Labels>()
+    const reserved = (await tx.callEvidence({ identifiers: ids })).filter(row => row.at <= cut.at)
+    const counts = new Map(ids.map(id => [id, new Set([...shared, ...reserved].filter(edge => edge.identifier === id).map(edge => edge.subject)).size]))
+    if (![...counts].some(([id, count]) => count >= 2 && count <= ruleFor(policy, id).cap)) return new Map<Subject, Labels>()
+    const peers = [...present]
+    const edges = [...(await tx.edgesOf(peers)).filter(e => !ids.includes(e.identifier)), ...shared].filter(e => e.first <= cut.at).map(e => ({ ...e, last: Math.min(cut.at, e.last) }))
+    const withheld = (await tx.callEvidence({ subjects: peers })).filter(row => row.at <= cut.at)
+    const states = await tx.states(unique([...edges, ...withheld].map(e => e.identifier)))
+    // People who first gave the number after the cut cannot dilute an earlier link and remove its STOP.
+    for (const [id, fanout] of counts) states.set(id, { fanout, ignored: states.get(id)?.ignored ?? false })
+    const separated = (await tx.separatedOf(peers)).filter(([a, b]) => present.has(a) && present.has(b))
+    return grouped(peers, edges, withheld, states, separated)
+  }
+
+  async function textWords(tx: Tx, subjects: readonly Subject[], through?: number, recover = true) {
+    const numbers = (await tx.textNumbers(unique([...subjects]))).filter(row => through === undefined || row.first === undefined || row.first <= through)
+    const inheritedThrough = new Map<TextNumber, number>()
+    if (through === undefined && recover) {
+      // A STOP or a profile can arrive after the records came apart. Only a member with an actual phone withdrawal needs its former group.
+      const groups = new Map<string, Map<Subject, Labels>>()
+      const formerWords = new Map<string, TextWord | undefined>()
+      for (const owner of [...numbers]) for (const cut of formerPhoneCuts(owner)) {
+        const key = JSON.stringify([owner.line, cut.at, cut.key])
+        const group = groups.get(key) ?? await formerPhoneGroup(tx, owner.line, cut)
+        groups.set(key, group)
+        const home = group.get(owner.subject)?.cluster
+        const members = [...group].filter(([, labels]) => labels.cluster === home).map(([subject]) => subject)
+        if (members.length < 2) continue
+        const groupKey = JSON.stringify([key, home])
+        if (!formerWords.has(groupKey)) formerWords.set(groupKey, (await textWords(tx, members, cut.at))(members))
+        const word = formerWords.get(groupKey)
+        if (!word?.optedOut) continue
+        let row = numbers.find(r => r.subject === owner.subject && r.line === word.line)
+        if (!row) {
+          row = { subject: owner.subject, line: word.line, active: false }
+          numbers.push(row)
+        }
+        if (row.stop === undefined || later(word, { at: row.stop, key: row.stopKey! }) > 0) {
+          row.stop = word.at
+          row.stopKey = word.key
+        }
+        inheritedThrough.set(row, Math.max(inheritedThrough.get(row) ?? -Infinity, cut.at))
+        if (!row.held && row.first !== undefined) row.held = [{ at: row.first, key: '', held: true }]
+      }
+    }
+    const lines = new Map<Subject, TextWord[]>()
+    for (const text of await tx.textsOf(unique([...subjects, ...numbers.map(row => row.line)]))) {
+      if (through !== undefined && text.at > through) continue
+      if (!text.flags.includes('opt_out') && !text.flags.includes('opt_in')) continue
+      const words = lines.get(text.subject) ?? []
+      words.push({ line: text.subject, at: text.at, key: text.id, optedOut: text.flags.includes('opt_out') })
+      lines.set(text.subject, words)
+    }
+    for (const words of lines.values()) words.sort(later)
+    const eligible = (row: TextNumber) => {
+      const words = lines.get(row.line) ?? []
+      if (!row.held) return row.active ? words.at(-1) : undefined
+      // A START in a gap cannot cancel a STOP from when this record had the number, even after a later profile gives it back.
+      const history = [...row.held].sort(byPhoneStamp)
+      let i = 0
+      let held = false
+      let last: TextWord | undefined
+      for (const word of words) {
+        while (i < history.length && history[i]!.at <= word.at) held = history[i++]!.held
+        if (held || word.optedOut && row.uncertain && row.uncertain.first <= word.at && word.at <= row.uncertain.last) last = word
+      }
+      return last
+    }
+    const bySubject = new Map<Subject, { row: TextNumber; word: TextWord | undefined }[]>()
+    for (const row of numbers) {
+      const retained = row.stop !== undefined && row.stopKey !== undefined && (through === undefined || row.stop <= through) ? { line: row.line, at: row.stop, key: row.stopKey, optedOut: true } : undefined
+      const word = eligible(row)
+      const all = bySubject.get(row.subject) ?? []
+      const blocked = word && !word.optedOut && (row.through && later(word, row.through) <= 0 || word.at <= (inheritedThrough.get(row) ?? -Infinity))
+      all.push({ row, word: retained && (!word || blocked || later(retained, word) > 0) ? retained : word })
+      bySubject.set(row.subject, all)
+    }
+    return (members: readonly Subject[]): TextWord | undefined => {
       const inside = new Set(members)
-      const own = words.findLast((text) => inside.has(text.subject))
-      const stopped = members.flatMap((member) => [...(numbers.get(member) ?? [])]).filter((number) => !inside.has(number))
-        .flatMap((number) => words[last.get(number) ?? -1] ?? []).filter((text) => text.flags.includes('opt_out'))
-      const said = own?.flags.includes('opt_out') ? own : stopped.sort((x, y) => x.at - y.at).at(-1) ?? own
-      return said && { optedOut: said.flags.includes('opt_out'), at: said.at }
+      const records = members.flatMap(member => bySubject.get(member) ?? [])
+      const constrained = new Set(records.filter(({ row }) => row.subject !== row.line && (row.held || row.stop !== undefined)).map(({ row }) => row.line))
+      const own = newest(members.flatMap(member => {
+        const words = lines.get(member)
+        if (!constrained.has(member)) return words?.at(-1) ?? []
+        // A staff join can keep the caller inside the cluster after withdrawal. Their START still needs a holder.
+        const holders = records.filter(({ row }) => row.subject !== member && row.line === member)
+        const stop = words?.findLast(word => word.optedOut)
+        return [...holders.flatMap(({ word }) => word ?? []), ...(stop ? [stop] : [])]
+      }))
+      if (own?.optedOut) return own
+      const stopped = records.flatMap(({ row, word }) =>
+        word?.optedOut && (!inside.has(row.line) || row.held || row.stop !== undefined) ? [word] : [])
+      return newest(stopped) ?? own
     }
+  }
+
+  async function stoppedBeforeCut(tx: Tx, subjects: readonly Subject[], recover = true): Promise<TextStop[]> {
+    const labels = await tx.aroundOf(subjects)
+    const groups = new Map<Subject, Subject[]>()
+    for (const [id, { cluster }] of labels) {
+      const members = groups.get(cluster) ?? []
+      members.push(id)
+      groups.set(cluster, members)
+    }
+    const saidOf = await textWords(tx, [...labels.keys()], undefined, recover)
+    const stops: TextStop[] = []
+    for (const group of groups.values()) {
+      const word = saidOf(group)
+      if (word?.optedOut) for (const subject of group) stops.push({ subject, line: word.line, at: word.at, key: word.key })
+    }
+    return stops
   }
 
   /** Whether a caller may be tied to a visitor: no reviewer keeps the two apart, and the visitor is no other caller's. */
@@ -1331,12 +1471,12 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
   }
 
   /** Appends decisions to the record, each sealed to the one before it. Returns their sequence numbers. */
-  async function decideAll(tx: Tx, entries: readonly { action: Decision['action']; about: string[]; why?: Why | undefined }[]): Promise<number[]> {
+  async function decideAll(tx: Tx, entries: readonly { action: Decision['action']; about: string[]; why?: Why | undefined; at?: number }[]): Promise<number[]> {
     let last = await tx.lastDecision()
     const seqs: number[] = []
-    for (const { action, about, why } of entries) {
+    for (const { action, about, why, at = now() } of entries) {
       keepable(why?.by, why?.reason)
-      const entry = { seq: (last?.seq ?? 0) + 1, at: now(), action, about, ...(why?.by && { by: why.by }), ...(why?.reason && { reason: why.reason }) }
+      const entry = { seq: (last?.seq ?? 0) + 1, at, action, about, ...(why?.by && { by: why.by }), ...(why?.reason && { reason: why.reason }) }
       last = { ...entry, hash: seal(last?.hash ?? '', entry) }
       await tx.addDecision(last)
       seqs.push(entry.seq)
@@ -1484,13 +1624,19 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
     const states = await tx.states(touched)
     // An identifier that was public before this write linked nothing then and links nothing now.
     const open = touched.filter((identifier) => {
-      const state = states.get(identifier)!
+      const state = states.get(identifier)
+      if (!state) return false
       const before = state.fanout - (added.get(identifier) ?? 0)
       return !state.ignored && before <= ruleFor(policy, identifier).cap && state.fanout > 1
     })
     const affected = new Set(sightings.map((sighting) => sighting.subject))
     for (const edge of await tx.edgesOn(open)) affected.add(edge.subject)
-    return settle(tx, affected)
+    if (!added.restored?.size) return settle(tx, affected)
+    const former = [...(await tx.aroundOf([...affected])).keys()]
+    const moved = await settle(tx, affected)
+    await recheckCallbacks(tx, former)
+    await recheckCallbacks(tx, former, true)
+    return moved
   }
 
   async function policyState(tx: Tx): Promise<PolicyState> {
@@ -1504,7 +1650,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
   }
 
   const graph: Graph = {
-    async observe(input) {
+    async observe(input, profile) {
       const observations = Array.isArray(input) ? (input as readonly Observation[]) : [input as Observation]
       const sightings: Sighting[] = []
       const recorded = now()
@@ -1518,7 +1664,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         for (const identifier of nameEvidence(identifiers)) {
           if (UNSTORABLE.test(identifier)) throw malformed('An observation contains unsupported characters')
           ruleFor(policy, identifier)
-          sightings.push(event === undefined ? { subject, identifier, at, recorded } : { subject, identifier, at, event, recorded })
+          sightings.push({ subject, identifier, at, recorded, ...(event !== undefined && { event }), ...ownership(subject, identifier, profile) })
         }
       }
       if (sightings.length === 0) return []
@@ -2010,7 +2156,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       return store.read((tx) => tx.callOf(id))
     },
 
-    async speak(who, by, at, event = 'speaker') {
+    async speak(who, by, at, event = 'speaker', profile) {
       ruleFor(policy, 'behalf:0')
       if (!names(who.subject) || by.some((each) => names(each.subject))) throw malformed('A browser or a caller speaks for a record of yours')
       const marks: Identifier[] = []
@@ -2042,7 +2188,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
           if (before === i) marked.push({ subject: past?.subject ?? each.subject, identifiers: [mark] })
         }
         const recorded = now()
-        return record(tx, [{ ...who, identifiers: [...identifiers, ...marks] }, ...by, ...marked].flatMap((each) => nameEvidence(each.identifiers).map((identifier) => ({ subject: each.subject, identifier, at, event, recorded }))))
+        return record(tx, [{ ...who, identifiers: [...identifiers, ...marks] }, ...by, ...marked].flatMap((each) => nameEvidence(each.identifiers).map((identifier) => ({ subject: each.subject, identifier, at, event, recorded, ...(each.subject === who.subject && identifiers.includes(identifier) && ownership(each.subject, identifier, profile)) }))))
       })
       return { marks, identifiers: [...identifiers, ...new Set(marks)], changes }
     },
@@ -2285,7 +2431,8 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       return store.read(async (tx) => {
         const own = (await tx.labelsOf([subject])).get(subject)
         const members = own ? await tx.clusterOf(own.cluster) : [subject]
-        return (await textWords(tx, members))(members)
+        const word = (await textWords(tx, members))(members)
+        return word && { optedOut: word.optedOut, at: word.at }
       })
     },
 
@@ -2501,6 +2648,59 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         const missed: typeof notLeads = []
         for (const call of uncounted) (spurned.has(callId(call)) ? notLeads : missed).push({ at: call.at, ...creditOf(call, ofCall), tags: call.tags })
         return fold(from, to, await tx.costsBetween(from, to), await tx.touchesBetween(start, end), credited, { missed, notLeads, by, per, timeZone, through: dayIn(now(), timeZone), history })
+      })
+    },
+
+    async withdrawFact(subject, identifiers, at, key, why) {
+      for (const id of identifiers) ruleFor(policy, id)
+      return changing(async tx => {
+        await current(tx, [subject], why)
+        const recorded = now()
+        const [decision] = await decideAll(tx, [{ action: 'withdraw', about: [subject], why, at: recorded }])
+        // Losing a name-and-contact hash can split a different cluster, and falling below a cap can bring its other holders together.
+        const dependent = (await tx.edgesOf([subject])).filter(edge => edge.identifier.startsWith('named:')).map(edge => edge.identifier)
+        const ids = unique([...identifiers, ...dependent])
+        const writable = await tx.states(ids)
+        const peers = [...await withinCaps(tx, ids, writable, 1)].filter(id => !writable.get(id)?.ignored)
+        const others = [...await tx.edgesOn(peers), ...await tx.callEvidence({ identifiers: peers })]
+        const before = await stoppedBeforeCut(tx, unique([subject, ...others.map(edge => edge.subject)]))
+        const preserveStops = async () => {
+          if (!before.length) return
+          // A STOP witnessed before the split must survive even if the evidence for late recovery is later lost.
+          const still = new Set((await stoppedBeforeCut(tx, before.map(row => row.subject), false)).map(row => row.subject))
+          const lost = before.filter(row => !still.has(row.subject))
+          if (!lost.length) return
+          // A START the line had already sent could not clear this STOP before the split. Carry both words so the split alone cannot clear it.
+          const starts = new Map<Subject, { at: number; key: string }>()
+          for (const text of await tx.textsOf(unique(lost.map(row => row.line)))) {
+            if (!text.flags.includes('opt_in') || text.flags.includes('opt_out')) continue
+            const start = { at: text.at, key: text.id }
+            const prior = starts.get(text.subject)
+            if (!prior || later(start, prior) > 0) starts.set(text.subject, start)
+          }
+          for (const row of lost) {
+            const start = starts.get(row.line)
+            if (start && later(start, row) > 0) row.through = start
+          }
+          await tx.keepTextStops(lost)
+        }
+        const changed = await tx.withdrawFact(subject, identifiers, at, key, recorded, decision)
+        if (!changed.length) {
+          await preserveStops()
+          return []
+        }
+        await mark(tx)
+        await tx.setSetting('callParty', randomUUID())
+        const states = await tx.states(changed)
+        const open = [...await withinCaps(tx, changed, states)].filter(id => !states.get(id)?.ignored)
+        const holders = [...await tx.edgesOn(open), ...await tx.callEvidence({ identifiers: open })]
+        const affected = new Set([subject, ...holders.map(row => row.subject)])
+        const former = [...(await tx.aroundOf([...affected])).keys()]
+        const moved = await settle(tx, affected)
+        await preserveStops()
+        await recheckCallbacks(tx, former)
+        await recheckCallbacks(tx, former, true)
+        return moved
       })
     },
 
@@ -3107,15 +3307,23 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         if (withdrawn.length) await copy.write(tx => tx.reserveCall(withdrawn))
         let batch: Sighting[] = []
         for await (const sightings of tx.sightingsUntil(at)) {
-          for (const { subject, identifier, at: seen, event } of sightings) {
-            batch.push({ subject, identifier, at: seen, recorded: at, ...(event !== undefined && { event }) })
+          for (const sighting of sightings) {
+            // A profile written early is a sighting, but its future assertion cannot yet restore a withdrawn fact.
+            const { profileKey, ...fields } = sighting
+            batch.push({ ...fields, ...(profileKey !== undefined && sighting.at <= at && { profileKey }), recorded: at })
             if (batch.length < 1000) continue
             await copy.write((tx) => past.record(tx, batch))
             batch = []
           }
         }
         if (batch.length > 0) await copy.write((tx) => past.record(tx, batch))
-        return (await tx.decisions()).filter((decision) => decision.at <= at)
+        const decisions = (await tx.decisions()).filter((decision) => decision.at <= at)
+        if (decisions.some(row => row.action === 'withdraw')) {
+          for (const row of await tx.factHistory(at)) {
+            if (row.at <= at) await past.graph.withdrawFact(row.subject, row.identifiers, row.at, row.key, {})
+          }
+        }
+        return decisions
       })
       for (const { action, about } of decisions) {
         if (action === 'ignore' || action === 'restore') await past.graph.ignore(about[0]!, action === 'ignore')

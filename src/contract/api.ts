@@ -280,14 +280,17 @@ export interface Deciding {
   /** `decisions` from the lookup you decided by. A later decision about the same subjects refuses yours. Not an event `seq`. */
   readonly seen?: number
 }
+type MatchingFact = { readonly email: string } | { readonly phone: string } | { readonly ip: string } | { readonly identifier: string }
+
 export type DecideRequest = Deciding &
   (
     | { readonly action: 'merge' | 'unmerge' | 'split' | 'unsplit'; /** 1 to 1,000, all or none. */ readonly pairs: readonly { readonly a: string; readonly b: string; readonly reason?: string }[] }
-    | { readonly action: 'mute' | 'unmute'; readonly fact: { readonly email: string } | { readonly phone: string } | { readonly ip: string } | { readonly identifier: string } }
+    | { readonly action: 'mute' | 'unmute'; readonly fact: MatchingFact }
+    | { readonly action: 'withdraw'; readonly subject: string; readonly fact: MatchingFact | { readonly device: string } }
   )
 export interface DecideValue {
   readonly duplicate: boolean
-  /** On a replay, whether the requested merge, separation or mute state still holds for every pair or fact. */
+  /** On a replay, whether the requested state still holds. A withdrawal also reports on its first write whether that exact statement stands. */
   readonly stands?: boolean
   readonly changes: readonly Change[]
   readonly recorded: number

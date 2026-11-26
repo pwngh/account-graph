@@ -7,6 +7,28 @@ import { byKey } from './said.ts'
 import type { Job, OutboxStore } from './outbox.ts'
 import type { CallResult, CallTime, Change, Consent, ConsentAnswer, CostRow, Counted, Counts, Decision, Edge, Flow, FlowEdge, Identifier, IdentifierState, KeptCall, KeptText, Labels, Lease, Moved, NotLead, NumberedChange, SentLink, OutcomeValue, Payment, Sighting, Subject, Touch } from '../contract/types.ts'
 
+export type AddedSightings = Map<Identifier, number> & { restored?: Set<Subject> }
+
+export interface TextNumber {
+  subject: Subject
+  line: Subject
+  active: boolean
+  first?: number
+  held?: { at: number; key: string; held: boolean }[]
+  uncertain?: { first: number; last: number }
+  stop?: number
+  stopKey?: string
+  through?: { at: number; key: string }
+}
+
+export interface TextStop {
+  subject: Subject
+  line: Subject
+  at: number
+  key: string
+  through?: { at: number; key: string }
+}
+
 export interface CallEvidence {
   call: string
   subject: Subject
@@ -57,7 +79,11 @@ export interface Tx {
   /** Runs `work` as a write inside this one: where it throws, what it wrote is gone and the rest stands. */
   nested<T>(work: () => Promise<T>): Promise<T>
   /** Logs sightings and folds them into edges. Returns how many new edges each identifier gained. */
-  addSightings(sightings: readonly Sighting[]): Promise<Map<Identifier, number>>
+  addSightings(sightings: readonly Sighting[]): Promise<AddedSightings>
+  /** Records a withdrawal and returns every identifier whose active holders changed, including dependent name keys. */
+  withdrawFact(subject: Subject, identifiers: readonly Identifier[], at: number, key: string, recorded: number, decision?: number): Promise<Identifier[]>
+  factHistory(before: number): Promise<{ subject: Subject; identifiers: Identifier[]; at: number; key: string; decision?: number }[]>
+  factWithdrawn(subject: Subject, identifiers: readonly Identifier[], at: number, key: string): Promise<boolean>
   /** Deletes a subject with its sightings, edges, touches, outcomes, calls, leases, flows, consent, alerts, conversions, and reviewer decisions. */
   removeSubject(subject: Subject, only?: readonly string[]): Promise<Job[]>
   /** A removed call sighting counts its holder and bounds which cuts can change, but gives no positive evidence. */
@@ -77,6 +103,11 @@ export interface Tx {
   /** Keeps the newest creation statement by time and then key. */
   setCreatedAt(subject: Subject, createdAt: number, at: number, key: string): Promise<boolean>
   createdAtStands(subject: Subject, createdAt: number, at: number, key: string): Promise<boolean>
+  /** Which lines can speak about texts for these subjects, including an earlier STOP from a withdrawn line. */
+  textNumbers(subjects: readonly Subject[]): Promise<TextNumber[]>
+  /** Both visible and withdrawn edges can establish who shared a phone before a withdrawal. */
+  phoneHoldersBefore(identifiers: readonly Identifier[], at: number): Promise<Edge[]>
+  keepTextStops(rows: readonly TextStop[]): Promise<void>
   edgesOf(subjects: readonly Subject[]): Promise<Edge[]>
   edgesOn(identifiers: readonly Identifier[]): Promise<Edge[]>
   /**

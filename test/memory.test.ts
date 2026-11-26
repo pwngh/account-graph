@@ -4,6 +4,7 @@ import { opsSuite } from './ops.suite.ts'
 import { outboxSuite } from './outbox.suite.ts'
 import { eventsSuite } from './events.suite.ts'
 import { unjoinSuite } from './unjoin.suite.ts'
+import { factSuite } from './fact.suite.ts'
 import { saidSuite } from './said.suite.ts'
 import { suite } from './suite.ts'
 import { unitSuite } from './unit.suite.ts'
@@ -15,6 +16,7 @@ readHistorySuite('memory store', open, false)
 outboxSuite('memory store', open)
 opsSuite('memory store', open)
 malformedSuite('memory store', open)
+factSuite('memory store', open)
 saidSuite('memory store', open)
 unjoinSuite('memory store', open)
 eventsSuite('memory store', open)

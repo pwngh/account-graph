@@ -14,7 +14,7 @@ import { cursorOf, seqOf } from './events.ts'
 import { Outdated } from './graph.ts'
 import type { Tx } from './store.ts'
 import type { Hours } from './hours.ts'
-import { email, hashPhone, identifier, ip, normalizeEmail, normalizePhone } from './identifiers.ts'
+import { email, hashPhone, identifier, ip, normalizeEmail, normalizePhone, RESERVED, withdrawable } from './identifiers.ts'
 import { newest } from './said.ts'
 import { sentOf } from './outbox.ts'
 import type { Job } from './outbox.ts'
@@ -26,8 +26,6 @@ import { asks, beginnings, recordText, replyTo } from './texts.ts'
 import { checkTags } from './tags.ts'
 import { checkTouch } from './touch.ts'
 
-/** Kinds of identifier the graph writes itself. One a caller wrote would join people with nobody having decided it. */
-const RESERVED = new Set(['behalf', 'named', 'ward', 'given', 'dated', 'initial', 'compound', 'person', 'perhaps', 'review', 'link', 'carry', 'opened', 'lease', 'dial', 'text', 'place', 'birth', 'dialed'])
 /** How many checks of addresses and lines are under way at once, and how long one may take. */
 const TOGETHER = 8
 const CHECK = 3_000
@@ -232,7 +230,7 @@ export function createSix(engine: Engine, options: SixOptions) {
         if (again) return { value: { changes: [], notes: {} }, subjects: [], stands: entry.createdAt === undefined || await inside.tx.createdAtStands(entry.subject, entry.createdAt, entry.at, entry.key) }
         const found = await service.factsIn({ ...entry.facts, at: entry.at }, true, true)
         if (found.identifiers.length === 0 && !entry.speaker) throw Object.assign(malformed('No fact could be used'), { refusal: { reason: 'NO_FACT_USED', notes: found.notes } })
-        const { notes, speakers } = await service.identify({ subject: entry.subject, ...entry.facts, at: entry.at, ...(entry.event && { event: entry.event }), ...(entry.speaker && { speaker: entry.speaker }) })
+        const { notes, speakers } = await service.identify({ subject: entry.subject, ...entry.facts, at: entry.at, ...(entry.event && { event: entry.event }), ...(entry.speaker && { speaker: entry.speaker }) }, entry.key)
         const stands = entry.createdAt === undefined || await inside.tx.setCreatedAt(entry.subject, entry.createdAt, entry.at, entry.key)
         // Of whoever speaks too: once they are deleted, a late retry must not bring them back.
         return { value: { changes: inside.changes, notes }, subjects: [entry.subject, ...speakers], stands }
@@ -399,6 +397,7 @@ export function createSix(engine: Engine, options: SixOptions) {
     if ('email' in fact) return [email(fact.email)]
     if ('ip' in fact) return [ip(fact.ip)]
     if ('phone' in fact) return ['phone', 'voip'].map((kind) => `${kind}:${hashPhone(fact.phone, country)}`)
+    if ('device' in fact) return [identifier('device', fact.device)]
     return [fact.identifier]
   }
 
@@ -444,6 +443,17 @@ export function createSix(engine: Engine, options: SixOptions) {
             notAsAsked = notAsAsked.map((each, i) => ({ ...each, because: scores[i]!.score >= engine.policy.same ? ('evidence' as const) : ('other_merges' as const) }))
           }
           if (!before) await tx.addReceipt(receipts.make(entry, now()), [...new Set(pairs.flatMap(({ a, b }) => [a, b]))])
+        } else if (request.action === 'withdraw') {
+          if ('identifier' in request.fact && !withdrawable(request.fact.identifier)) throw malformed('A withdrawal requires an identifying fact of the record')
+          const aliases = identifiers.flatMap(id => /^(phone|voip):/.test(id) ? [id.replace(/^voip:/, 'phone:'), id.replace(/^phone:/, 'voip:')] : [id])
+          const applicable = [...new Set(aliases)].filter(id => aliases.length === 1 || Object.hasOwn(engine.policy.kinds, id.split(':', 1)[0]!))
+          if (!applicable.length) return no({ reason: 'KIND_NOT_IN_POLICY' as const, kind: 'phone' })
+          if (!before) {
+            await graph.withdrawFact(request.subject, applicable, request.at, request.key, why(request))
+            await tx.addReceipt(receipts.make(entry, now(), { type: 'withdraw', key: request.key }), [request.subject])
+            recorded = 1
+          } else already = 1
+          stands = await tx.factWithdrawn(request.subject, applicable, request.at, request.key)
         } else {
           // A phone is one of two kinds, and a policy may name only one.
           const applicable = identifiers.filter(each => identifiers.length === 1 || Object.hasOwn(engine.policy.kinds, each.slice(0, each.indexOf(':'))))
@@ -462,7 +472,7 @@ export function createSix(engine: Engine, options: SixOptions) {
             await tx.addReceipt(receipts.make(entry, now()), [])
           }
         }
-        return ok({ duplicate: before !== undefined, ...(before && { stands }), changes: before ? [] : changes, recorded, already, notAsAsked })
+        return ok({ duplicate: before !== undefined, ...((before || request.action === 'withdraw') && { stands }), changes: before ? [] : changes, recorded, already, notAsAsked })
       })
     } catch (error) {
       if (error instanceof Outdated) return stale(error)

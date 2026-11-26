@@ -15,6 +15,7 @@ export async function tokenRoutes(local: AccountGraph) {
     token: 'root-key', reviewers: { dana: ['desk-key', 'old-key'] },
     serviceTokens: [
       { name: 'intake', token: 'intake-key', calls: { record: ['profile', 'call_update'], decide: ['split'], lookup: ['party'], report: ['calls'] } },
+      { name: 'corrections', token: 'corrections-key', calls: { decide: ['withdraw'] } },
       { name: 'full', token: 'full-key', calls: { record: true, decide: true, forget: true, lookup: true, report: true, events: true } },
       { name: 'closed', token: 'closed-key', calls: {} },
     ],
@@ -32,13 +33,14 @@ export async function tokenRoutes(local: AccountGraph) {
   const info = console.info
   console.info = line => log.push(String(line))
   try {
-    for (const [n, key] of ['root-key', 'desk-key', 'old-key', 'intake-key', 'full-key', 'closed-key', 'wrong'].entries()) {
+    for (const [n, key] of ['root-key', 'desk-key', 'old-key', 'intake-key', 'corrections-key', 'full-key', 'closed-key', 'wrong'].entries()) {
       const root = key === 'root-key'
       const reviewer = key === 'desk-key' || key === 'old-key'
       const intake = key === 'intake-key'
+      const corrections = key === 'corrections-key'
       const full = key === 'full-key'
       const refused = key === 'wrong' ? 401 : 403
-      const by = reviewer ? 'dana' : full ? 'system:full' : 'system:intake'
+      const by = reviewer ? 'dana' : full ? 'system:full' : corrections ? 'system:corrections' : 'system:intake'
       const call = (name: string, body: unknown) => ask(key, '/v1/' + name, 'POST', body)
       for (const [method, names] of [['GET', reviewReads], ['POST', reviewWrites]] as const) {
         for (const name of names) {
@@ -70,6 +72,8 @@ export async function tokenRoutes(local: AccountGraph) {
         const decision = { key: 'decision-' + n + '-' + action, at, by, action, ...(['mute', 'unmute'].includes(action) ? { fact: { email: 'guard@example.org' } } : { pairs: [{ a: subject, b: 'contact:other' }] }) } as DecideRequest
         assert.equal((await call('decide', decision)).status, root || full || reviewer || (intake && action === 'split') ? 200 : refused, action)
       }
+      const withdrawal = { action: 'withdraw', key: 'withdraw-' + n, at, by, subject, fact: { email: 'guard@example.org' } }
+      assert.equal((await call('decide', withdrawal)).status, root || full || corrections ? 200 : refused)
       for (const query of [
         { kind: 'person', subjects: [subject], at }, { kind: 'journey', subject }, { kind: 'find', text: subject }, { kind: 'match', facts: { email: 'guard@example.org' }, at }, { kind: 'caller', to: '+12025550100', at },
         { kind: 'party', call: 'pending' }, { kind: 'conflicts', subjects: [subject] }, { kind: 'record', type: 'call', key: 'missing', at }, { kind: 'transfers', subject },
@@ -108,7 +112,7 @@ export async function tokenRoutes(local: AccountGraph) {
     await refused('forget', { ...forget, by: 'system:intake' }, 'merge-9')
     for (const name of ['decide', 'forget']) assert.equal((await ask('full-key', '/v1/' + name, 'POST', { by: 'dana' })).status, 403)
     assert.ok(log.includes('service intake requested record'))
-    assert.doesNotMatch(log.join('\n'), /intake-key|full-key|closed-key/)
+    assert.doesNotMatch(log.join('\n'), /intake-key|corrections-key|full-key|closed-key/)
   } finally {
     console.info = info
     await new Promise<void>(resolve => server.close(() => resolve()))

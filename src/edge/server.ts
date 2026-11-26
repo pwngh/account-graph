@@ -631,7 +631,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
       if (owner.role === 'reviewer') {
         const reviewer = owner.name
         const party = name === 'record' && Array.isArray(body?.entries) && body.entries.length > 0 && body.entries.every((entry: any) => entry?.type === 'call_update' && entry.change?.kind === 'party' && entry.change.by === reviewer)
-        const opens = party || name === 'report' || ((name === 'decide' || name === 'forget') && body?.by === reviewer) || (name === 'lookup' && (body?.kind === 'journey' || body?.kind === 'find' || body?.kind === 'party'))
+        const opens = party || name === 'report' || (((name === 'decide' && body?.action !== 'withdraw') || name === 'forget') && body?.by === reviewer) || (name === 'lookup' && (body?.kind === 'journey' || body?.kind === 'find' || body?.kind === 'party'))
         if (!opens) throw fault(FAULT_CODES.AUTH.FORBIDDEN, name === 'decide' || name === 'forget' ? '`by` must match the owner of the token' : 'The token does not open this call')
       }
       const run = (input: unknown) => core.v1!(name as CallName, input, gone.signal)

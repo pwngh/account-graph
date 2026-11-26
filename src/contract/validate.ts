@@ -176,13 +176,13 @@ const REQUEST = {
   decide: byField('action', (() => {
     const deciding = { key, at, by: string(1, 100), 'reason?': string(1, 1000), 'seen?': integer(0, Number.MAX_SAFE_INTEGER), action: any }
     const pairs = shape({ ...deciding, pairs: list(shape({ a: subject, b: subject, 'reason?': string(1, 1000) }), 1, 1000) })
-    const fact: Check = (value, path) => {
+    const fact = (withdraw = false): Check => (value, path) => {
       object(value, path)
       if (Object.keys(value).length !== 1) throw bad(path, 'requires one fact')
-      shape({ 'email?': string(3, 512), 'phone?': phone, 'ip?': string(2, 64), 'identifier?': own })(value, path)
+      shape({ 'email?': string(3, 512), 'phone?': phone, 'ip?': string(2, 64), 'identifier?': own, ...(withdraw && { 'device?': device }) })(value, path)
     }
-    const muting = shape({ ...deciding, fact })
-    return { merge: pairs, unmerge: pairs, split: pairs, unsplit: pairs, mute: muting, unmute: muting }
+    const muting = shape({ ...deciding, fact: fact() })
+    return { merge: pairs, unmerge: pairs, split: pairs, unsplit: pairs, mute: muting, unmute: muting, withdraw: shape({ ...deciding, by: signedParty.by, subject: recordedParty, fact: fact(true) }) }
   })()),
   forget: shape({ key, at, by: string(1, 100), 'reason?': string(1, 1000), 'seen?': integer(0, Number.MAX_SAFE_INTEGER), subjects: list(subject, 1, 50), platforms: oneOf('report', 'retract') }),
   lookup: byField('kind', {

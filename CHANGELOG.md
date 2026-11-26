@@ -19,6 +19,9 @@
 - `decide` answers a key used for another action with `KEY_REUSED` naming only `action`, for every caller.
 - `allowPages` and `refusePages` keep a firm's private pages out of the collector and the server on every host; only a referrer from another site passes, as origin and path. A refused entry is refused alone.
 - `requireConsent` (`consent=required` on the tag) makes no identifier and sends nothing until the visitor says yes.
+- `decide` `withdraw` takes one matching fact off one record. It stops joining or counting for that record, other holders keep it, and a newer profile naming it restores it.
+- `textsOptedOut` keeps a STOP sent from a number while the record held it, after that number is withdrawn.
+- A withdrawal changes earlier credit, people, journeys and reports, as a split does. Identity snapshots respect its time.
 - `profile.createdAt` records when your system created a subject. The Accounts heading and Links table show it alongside the earliest activity the graph still holds for each record.
 - `textsOptedOut` covers a STOP from any phone number the subject’s cluster has, including one only related to it under `records`. A START from inside the cluster does not undo it.
 - `record` applies an inbound opt-out first supplied on a text retry at the original message time and answers `optOutAdded: true` once.

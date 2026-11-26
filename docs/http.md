@@ -20,7 +20,7 @@ curl -X POST https://graph.example.org/v1/record \
 | Call | Does | Keyed |
 | --- | --- | --- |
 | [`record`](#record) | Writes what happened: 1 to 100 entries | Each entry |
-| [`decide`](#decide) | Merges, splits and mutes, and takes each back | Yes |
+| [`decide`](#decide) | Merges, splits, mutes and withdrawals of a record’s matching facts | Yes |
 | [`forget`](#forget) | Deletes 1 to 50 subjects | Yes |
 | [`lookup`](#lookup) | Reads about people and records | No |
 | [`report`](#report) | Reads figures and lists | No |
@@ -33,7 +33,7 @@ Send a token in the `authorization` header as `Bearer …`.
 | Call | Main service token | Reviewer token | Named service token |
 | --- | --- | --- | --- |
 | `record` | Every entry | A batch consisting entirely of call party statements signed with the reviewer’s name | Listed entry types. Party statements require the service’s own signature. |
-| `decide` | Any action and author | Own signature | Listed actions and own signature |
+| `decide` | Any action and author | Own signature for merge, unmerge, split, unsplit, mute and unmute | Listed actions and own signature |
 | `forget` | Any author | Own signature, including platform retraction | Explicit grant and own signature |
 | `lookup` | Every kind | `journey`, `find` and `party`. An excluded party’s subject is hidden. | Listed kinds |
 | `report` | Every kind | Every kind, including deliveries | Listed kinds |
@@ -263,8 +263,11 @@ POST /v1/decide
 | `unsplit` | `pairs` | Takes back the splits |
 | `mute` | `fact` | Nothing links through it |
 | `unmute` | `fact` | It links again |
+| `withdraw` | `subject`, `fact` | Removes this fact as evidence for this exact record |
 
-`fact` names one of `{ "email" }`, `{ "phone" }`, `{ "ip" }` or `{ "identifier" }`. All of the pairs are written, or none. `by` is 1 to 100 characters, and a reason is at most 1,000.
+For example, `{"action":"withdraw","subject":"contact:7","fact":{"phone":"+12025550148"},"by":"system:intake","at":1790000000000,"key":"line-returned"}` withdraws a phone. The main service token or a named service with this grant may send it. A withdrawal also accepts `{"device":"…"}`. Its subject must be a record. Its first answer and every replay say whether this exact statement still stands. A later profile can give the fact back. Retrying the original profile still acknowledges that observation. Its `stands` field continues to describe the optional creation date. Replay the withdrawal to check whether it still applies. See [withdrawing a matching fact](matching.md#withdrawing-a-matching-fact).
+
+For a mute or unmute, `fact` names one of `{ "email" }`, `{ "phone" }`, `{ "ip" }` or `{ "identifier" }`. All of the pairs are written, or none. `by` is 1 to 100 characters, and a reason is at most 1,000.
 
 | Answer | Meaning |
 | --- | --- |
