@@ -18,7 +18,7 @@ function exercise($task)
     if ($method === 'screen') {
         return AccountGraphOutbox::row($request['subject'], 'record', array('entries' => array($request)));
     }
-    if (in_array($method, array('seed', 'work', 'repair', 'overlap', 'purge', 'missingDependency'), true)) {
+    if (in_array($method, array('seed', 'work', 'repair', 'overlap', 'purge', 'missingDependency', 'savedAnswer'), true)) {
         $db = new PDO('sqlite:' . $task['database'], null, null, array(PDO::ATTR_ERRMODE => PDO::ERRMODE_SILENT));
         if ($method === 'seed') {
             $db->exec("CREATE TABLE account_graph_outbox (id INTEGER PRIMARY KEY AUTOINCREMENT, record_id TEXT NOT NULL, call_name TEXT NOT NULL, item_key TEXT NOT NULL, item_kind TEXT NOT NULL, request TEXT, state TEXT NOT NULL DEFAULT 'pending', answer TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, depends_on INTEGER)");
@@ -34,6 +34,11 @@ function exercise($task)
                 $ids[] = AccountGraphOutbox::enqueue($db, $group, 'record', array('entries' => array($entry)), $parent);
             }
             $db->commit();
+        } elseif ($method === 'savedAnswer') {
+            $update = $db->prepare("UPDATE account_graph_outbox SET answer = ? WHERE id = ? AND state = 'pending'");
+            if (!$update->execute(array(json_encode($request['answer']), $request['id'])) || $update->rowCount() !== 1) {
+                throw new RuntimeException('The test expected a pending outbox row');
+            }
         } elseif ($method === 'purge') {
             $delete = $db->prepare("DELETE FROM account_graph_outbox WHERE item_key = ? AND state = 'sent'");
             $delete->execute(array($request['key']));

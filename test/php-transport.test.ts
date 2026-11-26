@@ -76,12 +76,12 @@ test('PHP waits for Retry-After seconds or dates and returns longer waits to the
     dates.push(now)
     if (dates.length > 1) return res.end('null')
     if (hint === 'closed') return res.writeHead(503, { 'retry-after': '3600' }).end(JSON.stringify({ fault: { code: 'GRAPH.CLOSED', retryable: false, detail: {} } }))
-    const header = hint === 'date' ? new Date(now + 1800).toUTCString() : hint
-    earliest = hint === 'date' ? Date.parse(header) : now + Number(header) * 1000
+    const header = hint === 'date' ? new Date(now + 1800).toUTCString() : hint === 'past' ? new Date(now - 60000).toUTCString() : hint
+    earliest = hint === 'date' ? Date.parse(header) : now + (hint === '1' ? 1000 : 50)
     res.writeHead(503, { 'retry-after': header, 'content-type': 'application/json' }).end(JSON.stringify({ fault: { code: 'GRAPH.UNAVAILABLE', retryable: true, detail: {} } }))
   }))
   for (const ini of transports()) {
-    for (hint of ['1', 'date', '3600', 'closed']) {
+    for (hint of ['1', 'date', '0', '-1', 'past', '3600', 'closed']) {
       dates.length = 0
       const answer = await php(read, [url], ini)
       if (hint === 'closed') {
@@ -97,6 +97,14 @@ test('PHP waits for Retry-After seconds or dates and returns longer waits to the
       }
     }
   }
+})
+
+test('PHP caps Retry-After dates and delta-seconds at fifteen minutes', { skip }, async () => {
+  const { start, deadlines, end } = await php(`
+$start = microtime(true);
+$deadlines = array_map(array('AccountGraph', 'retryAt'), array('86400', 'Fri, 31 Dec 9999 23:59:59 GMT', '99999999999999999999999'));
+echo json_encode(array('start' => $start, 'deadlines' => $deadlines, 'end' => microtime(true)));`)
+  for (const until of deadlines) assert.ok(until >= start + 900 && until <= end + 900)
 })
 
 test('PHP keeps certificate verification failures separate from a TLS handshake timeout', { skip: skip || (!openssl && 'the PHP OpenSSL extension is not loaded') }, async t => {

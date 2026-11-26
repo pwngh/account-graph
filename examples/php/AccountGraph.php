@@ -24,6 +24,8 @@ class AccountGraphFault extends RuntimeException
 
 class AccountGraph
 {
+    const MAX_RETRY_AFTER_SECONDS = 900;
+
     private $origin;
     private $host;
     private $port;
@@ -252,9 +254,9 @@ class AccountGraph
         if (!is_string($hint) || $hint === '') {
             return null;
         }
+        $now = microtime(true);
         if (preg_match('/^[0-9]+$/D', $hint)) {
-            // Keep arbitrarily large delta-seconds representable in a host queue.
-            return min(253402300799.0, microtime(true) + (float) $hint);
+            return $now + min(self::MAX_RETRY_AFTER_SECONDS, (float) $hint);
         }
         if (strlen($hint) > 40 || preg_match('/[^\x20-\x7e]/', $hint)) {
             return null;
@@ -265,7 +267,7 @@ class AccountGraph
             $errors = DateTimeImmutable::getLastErrors();
             if ($date && (!$errors || (!$errors['warning_count'] && !$errors['error_count']))) {
                 // format('U') works beyond the signed integer range on 32-bit PHP.
-                return (float) $date->format('U');
+                return min($now + self::MAX_RETRY_AFTER_SECONDS, (float) $date->format('U'));
             }
         }
         return null;
@@ -458,8 +460,9 @@ class AccountGraph
 class AccountGraphOutbox
 {
     // The host's query builder can insert this same row on the connection that changed the contact.
-    public static function row($recordId, $call, array $request, $dependsOn = null)
+    public static function row($recordId, $call, array $request, $dependsOn = null, &$dropped = null)
     {
+        $dropped = array();
         if (!is_string($recordId) || $recordId === '' || strlen($recordId) > 200 || !in_array($call, array('record', 'decide', 'forget'), true)) {
             throw new InvalidArgumentException('A record ID and a write call are required');
         }
@@ -482,9 +485,13 @@ class AccountGraphOutbox
             throw new InvalidArgumentException('Store the original key and at with each write');
         }
         if ($kind === 'profile') {
-            $facts = self::facts($write['facts'] ?? array(), false);
-            $speaker = self::facts($write['speaker'] ?? array(), true);
+            $facts = self::facts(array_key_exists('facts', $write) ? $write['facts'] : array(), false, $dropped);
+            $speaker = array_key_exists('speaker', $write) ? self::facts($write['speaker'], true, $dropped) : array();
             if (!$speaker && (!$facts || array_keys($facts) === array('name'))) {
+                if (isset($facts['name'])) {
+                    $dropped['facts.name'] = 'A name needs another usable fact or a speaker.';
+                }
+                $dropped['profile'] = 'No usable subject identifier or speaker.';
                 return null;
             }
             $write['facts'] = (object) $facts;
@@ -508,10 +515,32 @@ class AccountGraphOutbox
         return $chars !== false && $chars + preg_match_all('/[\x{10000}-\x{10ffff}]/u', $value) <= $limit;
     }
 
-    private static function facts($given, $speaker)
+    private static function droppedFields(array $input, array $kept, array $reasons, $path, array &$dropped)
     {
-        $fields = is_array($given) || is_object($given) ? (array) $given : array();
+        foreach (array_keys($input) as $key) {
+            if (!isset($reasons[$key])) {
+                // Unknown keys can themselves be email addresses or other contact data.
+                $dropped[$path . '.*'] = 'Unknown field.';
+            } elseif (!array_key_exists($key, $kept)) {
+                $dropped[$path . '.' . $key] = $reasons[$key];
+            }
+        }
+    }
+
+    private static function facts($given, $speaker, array &$dropped)
+    {
+        $path = $speaker ? 'speaker' : 'facts';
+        if (!is_array($given) && !is_object($given)) {
+            $dropped[$path] = 'Expected an object.';
+            return array();
+        }
+        $fields = (array) $given;
         $facts = array();
+        $reasons = array(
+            'email' => 'Expected an email address of at most 512 characters with a local part and domain.',
+            'phone' => 'Expected a usable phone number of at most 64 characters.',
+            'device' => 'Expected 1 to 128 letters, digits, dots, dashes or underscores.'
+        );
         $email = $fields['email'] ?? null;
         if (self::text($email, 512)) {
             $trimmed = preg_replace('/^[\s\x{feff}]+|[\s\x{feff}]+$/u', '', $email);
@@ -528,14 +557,35 @@ class AccountGraphOutbox
             $facts['device'] = $fields['device'];
         }
         if ($speaker) {
+            self::droppedFields($fields, $facts, $reasons, $path, $dropped);
+            if (!$fields) {
+                $dropped['speaker'] = 'A speaker needs a device, phone or email.';
+            }
             return $facts;
         }
+        $reasons += array(
+            'ip' => 'Expected an IPv4 or IPv6 address of at most 64 characters.',
+            'name' => 'A name needs both a usable first and last name.',
+            'dob' => 'Expected a valid calendar date in YYYY-MM-DD format.',
+            'address' => 'An address needs a nonblank street of at most 2048 characters.',
+            'identifiers' => 'Expected a list containing at least one usable identifier.'
+        );
         if (self::text($fields['ip'] ?? null, 64) && @inet_pton(trim($fields['ip'])) !== false) {
             $facts['ip'] = $fields['ip'];
         }
         $name = (array) ($fields['name'] ?? array());
-        if (self::text($name['first'] ?? null, 200) && self::text($name['last'] ?? null, 200)) {
-            $facts['name'] = array('first' => $name['first'], 'last' => $name['last']);
+        $parts = array();
+        $nameFields = array('first' => 'Expected text of 1 to 200 characters.', 'last' => 'Expected text of 1 to 200 characters.');
+        foreach ($nameFields as $field => $reason) {
+            if (self::text($name[$field] ?? null, 200)) {
+                $parts[$field] = $name[$field];
+            }
+        }
+        if (count($parts) === 2) {
+            $facts['name'] = $parts;
+        }
+        if (is_array($fields['name'] ?? null) || is_object($fields['name'] ?? null)) {
+            self::droppedFields($name, $parts, $nameFields, 'facts.name', $dropped);
         }
         $dob = $fields['dob'] ?? null;
         if (is_string($dob) && preg_match('/^([0-9]{4})-([0-9]{2})-([0-9]{2})$/D', $dob, $parts)
@@ -543,24 +593,34 @@ class AccountGraphOutbox
             $facts['dob'] = $dob;
         }
         $address = (array) ($fields['address'] ?? array());
-        if (self::text($address['street'] ?? null, 2048) && trim($address['street']) !== '') {
-            $facts['address'] = array('street' => $address['street']);
-            foreach (array('street2' => 2048, 'secondary' => 200, 'city' => 200, 'state' => 200, 'zipcode' => 200) as $field => $limit) {
-                if (self::text($address[$field] ?? null, $limit)) {
-                    $facts['address'][$field] = $address[$field];
-                }
+        $parts = array();
+        $addressFields = array();
+        foreach (array('street' => 2048, 'street2' => 2048, 'secondary' => 200, 'city' => 200, 'state' => 200, 'zipcode' => 200) as $field => $limit) {
+            $addressFields[$field] = $field === 'street' ? $reasons['address'] : 'Expected text of 1 to ' . $limit . ' characters.';
+            if (self::text($address[$field] ?? null, $limit) && ($field !== 'street' || trim($address[$field]) !== '')) {
+                $parts[$field] = $address[$field];
             }
+        }
+        if (isset($parts['street'])) {
+            $facts['address'] = $parts;
+        }
+        if (is_array($fields['address'] ?? null) || is_object($fields['address'] ?? null)) {
+            self::droppedFields($address, $parts, $addressFields, 'facts.address', $dropped);
         }
         if (isset($fields['identifiers']) && is_array($fields['identifiers'])) {
             foreach ($fields['identifiers'] as $id) {
+                if (isset($facts['identifiers']) && count($facts['identifiers']) === 100) {
+                    $dropped['facts.identifiers'] = 'Only the first 100 usable identifiers can be queued.';
+                    break;
+                }
                 if (is_string($id) && strlen($id) <= 1024 && strpos($id, "\0") === false && preg_match('/^[^:]+:\s*\S/us', $id)) {
                     $facts['identifiers'][] = $id;
-                    if (count($facts['identifiers']) === 100) {
-                        break;
-                    }
+                } else {
+                    $dropped['facts.identifiers[]'] = 'Expected a kind:value identifier of at most 1024 bytes.';
                 }
             }
         }
+        self::droppedFields($fields, $facts, $reasons, $path, $dropped);
         return $facts;
     }
 
@@ -583,12 +643,13 @@ class AccountGraphOutbox
         return $international ? $digits >= 8 && $digits <= 15 : $digits === 10 || $digits === 11;
     }
 
-    public static function enqueue(PDO $db, $recordId, $call, array $request, $dependsOn = null)
+    public static function enqueue(PDO $db, $recordId, $call, array $request, $dependsOn = null, &$dropped = null)
     {
+        $dropped = array();
         if (!$db->inTransaction()) {
             throw new LogicException('Enqueue on the host transaction connection');
         }
-        $row = self::row($recordId, $call, $request, $dependsOn);
+        $row = self::row($recordId, $call, $request, $dependsOn, $dropped);
         if (!$row) {
             return false;
         }
@@ -651,14 +712,25 @@ class AccountGraphOutbox
                     continue;
                 }
                 $stop = false;
+                $last = json_decode($job['answer'] ?? '', true);
+                $now = microtime(true);
                 // Enqueue checked the prerequisite. Retention only deletes sent rows.
                 if ($job['parent_state'] !== null && $job['parent_state'] !== 'sent') {
                     // An in-flight prerequisite still protects its group's order until it has an answer.
                     $park = in_array($job['parent_state'], array('failed', 'refused', 'blocked'), true);
                     $state = $park ? 'blocked' : 'pending';
                     $answer = array('depends_on' => $job['depends_on']);
+                    if ($park) {
+                        $processed++;
+                    }
+                } elseif (is_numeric($last['retry_at'] ?? null) && $last['retry_at'] > $now) {
+                    // Persist the absolute cap once for rows written by older workers. Leave the send budget for ready groups.
+                    $state = 'pending';
+                    $answer = $last;
+                    $answer['retry_at'] = min((float) $last['retry_at'], $now + AccountGraph::MAX_RETRY_AFTER_SECONDS);
                 } else {
                     list($state, $answer, $stop) = self::send($graph, $job);
+                    $processed++;
                 }
                 $finish = "UPDATE $table SET state = ?, answer = ?" . ($state === 'sent' ? ', request = NULL' : '') . ' WHERE id = ?';
                 $store->execute($finish, array($state, AccountGraph::json($answer), $id));
@@ -667,7 +739,6 @@ class AccountGraphOutbox
                 $store->rollback();
                 throw $error;
             }
-            $processed++;
             $counts[$state]++;
             if ($stop) {
                 break;
@@ -678,10 +749,6 @@ class AccountGraphOutbox
 
     private static function send(AccountGraph $graph, array $job)
     {
-        $last = json_decode($job['answer'] ?? '', true);
-        if (isset($last['retry_at']) && $last['retry_at'] > microtime(true)) {
-            return array('pending', $last, true);
-        }
         try {
             $request = json_decode($job['request'] ?? '');
             $call = $job['call_name'];

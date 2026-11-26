@@ -1,13 +1,66 @@
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync } from 'node:fs'
+import { execFile, spawnSync } from 'node:child_process'
+import { once } from 'node:events'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
+import { createEdge } from '../src/edge/index.ts'
+import { accountGraph } from '../src/index.ts'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const probe = spawnSync('php', ['-r', "exit(extension_loaded('pdo_sqlite') ? 0 : 1);"])
 const skip = probe.error ? 'php is not on the PATH' : probe.status !== 0 ? 'pdo_sqlite is not loaded' : false
+
+test('the PHP guide shows how to link decisions for one pair across a repair', () => {
+  const guide = readFileSync(join(root, 'docs/php.md'), 'utf8')
+  const guidance = guide.split(/\n\s*\n/).find(p => p.includes('`decide`') && p.includes('`depends_on`'))
+  assert.ok(guidance, 'the pair must carry an explicit decision dependency')
+  for (const term of ['pair', 'merge', 'unmerge', 'split', 'unsplit', 'repair', 'older', 'newer', 'profile', 'at']) assert.match(guidance, new RegExp('\\b' + term + '\\b', 'i'))
+  assert.match(guide, /->enqueue\(\s*\$\w+,\s*'decide',\s*\$\w+,\s*\$\w+\s*\)/)
+})
+
+test('a restarted CI3 worker sends merge before unmerge and split before unsplit after repair', { skip }, async t => {
+  const app = mkdtempSync(join(root, '.ci-outbox-'))
+  t.after(() => rmSync(app, { recursive: true, force: true }))
+  mkdirSync(join(app, 'application'))
+  symlinkSync(join(root, 'examples/php'), join(app, 'application/third_party'))
+  const graph = accountGraph({ memory: true })
+  const edge = createEdge(graph, { token: 'synthetic-test', limit: false })
+  const server = createServer(edge).listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  t.after(async () => {
+    const closed = once(server, 'close')
+    server.close()
+    server.closeAllConnections()
+    await closed
+    await edge.drain()
+    await graph.close()
+  })
+  const url = 'http://127.0.0.1:' + (server.address() as AddressInfo).port
+  const fixture = join(root, 'test/fixtures/php/codeigniter.php')
+  const run = async (stage: 'queue' | 'repair') => {
+    const { stdout, stderr } = await promisify(execFile)('php', [fixture, app, 'pdo_mysql', stage, join(app, 'outbox.sqlite'), url], { timeout: 10_000 })
+    assert.equal(stderr, '')
+    return JSON.parse(stdout) as { id: number; item_key: string; depends_on: number | null; state: string; answer: string }[]
+  }
+  const subjects = ['contact:0', 'contact:1', 'contact:2', 'contact:3']
+  const { results } = await graph.record({ entries: subjects.map((subject, i) => ({ type: 'profile', subject, key: 'profile-' + i, at: 500, facts: { email: 'row' + i + '@example.org' } })) })
+  assert.ok(results.every(row => row.ok))
+  const parked = await run('queue')
+  assert.deepEqual(parked.map(row => [row.item_key, row.state, row.depends_on]), [['merge', 'failed', null], ['unmerge', 'blocked', parked[0]!.id], ['split', 'failed', null], ['unsplit', 'blocked', parked[2]!.id]])
+  assert.equal((await graph.lookup({ kind: 'person', subjects, at: 2000 })).decisions, 0)
+  const sent = await run('repair')
+  assert.deepEqual(sent.map(row => [row.state, JSON.parse(row.answer).value.recorded]), Array(4).fill(['sent', 1]))
+  for (const [subject, expected] of [['contact:0', ['join', 'unjoin']], ['contact:2', ['separate', 'rejoin']]] as const) {
+    const { entries } = await graph.lookup({ kind: 'journey', subject })
+    const decisions = entries.filter(entry => entry.kind === 'decision').sort((a, b) => a.decision - b.decision)
+    assert.deepEqual(decisions.map(entry => entry.action), expected)
+  }
+})
 
 test('the CI3 model uses the host transaction and query builder with mysqli and PDO connections', { skip }, () => {
   const app = mkdtempSync(join(root, '.ci-outbox-'))

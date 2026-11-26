@@ -4,13 +4,14 @@ require_once APPPATH . 'third_party/AccountGraph.php';
 
 class Graph_outbox extends CI_Model
 {
-    public function enqueue($recordId, $call, array $request, $dependsOn = null)
+    public function enqueue($recordId, $call, array $request, $dependsOn = null, &$dropped = null)
     {
+        $dropped = array();
         $this->load->database();
         if ($this->transactionActive() === false) {
             throw new LogicException('Queue the graph write in the host transaction.');
         }
-        $fields = AccountGraphOutbox::row($recordId, $call, $request, $dependsOn);
+        $fields = AccountGraphOutbox::row($recordId, $call, $request, $dependsOn, $dropped);
         if ($fields === null) {
             return false;
         }

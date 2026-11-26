@@ -7,7 +7,9 @@ require_once __DIR__ . '/AccountGraph.php';
 $graph = new AccountGraph(getenv('GRAPH_URL'), getenv('GRAPH_TOKEN'), 1000, 35000, 3);
 ```
 
-Give the server's base URL, such as `https://graph.example.org`. The last three arguments are the connect timeout in milliseconds, the timeout for the entire request in milliseconds per attempt, and the maximum number of attempts. On a retryable fault the client resends the request with its original keys. In a completed batch it retries only entries marked `NOT_ATTEMPTED`. The default attempt allows 35 seconds because the graph has a 30-second record budget and the reply must travel back. The wait starts at 50 ms and doubles on each retry. A retryable response’s `Retry-After` header can extend the wait. If the server asks for more than five seconds, the client returns the fault to the caller for later delivery. The worker saves that deadline across cron runs. A TLS verification or handshake failure reports `CONFIG.INVALID` with a TLS detail. A timeout reports `TRANSPORT.INDETERMINATE` because a write may already have committed. Keep the bearer token in the server environment. Keep request bodies, contact details, SQL parameters and exception traces out of application logs.
+Give the server's base URL, such as `https://graph.example.org`. The last three arguments are the connect timeout in milliseconds, the timeout for the entire request in milliseconds per attempt, and the maximum number of attempts. On a retryable fault the client resends the request with its original keys. In a completed batch it retries only entries marked `NOT_ATTEMPTED`. The default attempt allows 35 seconds because the graph has a 30-second record budget and the reply must travel back.
+
+The wait starts at 50 ms and doubles on each retry. `Retry-After` can extend it by up to 15 minutes. A zero, negative or past value leaves the normal backoff in effect. For a wait over five seconds the client returns the fault so a worker can schedule the retry. A standalone caller can pass `$fault->detail['retryAfter'] ?? null` to `AccountGraph::retryAt()` for the capped Unix timestamp in seconds. A TLS verification or handshake failure reports `CONFIG.INVALID` with a TLS detail. A timeout reports `TRANSPORT.INDETERMINATE` because a write may already have committed. Keep the bearer token in the server environment. Keep request bodies, contact details, SQL parameters and exception traces out of application logs.
 
 ## Where the calls belong
 
@@ -126,7 +128,7 @@ try {
         'type' => 'profile', 'key' => AccountGraph::key('desk.profile', $id, $revision + 1),
         'at' => $at, 'subject' => $subject, 'facts' => array('email' => $email)
     );
-    $this->graph_outbox->enqueue($subject, 'record', array('entries' => array($entry)));
+    $outboxId = $this->graph_outbox->enqueue($subject, 'record', array('entries' => array($entry)), null, $dropped);
     if (!$db->trans_status() || !$db->trans_commit()) {
         throw new RuntimeException('Contact save did not commit.');
     }
@@ -138,9 +140,19 @@ try {
 
 The producer screens profile facts before storing the JSON. It drops unknown fields, malformed email addresses, unusable phone formats, invalid devices and IP addresses, incomplete names and addresses, invalid calendar dates or dates outside the required format, and malformed identifier strings. It keeps usable fields from the same profile. With only a name or no facts and no usable speaker, `enqueue` returns `false` and the host can still commit its contact. A valid speaker permits empty subject facts. The graph applies its policy, country rules and provider checks to what remains.
 
+In the example, `$dropped` receives a fresh map of field paths to reasons. When `$outboxId === false`, use those reasons to tell staff why the profile was skipped. A partially accepted profile can also have entries in `$dropped`. Known fields have paths such as `facts.email`. Unknown names are grouped under a path such as `facts.*`, since a form can put contact details in a field name. Reasons omit the submitted values. With standalone PDO, pass the same final argument to `AccountGraphOutbox::enqueue($db, $subject, 'record', $request, null, $dropped)`.
+
 Use one `record_id` per record to preserve send order. A shared group also works for edits spanning multiple records, provided producers lock a common host row before allocating outbox IDs. A commit that arrives late can otherwise become visible after its successor. Each queued `record` carries one entry.
 
 On insert, `enqueue` returns the outbox ID as a decimal string. Pass that ID as the optional fourth argument to the CI model (fifth to standalone `enqueue`) when a later write requires that **specific earlier write** to succeed. For example, a restatement that corrects a conversion can depend on the conversion row. The writer declares this dependency when it knows the business relationship. Sharing a contact or ordering group alone does not declare a dependency. If a proposed prerequisite was screened out, handle that case at the host before enqueueing a dependent write.
+
+**Link successive `decide` entries for the same pair with `depends_on`.** A merge followed by an unmerge, or a split followed by an unsplit, must reach the graph in that order. After a repair, the worker can send an older row after a newer one. A late profile is safe in this respect because its sightings carry the original event time (`at`), and its standing `createdAt` is ordered by `at`, then `key`. Replaying paired decisions out of order can change which decision stands.
+
+Under the host lock for the pair, read its previous outstanding decision's outbox ID, or use `null` if there is none. Use the same group and predecessor whether staff select A then B or B then A. Store the returned ID with the host decision in the same transaction so the next edit can depend on it.
+
+```php
+$decisionRowId = $this->graph_outbox->enqueue($pairGroup, 'decide', $decision, $previousDecisionRowId);
+```
 
 Schedule the CLI worker once a minute, with the same application environment as the web process.
 
@@ -148,7 +160,7 @@ Schedule the CLI worker once a minute, with the same application environment as 
 * * * * * cd /path/to/application-root && /usr/bin/php index.php graph_worker run
 ```
 
-On success the worker saves the answer, item kind and key and clears the request body in the same transaction. A lost acknowledgment leaves the original key safe to repeat. An authentication, configuration, graph or transport fault ends the pass immediately. The row stays pending, with the fault available for diagnosis. After the service recovers, cron resumes automatically. An exhausted `NOT_ATTEMPTED` also stays pending.
+On success the worker saves the answer, item kind and key and clears the request body in the same transaction. A lost acknowledgment leaves the original key safe to repeat. A fresh authentication, configuration, graph or transport fault ends the current pass. The row stays pending with the fault in `answer`. If the answer has a `retry_at` deadline, subsequent passes hold later writes in that row's group and continue sending independent groups. The worker persists the deadline across restarts and shortens any previously saved deadline beyond 15 minutes to 15 minutes from the time it first reads it. Cron counts a waiting row under `pending`. Its saved answer gives staff the fault code and the retry time in Unix seconds. An exhausted `NOT_ATTEMPTED` also stays pending.
 
 An item refusal stays `refused` with the full answer. A malformed or oversized write stays `failed` with the input fault and its detail. The worker continues with independent changes, including later changes to the same record. A write whose explicit prerequisite was set aside becomes `blocked`. Once the prerequisite succeeds, a later pass picks up its children. Staff can inspect unresolved rows with `SELECT id, item_kind, state, depends_on FROM account_graph_outbox WHERE state <> 'sent' ORDER BY id`. Resolve the cause before returning a refused or malformed row to `pending`. Verify a `KEY_REUSED` against the original host transaction.
 
