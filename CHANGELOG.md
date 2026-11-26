@@ -172,6 +172,9 @@
 ### Reviewer screen
 
 - A separate React Router app renders Accounts, Journey, Board and Calls on the server. It checks a reviewer token at sign-in, keeps it on the server and follows graph changes for the open page. See the [review app](docs/review-app.md).
+- The review app links to the original screen only at `REVIEW_LEGACY_URL`, refuses a `REVIEW_SESSION_SECRET` shorter than 32 characters and allows ten sign-in attempts per address in fifteen minutes.
+- One process follows the graph once for all open tabs. Without `REVIEW_EVENTS_TOKEN` the pages say live updates are off, and a server restart ends event streams without signing anyone out.
+- Review app times are in the reviewer’s zone, stored by the browser in a cookie, and in the report’s zone until then. Long IDs are shortened in links, names and IDs are isolated for right-to-left text, and Board, Calls and the audit log regain the original screen’s Period label, date presets, Copy time and `system desk` authors.
 - The firm stage serves its current scene, loading progress and last result from the server. Scenes submit as forms, and open stages receive updates over a server-sent event stream. PostgreSQL loads the sample history in a batched transaction. See the [demo](docs/demo.md).
 - `undecided` pages through ranked pairs from recent sightings and can sweep every subject, including those with pruned sightings.
 - Detail cards open from an icon beside a number or a row on Calls, Board, Journey and Health. Each holds what is behind it, names how it is known and leaves out what is not. See the [reviewer screen](docs/operations.md#reviewer-screen).
