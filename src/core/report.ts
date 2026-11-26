@@ -122,7 +122,7 @@ interface Told {
 export function dimension(by: string, timeZone?: string): (told: Told) => string {
   if (by === 'hour' || by === 'weekday') return ({ at }) => hourIn(at, timeZone)[by]
   const [, side, name] = /^(touch|outcome)\.(.+)$/.exec(by) ?? []
-  if (!side || !name || !DIMENSION.test(name)) throw malformed(`"${by}" is not a dimension; use touch.<name>, outcome.<name>, hour or weekday`)
+  if (!side || !name || !DIMENSION.test(name)) throw malformed(`"${by}" is not a dimension. Use touch.<name>, outcome.<name>, hour or weekday`)
   if (side === 'touch') return ({ touch }) => touchTag(touch, name) ?? NOT_SET
   return ({ tags }) => (tags && Object.hasOwn(tags, name) ? tags[name]! : NOT_SET)
 }

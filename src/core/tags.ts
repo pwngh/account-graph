@@ -18,10 +18,10 @@ export function checkTags(given: unknown, what: string): Tags | undefined {
   const entries = Object.entries(given)
   if (entries.length > 8) throw malformed(`${what} has more than 8 tags`)
   for (const [name, value] of entries) {
-    if (!/^[a-z_]{1,32}$/.test(name)) throw malformed(`${what} has a tag named "${name}"; a name is lowercase letters and underscores, at most 32`)
+    if (!/^[a-z_]{1,32}$/.test(name)) throw malformed(`${what} has a tag named "${name}". A tag name is 1 to 32 lowercase letters and underscores`)
     if (typeof value !== 'string' || !value.trim() || value.length > 64) throw malformed(`${what} requires its tag "${name}" as a string of at most 64 characters`)
     // It would read as a value that was never recorded.
-    if (value.trim() === NOT_SET) throw malformed(`${what} cannot have "${NOT_SET}" as its tag "${name}"; leave the tag out`)
+    if (value.trim() === NOT_SET) throw malformed(`${what} cannot have "${NOT_SET}" as its tag "${name}". Leave the tag out`)
   }
   if (entries.length === 0) return undefined
   const tags: Tags = Object.fromEntries(entries.map(([name, value]) => [name, value.trim()]))
