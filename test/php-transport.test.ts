@@ -75,15 +75,19 @@ test('PHP waits for Retry-After seconds or dates and returns longer waits to the
     const now = Date.now()
     dates.push(now)
     if (dates.length > 1) return res.end('null')
+    if (hint === 'closed') return res.writeHead(503, { 'retry-after': '3600' }).end(JSON.stringify({ fault: { code: 'GRAPH.CLOSED', retryable: false, detail: {} } }))
     const header = hint === 'date' ? new Date(now + 1800).toUTCString() : hint
     earliest = hint === 'date' ? Date.parse(header) : now + Number(header) * 1000
     res.writeHead(503, { 'retry-after': header, 'content-type': 'application/json' }).end(JSON.stringify({ fault: { code: 'GRAPH.UNAVAILABLE', retryable: true, detail: {} } }))
   }))
   for (const ini of transports()) {
-    for (hint of ['1', 'date', '3600']) {
+    for (hint of ['1', 'date', '3600', 'closed']) {
       dates.length = 0
       const answer = await php(read, [url], ini)
-      if (hint === '3600') {
+      if (hint === 'closed') {
+        assert.deepEqual(answer, { code: 'GRAPH.CLOSED', retryable: false, detail: { retryAfter: '3600' } })
+        assert.equal(dates.length, 1)
+      } else if (hint === '3600') {
         assert.deepEqual(answer, { code: 'GRAPH.UNAVAILABLE', retryable: true, detail: { retryAfter: hint } })
         assert.equal(dates.length, 1)
       } else {

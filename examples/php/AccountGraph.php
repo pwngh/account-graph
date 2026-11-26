@@ -223,7 +223,7 @@ class AccountGraph
                 }
                 $body = self::json(array('entries' => $remaining));
             } catch (AccountGraphFault $fault) {
-                if ($fault->retryable && isset($response[2]) && $response[2] !== '') {
+                if (isset($response[2]) && $response[2] !== '') {
                     $fault->detail['retryAfter'] = $response[2];
                 }
                 if (!$fault->retryable || $attempt === $this->attempts) {
@@ -457,86 +457,306 @@ class AccountGraph
 
 class AccountGraphOutbox
 {
-    public static function enqueue(PDO $db, $recordId, $call, array $request)
+    // The host's query builder can insert this same row on the connection that changed the contact.
+    public static function row($recordId, $call, array $request, $dependsOn = null)
     {
-        if (!$db->inTransaction() || $db->getAttribute(PDO::ATTR_ERRMODE) !== PDO::ERRMODE_EXCEPTION) {
-            throw new LogicException('Enqueue on the host transaction connection in PDO exception mode');
-        }
         if (!is_string($recordId) || $recordId === '' || strlen($recordId) > 200 || !in_array($call, array('record', 'decide', 'forget'), true)) {
             throw new InvalidArgumentException('A record ID and a write call are required');
         }
-        $body = AccountGraph::json((object) $request);
-        $write = json_decode($body);
+        if ($dependsOn !== null && ((!is_string($dependsOn) && !is_int($dependsOn)) || !preg_match('/^[1-9][0-9]*$/D', (string) $dependsOn))) {
+            throw new InvalidArgumentException('A prerequisite must be an existing outbox row ID');
+        }
+        $write = $request;
+        $kind = $call;
         if ($call === 'record') {
-            if (!isset($write->entries) || !is_array($write->entries) || count($write->entries) !== 1) {
+            if (!isset($request['entries'][0]) || !is_array($request['entries']) || count($request['entries']) !== 1) {
                 throw new InvalidArgumentException('Enqueue one record entry per row');
             }
-            $write = $write->entries[0];
+            $write = (array) $request['entries'][0];
+            $kind = $write['type'] ?? '';
+            if (!in_array($kind, array('profile', 'arrival', 'cost', 'conversion', 'restatement', 'payment', 'call', 'call_update', 'text', 'consent', 'link', 'transfer'), true)) {
+                throw new InvalidArgumentException('Unknown record entry type');
+            }
         }
-        if (!isset($write->key, $write->at) || !is_string($write->key) || $write->key === '') {
+        if (!isset($write['key'], $write['at']) || !self::text($write['key'], 200)) {
             throw new InvalidArgumentException('Store the original key and at with each write');
         }
-        $insert = $db->prepare('INSERT INTO account_graph_outbox (record_id, call_name, request, state) VALUES (?, ?, ?, ?)');
-        $insert->execute(array($recordId, $call, $body, 'pending'));
+        if ($kind === 'profile') {
+            $facts = self::facts($write['facts'] ?? array(), false);
+            $speaker = self::facts($write['speaker'] ?? array(), true);
+            if (!$speaker && (!$facts || array_keys($facts) === array('name'))) {
+                return null;
+            }
+            $write['facts'] = (object) $facts;
+            unset($write['speaker']);
+            if ($speaker) {
+                $write['speaker'] = (object) $speaker;
+            }
+            $request['entries'] = array($write);
+        }
+        return array('record_id' => $recordId, 'call_name' => $call, 'item_kind' => $kind, 'item_key' => $write['key'],
+            'request' => AccountGraph::json((object) $request), 'state' => 'pending', 'depends_on' => $dependsOn);
+    }
+
+    private static function text($value, $limit)
+    {
+        if (!is_string($value) || $value === '' || strlen($value) > $limit * 4 || strpos($value, "\0") !== false) {
+            return false;
+        }
+        // The wire limit counts UTF-16 units. Each character outside the BMP takes two.
+        $chars = preg_match_all('/./us', $value);
+        return $chars !== false && $chars + preg_match_all('/[\x{10000}-\x{10ffff}]/u', $value) <= $limit;
+    }
+
+    private static function facts($given, $speaker)
+    {
+        $fields = is_array($given) || is_object($given) ? (array) $given : array();
+        $facts = array();
+        $email = $fields['email'] ?? null;
+        if (self::text($email, 512)) {
+            $trimmed = preg_replace('/^[\s\x{feff}]+|[\s\x{feff}]+$/u', '', $email);
+            $at = strrpos($trimmed, '@');
+            if ($at !== false && $at > 0 && $at < strlen($trimmed) - 1) {
+                $facts['email'] = $email;
+            }
+        }
+        $phone = $fields['phone'] ?? null;
+        if (self::text($phone, 64) && self::phone($phone)) {
+            $facts['phone'] = $phone;
+        }
+        if (isset($fields['device']) && is_string($fields['device']) && preg_match('/^[a-zA-Z0-9_.-]{1,128}$/D', $fields['device'])) {
+            $facts['device'] = $fields['device'];
+        }
+        if ($speaker) {
+            return $facts;
+        }
+        if (self::text($fields['ip'] ?? null, 64) && @inet_pton(trim($fields['ip'])) !== false) {
+            $facts['ip'] = $fields['ip'];
+        }
+        $name = (array) ($fields['name'] ?? array());
+        if (self::text($name['first'] ?? null, 200) && self::text($name['last'] ?? null, 200)) {
+            $facts['name'] = array('first' => $name['first'], 'last' => $name['last']);
+        }
+        $dob = $fields['dob'] ?? null;
+        if (is_string($dob) && preg_match('/^([0-9]{4})-([0-9]{2})-([0-9]{2})$/D', $dob, $parts)
+            && checkdate((int) $parts[2], (int) $parts[3], (int) $parts[1])) {
+            $facts['dob'] = $dob;
+        }
+        $address = (array) ($fields['address'] ?? array());
+        if (self::text($address['street'] ?? null, 2048) && trim($address['street']) !== '') {
+            $facts['address'] = array('street' => $address['street']);
+            foreach (array('street2' => 2048, 'secondary' => 200, 'city' => 200, 'state' => 200, 'zipcode' => 200) as $field => $limit) {
+                if (self::text($address[$field] ?? null, $limit)) {
+                    $facts['address'][$field] = $address[$field];
+                }
+            }
+        }
+        if (isset($fields['identifiers']) && is_array($fields['identifiers'])) {
+            foreach ($fields['identifiers'] as $id) {
+                if (is_string($id) && strlen($id) <= 1024 && strpos($id, "\0") === false && preg_match('/^[^:]+:\s*\S/us', $id)) {
+                    $facts['identifiers'][] = $id;
+                    if (count($facts['identifiers']) === 100) {
+                        break;
+                    }
+                }
+            }
+        }
+        return $facts;
+    }
+
+    private static function phone($phone)
+    {
+        // Keep the provider's spelling. An extension is never part of the line's digit count.
+        $parts = preg_split('/(?<=[0-9)])[\s.,\/;(-]*(?:extensi(?:[oó]|o\x{0301})n|extn?|anexo|interno|int|postd)(?!\p{L})[\s.:(=#-]*[0-9]+(?![\p{L}0-9])/iu', $phone, 2);
+        $line = $parts ? $parts[0] : $phone;
+        $international = preg_match('/^[\s\x{feff}]*\+/u', $line);
+        preg_match_all('/(?<=[0-9)])[\s.\/(-]*(?:x|#|[,;]+|[pw](?=[0-9]))[\s.:(=#-]*(?=[0-9]{1,7}(?![\p{L}0-9]|[\s.()-]*[0-9]{3}))/iu', $line, $marks, PREG_OFFSET_CAPTURE);
+        foreach ($marks[0] as $mark) {
+            $prefix = substr($line, 0, $mark[1]);
+            $digits = strlen(preg_replace('/[^0-9]/', '', $prefix));
+            if ($digits >= 10 && $digits <= ($international ? 15 : 11)) {
+                $line = $prefix;
+                break;
+            }
+        }
+        $digits = strlen(preg_replace('/[^0-9]/', '', $line));
+        return $international ? $digits >= 8 && $digits <= 15 : $digits === 10 || $digits === 11;
+    }
+
+    public static function enqueue(PDO $db, $recordId, $call, array $request, $dependsOn = null)
+    {
+        if (!$db->inTransaction()) {
+            throw new LogicException('Enqueue on the host transaction connection');
+        }
+        $row = self::row($recordId, $call, $request, $dependsOn);
+        if (!$row) {
+            return false;
+        }
+        $store = new AccountGraphOutboxPDO($db);
+        if ($dependsOn !== null && !$store->one('SELECT id FROM account_graph_outbox WHERE id = ?', array($dependsOn))) {
+            throw new InvalidArgumentException('The prerequisite outbox row does not exist');
+        }
+        $sql = 'INSERT INTO account_graph_outbox (' . implode(', ', array_keys($row)) . ') VALUES (?, ?, ?, ?, ?, ?, ?)';
+        if ($db->getAttribute(PDO::ATTR_DRIVER_NAME) === 'pgsql') {
+            return (string) $store->one($sql . ' RETURNING id', array_values($row))['id'];
+        }
+        $store->execute($sql, array_values($row));
+        return (string) $db->lastInsertId();
     }
 
     public static function run(PDO $db, AccountGraph $graph, $limit = 100)
     {
-        if ($db->inTransaction() || $db->getAttribute(PDO::ATTR_ERRMODE) !== PDO::ERRMODE_EXCEPTION) {
-            throw new LogicException('Run the worker on an idle connection in PDO exception mode');
+        if ($db->inTransaction()) {
+            throw new LogicException('Run the worker on an idle connection');
         }
+        return self::work(new AccountGraphOutboxPDO($db), $graph, $limit);
+    }
+
+    public static function work($store, AccountGraph $graph, $limit = 100)
+    {
         if (!is_int($limit) || $limit < 1) {
             throw new InvalidArgumentException('The worker limit must be a positive integer');
         }
-        $counts = array('sent' => 0, 'refused' => 0, 'failed' => 0, 'pending' => 0);
-        $next = $db->prepare("SELECT j.id FROM account_graph_outbox j WHERE j.id > ? AND j.state = 'pending'
-            AND NOT EXISTS (SELECT 1 FROM account_graph_outbox older WHERE older.record_id = j.record_id AND older.id < j.id AND older.state <> 'sent')
-            ORDER BY j.id LIMIT 1");
-        $claim = $db->prepare("UPDATE account_graph_outbox SET state = 'sending' WHERE id = ? AND state = 'pending'");
-        $read = $db->prepare('SELECT call_name, request FROM account_graph_outbox WHERE id = ?');
-        $finish = $db->prepare('UPDATE account_graph_outbox SET state = ?, answer = ? WHERE id = ?');
+        $counts = array('sent' => 0, 'refused' => 0, 'failed' => 0, 'blocked' => 0, 'pending' => 0);
+        $table = 'account_graph_outbox';
+        // A parked dependency blocks its descendants. A repaired prerequisite makes its children eligible again.
+        $earlier = "FROM $table older LEFT JOIN $table parent ON parent.id = older.depends_on
+            WHERE older.record_id = j.record_id AND older.id < j.id AND (older.state IN ('pending','sending')
+                OR (older.state = 'blocked' AND (parent.id IS NULL OR parent.state = 'sent')))";
+        $next = "SELECT j.id, j.state FROM $table j LEFT JOIN $table p ON p.id = j.depends_on
+            WHERE j.id > ? AND (j.state = 'pending' OR (j.state = 'blocked' AND (p.id IS NULL OR p.state = 'sent')))
+            AND NOT EXISTS (SELECT 1 $earlier) ORDER BY j.id LIMIT 1";
+        $claimed = "SELECT j.call_name, j.request, j.answer, j.depends_on, p.state AS parent_state,
+            (SELECT MIN(older.id) - 1 $earlier) AS restart_after FROM $table j LEFT JOIN $table p ON p.id = j.depends_on WHERE j.id = ?";
         $id = 0;
-        for ($i = 0; $i < $limit; $i++) {
-            $next->execute(array($id));
-            $id = $next->fetchColumn();
-            $next->closeCursor();
-            if ($id === false) {
+        $processed = 0;
+        while ($processed < $limit) {
+            $row = $store->one($next, array($id));
+            if (!$row) {
                 break;
             }
-            $db->beginTransaction();
+            $id = $row['id'];
+            $store->begin();
             try {
-                // Only one worker sends this row. A crash rolls back the claim and leaves the original keys in place.
-                $claim->execute(array($id));
-                if (!$claim->rowCount()) {
-                    $db->rollBack();
+                // A crash rolls back the claim, so the next worker retries the original key.
+                if (!$store->execute("UPDATE $table SET state = 'sending' WHERE id = ? AND state = ?", array($id, $row['state']))) {
+                    $store->rollback();
                     continue;
                 }
-                $read->execute(array($id));
-                $job = $read->fetch(PDO::FETCH_ASSOC);
-                $read->closeCursor();
-                $call = $job['call_name'];
-                try {
-                    $request = json_decode($job['request']);
-                    if (!is_object($request) || !in_array($call, array('record', 'decide', 'forget'), true)) {
-                        throw new AccountGraphFault('INPUT.MALFORMED');
-                    }
-                    $answer = $graph->$call((array) $request);
-                    $decision = $call === 'record' ? $answer['results'][0] : $answer;
-                    $state = $decision['ok'] ? 'sent' : ($decision['reason'] === 'NOT_ATTEMPTED' ? 'pending' : 'refused');
-                } catch (AccountGraphFault $fault) {
-                    $answer = array('fault' => array('code' => $fault->faultCode, 'retryable' => $fault->retryable, 'detail' => $fault->detail));
-                    $state = $fault->retryable ? 'pending' : 'failed';
+                $job = $store->one($claimed, array($id));
+                if ($job['restart_after'] !== null) {
+                    // A concurrent repair can make an older row ready between selection and claim.
+                    $id = $job['restart_after'];
+                    $store->rollback();
+                    continue;
                 }
-                $finish->execute(array($state, AccountGraph::json($answer), $id));
-                $db->commit();
-                $counts[$state]++;
+                $stop = false;
+                // Enqueue checked the prerequisite. Retention only deletes sent rows.
+                if ($job['parent_state'] !== null && $job['parent_state'] !== 'sent') {
+                    // An in-flight prerequisite still protects its group's order until it has an answer.
+                    $park = in_array($job['parent_state'], array('failed', 'refused', 'blocked'), true);
+                    $state = $park ? 'blocked' : 'pending';
+                    $answer = array('depends_on' => $job['depends_on']);
+                } else {
+                    list($state, $answer, $stop) = self::send($graph, $job);
+                }
+                $finish = "UPDATE $table SET state = ?, answer = ?" . ($state === 'sent' ? ', request = NULL' : '') . ' WHERE id = ?';
+                $store->execute($finish, array($state, AccountGraph::json($answer), $id));
+                $store->commit();
             } catch (Throwable $error) {
-                if ($db->inTransaction()) {
-                    $db->rollBack();
-                }
+                $store->rollback();
                 throw $error;
+            }
+            $processed++;
+            $counts[$state]++;
+            if ($stop) {
+                break;
             }
         }
         return $counts;
+    }
+
+    private static function send(AccountGraph $graph, array $job)
+    {
+        $last = json_decode($job['answer'] ?? '', true);
+        if (isset($last['retry_at']) && $last['retry_at'] > microtime(true)) {
+            return array('pending', $last, true);
+        }
+        try {
+            $request = json_decode($job['request'] ?? '');
+            $call = $job['call_name'];
+            if (!is_object($request) || !in_array($call, array('record', 'decide', 'forget'), true)) {
+                throw new AccountGraphFault('INPUT.MALFORMED');
+            }
+            $answer = $graph->$call((array) $request);
+            $decision = $call === 'record' ? $answer['results'][0] : $answer;
+            $state = $decision['ok'] ? 'sent' : ($decision['reason'] === 'NOT_ATTEMPTED' ? 'pending' : 'refused');
+            return array($state, $answer, false);
+        } catch (AccountGraphFault $fault) {
+            $answer = array('fault' => array('code' => $fault->faultCode, 'retryable' => $fault->retryable, 'detail' => $fault->detail));
+            if (in_array($fault->faultCode, array('INPUT.MALFORMED', 'INPUT.TOO_LARGE'), true)) {
+                return array('failed', $answer, false);
+            }
+            if (isset($fault->detail['retryAfter'])) {
+                $retryAt = AccountGraph::retryAt($fault->detail['retryAfter']);
+                if ($retryAt !== null) {
+                    $answer['retry_at'] = $retryAt;
+                }
+            }
+            return array('pending', $answer, true);
+        }
+    }
+}
+
+class AccountGraphOutboxPDO
+{
+    private $db;
+
+    public function __construct(PDO $db)
+    {
+        $this->db = $db;
+    }
+
+    private function query($sql, array $args)
+    {
+        $query = @$this->db->prepare($sql);
+        if (!$query || !@$query->execute($args)) {
+            throw new RuntimeException('Outbox query failed');
+        }
+        return $query;
+    }
+
+    public function one($sql, array $args)
+    {
+        $query = $this->query($sql, $args);
+        $row = $query->fetch(PDO::FETCH_ASSOC);
+        $query->closeCursor();
+        return $row ?: null;
+    }
+
+    public function execute($sql, array $args)
+    {
+        return $this->query($sql, $args)->rowCount();
+    }
+
+    public function begin()
+    {
+        if (!@$this->db->beginTransaction()) {
+            throw new RuntimeException('Could not start the outbox transaction');
+        }
+    }
+
+    public function commit()
+    {
+        if (!@$this->db->commit()) {
+            throw new RuntimeException('Could not commit the outbox transaction');
+        }
+    }
+
+    public function rollback()
+    {
+        if ($this->db->inTransaction() && !@$this->db->rollBack()) {
+            throw new RuntimeException('Could not roll back the outbox transaction');
+        }
     }
 }

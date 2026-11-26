@@ -1,13 +1,13 @@
 # PHP and CodeIgniter 3
 
-Copy [AccountGraph.php](../examples/php/AccountGraph.php) into your application. The client targets PHP 7.2 and later. It was syntax-checked and exercised on PHP 8.5.6, including its stream transport and SQLite outbox. PHP 7.2 compatibility was checked by source review. It uses JSON and cURL, with PHP streams when cURL is absent. HTTPS needs the host's trusted CA certificates and, for streams, OpenSSL. Only loopback may use plain HTTP. The optional outbox uses PDO and the driver for the host database.
+Copy [AccountGraph.php](../examples/php/AccountGraph.php) into your application. The client targets PHP 7.2 and later. It was syntax-checked and exercised on PHP 8.5.6, including its stream transport and SQLite outbox. PHP 7.2 compatibility was checked by source review. It uses JSON and cURL, with PHP streams when cURL is absent. HTTPS needs the host's trusted CA certificates and, for streams, OpenSSL. Only loopback may use plain HTTP. The standalone outbox uses PDO. The CodeIgniter model uses the host’s existing query builder and connection.
 
 ```php
 require_once __DIR__ . '/AccountGraph.php';
-$graph = new AccountGraph(getenv('GRAPH_URL'), getenv('GRAPH_TOKEN'), 1000, 5000, 3);
+$graph = new AccountGraph(getenv('GRAPH_URL'), getenv('GRAPH_TOKEN'), 1000, 35000, 3);
 ```
 
-Give the server's base URL, such as `https://graph.example.org`. The last three arguments are the connect timeout in milliseconds, the timeout for the entire request in milliseconds per attempt, and the maximum number of attempts. On a retryable fault the client resends the request with its original keys. In a completed batch it retries only entries marked `NOT_ATTEMPTED`. The wait starts at 50 ms and doubles on each retry. Keep the bearer token in the server environment. Keep request bodies, contact details, SQL parameters and exception traces out of application logs.
+Give the server's base URL, such as `https://graph.example.org`. The last three arguments are the connect timeout in milliseconds, the timeout for the entire request in milliseconds per attempt, and the maximum number of attempts. On a retryable fault the client resends the request with its original keys. In a completed batch it retries only entries marked `NOT_ATTEMPTED`. The default attempt allows 35 seconds because the graph has a 30-second record budget and the reply must travel back. The wait starts at 50 ms and doubles on each retry. A retryable response’s `Retry-After` header can extend the wait. If the server asks for more than five seconds, the client returns the fault to the caller for later delivery. The worker saves that deadline across cron runs. A TLS verification or handshake failure reports `CONFIG.INVALID` with a TLS detail. A timeout reports `TRANSPORT.INDETERMINATE` because a write may already have committed. Keep the bearer token in the server environment. Keep request bodies, contact details, SQL parameters and exception traces out of application logs.
 
 ## Where the calls belong
 
@@ -42,14 +42,14 @@ Never send case notes, medical or other health information, income, government i
 
 ## Install the CodeIgniter example
 
-Copy the four directories in [codeigniter/](../examples/php/codeigniter/) into the matching directories under `application/`. Place the client in `application/third_party/AccountGraph.php`. Set `GRAPH_URL` and `GRAPH_TOKEN` for the server process and cron. The library loads its timeouts from `application/config/graph_client.php`. Use the CI3 PDO database driver for the host's connection, configure `PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION` in its `options`, and disable database debugging, query logging and the profiler in production.
+Copy the four directories in [codeigniter/](../examples/php/codeigniter/) into the matching directories under `application/`. Place the client in `application/third_party/AccountGraph.php`. Set `GRAPH_URL` and `GRAPH_TOKEN` for the server process and cron. The library loads its timeouts from `application/config/graph_client.php`. Use your existing mysqli or PDO connection and transaction. The model checks failed writes with the host’s error mode in place. It submits builder-escaped writes through the driver directly so CI3’s query history and SQL error log do not capture the payload. Keep the token in the environment so the loader never receives it in its config array. Treat the CI profiler, saved queries, SQL error output and database logs as sensitive because they can contain bound values.
 
 ```php
 $this->load->library('graph_client');
 $this->load->model('graph_outbox');
 ```
 
-The library exposes the six methods of the standalone client. For a suggestion at contact creation, have the form make a separate authenticated request to a host endpoint. This call allows 80 ms to connect and 200 ms overall, with one attempt.
+The library exposes the six methods of the standalone client. For a suggestion at contact creation, have the form make a separate authenticated request to a host endpoint. This call allows 80 ms to connect and 200 ms overall, with one attempt. A synchronous DNS resolver on an older host can exceed the socket deadline, so keep the form independent of the suggestion request.
 
 ```php
 try {
@@ -64,7 +64,7 @@ Show only candidate records the operator can already open. Label each suggestion
 
 ## Host outbox
 
-Create the table once in the host database. On MySQL use a transactional engine for both the contact table and the outbox.
+Create the table once in the host database. If the CI3 connection has a table prefix, apply it to the table name in the SQL below. On MySQL use a transactional engine for both the contact table and the outbox.
 
 **MySQL**
 
@@ -73,7 +73,12 @@ CREATE TABLE account_graph_outbox (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   record_id VARCHAR(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   call_name VARCHAR(10) NOT NULL,
-  request MEDIUMTEXT NOT NULL,
+  item_kind TEXT NOT NULL,
+  item_key MEDIUMTEXT NOT NULL,
+  request MEDIUMTEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  depends_on BIGINT UNSIGNED,
+  INDEX ag_outbox_dependency (depends_on),
   state VARCHAR(10) NOT NULL DEFAULT 'pending',
   answer MEDIUMTEXT,
   INDEX ag_outbox_record (record_id, id),
@@ -88,26 +93,33 @@ CREATE TABLE account_graph_outbox (
   id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
   record_id VARCHAR(200) NOT NULL,
   call_name VARCHAR(10) NOT NULL,
-  request TEXT NOT NULL,
+  item_kind TEXT NOT NULL,
+  item_key TEXT NOT NULL,
+  request TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  depends_on BIGINT,
   state VARCHAR(10) NOT NULL DEFAULT 'pending',
   answer TEXT
 );
+CREATE INDEX ag_outbox_dependency ON account_graph_outbox (depends_on);
 CREATE INDEX ag_outbox_record ON account_graph_outbox (record_id, id);
 CREATE INDEX ag_outbox_pending ON account_graph_outbox (state, id);
 ```
 
-Update the contact and insert the outbox row on the **same connection, in the same transaction**. The conditional update below locks the contact and checks the revision the operator edited. If two people edit it, the second save must resolve the stale revision before queuing anything. The host supplies the contact ID, email, prior revision and time of this change.
+Update the contact and insert the outbox row on the **same connection, in the same transaction**. The conditional update below locks the contact and checks the revision the operator edited. If two people edit it, the second save must resolve the stale revision before queuing anything. The host supplies the contact ID, email, prior revision and time of this change. On older mysqli drivers that expose no transaction state, the producer owns this boundary. Run the worker on its own idle connection.
 
 ```php
 $this->load->model('graph_outbox');
 $this->load->database();
-$db = $this->db->conn_id;
-$db->beginTransaction();
+$db = $this->db;
+if (!$db->trans_begin()) {
+    throw new RuntimeException('Could not start the contact save.');
+}
 try {
-    $change = $db->prepare('UPDATE contacts SET email = ?, revision = revision + 1 WHERE id = ? AND revision = ?');
-    $change->execute(array($email, $id, $revision));
-    if ($change->rowCount() !== 1) {
-        throw new RuntimeException('Contact changed before the save.');
+    $changed = $db->where('id', $id)->where('revision', $revision)
+        ->update('contacts', array('email' => $email, 'revision' => $revision + 1));
+    if (!$changed || $db->affected_rows() !== 1) {
+        throw new RuntimeException('Contact could not be saved at this revision.');
     }
     $subject = 'contact:' . $id;
     $entry = array(
@@ -115,14 +127,20 @@ try {
         'at' => $at, 'subject' => $subject, 'facts' => array('email' => $email)
     );
     $this->graph_outbox->enqueue($subject, 'record', array('entries' => array($entry)));
-    $db->commit();
+    if (!$db->trans_status() || !$db->trans_commit()) {
+        throw new RuntimeException('Contact save did not commit.');
+    }
 } catch (Throwable $error) {
-    $db->rollBack();
+    $db->trans_rollback();
     throw $error;
 }
 ```
 
-Use the same `record_id` for every change that must stay in order. For a workflow that merges or erases several records, use a shared ordering group for **all** writes that may involve those records, including profiles. In that workflow lock one stable host row for the group before making the change and enqueuing it. A transaction that reserves an outbox ID and commits late can otherwise appear after its successor. The shared group can cover the whole integration on a small host. Queue each request once, with one entry per queued `record`.
+The producer screens profile facts before storing the JSON. It drops unknown fields, malformed email addresses, unusable phone formats, invalid devices and IP addresses, incomplete names and addresses, invalid calendar dates or dates outside the required format, and malformed identifier strings. It keeps usable fields from the same profile. With only a name or no facts and no usable speaker, `enqueue` returns `false` and the host can still commit its contact. A valid speaker permits empty subject facts. The graph applies its policy, country rules and provider checks to what remains.
+
+Use one `record_id` per record to preserve send order. A shared group also works for edits spanning multiple records, provided producers lock a common host row before allocating outbox IDs. A commit that arrives late can otherwise become visible after its successor. Each queued `record` carries one entry.
+
+On insert, `enqueue` returns the outbox ID as a decimal string. Pass that ID as the optional fourth argument to the CI model (fifth to standalone `enqueue`) when a later write requires that **specific earlier write** to succeed. For example, a restatement that corrects a conversion can depend on the conversion row. The writer declares this dependency when it knows the business relationship. Sharing a contact or ordering group alone does not declare a dependency. If a proposed prerequisite was screened out, handle that case at the host before enqueueing a dependent write.
 
 Schedule the CLI worker once a minute, with the same application environment as the web process.
 
@@ -130,7 +148,52 @@ Schedule the CLI worker once a minute, with the same application environment as 
 * * * * * cd /path/to/application-root && /usr/bin/php index.php graph_worker run
 ```
 
-The worker stores the graph answer on a sent row. A lost acknowledgment leaves the request safe to repeat with its saved key. A retryable fault or an exhausted `NOT_ATTEMPTED` stays pending. An item refusal stays `refused` with its reason, and a permanent fault stays `failed`. An earlier unresolved row holds back later rows in its ordering group. Cron prints counts for that pass. Staff can find older unresolved rows with `SELECT id, state FROM account_graph_outbox WHERE state <> 'sent' ORDER BY id`. Inspect the private answer, correct a refusal or fix the configuration, then return the row to `pending`. Reconcile a `KEY_REUSED` against the host's original transaction before doing so. Restrict access to this table and expire the saved payloads when they are no longer needed.
+On success the worker saves the answer, item kind and key and clears the request body in the same transaction. A lost acknowledgment leaves the original key safe to repeat. An authentication, configuration, graph or transport fault ends the pass immediately. The row stays pending, with the fault available for diagnosis. After the service recovers, cron resumes automatically. An exhausted `NOT_ATTEMPTED` also stays pending.
+
+An item refusal stays `refused` with the full answer. A malformed or oversized write stays `failed` with the input fault and its detail. The worker continues with independent changes, including later changes to the same record. A write whose explicit prerequisite was set aside becomes `blocked`. Once the prerequisite succeeds, a later pass picks up its children. Staff can inspect unresolved rows with `SELECT id, item_kind, state, depends_on FROM account_graph_outbox WHERE state <> 'sent' ORDER BY id`. Resolve the cause before returning a refused or malformed row to `pending`. Verify a `KEY_REUSED` against the original host transaction.
+
+Choose a retention period for the remaining answers and identifiers. For example, a daily cleanup can run `DELETE FROM account_graph_outbox WHERE state = 'sent' AND created_at < ?` with a bound UTC cutoff 30 days ago. The producer checks the prerequisite exists with an ordinary read. A foreign key on MySQL would make that insert wait while a worker sends the parent. Once a dependency has been admitted, the worker treats a missing parent as a successful row removed by this cleanup. Delete only successful rows automatically. Restrict access to unsent requests and review them on a schedule. For erasure, reconcile or cancel outstanding dependent writes before deleting their prerequisite.
+
+## Upgrading an existing outbox
+
+Pause producers and cron while upgrading. Existing rows acquire the migration time as their creation time. Copy the original key and kind before clearing sent bodies. Both migrations return previously failed service requests to the queue, preserving their original keys. Existing rows have no declared dependency.
+
+**MySQL upgrade (5.7.8 or later)**
+
+```sql
+ALTER TABLE account_graph_outbox
+  MODIFY request MEDIUMTEXT NULL,
+  ADD COLUMN item_kind TEXT, ADD COLUMN item_key MEDIUMTEXT,
+  ADD COLUMN created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  ADD COLUMN depends_on BIGINT UNSIGNED,
+  ADD INDEX ag_outbox_dependency (depends_on);
+UPDATE account_graph_outbox SET
+  item_kind = COALESCE(CASE WHEN call_name = 'record' THEN JSON_UNQUOTE(JSON_EXTRACT(request, '$.entries[0].type')) ELSE call_name END, call_name),
+  item_key = CASE WHEN call_name = 'record' THEN JSON_UNQUOTE(JSON_EXTRACT(request, '$.entries[0].key')) ELSE JSON_UNQUOTE(JSON_EXTRACT(request, '$.key')) END;
+ALTER TABLE account_graph_outbox MODIFY item_kind TEXT NOT NULL, MODIFY item_key MEDIUMTEXT NOT NULL;
+UPDATE account_graph_outbox SET request = NULL WHERE state = 'sent';
+UPDATE account_graph_outbox SET state = 'pending' WHERE state = 'failed'
+  AND JSON_UNQUOTE(JSON_EXTRACT(answer, '$.fault.code')) NOT IN ('INPUT.MALFORMED', 'INPUT.TOO_LARGE');
+```
+
+**PostgreSQL upgrade**
+
+```sql
+BEGIN;
+ALTER TABLE account_graph_outbox ALTER COLUMN request DROP NOT NULL,
+  ADD COLUMN item_kind TEXT, ADD COLUMN item_key TEXT,
+  ADD COLUMN created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  ADD COLUMN depends_on BIGINT;
+UPDATE account_graph_outbox SET
+  item_kind = COALESCE(CASE WHEN call_name = 'record' THEN request::json #>> '{entries,0,type}' ELSE call_name END, call_name),
+  item_key = CASE WHEN call_name = 'record' THEN request::json #>> '{entries,0,key}' ELSE request::json ->> 'key' END;
+ALTER TABLE account_graph_outbox ALTER COLUMN item_kind SET NOT NULL, ALTER COLUMN item_key SET NOT NULL;
+CREATE INDEX ag_outbox_dependency ON account_graph_outbox (depends_on);
+UPDATE account_graph_outbox SET request = NULL WHERE state = 'sent';
+UPDATE account_graph_outbox SET state = 'pending' WHERE state = 'failed'
+  AND answer::jsonb #>> '{fault,code}' NOT IN ('INPUT.MALFORMED', 'INPUT.TOO_LARGE');
+COMMIT;
+```
 
 ## Read to the end
 

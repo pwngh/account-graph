@@ -24,6 +24,7 @@
 - `textsOptedOut` keeps a STOP sent from a number while the record held it, after that number is withdrawn.
 - A withdrawal changes earlier credit, people, journeys and reports, as a split does. Identity snapshots respect its time.
 - `profile` refuses an `ip` fact that is not an IPv4 or IPv6 address with `INPUT.MALFORMED`. Valid addresses keep the keys they had.
+- `AccountGraph.php` allows a record batch time to finish, honors the server’s retry delay across worker runs and distinguishes TLS setup failures from indeterminate timeouts.
 - `AccountGraph.php` brings the six calls to PHP hosts, with stable keys, cursor paging and a transactional outbox that keeps each record's changes in order.
 - `profile.createdAt` records when your system created a subject. The Accounts heading and Links table show it alongside the earliest activity the graph still holds for each record.
 - `textsOptedOut` covers a STOP from any phone number the subject’s cluster has, including one only related to it under `records`. A START from inside the cluster does not undo it.

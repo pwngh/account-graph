@@ -214,7 +214,7 @@ for (const store of ['memory', 'postgres']) {
       assert.deepEqual(view.values.map(row => row.value), [0, 37])
     })
 
-    await t.test('a new worker replays the oldest pending row and saves the refusal that blocks a later row', { skip: !hasSqlite && 'pdo_sqlite is not loaded' }, async t => {
+    await t.test('a new worker replays a lost answer, clears sent bodies and parks a refusal', { skip: !hasSqlite && 'pdo_sqlite is not loaded' }, async t => {
       const dir = await mkdtemp(join(root, '.php-test-'))
       t.after(() => rm(dir, { recursive: true, force: true }))
       const database = join(dir, 'outbox.sqlite')
@@ -227,20 +227,118 @@ for (const store of ['memory', 'postgres']) {
       const run = () => php(relay.url, 'work', {}, { database, attempts: 1, timeout: 1000, streams: true })
       const keys = () => relay.bodies.map(body => JSON.parse(body).entries[0].key)
       const interrupted = await run()
-      assert.deepEqual(keys(), ['first', 'independent'])
-      assert.deepEqual(interrupted.map((r: any) => r.state), ['pending', 'pending', 'sent', 'pending', 'pending'])
+      assert.deepEqual(keys(), ['first'])
+      assert.ok(interrupted.every((r: any) => r.state === 'pending' && r.request && r.created_at))
       down = false
       const finished = await run()
-      assert.deepEqual(keys(), ['first', 'independent', 'first', 'second', 'second'])
-      assert.equal(relay.bodies[0], relay.bodies[2])
-      assert.deepEqual(finished.map((r: any) => r.state), ['sent', 'sent', 'sent', 'refused', 'pending'])
+      assert.deepEqual(keys(), ['first', 'first', 'second', 'independent', 'second', 'last'])
+      assert.equal(relay.bodies[0], relay.bodies[1])
+      assert.deepEqual(finished.map((r: any) => r.state), ['sent', 'sent', 'sent', 'refused', 'sent'])
+      assert.ok(finished.every((r: any, i: number) => r.item_kind === 'profile' && r.item_key === entries[i]!.key && (r.state === 'sent' ? r.request === null : !!r.request)))
       assert.equal(finished[0].answer.results[0].value.duplicate, true)
       assert.equal(finished[3].answer.results[0].reason, 'KEY_REUSED')
       await run()
-      assert.equal(relay.bodies.length, 5)
+      assert.equal(relay.bodies.length, 6)
+    })
+
+    await t.test('a malformed write holds only its named dependents, which resume when repaired', { skip: !hasSqlite && 'pdo_sqlite is not loaded' }, async t => {
+      const dir = await mkdtemp(join(root, '.php-test-'))
+      t.after(() => rm(dir, { recursive: true, force: true }))
+      const database = join(dir, 'outbox.sqlite')
+      const subject = 'contact:depends'
+      const sale = { type: 'conversion', subject, at, key: 'needs-stage' }
+      const payment = { type: 'payment', key: 'paid-after-sale', at, conversion: sale.key, direction: 'received', amount: 7, _group: subject, _depends: 0 }
+      const visit = { type: 'arrival', key: 'visit-after-payment', at, subject, _depends: 1 }
+      const profile = { type: 'profile', subject, key: 'independent-save', at, facts: { phone: '+12025550104', email: 'not-an-email' } }
+      const seed = await php(base, 'seed', [sale, payment, visit, profile], { database })
+      assert.deepEqual(JSON.parse(seed[3].request).entries[0].facts, { phone: profile.facts.phone })
+      const first = await php(base, 'work', {}, { database })
+      assert.deepEqual(first.map((r: any) => r.state), ['failed', 'blocked', 'blocked', 'sent'])
+      assert.equal(first[0].answer.fault.code, 'INPUT.MALFORMED')
+      assert.equal(first[0].answer.fault.detail.path, 'request.entries[0].stage')
+      const before = requests
+      await php(base, 'work', {}, { database })
+      assert.equal(requests, before)
+      await php(base, 'repair', { ...sale, stage: 'paid' }, { database })
+      await php(base, 'work', { limit: 1 }, { database })
+      await php(base, 'purge', { key: sale.key }, { database })
+      assert.equal(await php(base, 'missingDependency', { id: seed[0].id, entry: profile }, { database }), true)
+      const last = await php(base, 'work', {}, { database })
+      assert.ok(last.every((r: any) => r.state === 'sent' && r.request === null))
+      assert.equal(last[0].item_key, payment.key)
+      assert.equal(last[0].answer.results[0].value.value, 7)
+      assert.equal(requests, before + 3)
+    })
+
+    await t.test('a repair committed between selection and claim sends the newly eligible older change first', { skip: !hasSqlite && 'pdo_sqlite is not loaded' }, async t => {
+      const dir = await mkdtemp(join(root, '.php-test-'))
+      t.after(() => rm(dir, { recursive: true, force: true }))
+      const database = join(dir, 'outbox.sqlite')
+      const parent = { type: 'conversion', at, key: 'race-parent', subject: 'contact:parent' }
+      const older = { type: 'arrival', at, key: 'race-older', subject: 'contact:race', _depends: 0 }
+      const newer = { type: 'arrival', at: at + 1, key: 'race-newer', subject: older.subject }
+      await php(base, 'seed', [parent, older, newer], { database })
+      const initial = await php(base, 'work', { limit: 2 }, { database })
+      assert.deepEqual(initial.map((r: any) => r.state), ['failed', 'blocked', 'pending'])
+      const relay = await relayRecords(t, base, () => false)
+      const after = await php(relay.url, 'overlap', { ...parent, stage: 'repaired' }, { database })
+      assert.deepEqual(after.map((r: any) => r.state), ['sent', 'sent', 'pending'])
+      await php(relay.url, 'work', {}, { database })
+      assert.deepEqual(relay.bodies.map(body => JSON.parse(body).entries[0].key), [parent.key, older.key, newer.key])
     })
   })
 }
+
+test('PHP screens profile facts before enqueueing and preserves speaker-only profiles', { skip: noPhp && 'php is not on the PATH' }, async () => {
+  const entry = { type: 'profile', key: 'facts', at, subject: 'contact:screen' }
+  const screen = (facts: object, speaker?: object) => php('http://127.0.0.1', 'screen', { ...entry, facts, ...(speaker && { speaker }) })
+  assert.equal(await screen({}), null)
+  assert.equal(await screen({ name: { first: 'Test', last: 'Record' } }), null)
+  assert.equal(await screen({ email: 'not-an-email', phone: '123', device: 'invalid device', ip: 'unknown' }), null)
+  assert.equal(await screen({ dob: '2001-02-29' }), null)
+  const speaker = { email: 'speaker@example.org' }
+  const row = await screen({ unlisted: 'drop this' }, { ...speaker, unlisted: 'drop this too' })
+  assert.deepEqual(JSON.parse(row.request).entries[0], { ...entry, facts: {}, speaker })
+  const phone = '+1 (202) 555-0100 ext 12'
+  assert.deepEqual(JSON.parse((await screen({ email: 'a@b@', phone })).request).entries[0].facts, { phone })
+})
+
+test('one call fault stops the worker and the next run can recover every group', { skip: noPhp ? 'php is not on the PATH' : !hasSqlite && 'pdo_sqlite is not loaded' }, async t => {
+  const dir = await mkdtemp(join(root, '.php-test-'))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const database = join(dir, 'outbox.sqlite')
+  let reply = '401'
+  const keys: string[] = []
+  const base = await listen(t, async (req, res) => {
+    const { entries: [entry] } = JSON.parse(await text(req))
+    keys.push(entry.key)
+    if (reply === '401') return res.writeHead(401).end()
+    if (reply === 'closed') return res.writeHead(503).end(JSON.stringify({ fault: { code: 'GRAPH.CLOSED', retryable: false, detail: {} } }))
+    if (reply === 'html') return res.writeHead(500).end('<html>error</html>')
+    if (reply === '503') return res.writeHead(503, { 'retry-after': '2' }).end()
+    res.end(JSON.stringify({ results: [{ type: entry.type, key: entry.key, ok: true, value: { duplicate: false, stands: true, subject: entry.subject } }] }))
+  })
+  const entries = Array.from({ length: 30 }, (_, i) => ({ type: 'arrival', key: 'outage-' + i, at, subject: 'contact:' + i % 3 }))
+  await php(base, 'seed', entries, { database })
+  const work = () => php(base, 'work', {}, { database, attempts: 1 })
+  let retryAt = 0
+  for (const [mode, expected] of [['401', 'AUTH.REJECTED'], ['closed', 'GRAPH.CLOSED'], ['html', 'GRAPH.INTERNAL'], ['503', 'GRAPH.UNAVAILABLE']] as const) {
+    reply = mode
+    const rows = await work()
+    assert.ok(rows.every((r: any) => r.state === 'pending' && r.request))
+    assert.equal(rows[0].answer.fault.code, expected)
+    retryAt = rows[0].answer.retry_at
+  }
+  assert.deepEqual(keys, Array(4).fill(entries[0]!.key))
+  reply = 'ok'
+  assert.ok(retryAt * 1000 > Date.now())
+  await work()
+  assert.equal(keys.length, 4)
+  await new Promise(resolve => setTimeout(resolve, Math.max(0, retryAt * 1000 - Date.now()) + 10))
+  const sent = await work()
+  assert.ok(sent.every((r: any) => r.state === 'sent' && r.request === null))
+  assert.deepEqual(keys.slice(4), entries.map(e => e.key))
+})
 
 test('PHP refuses redirects and distinguishes a proxy outage from a graph configuration fault', { skip: noPhp && 'php is not on the PATH' }, async t => {
   let followed = 0
