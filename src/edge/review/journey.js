@@ -424,9 +424,12 @@ function chart(entries, shown, ties, subject, show, partial) {
     const x = (entry.at - from) * perMs
     if (x < track.scrollLeft + 40 || x > track.scrollLeft + track.clientWidth - 40) track.scrollTo({ left: x - track.clientWidth / 2, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
   }
+  /** The width it was last drawn at. */
+  let drawnAt = 0
   function draw() {
     const wide = track.clientWidth
     if (wide === 0) return
+    drawnAt = wide
     const fit = wide / (to - from)
     perMs = charted.zoom === 'All' ? fit : Math.max(fit, 700 / ZOOMS[charted.zoom])
     canvas.style.width = `${Math.round((to - from) * perMs)}px`
@@ -532,7 +535,9 @@ function chart(entries, shown, ties, subject, show, partial) {
     const next = order[(charted.at ?? [...marks].findIndex(([, mark]) => mark === event.target)) + step]
     if (next) { pick(next, true); reach(next) }
   })
-  new ResizeObserver(() => draw()).observe(track)
+  // Drawn by whoever puts it on the page, as soon as it is there, and again when its width changes. Drawn only once measured, it would be shorter for a moment, and what is under it would move from under the pointer.
+  root.begin = draw
+  new ResizeObserver(() => track.clientWidth !== drawnAt && draw()).observe(track)
   return root
 }
 /** What the card of a call in a journey is made from. */
@@ -578,7 +583,10 @@ view('journey', 'Journey', async (box, subject, wanted) => {
   const draw = () => {
     lines.clear()
     const shown = entries.filter((entry) => !leaving.has(entry.kind))
-    strip.replaceChildren(tiles(['Events', `${amount(entries.length)}${next === null ? '' : '+'}`], [term('IDs', 'journeyIds'), amount(subjects.length)], ...timespan(entries)), chart(entries, shown, ties, subject, find, next !== null))
+    const over = chart(entries, shown, ties, subject, find, next !== null)
+    strip.replaceChildren(tiles(['Events', `${amount(entries.length)}${next === null ? '' : '+'}`], [term('IDs', 'journeyIds'), amount(subjects.length)], ...timespan(entries)), over)
+    // On a view being made, the load that shows it draws the chart.
+    if (over && strip.isConnected) over.begin()
     timeline.replaceChildren(shown.length > 0
       ? el('ol', { class: 'journey', role: 'list' }, ...byDay(shown, row(ties, subject, lines, (entry) => callFacts(entry, entries, next !== null))))
       : el('p', { class: 'timeline-entry muted' }, 'All event types are hidden.'))

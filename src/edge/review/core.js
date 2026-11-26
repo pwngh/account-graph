@@ -588,7 +588,7 @@ async function load(tag) {
     const scrolled = quiet ? [...$('view').querySelectorAll('.wide, .scroll')].map((each) => [each.scrollLeft, each.scrollTop]) : []
     const unfolded = quiet ? [...$('view').querySelectorAll('details[open]')].map(fold) : []
     $('view').replaceChildren(box)
-    for (const each of box.querySelectorAll('.graph')) each.begin()
+    for (const each of box.querySelectorAll('.graph, .chart')) each.begin()
     ;[...$('view').querySelectorAll('.wide, .scroll')].forEach((each, i) => ([each.scrollLeft, each.scrollTop] = scrolled[i] ?? [0, 0]))
     for (const each of $('view').querySelectorAll('details')) each.open = unfolded.includes(fold(each))
     if (held) [...$('view').querySelectorAll('a, button, input, select, [tabindex]')].find((node) => which(node) === held)?.focus({ preventScroll: true })
