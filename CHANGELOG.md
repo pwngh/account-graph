@@ -15,9 +15,8 @@
 
 ### The six calls
 
-- `decide` reports only the action field when an allowed decision collides with a different action’s key, preserving the earlier signer’s privacy across service tokens.
-- `serviceTokens` gives each integration its own credential and limits which calls, record entries, decisions and reads it may make under its own name.
-
+- `serviceTokens` gives each integration a credential of its own, limited to the calls, entry types, decisions and reads it lists, signing only as `system:<name>`.
+- `decide` answers a key used for another action with `KEY_REUSED` naming only `action`, for every caller.
 - `profile.createdAt` records when your system created a subject. The Accounts heading and Links table show it alongside the earliest activity the graph still holds for each record.
 - `textsOptedOut` covers a STOP from any phone number the subject’s cluster has, including one only related to it under `records`. A START from inside the cluster does not undo it.
 - `record` applies an inbound opt-out first supplied on a text retry at the original message time and answers `optOutAdded: true` once.
