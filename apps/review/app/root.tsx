@@ -24,9 +24,10 @@ function Live({path}: {path: string}) {
     stream.onopen = () => { if (connected) void revalidate(); connected = true; setStatus('') }
     stream.addEventListener('change', receive)
     stream.addEventListener('signout', () => { stream.close(); location.replace('/signin') })
-    const unavailable = () => setStatus('Live updates interrupted. Reload for the latest data.')
-    stream.onerror = unavailable
-    stream.addEventListener('unavailable', unavailable)
+    const interrupted = () => setStatus('Live updates interrupted. Reload for the latest data.')
+    // A server restart ends the stream plainly, and the browser opens it again by itself.
+    stream.onerror = () => stream.readyState === EventSource.CLOSED ? interrupted() : setStatus('Live updates paused. Reconnecting…')
+    stream.addEventListener('unavailable', () => { stream.close(); interrupted() })
     return () => stream.close()
   }, [revalidate])
   return <span role="status">{status}</span>

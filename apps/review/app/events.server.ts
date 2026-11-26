@@ -156,6 +156,8 @@ export async function events(request: Request) {
         if (!cancel.signal.aborted) controller.close()
       }
       function finish() {
+        // A restart is not a sign-out. The browser reconnects to the next process.
+        if (config.stopped.signal.aborted) return end()
         if (session.controller.signal.aborted || session.expires <= Date.now()) {
           config.sessions.delete(session.id)
           session.controller.abort()

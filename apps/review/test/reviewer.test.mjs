@@ -369,6 +369,24 @@ test('open tabs share one follower of the graph that starts with the first tab a
   assert.equal(reads().length, after, 'the follower stops with the last tab')
 })
 
+test('a server shutdown ends open streams without signing the reviewer out', async () => {
+  const { reviewServer } = await import('../server.mjs')
+  const standalone = await reviewServer({ port: 0, host: '127.0.0.1', eventsToken: service })
+  try {
+    const url = address(standalone)
+    const cookie = cookieFrom(await fetch(url + '/signin', post({ token: reviewer }, undefined, url)))
+    const response = await fetch(url + '/events', { headers: { cookie }, signal: AbortSignal.timeout(8000) })
+    const reader = response.body.pipeThrough(new TextDecoderStream()).getReader()
+    let text = (await reader.read()).value
+    assert.match(text, /connected/)
+    standalone.close()
+    for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) text += chunk.value
+    assert.doesNotMatch(text, /signout/)
+  } finally {
+    standalone.closeAllConnections()
+  }
+})
+
 test('without a service events token authenticated HTML still works', async () => {
   const { reviewServer } = await import('../server.mjs')
   const standalone = await reviewServer({ port: 0, host: '127.0.0.1', eventsToken: '' })
