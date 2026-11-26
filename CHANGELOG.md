@@ -137,6 +137,7 @@
 
 ### Edge and operations
 
+- `account-graph sends pause REASON` stops sends to ad platforms in every process until `account-graph sends resume`, and alerts with a `delivery.paused` event. Jobs wait as they were.
 - `account-graph sample-joins` writes a seeded random sample of the pairs the graph joined without a reviewer as CSV, and `account-graph score-joins` reads the checked sample back as the share of right joins with its 95% Wilson interval.
 - `restore-check.ts` rehearses a PostgreSQL restore into an empty database, times each step and checks stored clusters, every table's row count and the newest audit hash.
 - `POST /leads/<name>` authenticates each chat, intake or payment source with its own secret and records mapped fields once per vendor ID, without keeping transcripts.

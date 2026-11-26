@@ -52,6 +52,8 @@ Compose passes the variables in [Environment variables](#environment-variables) 
 | `account-graph alerts test` | Posts a test alert |
 | `account-graph staff-link https://example.org/team` | Makes an address that marks a browser as [staff](#staff-traffic) |
 | `account-graph events new-epoch` | Begins a new history of events, after a [restore](#backups) |
+| `account-graph sends pause checking a wrong tie` | [Stops sends](#stopping-sends) to ad platforms in every process, with a reason |
+| `account-graph sends resume` | Lets sends go again on the next pass. `account-graph sends` says whether they are paused. |
 | `account-graph sample-joins --size 300 --seed 2026-11` | Writes a random sample of the graph's own joins as CSV, for [checking by hand](#checking-joins-by-hand) |
 | `account-graph score-joins checked.csv` | Scores a checked sample. Needs no database. |
 
@@ -472,6 +474,7 @@ Set `ALERT_WEBHOOK` to a private receiver, such as a Slack incoming webhook, tha
 | --- | --- | --- |
 | A platform rejects a conversion, or its retries run out | Transaction, platform and reason, up to ten per message | At most once in ten minutes |
 | The outbox cannot run, so conversions are paused | The reason, such as a database outage | At most once in ten minutes |
+| Sends are paused with `account-graph sends pause` | The reason given | Each time |
 | Campaign costs cannot be read, so the report's costs become stale | Platform and reason | At most once in ten minutes per platform |
 | A feed is stale | Feed and time of its last record | Once per stale period |
 | Conversions are `LATE_HOURS` overdue | Due time of the oldest | Once a day while it lasts |
@@ -489,6 +492,16 @@ account-graph alerts test
 ```json
 { "delivered": true }
 ```
+
+### Stopping sends
+
+When a tie looks wrong, or a platform is being sent the wrong thing, stop every send at once.
+
+```sh
+account-graph sends pause checking a wrong tie
+```
+
+The stop is kept in the database, so every process holds to it, and a restart keeps it. Conversions are still recorded, and their jobs wait as they were. No retry is used up while sends are stopped. Time still counts: the `LATE_HOURS` alert counts the wait, and an outcome waiting for a click, email or phone still has seven days from when it happened. Deletions asked for when someone is forgotten still go. `account-graph sends resume` lets the jobs go on the next pass. With [`OUTBOX_DELAY_MS`](#outcomes-and-calls) set, a tie undone while sends are stopped is not sent.
 
 ### Stale feeds
 

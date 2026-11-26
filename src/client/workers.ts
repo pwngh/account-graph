@@ -2,6 +2,7 @@ import type { LocalOptions } from '../contract/api.ts'
 import type { Engine } from '../core/engine.ts'
 import { createWebhook } from '../core/delivery.ts'
 import type { Ops } from '../core/ops.ts'
+import { sendsPaused } from '../core/pause.ts'
 import { costSourcesOf } from './providers.ts'
 
 const MINUTE = 60_000
@@ -20,10 +21,10 @@ export function createWorkers(engine: Engine, ops: Ops, options: LocalOptions, l
   const wait = (error: unknown) => String((error as Error)?.message ?? error)
   const jobs: { name: string; every: number; lease: number; work: () => Promise<unknown>; failed: (reason: string) => void }[] = []
 
-  // Claims its own rows, so every process may send.
+  // Claims its own rows, so every process may send. A stop put on with `account-graph sends pause` holds every process.
   if (outbox) {
     jobs.push({
-      name: 'outbox', every: 30_000, lease: 0, work: () => outbox.run(),
+      name: 'outbox', every: 30_000, lease: 0, work: async () => ((await sendsPaused(store)) ? undefined : outbox.run()),
       failed: (reason) => void ops.alert('outbox', `account-graph: the outbox failed and conversions are not being sent. ${reason}`, { type: 'delivery.paused', at: now(), data: { reason } }),
     })
   }
