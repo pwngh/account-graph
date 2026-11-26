@@ -66,7 +66,7 @@ The server writes every time on the page. On the first load with JavaScript, the
 | `/calls` | Missed calls, call outcomes, coverage and supporting detail. |
 | `/decide` | Pending matches with Join and Separate forms. It says when pairs among older sightings are not in the queue, and links to the original screen, whose Check older records reaches them. The original screen also has keyboard controls. |
 | `/channels` | Campaign attribution table. The original screen has the full channel breakdown and date controls. |
-| `/health` | Feed status. The original screen has jobs, alerts, conversions, the audit chain and policy details. |
+| `/health` | Feed status, and a stop on sends to ad platforms with its reason and time. The original screen has jobs, alerts, conversions, the audit chain and policy details. |
 
 The existing screen remains at `/review` on the graph server and at `/legacy` in the firm demo. It uses its own sign-in. The app links to it only at `REVIEW_LEGACY_URL`, or at `/legacy` in the demo. Opening an old `/review#/…` bookmark on the new app converts the fragment to a path when JavaScript runs. Call date ranges and links to a call on a journey keep their targets. Filtered Channels bookmarks open the original screen with their settings when `REVIEW_LEGACY_URL` is set, and Channels otherwise. With scripts off the browser sends only `/review`. Use the Accounts link and navigation.
 

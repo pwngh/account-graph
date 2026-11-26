@@ -130,3 +130,35 @@ test('Matches says when pairs among older sightings are left out, and where to c
   older = false
   assert.doesNotMatch(await page(), /class="older"/)
 })
+
+test('Health says when sends to ad platforms are stopped, why, since when, and how to resume', async t => {
+  const graph = accountGraph({ memory: true })
+  const edge = createEdge(graph, { token: 'service-fixture', reviewers: { dana: 'review-fixture' }, origins: [], limit: false })
+  // The graph's ops answer with a stop, as test/integrations.test.ts checks it gives one.
+  let paused = { at: Date.now() - 120_000, reason: 'checking a wrong tie' }
+  const upstream = createServer(async (request, response) => {
+    if (!request.url.startsWith('/review/api/ops')) return edge(request, response)
+    const answer = await (await fetch(address(real) + request.url, { headers: { authorization: request.headers.authorization } })).json()
+    response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ...answer, paused }))
+  })
+  const real = createServer(edge)
+  for (const server of [upstream, real]) await once(server.listen(0, '127.0.0.1'), 'listening')
+  const ui = await reviewServer({ host: '127.0.0.1', port: 0, graphUrl: address(upstream), secret: 'local-review-test-secret-without-other-uses' })
+  t.after(async () => {
+    for (const server of [ui, upstream, real]) {
+      const done = once(server, 'close')
+      server.close()
+      server.closeAllConnections()
+      await done
+    }
+    await edge.drain()
+    await graph.close()
+  })
+  const origin = address(ui)
+  const login = await fetch(origin + '/signin', { method: 'POST', headers: { origin }, body: new URLSearchParams({ token: 'review-fixture' }), redirect: 'manual' })
+  const cookie = login.headers.get('set-cookie').split(';')[0]
+  const page = async () => (await fetch(origin + '/health', { headers: { cookie } })).text()
+  assert.match(await page(), /<p class="stopped" role="alert">Sends to ad platforms are paused\. checking a wrong tie\. Since <time dateTime="[^"]+"[^>]*>[^<]+<\/time>\. Run account-graph sends resume once the cause is fixed\.<\/p>/)
+  paused = null
+  assert.doesNotMatch(await page(), /class="stopped"/)
+})
