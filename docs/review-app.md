@@ -43,6 +43,8 @@ npm --prefix apps/review start
 | `REVIEW_EVENTS_TOKEN` | Server-only graph service token for the `events` call. Without it, pages open no event stream and say that live updates are off. Opening or reloading a page still reads the graph. |
 | `HOST`, `PORT` | Production listener address and port, default `127.0.0.1` and `3000`. |
 
+`npm start` runs `server.mjs`, a small Node HTTP server around the request handler from `@react-router/node`. It serves the built assets and checks the Origin of every form post.
+
 ## Sign-in and updates
 
 Open `/signin` and enter the token issued to your reviewer name. The server checks it at `/review/api/me` and keeps it in process memory. The browser gets a signed, eight-hour session ID in an HttpOnly, SameSite=Strict cookie. The cookie is Secure except with HTTP on loopback. Sign out to revoke the session for all tabs that share it. A graph authorization failure also ends the session. Restarting the process clears sessions. Run a single app process or route a session’s requests to the same instance.
