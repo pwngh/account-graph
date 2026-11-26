@@ -759,7 +759,7 @@ final class account_graph_wordpress
     private function replace(string $lock, string $name, string $old, string $json): bool
     {
         $wpdb = $this->db;
-        $sql = $wpdb->prepare("UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s AND BINARY option_value = BINARY %s AND IS_USED_LOCK(%s) = CONNECTION_ID()", $json, $name, $old, $lock);
+        $sql = $wpdb->prepare("UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s AND CAST(option_value AS BINARY) = CAST(%s AS BINARY) AND IS_USED_LOCK(%s) = CONNECTION_ID()", $json, $name, $old, $lock);
         return $this->write($sql) === 1;
     }
 

@@ -66,7 +66,11 @@ class FixtureWpdb
         $sql = preg_replace('/ON DUPLICATE KEY UPDATE option_name\s*=\s*option_name/i', 'ON CONFLICT(option_name) DO NOTHING', $sql);
         $sql = preg_replace('/^DELETE FROM wp_options WHERE (.*) LIMIT (\d+)$/is', 'DELETE FROM wp_options WHERE option_id IN (SELECT option_id FROM wp_options WHERE $1 LIMIT $2)', $sql);
         $sql = $this->like($sql);
-        $sql = str_replace('BINARY ', '', $sql);
+        if (preg_match('/(?<!AS )\bBINARY\b(?!\))/', $sql)) {
+            // MySQL 8.0.27 and later warn about the BINARY operator.
+            fwrite(STDERR, "'BINARY expr' is deprecated and will be removed in a future release. Please use CAST instead\n");
+        }
+        $sql = str_replace('AS BINARY)', 'AS BLOB)', $sql);
         return $this->sqlite->exec($sql);
     }
     public function get_var($sql)
