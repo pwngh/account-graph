@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { Form, Link, useLocation, useSearchParams } from 'react-router'
 import { amount, Badge, DecisionForm, DecisionScope, percent, Subject, subjectPath, Table, Tiles, Time, type WriteContext } from './shared'
 import { ICONS, nameOf, PERSON, typeOf, type ClusterLayout } from './cluster-layout.js'
@@ -35,18 +35,67 @@ export function ClusterGraph({ layout }: { layout: ClusterLayout }) {
   const [off, setOff] = useState<string[]>([])
   const [score, setScore] = useState(0)
   const [ready, setReady] = useState(false)
+  const [selected, setSelected] = useState('')
+  const [camera, setCamera] = useState({ zoom: 1, dx: 0, dy: 0 })
+  const diagram = useRef<HTMLDivElement>(null)
+  const back = useRef<Element | null>(null)
+  const closeButton = useRef<HTMLButtonElement>(null)
+  const drag = useRef<{ x: number, y: number, dx: number, dy: number, scale: number } | null>(null)
+  const [left, top, width, height] = layout.viewBox.split(' ').map(Number)
+  const zoom = (factor: number) => setCamera(view => ({ ...view, zoom: Math.min(8, Math.max(.5, view.zoom * factor)) }))
+  const viewBox = [left + width / 2 - width / (2 * camera.zoom) + camera.dx, top + height / 2 - height / (2 * camera.zoom) + camera.dy, width / camera.zoom, height / camera.zoom].join(' ')
+  const node = layout.nodes.find(node => node.id === selected)
+  const close = () => {
+    setSelected('')
+    if (back.current?.isConnected) (back.current as SVGElement).focus({preventScroll:true})
+  }
+  useEffect(() => { if (selected) closeButton.current?.focus({preventScroll:true}) }, [selected])
   useEffect(() => setReady(true), [])
   const kinds = { joined: 'Same person', related: 'Related', apart: 'Separated' }
   const visible = layout.paths.filter(edge => !off.includes(edge.kind) && (edge.kind === 'apart' || (edge.score ?? 0) * 100 >= score))
-  return <><div className="graph"><div className="stage"><svg viewBox={layout.viewBox} role="group" aria-label="Cluster graph"><g>
+  return <><div className="graph" ref={diagram} onKeyDown={event => {
+    if (event.key === 'Escape' && node) { event.preventDefault(); close() }
+  }}><div className="stage"><svg viewBox={viewBox} role="group" aria-label="Cluster graph" tabIndex={ready ? 0 : undefined}
+    onKeyDown={event => {
+      if (event.target !== event.currentTarget) return
+      const moves: Record<string, [number,number]> = { ArrowLeft: [-1,0], ArrowRight: [1,0], ArrowUp: [0,-1], ArrowDown: [0,1] }
+      const move = moves[event.key]
+      if (!move) return
+      event.preventDefault()
+      setCamera(view => ({ ...view, dx: view.dx + move[0] * width / (8 * view.zoom), dy: view.dy + move[1] * height / (8 * view.zoom) }))
+    }}
+    onPointerDown={event => {
+      if (event.button !== 0 || (event.target as Element).closest('a')) return
+      const scale = event.currentTarget.getScreenCTM()?.a
+      if (!scale) return
+      drag.current = { x: event.clientX, y: event.clientY, dx: camera.dx, dy: camera.dy, scale }
+      event.currentTarget.setPointerCapture(event.pointerId)
+    }}
+    onPointerMove={event => {
+      const start = drag.current
+      if (start) setCamera(view => ({ ...view, dx: start.dx - (event.clientX - start.x) / start.scale, dy: start.dy - (event.clientY - start.y) / start.scale }))
+    }}
+    onLostPointerCapture={() => { drag.current = null }}><g>
     <g>{layout.hulls.map((d, i) => <path className="mine" key={i} d={d} strokeWidth={28}/>)}</g>
     <g>{visible.map(edge => <g key={JSON.stringify([edge.a, edge.b])} className={'edge ' + edge.kind}><title>{edge.a + ' and ' + edge.b + ' · ' + edge.label}</title><path className="line" d={edge.d} strokeWidth={1 + 2 * (edge.score ?? 0)}/></g>)}</g>
     <g>{visible.length <= 9 && visible.map(edge => <g className={'tag worded ' + edge.kind} key={JSON.stringify([edge.a, edge.b])} transform={'translate(' + edge.x + ' ' + edge.y + ')'}><rect x={-4 * edge.label.length - 4} y="-10" width={8 * edge.label.length + 8} height="20" rx="10"/><text textAnchor="middle" y="4">{edge.label}</text></g>)}</g>
-    <g>{layout.nodes.map(node => <a key={node.id} className={'node ' + node.role} href={subjectPath(node.id)} aria-label={node.id + ', ' + ({ me: 'this subject', member: 'same person', apart: 'kept apart', related: 'related' }[node.role] || node.role)}><g transform={'translate(' + node.x + ' ' + node.y + ')'}><title>{node.id}</title><circle className="halo" r={node.r + 7}/><circle className="disc" r={node.r}/><path className={ICONS[typeOf(node.id)] ? 'icon line' : 'icon'} d={ICONS[typeOf(node.id)] || PERSON} transform={'scale(' + node.r / 15 + ')'}/>{node.role === 'apart' && <path className="no" d={'M' + -node.r * .71 + ' ' + node.r * .71 + 'L' + node.r * .71 + ' ' + -node.r * .71}/>}<text className="name" textAnchor="middle" x={node.tx} y={node.ty - 2}>{nameOf(node.id)}</text><text className="type" textAnchor="middle" x={node.tx} y={node.ty + 13}>{typeOf(node.id)}</text></g></a>)}</g>
-  </g></svg></div><div className="bar"><div className="keys">{Object.entries(kinds).map(([kind, name]) => {
+    <g>{layout.nodes.map(node => <a key={node.id} className={'node ' + node.role} href={subjectPath(node.id)} onClick={event => {
+      if (!ready || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+      event.preventDefault()
+      back.current = event.currentTarget
+      setSelected(node.id)
+    }} aria-label={node.id + ', ' + ({ me: 'this subject', member: 'same person', apart: 'kept apart', related: 'related' }[node.role] || node.role)}><g transform={'translate(' + node.x + ' ' + node.y + ')'}><title>{node.id}</title><circle className="halo" r={node.r + 7}/><circle className="disc" r={node.r}/><path className={ICONS[typeOf(node.id)] ? 'icon line' : 'icon'} d={ICONS[typeOf(node.id)] || PERSON} transform={'scale(' + node.r / 15 + ')'}/>{node.role === 'apart' && <path className="no" d={'M' + -node.r * .71 + ' ' + node.r * .71 + 'L' + node.r * .71 + ' ' + -node.r * .71}/>}<text className="name" textAnchor="middle" x={node.tx} y={node.ty - 2}>{nameOf(node.id)}</text><text className="type" textAnchor="middle" x={node.tx} y={node.ty + 13}>{typeOf(node.id)}</text></g></a>)}</g>
+  </g></svg>{node && <aside className="card" aria-label={node.id}><button ref={closeButton} className="shut" aria-label="Close" type="button" onClick={close}>×</button><b className="title">{node.id}</b><p>{{ me: 'Selected ID', member: 'Same person', related: 'Related', apart: 'Separated' }[node.role] || 'Indirect'}</p>
+    {layout.paths.filter(line => line.a === node.id || line.b === node.id).map(line => <div key={JSON.stringify([line.a,line.b])} className="reason"><b>{line.a === node.id ? line.b : line.a}</b> · {line.label}</div>)}
+    <div className="row"><Link className="button primary" to={subjectPath(node.id)}>Open</Link><Link className="button" to={subjectPath(node.id) + '#links'}>Show links</Link></div></aside>}</div><div className="bar"><div className="keys">{Object.entries(kinds).map(([kind, name]) => {
     const count = layout.paths.filter(edge => edge.kind === kind).length
     return count > 0 && (ready ? <button type="button" className={kind} key={kind} aria-pressed={!off.includes(kind)} onClick={() => setOff(off.includes(kind) ? off.filter(k => k !== kind) : [...off, kind])}>{name} {count}</button> : <span key={kind}>{name} {count} </span>)
-  })}{ready && <label className="least"><input aria-label="Minimum score, in percent" type="range" min="0" max="100" step="5" value={score} onChange={event => setScore(Number(event.target.value))}/>{score ? 'Score ≥ ' + score + '%' : 'All scores'}</label>}</div></div></div>{layout.total > 24 && <p>Showing 24 of {amount(layout.total)}. All links are listed below.</p>}</>
+  })}{ready && <label className="least"><input aria-label="Minimum score, in percent" type="range" min="0" max="100" step="5" value={score} onChange={event => setScore(Number(event.target.value))}/>{score ? 'Score ≥ ' + score + '%' : 'All scores'}</label>}</div>{ready && <div className="tools"><button type="button" aria-label="Zoom in" onClick={() => zoom(1.25)}>+</button><button type="button" aria-label="Zoom out" onClick={() => zoom(.8)}>−</button><button type="button" aria-label="Reset the layout" onClick={() => {
+    setCamera({ zoom: 1, dx: 0, dy: 0 })
+    setOff([])
+    setScore(0)
+    setSelected('')
+  }}>Reset</button>{document.fullscreenEnabled && <button type="button" onClick={() => void (document.fullscreenElement ? document.exitFullscreen() : diagram.current?.requestFullscreen())?.catch(() => {})}>Full screen</button>}</div>}</div></div>{layout.total > 24 && <p>Showing 24 of {amount(layout.total)}. All links are listed below.</p>}</>
 }
 
 function DatesOf({ id, dates }: { id: string, dates?: Dates }) {
@@ -80,7 +129,7 @@ function ProfileView({ profile, data, context }: { profile: Profile, data: Accou
     const id = link?.subject ?? profile.separated[i - profile.links.length]
     const v = verdicts.get(id)
     const word = !link ? 'Separated' : link.level === 'same' ? members.has(id) ? 'Same person' : 'High confidence' : 'Related'
-    return <tr key={i}><td className="who"><Badge id={id}/><Subject id={id}/><DatesOf id={id} dates={dates}/></td><td><span className={'chip ' + (link?.level ?? 'apart')}>{word}</span>{(v?.reversals ?? 0) >= 3 && <span className="chip apart">Conflict</span>}</td><td className="num">{link ? percent(link.score) : '—'}</td><td className="why">{link ? link.reasons.map((r, j) => <div className={'reason' + (r.counted === false ? ' uncounted' : '')} key={j}><b>{typeOf(r.identifier)}</b> {percent(r.evidence)} · {r.fanout} IDs · {r.gap === 0 ? 'same time' : Math.round(r.gap / 86400000) < 1 ? '<1 day apart' : Math.round(r.gap / 86400000) + (Math.round(r.gap / 86400000) === 1 ? ' day apart' : ' days apart')}{r.group && (r.counted === false ? ' · not counted (' + r.group + ' group)' : ' · ' + r.group + ' group')}<DecisionForm context={context} intent="mute" subject={subject} identifier={r.identifier}/></div>) : v?.apart ? <>{v.apart.by} · <Time at={v.apart.at}/> {v.apart.reason}{v.last.action === 'join' && <p>Later joined by {v.last.by}, <Time at={v.last.at}/>. The separation takes precedence.</p>}</> : 'No data'}</td>
+    return <tr key={word + id}><td className="who"><Badge id={id}/><Subject id={id}/><DatesOf id={id} dates={dates}/></td><td><span className={'chip ' + (link?.level ?? 'apart')}>{word}</span>{(v?.reversals ?? 0) >= 3 && <span className="chip apart">Conflict</span>}</td><td className="num">{link ? percent(link.score) : '—'}</td><td className="why">{link ? link.reasons.map(r => <div className={'reason' + (r.counted === false ? ' uncounted' : '')} key={r.identifier}><b>{typeOf(r.identifier)}</b> {percent(r.evidence)} · {r.fanout} IDs · {r.gap === 0 ? 'same time' : Math.round(r.gap / 86400000) < 1 ? '<1 day apart' : Math.round(r.gap / 86400000) + (Math.round(r.gap / 86400000) === 1 ? ' day apart' : ' days apart')}{r.group && (r.counted === false ? ' · not counted (' + r.group + ' group)' : ' · ' + r.group + ' group')}<DecisionForm context={context} intent="mute" subject={subject} identifier={r.identifier}/></div>) : v?.apart ? <>{v.apart.by} · <Time at={v.apart.at}/> {v.apart.reason}{v.last.action === 'join' && <p>Later joined by {v.last.by}, <Time at={v.last.at}/>. The separation takes precedence.</p>}</> : 'No data'}</td>
       <td><DecisionForm context={context} subject={subject} other={id} intent={link ? 'separate' : 'rejoin'}/></td></tr>
   })}</Table> : <p>No links</p>}{start > 0 && <Link to={pageHref(start - 50)}>Previous links</Link>} {start + 50 < count && <Link to={pageHref(start + 50)}>Show more links</Link>}</section>
   {!!profile.flows.length && <section><h2>Transfers</h2><Table title="Transfers" headers={['ID', 'Status', 'Sent', 'Received', 'Transfers', 'Last']}>{profile.flows.map((flow, i) => <tr key={i}><td><Subject id={flow.subject}/></td><td>{flow.relation === 'none' ? 'Not linked' : flow.relation === 'same' ? 'Same person' : 'Related'}</td><td>{amount(flow.sent)} {flow.asset}</td><td>{amount(flow.received)} {flow.asset}</td><td>{amount(flow.count)}</td><td><Time at={flow.last}/></td></tr>)}</Table>{!!profile.rings.length && <><h2>Circular transfers</h2><ul>{profile.rings.map((ring, i) => <li key={i}>{ring.subjects.map(id => <Fragment key={id}><Subject id={id}/> → </Fragment>)}{subject} · {amount(ring.amount)} {ring.asset} {ring.tied > 0 && (ring.tied + ' linked to this ID')}</li>)}</ul></>}</section>}
@@ -93,10 +142,10 @@ export default function Accounts({ data }: { data: AccountsData }) {
   const { audit, clusters, recent, decisions, subject, profile } = data
   const first = clusters[0]
   const context = { key: data.key, at: data.at, seen: audit.head?.seq ?? 0 }
-  const { pathname } = useLocation()
+  const { pathname, search } = useLocation()
   const offset = data.offset || 0
   const latest = new Set<string>()
-  return <DecisionScope key={subject || 'list'}><div className={'split' + (subject ? ' opened' : '')}><aside className="account-rail"><section><h2>Largest groups</h2><ul id="queue">{clusters.length ? clusters.map(cluster => <li className="line" key={cluster.id}><Badge id={cluster.id}/><Subject id={cluster.id}/> <span className="muted">{amount(cluster.size)} IDs</span>{cluster.oversized && <span className="chip apart">Review</span>}</li>) : <li>None</li>}</ul>{offset > 0 && <Link to={'?offset=' + Math.max(0, offset - 50)}>Previous groups</Link>} {clusters.length === 50 && <Link to={'?offset=' + (offset + 50)}>Show more</Link>}</section>
+  return <DecisionScope key={pathname + search + '/' + (subject || 'list')}><div className={'split' + (subject ? ' opened' : '')}><aside className="account-rail"><section><h2>Largest groups</h2><ul id="queue">{clusters.length ? clusters.map(cluster => <li className="line" key={cluster.id}><Badge id={cluster.id}/><Subject id={cluster.id}/> <span className="muted">{amount(cluster.size)} IDs</span>{cluster.oversized && <span className="chip apart">Review</span>}</li>) : <li>None</li>}</ul>{offset > 0 && <Link to={'?offset=' + Math.max(0, offset - 50)}>Previous groups</Link>} {clusters.length === 50 && <Link to={'?offset=' + (offset + 50)}>Show more</Link>}</section>
   <section><h2>Recent changes</h2><ul id="recent">{recent.length ? recent.slice(0, 30).map((row, i) => <li className="move" key={i}><Badge id={row.subject}/><Subject id={row.subject}/> <span className="meta move-time"><Time at={row.at}/></span><span className="move-to">{row.to === undefined ? 'removed' : row.to === row.subject ? 'ungrouped' : <>joined <Subject id={row.to}/></>}</span></li>) : <li>None</li>}</ul></section>
   <section><h2>Audit log</h2><Form action={pathname} method="get"><label>Author <select name="author" defaultValue={data.author ?? ''}><option value="">All</option><option value="people">People</option><option value="system">Systems</option></select></label> <button>Show</button></Form><p className="meta">{audit.sound ? amount(decisions.total) + (decisions.total === 1 ? ' entry' : ' entries') + ' · Verified' : 'Altered at entry ' + audit.brokenAt}</p><ul id="decisions">{decisions.decisions.length ? decisions.decisions.map(d => {
     const first = !data.author && !latest.has(d.about[0])

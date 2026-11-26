@@ -53,7 +53,8 @@ export function DecisionScope({ children }: { children: ReactNode }) {
   const control = useRef<HTMLElement | null>(null)
   useEffect(() => {
     if (fetcher.data && fetcher.state === 'idle' && document.activeElement === document.body) {
-      const next = control.current?.isConnected ? control.current : result.current
+      const previous = control.current
+      const next = previous?.isConnected ? previous.closest('details:not([open])')?.querySelector('summary') ?? previous : result.current
       next?.focus({ preventScroll: true })
     }
   }, [fetcher.data, fetcher.state])
@@ -66,14 +67,34 @@ export function DecisionForm({ context, intent, subject, other, identifier, targ
   const id = useId()
   const scope = useContext(decisionKey)
   const fetcher = useFetcher<ActionResult>({ key: scope?.key })
+  const [opened, setOpened] = useState<WriteContext | null>(null)
+  const submitted = useRef(false)
+  const details = useRef<HTMLDetailsElement>(null)
+  const shown = opened ?? context
+  useEffect(() => {
+    if (submitted.current && fetcher.state === 'idle' && fetcher.data) {
+      submitted.current = false
+      if (fetcher.data.saved && details.current) {
+        details.current.open = false
+        details.current.querySelector('form')?.reset()
+        setOpened(null)
+      }
+    }
+  }, [fetcher.data, fetcher.state])
   const busy = fetcher.state !== 'idle'
   const button = { join: 'Join', separate: 'Separate', rejoin: 'Remove', mute: 'Ignore', restore: 'Restore', forget: 'Delete data' }[intent]
-  return <details className="decision-form"><summary>{label || button}</summary><fetcher.Form method="post" preventScrollReset onSubmit={event => {
+  return <details className="decision-form" ref={details} onToggle={event => {
+    // A live read may replace the audit head while the reviewer is writing a reason.
+    setOpened(event.currentTarget.open ? context : null)
+  }}><summary>{label || button}</summary><fetcher.Form method="post" preventScrollReset onSubmit={event => {
     if (busy) event.preventDefault()
-    else scope?.remember(document.activeElement instanceof HTMLElement ? document.activeElement : null)
+    else {
+      submitted.current = true
+      scope?.remember(document.activeElement instanceof HTMLElement ? document.activeElement : null)
+    }
   }}>
     {scope?.enhanced && <input type="hidden" name="_enhanced" value="1"/>}
-    {Object.entries({ intent, key: context.key + id, seen: context.seen, at: context.at, subject, other, identifier }).map(([name, value]) => value != null && <input key={name} type="hidden" name={name} value={value}/>)}
+    {Object.entries({ intent, key: shown.key + id, seen: shown.seen, at: shown.at, subject, other, identifier }).map(([name, value]) => value != null && <input key={name} type="hidden" name={name} value={value}/>)}
     {intent === 'join' && !other && <label>Other ID <input name="other" placeholder="account:42" required maxLength={500}/></label>}
     <p>{intent === 'forget' ? 'All data recorded for ' + subject + ' will be permanently deleted.' : intent === 'join' ? subject + ' and the other ID will be treated as one person.' : intent === 'separate' ? subject + ' and ' + other + ' will be treated as different people.' : intent === 'rejoin' ? subject + ' and ' + other + ' can be joined again.' : identifier}</p>
     <label>Reason <input name="reason" maxLength={1000}/></label>
