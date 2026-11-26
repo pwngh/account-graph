@@ -428,7 +428,8 @@ if (url) {
     const through = new URL(url)
     through.port = String((proxy.address() as AddressInfo).port)
     through.hostname = '127.0.0.1'
-    const graph = accountGraph({ databaseUrl: through.href, schema, workers: false, receiptSecrets: [SECRET], timeoutMs: 800 })
+    // Room for a first write while other suites run: what is tested is that a silent connection costs one call, not how fast.
+    const graph = accountGraph({ databaseUrl: through.href, schema, workers: false, receiptSecrets: [SECRET], timeoutMs: 2000 })
     try {
       assert.ok((await one(graph, conversion())).ok)
       for (const pair of open) pair.dead = true

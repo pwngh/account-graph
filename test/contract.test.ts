@@ -767,7 +767,8 @@ if (url) {
   })
 
   test('a call that waits too long for the lock ends', async () => {
-    const { graph, schema, close } = await postgres({ timeoutMs: 600 })
+    // The first write of a new schema takes a few hundred milliseconds alone, and more beside other suites, so the limit leaves room for it.
+    const { graph, schema, close } = await postgres({ timeoutMs: 2000 })
     const holder = await pool!.connect()
     try {
       await one(graph, EVERY[1]!)
