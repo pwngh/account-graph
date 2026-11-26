@@ -31,6 +31,8 @@
 - `account_graph_outbox_lib` stops a pass on service faults, holds explicit dependents for refused or malformed writes, and clears the saved request after each successful send.
 - `account_graph_lib.php` allows a record batch time to finish, honors the server’s retry delay across worker runs and distinguishes TLS setup failures from indeterminate timeouts.
 - `account_graph_lib.php` brings the six calls to PHP hosts, with stable keys, cursor paging and a transactional outbox that keeps each record's changes in order.
+- `account_graph_lib` brings the six calls to PHP 7.2+ hosts, plain or CodeIgniter (`$this->load->library('account_graph_lib', $config)`), with retries under the same key, cursor paging and Retry-After capped at 15 minutes. See [PHP](docs/php.md).
+- `account_graph_outbox_lib` sends each record's changes in order from the host's own transaction; a service fault pauses the pass, a refused row waits for a person, and a sent row keeps no personal data.
 - `profile.createdAt` records when your system created a subject. The Accounts heading and Links table show it alongside the earliest activity the graph still holds for each record.
 - `textsOptedOut` covers a STOP from any phone number the subject’s cluster has, including one only related to it under `records`. A START from inside the cluster does not undo it.
 - `record` applies an inbound opt-out first supplied on a text retry at the original message time and answers `optOutAdded: true` once.
