@@ -237,3 +237,49 @@ test('a card has its place, and leaves the page as it was', { skip: without, tim
   await run(`$('leave').click()`)
   assert.deepEqual(await run(`['subject', 'ask-title', 'ask-text'].map((id) => $(id).value ?? $(id).textContent)`), ['', '', ''])
 })
+
+test('a card stays open through what a slow machine delivers late, and fills', { skip: without, timeout: 120_000 }, async (t) => {
+  const made = await firm(memory)
+  t.after(made.close)
+  const page = await screen(made.base)
+  t.after(page.close)
+  const { run, key, find, text } = page
+  const ada = 'board.person contact:ada'
+  // The change of address that brought the view here, delivered after the card was opened, leaves the card open. Leaving for another address closes it.
+  await page.go('#/board/90')
+  await page.click(find(ada))
+  await page.settled()
+  await run(`dispatchEvent(new HashChangeEvent('hashchange'))`)
+  await until('the view to be read again', () => run(`opening === 0`))
+  assert.deepEqual([await page.shown(), await text('#card-title')], [true, 'contact:ada'])
+  await run(`location.hash = '#/board/7'`)
+  await until('it to close', async () => !(await page.shown()))
+
+  // While a card waits for its answer: its minute runs out, a pulse says something was written, the page writes a decision, and the view is read again. The answer is drawn all the same.
+  await page.go('#/board/90')
+  await run(`(() => {
+    lately.clear()
+    window.timers = []
+    window.realTimeout ??= setTimeout
+    window.setTimeout = (done, ms, ...rest) => (ms === 60000 ? timers.push(done) : realTimeout(done, ms, ...rest))
+    window.real ??= window.fetch
+    window.fetch = async (...asked) => {
+      if (String(asked[0]).includes('/journey')) await new Promise((done) => realTimeout(done, 1500))
+      return window.real(...asked)
+    }
+  })()`)
+  await page.click(find(ada))
+  assert.equal(await run(`document.querySelectorAll('#card .waiting-lines').length`), 1)
+  await run(`(async () => {
+    for (const done of timers) done()
+    window.setTimeout = realTimeout
+    beat = undefined
+    await pulse()
+    await api('POST', '/forget', { subjects: ['visitor:nobody'], reason: 'asked to' })
+    await load(beat)
+  })()`)
+  await page.settled()
+  assert.deepEqual([await page.shown(), await text('#card-title'), (await page.says())['Next step']], [true, 'contact:ada', 'client'])
+  await key('Escape')
+  await run(`window.fetch = window.real`)
+})

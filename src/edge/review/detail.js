@@ -162,6 +162,8 @@ const cards = (() => {
   let hinted
   let aimed
   let gone
+  /** The address the card was opened at. */
+  let openedFor
   let timer
   const resting = { x: -1, y: -1 }
   addEventListener('pointermove', ({ clientX, clientY }) => Object.assign(resting, { x: clientX, y: clientY }), { passive: true })
@@ -205,6 +207,7 @@ const cards = (() => {
   function open(button) {
     close()
     from = button
+    openedFor = location.hash
     tell = telling(body, () => stand(card, from), 10, turns)
     if (!card.matches(':popover-open')) card.showPopover()
     if (!show()) return close()
@@ -309,7 +312,8 @@ const cards = (() => {
   }, true)
   // A question or the palette takes the whole screen.
   addEventListener('focusin', (event) => from && event.target.closest?.('dialog') && close())
-  addEventListener('hashchange', () => close())
+  // Leaving the page closes it. A change of address that comes after the card was opened for that address leaves nothing, and a slow machine can deliver one that late.
+  addEventListener('hashchange', () => (location.hash === openedFor ? hide() : close()))
   addEventListener('scroll', (event) => {
     if (!card.contains(event.target)) stand(card, from)
     // The focus brings a mark into view by scrolling, so the short card goes along with it.
