@@ -304,7 +304,7 @@ class OutboxTests(unittest.TestCase):
                              [("a1", "refused"), ("a2", "sent"), ("b1", "blocked"), ("b2", "sent"), ("c1", "blocked")])
             self.assertEqual(box.flush(client), 0)
 
-            # Once the prerequisite is put right and sent, the rows waiting on it follow in the same pass.
+            # Once the prerequisite is fixed and sent, the rows waiting on it follow in the same pass.
             box._db.execute("UPDATE account_graph_outbox SET status = 'pending', reason = NULL WHERE id = ?", (a1,))
             client.record.side_effect = lambda request: accepted(request["entries"][0]["key"])
             self.assertEqual(box.flush(client), 3)

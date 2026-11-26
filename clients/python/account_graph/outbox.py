@@ -219,7 +219,7 @@ def _levels(value: Any) -> int:
 
 
 def _refusal(reply: object, entry: RecordEntry) -> Optional[str]:
-    # An incomplete or mismatched reply cannot acknowledge this particular row.
+    # An incomplete or mismatched reply cannot acknowledge this row.
     results = reply.get("results") if isinstance(reply, dict) else None
     if isinstance(results, list) and len(results) == 1 and isinstance(results[0], dict):
         result = results[0]
