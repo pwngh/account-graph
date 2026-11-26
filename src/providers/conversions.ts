@@ -89,7 +89,7 @@ export function conversionEvent(conversion: Conversion): Record<string, unknown>
   }
 }
 
-/** The body for `events:ingest`. `validateOnly` defaults to true: Google checks it and records nothing. */
+/** The body for `events:ingest`. `validateOnly` defaults to true, so Google checks it and records nothing. */
 export function ingestRequest(
   destination: Destination,
   conversions: readonly Conversion[],
