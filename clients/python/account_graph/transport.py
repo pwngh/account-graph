@@ -47,7 +47,7 @@ def post(host: str, port: Optional[int], tls: Optional[ssl.SSLContext], path: st
             sock = connection.sock
             if sock is None:
                 return
-            # Check the actual peer before sending a bearer token over plaintext, even for localhost.
+            # Check the connected peer before sending a bearer token over plaintext, even for localhost.
             if tls is None and not ipaddress.ip_address(sock.getpeername()[0]).is_loopback:
                 invalid_origin = True
                 return
