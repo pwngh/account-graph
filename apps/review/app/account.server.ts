@@ -1,3 +1,4 @@
+import { subjectPath } from './navigation'
 import { graphTime } from './runtime.server'
 import { randomUUID } from 'node:crypto'
 import { data, redirect } from 'react-router'
@@ -54,7 +55,7 @@ export async function changeAccounts(request: Request, subject?: string, fields?
     const saved = (message: string) => {
       if (field('_enhanced') === '1') return { saved: message }
       const url = new URL(request.url)
-      return redirect(url.pathname.replace(/\.data$/, '') + url.search, 303)
+      return redirect((subject ? subjectPath(subject) : url.pathname.replace(/\.data$/, '')) + url.search, 303)
     }
     let answer
     if (intent === 'forget') {

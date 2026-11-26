@@ -423,7 +423,7 @@ async function round(databaseUrl: string | undefined, graphAt: string, sitePort:
       },
     },
     {
-      title: 'Join kept', text: 'The parent is on file twice. Staff join the two, then separate parent and child. The join holds.', see: ['Accounts', review('accounts/contact:marta-lago')],
+      title: 'Join kept', text: 'The parent is on file twice. Staff join the two, then separate parent and child. The join holds.', see: ['Accounts', review('accounts/' + encodeURIComponent('contact:marta-lago'))],
       async run() {
         await at(3, 16, 47)
         await record<'profile'>({ type: 'profile', subject: 'contact:marta-lago-2', facts: { phone: '+15550100044', name: { first: 'Marta', last: 'Lagos' } }, event: 'staff entry' })

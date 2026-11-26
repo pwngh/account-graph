@@ -7,6 +7,7 @@ import { RouterContextProvider } from 'react-router'
 const subject = 'account:42'
 const path = '/accounts/' + encodeURIComponent(subject)
 const other = 'contact:72'
+const specialSubjects = ['.', '..', ';id=.', 'contact:hello/世界?literal%2F#end.data']
 const reviewer = 'sample-reviewer-token'
 const service = 'sample-events-token'
 const observed = Date.UTC(2026, 8, 21)
@@ -43,11 +44,13 @@ async function handler(req, res) {
   switch (url.pathname) {
     case '/review/api/me': return send(200, { reviewer: 'dana', retraction: { targets: [], always: false }, targets: {}, limits: { returnHours: null, openHours: false } })
     case '/review/api/subject': return send(200, url.searchParams.get('subject') === subject ? account : { known: false, subject: url.searchParams.get('subject') })
+    case '/review/api/journey': return send(200, { entries: [], subjects: {}, next: null, more: 0 })
     case '/review/api/clusters': return send(200, [{ id: subject, size: account.cluster.members.length, oversized: false }])
     case '/review/api/recent': return send(200, [])
     case '/review/api/decisions': return send(200, { decisions: [], next: null, total: 0 })
     case '/review/api/audit': return send(200, { sound: true, head: null })
     case '/review/api/pulse': return send(200, { version: changes.length })
+    case '/v1/lookup': return send(200, { by: 'subject', subjects: specialSubjects })
     case '/v1/decide': {
       if (beforeDecision) await beforeDecision
       const previous = decisions.get(input.key)
@@ -103,7 +106,7 @@ function routeModule(part) {
 }
 async function invoke(fn, request, params = {}) {
   try {
-    return await fn({ request, params, context: new RouterContextProvider() })
+    return await fn({ request, params, url: new URL(request.url), context: new RouterContextProvider() })
   } catch (error) {
     if (error instanceof Response) return error
     throw error
@@ -194,6 +197,7 @@ test('a plain HTML client signs in, reads an account, posts its form twice and s
   fields.set('other', 'contact:73')
   fields.set('reason', 'Confirmed at intake')
   const action = new URL(/\baction="([^"]+)"/.exec(form)?.[1] || path, origin)
+  assert.equal(action.pathname, path, 'the form posts to the linked account address')
   for (const foreign of ['https://elsewhere.example.org', null]) {
     const previous = requests.filter(call => call.path === '/v1/decide').length
     const refused = await fetch(action, post(fields, cookie, foreign))
@@ -205,9 +209,12 @@ test('a plain HTML client signs in, reads an account, posts its form twice and s
   const rejected = await fetch(action, post(invalid, cookie))
   assert.equal(rejected.status, 400)
   assert.match((await rejected.text()).replace(/<script\b[^>]*>[^]*?<\/script>/gi, ''), /Choose two different IDs/)
-  for (let i = 0; i < 2; i++) {
-    const response = await fetch(action, post(fields, cookie))
+  for (const address of [action, origin + '/accounts/' + subject]) {
+    const response = await fetch(address, post(fields, cookie))
     assert.equal(response.status, 303, 'a native submission redirects to its current account')
+    assert.equal(response.headers.get('location'), path)
+    const redirected = await fetch(new URL(response.headers.get('location'), origin), { headers: { cookie } })
+    assert.match(await redirected.text(), /Created in your system/)
   }
   const input = decisions.get(fields.get('key'))
   assert.deepEqual(input?.pairs, [{ a: subject, b: 'contact:73' }])
@@ -216,6 +223,42 @@ test('a plain HTML client signs in, reads an account, posts its form twice and s
   const out = await fetch(origin + '/signout', post({}, cookie))
   assert.match(out.headers.get('set-cookie') ?? '', /Max-Age=0|Expires=Thu, 01 Jan 1970/i)
   redirectToLogin(await fetch(origin + path, { redirect: 'manual', headers: { cookie } }))
+})
+
+test('pasted and linked subjects reopen the same record with their ID preserved', async () => {
+  const cookie = await signin()
+  const headers = { cookie }
+  for (const view of ['accounts', 'journey']) {
+    const pasted = '/' + view + '/' + subject + '?before=1'
+    const page = await fetch(origin + pasted, { headers })
+    assert.equal(page.status, 200)
+    assert.equal(page.url, origin + '/' + view + '/account%3A42?before=1')
+    const html = (await page.text()).split('<script')[0]
+    assert.ok(html.includes(subject))
+    const linkedView = view === 'accounts' ? 'journey' : 'accounts'
+    const href = new RegExp('href="(/' + linkedView + '/[^"]+)"').exec(html)?.[1]
+    assert.equal(href, '/' + linkedView + '/account%3A42')
+    for (let read = 0; read < 2; read++) {
+      const linked = await fetch(new URL(href, page.url), { headers, redirect: 'manual' })
+      assert.equal(linked.status, 200)
+      assert.match((await linked.text()).split('<script')[0], linkedView === 'accounts' ? /Created in your system/ : /No events/)
+    }
+  }
+  const search = await fetch(origin + '/search', post({text: 'sample'}, cookie))
+  assert.equal(search.status, 200)
+  const matches = [...(await search.text()).split('<script')[0].matchAll(/<a\b[^>]*\bhref="(\/accounts\/[^"]+)"[^>]*>([^<]+)<\/a>/g)]
+  assert.equal(matches.length, specialSubjects.length)
+  assert.equal(new Set(matches.map(([, href]) => href)).size, specialSubjects.length)
+  for (const id of specialSubjects) {
+    const href = matches.find(([, , label]) => label === id)?.[1]
+    assert.ok(href, 'search links to ' + id)
+    for (let read = 0; read < 2; read++) {
+      const linked = await fetch(new URL(href, search.url), { headers, redirect: 'manual' })
+      assert.equal(linked.status, 200)
+      assert.ok((await linked.text()).split('<script')[0].includes('<h2>' + id + '</h2>'), id)
+      assert.equal(requests.findLast(call => call.path === '/review/api/subject').query.get('subject'), id)
+    }
+  }
 })
 
 test('a graph refusal clears the session, a temporary outage renders an actionable error', async () => {
@@ -385,13 +428,13 @@ test('keyboard navigation, narrow forced colors, pending form and history keep t
   }
 })
 
-test('Chrome with scripts disabled signs in, posts a native form and returns to the account', { skip: !process.env.CHROME && 'set CHROME to verify native browser forms with scripts disabled', timeout: 40000 }, async t => {
+test('Chrome with scripts disabled signs in, posts a native form, follows an account link and reloads it', { skip: !process.env.CHROME && 'set CHROME to verify native browser forms with scripts disabled', timeout: 40000 }, async t => {
   const { browse, until } = await import('../../../test/chrome.ts')
   const browser = await browse('about:blank')
   t.after(browser.close)
-  const posts = []
+  const postOrigins = []
   const observe = request => {
-    if (request.method === 'POST') posts.push({ path: new URL(request.url, origin).pathname, from: request.headers.origin })
+    if (request.method === 'POST') postOrigins.push(request.headers.origin)
   }
   app.on('request', observe)
   t.after(() => app.off('request', observe))
@@ -436,5 +479,18 @@ test('Chrome with scripts disabled signs in, posts a native form and returns to 
     const loader = await loadedAccount()
     return loader && loader !== signedIn && [...decisions.values()].some(input => input.pairs?.[0]?.b === 'contact:browser-native')
   })
-  assert.deepEqual(posts, [{ path: '/signin', from: origin }, { path, from: origin }])
+  assert.deepEqual(postOrigins, [origin, origin])
+  await focus('#links a.subject')
+  await browser.press('Enter')
+  async function linkedAccount(previous) {
+    const active = await frame()
+    if (active.loaderId === previous || decodeURIComponent(new URL(active.url).pathname) !== '/accounts/' + other) return false
+    const detail = await node('#detail').catch(() => 0)
+    if (!detail) return false
+    const { outerHTML } = await cdp('DOM.getOuterHTML', { nodeId: detail })
+    return outerHTML.includes('<h2>' + other + '</h2>') && outerHTML.includes('No records') && active.loaderId
+  }
+  const followed = await until('the linked account without scripts', linkedAccount)
+  await cdp('Page.reload')
+  await until('the same linked account after reloading', () => linkedAccount(followed))
 })

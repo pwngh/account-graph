@@ -2,6 +2,8 @@
 
 The review app serves the reviewer’s pages from a Node server. Accounts, Journey, Board and Calls have addresses you can open, bookmark and share with another reviewer. The server obtains the graph data over HTTP and renders the page, including its charts. Search and decision forms submit to the app. With JavaScript off you can follow links, open details, submit a form and reload to see changes.
 
+Subject IDs occupy one URL segment. The account for `account:42` is at `/accounts/account%3A42`. An address pasted with a literal colon redirects to the same record. The IDs `.` and `..` use `;id=.` and `;id=..` in that segment so the browser can follow them.
+
 ## Development
 
 Use Node 22.22 or later. From the repository root, install both lockfiles once and build the graph package. The app imports the checkout’s public `account-graph` entry point. Its React dependencies belong to `apps/review`.

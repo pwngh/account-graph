@@ -1,3 +1,4 @@
+import { subjectPath } from './navigation.ts'
 import { graphTime } from './runtime.server'
 import { createHash, randomUUID } from 'node:crypto'
 import { reviewGet, withGraph } from './auth.server'
@@ -32,7 +33,7 @@ export async function prepareReport(kind: ReportKind, which: string | undefined,
     return get(name, Object.fromEntries(new URLSearchParams(args)))
   })
   const qs = new URLSearchParams()
-  const canonical = '/' + kind + (which ? '/' + encodeURIComponent(which) : '')
+  const canonical = kind === 'journey' && which ? subjectPath(which, kind) : '/' + kind + (which ? '/' + encodeURIComponent(which) : '')
   const specs: { type: string, id: string, data: Row }[] = []
   const add = (type: string, id: string, data: Row) => {
     const key = type + '.' + identity(id)

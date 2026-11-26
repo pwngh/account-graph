@@ -1,3 +1,5 @@
+import { subjectPath } from '../navigation.ts'
+
 export const WHAT = { visit: 'Visit', sighting: 'Sighting', call: 'Call', text: 'Text', link: 'Link', outcome: 'Outcome', value: 'Value change', consent: 'Consent', decision: 'Decision' }
 export const SENT = { held: 'Held for a call result', pending: 'Queued for', sent: 'Sent to', skipped: 'Skipped for', failed: 'Rejected by' }
 /** It had nothing to send the platform yet, and is tried again until it has. */
@@ -43,8 +45,8 @@ export const cameFrom = row => row?.source ? row.source + (row.campaign || row.c
 export const visitWords = entry => cameFrom({ source: entry.source, campaign: entry.touch?.campaign, campaignId: entry.touch?.campaignId })
 export const directionOf = call => call.direction === 'outbound' ? 'Outbound' : 'Inbound'
 export const dayOf = at => at > 0 ? new Date(at).toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }) : 'No date'
-export const subjectHash = subject => '/accounts/' + encodeURIComponent(subject)
-export const journeyHash = (subject, call) => '/journey/' + encodeURIComponent(subject) + (call ? '#call-' + encodeURIComponent(call) : '')
+export const subjectHash = subject => subjectPath(subject)
+export const journeyHash = (subject, call) => subjectPath(subject, 'journey') + (call ? '#call-' + encodeURIComponent(call) : '')
 export const ACTIONS = { ignore: 'Ignored identifier', restore: 'Restored identifier', separate: 'Separated', rejoin: 'Removed separation', join: 'Joined', unjoin: 'Removed join', forget: 'Deleted data', rebuild: 'Rebuilt all groups', prune: 'Deleted sightings before' }
 
 // One fetcher can outlive a revalidation at the same URL. The answer belongs to the render it was requested from.

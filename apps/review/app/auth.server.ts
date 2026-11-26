@@ -2,6 +2,7 @@ import { fieldsOf } from './forms.server'
 import { randomUUID } from 'node:crypto'
 import { createCookieSessionStorage, data, redirect } from 'react-router'
 import { accountGraph } from 'account-graph'
+import { subjectAddress } from './navigation'
 import { runtime, type Reviewer } from './runtime.server'
 
 const lifetime = 8 * 3600
@@ -69,7 +70,7 @@ function safePath(path: unknown) {
     const value = url.searchParams.get(key)
     if (value && allowed.test(value)) clean.set(key, value)
   }
-  return url.pathname + (clean.size ? '?' + clean : '') + (url.pathname.startsWith('/journey/') && url.hash.startsWith('#call-') ? url.hash : '')
+  return (subjectAddress(url.pathname)?.path ?? url.pathname) + (clean.size ? '?' + clean : '') + (url.pathname.startsWith('/journey/') && url.hash.startsWith('#call-') ? url.hash : '')
 }
 
 // A board can make several successive reads for its details. They share one deadline.

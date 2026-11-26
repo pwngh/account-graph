@@ -1,10 +1,10 @@
 import { createContext, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { Link, useFetcher } from 'react-router'
+import { Link, useFetcher, useLocation } from 'react-router'
+import { subjectPath } from '../navigation'
 import { ICONS, PERSON, typeOf } from './cluster-layout.js'
 
 export const amount = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 2 })
 export const percent = (n: number) => Math.round(n * 100) + '%'
-export const subjectPath = (subject: string, view = 'accounts') => '/' + view + '/' + encodeURIComponent(subject)
 const formatter = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' })
 export const stamp = (at: number) => formatter.format(at) + ' UTC'
 export function Time({ at }: { at?: number }) {
@@ -65,6 +65,7 @@ export interface WriteContext { key: string, at: number, seen: number }
 export type Intent = 'join' | 'separate' | 'rejoin' | 'mute' | 'restore' | 'forget'
 export function DecisionForm({ context, intent, subject, other, identifier, targets, label }: { context: WriteContext, intent: Intent, subject: string, other?: string, identifier?: string, targets?: string[], label?: string }) {
   const id = useId()
+  const { pathname, search } = useLocation()
   const scope = useContext(decisionKey)
   const fetcher = useFetcher<ActionResult>({ key: scope?.key })
   const [opened, setOpened] = useState<WriteContext | null>(null)
@@ -86,7 +87,7 @@ export function DecisionForm({ context, intent, subject, other, identifier, targ
   return <details className="decision-form" ref={details} onToggle={event => {
     // A live read may replace the audit head while the reviewer is writing a reason.
     setOpened(event.currentTarget.open ? context : null)
-  }}><summary>{label || button}</summary><fetcher.Form method="post" preventScrollReset onSubmit={event => {
+  }}><summary>{label || button}</summary><fetcher.Form method="post" action={pathname + search} preventScrollReset onSubmit={event => {
     if (busy) event.preventDefault()
     else {
       submitted.current = true
