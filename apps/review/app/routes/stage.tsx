@@ -16,7 +16,7 @@ function Fields({rows}: {rows: [string,string][]}) {
   return <>{rows.map(([label, value]) => <div className="field" key={label}><small>{label}</small> <span>{value}</span></div>)}</>
 }
 
-function Phone({state, phone}: {state: StageState, phone: string}) {
+function Phone({state, phone, busy}: {state: StageState, phone: string, busy: boolean}) {
   const p = state.practice
   const shown = state.scenes[state.next - 1]?.shown
   const page = phone === 'ad' || phone === 'site' ? phone : phone.startsWith('text-') ? 'texts' : ['calling','missed','talking','director'].includes(phone) ? 'ringing' : 'paper'
@@ -24,8 +24,8 @@ function Phone({state, phone}: {state: StageState, phone: string}) {
   const words = phone === 'paid' ? p.last.done : phone === 'signed' ? p.signed : phone === 'form-sent' ? ['Datos enviados','Gracias, Inés.'] : phone === 'pay' ? [p.last.title,p.last.text] : ['Sus datos','Esta página es de la firma.']
   return <aside id="stage-phone" aria-label="The caller’s phone"><div className="device" data-state={phone} data-page={page}><div className="screen">
     <div className="bar"><time>{new Date(state.clock).toISOString().slice(11,16)} UTC</time><i/></div>
-    {page === 'ad' ? <div className="page ad"><div className="ask">{p.ask}</div><div className="result"><small>Anuncio · {p.firm}</small><b>{p.ad[0]}</b>{p.ad[1]}</div></div>
-      : page === 'site' ? <div className="page site"><iframe src={state.site + '/es?phone=1'} title="The sample firm on the caller’s phone"/></div>
+    {page === 'ad' ? <div className="page ad"><div className="ask">{p.ask}</div><button className="result" type="submit" name="intent" value="run" form="scene-controls" disabled={!state.ready || busy}><small>Anuncio · {p.firm}</small><b>{p.ad[0]}</b>{p.ad[1]}</button></div>
+      : page === 'site' ? <div className="page site"><iframe sandbox="allow-scripts allow-same-origin" referrerPolicy="no-referrer" src={state.site + '/es?phone=1'} title="The sample firm on the caller’s phone"/></div>
       : page === 'ringing' ? <div className="page ringing"><span className="face">T</span><b>{p.firm}</b><span className="how">{phone === 'missed' ? 'Missed call' : phone === 'calling' ? 'Calling…' : 'Answered'}</span><span className="clock">{shown?.seconds} s</span></div>
       : page === 'texts' ? <div className="page texts"><div className="with">{p.firm}</div><div className="thread"><p className="bubble">{text}</p></div></div>
       : <div className="page paper"><div className="sheet"><small>{p.firm}</small><b>{words[0]}</b><p>{words[1]}</p>{phone === 'form' && <Fields rows={p.form}/>}{phone === 'pay' && <Fields rows={p.last.fields}/>}</div></div>}
@@ -38,7 +38,8 @@ export default function StagePage() {
   const [live, setLive] = useState(loaded)
   const state = live.revision > loaded.revision ? live : loaded
   const [status, setStatus] = useState('')
-  const [playing, setPlaying] = useState(false)
+  const [playStart, setPlayStart] = useState<number | undefined>()
+  const playing = playStart !== undefined
   const [hidden, setHidden] = useState(false)
   const [enhanced, setEnhanced] = useState(false)
   const fetcher = useFetcher<ActionResult>()
@@ -87,16 +88,16 @@ export default function StagePage() {
     return () => match?.classList.remove('spot')
   }, [scene, currentView, content])
   const play = () => {
-    if (playing) setPlaying(false)
+    if (playing) setPlayStart(undefined)
     else if (state.next) setStatus('Press R to restart before playing the story.')
-    else setPlaying(true)
+    else if (state.ready && !busy) setPlayStart(performance.now())
   }
   useEffect(() => {
     function key(event: KeyboardEvent) {
       if (event.repeat || event.ctrlKey || event.metaKey || event.altKey || (event.target as HTMLElement)?.closest('input, select, textarea, button, summary, a')) return
       switch (event.key.toLowerCase()) {
         case ' ': case 'space': event.preventDefault(); run.current?.click(); break
-        case 'r': setPlaying(false); restart.current?.click(); break
+        case 'r': setPlayStart(undefined); restart.current?.click(); break
         case 'p': play(); break
         case 'h': setHidden(h => !h); break
       }
@@ -105,12 +106,26 @@ export default function StagePage() {
     return () => window.removeEventListener('keydown', key)
   })
   useEffect(() => {
-    if (!playing || busy || !state.ready) return
-    if (state.next >= 17 || fetcher.data?.error) { setPlaying(false); return }
-    const timer = setTimeout(() => run.current?.click(), state.next ? 4800 : 0)
+    if (state.next !== 1 || !state.ready || busy || playing) return
+    function fromPhone(event: MessageEvent) {
+      const phone = document.querySelector<HTMLIFrameElement>('#stage-phone iframe')
+      if (event.origin === state.site && event.source === phone?.contentWindow && event.data === 'call') run.current?.click()
+    }
+    window.addEventListener('message', fromPhone)
+    return () => window.removeEventListener('message', fromPhone)
+  }, [state.site, state.next, state.ready, busy, playing])
+  useEffect(() => {
+    if (playStart === undefined || busy || !state.ready) return
+    if (fetcher.data?.error) {
+      setPlayStart(undefined)
+      return
+    }
+    const times = [1, 4.5, 8, 15, 20, 28, 31, 39, 43.5, 49, 55, 59.5, 62.5, 66, 70]
+    const when = times[state.next]
+    const timer = setTimeout(() => when === undefined ? setPlayStart(undefined) : run.current?.click(), Math.max(0, playStart + (when ?? 90) * 1000 - performance.now()))
     return () => clearTimeout(timer)
-  }, [playing, busy, state.next, state.ready, fetcher.data])
-  return <div className={phone ? 'with-phone' : undefined}>{phone && <Phone state={state} phone={phone}/>}
+  }, [playStart, busy, state.next, state.ready, fetcher.data])
+  return <div className={phone ? 'with-phone' : undefined}>{phone && <Phone state={state} phone={phone} busy={busy}/>}
     <section><h2>{scene?.title ?? state.practice.firm}</h2>{scene && <p>{scene.text}</p>}
       {!state.ready && <p role="status">Loading sample history · {state.progress}. <a href="/stage">Refresh progress</a></p>}
       {state.error && <p role="alert">{state.error}</p>}{state.ready && <Link to={path}>Open reviewer view</Link>}
@@ -121,11 +136,11 @@ export default function StagePage() {
     {state.told.credit && <section className="stage-credit">Ad credit of contact:ines-vega <b>{Math.round(100 * state.told.credit.share)}%</b>{state.told.credit.campaign ? 'Credited to ' + state.told.credit.campaign : 'Not credited. It takes 90%.'}</section>}
     <div id="stage" role="group" aria-label="Demo scenes" className={hidden ? 'away' : undefined} data-at={state.next} data-ms={state.ms} data-ready={state.ready} data-running={busy}>
       <span className="where">{state.next} of {state.scenes.length}</span><b>{scene?.title ?? 'Scenes'}</b><span className="told" role="status">{status || (state.ready ? state.told.lines.join(' ') : state.progress)}</span>
-      <fetcher.Form method="post" action="/stage" className="keys" preventScrollReset>
+      <fetcher.Form id="scene-controls" method="post" action="/stage" className="keys" preventScrollReset>
         {enhanced && <input type="hidden" name="_enhanced" value="1"/>}<input type="hidden" name="boot" value={state.boot}/><input type="hidden" name="expected" value={state.next}/>
         <button ref={run} name="intent" value="run" className="primary" hidden={finished} disabled={!state.ready || busy || finished}>Next <kbd>Space</kbd></button>
         {enhanced && <button type="button" onClick={play} disabled={!state.ready}>{playing ? 'Pause' : 'Play'} <kbd>P</kbd></button>}
-        <button ref={restart} name="intent" value="restart" className={finished ? 'primary' : ''} disabled={busy || (!state.ready && !state.error)} onClick={() => setPlaying(false)}>Restart <kbd>R</kbd></button>
+        <button ref={restart} name="intent" value="restart" className={finished ? 'primary' : ''} disabled={busy || (!state.ready && !state.error)} onClick={() => setPlayStart(undefined)}>Restart <kbd>R</kbd></button>
         {enhanced && <button type="button" onClick={() => setHidden(true)}>Hide <kbd>H</kbd></button>}
       </fetcher.Form><Answer result={fetcher.data ?? actionData}/>
     </div>{hidden && <button type="button" onClick={() => setHidden(false)}>Show scene controls</button>}

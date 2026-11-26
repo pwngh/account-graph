@@ -2,7 +2,7 @@
 import { ACTIONS, WHAT, CLICKS, cameFrom, consentWords, dayOf, directionOf, idText, inShort, inWords, journeyHash, lasted, percent, amount, subjectHash, tieWords, unreached, visitWords, waiting, worthOf } from './views/report-words.js'
 const money = amount
 const reviewDisplay = { idText, day: day => new Date(day + 'T00:00:00Z').toLocaleDateString('en-US', {dateStyle:'medium',timeZone:'UTC'}) }
-const docs = (text, path) => ({ text, href: 'https://github.com/pwngh/account-graph/blob/main/docs/' + path })
+const docs = (text, path) => ({ text, href: '/guide/' + path.split('#')[1] })
 const toPart = (text, id) => ({ text, href: '#' + id })
 const author = by => by?.startsWith('system:') ? 'system ' + by.slice(7) : by || 'Unknown'
 const moment = (at, seconds = false) => typeof at === 'number' && at > 0 ? new Date(at).toLocaleString('en-US', {timeZone:'UTC',weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',...(seconds && {second:'2-digit',timeZoneName:'short'})}) : undefined

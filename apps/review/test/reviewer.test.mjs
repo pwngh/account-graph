@@ -168,6 +168,7 @@ test('a plain HTML client signs in, reads an account, posts its form twice and s
   const html = await page.text()
   const document = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '').replaceAll('<!-- -->', '')
   for (const evidence of ['Largest groups', 'Recent changes', 'Audit log', 'First seen here', 'Created in your system', '98%', 'Sightings', 'First &lt;visit&gt;', '<svg']) assert.ok(document.includes(evidence), 'SSR includes ' + evidence)
+  assert.equal(page.headers.get('referrer-policy'), 'same-origin', 'native POSTs keep their origin')
   const policy = page.headers.get('content-security-policy')
   const nonce = /script-src[^;]*'nonce-([^']+)'/.exec(policy)?.[1]
   assert.ok(nonce, 'script policy carries a nonce')

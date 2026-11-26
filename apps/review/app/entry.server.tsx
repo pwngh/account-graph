@@ -10,7 +10,11 @@ export default async function document(request: Request, status: number, headers
   if (stage && new URL(request.url).pathname === '/stage') policy.push('frame-src ' + new URL(stage.state().site).origin)
   headers.set('content-security-policy', policy.join('; '))
   headers.set('cache-control', 'no-store')
-  headers.set('referrer-policy', 'no-referrer')
+  // A native POST under no-referrer can carry Origin: null. Same-origin forms must retain their origin.
+  headers.set('referrer-policy', 'same-origin')
+  headers.set('cross-origin-opener-policy', 'same-origin')
+  headers.set('cross-origin-resource-policy', 'same-origin')
+  headers.set('permissions-policy', 'camera=(), display-capture=(), geolocation=(), microphone=(), payment=(), usb=()')
   headers.set('x-content-type-options', 'nosniff')
   headers.set('content-type', 'text/html; charset=utf-8')
   if (request.method === 'HEAD') return new Response(null, {status,headers})

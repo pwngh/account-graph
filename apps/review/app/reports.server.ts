@@ -1,5 +1,5 @@
 import { graphTime } from './runtime.server'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { reviewGet, withGraph } from './auth.server'
 import { cardModels, daysBefore } from './cards.server.js'
 
@@ -10,7 +10,7 @@ const missing = () => new Response('These details have changed. Open the report 
 const identity = (...values: unknown[]) => createHash('sha256').update(JSON.stringify(values)).digest('base64url').slice(0, 24)
 
 export function loadReport(request: Request, kind: ReportKind, which?: string, selected?: string) {
-  return withGraph(request, session => prepareReport(kind, which, new URL(request.url).searchParams, (path, query) => reviewGet(request, session, path, query), selected))
+  return withGraph(request, session => prepareReport(kind, which, new URL(request.url).searchParams, (path, query) => reviewGet(request, session, path, query), selected, graphTime()))
 }
 
 export async function loadCard(request: Request, kind?: string, which?: string) {
@@ -20,7 +20,7 @@ export async function loadCard(request: Request, kind?: string, which?: string) 
   return { card: cards[item], canonical }
 }
 
-export async function prepareReport(kind: ReportKind, which: string | undefined, query: URLSearchParams, read: Read, selected?: string) {
+export async function prepareReport(kind: ReportKind, which: string | undefined, query: URLSearchParams, read: Read, selected?: string, at = Date.now()) {
   const cache = new Map<string, Promise<any>>()
   const get = (path: string, query: Record<string, string> = {}) => {
     const key = path + '?' + new URLSearchParams(query)
@@ -39,7 +39,7 @@ export async function prepareReport(kind: ReportKind, which: string | undefined,
     if (selected == null || key === selected) specs.push({ type, id: key, data })
     return key
   }
-  const report: Row = { kind, which, canonical }
+  const report: Row = { kind, which, canonical, snapshot: randomUUID() }
   const me = await get('me')
   const { limits, targets: goals } = me
   if (kind === 'journey') {
@@ -48,7 +48,6 @@ export async function prepareReport(kind: ReportKind, which: string | undefined,
       const before = query.get('before')
       if (before && /^\d+$/.test(before)) qs.set('before', before)
       const journey = report.journey = await get('journey', { ...args, ...Object.fromEntries(qs) })
-      const at = graphTime()
       const { entries, subjects, next } = journey
       const atOf = (e: Row) => [e.subject,e.kind,e.at,e.call?.id,e.text?.id,e.outcome?.transactionId,e.decision?.seq,e.event]
       const facts = { entries, ties: subjects, subject: which, at, limits, partial: next !== null, here: true }
@@ -89,6 +88,7 @@ export async function prepareReport(kind: ReportKind, which: string | undefined,
     const page = Number(query.get('page') ?? 0)
     if (!Number.isSafeInteger(page) || page < 0 || page > 100) throw new Response('Choose a page from the report.', {status: 400})
     const first = open
+    report.oldest = first.calls[0]?.at
     for (let i = 0; i < page; i++) {
       if (open.next == null) throw missing()
       open = await get('calls', { ...window, after: open.next })
@@ -97,11 +97,27 @@ export async function prepareReport(kind: ReportKind, which: string | undefined,
     const before = daysBefore(summary)
     const { total: then } = await get('calls/summary', { from: before.from, to: before.to })
     const facts = { summary, then, open: first, goals, limits }
-    Object.assign(report, { summary, then, open, page, metrics: ['inbound','answered','missed','returned','awaiting'].map(key => add('calls.' + key, '', facts)) })
+    Object.assign(report, { summary, then, before, open, page, metrics: ['inbound','answered','missed','returned','awaiting'].map(key => add('calls.' + key, '', facts)) })
     report.calls = open.calls.map((call: Row) => add('call', call.id, { call, state: call.state, followUp: { state: 'open', attempts: call.attempts }, credit: call, limits, at: open.at }))
     report.measure = ['calls','answered','missed','voicemail','unknown','waiting','returned'].includes(query.get('measure') || '') ? query.get('measure') : 'missed'
-    report.selectedSubject = open.calls.find((call: Row) => call.subject === query.get('who'))?.subject ?? open.calls[0]?.subject
-    if (report.selectedSubject && !selected) report.story = await get('journey', { subject: report.selectedSubject })
+    const state = query.get('result')
+    report.result = state === 'missed' || state === 'voicemail' ? state : 'all'
+    if (report.result !== 'all') qs.set('result', report.result)
+    const available = open.calls.map((call: Row, index: number) => ({ call, index })).filter(({ call }: {call: Row}) => report.result === 'all' || call.state === report.result)
+    const picked = available.find(({index}: {index: number}) => report.calls[index] === query.get('pick')) ?? available[0]
+    if (picked) {
+      const { call, index } = picked
+      report.picked = index
+      if (query.has('pick')) qs.set('pick', report.calls[index])
+      // The selected row and its story share a journey with the historical rows behind the call cards.
+      const journey = await get('journey', {subject: call.subject})
+      report.story = {
+        count: journey.entries.length, more: journey.next !== null, ids: Object.keys(journey.subjects).length,
+        rows: journey.entries.slice(-14).reverse().map((entry: Row) => ({
+          entry, card: entry.kind === 'call' ? add('call', 'history/' + entry.call.id, { ...entry, at: open.at, entries: journey.entries, partial: journey.next !== null, limits, here: false }) : undefined,
+        })),
+      }
+    }
   } else throw missing()
   if (selected !== undefined && specs.length === 0) throw missing()
   const cards: Record<string, Row> = {}
