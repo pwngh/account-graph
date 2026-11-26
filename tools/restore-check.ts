@@ -68,8 +68,10 @@ async function postgresTool(program: 'pg_dump' | 'pg_restore', url: URL, archive
   try {
     await run(program, ['--no-password', '--dbname=service=rehearsal', ...args], { env })
   } catch (error) {
-    // A failed COPY can put a row in stderr.
-    throw new Error(`${program} failed (${(error as NodeJS.ErrnoException).code ?? 'interrupted'})`)
+    // A failed COPY can put a row in stderr, so only its error lines are told, with anything quoted left out and no detail or context lines.
+    const said = String((error as { stderr?: unknown }).stderr ?? '').split('\n').filter((line) => / error: /.test(line) && !/COPY|DETAIL|CONTEXT/.test(line))
+    const why = said.slice(0, 3).map((line) => line.replace(/"[^"]*"|'[^']*'/g, '…').slice(0, 200)).join('; ')
+    throw new Error(`${program} failed (${(error as NodeJS.ErrnoException).code ?? 'interrupted'})${why ? `: ${why}` : ''}`)
   } finally {
     await rm(service)
   }
