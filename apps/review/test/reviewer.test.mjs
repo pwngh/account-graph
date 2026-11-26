@@ -54,6 +54,7 @@ async function handler(req, res) {
     case '/review/api/audit': return send(200, { sound: true, head: null })
     case '/review/api/pulse': return send(200, { version: changes.length })
     case '/review/api/ops': return send(200, { feeds: [] })
+    case '/review/api/texts': return send(200, { from: url.searchParams.get('from'), to: url.searchParams.get('to'), timeZone: 'America/New_York', at: observed, texts: [], next: null })
     case '/review/api/report': return send(200, { rows: [] })
     case '/v1/lookup': return send(200, { by: 'subject', subjects: specialSubjects })
     case '/v1/decide': {
@@ -547,6 +548,43 @@ test('right-to-left names and IDs are isolated from the text around them', async
     Object.assign(account, original)
     audited.length = 0
   }
+})
+
+test('times are in the zone the browser stored, and in the report zone until it has', async () => {
+  const { reviewServer } = await import('../server.mjs')
+  const standalone = await reviewServer({ port: 0, host: '127.0.0.1' })
+  try {
+    const url = address(standalone)
+    const cookie = cookieFrom(await fetch(url + '/signin', post({ token: reviewer }, undefined, url)))
+    const created = async zone => {
+      const html = (await (await fetch(url + path, { headers: { cookie: cookie + (zone ? '; review_zone=' + zone : '') } })).text()).replaceAll('<!-- -->', '')
+      return /Created in your system <time dateTime="2026-09-20T00:00:00.000Z" title="2026-09-20T00:00:00.000Z">([^<]+)<\/time>/.exec(html)?.[1]
+    }
+    const probes = () => requests.filter(call => call.path === '/review/api/texts').length
+    const before = probes()
+    assert.equal(await created(), 'Sep 19, 2026, 8:00 PM EDT')
+    assert.equal(await created(encodeURIComponent('Asia/Tokyo')), 'Sep 20, 2026, 9:00 AM GMT+9')
+    assert.equal(await created('Mars%2FOlympus'), 'Sep 19, 2026, 8:00 PM EDT')
+    assert.equal(probes() - before, 1, 'the report zone is asked for once')
+  } finally {
+    await close(standalone)
+  }
+})
+
+test('Chrome stores its zone on first load and the page shows times in it', { skip: !process.env.CHROME && 'set CHROME to check times in the browser zone', timeout: 40000 }, async t => {
+  const { browse, until } = await import('../../../test/chrome.ts')
+  const { run, send, close: closeBrowser } = await browse('about:blank')
+  t.after(closeBrowser)
+  await send('Emulation.setTimezoneOverride', { timezoneId: 'Asia/Tokyo' })
+  await send('Page.navigate', { url: origin + path })
+  await until('the sign-in form', () => run("Boolean(document.querySelector('input[name=token]'))").catch(() => false))
+  await run(`{
+    const input = document.querySelector('input[name=token]')
+    input.value = ${JSON.stringify(reviewer)}
+    input.form.requestSubmit()
+  }`)
+  await until('the account in the browser zone', () => run(`[...document.querySelectorAll('time')].some(time => time.textContent === 'Sep 20, 2026, 9:00 AM GMT+9')`).catch(() => false))
+  assert.match(await run('document.cookie'), /review_zone=Asia%2FTokyo/)
 })
 
 test('the server bounds a large graph drawing and keeps every link reachable by ordinary pagination', async () => {

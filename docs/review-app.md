@@ -52,6 +52,10 @@ Open `/signin` and enter the token issued to your reviewer name. An address gets
 
 With JavaScript, one event stream stays open as the reviewer moves between reports. One follower per process reads the graph with the events token for every open tab. It starts with the first stream and stops when the last one closes. It follows the graph cursor and checks the write count because some ordinary observations produce no public event. If the graph refuses the events token, the streams end and the page says live updates were interrupted. The reviewer stays signed in. It catches up on history at a fresh connection and asks for one refresh of the open view. A reconnect carries the browser’s last event ID. Stopping the server ends each stream without a sign-out event, and the browser reconnects to the next process. Pages and forms work after an ordinary reload if streaming is unavailable.
 
+## Times
+
+The server writes every time on the page. On the first load with JavaScript, the browser stores its time zone in the `review_zone` cookie and reads the page again, so times appear in the reviewer's zone, with its abbreviation. Before that, and with JavaScript off, times are in the report's zone, the graph's `timeZone`, or UTC if the graph cannot say. Report periods such as Board and Calls dates stay in the report's zone, as on the original screen.
+
 ## Views
 
 | Address | Contents |

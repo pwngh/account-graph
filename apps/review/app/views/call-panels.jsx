@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useContext, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { amount, cameFrom, idText, journeyHash, percent, subjectHash } from './report-words'
-import { Time, stamp } from './shared'
+import { Time, ZoneContext, stamp } from './shared'
 
 export function Change({ now, was, before, good, points }) {
   if (!Number.isFinite(now) || !Number.isFinite(was)) return null
@@ -45,9 +45,10 @@ export function Coverage({ coverage }) {
 function CopyTime({ at }) {
   const [enhanced, setEnhanced] = useState(false)
   const [said, setSaid] = useState('')
+  const zone = useContext(ZoneContext)
   useEffect(() => setEnhanced(true), [])
   if (!enhanced) return null
-  const text = stamp(at)
+  const text = stamp(at, zone)
   return <div className="row"><button type="button" onClick={async () => {
     try {
       await navigator.clipboard.writeText(text)

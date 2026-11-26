@@ -1,7 +1,7 @@
 import './reports.css'
 import { createContext, Fragment, useContext, useEffect, useState } from 'react'
 import { Form, Link, useFetcher } from 'react-router'
-import { Table, Tiles, Time, Subject } from './shared'
+import { Table, Tiles, Time, Subject, ZoneContext } from './shared'
 import { amount, cameFrom, dayOf, detailReply, lasted, percent, subjectHash, tieWords, WHAT } from './report-words'
 import { Bars, CallInbox, Change, Coverage } from './call-panels'
 import { told } from './story'
@@ -62,6 +62,7 @@ function Story({ entry }) {
   return <>{told(entry).map((part,i) => <Fragment key={i}>{part}</Fragment>)}</>
 }
 function Chart({ events, groups, cards }) {
+  const zone = useContext(ZoneContext)
   const marks = events.filter(e => e.entry.at > 0)
   if (!marks.length) return null
   const tracks = kinds.filter(kind => marks.some(e => e.entry.kind === kind))
@@ -72,14 +73,15 @@ function Chart({ events, groups, cards }) {
   return <section><h2>Journey chart</h2><svg className="report-chart" viewBox={'0 0 784 ' + (tracks.length * 34 + 36)} aria-label="Events by type and time" role="group"><g>{
     tracks.map(kind => <g key={kind}><text x="8" y={y(kind) + 5}>{WHAT[kind]}</text><line x1="104" x2="767" y1={y(kind)} y2={y(kind)}/></g>)
   }{marks.filter(item => item.wait).map(item => <a key={item.wait} href={'#' + item.wait} aria-label={cards[item.wait]?.title}><line className="wait" x1={x(item.entry.at)} x2={x(Math.min(high,item.entry.at + item.entry.followUp.delay))} y1={y('call') + 9} y2={y('call') + 9}/></a>)}{
-    groups.filter(group => tracks.includes(group.kind)).map(group => <a key={group.card} href={'#' + group.card} aria-label={cards[group.card]?.title + ', ' + dayOf(group.at)}><title>{cards[group.card]?.title}</title><circle cx={x(group.at)} cy={y(group.kind)} r={group.count === 1 ? 6 : 12}/>{group.count > 1 && <text className="group-count" x={x(group.at)} y={y(group.kind) + 3} textAnchor="middle">{group.count}</text>}</a>)
-  }</g><text x="100" y={tracks.length * 34 + 28}>{dayOf(low)}</text><text x="770" textAnchor="end" y={tracks.length * 34 + 28}>{dayOf(high)}</text></svg>
+    groups.filter(group => tracks.includes(group.kind)).map(group => <a key={group.card} href={'#' + group.card} aria-label={cards[group.card]?.title + ', ' + dayOf(group.at, zone)}><title>{cards[group.card]?.title}</title><circle cx={x(group.at)} cy={y(group.kind)} r={group.count === 1 ? 6 : 12}/>{group.count > 1 && <text className="group-count" x={x(group.at)} y={y(group.kind) + 3} textAnchor="middle">{group.count}</text>}</a>)
+  }</g><text x="100" y={tracks.length * 34 + 28}>{dayOf(low, zone)}</text><text x="770" textAnchor="end" y={tracks.length * 34 + 28}>{dayOf(high, zone)}</text></svg>
   {groups.filter(g => g.count > 1 && tracks.includes(g.kind)).map(group => <Detail key={group.card} id={group.card} card={cards[group.card]} title={cards[group.card]?.title}/>)}</section>
 }
 function Journey({ data }) {
   const { journey, which, cards } = data
   const [hidden, setHidden] = useState([])
   const [enhanced, setEnhanced] = useState(false)
+  const zone = useContext(ZoneContext)
   // The server supplies a complete timeline. Its type checkboxes appear after React can act on them.
   useEffect(() => setEnhanced(true), [])
   if (!which) return <section><h2>Journey</h2><p>Select an ID</p><a href="#find">Search</a></section>
@@ -88,7 +90,7 @@ function Journey({ data }) {
   const dates = data.events.map(event => event.entry.at).filter(at => at > 0)
   const days = new Map()
   for (const event of visible) {
-    const day = dayOf(event.entry.at)
+    const day = dayOf(event.entry.at, zone)
     if (!days.has(day)) days.set(day, [])
     days.get(day).push(event)
   }

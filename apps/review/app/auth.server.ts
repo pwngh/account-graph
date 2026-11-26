@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { createCookieSessionStorage, data, redirect } from 'react-router'
 import { accountGraph } from 'account-graph'
 import { subjectAddress } from './navigation'
-import { clientAddress, runtime, type Reviewer } from './runtime.server'
+import { clientAddress, runtime, validZone, type Reviewer } from './runtime.server'
 
 const lifetime = 8 * 3600
 export const publicOrigin = (request: Request) => runtime().origin ?? new URL(request.url).origin
@@ -71,6 +71,34 @@ function safePath(path: unknown) {
     if (value && allowed.test(value)) clean.set(key, value)
   }
   return (subjectAddress(url.pathname)?.path ?? url.pathname) + (clean.size ? '?' + clean : '') + (url.pathname.startsWith('/journey/') && url.hash.startsWith('#call-') ? url.hash : '')
+}
+
+// The browser's script stores the reviewer's zone in a cookie on first load. Until then, and without scripts, times are in the report's zone.
+const zoneCookie = /(?:^|;\s*)review_zone=([^;]{1,200})/
+const zonesOf = new WeakMap<Request, Promise<string>>()
+export function reviewerZone(request: Request) {
+  let found = zonesOf.get(request)
+  if (!found) zonesOf.set(request, found = lookup())
+  return found
+  async function lookup() {
+    let saved
+    try {
+      saved = decodeURIComponent(zoneCookie.exec(request.headers.get('cookie') ?? '')?.[1] ?? '')
+    } catch {}
+    const chosen = validZone(saved)
+    if (chosen) return chosen
+    const config = runtime()
+    if (config.reportZone) return config.reportZone
+    const session = await current(request)
+    if (!session) return 'UTC'
+    try {
+      // An empty day of texts is the smallest answer that names the report's zone.
+      const { timeZone } = await reviewGet(request, session, 'texts', { from: '1970-01-01', to: '1970-01-01' })
+      return config.reportZone = validZone(timeZone) ?? 'UTC'
+    } catch {
+      return 'UTC'
+    }
+  }
 }
 
 // A board can make several successive reads for its details. They share one deadline.

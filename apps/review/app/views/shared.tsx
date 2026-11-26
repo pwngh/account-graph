@@ -6,12 +6,19 @@ import { idText } from './report-words.js'
 
 export const amount = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 2 })
 export const percent = (n: number) => Math.round(n * 100) + '%'
-const formatter = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' })
-export const stamp = (at: number) => formatter.format(at) + ' UTC'
+/** The reviewer's time zone, from the root loader. The server and the browser format a time alike. */
+export const ZoneContext = createContext('UTC')
+const formatters = new Map<string, Intl.DateTimeFormat>()
+export function stamp(at: number, timeZone = 'UTC') {
+  let formatter = formatters.get(timeZone)
+  if (!formatter) formatters.set(timeZone, formatter = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }))
+  return formatter.format(at)
+}
 export function Time({ at }: { at?: number }) {
+  const zone = useContext(ZoneContext)
   if (at == null || !Number.isFinite(at)) return <>No data</>
   const exact = new Date(at).toISOString()
-  return <time dateTime={exact} title={exact}>{stamp(at)}</time>
+  return <time dateTime={exact} title={exact}>{stamp(at, zone)}</time>
 }
 
 // As on the original screen, a long ID such as a caller's hash is shortened in a link and given in full in its title.

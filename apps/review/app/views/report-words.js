@@ -44,7 +44,7 @@ export const inWords = name => String(name).replaceAll('_', ' ')
 export const cameFrom = row => row?.source ? row.source + (row.campaign || row.campaignId ? ' · ' + (row.campaign ?? row.campaignId) : '') : undefined
 export const visitWords = entry => cameFrom({ source: entry.source, campaign: entry.touch?.campaign, campaignId: entry.touch?.campaignId })
 export const directionOf = call => call.direction === 'outbound' ? 'Outbound' : 'Inbound'
-export const dayOf = at => at > 0 ? new Date(at).toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }) : 'No date'
+export const dayOf = (at, timeZone = 'UTC') => at > 0 ? new Date(at).toLocaleDateString('en-US', { timeZone, weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }) : 'No date'
 export const subjectHash = subject => subjectPath(subject)
 export const journeyHash = (subject, call) => subjectPath(subject, 'journey') + (call ? '#call-' + encodeURIComponent(call) : '')
 export const ACTIONS = { ignore: 'Ignored identifier', restore: 'Restored identifier', separate: 'Separated', rejoin: 'Removed separation', join: 'Joined', unjoin: 'Removed join', forget: 'Deleted data', rebuild: 'Rebuilt all groups', prune: 'Deleted sightings before' }

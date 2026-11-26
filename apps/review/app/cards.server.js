@@ -1,11 +1,13 @@
 // The rows and explanations from the reviewer cards, with their graph reads scoped to one request.
-import { ACTIONS, WHAT, CLICKS, cameFrom, consentWords, dayOf, directionOf, idText, inShort, inWords, journeyHash, lasted, percent, amount, subjectHash, tieWords, unreached, visitWords, waiting, worthOf } from './views/report-words.js'
+import { zone } from './runtime.server'
+import { ACTIONS, WHAT, CLICKS, cameFrom, consentWords, dayOf as dayIn, directionOf, idText, inShort, inWords, journeyHash, lasted, percent, amount, subjectHash, tieWords, unreached, visitWords, waiting, worthOf } from './views/report-words.js'
 const money = amount
+const dayOf = at => dayIn(at, zone())
 const reviewDisplay = { idText, day: day => new Date(day + 'T00:00:00Z').toLocaleDateString('en-US', {dateStyle:'medium',timeZone:'UTC'}) }
 const docs = (text, path) => ({ text, href: '/guide/' + path.split('#')[1] })
 const toPart = (text, id) => ({ text, href: '#' + id })
 const author = by => by?.startsWith('system:') ? 'system ' + by.slice(7) : by || 'Unknown'
-const moment = (at, seconds = false) => typeof at === 'number' && at > 0 ? new Date(at).toLocaleString('en-US', {timeZone:'UTC',weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',...(seconds && {second:'2-digit',timeZoneName:'short'})}) : undefined
+const moment = (at, seconds = false) => typeof at === 'number' && at > 0 ? new Date(at).toLocaleString('en-US', {timeZone:zone(),weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',...(seconds && {second:'2-digit',timeZoneName:'short'})}) : undefined
 const counted = (n) => (typeof n === 'number' && Number.isFinite(n) ? amount(n) : undefined)
 
 const both = (a, b) => (counted(a) !== undefined && counted(b) !== undefined ? `${amount(a)} · ${amount(b)}` : undefined)
@@ -211,7 +213,7 @@ export function cardModels(recent) {
       const before = entries.filter((each) => each.kind === entry.kind && each.at > 0 && each.at < entry.at).at(-1)
       const tie = tieWords(ties[entry.subject], subject)
       const date = new Date(entry.at)
-      return { title: WHAT[entry.kind], value: `${date.toLocaleTimeString(undefined, { timeStyle: 'medium' })} · ${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`,
+      return { title: WHAT[entry.kind], value: `${date.toLocaleTimeString('en-US', { timeZone: zone(), timeStyle: 'medium' })} · ${date.toLocaleDateString('en-US', { timeZone: zone(), month: 'short', day: 'numeric' })}`,
         rows: [...first, ...(short ? [] : rest), ['Whose', entry.subject && `${reviewDisplay.idText(entry.subject)}${tie ? ` · ${tie}` : ''}`], ['Around this time', nearby(entry, entries)], [`The ${WHAT[entry.kind].toLowerCase()} before`, before && `${lasted(entry.at - before.at)} earlier`],
           ...(short ? [] : [['UTC', date.toISOString().slice(0, 19).replace('T', ' ')]])],
         foot: 'Click to keep open' }
@@ -235,9 +237,9 @@ export function cardModels(recent) {
     now(data) {
       const list = data?.list ?? []
       if (list.length === 0) return undefined
-      const time = (at) => new Date(at).toLocaleTimeString(undefined, { timeStyle: 'short' })
+      const time = (at) => new Date(at).toLocaleTimeString('en-US', { timeZone: zone(), timeStyle: 'short' })
       const [from, to] = [list[0].at, list.at(-1).at]
-      return { title: `${amount(list.length)} ${MANY[list[0].kind]}`, value: dayOf(from) === dayOf(to) ? `${new Date(from).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}, ${time(from)} – ${time(to)}` : `${moment(from)} – ${moment(to)}`,
+      return { title: `${amount(list.length)} ${MANY[list[0].kind]}`, value: dayOf(from) === dayOf(to) ? `${new Date(from).toLocaleDateString('en-US', { timeZone: zone(), month: 'short', day: 'numeric' })}, ${time(from)} – ${time(to)}` : `${moment(from)} – ${moment(to)}`,
         rows: list.slice(0, 6).map((entry) => [inShort(entry), dayOf(from) === dayOf(to) ? time(entry.at) : moment(entry.at)]),
         say: [list.length > 6 ? `And ${amount(list.length - 6)} more.` : undefined], foot: 'Click to zoom in' }
     },
@@ -288,7 +290,7 @@ export function cardModels(recent) {
       for (const entry of of('outcome')) if (!entry.notLead && ladder.includes(entry.outcome.stage) && !first.has(entry.outcome.stage)) first.set(entry.outcome.stage, entry)
       const reached = ladder.filter((step) => first.has(step))
       const next = ladder[ladder.indexOf(row.step) + 1]
-      const day = (at) => new Date(at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+      const day = (at) => new Date(at).toLocaleDateString('en-US', { timeZone: zone(), month: 'short', day: 'numeric' })
       const worth = of('outcome').findLast((entry) => entry.outcome.stage === row.step)
       const call = of('call').at(-1)
       const open = of('call').filter((entry) => entry.followUp?.state === 'open' && !entry.notLead)

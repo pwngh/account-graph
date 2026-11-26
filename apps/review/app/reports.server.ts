@@ -1,7 +1,7 @@
 import { subjectPath } from './navigation.ts'
-import { graphTime } from './runtime.server'
+import { graphTime, inZone } from './runtime.server'
 import { createHash, randomUUID } from 'node:crypto'
-import { reviewGet, withGraph } from './auth.server'
+import { reviewerZone, reviewGet, withGraph } from './auth.server'
 import { cardModels, daysBefore } from './cards.server.js'
 
 export type ReportKind = 'journey' | 'board' | 'calls'
@@ -11,7 +11,7 @@ const missing = () => new Response('These details have changed. Open the report 
 const identity = (...values: unknown[]) => createHash('sha256').update(JSON.stringify(values)).digest('base64url').slice(0, 24)
 
 export function loadReport(request: Request, kind: ReportKind, which?: string, selected?: string) {
-  return withGraph(request, session => prepareReport(kind, which, new URL(request.url).searchParams, (path, query) => reviewGet(request, session, path, query), selected, graphTime()))
+  return withGraph(request, async session => inZone(await reviewerZone(request), () => prepareReport(kind, which, new URL(request.url).searchParams, (path, query) => reviewGet(request, session, path, query), selected, graphTime())))
 }
 
 export async function loadCard(request: Request, kind?: string, which?: string) {
