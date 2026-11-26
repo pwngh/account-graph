@@ -227,6 +227,25 @@ test('a plain HTML client signs in, reads an account, posts its form twice and s
   redirectToLogin(await fetch(origin + path, { redirect: 'manual', headers: { cookie } }))
 })
 
+test('a GET to /signout answers 405 without logging a server error', async () => {
+  const cookie = await signin()
+  const logged = []
+  const { error } = console
+  console.error = (...args) => logged.push(args)
+  try {
+    for (const headers of [{}, { cookie }]) {
+      const answer = await fetch(origin + '/signout', { headers, redirect: 'manual' })
+      assert.equal(answer.status, 405)
+      assert.equal(answer.headers.get('allow'), 'POST')
+      assert.match(await answer.text(), /Sign out button/)
+    }
+  } finally {
+    console.error = error
+  }
+  assert.deepEqual(logged, [])
+  assert.equal((await fetch(origin + path, { headers: { cookie } })).status, 200, 'a GET leaves the session signed in')
+})
+
 test('pasted and linked subjects reopen the same record with their ID preserved', async () => {
   const cookie = await signin()
   const headers = { cookie }
