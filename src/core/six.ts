@@ -213,7 +213,7 @@ export function createSix(engine: Engine, options: SixOptions) {
     return out
   }
 
-  /** Whether a forget left a tombstone of the subject an entry is filed under. Only lead webhooks ask: `record` may write a forgotten subject again with new keys, and a profile from it clears the tombstone. */
+  /** Whether a forget left a tombstone of the subject an entry is filed under. Only lead webhooks ask, because `record` may write a forgotten subject again with new keys, and a profile from it clears the tombstone. */
   const subjectForgotten = async (tx: Tx, entry: RecordEntry): Promise<boolean> =>
     'subject' in entry && typeof entry.subject === 'string' && (await tx.receiptOf(SUBJECT_RECEIPT, receipts.mac(SUBJECT_RECEIPT, entry.subject).all))?.forgotten !== undefined
 
@@ -242,7 +242,7 @@ export function createSix(engine: Engine, options: SixOptions) {
         if (found.identifiers.length === 0 && !entry.speaker) throw Object.assign(malformed('No fact could be used'), { refusal: { reason: 'NO_FACT_USED', notes: found.notes } })
         const { notes, speakers } = await service.identify({ subject: entry.subject, ...entry.facts, at: entry.at, ...(entry.event && { event: entry.event }), ...(entry.speaker && { speaker: entry.speaker }) }, entry.key)
         const stands = entry.createdAt === undefined || await inside.tx.setCreatedAt(entry.subject, entry.createdAt, entry.at, entry.key)
-        // Of whoever speaks too: once they are deleted, a late retry must not bring them back.
+        // Of whoever speaks too. Once they are deleted, a late retry must not bring them back.
         return { value: { changes: inside.changes, notes }, subjects: [entry.subject, ...speakers], stands }
       }
       case 'arrival':
@@ -778,7 +778,7 @@ export function createSix(engine: Engine, options: SixOptions) {
   const answers = new Map<string, { party: string | undefined; version: number; at: number; until: number; made: boolean; answer: Promise<ReportValue[ReportRequest['kind']]> }>()
   let decided = 0
   let deciding = 0
-  /** A decision is done: what was being worked out meanwhile is worked out again. */
+  /** A decision is done, so what was being worked out meanwhile is worked out again. */
   const settled = () => {
     deciding -= 1
     decided += 1
@@ -833,7 +833,7 @@ export function createSix(engine: Engine, options: SixOptions) {
     })
   }
 
-  /** A decision was made by another way in: what was worked out before it is worked out again. */
+  /** A decision was made by another way in, so what was worked out before it is worked out again. */
   const heard = () => {
     decided += 1
     answers.clear()

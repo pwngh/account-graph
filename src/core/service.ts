@@ -182,7 +182,7 @@ export function createService(graph: Graph, options: ServiceOptions) {
       const number = normalizePhone(body.phone, options.calls?.country)
       const made = fakePhone(number)
       if (made === 'repeated' || made === 'counted') notes.phone = PLACEHOLDER
-      // A lookup that is down must not lose the sighting: the number is kept as a plain phone.
+      // A lookup that is down must not lose the sighting. The number is kept as a plain phone.
       const line = lineOf && saving && !notes.phone ? ((await lineOf(number).catch((error) => void console.error(error))) ?? undefined) : undefined
       const found = notes.phone ? undefined : phoneOfType(number, line?.type)
       if (found) identifiers.push(found)

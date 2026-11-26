@@ -50,7 +50,7 @@ export interface SubjectDates {
  * always be rebuilt.
  */
 export interface Store {
-  /** Runs `work` alone: no other write overlaps it, and it commits whole or not at all. */
+  /** Runs `work` alone. No other write overlaps it, and it commits whole or not at all. */
   write<T>(work: (tx: Tx) => Promise<T>, options?: WriteOptions): Promise<T>
   /** Runs `work` against one consistent snapshot. */
   read<T>(work: (tx: Tx) => Promise<T>): Promise<T>
@@ -88,7 +88,7 @@ export interface Tx {
   insertActivity(rows: ActivityRows): Promise<void>
   /** The jobs of conversions, written and read in this transaction. */
   outbox: OutboxStore
-  /** Runs `work` as a write inside this one: where it throws, what it wrote is gone and the rest stands. */
+  /** Runs `work` as a write inside this one. Where it throws, what it wrote is gone and the rest stands. */
   nested<T>(work: () => Promise<T>): Promise<T>
   /** Logs sightings and folds them into edges. Returns how many new edges each identifier gained. */
   addSightings(sightings: readonly Sighting[]): Promise<AddedSightings>
@@ -131,7 +131,7 @@ export interface Tx {
   /** Every subject, in batches: where it sits, and whether it holds any identifier. */
   everyone(): AsyncIterable<{ subject: Subject; labels: Labels | undefined; held: boolean }[]>
   states(identifiers: readonly Identifier[]): Promise<Map<Identifier, IdentifierState>>
-  /** The identifiers of these subjects that somebody else holds too, not muted: all that could link them. */
+  /** The identifiers of these subjects that somebody else holds too, not muted, which is all that could link them. */
   shared(subjects: readonly Subject[]): Promise<Map<Identifier, IdentifierState>>
   setIgnored(identifier: Identifier, ignored: boolean): Promise<void>
   /** Where each given subject sits. Unknown subjects are absent. */
@@ -140,7 +140,7 @@ export interface Tx {
   membersOf(components: readonly Subject[]): Promise<Map<Subject, Labels>>
   /** The members of one cluster. */
   clusterOf(cluster: Subject): Promise<Subject[]>
-  /** A number that is different after every write: the same number means nothing has changed. */
+  /** A number that is different after every write. The same number means nothing has changed. */
   version(): Promise<number>
   /** How much the graph holds. */
   counts(): Promise<Counts>
@@ -156,7 +156,7 @@ export interface Tx {
   addChanges(at: number, changes: readonly Change[]): Promise<void>
   /**
    * Numbers events and keeps them. The number comes from a row that is held until the write commits, so no higher number
-   * is seen before a lower one. Call it last: that row is held from here on. Resolves to how many were new.
+   * is seen before a lower one. Call it last, because that row is held from here on. Resolves to how many were new.
    */
   emit(events: readonly NewEvent[]): Promise<number>
   /** Keeps an alert with the event it names. A fresh failure batch may reopen the same message. */
@@ -259,7 +259,7 @@ export interface Tx {
   callsBetween(from: number, to: number): Promise<KeptCall[]>
   /** The same, of those with one of these ids. */
   callsWith(ids: readonly string[]): Promise<KeptCall[]>
-  /** When each call of the given subjects was and how it went, oldest first, without calls that were no lead: all that says who waits for whom. */
+  /** When each call of the given subjects was and how it went, oldest first, without calls that were no lead. That is all that says who waits for whom. */
   callTimes(subjects: readonly Subject[]): Promise<CallTime[]>
   /** Everyone in the components the given subjects are in. */
   aroundOf(subjects: readonly Subject[]): Promise<Map<Subject, Labels>>

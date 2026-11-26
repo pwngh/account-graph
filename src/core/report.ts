@@ -77,10 +77,10 @@ export function dayStart(day: string, timeZone = 'UTC'): number {
   // Date.parse rolls 30 February into March; a day that does not read back as itself is not a day.
   if (Number.isNaN(utc) || new Date(utc).toISOString().slice(0, 10) !== day) throw malformed(`"${day}" is not a day written YYYY-MM-DD`)
   try {
-    // Ask twice: the zone's offset at the guess can differ from its offset at the answer, around a clock change.
+    // Ask twice, because the zone's offset at the guess can differ from its offset at the answer, around a clock change.
     const guess = utc - ahead(utc, timeZone)
     const refined = utc - ahead(guess, timeZone)
-    // Where clocks go forward at midnight, midnight never happens: keep the earliest answer that falls on the day itself.
+    // Where clocks go forward at midnight, midnight never happens. Keep the earliest answer that falls on the day itself.
     const onDay = [refined, guess].filter((at) => new Date(at + ahead(at, timeZone)).toISOString().slice(0, 10) === day)
     return onDay.length > 0 ? Math.min(...onDay) : refined
   } catch {
@@ -116,7 +116,7 @@ interface Told {
 /**
  * Reads one dimension of an outcome or a call. `touch.name` is what its
  * arrival said, `outcome.name` what is known of the outcome itself, and the
- * two are never mixed: where an office was advertised is not where the
+ * two are never mixed. Where an office was advertised is not where the
  * person was served. `hour` and `weekday` are when it happened.
  */
 export function dimension(by: string, timeZone?: string): (told: Told) => string {
@@ -155,7 +155,7 @@ export interface Credited {
   paidCampaign?: true
   /** Its first value, with no time when it may not be the first, and the most it was ever worth. */
   first?: (OutcomeValue & { most: number; refunded?: number; writtenOff?: number; lostIn?: readonly string[] }) | undefined
-  /** Who it is: the cluster of its subject. Defaults to the subject. */
+  /** Who it is, as the cluster of its subject. Defaults to the subject. */
   person?: string
   /** Milliseconds from the newest strong arrival in the year before it, inside the window or not. */
   delay?: number | undefined
@@ -259,7 +259,7 @@ const ratios = ({ cost, outcomes, value }: Spent) => ({
 
 /**
  * What a campaign's outcomes cost. Only the days that have cost data count,
- * on both sides: an outcome on a day whose cost is not known would look
+ * on both sides. An outcome on a day whose cost is not known would look
  * free. A recorded zero is cost data, and so is a day that cost nothing.
  */
 function worth(costDays: number, days: number, { campaign, campaignId, bought }: { campaign: string; campaignId: string; bought: boolean }, spent: Spent): Pick<ReportRow, Worked> {
@@ -396,7 +396,7 @@ export function fold(
   let excluded = 0
   const order = (found: Line) => `${found.source}\u0000${found.campaignId}\u0000${found.campaign}`
   const sorted = [...lines.values()].sort((x, y) => y.cost - x.cost || y.value - x.value || y.visits - x.visits || (order(x) < order(y) ? -1 : 1))
-  // A step is named by whoever recorded the outcome, so the names are kept in maps until the very end.
+  // A step is named by whoever recorded the outcome, so the names are kept in maps until the end.
   const rows = sorted.map(({ named: _, stages, parts, costed: costDays, claims, onDays, bought, people, ...found }): ReportRow => {
     found.cost = round(found.cost)
     found.value = round(found.value)

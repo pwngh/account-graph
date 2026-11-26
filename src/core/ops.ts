@@ -270,7 +270,7 @@ export function createOps(graph: Graph, store: OpsStore, options: OpsOptions = {
         // What else there is to look for does not depend on the outbox.
         onError(error)
       }
-      // Once a day while it lasts: a backlog that drains slowly has a new oldest job at every look.
+      // Once a day while it lasts, because a backlog that drains slowly has a new oldest job at every look.
       if (due !== undefined && at - due >= late * HOUR) await ops.once(`late:${dayIn(at, timeZone)}`, `account-graph: conversions are overdue. The oldest was due ${when(due)} (${timeZone}).`, undefined, { type: 'delivery.late', at, data: { oldestDue: due } })
 
       const hours = options.returnHours ?? 0

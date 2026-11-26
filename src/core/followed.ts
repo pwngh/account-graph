@@ -30,15 +30,15 @@ const BANDS: readonly [number, string][] = [[MINUTE, 'under 1 minute'], [5 * MIN
 const ORDER = [...BANDS.map(([, name]) => name), 'answered', 'missed', 'voicemail', 'returned within a day', 'not returned within a day']
 const NOT_SET = '(not set)'
 
-/** How long someone talked: the call without the wait. Undefined when either was not reported, because neither says it alone. */
+/** How long someone talked, which is the call without the wait. Undefined when either was not reported, because neither says it alone. */
 const talk = (call: KeptCall) => (call.duration === undefined || call.result?.waited === undefined ? undefined : Math.max(0, call.duration - call.result.waited))
-/** When a person was reached on a call: after the wait, where that is known. */
+/** When a person was reached on a call, which is after the wait where that is known. */
 const connected = (call: KeptCall) => call.at + (call.result?.waited ?? 0) * 1000
 
 /**
  * Counts, among people who called, how many reached a step within some days.
  *
- * For what a call was like (how long, answered or not, in what language) the
+ * For what a call was like, such as its length, whether it was answered and its language, the
  * clock starts when the person's first call in the period ended, and whoever
  * had already reached the step is left out.
  *

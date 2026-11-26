@@ -164,7 +164,7 @@ export function knownOf(policy: Policy, edges: readonly Edge[], undone: (identif
   return out
 }
 
-/** Whether comparing the full spelling can change a fact. Ordinary checked names have exactly the same facts under both readings. */
+/** Whether comparing the full spelling can change a fact. Ordinary checked names have the same facts under both readings. */
 function changedSpelling(known: Known): boolean {
   if (!known.earlier) return false
   const same = (before: Set<Identifier> | undefined, after: Set<Identifier> | undefined) => before?.size === after?.size && (!before || [...before].every((id) => after!.has(foldedNameKey(id) ? id + CHECKED_NAME : id)))
@@ -253,7 +253,7 @@ function corroborated(a: Known | undefined, b: Known | undefined): boolean {
   const within = (one: ReadonlySet<Identifier>, other: ReadonlySet<Identifier>) => [...one].every((each) => other.has(each))
   const loosely = ours !== undefined && theirs !== undefined && !(within(ours, theirs) && (within(theirs, ours) || b.facts.has('compound'))) && !(within(theirs, ours) && a.facts.has('compound'))
   if (loosely ? [...a.things].some((each) => b.things.has(each) && !NAMED.has(each.slice(0, each.indexOf(':')))) : meets(a.things, b.things) || meets(ours, theirs)) return true
-  // A name no table has is no fact, and is still a name: two who gave names under which nothing is the same are twins as likely as one.
+  // A name no table has is no fact, and is still a name. Two who gave names under which nothing is the same are twins as likely as one.
   const names = (known: Known) => known.missingName || [...known.things].some((each) => NAMED.has(each.slice(0, each.indexOf(':'))) || each.startsWith('name:'))
   return dates && (meets(ours, theirs) === true || !(names(a) && names(b)))
 }
@@ -278,7 +278,7 @@ type Difference = readonly [a: Subject, b: Subject, birth: boolean]
  *    stays apart where it was cut from two.
  *
  * Where the policy joins records only when that is confirmed, what is left is
- * cut once more: see `refined`.
+ * cut once more. See `refined`.
  *
  * Pure, and the result does not depend on the order of its inputs.
  */
@@ -355,7 +355,7 @@ export function partition(
  * or through browsers and callers, some record of the one is confirmed to be some record of the other, and none differs from
  * any in a fact. One that could be either of two who differ is neither's. A decision joins the two it names whatever differs. Each browser and caller then goes with the group it is
  * tied to most strongly, by itself or through others that name nobody, and of two as strong, with the one first seen. No link
- * is taken for it: what they share is as it was.
+ * is taken for it. What they share is as it was.
  */
 function refined(pieces: Subject[][], links: readonly Pair[], policy: Policy, known: ReadonlyMap<Subject, Known>, since: ReadonlyMap<Subject, number>): Subject[][] {
   if (policy.records !== 'confirmed') return pieces
@@ -370,9 +370,9 @@ function refined(pieces: Subject[][], links: readonly Pair[], policy: Policy, kn
   }
   const everyone = pieces.flat().filter((subject) => !nobody(subject))
   if (everyone.length < 2) return pieces
-  // So many come of something everybody shares, and what confirms them is then shared by chance: decisions alone join them.
+  // So many come of something everybody shares, and what confirms them is then shared by chance. Decisions alone join them.
   const crowd = crowdedRecords(everyone.length)
-  // Who has anything in common that could confirm the two, in all of the component: whoever was cut off may be one's as well.
+  // Who has anything in common that could confirm the two, in all of the component, because whoever was cut off may be one's as well.
   const holders = new Map<Identifier, Subject[]>()
   const own = (subject: Subject) => {
     const each = known.get(subject)
@@ -556,8 +556,8 @@ function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subj
     restoreJoins(adjacency, apart, removed, decided)
     for (const [a, b] of removed) if (!adjacency.get(a)!.has(b)) onCut?.(a, b)
   }
-  // Facts come after decisions, and cut no link a decision made: two held together by those alone stay together.
-  // That a call was about one, and another call about the other, does not say the two are one: a telephone is many people's.
+  // Facts come after decisions, and cut no link a decision made. Two held together by those alone stay together.
+  // That a call was about one, and another call about the other, does not say the two are one, because a telephone is many people's.
   // So two births part a telephone or a browser from one of them, and never two records somebody said are one.
   const unnamed = new Set(policy.unnamed ?? UNNAMED)
   const nobody = (subject: Subject) => unnamed.has(subject.slice(0, Math.max(0, subject.indexOf(':'))))
@@ -605,7 +605,7 @@ function split(members: Subject[], links: readonly Pair[], apart: [Subject, Subj
     }
     const seen = (each: Subject) => since.get(each) ?? 0
     // All the records of a birth are on one side, so what is left out is counted once for a person and not for each of their records.
-    // A join of two records comes before that: whoever one ties to a birth of the other side is held to neither.
+    // A join of two records comes before that. Whoever one ties to a birth of the other side is held to neither.
     const joined = new Map<Subject, Set<Subject>>()
     const over = (from: Subject) => {
       const before = joined.get(from)

@@ -115,7 +115,7 @@ export function createMemoryStore() {
     const erased = erasedRecord(subject)
     if (!erased) return undefined
     const held = calls.get(call)
-    // A staff link alone does not put somebody’s profile back on record.
+    // A staff link alone does not put somebody's profile back on record.
     const observed = [bySubject.get(subject), hidden.get(subject)].some(edges => edges && [...edges.keys()].some(id => !id.startsWith('review:')))
     return held && held.at > erased.at && observed ? erased.seq : 'forgotten'
   }

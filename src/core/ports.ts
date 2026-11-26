@@ -45,7 +45,7 @@ export interface VerifiedAddress {
   match: string
   /** A home rather than a business, when the postal service says. */
   residential: boolean | undefined
-  /** A mail-receiving business: a rented box that many strangers share. */
+  /** A mail-receiving business, which is a rented box that many strangers share. */
   mailDrop: boolean
   vacant: boolean
 }

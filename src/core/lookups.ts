@@ -62,7 +62,7 @@ const MEANT: Record<string, string> = {
 }
 const TYPOS = new Map(Object.entries(MEANT).flatMap(([meant, typed]) => [...words(typed)].map((each) => [each, meant] as const)))
 
-/** The address somebody most likely meant, where the domain is a well known one misspelled. A suggestion: it may be right as it is. */
+/** The address somebody most likely meant, where the domain is a well known one misspelled. It is a suggestion, and the address may be right as it is. */
 export function meantEmail(email: string): string | undefined {
   const clean = email.trim()
   const at = clean.lastIndexOf('@')
@@ -127,7 +127,7 @@ export function holidays(year: number, { texas = false }: { texas?: boolean } = 
 
 const ALTO = words('alto pare parar detener cancelar baja salir terminar fin')
 
-/** Whether a text is one Spanish word that asks for no more. Inside a sentence the same word says nothing. No Spanish word undoes it: START does. */
+/** Whether a text is one Spanish word that asks for no more. Inside a sentence the same word says nothing. No Spanish word undoes it. START does. */
 export const spanishStop = (text: string): boolean => ALTO.has(fold(text.trim().replace(/^[¡]+|[.!]+$/g, '')))
 
 const NADIE = new Set(['desconocido', 'desconocida', 'sin nombre', 'no tiene', 'no dio', 'ninguno', 'ninguna', 'nadie', 'cliente', 'prueba', 'nombre', 'apellido', 'no sabe'])

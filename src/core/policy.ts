@@ -42,7 +42,7 @@ export interface Policy {
   related: number
   /**
    * At or above this confidence a visit is credited in the report and in what brought somebody, `same` when left out. Joining two
-   * people and crediting an ad are two questions: an ad credited wrongly now and then shows nobody's record. It joins nobody,
+   * people and crediting an ad are two questions. An ad credited wrongly now and then shows nobody's record. It joins nobody,
    * shows nothing of one in the journey of another, crosses no split, and is not what is sent to an ad platform.
    */
   credit?: number
@@ -103,7 +103,7 @@ export const defaultPolicy: Policy = {
     // A passkey's credential id, after your server verified the sign-in. Bound to one device or one person's keychain.
     passkey: { weight: 0.99, dilution: 0, cap: 5, halfLife: Infinity },
     email: { weight: 0.99, dilution: 0, cap: 10, halfLife: Infinity },
-    // Alone it joins two subjects, relates three, and says nothing of four or more: a household or a front desk is as likely.
+    // Alone it joins two subjects, relates three, and says nothing of four or more, because a household or a front desk is as likely.
     phone: { weight: 0.9, dilution: 1, cap: 10, halfLife: Infinity },
     // A number from an internet calling app, which anyone can get and drop in a minute. A carrier lookup tells it from a real line.
     voip: { weight: 0.5, dilution: 1, cap: 10, halfLife: Infinity },
@@ -124,23 +124,23 @@ export const defaultPolicy: Policy = {
     link: { weight: 0.92, dilution: 1, cap: 5, halfLife: Infinity },
     // A visitor who followed a link from another of your sites, proven by a token made for that browser. Passed around, it thins.
     carry: { weight: 0.95, dilution: 1, cap: 4, halfLife: Infinity },
-    // A note, not evidence: a browser opened the link sent to this person. It links nothing.
+    // A note, not evidence. A browser opened the link sent to this person. It links nothing.
     opened: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     // A phone call that began moments after exactly one visitor tapped its number on your site. `recordCall` writes it.
     lease: { weight: 0.9, dilution: 0, cap: 2, halfLife: Infinity },
     dial: { weight: 0.92, dilution: 0, cap: 2, halfLife: Infinity },
-    // A text that carried the code one visitor was given. Better than a tap's time, and still a prior: a text can be forwarded.
+    // A text that carried the code one visitor was given. Better than a tap's time, and still a prior, because a text can be forwarded.
     text: { weight: 0.95, dilution: 0, cap: 2, halfLife: Infinity },
     // Somebody who speaks for somebody else: a parent for a child, a wife for a husband. The credit for what brought the one is the other's, and they are two people.
     behalf: { weight: 0.92, dilution: 0, cap: 2, halfLife: Infinity, relates: true },
-    // A note, not evidence: where an address places a visit. It links nothing.
+    // A note, not evidence. It says where an address places a visit. It links nothing.
     place: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
-    // Notes, not evidence: what is known of a person that cannot be two people's. They link nothing.
+    // Notes, not evidence. They are what is known of a person that cannot be two people's. They link nothing.
     birth: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     given: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     initial: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     dated: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
-    // One full name and date of birth, kept where records have to be confirmed, and then it is evidence: see PERSON. Elsewhere it says nothing.
+    // One full name and date of birth, kept where records have to be confirmed, and then it is evidence. See PERSON. Elsewhere it says nothing.
     person: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     perhaps: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
     // That a first name has several words, so a half of it is not all of it. Kept where records have to be confirmed.
@@ -149,7 +149,7 @@ export const defaultPolicy: Policy = {
     named: { weight: 0.999, dilution: 0, cap: 10, halfLife: Infinity, corroborates: true },
     // The same of two who were spoken for by one number or email, which is on neither's record.
     ward: { weight: 0.97, dilution: 0, cap: 5, halfLife: Infinity },
-    // A note, not evidence: the number a visitor tapped, or a call that was recorded. It links nothing.
+    // A note, not evidence. It is the number a visitor tapped, or a call that was recorded. It links nothing.
     dialed: { weight: 0, dilution: 0, cap: 0, halfLife: Infinity },
   },
 }
@@ -251,7 +251,7 @@ export const REBUILD_NOTICE = 'Groups are due a rebuild. Run account-graph rebui
 /** The same for two policies exactly when they score and cluster alike. What only flags, `review`, and what only credits, `credit`, are not part of it. */
 export function policyHash(policy: Policy): string {
   const { review: _, credit: __, ...rest } = plainPolicy(policy)
-  // A note that links nothing and says nothing but where records have to be confirmed: a policy without is what it was.
+  // A note that links nothing and says nothing but where records have to be confirmed. A policy without it is what it was.
   if (!policy.records) for (const kind of ['compound', 'person', 'perhaps']) delete (rest.kinds as Record<string, unknown>)[kind]
   return createHash('sha256').update(JSON.stringify({ ...rest, rules: RULES, unnamed: [...new Set(policy.unnamed ?? UNNAMED)].sort() })).digest('hex')
 }
@@ -262,7 +262,7 @@ export function ruleFor(policy: Policy, identifier: Identifier): Rule {
     throw malformed(`Identifier "${identifier}" must have the form "kind:value"`)
   }
   const kind = identifier.slice(0, colon)
-  // Own rules only: every object has things like a constructor, and none of them is a rule.
+  // Own rules only, because every object has things like a constructor, and none of them is a rule.
   const rule = Object.hasOwn(policy.kinds, kind) ? policy.kinds[kind] : undefined
   if (!rule) throw refused(`Identifier "${identifier}" has a kind that is missing from the policy`, { reason: 'KIND_NOT_IN_POLICY', kind })
   return rule

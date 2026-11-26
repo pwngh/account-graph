@@ -31,7 +31,7 @@ export function checkTags(given: unknown, what: string): Tags | undefined {
   return county ? { ...tags, county } : tags
 }
 
-/** Names an arrival may carry a documented code under, the first one present winning: what fits in an ad's address is shorter. */
+/** Names an arrival may carry a documented code under. The first one present wins, because what fits in an ad's address is shorter. */
 const WRITTEN: Record<string, readonly string[]> = { office_advertised: ['office_advertised', 'office'], language: ['language', 'lang'] }
 const READ = new Map(Object.entries(WRITTEN).flatMap(([name, written]) => written.map((each) => [each, name])))
 

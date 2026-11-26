@@ -242,7 +242,7 @@ async function tie(graph: Graph, { id, at, subject, ours, text, flags }: { id: s
   const named = await namedBy(graph, text.code ?? (text.text === undefined ? undefined : codeIn(text.text)), at, options.codeLife)
   if (named) {
     // The code has said whose it is, so a tap of somebody else's is not looked for. A visitor already tied to another
-    // sender or caller is not tied to this one too: the two would become one person.
+    // sender or caller is not tied to this one too, because the two would become one person.
     const tied = await graph.tieCall(subject, named.visitor, `text:${id}`, at, { notes: [named.note] })
     flags.push(tied ? 'code' : 'taken')
     return tied ? named.visitor : undefined
@@ -259,7 +259,7 @@ async function tie(graph: Graph, { id, at, subject, ours, text, flags }: { id: s
 }
 
 /**
- * What became of a text to you, from every text and call with its sender: a
+ * What became of a text to you, from every text and call with its sender. A
  * text from you or a call someone answered replies to it, and a later STOP
  * means nobody may. Worked out each time, so it does not depend on the order
  * things were reported in.

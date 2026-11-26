@@ -18,7 +18,7 @@ const MOST = 100
 /**
  * Posts events to a receiver, in order and at least once. One process posts
  * at a time, whichever has the lease. One that keeps being refused is tried
- * for a day and then passed over: `events` still has it.
+ * for a day and then passed over. `events` still has it.
  */
 export function createWebhook(store: Store, options: WebhookOptions) {
   const now = options.now ?? Date.now

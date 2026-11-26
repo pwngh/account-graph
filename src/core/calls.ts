@@ -21,7 +21,7 @@ export interface Call {
   duration?: number
   /**
    * `inbound`, which is the default, or `outbound` for a call you placed.
-   * An outbound call is never an outcome, and ties nobody to anything: it
+   * An outbound call is never an outcome, and ties nobody to anything. It
    * says whether a missed caller was rung back.
    */
   direction?: 'inbound' | 'outbound'
@@ -256,11 +256,11 @@ export async function recordCall(graph: Graph, call: Call, options: CallOptions 
   const coded = code && (await graph.tieCall(subject, code.visitor, codeTie(id), at, { notes: [code.note] })) ? code.visitor : undefined
   if (code) flags.push(coded ? 'code' : 'taken')
   if (saved && byCode(saved)) flags.push(saved.flags.includes('code') ? 'code' : 'taken')
-  // The outcome comes before the touch: if recording it fails, the call is reported again and nothing has been written twice.
-  // What would be sent is held before the call is kept, while the number is at hand: a result that finds the call then finds that too.
+  // The outcome comes before the touch. If recording it fails, the call is reported again and nothing has been written twice.
+  // What would be sent is held before the call is kept, while the number is at hand. A result that finds the call then finds that too.
   if (!short) await options.hold?.(outcomeOf({ id, subject, at, ...(tags && { tags }) }, options, known))
   // The call is kept before its result is looked for, and a result is kept before its call is, so whichever comes second settles it.
-  // It is kept before its visitor is looked for too: of two calls reported at once, the later then finds the other.
+  // It is kept before its visitor is looked for too. Of two calls reported at once, the later then finds the other.
   const kept = { id, direction: 'inbound' as const, subject, at, to, flags, ...(call.duration !== undefined && { duration: call.duration }), ...(tags && { tags }) }
   // Reported again, what it was tied to stands until that is decided anew.
   if (!saved) await graph.keepCall(kept, phone ? (phone.startsWith('voip:') ? 'voip' : 'phone') : 'none')
@@ -302,7 +302,7 @@ async function tellCode(graph: Graph, call: KeptCall, given: string | undefined,
   if (named) await graph.nameCall(call.id, named.visitor, named.note, line)
 }
 
-/** Who is calling, while the phone rings: what a call from this number to this one would be tied to. Nothing is written. */
+/** Who is calling, while the phone rings. It is what a call from this number to this one would be tied to. Nothing is written. */
 export interface Ringing {
   /** The caller, as the call will be recorded. Undefined when they hid their number. */
   subject?: Subject
@@ -492,7 +492,7 @@ function ties(calls: readonly Heard[], heard: readonly Heard[], taps: readonly T
   }
   // First by the ties there are. What that makes sure of then says whose the other taps of the same visitor are, the earliest call first.
   const owners = new Map([...tied].map(([visitor, callers]) => [visitor, new Set(callers)]))
-  // Of a call at the edge not everything that bears on it was read, so it makes nobody sure: what it is tied to is among the ties there are.
+  // Of a call at the edge not everything that bears on it was read, so it makes nobody sure. What it is tied to is among the ties there are.
   for (const call of calls) {
     if (!full.has(call.id)) continue
     const { visitor } = decide(call, tied)
@@ -501,7 +501,7 @@ function ties(calls: readonly Heard[], heard: readonly Heard[], taps: readonly T
   return new Map(calls.map((call) => [call.id, decide(call, owners)]))
 }
 
-/** Records a call you placed. Nothing is observed: that you rang someone says nothing about who they are. */
+/** Records a call you placed. Nothing is observed, because ringing someone says nothing about who they are. */
 async function placed(graph: Graph, call: Call, theirs: string, result: Omit<CallResult, 'recorded'> | undefined, tags: Record<string, string> | undefined, options: CallOptions): Promise<RecordedCall> {
   if (typeof call.from !== 'string') throw malformed(`Call "${call.id}" requires "from", the number it was placed from`)
   const ours = normalizePhone(call.from, options.country)
@@ -586,7 +586,7 @@ const outcomeOf = (call: { id: string; subject: Subject; at: number; tags?: Reco
 })
 
 /**
- * Brings the outcome of a kept call in line with what is known about it: a
+ * Brings the outcome of a kept call in line with what is known about it. A
  * call counts when it was long enough and either a person answered, or no
  * result is expected and none says otherwise. Safe to run again, and from
  * two places at once. `phone` is given only while the call is being
@@ -632,7 +632,7 @@ async function tell(graph: Graph, id: string, result: Omit<CallResult, 'recorded
 
 /**
  * Records how a call went, from whoever runs the phones. It may arrive
- * before the call or after it, and as often as it likes: the last report
+ * before the call or after it, and as often as it likes. The last report
  * stands. Resolves to how the call stands now, or undefined while the call
  * itself has not been recorded.
  */
@@ -647,7 +647,7 @@ export async function recordCallResult(graph: Graph, report: { id: string; answe
  * Records that somebody reached a caller some way your phone system does not
  * report: from another line, by a text they answered, in person. `at` is when,
  * now unless you say, and `returned: false` takes it back. It may come before
- * the call it is about, and as often as it likes: the last report stands.
+ * the call it is about, and as often as it likes. The last report stands.
  * Resolves to what became of the call, or undefined while it has not been
  * recorded or was not missed.
  */

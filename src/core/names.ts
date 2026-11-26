@@ -1376,8 +1376,8 @@ const PARTICLES = new Set(['de', 'del', 'la', 'las', 'los', 'el', 'da', 'dos', '
 /**
  * The keys of a number or an email under the name it was given with. Two records that share one were given it by one name.
  * They are made with a secret, as the rest are. A record may have one of two last names, so each word of it has a key. A
- * browser has none: a front desk's is everybody's. Of somebody who is spoken for, with the detail the speaker's, it is a
- * `ward`: it joins them to whoever was spoken for by the same name and detail, and never to the speaker.
+ * browser has none. A front desk's is everybody's. Of somebody who is spoken for, with the detail the speaker's, it is a
+ * `ward`. It joins them to whoever was spoken for by the same name and detail, and never to the speaker.
  */
 /** Text of which every letter is a Latin one. */
 const LATIN = /^[\p{Script=Latin}\P{L}]*$/u

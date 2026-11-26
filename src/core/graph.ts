@@ -112,7 +112,7 @@ export interface ReportOptions {
    * said, `outcome.<name>` what is known of the outcome, `hour` or `weekday`.
    */
   by?: string
-  /** The one step whose outcomes `costPerOutcome` counts: what a client cost, and not what a client or a call did. */
+  /** The one step whose outcomes `costPerOutcome` counts, so it says what a client cost and not what a client or a call did. */
   per?: string
 }
 
@@ -174,7 +174,7 @@ export interface Graph {
   outcome(outcome: Outcome): Promise<boolean>
   /**
    * Changes the value of a recorded outcome: a refund, a write-off, or, without
-   * a kind, what was actually paid. The value is what it is worth after. A kind
+   * a kind, what was paid. The value is what it is worth after. A kind
    * may raise the value only to take back what was said with the same kind.
    * Resolves to false for an unknown id.
    */
@@ -187,7 +187,7 @@ export interface Graph {
   pay(payment: Payment): Promise<{ duplicate: boolean; value?: number }>
   /** Several people at once, as a list shows them, in the order given. */
   people(subjects: readonly Subject[], options?: { at?: number }): Promise<Person[]>
-  /** Takes a recorded outcome out of the report: it turned out not to have happened. Resolves to false for an unknown id. */
+  /** Takes a recorded outcome out of the report because it turned out not to have happened. Resolves to false for an unknown id. */
   withdraw(transactionId: string): Promise<boolean>
   /**
    * Says what a recorded outcome is worth, or how much of it was lost. Kept as it was said, so its worth does not depend
@@ -247,12 +247,12 @@ export interface Graph {
    */
   tieCall(caller: Subject, visitor: Subject, identifier: Identifier, at: number, by: { pool: string; grace: number } | { notes: readonly Identifier[] }, withheldCall?: string): Promise<boolean>
   /**
-   * Unties a call from whoever tapped the number, or keeps it from being tied: another call could have come of the same tap,
+   * Unties a call from whoever tapped the number, or keeps it from being tied, because another call could have come of the same tap,
    * or came of it, or makes the number busy. Untied, it is filed under `line`, the channel of the number it rang.
    */
   doubtCall(id: string, ambiguous: boolean, line?: Omit<Touch, 'subject' | 'at'>): Promise<void>
   /**
-   * Gives a call that was recorded without it the visitor its code names, as `tieCall` would have: whoever it was tied to by a
+   * Gives a call that was recorded without it the visitor its code names, as `tieCall` would have. Whoever it was tied to by a
    * tap or a number shown to them is untied, and it is flagged `code`, or `taken` and filed under `line` where the two cannot
    * be tied. Nothing where a code has said already, or a person has restored the tie it has.
    */
@@ -301,11 +301,11 @@ export interface Graph {
   /** Calls to you over a range of days: how they went, by hour and weekday, and how many could be placed. */
   callSummary(options: { from: string; to: string; timeZone?: string; at?: number; results?: 'expected'; resultWait?: number; hours?: Hours }): Promise<CallSummary>
   /**
-   * People by the furthest step they ever reached, with missed calls nobody returned first: whoever reached a step or
+   * People by the furthest step they ever reached, with missed calls nobody returned first. It covers whoever reached a step or
    * had a call in the last `days` days, today included.
    */
   board(options: BoardOptions): Promise<Board>
-  /** What followed calls in a range of days: who reached a step within some days of one. See `Followed` for what it does not say. */
+  /** What followed calls in a range of days, which is who reached a step within some days of one. See `Followed` for what it does not say. */
   followed(options: { from: string; to: string; timeZone?: string; step: string; days: number; at?: number; least?: number }): Promise<Followed>
   /** How a call went, whether or not the call itself was kept. */
   callResult(id: string): Promise<CallResult | undefined>
@@ -333,10 +333,10 @@ export interface Graph {
    * alone, so a system can send its whole list again.
    */
   separateAll(pairs: readonly Told[], why?: Deciding): Promise<Recorded>
-  /** Records a list of joins the same way: two records another system merged are one person here too. */
+  /** Records a list of joins the same way. Two records another system merged are one person here too. */
   joinAll(pairs: readonly Told[], why?: Deciding): Promise<Recorded>
   /**
-   * Takes joins back: mutes every mark a pair's joins left, with one decision for each pair. Refused where any of them
+   * Takes joins back. It mutes every mark a pair's joins left, with one decision for each pair. Refused where any of them
    * has none, and then none is taken back. What joined them besides stays.
    */
   unjoinAll(pairs: readonly Told[], why?: Deciding): Promise<Recorded>
@@ -354,13 +354,13 @@ export interface Graph {
   consentHistory(subject: Subject, limit?: number): Promise<ConsentAnswer[]>
   /** Records a reviewer's decision that two subjects are one person. They join one cluster unless separated. `marked` is told the mark it leaves, to `ignore` if it is taken back. */
   join(a: Subject, b: Subject, why?: Deciding, marked?: (mark: Identifier) => void): Promise<Change[]>
-  /** A number that is different after every write: the same number means nothing has changed. */
+  /** A number that is different after every write. The same number means nothing has changed. */
   version(): Promise<number>
   /** How much the graph holds: subjects, clusters, identifiers, edges, sightings, touches, decisions. */
   counts(): Promise<Counts>
   /** The subjects a reviewer has separated from this one. */
   separations(subject: Subject): Promise<Subject[]>
-  /** The clusters with two or more members, largest first: where a reviewer should look. `offset` skips that many. */
+  /** The clusters with two or more members, largest first. These are where a reviewer should look. `offset` skips that many. */
   clusters(limit?: number, offset?: number): Promise<{ id: Subject; size: number; oversized: boolean }[]>
   /** What a decision would do to the clusters now, worked out without making it: how many subjects would move, and the clusters it is about before and after. */
   foresee(decision: Supposed): Promise<Foreseen>
@@ -441,7 +441,7 @@ export interface Graph {
   /** Checks that the record of decisions is whole and unaltered. `brokenAt` names the first entry that does not fit, `head` the newest entry and its hash. */
   audit(): Promise<{ sound: boolean; brokenAt?: number; head?: { seq: number; hash: string } }>
   /**
-   * The graph as it stood at a time: a copy in memory, built from the
+   * The graph as it stood at a time, as a copy in memory built from the
    * sightings written down and the decisions made up to then. A sighting
    * that happened earlier but arrived later is not in it. A forgotten
    * subject, and anything pruned, is gone from every past.
@@ -458,7 +458,7 @@ export interface Graph {
   prune(before: number, why?: Why): Promise<number>
   /**
    * The policy this graph runs, and whether the stored clusters were built
-   * with it. `due` means they were not, or that it is not known: call `rebuild`.
+   * with it. `due` means they were not, or that it is not known. Then call `rebuild`.
    */
   policy(): Promise<PolicyState>
   /** Compares stored clusters with a full recompute. Empty when they agree. */
@@ -562,7 +562,7 @@ export function createGraph(store: Store, policy: Policy = defaultPolicy, option
 }
 
 function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: Graph; record: (tx: Tx, sightings: readonly Sighting[]) => Promise<Change[]> } {
-  // A copy, so a caller that edits its own policy later changes nothing here: the hash always names what scores.
+  // A copy, so a caller that edits its own policy later changes nothing here. The hash always names what scores.
   policy = structuredClone(policy)
   const hash = policyHash(policy)
   /**
@@ -644,7 +644,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
 
   /**
    * Recomputes the components of `affected` subjects. Sound when `affected`
-   * holds both ends of every pair whose score the current write changed: any
+   * holds both ends of every pair whose score the current write changed. Any
    * other `same` pair that reaches into this set was already `same`, so its
    * far end is in one of these components. Clusters are cut from whole
    * components, which is why components, not clusters, bound the work.
@@ -687,7 +687,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
 
   /**
    * Where every subject should sit that is joined to another, from all edges. One that is not here is on its own. Reads
-   * the edges a pair at a time, and keeps only the pairs that join: the graph may be larger than memory.
+   * the edges a pair at a time, and keeps only the pairs that join, because the graph may be larger than memory.
    */
   async function recompute(tx: Tx): Promise<Map<Subject, Labels>> {
     let changed = false
@@ -764,7 +764,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
     return out
   }
 
-  /** Every subject whose stored labels are not what a full recompute gives, with what they should be: undefined where nothing is held any more. */
+  /** Every subject whose stored labels are not what a full recompute gives, with what they should be, or undefined where nothing is held any more. */
   async function wrong(tx: Tx): Promise<{ subject: Subject; stored: Labels | undefined; next: Labels | undefined }[]> {
     const labels = await recompute(tx)
     const out: { subject: Subject; stored: Labels | undefined; next: Labels | undefined }[] = []
@@ -936,15 +936,15 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
   const unnamed = new Set(policy.unnamed ?? UNNAMED)
   const names = (subject: Subject) => !unnamed.has(subject.slice(0, Math.max(0, subject.indexOf(':'))))
 
-  /** One hop of a search: goes over the links of the frontier, and returns the subjects it found a better chain to. */
+  /** One hop of a search. It goes over the links of the frontier, and returns the subjects it found a better chain to. */
   function spread(reached: Reached, apart: ReadonlySet<Subject>, frontier: Subject[], links: ReadonlyMap<Subject, Link[]>, borders: ReturnType<typeof bordersOf>, from: readonly Subject[], only?: ReadonlySet<Subject>, last?: Map<Subject, Link>, crediting = false): Subject[] {
     const improved = new Set<Subject>()
-    // As the hop began: a chain made better during it is followed in the next one, or it would be a link longer.
+    // As the hop began. A chain made better during it is followed in the next one, or it would be a link longer.
     for (const [near, start] of frontier.sort().map((each) => [each, reached.get(each)!] as const)) {
       for (const link of links.get(near) ?? []) {
         const said = speaks(link)
         if (withheldApart.has(link) || (link.conflict && !said) || apart.has(link.subject) || (only && !only.has(link.subject)) || (told(policy, link.reasons) && !said)) continue
-        // Credit goes from whoever speaks to whoever they speak for, and not on: what brought one of their children did not bring another.
+        // Credit goes from whoever speaks to whoever they speak for, and not on. What brought one of their children did not bring another.
         if (said ? !crediting || borders.kept(near, link.subject) || start.speaks || !names(near) || names(link.subject) || !borders.one(from[0]!, near) : start.speaks && !borders.one(near, link.subject)) continue
         if (!said && !start.speaks && (borders.cut(near, link.subject) || borders.between(near, link.subject) || from.some((origin) => borders.kept(origin, link.subject) || borders.between(origin, link.subject)))) continue
         const confidence = start.confidence * link.score
@@ -976,7 +976,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
     const spoken = new Set<string>()
     const marked = new Set<Subject>()
     let met = false
-    /** The groups of two a reviewer keeps apart, looked for wherever one speaks for another: a decision comes before what was said. */
+    /** The groups of two a reviewer keeps apart, looked for wherever one speaks for another. A decision comes before what was said. */
     const kept = new Set<string>()
     const checked = new Set<Subject>()
     const far = new Set<Subject>()
@@ -1020,7 +1020,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
           for (let i = 0; i < ends.length; i += TOGETHER) for (const [subject, own] of await tx.labelsOf(ends.slice(i, i + TOGETHER))) groupOf.set(subject, own.cluster)
           for (const [a, b] of apartPairs) kept.add(pairKey(groupOf.get(a) ?? a, groupOf.get(b) ?? b))
         }
-        // A link out of a group to another of its component: the two were cut, and it may be for a decision or a mark between two others of them.
+        // A link out of a group to another of its component. The two were cut, and it may be for a decision or a mark between two others of them.
         const over = [...links].flatMap(([near, list]) => list.filter((link) => labels.get(near)?.cluster !== labels.get(link.subject)?.cluster && (link.level === 'same' || labels.get(near)?.component === labels.get(link.subject)?.component)).map(() => labels.get(near)?.component ?? near))
         const cutUps = unique(over).filter((id) => !marked.has(id))
         for (let i = 0; i < cutUps.length; i += TOGETHER) {
@@ -1054,7 +1054,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
             facts.set(cluster, [...(facts.get(cluster) ?? []), own])
             some.set(component, [...(some.get(component) ?? []), own])
           }
-          // Worked out again only where somebody differs from somebody: what was cut is not stored.
+          // Worked out again only where somebody differs from somebody, because what was cut is not stored.
           const cutUp = new Set([...some].filter(([, facts]) => facts.some((one, i) => facts.slice(i + 1).some((other) => conflict(policy, one, other)))).map(([component]) => component))
           if (cutUp.size > 0) await compute(tx, [...members].filter(([, own]) => cutUp.has(own.component)).map(([subject]) => subject), undefined, (a, b) => taken.add(pairKey(a, b)))
         }
@@ -1073,7 +1073,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
     }
   }
 
-  /** `reach` from each of many subjects by itself, read together: one read a hop for a thousand of them, not one for each. */
+  /** `reach` from each of many subjects by itself, read together. It makes one read a hop for a thousand of them, not one for each. */
   async function reachEach(tx: Tx, subjects: readonly Subject[], hops: number): Promise<Map<Subject, Reached>> {
     const out = new Map<Subject, Reached>()
     for (let i = 0; i < subjects.length; i += TOGETHER) {
@@ -1238,7 +1238,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
   /** An arrival that says which ad or campaign brought it. */
   const campaigned = (touch: Touch) => !byLine(touch) && Boolean(CLICK_IDS.some((id) => touch[id]) || touch.campaign || touch.campaignId)
   /**
-   * Of touches newest first, the one that earns the credit: the newest that is the person's. Where that is a phone line, an
+   * Of touches newest first, the one that earns the credit, which is the newest that is the person's. Where that is a phone line, an
    * ad click or a campaign that brought them before it comes first, because the line is only where they called.
    */
   const own = (touches: readonly AttributedTouch[]) => touches.filter((touch) => touch.confidence >= (byLine(touch) || touch.anothers ? policy.same : (policy.credit ?? policy.same)) || ((touch.joined || touch.speaker) && !byLine(touch)))
@@ -1305,7 +1305,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
   const followable = async (tx: Tx, subject: Subject, since: number, at: number) => (await tx.touchesOf([subject], since, at)).length > 0 && (await tx.consentOf([subject])).get(subject)?.adUserData !== false
 
   /**
-   * The last word on texts of each cluster, and of each number somebody in it has. A STOP is for a number: one sent from a number that
+   * The last word on texts of each cluster, and of each number somebody in it has. A STOP is for a number. One sent from a number that
    * is only related to a contact, as under a policy that confirms records, must still be seen on that contact. A number outside the
    * cluster can only add a STOP. Its START says nothing of the others.
    */
@@ -1550,7 +1550,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
 
   /**
    * The pairs of a list that are news, in order. A pair is not news when the
-   * last decision about it says the same and still holds: forgetting a
+   * last decision about it says the same and still holds. Forgetting a
    * subject, or muting a join, leaves the record as it was and the decision
    * without effect. A report that contradicts the last one is news even
    * where nothing moves, because two systems that disagree must show.
@@ -1577,7 +1577,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
     return pairs.map((told) => ({ pair: pairOf(told?.a, told?.b, verb), separated: told.separated ?? true, why: { ...why, ...(told.reason && { reason: String(told.reason) }) } }))
   }
 
-  /** An outcome as its payments have it: what they come to, to the hundred-thousandth, in their currency. */
+  /** An outcome as its payments have it, which is what they come to, to the hundred-thousandth, in their currency. */
   function paidFor(outcome: Counted, payments: readonly Required<Payment>[]): Counted {
     if (payments.length === 0) return outcome
     const paid = payments.find((each) => each.currency)?.currency
@@ -1690,7 +1690,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
     async match(identifiers, { at = now(), limit = 20 } = {}) {
       const given = nameEvidence(identifiers)
       for (const each of given) ruleFor(policy, each)
-      // Nobody's id: no subject on record has an empty one.
+      // Nobody's id, since no subject on record has an empty one.
       const nobody = ''
       return store.read(async (tx) => {
         const states = await tx.states(given)
@@ -2096,7 +2096,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
 
     async keepCall(call, lineKind, reserved) {
       await store.write(async (tx) => {
-        // Only a visitor still tied by this call: one forgotten meanwhile is not written down again.
+        // Only a visitor still tied by this call. One forgotten meanwhile is not written down again.
         const { visitor, ...rest } = call
         const before = await tx.callOf(call.id)
         // A doubted tap can rule out a visitor or preserve a doubt already on the call.
@@ -2161,7 +2161,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       if (!names(who.subject) || by.some((each) => names(each.subject))) throw malformed('A browser or a caller speaks for a record of yours')
       const marks: Identifier[] = []
       let identifiers: readonly Identifier[] = who.identifiers
-      // One transaction, with what is known of each: no moment has them as one.
+      // One transaction, with what is known of each. No moment has them as one.
       const changes = await changing(async (tx) => {
         marks.length = 0
         const held = await tx.edgesOf([who.subject, ...by.map((each) => each.subject)])
@@ -2196,9 +2196,9 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
     async tieCall(caller, visitor, identifier, at, by, withheldCall) {
       ruleFor(policy, identifier)
       let tied = false
-      // One transaction: two calls reported at once cannot both find the visitor free.
+      // One transaction, so two calls reported at once cannot both find the visitor free.
       await changing(async (tx) => {
-        // What matched the two is read again: whoever was forgotten meanwhile is not tied, even where they have been seen since.
+        // What matched the two is read again. Whoever was forgotten meanwhile is not tied, even where they have been seen since.
         const matched = 'pool' in by ? (await holderOf(tx, by.pool, at, by.grace)) === visitor : (await tx.edgesOn(by.notes)).some((edge) => edge.subject === visitor)
         // Another call reported meanwhile may have cast doubt on it.
         tied = matched && (await tieable(tx, caller, visitor, identifier))
@@ -2281,7 +2281,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         const tied = await tieable(tx, call.subject, visitor, identifier)
         const { visitor: guess, ...rest } = call
         await tx.setCall({ ...rest, flags: [...call.flags.filter((flag) => flag !== 'ambiguous' && flag !== 'pool'), tied ? 'code' : 'taken'], ...(tied && { visitor }) })
-        // As it would be had the code come first: filed under its number only where it is tied to nobody.
+        // As it would be had the code come first. It is filed under its number only where it is tied to nobody.
         if (tied && line && guess === undefined) await tx.dropTouch(call.subject, call.at, line.landing!, id)
         if (!tied && line && guess !== undefined) await tx.addTouch({ ...line, subject: call.subject, at: call.at }, id)
         return tied ? [...changes, ...(await record(tx, [call.subject, visitor].map((subject) => ({ subject, identifier, at: call.at, event: 'call', recorded: now() }))))] : changes
@@ -2326,7 +2326,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
           await tx.setLease(longer)
           return longer
         }
-        // Of those free, the one released longest ago: a number seen last week is still on somebody's screen more than one seen last year.
+        // Of those free, the one released longest ago, because a number seen last week is still on somebody's screen more than one seen last year.
         const ended = (number: string) => newest.get(number)?.until ?? -Infinity
         // The one who had it last gets it back.
         const free = unique(numbers).filter((number) => ended(number) <= at)
@@ -2507,7 +2507,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         for (const outcome of await leadsOf(tx, await tx.outcomesOf(theirs), outcomeId)) people.get(person(outcome.subject))?.outcomes.push(outcome)
         for (const call of times) people.get(person(call.subject))?.calls.push(call)
         const { columns, unplaced } = board([...people.values()], { steps: steps.map(({ name, wait }) => ({ name, ...(wait && { wait: wait * HOUR }) })), at, today, ...(returnHours > 0 && { returnWait: returnHours * HOUR }), ...(hours && { hours }) })
-        // Only those shown are traced to an ad: it is the slow part.
+        // Only those shown are traced to an ad, because that is the slow part.
         const shown: BoardColumn<BoardRow>[] = []
         const placed = columns.flatMap((column) => column.rows.slice(0, limit))
         // A record may have reached this step before the confirmed call whose outcome the row shows.
@@ -2540,7 +2540,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
       if (!Number.isSafeInteger(options.days) || options.days < 1 || options.days > 365) throw malformed('`days` must be an integer from 1 to 365')
       return store.read(async (tx) => {
         const inPeriod = await leadsOf(tx, (await tx.callsBetween(start, end)).filter((call) => call.direction === 'inbound'), callId)
-        // A person is a cluster: whoever rings from two numbers is counted once, and what they did under an account is theirs.
+        // A person is a cluster. Whoever rings from two numbers is counted once, and what they did under an account is theirs.
         const labels = await tx.labelsOf(unique(inPeriod.map((call) => call.subject)))
         const clusterOf = (subject: Subject) => labels.get(subject)?.cluster ?? subject
         const everyone = await tx.membersOf(unique([...labels.values()].map((label) => label.component)))
@@ -2612,7 +2612,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         const outcomes = await leadsOf(tx, recorded, outcomeId)
         const labels = await tx.labelsOf(unique(outcomes.map((outcome) => outcome.subject)))
         const first = await tx.firstValues(outcomes)
-        // How long steps take is read from the last half year and not from the days asked about: the newest days hold
+        // How long steps take is read from the last half year and not from the days asked about. The newest days hold
         // few outcomes, which is what it has to say. Some of each step, so a common quick one does not hide a slow one.
         const newest = await leadsOf(tx, await tx.newestOutcomes(now() - 180 * DAY, now(), 200), outcomeId)
         const ids = unique([...recorded, ...newest].map(outcomeId).filter((id) => id.startsWith('call:')).map((id) => id.slice(5)))
@@ -2623,7 +2623,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         // A call that was counted is an outcome, and is counted once.
         const counted = new Set(recorded.map(outcomeId))
         const uncounted = inbound.filter((call) => (spurned.has(callId(call)) ? !counted.has(callId(call)) : call.result?.answered === false))
-        // Each is read for the days it needs: the newest half year can be far from the days asked about.
+        // Each is read for the days it needs, because the newest half year can be far from the days asked about.
         const reached = new Map<Subject, Reached>()
         const ofOutcome = await creditAll(tx, recorded, year, hops, reached, calls)
         const ofCall = await creditAll(tx, uncounted, window, hops, reached, uncounted)
@@ -2713,7 +2713,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         if (ignored) await current(tx, [identifier], why)
         const states = await tx.states([identifier])
         const before = states.get(identifier)
-        // Asked for what already holds, nothing is decided: a server that mutes an address again after a restart adds no entry.
+        // Asked for what already holds, nothing is decided. A server that mutes an address again after a restart adds no entry.
         if ((before?.ignored ?? false) === ignored) return []
         if (ignored && why?.automatic && (await tx.newestNaming([identifier], 0, ['ignore', 'restore']))?.action === 'restore') return []
         await decide(tx, ignored ? 'ignore' : 'restore', [identifier], why)
@@ -2788,7 +2788,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         const sightings: Sighting[] = []
         const { joined } = await standing(tx, next.map(({ pair }) => pair))
         for (const [i, { pair }] of next.entries()) {
-          // One mark is enough: a second would keep the two joined after someone muted the first.
+          // One mark is enough. A second would keep the two joined after someone muted the first.
           if (joined.has(pairKey(...pair))) continue
           joined.add(pairKey(...pair))
           let identifier = `review:join-${seqs[i]}`
@@ -2971,7 +2971,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
           if (action === 'separate') verdicts.set(pairKey(a, b), { a, b, same: false })
           if (action === 'rejoin') verdicts.set(pairKey(a, b), undefined)
         }
-        // Score every shared identifier, however weak, and leave out the reviewer's own mark: it is the answer, not evidence.
+        // Score every shared identifier, however weak, and leave out the reviewer's own mark, because it is the answer and not evidence.
         const out: Labeled[] = []
         for (const verdict of verdicts.values()) {
           if (!verdict) continue
@@ -3120,7 +3120,7 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         for (const edge of await tx.edgesOn(open)) affected.add(edge.subject)
         const moved = await settle(tx, affected)
         await recheckCallbacks(tx, [...affected])
-        // Last: what moved is said of the groups they were in, and those may have had their names.
+        // Last, what moved is said of the groups they were in, and those may have had their names.
         await tx.unname(only ? [] : subjects, keys)
         return moved
       })
@@ -3134,9 +3134,9 @@ function graphOn(store: Store, policy: Policy, options: GraphOptions): { graph: 
         const own = (await tx.labelsOf([subject])).get(subject)
         const members = own ? (await tx.clusterOf(own.cluster)).sort() : [subject]
         // The person: their cluster, and whoever is tied to any of it strongly enough that their arrivals would be credited.
-        // Nobody kept apart from any of them, though: a browser two people used is tied to both, and they are still two.
+        // Nobody kept apart from any of them, though. A browser two people used is tied to both, and they are still two.
         const within = new Set(members)
-        // Whoever is in a group with somebody named is that person's, however strong the tie: one person's record shows nothing
+        // Whoever is in a group with somebody named is that person's, however strong the tie. One person's record shows nothing
         // of another's, and no path goes through it.
         const unnamed = new Set(policy.unnamed ?? UNNAMED)
         const isNamed = (each: Subject) => !unnamed.has(each.slice(0, Math.max(0, each.indexOf(':'))))

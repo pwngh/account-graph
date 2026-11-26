@@ -29,7 +29,7 @@ export function readToken(secret: string, purpose: string, token: unknown, now: 
   if (!body || !until || !signed || rest.length > 0 || !/^[0-9a-z]+$/.test(until)) return undefined
   const expires = Number.parseInt(until, 36)
   const payload = Buffer.from(body, 'base64url').toString('utf8')
-  // One token, one spelling: a body that does not encode back to itself was not written by `signToken`.
+  // One token has one spelling. A body that does not encode back to itself was not written by `signToken`.
   if (encode(payload) !== body) return undefined
   const expected = Buffer.from(signature(secret, purpose, payload, expires))
   const given = Buffer.from(signed)

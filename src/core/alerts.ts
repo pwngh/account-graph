@@ -18,7 +18,7 @@ export interface AlertOptions {
 export type Alerter = (about: string, text: string) => Promise<boolean>
 
 /**
- * Returns a function that posts an alert. It never throws: an alert that
+ * Returns a function that posts an alert. It never throws. An alert that
  * cannot be delivered is reported to `onError` and dropped, so a broken
  * webhook cannot break what it was reporting on.
  */
