@@ -98,6 +98,9 @@ export async function prepareReport(kind: ReportKind, which: string | undefined,
     const before = daysBefore(summary)
     const { total: then } = await get('calls/summary', { from: before.from, to: before.to })
     const facts = { summary, then, open: first, goals, limits }
+    // The presets count back from today in the report's zone, as the original screen does.
+    const day = Object.fromEntries(new Intl.DateTimeFormat('en', { timeZone: summary.timeZone, calendar: 'gregory', numberingSystem: 'latn', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(at).map(({ type, value }) => [type, value]))
+    report.today = day.year + '-' + day.month + '-' + day.day
     Object.assign(report, { summary, then, before, open, page, metrics: ['inbound','answered','missed','returned','awaiting'].map(key => add('calls.' + key, '', facts)) })
     report.calls = open.calls.map((call: Row) => add('call', call.id, { call, state: call.state, followUp: { state: 'open', attempts: call.attempts }, credit: call, limits, at: open.at }))
     report.measure = ['calls','answered','missed','voicemail','unknown','waiting','returned'].includes(query.get('measure') || '') ? query.get('measure') : 'missed'

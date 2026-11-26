@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { amount, cameFrom, idText, journeyHash, percent, subjectHash } from './report-words'
-import { Time } from './shared'
+import { Time, stamp } from './shared'
 
 export function Change({ now, was, before, good, points }) {
   if (!Number.isFinite(now) || !Number.isFinite(was)) return null
@@ -41,6 +41,23 @@ export function Coverage({ coverage }) {
   })}</ul>{off.length > 0 && <p role="status">Shares exclude hidden items.</p>}</div>{coverage.noResult > 0 && <p>{amount(coverage.noResult)} without a result</p>}</>
 }
 
+// Copying needs a script. Without one the time is on the page to select.
+function CopyTime({ at }) {
+  const [enhanced, setEnhanced] = useState(false)
+  const [said, setSaid] = useState('')
+  useEffect(() => setEnhanced(true), [])
+  if (!enhanced) return null
+  const text = stamp(at)
+  return <div className="row"><button type="button" onClick={async () => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setSaid('Copied')
+    } catch {
+      setSaid(text)
+    }
+  }}>Copy time</button><span className="meta" role="status">{said}</span></div>
+}
+
 export function CallInbox({ data, Detail, Story }) {
   const { open, cards, summary, story, result } = data
   const url = (page, result, pick) => '/calls?' + new URLSearchParams({ from: summary.from, to: summary.to, page, measure: data.measure, result, ...(pick && {pick}) })
@@ -54,6 +71,6 @@ export function CallInbox({ data, Detail, Story }) {
     <div className="inbox-list scroll" role="region" aria-label="Missed calls" tabIndex="0">{Object.entries(groups).map(([label,rows]) => rows.length > 0 && <div key={label}><h3 className="inbox-age">{label} {rows.length}</h3><ol>{rows.map(([call,i]) => <li key={call.id} className="inbox-call"><Link to={url(data.page,result,data.calls[i]) + '#call-history'} className="inbox-who" aria-current={i === data.picked ? 'true' : undefined} title={call.subject}>{idText(call.subject)}</Link><span className="inbox-time"><Time at={call.at}/></span><span className="inbox-from">{call.state === 'voicemail' ? 'Voicemail' : 'Missed'} · {cameFrom(call) || 'Unattributed'}</span>{call.attempts > 0 && <span className="chip">{amount(call.attempts)} {call.attempts === 1 ? 'attempt' : 'attempts'}</span>}<Detail card={cards[data.calls[i]]}/></li>)}</ol></div>)}{!selected && <p>None</p>}</div></div>
     {selected && story && <><div id="call-history" className="inbox-story"><div className="inbox-head"><div><b>{idText(selected.subject)}</b><p className="meta">{selected.state === 'voicemail' ? 'Voicemail' : 'Missed'} · <Time at={selected.at}/></p></div><Link className="button primary" to={journeyHash(selected.subject)}>Open journey</Link><Link className="button" to={subjectHash(selected.subject)}>Account</Link></div>
     <p className="inbox-age">History <b>{amount(story.count)}{story.more && '+'}</b>{story.ids > 1 && ' · ' + amount(story.ids) + ' IDs'}</p><ol className="story">{story.rows.map(({entry,card},i) => <li key={i} className={entry.kind + (entry.call?.id === selected.id ? ' this' : '')}><div className="what"><Story entry={entry}/>{card && <Detail card={cards[card]}/>}</div><span className="meta"><Time at={entry.at || undefined}/></span></li>)}</ol>{story.count > 14 && <p>{amount(story.count - 14)} more in the journey</p>}</div>
-    <div className="inbox-facts"><dl><dt>Called</dt><dd><Time at={selected.at}/></dd><dt>Wait</dt><dd>{selected.result?.waited == null ? 'No data' : amount(Math.round(selected.result.waited)) + ' s'}</dd><dt>Attempts</dt><dd>{amount(selected.attempts)}</dd><dt>Source</dt><dd>{cameFrom(selected) || 'Unattributed'}</dd>{Object.entries(selected.tags ?? {}).map(([key,value]) => <div key={key}><dt>{key.replaceAll('_',' ')}</dt><dd>{value}</dd></div>)}</dl></div></>}
+    <div className="inbox-facts"><dl><dt>Called</dt><dd><Time at={selected.at}/></dd><dt>Wait</dt><dd>{selected.result?.waited == null ? 'No data' : amount(Math.round(selected.result.waited)) + ' s'}</dd><dt>Attempts</dt><dd>{amount(selected.attempts)}</dd><dt>Source</dt><dd>{cameFrom(selected) || 'Unattributed'}</dd>{Object.entries(selected.tags ?? {}).map(([key,value]) => <div key={key}><dt>{key.replaceAll('_',' ')}</dt><dd>{value}</dd></div>)}</dl><CopyTime key={selected.id} at={selected.at}/></div></>}
     </div>{data.page > 0 && <Link to={url(data.page - 1, result)}>Previous calls</Link>} {open.next != null && <Link to={url(data.page + 1, result)}>Show more</Link>}</>
 }

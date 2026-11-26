@@ -113,6 +113,11 @@ function Hours({ data }) {
       return <tr key={day}><th scope="row">{day}</th>{row.map((cell,h) => <td className={'num heat' + Math.ceil(4 * (cell?.[measure] || 0) / most)} key={h}>{cell?.[measure]}</td>)}<td>{amount(row.reduce((all, cell) => all + (cell?.[measure] || 0), 0))}</td></tr>
     })}</tbody></table></div></section>
 }
+function Presets({ today, from, to }) {
+  const ago = n => new Date(Date.parse(today + 'T00:00:00Z') - n * 86400_000).toISOString().slice(0, 10)
+  const spans = [['Today', today, today], ['Yesterday', ago(1), ago(1)], ['7 days', ago(6), today], ['30 days', ago(29), today], ['This month', today.slice(0, 8) + '01', today]]
+  return <span className="row presets">{spans.map(([label, start, end]) => <Link key={label} className="button" aria-current={start === from && end === to ? 'page' : undefined} to={'/calls?' + new URLSearchParams({ from: start, to: end })}>{label}</Link>)}</span>
+}
 function Calls({ data }) {
   const { summary, open, cards, then } = data
   const { total, coverage } = summary
@@ -124,7 +129,7 @@ function Calls({ data }) {
   const bars = [<Bars values={hourly('calls')} title="Calls by starting hour"/>, undefined, <Bars values={hourly('voicemail').map((n,i) => n + missed[i])} title="Missed calls by starting hour"/>]
   const results = [['Answered',total.answered,total.calls,''],['Missed',total.missed,total.calls,''],['Voicemail',total.voicemail,total.calls,''],['Waiting',total.waiting,total.calls,'Result not received yet'],['Unknown',total.unknown,total.calls,'Result unavailable'],['Returned',total.returned,lost,[summary.returnedWithin != null && 'Median ' + lasted(summary.returnedWithin),total.reported > 0 && amount(total.reported) + ' reported by another system'].filter(Boolean).join(' · ')],['Called again',total.calledAgain,lost,'Caller got through later']]
   if (total.notLeads > 0) results.push(['Not a lead',total.notLeads,0,'Excluded from other counts'])
-  return <><section><div className="page-head"><h2>Calls</h2><Form className="row" action="/calls" method="get"><label>From <input type="date" name="from" required defaultValue={summary.from}/></label><label>To <input type="date" name="to" required defaultValue={summary.to}/></label><button>Show</button></Form></div><Range {...summary}/>
+  return <><section><div className="page-head"><h2>Calls</h2><Form className="row period" action="/calls" method="get"><label>From <input type="date" name="from" required defaultValue={summary.from}/></label><label>To <input type="date" name="to" required defaultValue={summary.to}/></label><button>Show</button><Presets today={data.today} from={summary.from} to={summary.to}/></Form></div><Range {...summary}/>
   {total.calls > 0 && <dl className="tiles">{data.metrics.map((key,i) => (i !== 3 || lost > 0) && <Metric key={key} card={cards[key]} note={notes[i]} change={changes[i]} bars={bars[i]}/>)}</dl>}</section><section id="calls-missed"><h2>Missed calls</h2>
   {open.calls.length ? <CallInbox data={data} Detail={Detail} Story={Story}/> : <p>{total.calls === 0 ? 'No inbound calls' : lost > 0 ? 'All missed callers have been reached.' : 'No missed calls'}</p>}
   {total.hidden > 0 && <p>{amount(total.hidden)} more with a withheld number</p>}</section>{total.calls > 0 && <><div className="panel-grid call-grid"><section><h2>Call results</h2><Table title="Call results" headers={['Result','Calls','Share','Detail']}>{results.map(([name,n,all,note]) => <tr key={name}><th scope="row">{name}</th><td>{amount(n)}</td><td>{all ? percent(n / all) : '—'}</td><td>{note}</td></tr>)}</Table></section><section><h2>Call attribution</h2><Coverage coverage={coverage}/></section></div><Hours data={data}/></>}</>
