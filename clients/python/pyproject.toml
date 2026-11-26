@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "account-graph"
+version = "0.1.0"
+description = "Python client for the six account-graph HTTP calls"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {file = "LICENSE"}
+dependencies = []
+
+[tool.setuptools]
+packages = ["account_graph"]
+
+[tool.setuptools.package-data]
+account_graph = ["py.typed"]
