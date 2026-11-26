@@ -21,7 +21,7 @@ export function checkTouch(touch: Touch): void {
     if (UNSTORABLE.test(name) || UNSTORABLE.test(value)) throw malformed('A touch contains unsupported characters')
   }
   for (const [name, value] of Object.entries(touch)) {
-    if (!KNOWN.has(name)) throw malformed(`A touch has no field "${name.slice(0, 100)}"; parameters of your own go in custom`)
+    if (!KNOWN.has(name)) throw malformed(`A touch has no field "${name.slice(0, 100)}". Put parameters of your own in custom`)
     if (value !== undefined && name !== 'at' && name !== 'custom') text(name, value)
   }
   if (touch.custom === undefined) return
