@@ -1,5 +1,6 @@
-import { Form, useActionData, useSearchParams, type ActionFunctionArgs } from 'react-router'
-import { signIn } from '../auth.server'
+import { Form, useActionData, useSearchParams, type ActionFunctionArgs, type LoaderFunctionArgs } from 'react-router'
+import { signIn, signInPage } from '../auth.server'
+export const loader = ({request}: LoaderFunctionArgs) => signInPage(request)
 export const action = ({request}: ActionFunctionArgs) => signIn(request)
 export default function SignIn() {
   const answer = useActionData<typeof action>()

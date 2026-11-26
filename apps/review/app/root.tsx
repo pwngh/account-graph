@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useState } from 'react'
-import { Form, Links, NavLink, Outlet, Scripts, ScrollRestoration, isRouteErrorResponse, useLocation, useNavigation, useRouteError, useRevalidator, useRouteLoaderData, type LoaderFunctionArgs } from 'react-router'
+import { Form, Link, Links, Outlet, Scripts, ScrollRestoration, isRouteErrorResponse, useLocation, useNavigation, useRouteError, useRevalidator, useRouteLoaderData, type LoaderFunctionArgs } from 'react-router'
 import { current } from './auth.server'
 import { runtime } from './runtime.server'
 import { affectsPage, oldBookmark } from './navigation'
@@ -45,11 +45,23 @@ export function Layout({children}: {children: React.ReactNode}) {
     window.addEventListener('hashchange', bookmark)
     return () => window.removeEventListener('hashchange', bookmark)
   }, [data?.legacy, data?.name])
+  useEffect(() => {
+    function search(event: KeyboardEvent) {
+      const input = document.querySelector<HTMLInputElement>('#find input')
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k' && input) {
+        event.preventDefault()
+        input.focus()
+        input.select()
+      }
+    }
+    window.addEventListener('keydown', search)
+    return () => window.removeEventListener('keydown', search)
+  }, [])
   const subject = /^\/(?:accounts|journey)\/(.+?)\/?$/.exec(location.pathname)?.[1]
   return <html lang="en"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><meta name="robots" content="noindex, nofollow"/><title>Account review</title><Links/></head><body>
     <a className="skip" href="#view">Skip to content</a><header><h1>Account review</h1>{data?.name && <>
-    <nav id="views" aria-label="Views">{menu.map(([path,title]) => <NavLink key={path} to={'/' + (path === 'journey' && subject ? path + '/' + subject : path)}>{title}</NavLink>)}</nav>
-    <Form id="find" className="row" method="post" action="/search"><label>Search <input name="text" placeholder="Search" autoComplete="off" required /></label><button>Open</button></Form>
+    <nav id="views" aria-label="Views">{menu.map(([path,title]) => <Link aria-current={location.pathname.split('/')[1] === path.split('/')[0] ? 'page' : undefined} key={path} to={'/' + (path === 'journey' && subject ? path + '/' + subject : path)}>{title}</Link>)}</nav>
+    <Form id="find" className="row" method="post" action="/search"><label>Search <input name="text" aria-keyshortcuts="Control+K Meta+K" placeholder="Search" autoComplete="off" required /></label><button>Open</button></Form>
     <Form method="post" action="/signout" reloadDocument>{data.name} <button>Sign out</button></Form></>}</header>
     <div id="notice" role="status">{navigation.state === 'loading' ? 'Opening view…' : navigation.state === 'submitting' ? 'Saving…' : ''}</div>
     <main id="view" tabIndex={-1}>{children}</main><footer>{data?.name && location.pathname !== '/stage' && <Live path={location.pathname}/>}</footer><ScrollRestoration/><Scripts/></body></html>

@@ -497,8 +497,10 @@ async function round(databaseUrl: string | undefined, graphAt: string, sitePort:
       next += 1
       ms = Math.round(performance.now() - began)
       return [200, last]
-    } catch (error) {
-      problem = String((error as Error).message)
+    } catch {
+      // A scene makes several independent office calls. Starting a new round clears a partial scene.
+      ready = false
+      problem = 'The graph could not finish this scene. Restart to play it from a fresh history.'
       return [500, {error: problem}]
     } finally {
       running = false
@@ -603,7 +605,7 @@ export async function startFirm({databaseUrl}: Kept, options: Options = {}): Pro
       const state = stage.state()
       if (boot !== state.boot || expected !== state.next || state.running) return 'The scene has changed. Use the current controls.'
       if (intent === 'run') {
-        if (!state.ready) return 'The sample data is still loading.'
+        if (!state.ready) return state.error || 'The sample data is still loading.'
         const [status, body] = await active!.runScene()
         return status === 200 ? undefined : (body as {error: string}).error
       }

@@ -9,6 +9,7 @@
     "dev": "react-router dev",
     "build": "react-router build",
     "start": "node server.mjs",
+    "test": "node --test test/*.test.*",
     "typecheck": "react-router typegen && tsc --noEmit"
   },
   "dependencies": {

@@ -65,7 +65,7 @@
     "costs": "node tools/costs.ts",
     "labels": "node tools/labels.ts",
     "review:build": "npm run build && npm --prefix apps/review run build",
-    "review:test": "npm run review:build && node --test apps/review/test/*.test.*"
+    "review:test": "npm run review:build && npm --prefix apps/review test"
   },
   "peerDependencies": {
     "pg": "^8.11.0"

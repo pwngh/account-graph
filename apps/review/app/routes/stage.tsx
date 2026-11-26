@@ -127,7 +127,7 @@ export default function StagePage() {
   }, [playStart, busy, state.next, state.ready, fetcher.data])
   return <div className={phone ? 'with-phone' : undefined}>{phone && <Phone state={state} phone={phone} busy={busy}/>}
     <section><h2>{scene?.title ?? state.practice.firm}</h2>{scene && <p>{scene.text}</p>}
-      {!state.ready && <p role="status">Loading sample history · {state.progress}. <a href="/stage">Refresh progress</a></p>}
+      {!state.ready && !state.error && <p role="status">Loading sample history · {state.progress}. <a href="/stage">Refresh progress</a></p>}
       {state.error && <p role="alert">{state.error}</p>}{state.ready && <Link to={path}>Open reviewer view</Link>}
     </section>
     {(card || desk) && <aside id="stage-desk" className="on"><strong>{card?.title || desk?.name}</strong><Fields rows={card?.fields || desk?.fields || []}/>{desk?.done} {state.told.checked && <small>{state.told.checked} POST /match</small>} {card?.path}</aside>}
@@ -135,7 +135,7 @@ export default function StagePage() {
       ('accounts' in content ? <Accounts data={content.accounts!}/> : 'report' in content ? <Report data={content.report!} openCard={scene?.open}/> : <Remaining model={content.other!}/>)}</div>
     {state.told.credit && <section className="stage-credit">Ad credit of contact:ines-vega <b>{Math.round(100 * state.told.credit.share)}%</b>{state.told.credit.campaign ? 'Credited to ' + state.told.credit.campaign : 'Not credited. It takes 90%.'}</section>}
     <div id="stage" role="group" aria-label="Demo scenes" className={hidden ? 'away' : undefined} data-at={state.next} data-ms={state.ms} data-ready={state.ready} data-running={busy}>
-      <span className="where">{state.next} of {state.scenes.length}</span><b>{scene?.title ?? 'Scenes'}</b><span className="told" role="status">{status || (state.ready ? state.told.lines.join(' ') : state.progress)}</span>
+      <span className="where">{state.next} of {state.scenes.length}</span><b>{scene?.title ?? 'Scenes'}</b><span className="told" role="status">{status || state.error || (state.running && state.ready ? 'Running ' + (state.scenes[state.next]?.title || 'scene') + '…' : state.ready ? state.told.lines.join(' ') : state.progress)}</span>
       <fetcher.Form id="scene-controls" method="post" action="/stage" className="keys" preventScrollReset>
         {enhanced && <input type="hidden" name="_enhanced" value="1"/>}<input type="hidden" name="boot" value={state.boot}/><input type="hidden" name="expected" value={state.next}/>
         <button ref={run} name="intent" value="run" className="primary" hidden={finished} disabled={!state.ready || busy || finished}>Next <kbd>Space</kbd></button>

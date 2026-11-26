@@ -40,6 +40,15 @@ export async function signedOut(request: Request, session?: Reviewer) {
   return redirect('/signin', { status: 303, headers: { 'set-cookie': await jar.destroySession(cookie) } })
 }
 
+export async function signInPage(request: Request) {
+  const jar = storage(request)
+  const cookie = await jar.getSession(request.headers.get('cookie'))
+  if (cookie.has('id') && !await current(request)) {
+    return data(null, {headers: {'set-cookie': await jar.destroySession(cookie)}})
+  }
+  return null
+}
+
 export async function requireReviewer(request: Request) {
   const session = await current(request)
   if (session) return session
