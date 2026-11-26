@@ -6,18 +6,23 @@ define('ARRAY_A', 'ARRAY_A');
 define('ACCOUNT_GRAPH_URL', $argv[3]);
 define('ACCOUNT_GRAPH_TOKEN', 'synthetic-wordpress');
 define('ACCOUNT_GRAPH_SOURCE', 'example-site');
+$input = json_decode($argv[5] ?? '{}', true);
+$configured_device = empty($input['no_device']) ? array('device' => 'ag_device') : array();
 define('ACCOUNT_GRAPH_FORMS', array(
-    'gravity' => array(17 => array('email' => '1', 'phone' => '2')),
-    'cf7' => array(23 => array('email' => 'your-email', 'phone' => 'your-phone'))
+    'gravity' => array(17 => array('email' => '1', 'phone' => '2') + $configured_device),
+    'cf7' => array(23 => array('email' => 'your-email', 'phone' => 'your-phone') + $configured_device)
 ));
 if ($argv[4] !== 'all-pages') {
     define('ACCOUNT_GRAPH_INCLUDE_PAGES', array('contact', 'private'));
     define('ACCOUNT_GRAPH_EXCLUDE_PAGES', array('private'));
 }
-if ($argv[4] === 'saved-cf7') {
+if ($argv[4] === 'saved-cf7' || isset($input['saved_id'])) {
     define('ACCOUNT_GRAPH_CF7_ENTRY_ID', 'fixture_cf7_id');
 }
-function fixture_cf7_id($form, $submission) { return 123; }
+function fixture_cf7_id($form, $submission) { return $GLOBALS['input']['saved_id'] ?? 123; }
+function get_current_blog_id() { return $GLOBALS['input']['blog'] ?? 1; }
+function wp_salt($scheme) { return 'synthetic-wordpress-site-secret'; }
+function wp_unslash($value) { return stripslashes($value); }
 
 class FixtureWpdb
 {
@@ -54,22 +59,34 @@ class FixtureWpdb
     public function query($sql)
     {
         if ($this->fail_write) throw new RuntimeException('Local storage unavailable');
-        $sql = preg_replace('/ON DUPLICATE KEY UPDATE .+$/is', 'ON CONFLICT(option_name) DO NOTHING', $sql);
+        $sql = preg_replace('/ON DUPLICATE KEY UPDATE option_value\s*=/i', 'ON CONFLICT(option_name) DO UPDATE SET option_value =', $sql);
+        $sql = preg_replace('/ON DUPLICATE KEY UPDATE option_name\s*=\s*option_name/i', 'ON CONFLICT(option_name) DO NOTHING', $sql);
+        $sql = preg_replace('/^DELETE FROM wp_options WHERE (.*) LIMIT (\d+)$/is', 'DELETE FROM wp_options WHERE option_id IN (SELECT option_id FROM wp_options WHERE $1 LIMIT $2)', $sql);
+        $sql = $this->like($sql);
         $sql = str_replace('BINARY ', '', $sql);
         return $this->sqlite->exec($sql);
     }
-    public function get_var($sql) { return $this->sqlite->query($sql)->fetchColumn(); }
+    public function get_var($sql)
+    {
+        $value = $this->sqlite->query($this->like($sql))->fetchColumn();
+        return $value === false ? null : $value;
+    }
     public function get_results($sql, $format)
+    {
+        return $this->sqlite->query($this->like($sql))->fetchAll(PDO::FETCH_ASSOC);
+    }
+    private function like($sql)
     {
         // MySQL uses a backslash LIKE escape by default. SQLite requires ESCAPE.
         $sql = preg_replace("/(LIKE '[^']*')/i", "$1 ESCAPE '\\\\'", $sql);
-        return $this->sqlite->query($sql)->fetchAll(PDO::FETCH_ASSOC);
+        return $sql;
     }
 }
 $GLOBALS['wpdb'] = new FixtureWpdb($argv[2]);
 $GLOBALS['hooks'] = array();
 $GLOBALS['scripts'] = array();
 $GLOBALS['schedule'] = array();
+$GLOBALS['singles'] = array();
 $GLOBALS['page'] = 'contact';
 function add_action($name, $callback, $priority = 10, $argc = 1) { $GLOBALS['hooks'][$name] = array($callback, $argc); }
 function add_filter($name, $callback, $priority = 10, $argc = 1) { add_action($name, $callback, $priority, $argc); }
@@ -78,24 +95,41 @@ function invoke_hook($name, ...$args)
     list($callback, $count) = $GLOBALS['hooks'][$name];
     return $callback(...array_slice($args, 0, $count));
 }
-function wp_enqueue_script($handle, $src, $deps = array(), $version = false, $footer = false) { $GLOBALS['scripts'][] = array($handle, $src); }
+function wp_enqueue_script($handle, $src, $deps = array(), $version = false, $footer = false) { $GLOBALS['scripts'][] = array('classic', $src); }
+function wp_enqueue_script_module($id, $src, $deps = array(), $version = false) { $GLOBALS['scripts'][] = array('module', $src); }
 function is_page($list = '') { return $list === '' || in_array($GLOBALS['page'], (array) $list, true); }
-function wp_next_scheduled($hook) { return isset($GLOBALS['schedule'][$hook]) ? 1700000000 : false; }
+function wp_next_scheduled($hook, $args = array())
+{
+    foreach ($GLOBALS['singles'] as $event) {
+        if ($event['hook'] === $hook && $event['args'] === $args) return $event['due'];
+    }
+    return !$args && isset($GLOBALS['schedule'][$hook]) ? time() + 60 : false;
+}
+function wp_schedule_single_event($due, $hook, $args = array())
+{
+    $scheduled = wp_next_scheduled($hook, $args);
+    if ($scheduled && abs($scheduled - $due) < 600) return false;
+    $GLOBALS['singles'][] = array('due' => $due, 'hook' => $hook, 'args' => $args);
+    return true;
+}
 function wp_schedule_event($time, $interval, $hook) { $GLOBALS['schedule'][$hook] = $interval; return true; }
 function wp_generate_uuid4() { return '00000000-0000-4000-8000-' . bin2hex(random_bytes(6)); }
-function wp_cache_delete($key, $group) {}
+function get_transient($key) { return $GLOBALS['transients'][$key] ?? false; }
+function set_transient($key, $value, $ttl) { $GLOBALS['transients'][$key] = $value; return true; }
 class WPCF7_ContactForm { public function id() { return 23; } }
 class WPCF7_Submission
 {
     public static $active;
     public static $reads = array();
     public static function get_instance() { return self::$active; }
-    public function get_meta($key) { return $key === 'timestamp' ? 1793534400 : null; }
+    public function get_meta($key) { return $key === 'timestamp' ? ($GLOBALS['input']['at'] ?? 1793534400) : null; }
     public function get_posted_data($key = '')
     {
-        if (!in_array($key, array('your-email', 'your-phone'), true)) throw new LogicException('Only read mapped fields');
+        if (!in_array($key, array('your-email', 'your-phone', 'ag_device', 'ag_speaker_device'), true)) throw new LogicException('Only read mapped fields');
         self::$reads[] = $key;
-        return $key === 'your-email' ? 'visitor@example.org' : '+12025550143';
+        if ($key === 'your-email') return $GLOBALS['input']['email'] ?? 'visitor@example.org';
+        if ($key === 'your-phone') return $GLOBALS['input']['phone'] ?? '+12025550143';
+        return $GLOBALS['input']['registered'][$key] ?? null;
     }
 }
 
@@ -107,31 +141,47 @@ if ($command === 'pages' || $command === 'all-pages') {
         $GLOBALS['page'] = $page;
         $GLOBALS['scripts'] = array();
         invoke_hook('wp_enqueue_scripts');
-        if ($GLOBALS['scripts']) {
-            list($id, $src) = $GLOBALS['scripts'][0];
-            $shown[$page] = invoke_hook('script_loader_tag', '<script id="fixture" src="' . $src . '"></script>', $id, $src);
-        }
+        if ($GLOBALS['scripts']) $shown[$page] = $GLOBALS['scripts'][0];
     }
     invoke_hook('init');
-    echo json_encode(array('shown' => $shown, 'schedule' => $GLOBALS['schedule'], 'other' => invoke_hook('script_loader_tag', '<script></script>', 'other', '')));
+    echo json_encode(array('shown' => $shown, 'schedule' => $GLOBALS['schedule']));
     exit;
 }
-if ($command === 'submit' || $command === 'storage-fault') {
-    $GLOBALS['wpdb']->fail_write = $command === 'storage-fault';
-    $entry = array('id' => '123', 'form_id' => 17, 'date_created' => '2026-11-01 12:00:00', '1' => 'row17@example.org', '2' => '+12025550142', '3' => 'private message');
-    invoke_hook('gform_after_submission', $entry, array('id' => 17));
-    invoke_hook('gform_after_submission', $entry, array('id' => 17));
-    $entry['id'] = '124';
-    $entry['form_id'] = 99;
-    invoke_hook('gform_after_submission', $entry, array('id' => 99));
-    WPCF7_Submission::$active = new WPCF7_Submission();
-    $form = new WPCF7_ContactForm();
-    invoke_hook('wpcf7_mail_sent', $form);
-    invoke_hook('wpcf7_mail_sent', $form);
-} elseif ($command === 'saved-cf7') {
-    WPCF7_Submission::$active = new WPCF7_Submission();
-    invoke_hook('wpcf7_mail_sent', new WPCF7_ContactForm());
+if ($command === 'expire-window') {
+    $GLOBALS['wpdb']->sqlite->exec("UPDATE wp_options SET option_value = '000000000001' || SUBSTR(option_value, 13) WHERE option_name GLOB 'account_graph_recent_*'");
+} elseif ($command === 'age') {
+    $stmt = $GLOBALS['wpdb']->sqlite->query("SELECT option_id, option_value FROM wp_options WHERE option_name GLOB 'account_graph_job_*' AND option_value LIKE '%\"state\":\"pending\"%' ORDER BY option_id LIMIT 1");
+    $first = $stmt->fetch(PDO::FETCH_ASSOC);
+    $job = json_decode($first['option_value'], true);
+    $job['queued_at'] = time() - ($input['age'] ?? 3601);
+    $GLOBALS['wpdb']->sqlite->prepare('UPDATE wp_options SET option_value = ? WHERE option_id = ?')->execute(array(json_encode($job), $first['option_id']));
+} elseif ($command === 'inspect') {
+    invoke_hook('init');
 } elseif ($command === 'cron') {
     invoke_hook('account_graph_deliver');
+} else {
+    // Model the existing recurring event due shortly after the form POST.
+    $GLOBALS['schedule']['account_graph_deliver'] = 'hourly';
+    $GLOBALS['wpdb']->fail_write = $command === 'storage-fault';
+    if (in_array($command, array('gravity', 'submit', 'storage-fault'), true)) {
+        $_POST = ($input['post'] ?? array()) + array('gform_submit' => '17');
+        $entry = array('id' => (string) ($input['id'] ?? '123'), 'form_id' => 17, 'date_created' => gmdate('Y-m-d H:i:s', $input['at'] ?? 1793534400),
+            '1' => $input['email'] ?? 'row17@example.org', '2' => $input['phone'] ?? '+12025550142', '3' => 'private message');
+        invoke_hook('gform_after_submission', $entry, array('id' => 17));
+        invoke_hook('gform_after_submission', $entry, array('id' => 17));
+        $entry['id'] = '124';
+        $entry['form_id'] = 99;
+        invoke_hook('gform_after_submission', $entry, array('id' => 99));
+    }
+    if (in_array($command, array('cf7', 'saved-cf7', 'submit', 'storage-fault'), true)) {
+        $_POST = ($input['post'] ?? array()) + array('_wpcf7' => '23');
+        WPCF7_Submission::$active = new WPCF7_Submission();
+        $form = new WPCF7_ContactForm();
+        invoke_hook('wpcf7_mail_sent', $form);
+        invoke_hook('wpcf7_mail_sent', $form);
+    }
 }
-echo json_encode(array('rows' => $GLOBALS['wpdb']->sqlite->query('SELECT option_value,autoload FROM wp_options ORDER BY option_id')->fetchAll(PDO::FETCH_ASSOC), 'reads' => WPCF7_Submission::$reads));
+$db = $GLOBALS['wpdb']->sqlite;
+$rows = $db->query("SELECT option_value,autoload FROM wp_options WHERE option_name GLOB 'account_graph_job_*' AND option_value NOT LIKE '{\"state\":\"alias\",%' ORDER BY option_id")->fetchAll(PDO::FETCH_ASSOC);
+$deadlines = $db->query("SELECT CAST(SUBSTR(option_value, 1, 12) AS INTEGER) FROM wp_options WHERE option_name GLOB 'account_graph_recent_*'")->fetchAll(PDO::FETCH_COLUMN);
+echo json_encode(array('rows' => $rows, 'deadlines' => $deadlines, 'reads' => WPCF7_Submission::$reads, 'singles' => $GLOBALS['singles']));
