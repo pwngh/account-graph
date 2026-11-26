@@ -1,6 +1,6 @@
 # HTTP API
 
-Six calls over plain HTTP, in JSON. Your services authenticate with a token. Browsers, Twilio and lead sources have routes of their own. The [OpenAPI 3.1 description](openapi.json) covers the six calls and the browser tag. Follow the [no-code guide](no-code.md) to connect a form.
+The API has six calls over plain HTTP, in JSON. Your services authenticate with a token. Browsers, Twilio and lead sources have routes of their own. The [OpenAPI 3.1 description](openapi.json) covers the six calls and the browser tag. Follow the [no-code guide](no-code.md) to connect a form.
 
 > **One rule.** `POST /v1/<call>` takes the call's argument as its body, and the 200 body is the call's answer. The [library](library.md) makes the same calls with the same shapes.
 
@@ -21,7 +21,7 @@ curl -X POST https://graph.example.org/v1/record \
 | Call | Does | Keyed |
 | --- | --- | --- |
 | [`record`](#record) | Writes what happened: 1 to 100 entries | Each entry |
-| [`decide`](#decide) | Merges, splits, mutes and withdrawals of a record’s matching facts | Yes |
+| [`decide`](#decide) | Merges, splits, mutes and withdrawals of a record's matching facts | Yes |
 | [`forget`](#forget) | Deletes 1 to 50 subjects | Yes |
 | [`lookup`](#lookup) | Reads about people and records | No |
 | [`report`](#report) | Reads figures and lists | No |
@@ -33,18 +33,18 @@ Send a token in the `authorization` header as `Bearer …`.
 
 | Call | Main service token | Reviewer token | Named service token |
 | --- | --- | --- | --- |
-| `record` | Every entry | A batch consisting entirely of call party statements signed with the reviewer’s name | Listed entry types. Party statements require the service’s own signature. |
+| `record` | Every entry | A batch consisting entirely of call party statements signed with the reviewer's name | Listed entry types. Party statements require the service's own signature. |
 | `decide` | Any action and author | Own signature for merge, unmerge, split, unsplit, mute and unmute | Listed actions and own signature |
 | `forget` | Any author | Own signature, including platform retraction | Explicit grant and own signature |
-| `lookup` | Every kind | `journey`, `find` and `party`. An excluded party’s subject is hidden. | Listed kinds |
+| `lookup` | Every kind | `journey`, `find` and `party`. An excluded party's subject is hidden. | Listed kinds |
 | `report` | Every kind | Every kind, including deliveries | Listed kinds |
 | `events` | Yes | No | Explicit grant |
 
-For a named service, the credential determines the author. Send `by: "system:intake"` for the service named `intake`. Another signature is refused, including a reviewer’s. The HTTP log gives the service name and the call. The decision history keeps the signature.
+For a named service, the credential determines the author. Send `by: "system:intake"` for the service named `intake`. Another signature is refused, including a reviewer's. The HTTP log gives the service name and the call. The decision history keeps the signature.
 
 An unknown token gets 401. A known token without the requested call, decision action, lookup or report kind gets 403. Within an authorized `record` batch, a disallowed entry gets `{type, key, ok: false, reason: "FORBIDDEN"}`. Other entries run in order. The check precedes receipt and provider lookups, including on retries. The ordinary envelope and entry shape checks still apply to the whole batch.
 
-Each record entry type has its own key space. Forget keys and decision keys each have one too. When an allowed decision uses a key occupied by a different action, every caller gets `KEY_REUSED` with just `["action"]`. The answer reveals no signer, action value or other field differences.
+Each record entry type has its own key space. Forget keys and decision keys each have one too. When an allowed decision uses a key occupied by a different action, every caller gets `KEY_REUSED` with only `["action"]`. The answer reveals no signer, action value or other field differences.
 
 An `x-request-id` header of 1 to 200 visible ASCII characters without spaces comes back with the answer of a call.
 
@@ -114,7 +114,7 @@ Each entry has `type`, `key` and `at`. A field with `?` may be left out.
 | Profile `createdAt` | When your system created this exact record, in whole epoch milliseconds above zero and at most one day after the profile's own `at`. A subject starting with `visitor:`, `caller:` or `call:` cannot have this field. |
 | `clicks` | `gclid`, `gbraid`, `wbraid`, `fbclid`, `fbp`, `msclkid`, `ttclid` |
 | `custom` | At most 10 names of your own, each with text up to 256 characters |
-| `actions` | What it counts as on each platform, `{ "google": "987654321" }`<!-- schema ConversionEntry/actions -->. Left out, the stage's own. |
+| `actions` | What it counts as on each platform, `{ "google": "987654321" }`<!-- schema ConversionEntry/actions -->. Left out, it is the stage's own. |
 | `channel` | `WEB`, `APP`, `IN_STORE`, `PHONE`, `MESSAGE`, `OTHER` or `SYSTEM_GENERATED` |
 | `userAgent` | The real user agent on the converting web request, when known. Meta can use it with `META_CLIENT_USER_AGENT=true` and explicit ad-user-data consent. Omit it when the converting browser is unknown. |
 | `tags` | At most 8. A name is lowercase letters and underscores, up to 32. A value is up to 64 characters. |
@@ -216,7 +216,7 @@ Emails and phones are compared as they are normalized, currencies in capitals, i
 
 > **Keep `at` with the key.** A retry that stamps a new `at` is refused with `KEY_REUSED` for most types.
 
-A key is remembered for a year, or longer until receipts are [pruned](operations.md#receipts). A key still known when somebody is deleted is remembered for good, as a keyed hash.
+A key is remembered for a year, or longer until receipts are [pruned](operations.md#receipts). A key still known when somebody is deleted is remembered permanently, as a keyed hash.
 
 A call or a conversion can come from two reporters, such as Twilio and your backend. Both name it by one id, so it is one record.
 
@@ -244,7 +244,7 @@ To correct a creation date, send another profile with the corrected `createdAt`,
 
 ## decide
 
-Merges, splits and mutes, with the author and the reason. [Matching](matching.md#decisions-from-your-own-systems) says when to use which.
+`decide` records merges, splits and mutes, with the author and the reason. [Matching](matching.md#decisions-from-your-own-systems) says when to use which.
 
 ```http
 POST /v1/decide
@@ -302,7 +302,7 @@ In `NOT_JOINED`, `apart` means the two are not together, `evidence` that what th
 
 ## forget
 
-Deletes subjects and everything recorded about them: all, or none. [Privacy](privacy.md#deletion) lists what goes and what stays.
+`forget` deletes subjects and everything recorded about them. It deletes all of them, or none. [Privacy](privacy.md#deletion) lists what goes and what stays.
 
 ```http
 POST /v1/forget
@@ -317,7 +317,7 @@ POST /v1/forget
 | `platforms` | Effect |
 | --- | --- |
 | `report` | `sent` lists the conversions that reached an ad platform |
-| `retract` | Each platform that has a way is also asked to take them back. Without such a platform, the fault `CONFIG.UNSUPPORTED`, and nothing is deleted. |
+| `retract` | Each platform that has a way is also asked to take them back. Without such a platform, the answer is the fault `CONFIG.UNSUPPORTED`, and nothing is deleted. |
 
 `sent` is kept with the key, so a lost answer can be asked for again. The refusals are `STALE` and `KEY_REUSED`.
 
@@ -325,7 +325,7 @@ POST /v1/forget
 
 A journey or record lookup reads its entries, party history and delivery details as of the same instant. The reviewer journey also reads each outcome and its delivery state together. A person or caller lookup reads call history, matches and arrivals together as well.
 
-Reads. Nothing is written.
+`lookup` only reads. Nothing is written.
 
 ```http
 POST /v1/lookup
@@ -341,7 +341,7 @@ POST /v1/lookup
 
 | `kind` | Asks | Answers |
 | --- | --- | --- |
-| `person` | `subjects`, 1 to 100, `at` | `decisions`, `people`: each one's cluster, the arrival that can be credited, the strongest one that cannot (`possible`), consent, and whether they asked for no texts |
+| `person` | `subjects`, 1 to 100, `at` | `decisions`, `people`: each one's cluster, the arrival that can be credited, the strongest one that cannot, as `possible`, consent, and whether they asked for no texts |
 | `journey` | `subject`, `before?` | `subjects`, `entries`, `next`, `more`: everything recorded about the person, oldest first, the newest 200. Pass `next` as `before` for earlier ones. |
 | `find` | `text` | `by`, `subjects`: a full email or phone, the start of a subject's id, or a full ad click id. At most 20. |
 | `match` | `facts`, `at` | `candidates`, `notes`: who somebody may be, before you save them |
@@ -361,7 +361,7 @@ A `find` by id matches the start of it and reads the subject table. The person o
 
 ## report
 
-Reads figures. Each kind is described with [the report](report.md) and [calls and texts](calls.md).
+`report` reads figures. Each kind is described with [the report](report.md) and [calls and texts](calls.md).
 
 ```http
 POST /v1/report
@@ -397,7 +397,7 @@ When a confirmed call gets its campaign from a visitor outside the named record'
 
 ## events
 
-Reads what happened, oldest first. [Operations](operations.md#events) covers following along and the webhook.
+`events` reads what happened, oldest first. [Operations](operations.md#events) covers following along and the webhook.
 
 ```http
 POST /v1/events
@@ -418,7 +418,7 @@ POST /v1/events
 
 A cursor is opaque. It names the history of the database as well as a place in it. A cursor of another history, or older than what is kept, answers `{ "ok": false, "reason": "CURSOR_LOST" }`<!-- schema /v1/events -->. Read everything again from `null`.
 
-`seq` only grows. Some numbers are missing, because a deletion takes a person's events with it. A hole is not a loss.
+`seq` only grows. Some numbers are missing, because a deletion takes a person's events with it. A gap in the numbers does not mean an event was lost.
 
 | Type | `data` |
 | --- | --- |
@@ -484,7 +484,7 @@ Browsers post to `/collect` without a token. The [script tag](operations.md#scri
 
 ## Lead webhooks
 
-`POST /leads/<name>` accepts `application/json` and `application/x-www-form-urlencoded` from a configured source. Its header holds the configured HMAC-SHA256 signature over the exact body bytes, or `Authorization: Bearer <source-secret>` for a bearer source. Query parameters supply no credentials. Responses contain entry types or a reason and omit posted values. An error is answered as `{ "error": "…" }`, as on every route outside `/v1`, never as a [fault](#faults). [Source settings and example posts](leads.md)
+`POST /leads/<name>` accepts `application/json` and `application/x-www-form-urlencoded` from a configured source. Its header holds the configured HMAC-SHA256 signature over the exact body bytes, or `Authorization: Bearer <source-secret>` for a bearer source. Query parameters supply no credentials. Responses contain entry types or a reason and omit posted values. An error is answered as `{ "error": "…" }`, as on every route outside `/v1`, never as a [fault](#faults). See [Source settings and example posts](leads.md).
 
 | Status | Meaning |
 | --- | --- |
@@ -494,7 +494,7 @@ Browsers post to `/collect` without a token. The [script tag](operations.md#scri
 | 404 | There is no configured source with this name. |
 | 405 | Use POST for a configured source. |
 | 409 | The ID was already posted with other mapped details or for another subject, or the payment ID for another payment. Nothing was recorded. A source with `updates` adds a lead's new details instead. |
-| 413 | The body exceeds 65,536 bytes. The server stops reading, answers with `Connection: close`, and closes the connection two seconds after the answer, giving a sender still streaming time to read it. |
+| 413 | The body exceeds 65,536 bytes. The server stops reading, answers with `Connection: close`, and closes the connection two seconds after the answer, so a sender still streaming has time to read it. |
 | 429 | The source has reached its rate limit, or a post with a missing or wrong signature came after 10 such posts from the sender's address to this source within a minute. A correct signature is not refused for the wrong ones. `Retry-After` gives the wait in seconds before sending the same post again. |
 | 503 | The graph is unavailable. Retry the same post when it is ready. |
 
@@ -507,11 +507,11 @@ Browsers post to `/collect` without a token. The [script tag](operations.md#scri
 | `GET /collect.js` | The script tag |
 | `GET /fingerprint.js` | Fingerprint helpers, loaded by the script on request |
 | `GET /review` | The [reviewer screen](operations.md#reviewer-screen). Its data requires a token. |
-| `/review/api/*` | The routes the screen calls, with the main service token or a reviewer token. They change with the bundled screen and are not part of the six calls: use the versioned calls for integrations. |
+| `/review/api/*` | The routes the screen calls, with the main service token or a reviewer token. They change with the bundled screen and are not part of the six calls. Use the versioned calls for integrations. |
 | `GET /health` | `{"ok":true}` once the database answers. While stored groups are due a rebuild, `warning` gives the command. |
 
 A Twilio request with a missing or wrong signature gets 403. A call or text that is already known, or whose person was deleted, gets the usual answer, so Twilio does not send it again.
 
 `GET /review/api/subject?subject=contact:7` returns a `dates` object keyed by the requested ID and the IDs in `links` and `separated`. For example, `"contact:7": {"firstSeen":1795460000000,"createdAt":1795300000000}`. Each date is omitted when unknown. An unknown ID with no dates keeps its usual `known: false` answer. The route requires the main service token or a reviewer token.
 
-`firstSeen` is the earliest retained event time on that exact ID. It includes identifier sightings, visits, outcomes, calls and texts filed under the ID, dated consent answers, links sent and transfers in either direction. Each identifier edge keeps its first sighting time even after the individual sighting is pruned. Staff join marks, audit decisions, receipt times and the reported creation date are excluded. An earlier event reported later can move this date earlier. Other members of the group keep their own dates.
+`firstSeen` is the earliest kept event time on that exact ID. It includes identifier sightings, visits, outcomes, calls and texts filed under the ID, dated consent answers, links sent and transfers in either direction. Each identifier edge keeps its first sighting time even after the individual sighting is pruned. Staff join marks, audit decisions, receipt times and the reported creation date are excluded. An earlier event reported later can move this date earlier. Other members of the group keep their own dates.
