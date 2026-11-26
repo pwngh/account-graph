@@ -289,6 +289,20 @@ const cards = (() => {
     from.setAttribute('aria-expanded', 'true')
     if (!show()) close()
   }).observe($('view'), { childList: true, subtree: true })
+  // Read again between a press on an icon and its release, the view has a new icon under the pointer, and the browser sends no click: the press began on a node that is gone. It was meant for the new one.
+  let pressed
+  let took
+  addEventListener('pointerdown', (event) => (pressed = event.button === 0 ? event.target.closest?.('button.detail') : undefined), true)
+  addEventListener('pointerup', (event) => {
+    const now = event.target.closest?.('button.detail')
+    if (!pressed || pressed.isConnected || !now?.about || now.dataset.key !== pressed.dataset.key) return
+    pressed = undefined
+    took = now
+    setTimeout(() => (took = undefined))
+    press(now)
+  }, true)
+  // A browser that sends that click after all has it on the new icon or around it, and it is not a second press.
+  addEventListener('click', (event) => took && (took.contains(event.target) || event.target.contains?.(took)) && event.stopPropagation(), true)
   addEventListener('click', (event) => {
     if (!from || event.composedPath().includes(card) || event.target.closest?.('button[aria-haspopup=dialog]')) return
     // A press on nothing in particular puts the focus back. One on a control leaves it there.
@@ -320,5 +334,9 @@ const cards = (() => {
     if (hinted && !hint.contains(event.target)) stand(hint, hinted)
   }, { passive: true, capture: true })
   addEventListener('resize', () => { stand(card, from); hide() })
-  return { press: (button) => (from === button ? close(true) : open(button)), close, hintable }
+  function press(button) {
+    if (from === button) close(true)
+    else open(button)
+  }
+  return { press, close, hintable }
 })()
