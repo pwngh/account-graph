@@ -51,9 +51,9 @@ The server normalizes and hashes the email, phone and postal address. `device` i
 
 The two weeks measure how well the graph links your site's visits, contacts and calls. No provider enrollment is required. You can rehearse the same steps beforehand with synthetic data and a test clock.
 
-For an offline rehearsal, start with an empty graph, an isolated process with no provider credentials, and no ad actions in `STAGES`. Use the library with `workers: false` (the normal server starts its workers). Deny connections outside loopback for the server and any test browser. Keep hosted fingerprint scripts, public CDNs, call-tracking tags and form capture off the test page. Leave address, IP and phone lookups, ad cost readers, event webhooks and alert destinations unset. The Compose example can pull images on first use and passes settings through from its environment. With dependencies already installed, `node --test test/provider-fixtures.test.ts` needs no images, browser, account or provider requests. [Fixture sources](../test/fixtures/providers/README.md) · [Fingerprint browser calls](https://docs.fingerprint.com/reference/js-agent-get-function) · [CallRail form capture](https://apidocs.callrail.com/#form-capture)
+For an offline rehearsal, start with an empty graph, an isolated process with no provider credentials, and no ad actions in `STAGES`. Use the library with `workers: false`. The normal server starts its workers. Deny connections outside loopback for the server and any test browser. Keep hosted fingerprint scripts, public CDNs, call-tracking tags and form capture off the test page. Leave address, IP and phone lookups, ad cost readers, event webhooks and alert destinations unset. The Compose example can pull images on first use and passes settings through from its environment. With dependencies already installed, `node --test test/provider-fixtures.test.ts` needs no images, browser, account or provider requests. See [Fixture sources](../test/fixtures/providers/README.md), [Fingerprint browser calls](https://docs.fingerprint.com/reference/js-agent-get-function) and [CallRail form capture](https://apidocs.callrail.com/#form-capture).
 
-For a field pilot, agree on consent, retention and a daily reviewer before connecting real systems. Keep advertising targets, cost imports and other outside services off unless the owner has separately authorized the specific data and destination. Each live provider check has its own scope, account and allowance. [Provider verification](providers.md#verification)
+For a field pilot, agree on consent, retention and a daily reviewer before connecting real systems. Keep advertising targets, cost imports and other outside services off unless the owner has separately authorized the specific data and destination. Each live provider check has its own scope, account and allowance. See [Provider verification](providers.md#verification).
 
 ### Before you start
 
@@ -77,19 +77,19 @@ For a field pilot, agree on consent, retention and a daily reviewer before conne
 | 7. Clients | Record each signed client as a [`conversion`](report.md#outcomes), with the value you give it | The client is under a campaign |
 | 8. Two weeks | Review Matches and the missed calls every day. Change nothing else | You have a list of right and wrong matches |
 
-To rehearse steps 3–8, load a synthetic pair to keep apart. Use a synthetic campaign URL and consent decision, intercept the phone tap, replay a signed call locally, and submit a synthetic form and a nominal-value outcome with no ad action. Compare the journey, missed calls, value and separation with the fixture ledger. Only a field pilot needs fourteen days of observation.
+To rehearse steps 3 to 8, load a synthetic pair to keep apart. Use a synthetic campaign URL and consent decision, intercept the phone tap, replay a signed call locally, and submit a synthetic form and a nominal-value outcome with no ad action. Compare the journey, missed calls, value and separation with the fixture ledger. Only a field pilot needs fourteen days of observation.
 
 ### Deciding
 
 1. Write down 100 pairs of contacts you know to be one person, and 100 you know not to be, chosen before looking at the screen.
-2. Run `npm run labels -- pairs.csv` from the graph's private launcher on those pairs. It prints precision and recall for each kind of evidence, with the counts behind them. [Labels](matching.md)
+2. Run `npm run labels -- pairs.csv` from the graph's private launcher on those pairs. It prints precision and recall for each kind of evidence, with the counts behind them. See [Labels](matching.md).
 3. Compare the missed calls on the Board with your phone system's own list for a week.
 4. Take ten clients at random. For each, ask how they found you, and compare it with the ad on their journey.
 5. In a rehearsal, compare against the known fixture answers. For a field pilot, use the independent phone and client evidence above to decide whether any single provider test warrants separate approval.
 
 ### Stopping
 
-Remove the script tag and test callbacks, stop intake and stop the server. [`forget`](http.md#forget) deletes one person from the graph. Dispose of the pilot database, restore copy, backups and call-forwarder spool on the agreed schedule. Historical copies retain data until they expire.
+Remove the script tag and test callbacks, stop intake and stop the server. [`forget`](http.md#forget) deletes one person from the graph. Dispose of the pilot database, restore copy, backups and call-forwarder spool on the agreed schedule. Older copies keep data until they expire.
 
 ### Limitations
 
