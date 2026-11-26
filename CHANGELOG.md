@@ -141,6 +141,7 @@
 - A connection the database ends is logged, and the server keeps running.
 - Crawlers, previewers, uptime checks and `STAFF_NETWORKS` are excluded. `/collect` is rate limited per address.
 - Requests with invalid UTF-8, NUL characters or more than 32 levels of nesting are refused.
+- `npm run firm` watches all four feeds, records visits at a made-up address and names campaigns as an agency would.
 - `runWorkers` of `./testing` runs every worker once. `npm run firm` and `examples/six-calls.ts` run in memory.
 - `record` `profile` takes `speaker`, whoever speaks for the subject. Their browser and number are related to the subject and never joined to them, and what brought them earns the credit.
 - `data-ag-for-other` marks the control of a form that says it is about somebody else. The script tag then sends `ag_speaker_device` in place of `ag_device`, and `accountGraph.fields(form)` answers the same way.
@@ -151,11 +152,16 @@
 ### Reviewer screen
 
 - `undecided` pages through ranked pairs from recent sightings and can sweep every subject, including those with pruned sightings.
+- Detail cards open from an icon beside a number or a row on Calls, Board, Journey and Health. Each holds what is behind it, names how it is known and leaves out what is not. See the [reviewer screen](docs/operations.md#reviewer-screen).
+- A mark, a number or a dashed wait on the Journey chart shows a short card when it is pointed at or focused. The panel beside the chart has every row.
+- `#/journey/ID/CALL` opens a journey at one call.
+- Each kind of event has one icon, drawn the same in the timeline, its filters, the chart, the story of a missed call and the feeds. A call nobody answered has a phone with a cross.
+- `TARGETS` and the library option `targets` hold the numbers a firm sets itself to meet. Both are off by default, are checked at the start, and are shown on the reviewer screen as set by you. See [targets](docs/operations.md#targets).
 - `Accounts` flags groups where too many conflicting call histories leave some matches unresolved.
 - `Matches` checks the speaker marks of both clusters before offering a pair. An active staff merge broken by a separation remains visible in Links.
 - Accounts shows linked IDs as an interactive graph and as a table with evidence.
 - Journey shows one person's events on a timeline.
-- Board shows people by step, with overdue people marked.
+- Board shows people by step, with overdue people marked. Its periods begin with Today.
 - Matches compares pending pairs side by side, with a preview and undo.
 - Calls lists missed calls with their history, call results and calls by hour.
 - Channels compares campaigns, with breakdowns, sorting, filters and CSV export.

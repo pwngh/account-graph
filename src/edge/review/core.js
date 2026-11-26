@@ -38,6 +38,38 @@ const info = (id, more) => el('button', { type: 'button', class: 'info', 'data-h
 /** A term with its definition beside it. */
 const term = (text, id, more) => el('span', { class: 'term' }, text, info(id, more))
 
+const VIEW_ICONS = {
+  accounts: 'M8 8a2.6 2.6 0 1 0 0-5.2A2.6 2.6 0 0 0 8 8ZM2.8 13.4c.5-2.5 2.5-3.8 5.2-3.8s4.7 1.3 5.2 3.8',
+  journey: 'M2 8h2.6M11.4 8H14M6.2 8a1.8 1.8 0 1 0 3.6 0a1.8 1.8 0 1 0-3.6 0M3.6 3.5v9M12.4 3.5v9',
+  board: 'M2.5 3h3v10h-3zM6.8 3h3v6.5h-3zM11 3h3v8.2h-3z',
+  decide: 'M8 2.5v11M8 4.2 3.4 5.6M8 4.2l4.6 1.4M1.6 9.4 3.4 5.6l1.8 3.8a1.9 1.9 0 0 1-3.6 0M10.8 9.4l1.8-3.8 1.8 3.8a1.9 1.9 0 0 1-3.6 0',
+  calls: 'M3.2 2.8h2.4l1.2 3-1.6 1.1a8 8 0 0 0 3.9 3.9l1.1-1.6 3 1.2v2.4c0 .5-.4.9-.9.9A9.9 9.9 0 0 1 2.3 3.7c0-.5.4-.9.9-.9Z',
+  channels: 'M2.5 13.5h11M4 11V7.5M8 11V3M12 11V5.8',
+  health: 'M1.8 8.4h2.8l1.7-4.6 3 8.4 1.7-3.8h3.2',
+}
+/**
+ * What each kind of event looks like, wherever it is drawn: the timeline, its filters, the chart and its lanes, the story of a
+ * missed call, and the feeds. A call nobody answered is the one kind with two.
+ */
+const GLYPHS = {
+  visit: 'M8 2.2a5.8 5.8 0 1 0 0 11.6A5.8 5.8 0 0 0 8 2.2ZM2.4 8h11.2M8 2.2c2 1.8 2.6 3.6 2.6 5.8S10 12 8 13.8C6 12 5.4 10.2 5.4 8S6 4 8 2.2',
+  sighting: 'M1.8 8S4 3.8 8 3.8 14.2 8 14.2 8 12 12.2 8 12.2 1.8 8 1.8 8ZM6 8a2 2 0 1 0 4 0a2 2 0 1 0-4 0',
+  call: VIEW_ICONS.calls,
+  missed: 'M5.2 4.6 3.6 5.1c-.7.3-1 1-.9 1.8.5 3.3 3.2 6.1 6.5 6.9.8.2 1.6 0 2-.7l.4-1.5-2.5-1.5-1.3 1.2c-1.3-.6-2.2-1.5-2.8-2.8l1.2-1.3ZM9.8 2.5l3.7 3.7M13.5 2.5 9.8 6.2',
+  text: 'M2.4 3.4h11.2v7.4H7.2L4.2 13.2v-2.4H2.4ZM5 6.2h6M5 8.3h4',
+  link: 'M6.6 9.4a2.6 2.6 0 0 0 3.7 0l2.2-2.2a2.6 2.6 0 0 0-3.7-3.7l-.9.9M9.4 6.6a2.6 2.6 0 0 0-3.7 0L3.5 8.8a2.6 2.6 0 0 0 3.7 3.7l.9-.9',
+  outcome: 'M4 14V2.6h7.6l-1.6 2.9 1.6 2.9H4',
+  value: 'M8 2.2v11.6M11 4.8c-.6-1-1.7-1.5-3-1.5-1.7 0-3 .9-3 2.3 0 3.2 6.2 1.6 6.2 4.8 0 1.4-1.4 2.3-3.2 2.3-1.5 0-2.7-.6-3.3-1.6',
+  consent: 'M8 2 13 4v3.8c0 3-2.1 5.2-5 6.2-2.9-1-5-3.2-5-6.2V4ZM5.6 8l1.8 1.8 3.2-3.5',
+  decision: VIEW_ICONS.decide,
+  result: 'M3 8.4 6.4 11.8 13 4.6',
+}
+const glyph = (kind) => svg('svg', { class: `glyph ${kind}`, viewBox: '0 0 16 16', 'aria-hidden': 'true', focusable: 'false' }, svg('path', { d: GLYPHS[kind] }))
+/** Nobody spoke to the caller. */
+const unreached = (state) => state === 'missed' || state === 'voicemail'
+/** Which of them an event is. */
+const looksLike = (entry) => (entry.kind === 'call' && unreached(entry.state) ? 'missed' : entry.kind)
+
 /** The mark of a view, as the list of views has it. The words beside it say the same. */
 const viewMark = (name) => svg('svg', { class: 'mark-view', viewBox: '0 0 16 16', 'aria-hidden': 'true', focusable: 'false' }, svg('path', { d: VIEW_ICONS[name] }))
 /** What a row is about, as a mark on a tile of its own. */
@@ -76,7 +108,7 @@ const meter = (share, marks = []) => {
 }
 /** The few numbers a view is about, large, each with what it is of. `tone` marks one that needs someone, in words as well as color. */
 const tiles = (...list) => el('dl', { class: 'tiles' }, ...list.filter(Boolean).map(([label, value, note = '', tone = '', more]) =>
-  el('div', tone ? { class: tone } : {}, el('dt', {}, label), el('dd', {}, el('span', { class: 'tile-line' }, el('b', {}, value), more?.change ?? ''), note ? el('span', { class: 'reason' }, note) : '', more?.bars ?? ''))))
+  el('div', tone ? { class: tone } : {}, el('dt', {}, label), el('dd', {}, el('span', { class: 'tile-line' }, el('b', {}, value), more?.change ?? '', more?.detail ?? ''), note ? el('span', { class: 'reason' }, note) : '', more?.bars ?? ''))))
 /** The same number of days just before a period. */
 function daysBefore({ from, to }) {
   const day = 86400000
@@ -224,9 +256,16 @@ function notice(text, bad = false) {
 let me
 /** The ad platforms that can be asked to retract a conversion, and whether each deletion asks them. */
 let retraction
+/** The numbers the firm set itself to meet, and how long it lets a missed caller wait, as the server says with who signed in. */
+let goals = {}
+let limits = { returnHours: null, openHours: false }
 /** Shows who decides, in place of the token. The name is the server's answer, never something typed here. */
 function signedIn(answer) {
   me = answer
+  if (me === undefined) {
+    goals = {}
+    forgetCards()
+  }
   $('token-label').hidden = me !== undefined
   $('who').hidden = me === undefined
   $('name').textContent = me === undefined ? '' : me === null ? 'Service token' : me
@@ -242,8 +281,10 @@ async function api(method, path, body) {
     headers: { authorization: `Bearer ${token}`, ...(body && { 'content-type': 'application/json' }) },
     ...(body && { body: JSON.stringify(body) }),
   })
-  if (response.status === 204) return undefined
   if (response.headers.get('age')) dated = asked
+  // A decision, or a deletion, changes what was read before it. These two only read, and send what they look for in a body.
+  if (method !== 'GET' && path !== '/find' && path !== '/foresee') lapse()
+  if (response.status === 204) return undefined
   const answer = await response.json()
   // One refused after someone else has signed in says nothing of them.
   if (response.status === 401 && $('token').value === token) signedIn(undefined)
@@ -483,7 +524,7 @@ function place() {
 }
 
 /** Which control this is, whatever moves around it or changes beside it: what it is and does, and the subject its row is about. */
-const which = (node) => [node.tagName, node.dataset.key, node.matches('a, button') ? node.textContent : '', node.getAttribute('href'), node.getAttribute('aria-label'), node.title, node.closest('tr, li')?.querySelector('a')?.getAttribute('href')].join('\n')
+const which = (node) => node.matches('.detail') ? node.dataset.key : [node.tagName, node.dataset.key, node.matches('a, button') ? node.textContent : '', node.getAttribute('href'), node.getAttribute('aria-label'), node.title, node.closest('tr, li')?.querySelector('a')?.getAttribute('href')].join('\n')
 /** Which notes these are, whatever sections come and go around them. */
 const fold = (node) => {
   const section = node.closest('section')
@@ -530,9 +571,12 @@ async function load(tag) {
     // Read the tag before the view: a change that lands while the view loads is then noticed on the next look.
     const seen = tag ?? (await pulse())
     if (me === undefined) {
-      const { reviewer, retraction: asked } = await api('GET', '/me')
+      const answer = await api('GET', '/me')
       if (turn !== loading) return false
-      retraction = asked
+      const { reviewer } = answer
+      retraction = answer.retraction
+      goals = answer.targets ?? goals
+      limits = answer.limits ?? limits
       signedIn(reviewer)
     }
     await views.get(name).show(box, ...parts)
@@ -544,7 +588,7 @@ async function load(tag) {
     const scrolled = quiet ? [...$('view').querySelectorAll('.wide, .scroll')].map((each) => [each.scrollLeft, each.scrollTop]) : []
     const unfolded = quiet ? [...$('view').querySelectorAll('details[open]')].map(fold) : []
     $('view').replaceChildren(box)
-    for (const each of box.querySelectorAll('.graph')) each.begin()
+    for (const each of box.querySelectorAll('.graph, .chart')) each.begin()
     ;[...$('view').querySelectorAll('.wide, .scroll')].forEach((each, i) => ([each.scrollLeft, each.scrollTop] = scrolled[i] ?? [0, 0]))
     for (const each of $('view').querySelectorAll('details')) each.open = unfolded.includes(fold(each))
     if (held) [...$('view').querySelectorAll('a, button, input, select, [tabindex]')].find((node) => which(node) === held)?.focus({ preventScroll: true })
@@ -594,6 +638,8 @@ async function pulse() {
     throw new Error('Invalid access token')
   }
   if (!response.ok) throw new Error(`Request failed with ${response.status}`)
+  // Something was written since, so what the cards were told before is out of date.
+  lapse()
   return response.headers.get('etag')
 }
 function fresh(problem) {

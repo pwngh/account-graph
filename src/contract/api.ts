@@ -543,6 +543,8 @@ export interface LocalSettings extends Common {
   readonly linkSecret?: string
   readonly timeZone?: string
   readonly openHours?: OpenHours
+  /** The numbers you set yourself to meet, shown on the reviewer screen as set by you. Off by default. */
+  readonly targets?: { readonly answered?: number; readonly returned?: number; readonly callbackHours?: number; readonly costPerOutcome?: number; readonly roas?: number }
   readonly stages?: Readonly<Record<string, { readonly value?: number; readonly currency?: string; readonly action?: Readonly<Record<string, string>>; readonly wait?: number }>>
   readonly phones?: {
     readonly numbers?: Readonly<Record<string, { readonly source: string; readonly medium?: string; readonly campaign?: string; readonly campaignId?: string; readonly tags?: Readonly<Record<string, string>> }>>

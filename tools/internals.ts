@@ -18,6 +18,7 @@ export { knownLink, readToken, signToken, staffLink } from '../src/core/sign.ts'
 export { ladderProblems, withStage } from '../src/core/ladder.ts'
 export { createAlerter } from '../src/core/alerts.ts'
 export { createHours, hoursProblems } from '../src/core/hours.ts'
+export { targetProblems } from '../src/core/targets.ts'
 export { createOps } from '../src/core/ops.ts'
 
 export type { AttributeOptions, Between, Board, BoardOptions, BoardRow, Foreseen, Graph, GraphOptions, PolicyState, ReportOptions, Supposed, Undecided } from '../src/core/graph.ts'

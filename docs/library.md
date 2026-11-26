@@ -57,6 +57,7 @@ A server has the settings as [environment variables](operations.md#environment-v
 | `identifierSecret`, `linkSecret` | a local graph | `IDENTIFIER_SECRET`, `LINK_SECRET` | 32 characters or more each |
 | `stages` | a local graph | `STAGES` | Your [steps](report.md#steps) |
 | `openHours`, `timeZone` | a local graph | `OPEN_HOURS`, `REPORT_TIME_ZONE` | When you are open, and the zone |
+| `targets` | a local graph | `TARGETS` | Numbers you set yourself to meet. See [targets](operations.md#targets). |
 | `phones` | a local graph | `CALL_*`, `POOL_*`, `RETURN_HOURS` | `numbers`, `exclude`, `minimumSeconds`, `resultsExpectedWithinMinutes`, `returnHours`, `country`, `tapSeconds`, `pool` |
 | `ads` | a local graph | each platform's, `FORGET_ADS`, `OUTBOX_DELAY_MS` | `google`, `meta`, `microsoft`, `tiktok`, `retractOnForget`, `delayMs` |
 | `costs` | a local graph | each platform's | `google`, `meta` |

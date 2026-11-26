@@ -216,7 +216,7 @@ Each column counts its `people`, and three values for today in `REPORT_TIME_ZONE
 STAGES='{"inquiry":{"value":5,"wait":48},"client":{"value":200}}'
 ```
 
-The Board reads people with a step or a call, inbound or outbound, in the period: 90 days by default. Rows list the longest waiting first, at most 50 per column; counts include everyone. The Board makes no assignments.
+The Board reads people with a step or a call, inbound or outbound, in the period: 90 days by default. The list of periods begins with Today, which is the people active today in `REPORT_TIME_ZONE`, and Overdue then counts only them. Rows list the longest waiting first, at most 50 per column; counts include everyone. The Board makes no assignments.
 
 ## Outcomes after a call
 

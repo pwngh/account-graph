@@ -145,6 +145,7 @@ export function createEdge(graph: AccountGraph, options: EdgeOptions): Edge {
       ...(pool && { pool }),
       ...(local.timeZone && { timeZone: local.timeZone }),
       returnHours: local.phones?.returnHours ?? 24,
+      ...(local.targets && { targets: local.targets }),
       // A tap on a phone link is what ties a call to a visitor, so taking calls means taking that event.
       events: [...new Set([...(options.events ?? []), ...(calls?.numbers || twilio?.calls || pool ? ['phone_click'] : []), ...(options.textCodes || twilio?.texts ? ['text_click'] : [])])],
       calls: { ...calls, ...(twilio?.calls && { twilio: { authToken: twilio.authToken, url: twilio.calls } }) },

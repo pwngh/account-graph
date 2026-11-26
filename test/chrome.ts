@@ -19,7 +19,7 @@ export async function until<T>(what: string, look: () => Promise<T> | T, seconds
   throw new Error(`Waited ${seconds} seconds for ${what}`)
 }
 
-/** Opens an address in a browser of its own. `run` evaluates an expression in the page. */
+/** Opens an address in a browser of its own. `run` evaluates an expression in the page, and `send` asks Chrome itself. */
 export async function browse(address: string) {
   const home = mkdtempSync(join(tmpdir(), 'ag-chrome-'))
   const browser = spawn(chrome!, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${home}`, '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage', '--no-first-run', '--user-agent=Mozilla/5.0 (a test that is not a bot)', 'about:blank'], { stdio: 'ignore', detached: true })
@@ -56,7 +56,7 @@ export async function browse(address: string) {
     const press = async (key: string) => {
       for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key, code: key, windowsVirtualKeyCode: key === 'Escape' ? 27 : 13, ...(type === 'keyDown' && key === 'Enter' && { text: '\r' }) })
     }
-    return { run, press, close }
+    return { run, press, send, close }
   } catch (error) {
     await close()
     throw error

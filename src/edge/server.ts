@@ -22,6 +22,7 @@ import type { FingerprintVerifier } from '../providers/fingerprint.ts'
 import { placeOf, shared } from '../providers/maxmind.ts'
 import { RECENT_SIGHTINGS } from '../core/undecided.ts'
 import { fromTwilio, twilioCall, twilioText } from '../providers/twilio.ts'
+import type { Targets } from '../core/targets.ts'
 import { asks, codeNote, textCode, texted } from '../core/texts.ts'
 import type { TextOptions } from '../core/texts.ts'
 import type { IpLookup } from '../providers/maxmind.ts'
@@ -152,7 +153,9 @@ export interface HandlerOptions extends PageRules {
   pool?: { numbers: readonly string[]; minutes: number; grace: number }
   /** How many hours a missed call may wait before the board says it has waited too long. Left out or 0, it never does. */
   returnHours?: number
-    /** When you are open. With it, the board counts waiting, and the call summary calls that came while you were closed. */
+    /** The numbers you set yourself to meet, which the screen shows beside what was reached. */
+  targets?: Targets
+  /** When you are open. With it, the board counts waiting, and the call summary calls that came while you were closed. */
   hours?: Hours
   /** The time zone the screen's reports read their days in when none is named. Use the ad account's. Defaults to UTC. */
   timeZone?: string
@@ -790,7 +793,10 @@ export function createHandler(core: Core, options: HandlerOptions) {
         return { moved, mark }
       }
       case 'GET /me':
-        return { reviewer: reviewerOf(request) ?? null, retraction: core.outbox?.retraction ?? { targets: [], always: false } }
+        return {
+          reviewer: reviewerOf(request) ?? null, retraction: core.outbox?.retraction ?? { targets: [], always: false },
+          targets: options.targets ?? {}, limits: { returnHours: options.returnHours || null, openHours: options.hours !== undefined },
+        }
       case 'GET /subject':
         return profile(subject)
       case 'GET /ops':

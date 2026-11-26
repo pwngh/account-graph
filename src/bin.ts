@@ -31,6 +31,7 @@ import { RECEIPT_RETENTION } from './core/receipts.ts'
 import { staffLink } from './core/sign.ts'
 import { checkTags } from './core/tags.ts'
 import { validPageRules } from './edge/collect.ts'
+import { targetProblems } from './core/targets.ts'
 import { createEdge } from './edge/index.ts'
 import type { EdgeOptions } from './edge/index.ts'
 import { networks, reviewerProblems } from './edge/server.ts'
@@ -166,6 +167,7 @@ export function readEnvironment(env: Env) {
     returnHours: number('RETURN_HOURS', 24),
     openHours: parsed('OPEN_HOURS') as OpenHours | undefined,
     lateHours: number('LATE_HOURS', 6),
+    targets: parsed('TARGETS') as LocalOptions['targets'],
     stages: parsed('STAGES') as Ladder | undefined,
     policy,
     ...(env.ALLOW_PAGES !== undefined && { allowPages: env.ALLOW_PAGES.split(',').map(each => each.trim()).filter(Boolean) }),
@@ -239,6 +241,7 @@ export function readEnvironment(env: Env) {
   if (Boolean(config.webhookUrl) !== Boolean(config.webhookSecret)) wrong.push('WEBHOOK_URL and WEBHOOK_SECRET must be set together')
   if (config.receiptSecrets.some((each) => each.length < 32)) wrong.push('RECEIPT_SECRETS must each be at least 32 characters')
   if (config.callTapSeconds > 3600) wrong.push('CALL_TAP_SECONDS must be at most 3600')
+  if (config.targets !== undefined) for (const problem of targetProblems(config.targets)) wrong.push(`TARGETS: ${problem}`)
   if (config.openHours !== undefined) for (const problem of hoursProblems(config.openHours)) wrong.push(`OPEN_HOURS: ${problem}`)
   if (!validPageRules(config)) wrong.push('ALLOW_PAGES and REFUSE_PAGES require literal paths or subtrees ending in /*')
   for (const each of config.staffNetworks) {
@@ -318,6 +321,7 @@ export function configFrom(env: Env): { graph: LocalOptions; edge: EdgeOptions; 
     ...(config.linkSecret && { linkSecret: config.linkSecret }),
     ...(config.openHours && { openHours: config.openHours as NonNullable<LocalOptions['openHours']> }),
     ...(stages && { stages }),
+    ...(config.targets && { targets: config.targets }),
     phones: {
       ...(config.callNumbers && { numbers: config.callNumbers }), exclude: config.callExclude, minimumSeconds: config.callMinimum, tapSeconds: config.callTapSeconds, returnHours: config.returnHours,
       ...(config.callResults === 'expected' && { resultsExpectedWithinMinutes: config.callResultWait }),

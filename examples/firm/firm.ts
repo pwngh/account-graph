@@ -33,19 +33,25 @@ const HOUR = 3_600_000
 const DAY = 24 * HOUR
 const SECRET = 'a-demo-secret-that-protects-nothing'
 
+/** Where the firm's site is, as its visits are recorded. The site of the demo itself runs on this machine. */
+const ADDRESS = 'https://www.firm.example.org'
+/** The firm's campaigns, named as an agency would: the office, the area of law, and what kind of campaign it is. */
+export const campaignsOf = ({ area }: Pick<Practice, 'area'>) => ({
+  north: `North | ${area} | Search`, river: `River | ${area} | Search`, spanish: `North | ${area} | Búsqueda`, online: `Online | ${area} | Consultations`, listing: `River | ${area} | Map listing`,
+})
 /** The firm's own numbers, each with where it is published. */
-export const LINES = {
-  '+15550100101': { source: 'google', campaignId: '30111', campaign: 'Search: North', tags: { office_advertised: 'north', language: 'en' } },
-  '+15550100102': { source: 'google', campaignId: '30222', campaign: 'Search: River', tags: { office_advertised: 'river', language: 'en' } },
-  '+15550100103': { source: 'google', campaignId: '30333', campaign: 'Busqueda: North', tags: { office_advertised: 'north', language: 'es' } },
-  '+15550100104': { source: 'listing', medium: 'map', campaign: 'Map listing, River', tags: { office_advertised: 'river', language: 'es' } },
-  '+15550100105': { source: 'meta', campaignId: '40444', campaign: 'Online consultations', tags: { office_advertised: 'online', language: 'en' } },
-} as const
-const CAMPAIGNS = [
-  { source: 'google', campaignId: '30111', campaign: 'Search: North', office: 'north', lang: 'en', line: '+15550100101', daily: 84, share: 0.34, client: 0.16 },
-  { source: 'google', campaignId: '30222', campaign: 'Search: River', office: 'river', lang: 'en', line: '+15550100102', daily: 61, share: 0.24, client: 0.11 },
-  { source: 'google', campaignId: '30333', campaign: 'Busqueda: North', office: 'north', lang: 'es', line: '+15550100103', daily: 38, share: 0.24, client: 0.2 },
-  { source: 'meta', campaignId: '40444', campaign: 'Online consultations', office: 'online', lang: 'en', line: '+15550100105', daily: 45, share: 0.18, client: 0.06 },
+const linesOf = (names: ReturnType<typeof campaignsOf>) => ({
+  '+15550100101': { source: 'google', campaignId: '30111', campaign: names.north, tags: { office_advertised: 'north', language: 'en' } },
+  '+15550100102': { source: 'google', campaignId: '30222', campaign: names.river, tags: { office_advertised: 'river', language: 'en' } },
+  '+15550100103': { source: 'google', campaignId: '30333', campaign: names.spanish, tags: { office_advertised: 'north', language: 'es' } },
+  '+15550100104': { source: 'listing', medium: 'map', campaign: names.listing, tags: { office_advertised: 'river', language: 'es' } },
+  '+15550100105': { source: 'meta', campaignId: '40444', campaign: names.online, tags: { office_advertised: 'online', language: 'en' } },
+})
+const adsOf = (names: ReturnType<typeof campaignsOf>) => [
+  { source: 'google', campaignId: '30111', campaign: names.north, office: 'north', lang: 'en', line: '+15550100101', daily: 84, share: 0.34, client: 0.16 },
+  { source: 'google', campaignId: '30222', campaign: names.river, office: 'river', lang: 'en', line: '+15550100102', daily: 61, share: 0.24, client: 0.11 },
+  { source: 'google', campaignId: '30333', campaign: names.spanish, office: 'north', lang: 'es', line: '+15550100103', daily: 38, share: 0.24, client: 0.2 },
+  { source: 'meta', campaignId: '40444', campaign: names.online, office: 'online', lang: 'en', line: '+15550100105', daily: 45, share: 0.18, client: 0.06 },
 ] as const
 const stepsOf = ({ papers, won, value }: Practice): Record<string, { value: number; currency: string; wait?: number; action?: { google: string } }> => ({
   call: { value: 5, currency: 'USD', action: { google: '222' } },
@@ -74,6 +80,9 @@ export interface Kept {
 export async function startFirm({ databaseUrl }: Kept, { ports = [0, 0], quick = false, practice = 'family', say = () => {}, restart }: { ports?: [number, number]; quick?: boolean; practice?: keyof typeof PRACTICES; say?: (line: string) => void; restart?: () => void } = {}): Promise<Firm> {
   const kind = PRACTICES[practice]
   const STEPS = stepsOf(kind)
+  const names = campaignsOf(kind)
+  const LINES = linesOf(names)
+  const CAMPAIGNS = adsOf(names)
   // What is seeded is written down when it happened. The story takes a Monday to a Thursday that have passed, and each scene moves the clock on to when it happens.
   let writing: number | undefined
   const monday = new Date()
@@ -105,7 +114,7 @@ export async function startFirm({ databaseUrl }: Kept, { ports = [0, 0], quick =
     now: clock, fetch: platform, stages: STEPS, linkSecret: SECRET, identifierSecret: SECRET, workers: false, timeoutMs: 120_000,
     phones: { numbers: LINES, resultsExpectedWithinMinutes: 30, returnHours: 24, pool: { numbers: ['+15550100111', '+15550100112'], minutes: 15, graceMinutes: 120 } },
     ads: { google: { customerId: '000-000-0000', serviceAccount: { client_email: 'demo@example.org', private_key: privateKey } } },
-    alerts: { url: `${siteAt}/hook` }, monitor: { quietHours: { calls: 12 } },
+    alerts: { url: `${siteAt}/hook` }, monitor: { quietHours: { touches: 24, calls: 12, results: 24, costs: 48 } },
   }
   const firm = accountGraph(databaseUrl ? { ...settings, databaseUrl, receiptSecrets: [SECRET] } : { ...settings, memory: true })
   const { engine, ops } = await internalsOf(firm)!()
@@ -116,7 +125,7 @@ export async function startFirm({ databaseUrl }: Kept, { ports = [0, 0], quick =
   const { html, headers } = reviewPage()
   const hash = (text: string) => `'sha256-${createHash('sha256').update(text).digest('base64')}'`
   const beside = (file: string) => readFileSync(new URL(`./${file}`, import.meta.url), 'utf8').replace(/\r\n?/g, '\n')
-  const stage = { style: beside('stage.css'), script: `const STAGE = ${JSON.stringify({ phone: `${siteAt}/es?phone=1`, won: kind.won, ...kind.stage })}\n${beside('stage.js')}` }
+  const stage = { style: beside('stage.css'), script: `const STAGE = ${JSON.stringify({ phone: `${siteAt}/es?phone=1`, won: kind.won, campaign: names.spanish, ...kind.stage })}\n${beside('stage.js')}` }
   const server = createServer((request, response) => {
     response.setHeader('x-demo-ahead', ahead)
     const path = `${request.method} ${new URL(request.url ?? '/', 'http://localhost').pathname}`
@@ -129,6 +138,15 @@ export async function startFirm({ databaseUrl }: Kept, { ports = [0, 0], quick =
       if (!restart || running || !ready) return json(409, { error: !restart ? 'This demo cannot start over by itself' : ready ? 'A scene is running' : 'The sample data is still loading' })
       json(202, {})
       return restart()
+    }
+    // A visit to the demo's own site is recorded at the firm's address, as the seeded ones are.
+    if (path === 'POST /collect') {
+      const read = request[Symbol.asyncIterator].bind(request)
+      request[Symbol.asyncIterator] = async function* () {
+        const chunks: Buffer[] = []
+        for await (const chunk of read()) chunks.push(chunk)
+        yield Buffer.from(Buffer.concat(chunks).toString().replace(`"landing":"${siteAt}`, `"landing":"${ADDRESS}`))
+      }
     }
     if (path !== 'GET /review' && path !== 'GET /stage') return handler(request, response)
     const staged = path === 'GET /stage'
@@ -183,17 +201,22 @@ export async function startFirm({ databaseUrl }: Kept, { ports = [0, 0], quick =
     }))
   }
   let others = 0
+  /** Somebody else arrives from an ad, rings and is answered, so the feeds are as alive as they would be. */
+  async function other(rang: number) {
+    const { lang, line, office, source, campaignId, campaign } = pick(CAMPAIGNS)
+    writing = rang
+    await graph.touch({ subject: `visitor:d${others}`, at: rang, source, medium: 'cpc', campaignId, campaign, [source === 'google' ? 'gclid' : 'fbclid']: `d${others}`, landing: `${ADDRESS}${lang === 'es' ? '/es' : '/'}`, custom: { office, lang } })
+    await recordCall(graph, { id: `day-${rang}`, from: phoneOf(2000 + ++others), to: line, at: rang, duration: 120 + Math.floor(chance() * 600), answered: true, tags: { language: lang } }, { ...calls, now: clock, convert: (outcome) => graph.outcome({ ...outcome, value: STEPS.call!.value, currency: 'USD' }) })
+  }
   /** Moves the clock on to a moment of the story. It never goes back. */
   async function at(days: number, hour: number, minute: number) {
     const now = clock()
     const then = Math.max(now + 1000, when(days, hour, minute))
     for (let day = now + DAY; day < then + DAY; day += DAY) await spend(Math.min(day, then))
-    // The phones ring on in between, by day, and are answered.
+    // Others go on arriving and ringing in between, by day, and are answered.
     for (let rang = now + 2 * HOUR; rang < then; rang += 2 * HOUR) {
       if (new Date(rang).getHours() < 9 || new Date(rang).getHours() > 17) continue
-      const { lang, line } = pick(CAMPAIGNS)
-      writing = rang
-      await recordCall(graph, { id: `day-${rang}`, from: phoneOf(2000 + ++others), to: line, at: rang, duration: 120 + Math.floor(chance() * 600), answered: true, tags: { language: lang } }, { ...calls, now: clock, convert: (outcome) => graph.outcome({ ...outcome, value: STEPS.call!.value, currency: 'USD' }) })
+      await other(rang)
     }
     writing = undefined
     ahead = then - Date.now()
@@ -224,7 +247,7 @@ export async function startFirm({ databaseUrl }: Kept, { ports = [0, 0], quick =
       const from = phoneOf(n)
       writing = at
       await graph.observe({ subject: visitor, identifiers: [`device:s${n}`, `ip:198.51.100.${n % 200}`], at, event: 'visit' })
-      await graph.touch({ subject: visitor, at, source, medium: 'cpc', campaignId, campaign: campaign.campaign, [source === 'google' ? 'gclid' : 'fbclid']: `s${n}`, landing: 'https://firm.example.org/', custom: { office, ...(chance() < 0.85 && { lang }) } })
+      await graph.touch({ subject: visitor, at, source, medium: 'cpc', campaignId, campaign: campaign.campaign, [source === 'google' ? 'gclid' : 'fbclid']: `s${n}`, landing: `${ADDRESS}${lang === 'es' ? '/es' : '/'}`, custom: { office, ...(chance() < 0.85 && { lang }) } })
       const called = chance() < 0.62
       let reached = !called
       let met = at
@@ -287,6 +310,8 @@ export async function startFirm({ databaseUrl }: Kept, { ports = [0, 0], quick =
         await graph.restate(`${kind.won}-${n}`, chance() < 0.15 ? 0 : Math.round((250 + chance() * 1400) * (kind.value / 400)))
       }
     }
+    // Somebody has rung this morning too.
+    await other(start - 40 * 60_000)
     writing = undefined
     // Households: a phone on two contacts of two names, which the preset only relates.
     for (let n = 0; n < (quick ? 3 : 9); n++) {
@@ -330,10 +355,10 @@ export async function startFirm({ databaseUrl }: Kept, { ports = [0, 0], quick =
   /** The scenes, in order. Each does over HTTP what the site, the phone system or the office would, and says what came of it. */
   const scenes: { title: string; text: string; see: [string, string]; stage?: string; spot?: string[]; shown?: Shown; run(): Promise<Told> }[] = [
     {
-      title: 'Ad visit', text: 'They search, tap the Spanish ad for the North office, and land on the site.', see: ['Channels', review('channels')], stage: `#/journey/${encodeURIComponent('visitor:v-4821')}`, spot: ['Busqueda: North'], shown: { phone: 'site' },
+      title: 'Ad visit', text: 'They search, tap the Spanish ad for the North office, and land on the site.', see: ['Channels', review('channels')], stage: `#/journey/${encodeURIComponent('visitor:v-4821')}`, spot: [names.spanish], shown: { phone: 'site' },
       async run() {
         await at(0, 9, 2)
-        await browser({ device: 'v-4821', url: `${siteAt}/es`, touch: { gclid: 'demo-click', source: 'google', medium: 'cpc', campaignId: '30333', campaign: 'Busqueda: North', landing: `${siteAt}/es`, custom: { office: 'north', lang: 'es' } } })
+        await browser({ device: 'v-4821', url: `${siteAt}/es`, touch: { gclid: 'demo-click', source: 'google', medium: 'cpc', campaignId: '30333', campaign: names.spanish, landing: `${ADDRESS}/es`, custom: { office: 'north', lang: 'es' } } })
         const arrival = (await personOf('visitor:v-4821')).arrival!
         return { lines: [`Visit recorded: ${arrival.campaign}, office ${arrival.custom.office}, language ${arrival.custom.lang}.`] }
       },
@@ -501,7 +526,7 @@ export async function startFirm({ databaseUrl }: Kept, { ports = [0, 0], quick =
       },
     },
     {
-      title: 'Listing call', text: 'A call to a number published on a map listing is attributed to that listing.', see: ['Channels', review('channels')], spot: ['Map listing, River'],
+      title: 'Listing call', text: 'A call to a number published on a map listing is attributed to that listing.', see: ['Channels', review('channels')], spot: [names.listing],
       async run() {
         await at(3, 16, 40)
         const call: CallValue = await record<'call'>({ type: 'call', key: 'demo-3', direction: 'inbound', from: '+15550100043', to: '+15550100104', duration: 260, result: { answered: true } })
@@ -513,7 +538,7 @@ export async function startFirm({ databaseUrl }: Kept, { ports = [0, 0], quick =
       title: 'Web form', text: 'Somebody else comes from an ad, and sends the form on the site in place of calling.', see: ['Board', review('board/7')], spot: ['contact:rosa-marin'],
       async run() {
         await at(3, 16, 42)
-        await browser({ device: 'v-5107', url: `${siteAt}/`, touch: { gclid: 'demo-click-2', source: 'google', medium: 'cpc', campaignId: '30222', campaign: 'Search: River', landing: `${siteAt}/`, custom: { office: 'river', lang: 'en' } } })
+        await browser({ device: 'v-5107', url: `${siteAt}/`, touch: { gclid: 'demo-click-2', source: 'google', medium: 'cpc', campaignId: '30222', campaign: names.river, landing: `${ADDRESS}/`, custom: { office: 'river', lang: 'en' } } })
         const { status } = await fetch(`${siteAt}/inquiry`, { method: 'POST', redirect: 'manual', body: new URLSearchParams({ first: 'Rosa', last: 'Marin', phone: '(555) 010-0046', texts: 'yes', lang: 'en', ag_device: 'v-5107' }) })
         if (status !== 303) throw new Error(`The form was answered ${status}`)
         const credited = (await personOf('contact:rosa-marin')).arrival!
