@@ -254,6 +254,19 @@ test('repeated visitor submissions across requests share an inquiry within ten m
   }
 })
 
+test('submissions identified only by a shared browser device stay separate inquiries', { skip }, async t => {
+  const run = await wordpress(t)
+  const url = await listen(t, (_req, res) => res.end())
+  const post = { ag_device: 'kiosk-lobby-1' }
+  for (const [id, phone] of [[300, ''], [301, ''], [302, 'call after five']] as const) {
+    await run(url, 'gravity', { id, email: '', phone, post })
+  }
+  const { rows, aliases, deadlines } = await run(url, 'gravity', { id: 302, email: '', phone: 'call after five', post })
+  assert.deepEqual(rows.map((row: any) => JSON.parse(row.option_value).inquiry.subject.split(':').at(-1)), ['300', '301', '302'])
+  assert.ok(rows.every((row: any) => JSON.parse(row.option_value).profile.facts.device === 'kiosk-lobby-1'))
+  assert.deepEqual([aliases.length, deadlines.length], [0, 0])
+})
+
 test('enqueues schedule immediate delivery even when the hourly worker is due soon', { skip }, async t => {
   const run = await wordpress(t)
   const { url } = await localGraph(t)

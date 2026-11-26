@@ -234,8 +234,8 @@ final class account_graph_wordpress
         $row = account_graph_outbox_lib::row($subject, 'record', ['entries' => [$profile]]);
         if ($row) {
             $profile = json_decode($row['request'], true)['entries'][0];
-            // A representative may submit for different people from the same browser.
-            if (!empty($profile['facts'])) {
+            // A shared browser, such as a kiosk or a representative's, alone cannot tell people apart.
+            if (isset($profile['facts']['email']) || isset($profile['facts']['phone'])) {
                 list($id, $seconds) = $this->claim_fingerprint($scope, $profile, $id, $seconds);
             }
             $subject = $scope . $id;
