@@ -2,7 +2,7 @@
 
 When someone submits a web form, one request can tell the graph who contacted the firm and record their inquiry. The first entry is a `profile` with the contact's email. The second is a `conversion` for the same subject with the stage `inquiry`. Ask the person who runs your graph for its HTTPS address, a service token and the stage name your firm uses.
 
-The [OpenAPI file](openapi.json) gives the method, path, body and answers for each action. The three tools below cannot import it as it is: Zapier has no OpenAPI import, and Power Automate custom connectors take OpenAPI 2.0. Use the HTTP step each tool offers, as shown, with the bodies and answers the file describes. A developer building a connector of their own can start from it.
+The [OpenAPI file](openapi.json) gives the method, path, body and answers for each action. The three tools below cannot import it as it is. Zapier has no OpenAPI import, and Power Automate custom connectors take OpenAPI 2.0. Use the HTTP step each tool offers, as shown, with the bodies and answers the file describes. A developer building a connector of their own can start from it.
 
 ## Map the submission
 
@@ -34,8 +34,8 @@ POST /v1/record
 ## Make
 
 1. Start a scenario with your form's new-response module. Suppose the response ID is `802`, the submission time in milliseconds is `1795463600000` and the email is `lee@example.org`.
-2. Add JSON → Create JSON. Generate its data structure from the body below. Add two items to `entries`. Map the response ID into both keys and subjects, the submission time into both number fields and the email into the first item's facts. Keep `profile` first.
-3. Add HTTP → Make a request. Set the URL, method and headers above, select the raw JSON body option and map the entire JSON string from the previous module without surrounding quotes. Enable response parsing. Run once and inspect each item in `results`.
+2. Add the JSON module's Create JSON action. Generate its data structure from the body below. Add two items to `entries`. Map the response ID into both keys and subjects, the submission time into both number fields and the email into the first item's facts. Keep `profile` first.
+3. Add the HTTP module's Make a request action. Set the URL, method and headers above, select the raw JSON body option and map the entire JSON string from the previous module without surrounding quotes. Enable response parsing. Run once and inspect each item in `results`.
 
 ```http
 POST /v1/record
@@ -50,7 +50,7 @@ POST /v1/record
 
 The HTTP action is a premium connector, so the flow's owner needs a Power Automate licence that includes premium connectors.
 
-1. Start an automated cloud flow with Microsoft Forms → When a new response is submitted. Use its Response Id in Get response details. In this example response `903` has email `sam@example.org` and submission time `1795467200000` in milliseconds. If the form gives an ISO timestamp, map it into a Compose action named `Submitted_time`. In the next Compose, enter `div(sub(ticks(outputs('Submitted_time')),ticks('1970-01-01T00:00:00Z')),10000)` to get milliseconds.
+1. Start an automated cloud flow with the Microsoft Forms trigger When a new response is submitted. Use its Response Id in Get response details. In this example response `903` has email `sam@example.org` and submission time `1795467200000` in milliseconds. If the form gives an ISO timestamp, map it into a Compose action named `Submitted_time`. In the next Compose, enter `div(sub(ticks(outputs('Submitted_time')),ticks('1970-01-01T00:00:00Z')),10000)` to get milliseconds.
 2. Add an HTTP action. Set Method, URI and Headers as above. Enter the example's JSON object in Body. Use dynamic content for Response Id in each key and subject, the submission time number in both `at` fields and the email answer in `facts.email`. Protect the token with secure inputs on the action.
 3. After the HTTP action, use Apply to each on the response body's `results` array. Test the item's `ok` field in a Condition so a refusal goes to the person who handles intake.
 
