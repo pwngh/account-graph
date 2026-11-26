@@ -1,6 +1,9 @@
 import { hasPageRules, validPageRules } from './collect.ts'
 import type { PageRules } from './collect.ts'
 import { browserPage, recordPages } from './pages.ts'
+import type { LeadSources } from '../contract/api.ts'
+import { LeadConflict, acceptLead, leadBody, signedLead } from './leads.ts'
+import type { RecordLead } from './leads.ts'
 import { FAULT_CODES, fault, malformed } from '../contract/fault.ts'
 import { CALLS } from '../contract/validate.ts'
 import type { CallName } from '../contract/validate.ts'
@@ -194,6 +197,91 @@ class Refusal extends Error {
   }
 }
 
+/** The address a request came from, read through as many proxies as are trusted. */
+const addressThrough = (request: IncomingMessage, trustProxy: boolean | number | undefined): string => {
+  const hops = trustProxy === true ? 1 : Number(trustProxy) || 0
+  const entries = hops > 0 ? String(request.headers['x-forwarded-for'] ?? '').split(',').map((entry) => entry.trim()).filter(Boolean) : []
+  const forwarded = entries[Math.max(0, entries.length - hops)] ?? ''
+  return forwarded || request.socket.remoteAddress || ''
+}
+
+/** How long a sender still streaming a refused body has to read the answer before its connection is reset. */
+const LINGER_MS = 2000
+
+/**
+ * Answers a request whose body was not read to the end, and reads no more of it. Node destroys the socket as soon as a
+ * `connection: close` answer is written, and a sender still streaming then gets a reset that can drop the answer unread.
+ * Instead the answer is followed by a half-close, and the socket is destroyed when the time is up, or sooner if it closes.
+ */
+function closeAfter(request: IncomingMessage, response: ServerResponse): void {
+  // Paused, and marked as consumed so that Node does not drain the rest after the answer: at most the stream's buffer is read.
+  request.pause()
+  request.read(0)
+  response.setHeader('connection', 'close')
+  const socket = request.socket
+  socket.destroySoon = () => {
+    socket.end()
+    const timer = setTimeout(() => socket.destroy(), LINGER_MS).unref()
+    socket.once('close', () => clearTimeout(timer))
+  }
+}
+
+/** Wrong signatures one address may send to one source in a minute before it must wait. */
+const FAILED_PER_MINUTE = 10
+
+/** A sender must prove the post before it can spend the source's allowance or open the graph. */
+export function createLeadHandler(leads: LeadSources, record: RecordLead, now: () => number, country?: string, trustProxy?: boolean | number) {
+  const sources = new Map(Object.entries(structuredClone(leads)))
+  const windows = new Map<string, { start: number, count: number }>()
+  const failures = new Map<string, { start: number, count: number }>()
+  return async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+    const name = request.url!.slice('/leads/'.length).split('?')[0]!
+    const source = sources.get(name)
+    const answer = (status: number, body: unknown) => {
+      // A sender that is refused before its body is read could otherwise keep streaming into the server.
+      if (!request.complete) closeAfter(request, response)
+      response.writeHead(status, JSON_HEADERS).end(JSON.stringify(body))
+    }
+    if (!source) return answer(404, { error: 'No such route' })
+    if (request.method !== 'POST') return answer(405, { error: 'Use POST' })
+    try {
+      const received = now()
+      const raw = await leadBody(request)
+      const current = now()
+      if (!signedLead(request, raw, source)) {
+        // Guessing a secret costs a minute's wait after a few tries. Only further failures wait: an address can be shared, and a correct post from it still goes through.
+        const tried = `${name}\u0000${addressThrough(request, trustProxy)}`
+        const failed = failures.get(tried)
+        const row = failed && current < failed.start + 60_000 ? failed : { start: current, count: 0 }
+        if (row.count >= FAILED_PER_MINUTE) {
+          response.setHeader('retry-after', String(Math.ceil((row.start + 60_000 - current) / 1000)))
+          return answer(429, { error: 'Too many failed signatures from this address' })
+        }
+        row.count += 1
+        if (failures.size >= 50_000 && !failures.has(tried)) failures.clear()
+        failures.set(tried, row)
+        return answer(401, { error: 'Missing or invalid lead credential' })
+      }
+      let window = windows.get(name)
+      if (!window || current >= window.start + 60_000) {
+        window = { start: current, count: 0 }
+        windows.set(name, window)
+      }
+      if (window.count >= (source.perMinute ?? 60)) {
+        response.setHeader('retry-after', String(Math.ceil((window.start + 60_000 - current) / 1000)))
+        return answer(429, { error: 'Too many posts from this source' })
+      }
+      window.count += 1
+      answer(200, await acceptLead(name, source, raw, request.headers['content-type'], received, country, record))
+    } catch (error) {
+      if (error instanceof LeadConflict) return answer(409, { error: error.message })
+      const known = asFault(error)
+      if (known.retryable) response.setHeader('retry-after', '5')
+      answer(STATUS[known.code] ?? 500, { error: known.message })
+    }
+  }
+}
+
 /**
  * An HTTP handler for `node:http`. `/collect` and `/event` are open to the listed origins,
  * `/collect.js` is the script tag that posts to it, `/review` serves the
@@ -258,12 +346,7 @@ export function createHandler(core: Core, options: HandlerOptions) {
     bucket.tokens -= 1
     return true
   }
-  const addressOf = (request: IncomingMessage): string => {
-    const hops = options.trustProxy === true ? 1 : Number(options.trustProxy) || 0
-    const entries = hops > 0 ? String(request.headers['x-forwarded-for'] ?? '').split(',').map((entry) => entry.trim()).filter(Boolean) : []
-    const forwarded = entries[Math.max(0, entries.length - hops)] ?? ''
-    return forwarded || request.socket.remoteAddress || ''
-  }
+  const addressOf = (request: IncomingMessage): string => addressThrough(request, options.trustProxy)
 
   const cookieDomain = typeof options.cookie === 'object' && options.cookie.domain ? `; Domain=${options.cookie.domain}` : ''
 

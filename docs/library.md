@@ -56,6 +56,7 @@ A server has the settings as [environment variables](operations.md#environment-v
 | `policy` | a local graph | `POLICY` | What differs from the default [policy](#policy) |
 | `identifierSecret`, `linkSecret` | a local graph | `IDENTIFIER_SECRET`, `LINK_SECRET` | 32 characters or more each |
 | `stages` | a local graph | `STAGES` | Your [steps](report.md#steps) |
+| `leads` | a local graph | `LEADS`, `LEADS_FILE` | Sources whose webhooks the edge accepts, keyed by the name in the URL. [Mappings and example posts](leads.md) |
 | `openHours`, `timeZone` | a local graph | `OPEN_HOURS`, `REPORT_TIME_ZONE` | When you are open, and the zone |
 | `targets` | a local graph | `TARGETS` | Numbers you set yourself to meet. See [targets](operations.md#targets). |
 | `phones` | a local graph | `CALL_*`, `POOL_*`, `RETURN_HOURS` | `numbers`, `exclude`, `minimumSeconds`, `resultsExpectedWithinMinutes`, `returnHours`, `country`, `tapSeconds`, `pool` |
@@ -282,6 +283,7 @@ async function stop() {
 | `staffNetworks` | `STAFF_NETWORKS` | Networks whose visits are dropped |
 | `events` | `EVENTS` | Page events to record |
 | `twilio` | `TWILIO_*` | `{ authToken, calls?, texts? }`, each the address entered in Twilio |
+| `leads` | `LEADS`, `LEADS_FILE` | Uses the local graph's lead sources when omitted. Supplying a map here replaces the graph's map for this edge. [Lead webhooks](leads.md) |
 | `textCodes` | `TEXT_CODES` | Puts a code in text links, and on pages that show it to callers |
 | `fingerprint`, `maxmind`, `serverRanges` | `FINGERPRINT_*`, `MAXMIND_*`, `SERVER_RANGES_FILE` | See [providers](providers.md). `serverRanges` is the text of the file. |
 

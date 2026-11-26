@@ -33,7 +33,7 @@ GRAPH_TOKEN=a-long-random-string REVIEW_TOKENS='{"dana":"another-one"}' RECEIPT_
 
 Compose also reads a `.env` file in the same directory. Use `.env.example` for synthetic local settings. For a credentialed run, inject secrets privately into the selected process. Keep them out of the checkout, shell history and command arguments. Container administrators can inspect the environment. Set `GRAPH_PORT` to publish a different port.
 
-Compose passes the variables in [Environment variables](#environment-variables) through to the server, except `GRAPH_SCHEMA`, `HOST`, `PORT`, `POLICY_FILE`, `CALL_NUMBERS_FILE`, `SERVICE_TOKENS_FILE` and `SERVER_RANGES_FILE`. It sets `DATABASE_URL` itself. Compose passes the Google key file path but does not mount the file. Supply a separate read-only secret mount and use its path inside the container. A shell running the checker does not read Compose’s .env.
+Compose passes the variables in [Environment variables](#environment-variables) through to the server, except `GRAPH_SCHEMA`, `HOST`, `PORT`, `POLICY_FILE`, `CALL_NUMBERS_FILE`, `LEADS_FILE`, `SERVICE_TOKENS_FILE` and `SERVER_RANGES_FILE`. It sets `DATABASE_URL` itself. Compose passes the Google key file path but does not mount the file. Supply a separate read-only secret mount and use its path inside the container. A shell running the checker does not read Compose’s .env.
 
 > **Use the compose file for evaluation.** It has a local volume, a fixed database password, the example site's features and placeholders for `LINK_SECRET` and `RECEIPT_SECRETS`. Replace these before production use. Values in `compose.yaml` that start with `change-me` are public, and the server refuses to start with one when `ORIGINS` contains a site outside your own machine.
 
@@ -322,6 +322,8 @@ Each address may post a burst of 60 requests and 120 a minute to `/collect`. Bey
 
 The limit protects the graph from a single sender, because a script can claim any origin. Set `RATE_LIMIT=off` only when a system in front already limits requests. Each server process counts for itself.
 
+Each configured lead source has its own limit of 60 authenticated posts per minute per server process. Set `perMinute` on the source to change it. Lead webhooks use this limit even when the browser limit is off. After 10 posts with a missing or wrong signature from one address to one source within a minute, further posts from that address with a missing or wrong signature get 429 from that source until the minute is up. A post with the right signature is never held up by them, since a relay pool or a proxy can share one address among many senders. It counts toward the source's own limit. The address is read through `TRUST_PROXY` as for `/collect`.
+
 ## Upgrades
 
 Start the new version. At startup the server applies pending database changes in order. Completed changes stay committed if the process stops. Upgrades 29 and 30 commit together because a confirmed call and its old channel visit must agree about who can see it. Upgrade 31 commits its new columns before filling them. Starting the server again repeats any unfinished phase.
@@ -360,6 +362,7 @@ RECEIPT_SECRETS=the-new-one…,the-old-one…
 | --- | --- |
 | Of a key | A year at least. `account-graph prune` deletes those that are older than a year and than its day. |
 | Of a key whose person was deleted | For good, as a tombstone: a type, a keyed hash and times. A late retry then brings nobody back. |
+| Of a deleted subject | For good, as a tombstone, until your own services `record` a profile under that subject. Until then a [lead webhook](leads.md) cannot file under it. |
 
 > **Keep an old secret while receipts made with it are kept.** A server without it does not start. Tombstones stay, so a secret under which anybody was deleted is kept for good.
 
@@ -566,6 +569,7 @@ A partially set group stops the server at startup, with a message naming the mis
 | --- | --- | --- |
 | `STAGES` | none | Your steps in order, as JSON, each with a `value`, `currency`, `action` and `wait`. See [the report](report.md#steps). |
 | `EVENTS` | none | Page events to record, separated by commas: `inquiry,phone_click`. |
+| `LEADS`, `LEADS_FILE` | none | Named lead webhook sources as a JSON object or a path to a private file containing that object. Set at most one. Empty is the same as unset. [Mappings and setup](leads.md) |
 | `CALL_NUMBERS` | none | Tracking numbers and the channel of each, as JSON: `{"+15551230001":{"source":"google","campaignId":"20222"}}`. Each may carry `tags`. |
 | `CALL_NUMBERS_FILE` | none | A file with the same JSON, for a long list. Set one of the two. |
 | `CALL_EXCLUDE` | none | Staff and test phone numbers, separated by commas. Calls from or to them are not recorded. |

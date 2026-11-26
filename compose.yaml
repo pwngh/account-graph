@@ -25,6 +25,7 @@ services:
     environment:
       DATABASE_URL: postgres://postgres:graph@postgres:5432/graph
       SERVICE_TOKENS: ${SERVICE_TOKENS:-[]}
+      LEADS:
       GRAPH_TOKEN: ${GRAPH_TOKEN:-change-me-service-token}
       RECEIPT_SECRETS: ${RECEIPT_SECRETS:-change-me-receipt-secret-change-me}
       # The people who review, each with a token of their own.

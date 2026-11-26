@@ -2,7 +2,7 @@ import type {
   Arrival, At, DecideRefusal, DecideRequest, DecideValue, Delivery, EventPage, EventsRequest, ForgetRefusal, ForgetRequest, ForgetValue, JourneyEntry, LookupRequest, LookupValue, Match,
   Person, RecordEntry, RecordRefusal, RecordRequest, RecordResponse, RecordResult, RecordView, ReportRequest, ReportValue, Tied, Window,
 } from '../contract/api.ts'
-import { FAULT_CODES, fault, isRefused, malformed } from '../contract/fault.ts'
+import { FAULT_CODES, fault, isRefused, malformed, refused } from '../contract/fault.ts'
 import { canonical } from '../contract/json.ts'
 import { no, ok } from '../contract/outcome.ts'
 import type { Decided, Outcome } from '../contract/outcome.ts'
@@ -44,10 +44,16 @@ export interface Asked {
   /** When it must be done. */
   until?: number
   signal?: AbortSignal | undefined
+  /** A lead webhook records its entries together. An entry already on file keeps the time it was first given, so a retry or an update is not a new key. */
+  lead?: boolean
+  /** A payment source's own payments to one conversion add up to `amount` at most. Those over it are refused with OVER_CAP, which only a lead webhook asks for. */
+  paidUpTo?: { prefix: string; amount: number }
 }
 
 const kinds = (reasons: readonly Reason[]): string[] => [...new Set(reasons.map(({ identifier }) => identifier.slice(0, identifier.indexOf(':'))))]
 const delivery = ({ transactionId, target, state, note }: Job): Delivery => ({ conversion: transactionId, platform: target, state, ...(note !== undefined && { note }) })
+/** The receipt type of a forgotten subject's tombstone. No entry has this type. */
+const SUBJECT_RECEIPT = 'subject'
 const ofKey = (type: 'conversion' | 'call' | 'text', key: string) => (type === 'conversion' ? key : `${type}:${key}`)
 
 function arrival(touch: AttributedTouch | undefined, subject: Subject): Arrival | null {
@@ -154,7 +160,7 @@ export function createSix(engine: Engine, options: SixOptions) {
   const linkOf = (entry: Extract<RecordEntry, { type: 'link' }>) => knownLink(entry.url, entry.subject, { secret: options.linkSecret!, id: entry.key, now: () => entry.at, lasts: Math.floor(entry.expires / 1000) * 1000 - entry.at })
 
   /** The line of a number and the address, asked before anything is locked. */
-  async function check(entry: RecordEntry, left: number): Promise<Checked> {
+  async function check(entry: RecordEntry, left: number, lead = false): Promise<Checked> {
     const bounded = async <T>(work: Promise<T>): Promise<{ value?: T; failed: boolean }> => {
       let timer: NodeJS.Timeout | undefined
       const late = new Promise<{ failed: boolean }>((resolve) => void (timer = setTimeout(() => resolve({ failed: true }), Math.min(CHECK, left))))
@@ -180,7 +186,7 @@ export function createSix(engine: Engine, options: SixOptions) {
       const gone = await store.read(async (tx) => {
         const ref = refOf(entry)
         const own = await tx.receiptOf(entry.type, receipts.mac(entry.type, entry.key).all)
-        return own?.forgotten !== undefined || (ref && (await tx.receiptOf(ref.type, receipts.mac(ref.type, ref.key).all))?.forgotten !== undefined)
+        return own?.forgotten !== undefined || (ref && (await tx.receiptOf(ref.type, receipts.mac(ref.type, ref.key).all))?.forgotten !== undefined) || (lead && await subjectForgotten(tx, entry))
       })
       if (gone) return { line: undefined, lineFailed: false, address: undefined, addressFailed: false }
     }
@@ -193,7 +199,7 @@ export function createSix(engine: Engine, options: SixOptions) {
   }
 
   /** Checks take a third of the time there is, all together. What was not checked by then is recorded unchecked. */
-  async function checks(entries: readonly RecordEntry[], budget: number): Promise<Checked[]> {
+  async function checks(entries: readonly RecordEntry[], budget: number, lead = false): Promise<Checked[]> {
     const out: Checked[] = []
     const began = performance.now()
     let next = 0
@@ -201,11 +207,15 @@ export function createSix(engine: Engine, options: SixOptions) {
       while (next < entries.length) {
         const i = next++
         const left = budget - (performance.now() - began)
-        out[i] = left > 0 ? await check(entries[i]!, left) : { line: undefined, lineFailed: true, address: undefined, addressFailed: true }
+        out[i] = left > 0 ? await check(entries[i]!, left, lead) : { line: undefined, lineFailed: true, address: undefined, addressFailed: true }
       }
     }))
     return out
   }
+
+  /** Whether a forget left a tombstone of the subject an entry is filed under. Only lead webhooks ask: `record` may write a forgotten subject again with new keys, and a profile from it clears the tombstone. */
+  const subjectForgotten = async (tx: Tx, entry: RecordEntry): Promise<boolean> =>
+    'subject' in entry && typeof entry.subject === 'string' && (await tx.receiptOf(SUBJECT_RECEIPT, receipts.mac(SUBJECT_RECEIPT, entry.subject).all))?.forgotten !== undefined
 
   /** What an entry is about, where that is another entry. */
   function refOf(entry: RecordEntry): { type: string; key: string } | undefined {
@@ -344,10 +354,9 @@ export function createSix(engine: Engine, options: SixOptions) {
     }
   }
 
-  async function one(entry: RecordEntry, checked: Checked): Promise<RecordResult> {
-    const { type, key } = entry
-    const about = refOf(entry)
-    const answer = (decided: Decided<object, RecordRefusal>) => ({ type, key, ...decided }) as unknown as RecordResult
+  async function recordUnit(entries: readonly RecordEntry[], checked: Checked, lead = false, paidUpTo?: Asked['paidUpTo']): Promise<RecordResult[]> {
+    let entry = entries[0]!
+    const answer = (decided: Decided<object, RecordRefusal>) => ({ type: entry.type, key: entry.key, ...decided }) as unknown as RecordResult
     const lookups = {
       ...(engine.options.lineType && { lineType: async (number: string) => {
         // Whoever speaks has a number of their own.
@@ -360,30 +369,47 @@ export function createSix(engine: Engine, options: SixOptions) {
     try {
       return await engine.unit(async (inside) => {
         const { tx } = inside
-        // Read once the lock is held: of two that came at once, the second finds what the first left.
-        const before = await tx.receiptOf(type, receipts.mac(type, key).all)
-        const parent = about && (await tx.receiptOf(about.type, receipts.mac(about.type, about.key).all))
-        if (before?.forgotten !== undefined || parent?.forgotten !== undefined) return answer(no({ reason: 'FORGOTTEN' as const }))
-        const fields = before && receipts.differs(before, entry)
-        if (fields && fields.length > 0) return answer(no({ reason: 'KEY_REUSED' as const, fields }))
-        const { value, subjects, stands = true, existed = false } = await write(inside, entry, before !== undefined)
-        if (!before) await tx.addReceipt(receipts.make(entry, now(), about), subjects)
-        return answer(ok({ duplicate: before !== undefined || existed, stands, ...value }))
+        const results: RecordResult[] = []
+        for (entry of entries) {
+          const { type, key } = entry
+          const about = refOf(entry)
+          // A concurrent retry finds the first write and the time it was given, even on another server.
+          const before = await tx.receiptOf(type, receipts.mac(type, key).all)
+          const parent = about && (await tx.receiptOf(about.type, receipts.mac(about.type, about.key).all))
+          if (before?.forgotten !== undefined || parent?.forgotten !== undefined || (lead && await subjectForgotten(tx, entry))) throw refused('The entry was forgotten', { reason: 'FORGOTTEN' })
+          const dated = lead && before ? { ...entry, at: before.at } : entry
+          const fields = before && receipts.differs(before, dated)
+          if (fields && fields.length > 0) throw refused('The key was used for another entry', { reason: 'KEY_REUSED', fields })
+          if (paidUpTo && entry.type === 'payment' && !before) {
+            // Counted with the lock held, whether or not the conversion is recorded yet.
+            const paid = (await tx.paymentsOf(entry.conversion)).filter(each => each.id.startsWith(paidUpTo.prefix) && each.kind === 'payment').reduce((sum, each) => sum + each.amount, entry.amount)
+            if (Math.round(paid * 1e5) > Math.round(paidUpTo.amount * 1e5)) throw refused('The payments would exceed the source\'s cap', { reason: 'OVER_CAP' })
+          }
+          const { value, subjects, stands = true, existed = false } = await write(inside, dated, before !== undefined)
+          if (!before) await tx.addReceipt(receipts.make(dated, now(), about), subjects)
+          // Your own services writing a profile of a forgotten subject bring it back on purpose, so lead webhooks may file under it again.
+          if (!lead && entry.type === 'profile') await tx.dropReceipt(SUBJECT_RECEIPT, receipts.mac(SUBJECT_RECEIPT, entry.subject).all)
+          results.push(answer(ok({ duplicate: before !== undefined || existed, stands, ...value })))
+        }
+        return results
       }, lookups)
     } catch (error) {
-      if (isRefused(error)) return answer(no(error.refusal as unknown as RecordRefusal))
+      if (isRefused(error)) return [answer(no(error.refusal as unknown as RecordRefusal))]
       throw error
     }
   }
 
   async function record({ entries }: RecordRequest, asked: Asked = {}): Promise<RecordResponse> {
     entries.forEach((entry, i) => preflight(entry, `request.entries[${i}]`))
-    const checked = await checks(entries, asked.until === undefined ? TOGETHER * CHECK : (asked.until - now()) / 3)
+    const checked = await checks(entries, asked.until === undefined ? TOGETHER * CHECK : (asked.until - now()) / 3, asked.lead)
+    // A webhook's profile and conversion share a transaction. Only its first entry can need a line check.
+    const units = asked.lead ? [entries] : entries.map(entry => [entry])
     const results: RecordResult[] = []
-    for (const [i, entry] of entries.entries()) {
+    for (const [i, unit] of units.entries()) {
       asked.signal?.throwIfAborted()
-      if (asked.until !== undefined && now() >= asked.until) results.push({ type: entry.type, key: entry.key, ...no({ reason: 'NOT_ATTEMPTED' as const }) } as unknown as RecordResult)
-      else results.push(await one(entry, checked[i]!))
+      if (asked.until !== undefined && now() >= asked.until) {
+        for (const { type, key } of unit) results.push({ type, key, ...no({ reason: 'NOT_ATTEMPTED' as const }) } as RecordResult)
+      } else results.push(...await recordUnit(unit, checked[i]!, asked.lead, asked.paidUpTo))
     }
     return { results }
   }
@@ -484,7 +510,9 @@ export function createSix(engine: Engine, options: SixOptions) {
   }
 
   async function eraseReceipts(tx: Tx, subjects: readonly Subject[], only?: readonly string[]) {
-    const keys = (await tx.keysOf(subjects, only)).map(({ type, key }) => ({ type, ...receipts.mac(type, key) }))
+    // A tombstone of the subject itself lets a lead webhook refuse to bring it back under a new vendor ID.
+    const named = only ? [] : subjects.map(subject => ({ type: SUBJECT_RECEIPT, key: subject }))
+    const keys = [...(await tx.keysOf(subjects, only)), ...named].map(({ type, key }) => ({ type, ...receipts.mac(type, key) }))
     const kept = (await tx.retainedPartyCalls(subjects, only)).flatMap(key => receipts.mac('call', key).all)
     await tx.forgetReceipts(subjects, keys, now(), kept, only)
   }

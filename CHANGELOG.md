@@ -137,6 +137,17 @@
 ### Edge and operations
 
 - `restore-check.ts` rehearses a PostgreSQL restore into an empty database, times each step and checks stored clusters, every table's row count and the newest audit hash.
+- `POST /leads/<name>` authenticates each chat, intake or payment source with its own secret and records mapped fields once per vendor ID, without keeping transcripts.
+- `POST /leads/<name>` writes only to subjects under the source's own prefix and refuses a mapped subject outside it. `trustSubjects` lifts this for a sender trusted with every record.
+- `LEADS` stops the server at startup when a source secret is shorter than 32 characters, has fewer than 8 different characters, or repeats another credential or any secret setting, when a name repeats, when subject prefixes overlap or begin with a built-in subject kind, or when a payment source lists call, text or page conversions.
+- `POST /leads/<name>` answers 429 to a wrong signature from an address that sent 10 wrong signatures to that source within a minute, until the minute is up. A correct signature from that address is accepted.
+- `LEADS` and `LEADS_FILE` set to an empty value are read as unset, as `STAGES` is.
+- `POST /leads/<name>` reads a mapped time below 100,000,000,000 as epoch seconds and a larger one as milliseconds, and refuses one more than a day ahead.
+- `POST /leads/<name>` accepts a signature written `sha256=<digest>`, in base64url or without padding, a `bearer` scheme in any case, and a phone sent as a JSON number.
+- `updates: true` on a lead source adds the new details of a lead posted again under the same ID to its subject, keeping the conversion's first time. Without it, `POST /leads/<name>` answers 409 to an ID posted again with other details, as it does to an ID posted for another subject or payment.
+- `conversions` and `maxAmount` are required on a payment lead source, which refuses a payment to a conversion outside those key prefixes, or one that takes its payments to that conversion above that amount.
+- `POST /leads/<name>` answers a post with no usable fact with `NO_FACT_USED` without opening the graph, and answers errors as `{ error }` like the other routes outside `/v1`.
+- `forget` leaves a tombstone of each forgotten subject, and `POST /leads/<name>` answers `FORGOTTEN` to a lead under that subject, even with a new vendor ID. `account-graph prune` keeps it, and a `record` profile under that subject removes it.
 - `GET /health`, startup and the reviewer Health view give the rebuild command when stored groups need updating. Earlier name hashes need a rebuild and fresh profiles. See [upgrades](docs/operations.md#upgrades).
 - `PostgreSQL` resumes interrupted upgrades and uses indexed calls to identify the sources of older callback notices.
 - `/collect` checks a personal link’s recipient group for a speaker in one read.

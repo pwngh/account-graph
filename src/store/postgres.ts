@@ -1267,6 +1267,10 @@ export function createPostgresStore(pool: Pool, schema = 'account_graph', { page
       await db.query(`update ${t('receipt')} set sent = $3 where type = $1 and key_mac = any($2::text[])`, [type, macs, JSON.stringify(sent)])
     },
 
+    async dropReceipt(type, macs) {
+      await db.query(`delete from ${t('receipt')} where type = $1 and key_mac = any($2::text[])`, [type, macs])
+    },
+
     async unname(subjects, keys) {
       await db.query(
         `update ${t('event')} set data = data || jsonb_build_object('from', case when data->>'from' = any($1::text[]) then null else data->'from' end, 'to', case when data->>'to' = any($1::text[]) then null else data->'to' end)
